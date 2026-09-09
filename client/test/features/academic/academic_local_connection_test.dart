@@ -19,6 +19,7 @@ import 'package:shenliyuan/features/academic/domain/academic_data_source.dart';
 import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:shenliyuan/features/academic/storage/academic_credential_store.dart';
+import 'package:shenliyuan/features/academic/storage/academic_connection_store.dart';
 import 'package:shenliyuan/features/academic/storage/academic_persistence_policy.dart';
 import 'package:shenliyuan/features/academic/storage/local_academic_account_store.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -119,6 +120,131 @@ void main() {
     expect((await h.credentials.readForIdentity(h.session.identity!))?.password,
         'password-secret');
   });
+
+  for (final provider in AcademicProviderId.values) {
+    test('HK 恢复后无需教务操作即可自动同步：${provider.value}', () async {
+      final h = await setup();
+      final api = Dio();
+      var calls = 0;
+      api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+        calls++;
+        if (calls == 1) {
+          handler.reject(DioException(
+              requestOptions: r, type: DioExceptionType.connectionError));
+        } else {
+          handler.resolve(Response(requestOptions: r, statusCode: 200, data: {
+            'verified': true,
+            'provider_id': provider.value,
+            'student_id': 'A',
+          }));
+        }
+      }));
+      final coordinator = AcademicLoginCoordinator(
+        controller: h.session,
+        identityClient: AcademicIdentityClient(api),
+        credentialStore: h.credentials,
+        silentCaptcha: false,
+        preferencesLoader: () async => h.preferences,
+        bindingRetryDelay: const Duration(milliseconds: 20),
+      );
+      var result = await coordinator.login(
+          studentId: 'A',
+          password: 'fixture',
+          providerId: provider,
+          saveCredentials: true,
+          saveAcademicData: false);
+      if (result.needsCaptcha) {
+        result = await coordinator.continueLoginWithCaptcha(code: '1234');
+      }
+      expect(result.isSuccess, true);
+      expect(await coordinator.bindingSyncState(), 'pending');
+      await Future.doWhile(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        return await coordinator.bindingSyncState() != 'bound';
+      }).timeout(const Duration(seconds: 2));
+      expect(calls, 2);
+      expect(h.session.isAuthenticated, true);
+      expect(
+          await h.credentials.readForIdentity(h.session.identity!), isNotNull);
+    });
+  }
+
+  test('重启后恢复待同步声明，无学校 Session 或密码仍可补发', () async {
+    final h = await setup();
+    final offline = Dio();
+    offline.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+      handler.reject(DioException(
+          requestOptions: r, type: DioExceptionType.connectionError));
+    }));
+    final first = withIdentity(h, offline);
+    await first.login(
+        studentId: 'A',
+        password: 'fixture',
+        providerId: AcademicProviderId.syluUndergraduate,
+        saveCredentials: false,
+        saveAcademicData: false);
+    expect(await first.bindingSyncState(), 'pending');
+    first.dispose();
+    final restarted = _Harness(h.preferences);
+    addTearDown(restarted.close);
+    await restarted.session.syncAppUser('1');
+    final online = Dio();
+    var calls = 0;
+    online.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+      calls++;
+      handler.resolve(Response(requestOptions: r, statusCode: 200, data: {
+        'verified': true,
+        'provider_id': 'sylu_undergraduate',
+        'student_id': 'A',
+      }));
+    }));
+    final restored = withIdentity(restarted, online);
+    await restored.warmUp();
+    expect(calls, 1);
+    expect(await restored.bindingSyncState(), 'bound');
+    expect(restarted.session.isAuthenticated, false);
+    expect(restarted.sources.fold(0, (n, source) => n + source.logins), 0);
+  });
+
+  for (final action in ['disconnect', 'switch-user', 'dispose']) {
+    test('停止旧身份同步后定时任务不会重新绑定：$action', () async {
+      final h = await setup();
+      final api = Dio();
+      var calls = 0;
+      api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+        calls++;
+        handler.reject(DioException(
+            requestOptions: r, type: DioExceptionType.connectionError));
+      }));
+      final coordinator = AcademicLoginCoordinator(
+        controller: h.session,
+        identityClient: AcademicIdentityClient(api),
+        credentialStore: h.credentials,
+        preferencesLoader: () async => h.preferences,
+        bindingRetryDelay: const Duration(milliseconds: 20),
+      );
+      await coordinator.login(
+          studentId: 'A',
+          password: 'fixture',
+          providerId: AcademicProviderId.syluUndergraduate,
+          saveCredentials: true,
+          saveAcademicData: false);
+      final oldIdentity = h.session.identity!;
+      if (action == 'disconnect') {
+        await AcademicConnectionStore(oldIdentity, h.preferences)
+            .setConnected(false);
+      } else if (action == 'switch-user') {
+        await h.session.syncAppUser('2');
+      } else {
+        coordinator.dispose();
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(calls, 1);
+      expect(
+          AcademicConnectionStore(oldIdentity, h.preferences).bindingSyncState,
+          action == 'disconnect' ? 'none' : 'pending');
+    });
+  }
 
   for (final brightness in Brightness.values) {
     testWidgets('认证授权提示支持深浅色与大字：$brightness', (tester) async {

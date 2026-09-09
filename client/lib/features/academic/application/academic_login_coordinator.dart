@@ -83,10 +83,13 @@ final class AcademicLoginCoordinator {
     this.persistencePolicy,
     this.captchaSubmissionPolicy = const AcademicCaptchaSubmissionPolicy(),
     this.silentCaptcha = true,
+    this.bindingRetryDelay = const Duration(seconds: 30),
     AcademicCaptchaRecognizer Function()? identityCaptchaRecognizerFactory,
   })  : credentialStore = credentialStore ?? PlatformAcademicCredentialStore(),
         _preferencesLoader =
             preferencesLoader ?? AppPreferencesStore.getInstance {
+    controller.disposeReadSessionGate?.call();
+    controller.disposeReadSessionGate = dispose;
     controller.readSessionGate = () async {
       final generation = controller.contextGeneration;
       final result = await ensureAuthenticated();
@@ -121,6 +124,22 @@ final class AcademicLoginCoordinator {
   final Map<AcademicIdentityKey, Future<String?>> _bindingSyncs = {};
   final Set<AcademicIdentityKey> _syncedIdentities = {};
   final Map<AcademicIdentityKey, DateTime> _bindingAttempts = {};
+  final Duration bindingRetryDelay;
+  Timer? _bindingRetry;
+  bool _disposed = false;
+
+  void dispose() {
+    _disposed = true;
+    _bindingRetry?.cancel();
+  }
+
+  Future<String> bindingSyncState() async {
+    final identity = controller.identity;
+    if (identity == null) return 'none';
+    return AcademicConnectionStore(identity, await _preferencesLoader())
+        .bindingSyncState;
+  }
+
   final Future<AppPreferencesStore> Function() _preferencesLoader;
   final AcademicPersistencePolicy? persistencePolicy;
   final AcademicCaptchaSubmissionPolicy captchaSubmissionPolicy;
@@ -400,7 +419,7 @@ final class AcademicLoginCoordinator {
   Future<String?> _syncLocalBinding({bool force = false}) async {
     final identity = controller.identity;
     final client = _identityClient;
-    if (!controller.isAuthenticated || identity == null || client == null) {
+    if (_disposed || identity == null || client == null) {
       return null;
     }
     final generation = controller.contextGeneration;
@@ -416,15 +435,50 @@ final class AcademicLoginCoordinator {
     _bindingAttempts[identity] = DateTime.now();
     final operation = () async {
       try {
-        await client.bindLocal(identity);
-        if (!controller.isCurrentContext(
-            generation: generation, appUserId: identity.appUserId)) {
+        final store =
+            AcademicConnectionStore(identity, await _preferencesLoader());
+        bool current() =>
+            !_disposed &&
+            controller.identity == identity &&
+            controller.isCurrentContext(
+                generation: generation, appUserId: identity.appUserId);
+        if (!current()) return null;
+        if (!store.connected) {
+          await store.setBindingSyncState('none');
           return null;
         }
-        _syncedIdentities.add(identity);
+        // 已通过本机认证的待同步声明可在学校离线时补发，不再提交学校密码。
+        if (!controller.isAuthenticated &&
+            store.bindingSyncState != 'pending') {
+          return null;
+        }
+        await store.setBindingSyncState('pending');
+        if (!current() || !store.connected) return null;
+        await client.bindLocal(identity);
+        if (!current() || !store.connected) {
+          return null;
+        }
         await controller.providerRouter?.onIdentityVerified?.call();
+        if (!current() || !store.connected) return null;
+        await store.setBindingSyncState('bound');
+        _syncedIdentities.add(identity);
+        _bindingRetry?.cancel();
         return null;
       } catch (_) {
+        if (!_disposed &&
+            controller.identity == identity &&
+            controller.isCurrentContext(
+                generation: generation, appUserId: identity.appUserId)) {
+          _bindingRetry?.cancel();
+          _bindingRetry = Timer(bindingRetryDelay, () {
+            if (!_disposed &&
+                controller.identity == identity &&
+                controller.isCurrentContext(
+                    generation: generation, appUserId: identity.appUserId)) {
+              unawaited(_syncLocalBinding(force: true));
+            }
+          });
+        }
         return '教务已在本机连接，学生身份尚未同步；联网后会重试';
       }
     }();
@@ -489,6 +543,7 @@ final class AcademicLoginCoordinator {
     if (controller.appUserId == null || _warmUpGeneration == generation) return;
     _warmUpGeneration = generation;
     await ensureAuthenticated();
+    await _syncLocalBinding();
   }
 
   Future<AcademicLoginOutcome> ensureAuthenticated({

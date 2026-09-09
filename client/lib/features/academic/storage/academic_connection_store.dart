@@ -10,6 +10,15 @@ final class AcademicConnectionStore {
   final AcademicIdentityKey identity;
   final AppPreferencesStore preferences;
   String get _prefix => 'academic_lifecycle_${identity.storageId}';
+  String get bindingSyncState =>
+      preferences.getString('${_prefix}_binding_sync') ?? 'none';
+
+  Future<void> setBindingSyncState(String state) async {
+    if (!await preferences.setString('${_prefix}_binding_sync', state)) {
+      throw StateError('保存学生身份同步状态失败');
+    }
+  }
+
   bool get cleanupPending => preferences.getBool('${_prefix}_cleanup') == true;
   Map<String, dynamic> get _local =>
       LocalAcademicAccountStore(identity.appUserId, preferences)
@@ -28,6 +37,7 @@ final class AcademicConnectionStore {
       preferences.getBool('${_prefix}_connected') != null;
 
   Future<void> setConnected(bool value) async {
+    if (!value) await setBindingSyncState('none');
     if (_local['student_id'] == identity.studentId) {
       await LocalAcademicAccountStore(identity.appUserId, preferences)
           .setEnabled(identity.providerId, value);
@@ -70,6 +80,7 @@ final class AcademicConnectionStore {
   }
 
   Future<void> setCleanupPending(bool value) async {
+    if (value) await setBindingSyncState('none');
     if (value &&
         !await preferences.setString(
             '${_prefix}_identity',

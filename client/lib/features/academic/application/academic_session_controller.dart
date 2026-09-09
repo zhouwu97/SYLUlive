@@ -244,6 +244,7 @@ final class AcademicSessionController extends ChangeNotifier {
 
   /// 完整恢复由协调器注入，必须在数据请求入队前执行，避免登录入队死锁。
   Future<bool> Function()? readSessionGate;
+  void Function()? disposeReadSessionGate;
 
   Future<void> waitForAccountContextReady() async {
     while (_sessionResetPending && !_disposed) {
@@ -1361,6 +1362,8 @@ final class AcademicSessionController extends ChangeNotifier {
 
   @override
   void dispose() {
+    disposeReadSessionGate?.call();
+    disposeReadSessionGate = null;
     providerRouter?.onConfigChanged = null;
     _disposed = true;
     _cleanupCoordinator.unregister(this);

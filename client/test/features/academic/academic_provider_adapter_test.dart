@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
 
 import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
+import 'package:shenliyuan/features/academic/application/academic_login_coordinator.dart';
+import 'package:shenliyuan/features/academic/storage/academic_credential_store.dart';
 import 'package:shenliyuan/features/academic/data/academic_provider_adapters.dart';
 import 'package:shenliyuan/features/academic/data/academic_provider_router_repository.dart';
 import 'package:shenliyuan/features/academic/data/academic_repository_impl.dart';
@@ -22,6 +24,79 @@ import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   AppPreferencesStore.setMockInitialValues({});
+
+  test('成绩详情过期后上层撤销登录状态并使用已保存凭据恢复读取', () async {
+    AppPreferencesStore.setMockInitialValues({});
+    final source = _RecordingAcademicDataSource();
+    final provider = UndergraduateAcademicProvider(
+      identity: const AcademicIdentityKey(
+        appUserId: 'app-user',
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: 'U-001',
+      ),
+      source: source,
+    );
+    final controller = AcademicSessionController.forProvider(
+      provider: provider,
+      identity: provider.identity,
+      cleanupCoordinator: AccountSessionCleanupCoordinator(),
+    );
+    addTearDown(controller.dispose);
+    await controller.syncAppUser('app-user');
+    final credentials = _MemoryCredentialStore();
+    final coordinator = AcademicLoginCoordinator(
+      controller: controller,
+      credentialStore: credentials,
+    );
+    final login = await coordinator.login(
+      studentId: 'U-001', password: 'fixture-password',
+      saveCredentials: true, saveAcademicData: false,
+    );
+    expect(login.isSuccess, isTrue);
+    source.detailError = const SessionExpiredException();
+    final failed = await controller.loadGradeDetail(
+      year: '2025', semester: 12, classId: 'class-id', courseName: '测试课程',
+    );
+    expect(failed, isNull);
+    expect(controller.failure?.kind, AcademicFailureKind.sessionExpired);
+    expect(controller.isAuthenticated, isFalse);
+    source.detailError = null;
+    final recovered = await coordinator.ensureAuthenticated();
+    expect(recovered.isSuccess, isTrue);
+    expect(source.loginCalls, 2);
+    expect(credentials.value, isNotNull);
+    final detail = await controller.loadGradeDetail(
+      year: '2025', semester: 12, classId: 'class-id', courseName: '测试课程',
+    );
+    expect(detail?.components.single.score, '60.1');
+    expect(controller.isAuthenticated, isTrue);
+  });
+
+  for (final error in <Object>[
+    const UnauthenticatedException(),
+    const AcademicAuthFailure(AcademicAuthFailureType.sessionExpired, '过期'),
+    const ProtocolChangedException(),
+    DioException(requestOptions: RequestOptions(path: '/detail')),
+  ]) {
+    test('详情异常同步认证状态但保留网络和协议错误的有效会话：${error.runtimeType}', () async {
+      final source = _RecordingAcademicDataSource()..detailError = error;
+      final repository = ProviderAcademicRepository(UndergraduateAcademicProvider(
+        identity: const AcademicIdentityKey(
+          appUserId: 'app-user', providerId: AcademicProviderId.syluUndergraduate,
+          studentId: 'U-001',
+        ),
+        source: source,
+      ));
+      addTearDown(repository.close);
+      repository.markSessionAuthenticated();
+      await expectLater(repository.getGradeDetail(
+        year: '2025', semester: 12, classId: 'class-id', courseName: '测试课程',
+      ), throwsA(same(error)));
+      expect(repository.sessionState, error is UnauthenticatedException
+          ? SessionState.unauthenticated
+          : error is AcademicAuthFailure ? SessionState.expired : SessionState.authenticated);
+    });
+  }
 
   test('验证码候选阈值只用于人工核对，低置信和无效结果不显示', () async {
     const manual = ManualAcademicCaptchaRecognizer();
@@ -397,6 +472,9 @@ final class _RecordingAcademicDataSource implements AcademicDataSource {
   final String? profileStudentId;
   int gradesCalls = 0;
   int situationCalls = 0;
+  int loginCalls = 0;
+  Object? detailError;
+  SessionState state = SessionState.authenticated;
   List<Object?>? detailQuery;
   String? lastCourseYear;
   int? lastCourseSemester;
@@ -405,7 +483,7 @@ final class _RecordingAcademicDataSource implements AcademicDataSource {
   String get sourceName => 'fixture';
 
   @override
-  SessionState get sessionState => SessionState.authenticated;
+  SessionState get sessionState => state;
 
   @override
   String get studentId => 'U-001';
@@ -414,8 +492,11 @@ final class _RecordingAcademicDataSource implements AcademicDataSource {
   Future<LoginResult> login({
     required String studentId,
     required String password,
-  }) async =>
-      const LoginSuccess(studentId: 'U-001', cookieNames: <String>{});
+  }) async {
+    loginCalls++;
+    state = SessionState.authenticated;
+    return const LoginSuccess(studentId: 'U-001', cookieNames: <String>{});
+  }
 
   @override
   Future<CaptchaChallenge> getCaptchaChallenge() async =>
@@ -466,6 +547,11 @@ final class _RecordingAcademicDataSource implements AcademicDataSource {
     String? studentGradeId,
   }) async {
     detailQuery = [year, semester, classId, courseName, courseId, studentGradeId];
+    final error = detailError;
+    if (error != null) {
+      if (error is SessionExpiredException) state = SessionState.expired;
+      throw error;
+    }
     return GradeDetail(success: true, courseName: courseName, totalGrade: '60.1',
       components: [GradeComponent(name: '总评', score: '60.1')]);
   }
@@ -502,11 +588,23 @@ final class _RecordingAcademicDataSource implements AcademicDataSource {
       );
 
   @override
-  Future<void> resetSession() async {}
+  Future<void> resetSession() async { state = SessionState.unauthenticated; }
 
   @override
   Future<void> restoreSession() async {}
 
   @override
   void close() {}
+}
+
+final class _MemoryCredentialStore implements AcademicCredentialStore {
+  AcademicCredential? value;
+  @override
+  Future<AcademicCredential?> read(String appUserId) async => value;
+  @override
+  Future<void> write(String appUserId, AcademicCredential credential) async {
+    value = credential;
+  }
+  @override
+  Future<void> delete(String appUserId) async { value = null; }
 }

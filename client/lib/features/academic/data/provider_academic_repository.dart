@@ -46,7 +46,7 @@ final class ProviderAcademicRepository implements AcademicRepository {
   /// 返回学校真实学期列表，供课表选择器传递准确 providerTermId。
   Future<List<AcademicTerm>> fetchTerms() async {
     _ensureOpen();
-    return _terms ??= await provider.fetchTerms();
+    return _terms ??= await _read<List<AcademicTerm>>(provider.fetchTerms);
   }
 
   /// Provider 的会话材料恢复已完成校验时，同步兼容仓储的状态。
@@ -135,10 +135,10 @@ final class ProviderAcademicRepository implements AcademicRepository {
   Future<StudentProfile> getProfile() async {
     _ensureOpen();
     if (provider is GraduateAcademicProvider) {
-      return (provider as GraduateAcademicProvider).fetchProfile();
+      return _read((provider as GraduateAcademicProvider).fetchProfile);
     }
     if (provider is UndergraduateAcademicProvider) {
-      return (provider as UndergraduateAcademicProvider).fetchProfile();
+      return _read((provider as UndergraduateAcademicProvider).fetchProfile);
     }
     throw const ProtocolChangedException(message: '当前 Provider 尚未开放学生资料解析');
   }
@@ -179,7 +179,10 @@ final class ProviderAcademicRepository implements AcademicRepository {
         code: 'ACADEMIC_TERM_NOT_FOUND',
       );
     }
-    final schedule = await provider.fetchSchedule(term.providerTermId);
+    final selectedTerm = term;
+    final schedule = await _read(
+      () => provider.fetchSchedule(selectedTerm.providerTermId),
+    );
     // 研究生 Provider 的 periodOrder 是学校课表行序（从 0 开始），
     // periodLabel 是学校原标签；本科仍沿用 RawCourse 的数字节次契约。
     final preservesProviderPeriod =
@@ -217,8 +220,8 @@ final class ProviderAcademicRepository implements AcademicRepository {
       throw const GradeNotOpenException(message: '研究生成绩暂未开放，本版支持教务登录和课表');
     }
     if (provider is UndergraduateAcademicProvider) {
-      return (provider as UndergraduateAcademicProvider)
-          .fetchGrades(year: year, semester: semester);
+      return _read(() => (provider as UndergraduateAcademicProvider)
+          .fetchGrades(year: year, semester: semester));
     }
     throw const GradeNotOpenException(message: '当前 Provider 成绩适配器尚未接入');
   }
@@ -234,14 +237,14 @@ final class ProviderAcademicRepository implements AcademicRepository {
   }) async {
     _ensureOpen();
     if (provider is UndergraduateAcademicProvider) {
-      return (provider as UndergraduateAcademicProvider).fetchGradeDetail(
+      return _read(() => (provider as UndergraduateAcademicProvider).fetchGradeDetail(
         year: year,
         semester: semester,
         classId: classId,
         courseName: courseName,
         courseId: courseId,
         studentGradeId: studentGradeId,
-      );
+      ));
     }
     throw const GradeNotOpenException(message: '当前 Provider 尚未开放成绩详情');
   }
@@ -250,8 +253,8 @@ final class ProviderAcademicRepository implements AcademicRepository {
   Future<AcademicSituation> getAcademicSituation() async {
     if (provider is UndergraduateAcademicProvider &&
         provider.capabilities.gpa) {
-      return (provider as UndergraduateAcademicProvider)
-          .fetchAcademicSituation();
+      return _read((provider as UndergraduateAcademicProvider)
+          .fetchAcademicSituation);
     }
     throw const GradeNotOpenException(message: '当前 Provider 尚未开放 GPA 学业情况');
   }
@@ -260,8 +263,8 @@ final class ProviderAcademicRepository implements AcademicRepository {
   Future<CreditRequirement> getCreditRequirements() async {
     _ensureOpen();
     if (provider is UndergraduateAcademicProvider) {
-      return (provider as UndergraduateAcademicProvider)
-          .fetchCreditRequirements();
+      return _read((provider as UndergraduateAcademicProvider)
+          .fetchCreditRequirements);
     }
     throw const GradeNotOpenException(message: '当前 Provider 尚未开放学分要求');
   }
@@ -279,7 +282,7 @@ final class ProviderAcademicRepository implements AcademicRepository {
   @override
   Future<void> restoreSession() async {
     _ensureOpen();
-    final state = await provider.probeSession();
+    final state = await _read(provider.probeSession);
     if (!state.authenticated) {
       _lastSessionState = SessionState.expired;
       throw const SessionExpiredException(message: '教务会话已失效');
@@ -337,5 +340,26 @@ final class ProviderAcademicRepository implements AcademicRepository {
 
   void _ensureOpen() {
     if (_closed) throw StateError('ProviderAcademicRepository 已关闭');
+  }
+
+  Future<T> _read<T>(Future<T> Function() operation) async {
+    _ensureOpen();
+    try {
+      return await operation();
+    } catch (error) {
+      // 底层 Cookie 失效必须同步到兼容仓储，否则页面会跳过认证并重复使用旧会话。
+      // 网络与解析失败不代表认证失效；保留原异常供上层决定恢复或展示错误。
+      final kind = AcademicFailure.fromException(error).kind;
+      if (!_closed &&
+          (kind == AcademicFailureKind.sessionExpired ||
+              kind == AcademicFailureKind.unauthenticated ||
+              kind == AcademicFailureKind.identityMismatch)) {
+        _lastSessionState = kind == AcademicFailureKind.sessionExpired
+            ? SessionState.expired
+            : SessionState.unauthenticated;
+        _terms = null;
+      }
+      rethrow;
+    }
   }
 }

@@ -901,9 +901,812 @@
       "title": "教育部关于印发《2026年世界职业院校技能大赛实施方案》的通知",
       "publisher": "中华人民共和国教育部",
       "url": "https://www.moe.gov.cn/srcsite/A07/s7055/202608/t20260820_1447374.html"
+    },
+    "curc_2026_official": {
+      "title": "全国大学生机器人大赛赛事体系",
+      "publisher": "全国大学生机器人大赛组织委员会",
+      "url": "https://www.curc.cn/"
+    },
+    "digital_building_2026": {
+      "title": "关于举办2026年全国数字建筑创新应用大赛的通知",
+      "publisher": "中国建设教育协会",
+      "url": "https://www.ccen.com.cn/info/1150/5937.htm"
+    },
+    "japanese_speech_2025_2026": {
+      "title": "关于举办第十九届中华全国日语演讲比赛华中赛区比赛的通知",
+      "publisher": "中华全国日语演讲比赛组委会（华中师范大学发布）",
+      "url": "https://wy.ccnu.edu.cn/info/1174/14461.htm"
+    },
+    "yiban_2026_platform": {
+      "title": "第十届全国高校易班技术创新大会活动页面",
+      "publisher": "易班",
+      "url": "https://x.yiban.cn/app/home"
+    },
+    "mineral_2026_notice": {
+      "title": "第十一届全国高等学校矿物加工工程专业学生实践作品大赛第一轮通知",
+      "publisher": "教育部高等学校矿业类专业教学指导委员会、中国高校矿物加工工程专业协同合作联盟",
+      "url": "https://hgxy.xust.edu.cn/info/1149/7482.htm"
+    },
+    "chem_design_2025_notice": {
+      "title": "关于举办第五届全国大学生化学实验创新设计大赛的通知",
+      "publisher": "全国大学生化学实验创新设计大赛委员会（赛事技术支持单位转载）",
+      "url": "https://www.dlvrtec.com/article/1277.html"
+    },
+    "robocon_2026_official": {
+      "title": "第二十五届全国大学生机器人大赛ROBOCON通知与赛程",
+      "publisher": "全国大学生机器人大赛ROBOCON组织委员会",
+      "url": "https://www.robocon.org.cn/h-col-104.html"
+    },
+    "robocon_2026_entry": {
+      "title": "第二十五届全国大学生机器人大赛ROBOCON报名系统",
+      "publisher": "全国大学生机器人大赛ROBOCON组织委员会",
+      "url": "https://data.robocon.org.cn/"
+    },
+    "wargame_2026_notice": {
+      "title": "关于举办2026第十届全国兵棋推演大赛的通知",
+      "publisher": "中国指挥与控制学会、中国军事科学学会",
+      "url": "https://m.c2.org.cn/nd.jsp?groupId=25&id=3068&mid=371"
+    },
+    "tax_risk_2026_official": {
+      "title": "2026年全国本科院校税收风险管控案例大赛",
+      "publisher": "全国本科院校税收风险管控案例大赛组委会",
+      "url": "https://ssfkds.moocollege.com/"
+    },
+    "tax_risk_2026_nwafu": {
+      "title": "关于组织我校学生参加2026年全国本科院校税收风险管控案例大赛的通知",
+      "publisher": "西北农林科技大学教务处、经济管理学院",
+      "url": "https://xkjszx.nwafu.edu.cn/sstz/352d2a848e144e6eb0cca84c23060190.htm"
+    },
+    "kingdee_enterprise_2026_official": {
+      "title": "全国大学生企业数字化管理创新大赛",
+      "publisher": "金蝶精一信息科技服务有限公司",
+      "url": "https://kone.kingdee.com/bigdataintelligentcompetition/innovate-cup"
+    },
+    "kingdee_enterprise_2026_nuc": {
+      "title": "关于2026年第十一届全国大学生企业数字化管理创新大赛校园选拔赛的通知",
+      "publisher": "中北大学经济与管理学院",
+      "url": "https://jgy.nuc.edu.cn/info/1009/23629.htm"
+    },
+    "brics_textbook_2026": {
+      "title": "关于举办2026一带一路暨金砖国家技能发展与技术创新大赛面向一带一路及金砖国家的教材与标准之教材与课程标准赛项选拔赛的通知",
+      "publisher": "金砖未来研究院",
+      "url": "https://www.bricsfuture.org.cn/a/20-333.html"
+    },
+    "robot_camp_2024_ecnu": {
+      "title": "关于举办2024年全国大学生机器人科技创新交流营暨大赛的通知",
+      "publisher": "共青团华东师范大学委员会",
+      "url": "https://youth.ecnu.edu.cn/4a/47/c52355a608839/page.htm"
+    },
+    "iic_english_2024_wit": {
+      "title": "2024全国大学生创新发明大赛互联网英语听说挑战赛报名通知",
+      "publisher": "武汉工程大学外语学院",
+      "url": "https://fl.wit.edu.cn/info/1511/18271.htm"
+    },
+    "iic_english_2024_rules": {
+      "title": "关于举办2024年全国大学生创新发明大赛互联网英语听说挑战赛省决赛的通知",
+      "publisher": "全国大学生创新发明大赛组委会",
+      "url": "https://www.sisu.edu.cn/docs/2024-11/11109c4a2cdc4e06a3887eccdf337239.pdf"
+    },
+    "medical_skills_2026_cczu": {
+      "title": "关于举办2026年中国大学生医学技术技能大赛常州大学校内选拔赛的通知",
+      "publisher": "常州大学教务处、创新创业学院、医学与健康工程学院",
+      "url": "https://med.cczu.edu.cn/2026/0409/c18739a413101/page.htm"
+    },
+    "sylu_3305": {
+      "title": "关于举办中国国际⼤学⽣创新⼤赛（2026）沈阳理⼯⼤学校内选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3305.htm"
+    },
+    "innovation_2026": {
+      "title": "教育部关于举办中国国际大学生创新大赛（2026）的通知",
+      "publisher": "教育部",
+      "url": "https://www.moe.gov.cn/srcsite/A08/s5672/202607/t20260731_1445670.html"
+    },
+    "moe_career_2026": {
+      "title": "教育部关于举办第三届全国大学生职业规划大赛的通知",
+      "publisher": "教育部",
+      "url": "https://www.moe.gov.cn/srcsite/A15/s7063/202510/t20251021_1417550.html"
+    },
+    "cimc_2026": {
+      "title": "关于开展2026年第二十届CIMC“西门子杯”中国智能制造挑战赛的通知",
+      "publisher": "西门子杯中国智能制造挑战赛全国竞赛组委会",
+      "url": "https://www.siemenscup-cimc.org.cn/notice/NoticeDetail?id=2431"
+    },
+    "cimc_2026_guide": {
+      "title": "2026年CIMC参赛说明",
+      "publisher": "西门子杯中国智能制造挑战赛全国竞赛组委会",
+      "url": "https://www.siemenscup-cimc.org.cn/joinflow/index"
+    },
+    "sylu_web_3080": {
+      "title": "关于组织开展2026年度沈阳理工大学大学生金相技能大赛第一赛道（实验技能赛道）的通知",
+      "publisher": "沈阳理工大学创新创业学院、材料科学与工程学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3080.htm"
+    },
+    "sylu_web_3046": {
+      "title": "关于组织开展2026年度沈阳理工大学大学生金相技能大赛第三赛道（创新应用赛道）的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3046.htm"
+    },
+    "sylu_web_3007": {
+      "title": "关于组织参加第十三届大学生新一代信息通信科技大赛省级选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、信息科学与工程学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3007.htm"
+    },
+    "sylu_web_3020": {
+      "title": "关于组织参加2026年全国高校商业精英挑战赛会计与商业管理案例竞赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、经济管理学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3020.htm"
+    },
+    "accounting_case_2026_ccpit": {
+      "title": "关于举办2026年全国高校商业精英挑战赛会计与商业管理案例竞赛的通知",
+      "publisher": "中国国际贸易促进委员会商业行业委员会",
+      "url": "https://www.ccpitcsc.org/mcdt/4641.html"
+    },
+    "sylu_3081": {
+      "title": "关于组织2026年第九届“外教社杯”全国高校学生跨文化能力大赛沈阳理工大学校赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、外国语学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3081.htm"
+    },
+    "sun_ada_2026": {
+      "title": "第18届全国大学生广告艺术大赛参赛指南",
+      "publisher": "全国大学生广告艺术大赛组委会",
+      "url": "https://www.sun-ada.net/home/about_intrs.html"
+    },
+    "sanchuang_2026": {
+      "title": "第十六届三创赛官网报名及赛程安排",
+      "publisher": "全国大学生电子商务三创赛组委会",
+      "url": "https://www.3chuang.net/"
+    },
+    "sylu_web_2984": {
+      "title": "关于组织参加第十六届全国大学生电子商务“创新、创意及创业”挑战赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、经济管理学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/2984.htm"
+    },
+    "3dds_2026_open": {
+      "title": "关于2026第19届全国三维数字化创新设计大赛初赛选拔的说明",
+      "publisher": "全国三维数字化创新设计大赛组委会",
+      "url": "https://3dds.3ddl.net/index.php?ctl=Informationlist&id=709&met=details"
+    },
+    "computer_design_2026": {
+      "title": "2026年中国大学生计算机设计大赛参赛要求",
+      "publisher": "中国大学生计算机设计大赛组织委员会",
+      "url": "https://jsjds.blcu.edu.cn/info/1078/1718.htm"
+    },
+    "cssc_market_2026_notice": {
+      "title": "关于“正大杯”第十六届全国大学生市场调查与分析大赛的通知",
+      "publisher": "中国商业统计学会",
+      "url": "https://www.china-cssc.org/show-568-1912-1.html"
+    },
+    "cicc_2026": {
+      "title": "第十届全国大学生集成电路创新创业大赛章程",
+      "publisher": "全国大学生集成电路创新创业大赛组委会",
+      "url": "https://www.ciciec.com/col.jsp?id=123"
+    },
+    "ncda_2026": {
+      "title": "关于举办2026第14届未来设计师全国高校数字艺术设计大赛的通知",
+      "publisher": "未来设计师全国高校数字艺术设计大赛组委会",
+      "url": "https://www.ncda.org.cn/news/2026/0330/714.html"
+    },
+    "sylu_3100": {
+      "title": "关于举办第二十一届全国大学生智能汽车竞赛校内选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、汽车与交通学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3100.htm"
+    },
+    "sylu_web_2930": {
+      "title": "关于2026年第十七届“蓝桥杯”全国软件和信息技术人才大赛报名的通知",
+      "publisher": "沈阳理工大学创新创业学院、信息科学与工程学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/2930.htm"
+    },
+    "sylu_web_3048": {
+      "title": "关于参加2026年第五届沈阳理工大学光电设计竞赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、理学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3048.htm"
+    },
+    "sylu_3224": {
+      "title": "关于组织参加2026年（第十三届）全国大学生物联网设计竞赛（东北区域赛）的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3224.htm"
+    },
+    "sylu_web_3063": {
+      "title": "2026年全国大学生商科大赛校内选拔赛通知",
+      "publisher": "沈阳理工大学创新创业学院、经济管理学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3063.htm"
+    },
+    "sylu_web_3015": {
+      "title": "关于组织参加第十九届全国大学生软件创新大赛（东北区域赛）的通知",
+      "publisher": "沈阳理工大学机械工程学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3015.htm"
+    },
+    "sylu_web_3002": {
+      "title": "关于组织参加2026年全国大学生英语竞赛（NECCS）的通知",
+      "publisher": "沈阳理工大学创新创业学院、外国语学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3002.htm"
+    },
+    "sylu_3138": {
+      "title": "关于组织参加第三十八届韩素音国际翻译大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、外国语学院（中俄学院）",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3138.htm"
+    },
+    "cmes_mechanical_2026_notice": {
+      "title": "2026年中国大学生机械工程创新创意大赛赛事公告及安排表",
+      "publisher": "中国机械工程学会",
+      "url": "https://www.cmes.org/cmes/upload/2026/03-18/09-51-2008271591192214.pdf"
+    },
+    "fltrp_2026_rules": {
+      "title": "2026“外研社·国才杯”“理解当代中国”全国大学生外语能力大赛通知及比赛方案",
+      "publisher": "北京外国语大学、外语教学与研究出版社",
+      "url": "https://ucc.fltrp.com/c/2026-04-15/517928.shtml"
+    },
+    "fwwb_2026": {
+      "title": "关于第十七届中国大学生服务外包创新创业大赛报名情况的通告",
+      "publisher": "中国大学生服务外包创新创业大赛组委会",
+      "url": "https://www.fwwb.org.cn/attached/file/20260416/20260416115145_211.pdf"
+    },
+    "fwwb_2026_materials": {
+      "title": "第十七届服创大赛参赛手册及报名系列材料",
+      "publisher": "中国大学生服务外包创新创业大赛组委会",
+      "url": "https://www.fwwb.org.cn/news/show/598"
+    },
+    "energy_saving_2026": {
+      "title": "“大工能动杯”第十九届全国大学生节能减排社会实践与科技竞赛第一轮通知",
+      "publisher": "全国大学生节能减排社会实践与科技竞赛委员会秘书处",
+      "url": "https://www.jienengjianpai.cn/nd.jsp?id=36"
+    },
+    "uiaec_2026_12th": {
+      "title": "关于举办第十二届国际大学生智能农业装备创新大赛的通知",
+      "publisher": "国际大学生智能农业装备创新大赛委员会",
+      "url": "https://uiaec.ujs.edu.cn/news_show.php?id=234"
+    },
+    "sylu_3169": {
+      "title": "关于组织参加第十五届“中国软件杯”大学生软件设计大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、信息科学与工程学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3169.htm"
+    },
+    "sylu_web_3025": {
+      "title": "关于组织参加2026年第31届中国日报社“21世纪杯”英语演讲比赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3025.htm"
+    },
+    "sylu_web_3023": {
+      "title": "2026年全国企业竞争模拟大赛校内选拔赛通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3023.htm"
+    },
+    "sylu_web_3255": {
+      "title": "关于组织参加2026年全国大学生化工设计竞赛校级选拔赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3255.htm"
+    },
+    "sylu_3324": {
+      "title": "关于举办2026年全国高校俄语大赛校赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、外国语学院（中俄学院）",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3324.htm"
+    },
+    "sylu_3191": {
+      "title": "关于组织参加2026年辽宁省第六届三维数字化创新设计大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、艺术设计学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3191.htm"
+    },
+    "sylu_3143": {
+      "title": "关于组织参加2026年辽宁省睿抗机器人开发者大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、信息科学与工程学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3143.htm"
+    },
+    "sylu_3258": {
+      "title": "关于组织参加2026年辽宁省高校中外大学生中华经典诵写讲大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3258.htm"
+    },
+    "sylu_3284": {
+      "title": "关于组织参加2026年辽宁省普通高等学校大学生工业设计竞赛省级竞赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、艺术设计学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3284.htm"
+    },
+    "sylu_3212": {
+      "title": "2026年辽宁省移动应用开发大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、信息科学与工程学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3212.htm"
+    },
+    "sylu_3177": {
+      "title": "关于组织辽宁省大学生智慧农业创新创业大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、汽车与交通学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3177.htm"
+    },
+    "sylu_3162": {
+      "title": "关于组织参加2026年辽宁省大学生管理决策模拟大赛的通知",
+      "publisher": "沈阳理工大学创新创业学院、经济管理学院",
+      "url": "https://cxcyxy.sylu.edu.cn/info/1089/3162.htm"
+    },
+    "cdec_2026_2027": {
+      "title": "第21届中国好创意暨全国数字艺术设计大赛简章",
+      "publisher": "中国好创意暨全国数字艺术设计大赛组织委员会",
+      "url": "https://www.cdec.org.cn/articleDetail/2363"
+    },
+    "cpipc_beautiful_2026": {
+      "title": "第四届中国研究生“美丽中国”创新设计大赛开赛通知",
+      "publisher": "中国研究生“美丽中国”创新设计大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/detail/2c908018876ef068018774a9501a03fe/2c9080199ed8b78d019ee84f68d23f67?page=0"
+    },
+    "cpipc_cyber_2026": {
+      "title": "“华为杯”第五届中国研究生网络安全创新大赛邀请函",
+      "publisher": "中国研究生网络安全创新大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/detail/2c90800c8093eef401809d33b36f0652/2c9080199ed8b78d019ed96ceea21560?page=0"
+    },
+    "soc_2026": {
+      "title": "第九届全国大学生嵌入式芯片与系统设计竞赛芯片应用赛道赛程",
+      "publisher": "全国大学生嵌入式芯片与系统设计竞赛组委会",
+      "url": "https://www.socchina.net/wx/home?tag=1"
+    },
+    "stat_model_2026": {
+      "title": "关于举办2026年（第十二届）全国大学生统计建模大赛的通知",
+      "publisher": "中国统计教育学会",
+      "url": "https://www.ai-learning.net/dstz/37119.jhtml"
+    },
+    "ican_2026": {
+      "title": "2026年iCAN大学生创新创业大赛官网赛制安排",
+      "publisher": "iCAN大学生创新创业大赛组委会",
+      "url": "https://g-ican.com/competition/ican"
+    },
+    "eastmoney_2026_notice": {
+      "title": "第十二届“东方财富杯”全国大学生金融挑战赛通知",
+      "publisher": "中国青年创业就业基金会、东方财富信息股份有限公司",
+      "url": "https://finance.eastmoney.com/a/202604073696398690.html"
+    },
+    "clpp_supplychain_2026_notice": {
+      "title": "关于举办第七届全国供应链大赛的通知",
+      "publisher": "中国物流与采购联合会、中国物流学会",
+      "url": "https://jwc.zjhzu.edu.cn/_upload/article/files/3f/5d/38e3c4e94f1b879d3dc93f0d4288/ce2b3a21-79f9-47c1-b298-e3d0b4dcf013.pdf"
+    },
+    "cpipc_international_chinese_2026": {
+      "title": "第三届中国研究生国际中文教育案例大赛官方赛程与参赛规则",
+      "publisher": "中国研究生国际中文教育案例大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/hp/2c9080158e2ad864018e5fa55a450c49"
+    },
+    "cpipc_culture_china_2026": {
+      "title": "第三届中国研究生“文化中国”两创大赛官方赛程与参赛规则",
+      "publisher": "中国研究生“文化中国”两创大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/hp/2c9080178e896671018e97ce7525018b"
+    },
+    "cpipc_os_2026": {
+      "title": "第三届中国研究生操作系统开源创新大赛官方赛程与参赛规则",
+      "publisher": "中国研究生操作系统开源创新大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/hp/2c9080178c7c917b018d1b1a0af61cd6"
+    },
+    "cpipc_engineering_management_2026": {
+      "title": "关于暂停举办2026年度中国研究生工程管理案例大赛的通知",
+      "publisher": "中国研究生工程管理案例大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/list/2c908018876ef068018774a7a5bc03fd/1"
+    },
+    "cpipc_fintech_2026": {
+      "title": "第五届中国研究生金融科技创新大赛官方赛程与参赛规则",
+      "publisher": "中国研究生金融科技创新大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/hompage2025/2c90800c8093eef401809d3501080654"
+    },
+    "cpipc_rural_2026": {
+      "title": "中国研究生乡村振兴科技强农+创新大赛第五届科技作品竞赛官方赛程与规则",
+      "publisher": "中国研究生乡村振兴科技强农+创新大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/hp/2c90800c7a132603017a1395f2c105f9"
+    },
+    "cpipc_public_management_2026": {
+      "title": "关于举办第十届中国研究生公共管理案例大赛的通知",
+      "publisher": "中国研究生公共管理案例大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/detail/8/2c9080189b6ee09e019bb08373051427?page=0"
+    },
+    "cpipc_eda_schedule_2026": {
+      "title": "2026中国研究生创“芯”大赛·EDA精英挑战赛官方赛程与参赛规则",
+      "publisher": "中国研究生创“芯”大赛·EDA精英挑战赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/hp/2c9080158ee9c272018f229208b610a6"
+    },
+    "cpipc_chip_2026": {
+      "title": "“华为杯”第九届中国研究生创“芯”大赛参赛说明",
+      "publisher": "中国研究生创“芯”大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/detail/10/2c9080189cfe726d019d054d2da806ee?page=1"
+    },
+    "cpipc_electronics_2026": {
+      "title": "第二十一届研电赛报名流程详解",
+      "publisher": "中国研究生电子设计竞赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/detail/6/2c9080179d4d9dbe019d671507b717f5?page=1"
+    },
+    "browser_tzb_2026_main": {
+      "title": "第十五届“挑战杯”建设银行中国大学生创业计划竞赛通知",
+      "publisher": "挑战杯全国组委会",
+      "url": "https://2026.tiaozhanbei.net/d51/article/727/"
+    },
+    "browser_icpc_2026": {
+      "title": "2026 ICPC Asia EC网络预选赛报名通知",
+      "publisher": "ICPC Asia EC网络预选赛组委会、北京大学计算机学院",
+      "url": "https://icpc.pku.edu.cn/tzgg/12450f30353743ccaa302be16a7a1d85.htm"
+    },
+    "liaoning_raicom_2026": {
+      "title": "2026年辽宁省睿抗机器人开发者大赛暨第十二届睿抗机器人开发者大赛辽宁省级选拔赛规程",
+      "publisher": "辽宁赛区组委会（渤海大学创新创业管理系统公开）",
+      "url": "https://cxcygl.bhu.edu.cn/comp/front/comp/info?id=MjA5Ny05YWM2YWM"
+    },
+    "chemical_experiment_2026_notice": {
+      "title": "关于举办第九届全国大学生化工实验大赛的通知（中化教协发〔2026〕17号）",
+      "publisher": "中国化工教育协会",
+      "url": "https://hgxy.hfut.edu.cn/_upload/article/files/2a/a3/90f6475b45d3a88778a739e48679/48601720-aee0-42d4-beb5-535c3023d396.pdf"
+    },
+    "cmit_2026_submission": {
+      "title": "2026全国大学生数字媒体科技作品及创意竞赛电脑版作品提交流程使用说明",
+      "publisher": "全国大学生数字媒体科技作品及创意竞赛组委会",
+      "url": "https://www.cmit.cn/html/liucheng/show-277-45689-1.html"
+    },
+    "structure_design_charter": {
+      "title": "全国大学生结构设计竞赛章程",
+      "publisher": "全国大学生结构设计竞赛委员会",
+      "url": "https://www.cug.edu.cn/__local/5/26/92/32C336C9807AF9E8699CB101CE2_497B5181_EA01.pdf?e=.pdf"
+    },
+    "siac_2025_rules": {
+      "title": "全国仿真创新应用大赛2025年章程与报名方式",
+      "publisher": "全国仿真创新应用大赛组委会",
+      "url": "https://www.siac.net.cn/h-col-103.html"
+    },
+    "cpipc_biodiversity_2025": {
+      "title": "2025年中国研究生生物多样性保护与利用创新大赛官方赛程",
+      "publisher": "中国学位与研究生教育学会",
+      "url": "https://cpipc.acge.org.cn/cw/hp/2c9080189073beab0190b560702408d1"
+    },
+    "ln_career_2026_employment": {
+      "title": "辽宁省第三届大学生职业规划大赛省决赛（就业赛道）及颁奖典礼",
+      "publisher": "辽宁大学",
+      "url": "https://www.lnu.edu.cn/ldyw/ldyw/177.htm"
+    },
+    "browser_tzb_2025_main": {
+      "title": "第十九届挑战杯中国移动全国大学生课外学术科技作品竞赛通知",
+      "publisher": "挑战杯全国组委会",
+      "url": "https://2025.tiaozhanbei.net/d49/article/676/"
+    },
+    "browser_innovation_2025": {
+      "title": "关于举办第十八届全国大学生创新年会的通知",
+      "publisher": "第十八届国创年会组委会／国家级大学生创新训练计划平台",
+      "url": "http://gjcxcy.bjtu.edu.cn/NoticeBulletin.aspx?0EB816D0E1EB2C79DCE3F86E2EFC9F47"
+    },
+    "zpy_2025": {
+      "title": "关于举办第十五届全国周培源大学生力学竞赛的通知",
+      "publisher": "中国力学学会、周培源基金会（力学与实践）",
+      "url": "https://pubs.cstam.org.cn/data/article/mie/preview/pdf/67c67c0aca140b6c84708bdc.pdf"
+    },
+    "astar_2026_entry": {
+      "title": "关于组织参加2026年第二十二届百度之星程序设计大赛的通知",
+      "publisher": "广州商学院信息技术与工程学院",
+      "url": "https://site.gcc.edu.cn/jxgl/xkjs/f1753a9e019d497f9684a797054b13ac.htm"
+    },
+    "ln_electronics_2026_syist": {
+      "title": "关于组织2026年TI杯全国大学生电子设计竞赛（辽宁赛区）校内选拔赛的通知",
+      "publisher": "沈阳科技学院创新创业学院",
+      "url": "https://cxcy.syist.edu.cn/article/details/id/1369.html"
+    },
+    "upln_2025_prov_006": {
+      "title": "2025年第六届辽宁省普通高等学校本科大学生程序设计竞赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match"
+    },
+    "upln_2025_prov_034": {
+      "title": "2025年TI杯辽宁省普通高等学校本科大学生电子设计竞赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match"
+    },
+    "upln_2025_prov_040": {
+      "title": "2025“外研社•国才杯”“理解当代中国”辽宁省大学外语能力大赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match"
+    },
+    "upln_2025_prov_044": {
+      "title": "第十六届蓝桥杯全国软件和信息技术专业人才大赛省赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match"
+    },
+    "upln_2025_prov_050": {
+      "title": "2025年中国好创意暨全国数字艺术设计大赛（辽宁赛区）（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match"
+    },
+    "upln_2025_prov_060": {
+      "title": "2025年全国大学生数字媒体科技作品及创意竞赛（辽宁省分赛区）（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match"
+    },
+    "upln_2025_prov_100": {
+      "title": "第二十四届全国大学生机器人大赛RoboMaster 2025机甲大师高校联盟赛（辽宁站）（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match"
+    },
+    "upln_2025_prov_102": {
+      "title": "2025年第四届辽宁省大学生智能技术应用大赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match"
+    },
+    "upln_2025_prov_144": {
+      "title": "2025年第四届辽宁省大学生商科综合能力大赛（2025届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match"
+    },
+    "upln_2024_prov_146": {
+      "title": "2024年辽宁省大学生动漫与媒体学院奖暨辽宁省大学生动漫与媒体创意设计大赛（2024届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match"
+    },
+    "upln_2024_prov_150": {
+      "title": "2024年中国电子数据取证大赛辽宁省赛区（2024届平台记录）",
+      "publisher": "辽宁省大学生创新创业管理共享平台",
+      "url": "https://cxcy.upln.cn/match"
     }
   },
   "items": [
+    {
+      "competition_id": "NAT-001",
+      "expected_title": "中国国际大学生创新大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://cy.ncss.cn/",
+      "scope_note": "沈理校赛报名窗口为2026年8月10日至15日；产业赛道另行通知，全国系统开放不代表仍可跳过校内选拔。",
+      "source_ids": [
+        "sylu_3305",
+        "innovation_2026"
+      ],
+      "steps": [
+        "按项目负责人所在学院加入沈理校赛QQ群，确认赛道、组别及团队资格。",
+        "登录全国大学生创业服务网，在2026年8月10日至15日完成项目报名并上传计划书等材料。",
+        "由指导教师和学院在校内截止前核对成员、指导教师、项目名称和组别；截止后相关信息不得修改。"
+      ],
+      "materials": [
+        "项目计划书；所选赛道通知要求的知识产权、资质或其他佐证材料。"
+      ],
+      "contacts": [
+        "沈理校赛一群1038058210、二群1039960115；李老师、周老师024-24685520、024-24681005。"
+      ]
+    },
+    {
+      "competition_id": "NAT-002",
+      "expected_title": "“挑战杯”大学生课外学术科技作品竞赛",
+      "season_year": 2025,
+      "scope": "national",
+      "status": "historical",
+      "entry_url": "https://2025.tiaozhanbei.net/",
+      "scope_note": "仅供第十九届（2025）主体赛流程参考；主体赛实行校赛、省赛、全国赛逐级推荐，省级组委会在2025年6月30日前完成国赛作品推报，不能据此推算下一届截止时间。",
+      "source_ids": [
+        "browser_tzb_2025_main"
+      ],
+      "steps": [
+        "关注沈阳理工大学团委或创新创业部门发布的当届校赛通知，在科技发明制作、自然科学类学术论文、哲学社会科学类社会调查报告中选择类别。",
+        "向学院提交作品及申报材料并参加校赛；入选后由学校统一推荐辽宁省赛。",
+        "省赛晋级作品由省级组委会登录挑战杯平台推报全国赛，学生不能绕过校、省两级直接获得主体赛国赛资格。"
+      ],
+      "materials": [
+        "作品申报书、研究论文或调查报告、作品说明及真实性和知识产权证明；具体格式以当届校赛通知和竞赛章程为准。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-003",
+      "expected_title": "“挑战杯”中国大学生创业计划竞赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://2026.tiaozhanbei.net/",
+      "scope_note": "第十五届主体赛实行校赛、省赛、全国赛逐级推荐；全国通知要求学校5月底前完成校赛、省级组委会6月底前完成复赛及国赛推报，不设学生个人统一直报截止。",
+      "source_ids": [
+        "browser_tzb_2026_main"
+      ],
+      "steps": [
+        "查看沈阳理工大学团委或创新创业部门发布的校赛通知，按主体赛赛道或专项赛要求组建团队。",
+        "向所在学院提交项目申报材料，参加校级评审；不能绕过学校直接申报省赛或国赛。",
+        "获得推荐后按学校通知在挑战杯系统完善团队、项目及证明信息，由学校统一推报辽宁省赛。",
+        "省赛晋级项目继续由省级组委会推报全国赛，并按后续通知更新展示和答辩材料。"
+      ],
+      "materials": [
+        "项目申报表、创业计划书或项目介绍材料；涉及知识产权、工商注册及专项资质时提交相应证明。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-004",
+      "expected_title": "全国大学生职业规划大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://zgs.chsi.com.cn/",
+      "scope_note": "第三届赛事跨2025—2026学年；报名最晚不超过2026年1月31日，各省和高校可以设置更早截止。",
+      "source_ids": [
+        "moe_career_2026"
+      ],
+      "steps": [
+        "登录全国大学生职业规划大赛平台，在成长赛道或就业赛道中选择符合资格的一个赛道。",
+        "按赛道方案填写报名信息并上传参赛材料，具体操作手册可在平台登录页下载。",
+        "等待学校资格与材料审核，依次参加校赛、省赛；全国总决赛只接受省级推荐。"
+      ],
+      "materials": [
+        "成长赛道或就业赛道方案要求的职业规划、简历、展示文件等材料。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-005",
+      "expected_title": "全国大学生创新创业训练计划年会展示",
+      "season_year": 2025,
+      "scope": "national",
+      "status": "historical",
+      "entry_url": "http://gjcxcy.bjtu.edu.cn/",
+      "scope_note": "仅供第十八届（2025）流程参考；全国年会展示面向经省级教育主管部门遴选推荐的国创计划项目，不是学生自由报名赛事。入选项目由高校管理员在2025年11月16日前完成参会注册。",
+      "source_ids": [
+        "browser_innovation_2025"
+      ],
+      "steps": [
+        "先参加沈阳理工大学国家级大学生创新训练计划项目申报、结题及年会展示校内遴选。",
+        "学校将候选项目报辽宁省教育主管部门参加省级遴选；只有获得推荐的项目才能进入全国年会名单。",
+        "入选后按学校管理员通知补全项目成员、指导教师、展示形式和参会人员信息，由高校管理员统一注册。"
+      ],
+      "materials": [
+        "国创计划项目成果、学术论文或改革成果展示材料，以及组委会要求的展板、实物或创业推介材料。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-006",
+      "expected_title": "ACM-ICPC国际大学生程序设计竞赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://icpc.pintia.cn/",
+      "scope_note": "本指引对应2026 ICPC Asia EC两场网络预选赛：第一场报名缴费截至8月26日23:59:59，第二场截至9月1日23:59:59；区域赛需另按赛站名额和通知报名。",
+      "source_ids": [
+        "browser_icpc_2026"
+      ],
+      "steps": [
+        "由学校教练在ICPC体系内确认队员资格和队伍信息，再登录中文报名平台选择网络预选赛场次。",
+        "在对应截止前填写参赛队伍信息并完成每场120元参赛费缴纳。",
+        "报名截止后核对北京大学ICPC官网公示名单；公示期仅处理姓名个别错字和资质异议，不允许换人。",
+        "按网络预选赛手册准备比赛环境，通过预选成绩申请后续亚洲区域赛名额。"
+      ],
+      "materials": [
+        "队伍及教练身份信息、缴费或汇款信息；比赛环境按网络预选赛手册准备。"
+      ],
+      "contacts": [
+        "报名异议邮箱zqj@pku.edu.cn；教练QQ群981342367。"
+      ]
+    },
+    {
+      "competition_id": "NAT-007",
+      "expected_title": "全国大学生广告艺术大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://www.sun-ada.net/user/list.html",
+      "scope_note": "第18届一般作品线上提交窗口为2026年5月10日至6月12日16:00；营销创客单元另用3月10日至4月10日22:00窗口，各赛区线下截止以赛区通知为准。",
+      "source_ids": [
+        "sun_ada_2026"
+      ],
+      "steps": [
+        "查阅官方命题并下载素材包，按所选作品类别的尺寸、格式、时长和匿名要求完成原创作品。",
+        "由一名作品代表在提交平台注册，上传作品、学生证照片或学信网截图，并完成参赛者电子签名。",
+        "将草稿确认转为正式作品，取得唯一参赛编号、报名表和承诺书；再把以参赛编号命名的作品及报名表电子版报送学校。",
+        "由学校核对线上信息并统一报送赛区，个人不能直接向全国总评审报送作品。"
+      ],
+      "materials": [
+        "符合类别规格的作品；学生证照片或学信网截图；系统生成的报名表和承诺书；所用素材授权或来源说明。"
+      ],
+      "contacts": [
+        "全国组委会010-58612105/06/07/09；sun_ada@126.com。"
+      ]
+    },
+    {
+      "competition_id": "NAT-008",
+      "expected_title": "全国大学生电子商务“创新、创意及创业”挑战赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://www.3chuang.net/",
+      "scope_note": "第十六届官网最终注册截止为2026年1月20日；沈理原通知要求2025年12月31日前完成，学生应以校内更早截止办理。常规赛与实战赛规则分别适用。",
+      "source_ids": [
+        "sanchuang_2026",
+        "sylu_web_2984"
+      ],
+      "steps": [
+        "组成3至5名学生的团队并确定队长，可配0至2名高校指导教师和0至2名企业指导教师；跨校团队以队长学校为报名学校。",
+        "由队长在三创赛官网选择常规赛或实战赛赛道，完成规则答题测试并按系统提示注册团队。",
+        "等待沈理校赛负责人审核；审核通过才算报名成功，并加入校赛QQ群688465280接收后续材料和校赛安排。"
+      ],
+      "materials": [
+        "团队成员和指导教师真实信息；不超过30个字符的作品名称及符合所选赛道规则的项目材料。"
+      ],
+      "contacts": [
+        "沈理经济管理学院刘老师15840555523；校赛QQ群688465280；全国邮箱service@3chuang.net。"
+      ]
+    },
+    {
+      "competition_id": "NAT-009",
+      "expected_title": "“西门子杯”中国智能制造挑战赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://www.siemenscup-cimc.org.cn/team/index",
+      "scope_note": "2026全国报名组队时间为3月1日至5月31日；部分创新研发及工程思政赛项还须提交方案并由指导教师审核。",
+      "source_ids": [
+        "cimc_2026",
+        "cimc_2026_guide"
+      ],
+      "steps": [
+        "所有参赛师生在大赛官网注册，完善真实个人信息并按规定缴纳评审费。",
+        "选择赛项和组别，创建或加入队伍，确保队员和第一指导教师均完成组队。",
+        "组队成功后下载报名表，加盖学校或学院公章并妥善保存；需要方案评审的赛项再按专页上传方案并请指导教师审核。"
+      ],
+      "materials": [
+        "系统生成并签字盖章的报名表；部分赛项另需方案及赛题页面规定的资料。"
+      ],
+      "contacts": [
+        "全国竞赛秘书处：siemenscup@163.com；工作电话18515835708。"
+      ]
+    },
+    {
+      "competition_id": "NAT-010",
+      "expected_title": "全国三维数字化创新设计大赛（大学生组）",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://3dds.3ddl.net/",
+      "scope_note": "本指引仅覆盖第19届开放赛项初赛；产业应用赛等专项赛按各赛项通知办理。开放赛项报名截止2026年6月30日24:00，初赛作品截止7月20日24:00。",
+      "source_ids": [
+        "3dds_2026_open"
+      ],
+      "steps": [
+        "在全国3D大赛官网注册并创建参赛团队，选择开放赛项和参赛方向。",
+        "在2026年7月20日24:00前上传初赛作品并确认审核状态；只有作品审核通过且初赛晋级，才可进入复赛或省赛。",
+        "所在学校或院系举办校内选拔时参加校选；未组织校选的院校团队按后续网络海选通知参与推荐和项目初评。"
+      ],
+      "materials": [
+        "按开放赛项规则准备的初赛作品及团队信息；具体文件格式以所选赛项页面为准。"
+      ],
+      "contacts": [
+        "全国3D大赛秘书处崔老师13261983342，工作日9:00—17:00。"
+      ]
+    },
+    {
+      "competition_id": "NAT-011",
+      "expected_title": "中国大学生计算机设计大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://2026.jsjds.com.cn/",
+      "scope_note": "国赛不接受学生自由首报，只接收省级赛推荐作品；获得国赛资格后须在2026年5月30日前完成国赛平台信息填报和核查。",
+      "source_ids": [
+        "computer_design_2026"
+      ],
+      "steps": [
+        "由同一院校2至9名2026年在籍本科生组队，先参加学校和所在省级赛区组织的选拔。",
+        "取得省级赛推荐资格后，登录2026国赛平台填写并核查作品、作者和指导教师信息。",
+        "在5月30日前完成国赛信息确认；取得国赛资格后作者、指导教师姓名及排序不得变更。"
+      ],
+      "materials": [
+        "本届期间完成的原创作品；所选大类附件要求的作品文件；合规数据、地图审图号及知识产权说明。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-012",
+      "expected_title": "全国大学生市场调查与分析大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://www.china-cssc.org/",
+      "scope_note": "第十六届报名跨2025—2026学年，当前报名期已结束；院校先报名取得代码，学生再凭代码报名，不能跳过院校组织环节。",
+      "source_ids": [
+        "cssc_market_2026_notice"
+      ],
+      "steps": [
+        "由学校竞赛负责人先在赛事专题页办理院校参赛报名，取得用于学生身份验证的院校代码。",
+        "学生进入专题页的学生参赛报名入口，填写院校代码和个人信息。",
+        "学校负责人核对并下载本校报名信息，在规定期限内统一缴费并向组委会发送确认参加网考的学生信息汇总表。",
+        "按组别参加知识赛和校赛、省赛，晋级团队再按实践赛通知提交调查报告、PPT及相关附件。"
+      ],
+      "materials": [
+        "院校代码和个人报名信息；学校统一报送的网考信息汇总表；实践赛阶段的调查报告、PPT及附件。"
+      ],
+      "contacts": [
+        "组委会邮箱891496257@qq.com；指导教师QQ群462544535。"
+      ]
+    },
     {
       "competition_id": "NAT-013",
       "expected_title": "两岸新锐设计竞赛“华灿奖”",
@@ -967,6 +1770,122 @@
       ]
     },
     {
+      "competition_id": "NAT-016",
+      "expected_title": "全国大学生集成电路创新创业大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://univ.ciciec.com/signup.jsp",
+      "scope_note": "本指引覆盖第十届主赛项，职业技能赛项使用独立章程。主赛项报名已于2026年3月31日截止，赛题软硬件申请期限以各题目规定为准。",
+      "source_ids": [
+        "cicc_2026"
+      ],
+      "steps": [
+        "由1至3名学生组队，可跨校组队，并确定1至2名指导教师；按成员学历确认A组或B组。",
+        "在大赛平台注册，选择本队资格允许的一个企业命题，填写团队信息并下载报名表。",
+        "将报名表交学校或学院盖章，并按平台要求提交；报名阶段缴纳300元押金。",
+        "按赛题规定申请软硬件并完成中期检查和初赛作品提交；通过初赛后押金转为参赛费。"
+      ],
+      "materials": [
+        "学校或学院盖章的报名表；企业命题要求的技术资料；初赛作品及中期检查材料。"
+      ],
+      "contacts": [
+        "大赛官网公布的报名咨询邮箱icbaoming@miitec.org.cn。"
+      ]
+    },
+    {
+      "competition_id": "NAT-017",
+      "expected_title": "全国大学生金相技能大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "沈理第一赛道与第三赛道分别报名、分别校选；第一赛道面向相关专业大二大三学生，第三赛道面向材料学院2023级本科生。",
+      "source_ids": [
+        "sylu_web_3080",
+        "sylu_web_3046"
+      ],
+      "steps": [
+        "实验技能赛道拟参赛学生实名加入第一赛道微信群，在2026年4月14日16:00前于群内接龙报名。",
+        "创新应用赛道由2名学生组队，加入第三赛道微信群并在群内完成报名，仅入群不视为报名成功。",
+        "参加对应校赛；实验技能赛道选手完成金相试样制备，创新应用赛道团队准备5分钟材料研究课题汇报并答辩。"
+      ],
+      "materials": [
+        "创新应用赛道准备材料研究课题汇报；后续区赛、国赛材料按晋级通知办理。"
+      ],
+      "contacts": [
+        "第一赛道毛老师18240078161、文老师13504936192；第三赛道毛老师18240078161。"
+      ]
+    },
+    {
+      "competition_id": "NAT-018",
+      "expected_title": "未来设计师·全国高校数字艺术设计大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://www.fd.show/member/login/ds",
+      "scope_note": "第14届投稿已于2026年6月20日截止；非命题、产教融合/创新创业、公益和挑战赛道的具体材料要求分别以官网方案为准。",
+      "source_ids": [
+        "ncda_2026"
+      ],
+      "steps": [
+        "登录未来设计师参赛个人入口，注册或使用个人账号进入报名系统。",
+        "选择大学生组及符合要求的赛道，填写参赛信息并在6月20日前上传作品。",
+        "按学校要求参加校级赛；省级赛一、二等奖作品晋级全国赛，不将全国赛阶段作为首次报名入口。"
+      ],
+      "materials": [
+        "所选赛道竞赛方案规定的作品文件和参赛信息；产教融合、公益或挑战赛道的专项材料。"
+      ],
+      "contacts": [
+        "本科组周老师17317564984、蔡老师13817222973；专科组涂老师18917545109。"
+      ]
+    },
+    {
+      "competition_id": "NAT-019",
+      "expected_title": "睿抗机器人开发者大赛（RAICOM）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "status": "verified",
+      "entry_url": "https://www.raicom.com.cn/match.html",
+      "scope_note": "辽宁赛区2026年采用省平台、睿抗官网和本校系统三平台报名；公开省赛规程窗口为4月1日至5月8日、管理员审核截至5月15日24:00，但沈理本校系统入口和校内截止仍须校方确认。",
+      "source_ids": [
+        "liaoning_raicom_2026"
+      ],
+      "steps": [
+        "先向沈阳理工大学竞赛负责人确认校内选拔和校内系统入口，选择CAIR、CAIA、CAIM或CAIP下的具体赛项。",
+        "以学校为单位集体报名，在辽宁省大学生创新创业管理共享平台和睿抗国赛官网分别注册并填报同一套团队信息。",
+        "按校方要求同步在本校系统提交，确保三个平台的成员、指导教师、队名和赛项完全一致。",
+        "由指导教师和校赛管理员在省赛审核截止前完成审核；审核后队员和指导教师不得随意更换。"
+      ],
+      "materials": [
+        "所选赛项规定的报名信息和作品材料；具体设计资料、PPT、实物或演示要求以赛项规则为准。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-020",
+      "expected_title": "“大唐杯”全国大学生新一代信息通信技术大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "第十三届已更名为“大学生新一代信息通信科技大赛”；本指引适用沈理参加省级选拔赛，由学校教师代表统一在官网报名。",
+      "source_ids": [
+        "sylu_web_3007"
+      ],
+      "steps": [
+        "按工程实践、产教融合5G+创新应用或ICT基础通识赛道的组队要求确定成员和指导教师。",
+        "加入沈理竞赛QQ群1033618806，向学校教师代表提交报名所需信息并按通知缴纳省赛费用。",
+        "由学校教师代表统一登录信科赛官网报名，参赛队随后按所选赛道完成学习、练习和比赛。"
+      ],
+      "materials": [
+        "团队及指导教师信息；产教融合赛道后续按赛项要求提交创新成果。"
+      ],
+      "contacts": [
+        "刘微老师13804344404、马毓姝老师15841395248；QQ群1033618806。"
+      ]
+    },
+    {
       "competition_id": "NAT-021",
       "expected_title": "华为ICT大赛",
       "season_year": 2026,
@@ -1004,6 +1923,30 @@
       "materials": [],
       "contacts": [
         "理学院吴老师；2924513775@qq.com；QQ群1098813220。"
+      ]
+    },
+    {
+      "competition_id": "NAT-023",
+      "expected_title": "全国高校商业精英挑战赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://ssyth.cubec.org.cn/",
+      "scope_note": "仅覆盖2026年会计与商业管理案例竞赛；沈理学生先按校内通知参加知识赛和校赛，院校负责人再通过赛事一体化平台办理推荐。",
+      "source_ids": [
+        "sylu_web_3020",
+        "accounting_case_2026_ccpit"
+      ],
+      "steps": [
+        "沈理学生加入QQ群921952186，在2026年3月10日前完成校内报名。",
+        "先参加个人知识赛；成绩合格后由3至5名选手、1至2名辅导教师组队参加案例团队赛。",
+        "按案例企业近三年财务报告编制商业计划书，通过校赛后由学校负责人统一在赛事平台办理省赛或全国预选赛推荐。"
+      ],
+      "materials": [
+        "案例企业分析及商业计划书；学校推荐阶段所需团队信息。"
+      ],
+      "contacts": [
+        "沈理王老师18940227898；QQ群921952186。"
       ]
     },
     {
@@ -1092,6 +2035,29 @@
       "contacts": []
     },
     {
+      "competition_id": "NAT-028",
+      "expected_title": "“外教社杯”全国高校学生跨文化能力大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "沈理团队现场赛与短视频赛分别报名，且短视频参赛者不能同时参加团队现场赛；不同语种晋级路径也不同。",
+      "source_ids": [
+        "sylu_3081"
+      ],
+      "steps": [
+        "团队现场赛由3名学生组队，填写附件1和附件3，压缩包以“负责人学号-姓名-团队现场赛报名”命名后发送指定邮箱。",
+        "短视频赛填写附件2并附视频，以“负责人学号-姓名-短视频报名”命名压缩包后发送指定邮箱。",
+        "所有参赛选手加入校赛QQ群1077834563；按所选赛道参加校赛并等待省赛或国赛推荐。"
+      ],
+      "materials": [
+        "团队现场赛报名表和作品设计说明；或短视频赛报名表及3至5分钟原创视频。"
+      ],
+      "contacts": [
+        "迟老师13889814764；chitengfei@sylu.edu.cn；QQ群1077834563。"
+      ]
+    },
+    {
       "competition_id": "NAT-029",
       "expected_title": "全国大学生工业设计大赛",
       "season_year": 2026,
@@ -1110,6 +2076,47 @@
       ],
       "materials": [
         "系统生成并签字盖章的报名表、按所选类别要求提交的设计作品。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-030",
+      "expected_title": "全国大学生化学实验创新设计大赛",
+      "season_year": 2025,
+      "scope": "national",
+      "status": "historical",
+      "entry_url": "https://cid.nju.edu.cn/",
+      "scope_note": "以下为2025年第五届方式；第六届通知指向2027年，不能据此推定2026存在新一届报名。",
+      "source_ids": [
+        "chem_design_2025_notice"
+      ],
+      "steps": [
+        "由学校按新创实验、改进实验、科普实验等赛道遴选队伍。",
+        "学校按所属分赛区通知统一报名并提交作品，参加分赛区评审。",
+        "获得分赛区推荐资格后参加全国总决赛，具体名额和材料以该届赛区通知为准。"
+      ],
+      "materials": [],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-031",
+      "expected_title": "全国本科院校税收风险管控案例大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://ssfkds.moocollege.com/",
+      "scope_note": "大赛官网全国报名窗口为2026年7月10日至9月20日；各校可能要求先完成校内遴选或同时填报校内系统。",
+      "source_ids": [
+        "tax_risk_2026_official",
+        "tax_risk_2026_nwafu"
+      ],
+      "steps": [
+        "登录大赛官网，从“报名参赛”入口注册并按三人一队填报参赛队伍。",
+        "按学校要求完成校内审核或校内系统登记；不要把其他高校的内部入口用于本校报名。",
+        "在大赛官网提交原创涉税案例分析材料，分区赛案例提交截止为2026年10月12日24:00。"
+      ],
+      "materials": [
+        "原创涉税案例分析报告；进入总决赛后按通知准备汇报答辩PPT。"
       ],
       "contacts": []
     },
@@ -1176,6 +2183,29 @@
       "contacts": []
     },
     {
+      "competition_id": "NAT-035",
+      "expected_title": "中国大学生机械工程创新创意大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://www.cmes.org/",
+      "scope_note": "2026年度大赛包含3个赛道、19个赛项，没有统一学生报名窗口；须先确认具体赛项，再进入公告附件所列赛项官网，按学校限额和赛项通知报名。",
+      "source_ids": [
+        "cmes_mechanical_2026_notice"
+      ],
+      "steps": [
+        "在创意、创新或毕业设计赛道的19个赛项中确认具体参赛项目，核对本赛项对象、报名期限和承办单位。",
+        "联系本校赛事负责人完成校内遴选和限额确认，再登录公告安排表所列的对应赛项官网报名。",
+        "按赛项独立规则提交报名信息和作品，获得省级或区域推荐后再参加全国总决赛。"
+      ],
+      "materials": [
+        "对应赛项要求的报名表、作品或设计文件；学校或区域限额申报材料。"
+      ],
+      "contacts": [
+        "各赛项联系人、邮箱和官网均列在中国机械工程学会2026赛事安排表中。"
+      ]
+    },
+    {
       "competition_id": "NAT-036",
       "expected_title": "全国大学生数学建模竞赛",
       "season_year": 2026,
@@ -1197,6 +2227,50 @@
       "contacts": []
     },
     {
+      "competition_id": "NAT-037",
+      "expected_title": "全国周培源大学生力学竞赛",
+      "season_year": 2025,
+      "scope": "national",
+      "status": "historical",
+      "entry_url": "",
+      "scope_note": "仅供第十五届（2025）个人赛流程参考；当届报名截至2025年3月31日，可通过学校或个人向所在省级力学学会联系人报名，下一届时间和联系人须重新确认。",
+      "source_ids": [
+        "zpy_2025"
+      ],
+      "steps": [
+        "确认参加个人赛，并向沈阳理工大学相关学院查询是否统一组织报名。",
+        "学校未统一组织时，查阅当届全国通知附件中的辽宁省联系人，按省级要求直接提交报名信息。",
+        "团体赛不单独自由报名，由个人赛成绩和全国通知规定的方式产生参赛队伍。"
+      ],
+      "materials": [
+        "个人赛报名表和省级联系人要求的学籍、身份及缴费信息。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-038",
+      "expected_title": "全国大学生智能汽车竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "本指引为第二十一届东北赛区沈理校内选拔；竞速赛和创意赛对象、组队人数不同，校内报名截止2026年5月15日。",
+      "source_ids": [
+        "sylu_3100"
+      ],
+      "steps": [
+        "按竞速赛或创意赛资格组队：竞速赛通常不超过3名本科生，个别组别不超过5人；创意赛可由本科生或研究生参加。",
+        "加入沈理校赛QQ群480567060，按群内要求提交队伍、赛道和指导教师信息。",
+        "参加暂定5月末举行的校内选拔，获推荐后再按全国官网规则办理东北赛区报名。"
+      ],
+      "materials": [
+        "所选组别要求的智能车作品、队伍信息及校内选拔材料。"
+      ],
+      "contacts": [
+        "沈理那老师、蔡老师；校赛QQ群480567060。"
+      ]
+    },
+    {
       "competition_id": "NAT-039",
       "expected_title": "全国大学生物流设计大赛",
       "season_year": 2025,
@@ -1216,6 +2290,77 @@
         "盖章报名表、在校生证明、学生证扫描件。"
       ],
       "contacts": []
+    },
+    {
+      "competition_id": "NAT-040",
+      "expected_title": "“外研社杯”全国大学生外语能力大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://ucc.fltrp.com/",
+      "scope_note": "2026届正式名称为“外研社·国才杯”“理解当代中国”全国大学生外语能力大赛；官网自6月2日起开放，个人截止按学校校赛通知。英语口译赛项2026年停办。",
+      "source_ids": [
+        "fltrp_2026_rules"
+      ],
+      "steps": [
+        "根据身份选择英语组、多语种组或国际中文组，并确认具体赛项和往届获奖限制。",
+        "从2026年6月2日起登录大赛官网，在“选手报名/参赛”页面注册并填写学校、语种、赛项和个人信息。",
+        "在本校规定的截止前参加校赛，由校赛管理员确认参赛及获奖名单；获得推荐后依次参加省赛和国赛。"
+      ],
+      "materials": [
+        "个人学籍与报名信息；国际传播、笔译、短视频或“四新”专项方案要求的作品。"
+      ],
+      "contacts": [
+        "英语组010-88819383、多语种组010-88819452、国际中文组010-88819480；ucc@fltrp.com。"
+      ]
+    },
+    {
+      "competition_id": "NAT-041",
+      "expected_title": "全国大学生机器人大赛（CURC）",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://data.robocon.org.cn/",
+      "scope_note": "仅补CURC体系下ROBOCON分赛项报名流程；RoboMaster及其他模块必须使用各自平台和通知。",
+      "source_ids": [
+        "curc_2026_official",
+        "robocon_2026_official",
+        "robocon_2026_entry"
+      ],
+      "steps": [
+        "由指导教师在ROBOCON报名系统注册并提交创建队伍申请。",
+        "按报名指南补充队伍和成员资料，等待赛务审核战队创建信息。",
+        "通过审核后依照所选赛项通知完成中期检查、正式报名和参赛确认。"
+      ],
+      "materials": [
+        "各赛项要求的队伍资料、中期检查材料；现场报到按通知提交安全承诺书。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-042",
+      "expected_title": "中国大学生服务外包创新创业大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://www.fwwb.org.cn/team/register",
+      "scope_note": "第十七届报名已于2026年3月31日结束；辽宁高校属于北部区域赛。团队只有完成选题、成员审核和签字盖章承诺书等环节后才算报名成功。",
+      "source_ids": [
+        "fwwb_2026",
+        "fwwb_2026_materials"
+      ],
+      "steps": [
+        "由队长在官网团队注册入口填写手机号、团队名称、学校、所在地区和邮箱，创建参赛团队。",
+        "按参赛手册选择A类企业命题、创客类或其他开放类别，添加全部团队成员和指导教师并等待审核。",
+        "下载并提交团队成员签字、学校盖章的参赛承诺书，确认选题和成员均审核通过。",
+        "按对应类别手册完成作品并通过报名系统提交，进入辽宁所在的北部区域赛。"
+      ],
+      "materials": [
+        "签字盖章的参赛承诺书；赛题要求的项目作品、文档及演示材料。"
+      ],
+      "contacts": [
+        "具体赛题咨询群及联系方式见第十七届参赛手册和官网公告。"
+      ]
     },
     {
       "competition_id": "NAT-043",
@@ -1240,6 +2385,29 @@
       "contacts": []
     },
     {
+      "competition_id": "NAT-044",
+      "expected_title": "蓝桥杯全国软件和信息技术专业人才大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://dasai.lanqiao.cn/",
+      "scope_note": "第十七届不同赛项使用不同窗口：软件、电子、人工智能赛已于2025年12月15日截止；视觉艺术设计赛和数字科技创新赛截至2026年4月27日14:00。",
+      "source_ids": [
+        "sylu_web_2930"
+      ],
+      "steps": [
+        "登录蓝桥杯官网注册，选择本人学籍匹配的院校、赛项和组别完成线上报名。",
+        "同时填写沈理第十七届蓝桥杯报名表，并核对姓名、证件、赛项和联系方式。",
+        "加入SYLU蓝桥杯2026报名群1038308089，按群内通知完成赛前辅导、缴费或考务确认。"
+      ],
+      "materials": [
+        "官网个人报名信息；沈理在线报名表；作品赛按赛项要求上传作品文件。"
+      ],
+      "contacts": [
+        "沈理李鹤群13940379895、崔宁海13322478789；QQ群1038308089。"
+      ]
+    },
+    {
       "competition_id": "NAT-045",
       "expected_title": "米兰设计周——中国高校设计学科师生优秀作品展",
       "season_year": 2026,
@@ -1258,6 +2426,29 @@
       "materials": [],
       "contacts": [
         "校内QQ群675380971。"
+      ]
+    },
+    {
+      "competition_id": "NAT-046",
+      "expected_title": "全国大学生光电设计竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "本条覆盖第十四届全国赛创意赛道的沈理校赛和东北区推荐流程；校赛报名与作品提交截至2026年5月1日。",
+      "source_ids": [
+        "sylu_web_3048"
+      ],
+      "steps": [
+        "组成不超过3名学生的创意赛队伍，研究生最多1名且队长须为本科生或专科生，并确定1至2名指导教师。",
+        "加入2026光电竞赛校内群，按群内要求在5月1日前提交竞赛方案设计书和3分钟以内项目介绍视频。",
+        "通过校赛后由学校统一在竞赛网站办理东北区赛报名；入围东北区决赛后到场展示并争取国赛推荐。"
+      ],
+      "materials": [
+        "竞赛方案设计书；3分钟以内包含设计原理、创新点及作品演示讲解的项目介绍视频。"
+      ],
+      "contacts": [
+        "张昱老师15041992226、杨青翰15040856702；sylglxygdz@163.com。"
       ]
     },
     {
@@ -1301,6 +2492,102 @@
       ]
     },
     {
+      "competition_id": "NAT-049",
+      "expected_title": "“中国软件杯”大学生软件设计大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://www.cnsoftbei.com/",
+      "scope_note": "沈理学生按通知选择A组赛题；全国报名为2026年3月24日至6月30日，初赛作品暂定6月30日15:00截止。",
+      "source_ids": [
+        "sylu_3169"
+      ],
+      "steps": [
+        "加入沈理软件杯QQ群709932374，从大赛官网公布的本届赛题中选择A组赛题。",
+        "组成包含队长、其他学生和指导教师在内不超过4人的团队，在官网完成在线报名并填写成员职责。",
+        "在作品提交系统上传电子版报名表，以及源代码、可执行文件、相关文档和建议不超过7分钟的演示视频。",
+        "晋级决赛后携带学校、学院、系或团委盖章的纸质报名表报到。"
+      ],
+      "materials": [
+        "电子版报名表；源代码、可执行文件、相关文档和演示视频；决赛纸质盖章报名表。"
+      ],
+      "contacts": [
+        "沈理程老师13998383976；QQ群709932374；全国组委会邮箱cnsoftbei@qq.com。"
+      ]
+    },
+    {
+      "competition_id": "NAT-050",
+      "expected_title": "中国好创意暨全国数字艺术设计大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://www.cdec.org.cn/",
+      "scope_note": "第21届为2026—2027跨年度赛季，常规赛报名及投稿为2026年10月20日至2027年5月31日17:00；各专项赛截止时间另行计算。",
+      "source_ids": [
+        "cdec_2026_2027"
+      ],
+      "steps": [
+        "确认学生单元或教师单元、学历组别和24个常规投稿类别之一；专项赛须改按对应专项简章。",
+        "指导教师先注册教师账号，并由院校二级学院管理员录入；学生随后在官网注册并选择已录入的指导教师。",
+        "按类别要求上传作品并检查学校、二级学院名称规范；同一作者或团队每类别不超过10件，全部常规类别合计不超过24件。",
+        "有校赛的学校由二级学院管理员审核和校赛推优，个人提交不等于已获得省赛资格。"
+      ],
+      "materials": [
+        "静态作品提交JPG、GIF或PNG，RGB、300dpi、单图不超过10MB；动态作品提交2至10分钟、1080P以上MP4及4张宣传图。"
+      ],
+      "contacts": [
+        "大赛秘书处010-89576608、18513190168；peixun3000@163.com。"
+      ]
+    },
+    {
+      "competition_id": "NAT-051",
+      "expected_title": "全国大学生节能减排社会实践与科技竞赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://www.jienengjianpai.cn/",
+      "scope_note": "第十九届按学校统一申报，不接受学生个人直接上传；每校限报15项，跨校队伍按第一署名高校统计。",
+      "source_ids": [
+        "energy_saving_2026"
+      ],
+      "steps": [
+        "组成不超过7名学生、3名指导教师的团队，参加校内选拔并确定第一署名高校和成员排序。",
+        "由学校在4月12日18:00前向组委会发送盖章高校报名表，取得学校系统账号。",
+        "由学校在5月10日至20日通过官网系统统一上传申报书等作品材料和3至5分钟介绍视频。",
+        "学校在5月23日18:00前通过邮件补交盖章申报书、说明书、汇总表和诚信承诺书，并确保与系统版本一致。"
+      ],
+      "materials": [
+        "高校报名表；科技类或社会实践类申报书、说明书、3至5分钟介绍视频、学校排序汇总表和诚信承诺书。"
+      ],
+      "contacts": [
+        "组委会邮箱jnjp_19@vip.163.com；大赛QQ群1019050133仅限每校一名联系人。"
+      ]
+    },
+    {
+      "competition_id": "NAT-052",
+      "expected_title": "“21世纪杯”全国英语演讲比赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://contest.i21st.cn/",
+      "scope_note": "沈理本科生参加大学组校园赛，研究生参加青年组个人海选；大学组材料最晚2026年4月10日17:00补交，建议4月3日前首次上传。",
+      "source_ids": [
+        "sylu_web_3025"
+      ],
+      "steps": [
+        "使用个人唯一手机号注册活动平台，完整填写选手和指导教师信息，并加入沈理QQ群1080478984。",
+        "本科大学组根据已备主题准备演讲稿和不超过4分钟的脱稿演讲视频，视频不得透露姓名或学校。",
+        "建议4月3日前同时上传稿件和视频，4月7日查看审核；未通过者在4月10日17:00前重新上传。",
+        "通过视频评审后参加4月19日现场选拔；研究生青年组按附件从官方平台直接参加个人海选。"
+      ],
+      "materials": [
+        "准确的个人和指导教师信息；已备主题演讲稿；不超过4分钟的匿名脱稿演讲视频。"
+      ],
+      "contacts": [
+        "沈理迟老师13889814764；QQ群1080478984。"
+      ]
+    },
+    {
       "competition_id": "NAT-053",
       "expected_title": "“工行杯”全国大学生金融科技创新大赛",
       "season_year": 2026,
@@ -1318,6 +2605,52 @@
       ],
       "materials": [],
       "contacts": []
+    },
+    {
+      "competition_id": "NAT-054",
+      "expected_title": "百度之星·程序设计大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://astar.baidu.com/#/program-design-match2026?tab=1",
+      "scope_note": "第22届选手以个人形式在官网注册报名；公开通知确认每场初赛开赛前2小时截止。大赛本身不收报名费，第三方OJ平台按场次收取考试服务费，沈理是否统一组织或报销须以校内通知为准。",
+      "source_ids": [
+        "astar_2026_entry"
+      ],
+      "steps": [
+        "登录百度之星大赛官网，阅读第22届章程和报名缴费通知，注册并完善姓名、证件、学校和学籍信息。",
+        "选择2026年8月23日或9月19日的线上初赛场次完成个人报名，并按平台提示支付对应场次考试服务费。",
+        "赛前进入练习区测试账号、编程语言和提交环境，比赛时使用C、C++、Python或Java独立答题。",
+        "同步关注沈理校内竞赛通知；若学校设置校内登记、赛前群或报销流程，应在校内截止前补办。"
+      ],
+      "materials": [
+        "实名身份、学籍和院校信息；可正常参加线上竞赛的电脑、网络及平台账号。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-055",
+      "expected_title": "全国大学生化工实验大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "http://edu.cteic.com/match/app/main",
+      "scope_note": "第九届实行学校推选、赛区初赛、全国总决赛三级赛制；辽宁属于东北赛区，学校及东北赛区具体报名截止须另查校内和赛区通知。",
+      "source_ids": [
+        "chemical_experiment_2026_notice"
+      ],
+      "steps": [
+        "由化工与制药类及相关专业全日制本科生组成3人队伍，不跨校组队，可设置不超过3人的指导团队。",
+        "先参加本校选拔并获得学校推荐，再以参赛队为单位登录大赛官网选择东北赛区注册报名。",
+        "按东北赛区通知参加化工原理理论、化工单元仿真操作与化工原理实验考核。",
+        "经赛区初赛晋级后，由学校和赛区办理全国总决赛参赛确认。"
+      ],
+      "materials": [
+        "团队和指导教师信息；赛区通知要求的学籍、学校推荐及参赛确认材料。"
+      ],
+      "contacts": [
+        "东北赛区吴老师：15941915128、15941915128@126.com；全国组委会010-64519532。"
+      ]
     },
     {
       "competition_id": "NAT-056",
@@ -1364,6 +2697,30 @@
       ]
     },
     {
+      "competition_id": "NAT-058",
+      "expected_title": "全国大学生物联网设计竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://iot.sjtu.edu.cn/",
+      "scope_note": "本指引覆盖第十三届沈理校选及东北区域赛；校内报名截至2026年6月10日，省赛系统截至6月15日，两个平台的信息和排序须保持一致。",
+      "source_ids": [
+        "sylu_3224"
+      ],
+      "steps": [
+        "组成不超过4名学生、2名指导教师的校内队伍，不跨校组队，并确定团队负责人和成员排序。",
+        "参赛师生在竞赛官网重新注册；学生通过邮箱验证，教师提交信息后等待人工审核。",
+        "由团队负责人在官网创建队伍并填报成员、指导教师；同时在辽宁省平台填写完全一致的报名信息。",
+        "加入校赛QQ群1084010176参加6月11日至14日校内选拔，晋级后在6月15日前完成省赛确认。"
+      ],
+      "materials": [
+        "团队参赛证明、参赛者声明；物联网应用设计方案和实物演示视频；后续阶段要求的匿名作品资料。"
+      ],
+      "contacts": [
+        "沈理梁老师15998802109；校赛QQ群1084010176。"
+      ]
+    },
+    {
       "competition_id": "NAT-059",
       "expected_title": "全国大学生信息安全与对抗技术竞赛",
       "season_year": 2026,
@@ -1384,6 +2741,54 @@
       ],
       "contacts": [
         "周越老师18640509517；QQ群1065385591。"
+      ]
+    },
+    {
+      "competition_id": "NAT-060",
+      "expected_title": "全国大学生数字媒体科技作品及创意竞赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://www.cmit.cn/",
+      "scope_note": "第十四届已发布2026作品提交流程，但全国统一截止日尚未在该流程页明确；校赛截止后除姓名错字外不再修改其他信息。",
+      "source_ids": [
+        "cmit_2026_submission"
+      ],
+      "steps": [
+        "在数媒竞赛官网点击“竞赛报名”，注册账号并通过注册邮箱中的验证链接激活。",
+        "选择本科及以上学历赛道或高职高专赛道，填写1至5名参赛学生、最多2名指导教师、作品类别和作品简介等信息。",
+        "下载系统生成的承诺书，完成负责人签字和学校、学院或竞赛管理部门盖章；跨校队伍由队长所在院校审核盖章。",
+        "上传承诺书、作品截图、作品压缩包以及视频或PPT，点击“提交审核”并跟踪审核状态。"
+      ],
+      "materials": [
+        "签字盖章承诺书、不超过10张作品截图、10GB以内ZIP/RAR/7Z作品包；答辩视频或PPT至少提交一项。"
+      ],
+      "contacts": [
+        "官方邮箱mail@cmit.cn。"
+      ]
+    },
+    {
+      "competition_id": "NAT-061",
+      "expected_title": "全国企业竞争模拟大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "本条为2026沈理企业决策、企业运营、供应链决策和数智沙盘四赛道校内报名；所有校内初赛队伍还须在对应官方系统完成报名。",
+      "source_ids": [
+        "sylu_web_3023"
+      ],
+      "steps": [
+        "按学历选择允许的赛道和组别，组成3名学生、1至2名本校在职指导教师的团队，不跨校组队。",
+        "加入沈理校内报名QQ群1033363086，在3月20日16:30前提交队伍信息。",
+        "按所选赛道进入iBizSim、BizWar或BizSand对应系统完成官方报名并参加校内初赛。",
+        "获得学校推荐后缴纳全国复赛报名费，继续参加全国复赛。"
+      ],
+      "materials": [
+        "团队成员、指导教师和赛道信息；对应竞赛平台要求的报名资料。"
+      ],
+      "contacts": [
+        "沈理陈雨老师15940245238；校内报名QQ群1033363086。"
       ]
     },
     {
@@ -1411,6 +2816,30 @@
       ]
     },
     {
+      "competition_id": "NAT-063",
+      "expected_title": "国际大学生智能农业装备创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://uiaec.ujs.edu.cn/",
+      "scope_note": "第十二届为2026—2027跨年度赛季。设省赛地区必须参加本省选拔；未设省赛地区由学校统一报名和申报，禁止绕过省赛直报。",
+      "source_ids": [
+        "uiaec_2026_12th"
+      ],
+      "steps": [
+        "先确认所在省份是否设置省级选拔赛；有省赛时按本省通知参加选拔，由省赛在2027年3月5日前推荐。",
+        "未设省赛时组成2至5名学生团队，选择A、B、C或D类作品，由学校统一扫码填写报名表，每校仅填一份。",
+        "学校组织校内选拔，并在11月30日前将盖章作品汇总表PDF和Excel发送至大赛邮箱。",
+        "A、C类在12月20日前上传申报书、研发报告及附件；D类上传申报书、设计报告和符合规格的概念视频。"
+      ],
+      "materials": [
+        "学校盖章作品汇总表；A/C类申报书、研发报告及附件；D类申报书、设计报告和MP4概念视频。"
+      ],
+      "contacts": [
+        "未设省赛地区作品汇总邮箱zhnjzb2027@163.com；省赛地区按本省组委会通知联系。"
+      ]
+    },
+    {
       "competition_id": "NAT-064",
       "expected_title": "全国大学生机器人大赛-RoboTac",
       "season_year": 2026,
@@ -1430,6 +2859,30 @@
       "materials": [],
       "contacts": [
         "ROBOTAC组委会：010-82377017；robotac@126.com。"
+      ]
+    },
+    {
+      "competition_id": "NAT-065",
+      "expected_title": "全国大学生化工设计竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "本指引为第二十届沈理校级选拔；面向化工类及相近专业大三全日制本科生，入群报名须在2026年6月9日前完成。",
+      "source_ids": [
+        "sylu_web_3255"
+      ],
+      "steps": [
+        "由5名符合资格的学生组成团队并确定队长，每名学生只能参加一支队伍。",
+        "在6月9日前加入沈理竞赛QQ群491671480，按群内要求提交团队信息完成报名。",
+        "团队至少派3名学生参加Aspen Plus现场软件操作，全体成员参加现场答辩。",
+        "参加6月15日至18日校内选拔，获推荐后按全国赛后续通知办理。"
+      ],
+      "materials": [
+        "团队报名信息；Aspen Plus操作准备材料；现场答辩展示材料。"
+      ],
+      "contacts": [
+        "沈理关老师13066531937、王老师18512453948；QQ群491671480。"
       ]
     },
     {
@@ -1475,6 +2928,71 @@
       ]
     },
     {
+      "competition_id": "NAT-068",
+      "expected_title": "中国研究生国际中文教育案例大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://cpipc.acge.org.cn/cw/hp/2c9080158e2ad864018e5fa55a450c49",
+      "scope_note": "第三届报名截至2026年6月30日，培养单位资格审核截至7月7日，作品提交截至7月13日；承诺书须单独提交，不得混入案例正文。",
+      "source_ids": [
+        "cpipc_international_chinese_2026"
+      ],
+      "steps": [
+        "组成3至5人团队，队长须为国际中文教育专业研究生；团队至少含1名该专业研究生，每人限参加一队。",
+        "在赛事页注册并创建队伍，跨校组队时以队长所在单位为参赛单位；按赛道核对额外成员要求。",
+        "在6月30日前完成报名，等待队长所在培养单位于7月7日前完成资格审核。",
+        "按官方案例模板在7月13日前提交作品，并将全员承诺书按系统要求单独上传。"
+      ],
+      "materials": [
+        "国际中文教育案例模板规定的案例文件；全体成员签署的参赛承诺书。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-069",
+      "expected_title": "中国研究生“文化中国”两创大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://cpipc.acge.org.cn/cw/hp/2c9080178e896671018e97ce7525018b",
+      "scope_note": "第三届报名、资格审核和作品提交统一截至2026年9月14日；本科生不得参赛，同一作品不得重复投递不同赛题。",
+      "source_ids": [
+        "cpipc_culture_china_2026"
+      ],
+      "steps": [
+        "组成1至5名研究生的队伍，可设置1至2名指导教师；先按邀请函和常见问题核对所选赛题资格。",
+        "全员在赛事官网注册，由队长完善队伍和赛题信息并提交培养单位资格审核。",
+        "按赛题要求上传作品，在9月14日前同时确认报名、审核和作品提交状态。"
+      ],
+      "materials": [
+        "所选赛题要求的作品文件；邀请函所附参赛系统操作手册中要求的报名信息。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-070",
+      "expected_title": "中国研究生操作系统开源创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://cpipc.acge.org.cn/cw/hp/2c9080178c7c917b018d1b1a0af61cd6",
+      "scope_note": "第三届报名截至2026年7月28日、资格审核截至7月29日；赛事页当前作品窗口显示至9月20日，初赛与后续阶段须分别核对通知。",
+      "source_ids": [
+        "cpipc_os_2026"
+      ],
+      "steps": [
+        "组成不超过3名学生、1名指导教师的队伍；本科生可作为队员，但队长必须是研究生，每人限参加一个赛题。",
+        "在研创网注册、选择赛题并组队，提交所在培养单位审核。",
+        "审核通过后由队长从报名系统点击“提交作品”跳转GitLink，使用报名邮箱关联账号并获取所选赛题的fork仓库。",
+        "在GitLink仓库master分支根目录按规定放置全部材料，并持续核对初赛、晋级阶段各自截止。"
+      ],
+      "materials": [
+        "README.md、设计文档、技术报告、参赛承诺书、演示PPT、100MB以内演示视频及项目代码。"
+      ],
+      "contacts": []
+    },
+    {
       "competition_id": "NAT-071",
       "expected_title": "中国研究生企业管理创新大赛",
       "season_year": 2026,
@@ -1498,6 +3016,90 @@
       ]
     },
     {
+      "competition_id": "NAT-072",
+      "expected_title": "中国研究生工程管理案例大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "组委会已于2026年5月27日发布暂停举办通知，本年度不开放报名；不得沿用2025年入口、材料或截止时间。",
+      "source_ids": [
+        "cpipc_engineering_management_2026"
+      ],
+      "steps": [
+        "2026年度无需且无法办理报名；后续年度以主题赛事页重新发布的正式通知为准。"
+      ],
+      "materials": [],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-073",
+      "expected_title": "中国研究生“美丽中国”创新设计大赛——生物多样性保护与利用创新大赛",
+      "season_year": 2025,
+      "scope": "national",
+      "status": "historical",
+      "entry_url": "https://cpipc.acge.org.cn/cw/hp/2c9080189073beab0190b560702408d1",
+      "scope_note": "仅为2025年第二届历史流程参考：报名、资格审核及作品提交均已结束；独立赛事页尚未发布2026届安排，不能套用“美丽中国”主赛2026窗口。",
+      "source_ids": [
+        "cpipc_biodiversity_2025"
+      ],
+      "steps": [
+        "往届参赛者在中国研究生创新实践系列大赛平台选择生物多样性保护与利用独立主题赛事注册组队。",
+        "提交队长所在培养单位资格审核，并在独立赛事页规定的作品窗口上传材料。",
+        "准备2026届时必须等待该独立赛事页发布新通知，不沿用2025年报名记录。"
+      ],
+      "materials": [
+        "作品和资格材料以独立主题赛事当届通知为准。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-074",
+      "expected_title": "中国研究生“美丽中国”创新设计大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://cpipc.acge.org.cn/",
+      "scope_note": "第四届全国报名、作品提交和培养单位审核均为2026年6月20日至8月20日；每人只能参加一支队伍，报名截止后成员和排序不得修改。",
+      "source_ids": [
+        "cpipc_beautiful_2026"
+      ],
+      "steps": [
+        "以个人或不超过5人的团队参赛；团队队长须为在校研究生，允许跨校组队并以队长单位作为参赛单位。",
+        "在中国研究生创新实践系列大赛平台注册，选择专业、风景园林或地方赛道并填写队伍信息。",
+        "使用官网模板上传一件匿名作品，材料中不得体现学校、学院或导师等身份信息。",
+        "在8月20日前完成提交，并由队长所在研究生培养单位在平台完成资格审核。"
+      ],
+      "materials": [
+        "所选赛道的参赛作品及官网对应模板；地方赛道另按命题要求准备调研和设计材料。"
+      ],
+      "contacts": [
+        "赛道综合咨询13913995008、meilichinadesign@163.com；其他分类联系人见开赛通知。"
+      ]
+    },
+    {
+      "competition_id": "NAT-075",
+      "expected_title": "中国研究生金融科技创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://cpipc.acge.org.cn/cw/hompage2025/2c90800c8093eef401809d3501080654",
+      "scope_note": "第五届报名截至2026年8月17日24:00，培养单位审核截至8月31日12:00，作品提交截至8月31日15:00；三个节点不可互相替代。",
+      "source_ids": [
+        "cpipc_fintech_2026"
+      ],
+      "steps": [
+        "组成不超过6名学生的团队，可配1至2名指导教师；跨校组队时以队长所在培养单位报名。",
+        "在赛事官网注册、选择赛道和赛题，填写团队信息并在8月17日24:00前提交报名。",
+        "由队长所在培养单位在8月31日12:00前完成身份与资格审核。",
+        "按参赛指南准备成果，在8月31日15:00前完成作品上传并检查提交状态。"
+      ],
+      "materials": [
+        "所选赛题要求的参赛作品；参赛团队原创性声明；揭榜挂帅赛道按指南使用赛题文件和精益画布模板。"
+      ],
+      "contacts": []
+    },
+    {
       "competition_id": "NAT-076",
       "expected_title": "中国研究生“双碳”创新与创意大赛",
       "season_year": 2026,
@@ -1519,6 +3121,71 @@
       "contacts": [
         "校内刘老师；liulijie@sylu.edu.cn。"
       ]
+    },
+    {
+      "competition_id": "NAT-077",
+      "expected_title": "中国研究生网络安全创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://cpipc.acge.org.cn/",
+      "scope_note": "第五届报名为2026年6月18日至10月18日23:59；揭榜和创意作品10月22日截止，实网对抗初赛10月24日。",
+      "source_ids": [
+        "cpipc_cyber_2026"
+      ],
+      "steps": [
+        "组成1至4名学生和1名本校在职指导教师的队伍，不跨校组队；有本科生时须由研究生担任队长且本科生不超过一半。",
+        "在中国研究生创新实践系列大赛平台注册并完善报名信息，选择揭榜挑战、创意作品或实网对抗赛道。",
+        "完成组队后提交所在培养单位审核，审核通过方可上传作品或参加实网对抗。",
+        "揭榜或创意赛上传作品文档与可执行程序；实网对抗队伍按平台通知参加CTF初赛。"
+      ],
+      "materials": [
+        "不超过10MB的PDF作品文档、可执行程序及参赛作品声明；文档包含简介、设计方案、测试报告等且正文匿名。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-078",
+      "expected_title": "中国研究生乡村振兴科技强农+创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://cpipc.acge.org.cn/cw/hp/2c90800c7a132603017a1395f2c105f9",
+      "scope_note": "本指引对应第五届科技作品竞赛：报名截至2026年8月24日24:00，培养单位审核和作品提交截至8月31日24:00；不套用于卓越兽医等其他专项赛事。",
+      "source_ids": [
+        "cpipc_rural_2026"
+      ],
+      "steps": [
+        "先确认申报项目属于科技作品竞赛，并核对在读研究生或已获推免资格应届本科毕业生的参赛证明要求。",
+        "参赛学生在主题赛事官网注册并完善报名信息，在8月24日24:00前提交报名。",
+        "按附件准备作品申报材料，由所在研究生培养单位在8月31日24:00前完成资格审核并提交作品。"
+      ],
+      "materials": [
+        "竞赛作品申报材料及格式附件；培养单位汇总、审核等单位提交材料；推免参赛者的推免资格和录取证明。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-079",
+      "expected_title": "中国研究生公共管理案例大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://cpipc.acge.org.cn/cw/hp/8",
+      "scope_note": "第十届报名截至2026年3月13日、资格审核截至3月16日、作品提交截至3月31日；所有参赛师生须来自同一院校。",
+      "source_ids": [
+        "cpipc_public_management_2026"
+      ],
+      "steps": [
+        "由同一院校的3至5名学生组队，可配0至2名指导教师；每名学生限参加一队，不允许跨校组队。",
+        "在研创网选择公共管理案例大赛报名，填写团队信息并提交培养单位资格审核。",
+        "围绕真实公共管理实践开展调研，按通知分别完成案例正文、案例分析报告和调研报告。",
+        "在3月31日前上传一套参赛作品，检查匿名、字数和文件格式后确认提交。"
+      ],
+      "materials": [
+        "案例正文、案例分析报告、调研报告；每队限提交1篇作品。"
+      ],
+      "contacts": []
     },
     {
       "competition_id": "NAT-080",
@@ -1590,6 +3257,73 @@
       ]
     },
     {
+      "competition_id": "NAT-083",
+      "expected_title": "中国研究生创“芯”大赛-EDA精英挑战赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://cpipc.acge.org.cn/cw/hp/2c9080158ee9c272018f229208b610a6",
+      "scope_note": "2026年报名截至10月16日、资格审核截至10月18日、作品提交截至11月7日；每人只能参加一队、一道赛题。",
+      "source_ids": [
+        "cpipc_eda_schedule_2026"
+      ],
+      "steps": [
+        "组成1至3名学生的队伍并设置1至2名指导教师；允许跨校组队，以队长所在学校为参赛单位。",
+        "在主题赛事页注册，选择一道赛题、完善团队信息并提交培养单位资格审核。",
+        "按赛题指南完成EDA设计与验证成果，在11月7日前从赛事系统提交作品并确认状态。"
+      ],
+      "materials": [
+        "所选赛题指南规定的设计、验证和说明材料；具体文件格式以赛题及参赛邀请函为准。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-084",
+      "expected_title": "中国研究生创“芯”大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://cpipc.acge.org.cn/cw/hp/10",
+      "scope_note": "第九届报名截至2026年6月30日；官方主题页后续显示资格审核截至7月7日、作品窗口延至7月19日，须以系统最终状态为准。",
+      "source_ids": [
+        "cpipc_chip_2026"
+      ],
+      "steps": [
+        "组成2至3名学生的队伍并设置1至2名指导教师；可跨校组队，以队长所在学校为参赛单位。",
+        "在主题赛事页注册、组队并选定自主命题或企业命题赛题，在6月30日前完成报名。",
+        "提交所属研究生培养单位核验；审核通过后才能在赛事官网正式上传作品。",
+        "按所选赛题要求完成材料，并以赛事系统显示的作品窗口为最终提交节点。"
+      ],
+      "materials": [
+        "所选自主命题或企业命题要求的设计成果与说明材料；入学资格证明等系统无法自动核验的资格材料。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-085",
+      "expected_title": "中国研究生电子设计竞赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://cpipc.acge.org.cn/cw/hp/6",
+      "scope_note": "第二十一届报名、缴费及作品提交均截至2026年6月20日24:00；报名截止后团队成员顺序、赛题和作品内容均不得变更。",
+      "source_ids": [
+        "cpipc_electronics_2026"
+      ],
+      "steps": [
+        "按技术竞赛或商业计划书专项赛分别组队；每队由1名队长、1至2名队员和1至2名指导教师组成。",
+        "全员在研创网选择相应身份注册，由队长创建队伍、确认成员与指导教师顺序并选择赛题。",
+        "通过学信网自动审核或所在研究生培养单位审核参赛资格，特殊本科生资格须提前按附件申请。",
+        "完成缴费后上传作品文档，在6月20日24:00前确认作品提交成功。"
+      ],
+      "materials": [
+        "技术类竞赛或商业计划书专项赛规定的作品文档；特殊本科生参赛申请表及盖章证明。"
+      ],
+      "contacts": [
+        "组委会邮箱cieeda@163.com；答疑热线4008850611。"
+      ]
+    },
+    {
       "competition_id": "NAT-086",
       "expected_title": "中国研究生未来飞行器创新大赛",
       "season_year": 2026,
@@ -1631,6 +3365,28 @@
       "contacts": [
         "李老师18698874472。"
       ]
+    },
+    {
+      "competition_id": "NAT-088",
+      "expected_title": "全国大学生结构设计竞赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "第十九届全国赛通过校级、省级选拔推荐优秀作品参赛，不提供面向学生的全国直报入口；辽宁校赛和省赛截止仍须向沈理确认。",
+      "source_ids": [
+        "structure_design_charter"
+      ],
+      "steps": [
+        "按当届赛题组成不超过3名全日制在校本、专科生的参赛小组，参加沈阳理工大学校内选拔。",
+        "由学校按辽宁省结构设计竞赛规程统一推荐参加省级选拔赛，不能个人直接报名全国赛。",
+        "获得省级推荐后，由学校完成全国赛作品申报、参赛确认及费用办理。",
+        "按全国赛通知携带或现场完成结构模型制作、加载测试和答辩展示。"
+      ],
+      "materials": [
+        "当届命题要求的设计方案、计算说明及模型制作材料；省赛和全国赛申报表由学校统一办理。"
+      ],
+      "contacts": []
     },
     {
       "competition_id": "NAT-089",
@@ -1696,6 +3452,53 @@
       "contacts": []
     },
     {
+      "competition_id": "NAT-092",
+      "expected_title": "全国大学生嵌入式芯片与系统设计竞赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://www.socchina.net/wx/home?tag=1",
+      "scope_note": "本指引仅覆盖第九届芯片应用赛道，不能套用于芯片设计或其他专项赛道；报名已于2026年4月20日截止。",
+      "source_ids": [
+        "soc_2026"
+      ],
+      "steps": [
+        "在嵌入式大赛官网注册或登录账号，进入2026芯片应用赛道报名通知和对应赛题。",
+        "按赛题要求创建队伍、填写成员和指导教师信息，并在4月20日前提交报名。",
+        "完成作品后在7月9日18:00前通过官网提交，随后参加初赛评审和所属分赛区复赛。"
+      ],
+      "materials": [
+        "所选芯片应用赛题要求的作品、技术文档及演示材料。"
+      ],
+      "contacts": [
+        "赛题和赛区联系方式见竞赛官网“联系我们”及具体报名通知。"
+      ]
+    },
+    {
+      "competition_id": "NAT-093",
+      "expected_title": "全国大学生统计建模大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://tjjmds.ai-learning.net/",
+      "scope_note": "第十二届先由学校进行校内选拔，学校在5月17日前确定推荐队伍；只有获推荐队伍的队长在5月18日至22日进入全国平台填报。",
+      "source_ids": [
+        "stat_model_2026"
+      ],
+      "steps": [
+        "由同校、同组别3名全日制本科生或研究生组队，确定1名指导教师和1名负责填报的队长。",
+        "围绕“服务国家战略 创新统计赋能”自拟题目完成论文，并参加本校组织的选拔。",
+        "获得学校推荐后，由队长在5月18日9:00至22日24:00登录全国大赛平台填报队伍信息并上传最终材料。",
+        "提交后核对论文字符数、知网查重率、AI工具使用说明和成员排序，等待学校及省赛复核。"
+      ],
+      "materials": [
+        "报名表、承诺书、AI工具使用情况表、论文、知网查重报告和数据包；论文正文不超过16000字符、查重率不超过20%。"
+      ],
+      "contacts": [
+        "组委会办公室邮箱nc_smc@163.com；各赛区QQ群见大赛官网“联系我们”。"
+      ]
+    },
+    {
       "competition_id": "NAT-094",
       "expected_title": "全国大学生能源经济学术创意大赛",
       "season_year": 2026,
@@ -1719,6 +3522,29 @@
       ]
     },
     {
+      "competition_id": "NAT-095",
+      "expected_title": "全国数字建筑创新应用大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "http://bisai.ccen.com.cn/",
+      "scope_note": "全国报名流程已核验；沈理是否先组织校赛及其更早截止仍需校内通知确认。",
+      "source_ids": [
+        "digital_building_2026"
+      ],
+      "steps": [
+        "指导教师登录大赛官网，填写参赛团队基础信息和赛事联系人信息并创建团队。",
+        "团队成员完善个人信息，上传盖章的院校参赛同意表后提交报名审核。",
+        "审核通过后按通知完成赛事服务费缴纳，并从官网获取赛项软件和备赛资料。"
+      ],
+      "materials": [
+        "盖章的院校参赛同意表。"
+      ],
+      "contacts": [
+        "中国建设教育协会王老师：010-88861200；广联达冯老师：010-56402161。"
+      ]
+    },
+    {
       "competition_id": "NAT-096",
       "expected_title": "全国高校BIM毕业设计创新大赛",
       "season_year": 2025,
@@ -1737,6 +3563,25 @@
       "materials": [
         "参赛同意表。"
       ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-097",
+      "expected_title": "全国大学生医学技术技能大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "以下流程仅适用于常州大学2026年护理方向校内选拔；沈理及其他高校不能使用该校二维码，须另查本校或赛区通知。",
+      "source_ids": [
+        "medical_skills_2026_cczu"
+      ],
+      "steps": [
+        "通过本校发布的专属二维码或校内渠道填报个人信息，供考场安排使用。",
+        "先参加个人理论、操作要点和情景案例初赛，再按成绩进入团队或单项操作复赛。",
+        "由学校择优推荐参加所属区域赛，不能绕过校内选拔直接视为国赛报名成功。"
+      ],
+      "materials": [],
       "contacts": []
     },
     {
@@ -1872,6 +3717,30 @@
       "contacts": []
     },
     {
+      "competition_id": "NAT-104",
+      "expected_title": "全国仿真创新应用大赛",
+      "season_year": 2025,
+      "scope": "national",
+      "status": "historical",
+      "entry_url": "https://www.siac.net.cn/",
+      "scope_note": "仅为2025年章程和延期窗口参考，报名已于2025年10月29日18:00结束；2026年报名安排尚未核实。",
+      "source_ids": [
+        "siac_2025_rules"
+      ],
+      "steps": [
+        "往届学生按具体赛道要求以个人或2至5人团队参赛，可设置1至2名指导教师。",
+        "由单位负责人统一填报，或由个人、团队联络人在大赛官网注册并填写参赛信息。",
+        "选择具体仿真方向，上传作品信息、诚信承诺书和赛道要求的完整作品，完成缴费后参加省赛选拔。",
+        "2026届必须等待官网新章程和报名通知，不把2025延期截止继续作为有效窗口。"
+      ],
+      "materials": [
+        "作品信息表、诚信承诺书、项目或设计报告；视频、PPT、代码等按具体赛道方案提交。"
+      ],
+      "contacts": [
+        "组委会13621202247；siac2022@qq.com。"
+      ]
+    },
+    {
       "competition_id": "NAT-107",
       "expected_title": "CFCC智慧经济创新创业大赛",
       "season_year": 2026,
@@ -1890,6 +3759,30 @@
       "materials": [],
       "contacts": [
         "校内王老师13940038799；校内群920190098；省内群1083086862。"
+      ]
+    },
+    {
+      "competition_id": "NAT-108",
+      "expected_title": "iCAN大学生创新创业大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://g-ican.com/competition/ican",
+      "scope_note": "本指引覆盖2026创新赛和创业赛，二者不能同时报名且报名后不能自行取消；报名及材料提交截至8月31日，其他挑战赛按专项通知。",
+      "source_ids": [
+        "ican_2026"
+      ],
+      "steps": [
+        "在创新赛和创业赛中选择一个赛道，确认团队资格后再报名；赛区按队长学校所在地区确定。",
+        "组成2至5名学生、最多2名指导教师的队伍，不跨赛区组队，每人只能报名一支团队。",
+        "登录iCAN官网进入对应赛道，填写团队和项目信息，并在8月31日前完成作品制作及材料提交。",
+        "创新赛准备可演示操作的产品或系统；创业赛须使用自主项目注册公司，并由符合持股要求的创始人或核心成员担任队长。"
+      ],
+      "materials": [
+        "创新赛提交原创产品或系统及产品说明书；创业赛提交商业计划书、创新产品或服务及公司和持股佐证。"
+      ],
+      "contacts": [
+        "唐老师13161711770；contest@g-ican.com。"
       ]
     },
     {
@@ -1936,6 +3829,115 @@
       ]
     },
     {
+      "competition_id": "NAT-112",
+      "expected_title": "全国大学生商科综合能力大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "本条为2026沈理校内选拔，报名已于4月30日24:00截止；校赛时间和模拟软件账号等后续事项由校内群发布。",
+      "source_ids": [
+        "sylu_web_3063"
+      ],
+      "steps": [
+        "由3名在籍学生组成团队并确定队长，可配置1至2名指导教师，每名学生只能参加一队。",
+        "由队长加入校内选拔QQ群786427890，向赛事负责人提交真实成员和联系方式完成报名。",
+        "按群内安排使用策鸿国际企业经营模拟软件参加校内选拔，晋级后参加地区赛和全国阶段。"
+      ],
+      "materials": [
+        "团队成员和指导教师信息；群内要求的企业经营模拟参赛资料。"
+      ],
+      "contacts": [
+        "沈理陈雨老师15940245238；校内选拔QQ群786427890。"
+      ]
+    },
+    {
+      "competition_id": "NAT-113",
+      "expected_title": "金蝶云管理创新杯全国总决赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "entry_only",
+      "entry_url": "https://kone.kingdee.com/bigdataintelligentcompetition/innovate-cup",
+      "scope_note": "官方赛事页确认旧称已更名为“全国大学生企业数字化管理创新大赛”并提供报名按钮；公开可核验的中北大学校赛群仅适用于该校，不可作为沈理报名渠道。",
+      "source_ids": [
+        "kingdee_enterprise_2026_official",
+        "kingdee_enterprise_2026_nuc"
+      ],
+      "steps": [],
+      "materials": [],
+      "contacts": [
+        "大赛QQ群1050252765（中北大学公开通知所列）。"
+      ]
+    },
+    {
+      "competition_id": "NAT-114",
+      "expected_title": "全国大学生机器人科技创新交流营暨机器人大赛",
+      "season_year": 2024,
+      "scope": "national",
+      "status": "historical",
+      "entry_url": "",
+      "scope_note": "以下仅为华东师范大学2024届校内组织样本；2026届全国入口、沈理校内渠道和截止均须重新确认。",
+      "source_ids": [
+        "robot_camp_2024_ecnu"
+      ],
+      "steps": [
+        "按主体赛或专项赛选择赛道，填写报名信息表并准备对应参赛材料。",
+        "在学校规定时间内提交校团委，由学校评审并择优推荐参加市赛。",
+        "晋级国赛的作品须先在学校官网公示不少于5天，再由学校按当届要求报送。"
+      ],
+      "materials": [
+        "报名信息表、机器人作品申报材料；国赛前须准备学校公示截图和承诺书。"
+      ],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-115",
+      "expected_title": "“东方财富杯”全国金融精英挑战赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://young.eastmoney.com/",
+      "scope_note": "第十二届现称全国大学生金融挑战赛；以学校为单位组织，校赛个人参赛，晋级省赛后才由操盘手与同校学生组成团队。",
+      "source_ids": [
+        "eastmoney_2026_notice"
+      ],
+      "steps": [
+        "联系本校领队教师确认学校已接入赛事系统，再通过东方财富APP、官方微信公众号或活动官网报名。",
+        "校赛阶段以个人身份参加模拟交易，学校综合收益率排名前30%的学生晋级省赛。",
+        "晋级者担任操盘手，邀请同校学生分别担任策略师和风控师，并配置1名指导教师组成省赛团队。",
+        "省赛排名前20%的团队或单周全国冠军团队进入国赛，策略师和风控师按通知提交对应报告。"
+      ],
+      "materials": [
+        "个人和学校报名信息；省赛团队成员及指导教师信息；策略师和风控师阶段报告。"
+      ],
+      "contacts": [
+        "日常咨询通过“东方财富金融素养”微信公众号或本校领队教师办理。"
+      ]
+    },
+    {
+      "competition_id": "NAT-116",
+      "expected_title": "一带一路暨金砖国家技能发展与技术创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://mood.nbpu.edu.cn/",
+      "scope_note": "仅适用于“面向一带一路及金砖国家的教材与标准之教材与课程标准赛项”；其他赛项使用各自规程和入口。",
+      "source_ids": [
+        "brics_textbook_2026"
+      ],
+      "steps": [
+        "由参赛单位选派一名代表登录云作业平台，选择2026第十届金砖大赛下的教材与课程标准赛项。",
+        "注册并按要求填写、提交参赛报名信息表，报名后加入赛项QQ群661772755。",
+        "在2026年8月31日23:59前按技术规程提交参赛作品，关注群内选拔赛和总决赛通知。"
+      ],
+      "materials": [
+        "参赛报名信息表；符合技术规程的教材或课程标准参赛作品。"
+      ],
+      "contacts": [
+        "赛项QQ群661772755；组委会邮箱bricsskill@126.com。"
+      ]
+    },
+    {
       "competition_id": "NAT-117",
       "expected_title": "国际青年人工智能大赛",
       "season_year": 2025,
@@ -1953,6 +3955,30 @@
       "materials": [],
       "contacts": [
         "2025校内李明昊18840684467；校内群683366716，东北群1016829113。"
+      ]
+    },
+    {
+      "competition_id": "NAT-118",
+      "expected_title": "全国大学生软件创新大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://www.swcontest.com.cn/index",
+      "scope_note": "本指引覆盖第十九届沈理校选和东北区域赛；校内报名截至2026年1月26日18:00，区域赛报名截至2月2日18:00。",
+      "source_ids": [
+        "sylu_web_3015"
+      ],
+      "steps": [
+        "按本届指定赛题组队，每队包含1名队长、其他学生不超过3名、指导教师不超过2名；参赛单位按队长学校确定。",
+        "由负责人实名注册大赛官网，填写团队及指导教师排序，并同步核对辽宁省平台和电子申报书信息。",
+        "参加1月27日至31日校内选拔，通过后在2月2日18:00前完成东北区域赛报名。",
+        "按官网阶段通知匿名提交软件作品，材料中不得出现学校或成员姓名。"
+      ],
+      "materials": [
+        "团队参赛证明、参赛者声明、电子申报书；本届指定赛题的软件作品和各轮匿名评审材料。"
+      ],
+      "contacts": [
+        "沈理梁老师15998802109；校赛QQ群837231470。"
       ]
     },
     {
@@ -1976,6 +4002,49 @@
       ],
       "contacts": [
         "组委会材料接收邮箱：yjkjjs2026@wust.edu.cn。"
+      ]
+    },
+    {
+      "competition_id": "NAT-120",
+      "expected_title": "中华全国日语演讲大赛",
+      "season_year": 2025,
+      "scope": "national",
+      "status": "historical",
+      "entry_url": "",
+      "scope_note": "以下为第十九届跨年赛制参考；辽宁所属赛区、第二十届入口和截止须重新核实。",
+      "source_ids": [
+        "japanese_speech_2025_2026"
+      ],
+      "steps": [
+        "按所在高校校内选拔安排报名，由学校确认资格并推荐地区赛选手。",
+        "学校依据所属地区赛区通知提交报名材料，参加命题演讲和即兴演讲。",
+        "获得地区赛特等奖后按组委会通知办理全国总决赛参赛手续。"
+      ],
+      "materials": [],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-121",
+      "expected_title": "全国供应链大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://dspt.clppx.org.cn/index/gylhome",
+      "scope_note": "本指引覆盖第七届供应链实战赛项和商贸供应链运营赛项；创客训练营及国际赛项使用独立通知。",
+      "source_ids": [
+        "clpp_supplychain_2026_notice"
+      ],
+      "steps": [
+        "由同校4名学生组成本科组或职教组队伍，并确定1至2名本校专职指导教师；不能同时报名两个实战赛项。",
+        "由团队领队或队长登录中物联竞赛平台，在4月15日17:00前选择赛项并完成团队报名。",
+        "学校需要先组织选拔时，由负责人通过赛项快捷入口提交校园赛申请。",
+        "报名成功后按平台安排参加省赛；省赛或省级联赛晋级队伍再参加全国初赛。"
+      ],
+      "materials": [
+        "团队及指导教师信息；所选赛项平台账号和竞赛操作环境。"
+      ],
+      "contacts": [
+        "组委会陈蕾010-83775930、司宇010-83775925；赛项技术联系人见通知附件。"
       ]
     },
     {
@@ -2023,6 +4092,52 @@
       "contacts": []
     },
     {
+      "competition_id": "NAT-124",
+      "expected_title": "全国大学生英语竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://www.saikr.com/neccs/2026",
+      "scope_note": "沈理报名窗口为2025年12月17日至2026年3月13日23:59；应按学籍选择A、B、C或D类，类别选错将取消成绩。",
+      "source_ids": [
+        "sylu_web_3002"
+      ],
+      "steps": [
+        "在官方报名通道注册，按研究生、英语专业本科、非英语专业本科或艺术类本科选择正确竞赛类别。",
+        "填写个人和学校信息并在线缴纳50元参赛费，确认报名成功。",
+        "加入沈理竞赛QQ群1076219879，关注准考证、校内线下考场及初赛安排。"
+      ],
+      "materials": [
+        "个人学籍和身份信息；报名缴费凭证；考试所需准考证和身份证件。"
+      ],
+      "contacts": [
+        "沈理迟老师；校内竞赛QQ群1076219879。"
+      ]
+    },
+    {
+      "competition_id": "NAT-126",
+      "expected_title": "全国高等学校矿物加工工程专业学生实践作品大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "第十一届只接受学校统一报送，不接受个人名义报名。",
+      "source_ids": [
+        "mineral_2026_notice"
+      ],
+      "steps": [
+        "按学校安排组队并确定作品类别，由学校审核参赛资格和校内推荐名额。",
+        "学校汇总单位、作品、完成人、指导教师和作品类型等信息。",
+        "在2026年5月31日前将电子作品、作品简介和完成人信息发送至组委会指定邮箱。"
+      ],
+      "materials": [
+        "电子作品、作品简介、完成人信息和学校汇总表；物理模型类另交3至5分钟视频和文字简介。"
+      ],
+      "contacts": [
+        "组委会：qujinzhou@xust.edu.cn、ningningzhang@xust.edu.cn。"
+      ]
+    },
+    {
       "competition_id": "NAT-127",
       "expected_title": "全国大学生创新体验竞赛",
       "season_year": 2026,
@@ -2046,6 +4161,48 @@
       ]
     },
     {
+      "competition_id": "NAT-129",
+      "expected_title": "全国兵棋推演大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "verified",
+      "entry_url": "https://ciccwargame.com/",
+      "scope_note": "人人对抗主体赛、算法专项赛和手工兵棋赛报名方式不同；本条保留三者边界。",
+      "source_ids": [
+        "wargame_2026_notice"
+      ],
+      "steps": [
+        "人人对抗主体赛或算法专项赛选手可登录大赛官网报名，也可由所在院校汇总报名。",
+        "按所在省赛区或校园赛点安排完成身份核验、培训和分赛区比赛。",
+        "手工兵棋赛由具备资格的单位提出书面申请并集中组织报名，不接受单个队伍直接报名。"
+      ],
+      "materials": [],
+      "contacts": []
+    },
+    {
+      "competition_id": "NAT-131",
+      "expected_title": "全国高校俄语大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "本条为2026沈理校赛报名；仅面向全日制俄语专业本科生和研究生，学校按低年级、高年级和研究生组选拔推荐。",
+      "source_ids": [
+        "sylu_3324"
+      ],
+      "steps": [
+        "按本科1至2年级、本科3至4年级或研究生1至3年级确认参赛组别。",
+        "在2026年8月31日至9月7日期间加入校赛QQ群885297198，按群内要求提交报名信息。",
+        "参加校赛笔试，由学校按组别选拔推荐参加全国高校俄语大赛。"
+      ],
+      "materials": [
+        "个人学籍、专业和年级信息；校赛笔试所需身份证明。"
+      ],
+      "contacts": [
+        "沈理高老师13898147786；校赛QQ群885297198。"
+      ]
+    },
+    {
       "competition_id": "NAT-132",
       "expected_title": "“CATTI”杯全国翻译大赛",
       "season_year": 2025,
@@ -2064,6 +4221,44 @@
       "contacts": [
         "2025校内郭巧懿15640521801；官方contest.ops.dept@catti.net.cn；QQ群927116000。"
       ]
+    },
+    {
+      "competition_id": "NAT-133",
+      "expected_title": "韩素音国际翻译大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://www.catl.org.cn/",
+      "scope_note": "第三十八届沈理通知截止为2026年5月1日00:00；国内学生从“中国翻译”微信公众号报名，外籍学生使用中国翻译研究院官网专栏。",
+      "source_ids": [
+        "sylu_3138"
+      ],
+      "steps": [
+        "按外语专业或非外语专业及学习层次选择组别，可在十个语种与汉语互译项目中选择一项或多项。",
+        "国内学生关注“中国翻译”微信公众号并回复“竞赛报名”，填写信息、缴费并保存报名成功通知和凭据号码；外籍学生从官网专栏报名并等待审核。",
+        "独立完成译文并在截止前提交，同时加入沈理QQ群1094813398接收校内通知。"
+      ],
+      "materials": [
+        "准确的个人、学校和组别信息；本人独立完成的参赛译文；报名凭据号码。"
+      ],
+      "contacts": [
+        "沈理郭老师15640521801；校内QQ群1094813398；官方咨询见中国翻译研究院大赛专栏。"
+      ]
+    },
+    {
+      "competition_id": "NAT-134",
+      "expected_title": "易班技术创新作品征集暨全国高校易班技术创新大会",
+      "season_year": 2026,
+      "scope": "national",
+      "status": "entry_only",
+      "entry_url": "https://x.yiban.cn/app/home",
+      "scope_note": "仅核验第十届官方活动页面；沈理校内推荐渠道、作品提交方式和截止仍待补充。",
+      "source_ids": [
+        "yiban_2026_platform"
+      ],
+      "steps": [],
+      "materials": [],
+      "contacts": []
     },
     {
       "competition_id": "NAT-135",
@@ -2086,6 +4281,26 @@
       "contacts": [
         "2025校内邮箱jinzhi@sylu.edu.cn；QQ群1073653779。"
       ]
+    },
+    {
+      "competition_id": "NAT-136",
+      "expected_title": "全国大学生创新发明大赛互联网英语听说挑战赛",
+      "season_year": 2024,
+      "scope": "national",
+      "status": "historical",
+      "entry_url": "https://www.jskxz.com/",
+      "scope_note": "以下为2024届公开流程，2026届入口、赛制和截止均须重新确认；不要直接沿用旧届日期。",
+      "source_ids": [
+        "iic_english_2024_wit",
+        "iic_english_2024_rules"
+      ],
+      "steps": [
+        "在大赛官网注册报名，或关注“IIC大赛”微信公众号后从“大赛报名”进入对应赛事。",
+        "按通知下载指定App，从“发现—活动推荐”进入相应比赛渠道参加校赛。",
+        "按校赛、省赛晋级结果参加后续环节，省决赛及全国赛安排以组委会通知为准。"
+      ],
+      "materials": [],
+      "contacts": []
     },
     {
       "competition_id": "NAT-137",
@@ -2147,6 +4362,28 @@
       "contacts": []
     },
     {
+      "competition_id": "PROV-004",
+      "expected_title": "全国大学生职业规划大赛（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "status": "verified",
+      "entry_url": "https://zgs.chsi.com.cn/",
+      "scope_note": "第三届辽宁省赛已结束；就业赛道省决赛于2026年3月12日至13日举行。学生报名须经过本校选拔，成长赛道和沈理校内截止尚未单独核实。",
+      "source_ids": [
+        "moe_career_2026",
+        "ln_career_2026_employment"
+      ],
+      "steps": [
+        "在全国大学生职业规划大赛平台选择成长赛道或就业赛道，按沈理校赛通知填写报名信息。",
+        "上传对应赛道材料并参加校级选拔，由学校审核资格和作品。",
+        "获得校级推荐后参加辽宁省赛；省赛晋级选手再由省级组委会统一推荐全国赛。"
+      ],
+      "materials": [
+        "成长赛道或就业赛道方案要求的职业发展报告、简历、展示文件及相关证明。"
+      ],
+      "contacts": []
+    },
+    {
       "competition_id": "PROV-005",
       "expected_title": "辽宁省大学生创新创业年会",
       "season_year": 2026,
@@ -2170,6 +4407,27 @@
       "contacts": []
     },
     {
+      "competition_id": "PROV-006",
+      "expected_title": "辽宁省大学生程序设计竞赛暨ICPC国际大学生程序设计竞赛（辽宁省赛）",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "status": "historical",
+      "entry_url": "https://cxcy.upln.cn/match",
+      "scope_note": "仅为2025届辽宁省平台记录；平台显示的2026年3月补录窗口不等于2026届学生报名。赛事通常由学校组织队伍统一报名，当届校内选拔和队伍资格须重新确认。",
+      "source_ids": [
+        "upln_2025_prov_006"
+      ],
+      "steps": [
+        "关注沈理信息类学院或创新创业学院发布的校内选拔通知，按ICPC队伍规则组队并确定教练。",
+        "通过校内选拔后，由学校管理员在辽宁省大学生创新创业管理共享平台统一录入或审核队伍。",
+        "核对队员、教练、学校和赛项信息，不把往年平台补录窗口当作个人直接报名入口。"
+      ],
+      "materials": [
+        "队员和教练信息；当届校赛或省赛通知要求的报名表及资格证明。"
+      ],
+      "contacts": []
+    },
+    {
       "competition_id": "PROV-007",
       "expected_title": "全国大学生广告艺术大赛（辽宁赛区）",
       "season_year": 2026,
@@ -2185,6 +4443,31 @@
       "contacts": []
     },
     {
+      "competition_id": "PROV-008",
+      "expected_title": "辽宁省大学生电子商务 “创新、创意及创业”挑战赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://www.3chuang.net/",
+      "scope_note": "第十六届沈理原通知要求2025年12月31日前完成，官网最终注册截止为2026年1月20日；参加辽宁省选拔仍须先通过沈理校赛负责人审核。",
+      "source_ids": [
+        "sanchuang_2026",
+        "sylu_web_2984"
+      ],
+      "steps": [
+        "组成3至5名学生的团队并确定队长，可配0至2名高校指导教师和0至2名企业指导教师。",
+        "由队长在三创赛官网选择常规赛或实战赛赛道，通过规则答题测试并创建团队。",
+        "加入沈理校赛QQ群688465280，等待学校负责人审核；审核通过才视为报名成功。",
+        "参加沈理校级选拔，获得推荐后进入辽宁省级选拔赛。"
+      ],
+      "materials": [
+        "团队成员及指导教师信息；符合所选常规赛或实战赛规则的项目材料。"
+      ],
+      "contacts": [
+        "沈理刘老师15840555523；校赛QQ群688465280。"
+      ]
+    },
+    {
       "competition_id": "PROV-009",
       "expected_title": "“西门子杯”中国智能制造挑战赛(辽宁赛区)",
       "season_year": 2026,
@@ -2198,6 +4481,30 @@
       "steps": [],
       "materials": [],
       "contacts": []
+    },
+    {
+      "competition_id": "PROV-010",
+      "expected_title": "辽宁省大学生三维数字化创新设计大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://cxcy.upln.cn/",
+      "scope_note": "第六届辽宁省赛要求辽宁省平台和全国3D大赛官网双平台同步报名、同步交作品；团队、作品、成员及排序必须完全一致。",
+      "source_ids": [
+        "sylu_3191"
+      ],
+      "steps": [
+        "组成2至5名学生、1至2名指导教师的团队，选择开放赛项或产业应用赛项。",
+        "在辽宁省平台和全国3D大赛官网分别创建同一团队，并保证团队名、作品名、成员、教师及排序完全一致。",
+        "在6月30日前完成两个平台报名，7月20日前在两个平台提交相同作品。",
+        "确认作品同时通过省赛平台和全国平台初审，加入沈理校赛QQ群749633005接收后续通知。"
+      ],
+      "materials": [
+        "团队及领队信息；按赛项要求制作的三维数字化作品和项目资料。"
+      ],
+      "contacts": [
+        "沈理陈老师；校赛QQ群749633005。"
+      ]
     },
     {
       "competition_id": "PROV-011",
@@ -2333,6 +4640,53 @@
       "contacts": []
     },
     {
+      "competition_id": "PROV-019",
+      "expected_title": "全国睿抗机器人开发者大赛（RAICOM）（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://cxcy.upln.cn/",
+      "scope_note": "辽宁省赛采用双平台报名，辽宁省平台与睿抗国赛官网缺一不可；报名信息一经确定将用于证书，不能随意修改。",
+      "source_ids": [
+        "sylu_3143"
+      ],
+      "steps": [
+        "按CAIR、CAIA、CAIM或CAIP赛道规则确定个人或团队形式，准备真实成员与指导教师信息。",
+        "在辽宁省平台填写报名信息并上传材料，同时在睿抗机器人开发者大赛官网注册报名。",
+        "检查两个平台的成员、排序、赛道和作品信息一致，并加入沈理QQ群689044910。",
+        "通过网络初评后携带身份证、学生证、作品设备和技术资料参加省级现场评审。"
+      ],
+      "materials": [
+        "赛项要求的报名资料、PPT、设计或技术资料、实物及相关设备；现场身份证和学生证。"
+      ],
+      "contacts": [
+        "沈理徐老师13478287078；校内学生交流群689044910。"
+      ]
+    },
+    {
+      "competition_id": "PROV-020",
+      "expected_title": "“大唐杯”全国大学生新一代信息通信技术大赛（辽宁赛区）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "适用沈理参加第十三届信科赛省级选拔；目录沿用“大唐杯”旧称，学校通知确认赛事已更名。",
+      "source_ids": [
+        "sylu_web_3007"
+      ],
+      "steps": [
+        "按工程实践、产教融合5G+创新应用或ICT基础通识赛道要求完成校内组队。",
+        "加入沈理QQ群1033618806，将参赛队伍和指导教师信息交给学校教师代表。",
+        "由学校教师代表统一登录信科赛官网完成辽宁省级选拔报名，学生按群内通知完成缴费、学习和比赛。"
+      ],
+      "materials": [
+        "团队及指导教师信息；产教融合赛道后续按赛项要求提交创新成果。"
+      ],
+      "contacts": [
+        "刘微老师13804344404、马毓姝老师15841395248；QQ群1033618806。"
+      ]
+    },
+    {
       "competition_id": "PROV-021",
       "expected_title": "辽宁省大学生华为ICT大赛",
       "season_year": 2025,
@@ -2366,6 +4720,30 @@
       "steps": [],
       "materials": [],
       "contacts": []
+    },
+    {
+      "competition_id": "PROV-023",
+      "expected_title": "辽宁高校商业精英挑战赛（品牌策划竞赛、文旅与会展创新创业实践竞赛、国际贸易竞赛等）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://ssyth.cubec.org.cn/",
+      "scope_note": "当前只覆盖会计与商业管理案例竞赛，不代表品牌策划、文旅会展、国际贸易等其他分赛项的报名流程。",
+      "source_ids": [
+        "sylu_web_3020",
+        "accounting_case_2026_ccpit"
+      ],
+      "steps": [
+        "沈理学生先加入QQ群921952186报名并参加个人知识赛。",
+        "知识赛合格后由3至5名学生组队，完成商业案例分析和校内团队赛。",
+        "校赛推荐队伍由学校负责人通过赛事一体化平台申报省赛或全国预选赛。"
+      ],
+      "materials": [
+        "案例企业分析及商业计划书；学校推荐阶段所需团队信息。"
+      ],
+      "contacts": [
+        "沈理王老师18940227898；QQ群921952186。"
+      ]
     },
     {
       "competition_id": "PROV-024",
@@ -2430,6 +4808,28 @@
       ]
     },
     {
+      "competition_id": "PROV-027",
+      "expected_title": "辽宁省高校大学生中华经典诵写讲大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://cxcy.upln.cn/",
+      "scope_note": "本届面向辽宁本科院校中外本科生和研究生，仅设诵读、讲解两个赛道；学生须在2026年7月10日前完成省平台报名。",
+      "source_ids": [
+        "sylu_3258"
+      ],
+      "steps": [
+        "选择“诵读中国”或“诗教中国”赛道，以个人或不超过10人的团队参赛，每名学生只能报一个赛道、一件作品。",
+        "按赛道要求录制2026年新作品，并填写作品信息表，确保视频片头信息与表格完全一致。",
+        "在7月10日前登录辽宁省平台完成注册报名并上传材料，参加学校组织的初赛。",
+        "晋级后按复赛、决赛通知重新制作和提交对应阶段作品。"
+      ],
+      "materials": [
+        "作品信息表；诵读赛3至8分钟1080P横屏一镜到底视频，或讲解赛5至8分钟、不低于720P的横屏视频。"
+      ],
+      "contacts": []
+    },
+    {
       "competition_id": "PROV-028",
       "expected_title": "“外教社杯”全国高校学生跨文化能力大赛（辽宁赛区）",
       "season_year": 2026,
@@ -2443,6 +4843,30 @@
       "steps": [],
       "materials": [],
       "contacts": []
+    },
+    {
+      "competition_id": "PROV-029",
+      "expected_title": "辽宁省大学生工业设计竞赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://www.cuidc.net/",
+      "scope_note": "辽宁省赛要求先在国赛官网生成参赛编号，再用该编号在省平台报名；两端信息和作品必须完全一致，学校统一报送材料。",
+      "source_ids": [
+        "sylu_3284"
+      ],
+      "steps": [
+        "在6月30日前登录国赛官网注册报名，填写作品信息并下载系统生成的报名表和参赛编号。",
+        "使用同一编号在辽宁省平台报名，逐项核对国赛与省赛的作者、排序、作品和指导教师信息。",
+        "将作品、报名表和汇总表压缩后发送至校内指定邮箱，由学校从校赛作品中统一报送省赛。",
+        "分别向国赛和省赛上传完全一致的平面图版、设计说明和作品视频。"
+      ],
+      "materials": [
+        "系统报名表和汇总表；纵向JPG平面图版；作品设计说明；1分钟以内MP4视频；入围国赛后制作实物、模型或功能演示。"
+      ],
+      "contacts": [
+        "沈理王老师13898846363；QQ群923199945；校内材料邮箱1410577971@qq.com。"
+      ]
     },
     {
       "competition_id": "PROV-030",
@@ -2466,6 +4890,21 @@
       "contacts": [
         "孙老师15040154551；hjsun@sylu.edu.cn；QQ群1091794124。"
       ]
+    },
+    {
+      "competition_id": "PROV-031",
+      "expected_title": "全国本科院校税收风险管控案例大赛辽宁省分区赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "status": "entry_only",
+      "entry_url": "https://ssfkds.moocollege.com/",
+      "scope_note": "仅确认全国官网入口和辽宁属于31个分赛区之一；辽宁赛区承办校、校内推荐流程及专属截止尚未核实。",
+      "source_ids": [
+        "tax_risk_2026_official"
+      ],
+      "steps": [],
+      "materials": [],
+      "contacts": []
     },
     {
       "competition_id": "PROV-032",
@@ -2506,6 +4945,29 @@
       "contacts": []
     },
     {
+      "competition_id": "PROV-034",
+      "expected_title": "全国大学生电子设计竞赛(辽宁赛区)",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "status": "verified",
+      "entry_url": "https://cxcy.upln.cn/",
+      "scope_note": "2026辽宁赛区公开校赛通知确认每队3名学生、通过省级平台报名并提交盖章报名表及汇总表；该通知正文把报名年份误写为2025，故不采用其中日期，沈理截止须另查校内通知。",
+      "source_ids": [
+        "ln_electronics_2026_syist",
+        "upln_2025_prov_034"
+      ],
+      "steps": [
+        "由3名沈理在校学生组成参赛队，先联系学院竞赛负责人参加校内选拔。",
+        "按校内通知在辽宁省大学生创新创业管理共享平台填写团队信息。",
+        "下载或填写2026辽宁赛区报名表，由学校相关部门审核原创性并加盖公章；学校统一汇总报送赛区。",
+        "按赛区要求准备理论设计和实际制作环境，不能以其他学校通知中的截止代替沈理校内截止。"
+      ],
+      "materials": [
+        "2026辽宁赛区报名表、学校汇总表及校内通知要求的队伍信息；赛前器材按当届赛题与器件说明准备。"
+      ],
+      "contacts": []
+    },
+    {
       "competition_id": "PROV-035",
       "expected_title": "中国大学生机械工程创新创意大赛（辽宁赛区）",
       "season_year": 2026,
@@ -2542,6 +5004,77 @@
       "contacts": []
     },
     {
+      "competition_id": "PROV-038",
+      "expected_title": "全国大学生智能汽车竞赛（省级）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "本条为第二十一届全国大学生智能汽车竞赛东北赛区沈理校内选拔；校内报名截至2026年5月15日。",
+      "source_ids": [
+        "sylu_3100"
+      ],
+      "steps": [
+        "按竞速赛或创意赛资格组队，确定具体组别和指导教师。",
+        "加入沈理校赛QQ群480567060，按群内要求提交队伍和赛道信息。",
+        "参加校内选拔，获得推荐后由学校按全国官网规则办理东北赛区报名。"
+      ],
+      "materials": [
+        "所选组别要求的智能车作品、团队信息和校内选拔材料。"
+      ],
+      "contacts": [
+        "沈理那老师、蔡老师；校赛QQ群480567060。"
+      ]
+    },
+    {
+      "competition_id": "PROV-040",
+      "expected_title": "“外研社杯”全国大学生外语能力大赛（省级）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "status": "entry_only",
+      "entry_url": "https://ucc.fltrp.com/",
+      "scope_note": "2026全国官网已开放选手注册和校赛报名，但辽宁省赛名额、时间及省级推报仍须等待辽宁或沈理通知；2025省平台窗口仅作流程参考。英语口译赛项2026年停办。",
+      "source_ids": [
+        "fltrp_2026_rules",
+        "upln_2025_prov_040"
+      ],
+      "steps": [
+        "登录大赛官网注册，选择英语组、多语种组或国际中文组及具体赛项，准确填写沈阳理工大学信息。",
+        "按沈理校赛通知参加校内比赛并提交相应作品；官网报名成功不代表已获得辽宁省赛资格。",
+        "取得校级推荐后，由校赛管理员确认获奖与推报名单，再按辽宁省赛通知参赛。"
+      ],
+      "materials": [
+        "个人学籍和报名信息；国际传播、笔译、短视频或“四新”专项要求的作品材料。"
+      ],
+      "contacts": [
+        "全国组委会ucc@fltrp.com；辽宁及沈理联系人待当届通知。"
+      ]
+    },
+    {
+      "competition_id": "PROV-044",
+      "expected_title": "蓝桥杯全国软件和信息技术专业人才大赛（省级）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://dasai.lanqiao.cn/",
+      "scope_note": "第十七届辽宁省赛报名沿用沈理校内通知：软件、电子、人工智能赛已于2025年12月15日截止；视觉艺术设计赛和数字科技创新赛截至2026年4月27日14:00。",
+      "source_ids": [
+        "sylu_web_2930",
+        "upln_2025_prov_044"
+      ],
+      "steps": [
+        "在蓝桥杯官网注册，选择与本人学籍相符的沈阳理工大学、赛项和组别完成报名。",
+        "同步填写沈理第十七届蓝桥杯报名表，核对姓名、证件、赛项和联系方式。",
+        "加入沈理蓝桥杯报名群1038308089，按群内通知完成缴费、辅导和省赛考务确认。"
+      ],
+      "materials": [
+        "官网个人报名信息、沈理在线报名表；作品赛按赛项要求上传作品文件。"
+      ],
+      "contacts": [
+        "沈理李鹤群13940379895、崔宁海13322478789；QQ群1038308089。"
+      ]
+    },
+    {
       "competition_id": "PROV-045",
       "expected_title": "米兰设计周——中国高校设计学科师生优秀作品展（省级）",
       "season_year": 2026,
@@ -2560,6 +5093,146 @@
       "materials": [],
       "contacts": [
         "校内QQ群675380971。"
+      ]
+    },
+    {
+      "competition_id": "PROV-046",
+      "expected_title": "全国大学生光电设计竞赛（省级）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "本条覆盖第十四届全国大学生光电设计竞赛东北区赛的沈理校选，校赛材料截至2026年5月1日。",
+      "source_ids": [
+        "sylu_web_3048"
+      ],
+      "steps": [
+        "组成不超过3名学生的创意赛团队，研究生最多1名且队长须为本科生或专科生。",
+        "加入校内竞赛群，在5月1日前提交方案设计书和3分钟以内项目介绍视频。",
+        "通过校选后由学校统一报名东北区赛，参加方案评审和现场展示。"
+      ],
+      "materials": [
+        "竞赛方案设计书；3分钟以内项目介绍视频。"
+      ],
+      "contacts": [
+        "张昱老师15041992226、杨青翰15040856702；sylglxygdz@163.com。"
+      ]
+    },
+    {
+      "competition_id": "PROV-050",
+      "expected_title": "中国好创意暨全国数字艺术设计大赛（省级）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "status": "entry_only",
+      "entry_url": "https://www.cdec.org.cn/",
+      "scope_note": "第21届全国赛为2026—2027跨年度赛季，常规赛可按官网投稿；辽宁省赛审核和推优节点尚未核实，2025辽宁平台窗口不能作为本届截止。",
+      "source_ids": [
+        "cdec_2026_2027",
+        "upln_2025_prov_050"
+      ],
+      "steps": [
+        "确认学生单元、学历组别和投稿类别；专项赛应另查对应专项简章。",
+        "指导教师先注册并由院校管理员录入，学生再注册、选择指导教师并上传作品。",
+        "在学校管理员审核和校赛推优后等待辽宁赛区安排，个人投稿不等于已取得省赛资格。"
+      ],
+      "materials": [
+        "静态作品按官网要求提交图片；动态作品提交视频及宣传图，具体规格以第21届简章为准。"
+      ],
+      "contacts": [
+        "大赛秘书处010-89576608、18513190168；peixun3000@163.com。"
+      ]
+    },
+    {
+      "competition_id": "PROV-052",
+      "expected_title": "“21世纪杯”全国英语演讲比赛（省级）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://contest.i21st.cn/",
+      "scope_note": "沈理本科生先参加大学组校园选拔，研究生参加青年组个人海选；校园赛推荐选手再进入地区赛。",
+      "source_ids": [
+        "sylu_web_3025"
+      ],
+      "steps": [
+        "使用个人手机号注册活动平台并完整填写选手和指导教师信息。",
+        "本科大学组上传演讲稿和不超过4分钟的匿名脱稿演讲视频，并检查审核结果。",
+        "通过视频评审后参加沈理现场选拔，获学校推荐后进入地区赛。"
+      ],
+      "materials": [
+        "已备主题演讲稿；不超过4分钟的匿名脱稿演讲视频。"
+      ],
+      "contacts": [
+        "沈理迟老师13889814764；QQ群1080478984。"
+      ]
+    },
+    {
+      "competition_id": "PROV-058",
+      "expected_title": "全国大学生物联网设计竞赛（省级）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://iot.sjtu.edu.cn/",
+      "scope_note": "本条覆盖第十三届全国大学生物联网设计竞赛沈理校选及东北区域赛，官网与辽宁省平台信息须保持一致。",
+      "source_ids": [
+        "sylu_3224"
+      ],
+      "steps": [
+        "组成不超过4名学生、2名指导教师的本校团队，确定负责人和成员排序。",
+        "师生在竞赛官网重新注册，由负责人创建团队；同步在辽宁省平台填写相同信息。",
+        "加入校赛QQ群1084010176参加校选，获得推荐后完成东北区域赛确认。"
+      ],
+      "materials": [
+        "团队参赛证明、参赛者声明、物联网应用设计方案和实物演示视频。"
+      ],
+      "contacts": [
+        "沈理梁老师15998802109；校赛QQ群1084010176。"
+      ]
+    },
+    {
+      "competition_id": "PROV-060",
+      "expected_title": "全国大学生数字媒体科技作品及创意竞赛（省级）",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "status": "entry_only",
+      "entry_url": "https://www.cmit.cn/",
+      "scope_note": "第十四届官网已发布2026作品提交流程，但辽宁省分赛区截止和校内审核节点尚未核实；2025届省平台跨年窗口仅作参考。",
+      "source_ids": [
+        "cmit_2026_submission",
+        "upln_2025_prov_060"
+      ],
+      "steps": [
+        "在数媒竞赛官网注册并通过邮件激活，选择本科及以上或高职高专赛道。",
+        "填写参赛学生、指导教师、作品类别和简介，下载承诺书并完成签字盖章。",
+        "上传承诺书、截图、作品包及视频或PPT，提交审核并关注辽宁分赛区和沈理校内通知。"
+      ],
+      "materials": [
+        "签字盖章承诺书、不超过10张截图、10GB以内作品压缩包；答辩视频或PPT至少一项。"
+      ],
+      "contacts": [
+        "官方邮箱mail@cmit.cn；辽宁及沈理联系人待当届通知。"
+      ]
+    },
+    {
+      "competition_id": "PROV-061",
+      "expected_title": "全国企业竞争模拟大赛（省级）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "本条为2026沈理校内初赛及后续全国复赛选拔；各队必须同时在对应官方模拟系统完成报名。",
+      "source_ids": [
+        "sylu_web_3023"
+      ],
+      "steps": [
+        "按学历和赛道组成3名学生、1至2名本校在职指导教师的团队。",
+        "加入沈理QQ群1033363086提交报名信息。",
+        "在iBizSim、BizWar或BizSand对应系统完成官方报名并参加校内初赛，获推荐后参加全国复赛。"
+      ],
+      "materials": [
+        "团队、指导教师及赛道信息；对应模拟系统要求的报名资料。"
+      ],
+      "contacts": [
+        "沈理陈雨老师15940245238；QQ群1033363086。"
       ]
     },
     {
@@ -2584,6 +5257,29 @@
       ],
       "contacts": [
         "校内梁老师；QQ群1058146085；东北赛区应老师13840374500；QQ群1055891006。"
+      ]
+    },
+    {
+      "competition_id": "PROV-065",
+      "expected_title": "全国大学生化工设计竞赛（省赛）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "",
+      "scope_note": "本指引为第二十届全国大学生化工设计竞赛沈理校级选拔；通过校选后再按赛区通知办理。",
+      "source_ids": [
+        "sylu_web_3255"
+      ],
+      "steps": [
+        "由5名化工类或相近专业大三全日制本科生组成团队并确定队长。",
+        "在6月9日前加入沈理QQ群491671480，按群内要求完成团队报名。",
+        "团队至少派3人参加Aspen Plus现场操作，全员参加现场答辩，获推荐后进入赛区阶段。"
+      ],
+      "materials": [
+        "团队信息；Aspen Plus操作准备和现场答辩展示材料。"
+      ],
+      "contacts": [
+        "关老师13066531937、王老师18512453948；QQ群491671480。"
       ]
     },
     {
@@ -2684,6 +5380,27 @@
       "contacts": []
     },
     {
+      "competition_id": "PROV-100",
+      "expected_title": "RoboMaster 机甲大师高校联盟赛（东北站）",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "status": "historical",
+      "entry_url": "https://cxcy.upln.cn/match",
+      "scope_note": "仅为RoboMaster 2025高校联盟赛辽宁站省平台记录，不能替代东北站或2026赛季官方报名。赛事通常以高校战队为单位组织，当前赛季站点和资格须查RoboMaster官网及沈理战队通知。",
+      "source_ids": [
+        "upln_2025_prov_100"
+      ],
+      "steps": [
+        "联系沈理RoboMaster战队或校内竞赛负责人，确认当前赛季是否组队以及所报联盟赛站点。",
+        "按官方赛季手册完成战队注册、队员认证和赛项选择，由战队负责人统一提交。",
+        "辽宁省平台如要求备案或补录，由学校管理员办理，勿把往年平台窗口当作当前报名。"
+      ],
+      "materials": [
+        "战队和队员认证信息、赛季报名材料；机器人技术资料及参赛物资按当届手册准备。"
+      ],
+      "contacts": []
+    },
+    {
       "competition_id": "PROV-101",
       "expected_title": "辽宁省大学生先进成图技术与产品信息建模创新大赛",
       "season_year": 2026,
@@ -2705,6 +5422,27 @@
       "contacts": [
         "徐老师18640033046；QQ群2152043119。"
       ]
+    },
+    {
+      "competition_id": "PROV-102",
+      "expected_title": "辽宁省大学生智能技术应用大赛",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "status": "historical",
+      "entry_url": "https://cxcy.upln.cn/match",
+      "scope_note": "仅为第四届（2025）省平台记录；2026届赛项、团队人数、作品规格及报名窗口均待省级或沈理通知，不使用旧日期推算。",
+      "source_ids": [
+        "upln_2025_prov_102"
+      ],
+      "steps": [
+        "关注辽宁省创新创业平台和沈理创新创业学院发布的当届通知，确认赛项及组队要求。",
+        "先按学院要求提交校内报名和作品，经校内审核后再由团队或学校管理员录入省平台。",
+        "核对成员、指导教师和作品名称，按当届规则提交作品并跟踪审核状态。"
+      ],
+      "materials": [
+        "团队报名信息及当届赛项要求的设计说明、程序、演示材料或作品文件。"
+      ],
+      "contacts": []
     },
     {
       "competition_id": "PROV-103",
@@ -2825,6 +5563,29 @@
       "steps": [],
       "materials": [],
       "contacts": []
+    },
+    {
+      "competition_id": "PROV-110",
+      "expected_title": "辽宁省大学生移动应用开发大赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "status": "verified",
+      "entry_url": "https://cxcy.upln.cn/",
+      "scope_note": "2026年报名和作品提交使用同一窗口：5月20日至5月28日12:00；原通知未公开更细的材料清单。",
+      "source_ids": [
+        "sylu_3212"
+      ],
+      "steps": [
+        "登录辽宁省大学生创新创业管理共享平台，查找2026年辽宁省大学生移动应用开发大赛。",
+        "填写团队和作品信息，并在2026年5月28日12:00前完成报名及作品上传。",
+        "由学校竞赛负责人在QQ群1084510651关注审核和后续竞赛通知。"
+      ],
+      "materials": [
+        "移动应用作品及省平台要求的团队、指导教师和作品信息。"
+      ],
+      "contacts": [
+        "校级负责人讨论QQ群1084510651。"
+      ]
     },
     {
       "competition_id": "PROV-111",
@@ -3115,6 +5876,30 @@
       "contacts": []
     },
     {
+      "competition_id": "PROV-127",
+      "expected_title": "辽宁省大学生智慧农业创新创业大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://cxcy.upln.cn/",
+      "scope_note": "仅接受2至5人团队报名，不接受个人；平台报名截止2026年5月24日18:00，学校在6月4日至5日完成省赛推荐。",
+      "source_ids": [
+        "sylu_3177"
+      ],
+      "steps": [
+        "组成2至5名辽宁高校全日制本科生团队，选择智慧农业解决方案、创新技术或创业实践赛道。",
+        "由团队负责人登录辽宁省平台，填写成员和1至2名指导教师信息并确认排序。",
+        "按赛道上传项目书、展示PPT、演示视频和参赛承诺声明，并在5月24日18:00前提交。",
+        "加入竞赛QQ群628321614参加校内选拔，等待学校在省平台完成推荐。"
+      ],
+      "materials": [
+        "A/C类项目书和PDF展示PPT；B类另需不少于2分钟、100MB以内的MP4演示视频；PDF参赛承诺和声明。"
+      ],
+      "contacts": [
+        "马老师15242428689；竞赛QQ群628321614。"
+      ]
+    },
+    {
       "competition_id": "PROV-128",
       "expected_title": "辽宁省大学生中华优秀传统文化创新设计大赛",
       "season_year": 2026,
@@ -3179,6 +5964,30 @@
       "steps": [],
       "materials": [],
       "contacts": []
+    },
+    {
+      "competition_id": "PROV-135",
+      "expected_title": "辽宁省大学生管理决策模拟大赛",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://cxcy.upln.cn/match/details?comId=6c7e7677d6c19007ef0b79de1c989745",
+      "scope_note": "报名必须同时完成辽宁省平台和iCAN“商道杯”官网二次报名，两个平台信息不一致将判为无效；省赛截止2026年5月25日。",
+      "source_ids": [
+        "sylu_3162"
+      ],
+      "steps": [
+        "组成3名本校在籍学生、1至2名指导教师的团队，每名学生只参加一队。",
+        "先在辽宁省平台查找管理决策模拟大赛，完成团队注册和报名。",
+        "团队每一名学生再登录iCAN大学生创新创业大赛官网，完成“商道杯”管理决策模拟挑战赛二次报名。",
+        "核对两个平台信息完全一致并加入沈理QQ群612122191；报名超过25队时参加校内选拔。"
+      ],
+      "materials": [
+        "真实学籍、身份证、年级、联系方式和指导教师信息；两个平台一致的团队信息。"
+      ],
+      "contacts": [
+        "沈理王老师13940369345；校内群612122191、省内群884533033。"
+      ]
     },
     {
       "competition_id": "PROV-136",
@@ -3321,6 +6130,27 @@
       "contacts": []
     },
     {
+      "competition_id": "PROV-144",
+      "expected_title": "辽宁省大学生商科综合能力大赛",
+      "season_year": 2025,
+      "scope": "liaoning",
+      "status": "historical",
+      "entry_url": "https://cxcy.upln.cn/match",
+      "scope_note": "仅为第四届（2025）省平台记录；2026届是否举办、赛道和校内截止尚未确认，需等待省平台或沈理经济管理学院通知。",
+      "source_ids": [
+        "upln_2025_prov_144"
+      ],
+      "steps": [
+        "向沈理经济管理学院或创新创业学院确认当届赛道、团队结构和校内选拔安排。",
+        "按校内要求提交团队信息和商科方案，经学校审核后在辽宁省平台报名。",
+        "以当届通知为准准备知识考核、经营模拟、案例分析或答辩材料。"
+      ],
+      "materials": [
+        "团队报名信息及当届赛道要求的商业分析、经营决策或展示材料。"
+      ],
+      "contacts": []
+    },
+    {
       "competition_id": "PROV-145",
       "expected_title": "辽宁省大学生数智财经大数据分析与应用大赛",
       "season_year": 2026,
@@ -3333,6 +6163,27 @@
       ],
       "steps": [],
       "materials": [],
+      "contacts": []
+    },
+    {
+      "competition_id": "PROV-146",
+      "expected_title": "辽宁省大学生动漫与媒体创意设计大赛",
+      "season_year": 2024,
+      "scope": "liaoning",
+      "status": "historical",
+      "entry_url": "https://cxcy.upln.cn/match",
+      "scope_note": "仅为2024届省平台记录；该届名称同时包含“动漫与媒体学院奖”，下一届名称、类别和报名方式均须重新核实。",
+      "source_ids": [
+        "upln_2024_prov_146"
+      ],
+      "steps": [
+        "关注辽宁省创新创业平台和沈理相关设计学院通知，确认当届是否举办及作品类别。",
+        "按校内要求准备并提交原创作品、报名信息和版权材料，参加学校审核或推选。",
+        "获得推荐后再按省赛通知在平台上传作品，不使用2024届跨年窗口报名新赛季。"
+      ],
+      "materials": [
+        "原创动漫或媒体设计作品、作品说明、报名表及素材版权或授权证明。"
+      ],
       "contacts": []
     },
     {
@@ -3378,6 +6229,27 @@
       ],
       "steps": [],
       "materials": [],
+      "contacts": []
+    },
+    {
+      "competition_id": "PROV-150",
+      "expected_title": "中国电子数据取证大赛(辽宁赛区)",
+      "season_year": 2024,
+      "scope": "liaoning",
+      "status": "historical",
+      "entry_url": "https://cxcy.upln.cn/match",
+      "scope_note": "仅为2024届辽宁赛区省平台记录；当前届次、赛制和报名入口尚未核实，不按旧窗口直接报名。",
+      "source_ids": [
+        "upln_2024_prov_150"
+      ],
+      "steps": [
+        "向沈理网络安全、计算机或创新创业相关负责人确认当届是否组织校队。",
+        "按当届规则组队并提交身份、学籍和团队信息，经学校审核后办理辽宁赛区报名。",
+        "根据赛题方向准备电子数据取证环境，并以官方技术手册确认软件、镜像和设备要求。"
+      ],
+      "materials": [
+        "团队报名和学籍信息；当届要求的资格证明及电子数据取证竞赛环境。"
+      ],
       "contacts": []
     },
     {
@@ -3517,6 +6389,29 @@
       "materials": [],
       "contacts": [
         "2025校内李明昊18840684467；校内群683366716，东北群1016829113。"
+      ]
+    },
+    {
+      "competition_id": "PROV-163",
+      "expected_title": "全国大学生软件创新大赛（东北赛区）",
+      "season_year": 2026,
+      "scope": "sylu",
+      "status": "verified",
+      "entry_url": "https://www.swcontest.com.cn/index",
+      "scope_note": "第十九届沈理校选与东北区域赛均已明确；官网、辽宁省平台和电子申报书中的成员及指导教师排序必须一致。",
+      "source_ids": [
+        "sylu_web_3015"
+      ],
+      "steps": [
+        "按本届指定赛题组队，由负责人实名注册全国大学生软件创新大赛官网。",
+        "填写团队和指导教师排序，并同步核对辽宁省平台和电子申报书信息。",
+        "参加沈理校内选拔，通过后完成东北区域赛报名并按阶段要求匿名提交软件作品。"
+      ],
+      "materials": [
+        "团队参赛证明、参赛者声明、电子申报书和本届指定赛题软件作品。"
+      ],
+      "contacts": [
+        "沈理梁老师15998802109；校赛QQ群837231470。"
       ]
     },
     {

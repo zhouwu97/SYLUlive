@@ -1317,6 +1317,71 @@
       "publisher": "中国学位与研究生教育学会",
       "url": "https://cpipc.acge.org.cn/cw/hp/2c9080189073beab0190b560702408d1"
     },
+    "cpipc_international_chinese_2026": {
+      "title": "第三届中国研究生国际中文教育案例大赛官方赛程与参赛规则",
+      "publisher": "中国研究生国际中文教育案例大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/hp/2c9080158e2ad864018e5fa55a450c49"
+    },
+    "cpipc_culture_china_2026": {
+      "title": "第三届中国研究生“文化中国”两创大赛官方赛程与参赛规则",
+      "publisher": "中国研究生“文化中国”两创大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/hp/2c9080178e896671018e97ce7525018b"
+    },
+    "cpipc_os_2026": {
+      "title": "第三届中国研究生操作系统开源创新大赛官方赛程与参赛规则",
+      "publisher": "中国研究生操作系统开源创新大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/hp/2c9080178c7c917b018d1b1a0af61cd6"
+    },
+    "cpipc_engineering_management_2026": {
+      "title": "关于暂停举办2026年度中国研究生工程管理案例大赛的通知",
+      "publisher": "中国研究生工程管理案例大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/list/2c908018876ef068018774a7a5bc03fd/1"
+    },
+    "cpipc_fintech_2026": {
+      "title": "第五届中国研究生金融科技创新大赛官方赛程与参赛规则",
+      "publisher": "中国研究生金融科技创新大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/hompage2025/2c90800c8093eef401809d3501080654"
+    },
+    "cpipc_rural_2026": {
+      "title": "中国研究生乡村振兴科技强农+创新大赛第五届科技作品竞赛官方赛程与规则",
+      "publisher": "中国研究生乡村振兴科技强农+创新大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/hp/2c90800c7a132603017a1395f2c105f9"
+    },
+    "cpipc_public_management_2026": {
+      "title": "关于举办第十届中国研究生公共管理案例大赛的通知",
+      "publisher": "中国研究生公共管理案例大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/detail/8/2c9080189b6ee09e019bb08373051427?page=0"
+    },
+    "cpipc_chip_2026": {
+      "title": "“华为杯”第九届中国研究生创“芯”大赛参赛说明",
+      "publisher": "中国研究生创“芯”大赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/detail/10/2c9080189cfe726d019d054d2da806ee?page=1"
+    },
+    "cpipc_electronics_2026": {
+      "title": "第二十一届研电赛报名流程详解",
+      "publisher": "中国研究生电子设计竞赛组委会",
+      "url": "https://cpipc.acge.org.cn/cw/contestNews/detail/6/2c9080179d4d9dbe019d671507b717f5?page=1"
+    },
+    "liaoning_raicom_2026": {
+      "title": "2026年辽宁省睿抗机器人开发者大赛暨第十二届睿抗机器人开发者大赛辽宁省级选拔赛规程",
+      "publisher": "辽宁赛区组委会（渤海大学创新创业管理系统公开）",
+      "url": "https://cxcygl.bhu.edu.cn/comp/front/comp/info?id=MjA5Ny05YWM2YWM"
+    },
+    "chemical_experiment_2026_notice": {
+      "title": "关于举办第九届全国大学生化工实验大赛的通知（中化教协发〔2026〕17号）",
+      "publisher": "中国化工教育协会",
+      "url": "https://hgxy.hfut.edu.cn/_upload/article/files/2a/a3/90f6475b45d3a88778a739e48679/48601720-aee0-42d4-beb5-535c3023d396.pdf"
+    },
+    "cmit_2026_submission": {
+      "title": "2026全国大学生数字媒体科技作品及创意竞赛电脑版作品提交流程使用说明",
+      "publisher": "全国大学生数字媒体科技作品及创意竞赛组委会",
+      "url": "https://www.cmit.cn/html/liucheng/show-277-45689-1.html"
+    },
+    "structure_design_charter": {
+      "title": "全国大学生结构设计竞赛章程",
+      "publisher": "全国大学生结构设计竞赛委员会",
+      "url": "https://www.cug.edu.cn/__local/5/26/92/32C336C9807AF9E8699CB101CE2_497B5181_EA01.pdf?e=.pdf"
+    },
     "siac_2025_extension": {
       "title": "关于2025年全国仿真创新应用大赛报名时间延期的通知",
       "publisher": "全国仿真创新应用大赛组委会",
@@ -1916,6 +1981,121 @@
       "title": "教育部关于印发《2026年世界职业院校技能大赛实施方案》的通知",
       "publisher": "中华人民共和国教育部",
       "url": "https://www.moe.gov.cn/srcsite/A07/s7055/202608/t20260820_1447374.html"
+    },
+    "chem_design_2025_notice": {
+      "title": "关于举办第五届全国大学生化学实验创新设计大赛的通知",
+      "publisher": "全国大学生化学实验创新设计大赛委员会（赛事技术支持单位转载）",
+      "url": "https://www.dlvrtec.com/article/1277.html"
+    },
+    "chem_design_2025_final": {
+      "title": "第五届全国大学生化学实验创新设计大赛全国总决赛获奖报道",
+      "publisher": "上海大学理学院",
+      "url": "https://scicol.shu.edu.cn/info/1007/28855.htm"
+    },
+    "curc_2026_official": {
+      "title": "全国大学生机器人大赛赛事体系",
+      "publisher": "全国大学生机器人大赛组织委员会",
+      "url": "https://www.curc.cn/"
+    },
+    "robocon_2026_official": {
+      "title": "第二十五届全国大学生机器人大赛ROBOCON通知与赛程",
+      "publisher": "全国大学生机器人大赛ROBOCON组织委员会",
+      "url": "https://www.robocon.org.cn/h-col-104.html"
+    },
+    "robocon_2026_entry": {
+      "title": "第二十五届全国大学生机器人大赛ROBOCON报名系统",
+      "publisher": "全国大学生机器人大赛ROBOCON组织委员会",
+      "url": "https://data.robocon.org.cn/"
+    },
+    "digital_building_2026": {
+      "title": "关于举办2026年全国数字建筑创新应用大赛的通知",
+      "publisher": "中国建设教育协会",
+      "url": "https://www.ccen.com.cn/info/1150/5937.htm"
+    },
+    "japanese_speech_2025_2026": {
+      "title": "关于举办第十九届中华全国日语演讲比赛华中赛区比赛的通知",
+      "publisher": "中华全国日语演讲比赛组委会（华中师范大学发布）",
+      "url": "https://wy.ccnu.edu.cn/info/1174/14461.htm"
+    },
+    "mineral_2026_notice": {
+      "title": "第十一届全国高等学校矿物加工工程专业学生实践作品大赛第一轮通知",
+      "publisher": "教育部高等学校矿业类专业教学指导委员会、中国高校矿物加工工程专业协同合作联盟",
+      "url": "https://hgxy.xust.edu.cn/info/1149/7482.htm"
+    },
+    "mineral_2026_final": {
+      "title": "第十一届全国高等学校矿物加工工程专业学生实践作品大赛获奖报道",
+      "publisher": "中南大学资源加工与生物工程学院",
+      "url": "https://mpb.csu.edu.cn/info/1211/4835.htm"
+    },
+    "wargame_2026_notice": {
+      "title": "关于举办2026第十届全国兵棋推演大赛的通知",
+      "publisher": "中国指挥与控制学会、中国军事科学学会",
+      "url": "https://m.c2.org.cn/nd.jsp?groupId=25&id=3068&mid=371"
+    },
+    "yiban_2026_platform": {
+      "title": "第十届全国高校易班技术创新大会活动页面",
+      "publisher": "易班",
+      "url": "https://x.yiban.cn/app/home"
+    },
+    "yiban_2026_school": {
+      "title": "关于组织参加第十届全国高校易班技术创新大会活动的通知",
+      "publisher": "广东医科大学学生工作部、易班发展中心",
+      "url": "https://xsgzb.gdmu.edu.cn/info/1121/5269.htm"
+    },
+    "tax_risk_2026_official": {
+      "title": "2026年全国本科院校税收风险管控案例大赛",
+      "publisher": "全国本科院校税收风险管控案例大赛组委会",
+      "url": "https://ssfkds.moocollege.com/"
+    },
+    "tax_risk_2026_nwafu": {
+      "title": "关于组织我校学生参加2026年全国本科院校税收风险管控案例大赛的通知",
+      "publisher": "西北农林科技大学教务处、经济管理学院",
+      "url": "https://xkjszx.nwafu.edu.cn/sstz/352d2a848e144e6eb0cca84c23060190.htm"
+    },
+    "kingdee_enterprise_2026_official": {
+      "title": "全国大学生企业数字化管理创新大赛",
+      "publisher": "金蝶精一信息科技服务有限公司",
+      "url": "https://kone.kingdee.com/bigdataintelligentcompetition/innovate-cup"
+    },
+    "kingdee_enterprise_2026_nuc": {
+      "title": "关于2026年第十一届全国大学生企业数字化管理创新大赛校园选拔赛的通知",
+      "publisher": "中北大学经济与管理学院",
+      "url": "https://jgy.nuc.edu.cn/info/1009/23629.htm"
+    },
+    "brics_textbook_2026": {
+      "title": "关于举办2026一带一路暨金砖国家技能发展与技术创新大赛面向一带一路及金砖国家的教材与标准之教材与课程标准赛项选拔赛的通知",
+      "publisher": "金砖未来研究院",
+      "url": "https://www.bricsfuture.org.cn/a/20-333.html"
+    },
+    "robot_camp_2024_ecnu": {
+      "title": "关于举办2024年全国大学生机器人科技创新交流营暨大赛的通知",
+      "publisher": "共青团华东师范大学委员会",
+      "url": "https://youth.ecnu.edu.cn/4a/47/c52355a608839/page.htm"
+    },
+    "iic_english_2024_wit": {
+      "title": "2024全国大学生创新发明大赛互联网英语听说挑战赛报名通知",
+      "publisher": "武汉工程大学外语学院",
+      "url": "https://fl.wit.edu.cn/info/1511/18271.htm"
+    },
+    "iic_english_2024_rules": {
+      "title": "关于举办2024年全国大学生创新发明大赛互联网英语听说挑战赛省决赛的通知",
+      "publisher": "全国大学生创新发明大赛组委会",
+      "url": "https://www.sisu.edu.cn/docs/2024-11/11109c4a2cdc4e06a3887eccdf337239.pdf"
+    },
+    "medical_skills_2026_cczu": {
+      "title": "关于举办2026年中国大学生医学技术技能大赛常州大学校内选拔赛的通知",
+      "publisher": "常州大学教务处、创新创业学院、医学与健康工程学院",
+      "url": "https://med.cczu.edu.cn/2026/0409/c18739a413101/page.htm"
+    },
+    "ln_electronics_2026_syist": {
+      "title": "关于组织2026年TI杯全国大学生电子设计竞赛（辽宁赛区）校内选拔赛的通知",
+      "publisher": "沈阳科技学院创新创业学院",
+      "url": "https://cxcy.syist.edu.cn/article/details/id/1369.html"
+    },
+    "nuedc_2026_ti_dlut": {
+      "title": "关于举办2026大连理工大学电子设计竞赛暨全国大学生电子设计竞赛模拟电子系统设计专题赛（TI杯）选拔赛的通知",
+      "publisher": "大连理工大学创新创业学院",
+      "url": "https://chuangxin.dlut.edu.cn/info/1020/16067.htm"
     }
   },
   "items": [
@@ -2216,16 +2396,19 @@
       "competition_id": "NAT-019",
       "expected_title": "睿抗机器人开发者大赛（RAICOM）",
       "season_year": 2026,
-      "scope": "national",
+      "scope": "liaoning",
       "source_ids": [
-        "aggregate_saikr_raicom_2026"
+        "aggregate_saikr_raicom_2026",
+        "liaoning_raicom_2026"
       ],
       "fields": {
         "time_status": "confirmed",
-        "time_precision": "unknown",
-        "registration_time_text": "2026年4—7月；各赛道及省级/区域选拔具体截止以分项通知为准",
-        "event_time_text": "省级/区域选拔：2026年4—9月；总决赛：2026年7—10月",
-        "time_note": "依据赛氪转载的2026年4月2日主办方通知正文。正文仅明确报名月份，第三方日历显示的7月31日及具体时刻不作为统一截止依据；校内选拔须在省级选拔前完成。"
+        "time_precision": "exact",
+        "registration_start": "2026-04-01",
+        "registration_end": "2026-05-08",
+        "registration_time_text": "辽宁赛区报名：2026-04-01 至 2026-05-08；校赛管理员审核截至05-15 24:00",
+        "event_time_text": "辽宁省赛网络初评：05-15 至05-20；现场决赛：05-30 至05-31（部分赛项另有安排）",
+        "time_note": "精确节点来自公开的辽宁赛区规程；采用省平台、睿抗官网和本校系统三平台报名，沈理校内入口及提前截止仍需另行核实。"
       }
     },
     {
@@ -2395,6 +2578,44 @@
       "verified_on": "2026-09-09"
     },
     {
+      "competition_id": "NAT-030",
+      "expected_title": "全国大学生化学实验创新设计大赛",
+      "season_year": 2025,
+      "scope": "national",
+      "source_ids": [
+        "chem_design_2025_notice",
+        "chem_design_2025_final"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "往年参考（2025年第五届）：高校组队参加所属七个分赛区选拔；各赛区报名截止由赛区通知，2026年未举办新一届全国赛。",
+        "event_time_text": "往年参考：2025年6—7月分赛区比赛，8月21日至24日在兰州大学举行全国总决赛。",
+        "time_note": "赛事按届次举办，第六届通知指向2027年；保留2025届真实安排，不推算2026报名或比赛日期。"
+      },
+      "verified_on": "2026-09-09"
+    },
+    {
+      "competition_id": "NAT-031",
+      "expected_title": "全国本科院校税收风险管控案例大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "tax_risk_2026_official",
+        "tax_risk_2026_nwafu"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-07-10T00:00:00+08:00",
+        "registration_end": "2026-09-20T23:59:59+08:00",
+        "registration_time_text": "大赛官网报名窗口：2026年7月10日00:00至9月20日23:59:59；各校内部遴选和校内系统截止可能更早。",
+        "event_time_text": "分区赛案例提交截止2026年10月12日24:00；全国总决赛时间、地点由官网另行通知。",
+        "time_note": "结构化截止采用大赛官网公开窗口；西北农林科技大学通知用于交叉核验案例提交节点，不代表沈理校内安排。"
+      },
+      "verified_on": "2026-09-09"
+    },
+    {
       "competition_id": "NAT-032",
       "expected_title": "全国高等院校数智化企业经营沙盘大赛",
       "season_year": 2026,
@@ -2545,6 +2766,24 @@
         "event_time_text": "2026年校赛4—9月、省赛9—11月、国赛11—12月；各语种及赛项按具体方案。",
         "time_note": "官网确认开放日，未公布全国统一的校赛个人报名截止日。2026年英语口译赛项停办一届，下次为2027年；省赛晋级名单填报期限不是学生报名期限。"
       }
+    },
+    {
+      "competition_id": "NAT-041",
+      "expected_title": "全国大学生机器人大赛（CURC）",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "curc_2026_official",
+        "robocon_2026_official"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "CURC当前包含ROBOCON、RoboMaster等独立赛项，各自使用报名通知和系统；2026年ROBOCON由指导教师创建队伍，统一截止待核实。",
+        "event_time_text": "第二十五届ROBOCON国内选拔于2026年7月举行；RoboMaster各赛项另按官方公告执行。",
+        "time_note": "只确认CURC赛事体系及ROBOCON分赛项当届活动，不生成CURC统一报名截止或统一比赛时间。"
+      },
+      "verified_on": "2026-09-09"
     },
     {
       "competition_id": "NAT-042",
@@ -2772,17 +3011,18 @@
       "season_year": 2026,
       "scope": "national",
       "source_ids": [
+        "chemical_experiment_2026_notice",
         "chemical_2026_final",
         "chemical_2026_result"
       ],
       "fields": {
         "time_status": "confirmed",
         "time_precision": "exact",
-        "registration_time_text": "全国决赛通过区域选拔产生参赛团队；全国统一报名窗口及辽宁、校内截止尚未核实。",
+        "registration_time_text": "参赛队在官网选择东北赛区注册报名；全国通知未给统一截止，辽宁及校内截止尚未核实。",
         "event_time_text": "2026年8月8日至11日在郑州大学举行全国决赛。",
         "event_start": "2026-08-08",
         "event_end": "2026-08-11",
-        "time_note": "目前仅核实全国决赛日期，不使用其他学校的校赛报名时间。"
+        "time_note": "全国通知确认学校推选、赛区初赛、全国总决赛三级赛制及官方报名入口；不使用其他学校的校赛截止。"
       },
       "verified_on": "2026-09-09"
     },
@@ -2862,17 +3102,17 @@
     {
       "competition_id": "NAT-060",
       "expected_title": "全国大学生数字媒体科技作品及创意竞赛",
-      "season_year": 2025,
+      "season_year": 2026,
       "scope": "national",
       "source_ids": [
-        "cmit_2025_notice"
+        "cmit_2026_submission"
       ],
       "fields": {
-        "time_status": "historical",
+        "time_status": "confirmed",
         "time_precision": "unknown",
-        "registration_time_text": "往年参考：2025年报名及作品提交截至9月21日24:00；国际专项赛道另行通知。",
-        "event_time_text": "2025年通知安排：校赛9月22日—26日，赛区赛9月27日—10月10日，总决赛拟10月24日—26日。",
-        "time_note": "采用官网2025年8月正式通知；以上是2025年参考安排，不代表2026年报名时间。"
+        "registration_time_text": "2026年第十四届报名和作品提交入口已开放；全国统一截止日期尚未从当届正式通知核实。",
+        "event_time_text": "",
+        "time_note": "官网2026年5月20日已发布完整作品提交流程，可确认当届赛事与入口；因流程页未给截止日期，不沿用2025年9月21日。"
       }
     },
     {
@@ -3005,7 +3245,7 @@
       "season_year": 2026,
       "scope": "national",
       "source_ids": [
-        "cpipc_2026"
+        "cpipc_international_chinese_2026"
       ],
       "fields": {
         "registration_start": "2026-06-01",
@@ -3014,7 +3254,7 @@
         "event_time_text": "决赛：2026年10月，具体日期以单项通知为准",
         "time_status": "confirmed",
         "time_precision": "exact",
-        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+        "time_note": "单项赛事页同时确认资格审核截至7月7日、作品提交截至7月13日；校内截止另行核实。"
       }
     },
     {
@@ -3023,16 +3263,16 @@
       "season_year": 2026,
       "scope": "national",
       "source_ids": [
-        "cpipc_2026"
+        "cpipc_culture_china_2026"
       ],
       "fields": {
         "registration_start": "2026-05-25",
         "registration_end": "2026-09-14",
         "registration_time_text": "全国报名：2026-05-25 至 2026-09-14（具体截止时刻以报名系统为准）",
-        "event_time_text": "",
+        "event_time_text": "全国总决赛：2026年10月底或11月初，具体日期另行通知",
         "time_status": "confirmed",
         "time_precision": "exact",
-        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+        "time_note": "单项赛事页确认报名、资格审核和作品提交统一截至9月14日；校内截止另行核实。"
       }
     },
     {
@@ -3041,16 +3281,16 @@
       "season_year": 2026,
       "scope": "national",
       "source_ids": [
-        "cpipc_2026"
+        "cpipc_os_2026"
       ],
       "fields": {
         "registration_start": "2026-05-15",
         "registration_end": "2026-07-28",
         "registration_time_text": "全国报名：2026-05-15 至 2026-07-28（具体截止时刻以报名系统为准）",
-        "event_time_text": "决赛：2026年10月，具体日期以单项通知为准",
+        "event_time_text": "赛事页当前作品提交窗口显示至2026-09-20；初赛与后续阶段节点以单项通知为准",
         "time_status": "confirmed",
         "time_precision": "exact",
-        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+        "time_note": "单项赛事页确认报名截至7月28日、资格审核截至7月29日；作品窗口可能随晋级阶段更新。"
       }
     },
     {
@@ -3074,12 +3314,12 @@
       "season_year": 2026,
       "scope": "national",
       "source_ids": [
-        "cpipc_2026"
+        "cpipc_engineering_management_2026"
       ],
       "fields": {
         "time_status": "confirmed",
         "time_precision": "unknown",
-        "time_note": "依据主办方年度赛程表的停赛标记；不生成报名截止提醒。",
+        "time_note": "组委会于2026年5月27日发布暂停举办通知；不生成报名截止提醒，也不沿用2025届安排。",
         "registration_time_text": "主办方2026年赛程标注停赛，本年度不安排报名",
         "event_time_text": "2026年度停赛"
       }
@@ -3121,16 +3361,16 @@
       "season_year": 2026,
       "scope": "national",
       "source_ids": [
-        "cpipc_2026"
+        "cpipc_fintech_2026"
       ],
       "fields": {
         "registration_start": "2026-05-22",
         "registration_end": "2026-08-17",
-        "registration_time_text": "全国报名：2026-05-22 至 2026-08-17（具体截止时刻以报名系统为准）",
-        "event_time_text": "",
+        "registration_time_text": "全国报名：2026-05-22 至 2026-08-17 24:00",
+        "event_time_text": "资格审核截止：2026-08-31 12:00；作品提交截止：2026-08-31 15:00",
         "time_status": "confirmed",
         "time_precision": "exact",
-        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+        "time_note": "单项赛事页分别公布报名、审核和作品截止时刻；校内截止另行核实。"
       }
     },
     {
@@ -3173,14 +3413,14 @@
       "season_year": 2026,
       "scope": "national",
       "source_ids": [
-        "cpipc_2026"
+        "cpipc_rural_2026"
       ],
       "fields": {
-        "registration_time_text": "科技作品竞赛报名：2026-05-19 至 2026-08-24；卓越兽医挑战赛日程需单独核实",
+        "registration_time_text": "科技作品竞赛报名：2026-05-19 至 2026-08-24 24:00；卓越兽医挑战赛日程需单独核实",
         "event_time_text": "科技作品竞赛决赛：2026年10月16日至17日",
         "time_status": "confirmed",
         "time_precision": "exact",
-        "time_note": "汇总赛事含不同赛道，不将科技作品竞赛的截止日期推广至整个赛事；校内截止另行核实。"
+        "time_note": "科技作品竞赛资格审核和作品提交均截至8月31日24:00；不将该节点推广至其他专项赛事。"
       }
     },
     {
@@ -3189,7 +3429,7 @@
       "season_year": 2026,
       "scope": "national",
       "source_ids": [
-        "cpipc_2026"
+        "cpipc_public_management_2026"
       ],
       "fields": {
         "registration_start": "2026-01-13",
@@ -3198,7 +3438,7 @@
         "event_time_text": "决赛：2026年6月13日至14日",
         "time_status": "confirmed",
         "time_precision": "exact",
-        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+        "time_note": "单项通知与赛事页确认报名、资格审核、作品提交及决赛日期；校内截止另行核实。"
       }
     },
     {
@@ -3279,7 +3519,7 @@
       "season_year": 2026,
       "scope": "national",
       "source_ids": [
-        "cpipc_2026"
+        "cpipc_chip_2026"
       ],
       "fields": {
         "registration_start": "2026-03-20",
@@ -3288,7 +3528,7 @@
         "event_time_text": "决赛：2026年8月13日至17日",
         "time_status": "confirmed",
         "time_precision": "exact",
-        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+        "time_note": "单项通知确认报名截至6月30日；主题赛事页后续将作品窗口显示至7月19日，反映后续阶段调整。"
       }
     },
     {
@@ -3297,16 +3537,16 @@
       "season_year": 2026,
       "scope": "national",
       "source_ids": [
-        "cpipc_2026"
+        "cpipc_electronics_2026"
       ],
       "fields": {
         "registration_start": "2026-04-03",
         "registration_end": "2026-06-20",
-        "registration_time_text": "全国报名：2026-04-03 至 2026-06-20（具体截止时刻以报名系统为准）",
+        "registration_time_text": "全国报名：2026-04-03 至 2026-06-20 24:00",
         "event_time_text": "决赛：2026年8月11日至14日",
         "time_status": "confirmed",
         "time_precision": "exact",
-        "time_note": "来源为主办方2026赛程汇总；校内选拔、审核可能提前，沈阳理工大学校内截止尚未核实。"
+        "time_note": "单项报名流程确认缴费和作品上传均须在6月20日24:00前完成；校内截止另行核实。"
       }
     },
     {
@@ -3352,7 +3592,8 @@
       "scope": "national",
       "source_ids": [
         "structure_2026_final",
-        "structure_2026_confirm"
+        "structure_2026_confirm",
+        "structure_design_charter"
       ],
       "fields": {
         "time_status": "confirmed",
@@ -3361,7 +3602,7 @@
         "event_time_text": "第十九届全国大学生结构设计竞赛计划2026年10月14日至18日在内蒙古科技大学举行。",
         "event_start": "2026-10-14",
         "event_end": "2026-10-18",
-        "time_note": "仅采用两所参赛高校公开确认的全国竞赛日期，不将甘肃、云南省赛日期套入辽宁。"
+        "time_note": "全国章程确认通过校级、省级选拔推荐参赛；全国日期采用两所参赛高校公开信息，不将外省选拔日期套入辽宁。"
       },
       "verified_on": "2026-09-09"
     },
@@ -3472,6 +3713,24 @@
       "verified_on": "2026-09-09"
     },
     {
+      "competition_id": "NAT-095",
+      "expected_title": "全国数字建筑创新应用大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "digital_building_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "全国报名2026年4月起开放，截止7月31日；由指导教师登录官网建队，上传院校参赛同意表并完成审核和缴费。",
+        "registration_end": "2026-07-31",
+        "event_time_text": "全国选拔赛：2026-09-12；全国总决赛：2026-10-18。",
+        "time_note": "全国通知给出两次独立比赛日期，不将其写成连续赛事区间；校内截止仍以沈理通知为准。"
+      },
+      "verified_on": "2026-09-09"
+    },
+    {
       "competition_id": "NAT-096",
       "expected_title": "全国高校BIM毕业设计创新大赛",
       "season_year": 2025,
@@ -3484,6 +3743,24 @@
         "time_precision": "unknown",
         "registration_time_text": "往届参考：第十二届常规赛道2025年9月10日10:00至11月28日16:00报名。",
         "event_time_text": "2025年启动的第十二届：晋级赛2025年9月至12月上旬，总决赛阶段2026年1月至5月；不代表下一届安排。"
+      },
+      "verified_on": "2026-09-09"
+    },
+    {
+      "competition_id": "NAT-097",
+      "expected_title": "全国大学生医学技术技能大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "medical_skills_2026_cczu"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_end": "2026-04-12",
+        "registration_time_text": "常州大学2026年校内选拔报名截至4月12日；沈理及其他高校须以本校或赛区通知为准。",
+        "event_time_text": "常州大学个人初赛为2026年4月15日18:30—20:00，复赛时间另行通知，优秀学生推荐参加华东片区区域赛。",
+        "time_note": "当前只核实到常州大学护理方向校内选拔节点，不代表全国统一报名或所有专业赛道日期。"
       },
       "verified_on": "2026-09-09"
     },
@@ -3699,6 +3976,41 @@
       }
     },
     {
+      "competition_id": "NAT-113",
+      "expected_title": "金蝶云管理创新杯全国总决赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "kingdee_enterprise_2026_official",
+        "kingdee_enterprise_2026_nuc"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "官方赛事页确认原“金蝶云管理创新杯大赛”已更名；中北大学2026年校赛报名截至9月10日，其他学校须以本校通知为准。",
+        "event_time_text": "中北大学校赛暂定2026年9月19日；区域（省）赛10—11月，全国总决赛11—12月，具体日期以组委会最终通知为准。",
+        "time_note": "目录保留旧称，本记录对应更名后的“全国大学生企业数字化管理创新大赛”；校赛日期仅是中北大学样本，不生成全国统一截止提醒。"
+      },
+      "verified_on": "2026-09-09"
+    },
+    {
+      "competition_id": "NAT-114",
+      "expected_title": "全国大学生机器人科技创新交流营暨机器人大赛",
+      "season_year": 2024,
+      "scope": "national",
+      "source_ids": [
+        "robot_camp_2024_ecnu"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2024届往年参考：华东师范大学校内材料提交截至2024年7月10日；学校评审后择优参加市赛。",
+        "event_time_text": "2024届按校赛、市赛、国赛三级推进，国赛和交流营具体日期须查当届后续通知。",
+        "time_note": "仅保存2024届高校组织样本用于备赛参考；2026届全国及沈理日程均未核实，不触发当届提醒。"
+      },
+      "verified_on": "2026-09-09"
+    },
+    {
       "competition_id": "NAT-115",
       "expected_title": "“东方财富杯”全国金融精英挑战赛",
       "season_year": 2026,
@@ -3714,6 +4026,24 @@
         "event_time_text": "2026年校赛4月27日—6月5日；省赛6月15日—7月10日；国赛7月13日—8月7日。",
         "time_note": "目录沿用金融精英挑战赛旧称；按主办方第十二届金融挑战赛通知补录。"
       }
+    },
+    {
+      "competition_id": "NAT-116",
+      "expected_title": "一带一路暨金砖国家技能发展与技术创新大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "brics_textbook_2026"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_end": "2026-07-30T23:59:59+08:00",
+        "registration_time_text": "教材与课程标准赛项报名信息表提交截至2026年7月30日23:59，参赛作品提交截至8月31日23:59。",
+        "event_time_text": "该赛项全国选拔赛计划2026年9月中旬，全国总决赛计划11月中旬，详情另行通知。",
+        "time_note": "只覆盖“面向一带一路及金砖国家的教材与标准之教材与课程标准赛项”，不得据此推定金砖大赛其他赛项日期。"
+      },
+      "verified_on": "2026-09-09"
     },
     {
       "competition_id": "NAT-117",
@@ -3765,6 +4095,23 @@
         "event_start": "2026-08-04",
         "event_end": "2026-08-05",
         "time_note": "报名节点为学校报送，不作为学生首次报名截止；仿真实训单元具体报名流程须另查。"
+      },
+      "verified_on": "2026-09-09"
+    },
+    {
+      "competition_id": "NAT-120",
+      "expected_title": "中华全国日语演讲大赛",
+      "season_year": 2025,
+      "scope": "national",
+      "source_ids": [
+        "japanese_speech_2025_2026"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "往届跨年参考（第十九届）：各高校按所属地区赛区通知统一报名，地区决赛于2025年10—11月举行。",
+        "event_time_text": "第十九届地区赛特等奖选手晋级拟于2026年3月在日本东京举行的总决赛。",
+        "time_note": "按地区赛启动年份记为2025届；辽宁所属赛区、第二十届报名及截止仍待当届通知，不触发提醒。"
       },
       "verified_on": "2026-09-09"
     },
@@ -3840,6 +4187,27 @@
       }
     },
     {
+      "competition_id": "NAT-126",
+      "expected_title": "全国高等学校矿物加工工程专业学生实践作品大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "mineral_2026_notice",
+        "mineral_2026_final"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "第十一届以学校为单位提交作品，不接受个人报名；电子作品、简介和完成人信息于2026年5月31日前发送至组委会邮箱。",
+        "registration_end": "2026-05-31",
+        "event_time_text": "第十一届全国比赛于2026年7月17日至19日在陕西西安举行。",
+        "event_start": "2026-07-17",
+        "event_end": "2026-07-19",
+        "time_note": "作品由学校汇总报送；物理模型仅交3至5分钟视频和文字简介，无需邮寄实物。"
+      },
+      "verified_on": "2026-09-09"
+    },
+    {
       "competition_id": "NAT-127",
       "expected_title": "全国大学生创新体验竞赛",
       "season_year": 2026,
@@ -3853,6 +4221,23 @@
         "registration_time_text": "第九届东北赛区沈理校赛：2026-03-24 前提交作品；晋级作品于 03-26 至 03-28 注册提交至东北赛区",
         "event_time_text": "沈理校赛：2026-03-18 至 03-28"
       }
+    },
+    {
+      "competition_id": "NAT-129",
+      "expected_title": "全国兵棋推演大赛",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "wargame_2026_notice"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "第十届人人对抗主体赛在2026年7月中旬前组织报名培训；可从官网直接报名或由院校汇总报名，手工兵棋赛只接受单位集体报名。",
+        "event_time_text": "分赛区比赛9月底前完成；全国晋级赛10月；全国总决赛11至12月。专项赛另按分项通知。",
+        "time_note": "不同赛项报名资格和方式不同，不把主体赛阶段安排推广为算法或手工兵棋赛统一截止。"
+      },
+      "verified_on": "2026-09-09"
     },
     {
       "competition_id": "NAT-131",
@@ -3904,6 +4289,24 @@
       }
     },
     {
+      "competition_id": "NAT-134",
+      "expected_title": "易班技术创新作品征集暨全国高校易班技术创新大会",
+      "season_year": 2026,
+      "scope": "national",
+      "source_ids": [
+        "yiban_2026_platform",
+        "yiban_2026_school"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "unknown",
+        "registration_time_text": "第十届活动已在易班官方页面开放；作品通常经高校易班工作部门组织推荐，沈理提交渠道和全国统一截止尚未核实。",
+        "event_time_text": "作品征集后进入审核、展示和答辩环节，技术创新大会具体日期待官方后续通知。",
+        "time_note": "外校2026年4月13日提交截止只用于证明当届类别和校级推荐方式，不套用为沈理或全国截止。"
+      },
+      "verified_on": "2026-09-09"
+    },
+    {
       "competition_id": "NAT-135",
       "expected_title": "中俄合作办学高校联盟俄语演讲比赛",
       "season_year": 2025,
@@ -3917,6 +4320,24 @@
         "registration_time_text": "2025届往年参考：学校报名2025年11月25日12:00前；2026届尚未核实。",
         "event_time_text": "2025届往年参考：校赛2025年11月25日16:30，LXA409；国赛2025年12月12日。",
         "time_note": "往年通知仅供备赛参考，不触发当届报名提醒。适用沈理中俄合作办学项目学生。"
+      },
+      "verified_on": "2026-09-09"
+    },
+    {
+      "competition_id": "NAT-136",
+      "expected_title": "全国大学生创新发明大赛互联网英语听说挑战赛",
+      "season_year": 2024,
+      "scope": "national",
+      "source_ids": [
+        "iic_english_2024_wit",
+        "iic_english_2024_rules"
+      ],
+      "fields": {
+        "time_status": "historical",
+        "time_precision": "unknown",
+        "registration_time_text": "2024届往年参考：全国报名截至2024年10月10日零点；校赛10月12日零点至20日零点。",
+        "event_time_text": "2024届省赛11月2日至10日，组委会后续确定省决赛为11月16日线上举行，全国赛在11月下旬。",
+        "time_note": "赛事由原iCAN互联网英语听说挑战赛更名而来；仅保留2024届真实安排，2026届尚未核实，不触发当届提醒。"
       },
       "verified_on": "2026-09-09"
     },
@@ -4439,6 +4860,26 @@
       }
     },
     {
+      "competition_id": "PROV-031",
+      "expected_title": "全国本科院校税收风险管控案例大赛辽宁省分区赛",
+      "season_year": 2026,
+      "scope": "liaoning",
+      "source_ids": [
+        "tax_risk_2026_official",
+        "tax_risk_2026_nwafu"
+      ],
+      "fields": {
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_start": "2026-07-10T00:00:00+08:00",
+        "registration_end": "2026-09-20T23:59:59+08:00",
+        "registration_time_text": "全国官网报名窗口为2026年7月10日00:00至9月20日23:59:59；辽宁高校内部选拔截止可能更早。",
+        "event_time_text": "全国统一分区赛案例提交截止为2026年10月12日24:00；辽宁赛区评审细节待专属通知确认。",
+        "time_note": "只确认辽宁属于31个分赛区及全国统一窗口，尚未核实辽宁赛区承办校和沈理校内安排。"
+      },
+      "verified_on": "2026-09-09"
+    },
+    {
       "competition_id": "PROV-032",
       "expected_title": "全国高等院校数智化企业经营沙盘大赛（辽宁赛区）",
       "season_year": 2026,
@@ -4475,17 +4916,18 @@
     {
       "competition_id": "PROV-034",
       "expected_title": "全国大学生电子设计竞赛(辽宁赛区)",
-      "season_year": 2025,
+      "season_year": 2026,
       "scope": "liaoning",
       "source_ids": [
-        "upln_2025_prov_034"
+        "ln_electronics_2026_syist",
+        "nuedc_2026_ti_dlut"
       ],
       "fields": {
-        "time_status": "historical",
-        "time_precision": "unknown",
-        "registration_time_text": "2025届省平台记录：2025-12-31 00:00:00 至 2026-01-01 23:59:59；当届时间待核实",
-        "time_note": "按2025届平台记录暂作参考，保留真实年份；不推算2026年日期，也不触发当届报名状态或截止提醒。平台窗口可能包含补录、推荐阶段。 该记录属于2025届但平台时段跨年，不代表2026届赛程。",
-        "event_time_text": "2025年7月30日08:00至8月2日20:00（平台竞赛简介所列比赛时间）"
+        "time_status": "confirmed",
+        "time_precision": "exact",
+        "registration_time_text": "2026辽宁赛区已启动校内选拔并通过辽宁省平台报名；公开校赛通知正文把截止年份误写为2025，沈理校内截止待确认。",
+        "time_note": "2026辽宁赛区公开通知确认赛事和省平台报名方式；专题赛初赛日期由大连理工大学通知确认。旧省平台跨年窗口仅保留为历史交叉核验，不作为本届截止。",
+        "event_time_text": "2026年7月29日至8月1日初赛；8月23日至27日在武汉大学举行专题赛决赛。"
       }
     },
     {

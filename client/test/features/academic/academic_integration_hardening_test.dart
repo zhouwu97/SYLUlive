@@ -78,6 +78,14 @@ void main() {
     expect(provider.getCachedGradeDetail(grade, '2025', 12), isNotNull);
     expect(provider.getCachedAcademicSituation(), isNotNull);
     expect(provider.getCachedCreditRequirements(), isNotNull);
+    await provider.fetchAcademicSituation();
+    await provider.fetchCreditRequirements();
+    expect(repository.calls.where((call) => call == 'situation').length, 1);
+    expect(repository.calls.where((call) => call == 'requirements').length, 1);
+    await provider.fetchAcademicSituation(forceRefresh: true);
+    await provider.fetchCreditRequirements(forceRefresh: true);
+    expect(repository.calls.where((call) => call == 'situation').length, 2);
+    expect(repository.calls.where((call) => call == 'requirements').length, 2);
     expect(requestedPaths, isEmpty);
 
     provider.dispose();
@@ -763,11 +771,13 @@ final class _FakeAcademicRepository implements AcademicRepository {
 
   @override
   Future<AcademicSituation> getAcademicSituation() async {
+    calls.add('situation');
     return academicSituation;
   }
 
   @override
   Future<CreditRequirement> getCreditRequirements() async {
+    calls.add('requirements');
     return creditRequirements;
   }
 

@@ -12,10 +12,13 @@ import 'package:shenliyuan/screens/post_detail_screen.dart';
 /// 可控回复排序 Dio：hot 慢 / latest 快，用于验证 requestVersion。
 class SortRaceDio extends Fake implements Dio {
   SortRaceDio({
+    this.postDelay = Duration.zero,
     this.hotDelay = Duration.zero,
     this.latestDelay = Duration.zero,
   });
 
+  final Duration postDelay;
+  bool postCompleted = false;
   final Duration hotDelay;
   final Duration latestDelay;
 
@@ -58,11 +61,14 @@ class SortRaceDio extends Fake implements Dio {
       );
     }
     if (path.startsWith('/posts/300')) {
+      await Future<void>.delayed(postDelay);
+      postCompleted = true;
       return Response<T>(
         requestOptions: RequestOptions(path: path),
         data: {
           'id': 300,
           'title': '排序测试帖',
+          'reply_count': 1,
           'content': '内容',
           'board_id': 1,
           'author_id': 1,
@@ -90,7 +96,9 @@ class SortRaceDio extends Fake implements Dio {
       };
 }
 
-class RaceAuthProvider extends Fake with ChangeNotifier implements AuthProvider {
+class RaceAuthProvider extends Fake
+    with ChangeNotifier
+    implements AuthProvider {
   RaceAuthProvider(this._dio);
   final SortRaceDio _dio;
 
@@ -113,7 +121,8 @@ class RaceAuthProvider extends Fake with ChangeNotifier implements AuthProvider 
   Dio get dio => _dio;
 }
 
-class RacePostProvider extends Fake with ChangeNotifier
+class RacePostProvider extends Fake
+    with ChangeNotifier
     implements PostProvider {
   @override
   Post? postFor(int postId) => null;
@@ -149,6 +158,21 @@ Widget buildRaceApp(SortRaceDio dio) {
 }
 
 void main() {
+  testWidgets('评论与正文并行请求，短时间重新打开不重复下载评论', (tester) async {
+    final dio = SortRaceDio(postDelay: const Duration(seconds: 1));
+    await tester.pumpWidget(buildRaceApp(dio));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(dio.hotRequests, 1);
+    expect(dio.postCompleted, isFalse);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('热门第一条'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(buildRaceApp(dio));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('热门第一条'), findsOneWidget);
+    expect(dio.hotRequests, 1);
+  });
+
   testWidgets('Hot 慢 / Latest 快：最终显示最后一次选择的结果', (tester) async {
     final dio = SortRaceDio(
       hotDelay: const Duration(milliseconds: 300),

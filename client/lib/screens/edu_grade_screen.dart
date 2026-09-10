@@ -343,7 +343,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       return;
     }
 
-    final cache = provider.getCachedAcademicSituation();
+    final gen = ++_academicRequestGeneration;
+    final cache = await provider.restoreCachedAcademicSituation();
+    if (!mounted || _academicRequestGeneration != gen) return;
     if (cache != null && !forceRefresh) {
       setState(() {
         _academicSituation = cache.data;
@@ -357,7 +359,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       });
     }
 
-    final gen = ++_academicRequestGeneration;
     if (!await _ensureReadReady(retry: forceRefresh)) {
       if (mounted && _academicRequestGeneration == gen) {
         setState(() {
@@ -368,7 +369,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       return;
     }
     if (!mounted || _academicRequestGeneration != gen) return;
-    final result = await provider.fetchAcademicSituation();
+    final result = await provider.fetchAcademicSituation(forceRefresh: true);
 
     if (!mounted || _academicRequestGeneration != gen) return;
 
@@ -415,7 +416,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       return;
     }
 
-    final cache = provider.getCachedCreditRequirements();
+    final gen = ++_requirementRequestGeneration;
+    final cache = await provider.restoreCachedCreditRequirements();
+    if (!mounted || _requirementRequestGeneration != gen) return;
 
     if (cache != null && !forceRefresh) {
       setState(() {
@@ -430,7 +433,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       });
     }
 
-    final gen = ++_requirementRequestGeneration;
     if (!await _ensureReadReady(retry: forceRefresh)) {
       if (mounted && _requirementRequestGeneration == gen) {
         setState(() {
@@ -441,7 +443,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       return;
     }
     if (!mounted || _requirementRequestGeneration != gen) return;
-    final result = await provider.fetchCreditRequirements();
+    final result = await provider.fetchCreditRequirements(forceRefresh: true);
 
     if (!mounted || _requirementRequestGeneration != gen) return;
 

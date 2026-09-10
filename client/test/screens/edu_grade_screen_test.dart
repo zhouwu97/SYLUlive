@@ -130,12 +130,21 @@ class _FakeEduProvider extends EduProvider {
   int fetchGradesCallCount = 0;
   int fetchDetailCallCount = 0;
   String? detailFailureCode;
+  EduGradeDetail? initialDetail;
+  Completer<OperationResult<EduGradeDetail>>? pendingDetail;
+  bool? detailForceRefresh;
+  @override
+  EduGradeDetail? getCachedGradeDetail(
+          EduGrade grade, String year, int semester) =>
+      initialDetail;
 
   @override
   Future<OperationResult<EduGradeDetail>> fetchGradeDetail(
       EduGrade grade, String year, int semester,
       {bool forceRefresh = false}) async {
     fetchDetailCallCount++;
+    detailForceRefresh = forceRefresh;
+    if (pendingDetail != null) return pendingDetail!.future;
     return OperationResult.fail('测试详情响应', errorCode: detailFailureCode);
   }
 
@@ -219,7 +228,8 @@ class _FakeEduProvider extends EduProvider {
   }
 
   @override
-  Future<OperationResult<EduAcademicSituation>> fetchAcademicSituation() async {
+  Future<OperationResult<EduAcademicSituation>> fetchAcademicSituation(
+      {bool forceRefresh = false}) async {
     return switch (academicMode) {
       _LoadMode.data => OperationResult.ok(academicSituation),
       _LoadMode.empty => OperationResult.ok(_emptyAcademicSituation()),
@@ -658,6 +668,54 @@ void main() {
     edu.finishPendingGrades();
     await tester.pumpAndSettle();
   });
+
+  for (final success in [true, false]) {
+    testWidgets('成绩详情缓存先展示并自动更新，刷新成功=$success', (tester) async {
+      final edu = _FakeEduProvider()
+        ..initialDetail = const EduGradeDetail(
+            message: null,
+            success: true,
+            courseName: '测试课程',
+            totalGrade: '80',
+            components: [
+              GradeComponent(name: '原有成绩构成', weight: '100%', score: '80')
+            ])
+        ..pendingDetail = Completer<OperationResult<EduGradeDetail>>();
+      await tester.pumpWidget(ChangeNotifierProvider<EduProvider>.value(
+        value: edu,
+        child: const MaterialApp(
+            home: EduGradeDetailScreen(
+          grade: EduGrade(
+              name: '测试课程',
+              classId: 'class-1',
+              displayGrade: '80',
+              credits: 3,
+              gpa: 3,
+              isDegree: true),
+          year: '2025',
+          semester: 3,
+        )),
+      ));
+      await tester.pump();
+      expect(find.text('原有成绩构成'), findsOneWidget);
+      expect(edu.fetchDetailCallCount, 1);
+      expect(edu.detailForceRefresh, isTrue);
+      edu.pendingDetail!.complete(success
+          ? OperationResult.ok(const EduGradeDetail(
+              message: null,
+              success: true,
+              courseName: '测试课程',
+              totalGrade: '90',
+              components: [
+                GradeComponent(name: '新的成绩构成', weight: '100%', score: '90')
+              ],
+            ))
+          : OperationResult.fail('网络不可用'));
+      await tester.pumpAndSettle();
+      expect(find.text(success ? '新的成绩构成' : '原有成绩构成'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('成绩详情先恢复会话，网络失败可重试', (tester) async {
     final repository = _SchoolRepository()

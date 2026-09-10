@@ -140,11 +140,10 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
           ? null
           : cached.message;
       _isLoadingDetail = false;
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _loadDetail(forceRefresh: true);
-      });
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadDetail(forceRefresh: true);
+    });
   }
 
   Future<void> _loadDetail({
@@ -222,8 +221,9 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
     setState(() {
       _isLoadingDetail = false;
       if (result.success && result.data != null) {
-        _detail = result.data;
-        if (!result.data!.success || result.data!.components.isEmpty) {
+        if (result.data!.success && result.data!.components.isNotEmpty) {
+          _detail = result.data;
+        } else {
           _detailError = result.data!.message ?? '暂未获取到成绩构成';
         }
       } else {
@@ -266,7 +266,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
   }
 
   Widget _buildComponents(BuildContext context, bool isDark) {
-    if (_isLoadingDetail) {
+    if (_isLoadingDetail && _detail?.components.isNotEmpty != true) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(

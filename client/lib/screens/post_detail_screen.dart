@@ -26,6 +26,7 @@ import '../providers/water_section_provider.dart';
 import '../services/emoji_favorite_service.dart';
 import '../services/async_action_guard.dart';
 import '../services/idempotency_key.dart';
+import '../services/post_reply_cache.dart';
 import '../utils/app_feedback.dart';
 import '../utils/image_decode_size.dart';
 import '../utils/post_clipboard.dart';
@@ -263,7 +264,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       _isLoading = false;
     }
     _activeTargetReplyId = widget.targetReplyId;
-    _loadPost();
+    _loadPost(forceReplies: false);
     if (widget.scrollToReplies && widget.initialPost != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _scheduleScrollToReplies();
@@ -322,7 +323,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     super.dispose();
   }
 
-  Future<void> _loadPost() async {
+  Future<void> _loadPost({bool forceReplies = true}) async {
+    final replyCache = PostReplyCache.forClient(_dio)..useScope(_replyScope);
+    final cachedReplyCount =
+        replyCache.peek(widget.postId, _replySort)?.data['total'];
+    // 评论与正文并行读取；重复打开优先复用首屏，不等待正文往返。
+    final repliesRequest =
+        _loadReplies(sort: _replySort, forceRefresh: forceReplies);
     // 有 initialPost 时首帧已经显示完整帖子：刷新在后台进行，
     // 不再把 _isLoading 切回 true 遮住已有内容（stale-while-refresh）。
     final hasInitialPost = _post != null;
@@ -368,7 +375,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         context.read<PostProvider>().updatePostInCache(_post!);
       }
       // 评论区独立加载：切换 Hot/Latest 只刷新回复，不重复拉帖子详情。
-      await _loadReplies(sort: _replySort);
+      await repliesRequest;
+      // 正文已报告评论数量变化时，突破短缓存窗口获取新评论。
+      if (mounted &&
+          !forceReplies &&
+          cachedReplyCount != null &&
+          cachedReplyCount != fetchedPost.replyCount) {
+        await _loadReplies(sort: _replySort);
+      }
       await _loadWaterSectionPermission(forceRefresh: true);
       if (_activeTargetReplyId != null && !_hasScrolledToTarget) {
         await _prepareTargetReplyAndScroll();
@@ -385,7 +399,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         if (hasInitialPost) {
           // 保留已有帖子内容 + 局部失败提示，弱网下不把整页换成错误页。
           AppFeedback.showSnackBar(context, '内容刷新失败', isError: true);
-          _loadReplies(sort: _replySort);
         }
       }
     } catch (e) {
@@ -398,7 +411,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         });
         if (hasInitialPost) {
           AppFeedback.showSnackBar(context, '内容刷新失败', isError: true);
-          _loadReplies(sort: _replySort);
         }
       }
     }
@@ -5623,70 +5635,52 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   /// 后发出的请求版本号更大，先返回的旧响应会被直接丢弃。
   /// 加载完成后，用 [_pendingReplyLikeTargets] 覆盖在途点赞的目标状态，
   /// 避免"♥13 → 切排序 → ♡12 → 请求完成 → ♥13"的闪烁。
-  Future<void> _loadReplies({String? sort, bool loadMore = false}) async {
+  String get _replyScope {
+    final auth = context.read<AuthProvider>();
+    return '${auth.user?.id}|${auth.token}';
+  }
+
+  Future<void> _loadReplies(
+      {String? sort, bool loadMore = false, bool forceRefresh = true}) async {
+    final scope = _replyScope;
+    final cache = PostReplyCache.forClient(_dio)..useScope(scope);
+    if (forceRefresh && !loadMore) cache.invalidate();
     final effectiveSort = sort ?? _replySort;
     final requestVersion = ++_replyRequestVersion;
+    final cached = loadMore ? null : cache.peek(widget.postId, effectiveSort);
+    if (cached != null) _applyReplyPage(cached.data, loadMore: false);
     if (mounted) {
       setState(() {
         if (loadMore) {
           _loadingMoreReplies = true;
         } else {
-          _isRepliesLoading = true;
+          _isRepliesLoading = _replies.isEmpty;
         }
       });
     }
     try {
-      final repliesResponse = await _dio.get(
-        '/posts/${widget.postId}/replies',
-        queryParameters: {
-          'sort': effectiveSort,
-          if (loadMore && _repliesNextCursor != null)
-            'cursor': _repliesNextCursor,
-        },
-      );
-      if (!mounted || requestVersion != _replyRequestVersion) return;
-      final data = repliesResponse.data;
-      if (data is! Map<String, dynamic>) return;
-      final rawReplies = data['replies'];
-      if (rawReplies is! List) return;
-      setState(() {
-        var replies = rawReplies
-            .map((e) => Reply.fromJson(e as Map<String, dynamic>))
-            .toList();
-        // 覆盖在途点赞目标，防止服务端旧状态覆盖乐观 UI。
-        if (_pendingReplyLikeTargets.isNotEmpty) {
-          replies = [
-            for (final r in replies)
-              _pendingReplyLikeTargets.containsKey(r.id)
-                  ? r.copyWith(isLiked: _pendingReplyLikeTargets[r.id])
-                  : r,
-          ];
-        }
-        if (loadMore) {
-          // 追加并按 id 去重（cursor 找不到时服务端可能从第一页开始重发）。
-          final known = _replies.map((r) => r.id).toSet();
-          _replies = [
-            ..._replies,
-            ...replies.where((r) => !known.contains(r.id)),
-          ];
-        } else {
-          _replies = replies;
-        }
-        _totalReplies = (data['total'] as num?)?.toInt() ?? _replies.length;
-        final next = data['next_cursor'] as String?;
-        _repliesNextCursor = (next != null && next.isNotEmpty) ? next : null;
-        _repliesHasMore = _repliesNextCursor != null;
-        // 保持评论数与服务端口径一致（total 含 tombstone 根）。
-        if (_post != null) {
-          _post = _post!.copyWith(replyCount: _totalReplies);
-        }
-      });
+      final data = await cache.load(widget.postId, effectiveSort,
+          cursor: loadMore ? _repliesNextCursor : null, force: forceRefresh);
+      if (!mounted ||
+          scope != _replyScope ||
+          requestVersion != _replyRequestVersion) {
+        return;
+      }
+      _applyReplyPage(data, loadMore: loadMore);
     } on DioException catch (e) {
-      if (!mounted || requestVersion != _replyRequestVersion) return;
+      if (!mounted ||
+          scope != _replyScope ||
+          requestVersion != _replyRequestVersion) {
+        return;
+      }
       final msg = AppFeedback.dioErrorMessage(e, fallback: '加载回复失败');
       AppFeedback.showSnackBar(context, msg, isError: true);
     } catch (e) {
-      if (!mounted || requestVersion != _replyRequestVersion) return;
+      if (!mounted ||
+          scope != _replyScope ||
+          requestVersion != _replyRequestVersion) {
+        return;
+      }
       AppFeedback.showSnackBar(context, '加载回复失败: $e', isError: true);
     } finally {
       // 统一收口：任何路径（含响应结构异常直接 return）都复位 loading 标志，
@@ -5702,13 +5696,49 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     }
   }
 
+  void _applyReplyPage(Map<String, dynamic> data, {required bool loadMore}) {
+    final rawReplies = data['replies'] as List;
+    setState(() {
+      var replies = rawReplies
+          .map((e) => Reply.fromJson(e as Map<String, dynamic>))
+          .toList();
+      // 覆盖在途点赞目标，防止服务端旧状态覆盖乐观 UI。
+      if (_pendingReplyLikeTargets.isNotEmpty) {
+        replies = [
+          for (final r in replies)
+            _pendingReplyLikeTargets.containsKey(r.id)
+                ? r.copyWith(isLiked: _pendingReplyLikeTargets[r.id])
+                : r,
+        ];
+      }
+      if (loadMore) {
+        // 追加并按 id 去重（cursor 找不到时服务端可能从第一页开始重发）。
+        final known = _replies.map((r) => r.id).toSet();
+        _replies = [
+          ..._replies,
+          ...replies.where((r) => !known.contains(r.id)),
+        ];
+      } else {
+        _replies = replies;
+      }
+      _totalReplies = (data['total'] as num?)?.toInt() ?? _replies.length;
+      final next = data['next_cursor'] as String?;
+      _repliesNextCursor = (next != null && next.isNotEmpty) ? next : null;
+      _repliesHasMore = _repliesNextCursor != null;
+      // 保持评论数与服务端口径一致（total 含 tombstone 根）。
+      if (_post != null) {
+        _post = _post!.copyWith(replyCount: _totalReplies);
+      }
+    });
+  }
+
   /// 切换评论排序（热门/最新）。只刷新回复列表，不重新请求帖子详情。
   Future<void> _changeReplySort(String sort) async {
     if (sort == _replySort) return;
     setState(() {
       _replySort = sort;
     });
-    await _loadReplies(sort: sort);
+    await _loadReplies(sort: sort, forceRefresh: false);
   }
 
   /// 评论点赞入口：登录检查 → pending 防连点 → optimistic 翻转 →

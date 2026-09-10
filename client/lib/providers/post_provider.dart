@@ -9,6 +9,7 @@ import '../models/post.dart';
 import '../models/topic.dart';
 import '../services/async_action_guard.dart';
 import '../services/post_cache_service.dart';
+import '../services/post_reply_cache.dart';
 import '../services/idempotency_key.dart';
 import '../utils/app_feedback.dart';
 import '../utils/public_image_compressor.dart';
@@ -1377,6 +1378,7 @@ class PostProvider extends ChangeNotifier {
   }
 
   Future<DeletePostResult> deleteReplyDetailed(int replyId) async {
+    PostReplyCache.forClient(_dio).invalidate();
     final actionKey = 'reply-delete:$replyId';
     final idempotencyKey =
         _idempotencyKeys[actionKey] ??= newIdempotencyKey('reply-delete');
@@ -1543,6 +1545,7 @@ class PostProvider extends ChangeNotifier {
   }) async {
     try {
       final response = like ? await _dio.post(path) : await _dio.delete(path);
+      PostReplyCache.forClient(_dio).invalidate();
       if (response.statusCode != null &&
           response.statusCode! >= 200 &&
           response.statusCode! < 300) {

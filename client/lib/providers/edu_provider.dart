@@ -760,17 +760,25 @@ class EduProvider extends ChangeNotifier {
   Future<OperationResult<void>> unbind() async {
     final controller = _academicSessionController;
     final identity = controller?.identity;
-    if (controller != null && identity != null && controller.providerRouter != null) {
+    if (controller != null &&
+        identity != null &&
+        controller.providerRouter != null) {
       final router = controller.providerRouter!;
       try {
-        await router.accountStore!.remove(identity.providerId, fromCloud:true);
+        await router.accountStore!.remove(identity.providerId, fromCloud: true);
         await controller.acceptIdentityUnbound(identity);
-      } catch (_) { return OperationResult.fail('本机移除未完成，请重试'); }
+      } catch (_) {
+        return OperationResult.fail('本机移除未完成，请重试');
+      }
       try {
-        await AcademicIdentityLifecycleCoordinator(controller:controller,
-            preferences:await AppPreferencesStore.getInstance()).clearLocalIdentity(identity);
+        await AcademicIdentityLifecycleCoordinator(
+                controller: controller,
+                preferences: await AppPreferencesStore.getInstance())
+            .clearLocalIdentity(identity);
         await router.accountStore!.acknowledgeCleanup(identity);
-      } catch (_) { _errorMessage = '账号已移除，本机残留资料待清理'; }
+      } catch (_) {
+        _errorMessage = '账号已移除，本机残留资料待清理';
+      }
       unawaited(router.syncConfiguration());
       _applyAcademicSessionState();
       return OperationResult.ok(null);
@@ -1233,7 +1241,71 @@ class EduProvider extends ChangeNotifier {
     }
   }
 
-  Future<OperationResult<EduAcademicSituation>> fetchAcademicSituation() async {
+  Future<AcademicSituationCacheEntry?> restoreCachedAcademicSituation() async {
+    final memory = getCachedAcademicSituation();
+    if (memory != null) return memory;
+    final user = _userId;
+    final account = _studentId.trim();
+    final source = _activeAcademicSourceKind;
+    final generation = _academicSessionController?.contextGeneration;
+    if (user == null || account.isEmpty) return null;
+    await _persistenceReady;
+    try {
+      final raw = await _academicCacheStoreFor(
+        appUserId: user,
+        sourceAccountId: account,
+      )?.readAcademicSituation();
+      if (raw == null ||
+          generation != _academicSessionController?.contextGeneration ||
+          !_isSameAcademicContext(user, account, source)) {
+        return null;
+      }
+      final entry = AcademicSituationCacheEntry(
+          data: EduAcademicSituation.fromJson(raw), updatedAt: DateTime.now());
+      _academicSituationCache[
+          _academicSituationCacheKey(user, account, source)] = entry;
+      return entry;
+    } catch (error) {
+      // 本地快照异常不阻断后续网络刷新，也不输出个人教务内容。
+      debugPrint("恢复教务概览缓存失败: ${error.runtimeType}");
+      return null;
+    }
+  }
+
+  Future<CreditRequirementCacheEntry?> restoreCachedCreditRequirements() async {
+    final memory = getCachedCreditRequirements();
+    if (memory != null) return memory;
+    final user = _userId;
+    final account = _studentId.trim();
+    final source = _activeAcademicSourceKind;
+    final generation = _academicSessionController?.contextGeneration;
+    if (user == null || account.isEmpty) return null;
+    await _persistenceReady;
+    try {
+      final raw = await _academicCacheStoreFor(
+        appUserId: user,
+        sourceAccountId: account,
+      )?.readCreditRequirements();
+      if (raw == null ||
+          generation != _academicSessionController?.contextGeneration ||
+          !_isSameAcademicContext(user, account, source)) {
+        return null;
+      }
+      final entry = CreditRequirementCacheEntry(
+          data: EduCreditRequirementOverview.fromJson(raw),
+          updatedAt: DateTime.now());
+      _creditRequirementCache[
+          _creditRequirementCacheKey(user, account, source)] = entry;
+      return entry;
+    } catch (error) {
+      // 本地快照异常不阻断后续网络刷新，也不输出个人教务内容。
+      debugPrint("恢复教务概览缓存失败: ${error.runtimeType}");
+      return null;
+    }
+  }
+
+  Future<OperationResult<EduAcademicSituation>> fetchAcademicSituation(
+      {bool forceRefresh = false}) async {
     final requestUserId = _userId;
     final sourceAccountId = _studentId.trim();
     final sourceKind = _activeAcademicSourceKind;
@@ -1248,11 +1320,13 @@ class EduProvider extends ChangeNotifier {
       sourceKind,
     );
     final cached = _academicSituationCache[key];
-    if (cached != null) return OperationResult.ok(cached.data);
-    final cachedRaw = await _academicCacheStoreFor(
-      appUserId: requestUserId,
-      sourceAccountId: sourceAccountId,
-    )?.readAcademicSituation();
+    if (!forceRefresh && cached != null) return OperationResult.ok(cached.data);
+    final cachedRaw = forceRefresh
+        ? null
+        : await _academicCacheStoreFor(
+            appUserId: requestUserId,
+            sourceAccountId: sourceAccountId,
+          )?.readAcademicSituation();
     if (cachedRaw != null &&
         _isSameAcademicContext(requestUserId, sourceAccountId, sourceKind)) {
       final value = EduAcademicSituation.fromJson(cachedRaw);
@@ -1328,8 +1402,8 @@ class EduProvider extends ChangeNotifier {
     );
   }
 
-  Future<OperationResult<EduCreditRequirementOverview>>
-      fetchCreditRequirements() async {
+  Future<OperationResult<EduCreditRequirementOverview>> fetchCreditRequirements(
+      {bool forceRefresh = false}) async {
     final requestUserId = _userId;
     final sourceAccountId = _studentId.trim();
     final sourceKind = _activeAcademicSourceKind;
@@ -1344,11 +1418,13 @@ class EduProvider extends ChangeNotifier {
       sourceKind,
     );
     final cached = _creditRequirementCache[key];
-    if (cached != null) return OperationResult.ok(cached.data);
-    final cachedRaw = await _academicCacheStoreFor(
-      appUserId: requestUserId,
-      sourceAccountId: sourceAccountId,
-    )?.readCreditRequirements();
+    if (!forceRefresh && cached != null) return OperationResult.ok(cached.data);
+    final cachedRaw = forceRefresh
+        ? null
+        : await _academicCacheStoreFor(
+            appUserId: requestUserId,
+            sourceAccountId: sourceAccountId,
+          )?.readCreditRequirements();
     if (cachedRaw != null &&
         _isSameAcademicContext(requestUserId, sourceAccountId, sourceKind)) {
       final value = EduCreditRequirementOverview.fromJson(cachedRaw);

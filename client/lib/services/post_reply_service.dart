@@ -9,6 +9,7 @@ import '../controllers/post_reply_composer_controller.dart';
 import '../models/reply.dart';
 import 'async_action_guard.dart';
 import 'idempotency_key.dart';
+import 'post_reply_cache.dart';
 import '../utils/public_image_compressor.dart';
 
 class PostReplyService {
@@ -80,6 +81,7 @@ class PostReplyService {
       }),
       options: _writeOptions(idempotencyKey),
     );
+    PostReplyCache.forClient(_dio).invalidate();
     return Reply.fromJson(Map<String, dynamic>.from(response.data as Map));
   }
 

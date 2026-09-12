@@ -78,6 +78,7 @@ class SettingsAccountHeader extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
+                    settings: const RouteSettings(name: '/login'),
                     builder: (_) => const LoginScreen(),
                   ),
                 );

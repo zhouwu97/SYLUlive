@@ -409,6 +409,7 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
+                          settings: const RouteSettings(name: '/login'),
                           builder: (_) => const LoginScreen(),
                         ),
                       ).then((_) => _loadDiagnostics());

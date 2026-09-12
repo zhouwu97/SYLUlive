@@ -216,7 +216,10 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
 
   Future<void> _openLogin() async {
     await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      MaterialPageRoute(
+        settings: const RouteSettings(name: '/login'),
+        builder: (_) => const LoginScreen(),
+      ),
     );
     if (!mounted) return;
     final auth = context.read<AuthProvider>();

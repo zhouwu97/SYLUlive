@@ -688,6 +688,11 @@ bool _isDuplicateNotificationOpen(
 }
 
 void _navigateToNotificationTarget(NotificationOpenTarget target) {
+  // 通知回调可能在登录页已经打开后才到达，不能用根路由清理当前登录流程。
+  if (_isLoginRouteVisible()) {
+    _pendingNotificationOpen.store(target);
+    return;
+  }
   final accountDecision = _notificationAccountDecision(target.recipientUserId);
   if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
     _pendingNotificationOpen.store(target);
@@ -1117,6 +1122,11 @@ bool _isDuplicatePrivateMessageOpen(
 }
 
 void _navigateToPrivateMessage(PrivateMessageTarget target) {
+  // 原生通知点击是直接回调路径，不能只依赖延迟队列处理处的门禁。
+  if (_isLoginRouteVisible()) {
+    _pendingPrivateMessageOpen.store(target);
+    return;
+  }
   final accountDecision = _notificationAccountDecision(target.recipientUserId);
   if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
     _pendingPrivateMessageOpen.store(target);
@@ -1724,11 +1734,13 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     if (uri == 'widget_timetable' ||
         uri == 'campus://timetable' ||
         uri.startsWith('sylulive://schedule')) {
+      if (_isLoginRouteVisible()) return _DeepLinkHandlingResult.deferred;
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       widgetTabSwitch.value++;
       return _DeepLinkHandlingResult.handled;
     }
     if (uri.startsWith('widget_exam') || uri.startsWith('sylulive://exam')) {
+      if (_isLoginRouteVisible()) return _DeepLinkHandlingResult.deferred;
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       appNavigatorKey.currentState?.push(
         MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),

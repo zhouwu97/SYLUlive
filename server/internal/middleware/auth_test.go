@@ -4,16 +4,38 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
 )
+
+func TestGenerateTokenUsesConfiguredAccessTTL(t *testing.T) {
+	original := os.Getenv("ACCESS_TOKEN_TTL")
+	t.Cleanup(func() { _ = os.Setenv("ACCESS_TOKEN_TTL", original) })
+	if err := os.Setenv("ACCESS_TOKEN_TTL", "2h"); err != nil {
+		t.Fatal(err)
+	}
+	token, err := GenerateToken(1, string(models.RoleUser), 0, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := &Claims{}
+	parsed, err := jwt.ParseWithClaims(token, claims, func(*jwt.Token) (interface{}, error) { return []byte("secret"), nil })
+	if err != nil || !parsed.Valid {
+		t.Fatalf("parse token: %v", err)
+	}
+	if d := time.Until(claims.ExpiresAt.Time); d < 119*time.Minute || d > 121*time.Minute {
+		t.Fatalf("expiry=%v", d)
+	}
+}
 
 func TestTokenFromRequestPrefersAuthorizationHeader(t *testing.T) {
 	gin.SetMode(gin.TestMode)

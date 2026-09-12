@@ -200,6 +200,7 @@ func main() {
 		&models.IdempotencyRecord{},
 		&models.FeedbackSubmission{},
 		&models.LoginThrottleRecord{},
+		&models.RefreshToken{},
 
 		&models.UserLegalConsent{},
 
@@ -383,6 +384,19 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 
 	}
+	// 定期启动清理已过期且已失效一段时间的刷新凭据，避免长期累积。
+	if err := db.Where("expires_at < ?", time.Now().Add(-7*24*time.Hour)).Delete(&models.RefreshToken{}).Error; err != nil {
+		log.Printf("清理过期刷新凭据失败: %v", err)
+	}
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := db.Where("expires_at < ?", time.Now().Add(-7*24*time.Hour)).Delete(&models.RefreshToken{}).Error; err != nil {
+				log.Printf("定期清理过期刷新凭据失败: %v", err)
+			}
+		}
+	}()
 	if err := services.MigrateAcademicIdentities(db); err != nil {
 		log.Fatal("学生身份回填失败:", err)
 	}
@@ -1336,6 +1350,8 @@ func main() {
 		auth.POST("/register/email", authHandler.RegisterWithEmail)
 
 		auth.POST("/login", authHandler.Login)
+		auth.POST("/refresh", authHandler.Refresh)
+		auth.POST("/auth/refresh", authHandler.Refresh)
 
 		auth.POST("/login_edu", withSchoolRetirement(authHandler.LoginEdu)...)
 

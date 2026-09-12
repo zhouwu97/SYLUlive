@@ -60,6 +60,9 @@ enum AppFontSizePreset {
 /// 否则 Android 的非线性无障碍字体缩放会失真。
 @immutable
 final class AppTextScaler implements TextScaler {
+  /// 组合系统字号和应用字号后的最大倍率，避免极端设置撑破固定高度控件。
+  static const double maxScaleFactor = 1.5;
+
   const AppTextScaler(this.systemScaler, this.appScaleFactor)
       : assert(appScaleFactor > 0),
         assert(appScaleFactor < double.infinity);

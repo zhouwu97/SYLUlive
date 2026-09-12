@@ -251,6 +251,7 @@ func (h *AuthHandler) UpdateUserEmail(c *gin.Context) {
 		return
 	}
 	middleware.InvalidateTokenVersionCache(user.ID)
+	revokeRefreshTokensForUser(h.db, user.ID)
 	clearLoginFailures("user:" + strconvUserID(user.ID))
 	if err := h.db.First(&user, user.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "刷新账号信息失败"})
@@ -329,6 +330,7 @@ func (h *AuthHandler) DeleteUserEmail(c *gin.Context) {
 		return
 	}
 	middleware.InvalidateTokenVersionCache(user.ID)
+	revokeRefreshTokensForUser(h.db, user.ID)
 	if err := h.db.First(&user, user.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "刷新账号信息失败"})
 		return
@@ -424,6 +426,7 @@ func (h *AuthHandler) ResetPasswordByEmail(c *gin.Context) {
 		return
 	}
 	middleware.InvalidateTokenVersionCache(user.ID)
+	revokeRefreshTokensForUser(h.db, user.ID)
 	clearLoginFailures("user:" + strconvUserID(user.ID))
 	h.writeSecurityAudit(user.ID, "password_reset_email", "")
 	c.JSON(http.StatusOK, gin.H{"message": "密码已重置，请使用新密码登录"})
@@ -484,13 +487,25 @@ func (h *AuthHandler) issueAuthSession(c *gin.Context, user models.User, status 
 	}
 	secure := middleware.SecureCookieEnabled()
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
+	c.SetCookie("jwt", token, int(accessTTL().Seconds()), "/api", "", secure, true)
 	response, err := selfUserResponseForDB(h.db, user)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号状态失败"})
 		return
 	}
-	c.JSON(status, authSessionPayload(c, token, response))
+	refreshToken, err := h.issueRefreshToken(user.ID, "", c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建刷新会话"})
+		return
+	}
+	payload := authSessionPayload(c, token, response)
+	payload["expires_at"] = time.Now().Add(accessTTL())
+	if !isCookieAuthTransport(c) {
+		payload["refresh_token"] = refreshToken
+		payload["refresh_expires_at"] = time.Now().Add(refreshTTL())
+	}
+	c.SetCookie("refresh_token", refreshToken, int(refreshTTL().Seconds()), "/api", "", secure, true)
+	c.JSON(status, payload)
 }
 
 func (h *AuthHandler) writeSecurityAudit(userID uint, action string, metadata string) {

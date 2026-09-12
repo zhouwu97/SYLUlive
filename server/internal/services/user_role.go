@@ -1,6 +1,8 @@
 package services
 
 import (
+	"time"
+
 	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 
@@ -19,5 +21,10 @@ func UpdateUserRoleAndInvalidateToken(db *gorm.DB, userID uint, role models.Role
 	}
 
 	middleware.InvalidateTokenVersionCache(userID)
+	if db.Migrator().HasTable(&models.RefreshToken{}) {
+		_ = db.Model(&models.RefreshToken{}).
+			Where("user_id = ? AND revoked_at IS NULL", userID).
+			Update("revoked_at", time.Now()).Error
+	}
 	return nil
 }

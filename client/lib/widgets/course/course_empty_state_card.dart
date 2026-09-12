@@ -172,16 +172,36 @@ class CourseEmptyStateCard extends StatelessWidget {
           const SizedBox(height: 24),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Row(
-              children: [
-                Expanded(child: _buildFeatureItem(Icons.sync_rounded, '教务导入')),
-                Expanded(child: _buildFeatureItem(Icons.edit_rounded, '自定义课程')),
-                Expanded(
-                    child: _buildFeatureItem(Icons.widgets_rounded, '桌面小组件')),
-                Expanded(
-                    child: _buildFeatureItem(
-                        Icons.notifications_active_rounded, '上课提醒')),
-              ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // 大字号时四列会把五字标签压成不均匀的多行，改成两列保留完整阅读宽度。
+                final largeText =
+                    MediaQuery.textScalerOf(context).scale(1.0) > 1.2;
+                final items = [
+                  _buildFeatureItem(Icons.sync_rounded, '教务导入'),
+                  _buildFeatureItem(Icons.edit_rounded, '自定义课程'),
+                  _buildFeatureItem(Icons.widgets_rounded, '桌面小组件'),
+                  _buildFeatureItem(Icons.notifications_active_rounded, '上课提醒'),
+                ];
+
+                if (!largeText) {
+                  return Row(
+                    children: items
+                        .map((item) => Expanded(child: item))
+                        .toList(growable: false),
+                  );
+                }
+
+                final itemWidth = (constraints.maxWidth - 12) / 2;
+                return Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: items
+                      .map((item) => SizedBox(width: itemWidth, child: item))
+                      .toList(growable: false),
+                );
+              },
             ),
           ),
           const SizedBox(height: 20),

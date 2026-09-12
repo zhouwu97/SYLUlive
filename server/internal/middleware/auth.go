@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -340,12 +341,19 @@ func writeAPIError(c *gin.Context, status int, code, message string) {
 
 // GenerateToken 生成JWT令牌
 func GenerateToken(userID uint, role string, tokenVersion int, jwtSecret string) (string, error) {
+	// 访问令牌短期有效，长期会话由 Refresh Token 续期。
+	ttl := 30 * time.Minute
+	if raw := strings.TrimSpace(os.Getenv("ACCESS_TOKEN_TTL")); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err == nil && parsed > 0 {
+			ttl = parsed
+		}
+	}
 	claims := &Claims{
 		UserID:       userID,
 		Role:         role,
 		TokenVersion: tokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}

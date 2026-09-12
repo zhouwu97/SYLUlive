@@ -487,5 +487,6 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 		return
 	}
 	middleware.InvalidateTokenVersionCache(userID)
+	revokeRefreshTokensForUser(h.db, userID)
 	c.JSON(http.StatusOK, gin.H{"message": "账号已注销并完成本地身份信息匿名化，相关远端清理任务已排队", "cleanup_pending": needsEduCredentialCleanup})
 }

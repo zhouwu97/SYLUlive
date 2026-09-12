@@ -7,6 +7,7 @@ import '../../config/api_constants.dart';
 import '../../screens/image_viewer_screen.dart';
 import '../../theme/app_motion.dart';
 import '../../utils/app_feedback.dart';
+import '../../utils/canteen_review_date.dart';
 import 'canteen_empty_state.dart';
 import 'canteen_status_image.dart';
 import 'canteen_theme.dart';
@@ -442,13 +443,14 @@ class _ReviewItemContent extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              Text(
-                _formatShortDate(review['created_at']?.toString() ?? ''),
+              Flexible(child: Text(
+                _reviewDate(review),
+                textAlign: TextAlign.end,
                 style: TextStyle(
                   fontSize: 12,
                   color: CanteenTheme.textTertiaryColor(isDark),
                 ),
-              ),
+              )),
             ],
           ),
           const SizedBox(height: 8),
@@ -550,9 +552,7 @@ class _ReviewItemContent extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  '${_reviewAuthorText(nickname, review['created_at'])}${review['credit_score'] is num && (review['credit_score'] as num).toInt() > 0 ? ' · 诚信 ${(review['credit_score'] as num).toInt()}' : ''}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  '${_reviewAuthorText(nickname, review)}${review['credit_score'] is num && (review['credit_score'] as num).toInt() > 0 ? ' · 诚信 ${(review['credit_score'] as num).toInt()}' : ''}',
                   style: TextStyle(
                     fontSize: 12,
                     color: CanteenTheme.textSecondaryColor(isDark),
@@ -1065,17 +1065,14 @@ class _ReviewItemContent extends StatelessWidget {
         .toList(growable: false);
   }
 
-  String _reviewAuthorText(String nickname, dynamic createdAt) {
-    final date = _formatShortDate(createdAt?.toString() ?? '');
+  String _reviewAuthorText(String nickname, Map<String, dynamic> review) {
+    final date = _reviewDate(review);
     if (date.isEmpty) return nickname;
     return '$nickname · $date';
   }
 
-  String _formatShortDate(String value) {
-    final parsed = DateTime.tryParse(value);
-    if (parsed == null) return '';
-    final month = parsed.month.toString().padLeft(2, '0');
-    final day = parsed.day.toString().padLeft(2, '0');
-    return '$month-$day';
-  }
+  String _reviewDate(Map<String, dynamic> review) => formatCanteenReviewDate(
+        DateTime.tryParse(review['created_at']?.toString() ?? ''),
+        DateTime.tryParse(review['updated_at']?.toString() ?? ''),
+      );
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/canteen_review_date.dart';
 import 'package:provider/provider.dart';
 
 import '../models/canteen_review.dart';
@@ -224,10 +225,6 @@ class _CanteenReviewHistoryScreenState
   Widget _buildCard(CanteenReviewEvent item, bool isDark) {
     final key = _keyFor(item);
     final deleting = _deleting.contains(key);
-    final edited = item.updatedAt != null &&
-        item.createdAt != null &&
-        item.updatedAt!.difference(item.createdAt!).abs() >
-            const Duration(seconds: 1);
     return AnimatedSize(
       duration: AppMotion.fast,
       curve: AppMotion.outgoing,
@@ -252,13 +249,14 @@ class _CanteenReviewHistoryScreenState
                       Text(item.overallScore.toStringAsFixed(1),
                           style: const TextStyle(fontWeight: FontWeight.w700)),
                       const Spacer(),
-                      Text(
-                        '${_date(item.createdAt)}${edited ? ' · 已编辑' : ''}',
+                      Flexible(child: Text(
+                        formatCanteenReviewDate(item.createdAt, item.updatedAt),
+                        textAlign: TextAlign.end,
                         style: TextStyle(
                           fontSize: 12,
                           color: CanteenTheme.textTertiaryColor(isDark),
                         ),
-                      ),
+                      )),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -348,8 +346,4 @@ class _CanteenReviewHistoryScreenState
     );
   }
 
-  String _date(DateTime? date) {
-    if (date == null) return '';
-    return '${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
 }

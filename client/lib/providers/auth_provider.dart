@@ -43,12 +43,21 @@ class AuthResult {
   final int? statusCode;
   final String? errorCode;
 
-  const AuthResult({required this.success, this.errorMessage, this.statusCode, this.errorCode});
+  const AuthResult(
+      {required this.success,
+      this.errorMessage,
+      this.statusCode,
+      this.errorCode});
 
   factory AuthResult.success() => const AuthResult(success: true);
 
-  factory AuthResult.failure(String message, {int? statusCode, String? errorCode}) =>
-      AuthResult(success: false, errorMessage: message, statusCode: statusCode, errorCode: errorCode);
+  factory AuthResult.failure(String message,
+          {int? statusCode, String? errorCode}) =>
+      AuthResult(
+          success: false,
+          errorMessage: message,
+          statusCode: statusCode,
+          errorCode: errorCode);
 }
 
 /// 注册时提交的法律文件确认。服务端会校验并持久化每份文件的同意记录。
@@ -84,9 +93,17 @@ class RegistrationConsents {
 
 class StoredAuthCredentials {
   final String? token;
+  final String? refreshToken;
+  final DateTime? accessTokenExpiresAt;
+  final DateTime? refreshTokenExpiresAt;
   final String? userJson;
 
-  const StoredAuthCredentials({this.token, this.userJson});
+  const StoredAuthCredentials(
+      {this.token,
+      this.refreshToken,
+      this.accessTokenExpiresAt,
+      this.refreshTokenExpiresAt,
+      this.userJson});
 }
 
 abstract interface class PreferenceStore {
@@ -120,9 +137,22 @@ abstract interface class AuthCredentialStore {
   Future<void> clear();
 }
 
-class PreferenceAuthCredentialStore implements AuthCredentialStore {
+abstract interface class SessionAuthCredentialStore
+    implements AuthCredentialStore {
+  Future<void> writeSession(
+      {required String token,
+      required String userJson,
+      String? refreshToken,
+      DateTime? accessTokenExpiresAt,
+      DateTime? refreshTokenExpiresAt});
+}
+
+class PreferenceAuthCredentialStore implements SessionAuthCredentialStore {
   static const _tokenKey = 'auth_token';
   static const _userKey = 'auth_user';
+  static const _refreshKey = 'auth_refresh_token';
+  static const _accessExpiryKey = 'auth_access_expires_at';
+  static const _refreshExpiryKey = 'auth_refresh_expires_at';
 
   final PreferenceStore _preferences;
 
@@ -132,21 +162,53 @@ class PreferenceAuthCredentialStore implements AuthCredentialStore {
   Future<StoredAuthCredentials> read() async {
     return StoredAuthCredentials(
       token: _preferences.getString(_tokenKey),
+      refreshToken: _preferences.getString(_refreshKey),
+      accessTokenExpiresAt:
+          DateTime.tryParse(_preferences.getString(_accessExpiryKey) ?? ''),
+      refreshTokenExpiresAt:
+          DateTime.tryParse(_preferences.getString(_refreshExpiryKey) ?? ''),
       userJson: _preferences.getString(_userKey),
     );
   }
 
   @override
   Future<void> write({required String token, required String userJson}) async {
+    await writeSession(token: token, userJson: userJson);
+  }
+
+  @override
+  Future<void> writeSession(
+      {required String token,
+      required String userJson,
+      String? refreshToken,
+      DateTime? accessTokenExpiresAt,
+      DateTime? refreshTokenExpiresAt}) async {
     final oldToken = _preferences.getString(_tokenKey);
     final oldUserJson = _preferences.getString(_userKey);
+    final oldRefresh = _preferences.getString(_refreshKey);
+    final oldAccessExpiry = _preferences.getString(_accessExpiryKey);
+    final oldRefreshExpiry = _preferences.getString(_refreshExpiryKey);
     try {
       await _setString(_tokenKey, token, '写入认证令牌失败');
       await _setString(_userKey, userJson, '写入认证用户失败');
+      if (refreshToken != null) {
+        await _setString(_refreshKey, refreshToken, '写入刷新令牌失败');
+      }
+      if (accessTokenExpiresAt != null) {
+        await _setString(_accessExpiryKey,
+            accessTokenExpiresAt.toIso8601String(), '写入令牌有效期失败');
+      }
+      if (refreshTokenExpiresAt != null) {
+        await _setString(_refreshExpiryKey,
+            refreshTokenExpiresAt.toIso8601String(), '写入刷新有效期失败');
+      }
     } catch (error, stackTrace) {
       try {
         await _restore(_tokenKey, oldToken);
         await _restore(_userKey, oldUserJson);
+        await _restore(_refreshKey, oldRefresh);
+        await _restore(_accessExpiryKey, oldAccessExpiry);
+        await _restore(_refreshExpiryKey, oldRefreshExpiry);
       } catch (rollbackError) {
         throw AuthCredentialConsistencyException(
           message: '回滚认证信息失败，持久化凭据可能不一致',
@@ -165,6 +227,9 @@ class PreferenceAuthCredentialStore implements AuthCredentialStore {
     try {
       await _remove(_tokenKey, '删除认证令牌失败');
       await _remove(_userKey, '删除认证用户失败');
+      await _preferences.remove(_refreshKey);
+      await _preferences.remove(_accessExpiryKey);
+      await _preferences.remove(_refreshExpiryKey);
     } catch (error, stackTrace) {
       try {
         await _restore(_tokenKey, oldToken);
@@ -201,9 +266,12 @@ class PreferenceAuthCredentialStore implements AuthCredentialStore {
 /// 通过鸿蒙 Asset Store Kit 持久化登录令牌。
 ///
 /// 原生端不设置“卸载后保留”标记，删除应用会一并清除这些凭据。
-class _PlatformAuthCredentialStore implements AuthCredentialStore {
+class _PlatformAuthCredentialStore implements SessionAuthCredentialStore {
   static const _tokenKey = 'auth_token';
   static const _userKey = 'auth_user';
+  static const _refreshKey = 'auth_refresh_token';
+  static const _accessExpiryKey = 'auth_access_expires_at';
+  static const _refreshExpiryKey = 'auth_refresh_expires_at';
 
   final AppSecretStore _store = AppSecretStore.current();
   Future<AppPreferencesStore> get _prefs => AppPreferencesStore.getInstance();
@@ -213,31 +281,74 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
     final prefs = await _prefs;
     return StoredAuthCredentials(
       token: await _store.read(_tokenKey),
+      refreshToken: await _store.read(_refreshKey),
+      accessTokenExpiresAt:
+          DateTime.tryParse(prefs.getString(_accessExpiryKey) ?? ''),
+      refreshTokenExpiresAt:
+          DateTime.tryParse(prefs.getString(_refreshExpiryKey) ?? ''),
       userJson: prefs.getString(_userKey),
     );
   }
 
   @override
   Future<void> write({required String token, required String userJson}) async {
+    await writeSession(token: token, userJson: userJson);
+  }
+
+  @override
+  Future<void> writeSession(
+      {required String token,
+      required String userJson,
+      String? refreshToken,
+      DateTime? accessTokenExpiresAt,
+      DateTime? refreshTokenExpiresAt}) async {
     final prefs = await _prefs;
     final oldToken = await _store.read(_tokenKey);
     final oldUserJson = prefs.getString(_userKey);
+    final oldRefresh = await _store.read(_refreshKey);
+    final oldAccessExpiry = prefs.getString(_accessExpiryKey);
+    final oldRefreshExpiry = prefs.getString(_refreshExpiryKey);
     try {
       await _store.write(_tokenKey, token);
       if (!await prefs.setString(_userKey, userJson)) {
         throw StateError('用户信息持久化失败');
       }
+      if (refreshToken != null) await _store.write(_refreshKey, refreshToken);
+      if (accessTokenExpiresAt != null &&
+          !await prefs.setString(
+              _accessExpiryKey, accessTokenExpiresAt.toIso8601String())) {
+        throw StateError('令牌有效期持久化失败');
+      }
+      if (refreshTokenExpiresAt != null &&
+          !await prefs.setString(
+              _refreshExpiryKey, refreshTokenExpiresAt.toIso8601String())) {
+        throw StateError('刷新有效期持久化失败');
+      }
     } catch (error, stackTrace) {
       try {
         await _restore(_tokenKey, oldToken);
+        await _restore(_refreshKey, oldRefresh);
         if (oldUserJson == null) {
           if (!await prefs.remove(_userKey)) {
             throw StateError('回滚用户信息删除失败');
           }
-        } else {
-          if (!await prefs.setString(_userKey, oldUserJson)) {
-            throw StateError('回滚用户信息修改失败');
+        } else if (!await prefs.setString(_userKey, oldUserJson)) {
+          throw StateError('回滚用户信息修改失败');
+        }
+        if (oldAccessExpiry == null) {
+          if (!await prefs.remove(_accessExpiryKey)) {
+            throw StateError('回滚令牌有效期删除失败');
           }
+        } else if (!await prefs.setString(_accessExpiryKey, oldAccessExpiry)) {
+          throw StateError('回滚令牌有效期修改失败');
+        }
+        if (oldRefreshExpiry == null) {
+          if (!await prefs.remove(_refreshExpiryKey)) {
+            throw StateError('回滚刷新有效期删除失败');
+          }
+        } else if (!await prefs.setString(
+            _refreshExpiryKey, oldRefreshExpiry)) {
+          throw StateError('回滚刷新有效期修改失败');
         }
       } catch (rollbackError) {
         throw AuthCredentialConsistencyException(
@@ -256,7 +367,10 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
     try {
       await Future.wait([
         _store.delete(_tokenKey),
+        _store.delete(_refreshKey),
         prefs.remove(_userKey),
+        prefs.remove(_accessExpiryKey),
+        prefs.remove(_refreshExpiryKey),
       ]);
     } catch (e) {
       debugPrint('清除凭据遇到异常: $e');
@@ -275,8 +389,14 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
 class _AuthSessionCandidate {
   final String token;
   final User user;
+  final String? refreshToken;
+  final DateTime? accessTokenExpiresAt;
+  final DateTime? refreshTokenExpiresAt;
 
-  const _AuthSessionCandidate(this.token, this.user);
+  const _AuthSessionCandidate(this.token, this.user,
+      {this.refreshToken,
+      this.accessTokenExpiresAt,
+      this.refreshTokenExpiresAt});
 }
 
 class AuthProvider extends ChangeNotifier {
@@ -291,6 +411,10 @@ class AuthProvider extends ChangeNotifier {
   int? _communityRulesRecoveryEpoch;
   User? _user;
   String? _token;
+  String? _refreshToken;
+  DateTime? _accessTokenExpiresAt;
+  Future<bool>? _refreshFuture;
+  bool _refreshTerminalFailure = false;
   bool _isLoading = false;
   bool _initialized = false;
   Future<void>? _initializationFuture;
@@ -320,6 +444,56 @@ class AuthProvider extends ChangeNotifier {
   int get sessionGeneration => _sessionGeneration;
   int get accountSessionEpoch => _accountSessionEpoch;
   Dio get dio => _dio;
+
+  Future<bool> refreshSession() {
+    final pending = _refreshFuture;
+    if (pending != null) return pending;
+    final refresh = _refreshToken;
+    // Web 端首次登录只把刷新凭据放在 HttpOnly Cookie，中间层无法读取明文。
+    // 只要当前仍有用户会话，就允许服务端从 Cookie 取凭据完成刷新。
+    if ((refresh == null || refresh.isEmpty) && !(kIsWeb && _user != null)) {
+      return Future.value(false);
+    }
+    _refreshTerminalFailure = false;
+    final generation = _sessionGeneration;
+    final future = _dio
+        .post(
+      '/refresh',
+      data: refresh == null || refresh.isEmpty
+          ? null
+          : {'refresh_token': refresh},
+    )
+        .then((response) async {
+      if (generation != _sessionGeneration || response.data is! Map) {
+        return false;
+      }
+      final candidate = _authSessionCandidateFromResponse(response.data);
+      // 先完整落盘新会话，持久化失败时保留旧内存会话，避免下次启动拿旧刷新令牌重放。
+      await _writeSessionCredentials(candidate);
+      if (generation != _sessionGeneration) {
+        return false;
+      }
+      _refreshToken = candidate.refreshToken ?? _refreshToken;
+      _accessTokenExpiresAt =
+          candidate.accessTokenExpiresAt ?? _accessTokenExpiresAt;
+      _token = kIsWeb ? null : candidate.token;
+      _user = candidate.user;
+      _applyAuthHeader();
+      return true;
+    }).catchError((error) {
+      if (error is DioException &&
+          (error.response?.statusCode == 401 ||
+              error.response?.statusCode == 400)) {
+        _refreshTerminalFailure = true;
+      }
+      return false;
+    });
+    _refreshFuture = future;
+    return future.whenComplete(() {
+      if (identical(_refreshFuture, future)) _refreshFuture = null;
+    });
+  }
+
   PersistCookieJar? _cookieJar;
 
   AuthProvider(
@@ -340,7 +514,14 @@ class AuthProvider extends ChangeNotifier {
     // 添加 401 拦截器：自动登出并提示重新登录
     _dio.interceptors.add(
       InterceptorsWrapper(
-        onRequest: (options, handler) {
+        onRequest: (options, handler) async {
+          if (!options.path.endsWith('/refresh') &&
+              _accessTokenExpiresAt != null &&
+              _accessTokenExpiresAt!.difference(DateTime.now()) <
+                  const Duration(minutes: 5) &&
+              (_refreshToken != null || (kIsWeb && _user != null))) {
+            await refreshSession();
+          }
           final token = _token;
           options.extra['authSessionGeneration'] = _sessionGeneration;
           options.extra['authTokenFingerprint'] = _tokenFingerprint(token);
@@ -386,6 +567,7 @@ class AuthProvider extends ChangeNotifier {
 
             // 非教务接口，判定为 App 401
             final isTargetError = errorCode == 'invalid_token' ||
+                errorCode == 'token_expired' ||
                 errorCode == 'token_version_expired' ||
                 errorCode == 'authentication_required' ||
                 errorCode == 'role_changed';
@@ -398,6 +580,38 @@ class AuthProvider extends ChangeNotifier {
               }
               handler.next(error);
               return;
+            }
+
+            if (error.requestOptions.extra['authRefreshRetried'] != true &&
+                !error.requestOptions.path.endsWith('/refresh') &&
+                (_refreshToken != null || (kIsWeb && _user != null)) &&
+                (error.requestOptions.data is! Stream ||
+                    error.requestOptions.data is FormData)) {
+              final refreshed = await refreshSession();
+              if (refreshed && isLoggedIn) {
+                final options = error.requestOptions;
+                options.extra['authRefreshRetried'] = true;
+                if (_token != null && _token!.isNotEmpty) {
+                  options.headers['Authorization'] = 'Bearer $_token';
+                } else {
+                  // Web 端依赖刷新后的 HttpOnly Cookie，不能发送空 Bearer 头覆盖 Cookie。
+                  options.headers.remove('Authorization');
+                }
+                if (options.data is FormData) {
+                  options.data = (options.data as FormData).clone();
+                  options.headers.remove(Headers.contentLengthHeader);
+                }
+                try {
+                  handler.resolve(await _dio.fetch<dynamic>(options));
+                } on DioException catch (retryError) {
+                  handler.reject(retryError);
+                }
+                return;
+              }
+              if (!_refreshTerminalFailure) {
+                handler.next(error);
+                return;
+              }
             }
 
             debugPrint('检测到 App 401，自动登出');
@@ -440,17 +654,19 @@ class AuthProvider extends ChangeNotifier {
               final options = error.requestOptions;
               final isLikeRequest =
                   RegExp(r'^(?:/api)?/(posts|replies)/\d+/like$')
-                      .hasMatch(options.uri.path) &&
-                  (options.method == 'POST' || options.method == 'DELETE') &&
-                  options.data == null;
+                          .hasMatch(options.uri.path) &&
+                      (options.method == 'POST' ||
+                          options.method == 'DELETE') &&
+                      options.data == null;
               final hasIdempotencyKey = options.headers.entries.any((entry) =>
                   entry.key.toLowerCase() == 'idempotency-key' &&
                   (entry.value?.toString().trim().isNotEmpty ?? false));
               final canReplay = isLikeRequest ||
                   (ForbiddenRecoveryRouter.canReplay(
-                    method: options.method,
-                    hasIdempotencyKey: hasIdempotencyKey,
-                  ) && options.data is! Stream);
+                        method: options.method,
+                        hasIdempotencyKey: hasIdempotencyKey,
+                      ) &&
+                      options.data is! Stream);
               if (accepted &&
                   canReplay &&
                   isLoggedIn &&
@@ -557,13 +773,24 @@ class AuthProvider extends ChangeNotifier {
 
         if (kIsWeb && stored.userJson != null) {
           // Web 端不恢复 JWT 文本，只用浏览器自动管理的 HttpOnly Cookie 验证会话。
+          _refreshToken = stored.refreshToken;
+          _accessTokenExpiresAt = stored.accessTokenExpiresAt;
           final response = await _dio.get('/user/profile');
-          if (response.statusCode != 200 || response.data is! Map) {
+          var profileResponse = response;
+          if ((response.statusCode != 200 || response.data is! Map) &&
+              _refreshToken != null) {
+            // Cookie 会话过期时用安全存储中的刷新凭据恢复，再重新读取用户资料。
+            if (await refreshSession()) {
+              profileResponse = await _dio.get('/user/profile');
+            }
+          }
+          if (profileResponse.statusCode != 200 ||
+              profileResponse.data is! Map) {
             await _clearStoredAuth();
             _setAuthState(AuthState.guest);
           } else {
             final user =
-                User.fromJson(Map<String, dynamic>.from(response.data));
+                User.fromJson(Map<String, dynamic>.from(profileResponse.data));
             _user = user;
             _token = null;
             _sessionGeneration++;
@@ -590,13 +817,40 @@ class AuthProvider extends ChangeNotifier {
           if (prefs != null) {
             await _clearLegacyEduPasswords(prefs, candidate.user);
           }
-          _commitAuthSession(candidate);
-          _setAuthState(AuthState.authenticated);
+          final restored = _AuthSessionCandidate(
+              candidate.token, candidate.user,
+              refreshToken: stored.refreshToken,
+              accessTokenExpiresAt: stored.accessTokenExpiresAt,
+              refreshTokenExpiresAt: stored.refreshTokenExpiresAt);
+          _commitAuthSession(restored);
+          var restoredState = AuthState.authenticated;
+          if (stored.accessTokenExpiresAt != null &&
+              !stored.accessTokenExpiresAt!.isAfter(DateTime.now()) &&
+              stored.refreshToken != null &&
+              stored.refreshToken!.isNotEmpty) {
+            _setAuthState(AuthState.recovering);
+            final refreshed = await refreshSession();
+            if (refreshed) {
+              restoredState = AuthState.authenticated;
+            } else if (_refreshTerminalFailure) {
+              await _clearStoredAuth();
+              _token = null;
+              _refreshToken = null;
+              _user = null;
+              restoredState = AuthState.expired;
+            } else {
+              // 网络错误时保留凭据，等待下一次请求或下次启动继续恢复。
+              restoredState = AuthState.recoveryFailed;
+            }
+          }
+          _setAuthState(restoredState);
           DiagnosticLogService.instance.record(
             level: 'info',
             source: '账号',
             type: '登录恢复成功',
-            summary: '已从本地安全存储恢复登录状态',
+            summary: restoredState == AuthState.authenticated
+                ? '已从本地安全存储恢复登录状态'
+                : '本地登录凭据待网络恢复',
             detail: '',
             eventCode: 'auth_session_restored',
             category: 'auth',
@@ -604,9 +858,10 @@ class AuthProvider extends ChangeNotifier {
             result: 'success',
             durationMs: stopwatch.elapsedMilliseconds,
           );
-          if (candidate.user.legalConsentsActive) {
+          if (restoredState == AuthState.authenticated &&
+              candidate.user.legalConsentsActive) {
             _onAuthenticated();
-          } else {
+          } else if (restoredState == AuthState.authenticated) {
             await _clearConsentDependentLocalData(candidate.user);
           }
         } else if (stored.token != null && stored.userJson == null) {
@@ -704,10 +959,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _saveAuthCandidate(_AuthSessionCandidate candidate) async {
     await _enqueueAuthMutation(() async {
-      await _credentialStore.write(
-        token: candidate.token,
-        userJson: jsonEncode(candidate.user.toJson()),
-      );
+      await _writeSessionCredentials(candidate);
       // 新会话完整落盘后清除旧的退出墓碑，防止下次冷启动被墓碑再次清掉。
       // 墓碑只在平台凭据存储路径下被启动逻辑读取，注入凭据存储（Web/测试）不涉及。
       if (_usesPlatformCredentialStore) {
@@ -855,16 +1107,42 @@ class AuthProvider extends ChangeNotifier {
     if (data is! Map) throw const FormatException('认证响应不是对象');
     final rawUser = data['user'];
     if (rawUser is! Map) throw const FormatException('认证用户不是对象');
-    return _authSessionCandidate(
+    final candidate = _authSessionCandidate(
       data['token'],
       Map<String, dynamic>.from(rawUser),
     );
+    return _AuthSessionCandidate(candidate.token, candidate.user,
+        refreshToken: data['refresh_token']?.toString(),
+        accessTokenExpiresAt:
+            DateTime.tryParse(data['expires_at']?.toString() ?? ''),
+        refreshTokenExpiresAt:
+            DateTime.tryParse(data['refresh_expires_at']?.toString() ?? ''));
+  }
+
+  Future<void> _writeSessionCredentials(_AuthSessionCandidate candidate) {
+    final store = _credentialStore;
+    // Web 端刷新接口会同时返回 JWT 以兼容原生客户端，但浏览器仍只保留 Cookie。
+    final persistedToken = kIsWeb ? '' : candidate.token;
+    if (store is SessionAuthCredentialStore) {
+      return store.writeSession(
+        token: persistedToken,
+        userJson: jsonEncode(candidate.user.toJson()),
+        refreshToken: candidate.refreshToken ?? _refreshToken,
+        accessTokenExpiresAt: candidate.accessTokenExpiresAt,
+        refreshTokenExpiresAt: candidate.refreshTokenExpiresAt,
+      );
+    }
+    return store.write(
+        token: persistedToken, userJson: jsonEncode(candidate.user.toJson()));
   }
 
   void _commitAuthSession(_AuthSessionCandidate candidate) {
     // 浏览器不把 JWT 留在持久化层，也不把它重新放进 Authorization 头；
     // 服务端 Set-Cookie 的 HttpOnly 会话负责后续请求认证。
     _token = kIsWeb ? null : candidate.token;
+    _refreshToken = candidate.refreshToken ?? _refreshToken;
+    _accessTokenExpiresAt =
+        candidate.accessTokenExpiresAt ?? _accessTokenExpiresAt;
     _user = candidate.user;
     _lastForbiddenRecovery = null;
     _sessionGeneration++;
@@ -1226,6 +1504,8 @@ class AuthProvider extends ChangeNotifier {
     // 认证凭据清除成功后再提交内存状态。
     await _clearAccountNotificationState();
     _token = null;
+    _refreshToken = null;
+    _accessTokenExpiresAt = null;
     _user = null;
     _lastForbiddenRecovery = null;
     if (_authState != AuthState.expired) {

@@ -445,6 +445,19 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 			return
 		}
 		payload := authSessionPayload(c, token, response)
+		refreshToken, refreshErr := issueRefreshTokenForDB(h.db, updatedUser.ID, "", c)
+		if refreshErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建刷新会话"})
+			return
+		}
+		payload["expires_at"] = time.Now().Add(accessTTL())
+		if !isCookieAuthTransport(c) {
+			payload["refresh_token"] = refreshToken
+			payload["refresh_expires_at"] = time.Now().Add(refreshTTL())
+		}
+		secure := middleware.SecureCookieEnabled()
+		c.SetSameSite(http.SameSiteLaxMode)
+		c.SetCookie("refresh_token", refreshToken, int(refreshTTL().Seconds()), "/api", "", secure, true)
 		payload["message"] = "已同意邀请，你已成为管理员"
 		c.JSON(http.StatusOK, payload)
 

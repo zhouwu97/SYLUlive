@@ -83,6 +83,15 @@ void main() {
     expect(scaler.scale(30), closeTo(51.75, 0.0001));
   });
 
+  test('组合缩放器可以限制最终最大倍率', () {
+    final scaler = AppTextScaler(
+      TextScaler.linear(1.3),
+      AppFontSizePreset.extraLarge.scaleFactor,
+    ).clamp(maxScaleFactor: AppTextScaler.maxScaleFactor);
+
+    expect(scaler.scale(20), closeTo(30, 0.0001));
+  });
+
   test('组合缩放器 clamp 限制最终倍率而不是系统倍率', () {
     const scaler = AppTextScaler(TextScaler.linear(1.5), 1.3);
     final clamped = scaler.clamp(

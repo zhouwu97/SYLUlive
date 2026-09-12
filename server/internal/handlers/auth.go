@@ -1393,6 +1393,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 	}
 	middleware.InvalidateTokenVersionCache(user.ID)
+	revokeRefreshTokensForUser(h.db, user.ID)
 
 	clearLoginFailures("user:" + strconvUserID(user.ID))
 	h.writeSecurityAudit(user.ID, "password_reset_edu", "")
@@ -1567,14 +1568,28 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	secure := middleware.SecureCookieEnabled()
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
+	c.SetCookie("jwt", token, int(accessTTL().Seconds()), "/api", "", secure, true)
 
 	response, responseErr := selfUserResponseForDB(h.db, user)
 	if responseErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
 		return
 	}
-	c.JSON(http.StatusOK, authSessionPayload(c, token, response))
+	refreshToken, refreshErr := h.issueRefreshToken(user.ID, "", c)
+	if refreshErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建刷新会话"})
+		return
+	}
+	payload := authSessionPayload(c, token, response)
+	payload["expires_at"] = time.Now().Add(accessTTL())
+	if !isCookieAuthTransport(c) {
+		payload["refresh_token"] = refreshToken
+		payload["refresh_expires_at"] = time.Now().Add(refreshTTL())
+	}
+	secureRefresh := middleware.SecureCookieEnabled()
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("refresh_token", refreshToken, int(refreshTTL().Seconds()), "/api", "", secureRefresh, true)
+	c.JSON(http.StatusOK, payload)
 
 }
 
@@ -1707,6 +1722,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 	middleware.InvalidateTokenVersionCache(user.ID)
+	revokeRefreshTokensForUser(h.db, user.ID)
 	h.issueAuthSession(c, user, http.StatusOK)
 
 }
@@ -1717,16 +1733,18 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"device_token": "", "push_data_processing_enabled": false,
 		"push_installation_id": "", "push_notice_version": "", "push_enabled_at": nil,
-		"token_version": gorm.Expr("token_version + 1"),
 	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "退出登录失败"})
 		return
 	}
-	if id, ok := userID.(uint); ok {
-		middleware.InvalidateTokenVersionCache(id)
+	if _, ok := userID.(uint); ok {
+		if raw, err := c.Cookie("refresh_token"); err == nil {
+			revokeRefreshToken(h.db, raw)
+		}
 	}
 	secure := middleware.SecureCookieEnabled()
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", "", -1, "/api", "", secure, true)
+	c.SetCookie("refresh_token", "", -1, "/api", "", secure, true)
 	c.JSON(http.StatusOK, gin.H{"message": "已退出登录"})
 }

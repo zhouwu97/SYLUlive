@@ -344,7 +344,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
             SettingsSliderTile(
               icon: Icons.format_size_rounded,
               title: '字体大小',
-              subtitle: '调整应用内文字大小，手机系统字体设置仍会继续叠加',
+              subtitle: '调整应用内文字大小，系统字体设置继续叠加，最大显示为 150%',
               value: AppFontSizePreset.values
                   .indexOf(themeProvider.fontSizePreset)
                   .toDouble(),

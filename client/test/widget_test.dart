@@ -23,7 +23,7 @@ void main() {
     expect(repository.sourceKind, AcademicSourceKind.legacy);
   });
 
-  testWidgets('应用字体档位叠加系统字体缩放并保留更新门禁', (tester) async {
+  testWidgets('应用字体档位叠加系统字体缩放并限制组合倍率', (tester) async {
     AppPreferencesStore.setMockInitialValues({
       'font_size_preset': 'extra_large',
     });
@@ -36,7 +36,7 @@ void main() {
     final gateFinder = find.byType(AppUpdateGate);
     expect(gateFinder, findsOneWidget);
     final scaler = MediaQuery.textScalerOf(tester.element(gateFinder));
-    expect(scaler.scale(20), closeTo(33.8, 0.001));
+    expect(scaler.scale(20), closeTo(30, 0.001));
   });
 
   testWidgets('冷启动检查更新时不覆盖原有开屏内容', (tester) async {

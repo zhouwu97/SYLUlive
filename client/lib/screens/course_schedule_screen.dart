@@ -298,7 +298,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           const Duration(seconds: 2),
           onTimeout: () => false,
         );
-
     // 提醒同步失败或平台通道缓慢不能阻塞已恢复的课表。
     unawaited(_syncCourseReminders(sc).catchError((Object _) {}));
     if (sessionKey != sc.sessionKey || generation != sc.contextGeneration) {

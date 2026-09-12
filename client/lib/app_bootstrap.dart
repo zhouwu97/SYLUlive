@@ -1838,13 +1838,12 @@ class _AppContent extends StatelessWidget {
       scaffoldMessengerKey: scaffoldMessengerKey,
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(context);
+        final appTextScaler = AppTextScaler(
+          mediaQuery.textScaler,
+          themeProvider.fontSizePreset.scaleFactor,
+        ).clamp(maxScaleFactor: AppTextScaler.maxScaleFactor);
         return MediaQuery(
-          data: mediaQuery.copyWith(
-            textScaler: AppTextScaler(
-              mediaQuery.textScaler,
-              themeProvider.fontSizePreset.scaleFactor,
-            ),
-          ),
+          data: mediaQuery.copyWith(textScaler: appTextScaler),
           child: AppUpdateGate(
             navigatorKey: appNavigatorKey,
             child: child ?? const SizedBox.shrink(),

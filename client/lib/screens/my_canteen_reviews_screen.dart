@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/canteen_review_date.dart';
 import 'package:provider/provider.dart';
 
 import '../config/api_constants.dart';
@@ -367,11 +368,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
 
   Widget _buildReviewCard(CanteenReviewEvent item, bool isDark) {
     final canteen = item.canteen;
-    final edited = item.updatedAt != null &&
-        item.createdAt != null &&
-        item.updatedAt!.difference(item.createdAt!).abs() >
-            const Duration(seconds: 1);
-    final date = item.createdAt == null ? '' : _date(item.createdAt!);
+    final date = formatCanteenReviewDate(item.createdAt, item.updatedAt);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -446,11 +443,12 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
               Text(item.overallScore.toStringAsFixed(1),
                   style: const TextStyle(fontWeight: FontWeight.w700)),
               const Spacer(),
-              Text('$date${edited ? ' · 已编辑' : ''}',
+              Flexible(child: Text(date,
+                  textAlign: TextAlign.end,
                   style: TextStyle(
                     fontSize: 12,
                     color: CanteenTheme.textTertiaryColor(isDark),
-                  )),
+                  ))),
             ],
           ),
           const SizedBox(height: 10),
@@ -556,6 +554,4 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     );
   }
 
-  String _date(DateTime date) =>
-      '${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 }

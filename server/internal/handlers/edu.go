@@ -415,8 +415,19 @@ func (h *EduHandler) issueBoundEduSession(c *gin.Context, userID uint) {
 	}
 	secure := middleware.SecureCookieEnabled()
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
+	c.SetCookie("jwt", token, int(accessTTL().Seconds()), "/api", "", secure, true)
+	refreshToken, refreshErr := issueRefreshTokenForDB(h.db, user.ID, "", c)
+	if refreshErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建刷新会话"})
+		return
+	}
 	payload := authSessionPayload(c, token, response)
+	payload["expires_at"] = time.Now().Add(accessTTL())
+	if !isCookieAuthTransport(c) {
+		payload["refresh_token"] = refreshToken
+		payload["refresh_expires_at"] = time.Now().Add(refreshTTL())
+	}
+	c.SetCookie("refresh_token", refreshToken, int(refreshTTL().Seconds()), "/api", "", secure, true)
 	payload["message"] = "绑定成功，学号已成为主账号，APP 密码保持不变"
 	c.JSON(http.StatusOK, payload)
 }

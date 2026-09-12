@@ -802,8 +802,22 @@ void _schedulePendingNotificationProcessing() {
   });
 }
 
+/// 登录页是覆盖在根页面上的临时路由。登录期间不能执行通知跳转，
+/// 否则通知处理里的 popUntil(route.isFirst) 会把登录页一并弹出。
+bool _isLoginRouteVisible() {
+  final navigator = appNavigatorKey.currentState;
+  if (navigator == null) return false;
+  var loginVisible = false;
+  navigator.popUntil((route) {
+    loginVisible = route.settings.name == '/login';
+    return true;
+  });
+  return loginVisible;
+}
+
 void _processPendingNotificationOpen() {
   if (appNavigatorKey.currentState == null) return;
+  if (_isLoginRouteVisible()) return;
 
   final now = DateTime.now();
   final target = _pendingNotificationOpen.consume(now);
@@ -1201,6 +1215,7 @@ void _processPendingPrivateMessageOpen() {
     debugPrint('📌 等待 navigator 就绪后再处理私信通知');
     return;
   }
+  if (_isLoginRouteVisible()) return;
 
   final target = _pendingPrivateMessageOpen.consume(now);
   if (target != null) {

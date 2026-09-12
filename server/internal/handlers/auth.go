@@ -1733,11 +1733,14 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"device_token": "", "push_data_processing_enabled": false,
 		"push_installation_id": "", "push_notice_version": "", "push_enabled_at": nil,
+		// 退出时递增版本，立即使仍在有效期内的访问令牌失效。
+		"token_version": gorm.Expr("token_version + 1"),
 	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "退出登录失败"})
 		return
 	}
-	if _, ok := userID.(uint); ok {
+	if id, ok := userID.(uint); ok {
+		middleware.InvalidateTokenVersionCache(id)
 		if raw, err := c.Cookie("refresh_token"); err == nil {
 			revokeRefreshToken(h.db, raw)
 		}

@@ -336,7 +336,7 @@ func TestChangePasswordReturnsRefreshedAuthSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开数据库失败: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.RefreshToken{}); err != nil {
 		t.Fatalf("迁移测试表失败: %v", err)
 	}
 	oldPassword := "old-password"

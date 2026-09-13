@@ -32,6 +32,7 @@ import 'login_screen.dart';
 import 'my_content_screen.dart';
 import 'chat_list_screen.dart';
 import 'admin_panel_screen.dart';
+import 'court_screen.dart';
 import 'super_admin_screen.dart';
 import 'admin_members_screen.dart';
 
@@ -264,6 +265,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 if (user?.isAdmin == true)
                   SliverToBoxAdapter(
                     child: _buildAdminSection(context, user, isDark),
+                  ),
+
+                if (authProvider.isLoggedIn)
+                  SliverToBoxAdapter(
+                    child: _buildCourtEntry(context, isDark),
                   ),
 
                 // 收到邀请（所有用户）
@@ -653,6 +659,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCourtEntry(BuildContext context, bool isDark) {
+    final controller = TextEditingController();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: ListTile(
+        leading: const Icon(Icons.gavel_rounded),
+        title: const Text('公众法庭'),
+        subtitle: const Text('输入申诉编号参与陪审投票'),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: () async {
+          final id = await showDialog<int>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('打开申诉'),
+              content: TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: '申诉编号'),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('取消')),
+                FilledButton(onPressed: () => Navigator.pop(dialogContext, int.tryParse(controller.text.trim())), child: const Text('打开')),
+              ],
+            ),
+          );
+          controller.dispose();
+          if (id != null && id > 0 && context.mounted) {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => CourtScreen(appealId: id)));
+          }
+        },
       ),
     );
   }

@@ -55,6 +55,7 @@ import 'screens/chat_detail_screen.dart';
 import 'screens/post_detail_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/court_screen.dart';
 import 'screens/privacy_center_screen.dart';
 import 'screens/exam_schedule_screen.dart';
 import 'screens/edu_grade_screen.dart';
@@ -1752,6 +1753,18 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
           ? _DeepLinkHandlingResult.handled
           : _DeepLinkHandlingResult.unhandled;
     }
+    final postUri = Uri.tryParse(uri);
+    if (postUri?.scheme == 'sylulive' &&
+        postUri?.host == 'post' &&
+        postUri?.pathSegments.length == 1) {
+      final postId = int.tryParse(postUri!.pathSegments.single);
+      if (postId == null || postId <= 0) return _DeepLinkHandlingResult.unhandled;
+      if (_isLoginRouteVisible()) return _DeepLinkHandlingResult.deferred;
+      appNavigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => PostDetailScreen(postId: postId)),
+      );
+      return _DeepLinkHandlingResult.handled;
+    }
     final recruitmentId = TeamShareLink.parseRecruitmentId(uri);
     if (recruitmentId == null) return _DeepLinkHandlingResult.unhandled;
 
@@ -1880,6 +1893,13 @@ class _AppContent extends StatelessWidget {
       routes: {
         '/login': (context) => const LoginScreen(),
         '/timetable': (context) => AppNavigation.buildTimetablePage(),
+        '/court': (context) {
+          final id = ModalRoute.of(context)?.settings.arguments;
+          final appealId = id is int ? id : int.tryParse('$id');
+          return appealId == null
+              ? const Scaffold(body: Center(child: Text('申诉编号无效')))
+              : CourtScreen(appealId: appealId);
+        },
       },
       home: const PredictiveBackGate(
         child: GlobalBackgroundWrapper(child: AuthWrapper()),

@@ -119,11 +119,14 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
     final operation = previous.then((_) => action());
     final tail = operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
     _mutationTails[_storageHash] = tail;
-    return operation.whenComplete(() {
+    // 仅在尾部 Future 完成后清理队列；调用方收到 operation 完成时，尾部
+    // 回调可能尚未运行，过早清理会让相邻读改写操作并发覆盖快照。
+    tail.whenComplete(() {
       if (identical(_mutationTails[_storageHash], tail)) {
         _mutationTails.remove(_storageHash);
       }
     });
+    return operation;
   }
 
   @override
@@ -174,7 +177,10 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
       final identity = AcademicIdentityKey(appUserId: _appUserId,
           providerId: AcademicProviderId.syluUndergraduate, studentId: sourceAccountId);
       // 旧兼容写入也要遵守身份清理墓碑，不能在新身份启用缓存后复活旧快照。
-      if (!AcademicConnectionStore(identity, preferences).connected) return;
+      final connection = AcademicConnectionStore(identity, preferences);
+      // 未建立过教务生命周期记录时允许初始化快照；一旦记录存在且已断开，
+      // 才由墓碑阻止旧身份数据重新落盘。
+      if (connection.initialized && !connection.connected) return;
     }
     if (normalizedSystem.isEmpty || normalizedAccount.isEmpty) {
       throw const PersonalSnapshotStoreException('个人数据缺少可校验的来源账号');

@@ -643,11 +643,13 @@ class ScheduleCacheStore {
       onError: (Object _, StackTrace __) {},
     );
     _mutationTails[queueKey] = tail;
-    return guarded.whenComplete(() {
+    // 仅在尾部 Future 完成后清理队列，避免相邻学期读改写交错。
+    tail.whenComplete(() {
       if (identical(_mutationTails[queueKey], tail)) {
         _mutationTails.remove(queueKey);
       }
     });
+    return guarded;
   }
 
   String _termId(String year, int semester) {

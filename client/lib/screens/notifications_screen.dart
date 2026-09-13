@@ -476,6 +476,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       actionText = '公众法庭陪审邀请';
     } else if (type == 'appeal_deadline') {
       actionText = '公众法庭即将截止';
+    } else if (type == 'appeal_review_required') {
+      actionText = '公众法庭转人工复核';
     } else if (type == 'appeal_result') {
       actionText = '公众法庭结案结果';
     }
@@ -529,6 +531,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           } else if ((type == 'appeal_jury_assigned' ||
                   type == 'appeal_created' ||
                   type == 'appeal_deadline' ||
+                  type == 'appeal_review_required' ||
                   type == 'appeal_result') &&
               relatedId != null) {
             if (!mounted) return;

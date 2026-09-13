@@ -135,11 +135,15 @@ func createReport(db *gorm.DB, userID uint, input CreateReportInput) (models.Rep
 		snapshot = string(payload)
 	case "reply":
 		var reply models.Reply
-		if err := db.Select("author_id", "status", "content", "created_at").First(&reply, input.TargetID).Error; err != nil || reply.Status != models.ReplyStatusNormal {
+		if err := db.Preload("Images").Select("id", "author_id", "status", "content", "created_at").First(&reply, input.TargetID).Error; err != nil || reply.Status != models.ReplyStatusNormal {
 			return models.Report{}, &reportCreateError{status: http.StatusNotFound, code: "target_not_found", message: "回复不存在或已删除"}
 		}
 		targetOwner = reply.AuthorID
-		payload, err := json.Marshal(gin.H{"content": reply.Content, "original_status": reply.Status, "created_at": reply.CreatedAt})
+		imageFileIDs := make([]uint, 0, len(reply.Images))
+		for _, image := range reply.Images {
+			imageFileIDs = append(imageFileIDs, image.FileID)
+		}
+		payload, err := json.Marshal(gin.H{"content": reply.Content, "image_file_ids": imageFileIDs, "original_status": reply.Status, "created_at": reply.CreatedAt})
 		if err != nil {
 			return models.Report{}, err
 		}
@@ -312,6 +316,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 	}
 	var report models.Report
 	var governedUserID uint
+	var governedPostID uint
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&report, reportID).Error; err != nil {
 			return err
@@ -345,6 +350,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 					return err
 				}
 				targetUserID = post.AuthorID
+				governedPostID = post.ID
 			case "reply":
 				var reply models.Reply
 				if err := tx.First(&reply, report.TargetID).Error; err != nil {
@@ -357,6 +363,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 					return err
 				}
 				targetUserID = reply.AuthorID
+				governedPostID = reply.PostID
 			case "teacher_rating":
 				var tr models.TeacherRating
 				if err := tx.First(&tr, report.TargetID).Error; err != nil {
@@ -531,7 +538,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 		return
 	}
 	if input.Status == string(models.ReportStatusHandled) && governedUserID > 0 && (report.TargetType == "post" || report.TargetType == "reply") {
-		_ = CreateContentGovernedNotification(h.db, governedUserID, report.ID, report.TargetID, report.DeleteReason)
+		_ = CreateContentGovernedNotification(h.db, governedUserID, report.ID, governedPostID, report.DeleteReason)
 	}
 	c.JSON(http.StatusOK, report)
 }

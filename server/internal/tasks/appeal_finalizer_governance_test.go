@@ -40,6 +40,13 @@ func TestFinalizeExpiredAppealRequiresFiveVotes(t *testing.T) {
 	if appeal.Status != models.AppealStatusReview || appeal.ClosedAt != nil {
 		t.Fatalf("票数不足必须保持 review_required 且未结案: status=%s closed_at=%v", appeal.Status, appeal.ClosedAt)
 	}
+	var notification models.Notification
+	if err := db.Where("user_id = ?", 1).First(&notification).Error; err != nil {
+		t.Fatal(err)
+	}
+	if notification.Type != models.NotificationTypeAppealReviewRequired {
+		t.Fatalf("票数不足应发送转人工复核通知，得到 %s", notification.Type)
+	}
 }
 
 func TestFinalizeExpiredAppealTieNeedsManualReview(t *testing.T) {

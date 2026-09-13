@@ -142,15 +142,19 @@ func finalizeExpiredAppeal(db *gorm.DB, appealID uint, now time.Time) (bool, err
 		}
 		changed = true
 		resultMessage := "公众法庭案件已结案，请查看复核结果。"
+		notificationType := models.NotificationTypeAppealResult
+		notificationKey := "appeal-result"
 		if appeal.Status == models.AppealStatusReview {
 			resultMessage = "社区评议未形成有效裁决，案件已转人工复核，请等待管理员处理。"
+			notificationType = models.NotificationTypeAppealReviewRequired
+			notificationKey = "appeal-review-required"
 		}
-		if err := createAppealTaskNotification(tx, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealResult,
-			resultMessage, fmt.Sprintf("appeal-result:%d:appellant", appeal.ID)); err != nil {
+		if err := createAppealTaskNotification(tx, appeal.AppellantID, appeal.ID, notificationType,
+			resultMessage, fmt.Sprintf("%s:%d:appellant", notificationKey, appeal.ID)); err != nil {
 			return err
 		}
-		if err := createAppealTaskNotification(tx, appeal.AdminID, appeal.ID, models.NotificationTypeAppealResult,
-			resultMessage, fmt.Sprintf("appeal-result:%d:admin", appeal.ID)); err != nil {
+		if err := createAppealTaskNotification(tx, appeal.AdminID, appeal.ID, notificationType,
+			resultMessage, fmt.Sprintf("%s:%d:admin", notificationKey, appeal.ID)); err != nil {
 			return err
 		}
 		if appeal.Status == models.AppealStatusPass || appeal.Status == models.AppealStatusReject {

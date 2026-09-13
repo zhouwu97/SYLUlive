@@ -66,6 +66,9 @@ type Appeal struct {
 	ClosedReason         string       `gorm:"size:100" json:"closed_reason"`
 	CreatedAt            time.Time    `json:"created_at"`
 	ClosedAt             *time.Time   `json:"closed_at"`
+	ReviewedByID         *uint        `json:"reviewed_by_id"`
+	ReviewReason         string       `gorm:"size:500" json:"review_reason"`
+	ReviewedAt           *time.Time   `json:"reviewed_at"`
 	Appellant            User         `gorm:"foreignKey:AppellantID" json:"appellant"`
 	Admin                User         `gorm:"foreignKey:AdminID" json:"admin"`
 	Post                 Post         `gorm:"foreignKey:PostID" json:"post"`
@@ -116,6 +119,9 @@ type AppealResponse struct {
 	ClosedReason         string                   `json:"closed_reason"`
 	CreatedAt            time.Time                `json:"created_at"`
 	ClosedAt             *time.Time               `json:"closed_at"`
+	ReviewedByID         *uint                    `json:"reviewed_by_id,omitempty"`
+	ReviewReason         string                   `json:"review_reason,omitempty"`
+	ReviewedAt           *time.Time               `json:"reviewed_at,omitempty"`
 	Appellant            PublicAppealUserResponse `json:"appellant"`
 	Admin                PublicAppealUserResponse `json:"admin"`
 	Post                 AppealPostResponse       `json:"post"`
@@ -143,12 +149,14 @@ type AppealVoteResponse struct {
 
 // PublicAppealResponse 结案公示 DTO，不包含当事人、管理员或陪审员身份。
 type PublicAppealResponse struct {
-	ID           uint         `json:"id"`
-	PostTitle    string       `json:"post_title"`
-	Status       AppealStatus `json:"status"`
-	Result       string       `json:"result"`
-	ClosedAt     *time.Time   `json:"closed_at"`
-	CreatedAt    time.Time    `json:"created_at"`
-	SupportCount int          `json:"support_count"`
-	OpposeCount  int          `json:"oppose_count"`
+	ID               uint         `json:"id"`
+	PostTitle        string       `json:"post_title"`
+	Status           AppealStatus `json:"status"`
+	Result           string       `json:"result"`
+	ResolutionSource string       `json:"resolution_source"`
+	ClosedReason     string       `json:"closed_reason"`
+	ClosedAt         *time.Time   `json:"closed_at"`
+	CreatedAt        time.Time    `json:"created_at"`
+	SupportCount     int          `json:"support_count"`
+	OpposeCount      int          `json:"oppose_count"`
 }

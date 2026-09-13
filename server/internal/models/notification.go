@@ -19,11 +19,12 @@ const (
 const NotificationTypeCourseEvaluationResult = "course_evaluation_result"
 
 const (
-	NotificationTypeAppealCreated  = "appeal_created"
-	NotificationTypeAppealJury     = "appeal_jury_assigned"
-	NotificationTypeAppealDeadline = "appeal_deadline"
-	NotificationTypeAppealResult   = "appeal_result"
-	NotificationTypeContentGoverned = "content_governed"
+	NotificationTypeAppealCreated        = "appeal_created"
+	NotificationTypeAppealJury           = "appeal_jury_assigned"
+	NotificationTypeAppealDeadline       = "appeal_deadline"
+	NotificationTypeAppealReviewRequired = "appeal_review_required"
+	NotificationTypeAppealResult         = "appeal_result"
+	NotificationTypeContentGoverned      = "content_governed"
 )
 
 // RetiredNotificationTypes 已退役通知类型：不再产生，查询时过滤并分批清理历史数据。

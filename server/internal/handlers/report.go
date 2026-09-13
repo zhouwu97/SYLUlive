@@ -530,7 +530,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 		}
 		return
 	}
-	if input.Status == string(models.ReportStatusHandled) && governedUserID > 0 && report.TargetType == "post" {
+	if input.Status == string(models.ReportStatusHandled) && governedUserID > 0 && (report.TargetType == "post" || report.TargetType == "reply") {
 		_ = CreateContentGovernedNotification(h.db, governedUserID, report.ID, report.TargetID, report.DeleteReason)
 	}
 	c.JSON(http.StatusOK, report)

@@ -745,6 +745,7 @@ func main() {
 	reportHandler := handlers.NewReportHandler(db)
 
 	appealHandler := handlers.NewAppealHandler(db)
+	appealHandler.SetUploadDir(cfg.UploadDir)
 
 	invitationHandler := handlers.NewInvitationHandler(db, cfg.JWTSecret)
 
@@ -1868,7 +1869,7 @@ func main() {
 		appeals.POST("/report/:id", appealHandler.CreateByReport)
 
 		appeals.GET("", appealHandler.GetList)
-
+		appeals.GET("/:id/evidence/files/:file_id", appealHandler.GetEvidenceFile)
 		appeals.GET("/:id", appealHandler.GetOne)
 
 		appeals.POST("/:id/vote", appealHandler.Vote)

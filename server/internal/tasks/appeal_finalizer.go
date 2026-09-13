@@ -141,12 +141,16 @@ func finalizeExpiredAppeal(db *gorm.DB, appealID uint, now time.Time) (bool, err
 			}
 		}
 		changed = true
+		resultMessage := "公众法庭案件已结案，请查看复核结果。"
+		if appeal.Status == models.AppealStatusReview {
+			resultMessage = "社区评议未形成有效裁决，案件已转人工复核，请等待管理员处理。"
+		}
 		if err := createAppealTaskNotification(tx, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealResult,
-			"公众法庭案件已结案，请查看复核结果。", fmt.Sprintf("appeal-result:%d:appellant", appeal.ID)); err != nil {
+			resultMessage, fmt.Sprintf("appeal-result:%d:appellant", appeal.ID)); err != nil {
 			return err
 		}
 		if err := createAppealTaskNotification(tx, appeal.AdminID, appeal.ID, models.NotificationTypeAppealResult,
-			"公众法庭案件已结案，请查看复核结果。", fmt.Sprintf("appeal-result:%d:admin", appeal.ID)); err != nil {
+			resultMessage, fmt.Sprintf("appeal-result:%d:admin", appeal.ID)); err != nil {
 			return err
 		}
 		if appeal.Status == models.AppealStatusPass || appeal.Status == models.AppealStatusReject {
@@ -155,7 +159,7 @@ func finalizeExpiredAppeal(db *gorm.DB, appealID uint, now time.Time) (bool, err
 					continue
 				}
 				if err := createAppealTaskNotification(tx, vote.VoterID, appeal.ID, models.NotificationTypeAppealResult,
-					"公众法庭案件已结案，请查看复核结果。", fmt.Sprintf("appeal-result:%d:jury:%d", appeal.ID, vote.VoterID)); err != nil {
+					resultMessage, fmt.Sprintf("appeal-result:%d:jury:%d", appeal.ID, vote.VoterID)); err != nil {
 					return err
 				}
 			}
@@ -167,12 +171,29 @@ func finalizeExpiredAppeal(db *gorm.DB, appealID uint, now time.Time) (bool, err
 
 // applyAppealPass 恢复治理前状态，并撤销原举报造成的信誉计数。
 func applyAppealPass(tx *gorm.DB, appeal models.Appeal) error {
-	originalStatus := appeal.OriginalPostStatus
-	if originalStatus == "" {
-		originalStatus = models.PostStatusNormal
-	}
-	if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("status", originalStatus).Error; err != nil {
-		return err
+	if appeal.TargetType == "reply" {
+		originalStatus := appeal.OriginalTargetStatus
+		if originalStatus == "" {
+			originalStatus = string(models.ReplyStatusNormal)
+		}
+		if err := tx.Model(&models.Reply{}).Where("id = ?", appeal.TargetID).Update("status", originalStatus).Error; err != nil {
+			return err
+		}
+		var replyCount int64
+		if err := tx.Model(&models.Reply{}).Where("post_id = ? AND status = ?", appeal.PostID, models.ReplyStatusNormal).Count(&replyCount).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("reply_count", replyCount).Error; err != nil {
+			return err
+		}
+	} else {
+		originalStatus := appeal.OriginalPostStatus
+		if originalStatus == "" {
+			originalStatus = models.PostStatusNormal
+		}
+		if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("status", originalStatus).Error; err != nil {
+			return err
+		}
 	}
 	if appeal.ReportID == nil {
 		return nil
@@ -205,7 +226,7 @@ func notifyUpcomingAppeals(db *gorm.DB, now time.Time) error {
 	}
 	for _, appeal := range appeals {
 		var jury []models.AppealVote
-		if err := db.Where("appeal_id = ? AND vote = ''", appeal.ID).Find(&jury).Error; err != nil {
+		if err := db.Where("appeal_id = ? AND vote = '' AND recused = ?", appeal.ID, false).Find(&jury).Error; err != nil {
 			return err
 		}
 		for _, vote := range jury {

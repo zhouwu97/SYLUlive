@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -155,6 +156,13 @@ class _CourtScreenState extends State<CourtScreen> {
     final isAppellant = appeal['is_appellant'] == true;
     final isAdmin = appeal['is_admin'] == true;
     final canRecuse = appeal['can_recuse'] == true;
+    final imageFileIds = snapshot['image_file_ids'] is List
+        ? (snapshot['image_file_ids'] as List)
+            .whereType<num>()
+            .map((id) => id.toInt())
+            .where((id) => id > 0)
+            .toList()
+        : const <int>[];
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
@@ -173,11 +181,8 @@ class _CourtScreenState extends State<CourtScreen> {
         const SizedBox(height: 20),
         _EvidenceSection(
             title: '原内容快照', content: '$snapshotTitle\n\n$snapshotContent'),
-        if (snapshot['image_file_ids'] is List &&
-            (snapshot['image_file_ids'] as List).isNotEmpty)
-          _EvidenceSection(
-              title: '图片证据',
-              content: (snapshot['image_file_ids'] as List).join('、')),
+        if (imageFileIds.isNotEmpty)
+          _EvidenceImages(appealId: widget.appealId, fileIds: imageFileIds),
         _EvidenceSection(
             title: '申诉理由',
             content: (appeal['appellant_reason'] ?? '未填写').toString()),
@@ -196,8 +201,14 @@ class _CourtScreenState extends State<CourtScreen> {
           Padding(
               padding: const EdgeInsets.only(top: 12),
               child: Text('你的陪审意见：${myVote == 'support' ? '支持申诉' : '维持原处理'}')),
-        if (isAppellant) const _RoleHint(text: '这是你的申诉，案件正在由随机陪审员评议。'),
-        if (isAdmin) const _RoleHint(text: '你是原治理管理员，请等待公众法庭或人工复核结果。'),
+        if (isAppellant && status == 'pending')
+          const _RoleHint(text: '这是你的申诉，案件正在由随机陪审员评议。'),
+        if (isAdmin && status == 'pending')
+          const _RoleHint(text: '你是原治理管理员，请等待公众法庭或人工复核结果。'),
+        if (appeal['is_recused'] == true)
+          const _RoleHint(text: '你已回避本案，不再参与本案评议。'),
+        if (status == 'review_required')
+          const _RoleHint(text: '社区评议未形成有效裁决，案件正在等待其他管理员人工复核。'),
         if (canRecuse)
           Align(
               alignment: Alignment.centerLeft,
@@ -220,6 +231,8 @@ class _CourtScreenState extends State<CourtScreen> {
                     icon: const Icon(Icons.close),
                     label: const Text('维持处理'))),
           ])
+        else if (status == 'pending' && appeal['is_recused'] == true)
+          const Text('你已回避本案，不再参与投票。')
         else if (status == 'pending')
           const Text('你不是本案陪审员，或已经提交过意见。'),
       ],
@@ -267,6 +280,100 @@ class _RoleHint extends StatelessWidget {
         ),
         child: Text(text),
       );
+}
+
+class _EvidenceImages extends StatelessWidget {
+  final int appealId;
+  final List<int> fileIds;
+
+  const _EvidenceImages({required this.appealId, required this.fileIds});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('图片证据', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 104,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: fileIds.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, index) => _EvidenceImage(
+              appealId: appealId,
+              fileId: fileIds[index],
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _EvidenceImage extends StatefulWidget {
+  final int appealId;
+  final int fileId;
+
+  const _EvidenceImage({required this.appealId, required this.fileId});
+
+  @override
+  State<_EvidenceImage> createState() => _EvidenceImageState();
+}
+
+class _EvidenceImageState extends State<_EvidenceImage> {
+  Uint8List? _bytes;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final response = await getSharedDio().get<List<int>>(
+        '/appeals/${widget.appealId}/evidence/files/${widget.fileId}',
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (mounted && response.data != null) {
+        setState(() => _bytes = Uint8List.fromList(response.data!));
+      }
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: 104,
+        height: 104,
+        child: _bytes != null
+            ? Image.memory(_bytes!, fit: BoxFit.cover)
+            : _failed
+                ? Container(
+                    color:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.broken_image_outlined),
+                  )
+                : Container(
+                    color:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    alignment: Alignment.center,
+                    child: const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                  ),
+      ),
+    );
+  }
 }
 
 class _EvidenceSection extends StatelessWidget {

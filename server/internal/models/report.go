@@ -47,25 +47,28 @@ const (
 
 // Appeal 申诉
 type Appeal struct {
-	ID                 uint         `gorm:"primaryKey" json:"id"`
-	ReportID           *uint        `gorm:"uniqueIndex:idx_appeal_report;index" json:"report_id"`
-	PostID             uint         `gorm:"not null" json:"post_id"`
-	AppellantID        uint         `gorm:"not null" json:"appellant_id"`
-	AdminID            uint         `gorm:"not null" json:"admin_id"` // 处理此举报的管理员
-	AppellantReason    string       `gorm:"type:text" json:"appellant_reason"`
-	EvidenceSnapshot   string       `gorm:"type:text" json:"evidence_snapshot"`
-	OriginalPostStatus PostStatus   `gorm:"size:20" json:"original_post_status"`
-	AdminReason        string       `gorm:"size:500" json:"admin_reason"` // 管理员删除理由
-	Status             AppealStatus `gorm:"default:pending" json:"status"`
-	Result             string       `gorm:"size:500" json:"result"` // 最终结果
-	VotingDeadline     *time.Time   `gorm:"index" json:"voting_deadline"`
-	RequiredVotes      int          `gorm:"not null;default:1" json:"required_votes"`
-	ClosedReason       string       `gorm:"size:100" json:"closed_reason"`
-	CreatedAt          time.Time    `json:"created_at"`
-	ClosedAt           *time.Time   `json:"closed_at"`
-	Appellant          User         `gorm:"foreignKey:AppellantID" json:"appellant"`
-	Admin              User         `gorm:"foreignKey:AdminID" json:"admin"`
-	Post               Post         `gorm:"foreignKey:PostID" json:"post"`
+	ID                   uint         `gorm:"primaryKey" json:"id"`
+	ReportID             *uint        `gorm:"uniqueIndex:idx_appeal_report;index" json:"report_id"`
+	TargetType           string       `gorm:"size:20;not null;default:post" json:"target_type"`
+	TargetID             uint         `gorm:"index" json:"target_id"`
+	PostID               uint         `gorm:"not null" json:"post_id"`
+	AppellantID          uint         `gorm:"not null" json:"appellant_id"`
+	AdminID              uint         `gorm:"not null" json:"admin_id"` // 处理此举报的管理员
+	AppellantReason      string       `gorm:"type:text" json:"appellant_reason"`
+	EvidenceSnapshot     string       `gorm:"type:text" json:"evidence_snapshot"`
+	OriginalPostStatus   PostStatus   `gorm:"size:20" json:"original_post_status"`
+	OriginalTargetStatus string       `gorm:"size:20" json:"original_target_status"`
+	AdminReason          string       `gorm:"size:500" json:"admin_reason"` // 管理员删除理由
+	Status               AppealStatus `gorm:"default:pending" json:"status"`
+	Result               string       `gorm:"size:500" json:"result"` // 最终结果
+	VotingDeadline       *time.Time   `gorm:"index" json:"voting_deadline"`
+	RequiredVotes        int          `gorm:"not null;default:1" json:"required_votes"`
+	ClosedReason         string       `gorm:"size:100" json:"closed_reason"`
+	CreatedAt            time.Time    `json:"created_at"`
+	ClosedAt             *time.Time   `json:"closed_at"`
+	Appellant            User         `gorm:"foreignKey:AppellantID" json:"appellant"`
+	Admin                User         `gorm:"foreignKey:AdminID" json:"admin"`
+	Post                 Post         `gorm:"foreignKey:PostID" json:"post"`
 }
 
 // AppealVote 申诉投票
@@ -96,33 +99,36 @@ type AppealPostResponse struct {
 }
 
 type AppealResponse struct {
-	ID                 uint                     `json:"id"`
-	ReportID           *uint                    `json:"report_id,omitempty"`
-	PostID             uint                     `json:"post_id"`
-	AppellantReason    string                   `json:"appellant_reason"`
-	EvidenceSnapshot   string                   `json:"evidence_snapshot,omitempty"`
-	OriginalPostStatus PostStatus               `json:"original_post_status,omitempty"`
-	AdminReason        string                   `json:"admin_reason"`
-	Status             AppealStatus             `json:"status"`
-	Result             string                   `json:"result"`
-	VotingDeadline     *time.Time               `json:"voting_deadline"`
-	RequiredVotes      int                      `json:"required_votes"`
-	ClosedReason       string                   `json:"closed_reason"`
-	CreatedAt          time.Time                `json:"created_at"`
-	ClosedAt           *time.Time               `json:"closed_at"`
-	Appellant          PublicAppealUserResponse `json:"appellant"`
-	Admin              PublicAppealUserResponse `json:"admin"`
-	Post               AppealPostResponse       `json:"post"`
-	CanVote            bool                     `json:"can_vote"`
-	CanRecuse          bool                     `json:"can_recuse"`
-	IsRecused          bool                     `json:"is_recused"`
-	IsAppellant        bool                     `json:"is_appellant"`
-	IsAdmin            bool                     `json:"is_admin"`
-	MyVote             string                   `json:"my_vote,omitempty"`
-	HasVoted           bool                     `json:"has_voted"`
-	CastCount          int                      `json:"cast_count,omitempty"`
-	SupportCount       int                      `json:"support_count,omitempty"`
-	OpposeCount        int                      `json:"oppose_count,omitempty"`
+	ID                   uint                     `json:"id"`
+	ReportID             *uint                    `json:"report_id,omitempty"`
+	TargetType           string                   `json:"target_type"`
+	TargetID             uint                     `json:"target_id"`
+	PostID               uint                     `json:"post_id"`
+	AppellantReason      string                   `json:"appellant_reason"`
+	EvidenceSnapshot     string                   `json:"evidence_snapshot,omitempty"`
+	OriginalPostStatus   PostStatus               `json:"original_post_status,omitempty"`
+	OriginalTargetStatus string                   `json:"original_target_status,omitempty"`
+	AdminReason          string                   `json:"admin_reason"`
+	Status               AppealStatus             `json:"status"`
+	Result               string                   `json:"result"`
+	VotingDeadline       *time.Time               `json:"voting_deadline"`
+	RequiredVotes        int                      `json:"required_votes"`
+	ClosedReason         string                   `json:"closed_reason"`
+	CreatedAt            time.Time                `json:"created_at"`
+	ClosedAt             *time.Time               `json:"closed_at"`
+	Appellant            PublicAppealUserResponse `json:"appellant"`
+	Admin                PublicAppealUserResponse `json:"admin"`
+	Post                 AppealPostResponse       `json:"post"`
+	CanVote              bool                     `json:"can_vote"`
+	CanRecuse            bool                     `json:"can_recuse"`
+	IsRecused            bool                     `json:"is_recused"`
+	IsAppellant          bool                     `json:"is_appellant"`
+	IsAdmin              bool                     `json:"is_admin"`
+	MyVote               string                   `json:"my_vote,omitempty"`
+	HasVoted             bool                     `json:"has_voted"`
+	CastCount            int                      `json:"cast_count,omitempty"`
+	SupportCount         int                      `json:"support_count,omitempty"`
+	OpposeCount          int                      `json:"oppose_count,omitempty"`
 }
 
 type AppealVoteResponse struct {

@@ -85,4 +85,19 @@ func TestFinalizeExpiredAppealPassRollsBackReportCountAndStatus(t *testing.T) {
 	}
 }
 
+func TestNotifyUpcomingAppealsSkipsRecusedJury(t *testing.T) {
+	db := newAppealFinalizerGovernanceDB(t)
+	deadline := time.Now().Add(12 * time.Hour)
+	db.Create(&models.Appeal{ID: 1, AppellantID: 1, AdminID: 2, Status: models.AppealStatusPending, VotingDeadline: &deadline})
+	db.Create(&models.AppealVote{AppealID: 1, VoterID: 3, Recused: true})
+	if err := notifyUpcomingAppeals(db, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	db.Model(&models.Notification{}).Where("user_id = ?", 3).Count(&count)
+	if count != 0 {
+		t.Fatalf("已回避陪审员不应收到临期提醒，收到 %d 条", count)
+	}
+}
+
 func uintPtr(value uint) *uint { return &value }

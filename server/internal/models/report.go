@@ -64,6 +64,7 @@ type Appeal struct {
 	VotingDeadline       *time.Time   `gorm:"index" json:"voting_deadline"`
 	RequiredVotes        int          `gorm:"not null;default:1" json:"required_votes"`
 	ClosedReason         string       `gorm:"size:100" json:"closed_reason"`
+	EscalationReason     string       `gorm:"size:50" json:"escalation_reason"`
 	CreatedAt            time.Time    `json:"created_at"`
 	ClosedAt             *time.Time   `json:"closed_at"`
 	ReviewedByID         *uint        `json:"reviewed_by_id"`
@@ -117,6 +118,7 @@ type AppealResponse struct {
 	VotingDeadline       *time.Time               `json:"voting_deadline"`
 	RequiredVotes        int                      `json:"required_votes"`
 	ClosedReason         string                   `json:"closed_reason"`
+	EscalationReason     string                   `json:"escalation_reason,omitempty"`
 	CreatedAt            time.Time                `json:"created_at"`
 	ClosedAt             *time.Time               `json:"closed_at"`
 	ReviewedByID         *uint                    `json:"reviewed_by_id,omitempty"`
@@ -155,6 +157,7 @@ type PublicAppealResponse struct {
 	Result           string       `json:"result"`
 	ResolutionSource string       `json:"resolution_source"`
 	ClosedReason     string       `json:"closed_reason"`
+	EscalationReason string       `json:"escalation_reason,omitempty"`
 	ClosedAt         *time.Time   `json:"closed_at"`
 	CreatedAt        time.Time    `json:"created_at"`
 	SupportCount     int          `json:"support_count"`

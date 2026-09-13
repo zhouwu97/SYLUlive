@@ -36,3 +36,12 @@ func TestAdminResolveReviewRejectsOriginalHandler(t *testing.T) {
 		t.Fatalf("原处理管理员应被禁止自审，得到 %d: %s", recorder.Code, recorder.Body.String())
 	}
 }
+
+func TestAppealResultNeedsIrreversibleMajorityBeforeDeadline(t *testing.T) {
+	if appealResultIrreversible(3, 2, 7) {
+		t.Fatal("3:2 且仍有两名未投票陪审员时不能提前结案")
+	}
+	if !appealResultIrreversible(4, 1, 7) {
+		t.Fatal("4:1 且剩余两票无法逆转时应允许提前结案")
+	}
+}

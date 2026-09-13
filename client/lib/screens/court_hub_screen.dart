@@ -187,12 +187,18 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
 
   Future<void> _showPublicResult(Map<String, dynamic> appeal) async {
     final isManual = appeal['resolution_source'] == 'manual_review';
+    final escalation = appeal['escalation_reason']?.toString();
+    final manualNote = escalation == 'tie'
+        ? '社区陪审形成平票，以上票数仅作评议记录；最终由独立管理员复核。'
+        : escalation == 'insufficient_jury'
+            ? '暂无足够合格陪审员，案件由独立管理员复核。'
+            : '社区评议未达到法定人数，以上票数仅作评议记录；最终由独立管理员复核。';
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('案件 #${appeal['id']} · 已结案'),
         content: Text(
-            '${appeal['result'] ?? '社区复核已完成'}\n\n支持申诉 ${appeal['support_count'] ?? 0} · 维持处理 ${appeal['oppose_count'] ?? 0}\n\n${isManual ? '社区评议未达到法定人数，以上票数仅作评议记录；最终由独立管理员复核。' : '陪审员身份不公开。'}'),
+            '${appeal['result'] ?? '社区复核已完成'}\n\n支持申诉 ${appeal['support_count'] ?? 0} · 维持处理 ${appeal['oppose_count'] ?? 0}\n\n${isManual ? manualNote : '陪审员身份不公开。'}'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context), child: const Text('知道了'))

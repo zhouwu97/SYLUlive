@@ -36,6 +36,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   int? _reviewTasksCount; // 教师、专业、食堂与课程评价
   int? _adminTasksCount; // Invitations + Removals
   int? _examPapersCount; // Exam paper submissions
+  int? _courtReviewCount;
   bool _hasLoadError = false;
 
   @override
@@ -71,6 +72,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       safeGet(dio.get('/canteens/pending')),
       safeGet(dio.get('/admin/course-evaluations/pending',
           queryParameters: {'limit': 50})),
+      safeGet(dio.get('/admin/appeals/review')),
     ]);
 
     if (!mounted) return;
@@ -105,6 +107,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           sumCounts([responses[2], responses[3], responses[7], responses[8]]);
       _adminTasksCount = sumCounts([responses[4], responses[5]]);
       _examPapersCount = getCount(responses[6]);
+      _courtReviewCount = getCount(responses[9]);
       _hasLoadError = responses.any((response) => response == null);
       _isLoading = false;
     });
@@ -487,6 +490,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       context,
                       MaterialPageRoute(
                           builder: (_) => const AdminReviewTasksScreen()))
+                  .then((_) => _loadCounts()),
+            ),
+            _AdminMetricPill(
+              title: '法庭复核',
+              count: _courtReviewCount,
+              isLoading: _isLoading,
+              isDark: isDark,
+              onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const AdminAppealReviewScreen()))
                   .then((_) => _loadCounts()),
             ),
           ],

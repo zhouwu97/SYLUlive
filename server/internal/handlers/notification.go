@@ -442,10 +442,16 @@ func CreateAppealNotification(db *gorm.DB, toUserID, appealID uint, notification
 	if err := db.Where("user_id = ? AND type = ? AND dedup_key = ?", toUserID, notificationType, dedupKey).First(&existing).Error; err == nil {
 		return nil
 	}
-	return db.Create(&models.Notification{
+	err := db.Create(&models.Notification{
 		UserID: toUserID, Type: notificationType, RelatedID: appealID,
 		Content: content, DedupKey: dedupKey, IsRead: false,
 	}).Error
+	if err != nil {
+		if lookupErr := db.Where("user_id = ? AND type = ? AND dedup_key = ?", toUserID, notificationType, dedupKey).First(&existing).Error; lookupErr == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 // CreateContentGovernedNotification 告知内容作者具体治理决定，related_id 固定为 ReportID。
@@ -458,11 +464,17 @@ func CreateContentGovernedNotification(db *gorm.DB, toUserID, reportID, postID u
 	if reason != "" {
 		content += "：" + reason
 	}
-	return db.Create(&models.Notification{
+	err := db.Create(&models.Notification{
 		UserID: toUserID, Type: models.NotificationTypeContentGoverned,
 		RelatedID: reportID, PostID: postID, Content: content,
 		DedupKey: fmt.Sprintf("content-governed:%d", reportID), IsRead: false,
 	}).Error
+	if err != nil {
+		if lookupErr := db.Where("user_id = ? AND type = ? AND dedup_key = ?", toUserID, models.NotificationTypeContentGoverned, fmt.Sprintf("content-governed:%d", reportID)).First(&existing).Error; lookupErr == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 // SendJPushNotification 异步发送极光推送（不阻塞主请求）

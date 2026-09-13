@@ -9,7 +9,9 @@ import '../widgets/app_page_app_bar.dart';
 
 class CourtScreen extends StatefulWidget {
   final int appealId;
-  const CourtScreen({super.key, required this.appealId});
+  final bool adminReviewMode;
+  const CourtScreen(
+      {super.key, required this.appealId, this.adminReviewMode = false});
 
   @override
   State<CourtScreen> createState() => _CourtScreenState();
@@ -123,6 +125,52 @@ class _CourtScreenState extends State<CourtScreen> {
     }
   }
 
+  Future<void> _manualResolve(String decision) async {
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(decision == 'pass' ? '确认支持申诉' : '确认维持原处理'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 4,
+          decoration: const InputDecoration(labelText: '人工复核意见'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text),
+              child: const Text('提交裁决')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (reason == null || reason.trim().isEmpty) return;
+    setState(() => _submitting = true);
+    try {
+      await getSharedDio()
+          .post('/admin/appeals/${widget.appealId}/review', data: {
+        'decision': decision,
+        'reason': reason.trim(),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('人工复核已完成')));
+      Navigator.pop(context, true);
+    } on DioException catch (error) {
+      if (!mounted) return;
+      final message = error.response?.data is Map
+          ? error.response?.data['error']?.toString()
+          : null;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message ?? '人工复核失败')));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final appeal = _appeal;
@@ -189,6 +237,11 @@ class _CourtScreenState extends State<CourtScreen> {
         _EvidenceSection(
             title: '原治理理由',
             content: (appeal['admin_reason'] ?? '暂无处理理由').toString()),
+        if (status == 'review_required')
+          _EvidenceSection(
+              title: '转人工原因',
+              content: _escalationReason(
+                  (appeal['escalation_reason'] ?? '').toString())),
         if (status != 'pending')
           _EvidenceSection(
               title: '社区复核结果',
@@ -207,8 +260,16 @@ class _CourtScreenState extends State<CourtScreen> {
           const _RoleHint(text: '你是原治理管理员，请等待公众法庭或人工复核结果。'),
         if (appeal['is_recused'] == true)
           const _RoleHint(text: '你已回避本案，不再参与本案评议。'),
-        if (status == 'review_required')
-          const _RoleHint(text: '社区评议未形成有效裁决，案件正在等待其他管理员人工复核。'),
+        if (status == 'review_required' && !widget.adminReviewMode)
+          const _RoleHint(text: '社区评议未形成有效裁决，案件正在等待独立管理员人工复核。'),
+        if (widget.adminReviewMode && status == 'review_required') ...[
+          const SizedBox(height: 16),
+          _ManualReviewPanel(
+            submitting: _submitting,
+            onPass: () => _manualResolve('pass'),
+            onReject: () => _manualResolve('reject'),
+          ),
+        ],
         if (canRecuse)
           Align(
               alignment: Alignment.centerLeft,
@@ -247,6 +308,13 @@ class _CourtScreenState extends State<CourtScreen> {
         _ => status,
       };
 
+  String _escalationReason(String reason) => switch (reason) {
+        'insufficient_jury' => '符合条件的陪审员不足 5 人，无法组成法定评议人数。',
+        'insufficient_votes' => '截止时有效意见不足 5 票，转交独立管理员复核。',
+        'tie' => '社区陪审形成平票，转交独立管理员复核。',
+        _ => '社区评议未形成可直接执行的裁决。',
+      };
+
   Map<String, dynamic> _snapshot(dynamic value) {
     if (value is! String || value.trim().isEmpty) return const {};
     try {
@@ -280,6 +348,42 @@ class _RoleHint extends StatelessWidget {
         ),
         child: Text(text),
       );
+}
+
+class _ManualReviewPanel extends StatelessWidget {
+  final bool submitting;
+  final VoidCallback onPass;
+  final VoidCallback onReject;
+
+  const _ManualReviewPanel(
+      {required this.submitting, required this.onPass, required this.onReject});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('人工复核意见', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 6),
+          const Text('请先核对原内容快照、申诉理由、治理理由和社区评议记录，再提交最终裁决。'),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+                child: FilledButton(
+                    onPressed: submitting ? null : onPass,
+                    child: const Text('支持申诉'))),
+            const SizedBox(width: 10),
+            Expanded(
+                child: OutlinedButton(
+                    onPressed: submitting ? null : onReject,
+                    child: const Text('维持处理'))),
+          ]),
+        ]),
+      ),
+    );
+  }
 }
 
 class _EvidenceImages extends StatelessWidget {

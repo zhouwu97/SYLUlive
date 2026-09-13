@@ -114,10 +114,12 @@ func finalizeExpiredAppeal(db *gorm.DB, appealID uint, now time.Time) (bool, err
 			appeal.Status = models.AppealStatusReview
 			appeal.Result = fmt.Sprintf("仅收到 %d 票，未达到法定人数 %d，转人工复核", supportCount+opposeCount, requiredVotes)
 			appeal.ClosedReason = "insufficient_votes"
+			appeal.EscalationReason = "insufficient_votes"
 		} else if supportCount == opposeCount {
 			appeal.Status = models.AppealStatusReview
 			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 平票，转人工复核", supportCount, opposeCount)
 			appeal.ClosedReason = "tie_review_required"
+			appeal.EscalationReason = "tie"
 		} else if supportCount > opposeCount {
 			appeal.Status = models.AppealStatusPass
 			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 申诉成功", supportCount, opposeCount)
@@ -251,5 +253,11 @@ func createAppealTaskNotification(db *gorm.DB, userID, appealID uint, notificati
 	if err := db.Where("user_id = ? AND type = ? AND dedup_key = ?", userID, notificationType, dedupKey).First(&existing).Error; err == nil {
 		return nil
 	}
-	return db.Create(&models.Notification{UserID: userID, Type: notificationType, RelatedID: appealID, Content: content, DedupKey: dedupKey}).Error
+	err := db.Create(&models.Notification{UserID: userID, Type: notificationType, RelatedID: appealID, Content: content, DedupKey: dedupKey}).Error
+	if err != nil {
+		if lookupErr := db.Where("user_id = ? AND type = ? AND dedup_key = ?", userID, notificationType, dedupKey).First(&existing).Error; lookupErr == nil {
+			return nil
+		}
+	}
+	return err
 }

@@ -122,13 +122,11 @@ func (h *AppealHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建申诉失败"})
 		return
 	}
-	_ = CreateAppealNotification(h.db, appeal.AppellantID, appeal.ID,
-		models.NotificationTypeAppealCreated, "你的申诉已创建，公众法庭将开始复核。", fmt.Sprintf("appeal-created:%d", appeal.ID))
-
 	if err := h.db.Preload("Appellant").Preload("Admin").Preload("Post").First(&appeal, appeal.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取申诉失败"})
 		return
 	}
+	notifyAppealOpened(h.db, appeal)
 	c.JSON(http.StatusCreated, appealResponse(appeal))
 }
 
@@ -200,12 +198,24 @@ func (h *AppealHandler) CreateByReport(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建申诉失败"})
 		return
 	}
-	_ = CreateAppealNotification(h.db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealCreated, "你的申诉已创建，公众法庭将开始复核。", fmt.Sprintf("appeal-created:%d", appeal.ID))
 	if err := h.db.Preload("Appellant").Preload("Admin").Preload("Post").First(&appeal, appeal.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取申诉失败"})
 		return
 	}
+	notifyAppealOpened(h.db, appeal)
 	c.JSON(http.StatusCreated, appealResponse(appeal))
+}
+
+func notifyAppealOpened(db *gorm.DB, appeal models.Appeal) {
+	if appeal.Status == models.AppealStatusReview {
+		_ = CreateAppealNotification(db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealReviewRequired,
+			"当前暂无足够陪审员，案件已转人工复核，请等待管理员处理。", fmt.Sprintf("appeal-review-required:%d:appellant", appeal.ID))
+		_ = CreateAppealNotification(db, appeal.AdminID, appeal.ID, models.NotificationTypeAppealReviewRequired,
+			"公众法庭案件已转人工复核，请及时处理。", fmt.Sprintf("appeal-review-required:%d:admin", appeal.ID))
+		return
+	}
+	_ = CreateAppealNotification(db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealCreated,
+		"你的申诉已创建，公众法庭将开始复核。", fmt.Sprintf("appeal-created:%d", appeal.ID))
 }
 
 // selectJury 随机选择陪审员
@@ -231,10 +241,11 @@ func (h *AppealHandler) selectJury(appealID, appellantID, adminID uint) error {
 	const minimumJury = 5
 	if len(candidates) < minimumJury {
 		return h.db.Model(&models.Appeal{}).Where("id = ?", appealID).Updates(map[string]interface{}{
-			"status":         models.AppealStatusReview,
-			"required_votes": minimumJury,
-			"result":         "合格陪审员不足，转人工复核",
-			"closed_reason":  "insufficient_jury",
+			"status":            models.AppealStatusReview,
+			"required_votes":    minimumJury,
+			"result":            "合格陪审员不足，转人工复核",
+			"closed_reason":     "insufficient_jury",
+			"escalation_reason": "insufficient_jury",
 		}).Error
 	}
 
@@ -312,7 +323,7 @@ func (h *AppealHandler) GetPublicList(c *gin.Context) {
 		if appeal.ClosedReason == "manual_review" {
 			source = "manual_review"
 		}
-		public = append(public, models.PublicAppealResponse{ID: appeal.ID, PostTitle: "社区内容治理复核", Status: appeal.Status, Result: publicAppealResult(appeal.Status), ResolutionSource: source, ClosedReason: appeal.ClosedReason, ClosedAt: appeal.ClosedAt, CreatedAt: appeal.CreatedAt, SupportCount: counts.SupportCount, OpposeCount: counts.OpposeCount})
+		public = append(public, models.PublicAppealResponse{ID: appeal.ID, PostTitle: "社区内容治理复核", Status: appeal.Status, Result: publicAppealResult(appeal.Status), ResolutionSource: source, ClosedReason: appeal.ClosedReason, EscalationReason: appeal.EscalationReason, ClosedAt: appeal.ClosedAt, CreatedAt: appeal.CreatedAt, SupportCount: counts.SupportCount, OpposeCount: counts.OpposeCount})
 	}
 	c.JSON(http.StatusOK, public)
 }
@@ -499,7 +510,7 @@ func (h *AppealHandler) GetOne(c *gin.Context) {
 		return
 	}
 	role, _ := c.Get("role")
-	allowed := role == string(models.RoleSuperAdmin) || appeal.AppellantID == userID.(uint) || appeal.AdminID == userID.(uint)
+	allowed := role == string(models.RoleSuperAdmin) || (role == string(models.RoleAdmin) && appeal.Status == models.AppealStatusReview) || appeal.AppellantID == userID.(uint) || appeal.AdminID == userID.(uint)
 	if !allowed {
 		var assigned int64
 		if err := h.db.Model(&models.AppealVote{}).Where("appeal_id = ? AND voter_id = ?", appeal.ID, userID).Count(&assigned).Error; err != nil {
@@ -606,7 +617,7 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 			return err
 		}
 
-		// 达到法定票数即可结案，不再永久等待所有陪审员。
+		// 达到法定票数后，仅在结果已经无法被剩余有效陪审员逆转时提前结案。
 		var votes []models.AppealVote
 		if err := tx.Where("appeal_id = ?", appealID).Find(&votes).Error; err != nil {
 			return err
@@ -615,7 +626,11 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 		castCount := 0
 		supportCount := 0
 		opposeCount := 0
+		eligibleCount := 0
 		for _, v := range votes {
+			if !v.Recused {
+				eligibleCount++
+			}
 			if v.Vote == "support" {
 				supportCount++
 				castCount++
@@ -633,16 +648,23 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 		if castCount < requiredVotes && !deadlineReached {
 			return nil
 		}
+		if !deadlineReached {
+			if !appealResultIrreversible(supportCount, opposeCount, eligibleCount) {
+				return nil
+			}
+		}
 		if castCount < requiredVotes {
 			appeal.Status = models.AppealStatusReview
 			appeal.Result = fmt.Sprintf("仅收到 %d 票，未达到法定人数 %d，转人工复核", castCount, requiredVotes)
 			appeal.ClosedReason = "insufficient_votes"
+			appeal.EscalationReason = "insufficient_votes"
 			return tx.Save(&appeal).Error
 		}
 		if supportCount == opposeCount {
 			appeal.Status = models.AppealStatusReview
 			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 平票，转人工复核", supportCount, opposeCount)
 			appeal.ClosedReason = "tie_review_required"
+			appeal.EscalationReason = "tie"
 			return tx.Save(&appeal).Error
 		}
 
@@ -714,6 +736,11 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "投票成功"})
 }
 
+func appealResultIrreversible(supportCount, opposeCount, eligibleCount int) bool {
+	remaining := eligibleCount - supportCount - opposeCount
+	return supportCount > opposeCount+remaining || opposeCount > supportCount+remaining
+}
+
 // Recuse 允许陪审员在投票前申请回避，回避不会暴露给其他陪审员。
 func (h *AppealHandler) Recuse(c *gin.Context) {
 	userID := c.GetUint("user_id")
@@ -772,7 +799,7 @@ func appealResponse(appeal models.Appeal) models.AppealResponse {
 		OriginalPostStatus: appeal.OriginalPostStatus, OriginalTargetStatus: appeal.OriginalTargetStatus,
 		AdminReason: appeal.AdminReason,
 		Status:      appeal.Status, Result: appeal.Result, VotingDeadline: appeal.VotingDeadline,
-		RequiredVotes: appeal.RequiredVotes, ClosedReason: appeal.ClosedReason,
+		RequiredVotes: appeal.RequiredVotes, ClosedReason: appeal.ClosedReason, EscalationReason: appeal.EscalationReason,
 		CreatedAt: appeal.CreatedAt, ClosedAt: appeal.ClosedAt,
 		ReviewedByID: appeal.ReviewedByID, ReviewReason: appeal.ReviewReason, ReviewedAt: appeal.ReviewedAt,
 		Appellant: appealUserResponse(appeal.Appellant), Admin: appealUserResponse(appeal.Admin),
@@ -792,11 +819,11 @@ func (h *AppealHandler) appealResponseForUser(appeal models.Appeal, userID uint)
 		response.IsRecused = assigned.Recused
 		response.MyVote = assigned.Vote
 		response.HasVoted = assigned.Vote != ""
-		if appeal.Status == models.AppealStatusPending && !response.IsAppellant && !response.IsAdmin {
-			// 陪审阶段不向陪审员下发当事人和原管理员身份，避免熟人投票与身份偏见。
-			response.Appellant = models.PublicAppealUserResponse{}
-			response.Admin = models.PublicAppealUserResponse{}
-		}
+	}
+	if (appeal.Status == models.AppealStatusPending || appeal.Status == models.AppealStatusReview) && !response.IsAppellant && !response.IsAdmin {
+		// 陪审与人工复核阶段都不向独立处理人下发当事人身份，避免熟人投票与身份偏见。
+		response.Appellant = models.PublicAppealUserResponse{}
+		response.Admin = models.PublicAppealUserResponse{}
 	}
 	return response
 }

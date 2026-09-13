@@ -16,6 +16,8 @@ import '../utils/post_route.dart';
 import '../services/reply_notification_service.dart';
 import '../services/reply_notification_state.dart';
 import 'my_content_screen.dart';
+import 'appeal_create_screen.dart';
+import 'court_screen.dart';
 
 @visibleForTesting
 bool canLoadMoreNotifications({
@@ -466,6 +468,16 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       actionText = '食堂审核结果';
     } else if (type == 'course_evaluation_result') {
       actionText = '学科评价审核结果';
+    } else if (type == 'content_governed') {
+      actionText = '内容处理通知';
+    } else if (type == 'appeal_created') {
+      actionText = '申诉已创建';
+    } else if (type == 'appeal_jury_assigned') {
+      actionText = '公众法庭陪审邀请';
+    } else if (type == 'appeal_deadline') {
+      actionText = '公众法庭即将截止';
+    } else if (type == 'appeal_result') {
+      actionText = '公众法庭结案结果';
     }
 
     return InkWell(
@@ -502,7 +514,31 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             }
           }
 
-          if (postId != null) {
+          if (type == 'content_governed' && relatedId != null) {
+            if (!mounted) return;
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => AppealCreateScreen(
+                  reportId: relatedId,
+                  postId: postId,
+                  governanceReason: content,
+                ),
+              ),
+            );
+          } else if ((type == 'appeal_jury_assigned' ||
+                  type == 'appeal_created' ||
+                  type == 'appeal_deadline' ||
+                  type == 'appeal_result') &&
+              relatedId != null) {
+            if (!mounted) return;
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CourtScreen(appealId: relatedId),
+              ),
+            );
+          } else if (postId != null) {
             try {
               final response = await auth.dio.get('/posts/$postId');
               if (!mounted) return;

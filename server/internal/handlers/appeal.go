@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -77,7 +78,7 @@ func (h *AppealHandler) Create(c *gin.Context) {
 
 	// 查找处理此举报的管理员（需要admin_reason）
 	var report models.Report
-	if h.db.Where("target_type = ? AND target_id = ? AND status = ?", "post", postID, models.ReportStatusHandled).First(&report).Error != nil {
+	if h.db.Where("target_type = ? AND target_id = ? AND status = ?", "post", postID, models.ReportStatusHandled).Order("handled_at DESC").First(&report).Error != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "未找到处理此帖子的管理员记录"})
 		return
 	}
@@ -89,14 +90,16 @@ func (h *AppealHandler) Create(c *gin.Context) {
 
 	deadline := time.Now().Add(72 * time.Hour)
 	appeal := models.Appeal{
-		ReportID:        &report.ID,
-		PostID:          uint(postID),
-		AppellantID:     userID.(uint),
-		AdminID:         *report.HandlerID,
-		AppellantReason: input.Reason,
-		AdminReason:     report.DeleteReason,
-		Status:          models.AppealStatusPending,
-		VotingDeadline:  &deadline,
+		ReportID:           &report.ID,
+		PostID:             uint(postID),
+		AppellantID:        userID.(uint),
+		AdminID:            *report.HandlerID,
+		AppellantReason:    input.Reason,
+		EvidenceSnapshot:   report.TargetSnapshot,
+		OriginalPostStatus: originalPostStatus(report.TargetSnapshot, post.Status),
+		AdminReason:        report.DeleteReason,
+		Status:             models.AppealStatusPending,
+		VotingDeadline:     &deadline,
 	}
 
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -108,7 +111,63 @@ func (h *AppealHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建申诉失败"})
 		return
 	}
+	_ = CreateAppealNotification(h.db, appeal.AppellantID, appeal.ID,
+		models.NotificationTypeAppealCreated, "你的申诉已创建，公众法庭将开始复核。", fmt.Sprintf("appeal-created:%d", appeal.ID))
 
+	if err := h.db.Preload("Appellant").Preload("Admin").Preload("Post").First(&appeal, appeal.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取申诉失败"})
+		return
+	}
+	c.JSON(http.StatusCreated, appealResponse(appeal))
+}
+
+// CreateByReport 以具体治理决定创建申诉，避免按帖子匹配到历史举报记录。
+func (h *AppealHandler) CreateByReport(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	reportID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的举报ID"})
+		return
+	}
+	var input struct {
+		Reason string `json:"appellant_reason"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	input.Reason = strings.TrimSpace(input.Reason)
+	if input.Reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写申诉理由"})
+		return
+	}
+	var report models.Report
+	if err := h.db.First(&report, reportID).Error; err != nil || report.Status != models.ReportStatusHandled || report.TargetType != "post" || report.HandlerID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该治理决定暂不可申诉"})
+		return
+	}
+	var post models.Post
+	if err := h.db.First(&post, report.TargetID).Error; err != nil || post.AuthorID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "只有被治理内容的作者可以申诉"})
+		return
+	}
+	var existing models.Appeal
+	if err := h.db.Where("report_id = ?", report.ID).First(&existing).Error; err == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "该治理决定已经提交过申诉"})
+		return
+	}
+	deadline := time.Now().Add(72 * time.Hour)
+	appeal := models.Appeal{ReportID: &report.ID, PostID: post.ID, AppellantID: userID, AdminID: *report.HandlerID, AppellantReason: input.Reason, EvidenceSnapshot: report.TargetSnapshot, OriginalPostStatus: originalPostStatus(report.TargetSnapshot, post.Status), AdminReason: report.DeleteReason, Status: models.AppealStatusPending, VotingDeadline: &deadline}
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&appeal).Error; err != nil {
+			return err
+		}
+		return NewAppealHandler(tx).selectJury(appeal.ID, post.AuthorID, appeal.AdminID)
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建申诉失败"})
+		return
+	}
+	_ = CreateAppealNotification(h.db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealCreated, "你的申诉已创建，公众法庭将开始复核。", fmt.Sprintf("appeal-created:%d", appeal.ID))
 	if err := h.db.Preload("Appellant").Preload("Admin").Preload("Post").First(&appeal, appeal.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取申诉失败"})
 		return
@@ -138,13 +197,11 @@ func (h *AppealHandler) selectJury(appealID, appellantID, adminID uint) error {
 
 	const minimumJury = 5
 	if len(candidates) < minimumJury {
-		now := time.Now()
 		return h.db.Model(&models.Appeal{}).Where("id = ?", appealID).Updates(map[string]interface{}{
 			"status":         models.AppealStatusReview,
 			"required_votes": minimumJury,
 			"result":         "合格陪审员不足，转人工复核",
 			"closed_reason":  "insufficient_jury",
-			"closed_at":      &now,
 		}).Error
 	}
 
@@ -164,6 +221,10 @@ func (h *AppealHandler) selectJury(appealID, appellantID, adminID uint) error {
 			Vote:     "",
 		}
 		if err := h.db.Create(&vote).Error; err != nil {
+			return err
+		}
+		if err := CreateAppealNotification(h.db, candidates[i].ID, appealID,
+			models.NotificationTypeAppealJury, "你已被随机选为公众法庭陪审员，请在截止前完成评议。", fmt.Sprintf("appeal-jury:%d:%d", appealID, candidates[i].ID)); err != nil {
 			return err
 		}
 	}
@@ -197,6 +258,98 @@ func (h *AppealHandler) GetList(c *gin.Context) {
 		responses = append(responses, h.appealResponseForUser(appeal, userID))
 	}
 	c.JSON(http.StatusOK, responses)
+}
+
+// GetPublicList 只公开已结案且有明确结果的匿名公示。
+func (h *AppealHandler) GetPublicList(c *gin.Context) {
+	var appeals []models.Appeal
+	if err := h.db.Where("status IN ?", []models.AppealStatus{models.AppealStatusPass, models.AppealStatusReject}).
+		Preload("Post").Order("closed_at DESC").Limit(50).Find(&appeals).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取结案公示失败"})
+		return
+	}
+	public := make([]models.PublicAppealResponse, 0, len(appeals))
+	for _, appeal := range appeals {
+		var counts struct {
+			SupportCount int
+			OpposeCount  int
+		}
+		h.db.Model(&models.AppealVote{}).Select("COALESCE(SUM(CASE WHEN vote = 'support' THEN 1 ELSE 0 END), 0) AS support_count, COALESCE(SUM(CASE WHEN vote = 'oppose' THEN 1 ELSE 0 END), 0) AS oppose_count").Where("appeal_id = ?", appeal.ID).Scan(&counts)
+		public = append(public, models.PublicAppealResponse{ID: appeal.ID, PostTitle: appeal.Post.Title, Status: appeal.Status, Result: appeal.Result, ClosedAt: appeal.ClosedAt, CreatedAt: appeal.CreatedAt, SupportCount: counts.SupportCount, OpposeCount: counts.OpposeCount})
+	}
+	c.JSON(http.StatusOK, public)
+}
+
+// AdminGetReviewList 获取平票、陪审人数不足等需要人工介入的案件。
+func (h *AppealHandler) AdminGetReviewList(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	var appeals []models.Appeal
+	if err := h.db.Where("status = ?", models.AppealStatusReview).
+		Preload("Appellant").Preload("Admin").Preload("Post").Order("created_at ASC").Find(&appeals).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取待复核案件失败"})
+		return
+	}
+	responses := make([]models.AppealResponse, 0, len(appeals))
+	for _, appeal := range appeals {
+		responses = append(responses, h.appealResponseForUser(appeal, userID))
+	}
+	c.JSON(http.StatusOK, responses)
+}
+
+// AdminResolveReview 由管理员对 review_required 案件作最终决定。
+func (h *AppealHandler) AdminResolveReview(c *gin.Context) {
+	appealID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的申诉ID"})
+		return
+	}
+	var input struct {
+		Decision string `json:"decision"`
+		Reason   string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil || (input.Decision != "pass" && input.Decision != "reject") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "decision 必须是 pass 或 reject"})
+		return
+	}
+	input.Reason = strings.TrimSpace(input.Reason)
+	if input.Reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写人工复核理由"})
+		return
+	}
+	var appeal models.Appeal
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&appeal, appealID).Error; err != nil {
+			return err
+		}
+		if appeal.Status != models.AppealStatusReview {
+			return fmt.Errorf("该案件不在待人工复核状态")
+		}
+		now := time.Now()
+		appeal.Status = models.AppealStatus(input.Decision)
+		appeal.Result = input.Reason
+		appeal.ClosedAt = &now
+		appeal.ClosedReason = "manual_review"
+		if input.Decision == "pass" {
+			if err := applyAppealPass(tx, appeal); err != nil {
+				return err
+			}
+			if err := tx.Model(&models.User{}).Where("id = ?", appeal.AdminID).
+				Update("admin_exp", gorm.Expr("CASE WHEN admin_exp >= 3 THEN admin_exp - 3 ELSE 0 END")).Error; err != nil {
+				return err
+			}
+		} else if err := tx.Model(&models.User{}).Where("id = ?", appeal.AdminID).
+			Update("admin_exp", gorm.Expr("admin_exp + 5")).Error; err != nil {
+			return err
+		}
+		return tx.Save(&appeal).Error
+	}); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	message := "人工复核已完成，请查看公众法庭案件结果。"
+	_ = CreateAppealNotification(h.db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealResult, message, fmt.Sprintf("appeal-result:%d:appellant", appeal.ID))
+	_ = CreateAppealNotification(h.db, appeal.AdminID, appeal.ID, models.NotificationTypeAppealResult, message, fmt.Sprintf("appeal-result:%d:admin", appeal.ID))
+	c.JSON(http.StatusOK, gin.H{"message": "人工复核已完成", "appeal": appealResponse(appeal)})
 }
 
 // GetOne 获取申诉详情
@@ -311,7 +464,7 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 			return fmt.Errorf("您不是此申诉的陪审员")
 		}
 
-		if vote.Vote != "" {
+		if vote.Recused || vote.Vote != "" {
 			return fmt.Errorf("您已经投过票了")
 		}
 
@@ -342,18 +495,22 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 		}
 
 		requiredVotes := appeal.RequiredVotes
-		if requiredVotes <= 0 {
-			requiredVotes = len(votes)
+		if requiredVotes < 5 {
+			requiredVotes = 5
 		}
 		deadlineReached := appeal.VotingDeadline != nil && !time.Now().Before(*appeal.VotingDeadline)
 		if castCount < requiredVotes && !deadlineReached {
 			return nil
 		}
+		if castCount < requiredVotes {
+			appeal.Status = models.AppealStatusReview
+			appeal.Result = fmt.Sprintf("仅收到 %d 票，未达到法定人数 %d，转人工复核", castCount, requiredVotes)
+			appeal.ClosedReason = "insufficient_votes"
+			return tx.Save(&appeal).Error
+		}
 		if supportCount == opposeCount {
-			now := time.Now()
 			appeal.Status = models.AppealStatusReview
 			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 平票，转人工复核", supportCount, opposeCount)
-			appeal.ClosedAt = &now
 			appeal.ClosedReason = "tie_review_required"
 			return tx.Save(&appeal).Error
 		}
@@ -362,7 +519,7 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 		if supportCount > opposeCount {
 			appeal.Status = models.AppealStatusPass
 			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 申诉成功", supportCount, opposeCount)
-			if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("status", models.PostStatusNormal).Error; err != nil {
+			if err := applyAppealPass(tx, appeal); err != nil {
 				return err
 			}
 
@@ -400,8 +557,62 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	var closedAppeal models.Appeal
+	if h.db.Select("id", "appellant_id", "admin_id", "status").First(&closedAppeal, appealID).Error == nil && closedAppeal.Status != models.AppealStatusPending {
+		message := "公众法庭案件已结案，请查看复核结果。"
+		if closedAppeal.Status == models.AppealStatusReview {
+			message = "公众法庭案件需要人工复核，请等待管理员处理。"
+		}
+		_ = CreateAppealNotification(h.db, closedAppeal.AppellantID, closedAppeal.ID, models.NotificationTypeAppealResult, message, fmt.Sprintf("appeal-result:%d:appellant", closedAppeal.ID))
+		_ = CreateAppealNotification(h.db, closedAppeal.AdminID, closedAppeal.ID, models.NotificationTypeAppealResult, message, fmt.Sprintf("appeal-result:%d:admin", closedAppeal.ID))
+		if closedAppeal.Status == models.AppealStatusPass || closedAppeal.Status == models.AppealStatusReject {
+			var jury []models.AppealVote
+			if h.db.Where("appeal_id = ? AND recused = ?", appealID, false).Find(&jury).Error == nil {
+				for _, assigned := range jury {
+					_ = CreateAppealNotification(h.db, assigned.VoterID, uint(appealID), models.NotificationTypeAppealResult,
+						message, fmt.Sprintf("appeal-result:%d:jury:%d", appealID, assigned.VoterID))
+				}
+			}
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "投票成功"})
+}
+
+// Recuse 允许陪审员在投票前申请回避，回避不会暴露给其他陪审员。
+func (h *AppealHandler) Recuse(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	appealID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的申诉ID"})
+		return
+	}
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请说明回避原因"})
+		return
+	}
+	input.Reason = strings.TrimSpace(input.Reason)
+	if input.Reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请说明回避原因"})
+		return
+	}
+	var vote models.AppealVote
+	if err := h.db.Where("appeal_id = ? AND voter_id = ?", appealID, userID).First(&vote).Error; err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "你不是本案陪审员"})
+		return
+	}
+	if vote.Vote != "" || vote.Recused {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前状态不能申请回避"})
+		return
+	}
+	if err := h.db.Model(&vote).Updates(map[string]interface{}{"recused": true, "recuse_reason": input.Reason}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "申请回避失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已申请回避"})
 }
 
 func appealUserResponse(user models.User) models.PublicAppealUserResponse {
@@ -411,8 +622,10 @@ func appealUserResponse(user models.User) models.PublicAppealUserResponse {
 func appealResponse(appeal models.Appeal) models.AppealResponse {
 	return models.AppealResponse{
 		ID: appeal.ID, ReportID: appeal.ReportID, PostID: appeal.PostID,
-		AppellantReason: appeal.AppellantReason, AdminReason: appeal.AdminReason,
-		Status: appeal.Status, Result: appeal.Result, VotingDeadline: appeal.VotingDeadline,
+		AppellantReason: appeal.AppellantReason, EvidenceSnapshot: appeal.EvidenceSnapshot,
+		OriginalPostStatus: appeal.OriginalPostStatus,
+		AdminReason:        appeal.AdminReason,
+		Status:             appeal.Status, Result: appeal.Result, VotingDeadline: appeal.VotingDeadline,
 		RequiredVotes: appeal.RequiredVotes, ClosedReason: appeal.ClosedReason,
 		CreatedAt: appeal.CreatedAt, ClosedAt: appeal.ClosedAt,
 		Appellant: appealUserResponse(appeal.Appellant), Admin: appealUserResponse(appeal.Admin),
@@ -427,7 +640,9 @@ func (h *AppealHandler) appealResponseForUser(appeal models.Appeal, userID uint)
 	response.IsAdmin = appeal.AdminID == userID
 	var assigned models.AppealVote
 	if err := h.db.Where("appeal_id = ? AND voter_id = ?", appeal.ID, userID).First(&assigned).Error; err == nil {
-		response.CanVote = appeal.Status == models.AppealStatusPending && assigned.Vote == ""
+		response.CanVote = appeal.Status == models.AppealStatusPending && assigned.Vote == "" && !assigned.Recused
+		response.CanRecuse = appeal.Status == models.AppealStatusPending && assigned.Vote == "" && !assigned.Recused
+		response.IsRecused = assigned.Recused
 		response.MyVote = assigned.Vote
 		response.HasVoted = assigned.Vote != ""
 	}
@@ -437,6 +652,52 @@ func (h *AppealHandler) appealResponseForUser(appeal models.Appeal, userID uint)
 func appealVoteResponse(vote models.AppealVote) models.AppealVoteResponse {
 	return models.AppealVoteResponse{
 		ID: vote.ID, AppealID: vote.AppealID, Vote: vote.Vote, Comment: vote.Comment,
-		CreatedAt: vote.CreatedAt, Voter: appealUserResponse(vote.Voter),
+		CreatedAt: vote.CreatedAt, Voter: appealUserResponse(vote.Voter), Recused: vote.Recused,
 	}
+}
+
+func originalPostStatus(snapshot string, fallback models.PostStatus) models.PostStatus {
+	var payload struct {
+		OriginalStatus models.PostStatus `json:"original_status"`
+	}
+	if json.Unmarshal([]byte(snapshot), &payload) == nil && payload.OriginalStatus != "" {
+		return payload.OriginalStatus
+	}
+	if fallback == models.PostStatusDeleted {
+		return models.PostStatusNormal
+	}
+	return fallback
+}
+
+// applyAppealPass 恢复治理前状态，同时撤销原举报对作者信誉计数的影响。
+// 只有仍为 handled 的原举报会执行回滚，避免重复结案时重复扣减计数。
+func applyAppealPass(tx *gorm.DB, appeal models.Appeal) error {
+	originalStatus := appeal.OriginalPostStatus
+	if originalStatus == "" {
+		originalStatus = models.PostStatusNormal
+	}
+	if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("status", originalStatus).Error; err != nil {
+		return err
+	}
+	if appeal.ReportID == nil {
+		return nil
+	}
+	var report models.Report
+	if err := tx.First(&report, *appeal.ReportID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	if report.Status != models.ReportStatusHandled {
+		return nil
+	}
+	if err := tx.Model(&report).Updates(map[string]interface{}{"status": models.ReportStatusOverturned, "result": "申诉通过，撤销原治理决定"}).Error; err != nil {
+		return err
+	}
+	if report.TargetAuthorID != nil {
+		return tx.Model(&models.User{}).Where("id = ?", *report.TargetAuthorID).
+			Update("report_count", gorm.Expr("CASE WHEN report_count > 0 THEN report_count - 1 ELSE 0 END")).Error
+	}
+	return nil
 }

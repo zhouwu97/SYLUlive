@@ -1858,18 +1858,21 @@ func main() {
 	// 申诉路由
 
 	appeals := r.Group("/api/appeals")
+	r.GET("/api/appeals/public", appealHandler.GetPublicList)
 
 	appeals.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 
 	{
 
 		appeals.POST("/post/:id", appealHandler.Create)
+		appeals.POST("/report/:id", appealHandler.CreateByReport)
 
 		appeals.GET("", appealHandler.GetList)
 
 		appeals.GET("/:id", appealHandler.GetOne)
 
 		appeals.POST("/:id/vote", appealHandler.Vote)
+		appeals.POST("/:id/recuse", appealHandler.Recuse)
 
 	}
 
@@ -1894,6 +1897,8 @@ func main() {
 	admin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 
 	{
+		admin.GET("/appeals/review", appealHandler.AdminGetReviewList)
+		admin.POST("/appeals/:id/review", appealHandler.AdminResolveReview)
 
 		admin.GET("/exam-papers", examPaperHandler.AdminList)
 		admin.GET("/exam-papers/pending-count", examPaperHandler.AdminPendingCount)

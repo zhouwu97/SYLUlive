@@ -59,6 +59,9 @@ func StartAppealFinalizerCron(ctx context.Context, db *gorm.DB) *AppealFinalizer
 
 // FinalizeExpiredAppeals 批量处理已过投票截止时间的 pending 案件。
 func FinalizeExpiredAppeals(db *gorm.DB, now time.Time) (int, error) {
+	if err := notifyUpcomingAppeals(db, now); err != nil {
+		return 0, err
+	}
 	var ids []uint
 	if err := db.Model(&models.Appeal{}).
 		Where("status = ? AND voting_deadline IS NOT NULL AND voting_deadline <= ?", models.AppealStatusPending, now).
@@ -103,15 +106,24 @@ func finalizeExpiredAppeal(db *gorm.DB, appealID uint, now time.Time) (bool, err
 			}
 		}
 
-		appeal.ClosedAt = &now
-		appeal.ClosedReason = "voting_deadline_reached"
-		if supportCount == opposeCount {
+		requiredVotes := appeal.RequiredVotes
+		if requiredVotes < 5 {
+			requiredVotes = 5
+		}
+		if supportCount+opposeCount < requiredVotes {
+			appeal.Status = models.AppealStatusReview
+			appeal.Result = fmt.Sprintf("仅收到 %d 票，未达到法定人数 %d，转人工复核", supportCount+opposeCount, requiredVotes)
+			appeal.ClosedReason = "insufficient_votes"
+		} else if supportCount == opposeCount {
 			appeal.Status = models.AppealStatusReview
 			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 平票，转人工复核", supportCount, opposeCount)
+			appeal.ClosedReason = "tie_review_required"
 		} else if supportCount > opposeCount {
 			appeal.Status = models.AppealStatusPass
 			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 申诉成功", supportCount, opposeCount)
-			if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("status", models.PostStatusNormal).Error; err != nil {
+			appeal.ClosedAt = &now
+			appeal.ClosedReason = "voting_deadline_reached"
+			if err := applyAppealPass(tx, appeal); err != nil {
 				return err
 			}
 			if err := tx.Model(&models.User{}).Where("id = ?", appeal.AdminID).
@@ -121,13 +133,98 @@ func finalizeExpiredAppeal(db *gorm.DB, appealID uint, now time.Time) (bool, err
 		} else {
 			appeal.Status = models.AppealStatusReject
 			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 申诉失败", supportCount, opposeCount)
+			appeal.ClosedAt = &now
+			appeal.ClosedReason = "voting_deadline_reached"
 			if err := tx.Model(&models.User{}).Where("id = ?", appeal.AdminID).
 				Update("admin_exp", gorm.Expr("admin_exp + 5")).Error; err != nil {
 				return err
 			}
 		}
 		changed = true
+		if err := createAppealTaskNotification(tx, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealResult,
+			"公众法庭案件已结案，请查看复核结果。", fmt.Sprintf("appeal-result:%d:appellant", appeal.ID)); err != nil {
+			return err
+		}
+		if err := createAppealTaskNotification(tx, appeal.AdminID, appeal.ID, models.NotificationTypeAppealResult,
+			"公众法庭案件已结案，请查看复核结果。", fmt.Sprintf("appeal-result:%d:admin", appeal.ID)); err != nil {
+			return err
+		}
+		if appeal.Status == models.AppealStatusPass || appeal.Status == models.AppealStatusReject {
+			for _, vote := range votes {
+				if vote.Recused {
+					continue
+				}
+				if err := createAppealTaskNotification(tx, vote.VoterID, appeal.ID, models.NotificationTypeAppealResult,
+					"公众法庭案件已结案，请查看复核结果。", fmt.Sprintf("appeal-result:%d:jury:%d", appeal.ID, vote.VoterID)); err != nil {
+					return err
+				}
+			}
+		}
 		return tx.Save(&appeal).Error
 	})
 	return changed, err
+}
+
+// applyAppealPass 恢复治理前状态，并撤销原举报造成的信誉计数。
+func applyAppealPass(tx *gorm.DB, appeal models.Appeal) error {
+	originalStatus := appeal.OriginalPostStatus
+	if originalStatus == "" {
+		originalStatus = models.PostStatusNormal
+	}
+	if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("status", originalStatus).Error; err != nil {
+		return err
+	}
+	if appeal.ReportID == nil {
+		return nil
+	}
+	var report models.Report
+	if err := tx.First(&report, *appeal.ReportID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil
+		}
+		return err
+	}
+	if report.Status != models.ReportStatusHandled {
+		return nil
+	}
+	if err := tx.Model(&report).Updates(map[string]interface{}{"status": models.ReportStatusOverturned, "result": "申诉通过，撤销原治理决定"}).Error; err != nil {
+		return err
+	}
+	if report.TargetAuthorID != nil {
+		return tx.Model(&models.User{}).Where("id = ?", *report.TargetAuthorID).
+			Update("report_count", gorm.Expr("CASE WHEN report_count > 0 THEN report_count - 1 ELSE 0 END")).Error
+	}
+	return nil
+}
+
+func notifyUpcomingAppeals(db *gorm.DB, now time.Time) error {
+	deadline := now.Add(24 * time.Hour)
+	var appeals []models.Appeal
+	if err := db.Where("status = ? AND voting_deadline > ? AND voting_deadline <= ?", models.AppealStatusPending, now, deadline).Find(&appeals).Error; err != nil {
+		return err
+	}
+	for _, appeal := range appeals {
+		var jury []models.AppealVote
+		if err := db.Where("appeal_id = ? AND vote = ''", appeal.ID).Find(&jury).Error; err != nil {
+			return err
+		}
+		for _, vote := range jury {
+			if err := createAppealTaskNotification(db, vote.VoterID, appeal.ID, models.NotificationTypeAppealDeadline,
+				"公众法庭案件将在 24 小时内截止，请及时完成评议。", fmt.Sprintf("appeal-deadline:%d:%d", appeal.ID, vote.VoterID)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func createAppealTaskNotification(db *gorm.DB, userID, appealID uint, notificationType, content, dedupKey string) error {
+	if userID == 0 || appealID == 0 {
+		return nil
+	}
+	var existing models.Notification
+	if err := db.Where("user_id = ? AND type = ? AND dedup_key = ?", userID, notificationType, dedupKey).First(&existing).Error; err == nil {
+		return nil
+	}
+	return db.Create(&models.Notification{UserID: userID, Type: notificationType, RelatedID: appealID, Content: content, DedupKey: dedupKey}).Error
 }

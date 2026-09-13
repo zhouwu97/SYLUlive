@@ -17,6 +17,7 @@ import 'admin_canteen_operations_screen.dart';
 import 'exam_papers/admin_exam_papers_screen.dart';
 import 'shuitie_screen.dart';
 import 'admin_ai_metrics_screen.dart';
+import 'admin_appeal_review_screen.dart';
 import '../widgets/global_background_wrapper.dart';
 
 class AdminPanelScreen extends StatefulWidget {
@@ -161,6 +162,19 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       title: '社区治理',
                       isDark: isDark,
                       children: [
+                        _AdminActionPill(
+                          icon: Icons.balance_outlined,
+                          iconColor: Colors.blueGrey,
+                          title: '公众法庭复核',
+                          subtitle: '处理平票与人数不足案件',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const AdminAppealReviewScreen()))
+                              .then((_) => _loadCounts()),
+                        ),
                         _AdminActionPill(
                           icon: Icons.restaurant_outlined,
                           iconColor: Colors.green,

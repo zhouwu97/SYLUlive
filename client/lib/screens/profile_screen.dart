@@ -676,7 +676,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
-                builder: (_) => const CourtHubScreen(initialTab: 1)),
+                builder: (_) => const CourtHubScreen(initialTab: 0)),
           ),
         ),
       ),
@@ -690,7 +690,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
-                builder: (_) => const CourtHubScreen(initialTab: 2)),
+                builder: (_) => const CourtHubScreen(initialTab: 1)),
           ),
         ),
       ),

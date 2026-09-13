@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -80,6 +82,46 @@ class _CourtScreenState extends State<CourtScreen> {
     }
   }
 
+  Future<void> _recuse() async {
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('申请回避'),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: '回避原因'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text),
+              child: const Text('提交')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (reason == null || reason.trim().isEmpty) return;
+    try {
+      await getSharedDio().post('/appeals/${widget.appealId}/recuse',
+          data: {'reason': reason.trim()});
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('已申请回避')));
+      await _load();
+    } on DioException catch (error) {
+      if (!mounted) return;
+      final message = error.response?.data is Map
+          ? error.response?.data['error']?.toString()
+          : null;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message ?? '申请回避失败')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final appeal = _appeal;
@@ -106,18 +148,36 @@ class _CourtScreenState extends State<CourtScreen> {
     final post = appeal['post'] is Map
         ? Map<String, dynamic>.from(appeal['post'])
         : const <String, dynamic>{};
+    final snapshot = _snapshot(appeal['evidence_snapshot']);
+    final snapshotTitle = snapshot['title'] ?? post['title'] ?? '未提供标题';
+    final snapshotContent = snapshot['content'] ?? post['content'] ?? '未提供内容';
+    final deadline = _formatDate(appeal['voting_deadline']);
+    final isAppellant = appeal['is_appellant'] == true;
+    final isAdmin = appeal['is_admin'] == true;
+    final canRecuse = appeal['can_recuse'] == true;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
-        Text('案件 #${appeal['id'] ?? widget.appealId}',
-            style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 4),
-        Text(_status(status)),
+        Row(children: [
+          Expanded(
+              child: Text('案件 #${appeal['id'] ?? widget.appealId}',
+                  style: Theme.of(context).textTheme.titleLarge)),
+          Chip(label: Text(_status(status))),
+        ]),
+        const SizedBox(height: 6),
+        Text('社区帖子治理复核', style: Theme.of(context).textTheme.bodyMedium),
+        if (deadline != null) ...[
+          const SizedBox(height: 4),
+          Text('评议截止：$deadline', style: Theme.of(context).textTheme.bodySmall),
+        ],
         const SizedBox(height: 20),
         _EvidenceSection(
-            title: '原内容快照',
-            content:
-                '${post['title'] ?? '未提供标题'}\n\n${post['content'] ?? '未提供内容'}'),
+            title: '原内容快照', content: '$snapshotTitle\n\n$snapshotContent'),
+        if (snapshot['image_file_ids'] is List &&
+            (snapshot['image_file_ids'] as List).isNotEmpty)
+          _EvidenceSection(
+              title: '图片证据',
+              content: (snapshot['image_file_ids'] as List).join('、')),
         _EvidenceSection(
             title: '申诉理由',
             content: (appeal['appellant_reason'] ?? '未填写').toString()),
@@ -136,6 +196,15 @@ class _CourtScreenState extends State<CourtScreen> {
           Padding(
               padding: const EdgeInsets.only(top: 12),
               child: Text('你的陪审意见：${myVote == 'support' ? '支持申诉' : '维持原处理'}')),
+        if (isAppellant) const _RoleHint(text: '这是你的申诉，案件正在由随机陪审员评议。'),
+        if (isAdmin) const _RoleHint(text: '你是原治理管理员，请等待公众法庭或人工复核结果。'),
+        if (canRecuse)
+          Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                  onPressed: _recuse,
+                  icon: const Icon(Icons.block_outlined),
+                  label: const Text('申请回避'))),
         const SizedBox(height: 24),
         if (canVote)
           Row(children: [
@@ -164,6 +233,40 @@ class _CourtScreenState extends State<CourtScreen> {
         'review_required' => '待人工复核',
         _ => status,
       };
+
+  Map<String, dynamic> _snapshot(dynamic value) {
+    if (value is! String || value.trim().isEmpty) return const {};
+    try {
+      final decoded = jsonDecode(value);
+      return decoded is Map ? Map<String, dynamic>.from(decoded) : const {};
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  String? _formatDate(dynamic value) {
+    if (value is! String || value.isEmpty) return null;
+    final date = DateTime.tryParse(value)?.toLocal();
+    if (date == null) return null;
+    return '${date.month}月${date.day}日 ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _RoleHint extends StatelessWidget {
+  final String text;
+  const _RoleHint({required this.text});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(top: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(text),
+      );
 }
 
 class _EvidenceSection extends StatelessWidget {

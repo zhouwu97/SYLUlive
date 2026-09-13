@@ -18,6 +18,7 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _appeals = const [];
+  List<Map<String, dynamic>> _publicAppeals = const [];
   late int _tab;
 
   @override
@@ -47,6 +48,21 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
             .map((item) => Map<String, dynamic>.from(item))
             .toList();
       });
+      try {
+        final publicResponse = await getSharedDio().get('/appeals/public');
+        final publicData = publicResponse.data;
+        if (mounted && publicData is List) {
+          setState(() {
+            _publicAppeals = publicData.whereType<Map>().map((item) {
+              final value = Map<String, dynamic>.from(item);
+              value['post'] = {'title': value['post_title'] ?? '社区治理复核'};
+              return value;
+            }).toList();
+          });
+        }
+      } catch (_) {
+        // 公示失败不影响个人案件列表。
+      }
     } on DioException catch (error) {
       if (mounted) {
         setState(() => _error = error.response?.data is Map
@@ -61,12 +77,14 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
   }
 
   List<Map<String, dynamic>> get _visibleAppeals {
+    if (_tab == 3) return _publicAppeals;
     return _appeals.where((appeal) {
       final status = appeal['status']?.toString() ?? 'pending';
       return switch (_tab) {
-        1 => appeal['can_vote'] == true && status == 'pending',
-        2 => appeal['is_appellant'] == true || appeal['is_admin'] == true,
-        _ => _tab == 3 ? status != 'pending' : true,
+        0 => appeal['can_vote'] == true && status == 'pending',
+        1 => appeal['is_appellant'] == true,
+        2 => appeal['my_vote'] != null && appeal['my_vote'] != '',
+        _ => true,
       };
     }).toList();
   }
@@ -91,15 +109,9 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
             const SizedBox(height: 16),
             _summaryRow(pendingCount),
             const SizedBox(height: 16),
-            SegmentedButton<int>(
-              segments: const [
-                ButtonSegment(value: 0, label: Text('全部')),
-                ButtonSegment(value: 1, label: Text('待我陪审')),
-                ButtonSegment(value: 2, label: Text('我的案件')),
-                ButtonSegment(value: 3, label: Text('结案公示')),
-              ],
-              selected: {_tab},
-              onSelectionChanged: (value) => setState(() => _tab = value.first),
+            _CourtTabs(
+              selected: _tab,
+              onChanged: (value) => setState(() => _tab = value),
             ),
             const SizedBox(height: 16),
             if (_loading)
@@ -109,9 +121,7 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
             else if (_error != null)
               _ErrorState(message: _error!, onRetry: _load)
             else if (_visibleAppeals.isEmpty)
-              const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Center(child: Text('暂无相关案件')))
+              _EmptyCourtState(tab: _tab)
             else
               ..._visibleAppeals.map(_buildAppealTile),
           ],
@@ -121,18 +131,21 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
   }
 
   Widget _summaryRow(int pendingCount) {
-    final closedCount =
-        _appeals.where((item) => item['status'] != 'pending').length;
     return Row(
       children: [
-        _SummaryItem(label: '待我陪审', value: '$pendingCount'),
+        _SummaryItem(label: '待我陪审', value: _loading ? '—' : '$pendingCount'),
         const SizedBox(width: 8),
         _SummaryItem(
-            label: '我的案件',
-            value:
-                '${_appeals.where((item) => item['is_appellant'] == true || item['is_admin'] == true).length}'),
+            label: '我的申诉',
+            value: _loading
+                ? '—'
+                : '${_appeals.where((item) => item['is_appellant'] == true).length}'),
         const SizedBox(width: 8),
-        _SummaryItem(label: '已结案', value: '$closedCount'),
+        _SummaryItem(
+            label: '已参与',
+            value: _loading
+                ? '—'
+                : '${_appeals.where((item) => item['my_vote'] != null && item['my_vote'] != '').length}'),
       ],
     );
   }
@@ -144,6 +157,7 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
         ? Map<String, dynamic>.from(appeal['post'])
         : const <String, dynamic>{};
     final canVote = appeal['can_vote'] == true;
+    final isPublic = _tab == 3;
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
@@ -158,13 +172,30 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         trailing: const Icon(Icons.chevron_right),
-        onTap: id is num
+        onTap: id is num && !isPublic
             ? () => Navigator.push(
                     context,
                     MaterialPageRoute(
                         builder: (_) => CourtScreen(appealId: id.toInt())))
                 .then((_) => _load())
-            : null,
+            : isPublic
+                ? () => _showPublicResult(appeal)
+                : null,
+      ),
+    );
+  }
+
+  Future<void> _showPublicResult(Map<String, dynamic> appeal) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('案件 #${appeal['id']} · 已结案'),
+        content: Text(
+            '${appeal['result'] ?? '社区复核已完成'}\n\n支持申诉 ${appeal['support_count'] ?? 0} · 维持处理 ${appeal['oppose_count'] ?? 0}\n\n陪审员身份不公开。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context), child: const Text('知道了'))
+        ],
       ),
     );
   }
@@ -176,6 +207,80 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
         'review_required' => '待人工复核',
         _ => status,
       };
+}
+
+class _CourtTabs extends StatelessWidget {
+  final int selected;
+  final ValueChanged<int> onChanged;
+
+  const _CourtTabs({required this.selected, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final labels = ['待陪审', '我的申诉', '参与记录', '结案公示'];
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        children: [
+          for (var index = 0; index < labels.length; index++)
+            Expanded(
+              child: InkWell(
+                onTap: () => onChanged(index),
+                child: Container(
+                  alignment: Alignment.center,
+                  color: selected == index ? scheme.primaryContainer : null,
+                  child: Text(
+                    labels[index],
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: selected == index
+                              ? scheme.onPrimaryContainer
+                              : scheme.onSurfaceVariant,
+                          fontWeight:
+                              selected == index ? FontWeight.w700 : null,
+                        ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyCourtState extends StatelessWidget {
+  final int tab;
+  const _EmptyCourtState({required this.tab});
+
+  @override
+  Widget build(BuildContext context) {
+    final isJury = tab == 0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 42, 24, 24),
+      child: Column(
+        children: [
+          Icon(isJury ? Icons.balance_outlined : Icons.gavel_outlined,
+              size: 40, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(height: 12),
+          Text(isJury ? '暂时没有待你陪审的案件' : '这里还没有案件记录',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text(isJury ? '当你被随机选为陪审员后，案件会出现在这里。' : '你的申诉和参与记录会在案件创建后显示。',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall),
+        ],
+      ),
+    );
+  }
 }
 
 class _SummaryItem extends StatelessWidget {

@@ -23,7 +23,7 @@ class HomeServiceDrawer extends StatelessWidget {
   final VoidCallback onOpenGrades;
   final VoidCallback onOpenExamSchedule;
   final VoidCallback onOpenFeedback;
-  final VoidCallback onOpenCourt;
+  final VoidCallback? onOpenCourt;
   final VoidCallback onOpenWaterSectionDirectory;
   final ValueChanged<WaterPostCategory>? onOpenWaterCategory;
   final ValueChanged<WaterSection>? onOpenWaterSection;
@@ -45,7 +45,7 @@ class HomeServiceDrawer extends StatelessWidget {
     required this.onOpenGrades,
     required this.onOpenExamSchedule,
     required this.onOpenFeedback,
-    required this.onOpenCourt,
+    this.onOpenCourt,
     required this.onOpenWaterSectionDirectory,
     this.onOpenWaterCategory,
     this.onOpenWaterSection,
@@ -493,7 +493,7 @@ class HomeServiceDrawer extends StatelessWidget {
             title: '公众法庭',
             subtitle: '查看陪审任务与社区治理结果',
             isDark: isDark,
-            onTap: onOpenCourt,
+            onTap: onOpenCourt ?? () {},
           ),
         ),
       ],

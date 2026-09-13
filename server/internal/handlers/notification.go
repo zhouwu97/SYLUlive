@@ -433,6 +433,38 @@ func CreateReplyNotification(db *gorm.DB, toUserID, fromUserID, replyID, postID 
 	return db.Create(&notification).Error
 }
 
+// CreateAppealNotification 写入公众法庭业务通知，dedupKey 保证定时任务重试不会重复提醒。
+func CreateAppealNotification(db *gorm.DB, toUserID, appealID uint, notificationType, content, dedupKey string) error {
+	if toUserID == 0 || appealID == 0 {
+		return nil
+	}
+	var existing models.Notification
+	if err := db.Where("user_id = ? AND type = ? AND dedup_key = ?", toUserID, notificationType, dedupKey).First(&existing).Error; err == nil {
+		return nil
+	}
+	return db.Create(&models.Notification{
+		UserID: toUserID, Type: notificationType, RelatedID: appealID,
+		Content: content, DedupKey: dedupKey, IsRead: false,
+	}).Error
+}
+
+// CreateContentGovernedNotification 告知内容作者具体治理决定，related_id 固定为 ReportID。
+func CreateContentGovernedNotification(db *gorm.DB, toUserID, reportID, postID uint, reason string) error {
+	var existing models.Notification
+	if err := db.Where("user_id = ? AND type = ? AND dedup_key = ?", toUserID, models.NotificationTypeContentGoverned, fmt.Sprintf("content-governed:%d", reportID)).First(&existing).Error; err == nil {
+		return nil
+	}
+	content := "你的内容已被管理员处理"
+	if reason != "" {
+		content += "：" + reason
+	}
+	return db.Create(&models.Notification{
+		UserID: toUserID, Type: models.NotificationTypeContentGoverned,
+		RelatedID: reportID, PostID: postID, Content: content,
+		DedupKey: fmt.Sprintf("content-governed:%d", reportID), IsRead: false,
+	}).Error
+}
+
 // SendJPushNotification 异步发送极光推送（不阻塞主请求）
 func SendJPushNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, toUserID, fromUserID uint, replyID, postID uint, content string) {
 	if jpushAppKey == "" || jpushMasterSecret == "" {

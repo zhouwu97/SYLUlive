@@ -117,16 +117,33 @@ func createReport(db *gorm.DB, userID uint, input CreateReportInput) (models.Rep
 	switch input.TargetType {
 	case "post":
 		var post models.Post
-		if err := db.Select("author_id", "status").First(&post, input.TargetID).Error; err != nil || post.Status == models.PostStatusDeleted {
+		if err := db.Preload("Images").First(&post, input.TargetID).Error; err != nil || post.Status == models.PostStatusDeleted {
 			return models.Report{}, &reportCreateError{status: http.StatusNotFound, code: "target_not_found", message: "帖子不存在或已删除"}
 		}
 		targetOwner = post.AuthorID
+		imageFileIDs := make([]uint, 0, len(post.Images))
+		for _, image := range post.Images {
+			imageFileIDs = append(imageFileIDs, image.FileID)
+		}
+		payload, err := json.Marshal(gin.H{
+			"title": post.Title, "content": post.Content, "image_file_ids": imageFileIDs,
+			"original_status": post.Status, "created_at": post.CreatedAt,
+		})
+		if err != nil {
+			return models.Report{}, err
+		}
+		snapshot = string(payload)
 	case "reply":
 		var reply models.Reply
-		if err := db.Select("author_id", "status").First(&reply, input.TargetID).Error; err != nil || reply.Status != models.ReplyStatusNormal {
+		if err := db.Select("author_id", "status", "content", "created_at").First(&reply, input.TargetID).Error; err != nil || reply.Status != models.ReplyStatusNormal {
 			return models.Report{}, &reportCreateError{status: http.StatusNotFound, code: "target_not_found", message: "回复不存在或已删除"}
 		}
 		targetOwner = reply.AuthorID
+		payload, err := json.Marshal(gin.H{"content": reply.Content, "original_status": reply.Status, "created_at": reply.CreatedAt})
+		if err != nil {
+			return models.Report{}, err
+		}
+		snapshot = string(payload)
 	case "teacher_rating":
 		var tr models.TeacherRating
 		if err := db.First(&tr, input.TargetID).Error; err != nil || tr.Status != "normal" || tr.DeletedAt.Valid {
@@ -294,6 +311,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 		input.ConfirmedReasonCode = ""
 	}
 	var report models.Report
+	var governedUserID uint
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&report, reportID).Error; err != nil {
 			return err
@@ -464,6 +482,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 			if err := tx.Model(&models.User{}).Where("id = ?", targetUserID).Update("report_count", gorm.Expr("report_count + 1")).Error; err != nil {
 				return err
 			}
+			governedUserID = targetUserID
 			if isCanteenGovernanceTarget(report.TargetType) {
 				_, err := services.ApplyCanteenSanction(tx, report.ID, report.TargetType, report.TargetID, targetUserID, userID.(uint), input.ConfirmedReasonCode)
 				if err != nil {
@@ -510,6 +529,9 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "处理举报失败"})
 		}
 		return
+	}
+	if input.Status == string(models.ReportStatusHandled) && governedUserID > 0 && report.TargetType == "post" {
+		_ = CreateContentGovernedNotification(h.db, governedUserID, report.ID, report.TargetID, report.DeleteReason)
 	}
 	c.JSON(http.StatusOK, report)
 }

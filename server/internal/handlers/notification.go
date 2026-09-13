@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -438,43 +439,23 @@ func CreateAppealNotification(db *gorm.DB, toUserID, appealID uint, notification
 	if toUserID == 0 || appealID == 0 {
 		return nil
 	}
-	var existing models.Notification
-	if err := db.Where("user_id = ? AND type = ? AND dedup_key = ?", toUserID, notificationType, dedupKey).First(&existing).Error; err == nil {
-		return nil
-	}
-	err := db.Create(&models.Notification{
+	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.Notification{
 		UserID: toUserID, Type: notificationType, RelatedID: appealID,
 		Content: content, DedupKey: dedupKey, IsRead: false,
 	}).Error
-	if err != nil {
-		if lookupErr := db.Where("user_id = ? AND type = ? AND dedup_key = ?", toUserID, notificationType, dedupKey).First(&existing).Error; lookupErr == nil {
-			return nil
-		}
-	}
-	return err
 }
 
 // CreateContentGovernedNotification 告知内容作者具体治理决定，related_id 固定为 ReportID。
 func CreateContentGovernedNotification(db *gorm.DB, toUserID, reportID, postID uint, reason string) error {
-	var existing models.Notification
-	if err := db.Where("user_id = ? AND type = ? AND dedup_key = ?", toUserID, models.NotificationTypeContentGoverned, fmt.Sprintf("content-governed:%d", reportID)).First(&existing).Error; err == nil {
-		return nil
-	}
 	content := "你的内容已被管理员处理"
 	if reason != "" {
 		content += "：" + reason
 	}
-	err := db.Create(&models.Notification{
+	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.Notification{
 		UserID: toUserID, Type: models.NotificationTypeContentGoverned,
 		RelatedID: reportID, PostID: postID, Content: content,
 		DedupKey: fmt.Sprintf("content-governed:%d", reportID), IsRead: false,
 	}).Error
-	if err != nil {
-		if lookupErr := db.Where("user_id = ? AND type = ? AND dedup_key = ?", toUserID, models.NotificationTypeContentGoverned, fmt.Sprintf("content-governed:%d", reportID)).First(&existing).Error; lookupErr == nil {
-			return nil
-		}
-	}
-	return err
 }
 
 // SendJPushNotification 异步发送极光推送（不阻塞主请求）

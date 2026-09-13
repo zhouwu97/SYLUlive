@@ -147,7 +147,7 @@ func finalizeExpiredAppeal(db *gorm.DB, appealID uint, now time.Time) (bool, err
 		notificationType := models.NotificationTypeAppealResult
 		notificationKey := "appeal-result"
 		if appeal.Status == models.AppealStatusReview {
-			resultMessage = "社区评议未形成有效裁决，案件已转人工复核，请等待管理员处理。"
+			resultMessage = "社区评议未形成有效裁决，案件已转交独立管理员复核，请等待最终结果。"
 			notificationType = models.NotificationTypeAppealReviewRequired
 			notificationKey = "appeal-review-required"
 		}
@@ -155,7 +155,11 @@ func finalizeExpiredAppeal(db *gorm.DB, appealID uint, now time.Time) (bool, err
 			resultMessage, fmt.Sprintf("%s:%d:appellant", notificationKey, appeal.ID)); err != nil {
 			return err
 		}
-		if err := createAppealTaskNotification(tx, appeal.AdminID, appeal.ID, notificationType,
+		if appeal.Status == models.AppealStatusReview {
+			if err := createAppealReviewNotifications(tx, appeal.ID, appeal.AdminID); err != nil {
+				return err
+			}
+		} else if err := createAppealTaskNotification(tx, appeal.AdminID, appeal.ID, notificationType,
 			resultMessage, fmt.Sprintf("%s:%d:admin", notificationKey, appeal.ID)); err != nil {
 			return err
 		}
@@ -249,15 +253,32 @@ func createAppealTaskNotification(db *gorm.DB, userID, appealID uint, notificati
 	if userID == 0 || appealID == 0 {
 		return nil
 	}
-	var existing models.Notification
-	if err := db.Where("user_id = ? AND type = ? AND dedup_key = ?", userID, notificationType, dedupKey).First(&existing).Error; err == nil {
-		return nil
+	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.Notification{
+		UserID: userID, Type: notificationType, RelatedID: appealID, Content: content, DedupKey: dedupKey,
+	}).Error
+}
+
+// createAppealReviewNotifications 只把人工复核待办发给排除原治理管理员后的管理员。
+func createAppealReviewNotifications(db *gorm.DB, appealID, originalAdminID uint) error {
+	var reviewerIDs []uint
+	if err := db.Model(&models.User{}).
+		Where("id <> ? AND role IN ?", originalAdminID, []models.Role{models.RoleAdmin, models.RoleSuperAdmin}).
+		Pluck("id", &reviewerIDs).Error; err != nil {
+		return err
 	}
-	err := db.Create(&models.Notification{UserID: userID, Type: notificationType, RelatedID: appealID, Content: content, DedupKey: dedupKey}).Error
-	if err != nil {
-		if lookupErr := db.Where("user_id = ? AND type = ? AND dedup_key = ?", userID, notificationType, dedupKey).First(&existing).Error; lookupErr == nil {
-			return nil
+	if len(reviewerIDs) == 0 {
+		return createAppealTaskNotification(db, originalAdminID, appealID, models.NotificationTypeAppealReviewRequired,
+			"当前暂无可用的独立复核管理员，案件已进入待分配复核队列。", fmt.Sprintf("appeal-review-required:%d:waiting", appealID))
+	}
+	if err := createAppealTaskNotification(db, originalAdminID, appealID, models.NotificationTypeAppealReviewRequired,
+		"该案件已转交其他管理员复核，你无需处理。", fmt.Sprintf("appeal-review-required:%d:original-admin", appealID)); err != nil {
+		return err
+	}
+	for _, reviewerID := range reviewerIDs {
+		if err := createAppealTaskNotification(db, reviewerID, appealID, models.NotificationTypeAppealReviewRequired,
+			"有公众法庭案件待人工复核，请查看法庭复核待办。", fmt.Sprintf("appeal-review-required:%d:reviewer:%d", appealID, reviewerID)); err != nil {
+			return err
 		}
 	}
-	return err
+	return nil
 }

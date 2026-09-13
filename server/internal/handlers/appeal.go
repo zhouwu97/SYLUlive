@@ -209,13 +209,33 @@ func (h *AppealHandler) CreateByReport(c *gin.Context) {
 func notifyAppealOpened(db *gorm.DB, appeal models.Appeal) {
 	if appeal.Status == models.AppealStatusReview {
 		_ = CreateAppealNotification(db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealReviewRequired,
-			"当前暂无足够陪审员，案件已转人工复核，请等待管理员处理。", fmt.Sprintf("appeal-review-required:%d:appellant", appeal.ID))
-		_ = CreateAppealNotification(db, appeal.AdminID, appeal.ID, models.NotificationTypeAppealReviewRequired,
-			"公众法庭案件已转人工复核，请及时处理。", fmt.Sprintf("appeal-review-required:%d:admin", appeal.ID))
+			"案件已转交独立管理员复核，请等待最终结果。", fmt.Sprintf("appeal-review-required:%d:appellant", appeal.ID))
+		notifyIndependentReviewers(db, appeal.ID, appeal.AdminID)
 		return
 	}
 	_ = CreateAppealNotification(db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealCreated,
 		"你的申诉已创建，公众法庭将开始复核。", fmt.Sprintf("appeal-created:%d", appeal.ID))
+}
+
+// notifyIndependentReviewers 只通知能够实际处理案件的管理员，避免原治理管理员收到无法执行的待办。
+func notifyIndependentReviewers(db *gorm.DB, appealID, originalAdminID uint) {
+	var reviewerIDs []uint
+	if err := db.Model(&models.User{}).
+		Where("id <> ? AND role IN ?", originalAdminID, []models.Role{models.RoleAdmin, models.RoleSuperAdmin}).
+		Pluck("id", &reviewerIDs).Error; err != nil {
+		return
+	}
+	if len(reviewerIDs) == 0 {
+		_ = CreateAppealNotification(db, originalAdminID, appealID, models.NotificationTypeAppealReviewRequired,
+			"当前暂无可用的独立复核管理员，案件已进入待分配复核队列。", fmt.Sprintf("appeal-review-required:%d:waiting", appealID))
+		return
+	}
+	_ = CreateAppealNotification(db, originalAdminID, appealID, models.NotificationTypeAppealReviewRequired,
+		"该案件已转交其他管理员复核，你无需处理。", fmt.Sprintf("appeal-review-required:%d:original-admin", appealID))
+	for _, reviewerID := range reviewerIDs {
+		_ = CreateAppealNotification(db, reviewerID, appealID, models.NotificationTypeAppealReviewRequired,
+			"有公众法庭案件待人工复核，请查看法庭复核待办。", fmt.Sprintf("appeal-review-required:%d:reviewer:%d", appealID, reviewerID))
+	}
 }
 
 // selectJury 随机选择陪审员
@@ -716,12 +736,15 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 		notificationType := models.NotificationTypeAppealResult
 		notificationKey := "appeal-result"
 		if closedAppeal.Status == models.AppealStatusReview {
-			message = "公众法庭案件需要人工复核，请等待管理员处理。"
+			notifyIndependentReviewers(h.db, closedAppeal.ID, closedAppeal.AdminID)
+			message = "公众法庭案件已转交独立管理员复核，请等待最终结果。"
 			notificationType = models.NotificationTypeAppealReviewRequired
 			notificationKey = "appeal-review-required"
+			_ = CreateAppealNotification(h.db, closedAppeal.AppellantID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:appellant", notificationKey, closedAppeal.ID))
+		} else {
+			_ = CreateAppealNotification(h.db, closedAppeal.AppellantID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:appellant", notificationKey, closedAppeal.ID))
+			_ = CreateAppealNotification(h.db, closedAppeal.AdminID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:admin", notificationKey, closedAppeal.ID))
 		}
-		_ = CreateAppealNotification(h.db, closedAppeal.AppellantID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:appellant", notificationKey, closedAppeal.ID))
-		_ = CreateAppealNotification(h.db, closedAppeal.AdminID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:admin", notificationKey, closedAppeal.ID))
 		if closedAppeal.Status == models.AppealStatusPass || closedAppeal.Status == models.AppealStatusReject {
 			var jury []models.AppealVote
 			if h.db.Where("appeal_id = ? AND recused = ?", appealID, false).Find(&jury).Error == nil {
@@ -738,6 +761,9 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 
 func appealResultIrreversible(supportCount, opposeCount, eligibleCount int) bool {
 	remaining := eligibleCount - supportCount - opposeCount
+	if remaining == 0 {
+		return true
+	}
 	return supportCount > opposeCount+remaining || opposeCount > supportCount+remaining
 }
 

@@ -815,7 +815,9 @@ bool _isLoginRouteVisible() {
   if (navigator == null) return false;
   var loginVisible = false;
   navigator.popUntil((route) {
-    loginVisible = route.settings.name == '/login';
+    // popUntil 只遍历路由，不改变栈；必须累积命中结果，不能让根路由
+    // 覆盖前面已经发现的登录页，否则 Login + Dialog 会被误判为未登录。
+    loginVisible = loginVisible || route.settings.name == '/login';
     return true;
   });
   return loginVisible;

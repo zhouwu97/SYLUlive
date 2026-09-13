@@ -97,6 +97,33 @@ class HomeWidgetPinResult {
   bool get requestSent => status == HomeWidgetPinStatus.requested;
 }
 
+enum HomeWidgetSyncStage { idle, writing, refreshing, success, failed }
+
+/// 小组件同步的最后一次结果，供设置页和诊断日志展示；不承载课程内容。
+class HomeWidgetSyncStatus {
+  const HomeWidgetSyncStatus({
+    this.stage = HomeWidgetSyncStage.idle,
+    this.lastWriteAt,
+    this.lastRefreshAt,
+    this.writeSucceeded,
+    this.refreshSucceeded,
+    this.accountId,
+    this.dataVersion,
+    this.errorCode,
+    this.errorMessage,
+  });
+
+  final HomeWidgetSyncStage stage;
+  final DateTime? lastWriteAt;
+  final DateTime? lastRefreshAt;
+  final bool? writeSucceeded;
+  final bool? refreshSucceeded;
+  final int? accountId;
+  final String? dataVersion;
+  final String? errorCode;
+  final String? errorMessage;
+}
+
 /// Flutter 与 Android RemoteViews / iOS WidgetKit 之间唯一的数据同步入口。
 class HomeWidgetService {
   HomeWidgetService._();
@@ -110,6 +137,13 @@ class HomeWidgetService {
   static CourseScheduleProvider? _lastCourseProvider;
   static List<HomeWidgetExamEntry>? _lastExamEntries;
   static Future<void> _appearanceUpdateQueue = Future<void>.value();
+  static HomeWidgetSyncStatus _syncStatus = const HomeWidgetSyncStatus();
+
+  static HomeWidgetSyncStatus get syncStatus => _syncStatus;
+
+  static void _setSyncStatus(HomeWidgetSyncStatus status) {
+    _syncStatus = status;
+  }
 
   static Future<void> migrateLegacyAppearance() async {
     final prefs = await AppPreferencesStore.getInstance();
@@ -203,17 +237,23 @@ class HomeWidgetService {
 
   static Future<void> syncCourseData(CourseScheduleProvider provider) async {
     final generation = provider.contextGeneration;
-    await AcademicAuxiliaryOwnership.write('widget', provider.academicIdentity,
-        () => _syncCourseData(provider),
+    await AcademicAuxiliaryOwnership.write(
+        'widget', provider.academicIdentity, () => _syncCourseData(provider),
         isCurrent: () => generation == provider.contextGeneration);
   }
 
   static Future<void> clearCourseDataForIdentity(AcademicIdentityKey identity,
-      {bool includeLegacy = false}) => AcademicAuxiliaryOwnership.clear(
-      'widget', identity, _clearCourseData, includeLegacy: includeLegacy);
+          {bool includeLegacy = false}) =>
+      AcademicAuxiliaryOwnership.clear('widget', identity, _clearCourseData,
+          includeLegacy: includeLegacy);
 
   static Future<void> _syncCourseData(CourseScheduleProvider provider) async {
     _lastCourseProvider = provider;
+    final startedAt = DateTime.now();
+    _setSyncStatus(HomeWidgetSyncStatus(
+      stage: HomeWidgetSyncStage.writing,
+      accountId: int.tryParse(provider.academicIdentity?.studentId ?? ''),
+    ));
     try {
       final now = DateTime.now();
       final semesterStartStr = provider.semesterStart != null
@@ -244,11 +284,43 @@ class HomeWidgetService {
       };
 
       final prefs = await AppPreferencesStore.getInstance();
-      await prefs.setString(_courseDataKey, jsonEncode(payload));
+      final saved = await prefs.setString(_courseDataKey, jsonEncode(payload));
+      if (!saved) {
+        throw StateError('共享存储写入失败');
+      }
+      _setSyncStatus(HomeWidgetSyncStatus(
+        stage: HomeWidgetSyncStage.refreshing,
+        lastWriteAt: startedAt,
+        writeSucceeded: true,
+        accountId: int.tryParse(provider.academicIdentity?.studentId ?? ''),
+        dataVersion: '${provider.selectedYear}_${provider.selectedSemester}',
+      ));
       await _refreshNative();
-      debugPrint('课表小组件已全量同步 (Schema v$courseWidgetSchemaVersion)：${courses.length} 门课');
+      _setSyncStatus(HomeWidgetSyncStatus(
+        stage: HomeWidgetSyncStage.success,
+        lastWriteAt: startedAt,
+        lastRefreshAt: DateTime.now(),
+        writeSucceeded: true,
+        refreshSucceeded: true,
+        accountId: int.tryParse(provider.academicIdentity?.studentId ?? ''),
+        dataVersion: '${provider.selectedYear}_${provider.selectedSemester}',
+      ));
+      debugPrint(
+          '课表小组件已全量同步 (Schema v$courseWidgetSchemaVersion)：${courses.length} 门课');
     } catch (error) {
+      _setSyncStatus(HomeWidgetSyncStatus(
+        stage: HomeWidgetSyncStage.failed,
+        lastWriteAt: startedAt,
+        writeSucceeded: error.toString().contains('刷新') ? true : false,
+        refreshSucceeded: error.toString().contains('刷新') ? false : null,
+        accountId: int.tryParse(provider.academicIdentity?.studentId ?? ''),
+        errorCode: error.toString().contains('刷新')
+            ? 'native_refresh_failed'
+            : 'storage_write_failed',
+        errorMessage: error.toString(),
+      ));
       debugPrint('课表小组件同步失败：$error');
+      rethrow;
     }
   }
 
@@ -544,6 +616,7 @@ class HomeWidgetService {
       // 桌面端和单元测试没有 Android 通道，数据仍会正常写入。
     } catch (error) {
       debugPrint('原生小组件刷新失败：$error');
+      throw StateError('原生小组件刷新失败：$error');
     }
   }
 

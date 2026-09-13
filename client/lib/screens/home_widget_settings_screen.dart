@@ -155,7 +155,15 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
   }
 
   Future<void> _syncKind(HomeWidgetKind kind) async {
-    await HomeWidgetService.syncKind(kind);
+    try {
+      await HomeWidgetService.syncKind(kind);
+    } catch (error) {
+      if (mounted) {
+        AppFeedback.error('小组件同步失败，请检查状态后重试', context: context);
+        setState(() {});
+      }
+      return;
+    }
     final preview = await HomeWidgetService.getPreviewData(kind);
     final counts = await HomeWidgetService.getInstalledWidgetCounts();
     if (!mounted) return;
@@ -169,7 +177,11 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
   Future<void> _syncAll() async {
     if (_syncingAll) return;
     setState(() => _syncingAll = true);
-    await HomeWidgetService.syncAll();
+    try {
+      await HomeWidgetService.syncAll();
+    } catch (_) {
+      if (mounted) AppFeedback.error('小组件同步失败，请检查状态后重试', context: context);
+    }
     await _load();
     if (!mounted) return;
     setState(() => _syncingAll = false);
@@ -213,6 +225,8 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
                         : const Icon(Icons.sync),
                     label: const Text('同步全部小组件'),
                   ),
+                  const SizedBox(height: 12),
+                  _buildSyncStatus(),
                   const SizedBox(height: 10),
                   Text(
                     '系统桌面的网格尺寸和圆角由启动器决定，实际占位可能与预览略有差异。',
@@ -221,6 +235,36 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
                   ),
                 ],
               ),
+      ),
+    );
+  }
+
+  Widget _buildSyncStatus() {
+    final status = HomeWidgetService.syncStatus;
+    final failed = status.stage == HomeWidgetSyncStage.failed;
+    final label = switch (status.stage) {
+      HomeWidgetSyncStage.idle => '尚未同步',
+      HomeWidgetSyncStage.writing => '正在写入共享存储…',
+      HomeWidgetSyncStage.refreshing => '正在刷新系统小组件…',
+      HomeWidgetSyncStage.success => '小组件状态：已同步',
+      HomeWidgetSyncStage.failed => '小组件同步失败',
+    };
+    return Card(
+      child: ListTile(
+        leading: Icon(failed ? Icons.error_outline : Icons.sync),
+        title: Text(label),
+        subtitle: Text(failed
+            ? '失败阶段：${status.errorCode == 'native_refresh_failed' ? '刷新系统小组件' : '写入共享存储'}'
+            : status.lastRefreshAt == null
+                ? '可在此处手动同步'
+                : '最后同步：${status.lastRefreshAt}'),
+        trailing: failed
+            ? IconButton(
+                tooltip: '重试同步',
+                onPressed: _syncingAll ? null : _syncAll,
+                icon: const Icon(Icons.refresh),
+              )
+            : null,
       ),
     );
   }

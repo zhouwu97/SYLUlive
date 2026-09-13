@@ -55,6 +55,7 @@ import 'create_post_screen.dart';
 import 'poll/poll_composer_screen.dart';
 import 'check_in_calendar_screen.dart';
 import 'competition_center_screen.dart';
+import 'court_hub_screen.dart';
 import 'edu_grade_screen.dart';
 import 'exam_schedule_screen.dart';
 import 'feedback_screen.dart';
@@ -1139,6 +1140,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 },
                 onOpenFeedback: () {
                   _openPageKeepingPanel(const FeedbackScreen());
+                },
+                onOpenCourt: () {
+                  if (!context.read<AuthProvider>().isLoggedIn) {
+                    _openPageKeepingPanel(const LoginScreen());
+                  } else {
+                    _openPageKeepingPanel(const CourtHubScreen());
+                  }
                 },
                 onOpenWaterSectionDirectory: () {
                   _openWaterSectionDirectoryKeepingPanel();

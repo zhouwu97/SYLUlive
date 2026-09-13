@@ -90,10 +90,12 @@ class Report {
 // 申诉模型
 class Appeal {
   final int id;
+  final int? reportId;
   final int postId;
   final int appellantId;
   final int adminId;
   final String adminReason;
+  final String appellantReason;
   final String status;
   final String result;
   final DateTime createdAt;
@@ -103,10 +105,12 @@ class Appeal {
 
   Appeal({
     required this.id,
+    this.reportId,
     required this.postId,
     required this.appellantId,
     required this.adminId,
     required this.adminReason,
+    this.appellantReason = '',
     this.status = 'pending',
     this.result = '',
     required this.createdAt,
@@ -118,10 +122,12 @@ class Appeal {
   factory Appeal.fromJson(Map<String, dynamic> json) {
     return Appeal(
       id: json['id'] ?? 0,
+      reportId: json['report_id'],
       postId: json['post_id'] ?? 0,
       appellantId: json['appellant_id'] ?? 0,
       adminId: json['admin_id'] ?? 0,
       adminReason: json['admin_reason'] ?? '',
+      appellantReason: json['appellant_reason'] ?? '',
       status: json['status'] ?? 'pending',
       result: json['result'] ?? '',
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),

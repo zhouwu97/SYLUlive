@@ -327,14 +327,6 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 					return err
 				}
 				targetUserID = post.AuthorID
-				deadline := now.Add(72 * time.Hour)
-				appeal := models.Appeal{PostID: post.ID, AppellantID: post.AuthorID, AdminID: userID.(uint), AdminReason: input.DeleteReason, Status: models.AppealStatusPending, VotingDeadline: &deadline}
-				if err := tx.Create(&appeal).Error; err != nil {
-					return err
-				}
-				if err := NewAppealHandler(tx).selectJury(appeal.ID, post.AuthorID, userID.(uint)); err != nil {
-					return err
-				}
 			case "reply":
 				var reply models.Reply
 				if err := tx.First(&reply, report.TargetID).Error; err != nil {

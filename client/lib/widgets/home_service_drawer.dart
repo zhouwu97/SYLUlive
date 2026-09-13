@@ -23,6 +23,7 @@ class HomeServiceDrawer extends StatelessWidget {
   final VoidCallback onOpenGrades;
   final VoidCallback onOpenExamSchedule;
   final VoidCallback onOpenFeedback;
+  final VoidCallback onOpenCourt;
   final VoidCallback onOpenWaterSectionDirectory;
   final ValueChanged<WaterPostCategory>? onOpenWaterCategory;
   final ValueChanged<WaterSection>? onOpenWaterSection;
@@ -44,6 +45,7 @@ class HomeServiceDrawer extends StatelessWidget {
     required this.onOpenGrades,
     required this.onOpenExamSchedule,
     required this.onOpenFeedback,
+    required this.onOpenCourt,
     required this.onOpenWaterSectionDirectory,
     this.onOpenWaterCategory,
     this.onOpenWaterSection,
@@ -100,6 +102,8 @@ class HomeServiceDrawer extends StatelessWidget {
                     _buildQuickEntries(context, isDark),
                     const SizedBox(height: 16),
                     _buildWaterCategorySection(context, isDark),
+                    const SizedBox(height: 20),
+                    _buildCommunityGovernance(context, isDark),
                     const SizedBox(height: 20),
                     _buildMoreServices(context, isDark),
                     const SizedBox(height: 32),
@@ -456,6 +460,44 @@ class HomeServiceDrawer extends StatelessWidget {
   List<WaterSection> get _resolvedSections {
     if (waterSections.isNotEmpty) return waterSections;
     return kWaterPostCategories.map(WaterSection.fromLegacyCategory).toList();
+  }
+
+  // ---- 社区自治 ----
+  Widget _buildCommunityGovernance(BuildContext context, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '社区自治',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            color: isDark ? Colors.white : const Color(0xFF111827),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          decoration: BoxDecoration(
+            color:
+                isDark ? Colors.white.withValues(alpha: 0.045) : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.07)
+                  : kCleanWarmCardBorderLight,
+            ),
+          ),
+          child: _ServiceRow(
+            icon: Icons.gavel_rounded,
+            color: const Color(0xFF147C72),
+            title: '公众法庭',
+            subtitle: '查看陪审任务与社区治理结果',
+            isDark: isDark,
+            onTap: onOpenCourt,
+          ),
+        ),
+      ],
+    );
   }
 
   // ---- 更多服务 ----

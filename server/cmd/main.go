@@ -1211,6 +1211,7 @@ func main() {
 		services.StartImageVariantWorkers(appCtx, db, cfg.UploadDir, 1)
 	}
 	tasks.StartLotteryCron(db)
+	appealFinalizerCron := tasks.StartAppealFinalizerCron(appCtx, db)
 	feedMetricsCron := tasks.StartFeedMetricsCron(appCtx, services.NewFeedMetricsService(db))
 	var examPaperStorageCron *tasks.ExamPaperStorageCron
 	if examPaperStorageJobs != nil && examPaperStorageMaintenance != nil {
@@ -2572,6 +2573,9 @@ func main() {
 	}
 	if feedMetricsCron != nil {
 		feedMetricsCron.Wait()
+	}
+	if appealFinalizerCron != nil {
+		appealFinalizerCron.Wait()
 	}
 	if serveErr != nil {
 		log.Fatal("服务器运行失败:", serveErr)

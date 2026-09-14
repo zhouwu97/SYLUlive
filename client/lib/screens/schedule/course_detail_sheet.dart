@@ -58,7 +58,8 @@ class CourseDetailSheet extends StatelessWidget {
     // 查找该课程是否关联了本地调整规则
     ScheduleOverride? relatedOverride;
     if (course.isOverridden && course.overrideId != null) {
-      final matches = provider.overrides.where((o) => o.id == course.overrideId);
+      final matches =
+          provider.overrides.where((o) => o.id == course.overrideId);
       if (matches.isNotEmpty) relatedOverride = matches.first;
     } else if (course.courseKey != null && course.meetingKey != null) {
       final matches = provider.overrides.where((o) =>
@@ -68,7 +69,8 @@ class CourseDetailSheet extends StatelessWidget {
       if (matches.isNotEmpty) relatedOverride = matches.first;
     }
 
-    final isNeedsReview = relatedOverride?.status == ScheduleOverrideStatus.needsReview;
+    final isNeedsReview =
+        relatedOverride?.status == ScheduleOverrideStatus.needsReview;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -81,7 +83,8 @@ class CourseDetailSheet extends StatelessWidget {
             padding: const EdgeInsets.all(22),
             decoration: BoxDecoration(
               color: tokens.surface,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -127,7 +130,8 @@ class CourseDetailSheet extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          _buildSourceBadge(tokens, isCustom, course.isOverridden),
+                          _buildSourceBadge(
+                              tokens, isCustom, course.isOverridden),
                         ],
                       ),
                     ),
@@ -146,7 +150,8 @@ class CourseDetailSheet extends StatelessWidget {
                           ? const Color(0xFF2E2413)
                           : const Color(0xFFFFF3DD),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: tokens.warning.withValues(alpha: 0.5)),
+                      border: Border.all(
+                          color: tokens.warning.withValues(alpha: 0.5)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,7 +174,8 @@ class CourseDetailSheet extends StatelessWidget {
                         const SizedBox(height: 6),
                         Text(
                           '你之前为这节课设置过本地调整，当前学校课表与调整创建时已不一致。',
-                          style: TextStyle(fontSize: 12, color: tokens.textSecondary),
+                          style: TextStyle(
+                              fontSize: 12, color: tokens.textSecondary),
                         ),
                         const SizedBox(height: 10),
                         Row(
@@ -177,30 +183,36 @@ class CourseDetailSheet extends StatelessWidget {
                             FilledButton(
                               style: FilledButton.styleFrom(
                                 backgroundColor: tokens.primary,
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 8),
                               ),
                               onPressed: () async {
                                 if (relatedOverride != null) {
-                                  await provider.confirmNeedsReviewOverride(relatedOverride.id);
+                                  await provider.confirmNeedsReviewOverride(
+                                      relatedOverride.id);
                                   if (context.mounted) Navigator.pop(context);
                                 }
                               },
-                              child: const Text('重新确认', style: TextStyle(fontSize: 12)),
+                              child: const Text('重新确认',
+                                  style: TextStyle(fontSize: 12)),
                             ),
                             const SizedBox(width: 10),
                             OutlinedButton(
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: tokens.error,
                                 side: BorderSide(color: tokens.error),
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 8),
                               ),
                               onPressed: () async {
                                 if (relatedOverride != null) {
-                                  await provider.restoreBaseMeeting(relatedOverride.id);
+                                  await provider
+                                      .restoreBaseMeeting(relatedOverride.id);
                                   if (context.mounted) Navigator.pop(context);
                                 }
                               },
-                              child: const Text('删除本地调整', style: TextStyle(fontSize: 12)),
+                              child: const Text('删除本地调整',
+                                  style: TextStyle(fontSize: 12)),
                             ),
                           ],
                         ),
@@ -211,9 +223,11 @@ class CourseDetailSheet extends StatelessWidget {
 
                 // 详细信息条目（没有数据的字段不展示，Section 16）
                 if (course.teacher != null && course.teacher!.isNotEmpty)
-                  _buildDetailRow(Icons.person_outline, '教师', course.teacher!, tokens),
+                  _buildDetailRow(
+                      Icons.person_outline, '教师', course.teacher!, tokens),
                 if (course.location != null && course.location!.isNotEmpty)
-                  _buildDetailRow(Icons.location_on_outlined, '教室', course.location!, tokens),
+                  _buildDetailRow(Icons.location_on_outlined, '教室',
+                      course.location!, tokens),
                 _buildDetailRow(
                   Icons.access_time,
                   '时间',
@@ -226,26 +240,34 @@ class CourseDetailSheet extends StatelessWidget {
                   WeekFormatter.format(course.weeks, prefixWithDi: true),
                   tokens,
                 ),
-                if (course.courseCode.isNotEmpty && course.courseCode != 'CUSTOM')
+                if (course.courseCode.isNotEmpty &&
+                    course.courseCode != 'CUSTOM')
                   _buildDetailRow(Icons.tag, '课程代码', course.courseCode, tokens),
-                if (course.teachingClassId != null && course.teachingClassId!.isNotEmpty)
-                  _buildDetailRow(Icons.class_outlined, '教学班', course.teachingClassId!, tokens),
+                if (course.teachingClassId != null &&
+                    course.teachingClassId!.isNotEmpty)
+                  _buildDetailRow(Icons.class_outlined, '教学班',
+                      course.teachingClassId!, tokens),
                 if (course.note != null && course.note!.isNotEmpty)
-                  _buildDetailRow(Icons.note_outlined, '备注', course.note!, tokens),
+                  _buildDetailRow(
+                      Icons.note_outlined, '备注', course.note!, tokens),
 
                 // 冲突警告指示 (Section 21)
                 if (course.hasConflict) ...[
                   const SizedBox(height: 8),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: tokens.isDark ? const Color(0xFF382312) : const Color(0xFFFFEDD5),
+                      color: tokens.isDark
+                          ? const Color(0xFF382312)
+                          : const Color(0xFFFFEDD5),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.warning_amber_rounded, size: 18, color: tokens.warning),
+                        Icon(Icons.warning_amber_rounded,
+                            size: 18, color: tokens.warning),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -257,7 +279,9 @@ class CourseDetailSheet extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: tokens.isDark ? Colors.amber[300] : Colors.orange[900],
+                              color: tokens.isDark
+                                  ? Colors.amber[300]
+                                  : Colors.orange[900],
                             ),
                           ),
                         ),
@@ -278,7 +302,8 @@ class CourseDetailSheet extends StatelessWidget {
                     children: [
                       TextButton.icon(
                         icon: Icon(Icons.edit_outlined, color: tokens.primary),
-                        label: Text('编辑课程', style: TextStyle(color: tokens.primary)),
+                        label: Text('编辑课程',
+                            style: TextStyle(color: tokens.primary)),
                         onPressed: () {
                           Navigator.pop(context);
                           onEditCustomCourse?.call();
@@ -286,7 +311,8 @@ class CourseDetailSheet extends StatelessWidget {
                       ),
                       TextButton.icon(
                         icon: Icon(Icons.delete_outline, color: tokens.error),
-                        label: Text('删除课程', style: TextStyle(color: tokens.error)),
+                        label:
+                            Text('删除课程', style: TextStyle(color: tokens.error)),
                         onPressed: () {
                           Navigator.pop(context);
                           onDeleteCustomCourse?.call();
@@ -307,9 +333,11 @@ class CourseDetailSheet extends StatelessWidget {
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-                          icon: const Icon(Icons.edit_calendar_outlined, size: 18),
+                          icon: const Icon(Icons.edit_calendar_outlined,
+                              size: 18),
                           label: const Text('修改调整'),
-                          onPressed: () => _startRescheduleFlow(context, provider),
+                          onPressed: () =>
+                              _startRescheduleFlow(context, provider),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -325,7 +353,8 @@ class CourseDetailSheet extends StatelessWidget {
                           icon: const Icon(Icons.restore_rounded, size: 18),
                           label: const Text('恢复原时间'),
                           onPressed: () async {
-                            final overrideId = course.overrideId ?? relatedOverride?.id;
+                            final overrideId =
+                                course.overrideId ?? relatedOverride?.id;
                             if (overrideId != null) {
                               await provider.restoreBaseMeeting(overrideId);
                               if (context.mounted) Navigator.pop(context);
@@ -349,9 +378,11 @@ class CourseDetailSheet extends StatelessWidget {
                             ),
                             padding: const EdgeInsets.symmetric(vertical: 11),
                           ),
-                          icon: const Icon(Icons.edit_calendar_rounded, size: 18),
+                          icon:
+                              const Icon(Icons.edit_calendar_rounded, size: 18),
                           label: const Text('更换时间'),
-                          onPressed: () => _startRescheduleFlow(context, provider),
+                          onPressed: () =>
+                              _startRescheduleFlow(context, provider),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -365,9 +396,11 @@ class CourseDetailSheet extends StatelessWidget {
                             ),
                             padding: const EdgeInsets.symmetric(vertical: 11),
                           ),
-                          icon: const Icon(Icons.meeting_room_outlined, size: 18),
+                          icon:
+                              const Icon(Icons.meeting_room_outlined, size: 18),
                           label: const Text('修改教室'),
-                          onPressed: () => _startChangeRoomFlow(context, provider),
+                          onPressed: () =>
+                              _startChangeRoomFlow(context, provider),
                         ),
                       ),
                     ],
@@ -390,9 +423,11 @@ class CourseDetailSheet extends StatelessWidget {
     );
   }
 
-  Widget _buildSourceBadge(AppThemeTokens tokens, bool isCustom, bool isOverridden) {
+  Widget _buildSourceBadge(
+      AppThemeTokens tokens, bool isCustom, bool isOverridden) {
     String label = '教务课表';
-    Color bgColor = tokens.isDark ? const Color(0xFF162B28) : const Color(0xFFEAF6F3);
+    Color bgColor =
+        tokens.isDark ? const Color(0xFF162B28) : const Color(0xFFEAF6F3);
     Color textColor = tokens.primary;
 
     if (isCustom) {
@@ -401,8 +436,10 @@ class CourseDetailSheet extends StatelessWidget {
       textColor = tokens.textSecondary;
     } else if (isOverridden) {
       label = '教务课表 + 本地调整';
-      bgColor = tokens.isDark ? const Color(0xFF2C253B) : const Color(0xFFF3EBF9);
-      textColor = tokens.isDark ? const Color(0xFFC084FC) : const Color(0xFF7C3AED);
+      bgColor =
+          tokens.isDark ? const Color(0xFF2C253B) : const Color(0xFFF3EBF9);
+      textColor =
+          tokens.isDark ? const Color(0xFFC084FC) : const Color(0xFF7C3AED);
     }
 
     return Container(
@@ -476,8 +513,10 @@ class CourseDetailSheet extends StatelessWidget {
       context,
       course: course,
       currentAcademicWeek: currentAcademicWeek,
+      totalTeachingWeeks: provider.currentTerm.maxWeek,
     );
-    if (affectedWeeks == null || affectedWeeks.isEmpty || !context.mounted) return;
+    if (affectedWeeks == null || affectedWeeks.isEmpty || !context.mounted)
+      return;
 
     await _runRescheduleFromStep2(
       context: context,
@@ -555,7 +594,8 @@ class CourseDetailSheet extends StatelessWidget {
           await provider.createRescheduleOverride(
             overrideId: course.overrideId,
             courseKey: course.courseKey ?? 'edu:course:${course.name}',
-            meetingKey: course.meetingKey ?? 'm_${course.weekday}_${course.startSection}',
+            meetingKey: course.meetingKey ??
+                'm_${course.weekday}_${course.startSection}',
             affectedWeeks: affectedWeeks,
             toWeekday: targetTime.weekday,
             toStartSection: targetTime.startSection,
@@ -590,7 +630,8 @@ class CourseDetailSheet extends StatelessWidget {
         await provider.createChangeRoomOverride(
           overrideId: course.overrideId,
           courseKey: course.courseKey ?? 'edu:course:${course.name}',
-          meetingKey: course.meetingKey ?? 'm_${course.weekday}_${course.startSection}',
+          meetingKey:
+              course.meetingKey ?? 'm_${course.weekday}_${course.startSection}',
           affectedWeeks: affectedWeeks,
           toRoom: newRoom,
           sourceSnapshotHash: snapshotHash,

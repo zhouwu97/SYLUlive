@@ -7,12 +7,14 @@ import '../../../utils/week_formatter.dart';
 class SelectWeeksSheet extends StatefulWidget {
   final CourseBlock course;
   final int currentAcademicWeek;
+  final int? totalTeachingWeeks;
   final ValueChanged<Set<int>> onNext;
 
   const SelectWeeksSheet({
     super.key,
     required this.course,
     required this.currentAcademicWeek,
+    this.totalTeachingWeeks,
     required this.onNext,
   });
 
@@ -20,6 +22,7 @@ class SelectWeeksSheet extends StatefulWidget {
     BuildContext context, {
     required CourseBlock course,
     required int currentAcademicWeek,
+    int? totalTeachingWeeks,
   }) {
     return showModalBottomSheet<Set<int>>(
       context: context,
@@ -28,6 +31,7 @@ class SelectWeeksSheet extends StatefulWidget {
       builder: (ctx) => SelectWeeksSheet(
         course: course,
         currentAcademicWeek: currentAcademicWeek,
+        totalTeachingWeeks: totalTeachingWeeks,
         onNext: (weeks) => Navigator.pop(ctx, weeks),
       ),
     );
@@ -48,7 +52,10 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
     super.initState();
     _courseWeeks = widget.course.weeks.isNotEmpty
         ? widget.course.weeks.toSet()
-        : Set<int>.from(List.generate(20, (i) => i + 1));
+        : Set<int>.from(List.generate(
+            widget.totalTeachingWeeks ?? widget.currentAcademicWeek,
+            (i) => i + 1,
+          ));
     final sortedWeeks = _courseWeeks.toList()..sort();
     final firstWeek = sortedWeeks.first;
     final lastWeek = sortedWeeks.last;
@@ -123,7 +130,8 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
                   ),
                 ),
                 IconButton(
-                  icon: Icon(Icons.close, color: tokens.textSecondary, size: 20),
+                  icon:
+                      Icon(Icons.close, color: tokens.textSecondary, size: 20),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -161,7 +169,8 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
               contentPadding: EdgeInsets.zero,
               title: Text('仅本周 (第${widget.currentAcademicWeek}周)',
                   style: TextStyle(color: tokens.textPrimary, fontSize: 14)),
-              onChanged: (val) => setState(() => _onlyCurrentWeek = val ?? false),
+              onChanged: (val) =>
+                  setState(() => _onlyCurrentWeek = val ?? false),
             ),
             // 指定范围
             RadioListTile<bool>(
@@ -171,7 +180,8 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
               contentPadding: EdgeInsets.zero,
               title: Text('指定周次范围',
                   style: TextStyle(color: tokens.textPrimary, fontSize: 14)),
-              onChanged: (val) => setState(() => _onlyCurrentWeek = val ?? false),
+              onChanged: (val) =>
+                  setState(() => _onlyCurrentWeek = val ?? false),
             ),
             if (!_onlyCurrentWeek) ...[
               const SizedBox(height: 8),
@@ -257,7 +267,8 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
                     ? null
                     : () => widget.onNext(_actualAffectedWeeks),
                 child: const Text('下一步：选择目标时间',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                    style:
+                        TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
               ),
             ),
           ],
@@ -273,12 +284,19 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
     required ValueChanged<int?> onChanged,
     int minWeek = 1,
   }) {
-    final items = List.generate(25, (i) => i + 1).where((w) => w >= minWeek).toList();
+    final maxWeek = widget.totalTeachingWeeks ??
+        (_courseWeeks.isEmpty
+            ? value
+            : _courseWeeks.reduce((a, b) => a > b ? a : b));
+    final items = List.generate(maxWeek, (i) => i + 1)
+        .where((w) => w >= minWeek)
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(fontSize: 12, color: tokens.textSecondary)),
+        Text(label,
+            style: TextStyle(fontSize: 12, color: tokens.textSecondary)),
         const SizedBox(height: 4),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12),

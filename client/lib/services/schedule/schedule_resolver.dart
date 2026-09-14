@@ -24,8 +24,14 @@ class ScheduleResolver {
   static final Set<int> _defaultTeachingWeeks =
       Set<int>.unmodifiable(List.generate(20, (i) => i + 1));
 
-  static Set<int> _normalizeWeeks(Set<int> weeks) {
-    return weeks.isNotEmpty ? weeks : _defaultTeachingWeeks;
+  static Set<int> _normalizeWeeks(Set<int> weeks, int? totalTeachingWeeks) {
+    if (weeks.isNotEmpty) return weeks;
+    if (totalTeachingWeeks == null || totalTeachingWeeks <= 0) {
+      return _defaultTeachingWeeks;
+    }
+    return Set<int>.unmodifiable(
+      List<int>.generate(totalTeachingWeeks, (index) => index + 1),
+    );
   }
 
   /// 解析并生成当前学期的最终课表
@@ -34,6 +40,7 @@ class ScheduleResolver {
     required List<ScheduleOverride> overrides,
     List<Course> manualCourses = const <Course>[],
     String? semesterId,
+    int? totalTeachingWeeks,
   }) {
     // 1. 过滤指定学期的 Overrides
     final activeOverrides = overrides.where((o) {
@@ -60,7 +67,8 @@ class ScheduleResolver {
       if (semesterId != null && course.semesterId != semesterId) continue;
 
       for (final meeting in course.meetings) {
-        final effectiveWeeks = _normalizeWeeks(meeting.weeks);
+        final effectiveWeeks =
+            _normalizeWeeks(meeting.weeks, totalTeachingWeeks);
         final meetingOverrides =
             overrideMap[course.courseKey]?[meeting.meetingKey] ?? const [];
 
@@ -77,7 +85,8 @@ class ScheduleResolver {
 
         // 计算所有有效受影响周次
         final allAffectedWeeks = <int>{};
-        final overrideWithActualWeeks = <({ScheduleOverride override, Set<int> actualWeeks})>[];
+        final overrideWithActualWeeks =
+            <({ScheduleOverride override, Set<int> actualWeeks})>[];
 
         for (final ov in meetingOverrides) {
           // Section 14: 取 affectedWeeks 与课程实际存在周次的交集
@@ -172,7 +181,7 @@ class ScheduleResolver {
         resolvedList.add(_createResolved(
           course: course,
           meeting: meeting,
-          weeks: _normalizeWeeks(meeting.weeks),
+          weeks: _normalizeWeeks(meeting.weeks, totalTeachingWeeks),
           isOverridden: false,
         ));
       }
@@ -226,7 +235,8 @@ class ScheduleResolver {
       if (list.length <= 1) continue;
       for (var i = 0; i < list.length; i++) {
         for (var j = i + 1; j < list.length; j++) {
-          final overlap = list[i].affectedWeeks.intersection(list[j].affectedWeeks);
+          final overlap =
+              list[i].affectedWeeks.intersection(list[j].affectedWeeks);
           if (overlap.isNotEmpty) {
             throw ScheduleResolverException(
               '同一上课时间块 (${entry.key}) 存在重叠的本地调整规则: '

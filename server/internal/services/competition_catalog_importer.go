@@ -190,8 +190,15 @@ func (i *CompetitionCatalogImporter) activatePackageTx(
 			}
 		}
 		if err == nil {
+			updates := catalogEventUpdates(event)
+			// 首次激活 legacy 基线时，目录不拥有这些扩展字段，必须保留历史值。
+			if existing.CatalogPackageID == nil && isLegacyCompetitionBaseline(catalog.DatasetVersion) {
+				for _, key := range []string{"undertake_unit", "attachment_urls", "source_article_id", "sort_date", "verified_by"} {
+					delete(updates, key)
+				}
+			}
 			if err := tx.Model(&models.CompetitionEvent{}).Where("id = ?", existing.ID).
-				Updates(catalogEventUpdates(event)).Error; err != nil {
+				Updates(updates).Error; err != nil {
 				return fmt.Errorf("更新赛事 %s 失败: %w", event.CompetitionID, err)
 			}
 			event.ID = existing.ID

@@ -10,7 +10,8 @@ class SelectTimeSheet extends StatefulWidget {
   final int? initialStartSection;
   final int? initialEndSection;
   final String? initialRoom;
-  final void Function(int weekday, int startSection, int endSection, String? newRoom) onNext;
+  final void Function(
+      int weekday, int startSection, int endSection, String? newRoom) onNext;
 
   const SelectTimeSheet({
     super.key,
@@ -23,7 +24,8 @@ class SelectTimeSheet extends StatefulWidget {
     required this.onNext,
   });
 
-  static Future<({int weekday, int startSection, int endSection, String? newRoom})?> show(
+  static Future<
+      ({int weekday, int startSection, int endSection, String? newRoom})?> show(
     BuildContext context, {
     required CourseBlock course,
     required Set<int> affectedWeeks,
@@ -32,7 +34,8 @@ class SelectTimeSheet extends StatefulWidget {
     int? initialEndSection,
     String? initialRoom,
   }) {
-    return showModalBottomSheet<({int weekday, int startSection, int endSection, String? newRoom})>(
+    return showModalBottomSheet<
+        ({int weekday, int startSection, int endSection, String? newRoom})>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -66,22 +69,43 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
   late TextEditingController _roomController;
 
   static const _weekdays = ['一', '二', '三', '四', '五', '六', '日'];
-  static const _sections = [
-    (label: '1-2节', start: 1, end: 2),
-    (label: '3-4节', start: 3, end: 4),
-    (label: '5-6节', start: 5, end: 6),
-    (label: '7-8节', start: 7, end: 8),
-    (label: '9-10节', start: 9, end: 10),
-    (label: '11-12节', start: 11, end: 12),
-  ];
+
+  /// 根据当前课程的真实节次范围生成候选项；研究生课表可能超过本科 12 节。
+  List<({String label, int start, int end})> _availableSections() {
+    final maxSection =
+        [12, widget.course.endSection].reduce((a, b) => a > b ? a : b);
+    final sections = <({String label, int start, int end})>[];
+    for (var start = 1; start <= maxSection; start += 2) {
+      final end = start + 1 <= maxSection ? start + 1 : start;
+      sections.add((
+        label: '$start${end == start ? '' : '-$end'}节',
+        start: start,
+        end: end
+      ));
+    }
+    // 保留当前非标准范围，避免编辑已有单节或三节课程时无法回显。
+    final current = (
+      label: '${widget.course.startSection}-${widget.course.endSection}节',
+      start: widget.course.startSection,
+      end: widget.course.endSection
+    );
+    if (!sections.any(
+        (item) => item.start == current.start && item.end == current.end)) {
+      sections.add(current);
+    }
+    sections.sort((a, b) => a.start.compareTo(b.start));
+    return sections;
+  }
 
   @override
   void initState() {
     super.initState();
     _selectedWeekday = widget.initialWeekday ?? widget.course.weekday;
-    _selectedStartSection = widget.initialStartSection ?? widget.course.startSection;
+    _selectedStartSection =
+        widget.initialStartSection ?? widget.course.startSection;
     _selectedEndSection = widget.initialEndSection ?? widget.course.endSection;
-    _roomController = TextEditingController(text: widget.initialRoom ?? widget.course.location ?? '');
+    _roomController = TextEditingController(
+        text: widget.initialRoom ?? widget.course.location ?? '');
   }
 
   @override
@@ -94,6 +118,7 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
     final sortedWeeks = widget.affectedWeeks.toList()..sort();
+    final sections = _availableSections();
 
     return SafeArea(
       top: false,
@@ -137,7 +162,8 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                     ),
                   ),
                   IconButton(
-                    icon: Icon(Icons.close, color: tokens.textSecondary, size: 20),
+                    icon: Icon(Icons.close,
+                        color: tokens.textSecondary, size: 20),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -180,7 +206,9 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                       height: 42,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: isSelected ? tokens.primary : tokens.inputBackground,
+                        color: isSelected
+                            ? tokens.primary
+                            : tokens.inputBackground,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
                           color: isSelected ? tokens.primary : tokens.outline,
@@ -191,7 +219,9 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: isSelected ? tokens.onPrimary : tokens.textPrimary,
+                          color: isSelected
+                              ? tokens.onPrimary
+                              : tokens.textPrimary,
                         ),
                       ),
                     ),
@@ -211,7 +241,7 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
-                children: _sections.map((sec) {
+                children: sections.map((sec) {
                   final isSelected = _selectedStartSection == sec.start &&
                       _selectedEndSection == sec.end;
                   return InkWell(
@@ -221,9 +251,12 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                       _selectedEndSection = sec.end;
                     }),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
                       decoration: BoxDecoration(
-                        color: isSelected ? tokens.primary : tokens.inputBackground,
+                        color: isSelected
+                            ? tokens.primary
+                            : tokens.inputBackground,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: isSelected ? tokens.primary : tokens.outline,
@@ -234,7 +267,9 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
-                          color: isSelected ? tokens.onPrimary : tokens.textPrimary,
+                          color: isSelected
+                              ? tokens.onPrimary
+                              : tokens.textPrimary,
                         ),
                       ),
                     ),
@@ -259,7 +294,8 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                   hintStyle: TextStyle(color: tokens.textDisabled),
                   filled: true,
                   fillColor: tokens.inputBackground,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide(color: tokens.outline),
@@ -312,7 +348,8 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                     );
                   },
                   child: const Text('下一步：冲突检查与确认',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                 ),
               ),
             ],

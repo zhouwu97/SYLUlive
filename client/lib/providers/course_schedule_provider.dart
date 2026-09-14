@@ -270,7 +270,8 @@ class CourseScheduleProvider extends ChangeNotifier {
   String? _userId;
   String? _sourceAccountId;
   String? _identityNamespace;
-  AcademicIdentityKey? get academicIdentity => _academicSessionController?.identity;
+  AcademicIdentityKey? get academicIdentity =>
+      _academicSessionController?.identity;
   ScheduleCacheStore? _scheduleStore;
   Future<void> _scheduleStoreReady = Future<void>.value();
   int _contextGeneration = 0;
@@ -301,8 +302,10 @@ class CourseScheduleProvider extends ChangeNotifier {
 
   final ScheduleResolver _scheduleResolver = const ScheduleResolver();
   final MeetingReconciler _meetingReconciler = const MeetingReconciler();
-  final ScheduleOverrideRepository _overrideRepository = ScheduleOverrideRepository();
-  final ScheduleConflictService _conflictService = const ScheduleConflictService();
+  final ScheduleOverrideRepository _overrideRepository =
+      ScheduleOverrideRepository();
+  final ScheduleConflictService _conflictService =
+      const ScheduleConflictService();
 
   List<ResolvedMeeting> get resolvedMeetings => _resolvedMeetings;
   List<ScheduleOverride> get overrides => _overrides;
@@ -1516,6 +1519,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       overrides: _overrides,
       manualCourses: _manualCourses,
       semesterId: termId,
+      totalTeachingWeeks: currentTerm.maxWeek,
     );
     _resolvedMeetings = resolved;
 
@@ -1718,7 +1722,8 @@ class CourseScheduleProvider extends ChangeNotifier {
     bool allowConflict = false,
     String? overrideId,
   }) async {
-    final effectiveId = overrideId ?? 'ov_${DateTime.now().millisecondsSinceEpoch}';
+    final effectiveId =
+        overrideId ?? 'ov_${DateTime.now().millisecondsSinceEpoch}';
     var status = ScheduleOverrideStatus.active;
 
     final conflictCheck = _conflictService.check(
@@ -1783,7 +1788,8 @@ class CourseScheduleProvider extends ChangeNotifier {
     String? fromRoom,
     String? overrideId,
   }) async {
-    final effectiveId = overrideId ?? 'ov_${DateTime.now().millisecondsSinceEpoch}';
+    final effectiveId =
+        overrideId ?? 'ov_${DateTime.now().millisecondsSinceEpoch}';
     final override = ScheduleOverride(
       id: effectiveId,
       semesterId: currentTerm.id,
@@ -1853,11 +1859,16 @@ class CourseScheduleProvider extends ChangeNotifier {
     final idx = _overrides.indexWhere((o) => o.id == overrideId);
     if (idx < 0) return;
     final current = _overrides[idx];
-    final courseMatches = _baseSchedule.where((c) => c.courseKey == current.courseKey);
+    final courseMatches =
+        _baseSchedule.where((c) => c.courseKey == current.courseKey);
     final course = courseMatches.isNotEmpty ? courseMatches.first : null;
-    final meetingMatches = course?.meetings.where((m) => m.meetingKey == current.meetingKey);
-    final meeting = (meetingMatches != null && meetingMatches.isNotEmpty) ? meetingMatches.first : null;
-    final newHash = meeting?.computeSnapshotHash() ?? current.sourceSnapshotHash;
+    final meetingMatches =
+        course?.meetings.where((m) => m.meetingKey == current.meetingKey);
+    final meeting = (meetingMatches != null && meetingMatches.isNotEmpty)
+        ? meetingMatches.first
+        : null;
+    final newHash =
+        meeting?.computeSnapshotHash() ?? current.sourceSnapshotHash;
 
     final updated = current.copyWith(
       status: ScheduleOverrideStatus.active,

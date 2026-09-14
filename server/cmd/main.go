@@ -379,6 +379,12 @@ func main() {
 
 		// 应用内更新：APK 发布记录
 		&models.AppRelease{},
+
+		// 反馈工单系统
+		&models.FeedbackTicket{},
+		&models.FeedbackMessage{},
+		&models.FeedbackAttachment{},
+		&models.FeedbackStatusHistory{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
@@ -867,6 +873,7 @@ func main() {
 	canteenDishPhotoAdminHandler := handlers.NewCanteenDishPhotoAdminHandler(db)
 
 	feedbackHandler := handlers.NewFeedbackHandler(db, cfg.UploadDir, cfg.JWTSecret)
+	feedbackTicketHandler := handlers.NewFeedbackTicketHandler(db, cfg.UploadDir, services.NewNotificationService(db, cfg.JPushAppKey, cfg.JPushMasterSecret))
 
 	checkinHandler := handlers.NewCheckInHandler(db)
 	checkinCompensationHandler := handlers.NewCheckInCompensationHandler(db)
@@ -2105,9 +2112,36 @@ func main() {
 
 	r.POST("/api/erke/scores", withSchoolRetirement(middleware.AuthMiddleware(db, cfg.JWTSecret), erkeHandler.GetScores)...)
 
-	// 用户反馈路由
+	// 用户反馈路由（旧版兼容）
 
 	r.POST("/api/feedback", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), feedbackHandler.Submit)
+
+	// 反馈工单系统（用户端）
+	feedbackGroup := r.Group("/api/feedback")
+	feedbackGroup.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		feedbackGroup.POST("/tickets", feedbackTicketHandler.CreateTicket)
+		feedbackGroup.GET("/tickets", feedbackTicketHandler.ListMyTickets)
+		feedbackGroup.GET("/tickets/unread-count", feedbackTicketHandler.GetUnreadCount)
+		feedbackGroup.GET("/tickets/:id", feedbackTicketHandler.GetTicketDetail)
+		feedbackGroup.POST("/tickets/:id/messages", feedbackTicketHandler.AddMessage)
+		feedbackGroup.POST("/tickets/:id/reopen", feedbackTicketHandler.ReopenTicket)
+		feedbackGroup.POST("/tickets/:id/confirm-resolved", feedbackTicketHandler.ConfirmResolved)
+		feedbackGroup.GET("/attachments/:file_id", feedbackTicketHandler.ServeAttachment)
+	}
+
+	// 反馈工单系统（管理员端）
+	feedbackAdmin := r.Group("/api/admin/feedback")
+	feedbackAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		feedbackAdmin.GET("/tickets", feedbackTicketHandler.AdminListTickets)
+		feedbackAdmin.GET("/tickets/stats", feedbackTicketHandler.AdminGetStats)
+		feedbackAdmin.GET("/tickets/:id", feedbackTicketHandler.AdminGetTicketDetail)
+		feedbackAdmin.POST("/tickets/:id/messages", feedbackTicketHandler.AdminAddMessage)
+		feedbackAdmin.PATCH("/tickets/:id/status", feedbackTicketHandler.AdminUpdateStatus)
+		feedbackAdmin.POST("/tickets/:id/request-info", feedbackTicketHandler.AdminRequestInfo)
+		feedbackAdmin.PATCH("/tickets/:id/assignee", feedbackTicketHandler.AdminUpdateAssignee)
+	}
 
 	// 教程页面路由（公开读，管理员写）
 

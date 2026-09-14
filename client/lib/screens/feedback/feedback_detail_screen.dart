@@ -1,0 +1,1393 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart';
+import '../../models/feedback_ticket.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/theme_provider.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
+import '../../utils/app_feedback.dart';
+import '../image_viewer_screen.dart';
+
+class FeedbackDetailScreen extends StatefulWidget {
+  final int ticketId;
+  final bool isAdmin;
+
+  const FeedbackDetailScreen({
+    super.key,
+    required this.ticketId,
+    this.isAdmin = false,
+  });
+
+  @override
+  State<FeedbackDetailScreen> createState() => _FeedbackDetailScreenState();
+}
+
+class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
+  final TextEditingController _msgController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+
+  FeedbackTicket? _ticket;
+  List<FeedbackMessage> _messages = [];
+  List<FeedbackStatusHistory> _history = [];
+  bool _loading = true;
+  String? _error;
+  bool _sending = false;
+
+  // 管理员专属状态
+  bool _adminInternalNote = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDetail();
+  }
+
+  @override
+  void dispose() {
+    _msgController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadDetail() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final auth = context.read<AuthProvider>();
+      final path = widget.isAdmin
+          ? '/admin/feedback/tickets/${widget.ticketId}'
+          : '/feedback/tickets/${widget.ticketId}';
+
+      final response = await auth.dio.get(path);
+
+      if (response.statusCode == 200 && response.data != null) {
+        final ticketData = response.data['ticket'] as Map<String, dynamic>;
+        final msgList = (response.data['messages'] as List<dynamic>?) ?? [];
+        final histList = (response.data['history'] as List<dynamic>?) ?? [];
+
+        if (mounted) {
+          setState(() {
+            _ticket = FeedbackTicket.fromJson(ticketData);
+            _messages = msgList
+                .map((e) => FeedbackMessage.fromJson(e as Map<String, dynamic>))
+                .toList();
+            _history = histList
+                .map((e) =>
+                    FeedbackStatusHistory.fromJson(e as Map<String, dynamic>))
+                .toList();
+            _loading = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _error = '工单加载失败';
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = '网络异常，请重试';
+        });
+      }
+    }
+  }
+
+  Future<void> _sendMessage({List<int>? imageIds}) async {
+    final text = _msgController.text.trim();
+    if (text.isEmpty && (imageIds == null || imageIds.isEmpty)) {
+      return;
+    }
+
+    setState(() => _sending = true);
+
+    try {
+      final auth = context.read<AuthProvider>();
+      Response response;
+
+      if (widget.isAdmin) {
+        response = await auth.dio.post(
+          '/admin/feedback/tickets/${widget.ticketId}/messages',
+          data: {
+            'content': text.isNotEmpty ? text : '[图片]',
+            'visible_to_user': !_adminInternalNote,
+            'image_ids': imageIds,
+          },
+        );
+      } else {
+        response = await auth.dio.post(
+          '/feedback/tickets/${widget.ticketId}/messages',
+          data: {
+            'content': text.isNotEmpty ? text : '[图片]',
+            'image_ids': imageIds,
+          },
+        );
+      }
+
+      if (response.statusCode == 200) {
+        _msgController.clear();
+        await _loadDetail();
+        // 滚到底部
+        Future.delayed(const Duration(milliseconds: 200), () {
+          if (_scrollController.hasClients) {
+            _scrollController.animateTo(
+              _scrollController.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          }
+        });
+      } else {
+        if (mounted) {
+          AppFeedback.showSnackBar(context, '发送失败，请重试', isError: true);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '发送失败: $e', isError: true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _sending = false);
+      }
+    }
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    final auth = context.read<AuthProvider>();
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked == null || !mounted) return;
+
+    try {
+      final bytes = await picked.readAsBytes();
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(bytes, filename: picked.name),
+      });
+
+      final uploadResp = await auth.dio.post('/upload', data: formData);
+      if (uploadResp.statusCode == 200 && uploadResp.data != null) {
+        final fileId = uploadResp.data['file_id'] as int? ?? 0;
+        if (fileId > 0) {
+          await _sendMessage(imageIds: [fileId]);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '图片上传失败: $e', isError: true);
+      }
+    }
+  }
+
+  Future<void> _reopenTicket() async {
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重新打开工单'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('请描述目前仍然存在的问题或异常现象：',
+                style: TextStyle(fontSize: 13, color: Colors.black87)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: reasonController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: '输入具体情况……',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.brandPrimary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('提交重开'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && reasonController.text.trim().isNotEmpty) {
+      if (!mounted) return;
+      final auth = context.read<AuthProvider>();
+      try {
+        final res = await auth.dio.post(
+          '/feedback/tickets/${widget.ticketId}/reopen',
+          data: {'reason': reasonController.text.trim()},
+        );
+        if (res.statusCode == 200) {
+          if (mounted) {
+            AppFeedback.showSnackBar(context, '工单已重新打开，我们会尽快进一步排查！');
+          }
+          await _loadDetail();
+        }
+      } catch (e) {
+        if (mounted) {
+          AppFeedback.showSnackBar(context, '操作失败: $e', isError: true);
+        }
+      }
+    }
+  }
+
+  Future<void> _confirmResolved() async {
+    final auth = context.read<AuthProvider>();
+    try {
+      final res = await auth.dio.post(
+        '/feedback/tickets/${widget.ticketId}/confirm-resolved',
+      );
+      if (res.statusCode == 200) {
+        if (mounted) {
+          AppFeedback.showSnackBar(context, '已确认问题解决，感谢你的反馈！');
+        }
+        await _loadDetail();
+      }
+    } catch (e) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '操作失败: $e', isError: true);
+      }
+    }
+  }
+
+  // 管理员操作面板：更新状态、请求补充信息、修改负责人与优先级
+  void _showAdminActionSheet() {
+    if (_ticket == null) return;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF1E2226) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
+      ),
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '管理员操作',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.sync_alt, color: Colors.teal),
+                title: const Text('更新处理进度与状态'),
+                subtitle: Text('当前状态：${_ticket!.statusDisplayName}'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showUpdateStatusDialog();
+                },
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.contact_support_outlined,
+                    color: Colors.orange),
+                title: const Text('请求用户补充信息'),
+                subtitle: const Text('结构化勾选截图、复现步骤等'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showRequestInfoDialog();
+                },
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.flag_outlined, color: Colors.indigo),
+                title: const Text('设置优先级与负责人'),
+                subtitle: Text('当前优先级：${_ticket!.priority}'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showUpdatePriorityDialog();
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showUpdateStatusDialog() {
+    final auth = context.read<AuthProvider>();
+    String selectedStatus = _ticket!.status;
+    final noteController = TextEditingController(text: _ticket!.statusNote);
+
+    final statusOptions = [
+      {'value': 'accepted', 'label': '已受理'},
+      {'value': 'waiting_user', 'label': '需要用户补充'},
+      {'value': 'investigating', 'label': '定位中'},
+      {'value': 'fixing', 'label': '修复中'},
+      {'value': 'testing', 'label': '测试中'},
+      {'value': 'resolved', 'label': '已解决'},
+      {'value': 'closed', 'label': '已关闭'},
+    ];
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('更新处理进度'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ...statusOptions.map((opt) {
+                  return RadioListTile<String>(
+                    dense: true,
+                    value: opt['value']!,
+                    groupValue: selectedStatus,
+                    title: Text(opt['label']!),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDialogState(() => selectedStatus = val);
+                      }
+                    },
+                  );
+                }),
+                const SizedBox(height: 12),
+                const Text('进度说明（如版本号或修复说明）：',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: noteController,
+                  decoration: const InputDecoration(
+                    hintText: '例如：内测版 v2.8.3 或 已定位问题',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  final res = await auth.dio.patch(
+                    '/admin/feedback/tickets/${widget.ticketId}/status',
+                    data: {
+                      'status': selectedStatus,
+                      'status_note': noteController.text.trim(),
+                    },
+                  );
+                  if (res.statusCode == 200) {
+                    if (context.mounted) {
+                      AppFeedback.showSnackBar(context, '状态已更新');
+                    }
+                    await _loadDetail();
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    AppFeedback.showSnackBar(context, '更新失败: $e', isError: true);
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.brandPrimary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('确定更新'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showRequestInfoDialog() {
+    final auth = context.read<AuthProvider>();
+    final selectedItems = <String>{'screenshot', 'steps'};
+    final commentController = TextEditingController();
+
+    final itemOptions = [
+      {'key': 'screenshot', 'label': '相关截图'},
+      {'key': 'steps', 'label': '复现步骤'},
+      {'key': 'time', 'label': '发生时间'},
+      {'key': 'network', 'label': '网络环境 (WiFi/蜂窝)'},
+      {'key': 'version', 'label': 'App版本'},
+      {'key': 'other', 'label': '其他信息'},
+    ];
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('请求用户补充信息'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('请勾选需要用户提供的内容：',
+                    style: TextStyle(fontSize: 13, color: Colors.black54)),
+                const SizedBox(height: 8),
+                ...itemOptions.map((opt) {
+                  final key = opt['key']!;
+                  final isChecked = selectedItems.contains(key);
+                  return CheckboxListTile(
+                    dense: true,
+                    title: Text(opt['label']!),
+                    value: isChecked,
+                    onChanged: (val) {
+                      setDialogState(() {
+                        if (val == true) {
+                          selectedItems.add(key);
+                        } else {
+                          selectedItems.remove(key);
+                        }
+                      });
+                    },
+                  );
+                }),
+                const SizedBox(height: 12),
+                const Text('附加说明：',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: commentController,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    hintText: '请输入具体指导说明……',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (selectedItems.isEmpty) {
+                  AppFeedback.showSnackBar(ctx, '请至少勾选一项', isError: true);
+                  return;
+                }
+                Navigator.pop(ctx);
+                try {
+                  final res = await auth.dio.post(
+                    '/admin/feedback/tickets/${widget.ticketId}/request-info',
+                    data: {
+                      'requested_items': selectedItems.toList(),
+                      'comment': commentController.text.trim(),
+                    },
+                  );
+                  if (res.statusCode == 200) {
+                    if (context.mounted) {
+                      AppFeedback.showSnackBar(context, '已向用户发送补充信息请求');
+                    }
+                    await _loadDetail();
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    AppFeedback.showSnackBar(context, '操作失败: $e', isError: true);
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.brandPrimary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('发起请求'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showUpdatePriorityDialog() {
+    final auth = context.read<AuthProvider>();
+    String priority = _ticket!.priority;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('设置工单优先级'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: ['P0', 'P1', 'P2', 'P3'].map((p) {
+              return RadioListTile<String>(
+                dense: true,
+                value: p,
+                groupValue: priority,
+                title: Text('$p 级别'),
+                onChanged: (val) {
+                  if (val != null) {
+                    setDialogState(() => priority = val);
+                  }
+                },
+              );
+            }).toList(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  await auth.dio.patch(
+                    '/admin/feedback/tickets/${widget.ticketId}/assignee',
+                    data: {'priority': priority},
+                  );
+                  await _loadDetail();
+                } catch (_) {}
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.brandPrimary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 状态与顶部进展卡片
+  Widget _buildTopStatusCard(bool isDark) {
+    if (_ticket == null) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E2226) : Colors.white,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(
+          color: isDark ? Colors.white12 : const Color(0xFFE8EEE9),
+          width: 0.8,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                '当前进度',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.brandPrimary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                ),
+                child: Text(
+                  _ticket!.statusDisplayName,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.brandPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (_ticket!.statusNote != null && _ticket!.statusNote!.isNotEmpty)
+            Text(
+              _ticket!.statusNote!,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.white : const Color(0xFF2D3748),
+                height: 1.4,
+              ),
+            ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '#${_ticket!.ticketNo}',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontFamily: 'monospace',
+                  color: Colors.grey,
+                ),
+              ),
+              Text(
+                '最后更新 ${_ticket!.updatedAt.month.toString().padLeft(2, '0')}-${_ticket!.updatedAt.day.toString().padLeft(2, '0')} ${_ticket!.updatedAt.hour.toString().padLeft(2, '0')}:${_ticket!.updatedAt.minute.toString().padLeft(2, '0')}',
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ],
+          ),
+          if (_history.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                dense: true,
+                title: Text(
+                  '状态变迁记录 (${_history.length})',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.brandPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                children: _history.map((h) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.commit, size: 14, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${h.createdAt.month.toString().padLeft(2, '0')}-${h.createdAt.day.toString().padLeft(2, '0')} ${h.createdAt.hour.toString().padLeft(2, '0')}:${h.createdAt.minute.toString().padLeft(2, '0')}',
+                          style: const TextStyle(fontSize: 11, color: Colors.grey),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            h.note.isNotEmpty
+                                ? '${h.newStatus} · ${h.note}'
+                                : h.newStatus,
+                            style: const TextStyle(fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // 原始提交内容卡片（首次描述、复现信息、附件）
+  Widget _buildInitialSubmissionCard(bool isDark) {
+    if (_ticket == null) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E2226) : Colors.white,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(
+          color: isDark ? Colors.white12 : const Color(0xFFE8EEE9),
+          width: 0.8,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: AppColors.brandPrimary.withValues(alpha: 0.15),
+                child: const Text('我',
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.brandPrimary,
+                        fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('初始反馈',
+                      style:
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  Text(
+                    '${_ticket!.createdAt.month.toString().padLeft(2, '0')}-${_ticket!.createdAt.day.toString().padLeft(2, '0')} ${_ticket!.createdAt.hour.toString().padLeft(2, '0')}:${_ticket!.createdAt.minute.toString().padLeft(2, '0')}',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _ticket!.description,
+            style: const TextStyle(fontSize: 14, height: 1.5),
+          ),
+          if (_ticket!.stepsToReproduce != null &&
+              _ticket!.stepsToReproduce!.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.04)
+                    : const Color(0xFFF9FBFA),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('复现步骤与现象：',
+                      style:
+                          TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text(_ticket!.stepsToReproduce!,
+                      style: const TextStyle(fontSize: 12, height: 1.4)),
+                  if (_ticket!.actualResult != null &&
+                      _ticket!.actualResult!.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text('实际结果：${_ticket!.actualResult}',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ],
+                  if (_ticket!.expectedResult != null &&
+                      _ticket!.expectedResult!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text('期望结果：${_ticket!.expectedResult}',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ],
+                ],
+              ),
+            ),
+          ],
+          if (_ticket!.attachments.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _buildAttachmentImages(_ticket!.attachments),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttachmentImages(List<FeedbackAttachment> attachments) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: attachments.map((att) {
+        final auth = context.read<AuthProvider>();
+        final baseUrl = auth.dio.options.baseUrl.replaceAll(RegExp(r'/+$'), '');
+        final imgUrl = '$baseUrl/feedback/attachments/${att.fileId}';
+
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ImageViewerScreen(
+                  initialIndex: 0,
+                  items: [
+                    ImageViewerItem(
+                      url: imgUrl,
+                      originalUrl: imgUrl,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            child: Image.network(
+              imgUrl,
+              headers: {
+                'Authorization': 'Bearer ${auth.token}',
+              },
+              width: 80,
+              height: 80,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                width: 80,
+                height: 80,
+                color: Colors.grey[200],
+                child: const Icon(Icons.broken_image, size: 24, color: Colors.grey),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // 对话流气泡与专用卡片
+  Widget _buildMessageItem(FeedbackMessage msg, bool isDark) {
+    if (msg.isStatusChange) {
+      return Container(
+        margin: const EdgeInsets.symmetric(vertical: 12),
+        alignment: Alignment.center,
+        child: Text(
+          '—— ${msg.content} ——',
+          style: TextStyle(
+            fontSize: 12,
+            color: isDark ? Colors.white38 : Colors.grey[500],
+          ),
+        ),
+      );
+    }
+
+    if (msg.isInternalNote) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBEB), // Amber 柔和警告底
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: const Color(0xFFFDE68A), width: 0.8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.lock_outline, size: 15, color: Color(0xFFB45309)),
+                SizedBox(width: 6),
+                Text(
+                  '内部备注（仅管理员可见）',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFB45309),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              msg.content,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF92400E)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (msg.isRequestInfo) {
+      List<String> items = [];
+      try {
+        if (msg.metadataJson != null) {
+          final data = json.decode(msg.metadataJson!);
+          if (data['requested_items'] is List) {
+            items = List<String>.from(data['requested_items']);
+          }
+        }
+      } catch (_) {}
+
+      final labelMap = {
+        'screenshot': '截图',
+        'steps': '复现步骤',
+        'time': '发生时间',
+        'network': '网络环境',
+        'version': 'App版本',
+        'other': '其他排查信息',
+      };
+
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED), // 橙黄色轻警告底
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: const Color(0xFFFFEDD5), width: 1.2),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded,
+                    size: 18, color: Color(0xFFEA580C)),
+                SizedBox(width: 6),
+                Text(
+                  '需要补充信息',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFC2410C),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              msg.content,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF9A3412)),
+            ),
+            if (items.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Text('请尽量提供以下信息：',
+                  style: TextStyle(fontSize: 12, color: Color(0xFFC2410C))),
+              const SizedBox(height: 4),
+              ...items.map((it) => Padding(
+                    padding: const EdgeInsets.only(left: 6, top: 2),
+                    child: Text('· ${labelMap[it] ?? it}',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFC2410C))),
+                  )),
+            ],
+            if (!widget.isAdmin) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    // 聚焦输入框
+                    FocusScope.of(context).requestFocus(FocusNode());
+                    _msgController.text = '【补充信息】：';
+                    _msgController.selection = TextSelection.fromPosition(
+                      TextPosition(offset: _msgController.text.length),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFEA580C),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
+                  ),
+                  child: const Text('立即补充信息'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    final isUserMsg = msg.isUser;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        mainAxisAlignment:
+            isUserMsg ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!isUserMsg) ...[
+            const CircleAvatar(
+              radius: 16,
+              backgroundColor: AppColors.brandPrimary,
+              child: Text('官',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: isUserMsg
+                    ? AppColors.brandPrimary
+                    : (isDark ? const Color(0xFF1E2226) : Colors.white),
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: !isUserMsg
+                    ? Border.all(
+                        color: isDark ? Colors.white12 : const Color(0xFFE2EFEA),
+                      )
+                    : null,
+              ),
+              child: Column(
+                crossAxisAlignment: isUserMsg
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
+                children: [
+                  if (!isUserMsg) ...[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          '官方运营与研发',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.brandPrimary,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${msg.createdAt.hour.toString().padLeft(2, '0')}:${msg.createdAt.minute.toString().padLeft(2, '0')}',
+                          style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+                  Text(
+                    msg.content,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isUserMsg
+                          ? Colors.white
+                          : (isDark ? Colors.white : const Color(0xFF1F2328)),
+                      height: 1.4,
+                    ),
+                  ),
+                  if (msg.attachments.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _buildAttachmentImages(msg.attachments),
+                  ],
+                  if (isUserMsg) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '${msg.createdAt.hour.toString().padLeft(2, '0')}:${msg.createdAt.minute.toString().padLeft(2, '0')}',
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.white.withValues(alpha: 0.7)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          if (isUserMsg) ...[
+            const SizedBox(width: 8),
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: AppColors.brandPrimary.withValues(alpha: 0.15),
+              child: const Text('我',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.brandPrimary,
+                      fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // 问题已解决确认卡片（仅普通用户且状态为 resolved 时展示）
+  Widget _buildResolvedConfirmationCard(bool isDark) {
+    if (widget.isAdmin || _ticket?.status != 'resolved') {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: const Color(0xFFBBF7D0), width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.check_circle_outline,
+                  color: Color(0xFF16A34A), size: 20),
+              SizedBox(width: 8),
+              Text(
+                '问题已解决',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF15803D),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _ticket?.statusNote ?? '已完成修复并发布验证版本。请问你的问题是否已经解决？',
+            style: const TextStyle(fontSize: 13, color: Color(0xFF166534)),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _reopenTicket,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFDC2626),
+                    side: const BorderSide(color: Color(0xFFFCA5A5)),
+                  ),
+                  child: const Text('仍有问题'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _confirmResolved,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF16A34A),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                  ),
+                  child: const Text('确认解决'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 底部回复栏
+  Widget _buildBottomComposer(bool isDark) {
+    final isClosed = _ticket?.status == 'closed';
+    if (isClosed && !widget.isAdmin) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        color: isDark ? const Color(0xFF1E2226) : Colors.white,
+        child: Row(
+          children: [
+            const Icon(Icons.lock_outline, size: 16, color: Colors.grey),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                '工单已解决归档',
+                style: TextStyle(fontSize: 13, color: Colors.grey),
+              ),
+            ),
+            TextButton(
+              onPressed: _reopenTicket,
+              child: const Text('仍有问题？重新打开'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        12,
+        8,
+        12,
+        MediaQuery.of(context).padding.bottom + 8,
+      ),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E2226) : Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: isDark ? Colors.white12 : const Color(0xFFE8EEE9),
+            width: 0.8,
+          ),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (widget.isAdmin)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  ChoiceChip(
+                    label: const Text('回复用户'),
+                    selected: !_adminInternalNote,
+                    onSelected: (val) =>
+                        setState(() => _adminInternalNote = !val),
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.lock_outline, size: 14),
+                        SizedBox(width: 4),
+                        Text('内部备注 (用户不可见)'),
+                      ],
+                    ),
+                    selected: _adminInternalNote,
+                    selectedColor: const Color(0xFFFDE68A),
+                    onSelected: (val) =>
+                        setState(() => _adminInternalNote = val),
+                  ),
+                ],
+              ),
+            ),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.add_photo_alternate_outlined),
+                color: AppColors.brandPrimary,
+                onPressed: _sending ? null : _pickAndUploadImage,
+              ),
+              Expanded(
+                child: TextField(
+                  controller: _msgController,
+                  maxLines: 4,
+                  minLines: 1,
+                  decoration: InputDecoration(
+                    hintText: _adminInternalNote
+                        ? '添加仅管理员可见的排查备注……'
+                        : (widget.isAdmin ? '回复用户……' : '继续回复或补充信息……'),
+                    hintStyle: TextStyle(
+                      fontSize: 14,
+                      color: isDark ? Colors.white38 : Colors.grey[400],
+                    ),
+                    filled: true,
+                    fillColor: isDark
+                        ? Colors.white.withValues(alpha: 0.05)
+                        : const Color(0xFFF8FAF9),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      borderSide: BorderSide(
+                        color:
+                            isDark ? Colors.white12 : const Color(0xFFE2EFEA),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      borderSide: BorderSide(
+                        color:
+                            isDark ? Colors.white12 : const Color(0xFFE2EFEA),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filled(
+                icon: _sending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.send_rounded, size: 18),
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.brandPrimary,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: _sending ? null : () => _sendMessage(),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pageBg = themeProvider.isCleanBackgroundMode && !isDark
+        ? const Color(0xFFFFFAF4)
+        : Theme.of(context).colorScheme.surface;
+
+    return Scaffold(
+      backgroundColor: pageBg,
+      appBar: AppBar(
+        title: Text(
+          widget.isAdmin ? '工单处理详情' : '工单详情',
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+        ),
+        centerTitle: true,
+        elevation: 0,
+        backgroundColor: pageBg,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
+        actions: [
+          if (widget.isAdmin)
+            TextButton.icon(
+              onPressed: _showAdminActionSheet,
+              icon: const Icon(Icons.tune_rounded, size: 18),
+              label: const Text('管理操作'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.brandPrimary,
+              ),
+            ),
+        ],
+      ),
+      body: _loading
+          ? const Center(
+              child: SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+            )
+          : _error != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(_error!),
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: _loadDetail,
+                        child: const Text('重新加载'),
+                      ),
+                    ],
+                  ),
+                )
+              : Column(
+                  children: [
+                    Expanded(
+                      child: ListView(
+                        controller: _scrollController,
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.only(bottom: 16),
+                        children: [
+                          _buildTopStatusCard(isDark),
+                          _buildInitialSubmissionCard(isDark),
+                          ..._messages.map((m) => _buildMessageItem(m, isDark)),
+                          _buildResolvedConfirmationCard(isDark),
+                        ],
+                      ),
+                    ),
+                    _buildBottomComposer(isDark),
+                  ],
+                ),
+    );
+  }
+}

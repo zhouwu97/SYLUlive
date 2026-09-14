@@ -38,7 +38,8 @@ import 'admin_members_screen.dart';
 
 import 'notifications_screen.dart';
 import 'settings_screen.dart';
-import 'feedback_screen.dart';
+import 'feedback/feedback_center_screen.dart';
+import 'admin/admin_feedback_screen.dart';
 import 'user_home_screen.dart';
 import 'social_list_screen.dart';
 import 'my_canteen_reviews_screen.dart';
@@ -77,6 +78,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   int _unreadReplyCount = 0;
   int _unreadMessageCount = 0;
+  int _feedbackUnreadCount = 0;
   bool _startOnTimetable = false;
   StartupDestinationMode _startupDestination = StartupDestinationMode.home;
   int? _postCount;
@@ -174,14 +176,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final repliesFuture = auth.dio.get('/user/notifications/unread_count');
       final messagesFuture = auth.dio.get('/messages/unread_count');
-      final responses = await Future.wait([repliesFuture, messagesFuture]);
+      final feedbackFuture = auth.dio.get('/feedback/tickets/unread-count');
+      final responses = await Future.wait([repliesFuture, messagesFuture, feedbackFuture]);
       if (mounted) {
         final replyResp = responses[0];
         final messageResp = responses[1];
+        final feedbackResp = responses[2];
         if (replyResp.statusCode == 200 && messageResp.statusCode == 200) {
           setState(() {
             _unreadReplyCount = replyResp.data['count'] ?? 0;
             _unreadMessageCount = messageResp.data['count'] ?? 0;
+            _feedbackUnreadCount = feedbackResp.data?['unread_count'] ?? 0;
           });
         }
       }
@@ -288,6 +293,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 // 我的内容
                 SliverToBoxAdapter(
                   child: _buildMyContentSection(context, isDark),
+                ),
+
+                // 服务与支持
+                SliverToBoxAdapter(
+                  child: _buildServiceAndSupportSection(context, isDark),
                 ),
 
                 // 设置区域
@@ -703,10 +713,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return FutureBuilder<Map<String, int>>(
       future: _adminOverviewFuture,
       builder: (_, snap) {
-        final overview = snap.data ?? const {'admin': 0, 'super': 0};
+        final overview = snap.data ?? const {'admin': 0, 'super': 0, 'feedback': 0};
         final adminTodo = overview['admin'] ?? 0;
         final superTodo = overview['super'] ?? 0;
+        final feedbackTodo = overview['feedback'] ?? 0;
         final items = [
+          _buildAdminEntry(
+            context: context,
+            isDark: isDark,
+            icon: Icons.confirmation_number_outlined,
+            iconColor: Colors.teal,
+            title: '工单管理',
+            subtitle: feedbackTodo > 0
+                ? '用户问题、建议与待处理反馈 · $feedbackTodo 条待办'
+                : '用户问题、建议与待处理反馈',
+            badgeText: feedbackTodo > 0
+                ? (feedbackTodo > 99 ? '99+' : '$feedbackTodo')
+                : null,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AdminFeedbackScreen()),
+              ).then((_) {
+                _refreshAdminOverview();
+              });
+            },
+          ),
           _buildAdminEntry(
             context: context,
             isDark: isDark,
@@ -864,7 +896,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
       superCount = superInvitations.where((i) => i['my_vote'] != true).length;
     }
 
-    return {'admin': adminCount, 'super': superCount};
+    var feedbackPendingCount = 0;
+    try {
+      final feedbackStatsResp = await auth.dio.get('/admin/feedback/tickets/stats');
+      if (feedbackStatsResp.data != null) {
+        feedbackPendingCount =
+            (feedbackStatsResp.data['pending_count'] as num?)?.toInt() ?? 0;
+      }
+    } catch (_) {}
+
+    return {
+      'admin': adminCount,
+      'super': superCount,
+      'feedback': feedbackPendingCount,
+    };
   }
 
   Widget _buildSectionLayout(
@@ -1025,21 +1070,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
           },
         ),
       ),
+    ];
+    return _buildSectionLayout(context, '我的内容', items, isDark);
+  }
+
+  Widget _buildServiceAndSupportSection(BuildContext context, bool isDark) {
+    final items = [
       _buildSettingsRow(
         child: _buildSettingsTile(
-          icon: Icons.bug_report_outlined,
-          iconColor: Colors.green,
-          title: '功能建议 (Bug提交)',
-          subtitle: '提交的建议会发送至开发者邮箱',
+          icon: Icons.chat_bubble_outline_rounded,
+          iconColor: AppColors.brandPrimary,
+          title: '帮助与反馈',
+          subtitle: '问题反馈、功能建议与处理进度',
+          trailing: _feedbackUnreadCount > 0
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '$_feedbackUnreadCount',
+                        style: const TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.chevron_right),
+                  ],
+                )
+              : null,
           isDark: isDark,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const FeedbackScreen()),
-          ),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const FeedbackCenterScreen()),
+            ).then((_) {
+              _loadUnreadCount();
+            });
+          },
         ),
       ),
     ];
-    return _buildSectionLayout(context, '我的内容', items, isDark);
+    return _buildSectionLayout(context, '服务与支持', items, isDark);
   }
 
   Widget _buildEduSection(

@@ -58,7 +58,7 @@ import 'competition_center_screen.dart';
 import 'court_hub_screen.dart';
 import 'edu_grade_screen.dart';
 import 'exam_schedule_screen.dart';
-import 'feedback_screen.dart';
+import 'feedback/feedback_center_screen.dart';
 import 'login_screen.dart';
 import 'post_detail_screen.dart';
 import 'poll/poll_detail_screen.dart';
@@ -1139,7 +1139,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   _openPageKeepingPanel(const ExamScheduleScreen());
                 },
                 onOpenFeedback: () {
-                  _openPageKeepingPanel(const FeedbackScreen());
+                  _openPageKeepingPanel(const FeedbackCenterScreen());
                 },
                 onOpenCourt: () {
                   if (!context.read<AuthProvider>().isLoggedIn) {

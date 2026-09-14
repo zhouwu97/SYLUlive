@@ -1,0 +1,750 @@
+package handlers
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+)
+
+const (
+	maxFeedbackTicketImages = 6
+	maxUserHourlyTickets    = 5
+	maxUserHourlyMessages   = 30
+)
+
+// FeedbackTicketHandler 处理用户端与通用的工单操作
+type FeedbackTicketHandler struct {
+	db        *gorm.DB
+	uploadDir string
+	notifier  *services.NotificationService
+}
+
+// NewFeedbackTicketHandler 创建工单处理器
+func NewFeedbackTicketHandler(db *gorm.DB, uploadDir string, notifier *services.NotificationService) *FeedbackTicketHandler {
+	return &FeedbackTicketHandler{
+		db:        db,
+		uploadDir: uploadDir,
+		notifier:  notifier,
+	}
+}
+
+// CreateTicketInput 用户提交新工单参数
+type CreateTicketInput struct {
+	Type             string `json:"type" binding:"required"`
+	Title            string `json:"title" binding:"required"`
+	Description      string `json:"description" binding:"required"`
+	StepsToReproduce string `json:"steps_to_reproduce"`
+	ActualResult     string `json:"actual_result"`
+	ExpectedResult   string `json:"expected_result"`
+	ImageIDs         []uint `json:"image_ids"`
+
+	// 诊断信息（非敏感）
+	AppVersion      string `json:"app_version"`
+	BuildNumber     string `json:"build_number"`
+	DeviceModel     string `json:"device_model"`
+	OSVersion       string `json:"os_version"`
+	NetworkType     string `json:"network_type"`
+	CurrentRoute    string `json:"current_route"`
+	DiagnosticsJSON string `json:"diagnostics_json"`
+}
+
+// CreateTicket 提交新工单
+func (h *FeedbackTicketHandler) CreateTicket(c *gin.Context) {
+	rawUID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录后提交反馈"})
+		return
+	}
+	userID := rawUID.(uint)
+	if userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录后提交反馈"})
+		return
+	}
+
+	var input CreateTicketInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数不完整，请填写标题和描述"})
+		return
+	}
+
+	input.Title = strings.TrimSpace(input.Title)
+	input.Description = strings.TrimSpace(input.Description)
+	if len([]rune(input.Title)) == 0 || len([]rune(input.Title)) > 120 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "标题长度必须在 1 到 120 字之间"})
+		return
+	}
+	if len([]rune(input.Description)) == 0 || len([]rune(input.Description)) > 2000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "问题描述长度必须在 1 到 2000 字之间"})
+		return
+	}
+
+	ticketType := strings.ToLower(strings.TrimSpace(input.Type))
+	if ticketType != models.FeedbackTypeBug && ticketType != models.FeedbackTypeSuggestion && ticketType != models.FeedbackTypeOther {
+		ticketType = models.FeedbackTypeBug
+	}
+
+	// 频控检查：1小时内最多提交 5 个工单
+	var recentCount int64
+	oneHourAgo := time.Now().Add(-1 * time.Hour)
+	if err := h.db.Model(&models.FeedbackTicket{}).
+		Where("user_id = ? AND created_at >= ?", userID, oneHourAgo).
+		Count(&recentCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "系统繁忙，请稍后重试"})
+		return
+	}
+	if recentCount >= maxUserHourlyTickets {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "提交过于频繁，请稍后再试"})
+		return
+	}
+
+	// 图片校验
+	var attachedFiles []models.File
+	if len(input.ImageIDs) > 0 {
+		files, err := services.ValidateImageFileIDs(h.db, input.ImageIDs, maxFeedbackTicketImages, userID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "截图无效或包含非法文件，请重新上传"})
+			return
+		}
+		attachedFiles = files
+	}
+
+	// 敏感诊断信息过滤清洗（绝不允许携带 jwt, token, password, cookie, auth）
+	sanitizedDiagnostics := sanitizeDiagnosticsJSON(input.DiagnosticsJSON)
+
+	now := time.Now()
+	ticketNo := models.GenerateTicketNo(now)
+
+	ticket := models.FeedbackTicket{
+		TicketNo:         ticketNo,
+		UserID:           userID,
+		Type:             ticketType,
+		Title:            input.Title,
+		Description:      input.Description,
+		StepsToReproduce: strings.TrimSpace(input.StepsToReproduce),
+		ActualResult:     strings.TrimSpace(input.ActualResult),
+		ExpectedResult:   strings.TrimSpace(input.ExpectedResult),
+		Status:           models.FeedbackStatusPending,
+		StatusNote:       "工单已提交，等待管理员查看受理",
+		Priority:         models.FeedbackPriorityP2,
+		AdminViewed:      false,
+		AppVersion:       strings.TrimSpace(input.AppVersion),
+		BuildNumber:      strings.TrimSpace(input.BuildNumber),
+		DeviceModel:      strings.TrimSpace(input.DeviceModel),
+		OSVersion:        strings.TrimSpace(input.OSVersion),
+		NetworkType:      strings.TrimSpace(input.NetworkType),
+		CurrentRoute:     strings.TrimSpace(input.CurrentRoute),
+		DiagnosticsJSON:  sanitizedDiagnostics,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&ticket).Error; err != nil {
+			return err
+		}
+
+		// 创建初始工单流水消息
+		msg := models.FeedbackMessage{
+			TicketID:      ticket.ID,
+			SenderType:    "user",
+			SenderID:      userID,
+			MessageType:   models.FeedbackMsgText,
+			Content:       input.Description,
+			VisibleToUser: true,
+			CreatedAt:     now,
+		}
+		if err := tx.Create(&msg).Error; err != nil {
+			return err
+		}
+
+		// 关联图片附件并 claim 私有状态
+		if len(attachedFiles) > 0 {
+			for _, file := range attachedFiles {
+				att := models.FeedbackAttachment{
+					TicketID:   ticket.ID,
+					MessageID:  &msg.ID,
+					FileID:     file.ID,
+					UploaderID: userID,
+					CreatedAt:  now,
+				}
+				if err := tx.Create(&att).Error; err != nil {
+					return err
+				}
+			}
+			if err := services.ClaimPrivateFiles(tx, input.ImageIDs); err != nil {
+				return err
+			}
+		}
+
+		// 创建初始状态流水
+		history := models.FeedbackStatusHistory{
+			TicketID:     ticket.ID,
+			OperatorID:   userID,
+			OperatorType: "user",
+			OldStatus:    "",
+			NewStatus:    models.FeedbackStatusPending,
+			Note:         "工单已提交",
+			CreatedAt:    now,
+		}
+		return tx.Create(&history).Error
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交反馈失败，请稍后重试"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "反馈已提交，我们会持续跟进处理！",
+		"ticket":  ticket,
+	})
+}
+
+// ListMyTickets 用户获取自己的工单列表
+func (h *FeedbackTicketHandler) ListMyTickets(c *gin.Context) {
+	rawUID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录"})
+		return
+	}
+	userID := rawUID.(uint)
+
+	statusGroup := strings.ToLower(strings.TrimSpace(c.Query("status_group")))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if page <= 0 {
+		page = 1
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	query := h.db.Model(&models.FeedbackTicket{}).Where("user_id = ?", userID)
+
+	switch statusGroup {
+	case "processing":
+		query = query.Where("status IN ?", []string{
+			models.FeedbackStatusPending,
+			models.FeedbackStatusAccepted,
+			models.FeedbackStatusInvestigating,
+			models.FeedbackStatusFixing,
+			models.FeedbackStatusTesting,
+		})
+	case "waiting_user":
+		query = query.Where("status = ?", models.FeedbackStatusWaitingUser)
+	case "resolved":
+		query = query.Where("status IN ?", []string{
+			models.FeedbackStatusResolved,
+			models.FeedbackStatusClosed,
+		})
+	default:
+		// "all" 全部
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单列表失败"})
+		return
+	}
+
+	var tickets []models.FeedbackTicket
+	if err := query.Order("updated_at DESC").Offset(offset).Limit(limit).Find(&tickets).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单列表失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total":   total,
+		"page":    page,
+		"limit":   limit,
+		"tickets": tickets,
+	})
+}
+
+// GetUnreadCount 获取用户未读工单回复数量（用于「我的」页面角标）
+func (h *FeedbackTicketHandler) GetUnreadCount(c *gin.Context) {
+	rawUID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"unread_count": 0})
+		return
+	}
+	userID := rawUID.(uint)
+
+	var count int64
+	// 用户有未读消息的工单数
+	if err := h.db.Model(&models.FeedbackTicket{}).
+		Where("user_id = ? AND user_unread_count > 0", userID).
+		Count(&count).Error; err != nil {
+		c.JSON(http.StatusOK, gin.H{"unread_count": 0})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"unread_count": count})
+}
+
+// GetTicketDetail 用户获取工单详情
+func (h *FeedbackTicketHandler) GetTicketDetail(c *gin.Context) {
+	rawUID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录"})
+		return
+	}
+	userID := rawUID.(uint)
+	ticketID := c.Param("id")
+
+	var ticket models.FeedbackTicket
+	if err := h.db.Where("id = ? AND user_id = ?", ticketID, userID).First(&ticket).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "工单不存在或无权查看"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单失败"})
+		return
+	}
+
+	// 读取对用户可见的消息流水（严格过滤 visible_to_user = true）
+	var messages []models.FeedbackMessage
+	if err := h.db.Where("ticket_id = ? AND visible_to_user = ?", ticket.ID, true).
+		Preload("Attachments.File").
+		Preload("Sender").
+		Order("created_at ASC").
+		Find(&messages).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单消息失败"})
+		return
+	}
+
+	// 读取初始附件
+	var attachments []models.FeedbackAttachment
+	_ = h.db.Where("ticket_id = ? AND (message_id IS NULL OR message_id = 0)", ticket.ID).
+		Preload("File").
+		Find(&attachments).Error
+	ticket.Attachments = attachments
+
+	// 读取状态流转记录
+	var history []models.FeedbackStatusHistory
+	_ = h.db.Where("ticket_id = ?", ticket.ID).Order("created_at ASC").Find(&history).Error
+
+	// 清空未读数
+	if ticket.UserUnreadCount > 0 {
+		_ = h.db.Model(&ticket).Update("user_unread_count", 0).Error
+		ticket.UserUnreadCount = 0
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"ticket":   ticket,
+		"messages": messages,
+		"history":  history,
+	})
+}
+
+// UserAddMessageInput 用户回复/补充消息
+type UserAddMessageInput struct {
+	Content  string `json:"content" binding:"required"`
+	ImageIDs []uint `json:"image_ids"`
+}
+
+// AddMessage 用户在工单中追加回复
+func (h *FeedbackTicketHandler) AddMessage(c *gin.Context) {
+	rawUID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录"})
+		return
+	}
+	userID := rawUID.(uint)
+	ticketID := c.Param("id")
+
+	var ticket models.FeedbackTicket
+	if err := h.db.Where("id = ? AND user_id = ?", ticketID, userID).First(&ticket).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "工单不存在或无权访问"})
+		return
+	}
+
+	if ticket.Status == models.FeedbackStatusClosed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该工单已关闭，如仍有问题请点击重新打开"})
+		return
+	}
+
+	var input UserAddMessageInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "回复内容不能为空"})
+		return
+	}
+	input.Content = strings.TrimSpace(input.Content)
+	if len([]rune(input.Content)) == 0 || len([]rune(input.Content)) > 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "回复内容长度必须在 1 到 1000 字之间"})
+		return
+	}
+
+	// 频控检查：1小时最多 30 条消息
+	var msgCount int64
+	oneHourAgo := time.Now().Add(-1 * time.Hour)
+	if err := h.db.Model(&models.FeedbackMessage{}).
+		Where("ticket_id = ? AND sender_type = 'user' AND created_at >= ?", ticket.ID, oneHourAgo).
+		Count(&msgCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "系统繁忙，请稍后重试"})
+		return
+	}
+	if msgCount >= maxUserHourlyMessages {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "发言过于频繁，请稍后再试"})
+		return
+	}
+
+	// 图片校验
+	var attachedFiles []models.File
+	if len(input.ImageIDs) > 0 {
+		files, err := services.ValidateImageFileIDs(h.db, input.ImageIDs, maxFeedbackTicketImages, userID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "截图无效，请重新上传"})
+			return
+		}
+		attachedFiles = files
+	}
+
+	now := time.Now()
+	msg := models.FeedbackMessage{
+		TicketID:      ticket.ID,
+		SenderType:    "user",
+		SenderID:      userID,
+		MessageType:   models.FeedbackMsgText,
+		Content:       input.Content,
+		VisibleToUser: true,
+		CreatedAt:     now,
+	}
+
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&msg).Error; err != nil {
+			return err
+		}
+
+		if len(attachedFiles) > 0 {
+			for _, file := range attachedFiles {
+				att := models.FeedbackAttachment{
+					TicketID:   ticket.ID,
+					MessageID:  &msg.ID,
+					FileID:     file.ID,
+					UploaderID: userID,
+					CreatedAt:  now,
+				}
+				if err := tx.Create(&att).Error; err != nil {
+					return err
+				}
+			}
+			if err := services.ClaimPrivateFiles(tx, input.ImageIDs); err != nil {
+				return err
+			}
+		}
+
+		updates := map[string]interface{}{
+			"updated_at":   now,
+			"admin_viewed": false, // 管理员未读
+		}
+
+		// 若原状态为「待用户补充」，用户回复后自动转为「已受理」
+		if ticket.Status == models.FeedbackStatusWaitingUser {
+			updates["status"] = models.FeedbackStatusAccepted
+			updates["status_note"] = "用户已补充信息，等待处理"
+
+			history := models.FeedbackStatusHistory{
+				TicketID:     ticket.ID,
+				OperatorID:   userID,
+				OperatorType: "user",
+				OldStatus:    models.FeedbackStatusWaitingUser,
+				NewStatus:    models.FeedbackStatusAccepted,
+				Note:         "用户已补充相关信息",
+				CreatedAt:    now,
+			}
+			if err := tx.Create(&history).Error; err != nil {
+				return err
+			}
+		}
+
+		return tx.Model(&ticket).Updates(updates).Error
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "发送回复失败，请稍后重试"})
+		return
+	}
+
+	_ = h.db.Preload("Attachments.File").Preload("Sender").First(&msg, msg.ID).Error
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": msg,
+		"ticket":  ticket,
+	})
+}
+
+// ReopenTicketInput 重新打开工单入参
+type ReopenTicketInput struct {
+	Reason string `json:"reason" binding:"required"`
+}
+
+// ReopenTicket 用户点击「仍有问题」，重新打开工单
+func (h *FeedbackTicketHandler) ReopenTicket(c *gin.Context) {
+	rawUID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录"})
+		return
+	}
+	userID := rawUID.(uint)
+	ticketID := c.Param("id")
+
+	var ticket models.FeedbackTicket
+	if err := h.db.Where("id = ? AND user_id = ?", ticketID, userID).First(&ticket).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "工单不存在或无权访问"})
+		return
+	}
+
+	if ticket.Status != models.FeedbackStatusResolved && ticket.Status != models.FeedbackStatusClosed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前工单仍在处理中，无需重新打开"})
+		return
+	}
+
+	var input ReopenTicketInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请说明仍存在的问题"})
+		return
+	}
+	input.Reason = strings.TrimSpace(input.Reason)
+	if len([]rune(input.Reason)) == 0 || len([]rune(input.Reason)) > 500 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "说明内容长度必须在 1 到 500 字之间"})
+		return
+	}
+
+	now := time.Now()
+	oldStatus := ticket.Status
+	newStatus := models.FeedbackStatusInvestigating
+
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		statusNote := "用户反馈问题仍存在：" + input.Reason
+		updates := map[string]interface{}{
+			"status":       newStatus,
+			"status_note":  statusNote,
+			"admin_viewed": false,
+			"updated_at":   now,
+			"resolved_at":  nil,
+			"closed_at":    nil,
+		}
+		if err := tx.Model(&ticket).Updates(updates).Error; err != nil {
+			return err
+		}
+
+		history := models.FeedbackStatusHistory{
+			TicketID:     ticket.ID,
+			OperatorID:   userID,
+			OperatorType: "user",
+			OldStatus:    oldStatus,
+			NewStatus:    newStatus,
+			Note:         statusNote,
+			CreatedAt:    now,
+		}
+		if err := tx.Create(&history).Error; err != nil {
+			return err
+		}
+
+		msg := models.FeedbackMessage{
+			TicketID:      ticket.ID,
+			SenderType:    "user",
+			SenderID:      userID,
+			MessageType:   models.FeedbackMsgStatusChange,
+			Content:       "重新打开工单：用户反馈问题仍未完全解决",
+			MetadataJSON:  fmt.Sprintf(`{"reason":%q}`, input.Reason),
+			VisibleToUser: true,
+			CreatedAt:     now,
+		}
+		return tx.Create(&msg).Error
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "重新打开工单失败，请稍后重试"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "工单已重新打开，我们会尽快进一步跟进定位！",
+		"ticket":  ticket,
+	})
+}
+
+// ConfirmResolved 用户点击「已解决」，确认关闭工单
+func (h *FeedbackTicketHandler) ConfirmResolved(c *gin.Context) {
+	rawUID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录"})
+		return
+	}
+	userID := rawUID.(uint)
+	ticketID := c.Param("id")
+
+	var ticket models.FeedbackTicket
+	if err := h.db.Where("id = ? AND user_id = ?", ticketID, userID).First(&ticket).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "工单不存在或无权访问"})
+		return
+	}
+
+	now := time.Now()
+	oldStatus := ticket.Status
+	newStatus := models.FeedbackStatusClosed
+
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{
+			"status":      newStatus,
+			"status_note": "用户已确认问题解决，工单关闭",
+			"closed_at":   now,
+			"updated_at":  now,
+		}
+		if err := tx.Model(&ticket).Updates(updates).Error; err != nil {
+			return err
+		}
+
+		history := models.FeedbackStatusHistory{
+			TicketID:     ticket.ID,
+			OperatorID:   userID,
+			OperatorType: "user",
+			OldStatus:    oldStatus,
+			NewStatus:    newStatus,
+			Note:         "用户确认问题已解决",
+			CreatedAt:    now,
+		}
+		if err := tx.Create(&history).Error; err != nil {
+			return err
+		}
+
+		msg := models.FeedbackMessage{
+			TicketID:      ticket.ID,
+			SenderType:    "user",
+			SenderID:      userID,
+			MessageType:   models.FeedbackMsgStatusChange,
+			Content:       "用户已确认问题解决，工单顺利归档",
+			VisibleToUser: true,
+			CreatedAt:     now,
+		}
+		return tx.Create(&msg).Error
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "操作失败，请稍后重试"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "感谢你的反馈与确认！",
+		"ticket":  ticket,
+	})
+}
+
+// ServeAttachment 鉴权访问私有截图附件（防越权与私密信息泄漏）
+func (h *FeedbackTicketHandler) ServeAttachment(c *gin.Context) {
+	rawUID, ok := c.Get("user_id")
+	if !ok {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	userID := rawUID.(uint)
+	fileIDRaw := c.Param("file_id")
+
+	fileID, err := strconv.ParseUint(fileIDRaw, 10, 64)
+	if err != nil || fileID == 0 {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	// 检查当前用户是否为管理员
+	var user models.User
+	isAdmin := false
+	if err := h.db.Select("id, role").First(&user, userID).Error; err == nil {
+		isAdmin = user.IsAdmin()
+	}
+
+	// 查找附件引用
+	var attachment models.FeedbackAttachment
+	if err := h.db.Where("file_id = ?", fileID).First(&attachment).Error; err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	// 若非管理员，必须是工单所有者
+	if !isAdmin {
+		var ticket models.FeedbackTicket
+		if err := h.db.Select("id, user_id").First(&ticket, attachment.TicketID).Error; err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		if ticket.UserID != userID {
+			c.Status(http.StatusNotFound)
+			return
+		}
+	}
+
+	// 读取文件实体与路径
+	var file models.File
+	if err := h.db.First(&file, fileID).Error; err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	fullPath, err := services.ResolveUploadPath(h.uploadDir, file.Path)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	if _, err := os.Stat(fullPath); err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	c.Header("Content-Type", file.MimeType)
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.File(fullPath)
+}
+
+// sanitizeDiagnosticsJSON 移除一切可能携带的敏感信息
+func sanitizeDiagnosticsJSON(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "{}"
+	}
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &data); err != nil {
+		return "{}"
+	}
+
+	sensitiveKeys := []string{
+		"token", "jwt", "authorization", "auth", "cookie", "password", "secret",
+		"key", "session", "credential", "chat", "message",
+	}
+
+	cleaned := make(map[string]interface{})
+	for k, v := range data {
+		lowerKey := strings.ToLower(k)
+		isSensitive := false
+		for _, s := range sensitiveKeys {
+			if strings.Contains(lowerKey, s) {
+				isSensitive = true
+				break
+			}
+		}
+		if !isSensitive {
+			cleaned[k] = v
+		}
+	}
+
+	out, err := json.Marshal(cleaned)
+	if err != nil {
+		return "{}"
+	}
+	return string(out)
+}

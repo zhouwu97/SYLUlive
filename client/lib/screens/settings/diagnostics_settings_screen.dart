@@ -14,7 +14,7 @@ import '../../widgets/settings/settings_section.dart';
 import '../../widgets/settings/settings_status_badge.dart';
 import '../../widgets/settings/settings_tile.dart';
 import '../diagnostic_log_screen.dart';
-import '../feedback_screen.dart';
+import '../feedback/feedback_center_screen.dart';
 import '../login_screen.dart';
 import 'notification_background_settings_screen.dart';
 
@@ -553,7 +553,7 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const FeedbackScreen(),
+                    builder: (_) => const FeedbackCenterScreen(),
                   ),
                 );
               },

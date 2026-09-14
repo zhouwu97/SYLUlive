@@ -140,3 +140,8 @@ func (u User) IsStudentVerified() bool {
 func (u User) IsEduAuthorized() bool {
 	return u.EduAuthorized
 }
+
+// IsAdmin 统一判断用户是否具有管理员或超级管理员权限。
+func (u User) IsAdmin() bool {
+	return u.Role == RoleAdmin || u.Role == RoleSuperAdmin
+}

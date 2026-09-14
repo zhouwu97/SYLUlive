@@ -206,11 +206,12 @@ class ScheduleResolver {
     );
   }
 
-  /// 校验同一 meetingKey 的活跃规则 affectedWeeks 是否相交
+  /// 校验同一 courseKey + meetingKey 的活跃规则 affectedWeeks 是否相交 (Section 11 强约束)
   static void _validateNoDisjointViolations(List<ScheduleOverride> overrides) {
     final group = <String, List<ScheduleOverride>>{};
     for (final ov in overrides) {
-      group.putIfAbsent(ov.meetingKey, () => []).add(ov);
+      final scopedKey = '${ov.semesterId}|${ov.courseKey}|${ov.meetingKey}';
+      group.putIfAbsent(scopedKey, () => []).add(ov);
     }
     for (final entry in group.entries) {
       final list = entry.value;
@@ -220,7 +221,7 @@ class ScheduleResolver {
           final overlap = list[i].affectedWeeks.intersection(list[j].affectedWeeks);
           if (overlap.isNotEmpty) {
             throw ScheduleResolverException(
-              '同一上课时间块 (meetingKey: ${entry.key}) 存在重叠的本地调整规则: '
+              '同一上课时间块 (${entry.key}) 存在重叠的本地调整规则: '
               '调整 ${list[i].id} 与 ${list[j].id} 在周次 $overlap 相交',
             );
           }
@@ -229,11 +230,11 @@ class ScheduleResolver {
     }
   }
 
-  /// 冲突检测：标记同一天、相同节次重叠、且至少有一周重合的课程块
+  /// 冲突检测：标记同一天、相同节次重叠、且周次重合的课程块（记录具体冲突周次）
   static List<ResolvedMeeting> _detectConflicts(List<ResolvedMeeting> list) {
     if (list.length <= 1) return list;
 
-    final conflictIndices = <int>{};
+    final conflictWeeksMap = <int, Set<int>>{};
     for (var i = 0; i < list.length; i++) {
       final a = list[i];
       for (var j = i + 1; j < list.length; j++) {
@@ -247,17 +248,19 @@ class ScheduleResolver {
         // 周次集合是否有交集
         final weekOverlap = a.weeks.intersection(b.weeks);
         if (weekOverlap.isNotEmpty) {
-          conflictIndices.add(i);
-          conflictIndices.add(j);
+          conflictWeeksMap.putIfAbsent(i, () => <int>{}).addAll(weekOverlap);
+          conflictWeeksMap.putIfAbsent(j, () => <int>{}).addAll(weekOverlap);
         }
       }
     }
 
-    if (conflictIndices.isEmpty) return list;
+    if (conflictWeeksMap.isEmpty) return list;
 
     return List<ResolvedMeeting>.generate(list.length, (idx) {
-      if (conflictIndices.contains(idx)) {
-        return list[idx].copyWith(hasConflict: true);
+      final cw = conflictWeeksMap[idx];
+      if (cw != null && cw.isNotEmpty) {
+        final merged = Set<int>.from(list[idx].conflictWeeks)..addAll(cw);
+        return list[idx].copyWith(conflictWeeks: merged);
       }
       return list[idx];
     });

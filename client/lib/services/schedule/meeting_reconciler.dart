@@ -1,4 +1,5 @@
 import '../../models/schedule/course.dart';
+import '../../models/schedule/course_source.dart';
 import '../../models/schedule/meeting.dart';
 import '../../models/schedule/schedule_override.dart';
 
@@ -31,11 +32,6 @@ class MeetingReconciler {
     required List<ScheduleOverride> existingOverrides,
     required String semesterId,
   }) {
-    final oldCourseMap = <String, Course>{};
-    for (final c in oldBaseSchedule) {
-      oldCourseMap[c.courseKey] = c;
-    }
-
     final reconciledCourses = <Course>[];
     final allReconciledMeetings = <String, Meeting>{}; // meetingKey -> Meeting
 
@@ -149,18 +145,42 @@ class MeetingReconciler {
   }
 
   static Course? _findMatchingOldCourse(Course newCourse, List<Course> oldList) {
-    // 1. 优先通过教学班 ID + 课程代码
+    // 筛除不同学期或非教务来源的课程，避免跨学期或跨来源错配
+    final candidates = oldList.where((old) {
+      if (old.source != CourseSource.edu) return false;
+      if (old.semesterId.isNotEmpty &&
+          newCourse.semesterId.isNotEmpty &&
+          old.semesterId != newCourse.semesterId) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    // 1. 优先通过教学班 ID + 课程代码双重匹配
+    if (newCourse.teachingClassId != null &&
+        newCourse.teachingClassId!.isNotEmpty &&
+        newCourse.courseCode != null &&
+        newCourse.courseCode!.isNotEmpty) {
+      for (final old in candidates) {
+        if (old.teachingClassId == newCourse.teachingClassId &&
+            old.courseCode == newCourse.courseCode) {
+          return old;
+        }
+      }
+    }
+
+    // 2. 教学班 ID 单独匹配
     if (newCourse.teachingClassId != null &&
         newCourse.teachingClassId!.isNotEmpty) {
-      for (final old in oldList) {
+      for (final old in candidates) {
         if (old.teachingClassId == newCourse.teachingClassId) return old;
       }
     }
 
-    // 2. 课程代码
+    // 3. 课程代码匹配
     if (newCourse.courseCode != null && newCourse.courseCode!.isNotEmpty) {
       final codeMatches =
-          oldList.where((o) => o.courseCode == newCourse.courseCode).toList();
+          candidates.where((o) => o.courseCode == newCourse.courseCode).toList();
       if (codeMatches.length == 1) return codeMatches.first;
       if (codeMatches.isNotEmpty) {
         for (final m in codeMatches) {
@@ -169,15 +189,15 @@ class MeetingReconciler {
       }
     }
 
-    // 3. 课程名称 + 教师
-    for (final old in oldList) {
+    // 4. 课程名称 + 教师
+    for (final old in candidates) {
       if (old.name == newCourse.name && old.teacher == newCourse.teacher) {
         return old;
       }
     }
 
-    // 4. 纯课程名称（唯一时）
-    final nameMatches = oldList.where((o) => o.name == newCourse.name).toList();
+    // 5. 纯课程名称（唯一时）
+    final nameMatches = candidates.where((o) => o.name == newCourse.name).toList();
     if (nameMatches.length == 1) return nameMatches.first;
 
     return null;

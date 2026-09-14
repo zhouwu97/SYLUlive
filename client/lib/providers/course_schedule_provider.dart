@@ -50,7 +50,11 @@ class CourseBlock {
 
   final bool isOverridden;
   final String? overrideId;
-  final bool hasConflict;
+  final Set<int> conflictWeeks;
+  final bool? _legacyHasConflict;
+
+  bool hasConflictAtWeek(int week) => conflictWeeks.contains(week);
+  bool get hasConflict => _legacyHasConflict ?? conflictWeeks.isNotEmpty;
   final String? courseKey;
   final String? meetingKey;
   final String? teachingClassId;
@@ -73,12 +77,13 @@ class CourseBlock {
     this.periodLabels = const <String>[],
     this.isOverridden = false,
     this.overrideId,
-    this.hasConflict = false,
+    this.conflictWeeks = const <int>{},
+    bool? hasConflict,
     this.courseKey,
     this.meetingKey,
     this.teachingClassId,
     this.source,
-  });
+  }) : _legacyHasConflict = hasConflict;
 
   int get span => endSection - startSection + 1;
 
@@ -105,6 +110,9 @@ class CourseBlock {
     if (isOverridden) json['is_overridden'] = true;
     if (overrideId != null) json['override_id'] = overrideId;
     if (hasConflict) json['has_conflict'] = true;
+    if (conflictWeeks.isNotEmpty) {
+      json['conflict_weeks'] = conflictWeeks.toList()..sort();
+    }
     if (courseKey != null) json['course_key'] = courseKey;
     if (meetingKey != null) json['meeting_key'] = meetingKey;
     if (teachingClassId != null) json['teaching_class_id'] = teachingClassId;
@@ -135,6 +143,11 @@ class CourseBlock {
             : const <String>[];
     final isOverridden = json['is_overridden'] == true;
     final overrideId = json['override_id']?.toString();
+    final rawConflictWeeks = (json['conflict_weeks'] as List<dynamic>?)
+            ?.map((e) => int.tryParse(e.toString()) ?? 0)
+            .where((e) => e > 0)
+            .toSet() ??
+        const <int>{};
     final hasConflict = json['has_conflict'] == true;
     final courseKey = json['course_key']?.toString();
     final meetingKey = json['meeting_key']?.toString();
@@ -167,6 +180,7 @@ class CourseBlock {
       periodLabels: periodLabels,
       isOverridden: isOverridden,
       overrideId: overrideId,
+      conflictWeeks: rawConflictWeeks,
       hasConflict: hasConflict,
       courseKey: courseKey,
       meetingKey: meetingKey,
@@ -1537,6 +1551,7 @@ class CourseScheduleProvider extends ChangeNotifier {
         periodLabels: r.periodLabels,
         isOverridden: r.isOverridden,
         overrideId: r.overrideId,
+        conflictWeeks: r.conflictWeeks,
         hasConflict: r.hasConflict,
         courseKey: r.courseKey,
         meetingKey: r.meetingKey,

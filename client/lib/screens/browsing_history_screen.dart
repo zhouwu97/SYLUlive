@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../models/browsing_history_item.dart';
 import '../models/campus_article.dart';
+import '../providers/auth_provider.dart';
 import '../repositories/browsing_history_repository.dart';
 import '../theme/app_theme_tokens.dart';
 import 'campus_article_detail_screen.dart';
@@ -29,6 +31,14 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
     (label: '帖子', type: BrowsingHistoryType.post),
   ];
 
+  String? get _currentUserId {
+    try {
+      return context.read<AuthProvider>().user?.id.toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -36,7 +46,9 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) setState(() {});
     });
-    _loadHistory();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadHistory();
+    });
   }
 
   @override
@@ -47,7 +59,7 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
 
   Future<void> _loadHistory() async {
     setState(() => _isLoading = true);
-    final items = await _repository.getHistory();
+    final items = await _repository.getHistory(userId: _currentUserId);
     if (mounted) {
       setState(() {
         _allItems = items;
@@ -63,7 +75,7 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
   }
 
   Future<void> _deleteItem(BrowsingHistoryItem item) async {
-    await _repository.removeItem(item.id);
+    await _repository.removeItem(item.id, userId: _currentUserId);
     await _loadHistory();
   }
 
@@ -93,7 +105,7 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
     );
 
     if (confirm == true) {
-      await _repository.clearAll();
+      await _repository.clearAll(userId: _currentUserId);
       await _loadHistory();
     }
   }
@@ -132,7 +144,7 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
     final diffDays = today.difference(itemDate).inDays;
     if (diffDays == 0) return '今天';
     if (diffDays == 1) return '昨天';
-    if (diffDays < 7) return '${diffDays}天前';
+    if (diffDays < 7) return '$diffDays天前';
     return DateFormat('yyyy年MM月dd日').format(date);
   }
 

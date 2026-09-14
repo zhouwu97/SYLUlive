@@ -24,7 +24,11 @@ class ResolvedMeeting {
   final bool isOverridden;
   final String? overrideId;
 
-  final bool hasConflict;
+  final Set<int> conflictWeeks;
+  final bool? _legacyHasConflict;
+
+  bool hasConflictAtWeek(int week) => conflictWeeks.contains(week);
+  bool get hasConflict => _legacyHasConflict ?? conflictWeeks.isNotEmpty;
 
   // 展示与兼容字段
   final String courseName;
@@ -49,7 +53,8 @@ class ResolvedMeeting {
     required this.source,
     this.isOverridden = false,
     this.overrideId,
-    this.hasConflict = false,
+    this.conflictWeeks = const <int>{},
+    bool? hasConflict,
     required this.courseName,
     this.courseCode,
     this.teachingClassId,
@@ -58,7 +63,7 @@ class ResolvedMeeting {
     this.periodOrder,
     this.periodLabel,
     this.periodLabels = const <String>[],
-  });
+  }) : _legacyHasConflict = hasConflict;
 
   int get span => endSection - startSection + 1;
 
@@ -75,6 +80,7 @@ class ResolvedMeeting {
     CourseSource? source,
     bool? isOverridden,
     String? overrideId,
+    Set<int>? conflictWeeks,
     bool? hasConflict,
     String? courseName,
     String? courseCode,
@@ -85,6 +91,13 @@ class ResolvedMeeting {
     String? periodLabel,
     List<String>? periodLabels,
   }) {
+    final effectiveConflictWeeks = conflictWeeks ??
+        (hasConflict == false
+            ? const <int>{}
+            : (hasConflict == true && this.conflictWeeks.isEmpty
+                ? (weeks ?? this.weeks)
+                : this.conflictWeeks));
+
     return ResolvedMeeting(
       semesterId: semesterId ?? this.semesterId,
       courseKey: courseKey ?? this.courseKey,
@@ -98,7 +111,8 @@ class ResolvedMeeting {
       source: source ?? this.source,
       isOverridden: isOverridden ?? this.isOverridden,
       overrideId: overrideId ?? this.overrideId,
-      hasConflict: hasConflict ?? this.hasConflict,
+      conflictWeeks: effectiveConflictWeeks,
+      hasConflict: hasConflict,
       courseName: courseName ?? this.courseName,
       courseCode: courseCode ?? this.courseCode,
       teachingClassId: teachingClassId ?? this.teachingClassId,
@@ -113,6 +127,7 @@ class ResolvedMeeting {
   /// 转换为全局兼容的 CourseBlock 结构供现有页面与小组件消费
   Map<String, dynamic> toCourseBlockMap({int? deterministicId}) {
     final sortedWeeks = weeks.toList()..sort();
+    final sortedConflictWeeks = conflictWeeks.toList()..sort();
     return {
       'id': deterministicId ?? (source == CourseSource.manual ? -1 : 1),
       'course_code': courseCode ?? '',
@@ -131,6 +146,7 @@ class ResolvedMeeting {
       'is_overridden': isOverridden,
       'override_id': overrideId,
       'has_conflict': hasConflict,
+      'conflict_weeks': sortedConflictWeeks,
       'course_key': courseKey,
       'meeting_key': meetingKey,
       'teaching_class_id': teachingClassId,
@@ -155,6 +171,7 @@ class ResolvedMeeting {
           source == other.source &&
           isOverridden == other.isOverridden &&
           overrideId == other.overrideId &&
+          setEquals(conflictWeeks, other.conflictWeeks) &&
           hasConflict == other.hasConflict;
 
   @override

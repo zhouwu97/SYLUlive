@@ -368,7 +368,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           _post = mergedPost;
           _isLoading = false;
         });
+        String? currentUserId;
+        try {
+          currentUserId = context.read<AuthProvider>().user?.id.toString();
+        } catch (_) {}
         BrowsingHistoryRepository().recordVisit(
+          userId: currentUserId,
           targetId: widget.postId.toString(),
           type: BrowsingHistoryType.post,
           title: mergedPost.title.isNotEmpty

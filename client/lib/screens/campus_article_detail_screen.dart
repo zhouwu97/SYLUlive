@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
 import '../models/browsing_history_item.dart';
+import '../providers/auth_provider.dart';
 import '../repositories/browsing_history_repository.dart';
 import '../platform/contracts/external_navigator.dart';
 import '../services/campus_article_service.dart';
@@ -60,7 +62,12 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
           _detail = detail;
           _isLoading = false;
         });
+        String? currentUserId;
+        try {
+          currentUserId = context.read<AuthProvider>().user?.id.toString();
+        } catch (_) {}
         BrowsingHistoryRepository().recordVisit(
+          userId: currentUserId,
           targetId: widget.summary.id.toString(),
           type: BrowsingHistoryType.campusNews,
           title: detail.title.isNotEmpty ? detail.title : widget.summary.title,

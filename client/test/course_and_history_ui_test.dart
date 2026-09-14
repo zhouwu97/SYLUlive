@@ -159,7 +159,7 @@ void main() {
           home: Scaffold(
             body: ConfirmChangeSheet(
               course: course,
-              affectedWeeks: {5, 6, 7, 8},
+              affectedWeeks: const {5, 6, 7, 8},
               toWeekday: 3,
               toStartSection: 1,
               toEndSection: 2,
@@ -196,7 +196,7 @@ void main() {
           home: Scaffold(
             body: ConfirmChangeSheet(
               course: course,
-              affectedWeeks: {6},
+              affectedWeeks: const {6},
               toWeekday: 3,
               toStartSection: 1,
               toEndSection: 2,

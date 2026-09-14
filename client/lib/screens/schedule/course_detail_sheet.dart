@@ -248,12 +248,18 @@ class CourseDetailSheet extends StatelessWidget {
                       children: [
                         Icon(Icons.warning_amber_rounded, size: 18, color: tokens.warning),
                         const SizedBox(width: 8),
-                        Text(
-                          '当前时间段存在课程时间冲突',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: tokens.isDark ? Colors.amber[300] : Colors.orange[900],
+                        Expanded(
+                          child: Text(
+                            course.hasConflictAtWeek(currentAcademicWeek)
+                                ? '当前周（第$currentAcademicWeek周）存在课程时间冲突'
+                                : (course.conflictWeeks.isNotEmpty
+                                    ? '第${(course.conflictWeeks.toList()..sort()).join('、')}周存在课程时间冲突'
+                                    : '当前时间段存在课程时间冲突'),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: tokens.isDark ? Colors.amber[300] : Colors.orange[900],
+                            ),
                           ),
                         ),
                       ],

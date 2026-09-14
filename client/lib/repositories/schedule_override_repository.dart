@@ -97,8 +97,9 @@ class ScheduleOverrideRepository {
       if (existing.id == candidate.id) continue;
       if (!existing.isActive) continue;
 
-      // 必须是同一个 meetingKey
-      if (existing.meetingKey == candidate.meetingKey) {
+      // 必须是同一个 courseKey 与 meetingKey
+      if (existing.courseKey == candidate.courseKey &&
+          existing.meetingKey == candidate.meetingKey) {
         final overlap =
             existing.affectedWeeks.intersection(candidate.affectedWeeks);
         if (overlap.isNotEmpty) {

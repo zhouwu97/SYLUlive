@@ -591,5 +591,182 @@ void main() {
       expect(manualResolved.endSection, 4);
       expect(manualResolved.isOverridden, false);
     });
+
+    test('回归测试：冲突只发生在第6周 -> 仅第6周标记冲突，第1-5、7-8周不得显示冲突', () {
+      final courseA = Course(
+        courseKey: 'edu:2026_1:c_a:tc_a',
+        semesterId: '2026_1',
+        source: CourseSource.edu,
+        name: '课程A',
+        meetings: [
+          Meeting(
+            meetingKey: 'm_a',
+            weekday: 3,
+            startSection: 1,
+            endSection: 2,
+            weeks: {1, 2, 3, 4, 5, 6, 7, 8},
+          ),
+        ],
+      );
+
+      final courseB = Course(
+        courseKey: 'edu:2026_1:c_b:tc_b',
+        semesterId: '2026_1',
+        source: CourseSource.edu,
+        name: '课程B',
+        meetings: [
+          Meeting(
+            meetingKey: 'm_b',
+            weekday: 3,
+            startSection: 1,
+            endSection: 2,
+            weeks: {6}, // 仅第6周
+          ),
+        ],
+      );
+
+      final resolved = resolver.resolve(
+        baseSchedule: [courseA, courseB],
+        overrides: [],
+        semesterId: '2026_1',
+      );
+
+      final resolvedA = resolved.firstWhere((r) => r.courseKey == courseA.courseKey);
+      final resolvedB = resolved.firstWhere((r) => r.courseKey == courseB.courseKey);
+
+      // 整体冲突布尔标记
+      expect(resolvedA.hasConflict, isTrue);
+      expect(resolvedB.hasConflict, isTrue);
+
+      // 冲突周次粒度必须严格为 {6}
+      expect(resolvedA.conflictWeeks, {6});
+      expect(resolvedB.conflictWeeks, {6});
+
+      // 第6周必须报告冲突
+      expect(resolvedA.hasConflictAtWeek(6), isTrue);
+      expect(resolvedB.hasConflictAtWeek(6), isTrue);
+
+      // 第1-5、7-8周绝不得报告冲突！
+      for (final w in [1, 2, 3, 4, 5, 7, 8]) {
+        expect(
+          resolvedA.hasConflictAtWeek(w),
+          isFalse,
+          reason: '课程A在第$w周不应显示冲突',
+        );
+      }
+    });
+
+    test('回归测试：不同课程即使拥有相同 meetingKey 也不得误判为同一时间块重叠', () {
+      final overrideCourse1 = ScheduleOverride(
+        id: 'ov_c1',
+        semesterId: '2026_1',
+        courseKey: 'edu:2026_1:c1',
+        meetingKey: 'meeting_1',
+        type: ScheduleOverrideType.reschedule,
+        affectedWeeks: {1, 2, 3},
+        toWeekday: 1,
+        toStartSection: 1,
+        toEndSection: 2,
+        sourceSnapshotHash: '',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      final overrideCourse2 = ScheduleOverride(
+        id: 'ov_c2',
+        semesterId: '2026_1',
+        courseKey: 'edu:2026_1:c2',
+        meetingKey: 'meeting_1', // 相同 meetingKey 但不同 courseKey
+        type: ScheduleOverrideType.reschedule,
+        affectedWeeks: {2, 3, 4}, // 周次有交集
+        toWeekday: 2,
+        toStartSection: 1,
+        toEndSection: 2,
+        sourceSnapshotHash: '',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      final repo = ScheduleOverrideRepository();
+      // 不应抛出重叠异常
+      expect(
+        () => repo.validateNoOverlap(
+          candidate: overrideCourse2,
+          existingList: [overrideCourse1],
+        ),
+        returnsNormally,
+      );
+    });
+
+    test('回归测试：MeetingReconciler 优先教学班+课程代码匹配并忽略跨学期缓存', () {
+      const reconciler = MeetingReconciler();
+
+      final oldCourseSameTerm = Course(
+        courseKey: 'edu:2026_1:c1:tc01',
+        semesterId: '2026_1',
+        source: CourseSource.edu,
+        name: '操作系统',
+        courseCode: 'CS301',
+        teachingClassId: 'TC01',
+        meetings: [
+          Meeting(
+            meetingKey: 'm_old_2026_1',
+            weekday: 1,
+            startSection: 1,
+            endSection: 2,
+            weeks: {1, 2, 3},
+          ),
+        ],
+      );
+
+      final oldCourseOtherTerm = Course(
+        courseKey: 'edu:2025_2:c1:tc01',
+        semesterId: '2025_2', // 上学期同教学班 ID
+        source: CourseSource.edu,
+        name: '操作系统（旧）',
+        courseCode: 'CS301',
+        teachingClassId: 'TC01',
+        meetings: [
+          Meeting(
+            meetingKey: 'm_old_2025_2',
+            weekday: 1,
+            startSection: 1,
+            endSection: 2,
+            weeks: {1, 2, 3},
+          ),
+        ],
+      );
+
+      final newCourse = Course(
+        courseKey: 'edu:2026_1:c1:tc01',
+        semesterId: '2026_1',
+        source: CourseSource.edu,
+        name: '操作系统',
+        courseCode: 'CS301',
+        teachingClassId: 'TC01',
+        meetings: [
+          Meeting(
+            meetingKey: '',
+            weekday: 1,
+            startSection: 1,
+            endSection: 2,
+            weeks: {1, 2, 3},
+          ),
+        ],
+      );
+
+      final result = reconciler.reconcile(
+        oldBaseSchedule: [oldCourseOtherTerm, oldCourseSameTerm],
+        newEduCourses: [newCourse],
+        existingOverrides: [],
+        semesterId: '2026_1',
+      );
+
+      // 应当继承 2026_1 的 meetingKey，而不是 2025_2 的
+      expect(
+        result.reconciledCourses.first.meetings.first.meetingKey,
+        'm_old_2026_1',
+      );
+    });
   });
 }

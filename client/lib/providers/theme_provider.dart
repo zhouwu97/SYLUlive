@@ -370,7 +370,8 @@ class ThemeProvider extends ChangeNotifier {
     if (prefs.containsKey(_followSystemKey)) {
       _followSystem = prefs.getBool(_followSystemKey) ?? true;
     } else {
-      _followSystem = !prefs.containsKey(_nightModeKey);
+      // 默认开启跟随系统（无论旧版是否曾写入 night_mode，升级后统一默认跟随系统）
+      _followSystem = true;
     }
     _fontSizePreset = AppFontSizePreset.fromStorage(
       prefs.getString(_fontSizePresetKey),

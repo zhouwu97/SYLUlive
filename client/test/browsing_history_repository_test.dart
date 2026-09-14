@@ -58,7 +58,6 @@ class MockPreferencesStore implements AppPreferencesStore {
     _data.clear();
     return true;
   }
-  @override
   Future<void> reload() async {}
 }
 
@@ -202,6 +201,54 @@ void main() {
       expect(list.any((i) => i.targetId == 'id_1'), false);
       expect(list.any((i) => i.targetId == 'id_10'), false);
       expect(list.any((i) => i.targetId == 'id_11'), true);
+    });
+
+    test('回归测试：用户A浏览历史 -> 切用户B后不得读取A的记录（账号数据隔离）', () async {
+      // 用户 A 浏览两条记录
+      await repo.recordVisit(
+        userId: 'user_A',
+        targetId: 'post_A1',
+        type: BrowsingHistoryType.post,
+        title: '用户A的帖子1',
+      );
+      await repo.recordVisit(
+        userId: 'user_A',
+        targetId: 'news_A2',
+        type: BrowsingHistoryType.campusNews,
+        title: '用户A的新闻2',
+      );
+
+      // 用户 B 查询历史 -> 必须为空
+      final userBHistoryBefore = await repo.getHistory(userId: 'user_B');
+      expect(userBHistoryBefore, isEmpty);
+
+      // 游客查询历史 -> 必须为空
+      final guestHistory = await repo.getHistory(userId: null);
+      expect(guestHistory, isEmpty);
+
+      // 用户 A 查询历史 -> 正常读取 2 条
+      final userAHistory = await repo.getHistory(userId: 'user_A');
+      expect(userAHistory.length, 2);
+      expect(userAHistory[0].titleSnapshot, '用户A的新闻2');
+      expect(userAHistory[1].titleSnapshot, '用户A的帖子1');
+
+      // 用户 B 浏览一条记录
+      await repo.recordVisit(
+        userId: 'user_B',
+        targetId: 'post_B1',
+        type: BrowsingHistoryType.post,
+        title: '用户B的帖子1',
+      );
+
+      // 用户 B 读取历史 -> 仅有 1 条用户 B 自己的记录
+      final userBHistoryAfter = await repo.getHistory(userId: 'user_B');
+      expect(userBHistoryAfter.length, 1);
+      expect(userBHistoryAfter.first.titleSnapshot, '用户B的帖子1');
+
+      // 用户 A 的历史依然保持 2 条，未被污染
+      final userAHistoryAgain = await repo.getHistory(userId: 'user_A');
+      expect(userAHistoryAgain.length, 2);
+      expect(userAHistoryAgain.any((i) => i.titleSnapshot == '用户B的帖子1'), isFalse);
     });
   });
 }

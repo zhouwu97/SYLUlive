@@ -14,16 +14,26 @@ import '../../academic/storage/academic_persistence_gate.dart';
 class ScheduleTermSnapshot {
   ScheduleTermSnapshot({
     List<Map<String, dynamic>> courses = const <Map<String, dynamic>>[],
+    List<Map<String, dynamic>> baseCourses = const <Map<String, dynamic>>[],
+    List<Map<String, dynamic>> manualCourses = const <Map<String, dynamic>>[],
     List<int> hiddenCourseIds = const <int>[],
     this.semesterStart,
     List<ScheduleArchiveSnapshot> archives = const <ScheduleArchiveSnapshot>[],
     this.activeArchiveId,
   })  : courses =
             List<Map<String, dynamic>>.unmodifiable(courses.map(_copyMap)),
+        baseCourses =
+            List<Map<String, dynamic>>.unmodifiable(baseCourses.map(_copyMap)),
+        manualCourses = List<Map<String, dynamic>>.unmodifiable(
+            manualCourses.map(_copyMap)),
         hiddenCourseIds = List<int>.unmodifiable(hiddenCourseIds),
         archives = List<ScheduleArchiveSnapshot>.unmodifiable(archives);
 
   final List<Map<String, dynamic>> courses;
+
+  /// 原始教务与自定义课程快照，展示调整结果不得覆盖这两份来源数据。
+  final List<Map<String, dynamic>> baseCourses;
+  final List<Map<String, dynamic>> manualCourses;
   final List<int> hiddenCourseIds;
   final DateTime? semesterStart;
   final List<ScheduleArchiveSnapshot> archives;
@@ -31,6 +41,8 @@ class ScheduleTermSnapshot {
 
   ScheduleTermSnapshot copyWith({
     List<Map<String, dynamic>>? courses,
+    List<Map<String, dynamic>>? baseCourses,
+    List<Map<String, dynamic>>? manualCourses,
     List<int>? hiddenCourseIds,
     DateTime? semesterStart,
     bool clearSemesterStart = false,
@@ -40,6 +52,8 @@ class ScheduleTermSnapshot {
   }) {
     return ScheduleTermSnapshot(
       courses: courses ?? this.courses,
+      baseCourses: baseCourses ?? this.baseCourses,
+      manualCourses: manualCourses ?? this.manualCourses,
       hiddenCourseIds: hiddenCourseIds ?? this.hiddenCourseIds,
       semesterStart:
           clearSemesterStart ? null : (semesterStart ?? this.semesterStart),
@@ -52,6 +66,8 @@ class ScheduleTermSnapshot {
   Map<String, dynamic> toPayload() {
     return <String, dynamic>{
       'courses': courses.map(_copyMap).toList(growable: false),
+      'base_courses': baseCourses.map(_copyMap).toList(growable: false),
+      'manual_courses': manualCourses.map(_copyMap).toList(growable: false),
       'hidden_course_ids': List<int>.from(hiddenCourseIds),
       'semester_start': semesterStart?.toUtc().toIso8601String(),
       'archives': archives.map((archive) => archive.toPayload()).toList(),
@@ -61,6 +77,14 @@ class ScheduleTermSnapshot {
 
   factory ScheduleTermSnapshot.fromPayload(Map<String, dynamic> payload) {
     final courses = _copyMapList(payload['courses'], '课程');
+    final baseCourses = _copyMapList(
+      payload['base_courses'] ?? const <dynamic>[],
+      '原始教务课程',
+    );
+    final manualCourses = _copyMapList(
+      payload['manual_courses'] ?? const <dynamic>[],
+      '自定义课程',
+    );
     final hiddenCourseIds = _copyIntList(payload['hidden_course_ids'], '隐藏课程');
     final semesterStart = _parseOptionalDateTime(
       payload['semester_start'],
@@ -96,6 +120,8 @@ class ScheduleTermSnapshot {
 
     return ScheduleTermSnapshot(
       courses: courses,
+      baseCourses: baseCourses,
+      manualCourses: manualCourses,
       hiddenCourseIds: hiddenCourseIds,
       semesterStart: semesterStart,
       archives: archives,
@@ -339,6 +365,26 @@ class ScheduleCacheStore {
     );
   }
 
+  /// 保存展示结果及其来源快照。来源字段为新增字段，旧密文仍可按 courses 回退读取。
+  Future<void> writeSourceCourses({
+    required String year,
+    required int semester,
+    required List<Map<String, dynamic>> courses,
+    required List<Map<String, dynamic>> baseCourses,
+    required List<Map<String, dynamic>> manualCourses,
+  }) {
+    return _mutateTerm(
+      year: year,
+      semester: semester,
+      update: (current) => current.copyWith(
+        courses: _copyMapList(courses, '课程'),
+        baseCourses: _copyMapList(baseCourses, '原始教务课程'),
+        manualCourses: _copyMapList(manualCourses, '自定义课程'),
+      ),
+      clearNeedsResync: true,
+    );
+  }
+
   Future<void> writeHiddenCourseIds({
     required String year,
     required int semester,
@@ -505,8 +551,8 @@ class ScheduleCacheStore {
     final keys = <String>{
       ...allPrefKeys.where((key) => prefixes.any(key.startsWith)),
       ...allPrefKeys.where(
-            (key) => key.startsWith('course_archive_data_v2_'),
-          ),
+        (key) => key.startsWith('course_archive_data_v2_'),
+      ),
     };
     if (preferences.containsKey('semester_start')) {
       keys.add('semester_start');
@@ -595,9 +641,12 @@ class ScheduleCacheStore {
     if (selectedTerm != null) payload['selected_term'] = selectedTerm;
     final namespace = identityNamespace;
     final preferences = AppPreferencesStore.maybeInstance;
-    if (namespace != null && preferences != null &&
-        (preferences.getBool('academic_lifecycle_${namespace}_connected') == false ||
-         preferences.getBool('academic_lifecycle_${namespace}_cleanup') == true)) {
+    if (namespace != null &&
+        preferences != null &&
+        (preferences.getBool('academic_lifecycle_${namespace}_connected') ==
+                false ||
+            preferences.getBool('academic_lifecycle_${namespace}_cleanup') ==
+                true)) {
       return;
     }
     await _snapshotStore.write(

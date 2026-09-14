@@ -10,6 +10,8 @@ class SelectTimeSheet extends StatefulWidget {
   final int? initialStartSection;
   final int? initialEndSection;
   final String? initialRoom;
+  final VoidCallback? onBack;
+  final VoidCallback? onClose;
   final void Function(
       int weekday, int startSection, int endSection, String? newRoom) onNext;
 
@@ -21,6 +23,8 @@ class SelectTimeSheet extends StatefulWidget {
     this.initialStartSection,
     this.initialEndSection,
     this.initialRoom,
+    this.onBack,
+    this.onClose,
     required this.onNext,
   });
 
@@ -154,7 +158,7 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                   IconButton(
                     tooltip: '返回上一步',
                     icon: Icon(Icons.arrow_back, color: tokens.textSecondary),
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: widget.onBack ?? () => Navigator.pop(context),
                   ),
                   Expanded(
                     child: Text(
@@ -169,7 +173,7 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                   IconButton(
                     icon: Icon(Icons.close,
                         color: tokens.textSecondary, size: 20),
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: widget.onClose ?? () => Navigator.pop(context),
                   ),
                 ],
               ),

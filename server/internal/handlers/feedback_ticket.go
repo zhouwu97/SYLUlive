@@ -665,7 +665,7 @@ func (h *FeedbackTicketHandler) ServeAttachment(c *gin.Context) {
 	var user models.User
 	isAdmin := false
 	if err := h.db.Select("id, role").First(&user, userID).Error; err == nil {
-		isAdmin = user.IsAdmin()
+		isAdmin = user.Role == models.RoleAdmin || user.Role == models.RoleSuperAdmin
 	}
 
 	// 查找附件引用
@@ -685,6 +685,14 @@ func (h *FeedbackTicketHandler) ServeAttachment(c *gin.Context) {
 		if ticket.UserID != userID {
 			c.Status(http.StatusNotFound)
 			return
+		}
+		// 附件授权还必须继承所属消息的可见性；内部备注的截图不能因知道 file_id 而泄露。
+		if attachment.MessageID != nil && *attachment.MessageID != 0 {
+			var message models.FeedbackMessage
+			if err := h.db.Select("id, visible_to_user").First(&message, *attachment.MessageID).Error; err != nil || !message.VisibleToUser {
+				c.Status(http.StatusNotFound)
+				return
+			}
 		}
 	}
 
@@ -727,22 +735,39 @@ func sanitizeDiagnosticsJSON(raw string) string {
 		"key", "session", "credential", "chat", "message",
 	}
 
-	cleaned := make(map[string]interface{})
-	for k, v := range data {
-		lowerKey := strings.ToLower(k)
-		isSensitive := false
-		for _, s := range sensitiveKeys {
-			if strings.Contains(lowerKey, s) {
-				isSensitive = true
-				break
+	var cleanValue interface{}
+	var clean func(interface{}) interface{}
+	clean = func(value interface{}) interface{} {
+		switch typed := value.(type) {
+		case map[string]interface{}:
+			out := make(map[string]interface{}, len(typed))
+			for k, v := range typed {
+				lowerKey := strings.ToLower(k)
+				sensitive := false
+				for _, s := range sensitiveKeys {
+					if strings.Contains(lowerKey, s) {
+						sensitive = true
+						break
+					}
+				}
+				if !sensitive {
+					out[k] = clean(v)
+				}
 			}
-		}
-		if !isSensitive {
-			cleaned[k] = v
+			return out
+		case []interface{}:
+			out := make([]interface{}, len(typed))
+			for i, item := range typed {
+				out[i] = clean(item)
+			}
+			return out
+		default:
+			return value
 		}
 	}
+	cleanValue = clean(data)
 
-	out, err := json.Marshal(cleaned)
+	out, err := json.Marshal(cleanValue)
 	if err != nil {
 		return "{}"
 	}

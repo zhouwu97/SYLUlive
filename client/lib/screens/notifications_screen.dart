@@ -18,6 +18,7 @@ import '../services/reply_notification_state.dart';
 import 'my_content_screen.dart';
 import 'appeal_create_screen.dart';
 import 'court_screen.dart';
+import 'feedback/feedback_detail_screen.dart';
 
 @visibleForTesting
 bool canLoadMoreNotifications({
@@ -144,6 +145,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     final raw = notification['id'];
     if (raw is int) return raw;
     return int.tryParse(raw?.toString() ?? '');
+  }
+
+  int? _parseInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
   }
 
   Future<void> _loadReplies({bool loadMore = false}) async {
@@ -436,7 +443,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     // 服务端对无帖通知（如食堂审核结果）返回 post_id=0，需视为无关联帖子。
     final rawPostId = notification['post_id'] as int?;
     final postId = (rawPostId != null && rawPostId > 0) ? rawPostId : null;
-    final relatedId = notification['related_id'] as int?;
+    final relatedId = _parseInt(notification['related_id']);
     final content = notification['content']?.toString() ?? '';
     final createdAt =
         DateTime.tryParse(notification['created_at'] ?? '') ?? DateTime.now();
@@ -480,6 +487,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       actionText = '公众法庭转人工复核';
     } else if (type == 'appeal_result') {
       actionText = '公众法庭结案结果';
+    } else if (type == 'feedback_update') {
+      actionText = '反馈工单有新回复';
     }
 
     return InkWell(
@@ -568,6 +577,14 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                   initialTabIndex: 2,
                   focusCourseEvaluationId: relatedId,
                 ),
+              ),
+            );
+          } else if (type == 'feedback_update' && relatedId != null) {
+            if (!mounted) return;
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => FeedbackDetailScreen(ticketId: relatedId),
               ),
             );
           }

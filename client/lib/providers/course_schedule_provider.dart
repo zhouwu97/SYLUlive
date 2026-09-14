@@ -422,6 +422,11 @@ class CourseScheduleProvider extends ChangeNotifier {
     debugPrint('课表账号上下文已切换，清理旧内存数据');
     _courses = [];
     _gridData = {};
+    // 账号/来源切换时必须连同解析链路一起清空，避免新账号无缓存时复用旧账号。
+    _baseSchedule = [];
+    _overrides = [];
+    _manualCourses = [];
+    _resolvedMeetings = [];
     _hiddenCourseIds = {};
     _archives = [];
     _errorMessage = null;
@@ -553,6 +558,10 @@ class CourseScheduleProvider extends ChangeNotifier {
     _sessionPhase = ScheduleSessionPhase.resolvingIdentity;
     _courses = [];
     _gridData = {};
+    _baseSchedule = [];
+    _overrides = [];
+    _manualCourses = [];
+    _resolvedMeetings = [];
     _hiddenCourseIds = {};
     _archives = [];
     _errorMessage = null;
@@ -634,17 +643,54 @@ class CourseScheduleProvider extends ChangeNotifier {
     final store = await _resolveOperationStore(context);
     if (store == null) return false;
     try {
-      await store.writeCourses(
+      final baseBlocks = _courseModelsToBlocks(_baseSchedule);
+      final manualBlocks = _courseModelsToBlocks(_manualCourses);
+      await store.writeSourceCourses(
         year: context.year,
         semester: context.semester,
         courses:
             courses.map((course) => course.toJson()).toList(growable: false),
+        baseCourses:
+            baseBlocks.map((course) => course.toJson()).toList(growable: false),
+        manualCourses: manualBlocks
+            .map((course) => course.toJson())
+            .toList(growable: false),
       );
       return _isCurrentOperation(context);
     } catch (error) {
       debugPrint('保存加密课程失败: ${error.runtimeType}');
       return false;
     }
+  }
+
+  List<CourseBlock> _courseModelsToBlocks(List<Course> courses) {
+    final blocks = <CourseBlock>[];
+    for (final course in courses) {
+      for (final meeting in course.meetings) {
+        blocks.add(CourseBlock(
+          id: meeting.sourceCourseId ??
+              (course.source == CourseSource.manual ? -1 : 1),
+          courseCode: course.courseCode ?? '',
+          name: course.name,
+          teacher: meeting.teacher ?? course.teacher,
+          location: meeting.room,
+          color: course.color,
+          weekday: meeting.weekday,
+          startSection: meeting.startSection,
+          endSection: meeting.endSection,
+          weeks: meeting.weeks.toList()..sort(),
+          note: meeting.note,
+          periodOrder: meeting.periodOrder,
+          periodLabel: meeting.periodLabel,
+          periodLabels: meeting.periodLabels,
+          courseKey: course.courseKey,
+          meetingKey: meeting.meetingKey,
+          teachingClassId: course.teachingClassId,
+          source: course.source.name,
+        ));
+      }
+    }
+    return blocks;
   }
 
   Future<bool> _saveOperationHiddenCourses(
@@ -757,9 +803,12 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (cached == null || cached.isEmpty) {
       return false;
     }
+    final operation = _captureOperationContext();
+    final snapshot =
+        operation == null ? null : await _loadOperationSnapshot(operation);
     final coalesced = _coalesceGraduateCourses(cached);
     final termId = currentTerm.id;
-    _populateSchedulesFromBlocks(coalesced);
+    _restoreSourceModels(snapshot, coalesced);
     _overrides = await _overrideRepository.loadOverrides(
       semesterId: termId,
       accountId: _sourceAccountId,
@@ -772,6 +821,24 @@ class CourseScheduleProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     return true;
+  }
+
+  void _restoreSourceModels(
+      ScheduleTermSnapshot? snapshot, List<CourseBlock> fallback) {
+    final base = snapshot?.baseCourses ?? const <Map<String, dynamic>>[];
+    final manual = snapshot?.manualCourses ?? const <Map<String, dynamic>>[];
+    if (base.isNotEmpty || manual.isNotEmpty) {
+      _baseSchedule = _convertToCourses(
+        base.map(CourseBlock.fromJson).toList(growable: false),
+        currentTerm.id,
+      );
+      _manualCourses = _convertToCourses(
+        manual.map(CourseBlock.fromJson).toList(growable: false),
+        currentTerm.id,
+      ).map((course) => course.copyWith(source: CourseSource.manual)).toList();
+      return;
+    }
+    _populateSchedulesFromBlocks(fallback);
   }
 
   DateTime? _lastFetchedAt;
@@ -864,7 +931,9 @@ class CourseScheduleProvider extends ChangeNotifier {
       accountId: _sourceAccountId,
     );
     final newEduCourses = _convertToCourses(
-      _coalesceGraduateCourses(fetchedCourses),
+      _coalesceGraduateCourses(fetchedCourses)
+          .where((course) => !_isCourseHidden(course))
+          .toList(growable: false),
       termId,
     );
     final reconcileResult = _meetingReconciler.reconcile(
@@ -1351,7 +1420,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       final cached =
           cachedRaw == null ? null : _coalesceGraduateCourses(cachedRaw);
       if (cached != null && cached.isNotEmpty) {
-        _populateSchedulesFromBlocks(cached);
+        _restoreSourceModels(snapshot, cached);
         _overrides = await _overrideRepository.loadOverrides(
           semesterId: currentTerm.id,
           accountId: _sourceAccountId,
@@ -1483,6 +1552,14 @@ class CourseScheduleProvider extends ChangeNotifier {
         _buildGrid();
       }
 
+      // 网络结果落盘前重建原始/自定义模型；缓存中的 courses 仅作为展示结果。
+      _populateSchedulesFromBlocks(_coalesceGraduateCourses(_courses));
+      _overrides = await _overrideRepository.loadOverrides(
+        semesterId: currentTerm.id,
+        accountId: _sourceAccountId,
+      );
+      _syncResolvedSchedule();
+
       final persisted = _courses.isNotEmpty
           ? await _saveOperationCourses(operation, _courses)
           : await _clearOperationCourses(operation);
@@ -1514,8 +1591,19 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// 重新解析课表并更新内存中的 _courses 与桌面小部件
   void _syncResolvedSchedule() {
     final termId = currentTerm.id;
+    final visibleBaseSchedule = _baseSchedule
+        .map((course) {
+          final meetings = course.meetings
+              .where((meeting) =>
+                  meeting.sourceCourseId == null ||
+                  !_hiddenCourseIds.contains(meeting.sourceCourseId))
+              .toList(growable: false);
+          return meetings.isEmpty ? null : course.copyWith(meetings: meetings);
+        })
+        .whereType<Course>()
+        .toList(growable: false);
     final resolved = _scheduleResolver.resolve(
-      baseSchedule: _baseSchedule,
+      baseSchedule: visibleBaseSchedule,
       overrides: _overrides,
       manualCourses: _manualCourses,
       semesterId: termId,
@@ -1764,10 +1852,13 @@ class CourseScheduleProvider extends ChangeNotifier {
       updatedAt: DateTime.now(),
     );
 
-    await _overrideRepository.upsertOverride(
+    final persisted = await _overrideRepository.upsertOverride(
       override: override,
       accountId: _sourceAccountId,
     );
+    if (!persisted) {
+      throw StateError('调课规则保存失败，请稍后重试');
+    }
     _overrides = await _overrideRepository.loadOverrides(
       semesterId: currentTerm.id,
       accountId: _sourceAccountId,
@@ -1805,10 +1896,13 @@ class CourseScheduleProvider extends ChangeNotifier {
       updatedAt: DateTime.now(),
     );
 
-    await _overrideRepository.upsertOverride(
+    final persisted = await _overrideRepository.upsertOverride(
       override: override,
       accountId: _sourceAccountId,
     );
+    if (!persisted) {
+      throw StateError('教室调整保存失败，请稍后重试');
+    }
     _overrides = await _overrideRepository.loadOverrides(
       semesterId: currentTerm.id,
       accountId: _sourceAccountId,
@@ -1824,10 +1918,13 @@ class CourseScheduleProvider extends ChangeNotifier {
     required ScheduleOverride updated,
     bool allowConflict = false,
   }) async {
-    await _overrideRepository.upsertOverride(
+    final persisted = await _overrideRepository.upsertOverride(
       override: updated,
       accountId: _sourceAccountId,
     );
+    if (!persisted) {
+      throw StateError('调课规则保存失败，请稍后重试');
+    }
     _overrides = await _overrideRepository.loadOverrides(
       semesterId: currentTerm.id,
       accountId: _sourceAccountId,
@@ -1840,11 +1937,14 @@ class CourseScheduleProvider extends ChangeNotifier {
 
   /// 恢复教务原课 (Section 25: 删除 Override，重跑 Resolver)
   Future<void> restoreBaseMeeting(String overrideId) async {
-    await _overrideRepository.deleteOverride(
+    final persisted = await _overrideRepository.deleteOverride(
       overrideId: overrideId,
       semesterId: currentTerm.id,
       accountId: _sourceAccountId,
     );
+    if (!persisted) {
+      throw StateError('恢复原安排失败，请稍后重试');
+    }
     _overrides = await _overrideRepository.loadOverrides(
       semesterId: currentTerm.id,
       accountId: _sourceAccountId,

@@ -57,7 +57,7 @@ type FeedbackTicket struct {
 	ActualResult       string     `gorm:"type:text" json:"actual_result,omitempty"`
 	ExpectedResult     string     `gorm:"type:text" json:"expected_result,omitempty"`
 	Status             string     `gorm:"size:30;not null;default:'pending';index" json:"status"`
-	StatusNote         string     `gorm:"size:255" json:"status_note,omitempty"`
+	StatusNote         string     `gorm:"type:text" json:"status_note,omitempty"`
 	Priority           string     `gorm:"size:10;not null;default:'P2';index" json:"priority"`
 	AssigneeAdminID    *uint      `gorm:"index" json:"assignee_admin_id,omitempty"`
 	AssigneeAdmin      *User      `gorm:"foreignKey:AssigneeAdminID" json:"assignee_admin,omitempty"`
@@ -87,17 +87,17 @@ type FeedbackTicket struct {
 
 // FeedbackMessage 工单流转消息与记录
 type FeedbackMessage struct {
-	ID            uint                  `gorm:"primaryKey" json:"id"`
-	TicketID      uint                  `gorm:"not null;index" json:"ticket_id"`
-	SenderType    string                `gorm:"size:20;not null;index" json:"sender_type"` // user / admin / system
-	SenderID      uint                  `gorm:"not null;index" json:"sender_id"`
-	Sender        *User                 `gorm:"foreignKey:SenderID" json:"sender,omitempty"`
-	MessageType   string                `gorm:"size:30;not null;index" json:"message_type"`
-	Content       string                `gorm:"type:text;not null" json:"content"`
-	MetadataJSON  string                `gorm:"type:text" json:"metadata_json,omitempty"`
-	VisibleToUser bool                  `gorm:"index" json:"visible_to_user"`
-	CreatedAt     time.Time             `json:"created_at"`
-	Attachments   []FeedbackAttachment  `gorm:"foreignKey:MessageID" json:"attachments,omitempty"`
+	ID            uint                 `gorm:"primaryKey" json:"id"`
+	TicketID      uint                 `gorm:"not null;index" json:"ticket_id"`
+	SenderType    string               `gorm:"size:20;not null;index" json:"sender_type"` // user / admin / system
+	SenderID      uint                 `gorm:"not null;index" json:"sender_id"`
+	Sender        *User                `gorm:"foreignKey:SenderID" json:"sender,omitempty"`
+	MessageType   string               `gorm:"size:30;not null;index" json:"message_type"`
+	Content       string               `gorm:"type:text;not null" json:"content"`
+	MetadataJSON  string               `gorm:"type:text" json:"metadata_json,omitempty"`
+	VisibleToUser bool                 `gorm:"index" json:"visible_to_user"`
+	CreatedAt     time.Time            `json:"created_at"`
+	Attachments   []FeedbackAttachment `gorm:"foreignKey:MessageID" json:"attachments,omitempty"`
 }
 
 // FeedbackAttachment 工单私有附件关联
@@ -119,7 +119,7 @@ type FeedbackStatusHistory struct {
 	OperatorType string    `gorm:"size:20;not null" json:"operator_type"` // user / admin / system
 	OldStatus    string    `gorm:"size:30;not null" json:"old_status"`
 	NewStatus    string    `gorm:"size:30;not null" json:"new_status"`
-	Note         string    `gorm:"size:255" json:"note"`
+	Note         string    `gorm:"type:text" json:"note"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 

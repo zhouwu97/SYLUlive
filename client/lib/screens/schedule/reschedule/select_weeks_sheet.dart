@@ -10,6 +10,8 @@ class SelectWeeksSheet extends StatefulWidget {
   final int? totalTeachingWeeks;
   final Set<int>? sourceWeeks;
   final Set<int>? initialAffectedWeeks;
+  final VoidCallback? onBack;
+  final VoidCallback? onClose;
   final ValueChanged<Set<int>> onNext;
 
   const SelectWeeksSheet({
@@ -19,6 +21,8 @@ class SelectWeeksSheet extends StatefulWidget {
     this.totalTeachingWeeks,
     this.sourceWeeks,
     this.initialAffectedWeeks,
+    this.onBack,
+    this.onClose,
     required this.onNext,
   });
 
@@ -78,9 +82,14 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
     _endWeek = initial?.isNotEmpty == true ? initial!.last : lastWeek;
 
     // 如果当前周在课程周次范围内，默认指定范围从当前周开始
-    if (_courseWeeks.contains(widget.currentAcademicWeek)) {
-      _startWeek = widget.currentAcademicWeek;
-      if (_startWeek > _endWeek) _endWeek = _startWeek;
+    if (initial == null || initial.isEmpty) {
+      if (_courseWeeks.contains(widget.currentAcademicWeek)) {
+        _startWeek = widget.currentAcademicWeek;
+        if (_startWeek > _endWeek) _endWeek = _startWeek;
+      }
+    }
+    if (initial?.length == 1 && initial!.single == widget.currentAcademicWeek) {
+      _onlyCurrentWeek = true;
     }
   }
 
@@ -146,7 +155,7 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
                 IconButton(
                   icon:
                       Icon(Icons.close, color: tokens.textSecondary, size: 20),
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: widget.onBack ?? () => Navigator.pop(context),
                 ),
               ],
             ),
@@ -204,7 +213,7 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
                   IconButton(
                     tooltip: '返回课程详情',
                     icon: Icon(Icons.arrow_back, color: tokens.textSecondary),
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: widget.onClose ?? () => Navigator.pop(context),
                   ),
                   Expanded(
                     child: _buildWeekDropdown(

@@ -14,6 +14,8 @@ class ConfirmChangeSheet extends StatelessWidget {
   final ScheduleConflictCheckResult conflictResult;
   final VoidCallback onConfirm;
   final VoidCallback onBackToEdit;
+  final VoidCallback? onBack;
+  final VoidCallback? onClose;
 
   const ConfirmChangeSheet({
     super.key,
@@ -26,6 +28,8 @@ class ConfirmChangeSheet extends StatelessWidget {
     required this.conflictResult,
     required this.onConfirm,
     required this.onBackToEdit,
+    this.onBack,
+    this.onClose,
   });
 
   static const _weekdays = ['一', '二', '三', '四', '五', '六', '日'];
@@ -73,8 +77,9 @@ class ConfirmChangeSheet extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    icon: Icon(Icons.close, color: tokens.textSecondary, size: 20),
-                    onPressed: () => Navigator.pop(context),
+                    icon: Icon(Icons.close,
+                        color: tokens.textSecondary, size: 20),
+                    onPressed: onClose ?? () => Navigator.pop(context),
                   ),
                 ],
               ),
@@ -116,7 +121,8 @@ class ConfirmChangeSheet extends StatelessWidget {
                             children: [
                               Text('原时间',
                                   style: TextStyle(
-                                      fontSize: 11, color: tokens.textSecondary)),
+                                      fontSize: 11,
+                                      color: tokens.textSecondary)),
                               const SizedBox(height: 2),
                               Text(
                                 '周${_weekdays[course.weekday - 1]} 第${course.startSection}-${course.endSection}节',
@@ -128,7 +134,8 @@ class ConfirmChangeSheet extends StatelessWidget {
                               if (course.location != null)
                                 Text(course.location!,
                                     style: TextStyle(
-                                        fontSize: 11, color: tokens.textSecondary)),
+                                        fontSize: 11,
+                                        color: tokens.textSecondary)),
                             ],
                           ),
                         ),
@@ -154,7 +161,8 @@ class ConfirmChangeSheet extends StatelessWidget {
                               if (toRoom != null && toRoom!.isNotEmpty)
                                 Text(toRoom!,
                                     style: TextStyle(
-                                        fontSize: 11, color: tokens.textSecondary)),
+                                        fontSize: 11,
+                                        color: tokens.textSecondary)),
                             ],
                           ),
                         ),
@@ -168,7 +176,8 @@ class ConfirmChangeSheet extends StatelessWidget {
               if (!hasConflict) ...[
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
                     color: tokens.isDark
                         ? const Color(0xFF142B1F)
@@ -205,7 +214,8 @@ class ConfirmChangeSheet extends StatelessWidget {
                     ),
                     onPressed: onConfirm,
                     child: const Text('确认修改',
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                        style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.bold)),
                   ),
                 ),
               ] else ...[
@@ -217,7 +227,8 @@ class ConfirmChangeSheet extends StatelessWidget {
                         ? const Color(0xFF2E2413)
                         : const Color(0xFFFFF3DD),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: tokens.warning.withValues(alpha: 0.5)),
+                    border: Border.all(
+                        color: tokens.warning.withValues(alpha: 0.5)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -239,14 +250,17 @@ class ConfirmChangeSheet extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       ...conflictResult.conflicts.map((conf) {
-                        final weeksList = conf.conflictingWeeks.toList()..sort();
+                        final weeksList = conf.conflictingWeeks.toList()
+                          ..sort();
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 6),
                           child: Text(
                             '• 第${weeksList.join('、')}周 周${_weekdays[conf.weekday - 1]} 第${conf.startSection}-${conf.endSection}节 已有课程：${conf.existingCourseName}',
                             style: TextStyle(
                               fontSize: 12,
-                              color: tokens.isDark ? Colors.amber[200] : Colors.brown[800],
+                              color: tokens.isDark
+                                  ? Colors.amber[200]
+                                  : Colors.brown[800],
                             ),
                           ),
                         );
@@ -254,7 +268,8 @@ class ConfirmChangeSheet extends StatelessWidget {
                       const SizedBox(height: 6),
                       Text(
                         '继续保存后，两门课程将在同一时间出现。',
-                        style: TextStyle(fontSize: 11, color: tokens.textSecondary),
+                        style: TextStyle(
+                            fontSize: 11, color: tokens.textSecondary),
                       ),
                     ],
                   ),

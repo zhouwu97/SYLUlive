@@ -25,9 +25,11 @@ class FeedbackDetailScreen extends StatefulWidget {
   State<FeedbackDetailScreen> createState() => _FeedbackDetailScreenState();
 }
 
-class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
+class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
+    with WidgetsBindingObserver {
   final TextEditingController _msgController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _msgFocusNode = FocusNode();
 
   FeedbackTicket? _ticket;
   List<FeedbackMessage> _messages = [];
@@ -42,13 +44,23 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadDetail();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _loadDetail();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _msgController.dispose();
     _scrollController.dispose();
+    _msgFocusNode.dispose();
     super.dispose();
   }
 
@@ -375,7 +387,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
                 }),
                 const SizedBox(height: 12),
                 const Text('进度说明（如版本号或修复说明）：',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),
                 TextField(
                   controller: noteController,
@@ -411,7 +424,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
                   }
                 } catch (e) {
                   if (context.mounted) {
-                    AppFeedback.showSnackBar(context, '更新失败: $e', isError: true);
+                    AppFeedback.showSnackBar(context, '更新失败: $e',
+                        isError: true);
                   }
                 }
               },
@@ -474,7 +488,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
                 }),
                 const SizedBox(height: 12),
                 const Text('附加说明：',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),
                 TextField(
                   controller: commentController,
@@ -515,7 +530,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
                   }
                 } catch (e) {
                   if (context.mounted) {
-                    AppFeedback.showSnackBar(context, '操作失败: $e', isError: true);
+                    AppFeedback.showSnackBar(context, '操作失败: $e',
+                        isError: true);
                   }
                 }
               },
@@ -662,7 +678,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
           if (_history.isNotEmpty) ...[
             const SizedBox(height: 10),
             Theme(
-              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              data:
+                  Theme.of(context).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: EdgeInsets.zero,
@@ -684,7 +701,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
                         const SizedBox(width: 4),
                         Text(
                           '${h.createdAt.month.toString().padLeft(2, '0')}-${h.createdAt.day.toString().padLeft(2, '0')} ${h.createdAt.hour.toString().padLeft(2, '0')}:${h.createdAt.minute.toString().padLeft(2, '0')}',
-                          style: const TextStyle(fontSize: 11, color: Colors.grey),
+                          style:
+                              const TextStyle(fontSize: 11, color: Colors.grey),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -781,13 +799,15 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
                       _ticket!.actualResult!.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text('实际结果：${_ticket!.actualResult}',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        style:
+                            const TextStyle(fontSize: 12, color: Colors.grey)),
                   ],
                   if (_ticket!.expectedResult != null &&
                       _ticket!.expectedResult!.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text('期望结果：${_ticket!.expectedResult}',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        style:
+                            const TextStyle(fontSize: 12, color: Colors.grey)),
                   ],
                 ],
               ),
@@ -817,6 +837,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
               context,
               MaterialPageRoute(
                 builder: (_) => ImageViewerScreen(
+                  httpHeaders: {
+                    'Authorization': 'Bearer ${auth.token}',
+                  },
                   initialIndex: 0,
                   items: [
                     ImageViewerItem(
@@ -842,7 +865,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
                 width: 80,
                 height: 80,
                 color: Colors.grey[200],
-                child: const Icon(Icons.broken_image, size: 24, color: Colors.grey),
+                child: const Icon(Icons.broken_image,
+                    size: 24, color: Colors.grey),
               ),
             ),
           ),
@@ -898,6 +922,10 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
               msg.content,
               style: const TextStyle(fontSize: 13, color: Color(0xFF92400E)),
             ),
+            if (msg.attachments.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _buildAttachmentImages(msg.attachments),
+            ],
           ],
         ),
       );
@@ -974,9 +1002,10 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    // 聚焦输入框
-                    FocusScope.of(context).requestFocus(FocusNode());
-                    _msgController.text = '【补充信息】：';
+                    FocusScope.of(context).requestFocus(_msgFocusNode);
+                    if (_msgController.text.trim().isEmpty) {
+                      _msgController.text = '【补充信息】：';
+                    }
                     _msgController.selection = TextSelection.fromPosition(
                       TextPosition(offset: _msgController.text.length),
                     );
@@ -1029,7 +1058,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
                 borderRadius: BorderRadius.circular(AppRadius.md),
                 border: !isUserMsg
                     ? Border.all(
-                        color: isDark ? Colors.white12 : const Color(0xFFE2EFEA),
+                        color:
+                            isDark ? Colors.white12 : const Color(0xFFE2EFEA),
                       )
                     : null,
               ),
@@ -1053,7 +1083,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
                         const SizedBox(width: 6),
                         Text(
                           '${msg.createdAt.hour.toString().padLeft(2, '0')}:${msg.createdAt.minute.toString().padLeft(2, '0')}',
-                          style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+                          style:
+                              TextStyle(fontSize: 10, color: Colors.grey[400]),
                         ),
                       ],
                     ),
@@ -1256,6 +1287,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
               Expanded(
                 child: TextField(
                   controller: _msgController,
+                  focusNode: _msgFocusNode,
                   maxLines: 4,
                   minLines: 1,
                   decoration: InputDecoration(
@@ -1270,8 +1302,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
                     fillColor: isDark
                         ? Colors.white.withValues(alpha: 0.05)
                         : const Color(0xFFF8FAF9),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(AppRadius.md),
                       borderSide: BorderSide(
@@ -1373,16 +1405,22 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen> {
               : Column(
                   children: [
                     Expanded(
-                      child: ListView(
-                        controller: _scrollController,
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.only(bottom: 16),
-                        children: [
-                          _buildTopStatusCard(isDark),
-                          _buildInitialSubmissionCard(isDark),
-                          ..._messages.map((m) => _buildMessageItem(m, isDark)),
-                          _buildResolvedConfirmationCard(isDark),
-                        ],
+                      child: RefreshIndicator(
+                        onRefresh: _loadDetail,
+                        child: ListView(
+                          controller: _scrollController,
+                          physics: const AlwaysScrollableScrollPhysics(
+                            parent: BouncingScrollPhysics(),
+                          ),
+                          padding: const EdgeInsets.only(bottom: 16),
+                          children: [
+                            _buildTopStatusCard(isDark),
+                            _buildInitialSubmissionCard(isDark),
+                            ..._messages
+                                .map((m) => _buildMessageItem(m, isDark)),
+                            _buildResolvedConfirmationCard(isDark),
+                          ],
+                        ),
                       ),
                     ),
                     _buildBottomComposer(isDark),

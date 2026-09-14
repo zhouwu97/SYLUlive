@@ -102,25 +102,54 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
     final base = _baseMeeting!;
     final snapshot = widget.existingOverride?.sourceSnapshotHash ??
         base.computeSnapshotHash();
+    final normalizedRoom = target.newRoom?.trim() ?? '';
+    final timeChanged = target.weekday != base.weekday ||
+        target.startSection != base.startSection ||
+        target.endSection != base.endSection;
+    final roomChanged = normalizedRoom != (base.room?.trim() ?? '');
+    if (!timeChanged && !roomChanged) {
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('未检测到任何修改')));
+      return;
+    }
     try {
-      await widget.provider.createRescheduleOverride(
-        overrideId: widget.existingOverride?.id ?? course.overrideId,
-        courseKey: course.courseKey ?? 'edu:course:${course.name}',
-        meetingKey:
-            course.meetingKey ?? 'm_${course.weekday}_${course.startSection}',
-        affectedWeeks: weeks,
-        toWeekday: target.weekday,
-        toStartSection: target.startSection,
-        toEndSection: target.endSection,
-        toRoom: target.newRoom,
-        sourceSnapshotHash: snapshot,
-        fromWeekday: base.weekday,
-        fromStartSection: base.startSection,
-        fromEndSection: base.endSection,
-        fromRoom: base.room,
-        allowConflict: _conflict?.hasConflict ?? false,
-      );
+      if (timeChanged) {
+        await widget.provider.createRescheduleOverride(
+          overrideId: widget.existingOverride?.id ?? course.overrideId,
+          courseKey: course.courseKey ?? 'edu:course:${course.name}',
+          meetingKey:
+              course.meetingKey ?? 'm_${course.weekday}_${course.startSection}',
+          affectedWeeks: weeks,
+          toWeekday: target.weekday,
+          toStartSection: target.startSection,
+          toEndSection: target.endSection,
+          toRoom: roomChanged ? normalizedRoom : null,
+          sourceSnapshotHash: snapshot,
+          fromWeekday: base.weekday,
+          fromStartSection: base.startSection,
+          fromEndSection: base.endSection,
+          fromRoom: base.room,
+          allowConflict: _conflict?.hasConflict ?? false,
+        );
+      } else {
+        await widget.provider.createChangeRoomOverride(
+          overrideId: widget.existingOverride?.id ?? course.overrideId,
+          courseKey: course.courseKey ?? 'edu:course:${course.name}',
+          meetingKey:
+              course.meetingKey ?? 'm_${course.weekday}_${course.startSection}',
+          affectedWeeks: weeks,
+          toRoom: normalizedRoom,
+          sourceSnapshotHash: snapshot,
+          fromRoom: base.room,
+        );
+      }
       if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('保存调整失败，请重试：$error')));
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -155,6 +184,8 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
             totalTeachingWeeks: widget.provider.currentTerm.maxWeek,
             sourceWeeks: base.weeks,
             initialAffectedWeeks: widget.existingOverride?.affectedWeeks,
+            onBack: () => Navigator.pop(context),
+            onClose: () => Navigator.pop(context),
             onNext: (weeks) => setState(() {
               _affectedWeeks = weeks;
               _step = 2;
@@ -175,6 +206,8 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
             initialRoom: _target?.newRoom ??
                 widget.existingOverride?.toRoom ??
                 base.room,
+            onBack: () => setState(() => _step = 1),
+            onClose: () => Navigator.pop(context),
             onNext: (weekday, start, end, room) => _goConfirm((
               weekday: weekday,
               startSection: start,
@@ -191,6 +224,8 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
             toRoom: _target!.newRoom,
             conflictResult: _conflict!,
             onBackToEdit: () => setState(() => _step = 2),
+            onBack: () => setState(() => _step = 2),
+            onClose: () => Navigator.pop(context),
             onConfirm: _saving ? () {} : _save,
           ),
       },

@@ -121,7 +121,7 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
               children: [
                 Expanded(
                   child: Text(
-                    '更换课程时间 (1/3)',
+                    '调整课程安排 (1/3)',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -187,6 +187,11 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
               const SizedBox(height: 8),
               Row(
                 children: [
+                  IconButton(
+                    tooltip: '返回课程详情',
+                    icon: Icon(Icons.arrow_back, color: tokens.textSecondary),
+                    onPressed: () => Navigator.pop(context),
+                  ),
                   Expanded(
                     child: _buildWeekDropdown(
                       label: '开始周',

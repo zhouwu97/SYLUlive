@@ -7,7 +7,6 @@ import '../../widgets/course/course_evaluation_section.dart';
 import 'reschedule/select_weeks_sheet.dart';
 import 'reschedule/select_time_sheet.dart';
 import 'reschedule/confirm_change_sheet.dart';
-import 'reschedule/change_room_sheet.dart';
 import '../../services/schedule/schedule_conflict_service.dart';
 import '../../utils/week_formatter.dart';
 
@@ -321,7 +320,7 @@ class CourseDetailSheet extends StatelessWidget {
                     ],
                   ),
                 ] else if (course.isOverridden || relatedOverride != null) ...[
-                  // 已调整课程：修改调整 / 恢复原时间 (Section 17)
+                  // 已调整课程：继续调整 / 恢复原安排
                   Row(
                     children: [
                       Expanded(
@@ -335,7 +334,7 @@ class CourseDetailSheet extends StatelessWidget {
                           ),
                           icon: const Icon(Icons.edit_calendar_outlined,
                               size: 18),
-                          label: const Text('修改调整'),
+                          label: const Text('继续调整'),
                           onPressed: () =>
                               _startRescheduleFlow(context, provider),
                         ),
@@ -351,7 +350,7 @@ class CourseDetailSheet extends StatelessWidget {
                             ),
                           ),
                           icon: const Icon(Icons.restore_rounded, size: 18),
-                          label: const Text('恢复原时间'),
+                          label: const Text('恢复原安排'),
                           onPressed: () async {
                             final overrideId =
                                 course.overrideId ?? relatedOverride?.id;
@@ -365,45 +364,22 @@ class CourseDetailSheet extends StatelessWidget {
                     ],
                   ),
                 ] else ...[
-                  // 正常教务课程：更换时间 / 修改教室 (Section 16)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: tokens.primary,
-                            foregroundColor: tokens.onPrimary,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 11),
-                          ),
-                          icon:
-                              const Icon(Icons.edit_calendar_rounded, size: 18),
-                          label: const Text('更换时间'),
-                          onPressed: () =>
-                              _startRescheduleFlow(context, provider),
+                  // 时间与教室统一在同一条调整流程中完成。
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: tokens.primary,
+                        foregroundColor: tokens.onPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
                         ),
+                        padding: const EdgeInsets.symmetric(vertical: 11),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: tokens.textPrimary,
-                            side: BorderSide(color: tokens.outline),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 11),
-                          ),
-                          icon:
-                              const Icon(Icons.meeting_room_outlined, size: 18),
-                          label: const Text('修改教室'),
-                          onPressed: () =>
-                              _startChangeRoomFlow(context, provider),
-                        ),
-                      ),
-                    ],
+                      icon: const Icon(Icons.edit_calendar_rounded, size: 18),
+                      label: const Text('调整课程安排'),
+                      onPressed: () => _startRescheduleFlow(context, provider),
+                    ),
                   ),
                 ],
 
@@ -506,8 +482,6 @@ class CourseDetailSheet extends StatelessWidget {
     BuildContext context,
     CourseScheduleProvider provider,
   ) async {
-    Navigator.pop(context); // 先关闭详情弹窗
-
     // 步骤 1：选择周次
     final affectedWeeks = await SelectWeeksSheet.show(
       context,
@@ -515,8 +489,9 @@ class CourseDetailSheet extends StatelessWidget {
       currentAcademicWeek: currentAcademicWeek,
       totalTeachingWeeks: provider.currentTerm.maxWeek,
     );
-    if (affectedWeeks == null || affectedWeeks.isEmpty || !context.mounted)
+    if (affectedWeeks == null || affectedWeeks.isEmpty || !context.mounted) {
       return;
+    }
 
     await _runRescheduleFromStep2(
       context: context,
@@ -610,34 +585,6 @@ class CourseDetailSheet extends StatelessWidget {
           );
         },
       ),
-    );
-  }
-
-  /// 启动修改教室流程 (Section 22)
-  void _startChangeRoomFlow(
-    BuildContext context,
-    CourseScheduleProvider provider,
-  ) {
-    Navigator.pop(context);
-    ChangeRoomSheet.show(
-      context,
-      course: course,
-      currentAcademicWeek: currentAcademicWeek,
-      onConfirm: (affectedWeeks, newRoom) async {
-        final snapshotHash =
-            'w${course.weekday}:s${course.startSection}-${course.endSection}:weeks[${course.weeks.join(',')}]:room[${course.location?.trim() ?? ''}]';
-
-        await provider.createChangeRoomOverride(
-          overrideId: course.overrideId,
-          courseKey: course.courseKey ?? 'edu:course:${course.name}',
-          meetingKey:
-              course.meetingKey ?? 'm_${course.weekday}_${course.startSection}',
-          affectedWeeks: affectedWeeks,
-          toRoom: newRoom,
-          sourceSnapshotHash: snapshotHash,
-          fromRoom: course.location,
-        );
-      },
     );
   }
 }

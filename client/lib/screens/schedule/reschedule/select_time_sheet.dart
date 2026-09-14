@@ -151,9 +151,14 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
               const SizedBox(height: 16),
               Row(
                 children: [
+                  IconButton(
+                    tooltip: '返回上一步',
+                    icon: Icon(Icons.arrow_back, color: tokens.textSecondary),
+                    onPressed: () => Navigator.pop(context),
+                  ),
                   Expanded(
                     child: Text(
-                      '选择新的上课时间 (2/3)',
+                      '调整课程安排 (2/3)',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,

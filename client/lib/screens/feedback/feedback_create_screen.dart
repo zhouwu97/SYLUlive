@@ -79,16 +79,23 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
         'type': _type,
         'title': title,
         'description': desc,
-        'steps_to_reproduce': _expandRepro ? _stepsController.text.trim() : null,
-        'actual_result': _expandRepro ? _actualController.text.trim() : null,
-        'expected_result': _expandRepro ? _expectedController.text.trim() : null,
+        'steps_to_reproduce': _type == 'bug' && _expandRepro
+            ? _stepsController.text.trim()
+            : null,
+        'actual_result': _type == 'bug' && _expandRepro
+            ? _actualController.text.trim()
+            : null,
+        'expected_result': _type == 'bug' && _expandRepro
+            ? _expectedController.text.trim()
+            : null,
         'image_ids': _uploadedImages.map((e) => e.fileId).toList(),
       };
 
       if (_includeDiagnostics && _diagInfo != null) {
         data['app_version'] = _diagInfo!.appVersion;
         data['build_number'] = _diagInfo!.buildNumber;
-        data['os_version'] = '${_diagInfo!.osName} ${_diagInfo!.osVersion}'.trim();
+        data['os_version'] =
+            '${_diagInfo!.osName} ${_diagInfo!.osVersion}'.trim();
         data['device_model'] = _diagInfo!.deviceModel;
         data['network_type'] = _diagInfo!.networkType;
         data['current_route'] = _diagInfo!.currentRoute;
@@ -127,7 +134,8 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
       isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF1E2226) : Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
       ),
       builder: (ctx) {
         return Container(
@@ -168,7 +176,8 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
                     Expanded(
                       child: Text(
                         '隐私安全保证：诊断信息已严格排除 JWT、Cookie、教务密码及聊天内容。',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF059669)),
+                        style:
+                            TextStyle(fontSize: 12, color: Color(0xFF059669)),
                       ),
                     ),
                   ],
@@ -186,7 +195,8 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
                           : const Color(0xFFF8FAF9),
                       borderRadius: BorderRadius.circular(AppRadius.md),
                       border: Border.all(
-                        color: isDark ? Colors.white12 : const Color(0xFFE2EFEA),
+                        color:
+                            isDark ? Colors.white12 : const Color(0xFFE2EFEA),
                       ),
                     ),
                     child: Text(
@@ -228,16 +238,24 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
 
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _type = type),
+        onTap: () => setState(() {
+          _type = type;
+          // 复现信息只属于问题反馈，切换类型后立即收起，避免误填。
+          if (type != 'bug') _expandRepro = false;
+        }),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
             color: isSelected
                 ? AppColors.brandPrimary.withValues(alpha: isDark ? 0.25 : 0.1)
-                : (isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFF8FAF9)),
+                : (isDark
+                    ? Colors.white.withValues(alpha: 0.04)
+                    : const Color(0xFFF8FAF9)),
             border: Border.all(
-              color: isSelected ? AppColors.brandPrimary : (isDark ? Colors.white12 : const Color(0xFFE2EFEA)),
+              color: isSelected
+                  ? AppColors.brandPrimary
+                  : (isDark ? Colors.white12 : const Color(0xFFE2EFEA)),
               width: isSelected ? 1.6 : 0.8,
             ),
             borderRadius: BorderRadius.circular(AppRadius.md),
@@ -392,9 +410,8 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
               controller: _titleController,
               maxLength: 60,
               decoration: InputDecoration(
-                hintText: _type == 'bug'
-                    ? '例如：课表重新同步后课程时间没有更新'
-                    : '例如：希望课表支持临时调整课程',
+                hintText:
+                    _type == 'bug' ? '例如：课表重新同步后课程时间没有更新' : '例如：希望课表支持临时调整课程',
                 hintStyle: TextStyle(
                   fontSize: 14,
                   color: isDark ? Colors.white38 : Colors.grey[400],
@@ -431,9 +448,8 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
               maxLines: 5,
               maxLength: 1000,
               decoration: InputDecoration(
-                hintText: _type == 'bug'
-                    ? '请描述发生了什么，什么情况下会出现……'
-                    : '请描述你的想法与期望如何使用……',
+                hintText:
+                    _type == 'bug' ? '请描述发生了什么，什么情况下会出现……' : '请描述你的想法与期望如何使用……',
                 hintStyle: TextStyle(
                   fontSize: 14,
                   color: isDark ? Colors.white38 : Colors.grey[400],
@@ -457,35 +473,36 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
             ),
             const SizedBox(height: 8),
 
-            // 展开复现信息
-            GestureDetector(
-              onTap: () => setState(() => _expandRepro = !_expandRepro),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    Icon(
-                      _expandRepro
-                          ? Icons.remove_circle_outline
-                          : Icons.add_circle_outline,
-                      size: 18,
-                      color: AppColors.brandPrimary,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      _expandRepro ? '收起复现信息' : '＋ 补充复现信息 (可选)',
-                      style: const TextStyle(
-                        fontSize: 13,
+            // 复现信息只对问题反馈开放，建议和其他类型保持简洁描述链路。
+            if (_type == 'bug')
+              GestureDetector(
+                onTap: () => setState(() => _expandRepro = !_expandRepro),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _expandRepro
+                            ? Icons.remove_circle_outline
+                            : Icons.add_circle_outline,
+                        size: 18,
                         color: AppColors.brandPrimary,
-                        fontWeight: FontWeight.w600,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 6),
+                      Text(
+                        _expandRepro ? '收起复现信息' : '＋ 补充复现信息 (可选)',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppColors.brandPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
 
-            if (_expandRepro) ...[
+            if (_type == 'bug' && _expandRepro) ...[
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(14),

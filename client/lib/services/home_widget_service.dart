@@ -136,6 +136,8 @@ class HomeWidgetService {
 
   static CourseScheduleProvider? _lastCourseProvider;
   static List<HomeWidgetExamEntry>? _lastExamEntries;
+  // 重新同步考试数据时必须沿用最近一次写入的身份，避免无参刷新把 owner 清掉。
+  static AcademicIdentityKey? _lastExamIdentity;
   static Future<void> _appearanceUpdateQueue = Future<void>.value();
   static HomeWidgetSyncStatus _syncStatus = const HomeWidgetSyncStatus();
 
@@ -348,6 +350,7 @@ class HomeWidgetService {
     final cached = entries.toList()
       ..sort((a, b) => a.startTime.compareTo(b.startTime));
     _lastExamEntries = cached;
+    _lastExamIdentity = identity;
     Future<void> action() async {
       final now = DateTime.now();
       final exams =
@@ -374,7 +377,7 @@ class HomeWidgetService {
       );
       await _refreshNative();
       debugPrint('考试小组件已同步：${exams.length} 场考试');
-    };
+    }
 
     try {
       if (identity != null) {
@@ -402,6 +405,7 @@ class HomeWidgetService {
       final prefs = await AppPreferencesStore.getInstance();
       await prefs.remove(_examDataKey);
       _lastExamEntries = null;
+      _lastExamIdentity = null;
       await _refreshNative();
     } catch (error) {
       debugPrint('清理考试小组件数据失败：${error.runtimeType}');
@@ -417,7 +421,14 @@ class HomeWidgetService {
         break;
       case HomeWidgetKind.exam:
         final exams = _lastExamEntries;
-        if (exams != null) return syncExamData(exams);
+        if (exams != null) {
+          final identity = _lastExamIdentity;
+          if (identity != null) {
+            return syncExamData(exams, identity: identity);
+          }
+          // 没有身份的历史缓存不能覆盖 ownership；仅刷新原生展示。
+          return _refreshNative();
+        }
         break;
     }
     await _refreshNative();
@@ -427,7 +438,15 @@ class HomeWidgetService {
     final course = _lastCourseProvider;
     final exams = _lastExamEntries;
     if (course != null) await syncCourseData(course);
-    if (exams != null) await syncExamData(exams);
+    if (exams != null) {
+      final identity = _lastExamIdentity;
+      if (identity != null) {
+        await syncExamData(exams, identity: identity);
+      } else {
+        // 无法确认身份时保留现有 owner，不执行 ownerless 写入。
+        await _refreshNative();
+      }
+    }
     if (course == null && exams == null) await _refreshNative();
   }
 

@@ -4,11 +4,13 @@ import '../../models/edu_grade.dart';
 class GradeCourseItem extends StatelessWidget {
   final EduGrade grade;
   final VoidCallback? onTap;
+  final bool isNew;
 
   const GradeCourseItem({
     super.key,
     required this.grade,
     this.onTap,
+    this.isNew = false,
   });
 
   static Color gradeColor(
@@ -127,12 +129,13 @@ class GradeCourseItem extends StatelessWidget {
               fontWeight: FontWeight.w500,
             ),
           ),
-          if (grade.isDegree || grade.isPassed == false) ...[
+          if (isNew || grade.isDegree || grade.isPassed == false) ...[
             const SizedBox(height: 10),
             Wrap(
               spacing: 6,
               runSpacing: 6,
               children: [
+                if (isNew) _tag(context, 'NEW', _TagTone.brand),
                 if (grade.isDegree) _tag(context, '学位课', _TagTone.neutral),
                 if (grade.isPassed == false)
                   _tag(context, '未通过', _TagTone.danger),
@@ -170,6 +173,12 @@ class GradeCourseItem extends StatelessWidget {
     late final Color fg;
 
     switch (tone) {
+      case _TagTone.brand:
+        bg = isDark
+            ? const Color(0xFF147C72).withValues(alpha: 0.22)
+            : const Color(0xFFE2F3F0);
+        fg = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
+        break;
       case _TagTone.danger:
         bg = isDark ? const Color(0xFF4A2525) : const Color(0xFFFFEEEE);
         fg = isDark ? const Color(0xFFFFB4B4) : const Color(0xFFC84242);
@@ -202,6 +211,7 @@ class GradeCourseItem extends StatelessWidget {
 }
 
 enum _TagTone {
+  brand,
   neutral,
   danger,
 }

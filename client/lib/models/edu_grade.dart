@@ -178,3 +178,141 @@ class EduGradeDetail {
     );
   }
 }
+
+/// 成绩稳定唯一标识生成器
+abstract final class GradeStableKey {
+  /// 生成课程的稳定唯一键：
+  /// 优先级：studentGradeId -> courseId -> courseCode+classId -> name+examType
+  static String of(EduGrade grade) {
+    final sgid = grade.studentGradeId.trim();
+    if (sgid.isNotEmpty) {
+      return 'sgid:$sgid';
+    }
+    final cid = grade.courseId.trim();
+    if (cid.isNotEmpty) {
+      return 'cid:$cid';
+    }
+    final code = grade.courseCode.trim();
+    final classId = grade.classId.trim();
+    if (code.isNotEmpty || classId.isNotEmpty) {
+      return 'code_class:${code}_$classId';
+    }
+    final examType = grade.examType?.trim() ?? '';
+    return 'name_exam:${grade.name.trim()}_$examType';
+  }
+}
+
+/// 单门成绩变动记录
+class GradeChange {
+  final EduGrade oldGrade;
+  final EduGrade newGrade;
+  final String reason;
+
+  const GradeChange({
+    required this.oldGrade,
+    required this.newGrade,
+    required this.reason,
+  });
+
+  @override
+  String toString() =>
+      'GradeChange(${oldGrade.name}: ${oldGrade.displayGrade} -> ${newGrade.displayGrade}, reason: $reason)';
+}
+
+/// 成绩增量 Diff 结果
+class GradeDiff {
+  final List<EduGrade> added;
+  final List<GradeChange> changed;
+  final List<EduGrade> removed;
+
+  const GradeDiff({
+    this.added = const [],
+    this.changed = const [],
+    this.removed = const [],
+  });
+
+  bool get hasChanges =>
+      added.isNotEmpty || changed.isNotEmpty || removed.isNotEmpty;
+
+  static bool _isUnscored(EduGrade grade) {
+    final t = grade.displayGrade.trim();
+    return t.isEmpty || t == '--' || t == '未录入';
+  }
+
+  /// 比较本地旧成绩快照与教务最新快照的差异
+  static GradeDiff compute(List<EduGrade> oldGrades, List<EduGrade> newGrades) {
+    final oldMap = <String, EduGrade>{};
+    for (final g in oldGrades) {
+      oldMap[GradeStableKey.of(g)] = g;
+    }
+
+    final newMap = <String, EduGrade>{};
+    for (final g in newGrades) {
+      newMap[GradeStableKey.of(g)] = g;
+    }
+
+    final added = <EduGrade>[];
+    final changed = <GradeChange>[];
+    final removed = <EduGrade>[];
+
+    for (final entry in newMap.entries) {
+      final key = entry.key;
+      final newG = entry.value;
+      final oldG = oldMap[key];
+
+      if (oldG == null) {
+        added.add(newG);
+      } else {
+        final wasUnscored = _isUnscored(oldG);
+        final isNowScored = !_isUnscored(newG);
+
+        if (wasUnscored && isNowScored) {
+          // 原先未出分（--/未录入），现在出分了 -> 属于新增成绩
+          added.add(newG);
+        } else if (oldG.displayGrade.trim() != newG.displayGrade.trim()) {
+          changed.add(GradeChange(
+            oldGrade: oldG,
+            newGrade: newG,
+            reason: '成绩变动: ${oldG.displayGrade} -> ${newG.displayGrade}',
+          ));
+        } else if (oldG.gpa != newG.gpa) {
+          changed.add(GradeChange(
+            oldGrade: oldG,
+            newGrade: newG,
+            reason: '绩点变动: ${oldG.gpa} -> ${newG.gpa}',
+          ));
+        } else if (oldG.credits != newG.credits) {
+          changed.add(GradeChange(
+            oldGrade: oldG,
+            newGrade: newG,
+            reason: '学分修正: ${oldG.credits} -> ${newG.credits}',
+          ));
+        } else if (oldG.examType != newG.examType) {
+          changed.add(GradeChange(
+            oldGrade: oldG,
+            newGrade: newG,
+            reason: '考试类型变动: ${oldG.examType} -> ${newG.examType}',
+          ));
+        } else if (oldG.isPassed != newG.isPassed) {
+          changed.add(GradeChange(
+            oldGrade: oldG,
+            newGrade: newG,
+            reason: '通过状态变动',
+          ));
+        }
+      }
+    }
+
+    for (final entry in oldMap.entries) {
+      if (!newMap.containsKey(entry.key)) {
+        removed.add(entry.value);
+      }
+    }
+
+    return GradeDiff(
+      added: added,
+      changed: changed,
+      removed: removed,
+    );
+  }
+}

@@ -1251,17 +1251,18 @@ class EduProvider extends ChangeNotifier {
     if (user == null || account.isEmpty) return null;
     await _persistenceReady;
     try {
-      final raw = await _academicCacheStoreFor(
+      final snapshot = await _academicCacheStoreFor(
         appUserId: user,
         sourceAccountId: account,
-      )?.readAcademicSituation();
-      if (raw == null ||
+      )?.readAcademicSituationSnapshot();
+      if (snapshot == null ||
           generation != _academicSessionController?.contextGeneration ||
           !_isSameAcademicContext(user, account, source)) {
         return null;
       }
       final entry = AcademicSituationCacheEntry(
-          data: EduAcademicSituation.fromJson(raw), updatedAt: DateTime.now());
+          data: EduAcademicSituation.fromJson(snapshot.data),
+          updatedAt: snapshot.fetchedAt.toLocal());
       _academicSituationCache[
           _academicSituationCacheKey(user, account, source)] = entry;
       return entry;
@@ -1321,18 +1322,18 @@ class EduProvider extends ChangeNotifier {
     );
     final cached = _academicSituationCache[key];
     if (!forceRefresh && cached != null) return OperationResult.ok(cached.data);
-    final cachedRaw = forceRefresh
+    final cachedSnapshot = forceRefresh
         ? null
         : await _academicCacheStoreFor(
             appUserId: requestUserId,
             sourceAccountId: sourceAccountId,
-          )?.readAcademicSituation();
-    if (cachedRaw != null &&
+          )?.readAcademicSituationSnapshot();
+    if (cachedSnapshot != null &&
         _isSameAcademicContext(requestUserId, sourceAccountId, sourceKind)) {
-      final value = EduAcademicSituation.fromJson(cachedRaw);
+      final value = EduAcademicSituation.fromJson(cachedSnapshot.data);
       _academicSituationCache[key] = AcademicSituationCacheEntry(
         data: value,
-        updatedAt: DateTime.now(),
+        updatedAt: cachedSnapshot.fetchedAt.toLocal(),
       );
       return OperationResult.ok(value);
     }

@@ -356,6 +356,222 @@ void main() {
       expect(unknown, 2); // 缓考, --
     });
   });
+
+  group('GradeStableKey', () {
+    test('prefers studentGradeId when available', () {
+      const g = EduGrade(
+        name: '微积分',
+        studentGradeId: 'SGID_123',
+        courseId: 'CID_456',
+        courseCode: 'MATH101',
+        classId: 'CLASS_1',
+        displayGrade: '90',
+        credits: 4,
+        gpa: 4.0,
+        isDegree: true,
+      );
+      expect(GradeStableKey.of(g), 'sgid:SGID_123');
+    });
+
+    test('falls back to courseId when studentGradeId is empty', () {
+      const g = EduGrade(
+        name: '微积分',
+        courseId: 'CID_456',
+        courseCode: 'MATH101',
+        classId: 'CLASS_1',
+        displayGrade: '90',
+        credits: 4,
+        gpa: 4.0,
+        isDegree: true,
+      );
+      expect(GradeStableKey.of(g), 'cid:CID_456');
+    });
+
+    test('falls back to courseCode + classId when courseId is empty', () {
+      const g = EduGrade(
+        name: '大学英语',
+        courseCode: 'ENG201',
+        classId: 'CLASS_2',
+        displayGrade: '85',
+        credits: 2,
+        gpa: 3.5,
+        isDegree: false,
+      );
+      expect(GradeStableKey.of(g), 'code_class:ENG201_CLASS_2');
+    });
+
+    test('falls back to name + examType as ultimate fallback', () {
+      const g = EduGrade(
+        name: '体育',
+        examType: '正常考试',
+        displayGrade: '80',
+        credits: 1,
+        gpa: 3.0,
+        isDegree: false,
+      );
+      expect(GradeStableKey.of(g), 'name_exam:体育_正常考试');
+    });
+  });
+
+  group('GradeDiff', () {
+    test('detects newly added courses', () {
+      final oldGrades = [
+        const EduGrade(
+          name: '高数',
+          courseId: 'C1',
+          displayGrade: '86',
+          credits: 4,
+          gpa: 3.6,
+          isDegree: true,
+        ),
+      ];
+      final newGrades = [
+        const EduGrade(
+          name: '高数',
+          courseId: 'C1',
+          displayGrade: '86',
+          credits: 4,
+          gpa: 3.6,
+          isDegree: true,
+        ),
+        const EduGrade(
+          name: '数据库原理',
+          courseId: 'C2',
+          displayGrade: '88',
+          credits: 3,
+          gpa: 3.8,
+          isDegree: true,
+        ),
+      ];
+      final diff = GradeDiff.compute(oldGrades, newGrades);
+      expect(diff.hasChanges, isTrue);
+      expect(diff.added.length, 1);
+      expect(diff.added.first.name, '数据库原理');
+      expect(diff.changed, isEmpty);
+      expect(diff.removed, isEmpty);
+    });
+
+    test('treats course changing from unscored (--/未录入) to scored as added', () {
+      final oldGrades = [
+        const EduGrade(
+          name: '高等数学',
+          courseId: 'C1',
+          displayGrade: '--',
+          credits: 4,
+          gpa: null,
+          isDegree: true,
+        ),
+      ];
+      final newGrades = [
+        const EduGrade(
+          name: '高等数学',
+          courseId: 'C1',
+          displayGrade: '87',
+          credits: 4,
+          gpa: 3.7,
+          isDegree: true,
+        ),
+      ];
+      final diff = GradeDiff.compute(oldGrades, newGrades);
+      expect(diff.hasChanges, isTrue);
+      expect(diff.added.length, 1);
+      expect(diff.added.first.name, '高等数学');
+      expect(diff.added.first.displayGrade, '87');
+      expect(diff.changed, isEmpty);
+    });
+
+    test('detects grade modification (82 -> 85) as changed', () {
+      final oldGrades = [
+        const EduGrade(
+          name: '高等数学',
+          courseId: 'C1',
+          displayGrade: '82',
+          credits: 4,
+          gpa: 3.2,
+          isDegree: true,
+        ),
+      ];
+      final newGrades = [
+        const EduGrade(
+          name: '高等数学',
+          courseId: 'C1',
+          displayGrade: '85',
+          credits: 4,
+          gpa: 3.5,
+          isDegree: true,
+        ),
+      ];
+      final diff = GradeDiff.compute(oldGrades, newGrades);
+      expect(diff.hasChanges, isTrue);
+      expect(diff.added, isEmpty);
+      expect(diff.changed.length, 1);
+      expect(diff.changed.first.oldGrade.displayGrade, '82');
+      expect(diff.changed.first.newGrade.displayGrade, '85');
+    });
+
+    test('detects credits modification as changed', () {
+      final oldGrades = [
+        const EduGrade(
+          name: '物理实验',
+          courseId: 'C1',
+          displayGrade: '80',
+          credits: 1.0,
+          gpa: 3.0,
+          isDegree: false,
+        ),
+      ];
+      final newGrades = [
+        const EduGrade(
+          name: '物理实验',
+          courseId: 'C1',
+          displayGrade: '80',
+          credits: 1.5,
+          gpa: 3.0,
+          isDegree: false,
+        ),
+      ];
+      final diff = GradeDiff.compute(oldGrades, newGrades);
+      expect(diff.hasChanges, isTrue);
+      expect(diff.changed.length, 1);
+      expect(diff.changed.first.reason, contains('学分修正'));
+    });
+
+    test('detects removed courses', () {
+      final oldGrades = [
+        const EduGrade(
+          name: '已退选课',
+          courseId: 'C_DROP',
+          displayGrade: '80',
+          credits: 2,
+          gpa: 3.0,
+          isDegree: false,
+        ),
+      ];
+      final newGrades = <EduGrade>[];
+      final diff = GradeDiff.compute(oldGrades, newGrades);
+      expect(diff.hasChanges, isTrue);
+      expect(diff.removed.length, 1);
+      expect(diff.removed.first.name, '已退选课');
+    });
+
+    test('returns hasChanges = false when grades are identical', () {
+      final grades = [
+        const EduGrade(
+          name: '数据结构',
+          courseId: 'C1',
+          displayGrade: '90',
+          credits: 3,
+          gpa: 4.0,
+          isDegree: true,
+        ),
+      ];
+      final diff = GradeDiff.compute(grades, grades);
+      expect(diff.hasChanges, isFalse);
+      expect(diff.added, isEmpty);
+      expect(diff.changed, isEmpty);
+      expect(diff.removed, isEmpty);
+    });
+  });
 }
 
 /// Helper: create an EduGrade with a given displayGrade and default other fields.

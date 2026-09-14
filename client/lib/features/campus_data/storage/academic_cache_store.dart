@@ -328,6 +328,12 @@ class AcademicCacheStore {
     return situation == null ? null : Map<String, dynamic>.from(situation);
   }
 
+  /// 读取完整的学业情况快照（包含真实 fetchedAt 时间戳）
+  Future<AcademicSituationSnapshot?> readAcademicSituationSnapshot() async {
+    final snapshot = await readSnapshot();
+    return snapshot?.situation;
+  }
+
   Future<Map<String, dynamic>?> readCreditRequirements() async {
     final snapshot = await readSnapshot();
     final requirements = snapshot?.creditRequirements;

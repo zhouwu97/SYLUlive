@@ -221,6 +221,43 @@ void main() {
       expect(await fresh.restoreCachedGrades('2025', 3), isNull);
     });
 
+    test('从真实 AES-GCM 快照恢复学业情况保留原始 fetchedAt 时间戳', () async {
+      final fixture = await createFixture(saveAcademicData: true);
+      addTearDown(fixture.dispose);
+      await AcademicPersistenceRegistry.waitUntilReady('app-user-a');
+      AcademicPersistenceRegistry.set('app-user-a', enabled: true);
+
+      final originalFetchedAt = DateTime.utc(2026, 9, 10, 8, 30);
+      final cacheStore = AcademicCacheStore(
+        appUserId: 'app-user-a',
+        sourceAccountId: '2403130233',
+        snapshotStore: createSnapshotStore('app-user-a'),
+      );
+      await cacheStore.writeAcademicSituation(
+        data: {
+          'all_gpa': 3.68,
+          'degree_gpa': 3.75,
+          'total_courses': 50,
+          'passed_courses': 45,
+          'failed_courses': 1,
+          'not_started_courses': 2,
+          'in_progress_courses': 2,
+        },
+        fetchedAt: originalFetchedAt,
+      );
+
+      final fresh = EduProvider(Dio(), createSnapshotStore)
+        ..setAcademicSessionController(fixture.controller)
+        ..setUserId('app-user-a');
+      addTearDown(fresh.dispose);
+      await fresh.ensureStatusLoaded();
+
+      final restored = await fresh.restoreCachedAcademicSituation();
+      expect(restored, isNotNull);
+      expect(restored!.data.allGpa, 3.68);
+      expect(restored.updatedAt, originalFetchedAt.toLocal());
+    });
+
     test('加密落盘失败仍返回成功成绩和存储警告', () async {
       final fixture = await createFixture(saveAcademicData: true);
       addTearDown(fixture.dispose);
@@ -343,7 +380,7 @@ void main() {
         degreeFailedCourses: 0,
         degreeNotStartedCourses: 0,
         degreeInProgressCourses: 0,
-        courses: const [],
+        courses: [],
         coursesStatus: 'complete',
       );
       fixture.repository.creditRequirements = const CreditRequirement(

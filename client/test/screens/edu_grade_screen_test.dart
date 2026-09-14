@@ -128,6 +128,7 @@ class _FakeEduProvider extends EduProvider {
 
   String? activeUserId;
   int fetchGradesCallCount = 0;
+  int fetchAcademicSituationCallCount = 0;
   int fetchDetailCallCount = 0;
   String? detailFailureCode;
   EduGradeDetail? initialDetail;
@@ -230,6 +231,7 @@ class _FakeEduProvider extends EduProvider {
   @override
   Future<OperationResult<EduAcademicSituation>> fetchAcademicSituation(
       {bool forceRefresh = false}) async {
+    fetchAcademicSituationCallCount++;
     return switch (academicMode) {
       _LoadMode.data => OperationResult.ok(academicSituation),
       _LoadMode.empty => OperationResult.ok(_emptyAcademicSituation()),
@@ -383,7 +385,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('学分要求'), findsOneWidget);
-    expect(find.text('3.52'), findsNothing);
+    expect(find.text('3.52'), findsOneWidget);
     expect(find.text('高等数学'), findsNothing);
     expect(find.text('课程明细'), findsNothing);
     expect(find.text('课程列表学分'), findsNothing);
@@ -866,6 +868,63 @@ void main() {
 
     expect(find.textContaining(historicalYear), findsWidgets);
     expect(find.text('离散数学'), findsOneWidget);
+  });
+
+  testWidgets('成绩刷新自动联动后台刷新官方 GPA', (tester) async {
+    final edu = _FakeEduProvider();
+    await _pumpGradeScreen(tester, edu: edu);
+
+    expect(edu.fetchGradesCallCount, 1);
+    expect(edu.fetchAcademicSituationCallCount, greaterThanOrEqualTo(1));
+  });
+
+  testWidgets('增量更新感知：新增成绩展示 NEW 徽章并提示 SnackBar', (tester) async {
+    final oldGrades = [_grade('离散数学', grade: '88')];
+    final newGrades = [
+      _grade('离散数学', grade: '88'),
+      _grade('数据库原理', grade: '92'),
+    ];
+
+    final edu = _FakeEduProvider(
+      initialCache: GradeCacheEntry(
+        grades: oldGrades,
+        updatedAt: DateTime.now().subtract(const Duration(hours: 1)),
+      ),
+      grades: newGrades,
+    );
+
+    await _pumpGradeScreen(tester, edu: edu);
+
+    expect(find.text('发现 1 门新成绩，绩点已同步更新'), findsOneWidget);
+    expect(find.text('数据库原理'), findsOneWidget);
+    expect(find.text('NEW'), findsOneWidget);
+  });
+
+  testWidgets('15分钟自动刷新冷却：缓存新鲜时不发起重复网络请求', (tester) async {
+    final edu = _FakeEduProvider(
+      initialCache: GradeCacheEntry(
+        grades: _sampleGrades(),
+        updatedAt: DateTime.now().subtract(const Duration(minutes: 5)),
+      ),
+    );
+
+    await _pumpGradeScreen(tester, edu: edu);
+
+    expect(edu.fetchGradesCallCount, 0);
+    expect(find.text('离散数学'), findsOneWidget);
+  });
+
+  testWidgets('学期 GPA 说明弹窗：点击说明按钮展示加权算法与免责说明', (tester) async {
+    await _pumpGradeScreen(tester);
+
+    final infoButton = find.byTooltip('学期 GPA 加权说明');
+    expect(infoButton, findsOneWidget);
+    await tester.tap(infoButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('学期 GPA 计算说明'), findsOneWidget);
+    expect(find.textContaining('计算公式：Σ(单科绩点 × 学分) ÷ Σ学分'), findsOneWidget);
+    expect(find.textContaining('学校教务系统为准'), findsOneWidget);
   });
 }
 

@@ -669,7 +669,18 @@ class CourseScheduleProvider extends ChangeNotifier {
       for (final meeting in course.meetings) {
         blocks.add(CourseBlock(
           id: meeting.sourceCourseId ??
-              (course.source == CourseSource.manual ? -1 : 1),
+              (course.source == CourseSource.manual
+                  ? -(course.courseKey.hashCode.abs() + 1)
+                  : deterministicCourseId(
+                      courseCode: course.courseCode ?? '',
+                      name: course.name,
+                      teacher: meeting.teacher ?? course.teacher ?? '',
+                      location: meeting.room ?? '',
+                      weekday: meeting.weekday,
+                      startSection: meeting.startSection,
+                      endSection: meeting.endSection,
+                      weeks: meeting.weeks,
+                    )),
           courseCode: course.courseCode ?? '',
           name: course.name,
           teacher: meeting.teacher ?? course.teacher,
@@ -806,28 +817,36 @@ class CourseScheduleProvider extends ChangeNotifier {
     final operation = _captureOperationContext();
     final snapshot =
         operation == null ? null : await _loadOperationSnapshot(operation);
+    if (operation == null || !_isCurrentOperation(operation)) return false;
     final coalesced = _coalesceGraduateCourses(cached);
     final termId = currentTerm.id;
-    _restoreSourceModels(snapshot, coalesced);
+    _hiddenCourseIds = snapshot?.hiddenCourseIds.toSet() ?? <int>{};
+    final sourceRestored = _restoreSourceModels(snapshot);
     _overrides = await _overrideRepository.loadOverrides(
       semesterId: termId,
       accountId: _sourceAccountId,
     );
-    _syncResolvedSchedule();
-    if (_courses.length != cached.length) {
+    if (!_isCurrentOperation(operation)) return false;
+    if (sourceRestored) {
+      _syncResolvedSchedule();
+    } else {
+      _courses = coalesced;
+      _buildGrid();
+      _errorMessage = '旧版课表缺少原始快照，请重新同步教务后再恢复调课';
+    }
+    if (sourceRestored && _courses.length != cached.length) {
       await _saveToCache(_courses);
     }
     _isLoading = false;
-    _errorMessage = null;
+    if (sourceRestored) _errorMessage = null;
     notifyListeners();
     return true;
   }
 
-  void _restoreSourceModels(
-      ScheduleTermSnapshot? snapshot, List<CourseBlock> fallback) {
+  bool _restoreSourceModels(ScheduleTermSnapshot? snapshot) {
     final base = snapshot?.baseCourses ?? const <Map<String, dynamic>>[];
     final manual = snapshot?.manualCourses ?? const <Map<String, dynamic>>[];
-    if (base.isNotEmpty || manual.isNotEmpty) {
+    if (snapshot?.sourceSnapshotPresent == true) {
       _baseSchedule = _convertToCourses(
         base.map(CourseBlock.fromJson).toList(growable: false),
         currentTerm.id,
@@ -836,9 +855,11 @@ class CourseScheduleProvider extends ChangeNotifier {
         manual.map(CourseBlock.fromJson).toList(growable: false),
         currentTerm.id,
       ).map((course) => course.copyWith(source: CourseSource.manual)).toList();
-      return;
+      return true;
     }
-    _populateSchedulesFromBlocks(fallback);
+    _baseSchedule = [];
+    _manualCourses = [];
+    return false;
   }
 
   DateTime? _lastFetchedAt;
@@ -1420,13 +1441,24 @@ class CourseScheduleProvider extends ChangeNotifier {
       final cached =
           cachedRaw == null ? null : _coalesceGraduateCourses(cachedRaw);
       if (cached != null && cached.isNotEmpty) {
-        _restoreSourceModels(snapshot, cached);
+        _hiddenCourseIds = snapshot?.hiddenCourseIds.toSet() ?? <int>{};
+        final sourceRestored = _restoreSourceModels(snapshot);
         _overrides = await _overrideRepository.loadOverrides(
           semesterId: currentTerm.id,
           accountId: _sourceAccountId,
         );
-        _syncResolvedSchedule();
-        if (cachedRaw != null && cached.length != cachedRaw.length) {
+        if (!_isCurrentOperation(operation)) return;
+        if (sourceRestored) {
+          _syncResolvedSchedule();
+          _errorMessage = null;
+        } else {
+          _courses = cached;
+          _buildGrid();
+          _errorMessage = '旧版课表缺少原始快照，请重新同步教务后再恢复调课';
+        }
+        if (sourceRestored &&
+            cachedRaw != null &&
+            cached.length != cachedRaw.length) {
           await _saveOperationCourses(operation, _courses);
           if (!_isCurrentOperation(operation)) return;
         }
@@ -1776,6 +1808,7 @@ class CourseScheduleProvider extends ChangeNotifier {
           periodOrder: b.periodOrder,
           periodLabel: b.periodLabel,
           periodLabels: b.periodLabels,
+          sourceCourseId: b.id,
         );
       }).toList();
 
@@ -1864,7 +1897,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       accountId: _sourceAccountId,
     );
     _syncResolvedSchedule();
-    if (_userId != null) await _saveToCache(_courses);
+    await _persistResolvedScheduleOrThrow();
     notifyListeners();
     return override;
   }
@@ -1908,7 +1941,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       accountId: _sourceAccountId,
     );
     _syncResolvedSchedule();
-    if (_userId != null) await _saveToCache(_courses);
+    await _persistResolvedScheduleOrThrow();
     notifyListeners();
     return override;
   }
@@ -1930,7 +1963,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       accountId: _sourceAccountId,
     );
     _syncResolvedSchedule();
-    if (_userId != null) await _saveToCache(_courses);
+    await _persistResolvedScheduleOrThrow();
     notifyListeners();
     return updated;
   }
@@ -1950,7 +1983,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       accountId: _sourceAccountId,
     );
     _syncResolvedSchedule();
-    if (_userId != null) await _saveToCache(_courses);
+    await _persistResolvedScheduleOrThrow();
     notifyListeners();
   }
 
@@ -1979,10 +2012,16 @@ class CourseScheduleProvider extends ChangeNotifier {
   }
 
   /// 保存课程到当前账号和来源账号绑定的 AES-GCM 保险箱。
-  Future<void> _saveToCache(List<CourseBlock> courses) async {
+  Future<bool> _saveToCache(List<CourseBlock> courses) async {
     final operation = _captureOperationContext();
-    if (operation == null) return;
-    await _saveOperationCourses(operation, courses);
+    if (operation == null) return false;
+    return _saveOperationCourses(operation, courses);
+  }
+
+  Future<void> _persistResolvedScheduleOrThrow() async {
+    if (_userId != null && !await _saveToCache(_courses)) {
+      throw StateError('课表保存失败，请稍后重试');
+    }
   }
 
   /// 只从当前账号和来源账号绑定的 AES-GCM 快照读取课程。
@@ -2101,15 +2140,15 @@ class CourseScheduleProvider extends ChangeNotifier {
       endSection: endSection,
       weeks: weeks,
       color: _colorPool[colorIdx],
+      courseKey: 'manual:${currentTerm.id}:$newId',
+      meetingKey: 'manual:${currentTerm.id}:$newId:meeting',
     );
 
     _courses.insert(0, course);
     _populateManualCoursesFromBlocks(_courses.where((c) => c.id < 0).toList());
     _syncResolvedSchedule();
 
-    if (_userId != null) {
-      await _saveToCache(_courses);
-    }
+    await _persistResolvedScheduleOrThrow();
 
     notifyListeners();
     return course;
@@ -2148,15 +2187,15 @@ class CourseScheduleProvider extends ChangeNotifier {
       periodOrder: oldCourse.periodOrder,
       periodLabel: oldCourse.periodLabel,
       periodLabels: oldCourse.periodLabels,
+      courseKey: oldCourse.courseKey,
+      meetingKey: oldCourse.meetingKey,
     );
 
     _courses[idx] = course;
     _populateManualCoursesFromBlocks(_courses.where((c) => c.id < 0).toList());
     _syncResolvedSchedule();
 
-    if (_userId != null) {
-      await _saveToCache(_courses);
-    }
+    await _persistResolvedScheduleOrThrow();
 
     notifyListeners();
     return course;
@@ -2171,9 +2210,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     }
     _populateManualCoursesFromBlocks(_courses.where((c) => c.id < 0).toList());
     _syncResolvedSchedule();
-    if (_userId != null) {
-      await _saveToCache(_courses);
-    }
+    await _persistResolvedScheduleOrThrow();
     notifyListeners();
   }
 
@@ -2275,7 +2312,7 @@ class CourseScheduleProvider extends ChangeNotifier {
             courseCount: archive.courseCount,
           ),
         )
-        .toList(growable: false);
+        .toList();
 
     await _clearOperationActiveArchive(operation);
     if (!_isCurrentOperation(operation)) return 0;
@@ -2305,7 +2342,7 @@ class CourseScheduleProvider extends ChangeNotifier {
             courseCount: archive.courseCount,
           ),
         )
-        .toList(growable: false);
+        .toList();
     notifyListeners();
   }
 
@@ -2426,8 +2463,23 @@ class CourseScheduleProvider extends ChangeNotifier {
     _courses = _coalesceGraduateCourses(
       archive.courses.map(CourseBlock.fromJson),
     );
-    _buildGrid();
-    await _saveOperationCourses(operation, _courses);
+    // 存档是完整可恢复状态：载入后同步替换来源模型并清除当前学期规则，
+    // 避免下一次重算又被载入前的底层课表覆盖。
+    _populateSchedulesFromBlocks(_courses);
+    if (!await _overrideRepository.clearOverrides(
+      semesterId: currentTerm.id,
+      accountId: _sourceAccountId,
+    )) {
+      throw StateError('载入存档失败：无法清除旧调课规则');
+    }
+    if (!_isCurrentOperation(operation)) return;
+    _overrides = [];
+    _hiddenCourseIds = {};
+    _syncResolvedSchedule();
+    if (!await _saveOperationHiddenCourses(operation, _hiddenCourseIds) ||
+        !await _saveOperationCourses(operation, _courses)) {
+      throw StateError('载入存档失败：无法保存完整课表状态');
+    }
     if (!_isCurrentOperation(operation)) return;
     notifyListeners();
     _syncWidget();

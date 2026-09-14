@@ -989,8 +989,9 @@ class EduProvider extends ChangeNotifier {
   /// 成功时自动写入内存缓存并记录更新时间。
   Future<OperationResult<List<EduGrade>>> fetchGrades(
     String year,
-    int semester,
-  ) async {
+    int semester, {
+    bool allowReducedCount = false,
+  }) async {
     // 捕获请求发起时的用户 ID，防止 await 后 _userId 被切换
     final requestUserId = _userId;
     if (requestUserId == null) {
@@ -1012,35 +1013,44 @@ class EduProvider extends ChangeNotifier {
 
     if (raw != null && raw.success && raw.data != null) {
       final grades = raw.data!.map((m) => EduGrade.fromJson(m)).toList();
-      // 使用捕获的 requestUserId 生成缓存键，防止写入错误用户的缓存
-      if (requestSourceAccountId.isNotEmpty) {
-        _gradeCache[_cacheKeyFor(
-          requestUserId,
-          requestSourceAccountId,
-          requestSourceKind,
-          year,
-          semester,
-        )] = GradeCacheEntry(
-          grades: grades,
-          updatedAt: DateTime.now(),
-        );
-      }
-      final store = _academicCacheStoreFor(
-        appUserId: requestUserId,
-        sourceAccountId: requestSourceAccountId,
+      final cacheKey = _cacheKeyFor(
+        requestUserId,
+        requestSourceAccountId,
+        requestSourceKind,
+        year,
+        semester,
       );
+      final existing = _gradeCache[cacheKey];
+      final isUnexpectedShrink = !allowReducedCount &&
+          existing != null &&
+          existing.grades.isNotEmpty &&
+          grades.length < existing.grades.length;
+
+      // 异常减少保护：静默刷新时若返回门数异常少于已知缓存，不破坏性覆写旧快照
       String? storageWarning;
-      if (store != null) {
-        try {
-          await store.writeGrades(
-            year: year,
-            semester: semester,
-            grades: raw.data!,
+      if (!isUnexpectedShrink) {
+        if (requestSourceAccountId.isNotEmpty) {
+          _gradeCache[cacheKey] = GradeCacheEntry(
+            grades: grades,
+            updatedAt: DateTime.now(),
           );
-        } catch (error) {
-          // 页面仍可使用本次响应；AI Gateway 没有成功密文时会返回缺失。
-          debugPrint('保存加密成绩失败: ${error.runtimeType}');
-          storageWarning = '成绩已获取，但保存加密成绩失败';
+        }
+        final store = _academicCacheStoreFor(
+          appUserId: requestUserId,
+          sourceAccountId: requestSourceAccountId,
+        );
+        if (store != null) {
+          try {
+            await store.writeGrades(
+              year: year,
+              semester: semester,
+              grades: raw.data!,
+            );
+          } catch (error) {
+            // 页面仍可使用本次响应；AI Gateway 没有成功密文时会返回缺失。
+            debugPrint('保存加密成绩失败: ${error.runtimeType}');
+            storageWarning = '成绩已获取，但保存加密成绩失败';
+          }
         }
       }
       if (!_isSameAcademicContext(

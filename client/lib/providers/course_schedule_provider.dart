@@ -484,7 +484,8 @@ class CourseScheduleProvider extends ChangeNotifier {
     final store = _scheduleStore;
     if (store == null || _disposed) return;
     final generation = ++_contextGeneration;
-    await _restoreSession(generation: generation, store: store);
+    _sessionRestoreFuture = _restoreSession(generation: generation, store: store);
+    await _sessionRestoreFuture;
   }
 
   /// 本地恢复独立于学校会话，不触发学校请求。
@@ -859,16 +860,18 @@ class CourseScheduleProvider extends ChangeNotifier {
     final base = snapshot?.baseCourses ?? const <Map<String, dynamic>>[];
     final manual = snapshot?.manualCourses ?? const <Map<String, dynamic>>[];
     if (snapshot?.sourceSnapshotPresent == true) {
-      _sourceTrustKnown = true;
-      _legacyCacheRequiresResync = false;
-      _baseSchedule = _convertToCourses(
+      final restoredBase = _convertToCourses(
         base.map(CourseBlock.fromJson).toList(growable: false),
         currentTerm.id,
       );
-      _manualCourses = _convertToCourses(
+      final restoredManual = _convertToCourses(
         manual.map(CourseBlock.fromJson).toList(growable: false),
         currentTerm.id,
       ).map((course) => course.copyWith(source: CourseSource.manual)).toList();
+      _baseSchedule = restoredBase;
+      _manualCourses = restoredManual;
+      _sourceTrustKnown = true;
+      _legacyCacheRequiresResync = false;
       return true;
     }
     _baseSchedule = [];

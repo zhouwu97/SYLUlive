@@ -482,6 +482,46 @@ void main() {
       expect(fixture.provider.getCachedGrades('2025', 3), isNull);
       fixture.dispose();
     });
+
+    test('成绩数量非预期减少保护：未显式允许时不破坏性覆写既有缓存', () async {
+      final fixture = await createFixture(
+        grades: GradeFetchResult(
+          grades: [
+            RawGrade(raw: {'kcmc': '高等数学', 'cj': '90', 'xf': 4, 'jd': 4.0}),
+            RawGrade(raw: {'kcmc': '线性代数', 'cj': '85', 'xf': 3, 'jd': 3.5}),
+          ],
+          pages: 1,
+        ),
+      );
+
+      // 第一次拉取：建立 2 门课程缓存
+      final initial = await fixture.provider.fetchGrades('2025', 3);
+      expect(initial.success, isTrue);
+      expect(fixture.provider.getCachedGrades('2025', 3)?.grades.length, 2);
+
+      // 模拟教务端异常仅返回 1 门课程
+      fixture.repository.grades = GradeFetchResult(
+        grades: [
+          RawGrade(raw: {'kcmc': '高等数学', 'cj': '90', 'xf': 4, 'jd': 4.0}),
+        ],
+        pages: 1,
+      );
+
+      // 静默刷新（allowReducedCount: false，默认）
+      final silentResult = await fixture.provider.fetchGrades('2025', 3);
+      expect(silentResult.success, isTrue);
+      // 缓存应受到保护，保留原来的 2 门课程
+      expect(fixture.provider.getCachedGrades('2025', 3)?.grades.length, 2);
+
+      // 手动刷新确认（allowReducedCount: true）
+      final manualResult =
+          await fixture.provider.fetchGrades('2025', 3, allowReducedCount: true);
+      expect(manualResult.success, isTrue);
+      // 显式允许后接受覆盖
+      expect(fixture.provider.getCachedGrades('2025', 3)?.grades.length, 1);
+
+      fixture.dispose();
+    });
   });
 }
 

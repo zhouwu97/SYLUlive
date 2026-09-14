@@ -197,8 +197,9 @@ class _FakeEduProvider extends EduProvider {
   @override
   Future<OperationResult<List<EduGrade>>> fetchGrades(
     String year,
-    int semester,
-  ) {
+    int semester, {
+    bool allowReducedCount = false,
+  }) {
     fetchGradesCallCount++;
     if (holdRefreshAfterInitial && fetchGradesCallCount > 1) {
       final pending = Completer<OperationResult<List<EduGrade>>>();
@@ -895,9 +896,55 @@ void main() {
 
     await _pumpGradeScreen(tester, edu: edu);
 
-    expect(find.text('发现 1 门新成绩，绩点已同步更新'), findsOneWidget);
+    expect(find.text('发现 1 门新成绩，学期绩点已更新'), findsOneWidget);
     expect(find.text('数据库原理'), findsOneWidget);
     expect(find.text('NEW'), findsOneWidget);
+  });
+
+  testWidgets('首次冷启动同步建立 baseline，不误报新成绩也不显示 NEW 徽章', (tester) async {
+    final edu = _FakeEduProvider(
+      initialCache: null, // 无任何历史快照
+      grades: [
+        _grade('高等数学', grade: '90'),
+        _grade('线性代数', grade: '85'),
+        _grade('大学英语', grade: '88'),
+      ],
+    );
+
+    await _pumpGradeScreen(tester, edu: edu);
+
+    expect(find.text('高等数学'), findsOneWidget);
+    expect(find.text('线性代数'), findsOneWidget);
+    expect(find.text('大学英语'), findsOneWidget);
+    expect(find.text('NEW'), findsNothing);
+    expect(find.textContaining('发现'), findsNothing);
+  });
+
+  testWidgets('成绩数量非预期减少保护：静默刷新保留旧成绩并提示确认', (tester) async {
+    final oldGrades = [
+      _grade('高等数学', grade: '90'),
+      _grade('线性代数', grade: '85'),
+      _grade('大学物理', grade: '80'),
+    ];
+    final truncatedGrades = [
+      _grade('高等数学', grade: '90'),
+    ];
+
+    final edu = _FakeEduProvider(
+      initialCache: GradeCacheEntry(
+        grades: oldGrades,
+        updatedAt: DateTime.now().subtract(const Duration(hours: 1)),
+      ),
+      grades: truncatedGrades,
+    );
+
+    await _pumpGradeScreen(tester, edu: edu);
+
+    // 异常减少保护：不丢失旧课程
+    expect(find.text('高等数学'), findsOneWidget);
+    expect(find.text('线性代数'), findsOneWidget);
+    expect(find.text('大学物理'), findsOneWidget);
+    expect(find.textContaining('本次返回成绩减少 2 门，已保留上次结果'), findsOneWidget);
   });
 
   testWidgets('15分钟自动刷新冷却：缓存新鲜时不发起重复网络请求', (tester) async {

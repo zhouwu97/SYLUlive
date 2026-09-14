@@ -336,10 +336,21 @@ func (h *FeedbackTicketHandler) GetTicketDetail(c *gin.Context) {
 	var history []models.FeedbackStatusHistory
 	_ = h.db.Where("ticket_id = ?", ticket.ID).Order("created_at ASC").Find(&history).Error
 
-	// 清空未读数
+	// 只清除本次响应已读到的边界；若期间出现新的管理员消息，保留未读提示。
 	if ticket.UserUnreadCount > 0 {
-		_ = h.db.Model(&ticket).Update("user_unread_count", 0).Error
-		ticket.UserUnreadCount = 0
+		readThroughID := uint(0)
+		for _, message := range messages {
+			if message.ID > readThroughID {
+				readThroughID = message.ID
+			}
+		}
+		result := h.db.Model(&models.FeedbackTicket{}).
+			Where("id = ? AND user_unread_count > 0", ticket.ID).
+			Where("NOT EXISTS (SELECT 1 FROM feedback_messages WHERE ticket_id = ? AND sender_type = ? AND visible_to_user = ? AND id > ?)", ticket.ID, "admin", true, readThroughID).
+			Update("user_unread_count", 0)
+		if result.Error == nil && result.RowsAffected > 0 {
+			ticket.UserUnreadCount = 0
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -668,9 +679,33 @@ func (h *FeedbackTicketHandler) ServeAttachment(c *gin.Context) {
 		isAdmin = user.Role == models.RoleAdmin || user.Role == models.RoleSuperAdmin
 	}
 
-	// 查找附件引用
+	// 同一文件可能被多个工单复用，必须按本次工单引用逐条授权，不能取最早引用。
+	var references []models.FeedbackAttachment
+	if err := h.db.Where("file_id = ?", fileID).Find(&references).Error; err != nil || len(references) == 0 {
+		c.Status(http.StatusNotFound)
+		return
+	}
 	var attachment models.FeedbackAttachment
-	if err := h.db.Where("file_id = ?", fileID).First(&attachment).Error; err != nil {
+	authorized := false
+	for _, candidate := range references {
+		if isAdmin {
+			attachment, authorized = candidate, true
+			break
+		}
+		var ownedTicket models.FeedbackTicket
+		if err := h.db.Select("id, user_id").First(&ownedTicket, candidate.TicketID).Error; err != nil || ownedTicket.UserID != userID {
+			continue
+		}
+		if candidate.MessageID != nil && *candidate.MessageID != 0 {
+			var message models.FeedbackMessage
+			if err := h.db.Select("id, visible_to_user").First(&message, *candidate.MessageID).Error; err != nil || !message.VisibleToUser {
+				continue
+			}
+		}
+		attachment, authorized = candidate, true
+		break
+	}
+	if !authorized {
 		c.Status(http.StatusNotFound)
 		return
 	}
@@ -685,14 +720,6 @@ func (h *FeedbackTicketHandler) ServeAttachment(c *gin.Context) {
 		if ticket.UserID != userID {
 			c.Status(http.StatusNotFound)
 			return
-		}
-		// 附件授权还必须继承所属消息的可见性；内部备注的截图不能因知道 file_id 而泄露。
-		if attachment.MessageID != nil && *attachment.MessageID != 0 {
-			var message models.FeedbackMessage
-			if err := h.db.Select("id, visible_to_user").First(&message, *attachment.MessageID).Error; err != nil || !message.VisibleToUser {
-				c.Status(http.StatusNotFound)
-				return
-			}
 		}
 	}
 

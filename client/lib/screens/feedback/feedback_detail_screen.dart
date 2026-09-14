@@ -37,6 +37,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   bool _loading = true;
   String? _error;
   bool _sending = false;
+  int _detailRequestGeneration = 0;
 
   // 管理员专属状态
   bool _adminInternalNote = false;
@@ -51,7 +52,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
-      _loadDetail();
+      _loadDetail(showLoading: false);
     }
   }
 
@@ -64,14 +65,19 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     super.dispose();
   }
 
-  Future<void> _loadDetail() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _loadDetail({bool showLoading = true}) async {
+    final requestGeneration = ++_detailRequestGeneration;
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    final sessionGeneration = auth.sessionGeneration;
+    if (showLoading) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
     try {
-      final auth = context.read<AuthProvider>();
       final path = widget.isAdmin
           ? '/admin/feedback/tickets/${widget.ticketId}'
           : '/feedback/tickets/${widget.ticketId}';
@@ -83,7 +89,10 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         final msgList = (response.data['messages'] as List<dynamic>?) ?? [];
         final histList = (response.data['history'] as List<dynamic>?) ?? [];
 
-        if (mounted) {
+        if (mounted &&
+            requestGeneration == _detailRequestGeneration &&
+            auth.user?.id == accountId &&
+            auth.sessionGeneration == sessionGeneration) {
           setState(() {
             _ticket = FeedbackTicket.fromJson(ticketData);
             _messages = msgList
@@ -97,7 +106,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
           });
         }
       } else {
-        if (mounted) {
+        if (mounted && requestGeneration == _detailRequestGeneration) {
           setState(() {
             _loading = false;
             _error = '工单加载失败';
@@ -105,7 +114,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         }
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && requestGeneration == _detailRequestGeneration) {
         setState(() {
           _loading = false;
           _error = '网络异常，请重试';
@@ -114,8 +123,12 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     }
   }
 
-  Future<void> _sendMessage({List<int>? imageIds}) async {
-    final text = _msgController.text.trim();
+  Future<void> _sendMessage({
+    List<int>? imageIds,
+    String? content,
+    bool? visibleToUser,
+  }) async {
+    final text = (content ?? _msgController.text).trim();
     if (text.isEmpty && (imageIds == null || imageIds.isEmpty)) {
       return;
     }
@@ -131,7 +144,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
           '/admin/feedback/tickets/${widget.ticketId}/messages',
           data: {
             'content': text.isNotEmpty ? text : '[图片]',
-            'visible_to_user': !_adminInternalNote,
+            'visible_to_user': visibleToUser ?? !_adminInternalNote,
             'image_ids': imageIds,
           },
         );
@@ -175,10 +188,17 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   }
 
   Future<void> _pickAndUploadImage() async {
+    if (_sending) return;
+    final capturedVisibleToUser = !_adminInternalNote;
+    final capturedContent = _msgController.text.trim();
+    setState(() => _sending = true);
     final auth = context.read<AuthProvider>();
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
-    if (picked == null || !mounted) return;
+    if (picked == null || !mounted) {
+      if (mounted) setState(() => _sending = false);
+      return;
+    }
 
     try {
       final bytes = await picked.readAsBytes();
@@ -190,13 +210,19 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       if (uploadResp.statusCode == 200 && uploadResp.data != null) {
         final fileId = uploadResp.data['file_id'] as int? ?? 0;
         if (fileId > 0) {
-          await _sendMessage(imageIds: [fileId]);
+          await _sendMessage(
+            imageIds: [fileId],
+            content: capturedContent,
+            visibleToUser: capturedVisibleToUser,
+          );
         }
       }
     } catch (e) {
       if (mounted) {
         AppFeedback.showSnackBar(context, '图片上传失败: $e', isError: true);
       }
+    } finally {
+      if (mounted) setState(() => _sending = false);
     }
   }
 
@@ -1256,8 +1282,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                   ChoiceChip(
                     label: const Text('回复用户'),
                     selected: !_adminInternalNote,
-                    onSelected: (val) =>
-                        setState(() => _adminInternalNote = !val),
+                    onSelected: _sending
+                        ? null
+                        : (val) => setState(() => _adminInternalNote = !val),
                   ),
                   const SizedBox(width: 8),
                   ChoiceChip(
@@ -1271,8 +1298,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     ),
                     selected: _adminInternalNote,
                     selectedColor: const Color(0xFFFDE68A),
-                    onSelected: (val) =>
-                        setState(() => _adminInternalNote = val),
+                    onSelected: _sending
+                        ? null
+                        : (val) => setState(() => _adminInternalNote = val),
                   ),
                 ],
               ),
@@ -1288,6 +1316,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                 child: TextField(
                   controller: _msgController,
                   focusNode: _msgFocusNode,
+                  readOnly: _sending,
                   maxLines: 4,
                   minLines: 1,
                   decoration: InputDecoration(
@@ -1406,7 +1435,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                   children: [
                     Expanded(
                       child: RefreshIndicator(
-                        onRefresh: _loadDetail,
+                        onRefresh: () => _loadDetail(showLoading: false),
                         child: ListView(
                           controller: _scrollController,
                           physics: const AlwaysScrollableScrollPhysics(

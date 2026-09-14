@@ -5,6 +5,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../app_bootstrap.dart';
+import '../theme/app_radius.dart';
+import '../theme/app_spacing.dart';
 import '../widgets/app_page_app_bar.dart';
 
 class CourtScreen extends StatefulWidget {
@@ -86,27 +88,15 @@ class _CourtScreenState extends State<CourtScreen> {
   }
 
   Future<void> _recuse() async {
-    final controller = TextEditingController();
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('申请回避'),
-        content: TextField(
-          controller: controller,
-          maxLines: 3,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: '回避原因'),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context), child: const Text('取消')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, controller.text),
-              child: const Text('提交')),
-        ],
-      ),
+    final reason = await _showReasonDialog(
+      title: '申请回避',
+      description: '如果你与案件当事人存在现实关系或其他利益冲突，请说明原因。',
+      label: '回避原因（必填）',
+      hint: '例如：我与该内容存在直接关系',
+      confirmLabel: '提交回避',
+      icon: Icons.block_outlined,
+      maxLength: 200,
     );
-    controller.dispose();
     if (reason == null || reason.trim().isEmpty) return;
     try {
       await getSharedDio().post('/appeals/${widget.appealId}/recuse',
@@ -126,27 +116,16 @@ class _CourtScreenState extends State<CourtScreen> {
   }
 
   Future<void> _manualResolve(String decision) async {
-    final controller = TextEditingController();
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(decision == 'pass' ? '确认支持申诉' : '确认维持原处理'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLines: 4,
-          decoration: const InputDecoration(labelText: '人工复核意见'),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context), child: const Text('取消')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, controller.text),
-              child: const Text('提交裁决')),
-        ],
-      ),
+    final isPass = decision == 'pass';
+    final reason = await _showReasonDialog(
+      title: isPass ? '确认支持申诉' : '确认维持原处理',
+      description: '请结合原内容快照、申诉理由、治理理由和社区评议记录，填写可追溯的裁决依据。',
+      label: '人工复核意见（必填）',
+      hint: isPass ? '说明为什么应恢复原内容' : '说明为什么应维持原治理决定',
+      confirmLabel: '提交裁决',
+      icon: Icons.gavel_outlined,
+      maxLength: 500,
     );
-    controller.dispose();
     if (reason == null || reason.trim().isEmpty) return;
     setState(() => _submitting = true);
     try {
@@ -169,6 +148,107 @@ class _CourtScreenState extends State<CourtScreen> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  Future<String?> _showReasonDialog({
+    required String title,
+    required String description,
+    required String label,
+    required String hint,
+    required String confirmLabel,
+    required IconData icon,
+    required int maxLength,
+  }) async {
+    final controller = TextEditingController();
+    final scheme = Theme.of(context).colorScheme;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          final canSubmit = controller.text.trim().isNotEmpty;
+          return AlertDialog(
+            insetPadding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg, vertical: AppSpacing.xxl),
+            titlePadding: const EdgeInsets.fromLTRB(
+                AppSpacing.xxl, AppSpacing.xl, AppSpacing.xxl, AppSpacing.sm),
+            contentPadding: const EdgeInsets.fromLTRB(
+                AppSpacing.xxl, 0, AppSpacing.xxl, AppSpacing.sm),
+            actionsPadding: const EdgeInsets.fromLTRB(
+                AppSpacing.md, 0, AppSpacing.md, AppSpacing.md),
+            title: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: Icon(icon, color: scheme.onPrimaryContainer),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                  child: Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.xs),
+                child: Text(title),
+              )),
+            ]),
+            content: SingleChildScrollView(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(description,
+                        style: Theme.of(dialogContext).textTheme.bodySmall),
+                    const SizedBox(height: AppSpacing.md),
+                    TextField(
+                      controller: controller,
+                      autofocus: true,
+                      keyboardType: TextInputType.multiline,
+                      textInputAction: TextInputAction.newline,
+                      minLines: 3,
+                      maxLines: 5,
+                      maxLength: maxLength,
+                      onChanged: (_) => setDialogState(() {}),
+                      decoration: InputDecoration(
+                        labelText: label,
+                        hintText: hint,
+                        alignLabelWithHint: true,
+                        filled: true,
+                        fillColor: scheme.surfaceContainerHighest
+                            .withValues(alpha: 0.42),
+                        contentPadding: const EdgeInsets.all(AppSpacing.md),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          borderSide: BorderSide(color: scheme.outlineVariant),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          borderSide: BorderSide(color: scheme.outlineVariant),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          borderSide:
+                              BorderSide(color: scheme.primary, width: 2),
+                        ),
+                      ),
+                    ),
+                  ]),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('取消')),
+              FilledButton(
+                  onPressed: canSubmit
+                      ? () => Navigator.pop(dialogContext, controller.text)
+                      : null,
+                  child: Text(confirmLabel)),
+            ],
+          );
+        },
+      ),
+    );
+    controller.dispose();
+    return result;
   }
 
   @override

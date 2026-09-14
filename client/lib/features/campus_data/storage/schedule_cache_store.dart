@@ -20,6 +20,7 @@ class ScheduleTermSnapshot {
     this.semesterStart,
     List<ScheduleArchiveSnapshot> archives = const <ScheduleArchiveSnapshot>[],
     this.activeArchiveId,
+    this.sourceSnapshotPresent = false,
   })  : courses =
             List<Map<String, dynamic>>.unmodifiable(courses.map(_copyMap)),
         baseCourses =
@@ -39,6 +40,9 @@ class ScheduleTermSnapshot {
   final List<ScheduleArchiveSnapshot> archives;
   final String? activeArchiveId;
 
+  /// 兼容旧快照时区分“字段缺失”和“合法空来源”。
+  final bool sourceSnapshotPresent;
+
   ScheduleTermSnapshot copyWith({
     List<Map<String, dynamic>>? courses,
     List<Map<String, dynamic>>? baseCourses,
@@ -49,6 +53,7 @@ class ScheduleTermSnapshot {
     List<ScheduleArchiveSnapshot>? archives,
     String? activeArchiveId,
     bool clearActiveArchive = false,
+    bool? sourceSnapshotPresent,
   }) {
     return ScheduleTermSnapshot(
       courses: courses ?? this.courses,
@@ -60,19 +65,27 @@ class ScheduleTermSnapshot {
       archives: archives ?? this.archives,
       activeArchiveId:
           clearActiveArchive ? null : (activeArchiveId ?? this.activeArchiveId),
+      sourceSnapshotPresent:
+          sourceSnapshotPresent ?? this.sourceSnapshotPresent,
     );
   }
 
   Map<String, dynamic> toPayload() {
-    return <String, dynamic>{
+    final payload = <String, dynamic>{
       'courses': courses.map(_copyMap).toList(growable: false),
-      'base_courses': baseCourses.map(_copyMap).toList(growable: false),
-      'manual_courses': manualCourses.map(_copyMap).toList(growable: false),
       'hidden_course_ids': List<int>.from(hiddenCourseIds),
       'semester_start': semesterStart?.toUtc().toIso8601String(),
       'archives': archives.map((archive) => archive.toPayload()).toList(),
       'active_archive_id': activeArchiveId,
     };
+    if (sourceSnapshotPresent) {
+      payload
+        ..['base_courses'] = baseCourses.map(_copyMap).toList(growable: false)
+        ..['manual_courses'] =
+            manualCourses.map(_copyMap).toList(growable: false)
+        ..['source_snapshot_present'] = true;
+    }
+    return payload;
   }
 
   factory ScheduleTermSnapshot.fromPayload(Map<String, dynamic> payload) {
@@ -85,6 +98,8 @@ class ScheduleTermSnapshot {
       payload['manual_courses'] ?? const <dynamic>[],
       '自定义课程',
     );
+    final sourceSnapshotPresent = payload.containsKey('base_courses') ||
+        payload.containsKey('manual_courses');
     final hiddenCourseIds = _copyIntList(payload['hidden_course_ids'], '隐藏课程');
     final semesterStart = _parseOptionalDateTime(
       payload['semester_start'],
@@ -128,6 +143,7 @@ class ScheduleTermSnapshot {
       activeArchiveId: activeArchiveId == null || activeArchiveId.isEmpty
           ? null
           : activeArchiveId,
+      sourceSnapshotPresent: sourceSnapshotPresent,
     );
   }
 }
@@ -380,6 +396,7 @@ class ScheduleCacheStore {
         courses: _copyMapList(courses, '课程'),
         baseCourses: _copyMapList(baseCourses, '原始教务课程'),
         manualCourses: _copyMapList(manualCourses, '自定义课程'),
+        sourceSnapshotPresent: true,
       ),
       clearNeedsResync: true,
     );
@@ -517,6 +534,9 @@ class ScheduleCacheStore {
       semester: semester,
       update: (current) => current.copyWith(
         courses: const <Map<String, dynamic>>[],
+        baseCourses: const <Map<String, dynamic>>[],
+        manualCourses: const <Map<String, dynamic>>[],
+        sourceSnapshotPresent: true,
         clearActiveArchive: true,
       ),
     );

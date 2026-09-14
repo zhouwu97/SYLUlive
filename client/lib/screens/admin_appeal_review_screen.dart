@@ -14,9 +14,24 @@ class AdminAppealReviewScreen extends StatefulWidget {
       _AdminAppealReviewScreenState();
 }
 
+enum _ReviewLoadError {
+  /// 403 – 当前管理员无法访问该接口。
+  forbidden,
+
+  /// 网络不可达 / 超时 / 无 response。
+  network,
+
+  /// 服务端返回 5xx 或其他非 2xx。
+  server,
+
+  /// 未知异常。
+  unknown,
+}
+
 class _AdminAppealReviewScreenState extends State<AdminAppealReviewScreen> {
   bool _loading = true;
-  String? _error;
+  _ReviewLoadError? _errorKind;
+  String? _errorDetail;
   List<Map<String, dynamic>> _items = const [];
 
   @override
@@ -28,7 +43,8 @@ class _AdminAppealReviewScreenState extends State<AdminAppealReviewScreen> {
   Future<void> _load() async {
     setState(() {
       _loading = true;
-      _error = null;
+      _errorKind = null;
+      _errorDetail = null;
     });
     try {
       final response = await getSharedDio().get('/admin/appeals/review');
@@ -45,13 +61,32 @@ class _AdminAppealReviewScreenState extends State<AdminAppealReviewScreen> {
             .toList());
       }
     } on DioException catch (error) {
+      debugPrint(
+          '[AdminAppealReview] 请求失败: '
+          'status=${error.response?.statusCode}, '
+          'type=${error.type}, '
+          'body=${error.response?.data}');
       if (mounted) {
-        setState(() => _error = error.response?.data is Map
-            ? (error.response?.data['error']?.toString() ?? '待复核案件加载失败')
-            : '待复核案件加载失败');
+        final status = error.response?.statusCode;
+        if (status == 403 || status == 401) {
+          _errorKind = _ReviewLoadError.forbidden;
+          _errorDetail = error.response?.data is Map
+              ? error.response?.data['error']?.toString()
+              : null;
+        } else if (error.response == null) {
+          // 无 response — 网络不可达 / 连接超时 / DNS 失败
+          _errorKind = _ReviewLoadError.network;
+        } else {
+          _errorKind = _ReviewLoadError.server;
+          _errorDetail = error.response?.data is Map
+              ? error.response?.data['error']?.toString()
+              : null;
+        }
+        setState(() {});
       }
-    } catch (_) {
-      if (mounted) setState(() => _error = '待复核案件加载失败');
+    } catch (error) {
+      debugPrint('[AdminAppealReview] 未知异常: $error');
+      if (mounted) setState(() => _errorKind = _ReviewLoadError.unknown);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -76,12 +111,8 @@ class _AdminAppealReviewScreenState extends State<AdminAppealReviewScreen> {
         onRefresh: _load,
         child: _loading
             ? const Center(child: CircularProgressIndicator())
-            : _error != null
-                ? Center(
-                    child: FilledButton.icon(
-                        onPressed: _load,
-                        icon: const Icon(Icons.refresh),
-                        label: Text(_error!)))
+            : _errorKind != null
+                ? _buildErrorState()
                 : _items.isEmpty
                     ? ListView(children: const [
                         SizedBox(height: 180),
@@ -94,6 +125,76 @@ class _AdminAppealReviewScreenState extends State<AdminAppealReviewScreen> {
                         itemBuilder: (_, index) => _buildCard(_items[index]),
                       ),
       ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    final IconData icon;
+    final String title;
+    final String subtitle;
+
+    switch (_errorKind!) {
+      case _ReviewLoadError.forbidden:
+        icon = Icons.lock_outline;
+        title = '你暂无公众法庭复核权限';
+        subtitle = _errorDetail ?? '请确认你的管理员身份是否拥有复核权限';
+      case _ReviewLoadError.network:
+        icon = Icons.wifi_off;
+        title = '网络连接异常';
+        subtitle = '请检查网络后重试';
+      case _ReviewLoadError.server:
+        icon = Icons.cloud_off;
+        title = '待复核案件暂时无法加载';
+        subtitle = _errorDetail ?? '请稍后重试；若持续出现，请联系超级管理员';
+      case _ReviewLoadError.unknown:
+        icon = Icons.error_outline;
+        title = '待复核案件加载失败';
+        subtitle = '发生未知错误，请稍后重试';
+    }
+
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // 使用 ListView 使 RefreshIndicator 仍可下拉刷新。
+    return ListView(
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.22),
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon,
+                    size: 48,
+                    color: isDark ? Colors.white38 : Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: isDark ? Colors.white54 : Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('重新加载'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 

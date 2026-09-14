@@ -54,7 +54,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     Future<Response<dynamic>?> safeGet(
         Future<Response<dynamic>> request) async {
       try {
-        return await request;
+        return await request.timeout(const Duration(seconds: 8));
       } catch (error) {
         debugPrint('[AdminPanel] pending count request failed: $error');
         return null;
@@ -687,13 +687,11 @@ class _AdminMetricPill extends StatelessWidget {
     required this.onTap,
   });
 
+  /// 加载失败时 count 为 null，用 '!' 警告标识区分 spinner 和成功数字。
+  bool get _hasFailed => !isLoading && count == null;
+
   @override
   Widget build(BuildContext context) {
-    String displayCount = '--';
-    if (!isLoading && count != null) {
-      displayCount = count.toString();
-    }
-
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
@@ -721,7 +719,9 @@ class _AdminMetricPill extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: isDark ? Colors.white24 : Colors.grey[200],
+                color: _hasFailed
+                    ? (isDark ? Colors.orange.withValues(alpha: 0.3) : Colors.orange[100])
+                    : (isDark ? Colors.white24 : Colors.grey[200]),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: isLoading
@@ -731,11 +731,13 @@ class _AdminMetricPill extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 1.5),
                     )
                   : Text(
-                      displayCount,
+                      count?.toString() ?? '!',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black54,
+                        color: _hasFailed
+                            ? (isDark ? Colors.orange[200] : Colors.orange[800])
+                            : (isDark ? Colors.white : Colors.black54),
                       ),
                     ),
             ),

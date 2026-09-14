@@ -8,6 +8,8 @@ class SelectWeeksSheet extends StatefulWidget {
   final CourseBlock course;
   final int currentAcademicWeek;
   final int? totalTeachingWeeks;
+  final Set<int>? sourceWeeks;
+  final Set<int>? initialAffectedWeeks;
   final ValueChanged<Set<int>> onNext;
 
   const SelectWeeksSheet({
@@ -15,6 +17,8 @@ class SelectWeeksSheet extends StatefulWidget {
     required this.course,
     required this.currentAcademicWeek,
     this.totalTeachingWeeks,
+    this.sourceWeeks,
+    this.initialAffectedWeeks,
     required this.onNext,
   });
 
@@ -23,6 +27,8 @@ class SelectWeeksSheet extends StatefulWidget {
     required CourseBlock course,
     required int currentAcademicWeek,
     int? totalTeachingWeeks,
+    Set<int>? sourceWeeks,
+    Set<int>? initialAffectedWeeks,
   }) {
     return showModalBottomSheet<Set<int>>(
       context: context,
@@ -32,6 +38,8 @@ class SelectWeeksSheet extends StatefulWidget {
         course: course,
         currentAcademicWeek: currentAcademicWeek,
         totalTeachingWeeks: totalTeachingWeeks,
+        sourceWeeks: sourceWeeks,
+        initialAffectedWeeks: initialAffectedWeeks,
         onNext: (weeks) => Navigator.pop(ctx, weeks),
       ),
     );
@@ -50,18 +58,24 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
   @override
   void initState() {
     super.initState();
-    _courseWeeks = widget.course.weeks.isNotEmpty
-        ? widget.course.weeks.toSet()
-        : Set<int>.from(List.generate(
-            widget.totalTeachingWeeks ?? widget.currentAcademicWeek,
-            (i) => i + 1,
-          ));
+    _courseWeeks = widget.sourceWeeks?.isNotEmpty == true
+        ? widget.sourceWeeks!
+        : widget.course.weeks.isNotEmpty
+            ? widget.course.weeks.toSet()
+            : Set<int>.from(List.generate(
+                widget.totalTeachingWeeks ?? widget.currentAcademicWeek,
+                (i) => i + 1,
+              ));
     final sortedWeeks = _courseWeeks.toList()..sort();
     final firstWeek = sortedWeeks.first;
     final lastWeek = sortedWeeks.last;
 
-    _startWeek = firstWeek;
-    _endWeek = lastWeek;
+    final initial = widget.initialAffectedWeeks
+        ?.where(_courseWeeks.contains)
+        .toList()
+      ?..sort();
+    _startWeek = initial?.isNotEmpty == true ? initial!.first : firstWeek;
+    _endWeek = initial?.isNotEmpty == true ? initial!.last : lastWeek;
 
     // 如果当前周在课程周次范围内，默认指定范围从当前周开始
     if (_courseWeeks.contains(widget.currentAcademicWeek)) {

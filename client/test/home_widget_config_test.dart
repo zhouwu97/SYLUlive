@@ -422,8 +422,7 @@ void main() {
       expect(previewAfter.items, isEmpty);
     });
 
-    test(
-        'A账号拉取考试 -> 退出登录 -> B账号登录且未拉取考试 -> 小组件绝不展示A账号考试 (A->logout->B)',
+    test('A账号拉取考试 -> 退出登录 -> B账号登录且未拉取考试 -> 小组件绝不展示A账号考试 (A->logout->B)',
         () async {
       AppPreferencesStore.setMockInitialValues({});
       final coordinator = AccountSessionCleanupCoordinator();
@@ -514,6 +513,35 @@ void main() {
       expect(
           (await HomeWidgetService.getPreviewData(HomeWidgetKind.exam)).items,
           isEmpty);
+    });
+
+    test('考试小组件重新同步沿用最近身份，不会降级为无主数据', () async {
+      AppPreferencesStore.setMockInitialValues({});
+      const identity = AcademicIdentityKey(
+        appUserId: '1',
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: '20230001',
+      );
+      final prefs = await AppPreferencesStore.getInstance();
+      await AcademicConnectionStore(identity, prefs).setConnected(true);
+      final tomorrow = DateTime.now().add(const Duration(days: 1));
+      await HomeWidgetService.syncExamData([
+        HomeWidgetExamEntry(
+          name: '线性代数',
+          startTime: tomorrow,
+          endTime: tomorrow.add(const Duration(hours: 2)),
+          location: '综A101',
+        ),
+      ], identity: identity);
+      expect(prefs.getString('academic_auxiliary_owner_widget_exam'),
+          identity.storageId);
+
+      await HomeWidgetService.syncKind(HomeWidgetKind.exam);
+      expect(prefs.getString('academic_auxiliary_owner_widget_exam'),
+          identity.storageId);
+      await HomeWidgetService.syncAll();
+      expect(prefs.getString('academic_auxiliary_owner_widget_exam'),
+          identity.storageId);
     });
   });
 }

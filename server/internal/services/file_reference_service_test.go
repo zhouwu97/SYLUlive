@@ -19,7 +19,7 @@ func newFileReferenceTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.File{}, &models.FileUploadGrant{}, &models.ImageVariant{}); err != nil {
+	if err := db.AutoMigrate(&models.File{}, &models.FileUploadGrant{}, &models.ImageVariant{}, &models.Canteen{}, &models.CanteenDish{}, &models.CanteenDishPhoto{}); err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -198,6 +198,7 @@ func newReconcileTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.File{},
+		&models.Canteen{},
 		&models.CanteenDish{},
 		&models.CanteenDishPhoto{},
 		&models.Post{},

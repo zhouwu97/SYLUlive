@@ -4,10 +4,7 @@ import '../../providers/course_schedule_provider.dart';
 import '../../models/schedule/schedule_override.dart';
 import '../../theme/app_theme_tokens.dart';
 import '../../widgets/course/course_evaluation_section.dart';
-import 'reschedule/select_weeks_sheet.dart';
-import 'reschedule/select_time_sheet.dart';
-import 'reschedule/confirm_change_sheet.dart';
-import '../../services/schedule/schedule_conflict_service.dart';
+import 'reschedule/course_adjustment_sheet.dart';
 import '../../utils/week_formatter.dart';
 
 /// 课程详情与本地调整 BottomSheet（升级版）
@@ -335,8 +332,8 @@ class CourseDetailSheet extends StatelessWidget {
                           icon: const Icon(Icons.edit_calendar_outlined,
                               size: 18),
                           label: const Text('继续调整'),
-                          onPressed: () =>
-                              _startRescheduleFlow(context, provider),
+                          onPressed: () => _startCourseAdjustmentFlow(
+                              context, provider, relatedOverride),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -378,7 +375,8 @@ class CourseDetailSheet extends StatelessWidget {
                       ),
                       icon: const Icon(Icons.edit_calendar_rounded, size: 18),
                       label: const Text('调整课程安排'),
-                      onPressed: () => _startRescheduleFlow(context, provider),
+                      onPressed: () => _startCourseAdjustmentFlow(
+                          context, provider, relatedOverride),
                     ),
                   ),
                 ],
@@ -477,114 +475,18 @@ class CourseDetailSheet extends StatelessWidget {
     return const Color(0xFF6366F1);
   }
 
-  /// 启动三步调课流程 (Section 18 - 20)
-  Future<void> _startRescheduleFlow(
+  Future<void> _startCourseAdjustmentFlow(
     BuildContext context,
     CourseScheduleProvider provider,
+    ScheduleOverride? existingOverride,
   ) async {
-    // 步骤 1：选择周次
-    final affectedWeeks = await SelectWeeksSheet.show(
+    final changed = await CourseAdjustmentSheet.show(
       context,
       course: course,
-      currentAcademicWeek: currentAcademicWeek,
-      totalTeachingWeeks: provider.currentTerm.maxWeek,
-    );
-    if (affectedWeeks == null || affectedWeeks.isEmpty || !context.mounted) {
-      return;
-    }
-
-    await _runRescheduleFromStep2(
-      context: context,
       provider: provider,
-      affectedWeeks: affectedWeeks,
+      currentAcademicWeek: currentAcademicWeek,
+      existingOverride: existingOverride,
     );
-  }
-
-  Future<void> _runRescheduleFromStep2({
-    required BuildContext context,
-    required CourseScheduleProvider provider,
-    required Set<int> affectedWeeks,
-    int? initialWeekday,
-    int? initialStartSection,
-    int? initialEndSection,
-    String? initialRoom,
-  }) async {
-    // 步骤 2：选择目标时间
-    final targetTime = await SelectTimeSheet.show(
-      context,
-      course: course,
-      affectedWeeks: affectedWeeks,
-      initialWeekday: initialWeekday,
-      initialStartSection: initialStartSection,
-      initialEndSection: initialEndSection,
-      initialRoom: initialRoom,
-    );
-    if (targetTime == null || !context.mounted) return;
-
-    // 步骤 3：冲突检测并弹出确认弹窗
-    const conflictService = ScheduleConflictService();
-    final conflictResult = conflictService.check(
-      currentResolved: provider.resolvedMeetings,
-      targetCourseKey: course.courseKey ?? '',
-      targetMeetingKey: course.meetingKey ?? '',
-      targetWeekday: targetTime.weekday,
-      targetStartSection: targetTime.startSection,
-      targetEndSection: targetTime.endSection,
-      targetWeeks: affectedWeeks,
-      editingOverrideId: course.overrideId,
-    );
-
-    if (!context.mounted) return;
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => ConfirmChangeSheet(
-        course: course,
-        affectedWeeks: affectedWeeks,
-        toWeekday: targetTime.weekday,
-        toStartSection: targetTime.startSection,
-        toEndSection: targetTime.endSection,
-        toRoom: targetTime.newRoom,
-        conflictResult: conflictResult,
-        onBackToEdit: () {
-          Navigator.pop(ctx);
-          // 重新打开步骤2，保留已选的 targetTime
-          _runRescheduleFromStep2(
-            context: context,
-            provider: provider,
-            affectedWeeks: affectedWeeks,
-            initialWeekday: targetTime.weekday,
-            initialStartSection: targetTime.startSection,
-            initialEndSection: targetTime.endSection,
-            initialRoom: targetTime.newRoom,
-          );
-        },
-        onConfirm: () async {
-          Navigator.pop(ctx);
-          final snapshotHash =
-              'w${course.weekday}:s${course.startSection}-${course.endSection}:weeks[${course.weeks.join(',')}]:room[${course.location?.trim() ?? ''}]';
-
-          await provider.createRescheduleOverride(
-            overrideId: course.overrideId,
-            courseKey: course.courseKey ?? 'edu:course:${course.name}',
-            meetingKey: course.meetingKey ??
-                'm_${course.weekday}_${course.startSection}',
-            affectedWeeks: affectedWeeks,
-            toWeekday: targetTime.weekday,
-            toStartSection: targetTime.startSection,
-            toEndSection: targetTime.endSection,
-            toRoom: targetTime.newRoom,
-            sourceSnapshotHash: snapshotHash,
-            fromWeekday: course.weekday,
-            fromStartSection: course.startSection,
-            fromEndSection: course.endSection,
-            fromRoom: course.location,
-            allowConflict: conflictResult.hasConflict,
-          );
-        },
-      ),
-    );
+    if (changed == true && context.mounted) Navigator.pop(context);
   }
 }

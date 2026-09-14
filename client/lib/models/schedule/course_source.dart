@@ -1,0 +1,4 @@
+enum CourseSource {
+  edu,
+  manual,
+}

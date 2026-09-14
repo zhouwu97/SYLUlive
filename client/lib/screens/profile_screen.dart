@@ -42,6 +42,7 @@ import 'feedback_screen.dart';
 import 'user_home_screen.dart';
 import 'social_list_screen.dart';
 import 'my_canteen_reviews_screen.dart';
+import 'browsing_history_screen.dart';
 
 @visibleForTesting
 ({
@@ -973,6 +974,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _loadUnreadCount();
             });
           },
+        ),
+      ),
+      _buildSettingsRow(
+        child: _buildSettingsTile(
+          icon: Icons.history_rounded,
+          iconColor: const Color(0xFF3B82F6),
+          title: '浏览记录',
+          subtitle: '查看我看过的资讯与帖子',
+          isDark: isDark,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const BrowsingHistoryScreen()),
+          ),
         ),
       ),
       _buildSettingsRow(

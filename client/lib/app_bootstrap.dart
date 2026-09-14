@@ -1874,7 +1874,7 @@ class _AppContent extends StatelessWidget {
           },
         ),
       ),
-      themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      themeMode: themeProvider.themeMode,
       navigatorKey: appNavigatorKey,
       navigatorObservers: [appRouteObserver],
       scaffoldMessengerKey: scaffoldMessengerKey,

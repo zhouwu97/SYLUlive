@@ -501,9 +501,10 @@ class ScheduleCacheStore {
       'semester_start_v2_${userId}_',
     ];
 
+    final allPrefKeys = preferences.getKeys().whereType<String>();
     final keys = <String>{
-      ...preferences.getKeys().where((key) => prefixes.any(key.startsWith)),
-      ...preferences.getKeys().where(
+      ...allPrefKeys.where((key) => prefixes.any(key.startsWith)),
+      ...allPrefKeys.where(
             (key) => key.startsWith('course_archive_data_v2_'),
           ),
     };
@@ -604,8 +605,8 @@ class ScheduleCacheStore {
       schemaVersion: schemaVersion,
       sourceSystem: sourceSystem,
       sourceAccountId: sourceAccountId,
-      fetchedAt: now,
-      expiresAt: now.add(_expiry),
+      fetchedAt: existing?.fetchedAt ?? now,
+      expiresAt: existing?.expiresAt ?? now.add(_expiry),
       payload: payload,
     );
   }

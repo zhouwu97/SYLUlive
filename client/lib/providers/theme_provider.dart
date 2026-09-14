@@ -147,6 +147,7 @@ const Color kCleanWarmBackgroundDark = Color(0xFF111315);
 
 class ThemeProvider extends ChangeNotifier {
   static const String _nightModeKey = 'night_mode';
+  static const String _followSystemKey = 'night_mode_follow_system';
   static const String _fontSizePresetKey = 'font_size_preset';
   static const String _backgroundModeKey = 'background_mode';
   static const String _backgroundImageKey = 'background_image';
@@ -181,6 +182,7 @@ class ThemeProvider extends ChangeNotifier {
 
   bool _isLoaded = false;
   bool _isDarkMode = false;
+  bool _followSystem = true;
   AppFontSizePreset _fontSizePreset = AppFontSizePreset.standard;
   AppBackgroundMode _backgroundMode = AppBackgroundMode.clean;
   String? _backgroundImage;
@@ -204,6 +206,10 @@ class ThemeProvider extends ChangeNotifier {
 
   bool get isLoaded => _isLoaded;
   bool get isDarkMode => _isDarkMode;
+  bool get followSystem => _followSystem;
+  ThemeMode get themeMode => _followSystem
+      ? ThemeMode.system
+      : (_isDarkMode ? ThemeMode.dark : ThemeMode.light);
   AppFontSizePreset get fontSizePreset => _fontSizePreset;
   AppBackgroundMode get backgroundMode => _backgroundMode;
   bool get isCleanBackgroundMode => _backgroundMode == AppBackgroundMode.clean;
@@ -361,6 +367,11 @@ class ThemeProvider extends ChangeNotifier {
   /// 将已初始化偏好应用到内存状态，供同步首帧与异步回退共用。
   void _applyStoredPreferences(AppPreferencesStore prefs) {
     _isDarkMode = prefs.getBool(_nightModeKey) ?? false;
+    if (prefs.containsKey(_followSystemKey)) {
+      _followSystem = prefs.getBool(_followSystemKey) ?? true;
+    } else {
+      _followSystem = !prefs.containsKey(_nightModeKey);
+    }
     _fontSizePreset = AppFontSizePreset.fromStorage(
       prefs.getString(_fontSizePresetKey),
     );
@@ -438,17 +449,28 @@ class ThemeProvider extends ChangeNotifier {
     return true;
   }
 
+  Future<void> setFollowSystem(bool value) async {
+    _followSystem = value;
+    final prefs = await AppPreferencesStore.getInstance();
+    await prefs.setBool(_followSystemKey, value);
+    notifyListeners();
+  }
+
   Future<void> toggleTheme() async {
     _isDarkMode = !_isDarkMode;
+    _followSystem = false;
     final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool(_nightModeKey, _isDarkMode);
+    await prefs.setBool(_followSystemKey, false);
     notifyListeners();
   }
 
   Future<void> setDarkMode(bool value) async {
     _isDarkMode = value;
+    _followSystem = false;
     final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool(_nightModeKey, value);
+    await prefs.setBool(_followSystemKey, false);
     notifyListeners();
   }
 

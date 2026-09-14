@@ -37,6 +37,8 @@ import '../widgets/course/course_preview_sheet.dart';
 import '../widgets/course/course_semester_start_picker.dart';
 import '../widgets/campus/campus_theme.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'schedule/course_detail_sheet.dart';
+import '../theme/app_theme_tokens.dart';
 
 /// 每节课槽的默认高度
 const double defaultSlotHeight = 75.0;
@@ -3975,31 +3977,48 @@ $classFilterRule
         child: _buildWeekEmptyPlaceholder(context),
       );
     }
-    final allActive = <CourseBlock>[];
-    final allInactive = <CourseBlock>[];
-    // 先用活跃课程占据时间槽，非活跃课程只在槽位为空时才显示
-    final activeSlots = <String>{};
-    final inactiveSeen = <String>{};
 
-    for (final c in sc.courses) {
-      if (c.weekday < 1 || c.weekday > 7) continue;
-      final keys = _slotKeys(c);
-      if (c.weeks.isEmpty || c.weeks.contains(wn)) {
-        // 当前教学周课程优先占据时间槽。
-        if (!keys.any(activeSlots.contains)) {
-          allActive.add(c);
-          activeSlots.addAll(keys);
+    final activeGroups = <List<CourseBlock>>[];
+    final activeSlots = <String>{};
+
+    for (int day = 1; day <= 7; day++) {
+      final dayCourses = sc.courses
+          .where((c) =>
+              c.weekday == day && (c.weeks.isEmpty || c.weeks.contains(wn)))
+          .toList()
+        ..sort((a, b) => a.startSection.compareTo(b.startSection));
+
+      if (dayCourses.isEmpty) continue;
+
+      var currentGroup = <CourseBlock>[dayCourses.first];
+      int currentEnd = dayCourses.first.endSection;
+
+      for (int i = 1; i < dayCourses.length; i++) {
+        final c = dayCourses[i];
+        if (c.startSection <= currentEnd) {
+          currentGroup.add(c);
+          if (c.endSection > currentEnd) currentEnd = c.endSection;
+        } else {
+          activeGroups.add(currentGroup);
+          currentGroup = [c];
+          currentEnd = c.endSection;
         }
+      }
+      activeGroups.add(currentGroup);
+    }
+
+    for (final grp in activeGroups) {
+      for (final c in grp) {
+        activeSlots.addAll(_slotKeys(c));
       }
     }
 
-    // 第二轮：非当前周课程，只在槽位未被活跃课程占用时才显示
-    // 已完全结课的课程（所有周数 < 当前周）不显示
+    final allInactive = <CourseBlock>[];
+    final inactiveSeen = <String>{};
     for (final c in sc.courses) {
       if (c.weekday < 1 || c.weekday > 7) continue;
       final keys = _slotKeys(c);
       if (c.weeks.isNotEmpty && !c.weeks.contains(wn)) {
-        // 跳过已完全结课的课程
         if (c.weeks.every((w) => w < wn)) continue;
         if (!keys.any(activeSlots.contains) &&
             !keys.any(inactiveSeen.contains)) {
@@ -4009,7 +4028,7 @@ $classFilterRule
       }
     }
 
-    if (allActive.isEmpty && allInactive.isEmpty && sc.courses.isNotEmpty) {
+    if (activeGroups.isEmpty && allInactive.isEmpty && sc.courses.isNotEmpty) {
       return Center(
         child: _buildWeekEmptyPlaceholder(context),
       );
@@ -4018,11 +4037,187 @@ $classFilterRule
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        // 课程卡片（非本周在前，当前周在上层）
         for (final c in allInactive)
           _buildCard(c, false, exactW, wn, slotHeight),
-        for (final c in allActive) _buildCard(c, true, exactW, wn, slotHeight),
+        for (final grp in activeGroups)
+          if (grp.length == 1)
+            _buildCard(grp.first, true, exactW, wn, slotHeight)
+          else
+            _buildConflictCard(grp, exactW, wn, slotHeight),
       ],
+    );
+  }
+
+  Widget _buildConflictCard(
+    List<CourseBlock> courses,
+    double exactW,
+    int wn,
+    double slotHeight,
+  ) {
+    final first = courses.first;
+    final minStart =
+        courses.map((c) => c.startSection).reduce((a, b) => a < b ? a : b);
+    final maxEnd =
+        courses.map((c) => c.endSection).reduce((a, b) => a > b ? a : b);
+    final top = (minStart - 1) * slotHeight;
+    final h = (maxEnd - minStart + 1) * slotHeight - 2;
+
+    final double scale = (exactW / 45.0).clamp(1.0, 1.35);
+    final double paddingVal = exactW > 80 ? 6.0 : 3.0;
+
+    return Positioned(
+      key: ValueKey('conflict_${first.weekday}_${minStart}_${courses.length}'),
+      left: (first.weekday - 1) * exactW + 1.5,
+      width: exactW - 3,
+      top: top,
+      height: h,
+      child: GestureDetector(
+        onTap: () => _showConflictCoursesSheet(courses),
+        child: Container(
+          alignment: Alignment.topLeft,
+          padding: EdgeInsets.all(paddingVal),
+          clipBehavior: Clip.hardEdge,
+          decoration: BoxDecoration(
+            color: const Color(0xFFE65100).withValues(alpha: 0.90),
+            borderRadius: BorderRadius.circular(6.0),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.6),
+              width: 0.8,
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.warning_amber_rounded,
+                      color: Colors.white, size: 12),
+                  const SizedBox(width: 2),
+                  Flexible(
+                    child: Text(
+                      '${courses.length}门课程冲突',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9.5 * scale,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Expanded(
+                child: Text(
+                  courses.map((c) => c.name).join(' / '),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10 * scale,
+                    fontWeight: FontWeight.w600,
+                    height: 1.15,
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showConflictCoursesSheet(List<CourseBlock> courses) {
+    showModalBottomSheet(
+      context: appNavigatorKey.currentContext!,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final tokens = AppThemeTokens.of(ctx);
+        return SafeArea(
+          top: false,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            decoration: BoxDecoration(
+              color: tokens.surface,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 38,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: tokens.divider,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded,
+                        color: tokens.warning, size: 22),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${courses.length}门课程冲突',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: tokens.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '当前时间段同时存在以下课程，点击可查看详情：',
+                  style: TextStyle(fontSize: 12, color: tokens.textSecondary),
+                ),
+                const SizedBox(height: 14),
+                ...courses.map((c) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: tokens.inputBackground,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: tokens.outline),
+                    ),
+                    child: ListTile(
+                      title: Text(
+                        c.name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: tokens.textPrimary,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${c.teacher ?? '未知教师'} · ${c.location ?? '未知教室'} · 第${c.startSection}-${c.endSection}节',
+                        style: TextStyle(
+                            fontSize: 12, color: tokens.textSecondary),
+                      ),
+                      trailing:
+                          Icon(Icons.chevron_right, color: tokens.textSecondary),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _showDetail(c);
+                      },
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -4147,176 +4342,48 @@ $classFilterRule
 
   // ====== 课程详情 ======
   void _showDetail(CourseBlock c) {
-    final color = courseColors[getCourseColorIndex(c.name)];
-    final wdn = _wd[c.weekday - 1];
-    // 正式教务课程才显示评价入口；手动添加与 AI 导入的自定义课程不显示。
-    final showEvaluation = c.id > 0 && c.courseCode != 'CUSTOM';
-
-    showModalBottomSheet(
-      context: appNavigatorKey.currentContext!,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => Padding(
-        // 键盘弹出时上移，保证评价表单输入框可见。
-        padding: EdgeInsets.only(
-          bottom:
-              MediaQuery.of(appNavigatorKey.currentContext!).viewInsets.bottom,
-        ),
-        child: SingleChildScrollView(
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[400],
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Container(
-                        width: 4,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: color,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          c.name,
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  _detailRow(Icons.person_outline, '教师', c.teacher ?? '未知'),
-                  _detailRow(
-                      Icons.location_on_outlined, '教室', c.location ?? '未知'),
-                  _detailRow(
-                    Icons.access_time,
-                    '时间',
-                    '周$wdn ${_courseSectionLabel(c)}',
-                  ),
-                  _detailRow(
-                    Icons.date_range,
-                    '周次',
-                    c.weeks.isNotEmpty
-                        ? '第${c.weeks.first}-${c.weeks.last}周'
-                        : '未知',
-                  ),
-                  if (c.note != null && c.note!.isNotEmpty)
-                    _detailRow(Icons.note_outlined, '备注', c.note!),
-                  // 评价区放在周次/备注之后，不包裹原有课程信息为新卡片。
-                  if (showEvaluation)
-                    CourseEvaluationSection(
-                      courseName: c.name,
-                      teacherName: c.teacher ?? '',
-                    ),
-                  const SizedBox(height: 16),
-                  if (c.id < 0) ...[
-                    const Divider(),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        TextButton.icon(
-                          icon: const Icon(Icons.edit, color: Colors.blue),
-                          label: const Text(
-                            '编辑',
-                            style: TextStyle(color: Colors.blue),
-                          ),
-                          onPressed: () {
-                            Navigator.pop(appNavigatorKey.currentContext!);
-                            _showAddCourseDialog(context, editCourse: c);
-                          },
-                        ),
-                        TextButton.icon(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          label: const Text(
-                            '删除',
-                            style: TextStyle(color: Colors.red),
-                          ),
-                          onPressed: () async {
-                            final confirmed = await showDialog<bool>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: const Text('删除课程'),
-                                content: const Text('确定要删除这门自定义课程吗？'),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx, false),
-                                    child: const Text('取消'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx, true),
-                                    child: const Text(
-                                      '删除',
-                                      style: TextStyle(color: Colors.red),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (confirmed == true) {
-                              Navigator.pop(appNavigatorKey.currentContext!);
-                              await context
-                                  .read<CourseScheduleProvider>()
-                                  .removeCustomCourse(c.id);
-                              if (mounted) setState(() {});
-                              ScaffoldMessenger.of(
-                                context,
-                              ).showSnackBar(
-                                  const SnackBar(content: Text('课程已删除')));
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
+    final sc = context.read<CourseScheduleProvider>();
+    final currentWeek = sc.getAcademicWeek(_weekStart) ?? 1;
+    CourseDetailSheet.show(
+      context,
+      course: c,
+      currentAcademicWeek: currentWeek,
+      onEditCustomCourse: () => _showAddCourseDialog(context, editCourse: c),
+      onDeleteCustomCourse: () => _confirmDeleteCourse(c),
     );
   }
 
-  Widget _detailRow(IconData icon, String l, String v) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: Colors.grey[600]),
-            const SizedBox(width: 12),
-            Text('$l：',
-                style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-            Expanded(
-              child: Text(
-                v,
-                style:
-                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-              ),
+  Future<void> _confirmDeleteCourse(CourseBlock c) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除课程'),
+        content: const Text('确定要删除这门自定义课程吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              '删除',
+              style: TextStyle(color: Colors.red),
             ),
-          ],
-        ),
-      );
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await context.read<CourseScheduleProvider>().removeCustomCourse(c.id);
+      if (mounted) setState(() {});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('课程已删除')),
+        );
+      }
+    }
+  }
 }
 
 class _SaveArchiveDialog extends StatefulWidget {

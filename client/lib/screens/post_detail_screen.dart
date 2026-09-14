@@ -16,6 +16,8 @@ import '../config/market_contact_type.dart';
 import '../config/water_post_taxonomy.dart';
 import '../controllers/post_reply_composer_controller.dart';
 import '../models/post.dart';
+import '../models/browsing_history_item.dart';
+import '../repositories/browsing_history_repository.dart';
 import '../models/reply.dart';
 import '../models/user.dart';
 import '../models/water_section.dart';
@@ -361,11 +363,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               fallbackPost.images.length > fetchedPost.images.length
           ? fetchedPost.copyWith(images: fallbackPost.images)
           : fetchedPost;
-      if (mounted)
+      if (mounted) {
         setState(() {
           _post = mergedPost;
           _isLoading = false;
         });
+        BrowsingHistoryRepository().recordVisit(
+          targetId: widget.postId.toString(),
+          type: BrowsingHistoryType.post,
+          title: mergedPost.title.isNotEmpty
+              ? mergedPost.title
+              : (mergedPost.content.length > 50
+                  ? '${mergedPost.content.substring(0, 50)}...'
+                  : mergedPost.content),
+          author: mergedPost.author?.nickname,
+          cover: mergedPost.images.isNotEmpty ? mergedPost.images.first.url : null,
+        );
+      }
       if (widget.scrollToReplies && !_hasScrolledToReplies) {
         // 帖子主体已经完成布局即可定位，不必等待权限等后台请求。
         _scheduleScrollToReplies();

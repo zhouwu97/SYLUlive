@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 
 import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
+import '../models/browsing_history_item.dart';
+import '../repositories/browsing_history_repository.dart';
 import '../platform/contracts/external_navigator.dart';
 import '../services/campus_article_service.dart';
 import '../theme/app_colors.dart';
@@ -58,6 +60,14 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
           _detail = detail;
           _isLoading = false;
         });
+        BrowsingHistoryRepository().recordVisit(
+          targetId: widget.summary.id.toString(),
+          type: BrowsingHistoryType.campusNews,
+          title: detail.title.isNotEmpty ? detail.title : widget.summary.title,
+          author: detail.authorDepartment.isNotEmpty
+              ? detail.authorDepartment
+              : widget.summary.authorDepartment,
+        );
       }
     } on CampusArticleServiceException catch (e) {
       if (mounted) {

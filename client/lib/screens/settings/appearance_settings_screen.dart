@@ -327,12 +327,25 @@ class AppearanceSettingsScreen extends StatelessWidget {
           title: '配色与暗色模式',
           children: [
             SettingsTile(
+              icon: Icons.brightness_auto_outlined,
+              title: '跟随系统',
+              subtitle: '实时跟随系统浅色或深色外观切换',
+              trailing: SettingsSwitch(
+                value: themeProvider.followSystem,
+                onChanged: (val) => themeProvider.setFollowSystem(val),
+              ),
+            ),
+            SettingsTile(
               icon: Icons.dark_mode_outlined,
               title: '深色模式',
-              subtitle: '针对夜间环境优化，降低屏幕明亮度',
+              subtitle: themeProvider.followSystem
+                  ? '已启用跟随系统，关闭后可手动指定'
+                  : '针对夜间环境优化，降低屏幕明亮度',
               trailing: SettingsSwitch(
                 value: themeProvider.isDarkMode,
-                onChanged: (val) => themeProvider.setDarkMode(val),
+                onChanged: themeProvider.followSystem
+                    ? null
+                    : (val) => themeProvider.setDarkMode(val),
               ),
             ),
           ],

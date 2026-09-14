@@ -3,7 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
-import 'package:jiaowu_dart_poc/jiaowu_dart.dart';
+import 'package:jiaowu_dart_poc/jiaowu_dart.dart' hide CourseSource;
 import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/domain/academic_failure.dart';
 import '../features/academic/domain/academic_provider.dart';
@@ -15,6 +15,15 @@ import '../services/home_widget_service.dart';
 import '../platform/platform_capabilities.dart';
 import '../models/course_term.dart';
 import '../utils/deterministic_course_id.dart';
+import '../models/schedule/course.dart';
+import '../models/schedule/course_source.dart';
+import '../models/schedule/meeting.dart';
+import '../models/schedule/schedule_override.dart';
+import '../models/schedule/resolved_meeting.dart';
+import '../services/schedule/schedule_resolver.dart';
+import '../services/schedule/meeting_reconciler.dart';
+import '../services/schedule/schedule_conflict_service.dart';
+import '../repositories/schedule_override_repository.dart';
 
 /// 单个课程块，用于课表网格展示
 class CourseBlock {
@@ -39,6 +48,14 @@ class CourseBlock {
   /// 研究生相邻节次归并后仍保留每一行的原标签，供详情展示与数据回溯使用。
   final List<String> periodLabels;
 
+  final bool isOverridden;
+  final String? overrideId;
+  final bool hasConflict;
+  final String? courseKey;
+  final String? meetingKey;
+  final String? teachingClassId;
+  final String? source;
+
   const CourseBlock({
     required this.id,
     required this.courseCode,
@@ -54,6 +71,13 @@ class CourseBlock {
     this.periodOrder,
     this.periodLabel,
     this.periodLabels = const <String>[],
+    this.isOverridden = false,
+    this.overrideId,
+    this.hasConflict = false,
+    this.courseKey,
+    this.meetingKey,
+    this.teachingClassId,
+    this.source,
   });
 
   int get span => endSection - startSection + 1;
@@ -78,6 +102,13 @@ class CourseBlock {
     if (periodLabels.isNotEmpty) {
       json['period_labels'] = periodLabels;
     }
+    if (isOverridden) json['is_overridden'] = true;
+    if (overrideId != null) json['override_id'] = overrideId;
+    if (hasConflict) json['has_conflict'] = true;
+    if (courseKey != null) json['course_key'] = courseKey;
+    if (meetingKey != null) json['meeting_key'] = meetingKey;
+    if (teachingClassId != null) json['teaching_class_id'] = teachingClassId;
+    if (source != null) json['source'] = source;
     return json;
   }
 
@@ -102,6 +133,14 @@ class CourseBlock {
         : rawPeriodLabel != null && rawPeriodLabel.isNotEmpty
             ? <String>[rawPeriodLabel]
             : const <String>[];
+    final isOverridden = json['is_overridden'] == true;
+    final overrideId = json['override_id']?.toString();
+    final hasConflict = json['has_conflict'] == true;
+    final courseKey = json['course_key']?.toString();
+    final meetingKey = json['meeting_key']?.toString();
+    final teachingClassId = json['teaching_class_id']?.toString();
+    final source = json['source']?.toString();
+
     return CourseBlock(
       id: (json['id'] as num?)?.toInt() ?? 0,
       courseCode: json['course_code']?.toString() ?? '',
@@ -126,6 +165,13 @@ class CourseBlock {
           ? null
           : rawPeriodLabel,
       periodLabels: periodLabels,
+      isOverridden: isOverridden,
+      overrideId: overrideId,
+      hasConflict: hasConflict,
+      courseKey: courseKey,
+      meetingKey: meetingKey,
+      teachingClassId: teachingClassId,
+      source: source,
     );
   }
 }
@@ -232,6 +278,22 @@ class CourseScheduleProvider extends ChangeNotifier {
   // 课程数据
   List<CourseBlock> _courses = [];
   Map<int, Map<int, List<CourseBlock>>> _gridData = {};
+
+  // 课程底层结构与本地调整规则
+  List<Course> _baseSchedule = [];
+  List<ScheduleOverride> _overrides = [];
+  List<Course> _manualCourses = [];
+  List<ResolvedMeeting> _resolvedMeetings = [];
+
+  final ScheduleResolver _scheduleResolver = const ScheduleResolver();
+  final MeetingReconciler _meetingReconciler = const MeetingReconciler();
+  final ScheduleOverrideRepository _overrideRepository = ScheduleOverrideRepository();
+  final ScheduleConflictService _conflictService = const ScheduleConflictService();
+
+  List<ResolvedMeeting> get resolvedMeetings => _resolvedMeetings;
+  List<ScheduleOverride> get overrides => _overrides;
+  List<Course> get baseSchedule => _baseSchedule;
+  List<Course> get manualCourses => _manualCourses;
 
   Set<int> _hiddenCourseIds = {};
 
@@ -370,7 +432,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     _scheduleStoreReady = store == null
         ? Future<void>.value()
         : store.discardUnownedLegacy().catchError((Object error) {
-            debugPrint('清理旧课表明文失败: ${error.runtimeType}');
+            debugPrint('丢弃旧课表失败: ${error.runtimeType}');
           });
 
     if (store != null) {
@@ -678,15 +740,20 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (cached == null || cached.isEmpty) {
       return false;
     }
-    _courses = _coalesceGraduateCourses(cached);
+    final coalesced = _coalesceGraduateCourses(cached);
+    final termId = currentTerm.id;
+    _populateSchedulesFromBlocks(coalesced);
+    _overrides = await _overrideRepository.loadOverrides(
+      semesterId: termId,
+      accountId: _sourceAccountId,
+    );
+    _syncResolvedSchedule();
     if (_courses.length != cached.length) {
       await _saveToCache(_courses);
     }
-    _buildGrid();
     _isLoading = false;
     _errorMessage = null;
     notifyListeners();
-    _syncWidget(); // 更新桌面小部件
     return true;
   }
 
@@ -774,8 +841,32 @@ class CourseScheduleProvider extends ChangeNotifier {
       'cache namespace updated',
     );
 
-    _courses = parsedCourses;
-    _buildGrid();
+    final termId = currentTerm.id;
+    _overrides = await _overrideRepository.loadOverrides(
+      semesterId: termId,
+      accountId: _sourceAccountId,
+    );
+    final newEduCourses = _convertToCourses(
+      _coalesceGraduateCourses(fetchedCourses),
+      termId,
+    );
+    final reconcileResult = _meetingReconciler.reconcile(
+      oldBaseSchedule: _baseSchedule,
+      newEduCourses: newEduCourses,
+      existingOverrides: _overrides,
+      semesterId: termId,
+    );
+    _baseSchedule = reconcileResult.reconciledCourses;
+    _overrides = reconcileResult.updatedOverrides;
+    await _overrideRepository.saveOverrides(
+      semesterId: termId,
+      overrides: _overrides,
+      accountId: _sourceAccountId,
+    );
+
+    _populateManualCoursesFromBlocks(customCourses);
+    _syncResolvedSchedule();
+
     _isLoading = false;
     _errorMessage = null;
 
@@ -1243,12 +1334,16 @@ class CourseScheduleProvider extends ChangeNotifier {
       final cached =
           cachedRaw == null ? null : _coalesceGraduateCourses(cachedRaw);
       if (cached != null && cached.isNotEmpty) {
-        _courses = cached;
+        _populateSchedulesFromBlocks(cached);
+        _overrides = await _overrideRepository.loadOverrides(
+          semesterId: currentTerm.id,
+          accountId: _sourceAccountId,
+        );
+        _syncResolvedSchedule();
         if (cachedRaw != null && cached.length != cachedRaw.length) {
-          await _saveOperationCourses(operation, cached);
+          await _saveOperationCourses(operation, _courses);
           if (!_isCurrentOperation(operation)) return;
         }
-        _buildGrid();
         debugPrint('从手机缓存加载课程: count=${_courses.length}');
         _isLoading = false;
         notifyListeners();
@@ -1399,6 +1494,354 @@ class CourseScheduleProvider extends ChangeNotifier {
     Future.microtask(() => HomeWidgetService.syncCourseData(this));
   }
 
+  /// 重新解析课表并更新内存中的 _courses 与桌面小部件
+  void _syncResolvedSchedule() {
+    final termId = currentTerm.id;
+    final resolved = _scheduleResolver.resolve(
+      baseSchedule: _baseSchedule,
+      overrides: _overrides,
+      manualCourses: _manualCourses,
+      semesterId: termId,
+    );
+    _resolvedMeetings = resolved;
+
+    _courses = resolved.map((r) {
+      final isManual = r.source == CourseSource.manual;
+      final int id = isManual
+          ? -(r.courseKey.hashCode.abs() % 100000000 + 1000)
+          : deterministicCourseId(
+            courseCode: r.courseCode ?? '',
+            name: r.courseName,
+            teacher: r.teacher,
+            location: r.room,
+            weekday: r.weekday,
+            startSection: r.startSection,
+            endSection: r.endSection,
+            weeks: r.weeks,
+          );
+
+      return CourseBlock(
+        id: id,
+        courseCode: r.courseCode ?? '',
+        name: r.courseName,
+        teacher: r.teacher,
+        location: r.room,
+        color: r.color,
+        weekday: r.weekday,
+        startSection: r.startSection,
+        endSection: r.endSection,
+        weeks: r.weeks.toList()..sort(),
+        note: r.note,
+        periodOrder: r.periodOrder,
+        periodLabel: r.periodLabel,
+        periodLabels: r.periodLabels,
+        isOverridden: r.isOverridden,
+        overrideId: r.overrideId,
+        hasConflict: r.hasConflict,
+        courseKey: r.courseKey,
+        meetingKey: r.meetingKey,
+        teachingClassId: r.teachingClassId,
+        source: r.source.name,
+      );
+    }).toList();
+
+    _buildGrid();
+    _syncWidget();
+  }
+
+  void _populateSchedulesFromBlocks(List<CourseBlock> blocks) {
+    final termId = currentTerm.id;
+    final eduBlocks = blocks.where((b) => b.id > 0).toList();
+    final manualBlocks = blocks.where((b) => b.id < 0).toList();
+
+    final eduGrouped = <String, List<CourseBlock>>{};
+    for (final b in eduBlocks) {
+      final cKey = b.courseKey ??
+          'edu:$termId:${b.courseCode.isNotEmpty ? b.courseCode : b.name}';
+      eduGrouped.putIfAbsent(cKey, () => []).add(b);
+    }
+
+    _baseSchedule = eduGrouped.entries.map((entry) {
+      final first = entry.value.first;
+      final meetings = entry.value.map((b) {
+        final sortedWks = b.weeks.toList()..sort();
+        final mKey = b.meetingKey ??
+            '${entry.key}:m:w${b.weekday}:s${b.startSection}-${b.endSection}:wks[${sortedWks.join(',')}]';
+        return Meeting(
+          meetingKey: mKey,
+          weekday: b.weekday,
+          startSection: b.startSection,
+          endSection: b.endSection,
+          weeks: b.weeks.toSet(),
+          room: b.location,
+          teacher: b.teacher,
+          note: b.note,
+          periodOrder: b.periodOrder,
+          periodLabel: b.periodLabel,
+          periodLabels: b.periodLabels,
+        );
+      }).toList();
+
+      return Course(
+        courseKey: entry.key,
+        semesterId: termId,
+        source: CourseSource.edu,
+        name: first.name,
+        courseCode: first.courseCode,
+        teachingClassId: first.teachingClassId,
+        teacher: first.teacher,
+        color: first.color,
+        meetings: meetings,
+      );
+    }).toList();
+
+    _populateManualCoursesFromBlocks(manualBlocks);
+  }
+
+  void _populateManualCoursesFromBlocks(List<CourseBlock> manualBlocks) {
+    final termId = currentTerm.id;
+    final manualGrouped = <String, List<CourseBlock>>{};
+    for (final b in manualBlocks) {
+      final cKey = b.courseKey ?? 'manual:$termId:${b.name}';
+      manualGrouped.putIfAbsent(cKey, () => []).add(b);
+    }
+
+    _manualCourses = manualGrouped.entries.map((entry) {
+      final first = entry.value.first;
+      final meetings = entry.value.map((b) {
+        final sortedWks = b.weeks.toList()..sort();
+        final mKey = b.meetingKey ??
+            '${entry.key}:m:w${b.weekday}:s${b.startSection}-${b.endSection}:wks[${sortedWks.join(',')}]';
+        return Meeting(
+          meetingKey: mKey,
+          weekday: b.weekday,
+          startSection: b.startSection,
+          endSection: b.endSection,
+          weeks: b.weeks.toSet(),
+          room: b.location,
+          teacher: b.teacher,
+          note: b.note,
+          periodOrder: b.periodOrder,
+          periodLabel: b.periodLabel,
+          periodLabels: b.periodLabels,
+        );
+      }).toList();
+
+      return Course(
+        courseKey: entry.key,
+        semesterId: termId,
+        source: CourseSource.manual,
+        name: first.name,
+        teacher: first.teacher,
+        color: first.color,
+        meetings: meetings,
+      );
+    }).toList();
+  }
+
+  List<Course> _convertToCourses(List<CourseBlock> blocks, String semesterId) {
+    final grouped = <String, List<CourseBlock>>{};
+    for (final b in blocks) {
+      final cKey = b.courseKey ??
+          'edu:$semesterId:${b.courseCode.isNotEmpty ? b.courseCode : b.name}';
+      grouped.putIfAbsent(cKey, () => []).add(b);
+    }
+
+    return grouped.entries.map((entry) {
+      final first = entry.value.first;
+      final meetings = entry.value.map((b) {
+        final sortedWks = b.weeks.toList()..sort();
+        final mKey = b.meetingKey ??
+            '${entry.key}:m:w${b.weekday}:s${b.startSection}-${b.endSection}:wks[${sortedWks.join(',')}]';
+        return Meeting(
+          meetingKey: mKey,
+          weekday: b.weekday,
+          startSection: b.startSection,
+          endSection: b.endSection,
+          weeks: b.weeks.toSet(),
+          room: b.location,
+          teacher: b.teacher,
+          note: b.note,
+          periodOrder: b.periodOrder,
+          periodLabel: b.periodLabel,
+          periodLabels: b.periodLabels,
+        );
+      }).toList();
+
+      return Course(
+        courseKey: entry.key,
+        semesterId: semesterId,
+        source: CourseSource.edu,
+        name: first.name,
+        courseCode: first.courseCode,
+        teachingClassId: first.teachingClassId,
+        teacher: first.teacher,
+        color: first.color,
+        meetings: meetings,
+      );
+    }).toList();
+  }
+
+  /// 创建时间调整规则 (Section 18 - 20)
+  Future<ScheduleOverride> createRescheduleOverride({
+    required String courseKey,
+    required String meetingKey,
+    required Set<int> affectedWeeks,
+    required int toWeekday,
+    required int toStartSection,
+    required int toEndSection,
+    String? toRoom,
+    required String sourceSnapshotHash,
+    int? fromWeekday,
+    int? fromStartSection,
+    int? fromEndSection,
+    String? fromRoom,
+    bool allowConflict = false,
+  }) async {
+    final newId = 'ov_${DateTime.now().millisecondsSinceEpoch}';
+    var status = ScheduleOverrideStatus.active;
+
+    final conflictCheck = _conflictService.check(
+      currentResolved: _resolvedMeetings,
+      targetCourseKey: courseKey,
+      targetMeetingKey: meetingKey,
+      targetWeekday: toWeekday,
+      targetStartSection: toStartSection,
+      targetEndSection: toEndSection,
+      targetWeeks: affectedWeeks,
+    );
+    if (conflictCheck.hasConflict) {
+      status = ScheduleOverrideStatus.conflicted;
+    }
+
+    final override = ScheduleOverride(
+      id: newId,
+      semesterId: currentTerm.id,
+      courseKey: courseKey,
+      meetingKey: meetingKey,
+      type: ScheduleOverrideType.reschedule,
+      status: status,
+      affectedWeeks: affectedWeeks,
+      toWeekday: toWeekday,
+      toStartSection: toStartSection,
+      toEndSection: toEndSection,
+      toRoom: toRoom,
+      sourceSnapshotHash: sourceSnapshotHash,
+      fromWeekday: fromWeekday,
+      fromStartSection: fromStartSection,
+      fromEndSection: fromEndSection,
+      fromRoom: fromRoom,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+
+    await _overrideRepository.upsertOverride(
+      override: override,
+      accountId: _sourceAccountId,
+    );
+    _overrides = await _overrideRepository.loadOverrides(
+      semesterId: currentTerm.id,
+      accountId: _sourceAccountId,
+    );
+    _syncResolvedSchedule();
+    if (_userId != null) await _saveToCache(_courses);
+    notifyListeners();
+    return override;
+  }
+
+  /// 创建教室调整规则 (Section 22)
+  Future<ScheduleOverride> createChangeRoomOverride({
+    required String courseKey,
+    required String meetingKey,
+    required Set<int> affectedWeeks,
+    required String toRoom,
+    required String sourceSnapshotHash,
+    String? fromRoom,
+  }) async {
+    final newId = 'ov_${DateTime.now().millisecondsSinceEpoch}';
+    final override = ScheduleOverride(
+      id: newId,
+      semesterId: currentTerm.id,
+      courseKey: courseKey,
+      meetingKey: meetingKey,
+      type: ScheduleOverrideType.changeRoom,
+      status: ScheduleOverrideStatus.active,
+      affectedWeeks: affectedWeeks,
+      toRoom: toRoom,
+      sourceSnapshotHash: sourceSnapshotHash,
+      fromRoom: fromRoom,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+
+    await _overrideRepository.upsertOverride(
+      override: override,
+      accountId: _sourceAccountId,
+    );
+    _overrides = await _overrideRepository.loadOverrides(
+      semesterId: currentTerm.id,
+      accountId: _sourceAccountId,
+    );
+    _syncResolvedSchedule();
+    if (_userId != null) await _saveToCache(_courses);
+    notifyListeners();
+    return override;
+  }
+
+  /// 更新已有调整规则 (Section 26)
+  Future<ScheduleOverride> updateExistingOverride({
+    required ScheduleOverride updated,
+    bool allowConflict = false,
+  }) async {
+    await _overrideRepository.upsertOverride(
+      override: updated,
+      accountId: _sourceAccountId,
+    );
+    _overrides = await _overrideRepository.loadOverrides(
+      semesterId: currentTerm.id,
+      accountId: _sourceAccountId,
+    );
+    _syncResolvedSchedule();
+    if (_userId != null) await _saveToCache(_courses);
+    notifyListeners();
+    return updated;
+  }
+
+  /// 恢复教务原课 (Section 25: 删除 Override，重跑 Resolver)
+  Future<void> restoreBaseMeeting(String overrideId) async {
+    await _overrideRepository.deleteOverride(
+      overrideId: overrideId,
+      semesterId: currentTerm.id,
+      accountId: _sourceAccountId,
+    );
+    _overrides = await _overrideRepository.loadOverrides(
+      semesterId: currentTerm.id,
+      accountId: _sourceAccountId,
+    );
+    _syncResolvedSchedule();
+    if (_userId != null) await _saveToCache(_courses);
+    notifyListeners();
+  }
+
+  /// 重新确认变更后的课表调整 (Section 10 & 17)
+  Future<void> confirmNeedsReviewOverride(String overrideId) async {
+    final idx = _overrides.indexWhere((o) => o.id == overrideId);
+    if (idx < 0) return;
+    final current = _overrides[idx];
+    final courseMatches = _baseSchedule.where((c) => c.courseKey == current.courseKey);
+    final course = courseMatches.isNotEmpty ? courseMatches.first : null;
+    final meetingMatches = course?.meetings.where((m) => m.meetingKey == current.meetingKey);
+    final meeting = (meetingMatches != null && meetingMatches.isNotEmpty) ? meetingMatches.first : null;
+    final newHash = meeting?.computeSnapshotHash() ?? current.sourceSnapshotHash;
+
+    final updated = current.copyWith(
+      status: ScheduleOverrideStatus.active,
+      sourceSnapshotHash: newHash,
+      updatedAt: DateTime.now(),
+    );
+    await updateExistingOverride(updated: updated);
+  }
+
   /// 保存课程到当前账号和来源账号绑定的 AES-GCM 保险箱。
   Future<void> _saveToCache(List<CourseBlock> courses) async {
     final operation = _captureOperationContext();
@@ -1525,13 +1968,13 @@ class CourseScheduleProvider extends ChangeNotifier {
     );
 
     _courses.insert(0, course);
-    _buildGrid();
+    _populateManualCoursesFromBlocks(_courses.where((c) => c.id < 0).toList());
+    _syncResolvedSchedule();
 
     if (_userId != null) {
       await _saveToCache(_courses);
     }
 
-    _syncWidget();
     notifyListeners();
     return course;
   }
@@ -1572,13 +2015,13 @@ class CourseScheduleProvider extends ChangeNotifier {
     );
 
     _courses[idx] = course;
-    _buildGrid();
+    _populateManualCoursesFromBlocks(_courses.where((c) => c.id < 0).toList());
+    _syncResolvedSchedule();
 
     if (_userId != null) {
       await _saveToCache(_courses);
     }
 
-    _syncWidget();
     notifyListeners();
     return course;
   }
@@ -1590,11 +2033,11 @@ class CourseScheduleProvider extends ChangeNotifier {
       _hiddenCourseIds.add(courseId);
       await _saveHiddenCourses();
     }
-    _buildGrid();
+    _populateManualCoursesFromBlocks(_courses.where((c) => c.id < 0).toList());
+    _syncResolvedSchedule();
     if (_userId != null) {
       await _saveToCache(_courses);
     }
-    _syncWidget();
     notifyListeners();
   }
 

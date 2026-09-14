@@ -38,6 +38,8 @@ import 'theme/app_text_scaler.dart';
 import 'features/academic/application/academic_session_controller.dart';
 import 'features/academic/application/academic_login_coordinator.dart';
 import 'features/academic/data/academic_repository_impl.dart';
+import 'services/home_widget_service.dart';
+import 'services/exam_schedule_repository.dart';
 import 'features/academic/data/academic_server_access_guard.dart';
 import 'features/academic/data/datasource/jiaowu_local_data_source.dart';
 import 'features/academic/data/datasource/legacy_server_data_source.dart';
@@ -1475,6 +1477,15 @@ class MyApp extends StatelessWidget {
           AccountSessionCleanupCoordinator.instance.register(
             postProvider,
             () => postProvider.invalidateHomeFeedCaches(),
+          );
+          // 退出/切换账号时清理小组件与本地考试数据，防止跨账号隐私残留。
+          AccountSessionCleanupCoordinator.instance.register(
+            'home_widget_exam_session_cleanup',
+            () async {
+              await HomeWidgetService.clearCourseData();
+              await HomeWidgetService.clearExamData();
+              await ExamScheduleRepository().clear();
+            },
           );
           return postProvider;
         }),

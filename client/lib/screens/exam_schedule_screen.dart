@@ -14,6 +14,8 @@ import 'package:add_2_calendar/add_2_calendar.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import '../widgets/glass_container.dart';
+import '../features/academic/domain/academic_provider.dart';
+import '../features/academic/application/academic_session_controller.dart';
 import '../services/home_widget_service.dart';
 import 'home_widget_settings_screen.dart';
 
@@ -241,6 +243,10 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   void _syncWidget() {
     _syncTimer?.cancel();
     _syncTimer = Timer(const Duration(milliseconds: 500), () async {
+      AcademicIdentityKey? identity;
+      try {
+        identity = context.read<AcademicSessionController>().identity;
+      } catch (_) {}
       await HomeWidgetService.syncExamData(
         _exams.map(
           (exam) => HomeWidgetExamEntry(
@@ -250,6 +256,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
             location: exam.location,
           ),
         ),
+        identity: identity,
       );
     });
   }
@@ -788,6 +795,10 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
             tooltip: '桌面小组件',
             onPressed: () async {
               _syncTimer?.cancel();
+              AcademicIdentityKey? identity;
+              try {
+                identity = context.read<AcademicSessionController>().identity;
+              } catch (_) {}
               await HomeWidgetService.syncExamData(
                 _exams.map(
                   (exam) => HomeWidgetExamEntry(
@@ -797,6 +808,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                     location: exam.location,
                   ),
                 ),
+                identity: identity,
               );
               if (!context.mounted) return;
               await Navigator.of(context).push(

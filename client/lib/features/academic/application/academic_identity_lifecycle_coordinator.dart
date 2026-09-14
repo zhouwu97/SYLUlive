@@ -136,6 +136,8 @@ final class AcademicIdentityLifecycleCoordinator {
     } else {
       await attempt(() => HomeWidgetService.clearCourseDataForIdentity(identity,
           includeLegacy: isCurrent || includeLegacyAuxiliary));
+      await attempt(() => HomeWidgetService.clearExamDataForIdentity(identity,
+          includeLegacy: isCurrent || includeLegacyAuxiliary));
       await attempt(() => CourseReminderService.instance.clearForIdentity(
           identity,
           includeLegacy: isCurrent || includeLegacyAuxiliary));

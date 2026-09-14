@@ -92,6 +92,18 @@ func newWaterTestUser(t *testing.T, db *gorm.DB, eduBound bool) models.User {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	if eduBound {
+		if err := db.Create(&models.AcademicIdentityBinding{
+			UserID:              user.ID,
+			ProviderID:          models.AcademicProviderUndergraduate,
+			StudentID:           user.StudentID,
+			VerifiedAt:          *verifiedAt,
+			VerificationMethod:  "test",
+			VerificationVersion: "1",
+		}).Error; err != nil {
+			t.Fatalf("create binding: %v", err)
+		}
+	}
 	return user
 }
 

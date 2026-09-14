@@ -6,12 +6,20 @@ import '../../../theme/app_theme_tokens.dart';
 class SelectTimeSheet extends StatefulWidget {
   final CourseBlock course;
   final Set<int> affectedWeeks;
+  final int? initialWeekday;
+  final int? initialStartSection;
+  final int? initialEndSection;
+  final String? initialRoom;
   final void Function(int weekday, int startSection, int endSection, String? newRoom) onNext;
 
   const SelectTimeSheet({
     super.key,
     required this.course,
     required this.affectedWeeks,
+    this.initialWeekday,
+    this.initialStartSection,
+    this.initialEndSection,
+    this.initialRoom,
     required this.onNext,
   });
 
@@ -19,6 +27,10 @@ class SelectTimeSheet extends StatefulWidget {
     BuildContext context, {
     required CourseBlock course,
     required Set<int> affectedWeeks,
+    int? initialWeekday,
+    int? initialStartSection,
+    int? initialEndSection,
+    String? initialRoom,
   }) {
     return showModalBottomSheet<({int weekday, int startSection, int endSection, String? newRoom})>(
       context: context,
@@ -27,6 +39,10 @@ class SelectTimeSheet extends StatefulWidget {
       builder: (ctx) => SelectTimeSheet(
         course: course,
         affectedWeeks: affectedWeeks,
+        initialWeekday: initialWeekday,
+        initialStartSection: initialStartSection,
+        initialEndSection: initialEndSection,
+        initialRoom: initialRoom,
         onNext: (weekday, start, end, room) {
           Navigator.pop(ctx, (
             weekday: weekday,
@@ -62,10 +78,10 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedWeekday = widget.course.weekday;
-    _selectedStartSection = widget.course.startSection;
-    _selectedEndSection = widget.course.endSection;
-    _roomController = TextEditingController(text: widget.course.location ?? '');
+    _selectedWeekday = widget.initialWeekday ?? widget.course.weekday;
+    _selectedStartSection = widget.initialStartSection ?? widget.course.startSection;
+    _selectedEndSection = widget.initialEndSection ?? widget.course.endSection;
+    _roomController = TextEditingController(text: widget.initialRoom ?? widget.course.location ?? '');
   }
 
   @override

@@ -16,6 +16,7 @@ class Meeting {
   final int? periodOrder;
   final String? periodLabel;
   final List<String> periodLabels;
+  final int? sourceCourseId;
 
   const Meeting({
     required this.meetingKey,
@@ -29,6 +30,7 @@ class Meeting {
     this.periodOrder,
     this.periodLabel,
     this.periodLabels = const <String>[],
+    this.sourceCourseId,
   });
 
   int get span => endSection - startSection + 1;
@@ -54,6 +56,7 @@ class Meeting {
     int? periodOrder,
     String? periodLabel,
     List<String>? periodLabels,
+    int? sourceCourseId,
   }) {
     return Meeting(
       meetingKey: meetingKey ?? this.meetingKey,
@@ -67,6 +70,7 @@ class Meeting {
       periodOrder: periodOrder ?? this.periodOrder,
       periodLabel: periodLabel ?? this.periodLabel,
       periodLabels: periodLabels ?? this.periodLabels,
+      sourceCourseId: sourceCourseId ?? this.sourceCourseId,
     );
   }
 
@@ -88,6 +92,9 @@ class Meeting {
     }
     if (periodLabels.isNotEmpty) {
       json['period_labels'] = periodLabels;
+    }
+    if (sourceCourseId != null) {
+      json['source_course_id'] = sourceCourseId;
     }
     return json;
   }
@@ -117,6 +124,7 @@ class Meeting {
       periodOrder: (json['period_order'] as num?)?.toInt(),
       periodLabel: json['period_label']?.toString(),
       periodLabels: parsedLabels,
+      sourceCourseId: (json['source_course_id'] as num?)?.toInt(),
     );
   }
 

@@ -1523,16 +1523,18 @@ class CourseScheduleProvider extends ChangeNotifier {
       final isManual = r.source == CourseSource.manual;
       final int id = isManual
           ? -(r.courseKey.hashCode.abs() % 100000000 + 1000)
-          : deterministicCourseId(
-            courseCode: r.courseCode ?? '',
-            name: r.courseName,
-            teacher: r.teacher,
-            location: r.room,
-            weekday: r.weekday,
-            startSection: r.startSection,
-            endSection: r.endSection,
-            weeks: r.weeks,
-          );
+          : (r.sourceCourseId != null && r.sourceCourseId != 0
+              ? r.sourceCourseId!
+              : deterministicCourseId(
+                  courseCode: r.courseCode ?? '',
+                  name: r.courseName,
+                  teacher: r.teacher,
+                  location: r.room,
+                  weekday: r.weekday,
+                  startSection: r.startSection,
+                  endSection: r.endSection,
+                  weeks: r.weeks,
+                ));
 
       return CourseBlock(
         id: id,
@@ -1594,6 +1596,7 @@ class CourseScheduleProvider extends ChangeNotifier {
           periodOrder: b.periodOrder,
           periodLabel: b.periodLabel,
           periodLabels: b.periodLabels,
+          sourceCourseId: b.id,
         );
       }).toList();
 
@@ -1639,6 +1642,7 @@ class CourseScheduleProvider extends ChangeNotifier {
           periodOrder: b.periodOrder,
           periodLabel: b.periodLabel,
           periodLabels: b.periodLabels,
+          sourceCourseId: b.id,
         );
       }).toList();
 
@@ -1697,7 +1701,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     }).toList();
   }
 
-  /// 创建时间调整规则 (Section 18 - 20)
+  /// 创建或更新时间调整规则 (Section 18 - 20)
   Future<ScheduleOverride> createRescheduleOverride({
     required String courseKey,
     required String meetingKey,
@@ -1712,8 +1716,9 @@ class CourseScheduleProvider extends ChangeNotifier {
     int? fromEndSection,
     String? fromRoom,
     bool allowConflict = false,
+    String? overrideId,
   }) async {
-    final newId = 'ov_${DateTime.now().millisecondsSinceEpoch}';
+    final effectiveId = overrideId ?? 'ov_${DateTime.now().millisecondsSinceEpoch}';
     var status = ScheduleOverrideStatus.active;
 
     final conflictCheck = _conflictService.check(
@@ -1724,13 +1729,17 @@ class CourseScheduleProvider extends ChangeNotifier {
       targetStartSection: toStartSection,
       targetEndSection: toEndSection,
       targetWeeks: affectedWeeks,
+      editingOverrideId: overrideId,
     );
     if (conflictCheck.hasConflict) {
+      if (!allowConflict) {
+        throw StateError('存在课程时间冲突，请确认或重新选择时间');
+      }
       status = ScheduleOverrideStatus.conflicted;
     }
 
     final override = ScheduleOverride(
-      id: newId,
+      id: effectiveId,
       semesterId: currentTerm.id,
       courseKey: courseKey,
       meetingKey: meetingKey,
@@ -1764,7 +1773,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     return override;
   }
 
-  /// 创建教室调整规则 (Section 22)
+  /// 创建或更新教室调整规则 (Section 22)
   Future<ScheduleOverride> createChangeRoomOverride({
     required String courseKey,
     required String meetingKey,
@@ -1772,10 +1781,11 @@ class CourseScheduleProvider extends ChangeNotifier {
     required String toRoom,
     required String sourceSnapshotHash,
     String? fromRoom,
+    String? overrideId,
   }) async {
-    final newId = 'ov_${DateTime.now().millisecondsSinceEpoch}';
+    final effectiveId = overrideId ?? 'ov_${DateTime.now().millisecondsSinceEpoch}';
     final override = ScheduleOverride(
-      id: newId,
+      id: effectiveId,
       semesterId: currentTerm.id,
       courseKey: courseKey,
       meetingKey: meetingKey,

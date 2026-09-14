@@ -21,6 +21,13 @@ class ScheduleResolverException implements Exception {
 class ScheduleResolver {
   const ScheduleResolver();
 
+  static final Set<int> _defaultTeachingWeeks =
+      Set<int>.unmodifiable(List.generate(20, (i) => i + 1));
+
+  static Set<int> _normalizeWeeks(Set<int> weeks) {
+    return weeks.isNotEmpty ? weeks : _defaultTeachingWeeks;
+  }
+
   /// 解析并生成当前学期的最终课表
   List<ResolvedMeeting> resolve({
     required List<Course> baseSchedule,
@@ -53,19 +60,18 @@ class ScheduleResolver {
       if (semesterId != null && course.semesterId != semesterId) continue;
 
       for (final meeting in course.meetings) {
+        final effectiveWeeks = _normalizeWeeks(meeting.weeks);
         final meetingOverrides =
             overrideMap[course.courseKey]?[meeting.meetingKey] ?? const [];
 
         if (meetingOverrides.isEmpty) {
           // 没有本地调整，原样保留
-          if (meeting.weeks.isNotEmpty) {
-            resolvedList.add(_createResolved(
-              course: course,
-              meeting: meeting,
-              weeks: meeting.weeks,
-              isOverridden: false,
-            ));
-          }
+          resolvedList.add(_createResolved(
+            course: course,
+            meeting: meeting,
+            weeks: effectiveWeeks,
+            isOverridden: false,
+          ));
           continue;
         }
 
@@ -75,7 +81,7 @@ class ScheduleResolver {
 
         for (final ov in meetingOverrides) {
           // Section 14: 取 affectedWeeks 与课程实际存在周次的交集
-          final actual = ov.affectedWeeks.intersection(meeting.weeks);
+          final actual = ov.affectedWeeks.intersection(effectiveWeeks);
           if (actual.isNotEmpty) {
             allAffectedWeeks.addAll(actual);
             overrideWithActualWeeks.add((override: ov, actualWeeks: actual));
@@ -83,7 +89,7 @@ class ScheduleResolver {
         }
 
         // Section 13: BaseWeeks - affectedWeeks = RemainingWeeks
-        final remainingWeeks = meeting.weeks.difference(allAffectedWeeks);
+        final remainingWeeks = effectiveWeeks.difference(allAffectedWeeks);
         if (remainingWeeks.isNotEmpty) {
           resolvedList.add(_createResolved(
             course: course,
@@ -125,6 +131,7 @@ class ScheduleResolver {
                 periodOrder: meeting.periodOrder,
                 periodLabel: meeting.periodLabel,
                 periodLabels: meeting.periodLabels,
+                sourceCourseId: meeting.sourceCourseId,
               ));
               break;
 
@@ -150,6 +157,7 @@ class ScheduleResolver {
                 periodOrder: meeting.periodOrder,
                 periodLabel: meeting.periodLabel,
                 periodLabels: meeting.periodLabels,
+                sourceCourseId: meeting.sourceCourseId,
               ));
               break;
           }
@@ -161,11 +169,10 @@ class ScheduleResolver {
     for (final course in manualCourses) {
       if (semesterId != null && course.semesterId != semesterId) continue;
       for (final meeting in course.meetings) {
-        if (meeting.weeks.isEmpty) continue;
         resolvedList.add(_createResolved(
           course: course,
           meeting: meeting,
-          weeks: meeting.weeks,
+          weeks: _normalizeWeeks(meeting.weeks),
           isOverridden: false,
         ));
       }
@@ -203,6 +210,7 @@ class ScheduleResolver {
       periodOrder: meeting.periodOrder,
       periodLabel: meeting.periodLabel,
       periodLabels: meeting.periodLabels,
+      sourceCourseId: meeting.sourceCourseId,
     );
   }
 

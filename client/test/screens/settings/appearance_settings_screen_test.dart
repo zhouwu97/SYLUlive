@@ -94,6 +94,12 @@ void main() {
     expect(find.text('简洁模式'), findsOneWidget);
     expect(find.text('自定义背景'), findsOneWidget);
     expect(find.text('深色模式'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.text('文字显示'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('文字显示'), findsOneWidget);
     expect(find.text('字体大小'), findsOneWidget);
     expect(find.text('标准 100%'), findsOneWidget);

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -208,12 +209,12 @@ func (h *AppealHandler) CreateByReport(c *gin.Context) {
 
 func notifyAppealOpened(db *gorm.DB, appeal models.Appeal) {
 	if appeal.Status == models.AppealStatusReview {
-		_ = CreateAppealNotification(db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealReviewRequired,
+		sendAppealNotification(db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealReviewRequired,
 			"案件已转交独立管理员复核，请等待最终结果。", fmt.Sprintf("appeal-review-required:%d:appellant", appeal.ID))
 		notifyIndependentReviewers(db, appeal.ID, appeal.AdminID)
 		return
 	}
-	_ = CreateAppealNotification(db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealCreated,
+	sendAppealNotification(db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealCreated,
 		"你的申诉已创建，公众法庭将开始复核。", fmt.Sprintf("appeal-created:%d", appeal.ID))
 }
 
@@ -226,15 +227,22 @@ func notifyIndependentReviewers(db *gorm.DB, appealID, originalAdminID uint) {
 		return
 	}
 	if len(reviewerIDs) == 0 {
-		_ = CreateAppealNotification(db, originalAdminID, appealID, models.NotificationTypeAppealReviewRequired,
+		sendAppealNotification(db, originalAdminID, appealID, models.NotificationTypeAppealReviewRequired,
 			"当前暂无可用的独立复核管理员，案件已进入待分配复核队列。", fmt.Sprintf("appeal-review-required:%d:waiting", appealID))
 		return
 	}
-	_ = CreateAppealNotification(db, originalAdminID, appealID, models.NotificationTypeAppealReviewRequired,
+	sendAppealNotification(db, originalAdminID, appealID, models.NotificationTypeAppealReviewRequired,
 		"该案件已转交其他管理员复核，你无需处理。", fmt.Sprintf("appeal-review-required:%d:original-admin", appealID))
 	for _, reviewerID := range reviewerIDs {
-		_ = CreateAppealNotification(db, reviewerID, appealID, models.NotificationTypeAppealReviewRequired,
+		sendAppealNotification(db, reviewerID, appealID, models.NotificationTypeAppealReviewRequired,
 			"有公众法庭案件待人工复核，请查看法庭复核待办。", fmt.Sprintf("appeal-review-required:%d:reviewer:%d", appealID, reviewerID))
+	}
+}
+
+func sendAppealNotification(db *gorm.DB, toUserID, appealID uint, notificationType, content, dedupKey string) {
+	if err := CreateAppealNotification(db, toUserID, appealID, notificationType, content, dedupKey); err != nil {
+		log.Printf("[APPEAL_NOTIFICATION_FAILED] to_user_id=%d appeal_id=%d type=%s dedup=%s err=%v",
+			toUserID, appealID, notificationType, dedupKey, err)
 	}
 }
 
@@ -502,12 +510,12 @@ func (h *AppealHandler) AdminResolveReview(c *gin.Context) {
 		return
 	}
 	message := "人工复核已完成，请查看公众法庭案件结果。"
-	_ = CreateAppealNotification(h.db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealResult, message, fmt.Sprintf("appeal-result:%d:appellant", appeal.ID))
-	_ = CreateAppealNotification(h.db, appeal.AdminID, appeal.ID, models.NotificationTypeAppealResult, message, fmt.Sprintf("appeal-result:%d:admin", appeal.ID))
+	sendAppealNotification(h.db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealResult, message, fmt.Sprintf("appeal-result:%d:appellant", appeal.ID))
+	sendAppealNotification(h.db, appeal.AdminID, appeal.ID, models.NotificationTypeAppealResult, message, fmt.Sprintf("appeal-result:%d:admin", appeal.ID))
 	var jury []models.AppealVote
 	if h.db.Where("appeal_id = ? AND recused = ?", appeal.ID, false).Find(&jury).Error == nil {
 		for _, vote := range jury {
-			_ = CreateAppealNotification(h.db, vote.VoterID, appeal.ID, models.NotificationTypeAppealResult,
+			sendAppealNotification(h.db, vote.VoterID, appeal.ID, models.NotificationTypeAppealResult,
 				"你参与的公众法庭案件已完成人工复核，请查看最终结果。", fmt.Sprintf("appeal-result:%d:jury:%d", appeal.ID, vote.VoterID))
 		}
 	}
@@ -619,6 +627,9 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 		if appeal.Status != models.AppealStatusPending {
 			return fmt.Errorf("申诉已处理完毕，不能再投票")
 		}
+		if appeal.VotingDeadline != nil && !time.Now().Before(*appeal.VotingDeadline) {
+			return errors.New("voting_closed:投票已截止，不能再投票")
+		}
 
 		// 检查是否是有效的陪审员
 		var vote models.AppealVote
@@ -727,6 +738,13 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 	})
 
 	if err != nil {
+		if strings.HasPrefix(err.Error(), "voting_closed:") {
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "投票已截止，不能再投票",
+				"code":  "voting_closed",
+			})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -740,16 +758,16 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 			message = "公众法庭案件已转交独立管理员复核，请等待最终结果。"
 			notificationType = models.NotificationTypeAppealReviewRequired
 			notificationKey = "appeal-review-required"
-			_ = CreateAppealNotification(h.db, closedAppeal.AppellantID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:appellant", notificationKey, closedAppeal.ID))
+			sendAppealNotification(h.db, closedAppeal.AppellantID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:appellant", notificationKey, closedAppeal.ID))
 		} else {
-			_ = CreateAppealNotification(h.db, closedAppeal.AppellantID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:appellant", notificationKey, closedAppeal.ID))
-			_ = CreateAppealNotification(h.db, closedAppeal.AdminID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:admin", notificationKey, closedAppeal.ID))
+			sendAppealNotification(h.db, closedAppeal.AppellantID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:appellant", notificationKey, closedAppeal.ID))
+			sendAppealNotification(h.db, closedAppeal.AdminID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:admin", notificationKey, closedAppeal.ID))
 		}
 		if closedAppeal.Status == models.AppealStatusPass || closedAppeal.Status == models.AppealStatusReject {
 			var jury []models.AppealVote
 			if h.db.Where("appeal_id = ? AND recused = ?", appealID, false).Find(&jury).Error == nil {
 				for _, assigned := range jury {
-					_ = CreateAppealNotification(h.db, assigned.VoterID, uint(appealID), models.NotificationTypeAppealResult,
+					sendAppealNotification(h.db, assigned.VoterID, uint(appealID), models.NotificationTypeAppealResult,
 						message, fmt.Sprintf("appeal-result:%d:jury:%d", appealID, assigned.VoterID))
 				}
 			}

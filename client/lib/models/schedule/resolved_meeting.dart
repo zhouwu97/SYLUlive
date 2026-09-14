@@ -39,6 +39,7 @@ class ResolvedMeeting {
   final int? periodOrder;
   final String? periodLabel;
   final List<String> periodLabels;
+  final int? sourceCourseId;
 
   const ResolvedMeeting({
     required this.semesterId,
@@ -63,6 +64,7 @@ class ResolvedMeeting {
     this.periodOrder,
     this.periodLabel,
     this.periodLabels = const <String>[],
+    this.sourceCourseId,
   }) : _legacyHasConflict = hasConflict;
 
   int get span => endSection - startSection + 1;
@@ -90,6 +92,7 @@ class ResolvedMeeting {
     int? periodOrder,
     String? periodLabel,
     List<String>? periodLabels,
+    int? sourceCourseId,
   }) {
     final effectiveConflictWeeks = conflictWeeks ??
         (hasConflict == false
@@ -121,6 +124,7 @@ class ResolvedMeeting {
       periodOrder: periodOrder ?? this.periodOrder,
       periodLabel: periodLabel ?? this.periodLabel,
       periodLabels: periodLabels ?? this.periodLabels,
+      sourceCourseId: sourceCourseId ?? this.sourceCourseId,
     );
   }
 
@@ -129,7 +133,7 @@ class ResolvedMeeting {
     final sortedWeeks = weeks.toList()..sort();
     final sortedConflictWeeks = conflictWeeks.toList()..sort();
     return {
-      'id': deterministicId ?? (source == CourseSource.manual ? -1 : 1),
+      'id': deterministicId ?? sourceCourseId ?? (source == CourseSource.manual ? -1 : 1),
       'course_code': courseCode ?? '',
       'name': courseName,
       'teacher': teacher,

@@ -9,6 +9,7 @@ import 'reschedule/select_time_sheet.dart';
 import 'reschedule/confirm_change_sheet.dart';
 import 'reschedule/change_room_sheet.dart';
 import '../../services/schedule/schedule_conflict_service.dart';
+import '../../utils/week_formatter.dart';
 
 /// 课程详情与本地调整 BottomSheet（升级版）
 class CourseDetailSheet extends StatelessWidget {
@@ -222,9 +223,7 @@ class CourseDetailSheet extends StatelessWidget {
                 _buildDetailRow(
                   Icons.date_range,
                   '周次',
-                  course.weeks.isNotEmpty
-                      ? '第${course.weeks.first}-${course.weeks.last}周'
-                      : '全周',
+                  WeekFormatter.format(course.weeks, prefixWithDi: true),
                   tokens,
                 ),
                 if (course.courseCode.isNotEmpty && course.courseCode != 'CUSTOM')
@@ -480,11 +479,31 @@ class CourseDetailSheet extends StatelessWidget {
     );
     if (affectedWeeks == null || affectedWeeks.isEmpty || !context.mounted) return;
 
+    await _runRescheduleFromStep2(
+      context: context,
+      provider: provider,
+      affectedWeeks: affectedWeeks,
+    );
+  }
+
+  Future<void> _runRescheduleFromStep2({
+    required BuildContext context,
+    required CourseScheduleProvider provider,
+    required Set<int> affectedWeeks,
+    int? initialWeekday,
+    int? initialStartSection,
+    int? initialEndSection,
+    String? initialRoom,
+  }) async {
     // 步骤 2：选择目标时间
     final targetTime = await SelectTimeSheet.show(
       context,
       course: course,
       affectedWeeks: affectedWeeks,
+      initialWeekday: initialWeekday,
+      initialStartSection: initialStartSection,
+      initialEndSection: initialEndSection,
+      initialRoom: initialRoom,
     );
     if (targetTime == null || !context.mounted) return;
 
@@ -517,8 +536,16 @@ class CourseDetailSheet extends StatelessWidget {
         conflictResult: conflictResult,
         onBackToEdit: () {
           Navigator.pop(ctx);
-          // 重新打开步骤2
-          _startRescheduleFlow(context, provider);
+          // 重新打开步骤2，保留已选的 targetTime
+          _runRescheduleFromStep2(
+            context: context,
+            provider: provider,
+            affectedWeeks: affectedWeeks,
+            initialWeekday: targetTime.weekday,
+            initialStartSection: targetTime.startSection,
+            initialEndSection: targetTime.endSection,
+            initialRoom: targetTime.newRoom,
+          );
         },
         onConfirm: () async {
           Navigator.pop(ctx);
@@ -526,6 +553,7 @@ class CourseDetailSheet extends StatelessWidget {
               'w${course.weekday}:s${course.startSection}-${course.endSection}:weeks[${course.weeks.join(',')}]:room[${course.location?.trim() ?? ''}]';
 
           await provider.createRescheduleOverride(
+            overrideId: course.overrideId,
             courseKey: course.courseKey ?? 'edu:course:${course.name}',
             meetingKey: course.meetingKey ?? 'm_${course.weekday}_${course.startSection}',
             affectedWeeks: affectedWeeks,
@@ -560,6 +588,7 @@ class CourseDetailSheet extends StatelessWidget {
             'w${course.weekday}:s${course.startSection}-${course.endSection}:weeks[${course.weeks.join(',')}]:room[${course.location?.trim() ?? ''}]';
 
         await provider.createChangeRoomOverride(
+          overrideId: course.overrideId,
           courseKey: course.courseKey ?? 'edu:course:${course.name}',
           meetingKey: course.meetingKey ?? 'm_${course.weekday}_${course.startSection}',
           affectedWeeks: affectedWeeks,

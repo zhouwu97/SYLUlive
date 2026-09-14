@@ -28,36 +28,35 @@ Widget _buildHeader(User? user) {
   );
 }
 
-User _user({String eduCollege = '', String eduMajor = ''}) {
+User _user({String loginAccount = '', int id = 1}) {
   return User(
-    id: 1,
+    id: id,
     studentId: '',
+    loginAccount: loginAccount,
     nickname: '邮箱用户',
     createdAt: DateTime(2026, 8, 23),
-    eduCollege: eduCollege,
-    eduMajor: eduMajor,
   );
 }
 
 void main() {
-  testWidgets('未教务认证账户不显示伪造的默认专业', (tester) async {
-    await tester.pumpWidget(_buildHeader(_user()));
+  testWidgets('展示 App 账号与未绑定专业保护', (tester) async {
+    await tester.pumpWidget(_buildHeader(_user(loginAccount: 'user@example.com')));
 
-    expect(find.text('学号已保密 · 未绑定教务'), findsOneWidget);
+    expect(find.text('App 账号：user@example.com'), findsOneWidget);
     expect(find.text('计算机科学与技术'), findsNothing);
   });
 
-  testWidgets('已有教务专业时继续显示真实专业', (tester) async {
-    await tester.pumpWidget(_buildHeader(_user(eduMajor: '软件工程')));
+  testWidgets('未提供 loginAccount 时降级展示 App ID', (tester) async {
+    await tester.pumpWidget(_buildHeader(_user(id: 7, loginAccount: '')));
 
-    expect(find.text('学号已保密 · 软件工程'), findsOneWidget);
+    expect(find.text('App ID 7'), findsOneWidget);
     expect(find.text('计算机科学与技术'), findsNothing);
   });
 
-  testWidgets('只有学院资料时显示学院而不是默认专业', (tester) async {
-    await tester.pumpWidget(_buildHeader(_user(eduCollege: '信息科学与工程学院')));
+  testWidgets('未登录时展示未登录引导', (tester) async {
+    await tester.pumpWidget(_buildHeader(null));
 
-    expect(find.text('学号已保密 · 信息科学与工程学院'), findsOneWidget);
-    expect(find.text('计算机科学与技术'), findsNothing);
+    expect(find.text('登录沈理校园'), findsOneWidget);
+    expect(find.text('登录后管理账号和教务数据'), findsOneWidget);
   });
 }

@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"shenliyuan/internal/models"
 
@@ -74,5 +75,48 @@ func TestReviewRequiredNotifiesIndependentReviewer(t *testing.T) {
 	}
 	if strings.Contains(originalNotification.Content, "请及时处理") {
 		t.Fatalf("原治理管理员不应收到可直接处理的待办文案: %s", originalNotification.Content)
+	}
+}
+
+func TestVoteRejectsAfterDeadline(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:appeal_vote_deadline?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Post{}, &models.Appeal{}, &models.AppealVote{}); err != nil {
+		t.Fatal(err)
+	}
+
+	expiredDeadline := time.Now().Add(-10 * time.Minute)
+	db.Create(&models.Appeal{
+		ID:             10,
+		PostID:         1,
+		AppellantID:    1,
+		AdminID:        2,
+		Status:         models.AppealStatusPending,
+		RequiredVotes:  5,
+		VotingDeadline: &expiredDeadline,
+	})
+	db.Create(&models.AppealVote{
+		AppealID: 10,
+		VoterID:  5,
+	})
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/appeals/10/vote", strings.NewReader(`{"vote":"support","comment":"迟到票"}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+	context.Params = gin.Params{{Key: "id", Value: "10"}}
+	context.Set("user_id", uint(5))
+
+	handler := NewAppealHandler(db)
+	handler.Vote(context)
+
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("投票截止后应返回 409 Conflict，得到 %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "voting_closed") {
+		t.Fatalf("响应中应包含 voting_closed 错误码，得到: %s", recorder.Body.String())
 	}
 }

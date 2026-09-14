@@ -342,12 +342,13 @@ class HomeWidgetService {
   }
 
   static Future<void> syncExamData(
-    Iterable<HomeWidgetExamEntry> entries,
-  ) async {
+    Iterable<HomeWidgetExamEntry> entries, {
+    AcademicIdentityKey? identity,
+  }) async {
     final cached = entries.toList()
       ..sort((a, b) => a.startTime.compareTo(b.startTime));
     _lastExamEntries = cached;
-    try {
+    Future<void> action() async {
       final now = DateTime.now();
       final exams =
           cached.where((exam) => exam.endTime.isAfter(now)).map((exam) {
@@ -366,14 +367,45 @@ class HomeWidgetService {
         _examDataKey,
         jsonEncode({
           'schema_version': examWidgetSchemaVersion,
+          if (identity?.studentId != null) 'account_id': identity!.studentId,
           'updated_at': now.toIso8601String(),
           'exams': exams,
         }),
       );
       await _refreshNative();
       debugPrint('考试小组件已同步：${exams.length} 场考试');
+    };
+
+    try {
+      if (identity != null) {
+        await AcademicAuxiliaryOwnership.write('widget_exam', identity, action);
+      } else {
+        await AcademicAuxiliaryOwnership.write('widget_exam', null, action);
+      }
     } catch (error) {
       debugPrint('考试小组件同步失败：$error');
+    }
+  }
+
+  static Future<void> clearExamDataForIdentity(AcademicIdentityKey identity,
+          {bool includeLegacy = false}) =>
+      AcademicAuxiliaryOwnership.clear('widget_exam', identity, _clearExamData,
+          includeLegacy: includeLegacy);
+
+  /// 清理教务资料时同步撤回考试小组件中的个人考试数据。
+  static Future<void> clearExamData() async {
+    await AcademicAuxiliaryOwnership.write('widget_exam', null, _clearExamData);
+  }
+
+  static Future<void> _clearExamData() async {
+    try {
+      final prefs = await AppPreferencesStore.getInstance();
+      await prefs.remove(_examDataKey);
+      _lastExamEntries = null;
+      await _refreshNative();
+    } catch (error) {
+      debugPrint('清理考试小组件数据失败：${error.runtimeType}');
+      rethrow;
     }
   }
 

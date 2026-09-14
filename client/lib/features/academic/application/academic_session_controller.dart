@@ -284,7 +284,15 @@ final class AcademicSessionController extends ChangeNotifier {
     if (isAuthenticated) return true;
     final gate = readSessionGate;
     final ready = gate != null ? await gate() : await ensureAuthenticated();
-    return ready && isCurrentContext(generation: generation);
+    final ok = ready && isCurrentContext(generation: generation);
+    if (!ok && _failure == null) {
+      _failure = const AcademicFailure(
+        kind: AcademicFailureKind.unauthenticated,
+        code: 'UNAUTHENTICATED',
+        message: '教务会话未认证，请先登录',
+      );
+    }
+    return ok;
   }
 
   /// 同步 App JWT 的账号上下文。

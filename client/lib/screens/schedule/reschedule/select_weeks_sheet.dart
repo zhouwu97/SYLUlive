@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../providers/course_schedule_provider.dart';
 import '../../../theme/app_theme_tokens.dart';
+import '../../../utils/week_formatter.dart';
 
 /// 调课第一步：选择调整周次
 class SelectWeeksSheet extends StatefulWidget {
@@ -45,9 +46,12 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
   @override
   void initState() {
     super.initState();
-    _courseWeeks = widget.course.weeks.toSet();
-    final firstWeek = widget.course.weeks.isNotEmpty ? widget.course.weeks.first : 1;
-    final lastWeek = widget.course.weeks.isNotEmpty ? widget.course.weeks.last : 18;
+    _courseWeeks = widget.course.weeks.isNotEmpty
+        ? widget.course.weeks.toSet()
+        : Set<int>.from(List.generate(20, (i) => i + 1));
+    final sortedWeeks = _courseWeeks.toList()..sort();
+    final firstWeek = sortedWeeks.first;
+    final lastWeek = sortedWeeks.last;
 
     _startWeek = firstWeek;
     _endWeek = lastWeek;
@@ -134,7 +138,7 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
             ),
             const SizedBox(height: 4),
             Text(
-              '当前时间：周${widget.course.weekday} 第${widget.course.startSection}-${widget.course.endSection}节  ·  课程周次：第${widget.course.weeks.first}-${widget.course.weeks.last}周',
+              '当前时间：周${widget.course.weekday} 第${widget.course.startSection}-${widget.course.endSection}节  ·  课程周次：${WeekFormatter.format(widget.course.weeks, prefixWithDi: true)}',
               style: TextStyle(fontSize: 12, color: tokens.textSecondary),
             ),
             const SizedBox(height: 16),

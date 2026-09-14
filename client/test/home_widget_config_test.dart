@@ -5,7 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shenliyuan/models/home_widget_config.dart';
+import 'package:shenliyuan/models/exam_schedule.dart';
 import 'package:shenliyuan/services/home_widget_service.dart';
+import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
+import 'package:shenliyuan/services/exam_schedule_repository.dart';
+import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
+import 'package:shenliyuan/features/academic/storage/academic_connection_store.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 void main() {
@@ -363,5 +368,152 @@ void main() {
 
     expect(preview.items, hasLength(1));
     expect(preview.items.single.title, '兼容考试');
+  });
+
+  group('桌面小组件考试数据账号隔离与退出清理', () {
+    setUp(() {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        const MethodChannel('shenliyuan/widget'),
+        (call) async => null,
+      );
+    });
+
+    tearDown(() {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        const MethodChannel('shenliyuan/widget'),
+        null,
+      );
+    });
+
+    test('A账号拉取考试并同步 -> 退出登录 -> 小组件数据与本地考试被清除 (A->logout)', () async {
+      AppPreferencesStore.setMockInitialValues({});
+      final coordinator = AccountSessionCleanupCoordinator();
+      coordinator.register('exam_cleanup', () async {
+        await HomeWidgetService.clearExamData();
+        await ExamScheduleRepository().clear();
+      });
+
+      // 1. 用户 A 同步考试
+      final tomorrow = DateTime.now().add(const Duration(days: 1));
+      await HomeWidgetService.syncExamData([
+        HomeWidgetExamEntry(
+          name: '高等数学A',
+          startTime: tomorrow,
+          endTime: tomorrow.add(const Duration(hours: 2)),
+          location: '综A101',
+        ),
+      ]);
+
+      final previewBefore =
+          await HomeWidgetService.getPreviewData(HomeWidgetKind.exam);
+      expect(previewBefore.items, hasLength(1));
+      expect(previewBefore.items.single.title, '高等数学A');
+
+      // 2. 模拟登出：触发账号会话清理
+      await coordinator.closeCurrentSession();
+
+      // 3. 验证小组件数据已清空
+      final previewAfter =
+          await HomeWidgetService.getPreviewData(HomeWidgetKind.exam);
+      expect(previewAfter.items, isEmpty);
+    });
+
+    test(
+        'A账号拉取考试 -> 退出登录 -> B账号登录且未拉取考试 -> 小组件绝不展示A账号考试 (A->logout->B)',
+        () async {
+      AppPreferencesStore.setMockInitialValues({});
+      final coordinator = AccountSessionCleanupCoordinator();
+      coordinator.register('exam_cleanup', () async {
+        await HomeWidgetService.clearExamData();
+        await ExamScheduleRepository().clear();
+      });
+
+      // 1. A 账号登录并同步考试与本地仓库
+      final futureDate = DateTime.now().add(const Duration(days: 2));
+      await HomeWidgetService.syncExamData([
+        HomeWidgetExamEntry(
+          name: '大学物理B',
+          startTime: futureDate,
+          endTime: futureDate.add(const Duration(hours: 2)),
+          location: '理教302',
+        ),
+      ]);
+      await ExamScheduleRepository().save([
+        ExamModel(
+          name: '大学物理B',
+          startTime: futureDate,
+          endTime: futureDate.add(const Duration(hours: 2)),
+          location: '理教302',
+          semester: '2026-2027-01',
+        ),
+      ]);
+
+      expect(
+          (await HomeWidgetService.getPreviewData(HomeWidgetKind.exam)).items,
+          hasLength(1));
+      expect((await ExamScheduleRepository().load()), hasLength(1));
+
+      // 2. A 登出
+      await coordinator.closeCurrentSession();
+
+      // 3. B 账号登录（此时 B 尚未拉取考试）
+      // 桌面小组件由 B 打开/查看
+      final previewB =
+          await HomeWidgetService.getPreviewData(HomeWidgetKind.exam);
+      final localExamsB = await ExamScheduleRepository().load();
+
+      expect(previewB.items, isEmpty, reason: 'B 账号绝不能看到 A 账号的考试小组件');
+      expect(localExamsB, isEmpty, reason: 'B 账号本地考试安排应为空');
+    });
+
+    test('clearExamDataForIdentity 按身份精准清理，不同身份互不误伤', () async {
+      AppPreferencesStore.setMockInitialValues({});
+      const identityA = AcademicIdentityKey(
+        appUserId: '1',
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: '20230001',
+      );
+      const identityB = AcademicIdentityKey(
+        appUserId: '2',
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: '20230002',
+      );
+      final prefs = await AppPreferencesStore.getInstance();
+      await AcademicConnectionStore(identityA, prefs).setConnected(true);
+      await AcademicConnectionStore(identityB, prefs).setConnected(true);
+
+      final futureDate = DateTime.now().add(const Duration(days: 1));
+      await HomeWidgetService.syncExamData(
+        [
+          HomeWidgetExamEntry(
+            name: '数据结构',
+            startTime: futureDate,
+            endTime: futureDate.add(const Duration(hours: 2)),
+            location: '计机楼201',
+          ),
+        ],
+        identity: identityA,
+      );
+
+      expect(
+          (await HomeWidgetService.getPreviewData(HomeWidgetKind.exam)).items,
+          hasLength(1));
+
+      // 尝试用 B 的身份清理 A 的小组件，应当不生效
+      await HomeWidgetService.clearExamDataForIdentity(identityB);
+      expect(
+          (await HomeWidgetService.getPreviewData(HomeWidgetKind.exam)).items,
+          hasLength(1));
+
+      // 用 A 的身份清理，成功清理
+      await HomeWidgetService.clearExamDataForIdentity(identityA);
+      expect(
+          (await HomeWidgetService.getPreviewData(HomeWidgetKind.exam)).items,
+          isEmpty);
+    });
   });
 }

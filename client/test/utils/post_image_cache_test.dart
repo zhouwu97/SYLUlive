@@ -1,8 +1,17 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/utils/post_image_cache.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() {
+    const channel = MethodChannel('plugins.flutter.io/path_provider');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      return '.';
+    });
+  });
 
   test('PostOriginalCache 配置为 7 天 50 项，与展示缓存隔离', () {
     expect(PostOriginalCache.stalePeriod, const Duration(days: 7));

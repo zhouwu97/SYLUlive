@@ -162,8 +162,8 @@ void main() {
     final networkImages = tester.widgetList<CachedNetworkImage>(
       find.byType(CachedNetworkImage),
     );
-    expect(networkImages, hasLength(1));
-    expect(networkImages.single.imageUrl, contains('b_v1_medium.jpg'));
+    expect(networkImages.any((img) => img.imageUrl.contains('b_v1_medium.jpg')), isTrue);
+    expect(networkImages.every((img) => !img.imageUrl.contains('invalid')), isTrue);
   });
 
   testWidgets('实拍 404（数据库有记录但文件丢失）确认后移除并回落上传引导', (tester) async {

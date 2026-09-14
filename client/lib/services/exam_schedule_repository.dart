@@ -39,4 +39,9 @@ class ExamScheduleRepository {
     final encoded = jsonEncode(exams.map((exam) => exam.toJson()).toList());
     await preferences.setString(localExamsKey, encoded);
   }
+
+  Future<void> clear() async {
+    final preferences = await AppPreferencesStore.getInstance();
+    await preferences.remove(localExamsKey);
+  }
 }

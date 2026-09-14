@@ -22,7 +22,7 @@ func TestQQVerificationCredentialCanBeConsumedByRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.RefreshToken{}); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
 

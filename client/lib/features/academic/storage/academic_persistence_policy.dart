@@ -100,9 +100,10 @@ final class AcademicPersistencePolicy extends ChangeNotifier
     await scheduleStore?.close();
   }
 
-  /// 清理教务相关的小组件数据和提醒；考试小组件不是教务课表数据，保留。
+  /// 清理教务相关的小组件数据（课表、考试）和提醒。
   static Future<void> clearAuxiliaryData() async {
     await HomeWidgetService.clearCourseData();
+    await HomeWidgetService.clearExamData();
     await CourseReminderService.instance.cancelCourseReminders();
   }
 }

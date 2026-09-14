@@ -87,8 +87,10 @@ func selfUserResponse(user models.User, consentState models.LegalConsentState) S
 		loginMethods = append(loginMethods, "email")
 	}
 	response := SelfUserResponse{
-		ID:          user.ID,
-		EmailMasked: maskEmail(user.Email), EmailBound: user.EmailVerifiedAt != nil && user.Email != "",
+		ID:              user.ID,
+		StudentID:       user.StudentID,
+		StudentVerified: user.IsStudentVerified(),
+		EmailMasked:     maskEmail(user.Email), EmailBound: user.EmailVerifiedAt != nil && user.Email != "",
 		LoginMethods: loginMethods, CanResetViaEmail: user.EmailVerifiedAt != nil && user.Email != "",
 		CanResetViaEdu: false, Nickname: user.Nickname, Gender: user.Gender,
 		Avatar: user.Avatar, Background: user.Background, NightMode: user.NightMode,
@@ -142,7 +144,7 @@ func selfUserResponseForDB(db *gorm.DB, user models.User) (SelfUserResponse, err
 		}
 		response.AcademicIdentities = bindings
 		response.StudentID = ""
-		response.StudentVerified = len(bindings) > 0
+		response.StudentVerified = len(bindings) > 0 || user.IsStudentVerified()
 		response.LoginMethods = filterNonSchoolLoginMethods(response.LoginMethods)
 		response.CanResetViaEdu = false
 		if len(bindings) > 0 {
@@ -154,6 +156,8 @@ func selfUserResponseForDB(db *gorm.DB, user models.User) (SelfUserResponse, err
 			if available {
 				response.LoginMethods = append(response.LoginMethods, "student_id")
 			}
+		} else if schoolPersonalDataVisible.Load() && user.StudentID != "" {
+			response.StudentID = user.StudentID
 		}
 	}
 	if db.Migrator().HasTable(&models.AccountLoginAlias{}) {

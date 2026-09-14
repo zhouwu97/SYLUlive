@@ -221,6 +221,16 @@ func createMarketTagsTestUser(t *testing.T, db *gorm.DB, studentID string) model
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	if err := db.Create(&models.AcademicIdentityBinding{
+		UserID:              user.ID,
+		ProviderID:          models.AcademicProviderUndergraduate,
+		StudentID:           studentID,
+		VerifiedAt:          now,
+		VerificationMethod:  "test",
+		VerificationVersion: "1",
+	}).Error; err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
 	return user
 }
 

@@ -122,11 +122,9 @@ class GradeSummaryCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    isRefreshing
-                        ? '正在连接教务…'
-                        : (updatedAt == null
-                            ? '暂无同步记录'
-                            : '上次更新 ${updatedAt!.toLocal().month}月${updatedAt!.toLocal().day}日 ${updatedAt!.toLocal().hour.toString().padLeft(2, '0')}:${updatedAt!.toLocal().minute.toString().padLeft(2, '0')}'),
+                    updatedAt != null
+                        ? '上次更新 ${updatedAt!.toLocal().month}月${updatedAt!.toLocal().day}日 ${updatedAt!.toLocal().hour.toString().padLeft(2, '0')}:${updatedAt!.toLocal().minute.toString().padLeft(2, '0')}${isRefreshing ? ' · 正在连接教务…' : ''}'
+                        : (isRefreshing ? '正在连接教务…' : '暂无同步记录'),
                     style: TextStyle(
                       fontSize: 12,
                       color: subColor,

@@ -102,9 +102,8 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
             );
             _tabTickets[tabIndex] = existing;
             _tabPages[tabIndex] = page;
-            _tabHasMore[tabIndex] = total == null
-                ? tickets.length >= 50
-                : existing.length < total;
+            _tabHasMore[tabIndex] =
+                total == null ? tickets.length >= 50 : existing.length < total;
             _tabLoading[tabIndex] = false;
           });
         }
@@ -201,17 +200,23 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
     String label;
     switch (type) {
       case 'bug':
-        bg = isDark ? Colors.red.withValues(alpha: 0.2) : const Color(0xFFFFEEEE);
+        bg = isDark
+            ? Colors.red.withValues(alpha: 0.2)
+            : const Color(0xFFFFEEEE);
         fg = const Color(0xFFE53E3E);
         label = '问题反馈';
         break;
       case 'suggestion':
-        bg = isDark ? Colors.blue.withValues(alpha: 0.2) : const Color(0xFFEFF6FF);
+        bg = isDark
+            ? Colors.blue.withValues(alpha: 0.2)
+            : const Color(0xFFEFF6FF);
         fg = const Color(0xFF2563EB);
         label = '功能建议';
         break;
       default:
-        bg = isDark ? Colors.grey.withValues(alpha: 0.2) : const Color(0xFFF3F4F6);
+        bg = isDark
+            ? Colors.grey.withValues(alpha: 0.2)
+            : const Color(0xFFF3F4F6);
         fg = const Color(0xFF6B7280);
         label = '其他';
         break;
@@ -313,7 +318,8 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
                       ticket.latestReplySnippet!,
                       style: TextStyle(
                         fontSize: 12,
-                        color: isDark ? Colors.white70 : const Color(0xFF4A5568),
+                        color:
+                            isDark ? Colors.white70 : const Color(0xFF4A5568),
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -357,9 +363,8 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0xFF1B2A27)
-            : const Color(0xFFF0FDF8), // 清淡青绿底
+        color:
+            isDark ? const Color(0xFF1B2A27) : const Color(0xFFF0FDF8), // 清淡青绿底
         borderRadius: BorderRadius.circular(AppRadius.lg),
         border: Border.all(
           color: isDark ? Colors.teal.shade900 : const Color(0xFFD1FAE5),
@@ -553,7 +558,9 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
             height: 42,
             margin: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
-              color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF1F5F3),
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : const Color(0xFFF1F5F3),
               borderRadius: BorderRadius.circular(AppRadius.md),
             ),
             child: TabBar(
@@ -574,8 +581,10 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
               indicatorSize: TabBarIndicatorSize.tab,
               dividerColor: Colors.transparent,
               labelColor: isDark ? Colors.white : AppColors.brandPrimary,
-              unselectedLabelColor: isDark ? Colors.white54 : const Color(0xFF718096),
-              labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              unselectedLabelColor:
+                  isDark ? Colors.white54 : const Color(0xFF718096),
+              labelStyle:
+                  const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
               unselectedLabelStyle: const TextStyle(fontSize: 13),
               tabs: _tabs.map((tab) => Tab(text: tab)).toList(),
             ),

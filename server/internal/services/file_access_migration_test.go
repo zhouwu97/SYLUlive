@@ -2,17 +2,26 @@ package services
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"shenliyuan/internal/models"
 
 	"github.com/stretchr/testify/require"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
 func newAccessScopeTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db := newFileReferenceTestDB(t)
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_", "\\", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(
+		&models.File{},
+		&models.FileUploadGrant{},
+		&models.ImageVariant{},
+		&models.AppSchemaMigration{},
+	))
 	for _, ddl := range []string{
 		"CREATE TABLE canteen_dish_photos (id INTEGER PRIMARY KEY, file_id BIGINT, status TEXT, dish_id BIGINT DEFAULT 100)",
 		"CREATE TABLE canteens (id INTEGER PRIMARY KEY, verified BOOLEAN, image TEXT)",

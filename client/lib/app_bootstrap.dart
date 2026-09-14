@@ -1436,7 +1436,8 @@ class MyApp extends StatelessWidget {
               legacy: legacy,
               registry: context.read<AcademicProviderRegistry>(),
               identityClient: context.read<AcademicIdentityClient>(),
-              onIdentityVerified: () => context.read<AuthProvider>().refreshUser(),
+              onIdentityVerified: () =>
+                  context.read<AuthProvider>().refreshUser(),
               configClient: AcademicAccountConfigClient(dio),
             );
           },
@@ -1467,9 +1468,13 @@ class MyApp extends StatelessWidget {
         ProxyProvider<AcademicSessionController, AcademicLoginCoordinator>(
           lazy: false,
           update: (_, controller, previous) {
-            final coordinator = previous ?? AcademicLoginCoordinator(controller: controller,
-                captchaSubmissionPolicy: AcademicCaptchaSubmissionPolicy.fromBuildCalibration());
-            unawaited(coordinator.resumePendingCleanup().catchError((Object _) {}));
+            final coordinator = previous ??
+                AcademicLoginCoordinator(
+                    controller: controller,
+                    captchaSubmissionPolicy:
+                        AcademicCaptchaSubmissionPolicy.fromBuildCalibration());
+            unawaited(
+                coordinator.resumePendingCleanup().catchError((Object _) {}));
             unawaited(coordinator.warmUp().catchError((Object _) {}));
             return coordinator;
           },
@@ -1793,7 +1798,8 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         postUri?.host == 'post' &&
         postUri?.pathSegments.length == 1) {
       final postId = int.tryParse(postUri!.pathSegments.single);
-      if (postId == null || postId <= 0) return _DeepLinkHandlingResult.unhandled;
+      if (postId == null || postId <= 0)
+        return _DeepLinkHandlingResult.unhandled;
       if (_isLoginRouteVisible()) return _DeepLinkHandlingResult.deferred;
       appNavigatorKey.currentState?.push(
         MaterialPageRoute(builder: (_) => PostDetailScreen(postId: postId)),

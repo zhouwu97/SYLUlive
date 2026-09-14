@@ -352,8 +352,22 @@ class CourseDetailSheet extends StatelessWidget {
                             final overrideId =
                                 course.overrideId ?? relatedOverride?.id;
                             if (overrideId != null) {
-                              await provider.restoreBaseMeeting(overrideId);
-                              if (context.mounted) Navigator.pop(context);
+                              try {
+                                await provider.restoreBaseMeeting(overrideId);
+                                if (context.mounted) Navigator.pop(context);
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        e.toString()
+                                            .replaceAll('Exception: ', '')
+                                            .replaceAll('StateError: ', ''),
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
                             }
                           },
                         ),

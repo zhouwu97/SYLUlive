@@ -13,6 +13,9 @@ import 'package:shenliyuan/screens/browsing_history_screen.dart';
 import 'package:shenliyuan/screens/schedule/course_detail_sheet.dart';
 import 'package:shenliyuan/screens/schedule/reschedule/confirm_change_sheet.dart';
 import 'package:shenliyuan/services/schedule/schedule_conflict_service.dart';
+import 'package:shenliyuan/models/schedule/course.dart';
+import 'package:shenliyuan/models/schedule/meeting.dart';
+import 'package:shenliyuan/models/schedule/course_source.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 class _TestAuthProvider extends AuthProvider {
@@ -37,7 +40,7 @@ void main() {
   });
 
   group('CourseDetailSheet 组件交互测试 (Section 16 & 17)', () {
-    testWidgets('正常教务课程展示完整字段、来源及更换时间/修改教室按钮', (tester) async {
+    testWidgets('正常教务课程展示完整字段、来源及统一调整入口', (tester) async {
       const course = CourseBlock(
         id: 101,
         courseCode: '080123',
@@ -55,13 +58,36 @@ void main() {
         source: 'edu',
       );
 
-      final provider = CourseScheduleProvider();
+      final provider = CourseScheduleProvider()
+        ..setBaseScheduleForTesting([
+          Course(
+            courseKey: 'edu:2026_1:080123:TC20260127',
+            semesterId: '2026_1',
+            source: CourseSource.edu,
+            name: '数字图像处理',
+            courseCode: '080123',
+            teachingClassId: 'TC20260127',
+            meetings: const [
+              Meeting(
+                meetingKey: 'm_1_3_4',
+                weekday: 1,
+                startSection: 3,
+                endSection: 4,
+                weeks: {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13},
+                room: 'XX-430',
+                teacher: '王辉宇',
+              ),
+            ],
+          ),
+        ]);
 
       await tester.pumpWidget(
         MultiProvider(
           providers: [
-            ChangeNotifierProvider<CourseScheduleProvider>.value(value: provider),
-            ChangeNotifierProvider<AuthProvider>(create: (_) => _TestAuthProvider()),
+            ChangeNotifierProvider<CourseScheduleProvider>.value(
+                value: provider),
+            ChangeNotifierProvider<AuthProvider>(
+                create: (_) => _TestAuthProvider()),
             ChangeNotifierProvider<CourseEvaluationProvider>(
               create: (_) => _TestCourseEvaluationProvider(),
             ),
@@ -89,12 +115,14 @@ void main() {
       expect(find.text('080123'), findsOneWidget);
       expect(find.text('TC20260127'), findsOneWidget);
 
-      // 验证操作按钮
-      expect(find.text('更换时间'), findsOneWidget);
-      expect(find.text('修改教室'), findsOneWidget);
+      // 验证操作按钮并测试进入调课流程
+      expect(find.text('调整课程安排'), findsOneWidget);
+      await tester.tap(find.text('调整课程安排'));
+      await tester.pumpAndSettle();
+      expect(find.text('调整课程安排 (1/3)'), findsOneWidget);
     });
 
-    testWidgets('本地调整课程展示「教务课表 + 本地调整」以及「修改调整」「恢复原时间」', (tester) async {
+    testWidgets('本地调整课程展示「教务课表 + 本地调整」以及「继续调整」「恢复原安排」', (tester) async {
       const course = CourseBlock(
         id: 101,
         courseCode: '080123',
@@ -113,13 +141,35 @@ void main() {
         source: 'edu',
       );
 
-      final provider = CourseScheduleProvider();
+      final provider = CourseScheduleProvider()
+        ..setBaseScheduleForTesting([
+          Course(
+            courseKey: 'edu:2026_1:080123',
+            semesterId: '2026_1',
+            source: CourseSource.edu,
+            name: '数字图像处理',
+            courseCode: '080123',
+            meetings: const [
+              Meeting(
+                meetingKey: 'm_1_3_4',
+                weekday: 1,
+                startSection: 3,
+                endSection: 4,
+                weeks: {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13},
+                room: 'XX-430',
+                teacher: '王辉宇',
+              ),
+            ],
+          ),
+        ]);
 
       await tester.pumpWidget(
         MultiProvider(
           providers: [
-            ChangeNotifierProvider<CourseScheduleProvider>.value(value: provider),
-            ChangeNotifierProvider<AuthProvider>(create: (_) => _TestAuthProvider()),
+            ChangeNotifierProvider<CourseScheduleProvider>.value(
+                value: provider),
+            ChangeNotifierProvider<AuthProvider>(
+                create: (_) => _TestAuthProvider()),
             ChangeNotifierProvider<CourseEvaluationProvider>(
               create: (_) => _TestCourseEvaluationProvider(),
             ),
@@ -136,8 +186,12 @@ void main() {
       );
 
       expect(find.text('教务课表 + 本地调整'), findsOneWidget);
-      expect(find.text('修改调整'), findsOneWidget);
-      expect(find.text('恢复原时间'), findsOneWidget);
+      expect(find.text('继续调整'), findsOneWidget);
+      expect(find.text('恢复原安排'), findsOneWidget);
+
+      await tester.tap(find.text('继续调整'));
+      await tester.pumpAndSettle();
+      expect(find.text('调整课程安排 (1/3)'), findsOneWidget);
     });
   });
 

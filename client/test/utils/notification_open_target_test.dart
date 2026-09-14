@@ -73,6 +73,21 @@ void main() {
       expect(target.recipientUserId, 7);
     });
 
+    test('应该能解析工单通知并保留工单与收件人', () {
+      final target = NotificationOpenTarget.parse({
+        'extras': {
+          'type': 'feedback_ticket',
+          'ticket_id': 321,
+          notificationRecipientUserIdKey: 7,
+        },
+      });
+
+      expect(target, isNotNull);
+      expect(target!.type, NotificationOpenType.feedbackTicket);
+      expect(target.ticketId, 321);
+      expect(target.recipientUserId, 7);
+    });
+
     test('保留原生事件 ID 供导航成功后确认', () {
       final target = NotificationOpenTarget.parse({
         'type': 'reply',

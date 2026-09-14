@@ -7,6 +7,17 @@ import 'package:shenliyuan/services/schedule/schedule_resolver.dart';
 import 'package:shenliyuan/services/schedule/meeting_reconciler.dart';
 import 'package:shenliyuan/services/schedule/schedule_conflict_service.dart';
 import 'package:shenliyuan/repositories/schedule_override_repository.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
+class _ThrowingPreferencesStore extends MemoryPreferencesStore {
+  bool failReads = true;
+
+  @override
+  String? getString(String key) {
+    if (failReads) throw StateError('测试读取失败');
+    return super.getString(key);
+  }
+}
 
 void main() {
   group('ScheduleResolver 核心算法测试 (Section 42 核心规范)', () {
@@ -199,7 +210,8 @@ void main() {
         toWeekday: 2,
         toStartSection: 1,
         toEndSection: 2,
-        sourceSnapshotHash: multiMeetingCourse.meetings[0].computeSnapshotHash(),
+        sourceSnapshotHash:
+            multiMeetingCourse.meetings[0].computeSnapshotHash(),
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -482,7 +494,8 @@ void main() {
         semesterId: '2026_1',
       );
 
-      expect(result1.updatedOverrides.first.status, ScheduleOverrideStatus.active);
+      expect(
+          result1.updatedOverrides.first.status, ScheduleOverrideStatus.active);
       expect(result1.needsReviewOverrides, isEmpty);
       expect(result1.orphanedOverrides, isEmpty);
 
@@ -515,7 +528,8 @@ void main() {
       );
 
       expect(result2.needsReviewOverrides.length, 1);
-      expect(result2.updatedOverrides.first.status, ScheduleOverrideStatus.needsReview);
+      expect(result2.updatedOverrides.first.status,
+          ScheduleOverrideStatus.needsReview);
 
       // 3. 学校取消了这门课 -> 无法重新关联，Override 进入 orphaned
       final result3 = reconciler.reconcile(
@@ -526,7 +540,8 @@ void main() {
       );
 
       expect(result3.orphanedOverrides.length, 1);
-      expect(result3.updatedOverrides.first.status, ScheduleOverrideStatus.orphaned);
+      expect(result3.updatedOverrides.first.status,
+          ScheduleOverrideStatus.orphaned);
     });
 
     test('场景18：学期切换 -> 不加载旧学期规则', () {
@@ -631,8 +646,10 @@ void main() {
         semesterId: '2026_1',
       );
 
-      final resolvedA = resolved.firstWhere((r) => r.courseKey == courseA.courseKey);
-      final resolvedB = resolved.firstWhere((r) => r.courseKey == courseB.courseKey);
+      final resolvedA =
+          resolved.firstWhere((r) => r.courseKey == courseA.courseKey);
+      final resolvedB =
+          resolved.firstWhere((r) => r.courseKey == courseB.courseKey);
 
       // 整体冲突布尔标记
       expect(resolvedA.hasConflict, isTrue);
@@ -696,6 +713,65 @@ void main() {
         ),
         returnsNormally,
       );
+    });
+
+    test('调课规则读取失败不得当作空列表覆盖原有规则', () async {
+      final store = _ThrowingPreferencesStore();
+      const rawStored =
+          '[{"id":"ov_original","semesterId":"2026_1","courseKey":"c1","meetingKey":"m1","type":"changeRoom","status":"active","affectedWeeks":[1,2],"createdAt":"2026-09-01T00:00:00.000","updatedAt":"2026-09-01T00:00:00.000"}]';
+      store.failReads = false;
+      await store.setString('schedule_overrides_v1_user-1_2026_1', rawStored);
+      store.failReads = true;
+
+      final repo = ScheduleOverrideRepository(() => store);
+      await expectLater(
+        repo.loadOverrides(semesterId: '2026_1', accountId: 'user-1'),
+        throwsA(isA<ScheduleOverrideStorageException>()),
+      );
+
+      final newOverride = ScheduleOverride(
+        id: 'ov_new',
+        semesterId: '2026_1',
+        courseKey: 'c2',
+        meetingKey: 'm2',
+        type: ScheduleOverrideType.changeRoom,
+        status: ScheduleOverrideStatus.active,
+        affectedWeeks: {3, 4},
+        sourceSnapshotHash: 'hash_c2_m2',
+        createdAt: DateTime(2026, 9, 14),
+        updatedAt: DateTime(2026, 9, 14),
+      );
+
+      // 读取失败时 upsertOverride 必须抛出异常且不得覆盖原有存储
+      await expectLater(
+        repo.upsertOverride(override: newOverride, accountId: 'user-1'),
+        throwsA(isA<ScheduleOverrideStorageException>()),
+      );
+
+      // 读取失败时 deleteOverride 必须抛出异常且不得覆盖原有存储
+      await expectLater(
+        repo.deleteOverride(
+          overrideId: 'ov_original',
+          semesterId: '2026_1',
+          accountId: 'user-1',
+        ),
+        throwsA(isA<ScheduleOverrideStorageException>()),
+      );
+
+      // 验证底层存储完全未被修改
+      store.failReads = false;
+      expect(
+        store.getString('schedule_overrides_v1_user-1_2026_1'),
+        rawStored,
+      );
+
+      // 恢复正常后能够正确加载原有规则
+      final restored = await repo.loadOverrides(
+        semesterId: '2026_1',
+        accountId: 'user-1',
+      );
+      expect(restored, hasLength(1));
+      expect(restored.single.id, 'ov_original');
     });
 
     test('回归测试：MeetingReconciler 优先教学班+课程代码匹配并忽略跨学期缓存', () {

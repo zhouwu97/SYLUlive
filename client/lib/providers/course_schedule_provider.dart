@@ -315,6 +315,13 @@ class CourseScheduleProvider extends ChangeNotifier {
   List<Course> get baseSchedule => _baseSchedule;
   List<Course> get manualCourses => _manualCourses;
 
+  @visibleForTesting
+  void setBaseScheduleForTesting(List<Course> courses) {
+    _baseSchedule = courses;
+    _sourceTrustKnown = true;
+    _legacyCacheRequiresResync = false;
+  }
+
   Set<int> _hiddenCourseIds = {};
 
   List<CourseArchive> _archives = [];
@@ -331,6 +338,7 @@ class CourseScheduleProvider extends ChangeNotifier {
   bool get isSessionReady => _sessionPhase == ScheduleSessionPhase.ready;
   int get contextGeneration => _contextGeneration;
   bool get legacyCacheRequiresResync => _legacyCacheRequiresResync;
+  bool get canMutateSchedule => _sourceTrustKnown && !_legacyCacheRequiresResync;
 
   /// 研究生 Provider 的节次标签不是本科课表的数字时钟，布局必须保留
   /// Provider 行序；即使当前学期没有课程，也不能回退到本科时间轴。
@@ -484,7 +492,8 @@ class CourseScheduleProvider extends ChangeNotifier {
     final store = _scheduleStore;
     if (store == null || _disposed) return;
     final generation = ++_contextGeneration;
-    _sessionRestoreFuture = _restoreSession(generation: generation, store: store);
+    _sessionRestoreFuture =
+        _restoreSession(generation: generation, store: store);
     await _sessionRestoreFuture;
   }
 
@@ -1995,6 +2004,17 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// 恢复教务原课 (Section 25: 删除 Override，重跑 Resolver)
   Future<void> restoreBaseMeeting(String overrideId) async {
     await _ensureTrustedSourceForMutation();
+    final overrideIdx = _overrides.indexWhere((o) => o.id == overrideId);
+    if (overrideIdx < 0) {
+      throw StateError('未找到对应的调课规则');
+    }
+    final targetOverride = _overrides[overrideIdx];
+    final hasBaseMeeting = _baseSchedule.any((c) =>
+        c.courseKey == targetOverride.courseKey &&
+        c.meetings.any((m) => m.meetingKey == targetOverride.meetingKey));
+    if (!hasBaseMeeting) {
+      throw StateError('当前没有对应课程的原始教务快照，无法恢复原安排，请重新同步教务');
+    }
     final persisted = await _overrideRepository.deleteOverride(
       overrideId: overrideId,
       semesterId: currentTerm.id,

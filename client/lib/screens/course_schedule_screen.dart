@@ -3482,48 +3482,62 @@ $classFilterRule
                       ).showSnackBar(const SnackBar(content: Text('请输入课程名称')));
                       return;
                     }
-                    if (editCourse == null) {
-                      await sc.addCustomCourse(
-                        name: nameCtrl.text.trim(),
-                        weekday: weekday,
-                        startSection: startSection,
-                        endSection: endSection,
-                        startWeek: startWeek,
-                        endWeek: endWeek,
-                        teacher: teacherCtrl.text.trim().isEmpty
-                            ? null
-                            : teacherCtrl.text.trim(),
-                        location: locationCtrl.text.trim().isEmpty
-                            ? null
-                            : locationCtrl.text.trim(),
-                      );
-                    } else {
-                      await sc.editCustomCourse(
-                        id: editCourse.id,
-                        name: nameCtrl.text.trim(),
-                        weekday: weekday,
-                        startSection: startSection,
-                        endSection: endSection,
-                        startWeek: startWeek,
-                        endWeek: endWeek,
-                        teacher: teacherCtrl.text.trim().isEmpty
-                            ? null
-                            : teacherCtrl.text.trim(),
-                        location: locationCtrl.text.trim().isEmpty
-                            ? null
-                            : locationCtrl.text.trim(),
-                      );
+                    try {
+                      if (editCourse == null) {
+                        await sc.addCustomCourse(
+                          name: nameCtrl.text.trim(),
+                          weekday: weekday,
+                          startSection: startSection,
+                          endSection: endSection,
+                          startWeek: startWeek,
+                          endWeek: endWeek,
+                          teacher: teacherCtrl.text.trim().isEmpty
+                              ? null
+                              : teacherCtrl.text.trim(),
+                          location: locationCtrl.text.trim().isEmpty
+                              ? null
+                              : locationCtrl.text.trim(),
+                        );
+                      } else {
+                        await sc.editCustomCourse(
+                          id: editCourse.id,
+                          name: nameCtrl.text.trim(),
+                          weekday: weekday,
+                          startSection: startSection,
+                          endSection: endSection,
+                          startWeek: startWeek,
+                          endWeek: endWeek,
+                          teacher: teacherCtrl.text.trim().isEmpty
+                              ? null
+                              : teacherCtrl.text.trim(),
+                          location: locationCtrl.text.trim().isEmpty
+                              ? null
+                              : locationCtrl.text.trim(),
+                        );
+                      }
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(editCourse == null ? '课程已添加' : '课程已更新'),
+                          ),
+                        );
+                        await _syncCourseReminders(sc);
+                        if (mounted) setState(() => _hasCache = true);
+                      }
+                      Navigator.pop(dialogCtx);
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              e.toString()
+                                  .replaceAll('Exception: ', '')
+                                  .replaceAll('StateError: ', ''),
+                            ),
+                          ),
+                        );
+                      }
                     }
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(editCourse == null ? '课程已添加' : '课程已更新'),
-                        ),
-                      );
-                      await _syncCourseReminders(sc);
-                      if (mounted) setState(() => _hasCache = true);
-                    }
-                    Navigator.pop(dialogCtx);
                   },
                   child: Text(editCourse == null ? '添加' : '保存'),
                 ),

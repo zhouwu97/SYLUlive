@@ -11,6 +11,8 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/stretchr/testify/require"
+
 	"shenliyuan/internal/academic"
 	"shenliyuan/internal/clients"
 	"shenliyuan/internal/models"
@@ -191,7 +193,7 @@ func TestBackfillAcademicSnapshotHashesRequiresApplyToWrite(t *testing.T) {
 
 func TestEduFetchDeduplicatesConcurrentRefreshes(t *testing.T) {
 	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
-	fetcher := &fakeEduContextFetcher{started: make(chan struct{}, 1), release: make(chan struct{})}
+	fetcher := &fakeEduContextFetcher{started: make(chan struct{}, 2), release: make(chan struct{})}
 	_, _, orchestrator := newEduFetchTestFixture(t, fetcher, now)
 	results := make(chan academic.ContextResult, 2)
 	errorsCh := make(chan error, 2)
@@ -207,6 +209,16 @@ func TestEduFetchDeduplicatesConcurrentRefreshes(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("remote fetch did not start")
 	}
+	require.Eventually(t, func() bool {
+		orchestrator.mu.Lock()
+		defer orchestrator.mu.Unlock()
+		for _, flight := range orchestrator.inflight {
+			if flight.waiters >= 2 {
+				return true
+			}
+		}
+		return false
+	}, time.Second, 5*time.Millisecond, "second request did not join inflight deduplication")
 	close(fetcher.release)
 	for range 2 {
 		if err := <-errorsCh; err != nil {

@@ -58,10 +58,9 @@ class ScheduleOverrideRepository {
   }) async {
     final store = await _getStore();
     final key = _storageKey(semesterId, accountId);
-    final raw = store.getString(key);
-    if (raw == null || raw.trim().isEmpty) return const [];
-
     try {
+      final raw = store.getString(key);
+      if (raw == null || raw.trim().isEmpty) return const [];
       final list = jsonDecode(raw);
       if (list is! List) {
         throw const FormatException('调课规则根节点不是数组');

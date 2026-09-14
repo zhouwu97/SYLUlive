@@ -414,6 +414,18 @@ void main() {
     );
     expect(preserved?.sourceSnapshotPresent, isFalse);
     expect(preserved?.courses, hasLength(2));
+
+    await expectLater(
+      provider.addCustomCourse(
+        name: '不可直接追加',
+        weekday: 2,
+        startSection: 1,
+        endSection: 1,
+        startWeek: 1,
+        endWeek: 1,
+      ),
+      throwsA(isA<StateError>()),
+    );
   });
 
   test('两条同名自定义课程保持独立身份并可单独删除', () async {

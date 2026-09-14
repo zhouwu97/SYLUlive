@@ -131,8 +131,8 @@ DateTime? _sectionTime(int section, DateTime day) {
     '15:45',
     '16:40',
     '17:35',
-    '18:30',
-    '19:25',
+    '19:30',
+    '20:25',
   ];
   if (section < 1 || section > starts.length) return null;
   final parts = starts[section - 1].split(':');

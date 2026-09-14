@@ -132,7 +132,7 @@ void main() {
     expect(result.value?.courses.single.courseName, '数据结构');
     expect(result.value?.courses.single.timeText, '10:00-11:40');
     expect(result.value?.freeTimeSlots.first.timeText, '08:00-09:40');
-    expect(result.value?.freeTimeSlots.last.timeText, '13:00-20:10');
+    expect(result.value?.freeTimeSlots.last.timeText, '13:00-21:10');
     expect(result.value?.dataUpdatedAt, fetchedAt);
     expect(result.evidence.single.source, 'device_encrypted_cache');
     expect(result.evidence.single.dataType, PersonalDataType.schedule);

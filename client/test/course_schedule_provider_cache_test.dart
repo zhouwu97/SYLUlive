@@ -11,6 +11,7 @@ import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_
 import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dart';
 import 'package:shenliyuan/providers/course_schedule_provider.dart';
 import 'package:shenliyuan/models/course_term.dart';
+import 'package:shenliyuan/repositories/schedule_override_repository.dart';
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 
 import 'helpers/personal_snapshot_test_fakes.dart';
@@ -560,7 +561,7 @@ void main() {
     expect(restored.courses.map((course) => course.name), ['高等数学']);
   });
 
-  test('自定义课程写入失败时抛出错误且保留当前输入结果', () async {
+  test('自定义课程写入失败时抛出错误且回滚内存课程状态', () async {
     final provider = createProvider()..syncSessionContext('1001', 'G-001');
     addTearDown(provider.dispose);
     files.failWrites = true;
@@ -576,7 +577,7 @@ void main() {
       ),
       throwsA(isA<StateError>()),
     );
-    expect(provider.courses.single.name, '待保存课程');
+    expect(provider.courses, isEmpty);
   });
 
   test('来源学号变化后不读取旧课表缓存', () async {
@@ -855,6 +856,192 @@ void main() {
     other.dispose();
     controller.dispose();
     otherController.dispose();
+  });
+
+  test('P1: 切换到无缓存学期后添加自定义课程，保存和恢复均不串入旧学期课程', () async {
+    final provider = createProvider()..syncSessionContext('1001', '2403130233');
+    for (var i = 0; i < 20 && !provider.isSessionReady; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(provider.isSessionReady, isTrue);
+
+    const termA = CourseTerm(
+      id: '2025_1',
+      year: '2025',
+      semester: 1,
+      title: '2025-2026 第一学期',
+      maxWeek: 20,
+    );
+    const termB = CourseTerm(
+      id: '2025_2',
+      year: '2025',
+      semester: 2,
+      title: '2025-2026 第二学期',
+      maxWeek: 20,
+    );
+
+    // 1. 学期 A 加载真实教务课程
+    await provider.applyFetchedCoursesForTerm(
+      term: termA,
+      rawCourses: [
+        {
+          'name': '学期A高等数学',
+          'time': 1,
+          'end_time': 2,
+          'week_day': 1,
+          'weeks': [1, 2, 3],
+          'location': '教一101',
+          'teacher': '张老师',
+        },
+      ],
+    );
+    expect(provider.currentTerm.id, termA.id);
+    expect(provider.courses, hasLength(1));
+    expect(provider.courses.single.name, '学期A高等数学');
+    expect(provider.baseSchedule, hasLength(1));
+
+    // 2. 切换到没有缓存的学期 B
+    final switched = await provider.switchTerm(termB);
+    expect(switched, isFalse);
+    expect(provider.currentTerm.id, termB.id);
+    expect(provider.courses, isEmpty);
+    expect(provider.baseSchedule, isEmpty);
+    expect(provider.manualCourses, isEmpty);
+
+    // 3. 在学期 B 添加一门自定义课程
+    await provider.addCustomCourse(
+      name: '学期B自定义课程',
+      weekday: 3,
+      startSection: 3,
+      endSection: 4,
+      startWeek: 1,
+      endWeek: 4,
+      location: '教二202',
+      teacher: '李老师',
+    );
+    expect(provider.courses, hasLength(1));
+    expect(provider.courses.single.name, '学期B自定义课程');
+
+    // 4. 验证存储中学期 B 的快照：baseCourses 必须为空，绝不含学期 A 的课程
+    final cacheStore = ScheduleCacheStore(
+      appUserId: '1001',
+      sourceAccountId: '2403130233',
+      snapshotStore: createSnapshotStore('1001'),
+    );
+    final snapshotB = await cacheStore.readTerm(
+      year: termB.year,
+      semester: termB.semester,
+    );
+    expect(snapshotB, isNotNull);
+    expect(snapshotB!.baseCourses, isEmpty,
+        reason: '学期 B 的底层教务课表快照绝不能串入学期 A 的教务课程');
+    expect(snapshotB.manualCourses, hasLength(1));
+    expect(snapshotB.manualCourses.single['name'], '学期B自定义课程');
+
+    provider.dispose();
+
+    // 5. 新建 Provider 恢复学期 B
+    final restored = createProvider()..syncSessionContext('1001', '2403130233');
+    for (var i = 0; i < 20 && !restored.isSessionReady; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(restored.isSessionReady, isTrue);
+    await restored.switchTerm(termB);
+
+    expect(restored.currentTerm.id, termB.id);
+    expect(restored.courses, hasLength(1));
+    expect(restored.courses.single.name, '学期B自定义课程');
+    expect(restored.baseSchedule, isEmpty);
+    expect(restored.courses.any((c) => c.name.contains('学期A')), isFalse);
+
+    restored.dispose();
+  });
+
+  test('P2: 注入第二阶段快照存储失败，自定义课程回滚内存，调课规则保留可恢复状态', () async {
+    final provider = createProvider()..syncSessionContext('1001', '2403130233');
+    for (var i = 0; i < 20 && !provider.isSessionReady; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(provider.isSessionReady, isTrue);
+
+    const term = CourseTerm(
+      id: '2025_1',
+      year: '2025',
+      semester: 1,
+      title: '2025-2026 第一学期',
+      maxWeek: 20,
+    );
+    await provider.applyFetchedCoursesForTerm(
+      term: term,
+      rawCourses: [
+        {
+          'name': '大学物理',
+          'time': 1,
+          'end_time': 2,
+          'week_day': 1,
+          'weeks': [1, 2, 3],
+          'location': '物理楼101',
+          'teacher': '赵老师',
+        },
+      ],
+    );
+    expect(provider.courses, hasLength(1));
+    final initialMeetingKey = provider.courses.single.meetingKey!;
+    final initialCourseKey = provider.courses.single.courseKey!;
+    final meeting = provider.baseSchedule.first.meetings.first;
+    final hash = meeting.computeSnapshotHash();
+
+    // Case 1: 自定义课程保存失败时，回滚内存状态
+    files.failWrites = true;
+    await expectLater(
+      () => provider.addCustomCourse(
+        name: '失败的自定义课',
+        weekday: 2,
+        startSection: 1,
+        endSection: 2,
+        startWeek: 1,
+        endWeek: 2,
+      ),
+      throwsA(isA<StateError>()),
+    );
+    // 验证内存已被回滚，没有残留
+    expect(provider.courses, hasLength(1));
+    expect(provider.courses.any((c) => c.name == '失败的自定义课'), isFalse);
+    expect(provider.manualCourses, isEmpty);
+
+    // Case 2: 调课规则写入成功（规则库成功），但第二阶段展示快照失败
+    // 规则是事实来源，整次调课不应整体崩溃报错，且内存中应用新规则、规则库保留落盘
+    final override = await provider.createRescheduleOverride(
+      courseKey: initialCourseKey,
+      meetingKey: initialMeetingKey,
+      affectedWeeks: {1, 2},
+      toWeekday: 5,
+      toStartSection: 3,
+      toEndSection: 4,
+      toRoom: '新教室505',
+      sourceSnapshotHash: hash,
+    );
+    expect(override, isNotNull);
+    expect(provider.overrides, hasLength(1));
+    expect(
+      provider.courses.any((c) => c.weekday == 5 && c.startSection == 3),
+      isTrue,
+    );
+
+    // 恢复正常写入
+    files.failWrites = false;
+
+    // 重新从规则库加载，确保规则确实成功持久化
+    final overrideRepo = ScheduleOverrideRepository();
+    final savedOverrides = await overrideRepo.loadOverrides(
+      semesterId: term.id,
+      accountId: '2403130233',
+    );
+    expect(savedOverrides, hasLength(1));
+    expect(savedOverrides.first.toWeekday, 5);
+    expect(savedOverrides.first.toStartSection, 3);
+
+    provider.dispose();
   });
 }
 

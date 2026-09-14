@@ -8,7 +8,9 @@ import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
 import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
 
 void main() {
-  testWidgets('empty collection opens the favorite page', (tester) async {
+  testWidgets(
+      'empty collection defaults to emoji page, and favorite tab shows empty state',
+      (tester) async {
     AppPreferencesStore.setMockInitialValues({});
     final service = EmojiFavoriteService(
       preferencesLoader: AppPreferencesStore.getInstance,
@@ -28,13 +30,19 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // 收藏为空时默认打开普通 Emoji
+    expect(find.text('😀'), findsOneWidget);
+    expect(find.byKey(const ValueKey('emoji-tab-face')), findsOneWidget);
+
+    // 切换到收藏 Tab
+    await tester.tap(find.byKey(const ValueKey('emoji-tab-favorite')));
+    await tester.pumpAndSettle();
+
     expect(find.text('暂无收藏的表情'), findsOneWidget);
-    expect(find.byKey(const ValueKey('emoji-tab-favorite')), findsOneWidget);
-    expect(find.byIcon(Icons.history_rounded), findsNothing);
+    expect(find.text('长按图片或表情即可添加'), findsOneWidget);
     expect(find.byKey(const ValueKey('emoji-add-image')), findsOneWidget);
-    expect(find.byIcon(Icons.add_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.add_photo_alternate_outlined), findsNothing);
-    expect(find.text('添加图片'), findsNothing);
+    expect(find.byIcon(Icons.add_photo_alternate_outlined), findsOneWidget);
+    expect(find.text('添加图片'), findsOneWidget);
   });
 
   testWidgets('empty favorite state centers in the favorite page',
@@ -58,11 +66,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // 切换到收藏 Tab
+    await tester.tap(find.byKey(const ValueKey('emoji-tab-favorite')));
+    await tester.pumpAndSettle();
+
     final pageRect = tester.getRect(
       find.byKey(const ValueKey('emoji-page-view')),
-    );
-    final addRect = tester.getRect(
-      find.byKey(const ValueKey('emoji-add-image')),
     );
     final emptyRect = tester.getRect(
       find.byKey(const ValueKey('emoji-favorite-empty-state')),
@@ -70,7 +79,7 @@ void main() {
     final expectedCenterY = pageRect.center.dy;
 
     expect((emptyRect.center.dy - expectedCenterY).abs(), lessThan(12));
-    expect(emptyRect.top, greaterThanOrEqualTo(addRect.bottom - 2));
+    expect(find.byKey(const ValueKey('emoji-add-image')), findsOneWidget);
   });
 
   testWidgets('favorite page keeps add image cell before custom favorite',
@@ -348,6 +357,10 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
+
+    // 切换到第一页（收藏）开始顺序向后滑动
+    await tester.tap(find.byKey(const ValueKey('emoji-tab-favorite')));
     await tester.pumpAndSettle();
 
     final pageView = find.byKey(const ValueKey('emoji-page-view'));

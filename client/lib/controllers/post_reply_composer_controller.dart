@@ -73,6 +73,7 @@ class PostReplyComposerController extends ChangeNotifier {
   bool get showEmojiPanel => _bottomPanel == PostReplyBottomPanel.emoji;
   double get stableKeyboardHeight => _stableKeyboardHeight;
   double get keyboardInset => _keyboardInset;
+  bool get hasObservedKeyboardHeight => _hasObservedKeyboardHeight;
   bool get inputHandoffActive => _handoff != PostReplyInputHandoff.none;
   int? get parentReplyId => _parentReplyId;
   int? get replyToUserId => _replyToUserId;

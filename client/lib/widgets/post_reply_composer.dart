@@ -27,6 +27,8 @@ class PostReplyComposer extends StatefulWidget {
     required this.onNeedLogin,
     this.pickImage,
     this.preserveReplyTargetOnSuccess = false,
+    this.emojiPanelFallbackHeight,
+    this.emojiPanelMaxHeight,
   });
 
   final PostReplyComposerController controller;
@@ -36,6 +38,8 @@ class PostReplyComposer extends StatefulWidget {
   final VoidCallback onNeedLogin;
   final PostReplyImagePicker? pickImage;
   final bool preserveReplyTargetOnSuccess;
+  final double? emojiPanelFallbackHeight;
+  final double? emojiPanelMaxHeight;
 
   @override
   State<PostReplyComposer> createState() => _PostReplyComposerState();
@@ -177,26 +181,37 @@ class _PostReplyComposerState extends State<PostReplyComposer>
           ),
           Builder(builder: (context) {
             final reduceMotion = MediaQuery.disableAnimationsOf(context);
+            final baseEmojiHeight = controller.hasObservedKeyboardHeight
+                ? controller.stableKeyboardHeight
+                : (widget.emojiPanelFallbackHeight ?? controller.stableKeyboardHeight);
+            final emojiHeight = widget.emojiPanelMaxHeight != null
+                ? baseEmojiHeight.clamp(0.0, widget.emojiPanelMaxHeight!)
+                : baseEmojiHeight;
+
             return AnimatedContainer(
               key: const ValueKey('post-reply-emoji-panel-container'),
               duration: (reduceMotion) ? Duration.zero : AppMotion.fast,
               curve: Curves.easeOutCubic,
-              height: isEmoji ? controller.stableKeyboardHeight : 0,
+              height: isEmoji ? emojiHeight : 0,
               clipBehavior: Clip.hardEdge,
               decoration: const BoxDecoration(),
               child: Offstage(
                 offstage: !isEmoji,
                 child: IgnorePointer(
                   ignoring: !isEmoji,
-                  child: AppEmojiPanel(
-                    key: const ValueKey('post-reply-emoji-panel'),
-                    onEmojiSelected: (emoji) =>
-                        insertAtSelection(controller.textController, emoji),
-                    onStickerSelected: controller.selectSticker,
-                    onFavoriteImageSelected: controller.selectFavoriteImage,
-                    favoriteImageHeaders: _favoriteImageHeaders(context),
-                    onBackspace: controller.deleteBackward,
-                    enabled: widget.enabled && !widget.sending,
+                  child: SafeArea(
+                    top: false,
+                    child: AppEmojiPanel(
+                      key: const ValueKey('post-reply-emoji-panel'),
+                      onEmojiSelected: (emoji) =>
+                          insertAtSelection(controller.textController, emoji),
+                      onStickerSelected: controller.selectSticker,
+                      onFavoriteImageSelected: controller.selectFavoriteImage,
+                      onAddImage: widget.pickImage != null ? _pickImage : null,
+                      favoriteImageHeaders: _favoriteImageHeaders(context),
+                      onBackspace: controller.deleteBackward,
+                      enabled: widget.enabled && !widget.sending,
+                    ),
                   ),
                 ),
               ),
@@ -227,7 +242,9 @@ class _PostReplyComposerState extends State<PostReplyComposer>
           ),
         ),
       ),
-      child: SafeArea(top: false, bottom: bottomSafeArea, child: child),
+      child: bottomSafeArea
+          ? SafeArea(top: false, bottom: true, child: child)
+          : child,
     );
   }
 

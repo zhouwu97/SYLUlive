@@ -3309,272 +3309,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       onSubmit: _sendReplyDraft,
       onNeedLogin: _openReplyLogin,
     );
-    /*
-    final viewInsets = MediaQuery.viewInsetsOf(context);
-    final bottomPadding = _showReplyEmojiPanel ? 0.0 : viewInsets.bottom;
-
-    return AnimatedPadding(
-      padding: EdgeInsets.only(bottom: bottomPadding),
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOutCubic,
-      child: Container(
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF131720) : Colors.white,
-          border: Border(
-            top: BorderSide(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : const Color(0xFFEDEDED),
-              width: 0.5,
-            ),
-          ),
-        ),
-        child: SafeArea(
-          top: false,
-          bottom: bottomPadding == 0,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_selectedReplySticker != null)
-                StickerComposerPreview(
-                  sticker: _selectedReplySticker!,
-                  onRemove: _removeSelectedReplySticker,
-                  enabled: !_isSending,
-                ),
-              if (_selectedReplyFavoriteImage != null)
-                FavoriteImageComposerPreview(
-                  favorite: _selectedReplyFavoriteImage!,
-                  onRemove: _removeSelectedReplyFavoriteImage,
-                  enabled: !_isSending,
-                ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Container(
-                        constraints: const BoxConstraints(minHeight: 44),
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.08)
-                              : const Color(0xFFF3F4F6),
-                          borderRadius: BorderRadius.circular(22),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                key: const ValueKey('post-reply-input'),
-                                controller: _replyController,
-                                focusNode: _replyFocus,
-                                enabled: !_isSending,
-                                readOnly: _isSending,
-                                onTap: () {
-                                  if (_showReplyEmojiPanel) {
-                                    setState(
-                                      () => _showReplyEmojiPanel = false,
-                                    );
-                                  }
-                                },
-                                minLines: 1,
-                                maxLines: 4,
-                                textAlignVertical: TextAlignVertical.center,
-                                textInputAction: TextInputAction.newline,
-                                decoration: InputDecoration(
-                                  constraints:
-                                      const BoxConstraints(minHeight: 44),
-                                  hintText: _replyToName != null
-                                      ? '回复 @$_replyToName'
-                                      : '写下你的想法...',
-                                  hintStyle: TextStyle(
-                                    color: isDark
-                                        ? Colors.white30
-                                        : Colors.grey[400],
-                                    fontSize: 14,
-                                  ),
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                  contentPadding: const EdgeInsets.fromLTRB(
-                                    14,
-                                    13,
-                                    4,
-                                    9,
-                                  ),
-                                ),
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: isDark
-                                      ? Colors.white
-                                      : const Color(0xFF22242A),
-                                  height: 1.3,
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              width: 42,
-                              height: 44,
-                              child: IconButton(
-                                key: const ValueKey(
-                                  'post-reply-emoji-button',
-                                ),
-                                tooltip: _showReplyEmojiPanel ? '打开键盘' : '选择表情',
-                                onPressed:
-                                    _isSending ? null : _toggleReplyEmojiPanel,
-                                padding: EdgeInsets.zero,
-                                icon: Icon(
-                                  _showReplyEmojiPanel
-                                      ? Icons.keyboard_alt_outlined
-                                      : Icons.sentiment_satisfied_alt_outlined,
-                                  size: 22,
-                                  color: isDark
-                                      ? Colors.white60
-                                      : const Color(0xFF60646C),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ValueListenableBuilder<TextEditingValue>(
-                      valueListenable: _replyController,
-                      builder: (context, value, _) {
-                        final canSend = !_isSending &&
-                            (value.text.trim().isNotEmpty ||
-                                _selectedReplySticker != null ||
-                                _selectedReplyFavoriteImage != null);
-                        return IconButton.filled(
-                          key: const ValueKey('post-reply-send-button'),
-                          tooltip: '发送评论',
-                          onPressed: canSend ? _sendReply : null,
-                          style: IconButton.styleFrom(
-                            fixedSize: const Size(44, 44),
-                            backgroundColor: isDark
-                                ? const Color(0xFF82A0FF)
-                                : const Color(0xFF6B8EFF),
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: isDark
-                                ? Colors.white.withValues(alpha: 0.10)
-                                : const Color(0xFFE5E7EB),
-                            disabledForegroundColor: isDark
-                                ? Colors.white30
-                                : const Color(0xFF9CA3AF),
-                          ),
-                          icon: _isSending
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.5,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.send_rounded, size: 20),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOutCubic,
-                child: _showReplyEmojiPanel
-                    ? SizedBox(
-                        height: _replyEmojiPanelHeight,
-                        child: AppEmojiPanel(
-                          onEmojiSelected: _insertReplyEmoji,
-                          onStickerSelected: _selectReplySticker,
-                          onFavoriteImageSelected: _selectReplyFavoriteImage,
-                          onBackspace: () =>
-                              deletePreviousCharacter(_replyController),
-                          enabled: !_isSending,
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    */
   }
 
   Widget _buildWaterReplyBar(bool isDark) {
     return _buildComposerBody(isDark);
-    /*
-    if (_isReplyComposerOpen) {
-      return _buildComposerBody(isDark);
-    }
-
-    // 折叠状态：说点什么… 入口
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF131720) : Colors.white,
-        border: Border(
-          top: BorderSide(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.08)
-                : const Color(0xFFEDEDED),
-            width: 0.5,
-          ),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
-          child: Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => _openReplyComposer(),
-                  child: Container(
-                    height: 38,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.08)
-                          : const Color(0xFFF3F4F6),
-                      borderRadius: BorderRadius.circular(19),
-                    ),
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '写下你的想法...',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isDark ? Colors.white30 : Colors.grey[400],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              _buildBottomStat(
-                icon: Icons.chat_bubble_outline_rounded,
-                label: '${_post?.replyCount ?? _replies.length}',
-                color: isDark ? Colors.white54 : const Color(0xFF60646C),
-                onTap: _openReplyComposer,
-              ),
-              const SizedBox(width: 10),
-              _buildBottomStat(
-                icon: _liked ? Icons.thumb_up : Icons.thumb_up_outlined,
-                label: '$_likeCount',
-                color: _liked
-                    ? const Color(0xFFFF6B6B)
-                    : (isDark ? Colors.white54 : const Color(0xFF60646C)),
-                onTap: _toggleLike,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    */
   }
 
   // ---- 作者卡片（集市复用，保持不变） ----
@@ -4457,6 +4195,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final threadComposerController = PostReplyComposerController();
+    final sheetController = DraggableScrollableController();
+
+    bool wasEmoji = false;
+    void handleComposerChanges() {
+      final isEmoji =
+          threadComposerController.bottomPanel == PostReplyBottomPanel.emoji;
+      if (isEmoji && !wasEmoji) {
+        if (sheetController.isAttached && sheetController.size < 0.90) {
+          sheetController.animateTo(
+            0.92,
+            duration: AppMotion.normal,
+            curve: AppMotion.standard,
+          );
+        }
+      }
+      wasEmoji = isEmoji;
+    }
+
+    threadComposerController.addListener(handleComposerChanges);
     final initialTarget = anchorReply ?? parentReply;
     threadComposerController.setReplyTarget(
       parentReplyId: parentReply.id,
@@ -4571,6 +4328,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                 return Padding(
                   padding: EdgeInsets.only(bottom: bottomPadding),
                   child: DraggableScrollableSheet(
+                    controller: sheetController,
                     initialChildSize: 0.72,
                     minChildSize: 0.50,
                     maxChildSize: 0.92,
@@ -4634,6 +4392,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                               sending: isSending,
                               enabled: context.watch<AuthProvider>().isLoggedIn,
                               preserveReplyTargetOnSuccess: true,
+                              emojiPanelFallbackHeight: 230,
+                              emojiPanelMaxHeight: 280,
                               onSubmit: (draft) async {
                                 if (isSending) return false;
                                 setSheetState(() => isSending = true);
@@ -4699,6 +4459,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       },
     );
 
+    threadComposerController.removeListener(handleComposerChanges);
+    sheetController.dispose();
     threadComposerController.dispose();
   }
 

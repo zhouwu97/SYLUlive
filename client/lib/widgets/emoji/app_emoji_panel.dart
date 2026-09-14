@@ -56,6 +56,7 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
   late final EmojiFavoriteService _favoriteService;
 
   int _tabIndex = _favoriteTabIndex;
+  bool _initialTabResolved = false;
   List<EmojiFavoriteItem> _favorites = const [];
 
   int get _tabCount =>
@@ -94,12 +95,38 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
   Future<void> _loadFavorites() async {
     try {
       final favorites = await _favoriteService.load();
-      if (mounted) setState(() => _favorites = favorites);
+      if (mounted) {
+        setState(() {
+          _favorites = favorites;
+          if (!_initialTabResolved) {
+            _initialTabResolved = true;
+            if (_visibleFavorites.isEmpty && _tabIndex == _favoriteTabIndex) {
+              _tabIndex = _emojiTabIndex;
+              if (_pageController.hasClients) {
+                _pageController.jumpToPage(_emojiTabIndex);
+              }
+            }
+          }
+        });
+      }
     } catch (error) {
       // 平台偏好存储不可用时（例如桌面/纯 Flutter 测试环境），
       // 表情面板仍应可用，只降级为空收藏，不让异步异常污染页面。
       debugPrint('读取表情收藏失败，使用空收藏: $error');
-      if (mounted) setState(() => _favorites = const []);
+      if (mounted) {
+        setState(() {
+          _favorites = const [];
+          if (!_initialTabResolved) {
+            _initialTabResolved = true;
+            if (_tabIndex == _favoriteTabIndex) {
+              _tabIndex = _emojiTabIndex;
+              if (_pageController.hasClients) {
+                _pageController.jumpToPage(_emojiTabIndex);
+              }
+            }
+          }
+        });
+      }
     }
   }
 
@@ -120,7 +147,7 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
     setState(() => _tabIndex = index);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_tabScrollController.hasClients) return;
-      final target = (index * 48.0 - 52.0).clamp(
+      final target = (index * 46.0 - 50.0).clamp(
         0.0,
         _tabScrollController.position.maxScrollExtent,
       );
@@ -256,33 +283,54 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
     final favorites = _visibleFavorites;
 
     if (favorites.isEmpty) {
-      return Stack(
-        children: [
-          GridView.builder(
-            key: const ValueKey('emoji-favorite-grid'),
-            padding: const EdgeInsets.all(10),
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 66,
-              mainAxisExtent: 72,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-            ),
-            itemCount: 1,
-            itemBuilder: (context, index) => _buildAddImageCell(muted),
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Padding(
-                // 上下对称留白，让空态以整个内容区为基准居中。
-                padding: const EdgeInsets.all(10),
-                child: Center(
-                  child: _buildFavoriteEmptyState(muted),
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          child: Column(
+            key: const ValueKey('emoji-favorite-empty-state'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.favorite_border_rounded, size: 32, color: muted),
+              const SizedBox(height: 8),
+              Text(
+                '暂无收藏的表情',
+                style: TextStyle(
+                  color: muted,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-            ),
+              const SizedBox(height: 4),
+              Text(
+                '长按图片或表情即可添加',
+                style: TextStyle(
+                  color: muted.withValues(alpha: 0.72),
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                key: const ValueKey('emoji-add-image'),
+                onPressed: widget.enabled ? widget.onAddImage : null,
+                icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+                label: const Text('添加图片'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.primary,
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       );
     }
 
@@ -322,30 +370,6 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
             ),
           ),
       ],
-    );
-  }
-
-  Widget _buildFavoriteEmptyState(Color muted) {
-    return Semantics(
-      liveRegion: true,
-      label: '暂无收藏的表情，长按图片或表情即可添加',
-      child: Column(
-        key: const ValueKey('emoji-favorite-empty-state'),
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.favorite_border_rounded, size: 28, color: muted),
-          const SizedBox(height: 4),
-          Text('暂无收藏的表情', style: TextStyle(color: muted, fontSize: 13)),
-          const SizedBox(height: 2),
-          Text(
-            '长按图片或表情即可添加',
-            style: TextStyle(
-              color: muted.withValues(alpha: 0.72),
-              fontSize: 11,
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -589,7 +613,7 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
     final divider =
         isDark ? AppColors.composerDividerDark : AppColors.composerDividerLight;
     return Container(
-      height: 56,
+      height: 50,
       decoration: BoxDecoration(
         color: isDark
             ? AppColors.surfaceSecondaryDark
@@ -602,7 +626,7 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
             child: ListView.builder(
               controller: _tabScrollController,
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
               itemCount: _tabCount,
               itemBuilder: (context, index) => _buildTab(
                 theme: theme,
@@ -612,11 +636,13 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
             ),
           ),
           SizedBox(
-            width: 46,
+            width: 44,
             child: Tooltip(
               message: '删除前一个字符',
               child: IconButton(
                 key: const ValueKey('emoji-backspace-button'),
+                padding: EdgeInsets.zero,
+                iconSize: 22,
                 onPressed: widget.enabled ? widget.onBackspace : null,
                 icon: const Icon(Icons.backspace_outlined),
               ),
@@ -645,7 +671,7 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
       tooltip = '收藏';
       icon = Icon(
         selected ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-        size: 24,
+        size: 22,
         color: selected ? selectedColor : muted,
       );
     } else if (index == _emojiTabIndex) {
@@ -653,7 +679,7 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
       tooltip = '普通表情';
       icon = Icon(
         Icons.sentiment_satisfied_alt_rounded,
-        size: 25,
+        size: 23,
         color: selected ? selectedColor : muted,
       );
     } else {
@@ -662,8 +688,8 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
       tooltip = group.name;
       icon = Image.asset(
         group.items.first.thumbnailAsset,
-        width: 36,
-        height: 36,
+        width: 32,
+        height: 32,
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => Icon(Icons.image_outlined, color: muted),
       );
@@ -676,7 +702,7 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
         onTap: widget.enabled ? () => _selectTab(index) : null,
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          width: 46,
+          width: 44,
           margin: const EdgeInsets.symmetric(horizontal: 1),
           decoration: BoxDecoration(
             color: background,

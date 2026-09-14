@@ -214,8 +214,8 @@ class UnifiedTimelineService {
       '15:45',
       '16:40',
       '17:35',
-      '18:30',
-      '19:25',
+      '19:30',
+      '20:25',
     ];
     return _at(day, starts[(section - 1).clamp(0, starts.length - 1)]);
   }
@@ -232,8 +232,8 @@ class UnifiedTimelineService {
       '16:30',
       '17:25',
       '18:20',
-      '19:15',
-      '20:10',
+      '20:15',
+      '21:10',
     ];
     return _at(day, ends[(section - 1).clamp(0, ends.length - 1)]);
   }

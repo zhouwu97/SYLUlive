@@ -7,8 +7,8 @@ import (
 
 	"shenliyuan/internal/models"
 
-	"github.com/stretchr/testify/require"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 

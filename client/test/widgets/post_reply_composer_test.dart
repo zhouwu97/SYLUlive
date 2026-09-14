@@ -16,6 +16,8 @@ Widget _buildComposer({
   VoidCallback? onNeedLogin,
   PostReplySubmitCallback? onSubmit,
   PostReplyImagePicker? pickImage,
+  double? emojiPanelFallbackHeight,
+  double? emojiPanelMaxHeight,
 }) {
   return MaterialApp(
     theme: theme,
@@ -40,6 +42,8 @@ Widget _buildComposer({
             onSubmit: onSubmit ?? (_) async => true,
             onNeedLogin: onNeedLogin ?? () {},
             pickImage: pickImage,
+            emojiPanelFallbackHeight: emojiPanelFallbackHeight,
+            emojiPanelMaxHeight: emojiPanelMaxHeight,
           ),
         ],
       ),
@@ -737,5 +741,86 @@ void main() {
     expect(controller.inputHandoffActive, isFalse);
     expect(controller.showEmojiPanel, isFalse);
     expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
+  });
+
+  testWidgets('首次打开 Emoji 使用 emojiPanelFallbackHeight 约束高度（未弹过键盘时）',
+      (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    expect(controller.hasObservedKeyboardHeight, isFalse);
+
+    await tester.pumpWidget(
+      _buildComposer(
+        controller: controller,
+        disableAnimations: true,
+        emojiPanelFallbackHeight: 230,
+        emojiPanelMaxHeight: 280,
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pumpAndSettle();
+
+    expect(controller.showEmojiPanel, isTrue);
+    final panelSize = tester.getSize(
+      find.byKey(const ValueKey('post-reply-emoji-panel-container')),
+    );
+    expect(panelSize.height, 230);
+  });
+
+  testWidgets('键盘弹起后使用实际测量高度，但不超过 emojiPanelMaxHeight 约束',
+      (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      _buildComposer(
+        controller: controller,
+        disableAnimations: true,
+        emojiPanelFallbackHeight: 230,
+        emojiPanelMaxHeight: 280,
+      ),
+    );
+
+    // 模拟真实键盘弹出 320px
+    controller.updateKeyboardMetrics(320);
+    expect(controller.hasObservedKeyboardHeight, isTrue);
+    expect(controller.stableKeyboardHeight, 320);
+
+    // 切换到 Emoji 面板
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pumpAndSettle();
+
+    final panelSize = tester.getSize(
+      find.byKey(const ValueKey('post-reply-emoji-panel-container')),
+    );
+    // 320 受到 emojiPanelMaxHeight: 280 约束
+    expect(panelSize.height, 280);
+  });
+
+  testWidgets('Emoji 面板内部由 SafeArea 保护底部系统导航区',
+      (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      _buildComposer(
+        controller: controller,
+        disableAnimations: true,
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pumpAndSettle();
+
+    // 验证 AppEmojiPanel 被包含在 emoji-panel-container 内部的 SafeArea 中
+    final safeAreaFinder = find.descendant(
+      of: find.byKey(const ValueKey('post-reply-emoji-panel-container')),
+      matching: find.byType(SafeArea),
+    );
+    expect(safeAreaFinder, findsOneWidget);
+    final safeAreaWidget = tester.widget<SafeArea>(safeAreaFinder);
+    expect(safeAreaWidget.top, isFalse);
   });
 }

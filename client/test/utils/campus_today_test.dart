@@ -78,7 +78,7 @@ void main() {
     expect(upcoming.single.courseState, CampusTodayCourseState.upcoming);
 
     final ended = buildCampusTodayEntries(
-      now: DateTime(2026, 8, 10, 21),
+      now: DateTime(2026, 8, 10, 21, 15),
       courses: [
         _course(id: 1, weekday: 1, startSection: 12, endSection: 12),
       ],

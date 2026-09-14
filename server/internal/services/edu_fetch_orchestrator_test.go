@@ -519,5 +519,3 @@ func TestEduFetchSingleflightAllWaitersCancelAbortsRemoteFetch(t *testing.T) {
 	<-orchestrator.workers
 	<-orchestrator.workers
 }
-
-

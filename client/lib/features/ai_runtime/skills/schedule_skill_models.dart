@@ -91,8 +91,8 @@ const List<String> scheduleSectionStarts = <String>[
   '15:45',
   '16:40',
   '17:35',
-  '18:30',
-  '19:25',
+  '19:30',
+  '20:25',
 ];
 
 const List<String> scheduleSectionEnds = <String>[
@@ -106,8 +106,8 @@ const List<String> scheduleSectionEnds = <String>[
   '16:30',
   '17:25',
   '18:20',
-  '19:15',
-  '20:10',
+  '20:15',
+  '21:10',
 ];
 
 String scheduleTimeText(int startSection, int endSection) {

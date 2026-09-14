@@ -232,6 +232,7 @@ class _ScheduleOperationContext {
     required this.sourceAccountId,
     required this.store,
     required this.storeReady,
+    required this.term,
     required this.year,
     required this.semester,
     this.providerTermId,
@@ -242,6 +243,7 @@ class _ScheduleOperationContext {
   final String sourceAccountId;
   final ScheduleCacheStore? store;
   final Future<void> storeReady;
+  final CourseTerm term;
   final String year;
   final int semester;
   final String? providerTermId;
@@ -609,6 +611,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       sourceAccountId: _sourceAccountId ?? '',
       store: _scheduleStore,
       storeReady: _scheduleStoreReady,
+      term: selectedTerm,
       year: selectedTerm.year,
       semester: selectedTerm.semester,
       providerTermId: selectedTerm.providerTermId,
@@ -663,8 +666,31 @@ class CourseScheduleProvider extends ChangeNotifier {
     final store = await _resolveOperationStore(context);
     if (store == null) return false;
     try {
-      final baseBlocks = _courseModelsToBlocks(_baseSchedule);
-      final manualBlocks = _courseModelsToBlocks(_manualCourses);
+      final targetSemesterId = context.term.id;
+
+      // 学期一致性校验：确保存入底层快照的课程均属于当前操作的目标学期，绝不跨学期串入
+      final validBaseCourses = _baseSchedule
+          .where((course) =>
+              course.semesterId.isEmpty || course.semesterId == targetSemesterId)
+          .toList(growable: false);
+      if (_baseSchedule.any((c) =>
+          c.semesterId.isNotEmpty && c.semesterId != targetSemesterId)) {
+        debugPrint(
+            '拦截到跨学期 baseCourses 残留：目标学期=$targetSemesterId, 忽略学期=${_baseSchedule.map((c) => c.semesterId).where((s) => s != targetSemesterId).toSet()}');
+      }
+
+      final validManualCourses = _manualCourses
+          .where((course) =>
+              course.semesterId.isEmpty || course.semesterId == targetSemesterId)
+          .toList(growable: false);
+      if (_manualCourses.any((c) =>
+          c.semesterId.isNotEmpty && c.semesterId != targetSemesterId)) {
+        debugPrint(
+            '拦截到跨学期 manualCourses 残留：目标学期=$targetSemesterId, 忽略学期=${_manualCourses.map((c) => c.semesterId).where((s) => s != targetSemesterId).toSet()}');
+      }
+
+      final baseBlocks = _courseModelsToBlocks(validBaseCourses);
+      final manualBlocks = _courseModelsToBlocks(validManualCourses);
       await store.writeSourceCourses(
         year: context.year,
         semester: context.semester,
@@ -832,6 +858,13 @@ class CourseScheduleProvider extends ChangeNotifier {
   Future<bool> loadCachedCoursesIfAvailable() async {
     final cached = await _loadFromCache();
     if (cached == null || cached.isEmpty) {
+      if (_courses.isEmpty) {
+        _baseSchedule = [];
+        _manualCourses = [];
+        _overrides = [];
+        _resolvedMeetings = [];
+        _buildGrid();
+      }
       _sourceTrustKnown = true;
       _legacyCacheRequiresResync = false;
       return false;
@@ -869,12 +902,28 @@ class CourseScheduleProvider extends ChangeNotifier {
     final base = snapshot?.baseCourses ?? const <Map<String, dynamic>>[];
     final manual = snapshot?.manualCourses ?? const <Map<String, dynamic>>[];
     if (snapshot?.sourceSnapshotPresent == true) {
+      final currentTermId = currentTerm.id;
+      final filteredBase = base
+          .map(CourseBlock.fromJson)
+          .where((b) =>
+              b.courseKey == null ||
+              !b.courseKey!.contains(':') ||
+              b.courseKey!.split(':')[1] == currentTermId)
+          .toList(growable: false);
+      final filteredManual = manual
+          .map(CourseBlock.fromJson)
+          .where((b) =>
+              b.courseKey == null ||
+              !b.courseKey!.contains(':') ||
+              b.courseKey!.split(':')[1] == currentTermId)
+          .toList(growable: false);
+
       final restoredBase = _convertToCourses(
-        base.map(CourseBlock.fromJson).toList(growable: false),
+        filteredBase,
         currentTerm.id,
       );
       final restoredManual = _convertToCourses(
-        manual.map(CourseBlock.fromJson).toList(growable: false),
+        filteredManual,
         currentTerm.id,
       ).map((course) => course.copyWith(source: CourseSource.manual)).toList();
       _baseSchedule = restoredBase;
@@ -1928,7 +1977,11 @@ class CourseScheduleProvider extends ChangeNotifier {
       accountId: _sourceAccountId,
     );
     _syncResolvedSchedule();
-    await _persistResolvedScheduleOrThrow();
+    try {
+      await _persistResolvedScheduleOrThrow();
+    } catch (e) {
+      debugPrint('课表展示快照保存失败（调课规则已落盘生效）: $e');
+    }
     notifyListeners();
     return override;
   }
@@ -1973,7 +2026,11 @@ class CourseScheduleProvider extends ChangeNotifier {
       accountId: _sourceAccountId,
     );
     _syncResolvedSchedule();
-    await _persistResolvedScheduleOrThrow();
+    try {
+      await _persistResolvedScheduleOrThrow();
+    } catch (e) {
+      debugPrint('课表展示快照保存失败（教室调整规则已落盘生效）: $e');
+    }
     notifyListeners();
     return override;
   }
@@ -1996,7 +2053,11 @@ class CourseScheduleProvider extends ChangeNotifier {
       accountId: _sourceAccountId,
     );
     _syncResolvedSchedule();
-    await _persistResolvedScheduleOrThrow();
+    try {
+      await _persistResolvedScheduleOrThrow();
+    } catch (e) {
+      debugPrint('课表展示快照保存失败（调课规则已落盘生效）: $e');
+    }
     notifyListeners();
     return updated;
   }
@@ -2028,7 +2089,11 @@ class CourseScheduleProvider extends ChangeNotifier {
       accountId: _sourceAccountId,
     );
     _syncResolvedSchedule();
-    await _persistResolvedScheduleOrThrow();
+    try {
+      await _persistResolvedScheduleOrThrow();
+    } catch (e) {
+      debugPrint('课表展示快照保存失败（恢复原安排已生效）: $e');
+    }
     notifyListeners();
   }
 
@@ -2190,14 +2255,26 @@ class CourseScheduleProvider extends ChangeNotifier {
       meetingKey: 'manual:${currentTerm.id}:$newId:meeting',
     );
 
-    _courses.insert(0, course);
-    _populateManualCoursesFromBlocks(_courses.where((c) => c.id < 0).toList());
-    _syncResolvedSchedule();
+    final previousCourses = List<CourseBlock>.from(_courses);
+    final previousManual = List<Course>.from(_manualCourses);
+    final previousResolved = List<ResolvedMeeting>.from(_resolvedMeetings);
 
-    await _persistResolvedScheduleOrThrow();
-
-    notifyListeners();
-    return course;
+    try {
+      _courses.insert(0, course);
+      _populateManualCoursesFromBlocks(
+          _courses.where((c) => c.id < 0).toList());
+      _syncResolvedSchedule();
+      await _persistResolvedScheduleOrThrow();
+      notifyListeners();
+      return course;
+    } catch (e) {
+      _courses = previousCourses;
+      _manualCourses = previousManual;
+      _resolvedMeetings = previousResolved;
+      _buildGrid();
+      _syncWidget();
+      rethrow;
+    }
   }
 
   /// 编辑自定义课程
@@ -2238,28 +2315,56 @@ class CourseScheduleProvider extends ChangeNotifier {
       meetingKey: oldCourse.meetingKey,
     );
 
-    _courses[idx] = course;
-    _populateManualCoursesFromBlocks(_courses.where((c) => c.id < 0).toList());
-    _syncResolvedSchedule();
+    final previousCourses = List<CourseBlock>.from(_courses);
+    final previousManual = List<Course>.from(_manualCourses);
+    final previousResolved = List<ResolvedMeeting>.from(_resolvedMeetings);
 
-    await _persistResolvedScheduleOrThrow();
-
-    notifyListeners();
-    return course;
+    try {
+      _courses[idx] = course;
+      _populateManualCoursesFromBlocks(
+          _courses.where((c) => c.id < 0).toList());
+      _syncResolvedSchedule();
+      await _persistResolvedScheduleOrThrow();
+      notifyListeners();
+      return course;
+    } catch (e) {
+      _courses = previousCourses;
+      _manualCourses = previousManual;
+      _resolvedMeetings = previousResolved;
+      _buildGrid();
+      _syncWidget();
+      rethrow;
+    }
   }
 
   /// 删除课程（支持自定义课程和服务器课程）
   Future<void> removeCustomCourse(int courseId) async {
     await _ensureTrustedSourceForMutation();
-    _courses.removeWhere((c) => c.id == courseId);
-    if (courseId > 0) {
-      _hiddenCourseIds.add(courseId);
-      await _saveHiddenCourses();
+    final previousCourses = List<CourseBlock>.from(_courses);
+    final previousManual = List<Course>.from(_manualCourses);
+    final previousResolved = List<ResolvedMeeting>.from(_resolvedMeetings);
+    final previousHidden = Set<int>.from(_hiddenCourseIds);
+
+    try {
+      _courses.removeWhere((c) => c.id == courseId);
+      if (courseId > 0) {
+        _hiddenCourseIds.add(courseId);
+        await _saveHiddenCourses();
+      }
+      _populateManualCoursesFromBlocks(
+          _courses.where((c) => c.id < 0).toList());
+      _syncResolvedSchedule();
+      await _persistResolvedScheduleOrThrow();
+      notifyListeners();
+    } catch (e) {
+      _courses = previousCourses;
+      _manualCourses = previousManual;
+      _resolvedMeetings = previousResolved;
+      _hiddenCourseIds = previousHidden;
+      _buildGrid();
+      _syncWidget();
+      rethrow;
     }
-    _populateManualCoursesFromBlocks(_courses.where((c) => c.id < 0).toList());
-    _syncResolvedSchedule();
-    await _persistResolvedScheduleOrThrow();
-    notifyListeners();
   }
 
   Future<void> _ensureTrustedSourceForMutation() async {
@@ -2293,6 +2398,12 @@ class CourseScheduleProvider extends ChangeNotifier {
       return false;
     }
     _courses = [];
+    _baseSchedule = [];
+    _manualCourses = [];
+    _overrides = [];
+    _resolvedMeetings = [];
+    _sourceTrustKnown = false;
+    _legacyCacheRequiresResync = false;
     _gridData = {};
     _hiddenCourseIds = {};
     _archives = [];
@@ -2306,6 +2417,8 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (loadCache) {
       hasCache = await loadCachedCoursesIfAvailable();
     } else {
+      _sourceTrustKnown = true;
+      _legacyCacheRequiresResync = false;
       notifyListeners();
     }
 
@@ -2376,6 +2489,14 @@ class CourseScheduleProvider extends ChangeNotifier {
       snapshot?.courses.map(CourseBlock.fromJson) ?? const <CourseBlock>[],
     );
     _buildGrid();
+
+    final sourceRestored = _restoreSourceModels(snapshot);
+    if (!sourceRestored) {
+      _baseSchedule = [];
+      _manualCourses = [];
+      _overrides = [];
+      _resolvedMeetings = [];
+    }
 
     return applyFetchedCourses(rawCourses, resetHidden: resetHidden);
   }

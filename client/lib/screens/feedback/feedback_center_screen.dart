@@ -23,6 +23,8 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
   final Map<int, List<FeedbackTicket>> _tabTickets = {};
   final Map<int, bool> _tabLoading = {};
   final Map<int, String?> _tabErrors = {};
+  final Map<int, int> _tabPages = {};
+  final Map<int, bool> _tabHasMore = {};
 
   @override
   void initState() {
@@ -55,10 +57,19 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
     }
   }
 
-  Future<void> _loadTicketsForTab(int tabIndex) async {
+  Future<void> _loadTicketsForTab(int tabIndex, {bool loadMore = false}) async {
+    if ((_tabLoading[tabIndex] ?? false) ||
+        (loadMore && !(_tabHasMore[tabIndex] ?? true))) {
+      return;
+    }
+    final page = loadMore ? ((_tabPages[tabIndex] ?? 0) + 1) : 1;
     setState(() {
       _tabLoading[tabIndex] = true;
-      _tabErrors[tabIndex] = null;
+      if (!loadMore) {
+        _tabErrors[tabIndex] = null;
+        _tabPages[tabIndex] = 0;
+        _tabHasMore[tabIndex] = true;
+      }
     });
 
     try {
@@ -68,7 +79,7 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
         '/feedback/tickets',
         queryParameters: {
           'status_group': statusGroup,
-          'page': 1,
+          'page': page,
           'limit': 50,
         },
       );
@@ -78,10 +89,22 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
         final tickets = list
             .map((e) => FeedbackTicket.fromJson(e as Map<String, dynamic>))
             .toList();
+        final total = (response.data['total'] as num?)?.toInt();
 
         if (mounted) {
           setState(() {
-            _tabTickets[tabIndex] = tickets;
+            final existing = loadMore
+                ? List<FeedbackTicket>.from(_tabTickets[tabIndex] ?? const [])
+                : <FeedbackTicket>[];
+            final existingIds = existing.map((ticket) => ticket.id).toSet();
+            existing.addAll(
+              tickets.where((ticket) => existingIds.add(ticket.id)),
+            );
+            _tabTickets[tabIndex] = existing;
+            _tabPages[tabIndex] = page;
+            _tabHasMore[tabIndex] = total == null
+                ? tickets.length >= 50
+                : existing.length < total;
             _tabLoading[tabIndex] = false;
           });
         }
@@ -462,16 +485,40 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
       );
     }
 
+    final hasMore = _tabHasMore[tabIndex] ?? false;
     return RefreshIndicator(
       onRefresh: () => _loadTicketsForTab(tabIndex),
       color: AppColors.brandPrimary,
-      child: ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(
-          parent: BouncingScrollPhysics(),
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification.metrics.extentAfter < 300 &&
+              notification is ScrollUpdateNotification) {
+            _loadTicketsForTab(tabIndex, loadMore: true);
+          }
+          return false;
+        },
+        child: ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          padding: const EdgeInsets.only(top: 4, bottom: 24),
+          itemCount: tickets.length + (hasMore ? 1 : 0),
+          itemBuilder: (_, index) {
+            if (index >= tickets.length) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              );
+            }
+            return _buildTicketCard(tickets[index], isDark);
+          },
         ),
-        padding: const EdgeInsets.only(top: 4, bottom: 24),
-        itemCount: tickets.length,
-        itemBuilder: (_, index) => _buildTicketCard(tickets[index], isDark),
       ),
     );
   }

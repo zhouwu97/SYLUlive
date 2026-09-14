@@ -19,6 +19,16 @@ class ScheduleOverrideOverlapException implements Exception {
   String toString() => 'ScheduleOverrideOverlapException: $message';
 }
 
+/// 调课规则读取失败时必须与“确实没有规则”区分，阻止后续整体覆盖写入。
+class ScheduleOverrideStorageException implements Exception {
+  final String message;
+
+  const ScheduleOverrideStorageException(this.message);
+
+  @override
+  String toString() => 'ScheduleOverrideStorageException: $message';
+}
+
 /// 本地课表调整仓库（ScheduleOverrideRepository）
 ///
 /// 负责持久化保存 ScheduleOverride，并严格执行 Section 11 的重叠禁止规则。
@@ -46,22 +56,29 @@ class ScheduleOverrideRepository {
     required String semesterId,
     String? accountId,
   }) async {
+    final store = await _getStore();
+    final key = _storageKey(semesterId, accountId);
+    final raw = store.getString(key);
+    if (raw == null || raw.trim().isEmpty) return const [];
+
     try {
-      final store = await _getStore();
-      final key = _storageKey(semesterId, accountId);
-      final raw = store.getString(key);
-      if (raw == null || raw.trim().isEmpty) return const [];
-
       final list = jsonDecode(raw);
-      if (list is! List) return const [];
-
-      return list
-          .whereType<Map<String, dynamic>>()
-          .map(ScheduleOverride.fromJson)
-          .toList();
-    } catch (e) {
-      debugPrint('加载本地调课规则失败: $e');
-      return const [];
+      if (list is! List) {
+        throw const FormatException('调课规则根节点不是数组');
+      }
+      final overrides = <ScheduleOverride>[];
+      for (final item in list) {
+        if (item is! Map) {
+          throw const FormatException('调课规则条目格式错误');
+        }
+        overrides.add(
+          ScheduleOverride.fromJson(Map<String, dynamic>.from(item)),
+        );
+      }
+      return overrides;
+    } catch (error) {
+      debugPrint('加载本地调课规则失败: $error');
+      throw ScheduleOverrideStorageException('本地调课规则读取失败，请稍后重试');
     }
   }
 

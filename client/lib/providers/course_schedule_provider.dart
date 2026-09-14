@@ -278,6 +278,9 @@ class CourseScheduleProvider extends ChangeNotifier {
   ScheduleSessionPhase _sessionPhase = ScheduleSessionPhase.resolvingIdentity;
   bool _isLoading = false;
   String? _errorMessage;
+  bool _legacyCacheRequiresResync = false;
+  bool _sourceTrustKnown = false;
+  Future<void> _sessionRestoreFuture = Future<void>.value();
   bool _disposed = false;
 
   // 学期管理
@@ -327,6 +330,7 @@ class CourseScheduleProvider extends ChangeNotifier {
   ScheduleSessionPhase get sessionPhase => _sessionPhase;
   bool get isSessionReady => _sessionPhase == ScheduleSessionPhase.ready;
   int get contextGeneration => _contextGeneration;
+  bool get legacyCacheRequiresResync => _legacyCacheRequiresResync;
 
   /// 研究生 Provider 的节次标签不是本科课表的数字时钟，布局必须保留
   /// Provider 行序；即使当前学期没有课程，也不能回退到本科时间轴。
@@ -430,6 +434,8 @@ class CourseScheduleProvider extends ChangeNotifier {
     _hiddenCourseIds = {};
     _archives = [];
     _errorMessage = null;
+    _legacyCacheRequiresResync = false;
+    _sourceTrustKnown = false;
     _isLoading = false;
     _lastFetchedAt = null;
     _userId = normalizedUserId;
@@ -458,10 +464,11 @@ class CourseScheduleProvider extends ChangeNotifier {
           });
 
     if (store != null) {
-      unawaited(_restoreSession(
+      _sessionRestoreFuture = _restoreSession(
         generation: generation,
         store: store,
-      ));
+      );
+      unawaited(_sessionRestoreFuture);
     }
     notifyListeners();
   }
@@ -555,6 +562,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     _identityNamespace = null;
     _scheduleStore = null;
     _scheduleStoreReady = Future<void>.value();
+    _sessionRestoreFuture = Future<void>.value();
     _sessionPhase = ScheduleSessionPhase.resolvingIdentity;
     _courses = [];
     _gridData = {};
@@ -565,6 +573,8 @@ class CourseScheduleProvider extends ChangeNotifier {
     _hiddenCourseIds = {};
     _archives = [];
     _errorMessage = null;
+    _legacyCacheRequiresResync = false;
+    _sourceTrustKnown = false;
     _lastFetchedAt = null;
     _currentTerm = null;
     _isLoading = false;
@@ -812,6 +822,8 @@ class CourseScheduleProvider extends ChangeNotifier {
   Future<bool> loadCachedCoursesIfAvailable() async {
     final cached = await _loadFromCache();
     if (cached == null || cached.isEmpty) {
+      _sourceTrustKnown = true;
+      _legacyCacheRequiresResync = false;
       return false;
     }
     final operation = _captureOperationContext();
@@ -847,6 +859,8 @@ class CourseScheduleProvider extends ChangeNotifier {
     final base = snapshot?.baseCourses ?? const <Map<String, dynamic>>[];
     final manual = snapshot?.manualCourses ?? const <Map<String, dynamic>>[];
     if (snapshot?.sourceSnapshotPresent == true) {
+      _sourceTrustKnown = true;
+      _legacyCacheRequiresResync = false;
       _baseSchedule = _convertToCourses(
         base.map(CourseBlock.fromJson).toList(growable: false),
         currentTerm.id,
@@ -859,6 +873,8 @@ class CourseScheduleProvider extends ChangeNotifier {
     }
     _baseSchedule = [];
     _manualCourses = [];
+    _sourceTrustKnown = true;
+    _legacyCacheRequiresResync = true;
     return false;
   }
 
@@ -973,6 +989,8 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     _populateManualCoursesFromBlocks(customCourses);
     _syncResolvedSchedule();
+    _legacyCacheRequiresResync = false;
+    _sourceTrustKnown = true;
 
     _isLoading = false;
     _errorMessage = null;
@@ -1843,6 +1861,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     bool allowConflict = false,
     String? overrideId,
   }) async {
+    await _ensureTrustedSourceForMutation();
     final effectiveId =
         overrideId ?? 'ov_${DateTime.now().millisecondsSinceEpoch}';
     var status = ScheduleOverrideStatus.active;
@@ -1912,6 +1931,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     String? fromRoom,
     String? overrideId,
   }) async {
+    await _ensureTrustedSourceForMutation();
     final effectiveId =
         overrideId ?? 'ov_${DateTime.now().millisecondsSinceEpoch}';
     final override = ScheduleOverride(
@@ -1951,6 +1971,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     required ScheduleOverride updated,
     bool allowConflict = false,
   }) async {
+    await _ensureTrustedSourceForMutation();
     final persisted = await _overrideRepository.upsertOverride(
       override: updated,
       accountId: _sourceAccountId,
@@ -1970,6 +1991,7 @@ class CourseScheduleProvider extends ChangeNotifier {
 
   /// 恢复教务原课 (Section 25: 删除 Override，重跑 Resolver)
   Future<void> restoreBaseMeeting(String overrideId) async {
+    await _ensureTrustedSourceForMutation();
     final persisted = await _overrideRepository.deleteOverride(
       overrideId: overrideId,
       semesterId: currentTerm.id,
@@ -2124,6 +2146,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     String? teacher,
     String? location,
   }) async {
+    await _ensureTrustedSourceForMutation();
     final weeks = List.generate(endWeek - startWeek + 1, (i) => startWeek + i);
     final colorIdx = deterministicCourseColorIndex(name, _colorPool.length);
     final newId = -(DateTime.now().millisecondsSinceEpoch * 100 +
@@ -2166,6 +2189,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     String? teacher,
     String? location,
   }) async {
+    await _ensureTrustedSourceForMutation();
     final idx = _courses.indexWhere((c) => c.id == id);
     if (idx < 0) throw Exception('课程不存在');
 
@@ -2203,6 +2227,7 @@ class CourseScheduleProvider extends ChangeNotifier {
 
   /// 删除课程（支持自定义课程和服务器课程）
   Future<void> removeCustomCourse(int courseId) async {
+    await _ensureTrustedSourceForMutation();
     _courses.removeWhere((c) => c.id == courseId);
     if (courseId > 0) {
       _hiddenCourseIds.add(courseId);
@@ -2212,6 +2237,13 @@ class CourseScheduleProvider extends ChangeNotifier {
     _syncResolvedSchedule();
     await _persistResolvedScheduleOrThrow();
     notifyListeners();
+  }
+
+  Future<void> _ensureTrustedSourceForMutation() async {
+    await _sessionRestoreFuture;
+    if (!_sourceTrustKnown || _legacyCacheRequiresResync) {
+      throw StateError('旧版课表缺少原始快照，请先重新同步教务后再修改课表');
+    }
   }
 
   CourseTerm buildTerm(String year, int semester) {

@@ -15,12 +15,18 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
 	maxFeedbackTicketImages = 6
 	maxUserHourlyTickets    = 5
 	maxUserHourlyMessages   = 30
+)
+
+var (
+	errFeedbackTicketStateConflict = errors.New("工单状态已变化，请刷新后重试")
+	errFeedbackTicketClosed       = errors.New("该工单已关闭，如仍有问题请点击重新打开")
 )
 
 // FeedbackTicketHandler 处理用户端与通用的工单操作
@@ -435,6 +441,16 @@ func (h *FeedbackTicketHandler) AddMessage(c *gin.Context) {
 	}
 
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var lockedTicket models.FeedbackTicket
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ?", ticketID, userID).
+			First(&lockedTicket).Error; err != nil {
+			return err
+		}
+		if lockedTicket.Status == models.FeedbackStatusClosed {
+			return errFeedbackTicketClosed
+		}
+		ticket = lockedTicket
 		if err := tx.Create(&msg).Error; err != nil {
 			return err
 		}
@@ -485,6 +501,10 @@ func (h *FeedbackTicketHandler) AddMessage(c *gin.Context) {
 	})
 
 	if err != nil {
+		if errors.Is(err, errFeedbackTicketClosed) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "发送回复失败，请稍后重试"})
 		return
 	}
@@ -539,6 +559,18 @@ func (h *FeedbackTicketHandler) ReopenTicket(c *gin.Context) {
 	newStatus := models.FeedbackStatusInvestigating
 
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var lockedTicket models.FeedbackTicket
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ?", ticketID, userID).
+			First(&lockedTicket).Error; err != nil {
+			return err
+		}
+		if lockedTicket.Status != models.FeedbackStatusResolved &&
+			lockedTicket.Status != models.FeedbackStatusClosed {
+			return errFeedbackTicketStateConflict
+		}
+		ticket = lockedTicket
+		oldStatus = lockedTicket.Status
 		statusNote := "用户反馈问题仍存在：" + input.Reason
 		updates := map[string]interface{}{
 			"status":       newStatus,
@@ -579,6 +611,10 @@ func (h *FeedbackTicketHandler) ReopenTicket(c *gin.Context) {
 	})
 
 	if err != nil {
+		if errors.Is(err, errFeedbackTicketStateConflict) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "重新打开工单失败，请稍后重试"})
 		return
 	}
@@ -610,6 +646,17 @@ func (h *FeedbackTicketHandler) ConfirmResolved(c *gin.Context) {
 	newStatus := models.FeedbackStatusClosed
 
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var lockedTicket models.FeedbackTicket
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ?", ticketID, userID).
+			First(&lockedTicket).Error; err != nil {
+			return err
+		}
+		if lockedTicket.Status != models.FeedbackStatusResolved {
+			return errFeedbackTicketStateConflict
+		}
+		ticket = lockedTicket
+		oldStatus = lockedTicket.Status
 		updates := map[string]interface{}{
 			"status":      newStatus,
 			"status_note": "用户已确认问题解决，工单关闭",
@@ -646,6 +693,10 @@ func (h *FeedbackTicketHandler) ConfirmResolved(c *gin.Context) {
 	})
 
 	if err != nil {
+		if errors.Is(err, errFeedbackTicketStateConflict) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "操作失败，请稍后重试"})
 		return
 	}

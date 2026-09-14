@@ -16,7 +16,8 @@ import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 import 'helpers/personal_snapshot_test_fakes.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-class _TemporarilyUnavailableSecureStore extends MemoryPersonalSnapshotSecureStore {
+class _TemporarilyUnavailableSecureStore
+    extends MemoryPersonalSnapshotSecureStore {
   bool unavailable = false;
   int remainingFailures = 0;
 
@@ -43,10 +44,19 @@ void main() {
     // 这些用例测试已连接账号的持久化，需满足新增的身份连接许可。
     final preferences = await AppPreferencesStore.getInstance();
     for (final userId in ['1001', '2002']) {
-      for (final studentId in ['2403130233', '2403130234', '2606610216',
-        'G-001', 'G-PAIR', 'G-STRICT', 'G-LEGACY']) {
-        final identity = AcademicIdentityKey(appUserId: userId,
-            providerId: AcademicProviderId.syluUndergraduate, studentId: studentId);
+      for (final studentId in [
+        '2403130233',
+        '2403130234',
+        '2606610216',
+        'G-001',
+        'G-PAIR',
+        'G-STRICT',
+        'G-LEGACY'
+      ]) {
+        final identity = AcademicIdentityKey(
+            appUserId: userId,
+            providerId: AcademicProviderId.syluUndergraduate,
+            studentId: studentId);
         await preferences.setBool(
             'academic_lifecycle_${identity.storageId}_connected', true);
       }
@@ -81,12 +91,20 @@ void main() {
     secureStore = flakySecureStore;
     final seed = createProvider()..syncSessionContext('1001', '2403130233');
     const term = CourseTerm(
-      id: '2025_12', year: '2025', semester: 12,
-      title: '2025-2026 第二学期', maxWeek: 20,
+      id: '2025_12',
+      year: '2025',
+      semester: 12,
+      title: '2025-2026 第二学期',
+      maxWeek: 20,
     );
     await seed.applyFetchedCoursesForTerm(term: term, rawCourses: [
-      {'name': '线性代数', 'time': 1, 'end_time': 2,
-       'week_day': 2, 'weeks': [1, 2, 3]},
+      {
+        'name': '线性代数',
+        'time': 1,
+        'end_time': 2,
+        'week_day': 2,
+        'weeks': [1, 2, 3]
+      },
     ]);
     seed.dispose();
     final savedFiles = Map.of(files.values);
@@ -102,8 +120,7 @@ void main() {
       }
     });
     await failed.future.timeout(const Duration(seconds: 2));
-    expect(restored.isSessionReady, isFalse,
-        reason: '本地读取失败不能向页面宣告空课表已恢复完成');
+    expect(restored.isSessionReady, isFalse, reason: '本地读取失败不能向页面宣告空课表已恢复完成');
     expect(restored.errorMessage, isNotNull);
     expect(files.values, savedFiles);
     flakySecureStore.unavailable = false;
@@ -346,7 +363,7 @@ void main() {
     expect(provider.courses.every((course) => course.span == 1), isTrue);
   });
 
-  test('旧缓存中的研究生单行课程在恢复时自动归并', () async {
+  test('旧缓存缺少来源快照时保留展示并提示重新同步', () async {
     final term = CourseTerm.inferCurrentTerm();
     final store = ScheduleCacheStore(
       appUserId: '1001',
@@ -389,16 +406,165 @@ void main() {
     expect(provider.courses, hasLength(1));
     expect(provider.courses.single.span, 2);
     expect(provider.courses.single.periodLabels, <String>['上午3', '上午4']);
+    expect(provider.errorMessage, contains('重新同步教务'));
 
-    final migrated = await store.readTerm(
+    final preserved = await store.readTerm(
       year: term.year,
       semester: term.semester,
     );
-    expect(migrated?.courses, hasLength(1));
-    expect(
-      migrated?.courses.single['period_labels'],
-      <String>['上午3', '上午4'],
+    expect(preserved?.sourceSnapshotPresent, isFalse);
+    expect(preserved?.courses, hasLength(2));
+  });
+
+  test('两条同名自定义课程保持独立身份并可单独删除', () async {
+    final provider = createProvider()..syncSessionContext('1001', 'G-001');
+    addTearDown(provider.dispose);
+
+    await provider.addCustomCourse(
+      name: '自习',
+      weekday: 2,
+      startSection: 1,
+      endSection: 2,
+      startWeek: 1,
+      endWeek: 4,
     );
+    await provider.addCustomCourse(
+      name: '自习',
+      weekday: 4,
+      startSection: 3,
+      endSection: 4,
+      startWeek: 1,
+      endWeek: 4,
+    );
+
+    expect(provider.courses, hasLength(2));
+    expect(provider.courses.map((course) => course.id).toSet(), hasLength(2));
+    expect(
+      provider.courses.map((course) => course.courseKey).toSet(),
+      hasLength(2),
+    );
+
+    final tuesdayId =
+        provider.courses.singleWhere((course) => course.weekday == 2).id;
+    await provider.removeCustomCourse(tuesdayId);
+    expect(provider.courses, hasLength(1));
+    expect(provider.courses.single.weekday, 4);
+
+    final restored = createProvider()..syncSessionContext('1001', 'G-001');
+    addTearDown(restored.dispose);
+    expect(await restored.loadCachedCoursesIfAvailable(), isTrue);
+    expect(restored.courses, hasLength(1));
+    expect(restored.courses.single.weekday, 4);
+  });
+
+  test('载入存档后重算和冷启动都不回到载入前课表', () async {
+    final provider = createProvider()..syncSessionContext('1001', 'G-PAIR');
+    addTearDown(provider.dispose);
+
+    await provider.applyFetchedCourses([
+      {
+        'name': '存档课程',
+        'time': 1,
+        'end_time': 2,
+        'week_day': 1,
+        'weeks': [1, 2]
+      },
+    ]);
+    final archive = await provider.saveCurrentAsArchive('存档 B');
+
+    await provider.applyFetchedCourses([
+      {
+        'name': '载入前课程',
+        'time': 3,
+        'end_time': 4,
+        'week_day': 3,
+        'weeks': [1, 2]
+      },
+    ]);
+    await provider.loadArchive(archive.id);
+    await provider.addCustomCourse(
+      name: '存档后自习',
+      weekday: 5,
+      startSection: 5,
+      endSection: 6,
+      startWeek: 1,
+      endWeek: 2,
+    );
+
+    expect(
+      provider.courses.map((course) => course.name),
+      containsAll(['存档课程', '存档后自习']),
+    );
+    expect(
+      provider.courses.map((course) => course.name),
+      isNot(contains('载入前课程')),
+    );
+
+    final restored = createProvider()..syncSessionContext('1001', 'G-PAIR');
+    addTearDown(restored.dispose);
+    expect(await restored.loadCachedCoursesIfAvailable(), isTrue);
+    expect(
+      restored.courses.map((course) => course.name),
+      containsAll(['存档课程', '存档后自习']),
+    );
+    expect(
+      restored.courses.map((course) => course.name),
+      isNot(contains('载入前课程')),
+    );
+  });
+
+  test('隐藏课程身份经过来源快照恢复和再次同步仍保持稳定', () async {
+    final rawCourses = <Map<String, dynamic>>[
+      {
+        'course_code': 'CS101',
+        'name': '数据结构',
+        'time': 1,
+        'end_time': 2,
+        'week_day': 1,
+        'weeks': [1, 2]
+      },
+      {
+        'course_code': 'MA101',
+        'name': '高等数学',
+        'time': 3,
+        'end_time': 4,
+        'week_day': 2,
+        'weeks': [1, 2]
+      },
+    ];
+    final provider = createProvider()..syncSessionContext('1001', 'G-STRICT');
+    addTearDown(provider.dispose);
+    await provider.applyFetchedCourses(rawCourses);
+    final hiddenId =
+        provider.courses.singleWhere((course) => course.name == '数据结构').id;
+    await provider.removeCustomCourse(hiddenId);
+
+    final restored = createProvider()..syncSessionContext('1001', 'G-STRICT');
+    addTearDown(restored.dispose);
+    expect(await restored.loadCachedCoursesIfAvailable(), isTrue);
+    expect(restored.courses.map((course) => course.name), ['高等数学']);
+
+    await restored.applyFetchedCourses(rawCourses, resetHidden: false);
+    expect(restored.courses.map((course) => course.name), ['高等数学']);
+  });
+
+  test('自定义课程写入失败时抛出错误且保留当前输入结果', () async {
+    final provider = createProvider()..syncSessionContext('1001', 'G-001');
+    addTearDown(provider.dispose);
+    files.failWrites = true;
+
+    await expectLater(
+      provider.addCustomCourse(
+        name: '待保存课程',
+        weekday: 2,
+        startSection: 1,
+        endSection: 2,
+        startWeek: 1,
+        endWeek: 2,
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(provider.courses.single.name, '待保存课程');
   });
 
   test('来源学号变化后不读取旧课表缓存', () async {

@@ -62,6 +62,7 @@ import 'screens/privacy_center_screen.dart';
 import 'screens/exam_schedule_screen.dart';
 import 'screens/edu_grade_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/feedback/feedback_detail_screen.dart';
 import 'screens/team/team_recruitment_detail_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/app_theme.dart';
@@ -589,6 +590,14 @@ Future<void> _handleNativeNotificationOpen(String raw) async {
       }
       _storeOrOpenNotificationTarget(target);
       return;
+    case 'feedback_ticket':
+      final target = NotificationOpenTarget.parse(payload);
+      if (target == null) {
+        await _ackNativeNotificationOpen(event.id);
+        return;
+      }
+      _storeOrOpenNotificationTarget(target);
+      return;
     default:
       debugPrint('忽略未知原生通知点击: type=$type');
       await _ackNativeNotificationOpen(event.id);
@@ -748,6 +757,19 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
             postId: postId,
             targetReplyId: target.replyId,
           ),
+        ),
+      );
+      _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+      return;
+    case NotificationOpenType.feedbackTicket:
+      final ticketId = target.ticketId;
+      if (ticketId == null) {
+        _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+        return;
+      }
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => FeedbackDetailScreen(ticketId: ticketId),
         ),
       );
       _ackNativeNotificationOpen(target.nativeOpenId).ignore();

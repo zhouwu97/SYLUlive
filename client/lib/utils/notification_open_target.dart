@@ -78,6 +78,7 @@ class NativeNotificationOpen {
 
 enum NotificationOpenType {
   reply,
+  feedbackTicket,
 }
 
 class NotificationOpenTarget {
@@ -86,6 +87,7 @@ class NotificationOpenTarget {
     required this.createdAt,
     this.postId,
     this.replyId,
+    this.ticketId,
     this.nativeOpenId,
     this.recipientUserId,
   });
@@ -93,6 +95,7 @@ class NotificationOpenTarget {
   final NotificationOpenType type;
   final int? postId;
   final int? replyId;
+  final int? ticketId;
   final String? nativeOpenId;
   final int? recipientUserId;
   final DateTime createdAt;
@@ -108,6 +111,7 @@ class NotificationOpenTarget {
     return type == other.type &&
         postId == other.postId &&
         replyId == other.replyId &&
+        ticketId == other.ticketId &&
         recipientUserId == other.recipientUserId;
   }
 
@@ -126,6 +130,9 @@ class NotificationOpenTarget {
     final replyId = _positiveId(
       extras['reply_id'] ?? extras['replyId'],
     );
+    final ticketId = _positiveId(
+      extras['ticket_id'] ?? extras['ticketId'],
+    );
 
     switch (type) {
       case 'reply':
@@ -133,6 +140,17 @@ class NotificationOpenTarget {
           type: NotificationOpenType.reply,
           postId: postId,
           replyId: replyId,
+          nativeOpenId: extras[nativeNotificationOpenIdKey]?.toString(),
+          recipientUserId: _positiveId(
+            extras[notificationRecipientUserIdKey],
+          ),
+          createdAt: now ?? DateTime.now(),
+        );
+      case 'feedback_ticket':
+        if (ticketId == null) return null;
+        return NotificationOpenTarget(
+          type: NotificationOpenType.feedbackTicket,
+          ticketId: ticketId,
           nativeOpenId: extras[nativeNotificationOpenIdKey]?.toString(),
           recipientUserId: _positiveId(
             extras[notificationRecipientUserIdKey],

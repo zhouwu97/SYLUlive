@@ -192,15 +192,12 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     final capturedVisibleToUser = !_adminInternalNote;
     final capturedContent = _msgController.text.trim();
     setState(() => _sending = true);
-    final auth = context.read<AuthProvider>();
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
-    if (picked == null || !mounted) {
-      if (mounted) setState(() => _sending = false);
-      return;
-    }
-
     try {
+      final auth = context.read<AuthProvider>();
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: ImageSource.gallery);
+      if (picked == null || !mounted) return;
+
       final bytes = await picked.readAsBytes();
       final formData = FormData.fromMap({
         'file': MultipartFile.fromBytes(bytes, filename: picked.name),

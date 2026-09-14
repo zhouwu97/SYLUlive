@@ -13,7 +13,20 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// feedbackSnippetForColumn 只限制列表摘要，不截断工单正文、消息或状态历史。
+func feedbackSnippetForColumn(value string, max int) string {
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+	if max <= 3 {
+		return string(runes[:max])
+	}
+	return string(runes[:max-3]) + "..."
+}
 
 // AdminListTickets 管理员查询工单列表
 func (h *FeedbackTicketHandler) AdminListTickets(c *gin.Context) {
@@ -282,8 +295,9 @@ func (h *FeedbackTicketHandler) AdminAddMessage(c *gin.Context) {
 			pushContent = string([]rune(pushContent)[:60]) + "..."
 		}
 		_ = h.notifier.Notify(ticket.UserID, pushTitle, pushContent, map[string]interface{}{
-			"type":      "feedback_ticket",
-			"ticket_id": ticket.ID,
+			"type":               "feedback_ticket",
+			"ticket_id":          ticket.ID,
+			"recipient_user_id": ticket.UserID,
 		})
 	}
 
@@ -341,6 +355,13 @@ func (h *FeedbackTicketHandler) AdminUpdateStatus(c *gin.Context) {
 	statusNote := strings.TrimSpace(input.StatusNote)
 
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var lockedTicket models.FeedbackTicket
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&lockedTicket, ticketID).Error; err != nil {
+			return err
+		}
+		ticket = lockedTicket
+		oldStatus = lockedTicket.Status
 		updates := map[string]interface{}{
 			"status":            newStatus,
 			"status_note":       statusNote,
@@ -349,7 +370,9 @@ func (h *FeedbackTicketHandler) AdminUpdateStatus(c *gin.Context) {
 		}
 
 		if statusNote != "" {
-			updates["latest_reply_snippet"] = fmt.Sprintf("状态变更：%s · %s", name, statusNote)
+			updates["latest_reply_snippet"] = feedbackSnippetForColumn(
+				fmt.Sprintf("状态变更：%s · %s", name, statusNote), 255,
+			)
 		} else {
 			updates["latest_reply_snippet"] = fmt.Sprintf("状态变更：%s", name)
 		}
@@ -423,8 +446,9 @@ func (h *FeedbackTicketHandler) AdminUpdateStatus(c *gin.Context) {
 			pushContent += " · " + statusNote
 		}
 		_ = h.notifier.Notify(ticket.UserID, pushTitle, pushContent, map[string]interface{}{
-			"type":      "feedback_ticket",
-			"ticket_id": ticket.ID,
+			"type":               "feedback_ticket",
+			"ticket_id":          ticket.ID,
+			"recipient_user_id": ticket.UserID,
 		})
 	}
 
@@ -540,8 +564,9 @@ func (h *FeedbackTicketHandler) AdminRequestInfo(c *gin.Context) {
 			pushContent = comment
 		}
 		_ = h.notifier.Notify(ticket.UserID, pushTitle, pushContent, map[string]interface{}{
-			"type":      "feedback_ticket",
-			"ticket_id": ticket.ID,
+			"type":               "feedback_ticket",
+			"ticket_id":          ticket.ID,
+			"recipient_user_id": ticket.UserID,
 		})
 	}
 

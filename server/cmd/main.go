@@ -1643,9 +1643,10 @@ func main() {
 		waterMod.GET("/mutes", waterModerationHandler.ListMutes)
 		waterMod.GET("/moderation/logs", waterModerationHandler.ListLogs)
 
-		waterMod.POST("/icon-review", waterSectionHandler.SubmitSectionIconReview)
+		// 版块图标提交是含有文字与图片、会公开展示的用户内容，需与帖子同门禁。
+		waterMod.POST("/icon-review", middleware.RequireCommunityRules(db), waterSectionHandler.SubmitSectionIconReview)
 		waterMod.GET("/icon-review/current", waterSectionHandler.GetCurrentSectionIconReview)
-		waterMod.POST("/icon-review/:id/cancel", waterSectionHandler.CancelSectionIconReview)
+		waterMod.POST("/icon-review/:id/cancel", middleware.RequireCommunityRules(db), waterSectionHandler.CancelSectionIconReview)
 	}
 
 	r.POST("/api/collaboration-applications/:id/approve", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.ApproveCollaborationApplication)
@@ -1654,7 +1655,7 @@ func main() {
 	r.POST("/api/revision-proposals/:id/reject", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.RejectRevisionProposal)
 
 	waterTeam := r.Group("/api/water/team")
-	waterTeam.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	waterTeam.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.RequireCommunityRules(db))
 	{
 		waterTeam.POST("/recruitments/:id/apply", waterTeamHandler.Apply)
 		waterTeam.GET("/recruitments/:id/applications", waterTeamHandler.GetRecruitmentApplications)
@@ -1669,7 +1670,7 @@ func main() {
 
 	// 独立组队 API — /api/team/...
 	teamAuth := r.Group("/api/team")
-	teamAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	teamAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.RequireCommunityRules(db))
 	{
 		teamAuth.POST("/recruitments", waterTeamHandler.CreateTeamRecruitment)
 		teamAuth.PATCH("/recruitments/:id", waterTeamHandler.UpdateTeamRecruitment)
@@ -1725,7 +1726,7 @@ func main() {
 
 	postsAuth := r.Group("/api/posts")
 
-	postsAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	postsAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.RequireCommunityRules(db))
 
 	{
 
@@ -1754,7 +1755,7 @@ func main() {
 
 	replies := r.Group("/api/replies")
 
-	replies.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	replies.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.RequireCommunityRules(db))
 
 	{
 
@@ -1768,7 +1769,7 @@ func main() {
 
 	like := r.Group("/api")
 
-	like.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	like.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.RequireCommunityRules(db))
 
 	{
 
@@ -1818,7 +1819,8 @@ func main() {
 
 		messages.GET("/:user_id/send-state", messageHandler.GetSendState)
 
-		messages.POST("/:user_id", messageHandler.Send)
+		// 只有"发出私信"是发布内容；已读标记、会话拉取不触发社区规则确认。
+		messages.POST("/:user_id", middleware.RequireCommunityRules(db), messageHandler.Send)
 
 		messages.POST("/conversations/:id/read", messageHandler.MarkRead)
 
@@ -2366,7 +2368,9 @@ func main() {
 
 	canteenAuth := canteen.Group("")
 
-	canteenAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	// 食堂评价、评分与菜品实拍同样是公开展示的用户内容，必须与帖子走同一道
+	// 社区规则门禁（此前按路径前缀白名单的写法漏掉了整个 /api/canteens）。
+	canteenAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.RequireCommunityRules(db))
 
 	{
 
@@ -2392,7 +2396,7 @@ func main() {
 
 	// 评价编辑的语义化别名，供新客户端按计划文档使用；旧 /canteens/reviews/:reviewId 保留。
 	canteenReviewAuth := r.Group("/api/canteen-reviews")
-	canteenReviewAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	canteenReviewAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.RequireCommunityRules(db))
 	canteenReviewAuth.PATCH("/:reviewId", canteenHandler.UpdateReview)
 	canteenReviewAuth.DELETE("/:reviewId", canteenHandler.DeleteReview)
 

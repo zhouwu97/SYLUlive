@@ -112,21 +112,8 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 
 		c.Set("user_id", claims.UserID)
 		c.Set("role", string(state.role))
-		if legalConsentEnforcement == LegalConsentEnforcementHard && isCommunityWriteRequest(c) {
-			var accepted int64
-			if err := db.Model(&models.UserLegalConsent{}).
-				Where("user_id = ? AND document = ? AND version = ? AND revoked_at IS NULL AND acknowledgement_type = ?", claims.UserID, models.LegalDocumentCommunityRules, models.LegalDocumentVersion, "rules_acceptance").
-				Count(&accepted).Error; err != nil {
-				writeAPIError(c, http.StatusInternalServerError, "legal_consent_lookup_failed", "读取社区规则确认状态失败")
-				c.Abort()
-				return
-			}
-			if accepted == 0 {
-				writeAPIError(c, http.StatusForbidden, "community_rules_required", "请先确认社区规则")
-				c.Abort()
-				return
-			}
-		}
+		// 社区规则确认门禁不在这里按路径前缀猜，而是由 RequireCommunityRules
+		// 显式挂在需要门禁的路由组上（见 community_rules.go）。
 		if state.legalConsentState != models.LegalConsentStateActive && !isLegalConsentExemptRequest(c) {
 			switch legalConsentEnforcement {
 			case LegalConsentEnforcementHard:
@@ -144,28 +131,6 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		c.Set("idempotency_auth_rejected", false)
 		c.Next()
 	}
-}
-
-func isCommunityWriteRequest(c *gin.Context) bool {
-	if c.Request.Method != http.MethodPost && c.Request.Method != http.MethodPut &&
-		c.Request.Method != http.MethodPatch && c.Request.Method != http.MethodDelete {
-		return false
-	}
-	path := c.Request.URL.Path
-	if strings.HasPrefix(path, "/api/messages/") {
-		// 已读、撤回和会话管理不是发布内容，打开聊天不能触发社区确认。
-		target := strings.TrimPrefix(path, "/api/messages/")
-		return c.Request.Method == http.MethodPost && target != "" && !strings.Contains(target, "/")
-	}
-	for _, prefix := range []string{
-		"/api/posts", "/api/replies", "/api/team/",
-		"/api/water/team/", "/api/posts/", "/api/market",
-	} {
-		if strings.HasPrefix(path, prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 // OptionalAuthMiddleware 可选JWT认证中间件。hard 模式下未授权用户访问公开接口时按匿名处理。

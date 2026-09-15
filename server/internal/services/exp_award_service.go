@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"shenliyuan/internal/academiccalendar"
 	"shenliyuan/internal/models"
 
 	"gorm.io/gorm"
@@ -33,7 +34,11 @@ const (
 //	err:     非 ErrRecordNotFound 的错误
 func AwardDailyGlobalExp(db *gorm.DB, userID uint, action string, exp int, refType string, refID uint) (bool, *models.ExpAward, error) {
 	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	// 每日唯一键必须按上海自然日截断；时区不可用时宁可不发，也不按 UTC 错发。
+	today, err := academiccalendar.DayStart(now)
+	if err != nil {
+		return false, nil, err
+	}
 
 	// 先读取当前用户经验，用于等级前后比对
 	var beforeUser models.User
@@ -106,7 +111,11 @@ func AwardDailyGlobalExp(db *gorm.DB, userID uint, action string, exp int, refTy
 // 唯一约束冲突视为今天已发，返回 (false, nil)。
 func AwardDailySectionExp(db *gorm.DB, userID uint, sectionID uint, sectionSlug string, sectionTitle string, action string, exp int, refType string, refID uint) (bool, *models.ExpAward, error) {
 	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	// 与 AwardDailyGlobalExp 一致：按上海自然日截断，时区不可用时 fail-closed。
+	today, err := academiccalendar.DayStart(now)
+	if err != nil {
+		return false, nil, err
+	}
 
 	// 读取发放前等级（用 stats 表，不存在则视为 Lv.1）
 	levelBefore, titleBefore := getSectionLevelInfo(db, userID, sectionID)

@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/academiccalendar"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 	"shenliyuan/internal/utils"
@@ -1306,7 +1307,13 @@ func (h *WaterSectionHandler) GetMyLevel(c *gin.Context) {
 	}
 
 	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	// 与发放侧（services.AwardDailySectionExp）共用同一套上海自然日口径，
+	// 否则两边在时区异常时会各自按不同自然日计算"今日是否已领"。
+	today, tzErr := academiccalendar.DayStart(now)
+	if tzErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "时区未初始化，无法计算今日奖励状态"})
+		return
+	}
 	var logs []models.WaterSectionExpLog
 	if err := h.db.
 		Where("user_id = ? AND section_id = ? AND date = ? AND action IN ?",

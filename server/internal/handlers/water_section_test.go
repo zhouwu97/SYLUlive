@@ -18,6 +18,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/academiccalendar"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 )
@@ -1353,8 +1354,14 @@ func TestGetMyLevelReturnsProgressAndTodayAwards(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("create stat: %v", err)
 	}
-	today := time.Now()
-	today = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.Local)
+	// 处理器按上海自然日判断"今日是否已领"，测试数据必须用同一口径。
+	if err := academiccalendar.InitializeTimezone(); err != nil {
+		t.Fatalf("初始化时区失败: %v", err)
+	}
+	today, err := academiccalendar.DayStart(time.Now())
+	if err != nil {
+		t.Fatalf("计算今日失败: %v", err)
+	}
 	if err := db.Create(&models.WaterSectionExpLog{
 		UserID:    user.ID,
 		SectionID: section.ID,

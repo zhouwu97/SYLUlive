@@ -135,8 +135,12 @@ func serveUntilShutdown(ctx context.Context, server gracefulHTTPServer, shutdown
 }
 
 func main() {
+	// 校历、课表、每日经验与竞赛截止时间都按上海自然日计算。初始化失败会让
+	// time.Local 保持容器默认值（通常是 UTC），之后所有"自然日"截断都会静默
+	// 错 8 小时（每日额度在北京时间 08:00 翻页、截止时间提前/延后 8 小时），
+	// 因此这里必须 fail-fast，而不是打条日志继续启动。
 	if err := academiccalendar.InitializeTimezone(); err != nil {
-		log.Printf("[ACADEMIC_CALENDAR_TIMEZONE_UNAVAILABLE] %v", err)
+		log.Fatalf("[ACADEMIC_CALENDAR_TIMEZONE_UNAVAILABLE] %v", err)
 	}
 
 	cfg := config.Load()

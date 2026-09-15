@@ -991,6 +991,61 @@ func TestUpdateReviewRebindsPhotoToChangedDish(t *testing.T) {
 	}
 }
 
+// 评价历史的权限字段必须按"视图者"判定。
+// 该接口挂在可选鉴权的公开路由上，匿名用户也能读到任意用户的历史评价；
+// 此前 CanDelete 被无条件写成 true，会给访客显示自己无权执行的删除入口。
+func TestReviewHistoryPermissionFieldsFollowViewerIdentity(t *testing.T) {
+	h, canteen, owner := prepareReviewV2DB(t)
+
+	created := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/reviews", canteen.ID), mapParams("id", fmt.Sprint(canteen.ID)), owner.ID, reviewBody())
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create review status=%d body=%s", created.Code, created.Body.String())
+	}
+
+	historyParams := append(mapParams("id", fmt.Sprint(canteen.ID)), gin.Param{Key: "userId", Value: fmt.Sprint(owner.ID)})
+	path := fmt.Sprintf("/api/canteens/%d/reviews/history/%d", canteen.ID, owner.ID)
+
+	readPermissions := func(userID uint) (canDelete, canEdit bool, count int) {
+		t.Helper()
+		response := performCanteenRequest(t, h.GetReviewHistory, http.MethodGet, path, historyParams, userID, "")
+		if response.Code != http.StatusOK {
+			t.Fatalf("history status=%d body=%s", response.Code, response.Body.String())
+		}
+		var body struct {
+			Items []struct {
+				CanDelete bool `json:"can_delete"`
+				CanEdit   bool `json:"can_edit"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode history: %v", err)
+		}
+		if len(body.Items) == 0 {
+			t.Fatalf("history empty body=%s", response.Body.String())
+		}
+		return body.Items[0].CanDelete, body.Items[0].CanEdit, len(body.Items)
+	}
+
+	if canDelete, canEdit, _ := readPermissions(owner.ID); !canDelete || !canEdit {
+		t.Fatalf("本人查看自己的评价历史应可删可编辑: can_delete=%v can_edit=%v", canDelete, canEdit)
+	}
+
+	// 匿名访客：不得拿到删除/编辑入口。
+	if canDelete, canEdit, _ := readPermissions(0); canDelete || canEdit {
+		t.Fatalf("匿名访客不应获得删除/编辑权限: can_delete=%v can_edit=%v", canDelete, canEdit)
+	}
+
+	// 其他登录用户：同样不应对别人的评价获得权限。
+	other := models.User{ID: 99, StudentID: "student-99", PasswordHash: "test", Nickname: "路人"}
+	if err := h.db.Create(&other).Error; err != nil {
+		t.Fatalf("create other user: %v", err)
+	}
+	if canDelete, canEdit, _ := readPermissions(other.ID); canDelete || canEdit {
+		t.Fatalf("其他用户不应获得他人评价的删除/编辑权限: can_delete=%v can_edit=%v", canDelete, canEdit)
+	}
+}
+
 func mapParams(key, value string) []gin.Param {
 	return []gin.Param{{Key: key, Value: value}}
 }

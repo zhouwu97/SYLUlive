@@ -1190,10 +1190,18 @@ func (h *CanteenHandler) GetReviewHistory(c *gin.Context) {
 	var canteen models.Canteen
 	_ = h.db.Select("id", "operating_status").First(&canteen, cid).Error
 	canteen.NormalizeOperatingStatus()
+	// 视图者身份必须先确定：该 handler 挂在可选鉴权的公开路由上，匿名用户也能
+	// 读到任意用户的历史评价，权限字段若不按视图者判定，就会给访客显示
+	// 自己无权执行的删除/编辑入口。
+	viewerID := uint(0)
+	if rawViewerID, exists := c.Get("user_id"); exists {
+		viewerID, _ = rawViewerID.(uint)
+	}
+	isOwner := viewerID != 0 && viewerID == uint(userID)
 	for i := range events {
 		populateReviewPublicFields(h.db, &events[i])
-		events[i].CanDelete = true
-		events[i].CanEdit = events[i].ScoreVersion >= 2 &&
+		events[i].CanDelete = isOwner
+		events[i].CanEdit = isOwner && events[i].ScoreVersion >= 2 &&
 			events[i].ID == latestEvent.ID && !canteen.IsOffline
 		if events[i].ScoreVersion >= 2 {
 			events[i].Source = "v2"
@@ -1204,10 +1212,6 @@ func (h *CanteenHandler) GetReviewHistory(c *gin.Context) {
 				events[i].LegacyRatingID = &legacy.ID
 			}
 		}
-	}
-	viewerID := uint(0)
-	if rawViewerID, exists := c.Get("user_id"); exists {
-		viewerID, _ = rawViewerID.(uint)
 	}
 	populateReviewDishNamesForViewer(h.db, events, viewerID)
 	populateReviewDishPhotosForViewer(h.db, events, viewerID)

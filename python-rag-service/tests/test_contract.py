@@ -18,6 +18,27 @@ def test_internal_auth_is_required(monkeypatch):
         assert response.status_code == 401
 
 
+def test_internal_auth_uses_constant_time_comparison_without_crashing(monkeypatch):
+    """非法/非常量时间比较的输入必须稳定返回 401，而不是 500。
+
+    hmac.compare_digest 对 str 参数要求 ASCII；若不做 bytes 编码，含非 ASCII
+    的 token 会抛 TypeError，把 401 变成 500。
+    """
+    monkeypatch.setenv("RAG_SERVICE_TOKEN", "test-token")
+    from app import main
+
+    main.SERVICE_TOKEN = "test-token"
+    monkeypatch.setattr(main, "TextEmbedding", lambda **_: _ReadyTextEmbedding())
+    with TestClient(main.app) as client:
+        for candidate in ("wrong-token", "token", "测试令牌", ""):
+            response = client.post(
+                "/internal/rag/analyze",
+                headers={"X-Internal-Service-Token": candidate},
+                json={"text": "学生请假规定"},
+            )
+            assert response.status_code == 401, candidate
+
+
 def test_chinese_analyze_contract(monkeypatch):
     from app import main
 

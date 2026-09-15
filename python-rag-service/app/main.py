@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import io
 import json
 import os
@@ -234,7 +235,15 @@ app = FastAPI(title="Shenliyuan RAG Service", docs_url=None, redoc_url=None, lif
 def require_internal_service(
     x_internal_service_token: Annotated[str | None, Header()] = None,
 ) -> None:
-    if not SERVICE_TOKEN or x_internal_service_token != SERVICE_TOKEN:
+    # 常量时间比较，避免按前缀逐字节泄漏 token —— 与 python-edu-service 的
+    # dependencies/internal_auth.py、services/security.py 保持一致。
+    # fail-closed 语义不变：未配置 token 或校验失败一律 401。
+    # 统一编码为 bytes：hmac.compare_digest 对 str 参数要求 ASCII，
+    # 否则会抛 TypeError，把本该 401 的请求变成 500。
+    provided = x_internal_service_token or ""
+    if not SERVICE_TOKEN or not hmac.compare_digest(
+        provided.encode("utf-8"), SERVICE_TOKEN.encode("utf-8")
+    ):
         raise HTTPException(status_code=401, detail="internal service authentication failed")
 
 

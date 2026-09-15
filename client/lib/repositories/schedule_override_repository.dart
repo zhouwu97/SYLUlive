@@ -188,6 +188,8 @@ class ScheduleOverrideRepository {
   }) async {
     final store = await _getStore();
     final key = _storageKey(semesterId, accountId);
+    // 没有规则时 remove 可能返回 false，但清空目标已经满足；避免把“本来为空”误报为载入失败。
+    if (!store.containsKey(key)) return true;
     return await store.remove(key);
   }
 }

@@ -101,8 +101,23 @@ class _CourseScheduleSettingsScreenState
   }
 
   Future<void> _refreshSnapshot() async {
-    final next = await widget.callbacks.reloadSnapshot();
-    if (mounted) setState(() => _snapshot = next);
+    if (_busy) return;
+    if (mounted) setState(() => _busy = true);
+    try {
+      final next = await widget.callbacks.reloadSnapshot();
+      if (!mounted) return;
+      setState(() => _snapshot = next);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('设置状态已重新读取')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('读取设置状态失败：$error')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _runAndRefresh(Future<void> Function() action) async {
@@ -111,7 +126,16 @@ class _CourseScheduleSettingsScreenState
     try {
       await action();
     } finally {
-      await _refreshSnapshot();
+      try {
+        final next = await widget.callbacks.reloadSnapshot();
+        if (mounted) setState(() => _snapshot = next);
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('读取设置状态失败：$error')),
+          );
+        }
+      }
       if (mounted) setState(() => _busy = false);
     }
   }

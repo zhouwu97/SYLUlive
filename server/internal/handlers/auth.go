@@ -1560,7 +1560,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	h.clearLoginFailures(accountKey)
 	h.clearLoginFailures(ipKey)
 
-	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
+	refreshToken, refreshErr := h.issueRefreshToken(user.ID, "", c)
+	if refreshErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建刷新会话"})
+		return
+	}
+	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret, refreshToken)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法生成Token"})
 		return
@@ -1573,11 +1578,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	response, responseErr := selfUserResponseForDB(h.db, user)
 	if responseErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
-		return
-	}
-	refreshToken, refreshErr := h.issueRefreshToken(user.ID, "", c)
-	if refreshErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建刷新会话"})
 		return
 	}
 	payload := authSessionPayload(c, token, response)
@@ -1733,15 +1733,21 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"device_token": "", "push_data_processing_enabled": false,
 		"push_installation_id": "", "push_notice_version": "", "push_enabled_at": nil,
-		// 退出时递增版本，立即使仍在有效期内的访问令牌失效。
-		"token_version": gorm.Expr("token_version + 1"),
 	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "退出登录失败"})
 		return
 	}
 	if id, ok := userID.(uint); ok {
 		middleware.InvalidateTokenVersionCache(id)
-		if raw, err := c.Cookie("refresh_token"); err == nil {
+		var input struct {
+			RefreshToken string `json:"refresh_token"`
+		}
+		_ = c.ShouldBindJSON(&input)
+		raw := strings.TrimSpace(input.RefreshToken)
+		if raw == "" {
+			raw, _ = c.Cookie("refresh_token")
+		}
+		if raw != "" {
 			revokeRefreshToken(h.db, raw)
 		}
 	}

@@ -109,7 +109,11 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	}
 	var current models.RefreshToken
 	if err := h.db.Where("token_hash = ?", refreshHash(input.RefreshToken)).First(&current).Error; err != nil {
-		c.JSON(401, gin.H{"error": "刷新凭据无效", "code": "invalid_refresh_token"})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(401, gin.H{"error": "刷新凭据无效", "code": "invalid_refresh_token"})
+		} else {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
+		}
 		return
 	}
 	now := time.Now()
@@ -123,7 +127,15 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 	var user models.User
-	if err := h.db.First(&user, current.UserID).Error; err != nil || user.AccountStatus != "active" {
+	if err := h.db.First(&user, current.UserID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(401, gin.H{"error": "账号不可用", "code": "invalid_refresh_token"})
+		} else {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
+		}
+		return
+	}
+	if user.AccountStatus != "active" {
 		c.JSON(401, gin.H{"error": "账号不可用", "code": "invalid_refresh_token"})
 		return
 	}
@@ -156,17 +168,17 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(500, gin.H{"error": "刷新会话失败"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
 		return
 	}
-	access, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
+	access, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret, current.TokenFamily)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "无法生成Token"})
 		return
 	}
 	response, err := selfUserResponseForDB(h.db, user)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "读取账号状态失败"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
 		return
 	}
 	payload := authSessionPayload(c, access, response)

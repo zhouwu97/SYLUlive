@@ -449,6 +449,19 @@ class ScheduleCacheStore {
     required int semester,
     required ScheduleArchiveSnapshot archive,
   }) {
+    if (!persistenceGate.allowPersonalDataPersistence) {
+      throw const PersonalSnapshotStoreException('未开启本机资料保存，课表存档未写入');
+    }
+    final namespace = identityNamespace;
+    final preferences = AppPreferencesStore.maybeInstance;
+    if (namespace != null &&
+        preferences != null &&
+        (preferences.getBool('academic_lifecycle_${namespace}_connected') ==
+                false ||
+            preferences.getBool('academic_lifecycle_${namespace}_cleanup') ==
+                true)) {
+      throw const PersonalSnapshotStoreException('账号本地数据正在清理，课表存档未写入');
+    }
     return _mutateTerm(
       year: year,
       semester: semester,

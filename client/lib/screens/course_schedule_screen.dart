@@ -682,7 +682,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           child: Center(
             child: AcademicRestoreStatus(
               key: ValueKey(sc.sessionKey),
-              error: sc.errorMessage ?? context.watch<EduProvider>().errorMessage,
+              error:
+                  sc.errorMessage ?? context.watch<EduProvider>().errorMessage,
               onRetry: () async {
                 final edu = context.read<EduProvider>();
                 if (!edu.isStatusLoaded) await edu.refreshStatus();
@@ -1387,6 +1388,19 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       return;
     }
 
+    final academicController = context.read<AcademicSessionController>();
+    final academicReady = await ensureAcademicSessionForRead(
+      context,
+      controller: academicController,
+      coordinator: _coordinatorOrNull(),
+    );
+    if (!academicReady || !mounted) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('教务会话尚未恢复，未开始拉取课表；请按提示登录后重试')),
+      );
+      return;
+    }
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -1525,7 +1539,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
       await sc.applyFetchedCourses(courses);
 
-      await _syncCourseReminders(sc);
+      Object? reminderError;
+      try {
+        await _syncCourseReminders(sc);
+      } catch (error) {
+        reminderError = error;
+      }
       if (!mounted) return;
 
       if (mounted)
@@ -1540,8 +1559,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         Navigator.pop(context); // 确保课表加载进状态后再关闭加载弹窗
       }
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('课表已拉取。首次导入请点击顶部“设置周数”，选择开学第一天。'),
+        SnackBar(
+          content: Text(reminderError == null
+              ? '课表已拉取。首次导入请点击顶部“设置周数”，选择开学第一天。'
+              : '课表已拉取，但课程提醒同步失败；课表数据已保存。'),
           duration: Duration(seconds: 4),
         ),
       );
@@ -2024,6 +2045,17 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   Future<CourseScheduleSettingsSnapshot> _reloadCourseSettingsSnapshot(
     CourseScheduleProvider sc,
   ) async {
+    // 高级维护必须重新读取页面显示设置本身，不能只刷新提醒/后台状态。
+    final prefs = await AppPreferencesStore.getInstance();
+    if (mounted) {
+      setState(() {
+        _scheduleCardOpacity = prefs.getDouble(_scheduleOpacityKey) ?? 0.55;
+        _scheduleSlotHeight =
+            prefs.getDouble(_scheduleSlotHeightKey) ?? defaultSlotHeight;
+        _reminderAdvanceMinutes =
+            prefs.getInt('course_reminder_advance_minutes') ?? 5;
+      });
+    }
     await _loadBackgroundStatusAsync();
     return _courseSettingsSnapshot(sc);
   }
@@ -3016,10 +3048,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     String name,
   ) async {
     try {
-      final prefs = await AppPreferencesStore.getInstance();
-      // 在 provider 中定义的常量：_archiveDataKeyPrefix = 'course_archive_data_v1_'
-      final jsonStr = prefs.getString('course_archive_data_v1_$archiveId');
-      if (jsonStr == null) throw Exception('存档数据不存在');
+      final sc = context.read<CourseScheduleProvider>();
+      final jsonStr = await sc.exportArchiveJson(archiveId);
 
       final safeName = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
       final tempDir = Directory.systemTemp;
@@ -3518,7 +3548,8 @@ $classFilterRule
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(editCourse == null ? '课程已添加' : '课程已更新'),
+                            content:
+                                Text(editCourse == null ? '课程已添加' : '课程已更新'),
                           ),
                         );
                         await _syncCourseReminders(sc);
@@ -3530,7 +3561,8 @@ $classFilterRule
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              e.toString()
+                              e
+                                  .toString()
                                   .replaceAll('Exception: ', '')
                                   .replaceAll('StateError: ', ''),
                             ),
@@ -4218,8 +4250,8 @@ $classFilterRule
                         style: TextStyle(
                             fontSize: 12, color: tokens.textSecondary),
                       ),
-                      trailing:
-                          Icon(Icons.chevron_right, color: tokens.textSecondary),
+                      trailing: Icon(Icons.chevron_right,
+                          color: tokens.textSecondary),
                       onTap: () {
                         Navigator.pop(ctx);
                         _showDetail(c);
@@ -4450,12 +4482,20 @@ class _SaveArchiveDialogState extends State<_SaveArchiveDialog> {
             final name = nameCtrl.text.trim();
             if (name.isEmpty) return;
             final scaffoldMessenger = ScaffoldMessenger.of(context);
-            Navigator.pop(context);
-            await widget.sc.saveCurrentAsArchive(name);
-            widget.setSheetState(() {});
-            scaffoldMessenger.showSnackBar(
-              SnackBar(content: Text('已保存存档「$name」\n如需提取文件，请点击该存档的分享按钮。')),
-            );
+            try {
+              await widget.sc.saveCurrentAsArchive(name);
+              if (!mounted) return;
+              Navigator.pop(context);
+              widget.setSheetState(() {});
+              scaffoldMessenger.showSnackBar(
+                SnackBar(content: Text('已保存存档「$name」\n如需提取文件，请点击该存档的分享按钮。')),
+              );
+            } catch (error) {
+              if (!mounted) return;
+              scaffoldMessenger.showSnackBar(
+                SnackBar(content: Text('保存失败：$error')),
+              );
+            }
           },
           child: const Text('保存'),
         ),

@@ -414,7 +414,9 @@ class AuthProvider extends ChangeNotifier {
   String? _refreshToken;
   DateTime? _accessTokenExpiresAt;
   Future<bool>? _refreshFuture;
+  int? _refreshFutureEpoch;
   bool _refreshTerminalFailure = false;
+  int? _refreshFailureEpoch;
   bool _isLoading = false;
   bool _initialized = false;
   Future<void>? _initializationFuture;
@@ -447,7 +449,8 @@ class AuthProvider extends ChangeNotifier {
 
   Future<bool> refreshSession() {
     final pending = _refreshFuture;
-    if (pending != null) return pending;
+    final epoch = _accountSessionEpoch;
+    if (pending != null && _refreshFutureEpoch == epoch) return pending;
     final refresh = _refreshToken;
     // Web 端首次登录只把刷新凭据放在 HttpOnly Cookie，中间层无法读取明文。
     // 只要当前仍有用户会话，就允许服务端从 Cookie 取凭据完成刷新。
@@ -455,42 +458,58 @@ class AuthProvider extends ChangeNotifier {
       return Future.value(false);
     }
     _refreshTerminalFailure = false;
-    final generation = _sessionGeneration;
-    final future = _dio
-        .post(
-      '/refresh',
-      data: refresh == null || refresh.isEmpty
-          ? null
-          : {'refresh_token': refresh},
-    )
-        .then((response) async {
-      if (generation != _sessionGeneration || response.data is! Map) {
+    _refreshFailureEpoch = null;
+    final future = () async {
+      try {
+        final response = await _dio.post(
+          '/refresh',
+          data: refresh == null || refresh.isEmpty
+              ? null
+              : {'refresh_token': refresh},
+        );
+        if (epoch != _accountSessionEpoch || response.data is! Map) {
+          return false;
+        }
+        final candidate = _authSessionCandidateFromResponse(response.data);
+        if (_user != null && candidate.user.id != _user!.id) {
+          return false;
+        }
+        // 网络请求可并行，但凭据落盘与内存提交必须和登录共用同一队列，
+        // 且在真正写入前再次确认仍属于原账号会话。
+        return await _enqueueAuthMutation(() async {
+          if (epoch != _accountSessionEpoch) return false;
+          await _writeSessionCredentials(candidate);
+          if (epoch != _accountSessionEpoch) return false;
+          _refreshToken = candidate.refreshToken ?? _refreshToken;
+          _accessTokenExpiresAt =
+              candidate.accessTokenExpiresAt ?? _accessTokenExpiresAt;
+          _token = kIsWeb ? null : candidate.token;
+          _user = candidate.user;
+          _applyAuthHeader();
+          if (_authState == AuthState.recovering ||
+              _authState == AuthState.recoveryFailed) {
+            _setAuthState(AuthState.authenticated);
+          }
+          return true;
+        });
+      } on DioException catch (error) {
+        if (error.response?.statusCode == 401 ||
+            error.response?.statusCode == 400) {
+          _refreshTerminalFailure = true;
+          _refreshFailureEpoch = epoch;
+        }
+        return false;
+      } catch (_) {
         return false;
       }
-      final candidate = _authSessionCandidateFromResponse(response.data);
-      // 先完整落盘新会话，持久化失败时保留旧内存会话，避免下次启动拿旧刷新令牌重放。
-      await _writeSessionCredentials(candidate);
-      if (generation != _sessionGeneration) {
-        return false;
-      }
-      _refreshToken = candidate.refreshToken ?? _refreshToken;
-      _accessTokenExpiresAt =
-          candidate.accessTokenExpiresAt ?? _accessTokenExpiresAt;
-      _token = kIsWeb ? null : candidate.token;
-      _user = candidate.user;
-      _applyAuthHeader();
-      return true;
-    }).catchError((error) {
-      if (error is DioException &&
-          (error.response?.statusCode == 401 ||
-              error.response?.statusCode == 400)) {
-        _refreshTerminalFailure = true;
-      }
-      return false;
-    });
+    }();
     _refreshFuture = future;
+    _refreshFutureEpoch = epoch;
     return future.whenComplete(() {
-      if (identical(_refreshFuture, future)) _refreshFuture = null;
+      if (identical(_refreshFuture, future)) {
+        _refreshFuture = null;
+        _refreshFutureEpoch = null;
+      }
     });
   }
 
@@ -523,6 +542,7 @@ class AuthProvider extends ChangeNotifier {
             await refreshSession();
           }
           final token = _token;
+          options.extra['authSessionEpoch'] = _accountSessionEpoch;
           options.extra['authSessionGeneration'] = _sessionGeneration;
           options.extra['authTokenFingerprint'] = _tokenFingerprint(token);
           // Web 端凭据只存在 HttpOnly Cookie，内存中没有 JWT，因此用当前用户
@@ -550,12 +570,11 @@ class AuthProvider extends ChangeNotifier {
 
           final requestHadAuth =
               error.requestOptions.extra['requestHadAuth'] == true;
-          final requestGeneration =
-              error.requestOptions.extra['authSessionGeneration'];
+          final requestEpoch = error.requestOptions.extra['authSessionEpoch'];
           final requestFingerprint =
               error.requestOptions.extra['authTokenFingerprint'];
           final isCurrentSessionRequest = requestHadAuth &&
-              requestGeneration == _sessionGeneration &&
+              requestEpoch == _accountSessionEpoch &&
               requestFingerprint == _tokenFingerprint(_token);
 
           if (status == 401 && requestHadAuth) {
@@ -570,13 +589,14 @@ class AuthProvider extends ChangeNotifier {
                 errorCode == 'token_expired' ||
                 errorCode == 'token_version_expired' ||
                 errorCode == 'authentication_required' ||
-                errorCode == 'role_changed';
+                errorCode == 'role_changed' ||
+                errorCode == 'session_revoked';
 
             if (!isTargetError || !isCurrentSessionRequest) {
               // 未分类业务 401，以及旧会话请求的 401，都不能清除当前会话。
               if (isTargetError && !isCurrentSessionRequest) {
                 debugPrint(
-                    '忽略旧会话 401: requestGen=$requestGeneration currentGen=$_sessionGeneration');
+                    '忽略旧会话 401: requestEpoch=$requestEpoch currentEpoch=$_accountSessionEpoch');
               }
               handler.next(error);
               return;
@@ -588,7 +608,10 @@ class AuthProvider extends ChangeNotifier {
                 (error.requestOptions.data is! Stream ||
                     error.requestOptions.data is FormData)) {
               final refreshed = await refreshSession();
-              if (refreshed && isLoggedIn) {
+              final stillOriginalSession =
+                  requestEpoch == _accountSessionEpoch &&
+                      requestFingerprint == _tokenFingerprint(_token);
+              if (refreshed && isLoggedIn && stillOriginalSession) {
                 final options = error.requestOptions;
                 options.extra['authRefreshRetried'] = true;
                 if (_token != null && _token!.isNotEmpty) {
@@ -608,7 +631,8 @@ class AuthProvider extends ChangeNotifier {
                 }
                 return;
               }
-              if (!_refreshTerminalFailure) {
+              if (!_refreshTerminalFailure ||
+                  _refreshFailureEpoch != requestEpoch) {
                 handler.next(error);
                 return;
               }
@@ -631,7 +655,14 @@ class AuthProvider extends ChangeNotifier {
                 'errorCode': errorCode?.toString() ?? 'unknown',
               },
             );
-            _expireCurrentSession(_sessionGeneration, _token);
+            // 刷新等待期间可能已经切换账号；清理只允许作用于原始请求所属会话。
+            if (requestEpoch != _accountSessionEpoch ||
+                requestFingerprint != _tokenFingerprint(_token)) {
+              handler.next(error);
+              return;
+            }
+            _expireCurrentSession(_sessionGeneration, _token,
+                accountEpoch: requestEpoch);
             // 重置 overlay 标记，允许再次弹出
             AuthExpiredManager.resetSessionFlag();
             // 延迟一帧弹出重新登录提示
@@ -710,15 +741,19 @@ class AuthProvider extends ChangeNotifier {
     return next;
   }
 
-  Future<void> _expireCurrentSession(int generation, String? token) {
+  Future<void> _expireCurrentSession(int generation, String? token,
+      {required int accountEpoch}) {
     if (_sessionExpiryFuture != null) return _sessionExpiryFuture!;
     _sessionExpiryFuture = _enqueueAuthMutation(() async {
-      if (_sessionGeneration != generation || _token != token) return;
+      if (_sessionGeneration != generation ||
+          _accountSessionEpoch != accountEpoch ||
+          _token != token) return;
       await _clearLocalSession(
         clearPushAlias: true,
         closeAccountContext: true,
         expectedGeneration: generation,
         expectedToken: token,
+        expectedAccountEpoch: accountEpoch,
         skipMutationQueue: true,
       );
     }).whenComplete(() => _sessionExpiryFuture = null);
@@ -930,6 +965,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<AuthState> _recoverUserWithToken(String token) async {
+    final accountEpoch = _accountSessionEpoch;
     try {
       final dio = Dio(BaseOptions(
         baseUrl: _dio.options.baseUrl,
@@ -940,7 +976,9 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 200 && response.data != null) {
         final userJson = Map<String, dynamic>.from(response.data);
         final candidate = _authSessionCandidate(token, userJson);
-        await _saveAuthCandidate(candidate);
+        await _saveAuthCandidate(candidate, expectedAccountEpoch: accountEpoch);
+        if (_accountSessionEpoch != accountEpoch)
+          return AuthState.recoveryFailed;
         _commitAuthSession(candidate);
         _onAuthenticated();
         return AuthState.authenticated;
@@ -957,8 +995,13 @@ class AuthProvider extends ChangeNotifier {
     return AuthState.recoveryFailed;
   }
 
-  Future<void> _saveAuthCandidate(_AuthSessionCandidate candidate) async {
+  Future<void> _saveAuthCandidate(_AuthSessionCandidate candidate,
+      {int? expectedAccountEpoch}) async {
     await _enqueueAuthMutation(() async {
+      if (expectedAccountEpoch != null &&
+          _accountSessionEpoch != expectedAccountEpoch) {
+        return;
+      }
       await _writeSessionCredentials(candidate);
       // 新会话完整落盘后清除旧的退出墓碑，防止下次冷启动被墓碑再次清掉。
       // 墓碑只在平台凭据存储路径下被启动逻辑读取，注入凭据存储（Web/测试）不涉及。
@@ -976,6 +1019,9 @@ class AuthProvider extends ChangeNotifier {
       await _clearConsentDependentLocalData(candidate.user);
     }
   }
+
+  /// 先使旧账号的飞行请求失去提交资格，再开始写入新会话。
+  int _beginAccountSessionTransition() => ++_accountSessionEpoch;
 
   Future<void> _clearCorruptedStoredAuth() async {
     try {
@@ -1136,7 +1182,8 @@ class AuthProvider extends ChangeNotifier {
         token: persistedToken, userJson: jsonEncode(candidate.user.toJson()));
   }
 
-  void _commitAuthSession(_AuthSessionCandidate candidate) {
+  void _commitAuthSession(_AuthSessionCandidate candidate,
+      {bool accountEpochAlreadyAdvanced = false}) {
     // 浏览器不把 JWT 留在持久化层，也不把它重新放进 Authorization 头；
     // 服务端 Set-Cookie 的 HttpOnly 会话负责后续请求认证。
     _token = kIsWeb ? null : candidate.token;
@@ -1146,7 +1193,7 @@ class AuthProvider extends ChangeNotifier {
     _user = candidate.user;
     _lastForbiddenRecovery = null;
     _sessionGeneration++;
-    _accountSessionEpoch++;
+    if (!accountEpochAlreadyAdvanced) _accountSessionEpoch++;
     _applyAuthHeader();
   }
 
@@ -1154,13 +1201,39 @@ class AuthProvider extends ChangeNotifier {
     _AuthSessionCandidate candidate, {
     bool prefetchWallpaper = false,
   }) async {
-    await _saveAuthCandidate(candidate);
+    var accountEpoch = _beginAccountSessionTransition();
+    await _enqueueAuthMutation(() async {
+      // 退出清理可能排在登录提交前；清理完成后以当前空会话代次接管写入。
+      if (_accountSessionEpoch != accountEpoch) {
+        if (_user == null && _token == null) {
+          accountEpoch = _accountSessionEpoch;
+        } else {
+          return;
+        }
+      }
+      await _writeSessionCredentials(candidate);
+      if (_usesPlatformCredentialStore) {
+        final prefs = await AppPreferencesStore.getInstance();
+        if (prefs.containsKey('auth_force_logged_out') &&
+            !await prefs.remove('auth_force_logged_out')) {
+          throw StateError('清除认证退出墓碑失败');
+        }
+      }
+    });
+    if (_accountSessionEpoch != accountEpoch && _user != null) {
+      throw StateError('登录会话已变化');
+    }
     if (_user != null && _user!.id != candidate.user.id) {
       await _sessionCleanupCoordinator.closeCurrentSession();
       await _clearAccountNotificationState();
     }
-    _commitAuthSession(candidate);
+    _commitAuthSession(candidate, accountEpochAlreadyAdvanced: true);
     _setAuthState(AuthState.authenticated);
+    if (candidate.user.legalConsentsActive) {
+      await KeepAliveService.instance.syncAuthToken(candidate.token);
+    } else {
+      await _clearConsentDependentLocalData(candidate.user);
+    }
     if (prefetchWallpaper && candidate.user.legalConsentsActive) {
       _onAuthenticated();
     }
@@ -1260,7 +1333,10 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logout() async {
     await _sessionCleanupCoordinator.closeCurrentSession();
     try {
-      await _dio.post('/logout'); // 调用服务端登出接口
+      await _dio.post('/logout',
+          data: _refreshToken == null
+              ? null
+              : <String, dynamic>{'refresh_token': _refreshToken}); // 调用服务端登出接口
     } catch (e) {
       debugPrint('服务端登出异常: ${e.runtimeType}');
     }
@@ -1475,10 +1551,14 @@ class AuthProvider extends ChangeNotifier {
     bool closeAccountContext = true,
     int? expectedGeneration,
     String? expectedToken,
+    int? expectedAccountEpoch,
     bool skipMutationQueue = false,
   }) async {
     if (expectedGeneration != null &&
-        (_sessionGeneration != expectedGeneration || _token != expectedToken)) {
+        (_sessionGeneration != expectedGeneration ||
+            _token != expectedToken ||
+            (expectedAccountEpoch != null &&
+                _accountSessionEpoch != expectedAccountEpoch))) {
       return;
     }
     if (!skipMutationQueue) {
@@ -1487,6 +1567,7 @@ class AuthProvider extends ChangeNotifier {
             closeAccountContext: closeAccountContext,
             expectedGeneration: expectedGeneration,
             expectedToken: expectedToken,
+            expectedAccountEpoch: expectedAccountEpoch,
             skipMutationQueue: true,
           ));
       return;
@@ -1614,12 +1695,16 @@ class AuthProvider extends ChangeNotifier {
   Future<void> refreshUser() async {
     if (_user == null) return;
     final generation = ++_profileGeneration;
+    final accountEpoch = _accountSessionEpoch;
+    final userId = _user!.id;
     try {
       final response = await _dio.get('/user/profile');
       if (response.statusCode == 200) {
         await _enqueueProfileCommit(
           Map<String, dynamic>.from(response.data),
           generation,
+          accountEpoch: accountEpoch,
+          userId: userId,
         );
       }
     } on DioException catch (e) {
@@ -1640,16 +1725,17 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> applyProfileResponse(Map<String, dynamic> userJson) async {
     final generation = ++_profileGeneration;
-    await _enqueueProfileCommit(userJson, generation);
+    await _enqueueProfileCommit(userJson, generation,
+        accountEpoch: _accountSessionEpoch, userId: null);
   }
 
   Future<void> _enqueueProfileCommit(
-    Map<String, dynamic> userJson,
-    int generation,
-  ) {
+      Map<String, dynamic> userJson, int generation,
+      {required int accountEpoch, required int? userId}) {
     final commit = _profileWriteTail.then((_) async {
       if (generation != _profileGeneration) return;
-      await _commitProfileResponse(userJson);
+      await _commitProfileResponse(userJson,
+          accountEpoch: accountEpoch, userId: userId);
     });
 
     // 提交失败不能阻断后续资料响应进入队列。
@@ -1660,20 +1746,29 @@ class AuthProvider extends ChangeNotifier {
     return commit;
   }
 
-  Future<void> _commitProfileResponse(
-    Map<String, dynamic> userJson,
-  ) async {
-    final token = _token;
-    if (token == null) {
+  Future<void> _commitProfileResponse(Map<String, dynamic> userJson,
+      {required int accountEpoch, required int? userId}) async {
+    if (_accountSessionEpoch != accountEpoch ||
+        (userId != null && _user?.id != userId)) {
+      return;
+    }
+    if (_user == null) {
       throw StateError('当前登录状态无效');
     }
 
     final nextUser = User.fromJson(userJson);
+    // 账号代次已经校验；同一代次下兼容旧服务端返回的完整用户快照，
+    // 但切号后的响应会在上面的会话校验处直接丢弃。
 
     await _enqueueAuthMutation(() => _credentialStore.write(
-          token: token,
+          token: _token ?? '',
           userJson: jsonEncode(nextUser.toJson()),
         ));
+
+    if (_accountSessionEpoch != accountEpoch ||
+        (userId != null && _user?.id != userId)) {
+      return;
+    }
 
     _commitUserSnapshot(nextUser);
     notifyListeners();

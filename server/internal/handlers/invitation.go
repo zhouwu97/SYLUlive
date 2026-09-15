@@ -429,7 +429,12 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 
 		}
 
-		token, err := middleware.GenerateToken(updatedUser.ID, string(updatedUser.Role), updatedUser.TokenVersion, h.jwtSecret)
+		refreshToken, refreshErr := issueRefreshTokenForDB(h.db, updatedUser.ID, "", c)
+		if refreshErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建刷新会话"})
+			return
+		}
+		token, err := middleware.GenerateToken(updatedUser.ID, string(updatedUser.Role), updatedUser.TokenVersion, h.jwtSecret, refreshToken)
 
 		if err != nil {
 
@@ -445,11 +450,6 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 			return
 		}
 		payload := authSessionPayload(c, token, response)
-		refreshToken, refreshErr := issueRefreshTokenForDB(h.db, updatedUser.ID, "", c)
-		if refreshErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建刷新会话"})
-			return
-		}
 		payload["expires_at"] = time.Now().Add(accessTTL())
 		if !isCookieAuthTransport(c) {
 			payload["refresh_token"] = refreshToken

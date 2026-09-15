@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -57,6 +58,7 @@ type Claims struct {
 	UserID       uint   `json:"user_id"`
 	Role         string `json:"role"`
 	TokenVersion int    `json:"token_version"`
+	SessionID    string `json:"session_id,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -90,7 +92,11 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		// 会话状态同时承载令牌版本和授权状态，避免业务接口分别遗漏校验。
 		state, err := getCachedSessionState(db, claims.UserID)
 		if err != nil {
-			writeAPIError(c, http.StatusUnauthorized, "authentication_required", "用户不存在")
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				writeAPIError(c, http.StatusUnauthorized, "authentication_required", "用户不存在")
+			} else {
+				writeAPIError(c, http.StatusServiceUnavailable, "auth_service_unavailable", "认证服务暂时不可用")
+			}
 			c.Abort()
 			return
 		}
@@ -108,6 +114,21 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 			writeAPIError(c, http.StatusUnauthorized, "account_unavailable", "账号当前不可用")
 			c.Abort()
 			return
+		}
+		if claims.SessionID != "" {
+			var active int64
+			if err := db.Model(&models.RefreshToken{}).
+				Where("user_id = ? AND token_family = ? AND revoked_at IS NULL AND expires_at > ?", claims.UserID, claims.SessionID, time.Now()).
+				Count(&active).Error; err != nil {
+				writeAPIError(c, http.StatusServiceUnavailable, "auth_service_unavailable", "认证服务暂时不可用")
+				c.Abort()
+				return
+			}
+			if active == 0 {
+				writeAPIError(c, http.StatusUnauthorized, "session_revoked", "当前设备登录已退出")
+				c.Abort()
+				return
+			}
 		}
 
 		c.Set("user_id", claims.UserID)
@@ -305,7 +326,7 @@ func writeAPIError(c *gin.Context, status int, code, message string) {
 }
 
 // GenerateToken 生成JWT令牌
-func GenerateToken(userID uint, role string, tokenVersion int, jwtSecret string) (string, error) {
+func GenerateToken(userID uint, role string, tokenVersion int, jwtSecret string, sessionID ...string) (string, error) {
 	// 访问令牌短期有效，长期会话由 Refresh Token 续期。
 	ttl := 30 * time.Minute
 	if raw := strings.TrimSpace(os.Getenv("ACCESS_TOKEN_TTL")); raw != "" {
@@ -321,6 +342,9 @@ func GenerateToken(userID uint, role string, tokenVersion int, jwtSecret string)
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
+	}
+	if len(sessionID) > 0 {
+		claims.SessionID = strings.TrimSpace(sessionID[0])
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

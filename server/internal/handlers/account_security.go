@@ -480,7 +480,13 @@ func (h *AuthHandler) validateEmailCode(email string, purpose string, code strin
 }
 
 func (h *AuthHandler) issueAuthSession(c *gin.Context, user models.User, status int) {
-	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
+	// 先建立刷新会话族，再把族标识写入访问令牌，退出时即可只撤销当前设备。
+	refreshToken, err := h.issueRefreshToken(user.ID, "", c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建刷新会话"})
+		return
+	}
+	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret, refreshToken)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法生成 Token"})
 		return
@@ -491,11 +497,6 @@ func (h *AuthHandler) issueAuthSession(c *gin.Context, user models.User, status 
 	response, err := selfUserResponseForDB(h.db, user)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号状态失败"})
-		return
-	}
-	refreshToken, err := h.issueRefreshToken(user.ID, "", c)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建刷新会话"})
 		return
 	}
 	payload := authSessionPayload(c, token, response)

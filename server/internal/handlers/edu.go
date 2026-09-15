@@ -403,7 +403,12 @@ func (h *EduHandler) issueBoundEduSession(c *gin.Context, userID uint) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "刷新账号信息失败"})
 		return
 	}
-	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
+	refreshToken, refreshErr := issueRefreshTokenForDB(h.db, user.ID, "", c)
+	if refreshErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建刷新会话"})
+		return
+	}
+	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret, refreshToken)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法生成 Token"})
 		return
@@ -416,11 +421,6 @@ func (h *EduHandler) issueBoundEduSession(c *gin.Context, userID uint) {
 	secure := middleware.SecureCookieEnabled()
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", token, int(accessTTL().Seconds()), "/api", "", secure, true)
-	refreshToken, refreshErr := issueRefreshTokenForDB(h.db, user.ID, "", c)
-	if refreshErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建刷新会话"})
-		return
-	}
 	payload := authSessionPayload(c, token, response)
 	payload["expires_at"] = time.Now().Add(accessTTL())
 	if !isCookieAuthTransport(c) {

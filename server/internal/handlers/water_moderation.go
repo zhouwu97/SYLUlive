@@ -217,13 +217,19 @@ func (h *WaterModerationHandler) PinPost(c *gin.Context) {
 	if dupErr == nil && existing.Status == models.PinStatusActive {
 		// 同一帖子已置顶 → 更新
 		snapshotBefore, _ := json.Marshal(existing)
-		h.db.Model(&existing).Updates(map[string]interface{}{
+		if err := h.db.Model(&existing).Updates(map[string]interface{}{
 			"pinned_by":    operator.ID,
 			"weight":       weight,
 			"reason":       reason,
 			"pinned_until": until,
-		})
-		_ = h.db.First(&existing, existing.ID)
+		}).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新置顶失败"})
+			return
+		}
+		if err := h.db.First(&existing, existing.ID).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取置顶记录失败"})
+			return
+		}
 		snapshotAfter, _ := json.Marshal(existing)
 		h.writeLog(section.ID, operator.ID, models.ModActionPinPost, "post", uint(postID), &post.AuthorID, reason,
 			fmt.Sprintf("before:%s after:%s", snapshotBefore, snapshotAfter))
@@ -233,10 +239,13 @@ func (h *WaterModerationHandler) PinPost(c *gin.Context) {
 
 	// 检查 active pin 上限
 	var activeCount int64
-	h.db.Model(&models.WaterSectionPin{}).
+	if err := h.db.Model(&models.WaterSectionPin{}).
 		Where("section_id = ? AND status = ? AND (pinned_until IS NULL OR pinned_until > ?)",
 			section.ID, models.PinStatusActive, now).
-		Count(&activeCount)
+		Count(&activeCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取置顶数量失败"})
+		return
+	}
 	if activeCount >= 3 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "该版块置顶已达上限（最多 3 条）"})
 		return
@@ -244,14 +253,20 @@ func (h *WaterModerationHandler) PinPost(c *gin.Context) {
 
 	if dupErr == nil {
 		// 复用 inactive 记录
-		h.db.Model(&existing).Updates(map[string]interface{}{
+		if err := h.db.Model(&existing).Updates(map[string]interface{}{
 			"pinned_by":    operator.ID,
 			"weight":       weight,
 			"reason":       reason,
 			"pinned_until": until,
 			"status":       models.PinStatusActive,
-		})
-		_ = h.db.First(&existing, existing.ID)
+		}).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "置顶失败"})
+			return
+		}
+		if err := h.db.First(&existing, existing.ID).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取置顶记录失败"})
+			return
+		}
 		snapshot, _ := json.Marshal(existing)
 		h.writeLog(section.ID, operator.ID, models.ModActionPinPost, "post", uint(postID), &post.AuthorID, reason, string(snapshot))
 		c.JSON(http.StatusOK, gin.H{"message": "置顶成功", "pin": existing})
@@ -321,7 +336,10 @@ func (h *WaterModerationHandler) UnpinPost(c *gin.Context) {
 		reason = body.Reason
 	}
 
-	h.db.Model(&pin).Update("status", models.PinStatusInactive)
+	if err := h.db.Model(&pin).Update("status", models.PinStatusInactive).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "取消置顶失败"})
+		return
+	}
 	h.writeLog(section.ID, operator.ID, models.ModActionUnpinPost, "post", uint(postID), nil, reason, "")
 	c.JSON(http.StatusOK, gin.H{"message": "已取消置顶"})
 }
@@ -414,7 +432,10 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "恢复版块精华失败"})
 			return
 		}
-		_ = h.db.First(&existing, existing.ID)
+		if err := h.db.First(&existing, existing.ID).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取版块精华记录失败"})
+			return
+		}
 		snapshot, _ := json.Marshal(existing)
 		h.writeLog(section.ID, operator.ID, models.ModActionFeaturePost, "post", uint(postID), &post.AuthorID, reason, string(snapshot))
 		homeApp, ensureErr := h.ensureHomeFeaturedApplication(uint(postID), operator.ID, section.ID, existing.ID, reason)
@@ -637,7 +658,12 @@ func (h *WaterModerationHandler) DeletePost(c *gin.Context) {
 		return
 	}
 
-	h.db.Model(&post).Update("status", models.PostStatusDeleted)
+	// 更新失败必须中断：否则版主看到"帖子已删除"、审计日志记下了一次并未
+	// 发生的删除、作者还会收到"帖子被删除"的通知，而帖子其实仍然可见。
+	if err := h.db.Model(&post).Update("status", models.PostStatusDeleted).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除帖子失败"})
+		return
+	}
 	h.writeLog(section.ID, operator.ID, models.ModActionDeletePost, "post", uint(postID), &post.AuthorID, reason,
 		fmt.Sprintf(`{"post_id":%d,"author_id":%d}`, post.ID, post.AuthorID))
 	h.notifyTarget(post.AuthorID, operator.ID, models.ModActionDeletePost, *section, post.ID, post.ID, reason)
@@ -806,12 +832,18 @@ func (h *WaterModerationHandler) MuteUser(c *gin.Context) {
 	dupErr := h.db.Where("section_id = ? AND user_id = ?", section.ID, targetUserID).First(&existing).Error
 	if dupErr == nil && existing.Status == models.MuteStatusActive {
 		// 已在禁言 → 更新
-		h.db.Model(&existing).Updates(map[string]interface{}{
+		if err := h.db.Model(&existing).Updates(map[string]interface{}{
 			"muted_by": operator.ID,
 			"reason":   reason,
 			"until":    until,
-		})
-		_ = h.db.First(&existing, existing.ID)
+		}).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新禁言失败"})
+			return
+		}
+		if err := h.db.First(&existing, existing.ID).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取禁言记录失败"})
+			return
+		}
 		snapshot, _ := json.Marshal(existing)
 		h.writeLog(section.ID, operator.ID, models.ModActionMuteUser, "user", uint(targetUserID), nil, reason, string(snapshot))
 		h.notifyTarget(uint(targetUserID), operator.ID, models.ModActionMuteUser, *section, existing.ID, 0, reason)
@@ -821,7 +853,7 @@ func (h *WaterModerationHandler) MuteUser(c *gin.Context) {
 
 	if dupErr == nil {
 		// 复用 lifted 记录
-		h.db.Model(&existing).Updates(map[string]interface{}{
+		if err := h.db.Model(&existing).Updates(map[string]interface{}{
 			"muted_by":    operator.ID,
 			"reason":      reason,
 			"until":       until,
@@ -829,8 +861,14 @@ func (h *WaterModerationHandler) MuteUser(c *gin.Context) {
 			"lifted_by":   nil,
 			"lifted_at":   nil,
 			"lift_reason": "",
-		})
-		_ = h.db.First(&existing, existing.ID)
+		}).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "禁言失败"})
+			return
+		}
+		if err := h.db.First(&existing, existing.ID).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取禁言记录失败"})
+			return
+		}
 		snapshot, _ := json.Marshal(existing)
 		h.writeLog(section.ID, operator.ID, models.ModActionMuteUser, "user", uint(targetUserID), nil, reason, string(snapshot))
 		h.notifyTarget(uint(targetUserID), operator.ID, models.ModActionMuteUser, *section, existing.ID, 0, reason)
@@ -901,12 +939,15 @@ func (h *WaterModerationHandler) UnmuteUser(c *gin.Context) {
 	}
 
 	now := time.Now()
-	h.db.Model(&mute).Updates(map[string]interface{}{
+	if err := h.db.Model(&mute).Updates(map[string]interface{}{
 		"status":      models.MuteStatusLifted,
 		"lifted_by":   operator.ID,
 		"lifted_at":   &now,
 		"lift_reason": reason,
-	})
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "解除禁言失败"})
+		return
+	}
 	h.writeLog(section.ID, operator.ID, models.ModActionUnmuteUser, "user", uint(targetUserID), nil, reason, "")
 	h.notifyTarget(uint(targetUserID), operator.ID, models.ModActionUnmuteUser, *section, mute.ID, 0, reason)
 	c.JSON(http.StatusOK, gin.H{"message": "已解除禁言"})

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -355,6 +356,59 @@ func TestModModeratorDeletePost(t *testing.T) {
 	db.Where("user_id = ? AND type = ? AND post_id = ?", author.ID, "water_moderation", post.ID).First(&notification)
 	if notification.ID == 0 {
 		t.Fatal("delete notification not found")
+	}
+}
+
+// 删除帖子写库失败时必须返回 500，且不得写审计日志、不得通知作者。
+// 原实现吞掉 Update 错误后仍返回 200：版主看到"帖子已删除"、日志记下一次
+// 并未发生的删除、作者收到误通知，而帖子其实仍然可见。
+func TestModDeletePostWriteFailureReturns500WithoutLogOrNotification(t *testing.T) {
+	db := newModTestDB(t)
+	section := modTestSection(t, db, "course_study")
+	modUser := newModTestUser(t, db, models.RoleUser)
+	author := newModTestUser(t, db, models.RoleUser)
+	post := modTestPost(t, db, author.ID, section)
+
+	makeModerator(t, db, section.ID, modUser.ID, "moderator", map[string]bool{
+		"can_delete_post": true,
+	})
+
+	// 只让 posts 表的 Update 失败，模拟写库抖动。
+	if err := db.Callback().Update().Before("gorm:update").Register("test:fail_posts_update", func(tx *gorm.DB) {
+		if tx.Statement != nil && tx.Statement.Table == "posts" {
+			tx.AddError(errors.New("模拟写入失败"))
+		}
+	}); err != nil {
+		t.Fatalf("register callback: %v", err)
+	}
+
+	handler := NewWaterModerationHandler(db)
+	path := fmt.Sprintf("/api/water/sections/%s/posts/%d/moderate", section.Slug, post.ID)
+	rec := execModAction(t, handler, http.MethodDelete, path, `{"reason":"广告内容"}`, modUser.ID, models.RoleUser)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("写库失败时应返回 500，实际 %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var reloaded models.Post
+	if err := db.Unscoped().First(&reloaded, post.ID).Error; err != nil {
+		t.Fatalf("reload post: %v", err)
+	}
+	if reloaded.Status == models.PostStatusDeleted {
+		t.Fatal("写库失败时帖子不应被标记为已删除")
+	}
+
+	var logCount int64
+	db.Model(&models.WaterModerationLog{}).
+		Where("action = ? AND target_id = ?", models.ModActionDeletePost, post.ID).Count(&logCount)
+	if logCount != 0 {
+		t.Fatalf("写库失败时不应记录删除日志，实际 %d 条", logCount)
+	}
+
+	var notificationCount int64
+	db.Model(&models.Notification{}).
+		Where("user_id = ? AND type = ?", author.ID, "water_moderation").Count(&notificationCount)
+	if notificationCount != 0 {
+		t.Fatalf("写库失败时不应通知作者，实际 %d 条", notificationCount)
 	}
 }
 

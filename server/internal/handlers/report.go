@@ -135,7 +135,7 @@ func createReport(db *gorm.DB, userID uint, input CreateReportInput) (models.Rep
 		snapshot = string(payload)
 	case "reply":
 		var reply models.Reply
-		if err := db.Preload("Images").Select("id", "author_id", "status", "content", "created_at").First(&reply, input.TargetID).Error; err != nil || reply.Status != models.ReplyStatusNormal {
+		if err := db.Preload("Images").Select("id", "post_id", "author_id", "status", "content", "created_at").First(&reply, input.TargetID).Error; err != nil || reply.Status != models.ReplyStatusNormal {
 			return models.Report{}, &reportCreateError{status: http.StatusNotFound, code: "target_not_found", message: "回复不存在或已删除"}
 		}
 		targetOwner = reply.AuthorID
@@ -143,7 +143,8 @@ func createReport(db *gorm.DB, userID uint, input CreateReportInput) (models.Rep
 		for _, image := range reply.Images {
 			imageFileIDs = append(imageFileIDs, image.FileID)
 		}
-		payload, err := json.Marshal(gin.H{"content": reply.Content, "image_file_ids": imageFileIDs, "original_status": reply.Status, "created_at": reply.CreatedAt})
+		// post_id 让管理端举报处理页能直接跳转到回复所在的帖子详情。
+		payload, err := json.Marshal(gin.H{"content": reply.Content, "post_id": reply.PostID, "image_file_ids": imageFileIDs, "original_status": reply.Status, "created_at": reply.CreatedAt})
 		if err != nil {
 			return models.Report{}, err
 		}

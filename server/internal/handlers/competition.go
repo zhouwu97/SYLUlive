@@ -2040,7 +2040,12 @@ func (h *CompetitionHandler) PinCalendarItem(c *gin.Context) {
 	var input struct {
 		IsPinned bool `json:"is_pinned"`
 	}
-	_ = c.ShouldBindJSON(&input)
+	// 畸形 body 曾让 IsPinned 保持零值 false：用户以为在置顶，实际把置顶
+	// 静默取消了。这里按同文件 ReorderCalendarItems 的写法检查错误。
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
 	if err := h.db.Model(&models.UserCompetitionCalendarItem{}).
 		Where("id = ? AND user_id = ?", id, userID).Update("is_pinned", input.IsPinned).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "置顶失败"})
@@ -2129,7 +2134,12 @@ func (h *CompetitionHandler) PreviewShareImport(c *gin.Context) {
 	var input struct {
 		ShareCode string `json:"share_code"`
 	}
-	_ = c.ShouldBindJSON(&input)
+	// 绑定失败曾让 ShareCode 保持空串，落到"分享码不存在"分支，
+	// 用错误的提示掩盖了"请求体畸形"这个真实原因。
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
 	snapshot, items, ok := h.loadShareSnapshot(c, input.ShareCode)
 	if !ok {
 		return
@@ -2146,7 +2156,12 @@ func (h *CompetitionHandler) CommitShareImport(c *gin.Context) {
 		ShareCode string `json:"share_code"`
 		Strategy  string `json:"strategy"`
 	}
-	_ = c.ShouldBindJSON(&input)
+	// 先判断绑定错误：否则畸形 body 会先落到策略校验，返回
+	// "导入策略只能是 replace 或 merge" 这种误导性提示。
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
 	if input.Strategy != "replace" && input.Strategy != "merge" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "导入策略只能是 replace 或 merge"})
 		return
@@ -2332,7 +2347,10 @@ func (h *CompetitionHandler) AdminDisableShareSnapshot(c *gin.Context) {
 	var input struct {
 		Reason string `json:"reason"`
 	}
-	_ = c.ShouldBindJSON(&input)
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
 	if err := h.db.Model(&models.CalendarShareSnapshot{}).Where("id = ?", id).
 		Updates(map[string]interface{}{"status": "disabled", "disabled_reason": input.Reason}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "禁用失败"})

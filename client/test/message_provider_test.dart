@@ -267,6 +267,92 @@ void main() {
     expect(provider.messages.last.id, 39);
   });
 
+  test('loadOlderMessages survives a conversation switch while in flight',
+      () async {
+    // 回归：loadOlderMessages 的 finally 曾把复位放在版本守卫里。若翻页请求
+    // 在途期间 loadMessages 自增了版本号（例如打开另一个尚未缓存的会话），
+    // _loadingMore 会永久卡在 true，此后所有会话的上滑加载都被静默短路。
+    final dio = Dio();
+    final olderGate = Completer<void>();
+    final beforeIdRequests = <String>[];
+
+    List<Map<String, dynamic>> page(int conversationId, int firstId) {
+      return List.generate(
+        30,
+        (index) => {
+          'id': firstId + index,
+          'conversation_id': conversationId,
+          'sender_id': index.isEven ? 3 : 8,
+          'content': 'message-${firstId + index}',
+          'created_at': '2026-06-14T08:14:00Z',
+        },
+      );
+    }
+
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'GET' &&
+              options.path.startsWith('/messages/conversations/')) {
+            final conversationId = options.path.split('/').last;
+            final beforeId = options.queryParameters['before_id'];
+            if (beforeId != null) {
+              beforeIdRequests.add('$conversationId:$beforeId');
+            }
+            if (conversationId == '42' && beforeId != null) {
+              // 会话 42 的翻页请求先挂住，模拟"在途"。
+              olderGate.future.then((_) {
+                handler.resolve(
+                  Response(requestOptions: options, statusCode: 200, data: const []),
+                );
+              });
+              return;
+            }
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: beforeId == null
+                    ? page(int.parse(conversationId),
+                        conversationId == '42' ? 10 : 1000)
+                    : const [],
+              ),
+            );
+            return;
+          }
+          if (options.method == 'POST' && options.path.endsWith('/read')) {
+            handler.resolve(Response(requestOptions: options, statusCode: 200));
+            return;
+          }
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              message: 'Unexpected request: ${options.method} ${options.path}',
+            ),
+          );
+        },
+      ),
+    );
+
+    final provider = MessageProvider(dio);
+    await provider.loadMessages(42);
+    expect(provider.messages.length, 30, reason: '首页满页才允许继续上滑');
+
+    final pendingOlder = provider.loadOlderMessages();
+    // 在途期间切到本次会话尚未缓存的会话 77，loadMessages 会自增版本号。
+    await provider.loadMessages(77);
+    olderGate.complete();
+    await pendingOlder;
+
+    await provider.loadOlderMessages();
+
+    expect(
+      beforeIdRequests,
+      containsAllInOrder(<String>['42:10', '77:1000']),
+      reason: '切会话后上滑加载不应被永久短路',
+    );
+  });
+
   test('loadMessages can restore cached messages before refreshing latest',
       () async {
     final dio = Dio();

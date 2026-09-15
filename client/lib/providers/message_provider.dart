@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../config/api_constants.dart';
+import '../config/private_chat_policy.dart';
 import '../models/conversation.dart';
 import '../models/message_send_state.dart';
 import '../services/async_action_guard.dart';
@@ -196,7 +197,7 @@ class MessageProvider extends ChangeNotifier {
     _sessionUserId = userId;
     _authSessionGeneration = nextAuthGeneration;
     resetSession();
-    if (userId != null && _enableRealtime) {
+    if (userId != null && _enableRealtime && PrivateChatPolicy.enabled) {
       unawaited(_runRealtimeLoop(userId, _realtimeGeneration));
     }
   }
@@ -252,6 +253,8 @@ class MessageProvider extends ChangeNotifier {
   }
 
   Future<void> loadConversations({bool silent = false}) async {
+    // 私聊暂停开放期间不发起会话列表请求，避免客户端反复拿到 410。
+    if (!PrivateChatPolicy.enabled) return;
     final request = _captureSessionRequest();
     final requestVersion = ++_conversationRequestVersion;
     _conversationError = null;
@@ -414,6 +417,9 @@ class MessageProvider extends ChangeNotifier {
     _hasMore = true;
     _messageError = null;
     _messageLoading = true;
+    // 与缓存命中分支保持一致：切换会话时必须复位翻页态，否则上一个会话
+    // 还在途的 loadOlderMessages 会让新会话的上滑加载被守卫短路。
+    _loadingMore = false;
     notifyListeners();
 
     try {
@@ -506,9 +512,13 @@ class MessageProvider extends ChangeNotifier {
             AppFeedback.dioErrorMessage(error, fallback: '加载更早消息失败');
       }
     } finally {
-      if (_ownsSessionRequest(sessionRequest) &&
-          requestVersion == _messageRequestVersion) {
-        _loadingMore = false;
+      // _loadingMore 必须无条件复位：requestVersion 在请求在途期间可能被
+      // loadMessages 自增（例如用户切到另一个尚未缓存的会话），此时版本守卫
+      // 不成立，若把复位也放进守卫里，_loadingMore 会永久卡在 true，
+      // loadOlderMessages 开头的守卫从此对所有会话短路，上滑加载历史静默失效。
+      final wasLoadingMore = _loadingMore;
+      _loadingMore = false;
+      if (wasLoadingMore && _ownsSessionRequest(sessionRequest)) {
         notifyListeners();
       }
       _releaseSessionRequest(sessionRequest);

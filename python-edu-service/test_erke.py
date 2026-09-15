@@ -8,7 +8,7 @@
   4. 毕业要求: StuFinishStudentScore.aspx → A~E 标准 + 已得分 + 结论
   5. 学年要求: StuFinishStudentScoreXN.aspx → 分学年标准 + 学年得分 + 累计得分 + 结论
 """
-import os, sys, io, re, time, random, string, base64, binascii, urllib.parse
+import os, sys, io, re, time, random, string, base64, binascii, hashlib, urllib.parse
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 for k in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
@@ -177,7 +177,12 @@ def vpn_cas_login(username: str, password: str) -> requests.Session | None:
 
     ticket = session.cookies.get("wengine_vpn_ticketwebvpn_sylu_edu_cn", "")
     if ticket and ticket.startswith("wrdvpn-"):
-        print(f"[VPN] SUCCESS: ticket={ticket[:40]}...")
+        # 只打印长度与指纹：ticket 是可直接冒充会话的凭据，任何前缀都不应落到
+        # 终端、日志或截图里。
+        print(
+            f"[VPN] SUCCESS: ticket 已获取 "
+            f"(len={len(ticket)}, fp={hashlib.sha256(ticket.encode('utf-8')).hexdigest()[:8]})"
+        )
         return session
     print("[VPN] FAIL: 未获取 VPN ticket")
     return None

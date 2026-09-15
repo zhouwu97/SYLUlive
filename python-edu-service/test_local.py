@@ -3,6 +3,7 @@
 不经过 API 服务，不写数据库，只看原始数据
 """
 import asyncio
+import hashlib
 import sys
 import json
 import io
@@ -31,7 +32,12 @@ async def main():
         print("--- Step 1: 登录正方教务 ---")
         try:
             cookie = await crawler.login(STUDENT_ID, PASSWORD)
-            print(f"[OK] 登录成功, Cookie: {cookie[:60]}...")
+            # 只打印长度与指纹：Cookie 可直接冒充登录态，任何前缀都不应落到
+            # 终端、日志或截图里。
+            print(
+                f"[OK] 登录成功, Cookie 长度 {len(cookie)}, "
+                f"指纹 {hashlib.sha256(cookie.encode('utf-8')).hexdigest()[:8]}"
+            )
         except LoginFailedError as e:
             print(f"[FAIL] 登录失败: {e}")
             return

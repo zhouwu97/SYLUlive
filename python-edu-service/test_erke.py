@@ -210,7 +210,9 @@ def erke_login(session: requests.Session, username: str, password: str) -> bool:
     body = gbk_urlencode({
         "__EVENTTARGET": "", "__EVENTARGUMENT": "",
         "__VIEWSTATE": vs, "__VIEWSTATEGENERATOR": vsg, "__EVENTVALIDATION": ev,
-        "UserName": username, "Password": password, "pwd": enc_pwd,
+        # 密码只走加密后的 pwd 字段，Password 传空串（与 erke_crawler 一致），
+        # 避免明文密码进入上游/中间设备的表单日志。
+        "UserName": username, "Password": "", "pwd": enc_pwd,
         "pubKey": pub, "codeInput": captcha, "queryBtn": QUERY_BTN_RAW,
     })
 

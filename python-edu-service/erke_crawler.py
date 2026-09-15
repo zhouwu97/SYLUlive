@@ -431,7 +431,10 @@ class SyluCrawler:
                 "__VIEWSTATEGENERATOR": viewstate_gen,
                 "__EVENTVALIDATION":    event_validation,
                 "UserName":             username,
-                "Password":             password,
+                # 密码只走 RSA 加密后的 pwd 字段（见类文档"密码 RSA 加密规则"）。
+                # 这里保留 Password 字段但传空串：既维持 ASP.NET 表单的形状，
+                # 又不会把明文密码送进上游与中间设备的表单日志，让加密形同虚设。
+                "Password":             "",
                 "pwd":                  pwd_encrypted,
                 "pubKey":               pub_key,
                 "codeInput":            captcha_code,

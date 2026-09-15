@@ -672,8 +672,8 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 		}
 
 		requiredVotes := appeal.RequiredVotes
-		if requiredVotes < 5 {
-			requiredVotes = 5
+		if requiredVotes < models.AppealMinRequiredVotes {
+			requiredVotes = models.AppealMinRequiredVotes
 		}
 		deadlineReached := appeal.VotingDeadline != nil && !time.Now().Before(*appeal.VotingDeadline)
 		if castCount < requiredVotes && !deadlineReached {
@@ -707,23 +707,19 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 				return err
 			}
 
-			// 管理员经验-3（不低于0）
-			var admin models.User
-			if err := tx.First(&admin, appeal.AdminID).Error; err == nil {
-				newExp := admin.AdminExp - 3
-				if newExp < 0 {
-					newExp = 0
-				}
-				if err := tx.Model(&admin).Update("admin_exp", newExp).Error; err != nil {
-					return err
-				}
+			// 管理员经验-3（不低于0）。
+			// 必须用原子表达式：两个申诉并发结案时，各自事务只锁 appeals 行、不锁
+			// users 行，读-改-写会丢掉一次扣减（10 应扣到 4，实际扣到 7）。
+			if err := tx.Model(&models.User{}).Where("id = ?", appeal.AdminID).
+				Update("admin_exp", gorm.Expr("CASE WHEN admin_exp >= 3 THEN admin_exp - 3 ELSE 0 END")).Error; err != nil {
+				return err
 			}
 		} else {
 			appeal.Status = models.AppealStatusReject
 			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 申诉失败", supportCount, opposeCount)
 
 			// 管理员经验+5
-			if err := tx.Model(&models.User{}).Where("id = ?", appeal.AdminID).Update("admin_exp", gorm.Expr("admin_exp + 5")).Error; err != nil {
+			if err := models.RewardAdminExpOnAppealReject(tx, appeal.AdminID); err != nil {
 				return err
 			}
 		}

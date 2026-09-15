@@ -45,6 +45,12 @@ const (
 	AppealStatusReview  AppealStatus = "review_required" // 平票或法定人数不足，转人工复核
 )
 
+// AppealMinRequiredVotes 是结案所需的法定票数下限。
+//
+// 即时结案（handlers/appeal.go）与到期兜底结案（tasks/appeal_finalizer.go）必须
+// 共用同一个阈值，否则改阈值时容易只改一处，出现"投票页说够了、到期结案说不够"。
+const AppealMinRequiredVotes = 5
+
 // Appeal 申诉
 type Appeal struct {
 	ID                   uint         `gorm:"primaryKey" json:"id"`

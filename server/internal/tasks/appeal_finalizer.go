@@ -107,8 +107,8 @@ func finalizeExpiredAppeal(db *gorm.DB, appealID uint, now time.Time) (bool, err
 		}
 
 		requiredVotes := appeal.RequiredVotes
-		if requiredVotes < 5 {
-			requiredVotes = 5
+		if requiredVotes < models.AppealMinRequiredVotes {
+			requiredVotes = models.AppealMinRequiredVotes
 		}
 		if supportCount+opposeCount < requiredVotes {
 			appeal.Status = models.AppealStatusReview
@@ -128,8 +128,8 @@ func finalizeExpiredAppeal(db *gorm.DB, appealID uint, now time.Time) (bool, err
 			if err := applyAppealPass(tx, appeal); err != nil {
 				return err
 			}
-			if err := tx.Model(&models.User{}).Where("id = ?", appeal.AdminID).
-				Update("admin_exp", gorm.Expr("CASE WHEN admin_exp >= 3 THEN admin_exp - 3 ELSE 0 END")).Error; err != nil {
+			// 与立即结案共用同一条原子扣减实现（见 models/appeal_exp.go）。
+			if err := models.PenalizeAdminExpOnAppealPass(tx, appeal.AdminID); err != nil {
 				return err
 			}
 		} else {

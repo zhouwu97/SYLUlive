@@ -806,7 +806,13 @@ class PostProvider extends ChangeNotifier {
     if (board.isLoading || !board.hasMore) return;
     board.isLoading = true;
     board.error = null;
-    final requestVersion = board.requestVersion;
+    // 必须自增版本号：列表非空时的刷新不会置 isLoading（见 _refreshInternal），
+    // 只读版本号会让在途刷新的版本号与本次翻页相同，翻页响应不被丢弃，
+    // 与刷新结果互相踩踏后整页被跳过。
+    final requestVersion = ++board.requestVersion;
+    // 覆盖还是合并必须按"发起请求时"的页码判定，不能事后读 board.currentPage：
+    // 刷新会把 currentPage 重排为 1，事后读会把翻页响应错当成第一页整列覆盖。
+    final requestedPage = board.currentPage;
     board.revision++;
     notifyListeners();
 
@@ -819,7 +825,7 @@ class PostProvider extends ChangeNotifier {
         tagId: tagId,
         topicId: topicId,
         sort: sort,
-        page: board.currentPage,
+        page: requestedPage,
         loadedCount: board.posts.length,
         sessionId: board.sessionId,
       );
@@ -838,8 +844,9 @@ class PostProvider extends ChangeNotifier {
             .map((e) => Post.fromJson(e))
             .toList();
 
-        if (board.currentPage == 1) {
+        if (requestedPage == 1) {
           board.posts = newPosts;
+          board.currentPage = 1;
         } else {
           final existingIndexMap = {
             for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i,
@@ -857,8 +864,10 @@ class PostProvider extends ChangeNotifier {
         final total = (data['total'] as num?)?.toInt();
         board.hasMore =
             total != null ? board.posts.length < total : newPosts.length >= 20;
-        if (!usesSnapshot) {
-          board.currentPage++;
+        // 期间若发生过刷新（currentPage 已被重排），不要再把页码往前推，
+        // 否则下一页会被跳过。
+        if (!usesSnapshot && board.currentPage == requestedPage) {
+          board.currentPage = requestedPage + 1;
         }
       }
     } on DioException catch (e) {
@@ -1034,12 +1043,18 @@ class PostProvider extends ChangeNotifier {
       debugPrint('刷新异常(board=$boardId): $e');
     }
 
+    // isLoading 必须无条件复位：若期间翻页自增过版本号，下面的版本守卫不成立，
+    // 复位被跳过会让列表卡在 loading 态，后续刷新与翻页都被守卫挡住。
+    final wasLoading = board.isLoading;
+    board.isLoading = false;
     if (requestVersion == board.requestVersion) {
-      board.isLoading = false;
       board.hasLoaded = true;
       if (succeeded) {
         board.lastSuccessfulRefreshAt = DateTime.now();
       }
+      board.revision++;
+      notifyListeners();
+    } else if (wasLoading) {
       board.revision++;
       notifyListeners();
     }

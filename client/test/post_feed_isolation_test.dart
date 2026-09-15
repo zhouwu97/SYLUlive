@@ -48,6 +48,19 @@ Response<dynamic> _response(RequestOptions options, int postId) {
   );
 }
 
+Response<dynamic> _pagedResponse(RequestOptions options, int page, {int total = 60}) {
+  final base = page * 100;
+  return Response(
+    requestOptions: options,
+    statusCode: 200,
+    data: {
+      'posts': List.generate(20, (index) => _postJson(base + index)),
+      'total': total,
+      'session_id': 'session-$page',
+    },
+  );
+}
+
 void main() {
   late Directory hiveDir;
 
@@ -85,6 +98,63 @@ void main() {
 
     expect(provider.postsFor(1, sort: 'all').single.id, 10);
     expect(provider.postsFor(1, sort: 'hot').single.id, 20);
+  });
+
+  test('stale page load cannot skip a page when a refresh lands first',
+      () async {
+    // 回归：翻页曾只读不自增 requestVersion，且刷新在列表非空时不置 isLoading，
+    // 于是"刷新在途时触发的翻页"会与刷新共用版本号，翻页响应不被丢弃：
+    // 刷新已把列表替换为第一页并把页码重排，陈旧翻页响应又进合并分支并
+    // currentPage++，导致第 2 页被整页跳过。
+    final dio = Dio();
+    final requestedPages = <int>[];
+    final releaseRefresh = Completer<void>();
+    final releaseStalePageLoad = Completer<void>();
+    var calls = 0;
+
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          calls++;
+          final page = (options.queryParameters['page'] as num?)?.toInt() ?? 1;
+          final isRefresh = options.queryParameters['scene'] == 'refresh';
+          requestedPages.add(page);
+          if (calls == 1) {
+            handler.resolve(_pagedResponse(options, page));
+            return;
+          }
+          if (isRefresh) {
+            await releaseRefresh.future;
+            handler.resolve(_pagedResponse(options, page));
+            return;
+          }
+          await releaseStalePageLoad.future;
+          handler.resolve(_pagedResponse(options, page));
+        },
+      ),
+    );
+
+    final provider = PostProvider(dio, enableCache: false);
+    await provider.refresh(boardId: 1, sort: 'time');
+    expect(provider.postsFor(1, sort: 'time').length, 20);
+
+    final pendingRefresh = provider.refresh(boardId: 1, sort: 'time');
+    final pendingPageLoad = provider.loadPosts(boardId: 1, sort: 'time');
+
+    // 刷新先落地，陈旧翻页响应随后才回来。
+    releaseRefresh.complete();
+    await pendingRefresh;
+    releaseStalePageLoad.complete();
+    await pendingPageLoad;
+
+    requestedPages.clear();
+    await provider.loadPosts(boardId: 1, sort: 'time');
+
+    expect(
+      requestedPages,
+      [2],
+      reason: '刷新之后应继续请求第 2 页，不能因陈旧翻页响应把页码推到第 3 页',
+    );
   });
 
   test('refresh keeps the existing list visible', () async {

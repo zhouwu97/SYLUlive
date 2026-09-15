@@ -30,6 +30,27 @@ def test_parse_grade_detail_html_table():
     ]
 
 
+def test_total_grade_is_empty_when_no_total_row_exists():
+    """明细里没有名字含"总"的项时不得把最后一行当总评。
+
+    以前会把最后一行（例如"平时成绩"）当成总评返回，用户会在成绩详情里
+    看到错误的总评分数。
+    """
+    html = """
+    <table>
+      <tr><th>成绩分项</th><th>成绩分项比例</th><th>成绩</th></tr>
+      <tr><td>【平时】</td><td>30%</td><td>98</td></tr>
+      <tr><td>【期末】</td><td>70%</td><td>40</td></tr>
+    </table>
+    """
+
+    detail = parse_grade_detail_response(html, "电磁场与电磁波")
+
+    assert detail["success"] is True
+    assert detail["total_grade"] == ""
+    assert [item["name"] for item in detail["components"]] == ["平时", "期末"]
+
+
 def test_parse_grade_detail_json_items():
     body = """
     {

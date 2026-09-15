@@ -1242,10 +1242,15 @@ def _first_non_empty(row: dict, keys: List[str]) -> str:
 
 
 def _find_total_grade(components: List[dict]) -> str:
+    """返回明细里的总评成绩；没有"总"项时返回空串。
+
+    原来在没有名字含"总"的项时直接把最后一行当总评，若最后一行是"平时成绩"，
+    用户会在成绩详情里看到错误的"总评"。这里改为返回空值，由上层按未知处理。
+    """
     for component in components:
         if "总" in component.get("name", ""):
             return component.get("score", "")
-    return components[-1]["score"] if components else ""
+    return ""
 
 
 def _normalize_text(value: str) -> str:

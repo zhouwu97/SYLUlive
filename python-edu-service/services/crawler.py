@@ -35,6 +35,14 @@ INDEX_INIT_MENU_URL = f"{INDEX_URL}/index_initMenu.html"
 # CA 和主机名校验保证证书安全；上下文只用于本爬虫固定的 jxw.sylu.edu.cn。
 ACADEMIC_TLS_CIPHER = "DEFAULT:AES256-SHA"
 
+# 成绩分页的硬上限。循环终止不能只依赖上游"尊重 currentPage"：教务端点改版
+# 或参数名不匹配时，若对任意页码都返回同一批满 500 条，len(items) == page_size
+# 恒成立，会永不 break 并持续打上游。一个学生每学期课程量在几十条量级，
+# 40 页 * 500 条足够覆盖任何真实成绩单，超出即视为上游异常。
+GRADE_PAGE_SIZE = 500
+MAX_GRADE_PAGES = 40
+MAX_GRADE_ITEMS = GRADE_PAGE_SIZE * MAX_GRADE_PAGES
+
 
 def _academic_tls_context() -> ssl.SSLContext:
     """创建本科教务专用 TLS 上下文，不降低协议版本或证书校验。"""
@@ -791,11 +799,13 @@ class EduCrawler:
             "Origin": "https://jxw.sylu.edu.cn",
         }
         query_data = {"doType": "query", "gnmkdm": "N305005"}
-        page_size = 500
+        page_size = GRADE_PAGE_SIZE
         page = 1
         all_items: List[dict] = []
+        previous_signature: Optional[str] = None
+        max_pages_reached = False
 
-        while True:
+        while page <= MAX_GRADE_PAGES:
             form_data = {
                 "xnm": year,
                 "xqm": str(semester),
@@ -861,10 +871,43 @@ class EduCrawler:
                 raise NetworkError("成绩接口返回了无法解析的数据，教务系统可能正在维护")
 
             items = data.get("items", [])
+            if not items:
+                break
+
+            # 上游对任意页码返回同一批数据时，指纹相同即可提前刹住。
+            signature = _pagination_page_signature(items)
+            if signature == previous_signature:
+                logger.warning(
+                    "[EDU-GRADES] upstream repeated the same page "
+                    "page=%s items=%d，提前停止翻页以免无限拉取",
+                    page,
+                    len(items),
+                )
+                break
+            previous_signature = signature
+
             all_items.extend(items)
+            if len(all_items) >= MAX_GRADE_ITEMS:
+                logger.warning(
+                    "[EDU-GRADES] accumulated items reached cap "
+                    "page=%s total=%d cap=%d",
+                    page,
+                    len(all_items),
+                    MAX_GRADE_ITEMS,
+                )
+                break
             if len(items) < page_size:
                 break
             page += 1
+        else:
+            max_pages_reached = True
+
+        if max_pages_reached:
+            logger.warning(
+                "[EDU-GRADES] stopped at MAX_GRADE_PAGES=%s total=%d",
+                MAX_GRADE_PAGES,
+                len(all_items),
+            )
 
         return all_items
 
@@ -1350,6 +1393,20 @@ def _academic_structure_signature(soup: BeautifulSoup) -> str:
         "headers:" + "|".join(table_headers),
         "scriptsrc:" + "|".join(script_sources),
     ]
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+def _pagination_page_signature(items: List[dict]) -> str:
+    """生成一页数据的指纹，用于识别上游对任意页码返回同一批记录。
+
+    只取首条与末条记录，避免对 500 条记录做全量序列化。
+    """
+    parts = [str(len(items))]
+    for row in (items[0], items[-1]):
+        try:
+            parts.append(json.dumps(row, sort_keys=True, ensure_ascii=False, default=str))
+        except (TypeError, ValueError):
+            parts.append(repr(row))
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
 

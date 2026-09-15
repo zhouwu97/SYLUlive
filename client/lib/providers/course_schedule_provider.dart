@@ -2631,12 +2631,13 @@ class CourseScheduleProvider extends ChangeNotifier {
       }
     }
     if (archive == null) throw Exception('课表存档数据不存在');
+    final previousSnapshot = snapshot!;
     final previousCourses = List<CourseBlock>.from(_courses);
     final previousBase = List<Course>.from(_baseSchedule);
     final previousManual = List<Course>.from(_manualCourses);
     final previousOverrides = List<ScheduleOverride>.from(_overrides);
     final previousHidden = Set<int>.from(_hiddenCourseIds);
-    final previousActiveArchive = snapshot?.activeArchiveId;
+    final previousActiveArchive = previousSnapshot.activeArchiveId;
     final previousResolved = List<ResolvedMeeting>.from(_resolvedMeetings);
     try {
       // 先完成所有可失败的本地写入，内存只在持久化成功后提交。
@@ -2645,8 +2646,8 @@ class CourseScheduleProvider extends ChangeNotifier {
       );
       _populateSchedulesFromBlocks(_courses);
       if (!await _overrideRepository.clearOverrides(
-        semesterId: currentTerm.id,
-        accountId: _sourceAccountId,
+        semesterId: operation.term.id,
+        accountId: operation.sourceAccountId,
       )) {
         throw StateError('载入存档失败：无法清除旧调课规则');
       }
@@ -2668,22 +2669,37 @@ class CourseScheduleProvider extends ChangeNotifier {
       notifyListeners();
       _syncWidget();
     } catch (error) {
-      // 失败时恢复内存及已改变的本地持久化状态，避免出现半载入课表。
-      _courses = previousCourses;
-      _baseSchedule = previousBase;
-      _manualCourses = previousManual;
-      _overrides = previousOverrides;
-      _hiddenCourseIds = previousHidden;
-      _resolvedMeetings = previousResolved;
-      _buildGrid();
+      // 回滚始终使用操作开始时捕获的 Store、账号和学期，切号后也不能写入新会话。
+      var rollbackComplete = true;
       try {
-        await _overrideRepository.saveOverrides(
-          semesterId: currentTerm.id,
-          accountId: _sourceAccountId,
+        final overridesRestored = await _overrideRepository.saveOverrides(
+          semesterId: operation.term.id,
+          accountId: operation.sourceAccountId,
           overrides: previousOverrides,
         );
-        await _saveOperationHiddenCourses(operation, previousHidden);
-        await _saveOperationCourses(operation, previousCourses);
+        if (!overridesRestored) rollbackComplete = false;
+      } catch (rollbackError) {
+        rollbackComplete = false;
+        debugPrint('载入存档调课规则回滚失败: $rollbackError');
+      }
+      try {
+        await store.writeSourceCourses(
+          year: operation.year,
+          semester: operation.semester,
+          courses: previousSnapshot.courses,
+          baseCourses: previousSnapshot.baseCourses,
+          manualCourses: previousSnapshot.manualCourses,
+        );
+        await store.writeHiddenCourseIds(
+          year: operation.year,
+          semester: operation.semester,
+          hiddenCourseIds: previousSnapshot.hiddenCourseIds,
+        );
+      } catch (rollbackError) {
+        rollbackComplete = false;
+        debugPrint('载入存档课表快照回滚失败: $rollbackError');
+      }
+      try {
         if (previousActiveArchive == null) {
           await store.clearActiveArchive(
               year: operation.year, semester: operation.semester);
@@ -2695,7 +2711,24 @@ class CourseScheduleProvider extends ChangeNotifier {
           );
         }
       } catch (rollbackError) {
-        debugPrint('载入存档回滚失败: $rollbackError');
+        rollbackComplete = false;
+        debugPrint('载入存档活动状态回滚失败: $rollbackError');
+      }
+
+      // 旧操作可以补偿旧持久化状态，但绝不能覆盖切换后的当前内存。
+      if (_isCurrentOperation(operation)) {
+        _courses = previousCourses;
+        _baseSchedule = previousBase;
+        _manualCourses = previousManual;
+        _overrides = previousOverrides;
+        _hiddenCourseIds = previousHidden;
+        _resolvedMeetings = previousResolved;
+        _buildGrid();
+        notifyListeners();
+        _syncWidget();
+      }
+      if (!rollbackComplete) {
+        throw StateError('载入存档失败，且原课表恢复未完成，请重新打开课表核对：$error');
       }
       throw StateError('载入存档失败，已恢复原课表：$error');
     }

@@ -1560,12 +1560,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	h.clearLoginFailures(accountKey)
 	h.clearLoginFailures(ipKey)
 
-	refreshToken, refreshErr := h.issueRefreshToken(user.ID, "", c)
+	refreshToken, sessionID, refreshErr := h.issueRefreshSession(user.ID, c)
 	if refreshErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建刷新会话"})
 		return
 	}
-	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret, refreshToken)
+	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret, sessionID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法生成Token"})
 		return
@@ -1739,16 +1739,21 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	}
 	if id, ok := userID.(uint); ok {
 		middleware.InvalidateTokenVersionCache(id)
-		var input struct {
-			RefreshToken string `json:"refresh_token"`
-		}
-		_ = c.ShouldBindJSON(&input)
-		raw := strings.TrimSpace(input.RefreshToken)
-		if raw == "" {
-			raw, _ = c.Cookie("refresh_token")
-		}
-		if raw != "" {
-			revokeRefreshToken(h.db, raw)
+		if sessionID, exists := c.Get("session_id"); exists && strings.TrimSpace(fmt.Sprint(sessionID)) != "" {
+			revokeRefreshTokenFamily(h.db, id, strings.TrimSpace(fmt.Sprint(sessionID)))
+		} else {
+			// 兼容尚未携带会话族标识的旧访问令牌。
+			var input struct {
+				RefreshToken string `json:"refresh_token"`
+			}
+			_ = c.ShouldBindJSON(&input)
+			raw := strings.TrimSpace(input.RefreshToken)
+			if raw == "" {
+				raw, _ = c.Cookie("refresh_token")
+			}
+			if raw != "" {
+				revokeRefreshToken(h.db, raw)
+			}
 		}
 	}
 	secure := middleware.SecureCookieEnabled()

@@ -220,6 +220,37 @@ void main() {
   });
 
   group('终结 401 才退出，且必须绑定当前会话', () {
+    test('刷新令牌成功轮换后使用新 JWT 重放原请求', () async {
+      final adapter = _QueuedAuthAdapter()
+        ..enqueue(200, {
+          'token': 'old-token',
+          'refresh_token': 'refresh-0',
+          'user': _userJson(1),
+        })
+        ..enqueue(401, {'code': 'invalid_token', 'error': '访问令牌已过期'})
+        ..enqueue(200, {
+          'token': 'new-token',
+          'refresh_token': 'refresh-1',
+          'user': _userJson(1),
+        })
+        ..enqueue(200, {'ok': true});
+      final provider = makeProvider(adapter);
+      expect((await provider.login('account', 'password')).success, isTrue);
+
+      final response = await provider.dio.get('/protected');
+
+      expect(response.statusCode, 200);
+      expect(provider.token, 'new-token');
+      expect(adapter.requests.map((request) => request.path), [
+        '/login',
+        '/protected',
+        '/refresh',
+        '/protected',
+      ]);
+      expect(
+          adapter.requests.last.headers['Authorization'], 'Bearer new-token');
+    });
+
     for (final code in [
       'invalid_token',
       'token_version_expired',
@@ -284,6 +315,29 @@ void main() {
   });
 
   group('并发与异步竞态', () {
+    test('显式退出不会因访问令牌临期而先刷新会话', () async {
+      final adapter = _QueuedAuthAdapter()
+        ..enqueue(200, {
+          'token': 'old-token',
+          'refresh_token': 'refresh-0',
+          'expires_at': DateTime.now()
+              .add(const Duration(minutes: 1))
+              .toIso8601String(),
+          'user': _userJson(1),
+        })
+        ..enqueue(200, {'message': '已退出登录'});
+      final provider = makeProvider(adapter);
+      expect((await provider.login('account', 'password')).success, isTrue);
+
+      await provider.logout();
+
+      expect(adapter.requests.map((request) => request.path), [
+        '/login',
+        '/logout',
+      ]);
+      expect(provider.user, isNull);
+    });
+
     test('20 个并发终结 401 只清理一次会话', () async {
       final adapter = _QueuedAuthAdapter();
       final store = _FakeAuthCredentialStore();

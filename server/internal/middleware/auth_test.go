@@ -301,6 +301,56 @@ func TestOptionalAuthMiddlewareHardModeKeepsActiveUserIdentity(t *testing.T) {
 	assertOptionalAuthIdentity(t, LegalConsentEnforcementHard, models.LegalConsentStateActive, true)
 }
 
+func TestRevokedSessionIsRejectedByRequiredAndOptionalAuth(t *testing.T) {
+	clearTokenVersionCacheForTest()
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.RefreshToken{}); err != nil {
+		t.Fatalf("migrate auth tables: %v", err)
+	}
+	user := models.User{StudentID: "revoked-session-user", PasswordHash: "hash", AccountStatus: "active"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	for _, document := range models.RequiredLegalDocuments(false) {
+		if err := db.Create(&models.UserLegalConsent{
+			UserID: user.ID, Document: document, Version: models.LegalDocumentVersion, AcceptedAt: time.Now(),
+		}).Error; err != nil {
+			t.Fatalf("create consent %s: %v", document, err)
+		}
+	}
+	token, err := GenerateToken(user.ID, string(models.RoleUser), user.TokenVersion, "secret", "revoked-family")
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+
+	required := gin.New()
+	required.GET("/private", AuthMiddleware(db, "secret"), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	request := httptest.NewRequest(http.MethodGet, "/private", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	required.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), "session_revoked") {
+		t.Fatalf("required auth accepted revoked session: status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	optional := gin.New()
+	optional.GET("/public", OptionalAuthMiddleware(db, "secret"), func(c *gin.Context) {
+		_, exists := c.Get("user_id")
+		c.JSON(http.StatusOK, gin.H{"has_identity": exists})
+	})
+	request = httptest.NewRequest(http.MethodGet, "/public", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response = httptest.NewRecorder()
+	optional.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"has_identity":false`) {
+		t.Fatalf("optional auth exposed revoked identity: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func assertOptionalAuthIdentity(t *testing.T, enforcement string, consentState models.LegalConsentState, wantIdentity bool) {
 	t.Helper()
 	clearTokenVersionCacheForTest()

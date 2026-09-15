@@ -116,15 +116,13 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 			return
 		}
 		if claims.SessionID != "" {
-			var active int64
-			if err := db.Model(&models.RefreshToken{}).
-				Where("user_id = ? AND token_family = ? AND revoked_at IS NULL AND expires_at > ?", claims.UserID, claims.SessionID, time.Now()).
-				Count(&active).Error; err != nil {
+			active, err := isSessionActive(db, claims.UserID, claims.SessionID)
+			if err != nil {
 				writeAPIError(c, http.StatusServiceUnavailable, "auth_service_unavailable", "认证服务暂时不可用")
 				c.Abort()
 				return
 			}
-			if active == 0 {
+			if !active {
 				writeAPIError(c, http.StatusUnauthorized, "session_revoked", "当前设备登录已退出")
 				c.Abort()
 				return
@@ -133,6 +131,7 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 
 		c.Set("user_id", claims.UserID)
 		c.Set("role", string(state.role))
+		c.Set("session_id", claims.SessionID)
 		// 社区规则确认门禁不在这里按路径前缀猜，而是由 RequireCommunityRules
 		// 显式挂在需要门禁的路由组上（见 community_rules.go）。
 		if state.legalConsentState != models.LegalConsentStateActive && !isLegalConsentExemptRequest(c) {
@@ -177,18 +176,34 @@ func OptionalAuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 						c.Next()
 						return
 					}
+					if claims.SessionID != "" {
+						active, sessionErr := isSessionActive(db, claims.UserID, claims.SessionID)
+						if sessionErr != nil || !active {
+							c.Next()
+							return
+						}
+					}
 					if state.legalConsentState != models.LegalConsentStateActive && legalConsentEnforcement == LegalConsentEnforcementSoft {
 						log.Printf("[LEGAL_CONSENT_SOFT] optional user_id=%d method=%s route=%s state=%s client_version=%q", claims.UserID, c.Request.Method, c.Request.URL.Path, state.legalConsentState, clientVersion(c))
 					}
 					if legalConsentEnforcement != LegalConsentEnforcementHard || state.legalConsentState == models.LegalConsentStateActive {
 						c.Set("user_id", claims.UserID)
 						c.Set("role", string(state.role))
+						c.Set("session_id", claims.SessionID)
 					}
 				}
 			}
 		}
 		c.Next()
 	}
+}
+
+func isSessionActive(db *gorm.DB, userID uint, sessionID string) (bool, error) {
+	var active int64
+	err := db.Model(&models.RefreshToken{}).
+		Where("user_id = ? AND token_family = ? AND revoked_at IS NULL AND expires_at > ?", userID, sessionID, time.Now()).
+		Count(&active).Error
+	return active > 0, err
 }
 
 func getCachedTokenVersion(db *gorm.DB, userID uint) (int, error) {

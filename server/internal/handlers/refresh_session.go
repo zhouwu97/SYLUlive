@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"crypto/hmac"
 	crand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,6 +50,9 @@ func refreshHash(token string) string {
 }
 
 var errRefreshTokenReused = errors.New("refresh token already rotated")
+var errRefreshRotationNotRecoverable = errors.New("refresh rotation cannot be recovered")
+
+const refreshRotationRecoveryWindow = 30 * time.Second
 
 func revokeRefreshTokensForUser(db *gorm.DB, userID uint) {
 	if !db.Migrator().HasTable(&models.RefreshToken{}) {
@@ -69,27 +74,136 @@ func revokeRefreshToken(db *gorm.DB, raw string) {
 		Updates(map[string]interface{}{"revoked_at": now, "last_used_at": now})
 }
 
-func (h *AuthHandler) issueRefreshToken(userID uint, family string, c *gin.Context) (string, error) {
-	return issueRefreshTokenForDB(h.db, userID, family, c)
+func revokeRefreshTokenFamily(db *gorm.DB, userID uint, family string) {
+	family = strings.TrimSpace(family)
+	if userID == 0 || family == "" || !db.Migrator().HasTable(&models.RefreshToken{}) {
+		return
+	}
+	now := time.Now()
+	_ = db.Model(&models.RefreshToken{}).
+		Where("user_id = ? AND token_family = ? AND revoked_at IS NULL", userID, family).
+		Update("revoked_at", now).Error
 }
 
-func issueRefreshTokenForDB(db *gorm.DB, userID uint, family string, c *gin.Context) (string, error) {
+func (h *AuthHandler) issueRefreshSession(userID uint, c *gin.Context) (string, string, error) {
+	return issueRefreshSessionForDB(h.db, userID, c)
+}
+
+func issueRefreshSessionForDB(db *gorm.DB, userID uint, c *gin.Context) (string, string, error) {
+	return issueRefreshTokenRecordForDB(db, userID, "", c)
+}
+
+func issueRefreshTokenRecordForDB(db *gorm.DB, userID uint, family string, c *gin.Context) (string, string, error) {
 	raw, err := randomRefreshToken()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if family == "" {
-		family = raw
+		family, err = randomRefreshToken()
+		if err != nil {
+			return "", "", err
+		}
 	}
 	var user models.User
 	if err := db.Select("id", "token_version").First(&user, userID).Error; err != nil {
-		return "", err
+		return "", "", err
 	}
 	row := &models.RefreshToken{UserID: userID, TokenVersion: user.TokenVersion, TokenHash: refreshHash(raw), TokenFamily: family, ExpiresAt: time.Now().Add(refreshTTL()), CreatedIPHash: refreshHash(c.ClientIP()), UserAgentHash: refreshHash(c.GetHeader("User-Agent"))}
 	if err := db.Create(row).Error; err != nil {
-		return "", err
+		return "", "", err
 	}
-	return raw, nil
+	return raw, family, nil
+}
+
+func rotationRefreshToken(secret, previousRaw string, previousID uint) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte("refresh-rotation:"))
+	_, _ = mac.Write([]byte(previousRaw))
+	_, _ = mac.Write([]byte(":" + strconv.FormatUint(uint64(previousID), 10)))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func refreshRotationFamily(secret string, current models.RefreshToken, previousRaw string) string {
+	if current.TokenFamily != previousRaw {
+		return current.TokenFamily
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte("refresh-family-migration:"))
+	_, _ = mac.Write([]byte(previousRaw))
+	_, _ = mac.Write([]byte(":" + strconv.FormatUint(uint64(current.ID), 10)))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func (h *AuthHandler) revokeRefreshRotationFamilies(current models.RefreshToken, previousRaw string) {
+	revokeRefreshTokenFamily(h.db, current.UserID, current.TokenFamily)
+	migratedFamily := refreshRotationFamily(h.jwtSecret, current, previousRaw)
+	if migratedFamily != current.TokenFamily {
+		revokeRefreshTokenFamily(h.db, current.UserID, migratedFamily)
+	}
+}
+
+func (h *AuthHandler) recoverRefreshRotation(current models.RefreshToken, previousRaw string, c *gin.Context, now time.Time) (models.User, string, time.Time, error) {
+	if current.RevokedAt == nil || current.ReplacedBy == nil || current.LastUsedAt == nil ||
+		now.Sub(*current.LastUsedAt) < 0 || now.Sub(*current.LastUsedAt) > refreshRotationRecoveryWindow ||
+		current.CreatedIPHash != refreshHash(c.ClientIP()) ||
+		current.UserAgentHash != refreshHash(c.GetHeader("User-Agent")) {
+		return models.User{}, "", time.Time{}, errRefreshRotationNotRecoverable
+	}
+
+	newRaw := rotationRefreshToken(h.jwtSecret, previousRaw, current.ID)
+	targetFamily := refreshRotationFamily(h.jwtSecret, current, previousRaw)
+	var replacement models.RefreshToken
+	if err := h.db.First(&replacement, *current.ReplacedBy).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return models.User{}, "", time.Time{}, errRefreshRotationNotRecoverable
+		}
+		return models.User{}, "", time.Time{}, err
+	}
+	if replacement.UserID != current.UserID || replacement.TokenFamily != targetFamily ||
+		replacement.TokenHash != refreshHash(newRaw) || replacement.RevokedAt != nil ||
+		!replacement.ExpiresAt.After(now) || replacement.CreatedIPHash != current.CreatedIPHash ||
+		replacement.UserAgentHash != current.UserAgentHash {
+		return models.User{}, "", time.Time{}, errRefreshRotationNotRecoverable
+	}
+
+	var user models.User
+	if err := h.db.First(&user, current.UserID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return models.User{}, "", time.Time{}, errRefreshRotationNotRecoverable
+		}
+		return models.User{}, "", time.Time{}, err
+	}
+	if user.AccountStatus != "active" || user.TokenVersion != current.TokenVersion ||
+		user.TokenVersion != replacement.TokenVersion {
+		return models.User{}, "", time.Time{}, errRefreshRotationNotRecoverable
+	}
+	return user, newRaw, replacement.ExpiresAt, nil
+}
+
+func (h *AuthHandler) prepareRefreshResponse(user models.User, family string) (string, SelfUserResponse, error) {
+	access, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret, family)
+	if err != nil {
+		return "", SelfUserResponse{}, err
+	}
+	response, err := selfUserResponseForDB(h.db, user)
+	if err != nil {
+		return "", SelfUserResponse{}, err
+	}
+	return access, response, nil
+}
+
+func writeRefreshResponse(c *gin.Context, access string, response SelfUserResponse, refreshToken string, refreshExpiresAt, now time.Time) {
+	payload := authSessionPayload(c, access, response)
+	payload["expires_at"] = now.Add(accessTTL())
+	if !isCookieAuthTransport(c) {
+		payload["refresh_token"] = refreshToken
+		payload["refresh_expires_at"] = refreshExpiresAt
+	}
+	secure := middleware.SecureCookieEnabled()
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("refresh_token", refreshToken, int(refreshTTL().Seconds()), "/api", "", secure, true)
+	c.SetCookie("jwt", access, int(accessTTL().Seconds()), "/api", "", secure, true)
+	c.JSON(http.StatusOK, payload)
 }
 
 func (h *AuthHandler) Refresh(c *gin.Context) {
@@ -118,7 +232,22 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	}
 	now := time.Now()
 	if current.RevokedAt != nil && current.ReplacedBy != nil {
-		_ = h.db.Model(&models.RefreshToken{}).Where("token_family = ? AND revoked_at IS NULL", current.TokenFamily).Updates(map[string]interface{}{"revoked_at": now})
+		user, newRaw, refreshExpiresAt, recoveryErr := h.recoverRefreshRotation(current, input.RefreshToken, c, now)
+		if recoveryErr == nil {
+			recoveredFamily := refreshRotationFamily(h.jwtSecret, current, input.RefreshToken)
+			access, response, prepareErr := h.prepareRefreshResponse(user, recoveredFamily)
+			if prepareErr != nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
+				return
+			}
+			writeRefreshResponse(c, access, response, newRaw, refreshExpiresAt, now)
+			return
+		}
+		if !errors.Is(recoveryErr, errRefreshRotationNotRecoverable) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
+			return
+		}
+		h.revokeRefreshRotationFamilies(current, input.RefreshToken)
 		c.JSON(401, gin.H{"error": "刷新凭据已重复使用", "code": "refresh_token_reused"})
 		return
 	}
@@ -143,12 +272,16 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		c.JSON(401, gin.H{"error": "会话已失效", "code": "refresh_token_expired"})
 		return
 	}
-	newRaw, err := randomRefreshToken()
+	// 轮换值可由旧凭据和服务端密钥重建，仅用于同设备短窗口内恢复“响应已丢失”。
+	newRaw := rotationRefreshToken(h.jwtSecret, input.RefreshToken, current.ID)
+	targetFamily := refreshRotationFamily(h.jwtSecret, current, input.RefreshToken)
+	newRow := &models.RefreshToken{UserID: user.ID, TokenVersion: user.TokenVersion, TokenHash: refreshHash(newRaw), TokenFamily: targetFamily, ExpiresAt: now.Add(refreshTTL()), CreatedIPHash: refreshHash(c.ClientIP()), UserAgentHash: refreshHash(c.GetHeader("User-Agent"))}
+	// 所有可能依赖外部表结构的响应数据都在轮换提交前准备，避免提交后失败使客户端失去凭据。
+	access, response, err := h.prepareRefreshResponse(user, targetFamily)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "无法生成会话"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
 		return
 	}
-	newRow := &models.RefreshToken{UserID: user.ID, TokenVersion: user.TokenVersion, TokenHash: refreshHash(newRaw), TokenFamily: current.TokenFamily, ExpiresAt: now.Add(refreshTTL()), CreatedIPHash: refreshHash(c.ClientIP()), UserAgentHash: refreshHash(c.GetHeader("User-Agent"))}
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&models.RefreshToken{}).Where("id = ? AND revoked_at IS NULL", current.ID).Updates(map[string]interface{}{"revoked_at": now, "last_used_at": now})
 		if result.Error != nil {
@@ -163,7 +296,27 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return tx.Model(&models.RefreshToken{}).Where("id = ?", current.ID).Update("replaced_by", newRow.ID).Error
 	})
 	if errors.Is(err, errRefreshTokenReused) {
-		_ = h.db.Model(&models.RefreshToken{}).Where("token_family = ? AND revoked_at IS NULL", current.TokenFamily).Updates(map[string]interface{}{"revoked_at": now})
+		var rotated models.RefreshToken
+		if reloadErr := h.db.First(&rotated, current.ID).Error; reloadErr != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
+			return
+		}
+		recoveredUser, recoveredRaw, refreshExpiresAt, recoveryErr := h.recoverRefreshRotation(rotated, input.RefreshToken, c, now)
+		if recoveryErr == nil {
+			recoveredFamily := refreshRotationFamily(h.jwtSecret, rotated, input.RefreshToken)
+			recoveredAccess, recoveredResponse, prepareErr := h.prepareRefreshResponse(recoveredUser, recoveredFamily)
+			if prepareErr != nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
+				return
+			}
+			writeRefreshResponse(c, recoveredAccess, recoveredResponse, recoveredRaw, refreshExpiresAt, now)
+			return
+		}
+		if !errors.Is(recoveryErr, errRefreshRotationNotRecoverable) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
+			return
+		}
+		h.revokeRefreshRotationFamilies(rotated, input.RefreshToken)
 		c.JSON(401, gin.H{"error": "刷新凭据已重复使用", "code": "refresh_token_reused"})
 		return
 	}
@@ -171,25 +324,5 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
 		return
 	}
-	access, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret, current.TokenFamily)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "无法生成Token"})
-		return
-	}
-	response, err := selfUserResponseForDB(h.db, user)
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
-		return
-	}
-	payload := authSessionPayload(c, access, response)
-	payload["expires_at"] = now.Add(accessTTL())
-	if !isCookieAuthTransport(c) {
-		payload["refresh_token"] = newRaw
-		payload["refresh_expires_at"] = newRow.ExpiresAt
-	}
-	secure := middleware.SecureCookieEnabled()
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("refresh_token", newRaw, int(refreshTTL().Seconds()), "/api", "", secure, true)
-	c.SetCookie("jwt", access, int(accessTTL().Seconds()), "/api", "", secure, true)
-	c.JSON(200, payload)
+	writeRefreshResponse(c, access, response, newRaw, newRow.ExpiresAt, now)
 }

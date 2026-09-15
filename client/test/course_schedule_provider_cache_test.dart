@@ -526,6 +526,47 @@ void main() {
     );
   });
 
+  test('载入存档回滚无法完整落盘时明确提示并保留原内存课表', () async {
+    final provider = createProvider()..syncSessionContext('1001', 'G-PAIR');
+    addTearDown(provider.dispose);
+    await provider.applyFetchedCourses([
+      {
+        'name': '存档课程',
+        'time': 1,
+        'end_time': 2,
+        'week_day': 1,
+        'weeks': [1, 2]
+      },
+    ]);
+    final archive = await provider.saveCurrentAsArchive('存档回滚测试');
+    await provider.applyFetchedCourses([
+      {
+        'name': '原课表课程',
+        'time': 3,
+        'end_time': 4,
+        'week_day': 3,
+        'weeks': [1, 2]
+      },
+    ]);
+
+    files.failWrites = true;
+    await expectLater(
+      provider.loadArchive(archive.id),
+      throwsA(isA<StateError>().having(
+        (error) => error.message,
+        'message',
+        contains('原课表恢复未完成'),
+      )),
+    );
+    expect(provider.courses.single.name, '原课表课程');
+    files.failWrites = false;
+
+    final restored = createProvider()..syncSessionContext('1001', 'G-PAIR');
+    addTearDown(restored.dispose);
+    expect(await restored.loadCachedCoursesIfAvailable(), isTrue);
+    expect(restored.courses.single.name, '原课表课程');
+  });
+
   test('隐藏课程身份经过来源快照恢复和再次同步仍保持稳定', () async {
     final rawCourses = <Map<String, dynamic>>[
       {

@@ -20,7 +20,7 @@ func newSystemMessageTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("打开测试数据库失败: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Conversation{}, &models.Message{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.Conversation{}, &models.Message{}); err != nil {
 		t.Fatalf("迁移测试数据库失败: %v", err)
 	}
 	if err := models.EnsureConversationIndexes(db); err != nil {

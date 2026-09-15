@@ -429,12 +429,12 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 
 		}
 
-		refreshToken, refreshErr := issueRefreshTokenForDB(h.db, updatedUser.ID, "", c)
+		refreshToken, sessionID, refreshErr := issueRefreshSessionForDB(h.db, updatedUser.ID, c)
 		if refreshErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "无法创建刷新会话"})
 			return
 		}
-		token, err := middleware.GenerateToken(updatedUser.ID, string(updatedUser.Role), updatedUser.TokenVersion, h.jwtSecret, refreshToken)
+		token, err := middleware.GenerateToken(updatedUser.ID, string(updatedUser.Role), updatedUser.TokenVersion, h.jwtSecret, sessionID)
 
 		if err != nil {
 

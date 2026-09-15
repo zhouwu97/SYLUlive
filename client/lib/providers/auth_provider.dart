@@ -534,17 +534,42 @@ class AuthProvider extends ChangeNotifier {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          bool sessionExpectationChanged() {
+            final expectedEpoch = options.extra['expectedAuthSessionEpoch'];
+            if (expectedEpoch == null) return false;
+            return expectedEpoch != _accountSessionEpoch ||
+                options.extra['expectedAuthUserId'] != _user?.id;
+          }
+
+          if (sessionExpectationChanged()) {
+            handler.reject(DioException(
+              requestOptions: options,
+              type: DioExceptionType.cancel,
+              error: StateError('登录状态已变化'),
+            ));
+            return;
+          }
           if (!options.path.endsWith('/refresh') &&
+              !options.path.endsWith('/logout') &&
               _accessTokenExpiresAt != null &&
               _accessTokenExpiresAt!.difference(DateTime.now()) <
                   const Duration(minutes: 5) &&
               (_refreshToken != null || (kIsWeb && _user != null))) {
             await refreshSession();
           }
+          if (sessionExpectationChanged()) {
+            handler.reject(DioException(
+              requestOptions: options,
+              type: DioExceptionType.cancel,
+              error: StateError('登录状态已变化'),
+            ));
+            return;
+          }
           final token = _token;
           options.extra['authSessionEpoch'] = _accountSessionEpoch;
           options.extra['authSessionGeneration'] = _sessionGeneration;
           options.extra['authTokenFingerprint'] = _tokenFingerprint(token);
+          options.extra['authUserId'] = _user?.id;
           // Web 端凭据只存在 HttpOnly Cookie，内存中没有 JWT，因此用当前用户
           // 标记请求是否属于已认证会话，确保 Cookie 会话失效时能够收口。
           options.extra['requestHadAuth'] =
@@ -573,8 +598,10 @@ class AuthProvider extends ChangeNotifier {
           final requestEpoch = error.requestOptions.extra['authSessionEpoch'];
           final requestFingerprint =
               error.requestOptions.extra['authTokenFingerprint'];
+          final requestUserId = error.requestOptions.extra['authUserId'];
           final isCurrentSessionRequest = requestHadAuth &&
               requestEpoch == _accountSessionEpoch &&
+              requestUserId == _user?.id &&
               requestFingerprint == _tokenFingerprint(_token);
 
           if (status == 401 && requestHadAuth) {
@@ -608,10 +635,10 @@ class AuthProvider extends ChangeNotifier {
                 (error.requestOptions.data is! Stream ||
                     error.requestOptions.data is FormData)) {
               final refreshed = await refreshSession();
-              final stillOriginalSession =
+              final stillOriginalAccount =
                   requestEpoch == _accountSessionEpoch &&
-                      requestFingerprint == _tokenFingerprint(_token);
-              if (refreshed && isLoggedIn && stillOriginalSession) {
+                      requestUserId == _user?.id;
+              if (refreshed && isLoggedIn && stillOriginalAccount) {
                 final options = error.requestOptions;
                 options.extra['authRefreshRetried'] = true;
                 if (_token != null && _token!.isNotEmpty) {
@@ -657,6 +684,7 @@ class AuthProvider extends ChangeNotifier {
             );
             // 刷新等待期间可能已经切换账号；清理只允许作用于原始请求所属会话。
             if (requestEpoch != _accountSessionEpoch ||
+                requestUserId != _user?.id ||
                 requestFingerprint != _tokenFingerprint(_token)) {
               handler.next(error);
               return;
@@ -734,6 +762,13 @@ class AuthProvider extends ChangeNotifier {
     if (token == null || token.isEmpty) return null;
     return sha256.convert(utf8.encode(token)).toString().substring(0, 8);
   }
+
+  Options _sessionBoundOptions(int accountEpoch, int userId) => Options(
+        extra: <String, dynamic>{
+          'expectedAuthSessionEpoch': accountEpoch,
+          'expectedAuthUserId': userId,
+        },
+      );
 
   Future<T> _enqueueAuthMutation<T>(Future<T> Function() mutation) {
     final next = _authMutationTail.then((_) => mutation());
@@ -1432,6 +1467,7 @@ class AuthProvider extends ChangeNotifier {
   }) async {
     if (!isLoggedIn) return AuthResult.failure('当前未登录');
     final epoch = _accountSessionEpoch;
+    final userId = _user!.id;
     _isLoading = true;
     notifyListeners();
     try {
@@ -1442,6 +1478,7 @@ class AuthProvider extends ChangeNotifier {
           'privacy_policy_accepted': true,
           'edu_data_consent_accepted': includeEduDataConsent,
         },
+        options: _sessionBoundOptions(epoch, userId),
       );
       final payload = response.data;
       if (response.statusCode != 200 ||
@@ -1452,8 +1489,10 @@ class AuthProvider extends ChangeNotifier {
       if (!isLoggedIn || _accountSessionEpoch != epoch) {
         return AuthResult.failure('登录状态已变化，请重新操作');
       }
-      await applyProfileResponse(
+      await _applyProfileResponseForSession(
         Map<String, dynamic>.from(payload['user'] as Map),
+        accountEpoch: epoch,
+        userId: userId,
       );
       return AuthResult.success();
     } on DioException catch (e) {
@@ -1667,14 +1706,20 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<AuthResult> updateProfile(String nickname) async {
+    if (_user == null) return AuthResult.failure('当前未登录');
+    final accountEpoch = _accountSessionEpoch;
+    final userId = _user!.id;
     try {
       final response = await _dio.put(
         '/user/profile',
         data: {'nickname': nickname},
+        options: _sessionBoundOptions(accountEpoch, userId),
       );
       if (response.statusCode == 200) {
-        await applyProfileResponse(
+        await _applyProfileResponseForSession(
           Map<String, dynamic>.from(response.data),
+          accountEpoch: accountEpoch,
+          userId: userId,
         );
         return AuthResult.success();
       }
@@ -1724,14 +1769,31 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> applyProfileResponse(Map<String, dynamic> userJson) async {
+    if (_user == null) throw StateError('当前登录状态无效');
+    await _applyProfileResponseForSession(
+      userJson,
+      accountEpoch: _accountSessionEpoch,
+      userId: _user!.id,
+    );
+  }
+
+  Future<void> _applyProfileResponseForSession(
+    Map<String, dynamic> userJson, {
+    required int accountEpoch,
+    required int userId,
+  }) async {
     final generation = ++_profileGeneration;
-    await _enqueueProfileCommit(userJson, generation,
-        accountEpoch: _accountSessionEpoch, userId: null);
+    await _enqueueProfileCommit(
+      userJson,
+      generation,
+      accountEpoch: accountEpoch,
+      userId: userId,
+    );
   }
 
   Future<void> _enqueueProfileCommit(
       Map<String, dynamic> userJson, int generation,
-      {required int accountEpoch, required int? userId}) {
+      {required int accountEpoch, required int userId}) {
     final commit = _profileWriteTail.then((_) async {
       if (generation != _profileGeneration) return;
       await _commitProfileResponse(userJson,
@@ -1747,9 +1809,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _commitProfileResponse(Map<String, dynamic> userJson,
-      {required int accountEpoch, required int? userId}) async {
-    if (_accountSessionEpoch != accountEpoch ||
-        (userId != null && _user?.id != userId)) {
+      {required int accountEpoch, required int userId}) async {
+    if (_accountSessionEpoch != accountEpoch || _user?.id != userId) {
       return;
     }
     if (_user == null) {
@@ -1757,21 +1818,25 @@ class AuthProvider extends ChangeNotifier {
     }
 
     final nextUser = User.fromJson(userJson);
-    // 账号代次已经校验；同一代次下兼容旧服务端返回的完整用户快照，
-    // 但切号后的响应会在上面的会话校验处直接丢弃。
+    if (nextUser.id != userId) return;
 
-    await _enqueueAuthMutation(() => _credentialStore.write(
-          token: _token ?? '',
-          userJson: jsonEncode(nextUser.toJson()),
-        ));
+    final committed = await _enqueueAuthMutation(() async {
+      // 校验必须紧邻持久化执行；排队期间可能已经完成账号切换。
+      if (_accountSessionEpoch != accountEpoch || _user?.id != userId) {
+        return false;
+      }
+      await _credentialStore.write(
+        token: _token ?? '',
+        userJson: jsonEncode(nextUser.toJson()),
+      );
+      if (_accountSessionEpoch != accountEpoch || _user?.id != userId) {
+        return false;
+      }
+      _commitUserSnapshot(nextUser);
+      return true;
+    });
 
-    if (_accountSessionEpoch != accountEpoch ||
-        (userId != null && _user?.id != userId)) {
-      return;
-    }
-
-    _commitUserSnapshot(nextUser);
-    notifyListeners();
+    if (committed) notifyListeners();
   }
 
   void _commitUserSnapshot(User nextUser) {
@@ -1781,11 +1846,18 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<AuthResult> updateAvatar(Uint8List avatarBytes) async {
+    if (_user == null) return AuthResult.failure('当前未登录');
+    final accountEpoch = _accountSessionEpoch;
+    final userId = _user!.id;
     try {
       final uploadFormData = FormData.fromMap({
         'file': MultipartFile.fromBytes(avatarBytes, filename: 'avatar.jpg'),
       });
-      final uploadResponse = await _dio.post('/upload', data: uploadFormData);
+      final uploadResponse = await _dio.post(
+        '/upload',
+        data: uploadFormData,
+        options: _sessionBoundOptions(accountEpoch, userId),
+      );
 
       if (uploadResponse.statusCode != 200 ||
           uploadResponse.data['url'] == null) {
@@ -1798,12 +1870,20 @@ class AuthProvider extends ChangeNotifier {
       final response = await _dio.put(
         '/user/avatar',
         data: {'avatar': avatarUrl},
+        options: _sessionBoundOptions(accountEpoch, userId),
       );
       if (response.statusCode == 200) {
         // 刷新用户信息以获取最新的avatar
-        final profileResponse = await _dio.get('/user/profile');
+        final profileResponse = await _dio.get(
+          '/user/profile',
+          options: _sessionBoundOptions(accountEpoch, userId),
+        );
         if (profileResponse.statusCode == 200) {
-          await applyProfileResponse(profileResponse.data);
+          await _applyProfileResponseForSession(
+            Map<String, dynamic>.from(profileResponse.data),
+            accountEpoch: accountEpoch,
+            userId: userId,
+          );
           return AuthResult.success();
         }
       }

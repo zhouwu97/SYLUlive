@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
@@ -8,9 +9,24 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 
 class _QueuedAuthAdapter implements HttpClientAdapter {
   final List<({int statusCode, Object? data})> _responses = [];
+  Completer<void>? _hold;
+  Completer<void>? _heldSignal;
 
   void enqueue(int statusCode, Object? data) {
     _responses.add((statusCode: statusCode, data: data));
+  }
+
+  void holdNext() {
+    _hold = Completer<void>();
+    _heldSignal = Completer<void>();
+  }
+
+  Future<void> get held => _heldSignal?.future ?? Future<void>.value();
+
+  void release() {
+    final hold = _hold;
+    _hold = null;
+    hold?.complete();
   }
 
   @override
@@ -23,6 +39,11 @@ class _QueuedAuthAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     await requestStream?.drain<void>();
+    final hold = _hold;
+    if (hold != null) {
+      _heldSignal?.complete();
+      await hold.future;
+    }
     if (_responses.isEmpty) throw StateError('缺少认证响应: ${options.path}');
     final response = _responses.removeAt(0);
     return ResponseBody.fromString(
@@ -402,8 +423,8 @@ void main() {
 
   test('旧资料刷新提交期间，旧编辑入口最终保留更新后的资料', () async {
     final adapter = _QueuedAuthAdapter()
-      ..enqueue(200, _userJson(2))
-      ..enqueue(200, _userJson(3));
+      ..enqueue(200, {..._userJson(1), 'nickname': '用户2'})
+      ..enqueue(200, {..._userJson(1), 'nickname': '用户3'});
     final store = _BlockingAuthCredentialStore();
     final provider = _provider(adapter, store);
     await provider.applyAuthPayload('token', _userJson(1));
@@ -419,8 +440,50 @@ void main() {
     store.releaseStaleWrite.complete();
     await Future.wait([staleRefresh, profileUpdate]);
 
-    expect(provider.user?.id, 3);
-    expect(jsonDecode(store.stored.userJson!)['id'], 3);
+    expect(provider.user?.id, 1);
+    expect(provider.user?.nickname, '用户3');
+    expect(jsonDecode(store.stored.userJson!)['nickname'], '用户3');
+  });
+
+  test('账号切换后丢弃旧账号延迟返回的资料更新', () async {
+    final adapter = _QueuedAuthAdapter()
+      ..enqueue(200, {..._userJson(1), 'nickname': '旧账号新昵称'});
+    final store = _FakeAuthCredentialStore();
+    final provider = _provider(adapter, store);
+    await provider.applyAuthPayload('token-a', _userJson(1));
+
+    adapter.holdNext();
+    final oldUpdate = provider.updateProfile('旧账号新昵称');
+    await adapter.held;
+    await provider.applyAuthPayload('token-b', _userJson(2));
+    adapter.release();
+    await oldUpdate;
+
+    expect(provider.token, 'token-b');
+    expect(provider.user?.id, 2);
+    expect(provider.user?.nickname, '用户2');
+    expect(store.stored.token, 'token-b');
+    expect(jsonDecode(store.stored.userJson!)['id'], 2);
+  });
+
+  test('头像上传期间切换账号后不继续修改新账号资料', () async {
+    final adapter = _QueuedAuthAdapter()
+      ..enqueue(200, {'url': 'https://example.com/avatar-a.jpg'});
+    final store = _FakeAuthCredentialStore();
+    final provider = _provider(adapter, store);
+    await provider.applyAuthPayload('token-a', _userJson(1));
+
+    adapter.holdNext();
+    final oldUpdate = provider.updateAvatar(Uint8List.fromList([1, 2, 3]));
+    await adapter.held;
+    await provider.applyAuthPayload('token-b', _userJson(2));
+    adapter.release();
+    final result = await oldUpdate;
+
+    expect(result.success, isFalse);
+    expect(provider.token, 'token-b');
+    expect(provider.user?.id, 2);
+    expect(store.stored.token, 'token-b');
   });
 
   test('本地认证用户数据畸形时不恢复部分会话', () async {

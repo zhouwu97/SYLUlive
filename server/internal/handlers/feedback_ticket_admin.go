@@ -105,13 +105,24 @@ func (h *FeedbackTicketHandler) AdminGetStats(c *gin.Context) {
 	var unviewedCount int64
 	var totalUnresolved int64
 
-	_ = h.db.Model(&models.FeedbackTicket{}).Where("status = ?", models.FeedbackStatusPending).Count(&pendingCount).Error
-	_ = h.db.Model(&models.FeedbackTicket{}).Where("status = ?", models.FeedbackStatusWaitingUser).Count(&waitingUserCount).Error
-	_ = h.db.Model(&models.FeedbackTicket{}).Where("status = ?", models.FeedbackStatusTesting).Count(&testingCount).Error
-	_ = h.db.Model(&models.FeedbackTicket{}).Where("admin_viewed = ?", false).Count(&unviewedCount).Error
-	_ = h.db.Model(&models.FeedbackTicket{}).
-		Where("status NOT IN ?", []string{models.FeedbackStatusResolved, models.FeedbackStatusClosed}).
-		Count(&totalUnresolved).Error
+	// 概览计数失败时不能返回全 0：那会让管理端角标显示成"没有待处理工单"。
+	counts := []struct {
+		query *gorm.DB
+		dest  *int64
+	}{
+		{h.db.Model(&models.FeedbackTicket{}).Where("status = ?", models.FeedbackStatusPending), &pendingCount},
+		{h.db.Model(&models.FeedbackTicket{}).Where("status = ?", models.FeedbackStatusWaitingUser), &waitingUserCount},
+		{h.db.Model(&models.FeedbackTicket{}).Where("status = ?", models.FeedbackStatusTesting), &testingCount},
+		{h.db.Model(&models.FeedbackTicket{}).Where("admin_viewed = ?", false), &unviewedCount},
+		{h.db.Model(&models.FeedbackTicket{}).
+			Where("status NOT IN ?", []string{models.FeedbackStatusResolved, models.FeedbackStatusClosed}), &totalUnresolved},
+	}
+	for _, count := range counts {
+		if err := count.query.Count(count.dest).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单概览失败"})
+			return
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"pending_count":      pendingCount,
@@ -142,7 +153,12 @@ func (h *FeedbackTicketHandler) AdminGetTicketDetail(c *gin.Context) {
 			updates["admin_first_viewed_at"] = now
 			ticket.AdminFirstViewedAt = &now
 		}
-		_ = h.db.Model(&ticket).Updates(updates).Error
+		if err := h.db.Model(&ticket).Updates(updates).Error; err != nil {
+			// 写失败被吞会让管理端未读角标长期不消；这里直接失败，
+			// 且不把 AdminViewed 置真，避免响应与库内状态不一致。
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "标记工单已读失败"})
+			return
+		}
 		ticket.AdminViewed = true
 	}
 
@@ -157,16 +173,22 @@ func (h *FeedbackTicketHandler) AdminGetTicketDetail(c *gin.Context) {
 		return
 	}
 
-	// 初始附件
+	// 初始附件（同用户端：读失败必须暴露，否则管理员看到的是残缺详情）
 	var attachments []models.FeedbackAttachment
-	_ = h.db.Where("ticket_id = ? AND (message_id IS NULL OR message_id = 0)", ticket.ID).
+	if err := h.db.Where("ticket_id = ? AND (message_id IS NULL OR message_id = 0)", ticket.ID).
 		Preload("File").
-		Find(&attachments).Error
+		Find(&attachments).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单附件失败"})
+		return
+	}
 	ticket.Attachments = attachments
 
 	// 状态变更记录
 	var history []models.FeedbackStatusHistory
-	_ = h.db.Where("ticket_id = ?", ticket.ID).Order("created_at ASC").Find(&history).Error
+	if err := h.db.Where("ticket_id = ?", ticket.ID).Order("created_at ASC").Find(&history).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单变更记录失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"ticket":   ticket,
@@ -295,8 +317,8 @@ func (h *FeedbackTicketHandler) AdminAddMessage(c *gin.Context) {
 			pushContent = string([]rune(pushContent)[:60]) + "..."
 		}
 		_ = h.notifier.Notify(ticket.UserID, pushTitle, pushContent, map[string]interface{}{
-			"type":               "feedback_ticket",
-			"ticket_id":          ticket.ID,
+			"type":              "feedback_ticket",
+			"ticket_id":         ticket.ID,
 			"recipient_user_id": ticket.UserID,
 		})
 	}
@@ -446,8 +468,8 @@ func (h *FeedbackTicketHandler) AdminUpdateStatus(c *gin.Context) {
 			pushContent += " · " + statusNote
 		}
 		_ = h.notifier.Notify(ticket.UserID, pushTitle, pushContent, map[string]interface{}{
-			"type":               "feedback_ticket",
-			"ticket_id":          ticket.ID,
+			"type":              "feedback_ticket",
+			"ticket_id":         ticket.ID,
 			"recipient_user_id": ticket.UserID,
 		})
 	}
@@ -564,8 +586,8 @@ func (h *FeedbackTicketHandler) AdminRequestInfo(c *gin.Context) {
 			pushContent = comment
 		}
 		_ = h.notifier.Notify(ticket.UserID, pushTitle, pushContent, map[string]interface{}{
-			"type":               "feedback_ticket",
-			"ticket_id":          ticket.ID,
+			"type":              "feedback_ticket",
+			"ticket_id":         ticket.ID,
 			"recipient_user_id": ticket.UserID,
 		})
 	}

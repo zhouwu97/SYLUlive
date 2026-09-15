@@ -412,8 +412,16 @@ func (h *UserHandler) GetFollowing(c *gin.Context) {
 
 	var follows []models.UserFollow
 	var total int64
-	h.db.Model(&models.UserFollow{}).Where("follower_id = ?", targetID).Count(&total)
-	h.db.Where("follower_id = ?", targetID).Order("created_at DESC").Offset(offset).Limit(limit).Find(&follows)
+	// DB 抖动时若吞掉错误，接口会返回 200 + items:[] + total:0，
+	// 客户端会显示成"这个人没有关注任何人"，把故障伪装成空数据。
+	if err := h.db.Model(&models.UserFollow{}).Where("follower_id = ?", targetID).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取关注列表失败"})
+		return
+	}
+	if err := h.db.Where("follower_id = ?", targetID).Order("created_at DESC").Offset(offset).Limit(limit).Find(&follows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取关注列表失败"})
+		return
+	}
 
 	var userIDs []uint
 	for _, f := range follows {
@@ -422,7 +430,10 @@ func (h *UserHandler) GetFollowing(c *gin.Context) {
 
 	users := make([]models.User, 0)
 	if len(userIDs) > 0 {
-		h.db.Where("id IN ?", userIDs).Find(&users)
+		if err := h.db.Where("id IN ?", userIDs).Find(&users).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取关注列表失败"})
+			return
+		}
 		users = orderUsersByIDs(users, userIDs)
 
 		// 填充 IsFollowing
@@ -430,7 +441,10 @@ func (h *UserHandler) GetFollowing(c *gin.Context) {
 		if exists {
 			currentUserID := currentUserIDAny.(uint)
 			var followingIDs []uint
-			h.db.Model(&models.UserFollow{}).Where("follower_id = ? AND following_id IN ?", currentUserID, userIDs).Pluck("following_id", &followingIDs)
+			if err := h.db.Model(&models.UserFollow{}).Where("follower_id = ? AND following_id IN ?", currentUserID, userIDs).Pluck("following_id", &followingIDs).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取关注列表失败"})
+				return
+			}
 
 			followingMap := make(map[uint]bool)
 			for _, id := range followingIDs {
@@ -468,8 +482,15 @@ func (h *UserHandler) GetFollowers(c *gin.Context) {
 
 	var follows []models.UserFollow
 	var total int64
-	h.db.Model(&models.UserFollow{}).Where("following_id = ?", targetID).Count(&total)
-	h.db.Where("following_id = ?", targetID).Order("created_at DESC").Offset(offset).Limit(limit).Find(&follows)
+	// 同 GetFollowing：失败必须 5xx，不能让"读失败"看起来像"没有粉丝"。
+	if err := h.db.Model(&models.UserFollow{}).Where("following_id = ?", targetID).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取粉丝列表失败"})
+		return
+	}
+	if err := h.db.Where("following_id = ?", targetID).Order("created_at DESC").Offset(offset).Limit(limit).Find(&follows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取粉丝列表失败"})
+		return
+	}
 
 	var userIDs []uint
 	for _, f := range follows {
@@ -478,7 +499,10 @@ func (h *UserHandler) GetFollowers(c *gin.Context) {
 
 	users := make([]models.User, 0)
 	if len(userIDs) > 0 {
-		h.db.Where("id IN ?", userIDs).Find(&users)
+		if err := h.db.Where("id IN ?", userIDs).Find(&users).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取粉丝列表失败"})
+			return
+		}
 		users = orderUsersByIDs(users, userIDs)
 
 		// 填充 IsFollowing
@@ -486,7 +510,10 @@ func (h *UserHandler) GetFollowers(c *gin.Context) {
 		if exists {
 			currentUserID := currentUserIDAny.(uint)
 			var followingIDs []uint
-			h.db.Model(&models.UserFollow{}).Where("follower_id = ? AND following_id IN ?", currentUserID, userIDs).Pluck("following_id", &followingIDs)
+			if err := h.db.Model(&models.UserFollow{}).Where("follower_id = ? AND following_id IN ?", currentUserID, userIDs).Pluck("following_id", &followingIDs).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取粉丝列表失败"})
+				return
+			}
 
 			followingMap := make(map[uint]bool)
 			for _, id := range followingIDs {

@@ -20,7 +20,7 @@ const summaryTagDays = 30
 
 // batchAggregateSummaryTags 批量拉取近 days 天内评价标签并在 Go 内存中按食堂分组聚合 topK（只留白名单）。
 // 消除按店 N+1 查询。
-func (h *CanteenHandler) batchAggregateSummaryTags(days int, topK int) map[uint][]services.SummaryTag {
+func (h *CanteenHandler) batchAggregateSummaryTags(days int, topK int) (map[uint][]services.SummaryTag, error) {
 	if days <= 0 {
 		days = summaryTagDays
 	}
@@ -29,19 +29,24 @@ func (h *CanteenHandler) batchAggregateSummaryTags(days int, topK int) map[uint]
 		CanteenID uint   `gorm:"column:canteen_id"`
 		Tags      string `gorm:"column:tags"`
 	}
+	// 查询失败必须上报：返回空 map 会让榜单标签静默变空，而接口仍然 200。
 	var rows []ratingTagRow
-	_ = h.db.Table("canteen_review_events AS e").
+	if err := h.db.Table("canteen_review_events AS e").
 		Select("e.canteen_id, e.tags").
 		Where("e.status = ? AND e.score_version >= ? AND e.created_at >= ?", models.ReviewEventStatusActive, 2, since).
 		Where("e.tags IS NOT NULL AND e.tags <> '' AND e.tags <> '[]'").
-		Scan(&rows).Error
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
 	var legacyRows []ratingTagRow
-	_ = h.db.Table("canteen_ratings AS r").
+	if err := h.db.Table("canteen_ratings AS r").
 		Select("r.canteen_id, r.tags").
 		Where("(r.status = ? OR r.status IS NULL OR r.status = '') AND r.created_at >= ?", models.ReviewEventStatusActive, since).
 		Where("r.tags IS NOT NULL AND r.tags <> '' AND r.tags <> '[]'").
 		Where("NOT EXISTS (SELECT 1 FROM canteen_review_events e WHERE e.canteen_id = r.canteen_id AND e.user_id = r.user_id AND e.status = ? AND (e.score_version >= ? OR e.score_version = ?))", models.ReviewEventStatusActive, 2, 0).
-		Scan(&legacyRows).Error
+		Scan(&legacyRows).Error; err != nil {
+		return nil, err
+	}
 	rows = append(rows, legacyRows...)
 
 	canteenRaws := make(map[uint][]string, len(rows))
@@ -53,60 +58,66 @@ func (h *CanteenHandler) batchAggregateSummaryTags(days int, topK int) map[uint]
 	for cid, raws := range canteenRaws {
 		result[cid] = services.AggregateSummaryTagsInMemory(raws, topK)
 	}
-	return result
+	return result, nil
 }
 
 // aggregateSummaryTags 单店查询包装（向前兼容）。
-func (h *CanteenHandler) aggregateSummaryTags(canteenID uint, days int, topK int) []services.SummaryTag {
+func (h *CanteenHandler) aggregateSummaryTags(canteenID uint, days int, topK int) ([]services.SummaryTag, error) {
 	if days <= 0 {
 		days = summaryTagDays
 	}
 	since := time.Now().AddDate(0, 0, -days)
 	var raws []string
-	err := h.db.Table("canteen_review_events AS e").
+	if err := h.db.Table("canteen_review_events AS e").
 		Where("e.canteen_id = ? AND e.status = ? AND e.score_version >= ? AND e.created_at >= ?", canteenID, models.ReviewEventStatusActive, 2, since).
 		Where("e.tags IS NOT NULL AND e.tags <> '' AND e.tags <> '[]'").
-		Pluck("e.tags", &raws).Error
+		Pluck("e.tags", &raws).Error; err != nil {
+		return nil, err
+	}
 	var legacyRaws []string
-	_ = h.db.Table("canteen_ratings AS r").
+	if err := h.db.Table("canteen_ratings AS r").
 		Where("r.canteen_id = ? AND (r.status = ? OR r.status IS NULL OR r.status = '') AND r.created_at >= ?", canteenID, models.ReviewEventStatusActive, since).
 		Where("r.tags IS NOT NULL AND r.tags <> '' AND r.tags <> '[]'").
 		Where("NOT EXISTS (SELECT 1 FROM canteen_review_events e WHERE e.canteen_id = r.canteen_id AND e.user_id = r.user_id AND e.status = ? AND (e.score_version >= ? OR e.score_version = ?))", models.ReviewEventStatusActive, 2, 0).
-		Pluck("r.tags", &legacyRaws)
-	raws = append(raws, legacyRaws...)
-	if err != nil {
-		return nil
+		Pluck("r.tags", &legacyRaws).Error; err != nil {
+		return nil, err
 	}
-	return services.AggregateSummaryTagsInMemory(raws, topK)
+	raws = append(raws, legacyRaws...)
+	return services.AggregateSummaryTagsInMemory(raws, topK), nil
 }
 
 // batchRecentReviewCounts 批量统计所有食堂近 days 天内的评价事件数（消除按店 N+1）。
-func (h *CanteenHandler) batchRecentReviewCounts(days int) map[uint]int64 {
+func (h *CanteenHandler) batchRecentReviewCounts(days int) (map[uint]int64, error) {
 	type countRow struct {
 		CanteenID uint  `gorm:"column:canteen_id"`
 		Cnt       int64 `gorm:"column:cnt"`
 	}
 	var rows []countRow
 	since := time.Now().AddDate(0, 0, -days)
-	_ = h.db.Table("canteen_review_events").
+	// 同上：失败即上报，避免"评价数静默变 0"被前端当成真的没有评价。
+	if err := h.db.Table("canteen_review_events").
 		Select("canteen_id, COUNT(*) as cnt").
 		Where("status = ? AND score_version >= ? AND created_at >= ?", models.ReviewEventStatusActive, 2, since).
 		Group("canteen_id").
-		Scan(&rows).Error
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
 	var legacyRows []countRow
-	_ = h.db.Table("canteen_ratings AS r").
+	if err := h.db.Table("canteen_ratings AS r").
 		Select("r.canteen_id, COUNT(*) as cnt").
 		Where("(r.status = ? OR r.status IS NULL OR r.status = '') AND r.created_at >= ?", models.ReviewEventStatusActive, since).
 		Where("NOT EXISTS (SELECT 1 FROM canteen_review_events e WHERE e.canteen_id = r.canteen_id AND e.user_id = r.user_id AND e.status = ? AND (e.score_version >= ? OR e.score_version = ?))", models.ReviewEventStatusActive, 2, 0).
 		Group("r.canteen_id").
-		Scan(&legacyRows).Error
+		Scan(&legacyRows).Error; err != nil {
+		return nil, err
+	}
 	rows = append(rows, legacyRows...)
 
 	counts := make(map[uint]int64, len(rows))
 	for _, r := range rows {
 		counts[r.CanteenID] += r.Cnt
 	}
-	return counts
+	return counts, nil
 }
 
 // recentReviewCount 统计某食堂近 days 天内的评价数。
@@ -155,7 +166,11 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 	sortRanking(entries, sortMode)
 
 	// 批量拉取近 30 天评价标签，避免 N+1
-	tagMap := h.batchAggregateSummaryTags(summaryTagDays, 3)
+	tagMap, tagErr := h.batchAggregateSummaryTags(summaryTagDays, 3)
+	if tagErr != nil {
+		c.JSON(500, gin.H{"error": "获取排行失败"})
+		return
+	}
 
 	type item struct {
 		Rank               int                   `json:"rank"`
@@ -275,12 +290,20 @@ func (h *CanteenHandler) BuildHomeFeed(
 	limit int,
 	recentCounts map[uint]int64,
 	summaryTags map[uint][]services.SummaryTag,
-) []canteenFeedItem {
+) ([]canteenFeedItem, error) {
 	if recentCounts == nil {
-		recentCounts = h.batchRecentReviewCounts(7)
+		queried, err := h.batchRecentReviewCounts(7)
+		if err != nil {
+			return nil, err
+		}
+		recentCounts = queried
 	}
 	if summaryTags == nil {
-		summaryTags = h.batchAggregateSummaryTags(summaryTagDays, 3)
+		queried, err := h.batchAggregateSummaryTags(summaryTagDays, 3)
+		if err != nil {
+			return nil, err
+		}
+		summaryTags = queried
 	}
 
 	// 1. 候选池按类型组织，各自按质量/新鲜度排序。
@@ -369,7 +392,7 @@ func (h *CanteenHandler) BuildHomeFeed(
 			break
 		}
 	}
-	return feed
+	return feed, nil
 }
 
 // pickRecommendation 从推荐候选池挑一条「同店最多 1 次、不与上一条同店、类型不重复」的卡。
@@ -703,8 +726,16 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 	sortRanking(entries, "composite")
 
 	// 批量拉取近 30 天评价标签和近 7 天评价数，一次性查询避免 N+1 与重复查询
-	tagMap := h.batchAggregateSummaryTags(summaryTagDays, 3)
-	recentCounts := h.batchRecentReviewCounts(7)
+	tagMap, tagErr := h.batchAggregateSummaryTags(summaryTagDays, 3)
+	if tagErr != nil {
+		c.JSON(500, gin.H{"error": "获取首页失败"})
+		return
+	}
+	recentCounts, countErr := h.batchRecentReviewCounts(7)
+	if countErr != nil {
+		c.JSON(500, gin.H{"error": "获取首页失败"})
+		return
+	}
 
 	// Hero：综合分最高的「有评价」食堂。
 	var hero *canteenFeedItem
@@ -762,7 +793,11 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 	if hero != nil {
 		feedEntries = removeCanteen(entries, hero.CanteenID)
 	}
-	feed := h.BuildHomeFeed(feedEntries, mean, 8, recentCounts, tagMap)
+	feed, feedErr := h.BuildHomeFeed(feedEntries, mean, 8, recentCounts, tagMap)
+	if feedErr != nil {
+		c.JSON(500, gin.H{"error": "获取首页失败"})
+		return
+	}
 	hotDishes := h.hotDishes(4)
 	recentReviews := h.loadRecentHomeReviews(5)
 

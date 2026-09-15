@@ -26,7 +26,7 @@ const (
 
 var (
 	errFeedbackTicketStateConflict = errors.New("工单状态已变化，请刷新后重试")
-	errFeedbackTicketClosed       = errors.New("该工单已关闭，如仍有问题请点击重新打开")
+	errFeedbackTicketClosed        = errors.New("该工单已关闭，如仍有问题请点击重新打开")
 )
 
 // FeedbackTicketHandler 处理用户端与通用的工单操作
@@ -331,16 +331,23 @@ func (h *FeedbackTicketHandler) GetTicketDetail(c *gin.Context) {
 		return
 	}
 
-	// 读取初始附件
+	// 读取初始附件。读失败不能吞掉：否则用户看到的是"没有附件"的残缺详情，
+	// 且完全无从察觉这是故障而不是真的没有附件。
 	var attachments []models.FeedbackAttachment
-	_ = h.db.Where("ticket_id = ? AND (message_id IS NULL OR message_id = 0)", ticket.ID).
+	if err := h.db.Where("ticket_id = ? AND (message_id IS NULL OR message_id = 0)", ticket.ID).
 		Preload("File").
-		Find(&attachments).Error
+		Find(&attachments).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单附件失败"})
+		return
+	}
 	ticket.Attachments = attachments
 
 	// 读取状态流转记录
 	var history []models.FeedbackStatusHistory
-	_ = h.db.Where("ticket_id = ?", ticket.ID).Order("created_at ASC").Find(&history).Error
+	if err := h.db.Where("ticket_id = ?", ticket.ID).Order("created_at ASC").Find(&history).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单变更记录失败"})
+		return
+	}
 
 	// 只清除本次响应已读到的边界；若期间出现新的管理员消息，保留未读提示。
 	if ticket.UserUnreadCount > 0 {

@@ -2158,7 +2158,12 @@ func recomputeCanteenUserSummary(tx *gorm.DB, canteenID, userID uint) error {
 		return err
 	}
 	var latest models.CanteenReviewEvent
-	_ = tx.First(&latest, effective.LatestEventID).Error
+	// LatestEventID 来自同一事务内的查询结果，正常路径查得到；但这里必须检查错误：
+	// First 失败时 latest 是零值，若继续执行会把摘要里的评语/图片/标签静默清空，
+	// 失败方向是破坏性的，只能返回错误。
+	if err := tx.First(&latest, effective.LatestEventID).Error; err != nil {
+		return err
+	}
 	summary.Status = models.ReviewEventStatusActive
 	summary.Star = int(math.Round(effective.Overall))
 	summary.EffectiveScore = effective.Overall

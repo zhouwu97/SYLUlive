@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -165,7 +166,7 @@ func applyPlan(db *gorm.DB, plan backfillPlan) error {
 		for _, item := range plan.Associations {
 			var topic models.Topic
 			if err := tx.Where("normalized_name = ?", item.Name).First(&topic).Error; err != nil {
-				if err != gorm.ErrRecordNotFound {
+				if !errors.Is(err, gorm.ErrRecordNotFound) {
 					return err
 				}
 				topic = models.Topic{Name: item.Name, NormalizedName: item.Name, Status: models.TopicStatusActive}

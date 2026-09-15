@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -92,7 +93,7 @@ func (h *PrivacyHandler) CreateRequest(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "同类请求正在处理中，请勿重复提交"})
 		return
 	}
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询请求状态失败"})
 		return
 	}
@@ -178,7 +179,7 @@ func (h *PrivacyHandler) personalDataPayload(userID uint, includeRequests bool) 
 func (h *PrivacyHandler) GetMyData(c *gin.Context) {
 	payload, err := h.personalDataPayload(c.GetUint("user_id"), true)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 			return
 		}
@@ -193,7 +194,7 @@ func (h *PrivacyHandler) ExportMyData(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	payload, err := h.personalDataPayload(userID, true)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 			return
 		}
@@ -379,7 +380,7 @@ func (h *PrivacyHandler) HandleRequest(c *gin.Context) {
 			Detail: fmt.Sprintf("处理个人信息请求: type=%s status=%s", request.RequestType, status),
 		}).Error
 	}); err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "个人信息请求不存在"})
 			return
 		}

@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -210,7 +211,7 @@ func applyAppealPass(tx *gorm.DB, appeal models.Appeal) error {
 	}
 	var report models.Report
 	if err := tx.First(&report, *appeal.ReportID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
 		return err

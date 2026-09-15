@@ -62,7 +62,7 @@ func (r *Runtime) validateAgentContext(
 			if err := r.db.WithContext(ctx).
 				Where("id = ? AND status IN ? AND deleted_at IS NULL", eventID, []string{"active", "published"}).
 				First(&event).Error; err != nil {
-				if err == gorm.ErrRecordNotFound {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
 					return nil, runtimeContextError("赛事上下文已不存在或不可见")
 				}
 				return nil, err

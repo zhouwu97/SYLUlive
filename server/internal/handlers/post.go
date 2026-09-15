@@ -321,7 +321,7 @@ func normalizeMarketTags(raw string) string {
 func validateWaterSectionActive(db *gorm.DB, postType string) (uint, error) {
 	var section models.WaterSection
 	err := db.Where("slug = ? AND status = ?", postType, "active").First(&section).Error
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return 0, fmt.Errorf("无效版块")
 	}
 	if err != nil {
@@ -334,7 +334,7 @@ func validateWaterSectionActive(db *gorm.DB, postType string) (uint, error) {
 func validateWaterTagBelongsToSection(db *gorm.DB, tagID uint, sectionID uint) error {
 	var tag models.WaterSectionTag
 	err := db.Where("id = ? AND section_id = ? AND is_enabled = ?", tagID, sectionID, true).First(&tag).Error
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return fmt.Errorf("标签不属于该版块")
 	}
 	return err

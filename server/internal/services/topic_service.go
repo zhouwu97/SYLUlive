@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -134,7 +135,7 @@ func ResolveTopicSelections(tx *gorm.DB, selections []TopicSelection) ([]models.
 		if selection.ID > 0 {
 			var topic models.Topic
 			if err := tx.Where("id = ? AND status = ?", selection.ID, models.TopicStatusActive).First(&topic).Error; err != nil {
-				if err == gorm.ErrRecordNotFound {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
 					return nil, &TopicInputError{Message: "所选话题不存在或已不可用"}
 				}
 				return nil, err

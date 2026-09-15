@@ -39,7 +39,7 @@ func (h *WaterModerationHandler) getSectionOr404(c *gin.Context) (*models.WaterS
 	slug := c.Param("slug")
 	var section models.WaterSection
 	if err := h.db.Where("slug = ? AND status = ?", slug, "active").First(&section).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "版块不存在"})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取版块失败"})
@@ -318,7 +318,7 @@ func (h *WaterModerationHandler) UnpinPost(c *gin.Context) {
 	var pin models.WaterSectionPin
 	dbErr := h.db.Where("section_id = ? AND post_id = ? AND status = ?",
 		section.ID, postID, models.PinStatusActive).First(&pin).Error
-	if dbErr == gorm.ErrRecordNotFound {
+	if errors.Is(dbErr, gorm.ErrRecordNotFound) {
 		// 幂等，已取消
 		c.JSON(http.StatusOK, gin.H{"message": "已取消置顶"})
 		return
@@ -557,7 +557,7 @@ func (h *WaterModerationHandler) UnfeaturePost(c *gin.Context) {
 	var featured models.WaterSectionFeaturedPost
 	dbErr := h.db.Where("section_id = ? AND post_id = ? AND status = ?",
 		section.ID, postID, models.SectionFeaturedStatusActive).First(&featured).Error
-	if dbErr == gorm.ErrRecordNotFound {
+	if errors.Is(dbErr, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusOK, gin.H{"message": "已取消加精"})
 		return
 	}
@@ -921,7 +921,7 @@ func (h *WaterModerationHandler) UnmuteUser(c *gin.Context) {
 	var mute models.WaterSectionMute
 	dbErr := h.db.Where("section_id = ? AND user_id = ? AND status = ?",
 		section.ID, targetUserID, models.MuteStatusActive).First(&mute).Error
-	if dbErr == gorm.ErrRecordNotFound {
+	if errors.Is(dbErr, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusOK, gin.H{"message": "已解除禁言"})
 		return
 	}

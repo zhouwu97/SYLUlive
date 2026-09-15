@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -381,7 +382,7 @@ func EnsureWaterSections(db *gorm.DB) error {
 	for _, entry := range defaultWaterSections() {
 		var section WaterSection
 		err := db.Where("slug = ?", entry.Slug).First(&section).Error
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			questionsJSON, marshalErr := json.Marshal(entry.StarterQuestions)
 			if marshalErr != nil {
 				return marshalErr
@@ -415,7 +416,7 @@ func EnsureWaterSections(db *gorm.DB) error {
 		for _, tagSeed := range entry.Tags {
 			var tag WaterSectionTag
 			tagErr := db.Where("section_id = ? AND slug = ?", section.ID, tagSeed.Slug).First(&tag).Error
-			if tagErr == gorm.ErrRecordNotFound {
+			if errors.Is(tagErr, gorm.ErrRecordNotFound) {
 				mode := tagSeed.ContentMode
 				if mode == "" {
 					mode = WaterTagModeStandard

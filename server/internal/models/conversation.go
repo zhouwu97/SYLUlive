@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -140,7 +141,7 @@ func NormalizeConversationPairs(db *gorm.DB) error {
 					Update("last_message_at", lastMessage.CreatedAt).Error; err != nil {
 					return err
 				}
-			} else if err != gorm.ErrRecordNotFound {
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
 		}

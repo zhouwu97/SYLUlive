@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -860,11 +861,11 @@ func (h *UserHandler) UpdatePushSettings(c *gin.Context) {
 			}
 			var device models.PushDevice
 			findErr := tx.Where("device_id = ?", input.InstallationID).First(&device).Error
-			if findErr != nil && findErr != gorm.ErrRecordNotFound {
+			if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
 				return findErr
 			}
 			now := time.Now()
-			if findErr == gorm.ErrRecordNotFound {
+			if errors.Is(findErr, gorm.ErrRecordNotFound) {
 				device = models.PushDevice{
 					UserID: userID, DeviceID: input.InstallationID,
 					Platform: input.Platform, PushProvider: "jpush",
@@ -926,7 +927,7 @@ func (h *UserHandler) UpdatePushSettings(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "授权已撤销，请重新确认基础协议后再开启推送", "code": "legal_consent_required"})
 			return
 		}
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 			return
 		}

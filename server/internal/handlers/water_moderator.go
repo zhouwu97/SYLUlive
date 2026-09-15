@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -99,7 +100,7 @@ func (h *WaterModeratorHandler) requireAdmin(c *gin.Context) (*models.User, *mod
 	slug := c.Param("slug")
 	var section models.WaterSection
 	if err := h.db.Where("slug = ? AND status = ?", slug, "active").First(&section).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "版块不存在"})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取版块失败"})
@@ -113,7 +114,7 @@ func (h *WaterModeratorHandler) requireAdmin(c *gin.Context) (*models.User, *mod
 func (h *WaterModeratorHandler) getSectionBySlug(c *gin.Context, slug string) (*models.WaterSection, bool) {
 	var section models.WaterSection
 	if err := h.db.Where("slug = ? AND status = ?", slug, "active").First(&section).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "版块不存在"})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取版块失败"})
@@ -248,7 +249,7 @@ func (h *WaterModeratorHandler) AssignModerator(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"moderator": toModeratorResponse(&existing)})
 			return
 		}
-	} else if err != gorm.ErrRecordNotFound {
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询版主记录失败"})
 		return
 	}
@@ -296,7 +297,7 @@ func (h *WaterModeratorHandler) UpdateModerator(c *gin.Context) {
 	var mod models.WaterSectionModerator
 	if err := h.db.Where("id = ? AND section_id = ? AND status = ?",
 		modID, section.ID, models.ModeratorStatusActive).First(&mod).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "版主记录不存在或已撤销"})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询版主失败"})
@@ -366,7 +367,7 @@ func (h *WaterModeratorHandler) RevokeModerator(c *gin.Context) {
 	modID := c.Param("moderator_id")
 	var mod models.WaterSectionModerator
 	if err := h.db.Where("id = ? AND section_id = ?", modID, section.ID).First(&mod).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "版主记录不存在"})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询版主失败"})

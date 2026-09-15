@@ -145,7 +145,7 @@ func AwardDailySectionExp(db *gorm.DB, userID uint, sectionID uint, sectionSlug 
 		// 更新或创建 stats
 		var stat models.WaterSectionUserStat
 		dbErr := tx.Where("user_id = ? AND section_id = ?", userID, sectionID).First(&stat).Error
-		if dbErr == gorm.ErrRecordNotFound {
+		if errors.Is(dbErr, gorm.ErrRecordNotFound) {
 			stat = models.WaterSectionUserStat{
 				UserID:       userID,
 				SectionID:    sectionID,
@@ -219,7 +219,7 @@ func AwardDailySectionExp(db *gorm.DB, userID uint, sectionID uint, sectionSlug 
 func getSectionLevelInfo(db *gorm.DB, userID uint, sectionID uint) (int, string) {
 	var stat models.WaterSectionUserStat
 	err := db.Where("user_id = ? AND section_id = ?", userID, sectionID).First(&stat).Error
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return 1, DefaultWaterSectionLevelTitle(1)
 	}
 	if err != nil {

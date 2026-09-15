@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -452,7 +453,7 @@ func (h *SuperAdminHandler) RevokeAdminExp(c *gin.Context) {
 		var operator models.User
 
 		if err := h.db.Select("role").First(&operator, operatorID).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				c.JSON(http.StatusForbidden, gin.H{"error": "无权追回超级管理员的经验"})
 			} else {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
@@ -607,7 +608,7 @@ func (h *SuperAdminHandler) DeleteLotteryEvent(c *gin.Context) {
 		}
 		return nil
 	}); err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "抽奖活动不存在"})
 			return
 		}

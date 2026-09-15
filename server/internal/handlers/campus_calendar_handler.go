@@ -97,7 +97,7 @@ func (h *CampusCalendarHandler) GetCurrent(c *gin.Context) {
 	if err := h.db.Where("status = ?", "published").
 		Order("academic_year DESC, version DESC, published_at DESC, id DESC").
 		First(&calendar).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "暂无已发布校历"})
 			return
 		}
@@ -117,7 +117,7 @@ func (h *CampusCalendarHandler) GetByAcademicYear(c *gin.Context) {
 
 	var calendar models.CampusCalendar
 	if err := h.db.Where("academic_year = ? AND status = ?", year, "published").First(&calendar).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "该学年暂无已发布校历"})
 			return
 		}
@@ -155,7 +155,7 @@ func (h *CampusCalendarHandler) CreateDraft(c *gin.Context) {
 		if err := tx.Where("academic_year = ?", document.AcademicYear).
 			Order("version DESC").First(&latest).Error; err == nil {
 			nextVersion = latest.Version + 1
-		} else if err != gorm.ErrRecordNotFound {
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 
@@ -215,7 +215,7 @@ func (h *CampusCalendarHandler) Publish(c *gin.Context) {
 		return tx.First(&published, target.ID).Error
 	})
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "校历不存在"})
 			return
 		}

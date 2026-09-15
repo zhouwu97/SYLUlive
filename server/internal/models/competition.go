@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"time"
 
 	"gorm.io/datatypes"
@@ -417,7 +418,7 @@ func EnsureCompetitionCategories(db *gorm.DB) error {
 	for _, category := range categories {
 		var existing CompetitionCategory
 		if err := db.Where("slug = ?", category.Slug).First(&existing).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				if err := db.Create(&category).Error; err != nil {
 					return err
 				}

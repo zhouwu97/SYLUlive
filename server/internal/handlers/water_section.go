@@ -324,7 +324,7 @@ func (h *WaterSectionHandler) getActiveSectionOr404(c *gin.Context) (*models.Wat
 	}
 	var section models.WaterSection
 	err := h.db.Where("slug = ? AND status = ?", slug, "active").First(&section).Error
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "版块不存在"})
 		return nil, false
 	}
@@ -339,7 +339,7 @@ func (h *WaterSectionHandler) getTagInSectionOr404(c *gin.Context, sectionID uin
 	tagID := c.Param("tag_id")
 	var tag models.WaterSectionTag
 	err := h.db.Where("id = ? AND section_id = ?", tagID, sectionID).First(&tag).Error
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "标签不存在"})
 		return nil, false
 	}
@@ -491,7 +491,7 @@ func (h *WaterSectionHandler) fillSectionStats(resps []waterSectionResponse) []w
 func (h *WaterSectionHandler) buildMyLevelBrief(sectionID uint, userID uint) *waterSectionMyLevelBrief {
 	var stat models.WaterSectionUserStat
 	err := h.db.Where("user_id = ? AND section_id = ?", userID, sectionID).First(&stat).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
 	}
 
@@ -654,7 +654,7 @@ func (h *WaterSectionHandler) Get(c *gin.Context) {
 		query = query.Preload("Tags", "is_enabled = ?", true)
 	}
 	err := query.First(&section).Error
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "版块不存在"})
 		return
 	}
@@ -694,7 +694,7 @@ func (h *WaterSectionHandler) Update(c *gin.Context) {
 
 	var section models.WaterSection
 	err := h.db.Where("slug = ? AND status = ?", slug, "active").First(&section).Error
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "版块不存在"})
 		return
 	}
@@ -1276,7 +1276,7 @@ func (h *WaterSectionHandler) GetMyLevel(c *gin.Context) {
 
 	var stat models.WaterSectionUserStat
 	err := h.db.Where("user_id = ? AND section_id = ?", operator.ID, section.ID).First(&stat).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取版块等级失败"})
 		return
 	}
@@ -1490,7 +1490,7 @@ func (h *WaterSectionHandler) UpdateLevelTitles(c *gin.Context) {
 				}
 				continue
 			}
-			if err != gorm.ErrRecordNotFound {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
 			row := models.WaterSectionLevelTitle{

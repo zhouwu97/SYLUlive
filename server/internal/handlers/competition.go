@@ -1786,7 +1786,7 @@ func (h *CompetitionHandler) ensureCalendar(userID uint) (models.UserCompetition
 	if err == nil {
 		return calendar, nil
 	}
-	if err != gorm.ErrRecordNotFound {
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return calendar, err
 	}
 	calendar = models.UserCompetitionCalendar{UserID: userID, Title: "我的竞赛计划", Visibility: "private"}
@@ -1930,7 +1930,7 @@ func (h *CompetitionHandler) ensureCalendarTx(tx *gorm.DB, userID uint) (models.
 	if err == nil {
 		return calendar, nil
 	}
-	if err != gorm.ErrRecordNotFound {
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return calendar, err
 	}
 	calendar = models.UserCompetitionCalendar{UserID: userID, Title: "我的竞赛计划", Visibility: "private"}

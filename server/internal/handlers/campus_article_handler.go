@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -143,7 +144,7 @@ func (h *CampusArticleHandler) GetLatest(c *gin.Context) {
 	if err := h.db.Where("source IN ?", allowedCampusSources).
 		Order("publish_date DESC, id DESC").
 		First(&article).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusOK, gin.H{"item": nil})
 			return
 		}
@@ -189,7 +190,7 @@ func (h *CampusArticleHandler) GetDetail(c *gin.Context) {
 	var article models.CampusArticle
 	if err := h.db.Where("source IN ?", allowedCampusSources).
 		First(&article, id).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "文章不存在"})
 			return
 		}

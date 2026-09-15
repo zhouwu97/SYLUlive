@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -44,7 +45,7 @@ func (s *WaterPermissionService) GetActiveModerator(sectionID, userID uint) (*mo
 	var mod models.WaterSectionModerator
 	err := s.db.Where("section_id = ? AND user_id = ? AND status = ?",
 		sectionID, userID, models.ModeratorStatusActive).First(&mod).Error
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	if err != nil {

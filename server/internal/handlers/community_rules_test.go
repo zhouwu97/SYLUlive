@@ -49,9 +49,11 @@ func TestCommunityRulesConsentAllowsRepeatedLikesAndSurvivesLegalRenewal(t *test
 	api := router.Group("/api", middleware.AuthMiddleware(db, "secret"))
 	api.POST("/user/legal-consents", auth.AcceptLegalConsents)
 	api.POST("/user/community-rules", auth.AcceptCommunityRules)
-	api.POST("/posts/:id/like", NewLikeHandler(db).LikePost)
+	// 内容门禁与 main.go 的挂载方式保持一致：只挂在"发布内容"的路由上，
+	// 已读标记不挂（它不是发布内容）。
+	api.POST("/posts/:id/like", middleware.RequireCommunityRules(db), NewLikeHandler(db).LikePost)
 	sent := 0
-	api.POST("/messages/:id", func(c *gin.Context) { sent++; c.JSON(http.StatusCreated, gin.H{"id": sent}) })
+	api.POST("/messages/:id", middleware.RequireCommunityRules(db), func(c *gin.Context) { sent++; c.JSON(http.StatusCreated, gin.H{"id": sent}) })
 	api.POST("/messages/conversations/:id/read", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 	request := func(path, body string, status int) {
 		t.Helper()

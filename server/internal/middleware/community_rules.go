@@ -55,11 +55,17 @@ func RequireCommunityRules(db *gorm.DB) gin.HandlerFunc {
 			Where("user_id = ? AND document = ? AND version = ? AND revoked_at IS NULL AND acknowledgement_type = ?",
 				userID, models.LegalDocumentCommunityRules, models.LegalDocumentVersion, "rules_acceptance").
 			Count(&accepted).Error; err != nil {
+			// 与 AuthMiddleware 的契约一致：门禁拒绝不是业务失败。
+			c.Set("idempotency_auth_rejected", true)
 			writeAPIError(c, http.StatusInternalServerError, "legal_consent_lookup_failed", "读取社区规则确认状态失败")
 			c.Abort()
 			return
 		}
 		if accepted == 0 {
+			// 这里必须置上幂等层读的标记：否则这次 403 会被当成业务响应存进
+			// 幂等记录，用户确认社区规则后用同一个 Idempotency-Key 重试会一直
+			// 重放这条 403（见 idempotency.go:135 的注释）。
+			c.Set("idempotency_auth_rejected", true)
 			writeAPIError(c, http.StatusForbidden, "community_rules_required", "请先确认社区规则")
 			c.Abort()
 			return

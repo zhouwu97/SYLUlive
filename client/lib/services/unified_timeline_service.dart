@@ -239,9 +239,12 @@ class UnifiedTimelineService {
   }
 
   static DateTime _at(DateTime date, String time) {
+    // 这些时间串是本文件内的常量，异常说明代码写错了；用 tryParse 兜底，
+    // 避免在渲染时间线时抛 FormatException 打断整页。
     final parts = time.split(':');
-    return DateTime(date.year, date.month, date.day, int.parse(parts[0]),
-        int.parse(parts[1]));
+    final hour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
+    final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    return DateTime(date.year, date.month, date.day, hour, minute);
   }
 }
 

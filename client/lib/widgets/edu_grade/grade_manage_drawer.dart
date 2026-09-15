@@ -474,12 +474,17 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
               for (final s in semesters) {
                 if (s.year != lastYear) {
                   lastYear = s.year;
-                  final y = int.parse(s.year);
+                  // 学年串来自教务或本地存储，可能是 '2023-2024' 之类的脏数据，
+                  // 不能让它在 build 期间抛 FormatException。
+                  final parsedYear = int.tryParse(s.year);
+                  final yearLabel = parsedYear == null
+                      ? s.year
+                      : '$parsedYear-${parsedYear + 1}';
                   widgets.add(
                     Padding(
                       padding: const EdgeInsets.only(top: 20, bottom: 4),
                       child: Text(
-                        '$y-${y + 1}学年',
+                        '$yearLabel学年',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,

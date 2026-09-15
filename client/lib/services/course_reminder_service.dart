@@ -395,6 +395,13 @@ class CourseReminderService {
           continue;
         }
         final timeParts = _starts[course.startSection - 1].split(':');
+        final startHour = timeParts.isNotEmpty ? int.tryParse(timeParts[0]) : null;
+        final startMinute =
+            timeParts.length > 1 ? int.tryParse(timeParts[1]) : null;
+        if (startHour == null || startMinute == null) {
+          // 课时表数据异常时跳过该节，而不是在排提醒时抛 FormatException。
+          continue;
+        }
         final classDate = start.add(
           Duration(days: (week - 1) * 7 + (course.weekday - 1)),
         );
@@ -402,8 +409,8 @@ class CourseReminderService {
           classDate.year,
           classDate.month,
           classDate.day,
-          int.parse(timeParts[0]),
-          int.parse(timeParts[1]),
+          startHour,
+          startMinute,
         );
         final reminderAt = classStart.subtract(
           Duration(minutes: advanceMinutes),

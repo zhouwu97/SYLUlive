@@ -498,7 +498,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                                   fontSize: 16, fontWeight: FontWeight.bold)),
                         ),
                         ..._availableYears.map((y) => ListTile(
-                              title: Text('$y—${int.parse(y) + 1}',
+                              title: Text(_academicYearLabel(y),
                                   textAlign: TextAlign.center),
                               trailing: _currentYear == y
                                   ? const Icon(Icons.check,
@@ -521,7 +521,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             child: Row(
               children: [
                 Text(
-                  '${_currentYear.isNotEmpty ? _currentYear : "..."}—${_currentYear.isNotEmpty ? int.parse(_currentYear) + 1 : "..."}',
+                  _academicYearLabel(_currentYear),
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
@@ -1114,4 +1114,16 @@ class _GymScoreItem {
   }
 
   String get statusLabel => grade.isNotEmpty ? grade : '--';
+}
+
+/// 学年区间展示：'2025' → '2025—2026'。
+///
+/// 学年串来自教务或本地存储，可能是空串、'2023-2024' 或 '上午' 这类脏数据；
+/// 这里统一退化展示，而不是在 build 期间抛 FormatException。
+String _academicYearLabel(String year) {
+  final trimmed = year.trim();
+  if (trimmed.isEmpty) return '...—...';
+  final parsed = int.tryParse(trimmed);
+  if (parsed == null) return trimmed;
+  return '$trimmed—${parsed + 1}';
 }

@@ -136,12 +136,18 @@ DateTime? _sectionTime(int section, DateTime day) {
   ];
   if (section < 1 || section > starts.length) return null;
   final parts = starts[section - 1].split(':');
+  if (parts.length < 2) return null;
+  final hour = int.tryParse(parts[0]);
+  final minute = int.tryParse(parts[1]);
+  // 时间串异常时返回 null，让调用方按"没有这一节"处理，
+  // 而不是抛 FormatException，也不要用 00:00 这类错误时间继续算。
+  if (hour == null || minute == null) return null;
   return DateTime(
     day.year,
     day.month,
     day.day,
-    int.parse(parts[0]),
-    int.parse(parts[1]),
+    hour,
+    minute,
   );
 }
 

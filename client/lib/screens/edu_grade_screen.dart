@@ -321,12 +321,15 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         final cur = EduSemester.current();
         final curYear = int.tryParse(cur.year) ?? DateTime.now().year;
 
+        // 只解析一次，并保留 tryParse 的判空语义：学年串可能是
+        // '2023-2024' 之类的脏数据，int.parse 会在 build 期间抛异常。
+        final parsedYear = int.tryParse(year);
         if (sem != null &&
             EduSemester.isValid(sem) &&
-            int.tryParse(year) != null &&
-            int.parse(year) >= enrollmentYear &&
-            (int.parse(year) < curYear ||
-                (int.parse(year) == curYear && sem <= cur.semester))) {
+            parsedYear != null &&
+            parsedYear >= enrollmentYear &&
+            (parsedYear < curYear ||
+                (parsedYear == curYear && sem <= cur.semester))) {
           _selectedYear = year;
           _selectedSemester = sem;
           loaded = true;

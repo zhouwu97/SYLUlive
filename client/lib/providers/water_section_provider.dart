@@ -124,8 +124,12 @@ class WaterSectionProvider extends ChangeNotifier {
     if (legacy != null) return WaterSection.fromLegacyCategory(legacy);
     // 最终兜底
     if (_sections.isNotEmpty) return _sections.first;
-    final campusLife =
-        kWaterPostCategories.firstWhere((c) => c.value == 'campus_life');
+    // 最终兜底。常量表若被重构删项/改名，这里不应在构建期抛 StateError：
+    // 优先取 campus_life，取不到就退到表内第一项（该常量表本身恒非空）。
+    final campusLife = kWaterPostCategories.firstWhere(
+      (c) => c.value == 'campus_life',
+      orElse: () => kWaterPostCategories.first,
+    );
     return WaterSection.fromLegacyCategory(campusLife);
   }
 

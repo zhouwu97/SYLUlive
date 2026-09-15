@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_session/personal_conversation_store.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/personal_skill.dart';
@@ -68,6 +70,40 @@ void main() {
     final restored = await store.read();
     expect(restored, hasLength(PersonalConversationStore.maximumMessages));
     expect(restored.first.message.content, 'message-10');
+  });
+
+  test('单条坏记录不会让整段历史读成空', () async {
+    // 回归：role/status/created_at 曾在 fromJson 里裸奔（无 orElse、非 tryParse），
+    // read() 的整段 try/catch 会把整份历史读成空，随后的 replace() 还会用
+    // 空列表覆盖存档，不可恢复。
+    final secure = _MemoryPersonalConversationSecureStore();
+    final store = PersonalConversationStore(
+      accountKey: 'app-a::edu-a',
+      blobStore: secure,
+    );
+    await store.replace(<PersonalConversationEntry>[
+      _entry('保留一', AiMessageRole.user),
+      _entry('保留二', AiMessageRole.assistant),
+    ]);
+
+    // 模拟降级运行 + 单条被截断：未知枚举值、坏时间戳、缺 id/content。
+    final key = secure.values.keys.single;
+    final payload = jsonDecode(secure.values[key]!) as Map<String, dynamic>;
+    final entries = payload['entries'] as List<dynamic>;
+    (entries.first as Map<String, dynamic>)
+      ..['role'] = 'tool'
+      ..['status'] = 'streaming_v2'
+      ..['created_at'] = 'not-a-timestamp';
+    entries.add(<String, dynamic>{'role': 'user', 'content': '截断记录'});
+    secure.values[key] = jsonEncode(payload);
+
+    final restored = await store.read();
+
+    expect(restored, hasLength(2), reason: '坏记录应被逐条跳过，其余历史必须保留');
+    expect(restored.first.message.content, '保留一');
+    expect(restored.first.message.role, AiMessageRole.assistant,
+        reason: '未知枚举值应退到兜底值而不是抛异常');
+    expect(restored.last.message.content, '保留二');
   });
 }
 

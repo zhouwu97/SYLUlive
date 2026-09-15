@@ -49,18 +49,31 @@ class PersonalConversationEntry {
       };
 
   static PersonalConversationEntry fromJson(Map<String, dynamic> json) {
+    // 枚举值必须带兜底：降级运行（新版写入过新枚举值后回退旧版）时，
+    // 裸 firstWhere 会抛 StateError，而 read() 的整段 try/catch 会让
+    // 整份 AI 本地历史读成空。
     final role = AiMessageRole.values.firstWhere(
       (item) => item.name == json['role'],
+      orElse: () => AiMessageRole.assistant,
     );
     final status = AiMessageStatus.values.firstWhere(
       (item) => item.name == json['status'],
+      orElse: () => AiMessageStatus.completed,
     );
-    final createdAt = DateTime.parse(json['created_at'] as String);
-    final evidence = (json['evidence'] as List? ?? const <Object>[])
-        .map(
-          (item) => _evidenceFromJson(Map<String, dynamic>.from(item as Map)),
-        )
-        .toList(growable: false);
+    // 时间戳损坏时退到 epoch：既不抛异常，也让该条在按时间排序/裁剪时
+    // 落到最旧位置，而不是丢失内容或把整体顺序搞乱。
+    final createdAt = _dateTime(json['created_at']) ??
+        DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+    final evidence = <SkillEvidence>[];
+    for (final item in json['evidence'] as List? ?? const <Object>[]) {
+      try {
+        evidence.add(
+          _evidenceFromJson(Map<String, dynamic>.from(item as Map)),
+        );
+      } catch (_) {
+        // 单条引用损坏时保留其余内容，与草稿的处理保持一致。
+      }
+    }
     final actionDrafts = <CompetitionPlanActionDraft>[];
     for (final item in json['action_drafts'] as List? ?? const <Object>[]) {
       try {
@@ -89,7 +102,7 @@ class PersonalConversationEntry {
     return PersonalConversationEntry(
       message: AiChatMessage(
         id: json['id'] as String,
-        requestId: json['request_id'] as String,
+        requestId: json['request_id'] as String? ?? '',
         role: role,
         content: json['content'] as String,
         status: status,
@@ -151,13 +164,21 @@ class PersonalConversationStore {
       if (decoded is! Map || decoded['schema_version'] != _schemaVersion) {
         return const <PersonalConversationEntry>[];
       }
-      final entries = (decoded['entries'] as List? ?? const <Object>[])
-          .map(
-            (item) => PersonalConversationEntry.fromJson(
+      // 逐条兜底：一条坏记录（降级运行遇到未知枚举值、本地加密 JSON 被截断）
+      // 不能让整段历史读成空 —— 随后的 replace() 会用空列表覆盖存档，不可恢复。
+      final rawEntries = decoded['entries'] as List? ?? const <Object>[];
+      final entries = <PersonalConversationEntry>[];
+      for (final item in rawEntries) {
+        try {
+          entries.add(
+            PersonalConversationEntry.fromJson(
               Map<String, dynamic>.from(item as Map),
             ),
-          )
-          .toList(growable: false);
+          );
+        } catch (_) {
+          // 跳过损坏的单条记录，保留其余会话内容。
+        }
+      }
       return _bounded(entries);
     } catch (_) {
       return const <PersonalConversationEntry>[];

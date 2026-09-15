@@ -47,6 +47,7 @@ func (h *ErkeHandler) GetScores(c *gin.Context) {
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
 		SetBody(input).
 		Post(EduServiceConfig.BaseURL + "/erke/scores")
 

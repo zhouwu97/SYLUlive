@@ -8,14 +8,21 @@
   POST /api/spider/erke    二课成绩抓取
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
 
 from erke_crawler import SyluCrawler
+from services.security import require_internal_service
 
 # ── 路由定义 ──────────────────────────────────────────────────
-router = APIRouter(prefix="/api/spider", tags=["爬虫服务"])
+# 该路由会代持学号+明文密码完成 WebVPN / 二课登录并回传会话 Cookie，
+# 必须与 /api/edu 等教务路由一致地做服务间认证，否则等于对外暴露凭据代理。
+router = APIRouter(
+    prefix="/api/spider",
+    tags=["爬虫服务"],
+    dependencies=[Depends(require_internal_service)],
+)
 
 
 # ── Pydantic 请求模型 ────────────────────────────────────────

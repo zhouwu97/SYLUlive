@@ -1,9 +1,15 @@
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel
 from typing import Optional
 from erke_crawler import SyluCrawler
+from services.security import require_internal_service
 
-router = APIRouter(prefix="/erke", tags=["二课服务"])
+# 该路由代持 VPN 与二课凭据并回传会话结果，必须做服务间认证。
+router = APIRouter(
+    prefix="/erke",
+    tags=["二课服务"],
+    dependencies=[Depends(require_internal_service)],
+)
 
 class ErkeLoginRequest(BaseModel):
     vpn_username: str

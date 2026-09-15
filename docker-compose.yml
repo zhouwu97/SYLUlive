@@ -96,6 +96,8 @@ services:
       - SCHOOL_LEGACY_SECRETS_FROZEN=${SCHOOL_LEGACY_SECRETS_FROZEN:-true}
       - SCHOOL_DEVICE_CAPABILITY_CUT=${SCHOOL_DEVICE_CAPABILITY_CUT:?set SCHOOL_DEVICE_CAPABILITY_CUT=true in .env}
       - SCHOOL_ACADEMIC_ROUTES_RETIRED=${SCHOOL_ACADEMIC_ROUTES_RETIRED:?set SCHOOL_ACADEMIC_ROUTES_RETIRED=false in .env}
+      # 私聊总开关。置 true 时 /api/messages/* 全部返回 410；默认 false 保持能力在线。
+      - PRIVATE_CHAT_DISABLED=${PRIVATE_CHAT_DISABLED:-false}
       # 默认不信任任何转发头；仅填写实际反向代理网段后才启用 X-Forwarded-For。
       - TRUSTED_PROXY_CIDRS=${TRUSTED_PROXY_CIDRS:-}
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}

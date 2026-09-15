@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 
 import '../app_bootstrap.dart';
 import '../config/api_constants.dart';
+import '../config/private_chat_policy.dart';
 import '../models/water_section.dart';
 import '../config/water_post_taxonomy.dart';
 import '../widgets/water_section/section_avatar.dart';
@@ -1003,6 +1004,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       Navigator.pushNamed(context, '/login');
+      return;
+    }
+    if (!PrivateChatPolicy.enabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(PrivateChatPolicy.disabledHint)),
+      );
       return;
     }
     Navigator.push(

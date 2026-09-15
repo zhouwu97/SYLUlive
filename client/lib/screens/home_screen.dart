@@ -7,6 +7,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import '../platform/contracts/external_navigator.dart';
 import '../config/api_constants.dart';
+import '../config/private_chat_policy.dart';
 import '../app_bootstrap.dart';
 import '../models/post.dart';
 import '../models/startup_destination.dart';
@@ -302,7 +303,9 @@ class _HomeScreenState extends State<HomeScreen>
         if (conversationId == null ||
             conversationId <= 0 ||
             targetUserId == null ||
-            targetUserId <= 0) {
+            targetUserId <= 0 ||
+            // 私聊暂停开放期间不再恢复私信深层页，避免进入空会话。
+            !PrivateChatPolicy.enabled) {
           if (mounted) setState(() => _restoringInitialDeepPage = false);
           break;
         }

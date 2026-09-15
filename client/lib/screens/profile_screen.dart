@@ -26,6 +26,7 @@ import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/app_cached_image.dart';
 import '../config/api_constants.dart';
+import '../config/private_chat_policy.dart';
 import 'edu_screen.dart';
 
 import 'login_screen.dart';
@@ -175,20 +176,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!auth.isLoggedIn) return;
     try {
       final repliesFuture = auth.dio.get('/user/notifications/unread_count');
-      final messagesFuture = auth.dio.get('/messages/unread_count');
       final feedbackFuture = auth.dio.get('/feedback/tickets/unread-count');
-      final responses = await Future.wait([repliesFuture, messagesFuture, feedbackFuture]);
-      if (mounted) {
-        final replyResp = responses[0];
-        final messageResp = responses[1];
-        final feedbackResp = responses[2];
-        if (replyResp.statusCode == 200 && messageResp.statusCode == 200) {
-          setState(() {
-            _unreadReplyCount = replyResp.data['count'] ?? 0;
-            _unreadMessageCount = messageResp.data['count'] ?? 0;
-            _feedbackUnreadCount = feedbackResp.data?['unread_count'] ?? 0;
-          });
-        }
+      // 私聊暂停开放期间不再请求 /messages/unread_count：该接口会返回 410，
+      // 而 Future.wait 的失败会连带打断同批次的回复未读与反馈未读数。
+      if (!PrivateChatPolicy.enabled) {
+        final responses = await Future.wait([repliesFuture, feedbackFuture]);
+        if (!mounted) return;
+        setState(() {
+          _unreadReplyCount = responses[0].data['count'] ?? 0;
+          _unreadMessageCount = 0;
+          _feedbackUnreadCount = responses[1].data?['unread_count'] ?? 0;
+        });
+        return;
+      }
+      final responses = await Future.wait([
+        repliesFuture,
+        auth.dio.get('/messages/unread_count'),
+        feedbackFuture,
+      ]);
+      if (!mounted) return;
+      final replyResp = responses[0];
+      final messageResp = responses[1];
+      final feedbackResp = responses[2];
+      if (replyResp.statusCode == 200 && messageResp.statusCode == 200) {
+        setState(() {
+          _unreadReplyCount = replyResp.data['count'] ?? 0;
+          _unreadMessageCount = messageResp.data['count'] ?? 0;
+          _feedbackUnreadCount = feedbackResp.data?['unread_count'] ?? 0;
+        });
       }
     } catch (_) {}
   }
@@ -965,34 +980,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
       unreadNotificationCount: _unreadReplyCount,
     );
     final items = [
-      _buildSettingsRow(
-        child: _buildSettingsTile(
-          icon: Icons.chat_outlined,
-          iconColor: const Color(0xFF10B981),
-          title: '私信',
-          subtitle: messageEntryState.privateSubtitle,
-          trailing: messageEntryState.showPrivateBadge
-              ? Container(
-                  width: 8,
-                  height: 8,
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: const BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                  ),
-                )
-              : null,
-          isDark: isDark,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ChatListScreen()),
-            ).then((_) {
-              _loadUnreadCount();
-            });
-          },
+      // 私聊暂停开放期间不展示入口；恢复时把 PrivateChatPolicy.enabled 改回 true。
+      if (PrivateChatPolicy.enabled)
+        _buildSettingsRow(
+          child: _buildSettingsTile(
+            icon: Icons.chat_outlined,
+            iconColor: const Color(0xFF10B981),
+            title: '私信',
+            subtitle: messageEntryState.privateSubtitle,
+            trailing: messageEntryState.showPrivateBadge
+                ? Container(
+                    width: 8,
+                    height: 8,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                  )
+                : null,
+            isDark: isDark,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ChatListScreen()),
+              ).then((_) {
+                _loadUnreadCount();
+              });
+            },
+          ),
         ),
-      ),
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.notifications_active_outlined,

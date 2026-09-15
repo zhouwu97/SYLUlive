@@ -632,6 +632,10 @@ func main() {
 	r.Use(middleware.SchoolAuthorityRetirementGate(cfg.SchoolAuthorityRetired))
 	r.Use(middleware.SchoolLegacySecretsFreezeGate(cfg.SchoolLegacySecretsFrozen))
 
+	// 私聊整体下线闸门同样前置：关闭期间私聊请求不进入认证、版本检查和幂等读取，
+	// 保证旧客户端无法通过任何 /api/messages 路径读写内容或建立实时通道。
+	r.Use(middleware.PrivateChatRetirementGate(cfg.PrivateChatDisabled))
+
 	// 法律页面无需登录和客户端版本头，供浏览器、下载页和分享页访问。
 	r.StaticFile("/terms", filepath.Join("static", "legal", "terms.html"))
 	r.StaticFile("/privacy", filepath.Join("static", "legal", "privacy.html"))

@@ -67,6 +67,7 @@ import 'screens/team/team_recruitment_detail_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/app_theme.dart';
 import 'config/api_constants.dart';
+import 'config/private_chat_policy.dart';
 import 'utils/app_navigator.dart';
 import 'utils/app_navigation.dart';
 import 'utils/grade_screen_registry.dart';
@@ -1149,6 +1150,11 @@ bool _isDuplicatePrivateMessageOpen(
 }
 
 void _navigateToPrivateMessage(PrivateMessageTarget target) {
+  // 私聊暂停开放期间不再处理私信通知跳转，直接确认原生通知，避免反复入队。
+  if (!PrivateChatPolicy.enabled) {
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+    return;
+  }
   // 原生通知点击是直接回调路径，不能只依赖延迟队列处理处的门禁。
   if (_isLoginRouteVisible()) {
     _pendingPrivateMessageOpen.store(target);

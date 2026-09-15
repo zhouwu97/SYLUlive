@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../config/api_constants.dart';
+import '../../config/private_chat_policy.dart';
 import '../../models/team_recruitment.dart';
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
@@ -448,21 +449,23 @@ class _TeamRecruitmentDetailScreenState
               .reviewingApplicationIds
               .contains(applicationId);
       return Row(children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            style: TeamUiTokens.secondaryButtonStyle(isDark),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    ChatDetailScreen(targetUser: _authorAsUser(item)),
+        if (PrivateChatPolicy.enabled) ...[
+          Expanded(
+            child: OutlinedButton.icon(
+              style: TeamUiTokens.secondaryButtonStyle(isDark),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ChatDetailScreen(targetUser: _authorAsUser(item)),
+                ),
               ),
+              icon: const Icon(Icons.mail_outline_rounded),
+              label: const Text('私信'),
             ),
-            icon: const Icon(Icons.mail_outline_rounded),
-            label: const Text('私信'),
           ),
-        ),
-        const SizedBox(width: 10),
+          const SizedBox(width: 10),
+        ],
         Expanded(
           child: FilledButton.icon(
             style: FilledButton.styleFrom(

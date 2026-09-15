@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import '../providers/auth_provider.dart';
 import '../config/api_constants.dart';
+import '../config/private_chat_policy.dart';
 import '../models/user.dart';
 import '../models/post.dart';
 import '../providers/social_provider.dart';
@@ -493,7 +494,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                               icon: Icons.arrow_back,
                               onTap: () => Navigator.maybePop(context),
                             ),
-                            if (!isMe)
+                            if (!isMe && PrivateChatPolicy.enabled)
                               _buildCircleButton(
                                 icon: Icons.mail_outline,
                                 onTap: () {

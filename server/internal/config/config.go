@@ -122,6 +122,9 @@ type Config struct {
 	CompetitionAIExplanationEnabled     bool   // 是否允许调用外部模型解释候选
 	SyluliveMCPGrant                    string // 纯 MCP 调用 Go 只读事实网关的固定 Grant
 	ReviewEnabled                       bool   // 是否开放前置审核与相关投稿链路（默认 false，暂时关闭）
+	// PrivateChatDisabled 表示私聊能力整体下线：所有 /api/messages 接口在认证和
+	// 请求体解析之前短路返回 410。默认 false，需要临时关闭时置 true。
+	PrivateChatDisabled bool
 }
 
 // IsReviewEnabled 返回当前是否启用了前置审核链路。
@@ -390,6 +393,9 @@ func Load() *Config {
 	schoolDeviceCapabilityCut := envBool("SCHOOL_DEVICE_CAPABILITY_CUT", schoolAuthorityRetired)
 	schoolAcademicRoutesRetired := envBool("SCHOOL_ACADEMIC_ROUTES_RETIRED", schoolAuthorityRetired)
 
+	// 私聊整体下线开关。默认 false 保持私聊能力在线；临时关闭言论类渠道时置 true。
+	privateChatDisabled := envBool("PRIVATE_CHAT_DISABLED", false)
+
 	aiEnabled := envBool("AI_ENABLED", false)
 	aiProvider := strings.ToLower(strings.TrimSpace(os.Getenv("AI_PROVIDER")))
 	if aiProvider == "" || aiProvider == "deepseek" {
@@ -605,6 +611,7 @@ func Load() *Config {
 		CompetitionAIExplanationEnabled:     competitionAIExplanationEnabled,
 		SyluliveMCPGrant:                    syluliveMCPGrant,
 		ReviewEnabled:                       envBool("REVIEW_ENABLED", false),
+		PrivateChatDisabled:                 privateChatDisabled,
 	}
 }
 

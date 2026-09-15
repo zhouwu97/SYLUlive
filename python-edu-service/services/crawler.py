@@ -632,7 +632,17 @@ class EduCrawler:
                     week_day=str(item.get("xqj", "1")),
                     week_str=item.get("zcd", "")
                 )
-                key = (course.name, course.week_day, course.time)
+                # 去重键必须包含周次、老师与地点：同一门课的"1-8 周在 A 教室 /
+                # 9-16 周在 B 教室"或不同老师的两行，(名称, 星期, 节次) 完全相同，
+                # 只用这三个字段会把第二行当成重复丢掉，学生课表少一节。
+                key = (
+                    course.name,
+                    course.week_day,
+                    course.time,
+                    course.week_str,
+                    course.teacher,
+                    course.location,
+                )
                 if key not in seen:
                     seen.add(key)
                     all_courses.append(course)

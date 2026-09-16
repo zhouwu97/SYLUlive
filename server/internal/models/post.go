@@ -121,6 +121,10 @@ type PostViewerPermissions struct {
 	HasPendingRectification bool `json:"has_pending_rectification"`
 	HasPendingAppeal        bool `json:"has_pending_appeal"`
 	SubmittedRevision       int  `json:"submitted_revision,omitempty"`
+	// LatestAppealID 是该帖子最近一次申诉的 ID（优先未决案件，其次已结案案件）。
+	// 申诉结案通知挂在帖子维度上，作者点进来后需要从这里跳回公众法庭看详情；
+	// 0 表示该帖子没有申诉记录。
+	LatestAppealID uint `json:"latest_appeal_id,omitempty"`
 }
 
 

@@ -1752,6 +1752,7 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 	hasPendingRectification := false
 	var pendingAppeal models.Appeal
 	hasPendingAppeal := false
+	var latestAppealID uint
 
 	if post.Status == models.PostStatusModeratedHidden && (isOwner || isAdmin) {
 		if err := h.db.Where("post_id = ? AND status = ?", post.ID, models.RectificationReviewPending).
@@ -1761,6 +1762,18 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 		if err := h.db.Where("post_id = ? AND status = ?", post.ID, models.AppealStatusPending).
 			Order("created_at DESC").First(&pendingAppeal).Error; err == nil {
 			hasPendingAppeal = true
+			latestAppealID = pendingAppeal.ID
+		}
+		if !hasPendingAppeal {
+			// 申诉结案通知现在挂在帖子维度上，作者点进来后要有路回到公众法庭；
+			// 没有未决案件时回看最近一次已结案的案件。
+			var closedAppeal models.Appeal
+			if err := h.db.Select("id").
+				Where("post_id = ? AND status IN ?", post.ID,
+					[]models.AppealStatus{models.AppealStatusPass, models.AppealStatusReject}).
+				Order("closed_at DESC").First(&closedAppeal).Error; err == nil {
+				latestAppealID = closedAppeal.ID
+			}
 		}
 	}
 
@@ -1777,6 +1790,7 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 		HasPendingRectification: hasPendingRectification,
 		HasPendingAppeal:        hasPendingAppeal,
 		SubmittedRevision:       pendingReview.SubmittedRevision,
+		LatestAppealID:          latestAppealID,
 	}
 	c.JSON(http.StatusOK, post)
 }

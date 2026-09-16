@@ -7,8 +7,10 @@ import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../screens/image_viewer_screen.dart';
 import '../screens/user_home_screen.dart';
+import '../utils/governed_post_image_cache.dart';
 import '../utils/image_decode_size.dart';
 import '../utils/post_image_cache.dart';
+import '../utils/post_media_access.dart';
 import 'cached_avatar.dart';
 import 'post_media/post_media_view.dart';
 
@@ -413,10 +415,19 @@ class MarketPostCard extends StatelessWidget {
     final imgUrl = imageUrls.isEmpty ? '' : imageUrls[0];
 
     final coverUrl = cover?.url ?? imgUrl;
+    final access = resolvePostMediaAccess(context, post);
     Widget imageWidget = coverUrl.isEmpty
         ? _buildSkeleton(isDark)
         : CachedNetworkImage(
-            cacheManager: PostImageCache.manager,
+            // 治理隐藏的帖子图片在服务端已降级为 private。作者在自己的主页
+            // （/user/:id/market-posts 对作者本人会返回 moderated_hidden）里
+            // 沿用公开缓存会直接裂图，必须切到鉴权私有通道。
+            cacheManager: access.isAuthorized
+                ? GovernedPostImageCache.instance.manager
+                : PostImageCache.manager,
+            cacheKey:
+                access.isAuthorized ? access.cacheKeyFor(coverUrl) : null,
+            httpHeaders: access.isAuthorized ? access.httpHeaders : null,
             imageUrl: coverUrl,
             fit: BoxFit.cover,
             width: width,
@@ -426,7 +437,11 @@ class MarketPostCard extends StatelessWidget {
             fadeInDuration: const Duration(milliseconds: 200),
             placeholder: (_, __) => _buildSkeleton(isDark),
             errorWidget: (context, url, error) {
-              Future.microtask(() => PostImageCache.manager.removeFile(url));
+              // 鉴权模式下失败多半是权限已撤回，不是脏缓存；此时清理公开缓存
+              // 既无效也危险（同一 URL 可能仍是别的帖子的公开资源）。
+              if (!access.isAuthorized) {
+                Future.microtask(() => PostImageCache.manager.removeFile(url));
+              }
               return _buildSkeleton(isDark);
             },
           );
@@ -783,12 +798,18 @@ class MarketPostCard extends StatelessWidget {
     if (images.isEmpty) return;
     final items =
         images.map(PostMediaView.viewerItemFor).toList(growable: false);
+    final access = resolvePostMediaAccess(context, post);
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ImageViewerScreen(
           items: items,
           initialIndex: initialIndex,
+          httpHeaders: access.httpHeaders,
+          cacheManager: access.isAuthorized
+              ? GovernedPostImageCache.instance.manager
+              : null,
+          cacheKeyBuilder: access.isAuthorized ? access.cacheKeyFor : null,
         ),
       ),
     );

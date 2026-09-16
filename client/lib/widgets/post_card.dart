@@ -15,6 +15,7 @@ import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_clipboard.dart';
+import '../utils/post_media_access.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
 import 'post_content_link_text.dart';
@@ -336,7 +337,7 @@ class _PostCardState extends State<PostCard>
             ),
             if (validImageCount > 0) ...[
               SizedBox(height: isDesktop ? 12 : 6),
-              _buildImageGrid(context, post.images),
+              _buildImageGrid(context, post),
             ],
             if (post.boardId == 1 && !widget.showCategoryBadge) ...[
               const SizedBox(height: 6),
@@ -490,6 +491,7 @@ class _PostCardState extends State<PostCard>
                     images: post.images,
                     variant: PostMediaVariant.homeFeed,
                     onTap: widget.onTap,
+                    access: resolvePostMediaAccess(context, post),
                   ),
                 ],
                 const SizedBox(height: AppSpacing.xs),
@@ -1104,12 +1106,13 @@ class _PostCardState extends State<PostCard>
     );
   }
 
-  Widget _buildImageGrid(BuildContext context, List<PostImage> images) {
+  Widget _buildImageGrid(BuildContext context, Post post) {
     return PostMediaView(
-      images: images,
+      images: post.images,
       variant: widget.variant == PostCardVariant.homeFeed
           ? PostMediaVariant.homeFeed
           : PostMediaVariant.feed,
+      access: resolvePostMediaAccess(context, post),
     );
     /*
     final validImages =

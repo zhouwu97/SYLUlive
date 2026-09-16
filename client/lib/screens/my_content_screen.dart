@@ -7,7 +7,9 @@ import '../providers/course_evaluation_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/poll_provider.dart';
 import '../utils/app_feedback.dart';
+import '../utils/governed_post_image_cache.dart';
 import '../utils/image_decode_size.dart';
+import '../utils/post_media_access.dart';
 import '../utils/post_route.dart';
 import '../widgets/course/course_evaluation_form_sheet.dart';
 import '../widgets/glass_container.dart';
@@ -698,6 +700,58 @@ class _MyContentScreenState extends State<MyContentScreen>
     );
   }
 
+  /// 集市卡片封面缩略图。
+  ///
+  /// 治理隐藏的帖子图片在服务端已被降级为 private，必须切到
+  /// `AppCachedImage.private`（Bearer JWT + 账号隔离私有缓存），否则作者在
+  /// 「我的内容」里会看到正文正常、封面裂图。
+  Widget _buildMarketCoverImage({
+    required String url,
+    required PostMediaAccess access,
+    required bool isDark,
+  }) {
+    // 60dp 缩略图走状态安全的最低可用档位；大图变体 pending/failed
+    // 时保持占位，不能把接口回退的 origin 当作 thumb 下载。
+    Widget errorWidget(BuildContext _, String __, Object ___) => Container(
+          width: 60,
+          height: 60,
+          color: isDark ? Colors.white12 : Colors.grey[200],
+          child: Icon(
+            Icons.image,
+            color: isDark ? Colors.white30 : Colors.grey[400],
+          ),
+        );
+
+    if (access.isAuthorized) {
+      return AppCachedImage.private(
+        imageUrl: url,
+        cacheManager: GovernedPostImageCache.instance.manager,
+        httpHeaders: access.httpHeaders,
+        cacheKey: access.cacheKeyFor(url),
+        width: 60,
+        height: 60,
+        fit: BoxFit.cover,
+        memCacheWidth: 120,
+        memCacheHeight: 120,
+        maxWidthDiskCache: 480,
+        maxHeightDiskCache: 480,
+        errorWidget: errorWidget,
+      );
+    }
+
+    return AppCachedImage.public(
+      imageUrl: url,
+      width: 60,
+      height: 60,
+      fit: BoxFit.cover,
+      memCacheWidth: 120,
+      memCacheHeight: 120,
+      maxWidthDiskCache: 480,
+      maxHeightDiskCache: 480,
+      errorWidget: errorWidget,
+    );
+  }
+
   Widget _buildMarketItem(Post post, bool isDark) {
     final isSelected = _selectedIds.contains(post.id);
     final coverSelection = post.images.isEmpty
@@ -733,26 +787,10 @@ class _MyContentScreenState extends State<MyContentScreen>
           if (post.images.isNotEmpty) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: AppCachedImage.public(
-                // 60dp 缩略图走状态安全的最低可用档位；大图变体 pending/failed
-                // 时保持占位，不能把接口回退的 origin 当作 thumb 下载。
-                imageUrl: coverSelection?.url ?? '',
-                width: 60,
-                height: 60,
-                fit: BoxFit.cover,
-                memCacheWidth: 120,
-                memCacheHeight: 120,
-                maxWidthDiskCache: 480,
-                maxHeightDiskCache: 480,
-                errorWidget: (_, __, ___) => Container(
-                  width: 60,
-                  height: 60,
-                  color: isDark ? Colors.white12 : Colors.grey[200],
-                  child: Icon(
-                    Icons.image,
-                    color: isDark ? Colors.white30 : Colors.grey[400],
-                  ),
-                ),
+              child: _buildMarketCoverImage(
+                url: coverSelection?.url ?? '',
+                access: resolvePostMediaAccess(context, post),
+                isDark: isDark,
               ),
             ),
             const SizedBox(width: 12),

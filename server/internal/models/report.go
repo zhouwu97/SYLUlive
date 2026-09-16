@@ -115,16 +115,19 @@ const (
 
 // PostRectificationReview 记录作者提交给管理员复核的明确内容版本。
 type PostRectificationReview struct {
-	ID                uint                     `gorm:"primaryKey" json:"id"`
-	PostID            uint                     `gorm:"not null;index" json:"post_id"`
-	ReportID          *uint                    `gorm:"index" json:"report_id,omitempty"`
-	SubmittedRevision int                      `gorm:"not null" json:"submitted_revision"`
+	ID                uint                      `gorm:"primaryKey" json:"id"`
+	PostID            uint                      `gorm:"not null;index" json:"post_id"`
+	ReportID          *uint                     `gorm:"index" json:"report_id,omitempty"`
+	SubmittedRevision int                       `gorm:"not null" json:"submitted_revision"`
 	Status            RectificationReviewStatus `gorm:"size:20;not null;default:pending;index" json:"status"`
-	ReviewerID        *uint                    `gorm:"index" json:"reviewer_id,omitempty"`
-	ReviewReason      string                   `gorm:"size:1000" json:"review_reason,omitempty"`
-	CreatedAt         time.Time                `json:"created_at"`
-	ReviewedAt        *time.Time               `json:"reviewed_at,omitempty"`
-	Post              Post                     `gorm:"foreignKey:PostID" json:"post,omitempty"`
+	ReviewerID        *uint                     `gorm:"index" json:"reviewer_id,omitempty"`
+	ReviewReason      string                    `gorm:"size:1000" json:"review_reason,omitempty"`
+	CreatedAt         time.Time                 `json:"created_at"`
+	ReviewedAt        *time.Time                `json:"reviewed_at,omitempty"`
+	Post              Post                      `gorm:"foreignKey:PostID" json:"post,omitempty"`
+	// Report 是触发治理隐藏的举报记录，仅管理端整改待办用于回溯“为什么当初被处理”。
+	// 不进 JSON：Report 含 reporter_id 与举报人自述，不属于审核依据，不能随审核响应外发。
+	Report *Report `gorm:"foreignKey:ReportID;-:migration" json:"-"`
 }
 
 // PublicAppealUserResponse 是申诉接口允许展示的最小用户资料。

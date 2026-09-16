@@ -152,8 +152,7 @@ func finalizeExpiredAppeal(db *gorm.DB, appealID uint, now time.Time) (bool, err
 			notificationType = models.NotificationTypeAppealReviewRequired
 			notificationKey = "appeal-review-required"
 		}
-		if err := createAppealTaskNotification(tx, appeal.AppellantID, appeal.ID, notificationType,
-			resultMessage, fmt.Sprintf("%s:%d:appellant", notificationKey, appeal.ID)); err != nil {
+		if err := createAppealAppellantNotification(tx, appeal, false); err != nil {
 			return err
 		}
 		if appeal.Status == models.AppealStatusReview {
@@ -256,6 +255,26 @@ func createAppealTaskNotification(db *gorm.DB, userID, appealID uint, notificati
 	}
 	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.Notification{
 		UserID: userID, Type: notificationType, RelatedID: appealID, Content: content, DedupKey: dedupKey,
+	}).Error
+}
+
+// createAppealAppellantNotification 写申诉人的主通知。
+//
+// 与 handlers 侧共用 models.ResolveAppealAppellantNotification，保证「投票即时结案」
+// 与「到期兜底结案」对同一个结案事件给出同一条通知：类型一致、数量一致、挂载维度
+// 一致（帖子类挂 PostID 让客户端直达帖子治理结果区）。
+func createAppealAppellantNotification(db *gorm.DB, appeal models.Appeal, closedByHumanReview bool) error {
+	notification := models.ResolveAppealAppellantNotification(appeal, closedByHumanReview)
+	if !notification.PostScoped {
+		return createAppealTaskNotification(db, appeal.AppellantID, appeal.ID,
+			notification.Type, notification.Content, notification.DedupKey)
+	}
+	if appeal.AppellantID == 0 || appeal.PostID == 0 {
+		return nil
+	}
+	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.Notification{
+		UserID: appeal.AppellantID, Type: notification.Type, PostID: appeal.PostID,
+		Content: notification.Content, DedupKey: notification.DedupKey,
 	}).Error
 }
 

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +11,7 @@ import '../theme/app_text_styles.dart';
 import '../widgets/app_page_app_bar.dart';
 import '../widgets/canteen/canteen_pending_card.dart';
 import '../utils/app_feedback.dart';
+import '../utils/report_reason_label.dart';
 import 'admin_teacher_governance_screen.dart';
 import 'post_detail_screen.dart';
 
@@ -90,6 +93,15 @@ class _PendingPostRectification {
   final String postContent;
   final DateTime createdAt;
 
+  /// 治理当时的处理依据。整改待办卡必须能回答"当初为什么被处理"，否则管理员只能
+  /// 对着已经改好的内容点通过，无法判断作者到底改掉了什么违规内容。
+  final String originalRuleCode;
+  final String originalReason;
+  final String reportReasonCode;
+  final int moderatedRevision;
+  final String moderatedSnapshot;
+  final DateTime? moderatedAt;
+
   const _PendingPostRectification({
     required this.id,
     required this.postId,
@@ -98,6 +110,12 @@ class _PendingPostRectification {
     required this.postTitle,
     required this.postContent,
     required this.createdAt,
+    this.originalRuleCode = '',
+    this.originalReason = '',
+    this.reportReasonCode = '',
+    this.moderatedRevision = 0,
+    this.moderatedSnapshot = '',
+    this.moderatedAt,
   });
 
   factory _PendingPostRectification.fromJson(Map<String, dynamic> json) {
@@ -110,8 +128,35 @@ class _PendingPostRectification {
       postTitle: post?['title']?.toString() ?? '',
       postContent: post?['content']?.toString() ?? '',
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
+      originalRuleCode: json['original_rule_code']?.toString() ?? '',
+      originalReason: json['original_reason']?.toString() ?? '',
+      reportReasonCode: json['report_reason_code']?.toString() ?? '',
+      moderatedRevision: (json['moderated_revision'] as num?)?.toInt() ?? 0,
+      moderatedSnapshot: json['moderated_snapshot']?.toString() ?? '',
+      moderatedAt: DateTime.tryParse(json['moderated_at']?.toString() ?? ''),
     );
   }
+
+  /// 原处理原因的中文标签；服务端未下发治理快照时为「未知」。
+  String get originalReasonLabel => reportReasonLabel(
+        code: originalRuleCode.isNotEmpty ? originalRuleCode : reportReasonCode,
+        fallbackText: originalRuleCode.isNotEmpty
+            ? originalRuleCode
+            : (reportReasonCode.isNotEmpty ? reportReasonCode : null),
+      );
+}
+
+/// 治理时内容快照的最小可用字段。
+class _ModeratedSnapshot {
+  const _ModeratedSnapshot({
+    required this.title,
+    required this.content,
+    required this.imageCount,
+  });
+
+  final String title;
+  final String content;
+  final int imageCount;
 }
 
 class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
@@ -384,6 +429,13 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       });
     } on DioException catch (e) {
       if (!mounted) return;
+      final conflictMessage = _rectificationConflictMessage(e);
+      if (conflictMessage != null) {
+        AppFeedback.showSnackBar(context, conflictMessage);
+        // 过期的卡片留在列表里只会让管理员反复点到 409，直接重新拉取待办。
+        await _loadData();
+        return;
+      }
       AppFeedback.showSnackBar(
         context,
         AppFeedback.dioErrorMessage(e, fallback: '操作失败'),
@@ -399,6 +451,29 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     final data = error.response?.data;
     return data is Map &&
         data['code']?.toString() == 'course_evaluation_revision_conflict';
+  }
+
+  /// 识别整改待办失效冲突（409）。
+  ///
+  /// 两个来源：
+  /// - `content_revision_changed`：作者在管理员审核期间又改了一次，旧复审记录的
+  ///   `submitted_revision` 已不等于帖子当前版本，服务端拒绝审批到未经查看的新版本；
+  /// - `review_already_resolved`：另一个管理员已经处理过这条待办。
+  ///
+  /// 两者都表示「这张卡片已经过期」，不能只弹一句通用错误 —— 那样管理员会以为
+  /// 系统坏了，还会反复点同一个按钮。
+  String? _rectificationConflictMessage(DioException error) {
+    if (error.response?.statusCode != 409) return null;
+    final data = error.response?.data;
+    if (data is! Map) return null;
+    switch (data['code']?.toString()) {
+      case 'content_revision_changed':
+        return '作者已更新内容，这条整改任务已失效，正在刷新最新待办';
+      case 'review_already_resolved':
+        return '该整改任务已被其他管理员处理，正在刷新最新待办';
+      default:
+        return null;
+    }
   }
 
   /// 审核通过课程评价。通过时携带 revision，过期返回 409。
@@ -1170,10 +1245,14 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
 
   Widget _buildPostRectificationCard(
       _PendingPostRectification item, bool isDark) {
+    final snapshot = _parseModeratedSnapshot(item.moderatedSnapshot);
+    final moderatedRevision = item.moderatedRevision > 0 ? item.moderatedRevision : null;
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       color: isDark ? Colors.grey[850] : Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -1192,14 +1271,17 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '帖子整改复审 (版本 v${item.submittedRevision})',
-                        style: const TextStyle(
+                      const Text(
+                        '帖子整改复审',
+                        style: TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '帖子 #${item.postId}',
+                        moderatedRevision == null
+                            ? '帖子 #${item.postId} · 提交版本 v${item.submittedRevision}'
+                            : '帖子 #${item.postId} · 处理版本 v$moderatedRevision'
+                                ' → 整改版本 v${item.submittedRevision}',
                         style: TextStyle(
                             fontSize: 12,
                             color: isDark ? Colors.white54 : Colors.grey[600]),
@@ -1216,30 +1298,43 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                       ),
                     );
                   },
-                  child: const Text('查看原帖'),
+                  // 这里打开的是整改后的当前版本，不是当初被处理的版本，
+                  // 文案必须与之相符，否则管理员会误以为在看原始违规内容。
+                  child: const Text('查看整改后帖子'),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
+            _buildGovernanceBasis(item, isDark),
+            const SizedBox(height: AppSpacing.sm),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: isDark ? Colors.black26 : const Color(0xFFF9FAFB),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
                 border:
                     Border.all(color: isDark ? Colors.white10 : Colors.black12),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text(
+                    '整改后内容',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white60 : Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
                   if (item.postTitle.isNotEmpty) ...[
                     Text(
                       item.postTitle,
                       style: const TextStyle(
                           fontWeight: FontWeight.w600, fontSize: 13),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: AppSpacing.xs),
                   ],
                   Text(
                     item.postContent.length > 120
@@ -1254,7 +1349,20 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: AppSpacing.xs),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: snapshot == null
+                    ? null
+                    : () => _showModeratedSnapshotDialog(item, snapshot),
+                icon: const Icon(Icons.history_rounded, size: 16),
+                label: Text(
+                  snapshot == null ? '处理时内容不可用' : '查看处理时内容',
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -1263,7 +1371,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                   style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
                   child: const Text('驳回'),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpacing.sm),
                 FilledButton(
                   onPressed: () => _resolvePostRectification(item, true),
                   style: FilledButton.styleFrom(
@@ -1276,6 +1384,178 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         ),
       ),
     );
+  }
+
+  /// 治理依据区：原处理原因 + 管理员说明 + 处理时间。
+  ///
+  /// 没有这一段，管理员只能对着已经改好的内容判断"看起来挺正常"，无法知道作者
+  /// 究竟把什么违规内容改掉了。
+  Widget _buildGovernanceBasis(_PendingPostRectification item, bool isDark) {
+    final labelColor = isDark ? Colors.white54 : Colors.grey[600];
+    final valueColor = isDark ? Colors.white : Colors.black87;
+    final rows = <Widget>[];
+
+    void addRow(String label, String value) {
+      if (value.isEmpty) return;
+      rows.add(Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.xs),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 68,
+              child: Text(
+                label,
+                style: TextStyle(fontSize: 12, color: labelColor),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: valueColor,
+                  height: 1.35,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ));
+    }
+
+    addRow('原处理原因', item.originalReasonLabel);
+    addRow('管理员说明', item.originalReason);
+    if (item.moderatedAt != null) {
+      addRow('处理时间', _formatRectificationTime(item.moderatedAt!));
+    }
+
+    if (rows.isEmpty) {
+      rows.add(Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.xs),
+        child: Text(
+          '未记录治理依据，请先查看处理时内容再决定',
+          style: TextStyle(fontSize: 12, color: labelColor),
+        ),
+      ));
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isDark
+            ? const Color(0xFFFFC857).withValues(alpha: 0.10)
+            : const Color(0xFFFFC857).withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(
+          color: const Color(0xFFFFC857).withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '治理依据',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: isDark ? const Color(0xFFFFC857) : const Color(0xFF9A6700),
+            ),
+          ),
+          ...rows,
+        ],
+      ),
+    );
+  }
+
+  /// 解析治理时的内容快照。
+  ///
+  /// 服务端 `Report.TargetSnapshot` 形如
+  /// `{"title","content","image_file_ids","original_status","created_at"}`。
+  /// 快照缺失或损坏时返回 null，卡片降级为只展示整改后内容。
+  _ModeratedSnapshot? _parseModeratedSnapshot(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(trimmed);
+      if (decoded is! Map) return null;
+      final imageIds = decoded['image_file_ids'];
+      final title = decoded['title']?.toString() ?? '';
+      final content = decoded['content']?.toString() ?? '';
+      if (title.isEmpty && content.isEmpty) return null;
+      return _ModeratedSnapshot(
+        title: title,
+        content: content,
+        imageCount: imageIds is List ? imageIds.length : 0,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _showModeratedSnapshotDialog(
+    _PendingPostRectification item,
+    _ModeratedSnapshot snapshot,
+  ) async {
+    final versionText = item.moderatedRevision > 0
+        ? '版本 v${item.moderatedRevision}'
+        : '处理时版本';
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('处理时内容（$versionText）'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (snapshot.title.isNotEmpty) ...[
+                  Text(
+                    snapshot.title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                ],
+                Text(
+                  snapshot.content.isEmpty ? '（该版本无正文）' : snapshot.content,
+                  style: const TextStyle(fontSize: 13, height: 1.5),
+                ),
+                if (snapshot.imageCount > 0) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    '该版本含 ${snapshot.imageCount} 张图片，治理快照只保留文字与图片数量。',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(ctx).brightness == Brightness.dark
+                          ? Colors.white54
+                          : Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatRectificationTime(DateTime value) {
+    final local = value.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}';
   }
 
   Widget _buildEmptyState(bool isDark) {    return Container(

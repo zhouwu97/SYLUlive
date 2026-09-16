@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/glass_container.dart';
 import '../utils/app_feedback.dart';
+import '../utils/report_reason_label.dart';
 import 'post_detail_screen.dart';
 
 class AdminReportsScreen extends StatefulWidget {
@@ -699,30 +700,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   };
 
   String _reasonLabel(dynamic report) {
-    const reasonMap = {
-      'spam': '垃圾广告',
-      'porn': '色情低俗',
-      'violence': '暴力血腥',
-      'fake': '虚假信息',
-      'privacy': '侵犯隐私',
-      'harassment': '人身攻击',
-      'fabricated': '捏造或失实',
-      'false': '虚假信息',
-      'unrelated': '与菜品无关',
-      'unrelated_photo': '图片与菜品无关',
-      'unrelated_content': '内容与目标无关',
-      'fake_dish': '虚假菜品',
-      'stolen_photo': '盗用图片',
-      'malicious': '恶意内容',
-      'malicious_repeat': '重复恶意内容',
-      'abuse': '辱骂或恶意内容',
-      'other': '其他',
-    };
-    final code = report['reason_code']?.toString();
-    final legacy = report['reason']?.toString();
-    return (code == null ? null : reasonMap[code]) ??
-        (legacy == null ? null : reasonMap[legacy]) ??
-        legacy ??
-        '未知';
+    return reportReasonLabel(
+      code: report['reason_code']?.toString(),
+      // 旧数据可能只有举报人自由文本，保留原有兜底行为。
+      fallbackText: report['reason']?.toString(),
+    );
   }
 }

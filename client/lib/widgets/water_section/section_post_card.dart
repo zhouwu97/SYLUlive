@@ -14,6 +14,7 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../utils/app_feedback.dart';
 import '../../utils/post_clipboard.dart';
+import '../../utils/post_media_access.dart';
 import '../cached_avatar.dart';
 import '../post_content_link_text.dart';
 import '../post_media/post_media_view.dart';
@@ -121,6 +122,7 @@ class SectionPostCard extends StatelessWidget {
                     images: validImages,
                     variant: PostMediaVariant.sectionFeed,
                     onTap: onTap,
+                    access: resolvePostMediaAccess(context, post),
                   ),
                 ],
                 const SizedBox(height: AppSpacing.sm),

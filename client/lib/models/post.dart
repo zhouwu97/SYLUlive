@@ -209,6 +209,10 @@ class PostViewerPermissions {
   final bool hasPendingAppeal;
   final int submittedRevision;
 
+  /// 该帖子最近一次申诉的案件 ID（优先未决，其次已结案）；0 表示无申诉记录。
+  /// 申诉结案通知落在帖子维度上，作者需要有路回到公众法庭看详情。
+  final int latestAppealId;
+
   const PostViewerPermissions({
     this.canView = false,
     this.canEdit = false,
@@ -222,6 +226,7 @@ class PostViewerPermissions {
     this.hasPendingRectification = false,
     this.hasPendingAppeal = false,
     this.submittedRevision = 0,
+    this.latestAppealId = 0,
   });
 
   factory PostViewerPermissions.fromJson(Map<String, dynamic> json) {
@@ -238,6 +243,7 @@ class PostViewerPermissions {
       hasPendingRectification: json['has_pending_rectification'] == true,
       hasPendingAppeal: json['has_pending_appeal'] == true,
       submittedRevision: (json['submitted_revision'] as num?)?.toInt() ?? 0,
+      latestAppealId: (json['latest_appeal_id'] as num?)?.toInt() ?? 0,
     );
   }
 }

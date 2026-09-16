@@ -11,6 +11,7 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../utils/app_feedback.dart';
+import '../../utils/post_media_access.dart';
 import '../cached_avatar.dart';
 import '../feed/feed_post_action_menu.dart';
 import '../post_media/post_media_view.dart';
@@ -249,6 +250,7 @@ class _PollPostCardState extends State<PollPostCard> {
                           ? PostMediaVariant.homeFeed
                           : PostMediaVariant.feed,
                   onTap: widget.onTap,
+                  access: resolvePostMediaAccess(context, widget.post),
                 ),
               ],
               const SizedBox(height: AppSpacing.sm),

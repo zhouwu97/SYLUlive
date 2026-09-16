@@ -246,6 +246,39 @@ func sendAppealNotification(db *gorm.DB, toUserID, appealID uint, notificationTy
 	}
 }
 
+// writeAppealAppellantNotification 在结案事务内写入申诉人的主通知。
+//
+// 具体规则集中在 models.ResolveAppealAppellantNotification：到期兜底结案
+// （tasks/appeal_finalizer.go）走的是同一份规则，两条路径不能各自推导。
+//
+// 站内通知必须与结案原子：事务外 `_ = Create...` 会让「帖子已恢复、作者永远收不到
+// 通知」静默发生，而接口照样返回成功。dedupKey + ON CONFLICT DO NOTHING 保证事务
+// 重试与定时任务重跑都不会重复提醒。
+func writeAppealAppellantNotification(tx *gorm.DB, appeal models.Appeal, closedByHumanReview bool) error {
+	notification := models.ResolveAppealAppellantNotification(appeal, closedByHumanReview)
+	if notification.PostScoped {
+		return CreatePostModerationResultNotification(
+			tx, appeal.AppellantID, appeal.PostID,
+			notification.Type, notification.Content, notification.DedupKey,
+		)
+	}
+	return CreateAppealNotification(
+		tx, appeal.AppellantID, appeal.ID,
+		notification.Type, notification.Content, notification.DedupKey,
+	)
+}
+
+// closeAppealAndNotify 落盘结案状态并在同一事务内写完申诉人主通知。
+//
+// 即时结案有三条出口（法定人数不足转人工、平票转人工、形成裁决），统一走这里，
+// 避免以后新增出口时漏发通知。
+func closeAppealAndNotify(tx *gorm.DB, appeal *models.Appeal) error {
+	if err := tx.Save(appeal).Error; err != nil {
+		return err
+	}
+	return writeAppealAppellantNotification(tx, *appeal, false)
+}
+
 // selectJury 随机选择陪审员
 func (h *AppealHandler) selectJury(appealID, appellantID, adminID uint) error {
 	excluded := []uint{appellantID, adminID}
@@ -500,7 +533,12 @@ func (h *AppealHandler) AdminResolveReview(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Save(&appeal).Error
+		if err := tx.Save(&appeal).Error; err != nil {
+			return err
+		}
+		// 人工复核结论与申诉人主通知同事务：复核成功但作者收不到结果，是治理链路里
+		// 最容易被忽略的静默失败。
+		return writeAppealAppellantNotification(tx, appeal, true)
 	}); err != nil {
 		if errors.Is(err, errOriginalAdminCannotReview) {
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
@@ -510,25 +548,10 @@ func (h *AppealHandler) AdminResolveReview(c *gin.Context) {
 		return
 	}
 	message := "人工复核已完成，请查看公众法庭案件结果。"
-	sendAppealNotification(h.db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealResult, message, fmt.Sprintf("appeal-result:%d:appellant", appeal.ID))
+	// 申诉人主通知已在事务内可靠写入（见上方 writeAppealAppellantNotification），
+	// 这里只做管理员与陪审员的事务外 best-effort fan-out；失败会留下
+	// [APPEAL_NOTIFICATION_FAILED] 日志，不会静默吞掉。
 	sendAppealNotification(h.db, appeal.AdminID, appeal.ID, models.NotificationTypeAppealResult, message, fmt.Sprintf("appeal-result:%d:admin", appeal.ID))
-	if appeal.PostID > 0 {
-		if input.Decision == "pass" {
-			_ = CreatePostModerationResultNotification(
-				h.db, appeal.AppellantID, appeal.PostID,
-				models.NotificationTypeAppealApproved,
-				"经复核，帖子的限制已解除，现已恢复正常公开展示。",
-				fmt.Sprintf("appeal-approved:%d", appeal.ID),
-			)
-		} else {
-			_ = CreatePostModerationResultNotification(
-				h.db, appeal.AppellantID, appeal.PostID,
-				models.NotificationTypeAppealRejected,
-				"申诉未通过：经复核原处理结果维持不变。你仍可以修改帖子后提交整改复审。",
-				fmt.Sprintf("appeal-rejected:%d", appeal.ID),
-			)
-		}
-	}
 	var jury []models.AppealVote
 	if h.db.Where("appeal_id = ? AND recused = ?", appeal.ID, false).Find(&jury).Error == nil {
 		for _, vote := range jury {
@@ -706,14 +729,14 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 			appeal.Result = fmt.Sprintf("仅收到 %d 票，未达到法定人数 %d，转人工复核", castCount, requiredVotes)
 			appeal.ClosedReason = "insufficient_votes"
 			appeal.EscalationReason = "insufficient_votes"
-			return tx.Save(&appeal).Error
+			return closeAppealAndNotify(tx, &appeal)
 		}
 		if supportCount == opposeCount {
 			appeal.Status = models.AppealStatusReview
 			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 平票，转人工复核", supportCount, opposeCount)
 			appeal.ClosedReason = "tie_review_required"
 			appeal.EscalationReason = "tie"
-			return tx.Save(&appeal).Error
+			return closeAppealAndNotify(tx, &appeal)
 		}
 
 		now := time.Now()
@@ -747,7 +770,7 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 		} else {
 			appeal.ClosedReason = "required_votes_reached"
 		}
-		return tx.Save(&appeal).Error
+		return closeAppealAndNotify(tx, &appeal)
 	})
 
 	if err != nil {
@@ -766,34 +789,14 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 		message := "公众法庭案件已结案，请查看复核结果。"
 		notificationType := models.NotificationTypeAppealResult
 		notificationKey := "appeal-result"
+		// 申诉人的主通知已在 closeAppealAndNotify 里与结案同事务写好，这里只负责
+		// 管理员与陪审员的事务外 best-effort fan-out（失败会留下日志，不静默吞掉）。
 		if closedAppeal.Status == models.AppealStatusReview {
 			notifyIndependentReviewers(h.db, closedAppeal.ID, closedAppeal.AdminID)
-			message = "公众法庭案件已转交独立管理员复核，请等待最终结果。"
-			notificationType = models.NotificationTypeAppealReviewRequired
-			notificationKey = "appeal-review-required"
-			sendAppealNotification(h.db, closedAppeal.AppellantID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:appellant", notificationKey, closedAppeal.ID))
 		} else {
-			sendAppealNotification(h.db, closedAppeal.AppellantID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:appellant", notificationKey, closedAppeal.ID))
 			sendAppealNotification(h.db, closedAppeal.AdminID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:admin", notificationKey, closedAppeal.ID))
 		}
 		if closedAppeal.Status == models.AppealStatusPass || closedAppeal.Status == models.AppealStatusReject {
-			if closedAppeal.PostID > 0 {
-				if closedAppeal.Status == models.AppealStatusPass {
-					_ = CreatePostModerationResultNotification(
-						h.db, closedAppeal.AppellantID, closedAppeal.PostID,
-						models.NotificationTypeAppealApproved,
-						"经复核，帖子的限制已解除，现已恢复正常公开展示。",
-						fmt.Sprintf("appeal-approved:%d", closedAppeal.ID),
-					)
-				} else {
-					_ = CreatePostModerationResultNotification(
-						h.db, closedAppeal.AppellantID, closedAppeal.PostID,
-						models.NotificationTypeAppealRejected,
-						"申诉未通过：经复核原处理结果维持不变。你仍可以修改帖子后提交整改复审。",
-						fmt.Sprintf("appeal-rejected:%d", closedAppeal.ID),
-					)
-				}
-			}
 			var jury []models.AppealVote
 			if h.db.Where("appeal_id = ? AND recused = ?", appealID, false).Find(&jury).Error == nil {
 				for _, assigned := range jury {

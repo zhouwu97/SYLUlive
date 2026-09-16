@@ -8,8 +8,10 @@ import '../../models/post.dart';
 import '../../screens/image_viewer_screen.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
+import '../../utils/governed_post_image_cache.dart';
 import '../../utils/image_decode_size.dart';
 import '../../utils/post_image_cache.dart';
+import '../../utils/post_media_access.dart';
 
 enum PostMediaVariant { feed, homeFeed, sectionFeed, detail }
 
@@ -28,6 +30,7 @@ class PostMediaView extends StatelessWidget {
     required this.images,
     this.variant = PostMediaVariant.feed,
     this.onTap,
+    this.access = const PostMediaAccess.public(),
   });
 
   final List<PostImage> images;
@@ -35,6 +38,13 @@ class PostMediaView extends StatelessWidget {
 
   /// 外层帖子卡片的主点击回调。为空时保留媒体自身的原图预览行为。
   final VoidCallback? onTap;
+
+  /// 图片访问凭证。
+  ///
+  /// 默认公开；治理隐藏帖的作者/管理员必须传入
+  /// `resolvePostMediaAccess(context, post)`，否则图片已被服务端降级为 private，
+  /// 客户端仍按 public 加载会直接裂图。
+  final PostMediaAccess access;
 
   @override
   Widget build(BuildContext context) {
@@ -47,19 +57,20 @@ class PostMediaView extends StatelessWidget {
       return _SinglePostImage(
         image: validImages.first,
         variant: variant,
-        onTap: onTap ?? () => _openPreview(context, validImages, 0),
+        access: access,
+        onTap: onTap ?? () => _openPreview(context, validImages, 0, access),
       );
     }
 
     final Widget multiChild;
     if (validImages.length == 2) {
-      multiChild = _twoImages(context, validImages, onTap);
+      multiChild = _twoImages(context, validImages, onTap, access);
     } else if (validImages.length == 3) {
-      multiChild = _threeImages(context, validImages, onTap);
+      multiChild = _threeImages(context, validImages, onTap, access);
     } else if (validImages.length == 4) {
-      multiChild = _fourImages(context, validImages, onTap);
+      multiChild = _fourImages(context, validImages, onTap, access);
     } else {
-      multiChild = _imageGrid(context, validImages, onTap);
+      multiChild = _imageGrid(context, validImages, onTap, access);
     }
 
     if (variant == PostMediaVariant.feed) {
@@ -82,14 +93,15 @@ class PostMediaView extends StatelessWidget {
     BuildContext context,
     List<PostImage> images,
     VoidCallback? onTap,
+    PostMediaAccess access,
   ) {
     return AspectRatio(
       aspectRatio: 2,
       child: Row(
         children: [
-          Expanded(child: _tile(context, images, 0, onTap)),
+          Expanded(child: _tile(context, images, 0, onTap, access)),
           const SizedBox(width: 4),
-          Expanded(child: _tile(context, images, 1, onTap)),
+          Expanded(child: _tile(context, images, 1, onTap, access)),
         ],
       ),
     );
@@ -99,16 +111,17 @@ class PostMediaView extends StatelessWidget {
     BuildContext context,
     List<PostImage> images,
     VoidCallback? onTap,
+    PostMediaAccess access,
   ) {
     return AspectRatio(
       aspectRatio: 3,
       child: Row(
         children: [
-          Expanded(child: _tile(context, images, 0, onTap)),
+          Expanded(child: _tile(context, images, 0, onTap, access)),
           const SizedBox(width: 6),
-          Expanded(child: _tile(context, images, 1, onTap)),
+          Expanded(child: _tile(context, images, 1, onTap, access)),
           const SizedBox(width: 6),
-          Expanded(child: _tile(context, images, 2, onTap)),
+          Expanded(child: _tile(context, images, 2, onTap, access)),
         ],
       ),
     );
@@ -118,6 +131,7 @@ class PostMediaView extends StatelessWidget {
     BuildContext context,
     List<PostImage> images,
     VoidCallback? onTap,
+    PostMediaAccess access,
   ) {
     return AspectRatio(
       aspectRatio: 1,
@@ -130,7 +144,8 @@ class PostMediaView extends StatelessWidget {
           crossAxisSpacing: 6,
         ),
         itemCount: 4,
-        itemBuilder: (context, index) => _tile(context, images, index, onTap),
+        itemBuilder: (context, index) =>
+            _tile(context, images, index, onTap, access),
       ),
     );
   }
@@ -139,6 +154,7 @@ class PostMediaView extends StatelessWidget {
     BuildContext context,
     List<PostImage> images,
     VoidCallback? onTap,
+    PostMediaAccess access,
   ) {
     final visibleCount = images.length.clamp(5, 9);
     final rows = (visibleCount / 3).ceil();
@@ -159,7 +175,7 @@ class PostMediaView extends StatelessWidget {
           return Stack(
             fit: StackFit.expand,
             children: [
-              _tile(context, images, index, onTap),
+              _tile(context, images, index, onTap, access),
               if (index == visibleCount - 1 && hiddenCount > 0)
                 IgnorePointer(
                   child: ColoredBox(
@@ -188,13 +204,14 @@ class PostMediaView extends StatelessWidget {
     List<PostImage> images,
     int index,
     VoidCallback? onTap,
+    PostMediaAccess access,
   ) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
       child: GestureDetector(
         key: ValueKey<String>('post-media-tile-$index'),
         behavior: HitTestBehavior.opaque,
-        onTap: onTap ?? () => _openPreview(context, images, index),
+        onTap: onTap ?? () => _openPreview(context, images, index, access),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final isHomeSection = variant == PostMediaVariant.homeFeed ||
@@ -233,6 +250,7 @@ class PostMediaView extends StatelessWidget {
               target: target,
               fit: BoxFit.cover,
               alignment: isHomeSection ? Alignment.topCenter : Alignment.center,
+              access: access,
             );
           },
         ),
@@ -284,6 +302,7 @@ class PostMediaView extends StatelessWidget {
     required ImageDecodeTarget target,
     required BoxFit fit,
     Alignment alignment = Alignment.center,
+    PostMediaAccess access = const PostMediaAccess.public(),
   }) {
     final selection = _selectResource(image, target);
     final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
@@ -307,6 +326,7 @@ class PostMediaView extends StatelessWidget {
       placeholderColor:
           showThumbUnderlay ? Colors.transparent : Colors.grey[200],
       showErrorIcon: !showThumbUnderlay,
+      access: access,
     );
     if (!showThumbUnderlay) return primary;
 
@@ -323,6 +343,7 @@ class PostMediaView extends StatelessWidget {
           target: thumbTarget,
           fit: fit,
           alignment: alignment,
+          access: access,
         ),
         primary,
       ],
@@ -345,12 +366,19 @@ class PostMediaView extends StatelessWidget {
     Alignment alignment = Alignment.center,
     Color? placeholderColor,
     bool showErrorIcon = true,
+    PostMediaAccess access = const PostMediaAccess.public(),
   }) {
     if (selection.url.isEmpty) {
       return Container(color: placeholderColor ?? Colors.grey[200]);
     }
     return CachedNetworkImage(
-      cacheManager: PostImageCache.manager,
+      // 治理帖图片已被服务端降级为 private，只有作者/管理员能取到；此时必须
+      // 切到「Bearer JWT + 账号作用域私有缓存」，不能继续复用公开帖子缓存。
+      cacheManager: access.isAuthorized
+          ? GovernedPostImageCache.instance.manager
+          : PostImageCache.manager,
+      cacheKey: access.isAuthorized ? access.cacheKeyFor(selection.url) : null,
+      httpHeaders: access.isAuthorized ? access.httpHeaders : null,
       imageUrl: selection.url,
       width: double.infinity,
       height: double.infinity,
@@ -382,6 +410,7 @@ class PostMediaView extends StatelessWidget {
     BuildContext context,
     List<PostImage> images,
     int initialIndex,
+    PostMediaAccess access,
   ) {
     final items = images.map(viewerItemFor).toList(growable: false);
     Navigator.of(context).push(
@@ -389,6 +418,13 @@ class PostMediaView extends StatelessWidget {
         builder: (_) => ImageViewerScreen(
           items: items,
           initialIndex: initialIndex,
+          // 治理帖：查看器必须复用同一套鉴权凭证与私有缓存，否则会出现
+          // 「缩略图能看、点开大图 404」。
+          httpHeaders: access.httpHeaders,
+          cacheManager: access.isAuthorized
+              ? GovernedPostImageCache.instance.manager
+              : null,
+          cacheKeyBuilder: access.isAuthorized ? access.cacheKeyFor : null,
         ),
       ),
     );
@@ -518,11 +554,13 @@ class _SinglePostImage extends StatefulWidget {
     required this.image,
     required this.variant,
     required this.onTap,
+    required this.access,
   });
 
   final PostImage image;
   final PostMediaVariant variant;
   final VoidCallback onTap;
+  final PostMediaAccess access;
 
   @override
   State<_SinglePostImage> createState() => _SinglePostImageState();
@@ -551,7 +589,9 @@ class _SinglePostImageState extends State<_SinglePostImage> {
     final hasChanged =
         oldWidget.image.resolvedOriginUrl != widget.image.resolvedOriginUrl ||
             oldWidget.image.file?.width != widget.image.file?.width ||
-            oldWidget.image.file?.height != widget.image.file?.height;
+            oldWidget.image.file?.height != widget.image.file?.height ||
+            // 登录态/账号变化会切换鉴权凭证，必须重新解析服务端尺寸回退链路。
+            oldWidget.access != widget.access;
     if (!hasChanged) return;
     _aspectRatio = 4 / 3;
     _applyServerAspectRatio();
@@ -583,9 +623,14 @@ class _SinglePostImageState extends State<_SinglePostImage> {
     );
     final selection = PostMediaView._selectResource(widget.image, target);
     if (selection.url.isEmpty) return;
+    final access = widget.access;
     final provider = CachedNetworkImageProvider(
       selection.url,
-      cacheManager: PostImageCache.manager,
+      cacheManager: access.isAuthorized
+          ? GovernedPostImageCache.instance.manager
+          : PostImageCache.manager,
+      cacheKey: access.isAuthorized ? access.cacheKeyFor(selection.url) : null,
+      headers: access.isAuthorized ? access.httpHeaders : null,
     );
     final ImageProvider<Object> resolvedProvider = selection.shouldResize
         ? ResizeImage(
@@ -676,6 +721,7 @@ class _SinglePostImageState extends State<_SinglePostImage> {
                         alignment: isLongImage
                             ? Alignment.topCenter
                             : Alignment.center,
+                        access: widget.access,
                       ),
                       if (isHomeSection && _aspectRatio < _kLongImageRatio)
                         Positioned(

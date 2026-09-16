@@ -88,14 +88,80 @@ func (h *PostGovernanceHandler) SubmitRectification(c *gin.Context) {
 }
 
 // ListRectification 管理员查看整改待办。
+//
+// 返回的每一项都必须能回答两个问题，否则管理员只能“看现在这篇挺正常就点通过”，
+// 并不知道作者改掉了什么：
+//   - 当初为什么被处理（治理规则码 + 管理员处理说明）；
+//   - 处理时是哪一版、内容长什么样（vs 现在提交的整改版本）。
 func (h *PostGovernanceHandler) ListRectification(c *gin.Context) {
 	status := c.DefaultQuery("status", string(models.RectificationReviewPending))
 	var reviews []models.PostRectificationReview
-	if err := h.db.Where("status = ?", status).Preload("Post").Order("created_at ASC").Find(&reviews).Error; err != nil {
+	if err := h.db.Where("status = ?", status).
+		Preload("Post").Preload("Report").
+		Order("created_at ASC").Find(&reviews).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取整改复审失败"})
 		return
 	}
-	c.JSON(http.StatusOK, reviews)
+	items := make([]rectificationAdminItem, 0, len(reviews))
+	for i := range reviews {
+		items = append(items, h.buildRectificationAdminItem(&reviews[i]))
+	}
+	c.JSON(http.StatusOK, items)
+}
+
+// rectificationAdminItem 是管理端整改待办卡片所需的完整审核上下文。
+//
+// 单独定义响应结构体、不复用 models.Report：举报人身份（reporter_id、举报人自述）
+// 不属于审核依据，不能搭着整改待办一起下发。
+type rectificationAdminItem struct {
+	models.PostRectificationReview
+	// OriginalRuleCode / OriginalReason 取自帖子当前记录的治理依据。整改待办只在
+	// moderated_hidden 期间存在，而这两个字段在恢复公开时会被清空，窗口正好吻合。
+	OriginalRuleCode string `json:"original_rule_code,omitempty"`
+	OriginalReason   string `json:"original_reason,omitempty"`
+	// ReportReasonCode 是举报分类码，只给管理员做归类参考，不含举报人身份。
+	ReportReasonCode  string     `json:"report_reason_code,omitempty"`
+	ModeratedRevision int        `json:"moderated_revision,omitempty"`
+	ModeratedSnapshot string     `json:"moderated_snapshot,omitempty"`
+	ModeratedAt       *time.Time `json:"moderated_at,omitempty"`
+}
+
+// buildRectificationAdminItem 补齐治理上下文。
+//
+// 举报记录缺失（历史数据、或提交整改时恰好查不到治理记录）时不报错，退回按帖子
+// 回查最近一次治理隐藏；仍查不到就只下发帖子字段，卡片降级展示而非整体失败。
+func (h *PostGovernanceHandler) buildRectificationAdminItem(
+	review *models.PostRectificationReview,
+) rectificationAdminItem {
+	item := rectificationAdminItem{
+		PostRectificationReview: *review,
+		OriginalRuleCode:        review.Post.ModerationRuleCode,
+		OriginalReason:          review.Post.ModerationReason,
+		ModeratedAt:             review.Post.ModeratedAt,
+	}
+	report := review.Report
+	if report == nil {
+		var fallback models.Report
+		if err := h.db.
+			Where("target_type = ? AND target_id = ? AND action = ?",
+				"post", review.PostID, models.ReportActionModeratedHidden).
+			Order("handled_at DESC").First(&fallback).Error; err == nil {
+			report = &fallback
+		}
+	}
+	if report == nil {
+		return item
+	}
+	item.ReportReasonCode = report.ReasonCode
+	item.ModeratedRevision = report.ModeratedRevision
+	item.ModeratedSnapshot = report.TargetSnapshot
+	if item.ModeratedAt == nil && report.HandledAt != nil {
+		item.ModeratedAt = report.HandledAt
+	}
+	if item.OriginalReason == "" {
+		item.OriginalReason = report.DeleteReason
+	}
+	return item
 }
 
 // ResolveRectification 由管理员通过或驳回整改复审。
@@ -124,7 +190,23 @@ func (h *PostGovernanceHandler) ResolveRectification(c *gin.Context) {
 	}
 	reviewerID := c.GetUint("user_id")
 	var review models.PostRectificationReview
-	var authorID, postID uint
+
+	// 结论通知在事务内写入，键用 reviewID 保证重试幂等（见下方 tx 内调用）。
+	var (
+		resultType    string
+		resultContent string
+		resultDedup   string
+	)
+	if decision == "approve" {
+		resultType = models.NotificationTypeRectificationApproved
+		resultContent = "你修改后的帖子已通过整改复审，现已恢复公开展示。"
+		resultDedup = fmt.Sprintf("rectification-approved:%d", reviewID)
+	} else {
+		resultType = models.NotificationTypeRectificationRejected
+		resultContent = "整改复审未通过：" + input.Reason + "。你可以继续修改后再次提交。"
+		resultDedup = fmt.Sprintf("rectification-rejected:%d", reviewID)
+	}
+
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("Post").First(&review, reviewID).Error; err != nil {
 			return err
@@ -168,7 +250,15 @@ func (h *PostGovernanceHandler) ResolveRectification(c *gin.Context) {
 		if err := tx.Save(&review).Error; err != nil {
 			return err
 		}
-		authorID, postID = post.AuthorID, post.ID
+		authorID, postID := post.AuthorID, post.ID
+		// 站内通知必须与状态变更原子：事务外 `_ = Create...` 会让“帖子已恢复、
+		// 作者永远收不到通知”静默发生，而接口照样返回成功。通知本身是幂等写入
+		// （dedupKey + ON CONFLICT DO NOTHING），放进事务不会造成重复提醒。
+		if err := CreatePostModerationResultNotification(
+			tx, authorID, postID, resultType, resultContent, resultDedup,
+		); err != nil {
+			return err
+		}
 		return tx.Create(&models.AdminActionLog{AdminID: reviewerID, Action: "resolve_rectification", TargetType: "post_rectification_review", TargetID: review.ID, Detail: input.Reason}).Error
 	})
 	if err != nil {
@@ -185,11 +275,6 @@ func (h *PostGovernanceHandler) ResolveRectification(c *gin.Context) {
 			}
 		}
 		return
-	}
-	if decision == "approve" {
-		_ = CreatePostModerationResultNotification(h.db, authorID, postID, models.NotificationTypeRectificationApproved, "你修改后的帖子已通过整改复审，现已恢复公开展示。", fmt.Sprintf("rectification-approved:%d", review.ID))
-	} else {
-		_ = CreatePostModerationResultNotification(h.db, authorID, postID, models.NotificationTypeRectificationRejected, "整改复审未通过："+input.Reason+"。你可以继续修改后再次提交。", fmt.Sprintf("rectification-rejected:%d", review.ID))
 	}
 	c.JSON(http.StatusOK, review)
 }
@@ -256,6 +341,16 @@ func (h *PostGovernanceHandler) AdminRestorePost(c *gin.Context) {
 				return err
 			}
 		}
+		// 与整改复审通过同一条可靠性约束：站内通知落在治理事务内，不允许
+		// “帖子已恢复但作者没收到通知”静默发生。
+		if err := CreatePostModerationResultNotification(
+			tx, authorID, post.ID,
+			models.NotificationTypeRectificationApproved,
+			"你的帖子已由管理员恢复正常公开展示。说明："+input.Reason,
+			fmt.Sprintf("admin-restored:%d:%d", post.ID, now.Unix()),
+		); err != nil {
+			return err
+		}
 		return tx.Create(&models.AdminActionLog{
 			AdminID:    reviewerID,
 			Action:     "restore_post",
@@ -275,12 +370,6 @@ func (h *PostGovernanceHandler) AdminRestorePost(c *gin.Context) {
 		}
 		return
 	}
-	_ = CreatePostModerationResultNotification(
-		h.db, authorID, uint(postID),
-		models.NotificationTypeRectificationApproved,
-		"你的帖子已由管理员恢复正常公开展示。说明："+input.Reason,
-		fmt.Sprintf("admin-restored:%d:%d", postID, time.Now().Unix()),
-	)
 	c.JSON(http.StatusOK, gin.H{"message": "帖子已恢复公开展示"})
 }
 

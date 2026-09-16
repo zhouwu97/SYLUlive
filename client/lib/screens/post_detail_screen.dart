@@ -32,6 +32,7 @@ import '../services/post_reply_cache.dart';
 import '../utils/app_feedback.dart';
 import '../utils/image_decode_size.dart';
 import '../utils/post_clipboard.dart';
+import '../utils/post_media_access.dart';
 import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/app_action_popup_menu.dart';
@@ -42,6 +43,7 @@ import '../widgets/post_reply/reply_image_media.dart';
 import '../widgets/post_reply_composer.dart';
 import '../widgets/emoji/sticker_catalog.dart';
 import 'create_post_screen.dart';
+import 'court_screen.dart';
 import 'image_viewer_screen.dart';
 import 'water_category_feed_route.dart';
 import 'team/team_recruitment_detail_screen.dart';
@@ -1175,6 +1177,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                   icon: const Icon(Icons.gavel_outlined, size: 18),
                   label: const Text('提交申诉'),
                 ),
+              // 申诉结案通知现在落在帖子维度上，点进来必须能回到公众法庭看案件详情。
+              if ((permissions?.latestAppealId ?? 0) > 0)
+                TextButton.icon(
+                  onPressed: _openAppealDetail,
+                  icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                  label: Text(
+                    hasPendingAppeal ? '查看申诉进度' : '查看申诉详情',
+                  ),
+                ),
               if (isAdmin)
                 FilledButton.icon(
                   onPressed: _adminRestorePost,
@@ -1193,6 +1204,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final local = value.toLocal();
     String two(int n) => n.toString().padLeft(2, '0');
     return '${local.year}-${two(local.month)}-${two(local.day)} ${two(local.hour)}:${two(local.minute)}';
+  }
+
+  /// 打开该帖子关联的公众法庭案件详情。
+  ///
+  /// 申诉结案通知挂在帖子维度（post_id）上，作者落到帖子后必须能继续看到案件本身。
+  Future<void> _openAppealDetail() async {
+    final appealId = _post?.viewerPermissions?.latestAppealId ?? 0;
+    if (appealId <= 0) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CourtScreen(appealId: appealId),
+      ),
+    );
+    if (mounted) await _loadPost();
   }
 
   Future<void> _editPost() async {
@@ -2967,6 +2993,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     return PostMediaView(
       images: p.images,
       variant: PostMediaVariant.detail,
+      access: resolvePostMediaAccess(context, p),
     );
     /*
     final urls = _resolvedImageUrls(p);
@@ -3303,6 +3330,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       child: PostMediaView(
         images: p.images,
         variant: PostMediaVariant.detail,
+        access: resolvePostMediaAccess(context, p),
       ),
     );
   }

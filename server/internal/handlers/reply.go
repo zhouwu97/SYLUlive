@@ -37,6 +37,28 @@ func NewReplyHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *ReplyH
 	}
 }
 
+// canViewPostForRequest 统一帖子读取权限判断：
+// 当帖子为 deleted / moderated_hidden 时，只有作者或管理员可读；否则公开可读。
+// 返回 false 时调用方统一按 404 处理（避免泄露帖子存在性）。
+func canViewPostForRequest(db *gorm.DB, c *gin.Context, postID uint) bool {
+	var pv struct {
+		AuthorID uint
+		Status   models.PostStatus
+	}
+	if err := db.Model(&models.Post{}).Select("author_id", "status").First(&pv, postID).Error; err != nil {
+		return false
+	}
+	if pv.Status == models.PostStatusDeleted || pv.Status == models.PostStatusModeratedHidden {
+		viewerID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		uid, _ := viewerID.(uint)
+		if uid != pv.AuthorID && role != "admin" && role != "super_admin" {
+			return false
+		}
+	}
+	return true
+}
+
 // 评论列表分页与子回复预览上限。
 const (
 	defaultReplyPageLimit = 20
@@ -69,22 +91,9 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
 		return
 	}
-	var postVisibility struct {
-		AuthorID uint
-		Status   models.PostStatus
-	}
-	if err := h.db.Model(&models.Post{}).Select("author_id", "status").First(&postVisibility, postID).Error; err != nil {
+	if !canViewPostForRequest(h.db, c, uint(postID)) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
 		return
-	}
-	if postVisibility.Status == models.PostStatusDeleted || postVisibility.Status == models.PostStatusModeratedHidden {
-		viewerID, _ := c.Get("user_id")
-		role, _ := c.Get("role")
-		uid, _ := viewerID.(uint)
-		if uid != postVisibility.AuthorID && role != "admin" && role != "super_admin" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
-			return
-		}
 	}
 
 	mode, ok := services.ValidCommentSort(c.Query("sort"))
@@ -322,6 +331,10 @@ func (h *ReplyHandler) GetReplyContext(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的评论ID"})
 		return
 	}
+	if !canViewPostForRequest(h.db, c, uint(postID)) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
+		return
+	}
 
 	var target models.Reply
 	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").Scopes(withReplyImageVariants).First(&target, replyID).Error; err != nil {
@@ -379,6 +392,10 @@ func (h *ReplyHandler) GetChildren(c *gin.Context) {
 	replyID, err := strconv.ParseUint(replyIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的评论ID"})
+		return
+	}
+	if !canViewPostForRequest(h.db, c, uint(postID)) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
 		return
 	}
 

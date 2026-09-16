@@ -40,6 +40,15 @@ func ensureTeacherCourseSubject(db *gorm.DB, courseName string, verified bool) *
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
 	}
+	// 精确名称未命中时，先按课程别名解析到 canonical subject，避免治理过的
+	// 重复课程（如"高数上" → 高等数学A1）被重新创建出来。
+	if resolved, rerr := resolveSubjectForPending(db, courseName); rerr == nil && resolved != nil {
+		if verified && !resolved.Verified {
+			_ = db.Model(&models.CourseSubject{}).Where("id = ?", resolved.ID).Update("verified", true).Error
+		}
+		id := resolved.ID
+		return &id
+	}
 	candidate := models.CourseSubject{
 		Name:            strings.TrimSpace(courseName),
 		NormalizedName:  normalized,
@@ -130,7 +139,7 @@ func (h *TeacherHandler) GetDetail(c *gin.Context) {
 	if teacher.MergedIntoID != nil {
 		keeperName := ""
 		var keeper models.Teacher
-		if err := h.db.Select("id", "name").First(&keeper, *teacher.MergedIntoID).Error == nil {
+		if err := h.db.Select("id", "name").First(&keeper, *teacher.MergedIntoID).Error; err == nil {
 			keeperName = keeper.Name
 		}
 		c.JSON(http.StatusOK, gin.H{

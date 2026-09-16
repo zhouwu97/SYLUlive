@@ -231,6 +231,22 @@ func findOrCreateVerifiedSubject(tx *gorm.DB, submission *models.CourseEvaluatio
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取学科失败", err)
 	}
+	// 精确名称未命中时先按课程别名解析到 canonical subject，避免治理过的
+	// 重复课程名在审核通过时被重新创建为新的学科实体。
+	var alias models.CourseSubjectAlias
+	if aerr := tx.Where("normalized_alias = ?", normalized).Order("id ASC").First(&alias).Error; aerr == nil {
+		var aliased models.CourseSubject
+		if err := tx.First(&aliased, alias.CourseSubjectID).Error; err == nil {
+			if !aliased.Verified {
+				if err := tx.Model(&models.CourseSubject{}).Where("id = ?", aliased.ID).
+					Update("verified", true).Error; err != nil {
+					return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "审核学科失败", err)
+				}
+				aliased.Verified = true
+			}
+			return &aliased, nil
+		}
+	}
 
 	candidate := models.CourseSubject{
 		Name:            name,

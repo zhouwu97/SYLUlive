@@ -954,7 +954,11 @@ func applyAppealPass(tx *gorm.DB, appeal models.Appeal) error {
 		if originalStatus == "" {
 			originalStatus = models.PostStatusNormal
 		}
-		if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("status", originalStatus).Error; err != nil {
+		if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Updates(map[string]interface{}{
+			"status":               originalStatus,
+			"moderation_rule_code": "",
+			"moderation_reason":   "",
+		}).Error; err != nil {
 			return err
 		}
 		var rows []models.PostImage

@@ -145,7 +145,11 @@ func (h *PostGovernanceHandler) ResolveRectification(c *gin.Context) {
 		review.ReviewedAt = &now
 		if decision == "approve" {
 			review.Status = models.RectificationReviewApproved
-			if err := tx.Model(&post).Update("status", models.PostStatusNormal).Error; err != nil {
+			if err := tx.Model(&post).Updates(map[string]interface{}{
+				"status":               models.PostStatusNormal,
+				"moderation_rule_code": "",
+				"moderation_reason":   "",
+			}).Error; err != nil {
 				return err
 			}
 			var rows []models.PostImage

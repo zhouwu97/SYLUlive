@@ -224,3 +224,84 @@ func TestReplyCreateUsesTextInMixedStickerNotification(t *testing.T) {
 		t.Fatalf("notifications=%s", notificationResponse.Body.String())
 	}
 }
+
+func performReplyReadRequest(
+	t *testing.T,
+	handler gin.HandlerFunc,
+	postID, replyID uint,
+	loggedInUserID uint,
+) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(
+		http.MethodGet,
+		fmt.Sprintf("/api/posts/%d/replies/%d/context", postID, replyID),
+		nil,
+	)
+	context.Params = gin.Params{
+		{Key: "id", Value: fmt.Sprint(postID)},
+		{Key: "replyId", Value: fmt.Sprint(replyID)},
+	}
+	if loggedInUserID != 0 {
+		context.Set("user_id", loggedInUserID)
+	}
+	handler(context)
+	return recorder
+}
+
+// TestReplyDeepLinksEnforcePostVisibility 回归 P1-1：帖子被 moderated_hidden/deleted 后，
+// 评论的 children/context 深链接口也必须按同一可见性边界拦截匿名访问。
+func TestReplyDeepLinksEnforcePostVisibility(t *testing.T) {
+	db := newReplyTestDB(t)
+	post := createReplyTestPost(t, db)
+	handler := NewReplyHandler(db, "", "")
+
+	root := models.Reply{PostID: post.ID, AuthorID: 1, Content: "根评论", Status: models.ReplyStatusNormal}
+	if err := db.Create(&root).Error; err != nil {
+		t.Fatalf("create root reply: %v", err)
+	}
+	child := models.Reply{PostID: post.ID, AuthorID: 1, ParentReplyID: &root.ID, Content: "子评论", Status: models.ReplyStatusNormal}
+	if err := db.Create(&child).Error; err != nil {
+		t.Fatalf("create child reply: %v", err)
+	}
+
+	// normal 帖：匿名可读
+	if code := performReplyReadRequest(t, handler.GetReplyContext, post.ID, child.ID, 0).Code; code != http.StatusOK {
+		t.Fatalf("normal post anonymous context status=%d", code)
+	}
+	if code := performReplyReadRequest(t, handler.GetChildren, post.ID, root.ID, 0).Code; code != http.StatusOK {
+		t.Fatalf("normal post anonymous children status=%d", code)
+	}
+
+	// 隐藏帖：匿名应 404
+	if err := db.Model(&models.Post{}).Where("id = ?", post.ID).Update("status", models.PostStatusModeratedHidden).Error; err != nil {
+		t.Fatalf("hide post: %v", err)
+	}
+	if code := performReplyReadRequest(t, handler.GetReplyContext, post.ID, child.ID, 0).Code; code != http.StatusNotFound {
+		t.Fatalf("hidden post anonymous context status=%d, want 404", code)
+	}
+	if code := performReplyReadRequest(t, handler.GetChildren, post.ID, root.ID, 0).Code; code != http.StatusNotFound {
+		t.Fatalf("hidden post anonymous children status=%d, want 404", code)
+	}
+
+	// 隐藏帖：作者可读
+	if code := performReplyReadRequest(t, handler.GetReplyContext, post.ID, child.ID, post.AuthorID).Code; code != http.StatusOK {
+		t.Fatalf("hidden post owner context status=%d, want 200", code)
+	}
+	if code := performReplyReadRequest(t, handler.GetChildren, post.ID, root.ID, post.AuthorID).Code; code != http.StatusOK {
+		t.Fatalf("hidden post owner children status=%d, want 200", code)
+	}
+
+	// deleted 帖：匿名应 404
+	if err := db.Model(&models.Post{}).Where("id = ?", post.ID).Update("status", models.PostStatusDeleted).Error; err != nil {
+		t.Fatalf("delete post: %v", err)
+	}
+	if code := performReplyReadRequest(t, handler.GetReplyContext, post.ID, child.ID, 0).Code; code != http.StatusNotFound {
+		t.Fatalf("deleted post anonymous context status=%d, want 404", code)
+	}
+	if code := performReplyReadRequest(t, handler.GetChildren, post.ID, root.ID, 0).Code; code != http.StatusNotFound {
+		t.Fatalf("deleted post anonymous children status=%d, want 404", code)
+	}
+}

@@ -24,6 +24,7 @@ const (
 	CodeSubjectNotEmpty                          = "SUBJECT_NOT_EMPTY"
 	CodeAliasTargetConflict                      = "ALIAS_TARGET_CONFLICT"
 	CodeCanonicalNameConflict                    = "CANONICAL_NAME_CONFLICT"
+	CodeGovernanceSnapshotRequired              = "GOVERNANCE_SNAPSHOT_REQUIRED"
 	CodeGovernanceSnapshotStale                  = "GOVERNANCE_SNAPSHOT_STALE"
 	CodeMergeRatingConflict                      = "MERGE_RATING_CONFLICT"
 	CodeInvalidGovernanceDecision                = "INVALID_GOVERNANCE_DECISION"
@@ -54,7 +55,7 @@ func (e *TeacherGovernanceError) Unwrap() error { return e.Err }
 // TeacherGovernanceHTTPStatus 把业务码映射为 HTTP 状态码。
 func TeacherGovernanceHTTPStatus(code string) int {
 	switch code {
-	case CodeTeacherGovernanceInvalidInput, CodeInvalidGovernanceDecision:
+	case CodeTeacherGovernanceInvalidInput, CodeInvalidGovernanceDecision, CodeGovernanceSnapshotRequired:
 		return 400
 	case CodeTeacherGovernanceForbidden:
 		return 403
@@ -566,6 +567,7 @@ type MergeInput struct {
 	SnapshotToken          string                `json:"snapshot_token,omitempty"`
 	CourseMerges           []CourseMergeDecision `json:"course_merges,omitempty"`
 	RegisterTeacherAliases *bool                 `json:"register_teacher_aliases,omitempty"`
+	RegisterAliasesCompat  *bool                 `json:"register_aliases,omitempty"`
 	Decisions              *GovernanceDecisions  `json:"decisions,omitempty"`
 }
 
@@ -809,6 +811,8 @@ func (s *TeacherGovernanceService) buildMergePlan(db *gorm.DB, input MergeInput)
 	registerAliases := true
 	if input.RegisterTeacherAliases != nil {
 		registerAliases = *input.RegisterTeacherAliases
+	} else if input.RegisterAliasesCompat != nil {
+		registerAliases = *input.RegisterAliasesCompat
 	}
 
 	ratingCount := func(teacherID uint) int {
@@ -959,6 +963,7 @@ func (s *TeacherGovernanceService) buildMergePlan(db *gorm.DB, input MergeInput)
 		mergeIgnoreTeacherIDs[id] = true
 	}
 
+	var queriedLosers []models.Teacher
 	for _, loserID := range uniqueLosers {
 		var loser models.Teacher
 		if err := db.Where("id = ?", loserID).First(&loser).Error; err != nil {
@@ -967,6 +972,7 @@ func (s *TeacherGovernanceService) buildMergePlan(db *gorm.DB, input MergeInput)
 			}
 			return nil, governanceErr(CodeTeacherNotFound, "读取被合并教师失败", err)
 		}
+		queriedLosers = append(queriedLosers, loser)
 		if loser.MergedIntoID != nil {
 			if *loser.MergedIntoID == keeper.ID {
 				plan.IdempotentLosers = append(plan.IdempotentLosers, loser.ID)
@@ -982,13 +988,13 @@ func (s *TeacherGovernanceService) buildMergePlan(db *gorm.DB, input MergeInput)
 		loserSubj := derefUint(loser.CourseSubjectID)
 		if loserSubj != 0 && loserSubj != keeperSubjectID {
 			decision, hasDecision := decisionBySubject[loserSubj]
-			if !hasDecision || !decision.MergeSubjectEntity {
-				msg := fmt.Sprintf("教师 %q 与目标属于不同课程，必须勾选课程实体归并决策方可合并", loser.Name)
+			if !hasDecision {
+				msg := fmt.Sprintf("教师 %q 与目标属于不同课程，请选择课程处理方式（仅合并教师或同时归并课程）", loser.Name)
 				plan.Conflicts = append(plan.Conflicts, msg)
 				plan.MergeAllowed = false
 				plan.BlockReason = msg
-			} else {
-				// 检查原课程是否仍有其他未被本次合并的活动教师
+			} else if decision.MergeSubjectEntity {
+				// 情况 B：教师 + 课程一起合并，检查原课程是否仍有其他活动教师
 				var leftoverCount int64
 				db.Model(&models.Teacher{}).
 					Where("course_subject_id = ? AND merged_into_id IS NULL AND id NOT IN ?", loserSubj, uniqueLosers).
@@ -1000,6 +1006,7 @@ func (s *TeacherGovernanceService) buildMergePlan(db *gorm.DB, input MergeInput)
 					plan.BlockReason = msg
 				}
 			}
+			// 情况 A：hasDecision && !decision.MergeSubjectEntity（仅合并教师，保留各自课程实体，允许合并）
 		}
 
 		var lRatingsThisLoser []models.TeacherRating
@@ -1077,13 +1084,31 @@ func (s *TeacherGovernanceService) buildMergePlan(db *gorm.DB, input MergeInput)
 		}
 	}
 
-	// 课程归并规划
+	// 课程归并规划：优先使用输入决策，并自动发现未配置决策的跨学科 Loser
+	plannedSubjects := map[uint]bool{}
 	for _, decision := range input.CourseMerges {
 		cmp, err := planCourseMerge(db, decision, keeper, mergeIgnoreTeacherIDs, plan)
 		if err != nil {
 			return nil, err
 		}
 		plan.CourseMerges = append(plan.CourseMerges, *cmp)
+		plannedSubjects[decision.LoserSubjectID] = true
+	}
+	for _, loser := range queriedLosers {
+		loserSubj := derefUint(loser.CourseSubjectID)
+		if loserSubj != 0 && loserSubj != keeperSubjectID && !plannedSubjects[loserSubj] {
+			defaultDecision := CourseMergeDecision{
+				LoserSubjectID:     loserSubj,
+				KeeperSubjectID:    keeperSubjectID,
+				MergeSubjectEntity: false,
+			}
+			cmp, err := planCourseMerge(db, defaultDecision, keeper, mergeIgnoreTeacherIDs, plan)
+			if err != nil {
+				return nil, err
+			}
+			plan.CourseMerges = append(plan.CourseMerges, *cmp)
+			plannedSubjects[loserSubj] = true
+		}
 	}
 
 	plan.HasConflicts = len(plan.Conflicts) > 0
@@ -1233,6 +1258,10 @@ func (s *TeacherGovernanceService) Merge(adminID uint, input MergeInput) (*Merge
 		return nil, governanceErr(CodeTeacherGovernanceForbidden, "无权执行教师合并", nil)
 	}
 
+	if strings.TrimSpace(input.SnapshotToken) == "" {
+		return nil, governanceErr(CodeGovernanceSnapshotRequired, "请先重新预览合并影响", nil)
+	}
+
 	plan, err := s.buildMergePlan(s.db, input)
 	if err != nil {
 		return nil, err
@@ -1283,8 +1312,11 @@ func (s *TeacherGovernanceService) Merge(adminID uint, input MergeInput) (*Merge
 		}
 
 		// 2. 校验 snapshot_token，防止陈旧合并
+		if strings.TrimSpace(input.SnapshotToken) == "" {
+			return governanceErr(CodeGovernanceSnapshotRequired, "请先重新预览合并影响", nil)
+		}
 		currentToken := computeSnapshotToken(tx, input.KeeperID, input.LoserIDs)
-		if input.SnapshotToken != "" && input.SnapshotToken != currentToken {
+		if input.SnapshotToken != currentToken {
 			return governanceErr(CodeGovernanceSnapshotStale, "数据状态已发生变更，请刷新预览后重试", nil)
 		}
 
@@ -1292,6 +1324,8 @@ func (s *TeacherGovernanceService) Merge(adminID uint, input MergeInput) (*Merge
 		registerAliases := true
 		if input.RegisterTeacherAliases != nil {
 			registerAliases = *input.RegisterTeacherAliases
+		} else if input.RegisterAliasesCompat != nil {
+			registerAliases = *input.RegisterAliasesCompat
 		}
 
 		for i := range plan.Losers {
@@ -1471,9 +1505,10 @@ func mergeSingleTeacher(tx *gorm.DB, adminID, keeperID, loserID uint) (loserExec
 	}
 	stats.RelinkedSubmissions = int(res.RowsAffected)
 
-	// 3) 别名重挂
-	if err := tx.Model(&models.TeacherAlias{}).Where("teacher_id = ?", loser.ID).Update("teacher_id", keeper.ID).Error; err != nil {
-		return stats, governanceErr(CodeTeacherNotFound, "重挂别名失败", err)
+	// 3) 别名重挂（逐条处理，防止唯一索引冲突）
+	keeperSubjectID := derefUint(keeper.CourseSubjectID)
+	if err := reconcileTeacherAliases(tx, loser.ID, keeper.ID, keeperSubjectID); err != nil {
+		return stats, err
 	}
 
 	// 4) 压平既有合并链条
@@ -1656,10 +1691,9 @@ func mergeCourseSubjectEntity(tx *gorm.DB, adminID uint, batchID string, cmp cou
 		return governanceErr(CodeTeacherNotFound, "更新提交所属课程失败", err)
 	}
 
-	// 4. 重挂原课程别名
-	if err := tx.Model(&models.CourseSubjectAlias{}).Where("course_subject_id = ?", cmp.LoserSubjectID).
-		Update("course_subject_id", cmp.KeeperSubjectID).Error; err != nil {
-		return governanceErr(CodeTeacherNotFound, "重挂课程别名失败", err)
+	// 4. 重挂原课程别名（逐条处理，防止唯一索引冲突）
+	if err := reconcileCourseSubjectAliases(tx, cmp.LoserSubjectID, cmp.KeeperSubjectID); err != nil {
+		return err
 	}
 
 	// 5. 将 loser 课程名登记为 keeper 课程别名
@@ -1672,6 +1706,84 @@ func mergeCourseSubjectEntity(tx *gorm.DB, adminID uint, batchID string, cmp cou
 		return governanceErr(CodeTeacherNotFound, "删除已合并课程实体失败", err)
 	}
 
+	return nil
+}
+
+func reconcileTeacherAliases(tx *gorm.DB, loserID, keeperID, keeperSubjectID uint) error {
+	var loserAliases []models.TeacherAlias
+	if err := tx.Where("teacher_id = ?", loserID).Find(&loserAliases).Error; err != nil {
+		return governanceErr(CodeTeacherNotFound, "读取被合并教师别名失败", err)
+	}
+
+	for _, alias := range loserAliases {
+		var existing models.TeacherAlias
+		err := tx.Where("course_subject_id = ? AND normalized_alias = ?", keeperSubjectID, alias.NormalizedAlias).
+			First(&existing).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := tx.Model(&models.TeacherAlias{}).Where("id = ?", alias.ID).Updates(map[string]interface{}{
+				"teacher_id":        keeperID,
+				"course_subject_id": keeperSubjectID,
+			}).Error; err != nil {
+				return governanceErr(CodeTeacherNotFound, "重挂别名失败", err)
+			}
+		} else if err != nil {
+			return err
+		} else {
+			if existing.TeacherID == keeperID || existing.ID == alias.ID {
+				if existing.ID != alias.ID {
+					if err := tx.Delete(&models.TeacherAlias{}, alias.ID).Error; err != nil {
+						return governanceErr(CodeTeacherNotFound, "删除重复别名失败", err)
+					}
+				}
+			} else {
+				var owner models.Teacher
+				if err := tx.First(&owner, existing.TeacherID).Error; err == nil && owner.MergedIntoID == nil {
+					return governanceErr(CodeAliasTargetConflict, fmt.Sprintf("别名 %q 已指向其他活动教师 %q(#%d)，无法合并", alias.Alias, owner.Name, owner.ID), nil)
+				}
+				if err := tx.Delete(&models.TeacherAlias{}, alias.ID).Error; err != nil {
+					return governanceErr(CodeTeacherNotFound, "清理无效别名失败", err)
+				}
+				if err := tx.Model(&models.TeacherAlias{}).Where("id = ?", existing.ID).Updates(map[string]interface{}{
+					"teacher_id": keeperID,
+				}).Error; err != nil {
+					return governanceErr(CodeTeacherNotFound, "更新别名目标失败", err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func reconcileCourseSubjectAliases(tx *gorm.DB, loserSubjectID, keeperSubjectID uint) error {
+	var loserAliases []models.CourseSubjectAlias
+	if err := tx.Where("course_subject_id = ?", loserSubjectID).Find(&loserAliases).Error; err != nil {
+		return governanceErr(CodeTeacherNotFound, "读取被归并课程别名失败", err)
+	}
+
+	for _, alias := range loserAliases {
+		var existing models.CourseSubjectAlias
+		err := tx.Where("normalized_alias = ?", alias.NormalizedAlias).First(&existing).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := tx.Model(&models.CourseSubjectAlias{}).Where("id = ?", alias.ID).
+				Update("course_subject_id", keeperSubjectID).Error; err != nil {
+				return governanceErr(CodeTeacherNotFound, "重挂课程别名失败", err)
+			}
+		} else if err != nil {
+			return err
+		} else {
+			if existing.CourseSubjectID == keeperSubjectID || existing.ID == alias.ID {
+				if existing.ID != alias.ID {
+					if err := tx.Delete(&models.CourseSubjectAlias{}, alias.ID).Error; err != nil {
+						return governanceErr(CodeTeacherNotFound, "删除重复课程别名失败", err)
+					}
+				}
+			} else {
+				var targetSub models.CourseSubject
+				_ = tx.First(&targetSub, existing.CourseSubjectID).Error
+				return governanceErr(CodeAliasTargetConflict, fmt.Sprintf("课程别名 %q 已指向其他课程 %q(#%d)，无法归并", alias.Alias, targetSub.Name, targetSub.ID), nil)
+			}
+		}
+	}
 	return nil
 }
 

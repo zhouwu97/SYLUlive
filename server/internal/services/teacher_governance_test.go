@@ -207,14 +207,24 @@ func TestTeacherGovernancePreviewAndMerge(t *testing.T) {
 		t.Fatalf("Preview 绝不能修改数据库状态")
 	}
 
-	// --- 2. SnapshotToken 陈旧校验测试 ---
+	// --- 2. SnapshotToken 强制与陈旧校验测试 ---
+	missingTokenInput := input
+	missingTokenInput.SnapshotToken = ""
+	_, err = svc.Merge(admin.ID, missingTokenInput)
+	if err == nil {
+		t.Fatalf("缺少 snapshot_token 应该报错")
+	}
+	var govErr *TeacherGovernanceError
+	if !errors.As(err, &govErr) || govErr.Code != CodeGovernanceSnapshotRequired {
+		t.Fatalf("应返回 CodeGovernanceSnapshotRequired，实际 %v", err)
+	}
+
 	staleInput := input
 	staleInput.SnapshotToken = "stale_token_value_xyz"
 	_, err = svc.Merge(admin.ID, staleInput)
 	if err == nil {
 		t.Fatalf("陈旧 snapshot_token 应该报错")
 	}
-	var govErr *TeacherGovernanceError
 	if !errors.As(err, &govErr) || govErr.Code != CodeGovernanceSnapshotStale {
 		t.Fatalf("应返回 CodeGovernanceSnapshotStale，实际 %v", err)
 	}
@@ -295,9 +305,17 @@ func TestTeacherGovernancePreviewAndMerge(t *testing.T) {
 	}
 
 	// --- 4. 幂等性测试：再次对同一个 keeper 执行合并应幂等成功 ---
-	idempotentPlan, err := svc.Merge(admin.ID, MergeInput{
+	pPrev, err := svc.PreviewMerge(MergeInput{
 		KeeperID: keeper.ID,
 		LoserIDs: []uint{loser.ID},
+	})
+	if err != nil {
+		t.Fatalf("幂等 preview 失败: %v", err)
+	}
+	idempotentPlan, err := svc.Merge(admin.ID, MergeInput{
+		KeeperID:      keeper.ID,
+		LoserIDs:      []uint{loser.ID},
+		SnapshotToken: pPrev.SnapshotToken,
 	})
 	if err != nil {
 		t.Fatalf("对已合并至相同 keeper 的教师再次合并应幂等成功，但报错: %v", err)
@@ -306,18 +324,30 @@ func TestTeacherGovernancePreviewAndMerge(t *testing.T) {
 		t.Fatalf("应将已合并的 loser 列入 idempotent_losers")
 	}
 
-	// --- 5. 跨教师冲突：试图将已合并的 loser 合并到第三位教师应报 409 TEACHER_ALREADY_MERGED ---
+	// --- 5. 跨教师冲突：试图将已合并的 loser 合并到第三位教师，Preview 与 Merge 均应报 409 TEACHER_ALREADY_MERGED ---
 	thirdTeacher := models.Teacher{Name: "赵六", Course: "高等数学A1", CourseSubjectID: &s1.ID, NameNormalized: models.NormalizeTeacherName("赵六"), Verified: true}
 	db.Create(&thirdTeacher)
-	_, err = svc.Merge(admin.ID, MergeInput{
+	_, err = svc.PreviewMerge(MergeInput{
 		KeeperID: thirdTeacher.ID,
 		LoserIDs: []uint{loser.ID},
+	})
+	if err == nil {
+		t.Fatalf("对已合并到其他目标的 loser 执行 preview 应当报错")
+	}
+	if !errors.As(err, &govErr) || govErr.Code != CodeTeacherAlreadyMerged {
+		t.Fatalf("Preview 应返回 CodeTeacherAlreadyMerged，实际 %v", err)
+	}
+
+	_, err = svc.Merge(admin.ID, MergeInput{
+		KeeperID:      thirdTeacher.ID,
+		LoserIDs:      []uint{loser.ID},
+		SnapshotToken: "prior_snapshot_token",
 	})
 	if err == nil {
 		t.Fatalf("将已合并教师合并到其他目标应报错")
 	}
 	if !errors.As(err, &govErr) || govErr.Code != CodeTeacherAlreadyMerged {
-		t.Fatalf("应返回 CodeTeacherAlreadyMerged，实际 %v", err)
+		t.Fatalf("Merge 应返回 CodeTeacherAlreadyMerged，实际 %v", err)
 	}
 }
 

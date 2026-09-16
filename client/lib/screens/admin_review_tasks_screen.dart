@@ -104,6 +104,7 @@ class _PendingPostRectification {
   final DateTime? moderatedAt;
   final List<String> currentImageUrls;
   final List<int> currentImageFileIds;
+  final String snapshotSource;
 
   const _PendingPostRectification({
     required this.id,
@@ -118,6 +119,7 @@ class _PendingPostRectification {
     this.reportReasonCode = '',
     this.moderatedRevision = 0,
     this.moderatedSnapshot = '',
+    this.snapshotSource = 'moderated',
     this.moderatedAt,
     this.currentImageUrls = const [],
     this.currentImageFileIds = const [],
@@ -152,11 +154,14 @@ class _PendingPostRectification {
       reportReasonCode: json['report_reason_code']?.toString() ?? '',
       moderatedRevision: (json['moderated_revision'] as num?)?.toInt() ?? 0,
       moderatedSnapshot: json['moderated_snapshot']?.toString() ?? '',
+      snapshotSource: json['snapshot_source']?.toString() ?? 'moderated',
       moderatedAt: DateTime.tryParse(json['moderated_at']?.toString() ?? ''),
       currentImageUrls: currentImageUrls,
       currentImageFileIds: currentImageFileIds,
     );
   }
+
+  bool get isReportedSnapshotFallback => snapshotSource == 'reported';
 
   /// 原处理原因的中文标签；服务端未下发治理快照时为「未知」。
   String get originalReasonLabel => reportReasonLabel(
@@ -1305,10 +1310,12 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        moderatedRevision == null
-                            ? '帖子 #${item.postId} · 提交版本 v${item.submittedRevision}'
-                            : '帖子 #${item.postId} · 处理版本 v$moderatedRevision'
-                                ' → 整改版本 v${item.submittedRevision}',
+                        item.isReportedSnapshotFallback
+                            ? '帖子 #${item.postId} · 举报快照 v1 → 整改版本 v${item.submittedRevision}'
+                            : (moderatedRevision == null
+                                ? '帖子 #${item.postId} · 提交版本 v${item.submittedRevision}'
+                                : '帖子 #${item.postId} · 处理版本 v$moderatedRevision'
+                                    ' → 整改版本 v${item.submittedRevision}'),
                         style: TextStyle(
                             fontSize: 12,
                             color: isDark ? Colors.white54 : Colors.grey[600]),
@@ -1412,7 +1419,9 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                 label: Text(
                   snapshot == null
                       ? '处理时内容不可用'
-                      : '整改前后对比 (${item.moderatedRevision > 0 ? 'v${item.moderatedRevision}' : '处理时'} → v${item.submittedRevision})',
+                      : (item.isReportedSnapshotFallback
+                          ? '整改前后对比 (举报快照 → v${item.submittedRevision})'
+                          : '整改前后对比 (${item.moderatedRevision > 0 ? 'v${item.moderatedRevision}' : '处理时'} → v${item.submittedRevision})'),
                 ),
               ),
             ),
@@ -1656,10 +1665,13 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         ? {'Authorization': 'Bearer $token'}
         : <String, String>{};
 
-    final moderatedVersionText = item.moderatedRevision > 0
-        ? 'v${item.moderatedRevision}'
-        : '处理时';
+    final moderatedVersionText = item.isReportedSnapshotFallback
+        ? '举报时快照'
+        : (item.moderatedRevision > 0 ? 'v${item.moderatedRevision}' : '处理时');
     final submittedVersionText = 'v${item.submittedRevision}';
+    final dialogTitleText = item.isReportedSnapshotFallback
+        ? '整改前后对比 (举报快照 → $submittedVersionText)'
+        : '整改前后对比 ($moderatedVersionText → $submittedVersionText)';
 
     await showDialog<void>(
       context: context,
@@ -1671,7 +1683,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                '整改前后对比 ($moderatedVersionText → $submittedVersionText)',
+                dialogTitleText,
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ),
@@ -1733,7 +1745,9 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                               size: 16, color: Colors.red),
                           const SizedBox(width: 6),
                           Text(
-                            '处理时内容（$moderatedVersionText）',
+                            item.isReportedSnapshotFallback
+                                ? '举报时快照内容（未留存处理时快照）'
+                                : '处理时内容（$moderatedVersionText）',
                             style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
@@ -1742,6 +1756,28 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                           ),
                         ],
                       ),
+                      if (item.isReportedSnapshotFallback) ...[
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.info_outline_rounded, size: 14, color: Colors.amber),
+                              SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  '注：此快照为用户举报时的内容，非管理员执行治理时的实时版本',
+                                  style: TextStyle(fontSize: 11, color: Colors.amber),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       if (item.originalReason.isNotEmpty || item.originalRuleCode.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(

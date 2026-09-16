@@ -368,25 +368,58 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 					if err := tx.Model(&post).Update("status", models.PostStatusDeleted).Error; err != nil {
 						return err
 					}
-				default:
-					if err := tx.Model(&post).Updates(map[string]interface{}{
-						"status": models.PostStatusModeratedHidden,
-						"moderation_rule_code": input.ConfirmedReasonCode,
-						"moderation_reason": input.DeleteReason,
-						"moderated_by_id": userID.(uint),
-						"moderated_at": now,
-					}).Error; err != nil {
-						return err
-					}
-					report.ModeratedRevision = post.Revision
-				}
-				if input.Action == models.ReportActionModeratedHidden || input.Action == models.ReportActionDelete {
 					var rows []models.PostImage
+					var fileIDs []uint
 					if err := tx.Select("file_id").Where("post_id = ?", post.ID).Find(&rows).Error; err == nil && len(rows) > 0 {
-						fileIDs := make([]uint, 0, len(rows))
+						fileIDs = make([]uint, 0, len(rows))
 						for _, r := range rows {
 							fileIDs = append(fileIDs, r.FileID)
 						}
+					}
+					modSnapshot, _ := json.Marshal(gin.H{
+						"title":              post.Title,
+						"content":            post.Content,
+						"image_file_ids":     fileIDs,
+						"original_status":    post.Status,
+						"created_at":         post.CreatedAt,
+						"moderated_revision": post.Revision,
+					})
+					report.ModeratedSnapshot = string(modSnapshot)
+					report.ModeratedRevision = post.Revision
+					if len(fileIDs) > 0 {
+						if err := services.ReconcileFilePublicAccess(tx, fileIDs...); err != nil {
+							return err
+						}
+					}
+				default:
+					if err := tx.Model(&post).Updates(map[string]interface{}{
+						"status":               models.PostStatusModeratedHidden,
+						"moderation_rule_code": input.ConfirmedReasonCode,
+						"moderation_reason":    input.DeleteReason,
+						"moderated_by_id":      userID.(uint),
+						"moderated_at":         now,
+					}).Error; err != nil {
+						return err
+					}
+					var rows []models.PostImage
+					var fileIDs []uint
+					if err := tx.Select("file_id").Where("post_id = ?", post.ID).Find(&rows).Error; err == nil && len(rows) > 0 {
+						fileIDs = make([]uint, 0, len(rows))
+						for _, r := range rows {
+							fileIDs = append(fileIDs, r.FileID)
+						}
+					}
+					modSnapshot, _ := json.Marshal(gin.H{
+						"title":              post.Title,
+						"content":            post.Content,
+						"image_file_ids":     fileIDs,
+						"original_status":    post.Status,
+						"created_at":         post.CreatedAt,
+						"moderated_revision": post.Revision,
+					})
+					report.ModeratedSnapshot = string(modSnapshot)
+					report.ModeratedRevision = post.Revision
+					if len(fileIDs) > 0 {
 						if err := services.ReconcileFilePublicAccess(tx, fileIDs...); err != nil {
 							return err
 						}
@@ -529,8 +562,15 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 			default:
 				return fmt.Errorf("invalid_target_type")
 			}
-			if report.ModeratedRevision > 0 {
-				if err := tx.Model(&report).Update("moderated_revision", report.ModeratedRevision).Error; err != nil {
+			if report.ModeratedRevision > 0 || report.ModeratedSnapshot != "" {
+				updates := map[string]interface{}{}
+				if report.ModeratedRevision > 0 {
+					updates["moderated_revision"] = report.ModeratedRevision
+				}
+				if report.ModeratedSnapshot != "" {
+					updates["moderated_snapshot"] = report.ModeratedSnapshot
+				}
+				if err := tx.Model(&report).Updates(updates).Error; err != nil {
 					return err
 				}
 			}

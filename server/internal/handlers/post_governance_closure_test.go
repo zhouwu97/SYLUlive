@@ -365,3 +365,139 @@ func TestPostGovernance_ServeRectificationEvidenceFile(t *testing.T) {
 		}
 	}
 }
+
+func TestPostGovernance_ModeratedSnapshotSeparation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupPostGovernanceTestDB(t)
+
+	author := models.User{StudentID: "20261001", Nickname: "作者", Role: models.RoleUser}
+	reporter := models.User{StudentID: "20261002", Nickname: "举报人", Role: models.RoleUser}
+	admin := models.User{StudentID: "20261003", Nickname: "管理员", Role: models.RoleAdmin}
+	db.Create(&author)
+	db.Create(&reporter)
+	db.Create(&admin)
+
+	// 1. 发帖 v1
+	post := models.Post{
+		Title:    "帖子标题v1",
+		Content:  "帖子正文v1",
+		BoardID:  models.BoardShuitie,
+		AuthorID: author.ID,
+		Status:   models.PostStatusNormal,
+		Revision: 1,
+	}
+	db.Create(&post)
+
+	reportHandler := NewReportHandler(db)
+
+	// 2. 举报时记录 TargetSnapshot (v1)
+	var reportID uint
+	{
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Set("user_id", reporter.ID)
+		body := strings.NewReader(fmt.Sprintf(`{"target_type":"post","target_id":%d,"reason_code":"spam","reason":"垃圾广告"}`, post.ID))
+		req := httptest.NewRequest(http.MethodPost, "/api/reports", body)
+		req.Header.Set("Content-Type", "application/json")
+		c.Request = req
+
+		reportHandler.Create(c)
+		if w.Code != http.StatusOK && w.Code != http.StatusCreated {
+			t.Fatalf("create report failed: %d, %s", w.Code, w.Body.String())
+		}
+		var rep models.Report
+		json.Unmarshal(w.Body.Bytes(), &rep)
+		reportID = rep.ID
+		if !strings.Contains(rep.TargetSnapshot, "帖子标题v1") {
+			t.Fatalf("target snapshot should contain v1 content: %s", rep.TargetSnapshot)
+		}
+	}
+
+	// 3. 作者在管理员审核前编辑帖子 -> v2
+	db.Model(&post).Updates(map[string]interface{}{
+		"title":    "帖子标题v2(作者已修改)",
+		"content":  "帖子正文v2(作者已修改)",
+		"revision": 2,
+	})
+
+	// 4. 管理员审核该举报，执行违规隐藏
+	{
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Params = gin.Params{{Key: "id", Value: fmt.Sprint(reportID)}}
+		c.Set("user_id", admin.ID)
+		c.Set("role", string(models.RoleAdmin))
+
+		body := strings.NewReader(`{"status":"handled","action":"moderated_hidden","confirmed_reason_code":"spam","delete_reason":"违规隐藏"}`)
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/admin/reports/%d", reportID), body)
+		req.Header.Set("Content-Type", "application/json")
+		c.Request = req
+
+		reportHandler.Handle(c)
+		if w.Code != http.StatusOK {
+			t.Fatalf("handle report failed: %d, %s", w.Code, w.Body.String())
+		}
+	}
+
+	// 5. 校验 Report: TargetSnapshot 保留 v1，ModeratedSnapshot 准确捕获 v2
+	var updatedReport models.Report
+	db.First(&updatedReport, reportID)
+	if updatedReport.ModeratedRevision != 2 {
+		t.Fatalf("moderated_revision should be 2, got %d", updatedReport.ModeratedRevision)
+	}
+	if !strings.Contains(updatedReport.TargetSnapshot, "帖子标题v1") {
+		t.Fatalf("TargetSnapshot must remain v1: %s", updatedReport.TargetSnapshot)
+	}
+	if !strings.Contains(updatedReport.ModeratedSnapshot, "帖子标题v2") {
+		t.Fatalf("ModeratedSnapshot must accurately capture v2: %s", updatedReport.ModeratedSnapshot)
+	}
+
+	// 6. 整改待办 buildRectificationAdminItem 优先选用 ModeratedSnapshot 并标记 snapshot_source=moderated
+	govHandler := NewPostGovernanceHandler(db)
+	review := models.PostRectificationReview{
+		PostID:            post.ID,
+		ReportID:          &updatedReport.ID,
+		Status:            models.RectificationReviewPending,
+		SubmittedRevision: 3,
+	}
+	db.Create(&review)
+
+	var loadedReview models.PostRectificationReview
+	db.Preload("Report").Preload("Post").First(&loadedReview, review.ID)
+	item := govHandler.buildRectificationAdminItem(&loadedReview)
+
+	if item.SnapshotSource != "moderated" {
+		t.Fatalf("snapshot_source should be 'moderated', got %s", item.SnapshotSource)
+	}
+	if !strings.Contains(item.ModeratedSnapshot, "帖子标题v2") {
+		t.Fatalf("item.ModeratedSnapshot should contain v2 content: %s", item.ModeratedSnapshot)
+	}
+
+	// 7. 兜底测试：老数据没有 ModeratedSnapshot 时 fallback 到 TargetSnapshot 并标记 reported
+	legacyReport := models.Report{
+		TargetType:        "post",
+		TargetID:          post.ID,
+		TargetSnapshot:    `{"title":"老举报v1","content":"老举报正文"}`,
+		ModeratedSnapshot: "",
+		Status:            models.ReportStatusHandled,
+	}
+	db.Create(&legacyReport)
+	legacyReview := models.PostRectificationReview{
+		PostID:            post.ID,
+		ReportID:          &legacyReport.ID,
+		Status:            models.RectificationReviewPending,
+		SubmittedRevision: 4,
+	}
+	db.Create(&legacyReview)
+
+	var loadedLegacy models.PostRectificationReview
+	db.Preload("Report").Preload("Post").First(&loadedLegacy, legacyReview.ID)
+	legacyItem := govHandler.buildRectificationAdminItem(&loadedLegacy)
+
+	if legacyItem.SnapshotSource != "reported" {
+		t.Fatalf("legacy item snapshot_source should be 'reported', got %s", legacyItem.SnapshotSource)
+	}
+	if !strings.Contains(legacyItem.ModeratedSnapshot, "老举报v1") {
+		t.Fatalf("legacy item should fallback to TargetSnapshot: %s", legacyItem.ModeratedSnapshot)
+	}
+}

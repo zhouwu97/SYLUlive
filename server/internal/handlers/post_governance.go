@@ -130,6 +130,7 @@ type rectificationAdminItem struct {
 	ReportReasonCode  string     `json:"report_reason_code,omitempty"`
 	ModeratedRevision int        `json:"moderated_revision,omitempty"`
 	ModeratedSnapshot string     `json:"moderated_snapshot,omitempty"`
+	SnapshotSource    string     `json:"snapshot_source,omitempty"` // "moderated" or "reported"
 	ModeratedAt       *time.Time `json:"moderated_at,omitempty"`
 }
 
@@ -161,7 +162,13 @@ func (h *PostGovernanceHandler) buildRectificationAdminItem(
 	}
 	item.ReportReasonCode = report.ReasonCode
 	item.ModeratedRevision = report.ModeratedRevision
-	item.ModeratedSnapshot = report.TargetSnapshot
+	if report.ModeratedSnapshot != "" {
+		item.ModeratedSnapshot = report.ModeratedSnapshot
+		item.SnapshotSource = "moderated"
+	} else if report.TargetSnapshot != "" {
+		item.ModeratedSnapshot = report.TargetSnapshot
+		item.SnapshotSource = "reported"
+	}
 	if item.ModeratedAt == nil && report.HandledAt != nil {
 		item.ModeratedAt = report.HandledAt
 	}

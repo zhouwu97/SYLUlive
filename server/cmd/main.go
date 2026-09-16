@@ -762,6 +762,7 @@ func main() {
 
 	reportHandler := handlers.NewReportHandler(db)
 	postGovernanceHandler := handlers.NewPostGovernanceHandler(db)
+	postGovernanceHandler.SetUploadDir(cfg.UploadDir)
 
 	appealHandler := handlers.NewAppealHandler(db)
 	appealHandler.SetUploadDir(cfg.UploadDir)
@@ -1932,6 +1933,7 @@ func main() {
 		admin.POST("/posts/:id/restore", postGovernanceHandler.AdminRestorePost)
 		admin.GET("/rectification", postGovernanceHandler.ListRectification)
 		admin.POST("/rectification/:id/:decision", postGovernanceHandler.ResolveRectification)
+		admin.GET("/governance/files/:id", postGovernanceHandler.ServeGovernedEvidenceFile)
 		admin.GET("/appeals/review", appealHandler.AdminGetReviewList)
 		admin.POST("/appeals/:id/review", appealHandler.AdminResolveReview)
 

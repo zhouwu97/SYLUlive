@@ -974,6 +974,16 @@ func applyAppealPass(tx *gorm.DB, appeal models.Appeal) error {
 				return err
 			}
 		}
+		now := time.Now()
+		if err := tx.Model(&models.PostRectificationReview{}).
+			Where("post_id = ? AND status = ?", appeal.PostID, models.RectificationReviewPending).
+			Updates(map[string]interface{}{
+				"status":        models.RectificationReviewApproved,
+				"review_reason": "申诉通过自动解除治理并归档整改复审",
+				"reviewed_at":   &now,
+			}).Error; err != nil {
+			return err
+		}
 	}
 	if appeal.ReportID == nil {
 		return nil

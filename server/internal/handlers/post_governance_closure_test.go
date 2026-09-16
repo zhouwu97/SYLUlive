@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -213,6 +214,15 @@ func TestPostGovernanceClosure_AdminRestore(t *testing.T) {
 	}
 	db.Create(&post)
 
+	appeal := models.Appeal{
+		PostID:      post.ID,
+		AppellantID: author.ID,
+		TargetType:  "post",
+		TargetID:    post.ID,
+		Status:      models.AppealStatusPending,
+	}
+	db.Create(&appeal)
+
 	govHandler := NewPostGovernanceHandler(db)
 
 	// 管理员人工恢复帖子
@@ -239,5 +249,57 @@ func TestPostGovernanceClosure_AdminRestore(t *testing.T) {
 	var log models.AdminActionLog
 	if err := db.Where("target_id = ? AND action = ?", post.ID, "restore_post").First(&log).Error; err != nil {
 		t.Fatalf("admin action log should be created: %v", err)
+	}
+
+	var closedAppeal models.Appeal
+	if err := db.First(&closedAppeal, appeal.ID).Error; err != nil {
+		t.Fatalf("appeal should exist: %v", err)
+	}
+	if closedAppeal.Status != models.AppealStatusPass || closedAppeal.ClosedReason != "admin_restore" {
+		t.Fatalf("appeal should be closed with pass, got status=%s, reason=%s", closedAppeal.Status, closedAppeal.ClosedReason)
+	}
+}
+
+func TestPostGovernance_ServeGovernedEvidenceFile(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupPostGovernanceTestDB(t)
+
+	tempDir := t.TempDir()
+	contentBytes := []byte("fake image data for testing")
+	fileName := "evidence_test.png"
+	filePath := fmt.Sprintf("/uploads/%s", fileName)
+	if err := os.WriteFile(fmt.Sprintf("%s/%s", tempDir, fileName), contentBytes, 0644); err != nil {
+		t.Fatalf("write file failed: %v", err)
+	}
+
+	fileRec := models.File{
+		Path:        filePath,
+		MimeType:    "image/png",
+		Size:        int64(len(contentBytes)),
+		AccessScope: models.FileAccessPrivate,
+	}
+	if err := db.Create(&fileRec).Error; err != nil {
+		t.Fatalf("create file record: %v", err)
+	}
+
+	govHandler := NewPostGovernanceHandler(db)
+	govHandler.SetUploadDir(tempDir)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: fmt.Sprint(fileRec.ID)}}
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/admin/governance/files/%d", fileRec.ID), nil)
+	c.Request = req
+
+	govHandler.ServeGovernedEvidenceFile(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+	if !bytes.Equal(w.Body.Bytes(), contentBytes) {
+		t.Fatalf("body mismatch")
+	}
+	if w.Header().Get("Content-Type") != "image/png" {
+		t.Fatalf("content type mismatch: %s", w.Header().Get("Content-Type"))
 	}
 }

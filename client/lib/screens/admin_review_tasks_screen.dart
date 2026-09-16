@@ -13,6 +13,7 @@ import '../widgets/canteen/canteen_pending_card.dart';
 import '../utils/app_feedback.dart';
 import '../utils/report_reason_label.dart';
 import 'admin_teacher_governance_screen.dart';
+import 'image_viewer_screen.dart';
 import 'post_detail_screen.dart';
 
 class AdminReviewTasksScreen extends StatefulWidget {
@@ -101,6 +102,8 @@ class _PendingPostRectification {
   final int moderatedRevision;
   final String moderatedSnapshot;
   final DateTime? moderatedAt;
+  final List<String> currentImageUrls;
+  final List<int> currentImageFileIds;
 
   const _PendingPostRectification({
     required this.id,
@@ -116,10 +119,26 @@ class _PendingPostRectification {
     this.moderatedRevision = 0,
     this.moderatedSnapshot = '',
     this.moderatedAt,
+    this.currentImageUrls = const [],
+    this.currentImageFileIds = const [],
   });
 
   factory _PendingPostRectification.fromJson(Map<String, dynamic> json) {
     final post = json['post'] is Map ? Map<String, dynamic>.from(json['post']) : null;
+    final postImages = post?['images'] as List? ?? const [];
+    final currentImageUrls = <String>[];
+    final currentImageFileIds = <int>[];
+    for (final img in postImages) {
+      if (img is Map) {
+        final fid = (img['file_id'] as num?)?.toInt();
+        if (fid != null && fid > 0) currentImageFileIds.add(fid);
+        final url = img['thumb_url']?.toString() ??
+            img['medium_url']?.toString() ??
+            img['origin_url']?.toString() ??
+            '';
+        if (url.isNotEmpty) currentImageUrls.add(url);
+      }
+    }
     return _PendingPostRectification(
       id: (json['id'] as num?)?.toInt() ?? 0,
       postId: (json['post_id'] as num?)?.toInt() ?? 0,
@@ -134,6 +153,8 @@ class _PendingPostRectification {
       moderatedRevision: (json['moderated_revision'] as num?)?.toInt() ?? 0,
       moderatedSnapshot: json['moderated_snapshot']?.toString() ?? '',
       moderatedAt: DateTime.tryParse(json['moderated_at']?.toString() ?? ''),
+      currentImageUrls: currentImageUrls,
+      currentImageFileIds: currentImageFileIds,
     );
   }
 
@@ -152,11 +173,17 @@ class _ModeratedSnapshot {
     required this.title,
     required this.content,
     required this.imageCount,
+    this.imageFileIds = const [],
+    this.createdAt,
+    this.originalStatus = '',
   });
 
   final String title;
   final String content;
   final int imageCount;
+  final List<int> imageFileIds;
+  final DateTime? createdAt;
+  final String originalStatus;
 }
 
 class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
@@ -1349,6 +1376,31 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                 ],
               ),
             ),
+            if (snapshot != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  if (snapshot.title != item.postTitle)
+                    _buildDiffChip('标题已修改', Colors.blue, isDark),
+                  if (snapshot.content != item.postContent)
+                    _buildDiffChip('正文已修改', Colors.teal, isDark),
+                  if (item.currentImageFileIds.length < snapshot.imageFileIds.length)
+                    _buildDiffChip(
+                        '图片已删减 ${snapshot.imageFileIds.length - item.currentImageFileIds.length} 张',
+                        Colors.orange,
+                        isDark)
+                  else if (item.currentImageFileIds.length > snapshot.imageFileIds.length)
+                    _buildDiffChip(
+                        '图片新增 ${item.currentImageFileIds.length - snapshot.imageFileIds.length} 张',
+                        Colors.indigo,
+                        isDark)
+                  else if (snapshot.imageFileIds.isNotEmpty)
+                    _buildDiffChip('图片数量未变', Colors.grey, isDark),
+                ],
+              ),
+            ],
             const SizedBox(height: AppSpacing.xs),
             Align(
               alignment: Alignment.centerLeft,
@@ -1356,9 +1408,11 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                 onPressed: snapshot == null
                     ? null
                     : () => _showModeratedSnapshotDialog(item, snapshot),
-                icon: const Icon(Icons.history_rounded, size: 16),
+                icon: const Icon(Icons.compare_arrows_rounded, size: 16),
                 label: Text(
-                  snapshot == null ? '处理时内容不可用' : '查看处理时内容',
+                  snapshot == null
+                      ? '处理时内容不可用'
+                      : '整改前后对比 (${item.moderatedRevision > 0 ? 'v${item.moderatedRevision}' : '处理时'} → v${item.submittedRevision})',
                 ),
               ),
             ),
@@ -1481,31 +1535,147 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     try {
       final decoded = jsonDecode(trimmed);
       if (decoded is! Map) return null;
-      final imageIds = decoded['image_file_ids'];
+      final rawImageIds = decoded['image_file_ids'];
+      final List<int> imageFileIds = rawImageIds is List
+          ? rawImageIds.map((e) => (e as num).toInt()).toList()
+          : const [];
       final title = decoded['title']?.toString() ?? '';
       final content = decoded['content']?.toString() ?? '';
-      if (title.isEmpty && content.isEmpty) return null;
+      if (title.isEmpty && content.isEmpty && imageFileIds.isEmpty) return null;
       return _ModeratedSnapshot(
         title: title,
         content: content,
-        imageCount: imageIds is List ? imageIds.length : 0,
+        imageCount: imageFileIds.length,
+        imageFileIds: imageFileIds,
+        createdAt: DateTime.tryParse(decoded['created_at']?.toString() ?? ''),
+        originalStatus: decoded['original_status']?.toString() ?? '',
       );
     } catch (_) {
       return null;
     }
   }
 
+  Widget _buildDiffChip(String text, Color color, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDark ? 0.25 : 0.12),
+        borderRadius: BorderRadius.circular(4.0),
+        border: Border.all(color: color.withValues(alpha: 0.4), width: 0.8),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: isDark ? color.withValues(alpha: 0.9) : color,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThumbnailGrid({
+    required BuildContext context,
+    required List<int> fileIds,
+    required String baseUrl,
+    required Map<String, String> authHeaders,
+    required bool isDark,
+  }) {
+    if (fileIds.isEmpty) {
+      return Text(
+        '（无图片）',
+        style: TextStyle(
+          fontSize: 12,
+          color: isDark ? Colors.white38 : Colors.black38,
+        ),
+      );
+    }
+    final cleanBase = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    final urls = fileIds.map((id) => '$cleanBase/api/admin/governance/files/$id').toList();
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: List.generate(fileIds.length, (idx) {
+        final url = urls[idx];
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ImageViewerScreen(
+                  items: urls.map((u) => ImageViewerItem(url: u)).toList(),
+                  initialIndex: idx,
+                  httpHeaders: authHeaders,
+                ),
+              ),
+            );
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            child: Container(
+              width: 72,
+              height: 72,
+              color: isDark ? Colors.white12 : Colors.black12,
+              child: Image.network(
+                url,
+                headers: authHeaders,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Center(
+                  child: Icon(Icons.broken_image_rounded,
+                      size: 24, color: isDark ? Colors.white38 : Colors.black38),
+                ),
+                loadingBuilder: (_, child, progress) {
+                  if (progress == null) return child;
+                  return const Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
   Future<void> _showModeratedSnapshotDialog(
     _PendingPostRectification item,
     _ModeratedSnapshot snapshot,
   ) async {
-    final versionText = item.moderatedRevision > 0
-        ? '版本 v${item.moderatedRevision}'
-        : '处理时版本';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dio = context.read<AuthProvider>().dio;
+    final token = context.read<AuthProvider>().token;
+    final baseUrl = dio.options.baseUrl;
+    final authHeaders = token != null && token.isNotEmpty
+        ? {'Authorization': 'Bearer $token'}
+        : <String, String>{};
+
+    final moderatedVersionText = item.moderatedRevision > 0
+        ? 'v${item.moderatedRevision}'
+        : '处理时';
+    final submittedVersionText = 'v${item.submittedRevision}';
+
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('处理时内容（$versionText）'),
+        title: Row(
+          children: [
+            const Icon(Icons.compare_arrows_rounded,
+                color: Color(0xFF0D9488), size: 22),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '整改前后对比 ($moderatedVersionText → $submittedVersionText)',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
         content: SizedBox(
           width: double.maxFinite,
           child: SingleChildScrollView(
@@ -1513,36 +1683,203 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (snapshot.title.isNotEmpty) ...[
-                  Text(
-                    snapshot.title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 14),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                ],
-                Text(
-                  snapshot.content.isEmpty ? '（该版本无正文）' : snapshot.content,
-                  style: const TextStyle(fontSize: 13, height: 1.5),
+                // 变化摘要 Chips
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    if (snapshot.title != item.postTitle)
+                      _buildDiffChip('标题已修改', Colors.blue, isDark),
+                    if (snapshot.content != item.postContent)
+                      _buildDiffChip('正文已修改', Colors.teal, isDark),
+                    if (item.currentImageFileIds.length < snapshot.imageFileIds.length)
+                      _buildDiffChip(
+                          '图片已删减 ${snapshot.imageFileIds.length - item.currentImageFileIds.length} 张',
+                          Colors.orange,
+                          isDark)
+                    else if (item.currentImageFileIds.length > snapshot.imageFileIds.length)
+                      _buildDiffChip(
+                          '图片新增 ${item.currentImageFileIds.length - snapshot.imageFileIds.length} 张',
+                          Colors.indigo,
+                          isDark)
+                    else if (snapshot.imageFileIds.isNotEmpty)
+                      _buildDiffChip('图片数量未变', Colors.grey, isDark),
+                  ],
                 ),
-                if (snapshot.imageCount > 0) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  Text(
-                    '该版本含 ${snapshot.imageCount} 张图片，治理快照只保留文字与图片数量。',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(ctx).brightness == Brightness.dark
-                          ? Colors.white54
-                          : Colors.grey[600],
+                const SizedBox(height: AppSpacing.md),
+
+                // 处理时内容卡片
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.red.withValues(alpha: 0.1)
+                        : const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.red.withValues(alpha: 0.3)
+                          : const Color(0xFFFCA5A5),
                     ),
                   ),
-                ],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.history_rounded,
+                              size: 16, color: Colors.red),
+                          const SizedBox(width: 6),
+                          Text(
+                            '处理时内容（$moderatedVersionText）',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (item.originalReason.isNotEmpty || item.originalRuleCode.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          '治理原因: ${item.originalReasonLabel} ${item.originalReason.isNotEmpty ? '(${item.originalReason})' : ''}',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: isDark ? Colors.white60 : Colors.black54,
+                          ),
+                        ),
+                      ],
+                      if (item.moderatedAt != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '处理时间: ${_formatRectificationTime(item.moderatedAt!)}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.white38 : Colors.black38,
+                          ),
+                        ),
+                      ],
+                      const Divider(height: 16),
+                      if (snapshot.title.isNotEmpty) ...[
+                        Text(
+                          snapshot.title,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 13.5),
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                      Text(
+                        snapshot.content.isEmpty ? '（该版本无正文）' : snapshot.content,
+                        style: const TextStyle(fontSize: 12.5, height: 1.4),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        '原违规快照图片 (${snapshot.imageFileIds.length} 张):',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white70 : Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      _buildThumbnailGrid(
+                        context: context,
+                        fileIds: snapshot.imageFileIds,
+                        baseUrl: baseUrl,
+                        authHeaders: authHeaders,
+                        isDark: isDark,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+
+                // 整改后内容卡片
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.green.withValues(alpha: 0.3)
+                          : const Color(0xFF86EFAC),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.check_circle_outline_rounded,
+                              size: 16, color: Color(0xFF16A34A)),
+                          const SizedBox(width: 6),
+                          Text(
+                            '整改后内容（$submittedVersionText）',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF16A34A),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 16),
+                      if (item.postTitle.isNotEmpty) ...[
+                        Text(
+                          item.postTitle,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 13.5),
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                      Text(
+                        item.postContent.isEmpty ? '（该版本无正文）' : item.postContent,
+                        style: const TextStyle(fontSize: 12.5, height: 1.4),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        '整改后图片 (${item.currentImageFileIds.length} 张):',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white70 : Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      _buildThumbnailGrid(
+                        context: context,
+                        fileIds: item.currentImageFileIds,
+                        baseUrl: baseUrl,
+                        authHeaders: authHeaders,
+                        isDark: isDark,
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
         ),
         actions: [
           TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PostDetailScreen(postId: item.postId),
+                ),
+              );
+            },
+            child: const Text('查看整改后详情页'),
+          ),
+          FilledButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('关闭'),
           ),

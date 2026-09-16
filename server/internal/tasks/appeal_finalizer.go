@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -201,7 +202,31 @@ func applyAppealPass(tx *gorm.DB, appeal models.Appeal) error {
 		if originalStatus == "" {
 			originalStatus = models.PostStatusNormal
 		}
-		if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("status", originalStatus).Error; err != nil {
+		if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Updates(map[string]interface{}{
+			"status":               originalStatus,
+			"moderation_rule_code": "",
+			"moderation_reason":   "",
+		}).Error; err != nil {
+			return err
+		}
+		var rows []models.PostImage
+		if err := tx.Select("file_id").Where("post_id = ?", appeal.PostID).Find(&rows).Error; err == nil && len(rows) > 0 {
+			fileIDs := make([]uint, 0, len(rows))
+			for _, r := range rows {
+				fileIDs = append(fileIDs, r.FileID)
+			}
+			if err := services.ReconcileFilePublicAccess(tx, fileIDs...); err != nil {
+				return err
+			}
+		}
+		now := time.Now()
+		if err := tx.Model(&models.PostRectificationReview{}).
+			Where("post_id = ? AND status = ?", appeal.PostID, models.RectificationReviewPending).
+			Updates(map[string]interface{}{
+				"status":        models.RectificationReviewApproved,
+				"review_reason": "申诉通过自动解除治理并归档整改复审",
+				"reviewed_at":   &now,
+			}).Error; err != nil {
 			return err
 		}
 	}

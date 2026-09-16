@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -18,11 +19,16 @@ import (
 
 // PostGovernanceHandler 承载治理隐藏帖子的作者整改复审链路。
 type PostGovernanceHandler struct {
-	db *gorm.DB
+	db        *gorm.DB
+	uploadDir string
 }
 
 func NewPostGovernanceHandler(db *gorm.DB) *PostGovernanceHandler {
 	return &PostGovernanceHandler{db: db}
+}
+
+func (h *PostGovernanceHandler) SetUploadDir(dir string) {
+	h.uploadDir = dir
 }
 
 // SubmitRectification 作者提交当前明确 revision 的整改复审。
@@ -97,7 +103,7 @@ func (h *PostGovernanceHandler) ListRectification(c *gin.Context) {
 	status := c.DefaultQuery("status", string(models.RectificationReviewPending))
 	var reviews []models.PostRectificationReview
 	if err := h.db.Where("status = ?", status).
-		Preload("Post").Preload("Report").
+		Preload("Post.Images.File").Preload("Report").
 		Order("created_at ASC").Find(&reviews).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取整改复审失败"})
 		return
@@ -319,14 +325,33 @@ func (h *PostGovernanceHandler) AdminRestorePost(c *gin.Context) {
 			return err
 		}
 		// 关闭未决的整改复审
-		_ = tx.Model(&models.PostRectificationReview{}).
+		if err := tx.Model(&models.PostRectificationReview{}).
 			Where("post_id = ? AND status = ?", post.ID, models.RectificationReviewPending).
 			Updates(map[string]interface{}{
 				"status":        models.RectificationReviewApproved,
 				"reviewer_id":   reviewerID,
 				"review_reason": input.Reason,
 				"reviewed_at":   &now,
-			}).Error
+			}).Error; err != nil {
+			return err
+		}
+
+		// 关闭未决的申诉
+		var appeals []models.Appeal
+		if err := tx.Where("post_id = ? AND status IN ?", post.ID, []models.AppealStatus{models.AppealStatusPending, models.AppealStatusReview}).Find(&appeals).Error; err != nil {
+			return err
+		}
+		for _, ap := range appeals {
+			if err := tx.Model(&ap).Updates(map[string]interface{}{
+				"status":         models.AppealStatusPass,
+				"result":         "管理员人工恢复帖子，申诉自动通过并结案: " + input.Reason,
+				"closed_at":      &now,
+				"closed_reason":  "admin_restore",
+				"reviewed_by_id": &reviewerID,
+			}).Error; err != nil {
+				return err
+			}
+		}
 
 		authorID = post.AuthorID
 
@@ -373,3 +398,37 @@ func (h *PostGovernanceHandler) AdminRestorePost(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "帖子已恢复公开展示"})
 }
 
+// ServeGovernedEvidenceFile 供管理员安全查看违规治理凭据或快照原图。
+// 必须具备 admin / super_admin 权限，禁止匿名访问。
+func (h *PostGovernanceHandler) ServeGovernedEvidenceFile(c *gin.Context) {
+	fileID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || fileID == 0 {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	var file models.File
+	if err := h.db.First(&file, fileID).Error; err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	absPath, err := services.ResolveUploadPath(h.uploadDir, file.Path)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	if _, err := os.Stat(absPath); err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	mimeType := file.MimeType
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	c.Header("Content-Type", mimeType)
+	c.Header("Cache-Control", "private, no-cache")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.File(absPath)
+}

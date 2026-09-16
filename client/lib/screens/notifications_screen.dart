@@ -481,6 +481,10 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       actionText = '整改复审通过';
     } else if (type == 'rectification_rejected') {
       actionText = '整改复审未通过';
+    } else if (type == 'appeal_approved') {
+      actionText = '申诉已通过';
+    } else if (type == 'appeal_rejected') {
+      actionText = '申诉未通过';
     } else if (type == 'appeal_created') {
       actionText = '申诉已创建';
     } else if (type == 'appeal_jury_assigned') {
@@ -529,7 +533,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             }
           }
 
-          if (type == 'content_governed' && postId != null) {
+          if ((type == 'content_governed' ||
+                  type == 'rectification_approved' ||
+                  type == 'rectification_rejected' ||
+                  type == 'appeal_approved' ||
+                  type == 'appeal_rejected') &&
+              postId != null) {
             if (!mounted) return;
             await Navigator.push(
               context,

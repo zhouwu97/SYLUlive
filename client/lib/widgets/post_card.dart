@@ -287,6 +287,10 @@ class _PostCardState extends State<PostCard>
               SizedBox(height: isDesktop ? 12 : 6),
               Row(
                 children: [
+                  if (post.isModeratedHidden) ...[
+                    _buildModeratedBadge(isDesktop),
+                    const SizedBox(width: 6),
+                  ],
                   if (post.isActivePinned) ...[
                     _buildPinnedBadge(isDesktop),
                     const SizedBox(width: 6),
@@ -1023,6 +1027,41 @@ class _PostCardState extends State<PostCard>
               fontSize: isDesktop ? 11 : 10,
               fontWeight: FontWeight.w700,
               color: const Color(0xFFD97706),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeratedBadge(bool isDesktop) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isDesktop ? 7 : 6,
+        vertical: isDesktop ? 3 : 2,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFC857).withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: const Color(0xFFFFC857).withValues(alpha: 0.4),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.visibility_off_outlined,
+            size: isDesktop ? 13 : 11,
+            color: const Color(0xFFD48806),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            '限制展示',
+            style: TextStyle(
+              fontSize: isDesktop ? 11 : 10,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFFD48806),
             ),
           ),
         ],

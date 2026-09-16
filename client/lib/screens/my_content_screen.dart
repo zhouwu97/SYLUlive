@@ -578,6 +578,7 @@ class _MyContentScreenState extends State<MyContentScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (post.isModeratedHidden) _buildModerationStatusChip(isDark),
                 Text(
                   post.title.isNotEmpty ? post.title : post.content,
                   style: TextStyle(
@@ -643,6 +644,34 @@ class _MyContentScreenState extends State<MyContentScreen>
                 ),
               ],
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModerationStatusChip(bool isDark) {
+    final color = isDark ? const Color(0xFFFFC857) : const Color(0xFF9A6700);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.visibility_off_outlined, size: 11, color: color),
+          const SizedBox(width: 4),
+          Text(
+            '已被限制展示 · 仅自己与管理员可见',
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
         ],
       ),
     );
@@ -732,6 +761,7 @@ class _MyContentScreenState extends State<MyContentScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (post.isModeratedHidden) _buildModerationStatusChip(isDark),
                 Text(
                   post.title.isNotEmpty ? post.title : post.content,
                   style: TextStyle(
@@ -887,11 +917,13 @@ class _MyContentScreenState extends State<MyContentScreen>
       CourseEvaluationStatus.published => Colors.green,
       CourseEvaluationStatus.needsEdit => Colors.orange,
       CourseEvaluationStatus.pending => Colors.blue,
+      CourseEvaluationStatus.superseded => Colors.grey,
     };
     final statusLabel = switch (submission.status) {
       CourseEvaluationStatus.published => '已发布',
       CourseEvaluationStatus.needsEdit => '需修改',
       CourseEvaluationStatus.pending => '待审核',
+      CourseEvaluationStatus.superseded => '已废弃',
     };
     final subColor = isDark ? Colors.white60 : Colors.grey[600];
 

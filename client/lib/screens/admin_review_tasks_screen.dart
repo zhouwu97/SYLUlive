@@ -8,7 +8,9 @@ import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/app_page_app_bar.dart';
 import '../widgets/canteen/canteen_pending_card.dart';
+import '../utils/app_feedback.dart';
 import 'admin_teacher_governance_screen.dart';
+import 'post_detail_screen.dart';
 
 class AdminReviewTasksScreen extends StatefulWidget {
   const AdminReviewTasksScreen({super.key});
@@ -79,6 +81,39 @@ class _PendingCourseEvaluation {
   }
 }
 
+class _PendingPostRectification {
+  final int id;
+  final int postId;
+  final int submittedRevision;
+  final String status;
+  final String postTitle;
+  final String postContent;
+  final DateTime createdAt;
+
+  const _PendingPostRectification({
+    required this.id,
+    required this.postId,
+    required this.submittedRevision,
+    required this.status,
+    required this.postTitle,
+    required this.postContent,
+    required this.createdAt,
+  });
+
+  factory _PendingPostRectification.fromJson(Map<String, dynamic> json) {
+    final post = json['post'] is Map ? Map<String, dynamic>.from(json['post']) : null;
+    return _PendingPostRectification(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      postId: (json['post_id'] as num?)?.toInt() ?? 0,
+      submittedRevision: (json['submitted_revision'] as num?)?.toInt() ?? 1,
+      status: json['status']?.toString() ?? 'pending',
+      postTitle: post?['title']?.toString() ?? '',
+      postContent: post?['content']?.toString() ?? '',
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
+    );
+  }
+}
+
 class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
   List<dynamic> _pendingTeachers = [];
   List<dynamic> _pendingMajors = [];
@@ -86,6 +121,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
   List<dynamic> _pendingRemovals = [];
   List<dynamic> _pendingCanteens = [];
   List<_PendingCourseEvaluation> _pendingCourseEvaluations = [];
+  List<_PendingPostRectification> _pendingPostRectifications = [];
   bool _isLoading = true;
   String? _fatalError;
   String? _warningMessage;
@@ -112,6 +148,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         _loadOptionalList(dio, '/admin/removals/pending'),
         _loadOptionalCanteens(dio),
         _loadOptionalCourseEvaluations(dio),
+        _loadOptionalPostRectifications(dio),
       ]);
 
       if (!mounted) return;
@@ -126,6 +163,8 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         _pendingCanteens = results[4].items;
         _pendingCourseEvaluations =
             (results[5].items as List<_PendingCourseEvaluation>);
+        _pendingPostRectifications =
+            (results[6].items as List<_PendingPostRectification>);
         _isLoading = false;
 
         if (failedCount == results.length) {
@@ -248,6 +287,108 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       return OptionalListResult(items: parsed, failed: false);
     } catch (_) {
       return const OptionalListResult(items: [], failed: true);
+    }
+  }
+
+  Future<OptionalListResult> _loadOptionalPostRectifications(Dio dio) async {
+    try {
+      final res = await dio.get(
+        '/admin/rectification?status=pending',
+        options: Options(
+          connectTimeout: const Duration(seconds: 10),
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+      final data = res.data;
+      if (data is List) {
+        final items = data
+            .whereType<Map>()
+            .map((e) =>
+                _PendingPostRectification.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+        return OptionalListResult(items: items, failed: false);
+      }
+      return const OptionalListResult(items: [], failed: false);
+    } catch (_) {
+      return const OptionalListResult(items: [], failed: true);
+    }
+  }
+
+  Future<void> _resolvePostRectification(
+      _PendingPostRectification item, bool approve) async {
+    final decision = approve ? 'approve' : 'reject';
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(approve ? '通过整改复审' : '驳回整改复审'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              approve
+                  ? '确认帖子修改已符合规范，通过后帖子将恢复公开展示。'
+                  : '请输入驳回原因，将通知帖子作者继续修改。',
+              style: const TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonController,
+              decoration: InputDecoration(
+                labelText: '审核说明（必填）',
+                hintText: approve ? '例如：经复审已符合社区规范，恢复展示' : '例如：仍包含不当内容，请继续修改',
+                border: const OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (reasonController.text.trim().isEmpty) {
+                AppFeedback.showSnackBar(ctx, '请填写审核说明', isError: true);
+                return;
+              }
+              Navigator.pop(ctx, true);
+            },
+            style: approve
+                ? FilledButton.styleFrom(backgroundColor: const Color(0xFF2E7D32))
+                : FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: Text(approve ? '确认通过' : '确认驳回'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      await dio.post('/admin/rectification/${item.id}/$decision', data: {
+        'reason': reasonController.text.trim(),
+      });
+      if (!mounted) return;
+      AppFeedback.success(
+          approve ? '已通过整改复审并恢复公开' : '已驳回整改复审',
+          context: context);
+      setState(() {
+        _pendingPostRectifications = _pendingPostRectifications
+            .where((r) => r.id != item.id)
+            .toList();
+      });
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '操作失败'),
+        isError: true,
+      );
     }
   }
 
@@ -1027,6 +1168,116 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     );
   }
 
+  Widget _buildPostRectificationCard(
+      _PendingPostRectification item, bool isDark) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      color: isDark ? Colors.grey[850] : Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const CircleAvatar(
+                  backgroundColor: Color(0xFF0D9488),
+                  radius: 16,
+                  child: Icon(Icons.fact_check_outlined,
+                      color: Colors.white, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '帖子整改复审 (版本 v${item.submittedRevision})',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '帖子 #${item.postId}',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white54 : Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PostDetailScreen(postId: item.postId),
+                      ),
+                    );
+                  },
+                  child: const Text('查看原帖'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.black26 : const Color(0xFFF9FAFB),
+                borderRadius: BorderRadius.circular(8),
+                border:
+                    Border.all(color: isDark ? Colors.white10 : Colors.black12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (item.postTitle.isNotEmpty) ...[
+                    Text(
+                      item.postTitle,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+                  Text(
+                    item.postContent.length > 120
+                        ? '${item.postContent.substring(0, 120)}...'
+                        : item.postContent,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton(
+                  onPressed: () => _resolvePostRectification(item, false),
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                  child: const Text('驳回'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: () => _resolvePostRectification(item, true),
+                  style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF2E7D32)),
+                  child: const Text('通过并恢复'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmptyState(bool isDark) {    return Container(
       padding: const EdgeInsets.all(AppSpacing.xxl),
       decoration: BoxDecoration(
@@ -1211,6 +1462,12 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     for (final evaluation in _pendingCourseEvaluations) {
       items.add(
         _buildCourseEvaluationCard(evaluation, isDark),
+      );
+    }
+
+    for (final rectification in _pendingPostRectifications) {
+      items.add(
+        _buildPostRectificationCard(rectification, isDark),
       );
     }
 

@@ -1428,10 +1428,26 @@ class _TeacherMergeBottomSheet extends StatefulWidget {
       _TeacherMergeBottomSheetState();
 }
 
+enum CrossSubjectDecision {
+  unselected,
+  teacherOnly,
+  mergeSubject,
+}
+
 class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
   late int _keeperId;
   bool _registerAliases = true;
-  bool _mergeSubjectEntity = false;
+  CrossSubjectDecision _crossSubjectDecision = CrossSubjectDecision.unselected;
+
+  bool get _isCrossSubject {
+    final keeper = widget.teachers.firstWhere(
+      (t) => t.id == _keeperId,
+      orElse: () => widget.teachers.first,
+    );
+    final keeperSubj = keeper.subjectId;
+    return widget.teachers.any((t) => t.id != _keeperId && t.subjectId != keeperSubj) ||
+        (_preview != null && _preview!.courseMerges.isNotEmpty);
+  }
 
   bool _isLoadingPreview = false;
   String? _previewError;
@@ -1468,16 +1484,40 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
 
     try {
       final dio = context.read<AuthProvider>().dio;
+      List<Map<String, dynamic>>? courseMergesPayload;
+      if (_crossSubjectDecision != CrossSubjectDecision.unselected) {
+        final mergeEntity = _crossSubjectDecision == CrossSubjectDecision.mergeSubject;
+        if (_preview != null && _preview!.courseMerges.isNotEmpty) {
+          courseMergesPayload = _preview!.courseMerges.map((cm) => {
+                'loser_subject_id': cm.loserSubjectId,
+                'keeper_subject_id': cm.keeperSubjectId,
+                'merge_subject_entity': mergeEntity,
+              }).toList();
+        } else {
+          final keeper = widget.teachers.firstWhere(
+            (t) => t.id == _keeperId,
+            orElse: () => widget.teachers.first,
+          );
+          final keeperSubj = keeper.subjectId;
+          final loserSubjs = widget.teachers
+              .where((t) => t.id != _keeperId && t.subjectId != keeperSubj)
+              .map((t) => t.subjectId)
+              .toSet();
+          if (loserSubjs.isNotEmpty) {
+            courseMergesPayload = loserSubjs.map((sid) => {
+                  'loser_subject_id': sid,
+                  'keeper_subject_id': keeperSubj,
+                  'merge_subject_entity': mergeEntity,
+                }).toList();
+          }
+        }
+      }
+
       final payload = {
         'keeper_id': _keeperId,
         'loser_ids': _loserIds,
         'register_teacher_aliases': _registerAliases,
-        if (_preview != null && _preview!.courseMerges.isNotEmpty)
-          'course_merges': _preview!.courseMerges.map((cm) => {
-                'loser_subject_id': cm.loserSubjectId,
-                'keeper_subject_id': cm.keeperSubjectId,
-                'merge_subject_entity': _mergeSubjectEntity,
-              }).toList(),
+        if (courseMergesPayload != null) 'course_merges': courseMergesPayload,
       };
 
       final res = await dio.post(
@@ -1517,16 +1557,23 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
 
   Future<void> _submitMerge() async {
     if (_preview == null || !_preview!.mergeAllowed) return;
+    if (_isCrossSubject && _crossSubjectDecision == CrossSubjectDecision.unselected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先明确选择跨课程处理方式'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
     setState(() {
       _isSubmitting = true;
     });
 
     try {
       final dio = context.read<AuthProvider>().dio;
+      final mergeEntity = _crossSubjectDecision == CrossSubjectDecision.mergeSubject;
       final courseMergesPayload = (_preview?.courseMerges ?? const []).map((cm) => {
             'loser_subject_id': cm.loserSubjectId,
             'keeper_subject_id': cm.keeperSubjectId,
-            'merge_subject_entity': _mergeSubjectEntity,
+            'merge_subject_entity': mergeEntity,
           }).toList();
 
       final payload = {
@@ -1763,20 +1810,119 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
                       _fetchPreview();
                     },
                   ),
-                  if (widget.teachers.map((t) => t.subjectId).toSet().length > 1) ...[
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      activeTrackColor: AppColors.brandPrimary,
-                      title: const Text('归并课程学科实体'),
-                      subtitle: const Text('所选教师分属不同课程，开启此项将在合并教师的同时将课程归并至保留教师课程'),
-                      value: _mergeSubjectEntity,
-                      onChanged: (val) {
-                        setState(() {
-                          _mergeSubjectEntity = val;
-                        });
-                        _fetchPreview();
-                      },
+                  if (_isCrossSubject) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                        border: Border.all(
+                          color: _crossSubjectDecision == CrossSubjectDecision.unselected
+                              ? Colors.orange.withValues(alpha: 0.6)
+                              : (isDark ? Colors.white12 : Colors.black12),
+                          width: _crossSubjectDecision == CrossSubjectDecision.unselected ? 1.5 : 1.0,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.alt_route_rounded,
+                                size: 18,
+                                color: _crossSubjectDecision == CrossSubjectDecision.unselected
+                                    ? Colors.orange
+                                    : AppColors.brandPrimary,
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                '跨课程处理方式（必选）',
+                                style: TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '所选教师归属于不同课程，请明确课程实体归属决策：',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? Colors.white60 : Colors.black54,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          RadioGroup<CrossSubjectDecision>(
+                            groupValue: _crossSubjectDecision,
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() {
+                                  _crossSubjectDecision = val;
+                                });
+                                _fetchPreview();
+                              }
+                            },
+                            child: const Column(
+                              children: [
+                                RadioListTile<CrossSubjectDecision>(
+                                  contentPadding: EdgeInsets.zero,
+                                  activeColor: AppColors.brandPrimary,
+                                  title: Text(
+                                    '仅合并教师，保留两个课程实体',
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                  ),
+                                  subtitle: Text(
+                                    '被合并教师数据迁移至目标教师名下，原课程实体继续保留（适用于同名不同课或跨体系任教）',
+                                    style: TextStyle(fontSize: 11.5),
+                                  ),
+                                  value: CrossSubjectDecision.teacherOnly,
+                                ),
+                                Divider(height: 12),
+                                RadioListTile<CrossSubjectDecision>(
+                                  contentPadding: EdgeInsets.zero,
+                                  activeColor: AppColors.brandPrimary,
+                                  title: Text(
+                                    '同时归并课程实体',
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                  ),
+                                  subtitle: Text(
+                                    '在原课程无其他活动教师时，将原课程归并至保留教师课程并自动登记课程别名',
+                                    style: TextStyle(fontSize: 11.5),
+                                  ),
+                                  value: CrossSubjectDecision.mergeSubject,
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (_crossSubjectDecision == CrossSubjectDecision.unselected) ...[
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(AppRadius.sm),
+                              ),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.warning_amber_rounded, size: 14, color: Colors.orange),
+                                  SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      '请点击选择一种处理方式，系统将立即重新计算影响评估',
+                                      style: TextStyle(fontSize: 11.5, color: Colors.orange),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ],
                 ],
@@ -1799,7 +1945,8 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
                 onPressed: (_isLoadingPreview ||
                         _isSubmitting ||
                         _preview == null ||
-                        !_preview!.mergeAllowed)
+                        !_preview!.mergeAllowed ||
+                        (_isCrossSubject && _crossSubjectDecision == CrossSubjectDecision.unselected))
                     ? null
                     : _submitMerge,
                 child: _isSubmitting

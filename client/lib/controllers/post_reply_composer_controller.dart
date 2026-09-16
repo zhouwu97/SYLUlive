@@ -66,6 +66,7 @@ class PostReplyComposerController extends ChangeNotifier {
   bool _hasObservedKeyboardHeight = false;
   PostReplyInputHandoff _handoff = PostReplyInputHandoff.none;
   int _handoffGeneration = 0;
+  int _focusGeneration = 0;
   Timer? _handoffTimer;
   bool _disposing = false;
   int? _parentReplyId;
@@ -171,11 +172,20 @@ class PostReplyComposerController extends ChangeNotifier {
   }
 
   void open() {
+    if (_bottomPanel == PostReplyBottomPanel.emoji) {
+      _beginEmojiToKeyboardHandoff();
+      return;
+    }
     _cancelHandoff();
     _isOpen = true;
     _bottomPanel = PostReplyBottomPanel.keyboard;
     notifyListeners();
-    _focusAfterLayout();
+    if (!focusNode.hasFocus) {
+      _focusAfterLayout();
+    } else if (_keyboardInset == 0) {
+      // 已经有焦点但键盘已被系统收起：显式唤起输入法，不通过 unfocus 破坏连接
+      SystemChannels.textInput.invokeMethod('TextInput.show');
+    }
   }
 
   void openRoot() {
@@ -207,6 +217,11 @@ class PostReplyComposerController extends ChangeNotifier {
     _replyToReplyId = replyToReplyId;
     final trimmedName = replyToName?.trim();
     _replyToName = trimmedName;
+
+    if (_bottomPanel == PostReplyBottomPanel.emoji) {
+      _beginEmojiToKeyboardHandoff();
+      return;
+    }
 
     _cancelHandoff();
     _isOpen = true;
@@ -296,6 +311,7 @@ class PostReplyComposerController extends ChangeNotifier {
     String reason = 'unknown',
   }) {
     debugPrint('[COMMENT_IME] close reason=$reason');
+    _focusGeneration++;
     _cancelHandoff();
     focusNode.unfocus();
     _isOpen = false;
@@ -321,6 +337,7 @@ class PostReplyComposerController extends ChangeNotifier {
       _beginEmojiToKeyboardHandoff();
       return;
     }
+    _focusGeneration++;
     _cancelHandoff();
     if (keyboardInset >= 180 ||
         (keyboardInset > 0 && !_hasObservedKeyboardHeight)) {
@@ -339,7 +356,11 @@ class PostReplyComposerController extends ChangeNotifier {
     final generation = ++_handoffGeneration;
     _handoff = PostReplyInputHandoff.emojiToKeyboard;
     notifyListeners();
-    _focusAfterLayout();
+    if (!focusNode.hasFocus) {
+      _focusAfterLayout();
+    } else {
+      SystemChannels.textInput.invokeMethod('TextInput.show');
+    }
     // 保险超时：仅防状态永远卡住，不作为动画时长。
     _handoffTimer = Timer(
       const Duration(milliseconds: 750),
@@ -378,6 +399,7 @@ class PostReplyComposerController extends ChangeNotifier {
   }
 
   void closeEmojiPanel() {
+    _focusGeneration++;
     _cancelHandoff();
     if (_bottomPanel != PostReplyBottomPanel.emoji) return;
     _bottomPanel = PostReplyBottomPanel.none;
@@ -425,7 +447,14 @@ class PostReplyComposerController extends ChangeNotifier {
   }
 
   void _focusAfterLayout() {
+    final generation = ++_focusGeneration;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_disposing || generation != _focusGeneration) return;
+      if (!_isOpen) return;
+      if (_bottomPanel != PostReplyBottomPanel.keyboard &&
+          _handoff != PostReplyInputHandoff.emojiToKeyboard) {
+        return;
+      }
       if (!focusNode.canRequestFocus) return;
       focusNode.requestFocus();
     });
@@ -434,6 +463,7 @@ class PostReplyComposerController extends ChangeNotifier {
   @override
   void dispose() {
     _disposing = true;
+    _focusGeneration++;
     _handoffTimer?.cancel();
     _handoffTimer = null;
     focusNode.removeListener(_logFocusChange);

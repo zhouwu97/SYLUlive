@@ -244,9 +244,14 @@ class _PostReplyComposerState extends State<PostReplyComposer>
           ),
         ),
       ),
-      child: bottomSafeArea
-          ? SafeArea(top: false, bottom: true, child: child)
-          : child,
+      // 固定输入区父子结构，避免键盘高度变化时重建编辑器。
+      child: SafeArea(
+        top: false,
+        left: bottomSafeArea,
+        right: bottomSafeArea,
+        bottom: bottomSafeArea,
+        child: child,
+      ),
     );
   }
 

@@ -436,4 +436,45 @@ void main() {
     releaseLoadMore.complete();
     await tester.pumpAndSettle();
   });
+
+  testWidgets('软键盘弹起时投票页面通过 bottom padding 避让输入栏', (tester) async {
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      if (options.path == '/polls/1') {
+        handler.resolve(Response(
+            requestOptions: options, statusCode: 200, data: _pollJson()));
+        return;
+      }
+      if (options.path == '/posts/1/replies') {
+        handler.resolve(Response(
+            requestOptions: options, statusCode: 200, data: {'replies': []}));
+        return;
+      }
+      handler.reject(DioException(requestOptions: options));
+    }));
+
+    await tester.pumpWidget(
+      _buildScreen(dio, initialPost: Post.fromJson(_pollJson())),
+    );
+    await tester.pumpAndSettle();
+
+    final initialComposerBottom = tester.getBottomLeft(
+      find.byKey(const ValueKey('post-reply-composer')),
+    ).dy;
+
+    final dpr = tester.view.devicePixelRatio;
+    // 注入系统软键盘高度 300 逻辑像素 (300 * dpr 物理像素)
+    tester.view.viewInsets = FakeViewPadding(bottom: 300 * dpr);
+    await tester.pump();
+
+    final raisedComposerBottom = tester.getBottomLeft(
+      find.byKey(const ValueKey('post-reply-composer')),
+    ).dy;
+
+    // 输入栏应被整体抬起 300 逻辑像素
+    expect(initialComposerBottom - raisedComposerBottom, 300);
+
+    tester.view.resetViewInsets();
+    await tester.pump();
+  });
 }

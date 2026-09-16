@@ -43,6 +43,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
   Post? _post;
   List<Reply> _replies = [];
   final _replyComposerController = PostReplyComposerController();
+  late final Listenable _replyComposerActivity;
   bool _loading = true;
   String? _pollError;
   bool _pollNotFound = false;
@@ -63,6 +64,10 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _replyComposerActivity = Listenable.merge([
+      _replyComposerController,
+      _replyComposerController.focusNode,
+    ]);
     _post = widget.initialPost;
     if (_post != null) {
       _loading = false;
@@ -562,12 +567,13 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
               title: const Text('投票详情'),
               actions: [_buildMoreMenu(post)],
             ),
-      body: Column(
-        children: [
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _reload,
-              child: ListView(
+      body: _buildKeyboardAwareDetail(
+        child: Column(
+          children: [
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _reload,
+                child: ListView(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
                 children: [
                   if (_pollError != null)
@@ -694,15 +700,37 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
               ),
             ),
           ),
-          PostReplyComposer(
-            controller: _replyComposerController,
-            sending: _sending,
-            enabled: context.watch<AuthProvider>().isLoggedIn,
-            onSubmit: _sendReply,
-            onNeedLogin: _openLogin,
-          ),
-        ],
+            PostReplyComposer(
+              controller: _replyComposerController,
+              sending: _sending,
+              enabled: context.watch<AuthProvider>().isLoggedIn,
+              onSubmit: _sendReply,
+              onNeedLogin: _openLogin,
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  /// Scaffold 不随 IME resize 时，由详情页自己为 Composer 预留键盘 viewport。
+  Widget _buildKeyboardAwareDetail({required Widget child}) {
+    return AnimatedBuilder(
+      animation: _replyComposerActivity,
+      child: child,
+      builder: (context, child) {
+        final mediaInset = MediaQuery.viewInsetsOf(context).bottom;
+        final composerInset = _replyComposerController.keyboardInset;
+        final rawInset =
+            mediaInset > composerInset ? mediaInset : composerInset;
+        final bottomInset = _replyComposerController.showEmojiPanel
+            ? 0.0
+            : rawInset;
+        return Padding(
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: child,
+        );
+      },
     );
   }
 }

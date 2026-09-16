@@ -823,4 +823,93 @@ void main() {
     final safeAreaWidget = tester.widget<SafeArea>(safeAreaFinder);
     expect(safeAreaWidget.top, isFalse);
   });
+
+  testWidgets('系统键盘高度由 0 变正时，保留同一个 EditableTextState 实例，不重建编辑器',
+      (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_buildComposer(controller: controller));
+
+    // 获取初次挂载时的 EditableTextState 实例
+    final initialEditableTextState =
+        tester.state<EditableTextState>(find.byType(EditableText));
+
+    // 点击激活输入框
+    await tester.tap(find.byKey(const ValueKey('post-reply-input')));
+    await tester.pump();
+
+    // 模拟系统 IME viewInsets 由 0 变成 280
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+    await tester.pump();
+
+    // 键盘弹出后，验证 EditableTextState 仍然是同一个实例，没有因为 SafeArea 属性变化被销毁重建
+    final currentEditableTextState =
+        tester.state<EditableTextState>(find.byType(EditableText));
+    expect(identical(initialEditableTextState, currentEditableTextState), isTrue);
+
+    // 验证输入通道有效，可以正常输入内容
+    await tester.enterText(
+      find.byKey(const ValueKey('post-reply-input')),
+      '测试稳定输入连接',
+    );
+    await tester.pump();
+    expect(controller.textController.text, '测试稳定输入连接');
+
+    // 键盘收起 (归零)
+    tester.view.resetViewInsets();
+    await tester.pump();
+
+    final afterResetEditableTextState =
+        tester.state<EditableTextState>(find.byType(EditableText));
+    expect(
+      identical(initialEditableTextState, afterResetEditableTextState),
+      isTrue,
+    );
+  });
+
+  testWidgets('表情面板打开时点击输入框触发平滑交接 (handoff)，不发生面板突变闪退',
+      (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_buildComposer(controller: controller));
+
+    // 打开表情面板
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pumpAndSettle();
+    expect(controller.showEmojiPanel, isTrue);
+
+    // 表情面板处于打开状态时，直接点击文字输入框
+    await tester.tap(find.byKey(const ValueKey('post-reply-input')));
+    await tester.pump();
+
+    // 验证触发了 handoff，表情面板在键盘到位前保持展示
+    expect(controller.inputHandoffActive, isTrue);
+    expect(controller.showEmojiPanel, isTrue);
+
+    // 模拟系统键盘升起到稳定高度 (300)
+    controller.updateKeyboardMetrics(300);
+    expect(controller.inputHandoffActive, isFalse);
+    expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
+  });
+
+  testWidgets('open 后立即 close，失效下一帧的延迟聚焦请求，避免焦点反弹',
+      (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_buildComposer(controller: controller));
+
+    // 调用 open 后立即在同一事件周期内 close
+    controller.open();
+    controller.close(reason: 'test_dismiss');
+
+    // 执行 post-frame 回调
+    await tester.pump();
+
+    // 焦点不应当被旧回调重新抢回
+    expect(controller.focusNode.hasFocus, isFalse);
+    expect(controller.isOpen, isFalse);
+  });
 }

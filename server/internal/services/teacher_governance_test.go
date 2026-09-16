@@ -36,6 +36,14 @@ func newGovTestDB(t *testing.T) *gorm.DB {
 	); err != nil {
 		t.Fatalf("自动迁移失败: %v", err)
 	}
+	// 生产启动时 EnsureRatingInteractionSchema 先建立此唯一索引，测试必须包含
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_teacher_rating_user
+		ON teacher_ratings (teacher_id, user_id)
+		WHERE deleted_at IS NULL;
+	`).Error; err != nil {
+		t.Fatalf("创建唯一索引失败: %v", err)
+	}
 	return db
 }
 
@@ -428,5 +436,142 @@ func TestPendingTeacherMergeInto(t *testing.T) {
 	var govErr *TeacherGovernanceError
 	if !errors.As(err, &govErr) || govErr.Code != CodeUseGovernanceMerge {
 		t.Fatalf("应返回 CodeUseGovernanceMerge，实际 %v", err)
+	}
+}
+
+// TestTeacherGovernanceMergeWithUniqueIndex 验证 loser-wins 评价冲突在生产唯一索引下不会违约
+func TestTeacherGovernanceMergeWithUniqueIndex(t *testing.T) {
+	db := newGovTestDB(t) // 已包含 uq_teacher_rating_user 唯一索引
+	svc := NewTeacherGovernanceService(db)
+
+	admin := models.User{Nickname: "管理员", Role: "admin"}
+	db.Create(&admin)
+
+	s1 := models.CourseSubject{Name: "线性代数", NormalizedName: models.NormalizeCourseSubjectName("线性代数"), Verified: true}
+	db.Create(&s1)
+
+	keeper := models.Teacher{Name: "陈老师", Course: "线性代数", CourseSubjectID: &s1.ID, NameNormalized: models.NormalizeTeacherName("陈老师"), Verified: true}
+	loser := models.Teacher{Name: "陈教授", Course: "线性代数", CourseSubjectID: &s1.ID, NameNormalized: models.NormalizeTeacherName("陈教授"), Verified: false}
+	db.Create(&keeper)
+	db.Create(&loser)
+
+	now := time.Now()
+	// 用户 301: keeper 上有旧评价, loser 上有新评价 → loser 评价胜出
+	rKeeperOld := models.TeacherRating{TeacherID: keeper.ID, UserID: 301, Star: 2, Comment: "旧的keeper评价", Status: "normal", CreatedAt: now.Add(-2 * time.Hour)}
+	rLoserNew := models.TeacherRating{TeacherID: loser.ID, UserID: 301, Star: 5, Comment: "新的loser评价", Status: "normal", CreatedAt: now}
+	db.Create(&rKeeperOld)
+	db.Create(&rLoserNew)
+
+	// 关键：此时执行合并时，如果先 UPDATE loser.teacher_id = keeper 再 soft-delete keeper rating，
+	// 会暂时存在两条活动的 (keeper.ID, 301)，违反唯一索引。正确顺序是先软删 keeper rating 再 repoint loser。
+	preview, err := svc.PreviewMerge(MergeInput{
+		KeeperID: keeper.ID,
+		LoserIDs: []uint{loser.ID},
+	})
+	if err != nil {
+		t.Fatalf("PreviewMerge 失败: %v", err)
+	}
+	if preview.RatingConflictsCount != 1 {
+		t.Fatalf("应检测到 1 位冲突用户评价，实际 %d", preview.RatingConflictsCount)
+	}
+
+	// 执行合并 - 这是关键测试点：如果更新顺序错误将直接因唯一索引报错
+	_, err = svc.Merge(admin.ID, MergeInput{
+		KeeperID:      keeper.ID,
+		LoserIDs:      []uint{loser.ID},
+		SnapshotToken: preview.SnapshotToken,
+	})
+	if err != nil {
+		t.Fatalf("Merge 在唯一索引下执行失败（P0 回归）: %v", err)
+	}
+
+	// 验证结果：keeper 旧评价已软删，loser 新评价已 repoint 到 keeper
+	var checkKeeperRating, checkLoserRating models.TeacherRating
+	db.Unscoped().First(&checkKeeperRating, rKeeperOld.ID)
+	db.Unscoped().First(&checkLoserRating, rLoserNew.ID)
+
+	if !checkKeeperRating.DeletedAt.Valid {
+		t.Fatalf("keeper 旧评价应被软删除")
+	}
+	if checkLoserRating.TeacherID != keeper.ID {
+		t.Fatalf("loser 新评价应 repoint 到 keeper(#%d)，实际 %d", keeper.ID, checkLoserRating.TeacherID)
+	}
+	if checkLoserRating.DeletedAt.Valid {
+		t.Fatalf("loser 新评价（胜出方）不应被软删除")
+	}
+}
+
+// TestPendingTeacherMergeSubmissions 验证 MergePendingTeacherInto 重挂提交记录和跨学科拒绝
+func TestPendingTeacherMergeSubmissions(t *testing.T) {
+	db := newGovTestDB(t)
+	svc := NewTeacherGovernanceService(db)
+
+	admin := models.User{Nickname: "管理员", Role: "admin"}
+	db.Create(&admin)
+
+	s1 := models.CourseSubject{Name: "概率论", NormalizedName: models.NormalizeCourseSubjectName("概率论"), Verified: true}
+	s2 := models.CourseSubject{Name: "数理统计", NormalizedName: models.NormalizeCourseSubjectName("数理统计"), Verified: true}
+	db.Create(&s1)
+	db.Create(&s2)
+
+	keeper := models.Teacher{Name: "刘老师", Course: "概率论", CourseSubjectID: &s1.ID, NameNormalized: models.NormalizeTeacherName("刘老师"), Verified: true}
+	db.Create(&keeper)
+
+	// 1. 同学科 pending，带有提交记录 → 应成功重挂
+	pendingSameSubject := models.Teacher{Name: "刘老", Course: "概率论", CourseSubjectID: &s1.ID, NameNormalized: models.NormalizeTeacherName("刘老"), Verified: false}
+	db.Create(&pendingSameSubject)
+
+	sub1 := models.CourseEvaluationSubmission{
+		UserID:      501,
+		DedupKey:    "501|sub_pending1",
+		CourseName:  "概率论",
+		TeacherName: "刘老",
+		TeacherID:   &pendingSameSubject.ID,
+		Status:      models.CourseEvaluationStatusPending,
+	}
+	sub2 := models.CourseEvaluationSubmission{
+		UserID:      502,
+		DedupKey:    "502|sub_pending2",
+		CourseName:  "概率论",
+		TeacherName: "刘老",
+		TeacherID:   &pendingSameSubject.ID,
+		Status:      models.CourseEvaluationStatusPending,
+	}
+	db.Create(&sub1)
+	db.Create(&sub2)
+
+	keeperName, err := svc.MergePendingTeacherInto(admin.ID, pendingSameSubject.ID, keeper.ID, true)
+	if err != nil {
+		t.Fatalf("同学科待审教师快速并入失败: %v", err)
+	}
+	if keeperName != keeper.Name {
+		t.Fatalf("返回 keeper 名称不符: 期望 %q, 得到 %q", keeper.Name, keeperName)
+	}
+
+	// 验证提交记录已重挂
+	var checkSub1, checkSub2 models.CourseEvaluationSubmission
+	db.First(&checkSub1, sub1.ID)
+	db.First(&checkSub2, sub2.ID)
+	if checkSub1.TeacherID == nil || *checkSub1.TeacherID != keeper.ID {
+		t.Fatalf("提交1应重挂到 keeper(#%d)，实际 %v", keeper.ID, checkSub1.TeacherID)
+	}
+	if checkSub1.TeacherName != keeper.Name {
+		t.Fatalf("提交1教师名应更新为 %q，实际 %q", keeper.Name, checkSub1.TeacherName)
+	}
+	if checkSub2.TeacherID == nil || *checkSub2.TeacherID != keeper.ID {
+		t.Fatalf("提交2应重挂到 keeper(#%d)，实际 %v", keeper.ID, checkSub2.TeacherID)
+	}
+
+	// 2. 跨学科 pending → 应拒绝
+	pendingCrossSubject := models.Teacher{Name: "刘教授", Course: "数理统计", CourseSubjectID: &s2.ID, NameNormalized: models.NormalizeTeacherName("刘教授"), Verified: false}
+	db.Create(&pendingCrossSubject)
+
+	_, err = svc.MergePendingTeacherInto(admin.ID, pendingCrossSubject.ID, keeper.ID, true)
+	if err == nil {
+		t.Fatalf("跨学科待审教师快速并入应被拒绝")
+	}
+	var govErr *TeacherGovernanceError
+	if !errors.As(err, &govErr) || govErr.Code != CodeCrossSubjectMergeRequiresSubjectDecision {
+		t.Fatalf("应返回 CodeCrossSubjectMergeRequiresSubjectDecision，实际 %v", err)
 	}
 }

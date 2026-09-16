@@ -25,9 +25,16 @@ func newTeacherGovernanceTestDB(t *testing.T) *gorm.DB {
 func TestTeacherGovernanceMigration(t *testing.T) {
 	db := newTeacherGovernanceTestDB(t)
 
-	// 先准备历史数据环境：手动建旧表或旧字段，包含没有 canonical_source 的数据和 exact duplicates
 	if err := db.AutoMigrate(&CourseSubject{}, &Teacher{}, &TeacherRating{}, &TeacherRatingVote{}, &CourseEvaluationSubmission{}); err != nil {
 		t.Fatalf("基础建表失败: %v", err)
+	}
+	// 生产启动时 EnsureRatingInteractionSchema 先建立此唯一索引，测试必须包含该索引
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_teacher_rating_user 
+		ON teacher_ratings (teacher_id, user_id) 
+		WHERE deleted_at IS NULL;
+	`).Error; err != nil {
+		t.Fatalf("创建唯一索引失败: %v", err)
 	}
 
 	// 插入学科

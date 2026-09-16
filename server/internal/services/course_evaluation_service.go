@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/utils"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -442,9 +443,21 @@ func (s *CourseEvaluationService) Submit(userID uint, raw CreateCourseEvaluation
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, mapCourseEvalTxError(err)
 	}
 	return view, nil
+}
+
+// mapCourseEvalTxError 把 PostgreSQL 死锁/序列化失败映射为稳定可重试冲突码，
+// 避免并发写入（如用户评价与治理合并锁序交叉）时向客户端暴露 500。
+func mapCourseEvalTxError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if utils.IsPostgresRetryableTxError(err) {
+		return courseEvalErr(CodeCourseEvaluationConflict, "操作发生并发冲突，请稍后重试", nil)
+	}
+	return err
 }
 
 // Update 编辑既有提交记录。
@@ -491,7 +504,7 @@ func (s *CourseEvaluationService) Update(userID, submissionID uint, raw UpdateCo
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, mapCourseEvalTxError(err)
 	}
 	return view, nil
 }

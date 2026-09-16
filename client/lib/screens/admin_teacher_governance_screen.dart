@@ -243,10 +243,8 @@ class _AdminTeacherGovernanceScreenState
 
   Future<void> _showAddAliasDialog() async {
     final aliasCtrl = TextEditingController();
-    final subjectCtrl = TextEditingController();
-    final teacherCtrl = TextEditingController();
-    int? selectedSubjectId;
-    int? selectedTeacherId;
+    AliasTargetItem? selectedTeacher;
+    AliasTargetItem? selectedSubject;
 
     await showDialog(
       context: context,
@@ -259,44 +257,23 @@ class _AdminTeacherGovernanceScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (_aliasType == 'teacher') ...[
-                  TextField(
-                    controller: subjectCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '标准学科 ID (必填)',
-                      hintText: '所属课程学科 ID',
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (val) {
-                      selectedSubjectId = int.tryParse(val.trim());
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: teacherCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '目标教师 ID (必填)',
-                      hintText: '指向的活动教师 ID',
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (val) {
-                      selectedTeacherId = int.tryParse(val.trim());
-                    },
+                  _AliasTargetPicker(
+                    label: '目标教师（必选）',
+                    hint: '按姓名或课程搜索',
+                    targetType: 'teacher',
+                    selected: selectedTeacher,
+                    onSelected: (item) => setDialogState(
+                        () => selectedTeacher = item.id == 0 ? null : item),
                   ),
                   const SizedBox(height: 12),
                 ] else ...[
-                  TextField(
-                    controller: subjectCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '目标学科 ID (必填)',
-                      hintText: '指向的标准学科 ID',
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (val) {
-                      selectedSubjectId = int.tryParse(val.trim());
-                    },
+                  _AliasTargetPicker(
+                    label: '目标学科（必选）',
+                    hint: '按课程名搜索',
+                    targetType: 'course',
+                    selected: selectedSubject,
+                    onSelected: (item) => setDialogState(
+                        () => selectedSubject = item.id == 0 ? null : item),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -328,17 +305,16 @@ class _AdminTeacherGovernanceScreenState
                   return;
                 }
                 if (_aliasType == 'teacher') {
-                  if (selectedSubjectId == null ||
-                      selectedTeacherId == null) {
+                  if (selectedTeacher == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('请填写学科ID与教师ID')),
+                      const SnackBar(content: Text('请选择目标教师')),
                     );
                     return;
                   }
                 } else {
-                  if (selectedSubjectId == null) {
+                  if (selectedSubject == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('请填写目标学科ID')),
+                      const SnackBar(content: Text('请选择目标学科')),
                     );
                     return;
                   }
@@ -350,10 +326,11 @@ class _AdminTeacherGovernanceScreenState
                   final payload = <String, dynamic>{
                     'type': _aliasType,
                     'alias': alias,
-                    'course_subject_id': selectedSubjectId,
                   };
                   if (_aliasType == 'teacher') {
-                    payload['teacher_id'] = selectedTeacherId;
+                    payload['teacher_id'] = selectedTeacher!.id;
+                  } else {
+                    payload['course_subject_id'] = selectedSubject!.id;
                   }
                   await dio.post(
                     '/api/admin/teacher-governance/aliases',
@@ -2001,6 +1978,250 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 解析别名目标搜索响应，兼容裸数组与 {items|data|list} 包装。
+List<AliasTargetItem> _parseAliasTargets(dynamic data) {
+  final raw = switch (data) {
+    List() => data,
+    Map() => data['items'] ?? data['data'] ?? data['list'],
+    _ => null,
+  };
+  if (raw is! List) return const [];
+  return raw
+      .whereType<Map<String, dynamic>>()
+      .map(AliasTargetItem.fromJson)
+      .toList();
+}
+
+/// 别名目标选择器：按关键词搜索标准学科 / 活动教师，选中后回传 canonical ID。
+/// 用于替代手工输入数据库 ID，避免治理人员填错目标。
+/// 命中区遵循设计契约（≥44×44 logical px）。
+class _AliasTargetPicker extends StatefulWidget {
+  const _AliasTargetPicker({
+    required this.label,
+    required this.hint,
+    required this.targetType,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final String hint;
+
+  /// `teacher` 或 `course`。
+  final String targetType;
+  final AliasTargetItem? selected;
+
+  /// 回传选中项；`item.id == 0` 表示清空选择。
+  final ValueChanged<AliasTargetItem> onSelected;
+
+  @override
+  State<_AliasTargetPicker> createState() => _AliasTargetPickerState();
+}
+
+class _AliasTargetPickerState extends State<_AliasTargetPicker> {
+  final TextEditingController _controller = TextEditingController();
+  Timer? _debounce;
+  List<AliasTargetItem> _options = const [];
+  bool _isLoading = false;
+  String? _errorMessage;
+  bool _showOptions = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 打开即可见候选，管理员不必先猜关键词。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.selected == null) {
+        _search('');
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onQueryChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        _search(value);
+      }
+    });
+  }
+
+  Future<void> _search(String rawQuery) async {
+    final query = rawQuery.trim();
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _showOptions = true;
+    });
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      final response = await dio.get(
+        '/api/admin/teacher-governance/alias-targets',
+        queryParameters: <String, dynamic>{
+          'type': widget.targetType,
+          if (query.isNotEmpty) 'q': query,
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        _options = _parseAliasTargets(response.data);
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _options = const [];
+        _isLoading = false;
+        _errorMessage = '搜索失败: $e';
+      });
+    }
+  }
+
+  void _select(AliasTargetItem item) {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _showOptions = false;
+      _options = const [];
+      _controller.clear();
+    });
+    widget.onSelected(item);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final selected = widget.selected;
+
+    if (selected != null) {
+      return InputDecorator(
+        decoration: InputDecoration(
+          labelText: widget.label,
+          border: const OutlineInputBorder(),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                selected.label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+            // 清空按钮命中区固定 44×44，不随图标尺寸收缩。
+            SizedBox(
+              width: 44,
+              height: 44,
+              child: IconButton(
+                tooltip: '清空选择',
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () =>
+                    _select(const AliasTargetItem(id: 0, name: '')),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _controller,
+          onChanged: _onQueryChanged,
+          onTap: () {
+            if (!_showOptions) {
+              _search(_controller.text);
+            }
+          },
+          decoration: InputDecoration(
+            labelText: widget.label,
+            hintText: widget.hint,
+            border: const OutlineInputBorder(),
+            prefixIcon: const Icon(Icons.search, size: 20),
+            suffixIcon: _isLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : null,
+          ),
+        ),
+        if (_errorMessage != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              _errorMessage!,
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+        if (_showOptions)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: _buildOptions(theme),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildOptions(ThemeData theme) {
+    if (_options.isEmpty) {
+      return Text(
+        _isLoading ? '搜索中…' : '没有匹配的目标，请换关键词',
+        style: TextStyle(
+          fontSize: 12,
+          color: theme.textTheme.bodySmall?.color,
+        ),
+      );
+    }
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 200),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.dividerColor),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ListView.builder(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: _options.length,
+        itemBuilder: (context, index) {
+          final item = _options[index];
+          return InkWell(
+            onTap: () => _select(item),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 44),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '#${item.id}  ${item.label}',
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }

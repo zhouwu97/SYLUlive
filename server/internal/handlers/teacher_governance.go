@@ -203,6 +203,22 @@ func (h *TeacherGovernanceHandler) DeleteAlias(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
+// SearchAliasTargets 搜索别名目标（学科 / 教师），供工作台下拉选择。
+func (h *TeacherGovernanceHandler) SearchAliasTargets(c *gin.Context) {
+	limit := 0
+	if raw := c.Query("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			limit = parsed
+		}
+	}
+	targets, err := h.service.SearchAliasTargets(c.Query("type"), c.Query("q"), limit)
+	if err != nil {
+		respondGovernanceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": targets})
+}
+
 // ListMergeRecords 读取处理记录。
 func (h *TeacherGovernanceHandler) ListMergeRecords(c *gin.Context) {
 	limit := 0

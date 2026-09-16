@@ -323,6 +323,32 @@ class GovernanceAliasItem {
   }
 }
 
+/// 别名目标搜索项（学科 / 教师）
+class AliasTargetItem {
+  final int id;
+  final String name;
+  final int? subjectId;
+  final bool verified;
+
+  const AliasTargetItem({
+    required this.id,
+    this.name = '',
+    this.subjectId,
+    this.verified = false,
+  });
+
+  factory AliasTargetItem.fromJson(Map<String, dynamic> json) {
+    return AliasTargetItem(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      name: json['name']?.toString() ?? '',
+      subjectId: (json['course_subject_id'] as num?)?.toInt(),
+      verified: json['verified'] == true,
+    );
+  }
+
+  String get label => verified ? '$name（已审核）' : name;
+}
+
 /// 合并记录项
 class TeacherMergeRecordItem {
   final int id;

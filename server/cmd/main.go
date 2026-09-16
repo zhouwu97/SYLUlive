@@ -2221,6 +2221,7 @@ func main() {
 		govAdmin.POST("/merge", teacherGovernanceHandler.Merge)
 		govAdmin.GET("/merge-records", teacherGovernanceHandler.ListMergeRecords)
 		govAdmin.GET("/teachers", teacherGovernanceHandler.ListTeachers)
+		govAdmin.GET("/alias-targets", teacherGovernanceHandler.SearchAliasTargets)
 		govAdmin.GET("/aliases", teacherGovernanceHandler.ListAliases)
 		govAdmin.POST("/aliases", teacherGovernanceHandler.AddAlias)
 		govAdmin.DELETE("/aliases/:id", teacherGovernanceHandler.DeleteAlias)

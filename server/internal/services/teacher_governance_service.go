@@ -604,18 +604,29 @@ type courseMergePlan struct {
 }
 
 // RatingConflictDetail 评价冲突明细（详尽展示给管理员）。
+// RatingConflictLoserItem 冲突中被淘汰的评价明细（供治理工作台展示）。
+type RatingConflictLoserItem struct {
+	RatingID uint   `json:"rating_id"`
+	TeacherID uint  `json:"teacher_id"`
+	Star     int    `json:"star"`
+	Comment  string `json:"comment"`
+}
+
 type RatingConflictDetail struct {
-	UserID              uint   `json:"user_id"`
-	Nickname            string `json:"nickname"`
-	UserNickname        string `json:"user_nickname,omitempty"`
-	KeeperRatingID      uint   `json:"keeper_rating_id"`
-	KeeperRatingStar    int    `json:"keeper_rating_star"`
-	KeeperRatingComment string `json:"keeper_rating_comment"`
-	LoserRatingID       uint   `json:"loser_rating_id"`
-	LoserRatingStar     int    `json:"loser_rating_star"`
-	LoserRatingComment  string `json:"loser_rating_comment"`
-	WinnerRatingID      uint   `json:"winner_rating_id"`
-	WinnerSubmissionID  *uint  `json:"winner_submission_id,omitempty"`
+	UserID              uint                      `json:"user_id"`
+	Nickname            string                    `json:"nickname"`
+	UserNickname        string                    `json:"user_nickname,omitempty"`
+	KeeperRatingID      uint                      `json:"keeper_rating_id"`
+	KeeperRatingStar    int                       `json:"keeper_rating_star"`
+	KeeperRatingComment string                    `json:"keeper_rating_comment"`
+	LoserRatingID       uint                      `json:"loser_rating_id"`
+	LoserRatingStar     int                       `json:"loser_rating_star"`
+	LoserRatingComment  string                    `json:"loser_rating_comment"`
+	WinnerRatingID      uint                      `json:"winner_rating_id"`
+	WinnerRatingStar    int                       `json:"winner_rating_star"`
+	WinnerCreatedAt     *time.Time                `json:"winner_created_at,omitempty"`
+	LoserRatings        []RatingConflictLoserItem `json:"loser_ratings"`
+	WinnerSubmissionID  *uint                     `json:"winner_submission_id,omitempty"`
 }
 
 // MergePlan 合并影响预览：完全基于只读计算，绝不写数据库。
@@ -636,6 +647,7 @@ type MergePlan struct {
 
 	TotalRatingsMigrated       int                    `json:"ratings_migrated"`
 	TotalRatingsSoftDeleted    int                    `json:"ratings_soft_deleted"`
+	TotalRatingsPreserved      int                    `json:"ratings_preserved"`
 	RatingConflictsCount       int                    `json:"rating_conflicts_count"`
 	RatingConflicts            []RatingConflictDetail `json:"rating_conflicts,omitempty"`
 	RatingConflictDetails      []RatingConflictDetail `json:"rating_conflict_details,omitempty"`
@@ -677,18 +689,62 @@ func computeSnapshotToken(db *gorm.DB, keeperID uint, loserIDs []uint) string {
 			subj = *t.CourseSubjectID
 		}
 		fmt.Fprintf(h, "T:%d:%d:%d:%v:%d;", t.ID, t.UpdatedAt.UnixNano(), merged, t.Verified, subj)
+	}
 
-		var ratingCount int64
-		db.Table("teacher_ratings").Where("teacher_id = ? AND deleted_at IS NULL", t.ID).Count(&ratingCount)
-		var subCount int64
-		db.Table("course_evaluation_submissions").Where("teacher_id = ?", t.ID).Count(&subCount)
-		fmt.Fprintf(h, "C:%d:%d;", ratingCount, subCount)
+	// 活动评价明细：id/user_id/teacher_id/created_at/updated_at/status。
+	// 管理员的 Preview 展示与执行结果都依赖这些字段，必须进入快照。
+	var ratings []models.TeacherRating
+	db.Where("teacher_id IN ? AND deleted_at IS NULL", allIDs).
+		Order("id ASC").Find(&ratings)
+	for _, r := range ratings {
+		fmt.Fprintf(h, "R:%d:%d:%d:%d:%d:%s;", r.ID, r.UserID, r.TeacherID, r.CreatedAt.UnixNano(), r.UpdatedAt.UnixNano(), r.Status)
+	}
+
+	// 投票明细：id/rating_id/user_id/vote_type/updated_at。
+	ratingIDs := make([]uint, 0, len(ratings))
+	for _, r := range ratings {
+		ratingIDs = append(ratingIDs, r.ID)
+	}
+	if len(ratingIDs) > 0 {
+		var votes []models.TeacherRatingVote
+		db.Where("rating_id IN ?", ratingIDs).Order("id ASC").Find(&votes)
+		for _, v := range votes {
+			fmt.Fprintf(h, "V:%d:%d:%d:%s:%d;", v.ID, v.RatingID, v.UserID, v.VoteType, v.UpdatedAt.UnixNano())
+		}
+	}
+
+	// 提交明细：id/teacher_id/teacher_rating_id/status/revision/updated_at。
+	var subs []models.CourseEvaluationSubmission
+	db.Where("teacher_id IN ?", allIDs).Order("id ASC").Find(&subs)
+	for _, s := range subs {
+		ratingRef := uint(0)
+		if s.TeacherRatingID != nil {
+			ratingRef = *s.TeacherRatingID
+		}
+		fmt.Fprintf(h, "S:%d:%d:%d:%s:%d:%d;", s.ID, derefUint(s.TeacherID), ratingRef, s.Status, s.Revision, s.UpdatedAt.UnixNano())
 	}
 
 	var aliases []models.TeacherAlias
 	db.Where("teacher_id IN ?", allIDs).Order("id ASC").Find(&aliases)
 	for _, a := range aliases {
 		fmt.Fprintf(h, "A:%d:%d:%s;", a.ID, a.CourseSubjectID, a.NormalizedAlias)
+	}
+
+	// 学科实体状态：id/verified/updated_at。
+	subjectIDs := make([]uint, 0)
+	seenSubj := map[uint]bool{}
+	for _, t := range teachers {
+		if t.CourseSubjectID != nil && !seenSubj[*t.CourseSubjectID] {
+			seenSubj[*t.CourseSubjectID] = true
+			subjectIDs = append(subjectIDs, *t.CourseSubjectID)
+		}
+	}
+	if len(subjectIDs) > 0 {
+		var subjects []models.CourseSubject
+		db.Where("id IN ?", subjectIDs).Order("id ASC").Find(&subjects)
+		for _, cs := range subjects {
+			fmt.Fprintf(h, "CS:%d:%v:%d;", cs.ID, cs.Verified, cs.UpdatedAt.UnixNano())
+		}
 	}
 
 	return hex.EncodeToString(h.Sum(nil))
@@ -812,7 +868,13 @@ func (s *TeacherGovernanceService) buildMergePlan(db *gorm.DB, input MergeInput)
 		})
 		winner := allCandidateRatings[0]
 
-		plan.TotalRatingsMigrated++
+		// 统计口径与执行一致：仅当胜出评价来自 loser 时才发生"迁移"；
+		// 若 keeper 原评价胜出，则 loser 评价全部软删，迁移数为 0。
+		if !hasKeeper || winner.ID != kRating.ID {
+			plan.TotalRatingsMigrated++
+		} else {
+			plan.TotalRatingsPreserved++
+		}
 		plan.TotalRatingsSoftDeleted += len(allCandidateRatings) - 1
 
 		var userObj models.User
@@ -833,6 +895,19 @@ func (s *TeacherGovernanceService) buildMergePlan(db *gorm.DB, input MergeInput)
 			LoserRatingStar:     firstLoserRating.Star,
 			LoserRatingComment:  firstLoserRating.Comment,
 			WinnerRatingID:      winner.ID,
+			WinnerRatingStar:    winner.Star,
+			WinnerCreatedAt:     &winner.CreatedAt,
+		}
+		for _, cr := range allCandidateRatings {
+			if cr.ID == winner.ID {
+				continue
+			}
+			detail.LoserRatings = append(detail.LoserRatings, RatingConflictLoserItem{
+				RatingID:  cr.ID,
+				TeacherID: cr.TeacherID,
+				Star:      cr.Star,
+				Comment:   cr.Comment,
+			})
 		}
 		var winnerSub models.CourseEvaluationSubmission
 		if err := db.Where("teacher_rating_id = ?", winner.ID).First(&winnerSub).Error; err == nil {
@@ -1920,6 +1995,57 @@ func (s *TeacherGovernanceService) ListGovernanceTeachers(q string, limit int, i
 	out := make([]GovernanceTeacherView, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, maps.view(row))
+	}
+	return out, nil
+}
+
+// AliasTargetView 别名目标搜索项（供治理工作台下拉选择）。
+type AliasTargetView struct {
+	ID        uint   `json:"id"`
+	Name      string `json:"name"`
+	SubjectID uint   `json:"course_subject_id,omitempty"`
+	Verified  bool   `json:"verified"`
+}
+
+// SearchAliasTargets 按类型与关键词搜索别名目标（学科 / 教师），
+// 供治理工作台以名称选择替代手输数据库 ID。
+func (s *TeacherGovernanceService) SearchAliasTargets(targetType, q string, limit int) ([]AliasTargetView, error) {
+	if s == nil || s.db == nil {
+		return nil, governanceErr(CodeTeacherNotFound, "治理服务不可用", nil)
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	like := "%" + escapeLike(strings.TrimSpace(q)) + "%"
+	out := []AliasTargetView{}
+
+	switch strings.ToLower(strings.TrimSpace(targetType)) {
+	case "course":
+		var subjects []models.CourseSubject
+		query := s.db.Order("verified DESC, id ASC").Limit(limit)
+		if strings.TrimSpace(q) != "" {
+			query = query.Where("name LIKE ?", like)
+		}
+		if err := query.Find(&subjects).Error; err != nil {
+			return nil, governanceErr(CodeTeacherNotFound, "读取学科失败", err)
+		}
+		for _, cs := range subjects {
+			out = append(out, AliasTargetView{ID: cs.ID, Name: cs.Name, Verified: cs.Verified})
+		}
+	case "teacher":
+		var teachers []models.Teacher
+		query := models.ScopeActiveTeachers(s.db).Order("verified DESC, id ASC").Limit(limit)
+		if strings.TrimSpace(q) != "" {
+			query = query.Where("name LIKE ? OR course LIKE ?", like, like)
+		}
+		if err := query.Find(&teachers).Error; err != nil {
+			return nil, governanceErr(CodeTeacherNotFound, "读取教师失败", err)
+		}
+		for _, t := range teachers {
+			out = append(out, AliasTargetView{ID: t.ID, Name: t.Name, SubjectID: derefUint(t.CourseSubjectID), Verified: t.Verified})
+		}
+	default:
+		return nil, governanceErr(CodeTeacherGovernanceInvalidInput, "未知的目标类型", nil)
 	}
 	return out, nil
 }

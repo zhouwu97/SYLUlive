@@ -47,6 +47,14 @@ class PostReplyDraft {
 
 /// 统一维护帖子评论输入区的编辑状态。
 class PostReplyComposerController extends ChangeNotifier {
+  PostReplyComposerController() {
+    focusNode.addListener(_logFocusChange);
+  }
+
+  void _logFocusChange() {
+    debugPrint('[COMMENT_IME] focus changed: ${focusNode.hasFocus}');
+  }
+
   final TextEditingController textController = TextEditingController();
   final FocusNode focusNode = FocusNode();
 
@@ -76,10 +84,7 @@ class PostReplyComposerController extends ChangeNotifier {
   bool get hasObservedKeyboardHeight => _hasObservedKeyboardHeight;
   bool get inputHandoffActive => _handoff != PostReplyInputHandoff.none;
   bool get isInputPanelVisible =>
-      _bottomPanel == PostReplyBottomPanel.emoji ||
-      _handoff != PostReplyInputHandoff.none ||
-      (_bottomPanel == PostReplyBottomPanel.keyboard &&
-          (_keyboardInset > 0 || _isOpen));
+      showEmojiPanel || inputHandoffActive || _keyboardInset > 0;
   int? get parentReplyId => _parentReplyId;
   int? get replyToUserId => _replyToUserId;
   int? get replyToReplyId => _replyToReplyId;
@@ -106,6 +111,7 @@ class PostReplyComposerController extends ChangeNotifier {
 
   void updateKeyboardMetrics(double inset) {
     final normalizedInset = inset < 0 ? 0.0 : inset;
+    debugPrint('[COMMENT_IME] metrics inset=$normalizedInset');
     final insetChanged = (_keyboardInset - normalizedInset).abs() > 0.1;
     final wasCollapsing = normalizedInset < _lastKeyboardInset;
     _lastKeyboardInset = normalizedInset;
@@ -153,12 +159,9 @@ class PostReplyComposerController extends ChangeNotifier {
     } else {
       if (_bottomPanel == PostReplyBottomPanel.keyboard) {
         _bottomPanel = PostReplyBottomPanel.none;
-        // 软键盘由升起状态回落至 0：释放残留焦点与打开状态，避免形成孤立焦点
+        // 软键盘由升起状态回落至 0：更新面板与会话状态，但不主动销毁 FocusNode
         if (wasCollapsing) {
           _isOpen = false;
-          if (focusNode.hasFocus) {
-            focusNode.unfocus();
-          }
         }
         notifyListeners();
       } else if (insetChanged) {
@@ -172,13 +175,6 @@ class PostReplyComposerController extends ChangeNotifier {
     _isOpen = true;
     _bottomPanel = PostReplyBottomPanel.keyboard;
     notifyListeners();
-
-    // 若 FocusNode 曾保留焦点但键盘已被系统收起（keyboardInset == 0），
-    // 单纯 requestFocus() 无法触发焦点变更事件。
-    // 先释放旧焦点，下一帧重新 requestFocus，确保重新 arm TextInput connection。
-    if (focusNode.hasFocus && _keyboardInset == 0) {
-      focusNode.unfocus();
-    }
     _focusAfterLayout();
   }
 
@@ -212,7 +208,17 @@ class PostReplyComposerController extends ChangeNotifier {
     final trimmedName = replyToName?.trim();
     _replyToName = trimmedName;
 
-    open();
+    _cancelHandoff();
+    _isOpen = true;
+    _bottomPanel = PostReplyBottomPanel.keyboard;
+    notifyListeners();
+
+    if (!focusNode.hasFocus) {
+      _focusAfterLayout();
+    } else if (_keyboardInset == 0) {
+      // 已经有焦点但键盘已被系统收起：直接显式唤起输入法，不通过 unfocus 破坏连接
+      SystemChannels.textInput.invokeMethod('TextInput.show');
+    }
   }
 
   /// 将删除命中到的 `@名称` 扩展成完整 token，避免残留半个提及。
@@ -284,7 +290,12 @@ class PostReplyComposerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void close({bool clearDraft = false, bool preserveReplyTarget = false}) {
+  void close({
+    bool clearDraft = false,
+    bool preserveReplyTarget = false,
+    String reason = 'unknown',
+  }) {
+    debugPrint('[COMMENT_IME] close reason=$reason');
     _cancelHandoff();
     focusNode.unfocus();
     _isOpen = false;
@@ -425,6 +436,7 @@ class PostReplyComposerController extends ChangeNotifier {
     _disposing = true;
     _handoffTimer?.cancel();
     _handoffTimer = null;
+    focusNode.removeListener(_logFocusChange);
     textController.dispose();
     focusNode.dispose();
     super.dispose();

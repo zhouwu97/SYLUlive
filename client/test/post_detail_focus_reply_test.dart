@@ -623,10 +623,10 @@ void main() {
     tester.view.viewInsets = FakeViewPadding.zero;
     await tester.pump();
 
-    // 键盘收起到 0 后，stale focus 被清理，输入状态结束
+    // 键盘收起到 0 后，保留原生焦点状态，但重置 isOpen 与 bottomPanel
     expect(composer.controller.keyboardInset, 0);
-    expect(composer.controller.focusNode.hasFocus, isFalse);
     expect(composer.controller.isOpen, isFalse);
+    expect(composer.controller.bottomPanel, PostReplyBottomPanel.none);
 
     // 4. 首次点击评论项，验证无需点第二次即可直接打开回复
     await tester.tap(find.text('测试评论项'));
@@ -916,6 +916,85 @@ void main() {
     expect(composer.controller.inputHandoffActive, isFalse);
     expect(composer.controller.showEmojiPanel, isFalse);
     expect(composer.controller.bottomPanel, PostReplyBottomPanel.keyboard);
+  });
+
+  testWidgets('点击 TextField 激活输入时焦点单向流转且不发生反弹', (tester) async {
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: '正文内容',
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(_app(initial, focusReplyComposer: false));
+    await tester.pumpAndSettle();
+
+    final composer =
+        tester.widget<PostReplyComposer>(find.byType(PostReplyComposer));
+
+    final focusSequence = <bool>[];
+    composer.controller.focusNode.addListener(() {
+      focusSequence.add(composer.controller.focusNode.hasFocus);
+    });
+
+    // 点击输入框
+    await tester.tap(find.byKey(const ValueKey('post-reply-input')));
+    await tester.pumpAndSettle();
+
+    // 焦点必须单向获得 (false -> true)，绝不能在 open() 中经历 true -> false -> true 反弹
+    expect(composer.controller.focusNode.hasFocus, isTrue);
+    expect(focusSequence, [true]);
+  });
+
+  testWidgets('键盘弹起引发的布局自动滚动 (dragDetails == null) 不会误收起输入框', (tester) async {
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: '正文内容',
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(_app(initial, focusReplyComposer: false));
+    await tester.pumpAndSettle();
+
+    final composer =
+        tester.widget<PostReplyComposer>(find.byType(PostReplyComposer));
+
+    // 点击输入框打开
+    await tester.tap(find.byKey(const ValueKey('post-reply-input')));
+    await tester.pump();
+    expect(composer.controller.isOpen, isTrue);
+
+    // 模拟键盘弹起时由系统/布局重测引发的自动滚动（dragDetails == null, scrollDelta == 100）
+    final scrollable = find.byType(Scrollable).first;
+    final element = tester.element(scrollable);
+    ScrollUpdateNotification(
+      metrics: FixedScrollMetrics(
+        minScrollExtent: 0,
+        maxScrollExtent: 1000,
+        pixels: 100,
+        viewportDimension: 600,
+        axisDirection: AxisDirection.down,
+        devicePixelRatio: 1.0,
+      ),
+      context: element,
+      scrollDelta: 100,
+      dragDetails: null, // 无人手拖动
+    ).dispatch(element);
+
+    await tester.pump();
+
+    // 验证输入框并未被非手势自动滚动误关
+    expect(composer.controller.isOpen, isTrue);
+    expect(composer.controller.focusNode.hasFocus, isTrue);
   });
 }
 

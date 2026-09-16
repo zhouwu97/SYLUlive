@@ -73,9 +73,11 @@ class _PostReplyComposerState extends State<PostReplyComposer>
         controller.keyboardInset > 0;
     if (!ownsInput) return;
 
-    final view = View.of(context);
-    final keyboardInset = view.viewInsets.bottom / view.devicePixelRatio;
-    controller.updateKeyboardMetrics(keyboardInset);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+      controller.updateKeyboardMetrics(keyboardInset);
+    });
   }
 
   @override
@@ -249,6 +251,7 @@ class _PostReplyComposerState extends State<PostReplyComposer>
   }
 
   void _activateInput() {
+    debugPrint('[COMMENT_IME] inputTap');
     if (!widget.enabled) {
       controller.focusNode.unfocus();
       widget.onNeedLogin();
@@ -302,6 +305,7 @@ class _PostReplyComposerState extends State<PostReplyComposer>
       controller.close(
         clearDraft: true,
         preserveReplyTarget: widget.preserveReplyTargetOnSuccess,
+        reason: 'send',
       );
     }
   }

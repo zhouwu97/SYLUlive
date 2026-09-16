@@ -2063,9 +2063,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       animation: _replyComposerActivity,
       child: child,
       builder: (context, child) {
+        final mediaInset = MediaQuery.viewInsetsOf(context).bottom;
+        final composerInset = _replyComposerController.keyboardInset;
+        final rawInset =
+            mediaInset > composerInset ? mediaInset : composerInset;
         final bottomInset = _replyComposerController.showEmojiPanel
             ? 0.0
-            : _replyComposerController.keyboardInset;
+            : rawInset;
         return Padding(
           padding: EdgeInsets.only(bottom: bottomInset),
           child: child,
@@ -2083,35 +2087,37 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
 
   /// 为帖子正文及媒体内容区域提供点击收起输入层的包装。
   ///
-  /// 仅在软键盘真正升起（keyboardInset > 0）或表情面板激活时生效，
+  /// 仅在输入激活（获得焦点或输入面板可见）时生效，
   /// 不跨越到评论列表上方，避免阻断用户直接点击评论项切换回复对象。
   Widget _buildPostContentDismissWrapper({required Widget child}) {
     return AnimatedBuilder(
       animation: _replyComposerActivity,
       child: child,
       builder: (context, child) {
-        final panelVisible = _replyComposerController.isInputPanelVisible;
+        final active = _replyComposerController.focusNode.hasFocus ||
+            _replyComposerController.isInputPanelVisible;
 
         return Stack(
           children: [
             child!,
             Positioned.fill(
               child: IgnorePointer(
-                ignoring: !panelVisible,
+                ignoring: !active,
                 child: ExcludeSemantics(
-                  excluding: !panelVisible,
+                  excluding: !active,
                   child: Semantics(
                     button: true,
-                    enabled: panelVisible,
+                    enabled: active,
                     label: '收起评论输入',
-                    onTap: panelVisible
-                        ? () => _replyComposerController.close()
+                    onTap: active
+                        ? () => _replyComposerController.close(reason: 'content')
                         : null,
                     child: GestureDetector(
                       key: const ValueKey('post-detail-input-dismiss-layer'),
                       behavior: HitTestBehavior.opaque,
                       excludeFromSemantics: true,
-                      onTap: () => _replyComposerController.close(),
+                      onTap: () =>
+                          _replyComposerController.close(reason: 'content'),
                     ),
                   ),
                 ),
@@ -2124,6 +2130,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   /// 评论输入激活时，下滑达到 56dp 收起键盘/表情面板但保留草稿。
+  /// 严格限制为用户手势（dragDetails != null），忽略布局调整或系统自动滚动导致的位移。
   bool _handleDetailScrollNotification(ScrollNotification notification) {
     final panelVisible = _replyComposerController.isInputPanelVisible;
     if (notification is ScrollStartNotification) {
@@ -2131,21 +2138,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       _dragStartedWithInputPanel = panelVisible;
     } else if (notification is ScrollUpdateNotification ||
         notification is OverscrollNotification) {
-      double dy = 0;
-      if (notification is ScrollUpdateNotification) {
-        dy = notification.dragDetails?.primaryDelta ??
-            (notification.scrollDelta != null ? -notification.scrollDelta! : 0);
-      } else if (notification is OverscrollNotification) {
-        dy = notification.dragDetails?.primaryDelta ??
-            -notification.overscroll;
-      }
+      final dy = (notification is ScrollUpdateNotification
+              ? notification.dragDetails?.primaryDelta
+              : (notification as OverscrollNotification).dragDetails?.primaryDelta) ??
+          0.0;
       if (_dragStartedWithInputPanel && panelVisible) {
         if (dy > 0) {
           _keyboardDownDrag += dy;
           if (_keyboardDownDrag >= _keyboardDismissDragTrigger) {
             _dragStartedWithInputPanel = false;
             _keyboardDownDrag = 0;
-            _replyComposerController.close();
+            _replyComposerController.close(reason: 'scroll');
           }
         } else if (dy < 0) {
           _keyboardDownDrag = 0;
@@ -4510,7 +4513,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     required Reply parentReply,
     required Reply? anchorReply,
   }) async {
-    _replyComposerController.close();
+    _replyComposerController.close(reason: 'thread_sheet');
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final threadComposerController = PostReplyComposerController();

@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 )
@@ -54,35 +55,57 @@ var errRefreshRotationNotRecoverable = errors.New("refresh rotation cannot be re
 
 const refreshRotationRecoveryWindow = 30 * time.Second
 
-func revokeRefreshTokensForUser(db *gorm.DB, userID uint) {
+func revokeRefreshTokensForUser(db *gorm.DB, userID uint) error {
 	if !db.Migrator().HasTable(&models.RefreshToken{}) {
-		return
+		return nil
 	}
 	now := time.Now()
-	_ = db.Model(&models.RefreshToken{}).Where("user_id = ? AND revoked_at IS NULL", userID).Update("revoked_at", now).Error
+	return db.Model(&models.RefreshToken{}).Where("user_id = ? AND revoked_at IS NULL", userID).Update("revoked_at", now).Error
 }
 
 // 退出登录只撤销当前设备的刷新凭据，避免影响同一账号的其他设备。
-func revokeRefreshToken(db *gorm.DB, raw string) {
+func revokeRefreshToken(db *gorm.DB, raw string) error {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || !db.Migrator().HasTable(&models.RefreshToken{}) {
-		return
+		return nil
 	}
-	now := time.Now()
-	_ = db.Model(&models.RefreshToken{}).
-		Where("token_hash = ? AND revoked_at IS NULL", refreshHash(raw)).
-		Updates(map[string]interface{}{"revoked_at": now, "last_used_at": now})
+	return db.Transaction(func(tx *gorm.DB) error {
+		var current models.RefreshToken
+		if err := tx.Where("token_hash = ?", refreshHash(raw)).First(&current).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		var user models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, current.UserID).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		return tx.Model(&models.RefreshToken{}).
+			Where("id = ? AND revoked_at IS NULL", current.ID).
+			Updates(map[string]interface{}{"revoked_at": now, "last_used_at": now}).Error
+	})
 }
 
-func revokeRefreshTokenFamily(db *gorm.DB, userID uint, family string) {
+func revokeRefreshTokenFamily(db *gorm.DB, userID uint, family string) error {
 	family = strings.TrimSpace(family)
 	if userID == 0 || family == "" || !db.Migrator().HasTable(&models.RefreshToken{}) {
-		return
+		return nil
 	}
-	now := time.Now()
-	_ = db.Model(&models.RefreshToken{}).
-		Where("user_id = ? AND token_family = ? AND revoked_at IS NULL", userID, family).
-		Update("revoked_at", now).Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		var user models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		now := time.Now()
+		return tx.Model(&models.RefreshToken{}).
+			Where("user_id = ? AND token_family = ? AND revoked_at IS NULL", userID, family).
+			Update("revoked_at", now).Error
+	})
 }
 
 func (h *AuthHandler) issueRefreshSession(userID uint, c *gin.Context) (string, string, error) {
@@ -108,7 +131,7 @@ func issueRefreshTokenRecordForDB(db *gorm.DB, userID uint, family string, c *gi
 	if err := db.Select("id", "token_version").First(&user, userID).Error; err != nil {
 		return "", "", err
 	}
-	row := &models.RefreshToken{UserID: userID, TokenVersion: user.TokenVersion, TokenHash: refreshHash(raw), TokenFamily: family, ExpiresAt: time.Now().Add(refreshTTL()), CreatedIPHash: refreshHash(c.ClientIP()), UserAgentHash: refreshHash(c.GetHeader("User-Agent"))}
+	row := &models.RefreshToken{UserID: userID, TokenVersion: user.TokenVersion, TokenHash: refreshHash(raw), TokenFamily: family, FamilyVersion: 2, ExpiresAt: time.Now().Add(refreshTTL()), CreatedIPHash: refreshHash(c.ClientIP()), UserAgentHash: refreshHash(c.GetHeader("User-Agent"))}
 	if err := db.Create(row).Error; err != nil {
 		return "", "", err
 	}
@@ -124,7 +147,7 @@ func rotationRefreshToken(secret, previousRaw string, previousID uint) string {
 }
 
 func refreshRotationFamily(secret string, current models.RefreshToken, previousRaw string) string {
-	if current.TokenFamily != previousRaw {
+	if current.FamilyVersion >= 2 {
 		return current.TokenFamily
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
@@ -135,18 +158,19 @@ func refreshRotationFamily(secret string, current models.RefreshToken, previousR
 }
 
 func (h *AuthHandler) revokeRefreshRotationFamilies(current models.RefreshToken, previousRaw string) {
-	revokeRefreshTokenFamily(h.db, current.UserID, current.TokenFamily)
+	_ = revokeRefreshTokenFamily(h.db, current.UserID, current.TokenFamily)
 	migratedFamily := refreshRotationFamily(h.jwtSecret, current, previousRaw)
 	if migratedFamily != current.TokenFamily {
-		revokeRefreshTokenFamily(h.db, current.UserID, migratedFamily)
+		_ = revokeRefreshTokenFamily(h.db, current.UserID, migratedFamily)
 	}
 }
 
 func (h *AuthHandler) recoverRefreshRotation(current models.RefreshToken, previousRaw string, c *gin.Context, now time.Time) (models.User, string, time.Time, error) {
+	// 只用替代记录确认本次轮换的请求指纹；current.CreatedIPHash 属于旧签发网络，
+	// 换网后的合法重试不应因此被当作重放攻击。IP 不承担设备身份证明职责。
 	if current.RevokedAt == nil || current.ReplacedBy == nil || current.LastUsedAt == nil ||
 		now.Sub(*current.LastUsedAt) < 0 || now.Sub(*current.LastUsedAt) > refreshRotationRecoveryWindow ||
-		current.CreatedIPHash != refreshHash(c.ClientIP()) ||
-		current.UserAgentHash != refreshHash(c.GetHeader("User-Agent")) {
+		current.UserAgentHash == "" {
 		return models.User{}, "", time.Time{}, errRefreshRotationNotRecoverable
 	}
 
@@ -161,8 +185,7 @@ func (h *AuthHandler) recoverRefreshRotation(current models.RefreshToken, previo
 	}
 	if replacement.UserID != current.UserID || replacement.TokenFamily != targetFamily ||
 		replacement.TokenHash != refreshHash(newRaw) || replacement.RevokedAt != nil ||
-		!replacement.ExpiresAt.After(now) || replacement.CreatedIPHash != current.CreatedIPHash ||
-		replacement.UserAgentHash != current.UserAgentHash {
+		!replacement.ExpiresAt.After(now) || replacement.UserAgentHash != refreshHash(c.GetHeader("User-Agent")) {
 		return models.User{}, "", time.Time{}, errRefreshRotationNotRecoverable
 	}
 
@@ -275,7 +298,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	// 轮换值可由旧凭据和服务端密钥重建，仅用于同设备短窗口内恢复“响应已丢失”。
 	newRaw := rotationRefreshToken(h.jwtSecret, input.RefreshToken, current.ID)
 	targetFamily := refreshRotationFamily(h.jwtSecret, current, input.RefreshToken)
-	newRow := &models.RefreshToken{UserID: user.ID, TokenVersion: user.TokenVersion, TokenHash: refreshHash(newRaw), TokenFamily: targetFamily, ExpiresAt: now.Add(refreshTTL()), CreatedIPHash: refreshHash(c.ClientIP()), UserAgentHash: refreshHash(c.GetHeader("User-Agent"))}
+	newRow := &models.RefreshToken{UserID: user.ID, TokenVersion: user.TokenVersion, TokenHash: refreshHash(newRaw), TokenFamily: targetFamily, FamilyVersion: 2, ExpiresAt: now.Add(refreshTTL()), CreatedIPHash: refreshHash(c.ClientIP()), UserAgentHash: refreshHash(c.GetHeader("User-Agent"))}
 	// 所有可能依赖外部表结构的响应数据都在轮换提交前准备，避免提交后失败使客户端失去凭据。
 	access, response, err := h.prepareRefreshResponse(user, targetFamily)
 	if err != nil {
@@ -283,6 +306,11 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		// 刷新与登出共同锁定用户行，确保登出不会漏掉本事务随后插入的替代令牌。
+		var lockedUser models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedUser, user.ID).Error; err != nil {
+			return err
+		}
 		result := tx.Model(&models.RefreshToken{}).Where("id = ? AND revoked_at IS NULL", current.ID).Updates(map[string]interface{}{"revoked_at": now, "last_used_at": now})
 		if result.Error != nil {
 			return result.Error
@@ -301,7 +329,8 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
 			return
 		}
-		recoveredUser, recoveredRaw, refreshExpiresAt, recoveryErr := h.recoverRefreshRotation(rotated, input.RefreshToken, c, now)
+		recoveryNow := time.Now()
+		recoveredUser, recoveredRaw, refreshExpiresAt, recoveryErr := h.recoverRefreshRotation(rotated, input.RefreshToken, c, recoveryNow)
 		if recoveryErr == nil {
 			recoveredFamily := refreshRotationFamily(h.jwtSecret, rotated, input.RefreshToken)
 			recoveredAccess, recoveredResponse, prepareErr := h.prepareRefreshResponse(recoveredUser, recoveredFamily)

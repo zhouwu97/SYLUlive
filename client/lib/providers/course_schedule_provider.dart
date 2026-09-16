@@ -664,32 +664,46 @@ class CourseScheduleProvider extends ChangeNotifier {
     _ScheduleOperationContext context,
     List<CourseBlock> courses,
   ) async {
+    return _saveOperationCoursesSnapshot(
+      context,
+      courses: courses,
+      baseCourses: _baseSchedule,
+      manualCourses: _manualCourses,
+    );
+  }
+
+  Future<bool> _saveOperationCoursesSnapshot(
+    _ScheduleOperationContext context, {
+    required List<CourseBlock> courses,
+    required List<Course> baseCourses,
+    required List<Course> manualCourses,
+  }) async {
     final store = await _resolveOperationStore(context);
     if (store == null) return false;
     try {
       final targetSemesterId = context.term.id;
 
       // 学期一致性校验：确保存入底层快照的课程均属于当前操作的目标学期，绝不跨学期串入
-      final validBaseCourses = _baseSchedule
+      final validBaseCourses = baseCourses
           .where((course) =>
               course.semesterId.isEmpty ||
               course.semesterId == targetSemesterId)
           .toList(growable: false);
-      if (_baseSchedule.any(
+      if (baseCourses.any(
           (c) => c.semesterId.isNotEmpty && c.semesterId != targetSemesterId)) {
         debugPrint(
-            '拦截到跨学期 baseCourses 残留：目标学期=$targetSemesterId, 忽略学期=${_baseSchedule.map((c) => c.semesterId).where((s) => s != targetSemesterId).toSet()}');
+            '拦截到跨学期 baseCourses 残留：目标学期=$targetSemesterId, 忽略学期=${baseCourses.map((c) => c.semesterId).where((s) => s != targetSemesterId).toSet()}');
       }
 
-      final validManualCourses = _manualCourses
+      final validManualCourses = manualCourses
           .where((course) =>
               course.semesterId.isEmpty ||
               course.semesterId == targetSemesterId)
           .toList(growable: false);
-      if (_manualCourses.any(
+      if (manualCourses.any(
           (c) => c.semesterId.isNotEmpty && c.semesterId != targetSemesterId)) {
         debugPrint(
-            '拦截到跨学期 manualCourses 残留：目标学期=$targetSemesterId, 忽略学期=${_manualCourses.map((c) => c.semesterId).where((s) => s != targetSemesterId).toSet()}');
+            '拦截到跨学期 manualCourses 残留：目标学期=$targetSemesterId, 忽略学期=${manualCourses.map((c) => c.semesterId).where((s) => s != targetSemesterId).toSet()}');
       }
 
       final baseBlocks = _courseModelsToBlocks(validBaseCourses);
@@ -2639,23 +2653,36 @@ class CourseScheduleProvider extends ChangeNotifier {
     final previousHidden = Set<int>.from(_hiddenCourseIds);
     final previousActiveArchive = previousSnapshot.activeArchiveId;
     final previousResolved = List<ResolvedMeeting>.from(_resolvedMeetings);
+
+    // 目标课表只在同步计算阶段借用 Provider 的转换函数；同步恢复旧字段后，
+    // 后续异步持久化全部使用这些局部快照，避免切号期间污染当前内存。
+    final targetCourses = _coalesceGraduateCourses(
+      archive.courses.map(CourseBlock.fromJson),
+    );
+    _populateSchedulesFromBlocks(targetCourses);
+    final targetBase = List<Course>.from(_baseSchedule);
+    final targetManual = List<Course>.from(_manualCourses);
+    _baseSchedule = previousBase;
+    _manualCourses = previousManual;
     try {
-      // 先完成所有可失败的本地写入，内存只在持久化成功后提交。
-      _courses = _coalesceGraduateCourses(
-        archive.courses.map(CourseBlock.fromJson),
-      );
-      _populateSchedulesFromBlocks(_courses);
       if (!await _overrideRepository.clearOverrides(
         semesterId: operation.term.id,
         accountId: operation.sourceAccountId,
       )) {
         throw StateError('载入存档失败：无法清除旧调课规则');
       }
-      _overrides = [];
-      _hiddenCourseIds = {};
-      _syncResolvedSchedule();
-      if (!await _saveOperationHiddenCourses(operation, _hiddenCourseIds) ||
-          !await _saveOperationCourses(operation, _courses)) {
+      if (!_isCurrentOperation(operation)) {
+        throw StateError('课表账号上下文已切换');
+      }
+      if (!await _saveOperationHiddenCourses(operation, <int>{}) ||
+          !_isCurrentOperation(operation) ||
+          !await _saveOperationCoursesSnapshot(
+            operation,
+            courses: targetCourses,
+            baseCourses: targetBase,
+            manualCourses: targetManual,
+          ) ||
+          !_isCurrentOperation(operation)) {
         throw StateError('载入存档失败：无法保存完整课表状态');
       }
       await store.activateArchive(
@@ -2666,6 +2693,12 @@ class CourseScheduleProvider extends ChangeNotifier {
       if (!_isCurrentOperation(operation)) {
         throw StateError('课表账号上下文已切换');
       }
+      _courses = targetCourses;
+      _baseSchedule = targetBase;
+      _manualCourses = targetManual;
+      _overrides = [];
+      _hiddenCourseIds = {};
+      _syncResolvedSchedule();
       notifyListeners();
       _syncWidget();
     } catch (error) {

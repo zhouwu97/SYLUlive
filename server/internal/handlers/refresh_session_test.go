@@ -144,6 +144,42 @@ func TestRefreshSessionConcurrentSameDeviceGetsRecoverableResult(t *testing.T) {
 	require.Equal(t, refreshTokens[0], refreshTokens[1])
 }
 
+func TestRefreshSessionRecoveryAllowsNetworkChangeBeforeRotation(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.User{}, &models.RefreshToken{}, &models.UserLegalConsent{}))
+	user := models.User{PasswordHash: "x", AccountStatus: "active", Role: models.RoleUser}
+	require.NoError(t, db.Create(&user).Error)
+	h := NewAuthHandler(db, "test-secret")
+	seedCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	seedCtx.Request = httptest.NewRequest(http.MethodPost, "/api/refresh", nil)
+	seedCtx.Request.RemoteAddr = "192.0.2.10:1234"
+	seedCtx.Request.Header.Set("User-Agent", "old-network-device")
+	raw, _, err := h.issueRefreshSession(user.ID, seedCtx)
+	require.NoError(t, err)
+	body, _ := json.Marshal(map[string]string{"refresh_token": raw})
+
+	refresh := func() *httptest.ResponseRecorder {
+		record := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(record)
+		ctx.Request = httptest.NewRequest(http.MethodPost, "/api/refresh", bytes.NewReader(body))
+		ctx.Request.RemoteAddr = "198.51.100.20:5678"
+		ctx.Request.Header.Set("Content-Type", "application/json")
+		ctx.Request.Header.Set("User-Agent", "same-device")
+		h.Refresh(ctx)
+		return record
+	}
+
+	first := refresh()
+	require.Equal(t, http.StatusOK, first.Code, first.Body.String())
+	second := refresh()
+	require.Equal(t, http.StatusOK, second.Code, second.Body.String())
+	var firstPayload, secondPayload map[string]interface{}
+	require.NoError(t, json.Unmarshal(first.Body.Bytes(), &firstPayload))
+	require.NoError(t, json.Unmarshal(second.Body.Bytes(), &secondPayload))
+	require.Equal(t, firstPayload["refresh_token"], secondPayload["refresh_token"])
+}
+
 func TestRefreshSessionMigratesLegacyExposedFamily(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -181,6 +217,49 @@ func TestRefreshSessionMigratesLegacyExposedFamily(t *testing.T) {
 	require.True(t, parsed.Valid)
 	require.Equal(t, active.TokenFamily, claims.SessionID)
 	require.NotEqual(t, raw, claims.SessionID)
+}
+
+func TestRefreshSessionMigratesAlreadyRotatedLegacyChain(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.User{}, &models.RefreshToken{}, &models.UserLegalConsent{}))
+	user := models.User{PasswordHash: "x", AccountStatus: "active", Role: models.RoleUser}
+	require.NoError(t, db.Create(&user).Error)
+	legacyFamily := "legacy-family"
+	oldRaw := "legacy-refresh-0"
+	currentRaw := "legacy-refresh-1"
+	now := time.Now()
+	first := models.RefreshToken{
+		UserID: user.ID, TokenVersion: user.TokenVersion, TokenHash: refreshHash(oldRaw),
+		TokenFamily: legacyFamily, ExpiresAt: now.Add(time.Hour), FamilyVersion: 0,
+		UserAgentHash: refreshHash("legacy-device"),
+	}
+	require.NoError(t, db.Create(&first).Error)
+	current := models.RefreshToken{
+		UserID: user.ID, TokenVersion: user.TokenVersion, TokenHash: refreshHash(currentRaw),
+		TokenFamily: legacyFamily, ExpiresAt: now.Add(time.Hour), FamilyVersion: 0,
+		UserAgentHash: refreshHash("legacy-device"),
+	}
+	require.NoError(t, db.Create(&current).Error)
+	usedAt := time.Now()
+	require.NoError(t, db.Model(&first).Updates(map[string]interface{}{
+		"revoked_at": usedAt, "last_used_at": usedAt, "replaced_by": current.ID,
+	}).Error)
+
+	body, _ := json.Marshal(map[string]string{"refresh_token": currentRaw})
+	request := httptest.NewRequest(http.MethodPost, "/api/refresh", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("User-Agent", "legacy-device")
+	response := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(response)
+	ctx.Request = request
+	NewAuthHandler(db, "test-secret").Refresh(ctx)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+
+	var active models.RefreshToken
+	require.NoError(t, db.Where("revoked_at IS NULL").First(&active).Error)
+	require.NotEqual(t, legacyFamily, active.TokenFamily)
+	require.Equal(t, 2, active.FamilyVersion)
 }
 
 func TestRefreshSessionCookieTransportDoesNotExposeToken(t *testing.T) {

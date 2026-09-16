@@ -424,6 +424,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _authMutationTail = Future<void>.value();
   int _sessionGeneration = 0;
   int _accountSessionEpoch = 0;
+  bool _accountSessionTransitioning = false;
   bool _applyingConsentRestriction = false;
   AuthState _authState = AuthState.unknown;
   ForbiddenRecoveryRoute? _lastForbiddenRecovery;
@@ -448,6 +449,7 @@ class AuthProvider extends ChangeNotifier {
   Dio get dio => _dio;
 
   Future<bool> refreshSession() {
+    if (_accountSessionTransitioning) return Future.value(false);
     final pending = _refreshFuture;
     final epoch = _accountSessionEpoch;
     if (pending != null && _refreshFutureEpoch == epoch) return pending;
@@ -1056,7 +1058,10 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// 先使旧账号的飞行请求失去提交资格，再开始写入新会话。
-  int _beginAccountSessionTransition() => ++_accountSessionEpoch;
+  int _beginAccountSessionTransition() {
+    _accountSessionTransitioning = true;
+    return ++_accountSessionEpoch;
+  }
 
   Future<void> _clearCorruptedStoredAuth() async {
     try {
@@ -1237,33 +1242,38 @@ class AuthProvider extends ChangeNotifier {
     bool prefetchWallpaper = false,
   }) async {
     var accountEpoch = _beginAccountSessionTransition();
-    await _enqueueAuthMutation(() async {
-      // 退出清理可能排在登录提交前；清理完成后以当前空会话代次接管写入。
-      if (_accountSessionEpoch != accountEpoch) {
-        if (_user == null && _token == null) {
-          accountEpoch = _accountSessionEpoch;
-        } else {
-          return;
+    try {
+      await _enqueueAuthMutation(() async {
+        // 退出清理可能排在登录提交前；清理完成后以当前空会话代次接管写入。
+        if (_accountSessionEpoch != accountEpoch) {
+          if (_user == null && _token == null) {
+            accountEpoch = _accountSessionEpoch;
+          } else {
+            return;
+          }
         }
-      }
-      await _writeSessionCredentials(candidate);
-      if (_usesPlatformCredentialStore) {
-        final prefs = await AppPreferencesStore.getInstance();
-        if (prefs.containsKey('auth_force_logged_out') &&
-            !await prefs.remove('auth_force_logged_out')) {
-          throw StateError('清除认证退出墓碑失败');
+        await _writeSessionCredentials(candidate);
+        if (_usesPlatformCredentialStore) {
+          final prefs = await AppPreferencesStore.getInstance();
+          if (prefs.containsKey('auth_force_logged_out') &&
+              !await prefs.remove('auth_force_logged_out')) {
+            throw StateError('清除认证退出墓碑失败');
+          }
         }
-      }
-    });
+        if (_user != null && _user!.id != candidate.user.id) {
+          await _sessionCleanupCoordinator.closeCurrentSession();
+          await _clearAccountNotificationState();
+        }
+        // 凭据落盘、旧上下文清理和内存会话切换处于同一认证提交队列。
+        _commitAuthSession(candidate, accountEpochAlreadyAdvanced: true);
+        _setAuthState(AuthState.authenticated);
+      });
+    } finally {
+      _accountSessionTransitioning = false;
+    }
     if (_accountSessionEpoch != accountEpoch && _user != null) {
       throw StateError('登录会话已变化');
     }
-    if (_user != null && _user!.id != candidate.user.id) {
-      await _sessionCleanupCoordinator.closeCurrentSession();
-      await _clearAccountNotificationState();
-    }
-    _commitAuthSession(candidate, accountEpochAlreadyAdvanced: true);
-    _setAuthState(AuthState.authenticated);
     if (candidate.user.legalConsentsActive) {
       await KeepAliveService.instance.syncAuthToken(candidate.token);
     } else {
@@ -1366,18 +1376,36 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    final expectedEpoch = _accountSessionEpoch;
+    final expectedGeneration = _sessionGeneration;
+    final expectedToken = _token;
+    final expectedUserId = _user?.id;
+    final expectedRefreshToken = _refreshToken;
     await _sessionCleanupCoordinator.closeCurrentSession();
+    if (expectedUserId != null &&
+        (expectedEpoch != _accountSessionEpoch ||
+            expectedGeneration != _sessionGeneration ||
+            expectedToken != _token ||
+            expectedUserId != _user?.id)) {
+      return;
+    }
     try {
       await _dio.post('/logout',
-          data: _refreshToken == null
+          data: expectedRefreshToken == null
               ? null
-              : <String, dynamic>{'refresh_token': _refreshToken}); // 调用服务端登出接口
+              : <String, dynamic>{'refresh_token': expectedRefreshToken},
+          options: expectedUserId == null
+              ? null
+              : _sessionBoundOptions(expectedEpoch, expectedUserId));
     } catch (e) {
       debugPrint('服务端登出异常: ${e.runtimeType}');
     }
     await _clearLocalSession(
       clearPushAlias: true,
       closeAccountContext: false,
+      expectedGeneration: expectedGeneration,
+      expectedToken: expectedToken,
+      expectedAccountEpoch: expectedEpoch,
     );
   }
 

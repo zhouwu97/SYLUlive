@@ -445,6 +445,34 @@ void main() {
     expect(jsonDecode(store.stored.userJson!)['nickname'], '用户3');
   });
 
+  test('新会话落盘到内存提交之间不允许旧刷新写回凭据', () async {
+    final adapter = _QueuedAuthAdapter()
+      ..enqueue(200, {
+        'token': 'token-a',
+        'refresh_token': 'refresh-a',
+        'user': _userJson(1),
+      })
+      ..enqueue(200, {
+        'token': 'token-b',
+        'refresh_token': 'refresh-b',
+        'user': _userJson(2),
+      });
+    final store = _BlockingAuthCredentialStore();
+    final provider = _provider(adapter, store);
+    expect((await provider.login('account', 'password')).success, isTrue);
+
+    store.blockNextWrite = true;
+    final newLogin = provider.login('account-b', 'password');
+    await store.staleWriteStarted.future;
+
+    expect(await provider.refreshSession(), isFalse);
+    store.releaseStaleWrite.complete();
+    expect((await newLogin).success, isTrue);
+    expect(provider.token, 'token-b');
+    expect(provider.user?.id, 2);
+    expect(store.stored.token, 'token-b');
+  });
+
   test('账号切换后丢弃旧账号延迟返回的资料更新', () async {
     final adapter = _QueuedAuthAdapter()
       ..enqueue(200, {..._userJson(1), 'nickname': '旧账号新昵称'});
@@ -558,6 +586,23 @@ void main() {
       notificationOpenCalls.map((call) => call.method),
       contains('clearPendingNotificationOpen'),
     );
+  });
+
+  test('旧会话延迟返回的登出不能清掉新会话', () async {
+    final adapter = _QueuedAuthAdapter()..enqueue(200, {'success': true});
+    final provider = _provider(adapter, _FakeAuthCredentialStore());
+    await provider.applyAuthPayload('old-token', _userJson(1));
+
+    adapter.holdNext();
+    final oldLogout = provider.logout();
+    await adapter.held;
+    await provider.applyAuthPayload('new-token', _userJson(2));
+    adapter.release();
+    await oldLogout;
+
+    expect(provider.token, 'new-token');
+    expect(provider.user?.id, 2);
+    expect(provider.authState, AuthState.authenticated);
   });
 
   test('确认新版协议后以服务端状态更新本地会话', () async {

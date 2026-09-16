@@ -1740,7 +1740,10 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	if id, ok := userID.(uint); ok {
 		middleware.InvalidateTokenVersionCache(id)
 		if sessionID, exists := c.Get("session_id"); exists && strings.TrimSpace(fmt.Sprint(sessionID)) != "" {
-			revokeRefreshTokenFamily(h.db, id, strings.TrimSpace(fmt.Sprint(sessionID)))
+			if err := revokeRefreshTokenFamily(h.db, id, strings.TrimSpace(fmt.Sprint(sessionID))); err != nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "退出登录暂时不可用", "code": "auth_service_unavailable"})
+				return
+			}
 		} else {
 			// 兼容尚未携带会话族标识的旧访问令牌。
 			var input struct {
@@ -1752,7 +1755,10 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 				raw, _ = c.Cookie("refresh_token")
 			}
 			if raw != "" {
-				revokeRefreshToken(h.db, raw)
+				if err := revokeRefreshToken(h.db, raw); err != nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "退出登录暂时不可用", "code": "auth_service_unavailable"})
+					return
+				}
 			}
 		}
 	}

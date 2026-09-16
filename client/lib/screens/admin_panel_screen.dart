@@ -18,6 +18,7 @@ import 'exam_papers/admin_exam_papers_screen.dart';
 import 'shuitie_screen.dart';
 import 'admin_ai_metrics_screen.dart';
 import 'admin_appeal_review_screen.dart';
+import 'admin_teacher_governance_screen.dart';
 import '../widgets/global_background_wrapper.dart';
 
 class AdminPanelScreen extends StatefulWidget {
@@ -272,6 +273,19 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                   MaterialPageRoute(
                                       builder: (_) =>
                                           const AdminReviewTasksScreen()))
+                              .then((_) => _loadCounts()),
+                        ),
+                        _AdminActionPill(
+                          icon: Icons.auto_fix_high_outlined,
+                          iconColor: Colors.teal,
+                          title: '教师与课程治理',
+                          subtitle: '查重候选、别名管理与实体合并',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const AdminTeacherGovernanceScreen()))
                               .then((_) => _loadCounts()),
                         ),
                         _AdminActionPill(

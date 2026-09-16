@@ -195,6 +195,53 @@ class FileItem {
   String get url => path;
 }
 
+class PostViewerPermissions {
+  final bool canView;
+  final bool canEdit;
+  final bool canDelete;
+  final bool canComment;
+  final bool canLike;
+  final bool canShare;
+  final bool canAppeal;
+  final bool canSubmitRectification;
+  final bool canRestore;
+  final bool hasPendingRectification;
+  final bool hasPendingAppeal;
+  final int submittedRevision;
+
+  const PostViewerPermissions({
+    this.canView = false,
+    this.canEdit = false,
+    this.canDelete = false,
+    this.canComment = false,
+    this.canLike = false,
+    this.canShare = false,
+    this.canAppeal = false,
+    this.canSubmitRectification = false,
+    this.canRestore = false,
+    this.hasPendingRectification = false,
+    this.hasPendingAppeal = false,
+    this.submittedRevision = 0,
+  });
+
+  factory PostViewerPermissions.fromJson(Map<String, dynamic> json) {
+    return PostViewerPermissions(
+      canView: json['can_view'] == true,
+      canEdit: json['can_edit'] == true,
+      canDelete: json['can_delete'] == true,
+      canComment: json['can_comment'] == true,
+      canLike: json['can_like'] == true,
+      canShare: json['can_share'] == true,
+      canAppeal: json['can_appeal'] == true,
+      canSubmitRectification: json['can_submit_rectification'] == true,
+      canRestore: json['can_restore'] == true,
+      hasPendingRectification: json['has_pending_rectification'] == true,
+      hasPendingAppeal: json['has_pending_appeal'] == true,
+      submittedRevision: (json['submitted_revision'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 // 帖子模型
 
 class TeamRecruitmentMeta {
@@ -293,6 +340,11 @@ class Post {
   final List<String> marketTags;
   final int? waterTagId;
   final String status;
+  final int revision;
+  final String moderationRuleCode;
+  final String moderationReason;
+  final DateTime? moderatedAt;
+  final PostViewerPermissions? viewerPermissions;
   final int viewCount;
   final int replyCount;
   final int likeCount;
@@ -338,6 +390,11 @@ class Post {
     this.marketTags = const [],
     this.waterTagId,
     this.status = 'normal',
+    this.revision = 1,
+    this.moderationRuleCode = '',
+    this.moderationReason = '',
+    this.moderatedAt,
+    this.viewerPermissions,
     this.viewCount = 0,
     this.replyCount = 0,
     this.likeCount = 0,
@@ -388,6 +445,14 @@ class Post {
           ? (json['water_tag_id'] as num).toInt()
           : null,
       status: json['status'] ?? 'normal',
+      revision: (json['revision'] as num?)?.toInt() ?? 1,
+      moderationRuleCode: json['moderation_rule_code']?.toString() ?? '',
+      moderationReason: json['moderation_reason']?.toString() ?? '',
+      moderatedAt: DateTime.tryParse(json['moderated_at'] ?? ''),
+      viewerPermissions: json['viewer_permissions'] is Map
+          ? PostViewerPermissions.fromJson(
+              Map<String, dynamic>.from(json['viewer_permissions'] as Map))
+          : null,
       viewCount: json['view_count'] ?? 0,
       replyCount: json['reply_count'] ?? 0,
       likeCount: json['like_count'] ?? 0,
@@ -482,6 +547,8 @@ class Post {
     return pinnedUntil!.isAfter(DateTime.now());
   }
 
+  bool get isModeratedHidden => status == 'moderated_hidden';
+
   Post copyWith({
     int? id,
     String? title,
@@ -496,6 +563,11 @@ class Post {
     List<String>? marketTags,
     int? waterTagId,
     String? status,
+    int? revision,
+    String? moderationRuleCode,
+    String? moderationReason,
+    DateTime? moderatedAt,
+    PostViewerPermissions? viewerPermissions,
     int? viewCount,
     int? replyCount,
     int? likeCount,
@@ -546,6 +618,11 @@ class Post {
       marketTags: marketTags ?? this.marketTags,
       waterTagId: waterTagId ?? this.waterTagId,
       status: status ?? this.status,
+      revision: revision ?? this.revision,
+      moderationRuleCode: moderationRuleCode ?? this.moderationRuleCode,
+      moderationReason: moderationReason ?? this.moderationReason,
+      moderatedAt: moderatedAt ?? this.moderatedAt,
+      viewerPermissions: viewerPermissions ?? this.viewerPermissions,
       viewCount: viewCount ?? this.viewCount,
       replyCount: replyCount ?? this.replyCount,
       likeCount: likeCount ?? this.likeCount,

@@ -96,7 +96,7 @@ func (h *CourseEvaluationHandler) loadSubjectStats(subjectID *uint) ([]courseSub
 			COUNT(DISTINCT t.id) AS teacher_count,
 			COUNT(tr.id) AS rating_count,
 			COALESCE(AVG(CAST(tr.star AS FLOAT)), 0) AS average_star`).
-		Joins("LEFT JOIN teachers t ON t.course_subject_id = cs.id AND t.verified = ?", true).
+		Joins("LEFT JOIN teachers t ON t.course_subject_id = cs.id AND t.verified = ? AND t.merged_into_id IS NULL", true).
 		Joins("LEFT JOIN teacher_ratings tr ON tr.teacher_id = t.id AND tr.status = ? AND tr.deleted_at IS NULL", "normal").
 		Where("cs.verified = ?", true).
 		Group("cs.id, cs.name")
@@ -307,7 +307,7 @@ func (h *CourseEvaluationHandler) GetSubject(c *gin.Context) {
 			COUNT(tr.id) AS rating_count,
 			COALESCE(AVG(CAST(tr.star AS FLOAT)), 0) AS average_star`).
 		Joins("LEFT JOIN teacher_ratings tr ON tr.teacher_id = t.id AND tr.status = ? AND tr.deleted_at IS NULL", "normal").
-		Where("t.course_subject_id = ? AND t.verified = ?", subjectID, true).
+		Where("t.course_subject_id = ? AND t.verified = ? AND t.merged_into_id IS NULL", subjectID, true).
 		Group("t.id").
 		Order("average_star DESC, rating_count DESC, t.id ASC").
 		Find(&teachers).Error
@@ -415,6 +415,8 @@ func (h *CourseEvaluationHandler) ListPending(c *gin.Context) {
 }
 
 // Approve 管理员审核通过。revision 由请求体携带，过期返回 409。
+// 可选 keeper_teacher_id：把评价并入已有教师（审核卡片"合并到已有教师"）；
+// 可选 register_course_alias：是否把非标准课程名登记为别名（默认登记）。
 func (h *CourseEvaluationHandler) Approve(c *gin.Context) {
 	adminID, ok := courseEvaluationUserID(c)
 	if !ok {
@@ -429,13 +431,19 @@ func (h *CourseEvaluationHandler) Approve(c *gin.Context) {
 		return
 	}
 	var body struct {
-		Revision int `json:"revision"`
+		Revision           int    `json:"revision"`
+		KeeperTeacherID    uint   `json:"keeper_teacher_id"`
+		RegisterCourseAlias *bool `json:"register_course_alias"`
 	}
 	if err := decodeCourseEvaluationBody(c, &body); err != nil {
 		respondCourseEvaluationError(c, err)
 		return
 	}
-	view, err := h.service.Approve(adminID, submissionID, body.Revision)
+	opts := services.ApproveOptions{
+		KeeperTeacherID:     body.KeeperTeacherID,
+		RegisterCourseAlias: body.RegisterCourseAlias,
+	}
+	view, err := h.service.ApproveWithOptions(adminID, submissionID, body.Revision, opts)
 	if err != nil {
 		respondCourseEvaluationError(c, err)
 		return

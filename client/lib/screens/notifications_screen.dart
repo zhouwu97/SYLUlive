@@ -16,7 +16,7 @@ import '../utils/post_route.dart';
 import '../services/reply_notification_service.dart';
 import '../services/reply_notification_state.dart';
 import 'my_content_screen.dart';
-import 'appeal_create_screen.dart';
+import 'post_detail_screen.dart';
 import 'court_screen.dart';
 import 'feedback/feedback_detail_screen.dart';
 
@@ -477,6 +477,10 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       actionText = '学科评价审核结果';
     } else if (type == 'content_governed') {
       actionText = '内容处理通知';
+    } else if (type == 'rectification_approved') {
+      actionText = '整改复审通过';
+    } else if (type == 'rectification_rejected') {
+      actionText = '整改复审未通过';
     } else if (type == 'appeal_created') {
       actionText = '申诉已创建';
     } else if (type == 'appeal_jury_assigned') {
@@ -525,16 +529,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             }
           }
 
-          if (type == 'content_governed' && relatedId != null) {
+          if (type == 'content_governed' && postId != null) {
             if (!mounted) return;
             await Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => AppealCreateScreen(
-                  reportId: relatedId,
-                  postId: postId,
-                  governanceReason: content,
-                ),
+                builder: (_) => PostDetailScreen(postId: postId),
               ),
             );
           } else if ((type == 'appeal_jury_assigned' ||

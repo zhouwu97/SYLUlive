@@ -277,6 +277,7 @@ func (h *ReportHandler) GetList(c *gin.Context) {
 // HandleReportInput 处理举报输入
 type HandleReportInput struct {
 	Status              string `json:"status" binding:"required"` // handled/ignored
+	Action              string `json:"action"`                     // warn/moderated_hidden/delete
 	Result              string `json:"result"`
 	DeleteReason        string `json:"delete_reason"`
 	ConfirmedReasonCode string `json:"confirmed_reason_code"`
@@ -303,6 +304,15 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 		return
 	}
 	input.DeleteReason = strings.TrimSpace(input.DeleteReason)
+	input.Action = strings.ToLower(strings.TrimSpace(input.Action))
+	if input.Status == string(models.ReportStatusHandled) && input.Action == "" {
+		// 兼容旧管理员端：确认违规默认进入可整改的治理隐藏，而不是把帖子误当成作者删除。
+		input.Action = models.ReportActionModeratedHidden
+	}
+	if input.Action != "" && input.Action != models.ReportActionWarn && input.Action != models.ReportActionModeratedHidden && input.Action != models.ReportActionDelete {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_governance_action", "error": "action 仅支持 warn、moderated_hidden 或 delete"})
+		return
+	}
 	input.ConfirmedReasonCode = strings.ToLower(strings.TrimSpace(input.ConfirmedReasonCode))
 	if input.Status == string(models.ReportStatusHandled) && input.DeleteReason == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -314,6 +324,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 	if input.Status == string(models.ReportStatusIgnored) {
 		input.DeleteReason = ""
 		input.ConfirmedReasonCode = ""
+		input.Action = ""
 	}
 	var report models.Report
 	var governedUserID uint
@@ -334,7 +345,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 		report.Status = models.ReportStatus(input.Status)
 		report.HandlerID = new(uint)
 		*report.HandlerID = userID.(uint)
-		report.Result, report.DeleteReason, report.HandledAt = input.Result, input.DeleteReason, &now
+		report.Result, report.DeleteReason, report.Action, report.HandledAt = input.Result, input.DeleteReason, input.Action, &now
 		if err := tx.Save(&report).Error; err != nil {
 			return err
 		}
@@ -347,8 +358,39 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 				if err := tx.First(&post, report.TargetID).Error; err != nil {
 					return err
 				}
-				if err := tx.Model(&post).Update("status", models.PostStatusDeleted).Error; err != nil {
-					return err
+				if post.Revision < 1 {
+					post.Revision = 1
+				}
+				switch input.Action {
+				case models.ReportActionWarn:
+					// 仅记录警告，不改变公开权限。
+				case models.ReportActionDelete:
+					if err := tx.Model(&post).Update("status", models.PostStatusDeleted).Error; err != nil {
+						return err
+					}
+				default:
+					if err := tx.Model(&post).Updates(map[string]interface{}{
+						"status": models.PostStatusModeratedHidden,
+						"moderation_rule_code": input.ConfirmedReasonCode,
+						"moderation_reason": input.DeleteReason,
+						"moderated_by_id": userID.(uint),
+						"moderated_at": now,
+					}).Error; err != nil {
+						return err
+					}
+					report.ModeratedRevision = post.Revision
+				}
+				if input.Action == models.ReportActionModeratedHidden || input.Action == models.ReportActionDelete {
+					var rows []models.PostImage
+					if err := tx.Select("file_id").Where("post_id = ?", post.ID).Find(&rows).Error; err == nil && len(rows) > 0 {
+						fileIDs := make([]uint, 0, len(rows))
+						for _, r := range rows {
+							fileIDs = append(fileIDs, r.FileID)
+						}
+						if err := services.ReconcileFilePublicAccess(tx, fileIDs...); err != nil {
+							return err
+						}
+					}
 				}
 				targetUserID = post.AuthorID
 				governedPostID = post.ID
@@ -487,6 +529,11 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 			default:
 				return fmt.Errorf("invalid_target_type")
 			}
+			if report.ModeratedRevision > 0 {
+				if err := tx.Model(&report).Update("moderated_revision", report.ModeratedRevision).Error; err != nil {
+					return err
+				}
+			}
 			if err := tx.Model(&models.User{}).Where("id = ?", targetUserID).Update("report_count", gorm.Expr("report_count + 1")).Error; err != nil {
 				return err
 			}
@@ -517,7 +564,12 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 				return err
 			}
 		}
-		if err := tx.Create(&models.AdminActionLog{AdminID: userID.(uint), Action: "handle_report", TargetType: "report", TargetID: uint(reportID), Detail: fmt.Sprintf("处理举报: %s, 结果: %s", report.Reason, input.Status)}).Error; err != nil {
+		if governedUserID > 0 && governedPostID > 0 && input.Action == models.ReportActionModeratedHidden {
+			if err := CreateContentGovernedNotification(tx, governedUserID, report.ID, governedPostID, report.DeleteReason); err != nil {
+				return err
+			}
+		}
+		if err := tx.Create(&models.AdminActionLog{AdminID: userID.(uint), Action: "handle_report", TargetType: "report", TargetID: uint(reportID), Detail: fmt.Sprintf("处理举报: %s, 结果: %s, 动作: %s", report.Reason, input.Status, input.Action)}).Error; err != nil {
 			return err
 		}
 		return tx.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1")).Error
@@ -537,9 +589,6 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "处理举报失败"})
 		}
 		return
-	}
-	if input.Status == string(models.ReportStatusHandled) && governedUserID > 0 && (report.TargetType == "post" || report.TargetType == "reply") {
-		_ = CreateContentGovernedNotification(h.db, governedUserID, report.ID, governedPostID, report.DeleteReason)
 	}
 	c.JSON(http.StatusOK, report)
 }

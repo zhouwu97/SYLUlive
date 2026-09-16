@@ -8,6 +8,7 @@ import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/app_page_app_bar.dart';
 import '../widgets/canteen/canteen_pending_card.dart';
+import 'admin_teacher_governance_screen.dart';
 
 class AdminReviewTasksScreen extends StatefulWidget {
   const AdminReviewTasksScreen({super.key});
@@ -501,6 +502,226 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     }
   }
 
+  String _normalizeTeacherName(String raw) {
+    var s = raw.trim();
+    s = s.replaceAll(RegExp(r'\s+'), '');
+    if (s.endsWith('老师') && s.length > 2) {
+      s = s.substring(0, s.length - 2);
+    }
+    return s.toLowerCase();
+  }
+
+  Future<void> _mergeTeacherInto(
+      int pendingId, int keeperId, String keeperName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认合并到已有教师'),
+        content: Text(
+            '确定将此待审教师合并到已有教师「$keeperName」吗？\n\n合并后该待审教师原名称将自动登记为别名，避免后续再次重复提交。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认合并'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      final res = await dio.post(
+        '/api/admin/teachers/$pendingId/merge-into',
+        data: {
+          'keeper_id': keeperId,
+          'register_alias': true,
+        },
+      );
+      if (mounted) {
+        setState(
+            () => _pendingTeachers.removeWhere((t) => t['id'] == pendingId));
+        final msg = res.data is Map && res.data['message'] != null
+            ? res.data['message'].toString()
+            : '已并入已有教师 $keeperName';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.green),
+        );
+      }
+    } on DioException catch (e) {
+      if (mounted) {
+        final err =
+            e.response?.data is Map ? e.response?.data['error'] : null;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(err?.toString() ?? '合并失败'),
+              backgroundColor: Colors.red),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('操作失败'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Widget _buildPendingTeacherItem(dynamic t, bool isDark,
+      {bool isGroup = false}) {
+    final name = (t['name'] ?? '').toString();
+    final course = (t['course'] ?? '').toString();
+    final matched = t['matched_existing_teacher'] as Map?;
+
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: isGroup ? 6.0 : 0.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              CircleAvatar(
+                backgroundColor: AppColors.brandPrimary,
+                radius: 16,
+                child: Text(
+                  name.isNotEmpty ? name.substring(0, 1) : '?',
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    Text(
+                      '老师提交 · $course',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.white60 : Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (matched == null) ...[
+                IconButton(
+                  tooltip: '通过',
+                  icon: const Icon(Icons.check_circle, color: Colors.green),
+                  onPressed: () => _verifyTeacher(t['id'], true),
+                ),
+                IconButton(
+                  tooltip: '拒绝',
+                  icon: const Icon(Icons.cancel, color: Colors.red),
+                  onPressed: () => _verifyTeacher(t['id'], false),
+                ),
+              ],
+            ],
+          ),
+          if (matched != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xFF1E2A38)
+                    : const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isDark
+                      ? const Color(0xFF2A3D54)
+                      : const Color(0xFFBFDBFE),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.info_outline,
+                          size: 15, color: Color(0xFF2563EB)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          '发现已有教师：${matched['name']} · ${matched['rating_count'] ?? 0} 条评价',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF2563EB),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () => _verifyTeacher(t['id'], false),
+                        child:
+                            const Text('拒绝', style: TextStyle(fontSize: 12)),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () => _verifyTeacher(t['id'], true),
+                        child: const Text('新建教师',
+                            style: TextStyle(fontSize: 12)),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () => _mergeTeacherInto(
+                          t['id'],
+                          (matched['id'] as num).toInt(),
+                          (matched['name'] ?? '').toString(),
+                        ),
+                        child: const Text('合并到已有教师',
+                            style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Future<void> _verifyMajor(int id, bool approve) async {
     try {
       final dio = context.read<AuthProvider>().dio;
@@ -890,12 +1111,14 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       return seenRemovalAdmins.add(aid);
     }).toList();
 
-    final seenTeacherNames = <String>{};
-    final dedupedTeachers = _pendingTeachers.where((t) {
-      final name = (t['name'] ?? '').toString();
-      if (seenTeacherNames.contains(name)) return false;
-      return seenTeacherNames.add(name);
-    }).toList();
+    // 按 effectiveCourseSubject + NormalizeTeacherName 分组，避免误吞不同课程同名教师
+    final teacherGroups = <String, List<dynamic>>{};
+    for (final t in _pendingTeachers) {
+      final course = (t['course'] ?? '').toString().trim().toLowerCase();
+      final name = _normalizeTeacherName((t['name'] ?? '').toString());
+      final key = '$course|$name';
+      teacherGroups.putIfAbsent(key, () => []).add(t);
+    }
 
     final seenMajorNames = <String>{};
     final dedupedMajors = _pendingMajors.where((m) {
@@ -991,32 +1214,74 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       );
     }
 
-    for (final t in dedupedTeachers) {
+    for (final group in teacherGroups.values) {
+      final isGroupDuplicate = group.length > 1;
+      final first = group.first;
+      final teacherName = (first['name'] ?? '').toString();
+      final courseName = (first['course'] ?? '').toString();
+
       items.add(
         Card(
           margin: const EdgeInsets.only(bottom: 10),
           color: isDark ? Colors.grey[850] : Colors.white,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: AppColors.brandPrimary,
-              child: Text((t['name'] as String? ?? '?').substring(0, 1)),
-            ),
-            title: Text(t['name'] ?? ''),
-            subtitle: Text('老师提交 - ${t['course'] ?? ''}\n一个管理员同意即可通过'),
-            isThreeLine: true,
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.check_circle, color: Colors.green),
-                  onPressed: () => _verifyTeacher(t['id'], true),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.cancel, color: Colors.red),
-                  onPressed: () => _verifyTeacher(t['id'], false),
-                ),
+                if (isGroupDuplicate) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color:
+                          Colors.amber.withValues(alpha: isDark ? 0.2 : 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded,
+                            size: 18, color: Colors.amber),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '「$teacherName · $courseName」检测到 ${group.length} 条疑似重复提交',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color:
+                                  isDark ? Colors.amber[200] : Colors.amber[900],
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const AdminTeacherGovernanceScreen(),
+                              ),
+                            ).then((_) => _loadData());
+                          },
+                          child: const Text('查看治理',
+                              style: TextStyle(fontSize: 12)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                ...group.map((t) => _buildPendingTeacherItem(t, isDark,
+                    isGroup: isGroupDuplicate)),
               ],
             ),
           ),

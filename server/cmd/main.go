@@ -282,6 +282,7 @@ func main() {
 		&models.Announcement{},
 
 		&models.Report{},
+		&models.PostRectificationReview{},
 
 		&models.Appeal{},
 
@@ -552,6 +553,9 @@ func main() {
 	if err := models.EnsureCourseEvaluationSchema(db); err != nil {
 		log.Fatal("课程评价系统数据库约束未就绪:", err)
 	}
+	if err := models.EnsureTeacherGovernanceSchema(db); err != nil {
+		log.Fatal("教师治理数据库约束未就绪:", err)
+	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
 	announcementBackfills := []struct {
@@ -757,6 +761,7 @@ func main() {
 	announcementHandler := handlers.NewAnnouncementHandler(db)
 
 	reportHandler := handlers.NewReportHandler(db)
+	postGovernanceHandler := handlers.NewPostGovernanceHandler(db)
 
 	appealHandler := handlers.NewAppealHandler(db)
 	appealHandler.SetUploadDir(cfg.UploadDir)
@@ -1750,6 +1755,7 @@ func main() {
 		postsAuth.POST("/:id/replies", replyHandler.Create)
 
 		postsAuth.POST("/:id/appeal", appealHandler.Create)
+		postsAuth.POST("/:id/rectification-review", postGovernanceHandler.SubmitRectification)
 
 		postsAuth.GET("/:id/notifications/unread", notificationHandler.GetPostUnreadReplyNotifications)
 
@@ -1869,8 +1875,16 @@ func main() {
 
 		reportsAdmin.GET("", reportHandler.GetList)
 
-		reportsAdmin.PUT("/:id/handle", reportHandler.Handle)
+	reportsAdmin.PUT("/:id/handle", reportHandler.Handle)
 
+	}
+
+	// 治理隐藏帖子整改复审（管理员）。
+	rectificationAdmin := r.Group("/api/admin/rectification-reviews")
+	rectificationAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		rectificationAdmin.GET("", postGovernanceHandler.ListRectification)
+		rectificationAdmin.POST("/:id/:decision", postGovernanceHandler.ResolveRectification)
 	}
 
 	// 申诉路由
@@ -1915,6 +1929,9 @@ func main() {
 	admin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 
 	{
+		admin.POST("/posts/:id/restore", postGovernanceHandler.AdminRestorePost)
+		admin.GET("/rectification", postGovernanceHandler.ListRectification)
+		admin.POST("/rectification/:id/:decision", postGovernanceHandler.ResolveRectification)
 		admin.GET("/appeals/review", appealHandler.AdminGetReviewList)
 		admin.POST("/appeals/:id/review", appealHandler.AdminResolveReview)
 
@@ -2184,6 +2201,29 @@ func main() {
 
 		teacherAdmin.DELETE("/:id/reject", teacherHandler.RejectTeacher)
 
+		teacherAdmin.POST("/:id/merge-into", teacherHandler.MergeInto)
+
+	}
+
+	// 兼容显式管理员路径 POST /api/admin/teachers/:id/merge-into (§21.1)
+	r.POST("/api/admin/teachers/:id/merge-into",
+		middleware.AuthMiddleware(db, cfg.JWTSecret),
+		middleware.AdminMiddleware(),
+		teacherHandler.MergeInto)
+
+	// 教师与课程数据治理路由 (§22)
+	teacherGovernanceHandler := handlers.NewTeacherGovernanceHandler(db)
+	govAdmin := r.Group("/api/admin/teacher-governance")
+	govAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		govAdmin.GET("/duplicate-groups", teacherGovernanceHandler.ListDuplicateGroups)
+		govAdmin.POST("/merge-preview", teacherGovernanceHandler.PreviewMerge)
+		govAdmin.POST("/merge", teacherGovernanceHandler.Merge)
+		govAdmin.GET("/merge-records", teacherGovernanceHandler.ListMergeRecords)
+		govAdmin.GET("/teachers", teacherGovernanceHandler.ListTeachers)
+		govAdmin.GET("/aliases", teacherGovernanceHandler.ListAliases)
+		govAdmin.POST("/aliases", teacherGovernanceHandler.AddAlias)
+		govAdmin.DELETE("/aliases/:id", teacherGovernanceHandler.DeleteAlias)
 	}
 
 	teacherAuth := teacher.Group("")

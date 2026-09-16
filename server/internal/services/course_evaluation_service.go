@@ -343,19 +343,43 @@ func (s *CourseEvaluationService) resolveSubjects(courseName string) ([]CourseSu
 }
 
 // resolveTeachers 在指定学科内按规范化名称解析教师候选。
+// 精确命中活动教师为 exact；无实名命中时回退到教师别名（治理合并登记），
+// 命中别名返回 target 教师并标注 match=alias。已合并的存档教师永不参与解析。
 func (s *CourseEvaluationService) resolveTeachers(subjectID uint, teacherName string) ([]TeacherCandidate, error) {
 	normalized := models.NormalizeTeacherName(teacherName)
 	if normalized == "" || subjectID == 0 {
 		return []TeacherCandidate{}, nil
 	}
 	var teachers []models.Teacher
-	if err := s.db.Where("course_subject_id = ? AND name_normalized = ?", subjectID, normalized).
+	if err := teacherActiveScope(s.db).
+		Where("course_subject_id = ? AND name_normalized = ?", subjectID, normalized).
 		Order("verified DESC, id ASC").Limit(courseEvaluationMaxPageSize).Find(&teachers).Error; err != nil {
 		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取教师失败", err)
 	}
 	out := make([]TeacherCandidate, 0, len(teachers))
 	for _, t := range teachers {
 		out = append(out, TeacherCandidate{ID: t.ID, Name: t.Name, Verified: t.Verified, Match: "exact"})
+	}
+	if len(out) > 0 {
+		return out, nil
+	}
+	var aliases []models.TeacherAlias
+	if err := s.db.Where("course_subject_id = ? AND normalized_alias = ?", subjectID, normalized).
+		Order("id ASC").Limit(courseEvaluationMaxPageSize).Find(&aliases).Error; err != nil {
+		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取教师别名失败", err)
+	}
+	seen := map[uint]bool{}
+	for _, alias := range aliases {
+		if seen[alias.TeacherID] {
+			continue
+		}
+		var teacher models.Teacher
+		if err := teacherActiveScope(s.db).
+			Where("id = ?", alias.TeacherID).First(&teacher).Error; err != nil {
+			continue
+		}
+		seen[teacher.ID] = true
+		out = append(out, TeacherCandidate{ID: teacher.ID, Name: teacher.Name, Verified: teacher.Verified, Match: "alias"})
 	}
 	return out, nil
 }
@@ -487,6 +511,24 @@ func (s *CourseEvaluationService) RateVerifiedTeacher(userID, teacherID uint, st
 			return nil, courseEvalErr(CodeCourseEvaluationNotFound, "教师不存在或未通过审核", nil)
 		}
 		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取教师失败", err)
+	}
+
+	// 依据 §23 规约：对于旧 deeplink 或缓存引用的已合并教师，透明解析至最终 keeper
+	visited := map[uint]bool{teacher.ID: true}
+	for teacher.MergedIntoID != nil && *teacher.MergedIntoID != 0 {
+		nextID := *teacher.MergedIntoID
+		if visited[nextID] {
+			break // 环路死循环保护
+		}
+		visited[nextID] = true
+		if err := s.db.Where("id = ? AND verified = ?", nextID, true).First(&teacher).Error; err != nil {
+			break
+		}
+	}
+	if teacher.MergedIntoID != nil {
+		return nil, courseEvalErrWithDetails(CodeCourseEvaluationNotFound, "教师已合并且目标实体不可用", map[string]interface{}{
+			"merged_into_id": *teacher.MergedIntoID,
+		})
 	}
 
 	createInput := CreateCourseEvaluationInput{
@@ -749,16 +791,17 @@ func (s *CourseEvaluationService) selectSubject(tx *gorm.DB, input courseEvaluat
 	}
 }
 
-// selectTeacher 确定教师。客户端提交的 teacher_id 必须属于该学科且已审核，否则忽略。
+// selectTeacher 确定教师。客户端提交的 teacher_id 必须属于该学科、已审核且未被合并，
+// 否则忽略并回退到名称解析（含教师别名）。
 func (s *CourseEvaluationService) selectTeacher(tx *gorm.DB, subject *models.CourseSubject, input courseEvaluationInput) (*models.Teacher, error) {
 	if input.TeacherID != nil && *input.TeacherID != 0 {
 		var teacher models.Teacher
-		err := tx.Where("id = ? AND course_subject_id = ? AND verified = ?", *input.TeacherID, subject.ID, true).
+		err := tx.Where("id = ? AND course_subject_id = ? AND verified = ? AND merged_into_id IS NULL", *input.TeacherID, subject.ID, true).
 			First(&teacher).Error
 		if err == nil {
 			return &teacher, nil
 		}
-		// ID 不属于该学科或未审核：不信任，继续按名称解析。
+		// ID 不属于该学科、未审核或已被合并：不信任，继续按名称解析。
 	}
 	teachers, err := s.resolveTeachersTx(tx, subject.ID, input.TeacherName)
 	if err != nil {

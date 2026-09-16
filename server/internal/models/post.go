@@ -30,10 +30,11 @@ const (
 type PostStatus string
 
 const (
-	PostStatusNormal  PostStatus = "normal"  // 正常 / 出售中
-	PostStatusSold    PostStatus = "sold"    // 已售出，保留历史记录
-	PostStatusClosed  PostStatus = "closed"  // 已关闭，保留历史记录
-	PostStatusDeleted PostStatus = "deleted" // 已删除
+	PostStatusNormal          PostStatus = "normal"           // 正常 / 出售中
+	PostStatusSold            PostStatus = "sold"             // 已售出，保留历史记录
+	PostStatusClosed          PostStatus = "closed"           // 已关闭，保留历史记录
+	PostStatusModeratedHidden PostStatus = "moderated_hidden" // 治理隐藏，仅作者与管理员可见
+	PostStatusDeleted         PostStatus = "deleted"          // 作者删除/永久删除
 )
 
 // PostContentKind 区分普通帖子与复用帖子能力的特殊内容。
@@ -63,6 +64,11 @@ type Post struct {
 	// WaterTagID 水帖版块内标签 ID，仅在 board_id = BoardShuitie 时使用；旧帖子与旧客户端可不传。
 	WaterTagID             *uint      `gorm:"index" json:"water_tag_id"`
 	Status                 PostStatus `gorm:"default:normal;index" json:"status"` // 状态
+	Revision               int        `gorm:"not null;default:1" json:"revision"` // 内容版本，治理与整改复审按版本审核
+	ModerationRuleCode     string     `gorm:"size:80;index" json:"moderation_rule_code,omitempty"`
+	ModerationReason       string     `gorm:"size:1000" json:"moderation_reason,omitempty"`
+	ModeratedByID          *uint      `gorm:"index" json:"-"`
+	ModeratedAt            *time.Time `gorm:"index" json:"moderated_at,omitempty"`
 	ViewCount              int        `gorm:"default:0" json:"view_count"`        // 观看次数
 	ReplyCount             int        `gorm:"default:0" json:"reply_count"`       // 回复数量
 	LikeCount              int        `gorm:"default:0" json:"like_count"`        // 点赞数量
@@ -82,6 +88,7 @@ type Post struct {
 	WaterSectionFeatured   bool       `gorm:"-" json:"water_section_featured"`
 	WaterSectionFeaturedID *uint      `gorm:"-" json:"water_section_featured_id,omitempty"`
 	HomeFeaturedPending    bool       `gorm:"-" json:"home_featured_pending,omitempty"`
+	ViewerPermissions      *PostViewerPermissions `gorm:"-" json:"viewer_permissions,omitempty"`
 
 	// 统一经验返回字段
 	ExpEarned int `gorm:"-" json:"exp_earned,omitempty"`
@@ -99,6 +106,23 @@ type Post struct {
 	// LastActivityAt 是最后一条有效回复的时间；无回复时等于发帖时间，不能用正文编辑时间替代。
 	LastActivityAt time.Time `gorm:"index" json:"last_activity_at"`
 }
+
+// PostViewerPermissions 将服务端最终权限下发给客户端，避免在多页面散落状态推导。
+type PostViewerPermissions struct {
+	CanView                 bool `json:"can_view"`
+	CanEdit                 bool `json:"can_edit"`
+	CanDelete               bool `json:"can_delete"`
+	CanComment              bool `json:"can_comment"`
+	CanLike                 bool `json:"can_like"`
+	CanShare                bool `json:"can_share"`
+	CanAppeal               bool `json:"can_appeal"`
+	CanSubmitRectification  bool `json:"can_submit_rectification"`
+	CanRestore              bool `json:"can_restore"`
+	HasPendingRectification bool `json:"has_pending_rectification"`
+	HasPendingAppeal        bool `json:"has_pending_appeal"`
+	SubmittedRevision       int  `json:"submitted_revision,omitempty"`
+}
+
 
 // MarshalJSON 确保帖子作者始终使用公开 DTO，而非数据库 User 模型。
 func (p Post) MarshalJSON() ([]byte, error) {

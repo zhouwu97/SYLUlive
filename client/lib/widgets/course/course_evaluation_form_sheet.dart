@@ -727,6 +727,7 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
       CourseEvaluationStatus.published => ('已发布', Colors.green),
       CourseEvaluationStatus.needsEdit => ('需修改', Colors.orange),
       CourseEvaluationStatus.pending => ('待审核', Colors.blue),
+      CourseEvaluationStatus.superseded => ('已废弃', Colors.grey),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

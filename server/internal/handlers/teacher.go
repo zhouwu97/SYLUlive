@@ -41,9 +41,10 @@ func ensureTeacherCourseSubject(db *gorm.DB, courseName string, verified bool) *
 		return nil
 	}
 	candidate := models.CourseSubject{
-		Name:           strings.TrimSpace(courseName),
-		NormalizedName: normalized,
-		Verified:       verified,
+		Name:            strings.TrimSpace(courseName),
+		NormalizedName:  normalized,
+		Verified:        verified,
+		CanonicalSource: models.TeacherSourceUser,
 	}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&candidate).Error; err != nil {
 		return nil
@@ -82,7 +83,7 @@ func NewTeacherHandler(db *gorm.DB) *TeacherHandler {
 	return &TeacherHandler{db: db}
 }
 
-// GetList 教师列表（只显示已审核的，按添加时间倒序）
+// GetList 教师列表（只显示已审核且未合并的，按添加时间倒序）
 func (h *TeacherHandler) GetList(c *gin.Context) {
 	q := c.Query("q")
 
@@ -97,6 +98,7 @@ func (h *TeacherHandler) GetList(c *gin.Context) {
 		Select("teachers.*, COUNT(teacher_ratings.id) as rating_count, COALESCE(AVG(CAST(teacher_ratings.star AS FLOAT)), 0) as average_star").
 		Joins("LEFT JOIN teacher_ratings ON teacher_ratings.teacher_id = teachers.id AND teacher_ratings.status = 'normal' AND teacher_ratings.deleted_at IS NULL").
 		Where("teachers.verified = ?", true).
+		Where("teachers.merged_into_id IS NULL").
 		Group("teachers.id").
 		Order("teachers.created_at DESC")
 
@@ -112,7 +114,8 @@ func (h *TeacherHandler) GetList(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// GetDetail 教师详情（含评价列表和当前用户的评价）
+// GetDetail 教师详情（含评价列表和当前用户的评价）。
+// 已合并的教师返回 merged 标记与目标 ID，客户端据此跳转到保留教师。
 func (h *TeacherHandler) GetDetail(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -122,6 +125,19 @@ func (h *TeacherHandler) GetDetail(c *gin.Context) {
 	var teacher models.Teacher
 	if err := h.db.First(&teacher, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "教师不存在"})
+		return
+	}
+	if teacher.MergedIntoID != nil {
+		keeperName := ""
+		var keeper models.Teacher
+		if err := h.db.Select("id", "name").First(&keeper, *teacher.MergedIntoID).Error; err == nil {
+			keeperName = keeper.Name
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"merged":         true,
+			"merged_into_id": teacher.MergedIntoID,
+			"merged_into_name": keeperName,
+		})
 		return
 	}
 	sortMode := c.Query("review_sort")
@@ -204,10 +220,15 @@ func (h *TeacherHandler) Create(c *gin.Context) {
 	}
 	// 管理员添加自动通过
 	verified := role == "admin" || role == "super_admin"
+	source := models.TeacherSourceUser
+	if verified {
+		source = models.TeacherSourceAdmin
+	}
 	teacher := models.Teacher{
 		Name: input.Name, Course: input.Course,
 		Verified: verified, CreatedBy: userID.(uint),
-		NameNormalized: models.NormalizeTeacherName(input.Name),
+		NameNormalized:  models.NormalizeTeacherName(input.Name),
+		CanonicalSource: source,
 	}
 	// 旧入口继续以自由文本课程名为主，同时维护标准学科归属。
 	if subjectID := ensureTeacherCourseSubject(h.db, input.Course, verified); subjectID != nil {
@@ -271,18 +292,21 @@ func (h *TeacherHandler) Rate(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": message, "submission": view})
 }
 
-// Verify 管理员审核教师
+// Verify 管理员审核教师。
+// 审核前先做冲突收敛：若同学科已有同名活动教师（或别名已指向某教师），
+// 待审行并入该教师并登记别名，避免唯一索引竞争和重复实体。
 func (h *TeacherHandler) Verify(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	if err := h.db.Model(&models.Teacher{}).Where("id = ?", id).Update("verified", true).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-		return
-	}
 	var t models.Teacher
 	if err := h.db.First(&t, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "教师不存在"})
 		return
 	}
+	if t.MergedIntoID != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "该教师已被合并，请刷新待办列表"})
+		return
+	}
+
 	// 审核通过时补齐标准学科字段：教师名规范化、学科归属与学科审核状态。
 	updates := map[string]interface{}{}
 	if strings.TrimSpace(t.NameNormalized) == "" {
@@ -300,8 +324,88 @@ func (h *TeacherHandler) Verify(c *gin.Context) {
 	if len(updates) > 0 {
 		_ = h.db.Model(&models.Teacher{}).Where("id = ?", id).Updates(updates).Error
 	}
+	_ = h.db.First(&t, id).Error
+
+	// 冲突收敛：同学科下已有同名活动教师，或别名已指向某教师 → 并入而非重复创建。
+	if t.CourseSubjectID != nil {
+		normalized := t.NameNormalized
+		if normalized == "" {
+			normalized = models.NormalizeTeacherName(t.Name)
+		}
+		var owner models.Teacher
+		err := h.db.Where("course_subject_id = ? AND name_normalized = ? AND merged_into_id IS NULL AND id <> ?",
+			*t.CourseSubjectID, normalized, t.ID).Order("verified DESC, id ASC").First(&owner).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			var alias models.TeacherAlias
+			if err := h.db.Where("course_subject_id = ? AND normalized_alias = ?", *t.CourseSubjectID, normalized).
+				First(&alias).Error; err == nil {
+				if err := h.db.Where("id = ? AND merged_into_id IS NULL", alias.TeacherID).First(&owner).Error; err != nil {
+					owner = models.Teacher{}
+				}
+			}
+		}
+		if owner.ID != 0 {
+			// 并入已有教师：原名登记为别名，待审行标记 merged。
+			governanceService := services.NewTeacherGovernanceService(h.db)
+			keeperName, err := governanceService.MergePendingTeacherInto(c.GetUint("user_id"), t.ID, owner.ID, true)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "并入已有教师失败: " + err.Error()})
+				return
+			}
+			h.logAdmin(c, "审核通过教师（并入已有）", t.Name, "并入 "+keeperName)
+			c.JSON(http.StatusOK, gin.H{"message": "已并入已有教师 " + keeperName, "merged_into_id": owner.ID})
+			return
+		}
+	}
+
+	if err := h.db.Model(&models.Teacher{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"verified":         true,
+		"canonical_source": models.TeacherSourceAdmin,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 	h.logAdmin(c, "审核通过教师", t.Name, "")
 	c.JSON(http.StatusOK, gin.H{"message": "已审核通过"})
+}
+
+// MergeInto 管理员把一条待审教师并入已有教师（审核卡片"合并到已有教师"）。
+func (h *TeacherHandler) MergeInto(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var body struct {
+		KeeperID       uint `json:"keeper_id"`
+		RegisterAlias  *bool `json:"register_alias"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.KeeperID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少合并目标"})
+		return
+	}
+	var pending models.Teacher
+	if err := h.db.First(&pending, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "教师不存在"})
+		return
+	}
+	if pending.MergedIntoID != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "该教师已被合并，请刷新待办列表"})
+		return
+	}
+	governanceService := services.NewTeacherGovernanceService(h.db)
+	keeperName, err := governanceService.MergePendingTeacherInto(c.GetUint("user_id"), uint(id), body.KeeperID, body.RegisterAlias == nil || *body.RegisterAlias)
+	if err != nil {
+		var businessErr *services.TeacherGovernanceError
+		if errors.As(err, &businessErr) {
+			response := gin.H{"error": businessErr.Message, "code": businessErr.Code}
+			for key, value := range businessErr.Details {
+				response[key] = value
+			}
+			c.JSON(services.TeacherGovernanceHTTPStatus(businessErr.Code), response)
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "合并失败"})
+		return
+	}
+	h.logAdmin(c, "待审教师并入已有教师", pending.Name, "并入 "+keeperName)
+	c.JSON(http.StatusOK, gin.H{"message": "已并入教师 " + keeperName, "merged_into_id": body.KeeperID})
 }
 
 // RejectTeacher 管理员拒绝教师
@@ -320,14 +424,107 @@ func (h *TeacherHandler) RejectTeacher(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已拒绝"})
 }
 
-// GetPending 获取待审核教师列表
+// GetPending 获取待审核教师列表。
+// 每条待审教师附带 matched_existing_teacher（按同学科同名 / 课程别名归并 / 教师别名匹配），
+// 供审核卡片展示"发现已有疑似教师"并提供合并入口。
 func (h *TeacherHandler) GetPending(c *gin.Context) {
 	var teachers []models.Teacher
-	if err := h.db.Where("verified = ?", false).Order("created_at DESC").Find(&teachers).Error; err != nil {
+	if err := h.db.Where("verified = ? AND merged_into_id IS NULL", false).Order("created_at DESC").Find(&teachers).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取待审核教师失败"})
 		return
 	}
-	c.JSON(http.StatusOK, teachers)
+
+	type pendingTeacherView struct {
+		models.Teacher
+		MatchedExistingTeacher *matchedExistingTeacher `json:"matched_existing_teacher,omitempty"`
+	}
+	result := make([]pendingTeacherView, 0, len(teachers))
+	for _, teacher := range teachers {
+		view := pendingTeacherView{Teacher: teacher}
+		view.MatchedExistingTeacher = h.matchExistingTeacher(&teacher)
+		result = append(result, view)
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+type matchedExistingTeacher struct {
+	ID          uint   `json:"id"`
+	Name        string `json:"name"`
+	Course      string `json:"course"`
+	RatingCount int    `json:"rating_count"`
+}
+
+// matchExistingTeacher 为待审教师查找同学科的已有活动教师。
+// 匹配顺序：同学科同名 → 课程别名归并后的学科同名 → 教师别名。
+func (h *TeacherHandler) matchExistingTeacher(pending *models.Teacher) *matchedExistingTeacher {
+	normalized := pending.NameNormalized
+	if normalized == "" {
+		normalized = models.NormalizeTeacherName(pending.Name)
+	}
+	if normalized == "" {
+		return nil
+	}
+
+	subjectIDs := []uint{}
+	if pending.CourseSubjectID != nil && *pending.CourseSubjectID != 0 {
+		subjectIDs = append(subjectIDs, *pending.CourseSubjectID)
+		// 课程别名归并：待审课程名命中的别名目标学科也算同源。
+		if subject, err := resolveSubjectForPending(h.db, pending.Course); err == nil && subject != nil && subject.ID != *pending.CourseSubjectID {
+			subjectIDs = append(subjectIDs, subject.ID)
+		}
+	} else if subject, err := resolveSubjectForPending(h.db, pending.Course); err == nil && subject != nil {
+		subjectIDs = append(subjectIDs, subject.ID)
+	}
+
+	for _, subjectID := range subjectIDs {
+		var owner models.Teacher
+		err := h.db.Where("course_subject_id = ? AND name_normalized = ? AND verified = ? AND merged_into_id IS NULL AND id <> ?",
+			subjectID, normalized, true, pending.ID).Order("id ASC").First(&owner).Error
+		if err == nil {
+			return buildMatchedTeacher(h.db, owner)
+		}
+		var alias models.TeacherAlias
+		if err := h.db.Where("course_subject_id = ? AND normalized_alias = ?", subjectID, normalized).
+			Order("id ASC").First(&alias).Error; err == nil {
+			if err := h.db.Where("id = ? AND merged_into_id IS NULL AND id <> ?", alias.TeacherID, pending.ID).
+				First(&owner).Error; err == nil {
+				return buildMatchedTeacher(h.db, owner)
+			}
+		}
+	}
+	return nil
+}
+
+// resolveSubjectForPending 按课程名解析标准学科（精确 → 别名）。
+func resolveSubjectForPending(db *gorm.DB, courseName string) (*models.CourseSubject, error) {
+	normalized := models.NormalizeCourseSubjectName(courseName)
+	if normalized == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	var subject models.CourseSubject
+	if err := db.Where("normalized_name = ?", normalized).Order("verified DESC, id ASC").First(&subject).Error; err == nil {
+		return &subject, nil
+	}
+	var alias models.CourseSubjectAlias
+	if err := db.Where("normalized_alias = ?", normalized).Order("id ASC").First(&alias).Error; err == nil {
+		if err := db.First(&subject, alias.CourseSubjectID).Error; err == nil {
+			return &subject, nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
+}
+
+func buildMatchedTeacher(db *gorm.DB, owner models.Teacher) *matchedExistingTeacher {
+	var count int64
+	db.Model(&models.TeacherRating{}).
+		Where("teacher_id = ? AND deleted_at IS NULL AND status = ?", owner.ID, "normal").
+		Count(&count)
+	return &matchedExistingTeacher{
+		ID:          owner.ID,
+		Name:        owner.Name,
+		Course:      owner.Course,
+		RatingCount: int(count),
+	}
 }
 
 // GetLogs 获取管理员操作日志

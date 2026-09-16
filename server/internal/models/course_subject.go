@@ -10,9 +10,10 @@ import (
 
 // 课程评价提交状态。
 const (
-	CourseEvaluationStatusPending   = "pending"
-	CourseEvaluationStatusPublished = "published"
-	CourseEvaluationStatusNeedsEdit = "needs_edit"
+	CourseEvaluationStatusPending    = "pending"
+	CourseEvaluationStatusPublished  = "published"
+	CourseEvaluationStatusNeedsEdit  = "needs_edit"
+	CourseEvaluationStatusSuperseded = "superseded"
 )
 
 // 课程评价来源。目前只允许从正式教务课表发起。
@@ -35,8 +36,10 @@ type CourseSubject struct {
 	NormalizedName string    `gorm:"size:100;not null;index" json:"normalized_name"`
 	Verified       bool      `gorm:"not null;default:false;index" json:"verified"`
 	CreatedBy      *uint     `gorm:"index" json:"created_by,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	// 名称出处，语义与 Teacher.CanonicalSource 一致。
+	CanonicalSource string    `gorm:"size:20;not null;default:legacy;index" json:"canonical_source"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 
 	// 关联数据（非数据库字段）
 	TeacherCount int     `gorm:"-" json:"teacher_count"`
@@ -97,6 +100,10 @@ type CourseEvaluationSubmission struct {
 	// 发布后指向的公开教师评价。
 	TeacherRatingID *uint `gorm:"index" json:"teacher_rating_id,omitempty"`
 
+	// 被后续提交或教师治理归并替代后的溯源指针。
+	SupersededBySubmissionID *uint  `gorm:"index" json:"superseded_by_submission_id,omitempty"`
+	SupersededReason         string `gorm:"size:255" json:"superseded_reason,omitempty"`
+
 	Revision int `gorm:"not null;default:1" json:"revision"`
 
 	ReviewedBy       *uint      `gorm:"index" json:"reviewed_by,omitempty"`
@@ -118,7 +125,7 @@ func (CourseEvaluationSubmission) TableName() string { return "course_evaluation
 // IsCourseEvaluationStatus 判断状态是否为允许的状态常量。
 func IsCourseEvaluationStatus(status string) bool {
 	switch status {
-	case CourseEvaluationStatusPending, CourseEvaluationStatusPublished, CourseEvaluationStatusNeedsEdit:
+	case CourseEvaluationStatusPending, CourseEvaluationStatusPublished, CourseEvaluationStatusNeedsEdit, CourseEvaluationStatusSuperseded:
 		return true
 	default:
 		return false

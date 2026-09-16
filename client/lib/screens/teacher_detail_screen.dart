@@ -19,11 +19,13 @@ import '../widgets/rating_detail/rating_input_sheet.dart';
 class TeacherDetailScreen extends StatefulWidget {
   final int teacherId;
   final String teacherName;
+  final int redirectCount;
 
   const TeacherDetailScreen({
     super.key,
     required this.teacherId,
     required this.teacherName,
+    this.redirectCount = 0,
   });
 
   @override
@@ -33,12 +35,43 @@ class TeacherDetailScreen extends StatefulWidget {
 class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
   bool _didChange = false;
   bool _isDeletingRating = false;
+  bool _hasRedirected = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<TeacherProvider>().loadTeacherDetail(widget.teacherId);
+    });
+  }
+
+  void _handleMergedRedirect(Teacher teacher) {
+    if (_hasRedirected) return;
+    final keeperId = teacher.mergedIntoId;
+    if (keeperId == null || keeperId == widget.teacherId) return;
+    if (widget.redirectCount >= 3) return;
+
+    _hasRedirected = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('该教师资料已合并，正在跳转到最新资料'),
+          duration: Duration(milliseconds: 1500),
+        ),
+      );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TeacherDetailScreen(
+            teacherId: keeperId,
+            teacherName: teacher.mergedIntoName.isNotEmpty
+                ? teacher.mergedIntoName
+                : teacher.name,
+            redirectCount: widget.redirectCount + 1,
+          ),
+        ),
+      );
     });
   }
 
@@ -206,6 +239,38 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                       },
                       child: const Text('重新加载'),
                     ),
+                  ],
+                ),
+              );
+            }
+
+            if (teacher.isMerged && teacher.mergedIntoId != null) {
+              if (widget.redirectCount >= 3) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.info_outline, size: 48, color: Colors.orange),
+                        const SizedBox(height: 16),
+                        Text(
+                          '该教师资料已合并至「${teacher.mergedIntoName.isNotEmpty ? teacher.mergedIntoName : '目标教师'}」，但重定向层级过多，已停止跳转。',
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              _handleMergedRedirect(teacher);
+              return const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('该教师资料已合并，正在跳转到最新资料...'),
                   ],
                 ),
               );

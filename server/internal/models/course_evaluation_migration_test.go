@@ -269,8 +269,10 @@ func TestEnsureCourseEvaluationSchemaMergesDuplicateTeachers(t *testing.T) {
 	db.Create(&loser)
 
 	// winner 与 loser 各有一条评价，其中 user 9 在两边都有评价。
-	db.Create(&TeacherRating{TeacherID: winner.ID, UserID: 9, Star: 5, Comment: "保留", Status: "normal"})
-	db.Create(&TeacherRating{TeacherID: loser.ID, UserID: 9, Star: 3, Comment: "重复", Status: "normal"})
+	// 依据 §14.2 规则，同一用户冲突评价保留最新（created_at DESC, id DESC）。
+	now := time.Now()
+	db.Create(&TeacherRating{TeacherID: winner.ID, UserID: 9, Star: 5, Comment: "保留", Status: "normal", CreatedAt: now.Add(time.Minute)})
+	db.Create(&TeacherRating{TeacherID: loser.ID, UserID: 9, Star: 3, Comment: "重复", Status: "normal", CreatedAt: now.Add(-time.Hour)})
 	db.Create(&TeacherRating{TeacherID: loser.ID, UserID: 10, Star: 4, Comment: "迁移", Status: "normal"})
 	db.Create(&TeacherRatingVote{RatingID: 3, UserID: 11, VoteType: "up"})
 
@@ -278,10 +280,18 @@ func TestEnsureCourseEvaluationSchemaMergesDuplicateTeachers(t *testing.T) {
 		t.Fatalf("迁移失败: %v", err)
 	}
 
-	var remaining int64
-	db.Model(&Teacher{}).Where("name_normalized = ?", NormalizeTeacherName("张三")).Count(&remaining)
-	if remaining != 1 {
-		t.Fatalf("重复教师应合并为 1 条，实际 %d", remaining)
+	var activeRemaining int64
+	ScopeActiveTeachers(db.Model(&Teacher{})).Where("name_normalized = ?", NormalizeTeacherName("张三")).Count(&activeRemaining)
+	if activeRemaining != 1 {
+		t.Fatalf("活动教师应合并为 1 位，实际 %d", activeRemaining)
+	}
+
+	var loserTeacher Teacher
+	if err := db.First(&loserTeacher, loser.ID).Error; err != nil {
+		t.Fatalf("loser 教师应继续保留在数据库中: %v", err)
+	}
+	if loserTeacher.MergedIntoID == nil || *loserTeacher.MergedIntoID != winner.ID {
+		t.Fatalf("loser 教师 merged_into_id 应指向 winner #%d，实际 %v", winner.ID, loserTeacher.MergedIntoID)
 	}
 
 	var liveRatings []TeacherRating
@@ -311,7 +321,7 @@ func TestEnsureCourseEvaluationSchemaCreatesUniqueIndexes(t *testing.T) {
 	}
 	for _, name := range []string{
 		"uq_course_subjects_normalized_name",
-		"uq_teachers_subject_name",
+		"uq_teachers_active_subject_name",
 		"uq_course_evaluation_submission_dedup",
 		"uq_teacher_rating_submission",
 	} {
@@ -342,7 +352,7 @@ func TestEnsureCourseEvaluationSchemaCreatesUniqueIndexes(t *testing.T) {
 }
 
 func TestIsCourseEvaluationStatus(t *testing.T) {
-	for _, ok := range []string{"pending", "published", "needs_edit"} {
+	for _, ok := range []string{"pending", "published", "needs_edit", "superseded"} {
 		if !IsCourseEvaluationStatus(ok) {
 			t.Fatalf("%s 应为合法状态", ok)
 		}

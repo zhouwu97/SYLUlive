@@ -46,7 +46,7 @@ func (s *HomeFeedService) SetPersonalizationV5(shadow bool, percent int) {
 
 func (s *HomeFeedService) PinnedPosts(now time.Time) ([]models.Post, error) {
 	var posts []models.Post
-	query := s.db.Where("board_id = ? AND status != ? AND is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?)", models.BoardShuitie, models.PostStatusDeleted, true, now)
+	query := s.db.Where("board_id = ? AND status IN ? AND is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?)", models.BoardShuitie, []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed}, true, now)
 	if !s.includePoll {
 		query = query.Where("content_kind <> ?", models.PostContentKindPoll)
 	}

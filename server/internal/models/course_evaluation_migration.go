@@ -24,7 +24,7 @@ func EnsureCourseEvaluationSchema(db *gorm.DB) error {
 	if db == nil {
 		return errors.New("database is nil")
 	}
-	if err := db.AutoMigrate(&CourseSubject{}, &CourseSubjectAlias{}, &CourseEvaluationSubmission{}, &Teacher{}, &TeacherRating{}); err != nil {
+	if err := db.AutoMigrate(&CourseSubject{}, &CourseSubjectAlias{}, &CourseEvaluationSubmission{}, &Teacher{}, &TeacherRating{}, &TeacherMergeRecord{}, &TeacherAlias{}); err != nil {
 		return fmt.Errorf("课程评价基础表迁移失败: %w", err)
 	}
 	if err := normalizeLegacyPhysicalEducationSubjects(db); err != nil {
@@ -36,7 +36,8 @@ func EnsureCourseEvaluationSchema(db *gorm.DB) error {
 	if err := backfillCourseSubjects(db); err != nil {
 		return err
 	}
-	if err := mergeDuplicateCourseTeachers(db); err != nil {
+	// 机械收敛历史技术重复（同一学科且规范化姓名完全一致），转为 merged_into_id 存档，绝不物理删除。
+	if err := reconcileLegacyExactDuplicateTeachers(db); err != nil {
 		return err
 	}
 	// 回填过程可能新建同名学科（唯一索引尚未建立），建索引前再收敛一次。
@@ -328,9 +329,10 @@ func mergeDuplicateCourseTeachers(db *gorm.DB) error {
 		NameNormalized  string
 		Total           int64
 	}
+	// merged_into_id 非空的行是管理员治理合并的存档，不再参与自动去重组。
 	if err := db.Model(&Teacher{}).
 		Select("course_subject_id, name_normalized, COUNT(*) AS total").
-		Where("course_subject_id IS NOT NULL AND name_normalized <> ''").
+		Where("course_subject_id IS NOT NULL AND name_normalized <> '' AND merged_into_id IS NULL").
 		Group("course_subject_id, name_normalized").
 		Having("COUNT(*) > 1").Scan(&groups).Error; err != nil {
 		return fmt.Errorf("读取重复教师分组失败: %w", err)
@@ -342,7 +344,7 @@ func mergeDuplicateCourseTeachers(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		for _, group := range groups {
 			var teachers []Teacher
-			if err := tx.Where("course_subject_id = ? AND name_normalized = ?", group.CourseSubjectID, group.NameNormalized).
+			if err := tx.Where("course_subject_id = ? AND name_normalized = ? AND merged_into_id IS NULL", group.CourseSubjectID, group.NameNormalized).
 				Order("verified DESC, updated_at DESC, id ASC").Find(&teachers).Error; err != nil {
 				return err
 			}
@@ -469,12 +471,17 @@ func recomputeTeacherRatingVoteCounts(tx *gorm.DB, teacherID uint) error {
 // ensureCourseEvaluationIndexes 建立课程评价闭环所需的唯一索引。
 // 三条语句均使用 IF NOT EXISTS，可在 SQLite 与 PostgreSQL 上重复执行。
 func ensureCourseEvaluationIndexes(db *gorm.DB) error {
+	// 兼容历史库：显式移除旧版全量唯一索引，避免阻止历史重复技术数据收敛
+	_ = db.Exec(`DROP INDEX IF EXISTS uq_teachers_subject_name`).Error
+
 	statements := []string{
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_course_subjects_normalized_name
 		 ON course_subjects(normalized_name)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS uq_teachers_subject_name
+		// 本索引是教师唯一性的唯一最终负责人：只约束活动教师，
+		// 被合并的存档行（merged_into_id 非空）不占用唯一键。
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_teachers_active_subject_name
 		 ON teachers(course_subject_id, name_normalized)
-		 WHERE course_subject_id IS NOT NULL`,
+		 WHERE course_subject_id IS NOT NULL AND merged_into_id IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_course_evaluation_submission_dedup
 			 ON course_evaluation_submissions(user_id, dedup_key)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_teacher_rating_submission

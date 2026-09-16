@@ -54,7 +54,7 @@ func (h *WaterTeamHandler) NotifyDeadlineSoon() {
 		Joins("JOIN posts ON posts.id = water_team_recruitments.post_id").
 		Where("water_team_recruitments.status = ? AND water_team_recruitments.accepted_count < water_team_recruitments.needed_count", models.RecruitmentStatusRecruiting).
 		Where("water_team_recruitments.deadline IS NOT NULL AND water_team_recruitments.deadline > ? AND water_team_recruitments.deadline <= ?", now, now.Add(72*time.Hour)).
-		Where("posts.status != ?", models.PostStatusDeleted).
+		Where("posts.status IN ?", []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed}).
 		Scan(&rows).Error; err != nil {
 		return
 	}
@@ -514,7 +514,7 @@ func (h *WaterTeamHandler) ListTeamRecruitments(c *gin.Context) {
 	query := h.db.Model(&models.WaterTeamRecruitment{}).
 		Joins("JOIN posts ON posts.id = water_team_recruitments.post_id").
 		Joins("JOIN users ON users.id = posts.author_id").
-		Where("posts.status != ?", models.PostStatusDeleted)
+		Where("posts.status IN ?", []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed})
 
 	if category != "" {
 		query = query.Where("water_team_recruitments.category = ?", category)
@@ -1259,7 +1259,7 @@ func (h *WaterTeamHandler) GetMyTeamRecruitments(c *gin.Context) {
 
 	query := h.db.Model(&models.WaterTeamRecruitment{}).
 		Joins("JOIN posts ON posts.id = water_team_recruitments.post_id").
-		Where("posts.author_id = ? AND posts.status != ?", userID, models.PostStatusDeleted)
+		Where("posts.author_id = ? AND posts.status IN ?", userID, []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed, models.PostStatusModeratedHidden})
 
 	if statusFilter != "" {
 		query = applyRecruitmentStatusFilter(query, statusFilter, now)
@@ -1687,7 +1687,7 @@ func (h *WaterTeamHandler) GetMyApplications(c *gin.Context) {
 	var apps []models.WaterTeamApplication
 	if err := h.db.Preload("Recruitment").Preload("Post").Preload("Post.Author").
 		Joins("JOIN posts ON posts.id = water_team_applications.post_id").
-		Where("water_team_applications.applicant_id = ? AND posts.status != ?", userID, models.PostStatusDeleted).
+		Where("water_team_applications.applicant_id = ? AND posts.status IN ?", userID, []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed}).
 		Order("water_team_applications.created_at desc").Find(&apps).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取申请列表失败"})
 		return

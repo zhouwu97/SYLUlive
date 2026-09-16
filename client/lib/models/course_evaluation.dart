@@ -1,7 +1,7 @@
-/// 课程评价相关 DTO。
-///
-/// 字段与服务端 `internal/services` 的视图结构一一对应，
-/// 刻意不包含教室、周次、节次等课表私有信息。
+// 课程评价相关 DTO。
+//
+// 字段与服务端 internal/services 的视图结构一一对应，
+// 刻意不包含教室、周次、节次等课表私有信息。
 
 /// 课程评价提交状态。取值与服务端 models 包保持一致。
 enum CourseEvaluationStatus {
@@ -13,6 +13,9 @@ enum CourseEvaluationStatus {
 
   /// 被管理员驳回，需修改后重新提交。
   needsEdit,
+
+  /// 已在教师治理中合并至另一条评价。
+  superseded,
 }
 
 CourseEvaluationStatus courseEvaluationStatusFromString(String? value) {
@@ -21,6 +24,8 @@ CourseEvaluationStatus courseEvaluationStatusFromString(String? value) {
       return CourseEvaluationStatus.published;
     case 'needs_edit':
       return CourseEvaluationStatus.needsEdit;
+    case 'superseded':
+      return CourseEvaluationStatus.superseded;
     case 'pending':
     default:
       return CourseEvaluationStatus.pending;
@@ -33,6 +38,8 @@ String courseEvaluationStatusToString(CourseEvaluationStatus status) {
       return 'published';
     case CourseEvaluationStatus.needsEdit:
       return 'needs_edit';
+    case CourseEvaluationStatus.superseded:
+      return 'superseded';
     case CourseEvaluationStatus.pending:
       return 'pending';
   }
@@ -45,13 +52,15 @@ extension CourseEvaluationStatusLabel on CourseEvaluationStatus {
         return '已发布';
       case CourseEvaluationStatus.needsEdit:
         return '需修改';
+      case CourseEvaluationStatus.superseded:
+        return '已合并';
       case CourseEvaluationStatus.pending:
         return '待审核';
     }
   }
 
   /// 是否还能打开表单编辑原记录。
-  bool get editable => true;
+  bool get editable => this != CourseEvaluationStatus.superseded;
 }
 
 /// 稳定业务错误码，与服务端保持一致。
@@ -301,6 +310,8 @@ class CourseEvaluationSubmission {
   final int revision;
   final String reviewReason;
   final int? teacherRatingId;
+  final int? supersededBySubmissionId;
+  final String supersededReason;
   final String proposedCourseName;
   final String proposedTeacherName;
   final bool willCreateSubject;
@@ -323,6 +334,8 @@ class CourseEvaluationSubmission {
     this.revision = 1,
     this.reviewReason = '',
     this.teacherRatingId,
+    this.supersededBySubmissionId,
+    this.supersededReason = '',
     this.proposedCourseName = '',
     this.proposedTeacherName = '',
     this.willCreateSubject = false,
@@ -360,6 +373,9 @@ class CourseEvaluationSubmission {
         revision: (json['revision'] as num?)?.toInt() ?? 1,
         reviewReason: json['review_reason']?.toString() ?? '',
         teacherRatingId: (json['teacher_rating_id'] as num?)?.toInt(),
+        supersededBySubmissionId:
+            (json['superseded_by_submission_id'] as num?)?.toInt(),
+        supersededReason: json['superseded_reason']?.toString() ?? '',
         proposedCourseName: json['proposed_course_name']?.toString() ?? '',
         proposedTeacherName: json['proposed_teacher_name']?.toString() ?? '',
         willCreateSubject: json['will_create_subject'] == true,

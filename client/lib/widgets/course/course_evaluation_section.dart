@@ -272,6 +272,17 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
           actionText: '修改并重新提交',
           onTap: _openForm,
         );
+      case CourseEvaluationStatus.superseded:
+        return _submissionCard(
+          isDark,
+          statusLabel: '已废弃',
+          statusColor: Colors.grey,
+          title: '${submission.subjectDisplayName} · ${submission.teacherDisplayName}',
+          subtitle: '该评价已被新提交替代或已废弃',
+          star: submission.star,
+          actionText: '重新评价',
+          onTap: _openForm,
+        );
     }
   }
 

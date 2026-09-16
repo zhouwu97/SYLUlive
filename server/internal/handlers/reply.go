@@ -69,6 +69,23 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
 		return
 	}
+	var postVisibility struct {
+		AuthorID uint
+		Status   models.PostStatus
+	}
+	if err := h.db.Model(&models.Post{}).Select("author_id", "status").First(&postVisibility, postID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
+		return
+	}
+	if postVisibility.Status == models.PostStatusDeleted || postVisibility.Status == models.PostStatusModeratedHidden {
+		viewerID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		uid, _ := viewerID.(uint)
+		if uid != postVisibility.AuthorID && role != "admin" && role != "super_admin" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
+			return
+		}
+	}
 
 	mode, ok := services.ValidCommentSort(c.Query("sort"))
 	if !ok {

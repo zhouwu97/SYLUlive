@@ -573,6 +573,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     }
     final current = _post;
     if (current == null) return;
+    if (current.status == 'moderated_hidden' || current.viewerPermissions?.canLike == false) {
+      AppFeedback.showSnackBar(context, '该帖子已被限制展示，暂不可点赞', isError: true);
+      return;
+    }
     final provider = context.read<PostProvider>();
     if (provider.isLikePending(current.id)) return;
     final result = await provider.toggleLikeOptimistic(current);
@@ -929,6 +933,266 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         isError: true,
       );
     }
+  }
+
+  Future<void> _submitModerationAppeal() async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => _PremiumInputDialog(
+        title: '提交申诉',
+        hint: '请说明你认为原处理不正确的原因',
+        confirmText: '提交申诉',
+      ),
+    );
+    if (reason == null || reason.trim().isEmpty || !mounted) return;
+    try {
+      await _dio.post('/posts/${widget.postId}/appeal', data: {
+        'appellant_reason': reason.trim(),
+      });
+      if (!mounted) return;
+      AppFeedback.success('申诉已提交，帖子仍处于限制展示状态', context: context);
+      await _loadPost();
+    } on DioException catch (error) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(error, fallback: '提交申诉失败'),
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _submitRectificationReview() async {
+    try {
+      await _dio.post('/posts/${widget.postId}/rectification-review');
+      if (!mounted) return;
+      AppFeedback.success('整改复审已提交，管理员审核通过后将恢复公开', context: context);
+      await _loadPost();
+    } on DioException catch (error) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(error, fallback: '提交整改复审失败'),
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _adminRestorePost() async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => _PremiumInputDialog(
+        title: '恢复帖子公开展示',
+        hint: '请输入恢复原因（必填）',
+        confirmText: '确认恢复',
+      ),
+    );
+    if (reason == null || reason.trim().isEmpty || !mounted) return;
+    try {
+      await _dio.post('/admin/posts/${widget.postId}/restore', data: {
+        'reason': reason.trim(),
+      });
+      if (!mounted) return;
+      AppFeedback.success('帖子已恢复公开展示', context: context);
+      await _loadPost();
+    } on DioException catch (error) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(error, fallback: '恢复帖子失败'),
+        isError: true,
+      );
+    }
+  }
+
+  Widget _buildModerationBanner(bool isDark) {
+    final post = _post;
+    if (post == null || post.status != 'moderated_hidden') {
+      return const SizedBox.shrink();
+    }
+    final primary = isDark ? const Color(0xFFFFC857) : const Color(0xFF9A6700);
+    final permissions = post.viewerPermissions;
+    final isOwner = _isCurrentUserPostOwner();
+    final currentUser = context.watch<AuthProvider>().user;
+    final isAdmin = currentUser?.isAdmin == true || (permissions?.canRestore == true);
+
+    final hasPendingRectification = permissions?.hasPendingRectification == true;
+    final hasPendingAppeal = permissions?.hasPendingAppeal == true;
+    final hasEdited = post.revision > 1;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: primary.withValues(alpha: isDark ? 0.14 : 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: primary.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.visibility_off_outlined, color: primary, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '该帖子已被限制展示',
+                  style: TextStyle(color: primary, fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: primary.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '仅自己与管理员可见',
+                  style: TextStyle(color: primary, fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '该内容因社区治理原因已停止公开展示，不会出现在首页、搜索及公开主页。',
+            style: TextStyle(color: isDark ? Colors.white70 : Colors.black87, height: 1.45, fontSize: 13),
+          ),
+          if (post.moderationReason.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              '处理原因：${post.moderationReason}',
+              style: TextStyle(color: isDark ? Colors.white : Colors.black, height: 1.4, fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ],
+          if (post.moderationRuleCode.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              '违规规则：${post.moderationRuleCode}',
+              style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 12),
+            ),
+          ],
+          if (post.moderatedAt != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              '处理时间：${_formatModerationTime(post.moderatedAt!)}',
+              style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 12),
+            ),
+          ],
+
+          if (hasPendingRectification) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: isDark ? 0.18 : 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.pending_actions, color: Colors.blue, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '整改复审审核中 (提交版本 v${permissions?.submittedRevision ?? post.revision})，请等待管理员审核。',
+                      style: TextStyle(color: isDark ? Colors.blue[200] : Colors.blue[900], fontSize: 12, height: 1.35),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else if (hasPendingAppeal) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.purple.withValues(alpha: isDark ? 0.18 : 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.purple.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.gavel_outlined, color: Colors.purple, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '申诉复核处理中，结果将通过系统通知告知。',
+                      style: TextStyle(color: isDark ? Colors.purple[200] : Colors.purple[900], fontSize: 12, height: 1.35),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else if (hasEdited && (permissions?.canSubmitRectification ?? isOwner)) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.teal.withValues(alpha: isDark ? 0.18 : 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.teal.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline, color: Colors.teal, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '修改已保存 (版本 v${post.revision})。帖子不会自动恢复公开，如整改完成请提交复审。',
+                      style: TextStyle(color: isDark ? Colors.teal[200] : Colors.teal[900], fontSize: 12, height: 1.35),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (permissions?.canEdit ?? isOwner)
+                OutlinedButton.icon(
+                  onPressed: _editPost,
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: Text(hasEdited ? '继续编辑' : '编辑整改'),
+                ),
+              if ((permissions?.canSubmitRectification ?? isOwner) && !hasPendingRectification)
+                FilledButton.tonalIcon(
+                  onPressed: _submitRectificationReview,
+                  icon: const Icon(Icons.fact_check_outlined, size: 18),
+                  label: const Text('提交整改复审'),
+                ),
+              if ((permissions?.canAppeal ?? isOwner) && !hasPendingAppeal && !hasPendingRectification)
+                TextButton.icon(
+                  onPressed: _submitModerationAppeal,
+                  icon: const Icon(Icons.gavel_outlined, size: 18),
+                  label: const Text('提交申诉'),
+                ),
+              if (isAdmin)
+                FilledButton.icon(
+                  onPressed: _adminRestorePost,
+                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2E7D32)),
+                  icon: const Icon(Icons.restore_page_outlined, size: 18),
+                  label: const Text('恢复公开展示'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatModerationTime(DateTime value) {
+    final local = value.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} ${two(local.hour)}:${two(local.minute)}';
   }
 
   Future<void> _editPost() async {
@@ -2417,6 +2681,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          _buildModerationBanner(isDark),
                           if (p.title.isNotEmpty) ...[
                             PostContentLinkText(
                               text: p.title,
@@ -2573,6 +2838,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          _buildModerationBanner(isDark),
                           if (p.title.isNotEmpty) ...[
                             PostContentLinkText(
                               text: p.title,
@@ -2787,6 +3053,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _buildModerationBanner(isDark),
                 const SizedBox(height: 12),
                 _buildWaterAuthorHeader(p, isDark),
                 if (p.title.isNotEmpty || p.content.isNotEmpty) ...[
@@ -3302,6 +3569,37 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   // ---- 水帖底部回复栏 ----
 
   Widget _buildComposerBody(bool isDark) {
+    if (_post?.status == 'moderated_hidden') {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1B1F2A) : const Color(0xFFF7F8FA),
+          border: Border(
+            top: BorderSide(
+              color: isDark ? Colors.white10 : Colors.black12,
+            ),
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.info_outline, size: 16, color: isDark ? Colors.white54 : Colors.black54),
+              const SizedBox(width: 6),
+              Text(
+                '帖子处于限制展示状态，互动功能暂不可用',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.white54 : Colors.black54,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return PostReplyComposer(
       controller: _replyComposerController,
       sending: _isSending,
@@ -5257,6 +5555,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     int? replyToUserId,
     int? replyToReplyId,
   }) {
+    if (_post?.status == 'moderated_hidden' || _post?.viewerPermissions?.canComment == false) {
+      AppFeedback.showSnackBar(context, '该帖子已被限制展示，暂不可发表评论', isError: true);
+      return;
+    }
     if (!context.read<AuthProvider>().isLoggedIn) {
       _openReplyLogin();
       return;

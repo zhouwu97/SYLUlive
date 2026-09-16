@@ -25,6 +25,10 @@ const (
 	NotificationTypeAppealReviewRequired = "appeal_review_required"
 	NotificationTypeAppealResult         = "appeal_result"
 	NotificationTypeContentGoverned      = "content_governed"
+	NotificationTypeRectificationApproved = "rectification_approved"
+	NotificationTypeRectificationRejected = "rectification_rejected"
+	NotificationTypeAppealApproved       = "appeal_approved"
+	NotificationTypeAppealRejected       = "appeal_rejected"
 )
 
 // RetiredNotificationTypes 已退役通知类型：不再产生，查询时过滤并分批清理历史数据。

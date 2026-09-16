@@ -447,14 +447,25 @@ func CreateAppealNotification(db *gorm.DB, toUserID, appealID uint, notification
 
 // CreateContentGovernedNotification 告知内容作者具体治理决定，related_id 固定为 ReportID。
 func CreateContentGovernedNotification(db *gorm.DB, toUserID, reportID, postID uint, reason string) error {
-	content := "你的内容已被管理员处理"
+	content := "你的帖子已被限制展示"
 	if reason != "" {
-		content += "：" + reason
+		content += "。处理原因：" + reason
 	}
 	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.Notification{
 		UserID: toUserID, Type: models.NotificationTypeContentGoverned,
 		RelatedID: reportID, PostID: postID, Content: content,
 		DedupKey: fmt.Sprintf("content-governed:%d", reportID), IsRead: false,
+	}).Error
+}
+
+// CreatePostModerationResultNotification 通知作者整改/申诉复核结果，不暴露举报人身份。
+func CreatePostModerationResultNotification(db *gorm.DB, toUserID, postID uint, notificationType, content, dedupKey string) error {
+	if toUserID == 0 || postID == 0 {
+		return nil
+	}
+	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.Notification{
+		UserID: toUserID, Type: notificationType, PostID: postID, Content: content,
+		DedupKey: dedupKey, IsRead: false,
 	}).Error
 }
 

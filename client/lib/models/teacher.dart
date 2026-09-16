@@ -9,6 +9,13 @@ class Teacher {
   /// 标准学科归属。历史数据与服务端旧响应可能为空。
   final int? courseSubjectId;
 
+  /// 教师治理状态字段
+  final bool isMerged;
+  final int? mergedIntoId;
+  final String mergedIntoName;
+  final String canonicalSource;
+  final bool verified;
+
   Teacher({
     required this.id,
     required this.name,
@@ -17,9 +24,15 @@ class Teacher {
     this.averageStar = 0,
     required this.createdAt,
     this.courseSubjectId,
+    this.isMerged = false,
+    this.mergedIntoId,
+    this.mergedIntoName = '',
+    this.canonicalSource = 'legacy',
+    this.verified = false,
   });
 
   factory Teacher.fromJson(Map<String, dynamic> json) {
+    final mergedInto = (json['merged_into_id'] as num?)?.toInt();
     return Teacher(
       id: json['id'] ?? 0,
       name: json['name'] ?? '',
@@ -28,6 +41,11 @@ class Teacher {
       averageStar: (json['average_star'] ?? 0).toDouble(),
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
       courseSubjectId: (json['course_subject_id'] as num?)?.toInt(),
+      isMerged: json['merged'] == true || mergedInto != null,
+      mergedIntoId: mergedInto,
+      mergedIntoName: json['merged_into_name']?.toString() ?? '',
+      canonicalSource: json['canonical_source']?.toString() ?? 'legacy',
+      verified: json['verified'] == true,
     );
   }
 }

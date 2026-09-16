@@ -483,7 +483,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 	// 走正常的查询（或 refresh 阶段）
 	query := h.db.Model(&models.Post{}).
-		Where("posts.status != ?", models.PostStatusDeleted).
+		Where("posts.status IN ?", []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed}).
 		Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
 		Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants)
 	if !supportsPoll {
@@ -737,7 +737,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		} else {
 			// 这里必须清除Preload等，单纯Pluck
 			snapshotQuery := h.db.Model(&models.Post{}).
-				Where("posts.status != ?", models.PostStatusDeleted).
+				Where("posts.status IN ?", []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed}).
 				Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)")
 			if !supportsPoll {
 				snapshotQuery = snapshotQuery.Where("posts.content_kind <> ?", models.PostContentKindPoll)
@@ -1724,10 +1724,11 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
 		return
 	}
-	if post.Status == models.PostStatusDeleted {
+	if post.Status == models.PostStatusDeleted || post.Status == models.PostStatusModeratedHidden {
 		userID, loggedIn := c.Get("user_id")
 		role, _ := c.Get("role")
-		if !loggedIn || (userID.(uint) != post.AuthorID && role != "admin" && role != "super_admin") {
+		viewerID, _ := userID.(uint)
+		if !loggedIn || (viewerID != post.AuthorID && role != "admin" && role != "super_admin") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
 			return
 		}
@@ -1740,6 +1741,43 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 	responsePosts := []models.Post{post}
 	h.hydratePosts(c, responsePosts, time.Now())
 	post = responsePosts[0]
+	viewerID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	viewerUserID, _ := viewerID.(uint)
+	isOwner := viewerUserID == post.AuthorID
+	isAdmin := role == "admin" || role == "super_admin"
+	isPublic := post.Status == models.PostStatusNormal || post.Status == models.PostStatusSold || post.Status == models.PostStatusClosed
+
+	var pendingReview models.PostRectificationReview
+	hasPendingRectification := false
+	var pendingAppeal models.Appeal
+	hasPendingAppeal := false
+
+	if post.Status == models.PostStatusModeratedHidden && (isOwner || isAdmin) {
+		if err := h.db.Where("post_id = ? AND status = ?", post.ID, models.RectificationReviewPending).
+			Order("created_at DESC").First(&pendingReview).Error; err == nil {
+			hasPendingRectification = true
+		}
+		if err := h.db.Where("post_id = ? AND status = ?", post.ID, models.AppealStatusPending).
+			Order("created_at DESC").First(&pendingAppeal).Error; err == nil {
+			hasPendingAppeal = true
+		}
+	}
+
+	post.ViewerPermissions = &models.PostViewerPermissions{
+		CanView:                 true,
+		CanEdit:                 isOwner || isAdmin,
+		CanDelete:               isOwner || isAdmin,
+		CanComment:              isPublic,
+		CanLike:                 isPublic,
+		CanShare:                isPublic,
+		CanAppeal:               isOwner && post.Status == models.PostStatusModeratedHidden && !hasPendingAppeal,
+		CanSubmitRectification:  isOwner && post.Status == models.PostStatusModeratedHidden && !hasPendingRectification,
+		CanRestore:              isAdmin && post.Status == models.PostStatusModeratedHidden,
+		HasPendingRectification: hasPendingRectification,
+		HasPendingAppeal:        hasPendingAppeal,
+		SubmittedRevision:       pendingReview.SubmittedRevision,
+	}
 	c.JSON(http.StatusOK, post)
 }
 
@@ -1797,6 +1835,9 @@ func (h *PostHandler) Update(c *gin.Context) {
 		}
 		if post.ContentKind == models.PostContentKindPoll {
 			return fmt.Errorf("poll_requires_poll_api")
+		}
+		if post.Status == models.PostStatusDeleted {
+			return fmt.Errorf("post_deleted")
 		}
 
 		// 只有作者或管理员可以更新
@@ -1871,6 +1912,18 @@ func (h *PostHandler) Update(c *gin.Context) {
 			"contact_type": contactType,
 			"contact":      contact,
 			"market_tags":  normalizeMarketTags(input.MarketTags),
+		}
+		// 编辑只推进内容版本，不触碰治理状态；moderated_hidden 必须继续保持隐藏。
+		if post.Revision < 1 {
+			updates["revision"] = 2
+		} else {
+			updates["revision"] = gorm.Expr("revision + 1")
+		}
+		// 如果在治理隐藏下保存新编辑，标记旧 pending 的整改复审为 obsolete，以便作者重新提交最新版本复审
+		if post.Status == models.PostStatusModeratedHidden {
+			_ = tx.Model(&models.PostRectificationReview{}).
+				Where("post_id = ? AND status = ?", post.ID, models.RectificationReviewPending).
+				Update("status", models.RectificationReviewObsolete).Error
 		}
 
 		var isOriginalTeam bool
@@ -2029,6 +2082,8 @@ func (h *PostHandler) Update(c *gin.Context) {
 		switch err.Error() {
 		case "post_not_found":
 			c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
+		case "post_deleted":
+			c.JSON(http.StatusNotFound, gin.H{"error": "帖子已删除，无法编辑"})
 		case "poll_requires_poll_api":
 			c.JSON(http.StatusBadRequest, gin.H{"code": "poll_requires_poll_api", "error": "投票内容请使用投票编辑接口"})
 		case "unauthorized":
@@ -2116,6 +2171,10 @@ func (h *PostHandler) UpdateStatus(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "只能修改自己的发布"})
 		return
 	}
+	if post.Status == models.PostStatusModeratedHidden || post.Status == models.PostStatusDeleted {
+		c.JSON(http.StatusConflict, gin.H{"code": "post_moderated", "error": "该发布处于治理限制或删除状态，无法变更状态"})
+		return
+	}
 	if post.BoardID != models.BoardMarket {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "只有集市发布可以修改状态"})
 		return
@@ -2176,6 +2235,18 @@ func (h *PostHandler) Delete(c *gin.Context) {
 		if err := tx.Model(&post).Update("status", models.PostStatusDeleted).Error; err != nil {
 			return err
 		}
+		// 关闭未决的整改复审与申诉
+		_ = tx.Model(&models.PostRectificationReview{}).
+			Where("post_id = ? AND status = ?", post.ID, models.RectificationReviewPending).
+			Update("status", models.RectificationReviewObsolete).Error
+		now := time.Now()
+		_ = tx.Model(&models.Appeal{}).
+			Where("post_id = ? AND status = ?", post.ID, models.AppealStatusPending).
+			Updates(map[string]interface{}{
+				"status":        models.AppealStatusReject,
+				"closed_at":     &now,
+				"closed_reason": "post_deleted_by_author",
+			}).Error
 		var rows []models.PostImage
 		if err := tx.Select("file_id").Where("post_id = ?", post.ID).Find(&rows).Error; err != nil {
 			return err

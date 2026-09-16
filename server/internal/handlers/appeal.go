@@ -47,15 +47,15 @@ func (h *AppealHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// 检查帖子是否已被删除
+	// 只有治理隐藏帖子可申诉；作者主动删除的帖子不再创建新的申诉。
 	var post models.Post
 	if err := h.db.First(&post, postID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
 		return
 	}
 
-	if post.Status != models.PostStatusDeleted {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "帖子未被删除，无需申诉"})
+	if post.Status != models.PostStatusModeratedHidden {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "帖子当前不在可申诉的治理隐藏状态"})
 		return
 	}
 
@@ -512,6 +512,23 @@ func (h *AppealHandler) AdminResolveReview(c *gin.Context) {
 	message := "人工复核已完成，请查看公众法庭案件结果。"
 	sendAppealNotification(h.db, appeal.AppellantID, appeal.ID, models.NotificationTypeAppealResult, message, fmt.Sprintf("appeal-result:%d:appellant", appeal.ID))
 	sendAppealNotification(h.db, appeal.AdminID, appeal.ID, models.NotificationTypeAppealResult, message, fmt.Sprintf("appeal-result:%d:admin", appeal.ID))
+	if appeal.PostID > 0 {
+		if input.Decision == "pass" {
+			_ = CreatePostModerationResultNotification(
+				h.db, appeal.AppellantID, appeal.PostID,
+				models.NotificationTypeAppealApproved,
+				"经复核，帖子的限制已解除，现已恢复正常公开展示。",
+				fmt.Sprintf("appeal-approved:%d", appeal.ID),
+			)
+		} else {
+			_ = CreatePostModerationResultNotification(
+				h.db, appeal.AppellantID, appeal.PostID,
+				models.NotificationTypeAppealRejected,
+				"申诉未通过：经复核原处理结果维持不变。你仍可以修改帖子后提交整改复审。",
+				fmt.Sprintf("appeal-rejected:%d", appeal.ID),
+			)
+		}
+	}
 	var jury []models.AppealVote
 	if h.db.Where("appeal_id = ? AND recused = ?", appeal.ID, false).Find(&jury).Error == nil {
 		for _, vote := range jury {
@@ -760,6 +777,23 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 			sendAppealNotification(h.db, closedAppeal.AdminID, closedAppeal.ID, notificationType, message, fmt.Sprintf("%s:%d:admin", notificationKey, closedAppeal.ID))
 		}
 		if closedAppeal.Status == models.AppealStatusPass || closedAppeal.Status == models.AppealStatusReject {
+			if closedAppeal.PostID > 0 {
+				if closedAppeal.Status == models.AppealStatusPass {
+					_ = CreatePostModerationResultNotification(
+						h.db, closedAppeal.AppellantID, closedAppeal.PostID,
+						models.NotificationTypeAppealApproved,
+						"经复核，帖子的限制已解除，现已恢复正常公开展示。",
+						fmt.Sprintf("appeal-approved:%d", closedAppeal.ID),
+					)
+				} else {
+					_ = CreatePostModerationResultNotification(
+						h.db, closedAppeal.AppellantID, closedAppeal.PostID,
+						models.NotificationTypeAppealRejected,
+						"申诉未通过：经复核原处理结果维持不变。你仍可以修改帖子后提交整改复审。",
+						fmt.Sprintf("appeal-rejected:%d", closedAppeal.ID),
+					)
+				}
+			}
 			var jury []models.AppealVote
 			if h.db.Where("appeal_id = ? AND recused = ?", appealID, false).Find(&jury).Error == nil {
 				for _, assigned := range jury {
@@ -922,6 +956,16 @@ func applyAppealPass(tx *gorm.DB, appeal models.Appeal) error {
 		}
 		if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("status", originalStatus).Error; err != nil {
 			return err
+		}
+		var rows []models.PostImage
+		if err := tx.Select("file_id").Where("post_id = ?", appeal.PostID).Find(&rows).Error; err == nil && len(rows) > 0 {
+			fileIDs := make([]uint, 0, len(rows))
+			for _, r := range rows {
+				fileIDs = append(fileIDs, r.FileID)
+			}
+			if err := services.ReconcileFilePublicAccess(tx, fileIDs...); err != nil {
+				return err
+			}
 		}
 	}
 	if appeal.ReportID == nil {

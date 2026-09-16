@@ -14,6 +14,14 @@ const (
 	ReportStatusOverturned ReportStatus = "overturned" // 申诉成功，撤销原治理决定
 )
 
+// ReportAction 管理员对内容采取的动作。warn 只记录并通知，moderated_hidden
+// 保留内容供作者整改/申诉，delete 表示永久删除。
+const (
+	ReportActionWarn            = "warn"
+	ReportActionModeratedHidden = "moderated_hidden"
+	ReportActionDelete          = "delete"
+)
+
 // Report 举报
 type Report struct {
 	ID             uint         `gorm:"primaryKey" json:"id"`
@@ -24,7 +32,8 @@ type Report struct {
 	Reason         string       `gorm:"type:text;not null" json:"reason"`
 	TargetAuthorID *uint        `gorm:"index" json:"target_author_id"`
 	TargetSnapshot string       `gorm:"type:text" json:"target_snapshot"`
-	Action         string       `gorm:"size:50" json:"action"`
+	Action            string       `gorm:"size:50" json:"action"`
+	ModeratedRevision int          `gorm:"index" json:"moderated_revision,omitempty"`
 	Status         ReportStatus `gorm:"default:pending;index" json:"status"`
 	HandlerID      *uint        `json:"handler_id"`
 	Result         string       `gorm:"size:500" json:"result"`        // 处理结果说明
@@ -92,6 +101,30 @@ type AppealVote struct {
 	RecuseReason string    `gorm:"size:500" json:"-"`
 	CreatedAt    time.Time `json:"created_at"`
 	Voter        User      `gorm:"foreignKey:VoterID" json:"voter"`
+}
+
+// RectificationReviewStatus 整改复审状态。
+type RectificationReviewStatus string
+
+const (
+	RectificationReviewPending  RectificationReviewStatus = "pending"
+	RectificationReviewApproved RectificationReviewStatus = "approved"
+	RectificationReviewRejected RectificationReviewStatus = "rejected"
+	RectificationReviewObsolete RectificationReviewStatus = "obsolete"
+)
+
+// PostRectificationReview 记录作者提交给管理员复核的明确内容版本。
+type PostRectificationReview struct {
+	ID                uint                     `gorm:"primaryKey" json:"id"`
+	PostID            uint                     `gorm:"not null;index" json:"post_id"`
+	ReportID          *uint                    `gorm:"index" json:"report_id,omitempty"`
+	SubmittedRevision int                      `gorm:"not null" json:"submitted_revision"`
+	Status            RectificationReviewStatus `gorm:"size:20;not null;default:pending;index" json:"status"`
+	ReviewerID        *uint                    `gorm:"index" json:"reviewer_id,omitempty"`
+	ReviewReason      string                   `gorm:"size:1000" json:"review_reason,omitempty"`
+	CreatedAt         time.Time                `json:"created_at"`
+	ReviewedAt        *time.Time               `json:"reviewed_at,omitempty"`
+	Post              Post                     `gorm:"foreignKey:PostID" json:"post,omitempty"`
 }
 
 // PublicAppealUserResponse 是申诉接口允许展示的最小用户资料。

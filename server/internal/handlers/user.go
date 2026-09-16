@@ -670,13 +670,19 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 
 	_, limit, offset := ParsePagination(c, 20, 50)
 
-	var posts []models.Post
-	if err := h.db.
+	query := h.db.
 		Preload("Author").
 		Preload("Images").
 		Preload("Images.File").
 		Scopes(withPostImageVariants).
-		Where("author_id = ? AND status = ? AND board_id != ?", targetID, models.PostStatusNormal, models.BoardMarket).
+		Where("author_id = ? AND status IN ? AND board_id != ?", targetID, []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed}, models.BoardMarket)
+	viewerID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	if viewerID == targetID || role == "admin" || role == "super_admin" {
+		query = query.Or("author_id = ? AND status = ? AND board_id != ?", targetID, models.PostStatusModeratedHidden, models.BoardMarket)
+	}
+	var posts []models.Post
+	if err := query.
 		Order("created_at DESC").
 		Offset(offset).
 		Limit(limit).
@@ -702,13 +708,19 @@ func (h *UserHandler) GetUserMarketPosts(c *gin.Context) {
 	postType := c.DefaultQuery("post_type", "sell")
 
 	buildQuery := func() *gorm.DB {
-		return h.db.Model(&models.Post{}).Where(
-			"author_id = ? AND board_id = ? AND post_type = ? AND status <> ?",
+		query := h.db.Model(&models.Post{}).Where(
+			"author_id = ? AND board_id = ? AND post_type = ? AND status IN ?",
 			targetID,
 			models.BoardMarket,
 			postType,
-			models.PostStatusDeleted,
+			[]models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed},
 		)
+		viewerID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if viewerID == targetID || role == "admin" || role == "super_admin" {
+			query = query.Or("author_id = ? AND board_id = ? AND post_type = ? AND status = ?", targetID, models.BoardMarket, postType, models.PostStatusModeratedHidden)
+		}
+		return query
 	}
 
 	var total int64

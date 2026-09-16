@@ -2075,52 +2075,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   Widget _buildInputDismissRegion({required Widget child}) {
-    return AnimatedBuilder(
-      animation: _replyComposerActivity,
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleDetailScrollNotification,
       child: child,
-      builder: (context, child) {
-        final panelVisible = _replyComposerController.isInputPanelVisible;
-
-        return Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: (_) {
-            _keyboardDownDrag = 0;
-            _dragStartedWithInputPanel = panelVisible &&
-                (_replyComposerController.keyboardInset > 0 ||
-                    _replyComposerController.showEmojiPanel);
-          },
-          onPointerMove: (event) {
-            if (!_dragStartedWithInputPanel) return;
-            // 键盘尚未真正弹起（仍在 0 阶段）时不响应向下拖拽收起，防止键盘弹起途中误收
-            if (_replyComposerController.keyboardInset <= 0 &&
-                !_replyComposerController.showEmojiPanel) {
-              return;
-            }
-            if (event.delta.dy > 0) {
-              _keyboardDownDrag += event.delta.dy;
-              if (_keyboardDownDrag >= _keyboardDismissDragTrigger) {
-                _dragStartedWithInputPanel = false;
-                _keyboardDownDrag = 0;
-                _replyComposerController.close();
-              }
-            } else if (event.delta.dy < 0) {
-              _keyboardDownDrag = 0;
-            }
-          },
-          onPointerUp: (_) {
-            _keyboardDownDrag = 0;
-            _dragStartedWithInputPanel = false;
-          },
-          onPointerCancel: (_) {
-            _keyboardDownDrag = 0;
-            _dragStartedWithInputPanel = false;
-          },
-          child: NotificationListener<ScrollNotification>(
-            onNotification: _handleDetailScrollNotification,
-            child: child!,
-          ),
-        );
-      },
     );
   }
 

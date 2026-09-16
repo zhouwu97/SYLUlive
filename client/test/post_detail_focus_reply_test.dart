@@ -352,8 +352,8 @@ void main() {
     await upwardGesture.up();
     await tester.pump();
     final downwardGesture = await tester.startGesture(scrollStart);
-    await downwardGesture.moveBy(const Offset(0, 40));
-    await downwardGesture.moveBy(const Offset(0, 40));
+    await downwardGesture.moveBy(const Offset(0, 20));
+    await downwardGesture.moveBy(const Offset(0, 70));
     await downwardGesture.up();
     await tester.pumpAndSettle();
 
@@ -710,7 +710,7 @@ void main() {
     expect(composer.controller.focusNode.hasFocus, isTrue);
   });
 
-  testWidgets('输入框激活时向下轻微滑动20px不误收起键盘', (tester) async {
+  testWidgets('键盘打开状态下向下拖拽35px不会误收起输入框（消除双重累计）', (tester) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -746,18 +746,24 @@ void main() {
     final scrollView = find.byKey(const ValueKey('post-detail-scroll-view'));
     final scrollStart = tester.getCenter(scrollView);
 
-    // 轻微向下移动 20px（低于 56px 阈值）
+    // 先向上滚动一部分距离
+    final upwardGesture = await tester.startGesture(scrollStart);
+    await upwardGesture.moveBy(const Offset(0, -240));
+    await upwardGesture.up();
+    await tester.pump();
+
+    // 向下移动 35px（位于此前双重累计最易误触的 30~40px 区间）
     final downwardGesture = await tester.startGesture(scrollStart);
-    await downwardGesture.moveBy(const Offset(0, 20));
+    await downwardGesture.moveBy(const Offset(0, 35));
     await downwardGesture.up();
     await tester.pump();
 
-    // 键盘和输入框不应被误收起
+    // 验证去除 Listener.onPointerMove 重复累计后，35px 不会触发收起
     expect(composer.controller.isOpen, isTrue);
     expect(composer.controller.focusNode.hasFocus, isTrue);
   });
 
-  testWidgets('输入框激活时向下真实滑动超过56px才收起输入并保留草稿', (tester) async {
+  testWidgets('键盘打开状态下向下真实拖拽70px收起输入框并保留草稿', (tester) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -786,7 +792,7 @@ void main() {
         tester.widget<PostReplyComposer>(find.byType(PostReplyComposer));
     await tester.enterText(
       find.byKey(const ValueKey('post-reply-input')),
-      '56px阈值测试草稿',
+      '70px拖拽测试草稿',
     );
     tester.view.viewInsets = const FakeViewPadding(bottom: 320);
     await tester.pump();
@@ -794,21 +800,22 @@ void main() {
     final scrollView = find.byKey(const ValueKey('post-detail-scroll-view'));
     final scrollStart = tester.getCenter(scrollView);
 
-    // 先向上滚动一部分距离，再向下滚动超过 56px (40+40 = 80px > 18+56)
+    // 先向上滚动一部分距离
     final upwardGesture = await tester.startGesture(scrollStart);
     await upwardGesture.moveBy(const Offset(0, -240));
     await upwardGesture.up();
     await tester.pump();
 
+    // 向下真实拖动超过 56px（突破 touch slop 后拖动 70px）
     final downwardGesture = await tester.startGesture(scrollStart);
-    await downwardGesture.moveBy(const Offset(0, 40));
-    await downwardGesture.moveBy(const Offset(0, 40));
+    await downwardGesture.moveBy(const Offset(0, 20));
+    await downwardGesture.moveBy(const Offset(0, 70));
     await downwardGesture.up();
     await tester.pumpAndSettle();
 
     expect(composer.controller.isOpen, isFalse);
     expect(composer.controller.focusNode.hasFocus, isFalse);
-    expect(composer.controller.textController.text, '56px阈值测试草稿');
+    expect(composer.controller.textController.text, '70px拖拽测试草稿');
   });
 
   testWidgets('键盘手动收起到0残留焦点时重新openReply重新激活焦点', (tester) async {

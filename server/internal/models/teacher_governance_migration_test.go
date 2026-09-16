@@ -216,3 +216,74 @@ func TestTeacherGovernanceMigration(t *testing.T) {
 		t.Fatalf("t2 仍应指向 keeper t1")
 	}
 }
+
+func TestValidateTeacherGovernanceSchema_CatchesViolations(t *testing.T) {
+	db := newTeacherGovernanceTestDB(t)
+	if err := db.AutoMigrate(&CourseSubject{}, &CourseSubjectAlias{}, &Teacher{}, &TeacherAlias{}, &TeacherRating{}, &TeacherRatingVote{}, &CourseEvaluationSubmission{}); err != nil {
+		t.Fatalf("建表失败: %v", err)
+	}
+
+	mathSubject := CourseSubject{
+		Name:           "线性代数",
+		NormalizedName: NormalizeCourseSubjectName("线性代数"),
+	}
+	if err := db.Create(&mathSubject).Error; err != nil {
+		t.Fatalf("创建学科失败: %v", err)
+	}
+
+	t1 := Teacher{Name: "李四", CourseSubjectID: &mathSubject.ID, NameNormalized: "李四"}
+	t2 := Teacher{Name: "李四老师", CourseSubjectID: &mathSubject.ID, NameNormalized: "李四老师", MergedIntoID: &t1.ID}
+	t3 := Teacher{Name: "李四副教授", CourseSubjectID: &mathSubject.ID, NameNormalized: "李四副教授", MergedIntoID: &t2.ID} // 级联: t3 -> t2 -> t1
+	if err := db.Create(&t1).Error; err != nil || db.Create(&t2).Error != nil || db.Create(&t3).Error != nil {
+		t.Fatalf("创建教师失败")
+	}
+
+	// 此时存在 t3 -> t2 -> t1 级联合并
+	if err := ValidateTeacherGovernanceSchema(db); err == nil {
+		t.Fatalf("预期检测到级联合并链条，但未返回错误")
+	}
+
+	// 压平链条 t3 -> t1
+	if err := db.Model(&Teacher{}).Where("id = ?", t3.ID).Update("merged_into_id", t1.ID).Error; err != nil {
+		t.Fatalf("更新失败: %v", err)
+	}
+	if err := ValidateTeacherGovernanceSchema(db); err != nil {
+		t.Fatalf("压平后预期通过校验，得到: %v", err)
+	}
+
+	// 插入指向已合并教师 t2 的别名
+	alias := TeacherAlias{
+		TeacherID:       t2.ID,
+		CourseSubjectID: mathSubject.ID,
+		Alias:           "李四代称",
+		NormalizedAlias: "李四代称",
+	}
+	if err := db.Create(&alias).Error; err != nil {
+		t.Fatalf("创建别名失败: %v", err)
+	}
+	if err := ValidateTeacherGovernanceSchema(db); err == nil {
+		t.Fatalf("预期检测到指向已合并教师的别名，但未返回错误")
+	}
+
+	// 修复别名指向 t1
+	if err := db.Model(&TeacherAlias{}).Where("id = ?", alias.ID).Update("teacher_id", t1.ID).Error; err != nil {
+		t.Fatalf("修复别名失败")
+	}
+	if err := ValidateTeacherGovernanceSchema(db); err != nil {
+		t.Fatalf("修复别名后预期通过校验，得到: %v", err)
+	}
+
+	// 插入指向已合并教师 t2 的在架评价
+	badRating := TeacherRating{
+		TeacherID: t2.ID,
+		UserID:    999,
+		Star:      5,
+		Comment:   "好老师",
+	}
+	if err := db.Create(&badRating).Error; err != nil {
+		t.Fatalf("创建评价失败: %v", err)
+	}
+	if err := ValidateTeacherGovernanceSchema(db); err == nil {
+		t.Fatalf("预期检测到在架评价指向已合并教师，但未返回错误")
+	}
+}

@@ -1933,7 +1933,7 @@ func main() {
 		admin.POST("/posts/:id/restore", postGovernanceHandler.AdminRestorePost)
 		admin.GET("/rectification", postGovernanceHandler.ListRectification)
 		admin.POST("/rectification/:id/:decision", postGovernanceHandler.ResolveRectification)
-		admin.GET("/governance/files/:id", postGovernanceHandler.ServeGovernedEvidenceFile)
+		admin.GET("/rectification/:reviewId/evidence/:fileId", postGovernanceHandler.ServeRectificationEvidenceFile)
 		admin.GET("/appeals/review", appealHandler.AdminGetReviewList)
 		admin.POST("/appeals/:id/review", appealHandler.AdminResolveReview)
 

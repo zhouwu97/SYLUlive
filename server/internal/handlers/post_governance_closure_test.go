@@ -260,7 +260,7 @@ func TestPostGovernanceClosure_AdminRestore(t *testing.T) {
 	}
 }
 
-func TestPostGovernance_ServeGovernedEvidenceFile(t *testing.T) {
+func TestPostGovernance_ServeRectificationEvidenceFile(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupPostGovernanceTestDB(t)
 
@@ -273,6 +273,7 @@ func TestPostGovernance_ServeGovernedEvidenceFile(t *testing.T) {
 	}
 
 	fileRec := models.File{
+		Hash:        "hash_evidence_1",
 		Path:        filePath,
 		MimeType:    "image/png",
 		Size:        int64(len(contentBytes)),
@@ -282,24 +283,85 @@ func TestPostGovernance_ServeGovernedEvidenceFile(t *testing.T) {
 		t.Fatalf("create file record: %v", err)
 	}
 
+	// 模拟不相关的私信附件文件，防止普通管理员借由证据接口跨权限读取
+	unrelatedFile := models.File{
+		Hash:        "hash_evidence_2",
+		Path:        "/uploads/private_msg.png",
+		MimeType:    "image/png",
+		Size:        100,
+		AccessScope: models.FileAccessPrivate,
+	}
+	if err := db.Create(&unrelatedFile).Error; err != nil {
+		t.Fatalf("create unrelated file: %v", err)
+	}
+
+	post := models.Post{
+		Title:    "证据测试帖",
+		Content:  "正文",
+		BoardID:  models.BoardShuitie,
+		AuthorID: 1,
+		Status:   models.PostStatusModeratedHidden,
+	}
+	db.Create(&post)
+
+	reportSnapshot := fmt.Sprintf(`{"title":"违规帖","content":"违规内容","image_file_ids":[%d],"original_status":"normal"}`, fileRec.ID)
+	report := models.Report{
+		ReporterID:     2,
+		TargetType:     "post",
+		TargetID:       post.ID,
+		TargetSnapshot: reportSnapshot,
+		Status:         models.ReportStatusHandled,
+	}
+	db.Create(&report)
+
+	review := models.PostRectificationReview{
+		PostID:            post.ID,
+		ReportID:          &report.ID,
+		Status:            models.RectificationReviewPending,
+		SubmittedRevision: 2,
+	}
+	db.Create(&review)
+
 	govHandler := NewPostGovernanceHandler(db)
 	govHandler.SetUploadDir(tempDir)
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Params = gin.Params{{Key: "id", Value: fmt.Sprint(fileRec.ID)}}
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/admin/governance/files/%d", fileRec.ID), nil)
-	c.Request = req
+	// 1. 访问属于该案件的证据图片 -> 200 OK
+	{
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Params = gin.Params{
+			{Key: "reviewId", Value: fmt.Sprint(review.ID)},
+			{Key: "fileId", Value: fmt.Sprint(fileRec.ID)},
+		}
+		c.Request = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/admin/rectification/%d/evidence/%d", review.ID, fileRec.ID), nil)
 
-	govHandler.ServeGovernedEvidenceFile(c)
+		govHandler.ServeRectificationEvidenceFile(c)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK, got %d", w.Code)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for related evidence file, got %d", w.Code)
+		}
+		if !bytes.Equal(w.Body.Bytes(), contentBytes) {
+			t.Fatalf("body mismatch")
+		}
+		if w.Header().Get("Content-Type") != "image/png" {
+			t.Fatalf("content type mismatch: %s", w.Header().Get("Content-Type"))
+		}
 	}
-	if !bytes.Equal(w.Body.Bytes(), contentBytes) {
-		t.Fatalf("body mismatch")
-	}
-	if w.Header().Get("Content-Type") != "image/png" {
-		t.Fatalf("content type mismatch: %s", w.Header().Get("Content-Type"))
+
+	// 2. 尝试借用该 reviewId 读取不属于该案件的私信/全局文件 -> 404 (防止 IDOR)
+	{
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Params = gin.Params{
+			{Key: "reviewId", Value: fmt.Sprint(review.ID)},
+			{Key: "fileId", Value: fmt.Sprint(unrelatedFile.ID)},
+		}
+		c.Request = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/admin/rectification/%d/evidence/%d", review.ID, unrelatedFile.ID), nil)
+
+		govHandler.ServeRectificationEvidenceFile(c)
+
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 Not Found for unrelated file, got %d", w.Code)
+		}
 	}
 }

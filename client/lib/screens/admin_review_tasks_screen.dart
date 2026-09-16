@@ -1576,6 +1576,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
 
   Widget _buildThumbnailGrid({
     required BuildContext context,
+    required int reviewId,
     required List<int> fileIds,
     required String baseUrl,
     required Map<String, String> authHeaders,
@@ -1591,7 +1592,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       );
     }
     final cleanBase = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
-    final urls = fileIds.map((id) => '$cleanBase/api/admin/governance/files/$id').toList();
+    final urls = fileIds.map((id) => '$cleanBase/api/admin/rectification/$reviewId/evidence/$id').toList();
 
     return Wrap(
       spacing: 8,
@@ -1786,6 +1787,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                       const SizedBox(height: 6),
                       _buildThumbnailGrid(
                         context: context,
+                        reviewId: item.id,
                         fileIds: snapshot.imageFileIds,
                         baseUrl: baseUrl,
                         authHeaders: authHeaders,
@@ -1854,6 +1856,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                       const SizedBox(height: 6),
                       _buildThumbnailGrid(
                         context: context,
+                        reviewId: item.id,
                         fileIds: item.currentImageFileIds,
                         baseUrl: baseUrl,
                         authHeaders: authHeaders,

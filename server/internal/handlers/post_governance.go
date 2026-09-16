@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -398,28 +399,62 @@ func (h *PostGovernanceHandler) AdminRestorePost(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "帖子已恢复公开展示"})
 }
 
-// ServeGovernedEvidenceFile 供管理员安全查看违规治理凭据或快照原图。
-// 必须具备 admin / super_admin 权限，禁止匿名访问。
-func (h *PostGovernanceHandler) ServeGovernedEvidenceFile(c *gin.Context) {
-	fileID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+// ServeRectificationEvidenceFile 供管理员安全查看指定整改复审案件关联的证据文件或快照原图。
+// 必须具备 admin / super_admin 权限，且 fileId 必须确属该整改案件（快照图片或当前帖子图片），
+// 杜绝通过文件 ID 遍历读取私信附件等未授权全局文件（防御 IDOR 越权）。
+func (h *PostGovernanceHandler) ServeRectificationEvidenceFile(c *gin.Context) {
+	reviewID, err := strconv.ParseUint(c.Param("reviewId"), 10, 64)
+	if err != nil || reviewID == 0 {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	fileID, err := strconv.ParseUint(c.Param("fileId"), 10, 64)
 	if err != nil || fileID == 0 {
-		c.Status(http.StatusNotFound)
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	var review models.PostRectificationReview
+	if err := h.db.Preload("Report").Preload("Post.Images").First(&review, reviewID).Error; err != nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	// 校验 fileID 是否确属该案件关联的证据图片
+	authorized := false
+
+	// 1. 检查当前帖子的图片
+	for _, img := range review.Post.Images {
+		if uint64(img.FileID) == fileID {
+			authorized = true
+			break
+		}
+	}
+
+	// 2. 检查关联举报/治理快照中的 image_file_ids
+	if !authorized && review.Report != nil {
+		authorized = containsEvidenceFileID(review.Report.ModeratedSnapshot, fileID) ||
+			containsEvidenceFileID(review.Report.TargetSnapshot, fileID)
+	}
+
+	if !authorized {
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 
 	var file models.File
 	if err := h.db.First(&file, fileID).Error; err != nil {
-		c.Status(http.StatusNotFound)
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 
 	absPath, err := services.ResolveUploadPath(h.uploadDir, file.Path)
 	if err != nil {
-		c.Status(http.StatusNotFound)
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	if _, err := os.Stat(absPath); err != nil {
-		c.Status(http.StatusNotFound)
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 
@@ -431,4 +466,22 @@ func (h *PostGovernanceHandler) ServeGovernedEvidenceFile(c *gin.Context) {
 	c.Header("Cache-Control", "private, no-cache")
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.File(absPath)
+}
+
+func containsEvidenceFileID(snapshotJSON string, fileID uint64) bool {
+	if snapshotJSON == "" {
+		return false
+	}
+	var data struct {
+		ImageFileIDs []uint64 `json:"image_file_ids"`
+	}
+	if err := json.Unmarshal([]byte(snapshotJSON), &data); err != nil {
+		return false
+	}
+	for _, id := range data.ImageFileIDs {
+		if id == fileID {
+			return true
+		}
+	}
+	return false
 }

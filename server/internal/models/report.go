@@ -31,7 +31,8 @@ type Report struct {
 	ReasonCode     string       `gorm:"size:50;index" json:"reason_code"`
 	Reason         string       `gorm:"type:text;not null" json:"reason"`
 	TargetAuthorID *uint        `gorm:"index" json:"target_author_id"`
-	TargetSnapshot string       `gorm:"type:text" json:"target_snapshot"`
+	TargetSnapshot    string       `gorm:"type:text" json:"target_snapshot"`
+	ModeratedSnapshot string       `gorm:"type:text" json:"moderated_snapshot,omitempty"`
 	Action            string       `gorm:"size:50" json:"action"`
 	ModeratedRevision int          `gorm:"index" json:"moderated_revision,omitempty"`
 	Status         ReportStatus `gorm:"default:pending;index" json:"status"`

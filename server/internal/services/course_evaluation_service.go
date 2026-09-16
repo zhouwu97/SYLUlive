@@ -25,6 +25,7 @@ const (
 	CodeCourseEvaluationSubjectUnavailable = "course_evaluation_subject_unavailable"
 	CodeCourseEvaluationAlreadyExists      = "course_evaluation_already_exists"
 	CodeCourseEvaluationDuplicateTarget    = "course_evaluation_duplicate_target"
+	CodeCourseEvaluationConflict           = "course_evaluation_conflict"
 )
 
 // CourseEvaluationError 承载稳定业务码与服务内部错误。
@@ -55,7 +56,8 @@ func CourseEvaluationHTTPStatus(code string) int {
 		return 404
 	case CodeCourseEvaluationRevisionConflict, CodeCourseEvaluationCandidateRequired,
 		CodeCourseEvaluationNotPending, CodeCourseEvaluationSubjectUnavailable,
-		CodeCourseEvaluationAlreadyExists, CodeCourseEvaluationDuplicateTarget:
+		CodeCourseEvaluationAlreadyExists, CodeCourseEvaluationDuplicateTarget,
+		CodeCourseEvaluationConflict:
 		return 409
 	default:
 		return 500
@@ -826,6 +828,17 @@ func (s *CourseEvaluationService) selectTeacher(tx *gorm.DB, subject *models.Cou
 
 // upsertTeacherRating 维护"一位用户对一位教师一条"的唯一约束。
 func upsertTeacherRating(tx *gorm.DB, userID, teacherID uint, submission *models.CourseEvaluationSubmission) (*models.TeacherRating, error) {
+	// 针对目标教师获取行排他锁，与治理合并事务串行化，防止向已合并教师写入活动评价
+	var t models.Teacher
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id, merged_into_id").
+		First(&t, teacherID).Error; err != nil {
+		return nil, courseEvalErr(CodeCourseEvaluationNotFound, "教师不存在", err)
+	}
+	if t.MergedIntoID != nil {
+		return nil, courseEvalErr(CodeCourseEvaluationConflict, "教师已被合并，请刷新后重试", nil)
+	}
+
 	var rating models.TeacherRating
 	err := tx.Where("course_evaluation_submission_id = ?", submission.ID).First(&rating).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {

@@ -130,13 +130,29 @@ func (h *TeacherHandler) GetDetail(c *gin.Context) {
 	if teacher.MergedIntoID != nil {
 		keeperName := ""
 		var keeper models.Teacher
-		if err := h.db.Select("id", "name").First(&keeper, *teacher.MergedIntoID).Error; err == nil {
+		if err := h.db.Select("id", "name").First(&keeper, *teacher.MergedIntoID).Error == nil {
 			keeperName = keeper.Name
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"merged":         true,
-			"merged_into_id": teacher.MergedIntoID,
+			"teacher": gin.H{
+				"id":                teacher.ID,
+				"name":              teacher.Name,
+				"course":            teacher.Course,
+				"course_subject_id": teacher.CourseSubjectID,
+				"rating_count":      teacher.RatingCount,
+				"average_star":      teacher.AverageStar,
+				"created_at":        teacher.CreatedAt,
+				"verified":          teacher.Verified,
+				"canonical_source":  teacher.CanonicalSource,
+				"is_merged":          true,
+				"merged":            true,
+				"merged_into_id":    teacher.MergedIntoID,
+				"merged_into_name":  keeperName,
+			},
+			"merged":           true,
+			"merged_into_id":   teacher.MergedIntoID,
 			"merged_into_name": keeperName,
+			"ratings":          []interface{}{},
 		})
 		return
 	}
@@ -178,25 +194,29 @@ func (h *TeacherHandler) GetDetail(c *gin.Context) {
 			"user_avatar":     userAvatar,
 			"created_at":      r.CreatedAt,
 			"updated_at":      r.UpdatedAt,
+			"status":          r.Status,
+			"is_own":          isOwn,
 			"helpful_count":   r.HelpfulCount,
 			"unhelpful_count": r.UnhelpfulCount,
-			"my_vote":         r.MyVote,
-			"is_own":          isOwn,
+			"user_vote":       nil,
 		})
 	}
+
 	var count int64
 	var avg float64
 	h.db.Model(&models.TeacherRating{}).Where("teacher_id = ? AND status = 'normal' AND deleted_at IS NULL", id).Count(&count)
 	if count > 0 {
 		h.db.Model(&models.TeacherRating{}).Where("teacher_id = ? AND status = 'normal' AND deleted_at IS NULL", id).Select("AVG(CAST(star AS FLOAT))").Scan(&avg)
 	}
+
 	var myRating *models.TeacherRating
 	if userID, exists := c.Get("user_id"); exists {
-		var rating models.TeacherRating
-		if err := h.db.Where("teacher_id = ? AND user_id = ? AND deleted_at IS NULL", id, userID).First(&rating).Error; err == nil {
-			myRating = &rating
+		var mr models.TeacherRating
+		if err := h.db.Where("teacher_id = ? AND user_id = ? AND deleted_at IS NULL", id, userID.(uint)).First(&mr).Error; err == nil {
+			myRating = &mr
 		}
 	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"teacher":      teacher,
 		"ratings":      ratingDTOs,
@@ -234,6 +254,16 @@ func (h *TeacherHandler) Create(c *gin.Context) {
 	if subjectID := ensureTeacherCourseSubject(h.db, input.Course, verified); subjectID != nil {
 		teacher.CourseSubjectID = subjectID
 	}
+
+	// 检查是否与同学科下既有别名冲突，避免实名撞别名导致歧义
+	if teacher.CourseSubjectID != nil && *teacher.CourseSubjectID != 0 {
+		var existingAlias models.TeacherAlias
+		if err := h.db.Where("course_subject_id = ? AND normalized_alias = ?", *teacher.CourseSubjectID, teacher.NameNormalized).First(&existingAlias).Error; err == nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "该教师姓名已作为别名存在，请直接选择对应教师或联系管理员"})
+			return
+		}
+	}
+
 	if err := h.db.Create(&teacher).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加失败"})
 		return

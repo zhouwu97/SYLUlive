@@ -143,19 +143,17 @@ func migrateExactDuplicateTeacher(tx *gorm.DB, batchID string, keeper, loser Tea
 		} else {
 			// 同用户评价冲突：按 created_at DESC, id DESC 确定 winner
 			var winner, loserR TeacherRating
+			winnerIsLoser := false
 			if lRating.CreatedAt.After(kRating.CreatedAt) || (lRating.CreatedAt.Equal(kRating.CreatedAt) && lRating.ID > kRating.ID) {
 				winner = lRating
 				loserR = kRating
-				if err := tx.Model(&TeacherRating{}).Where("id = ?", lRating.ID).Update("teacher_id", keeper.ID).Error; err != nil {
-					return err
-				}
-				migratedRatings++
+				winnerIsLoser = true
 			} else {
 				winner = kRating
 				loserR = lRating
 			}
 
-			// 软删除 loser 评价
+			// 必须先软删除 loser 评价（若 loserR 为 keeper 原有评价，先软删以释放 keeper 的 (teacher_id, user_id) 唯一索引槽位）
 			if err := tx.Model(&TeacherRating{}).Where("id = ?", loserR.ID).Updates(map[string]interface{}{
 				"deleted_at":        now,
 				"moderation_reason": "teacher_merge_duplicate",
@@ -163,6 +161,14 @@ func migrateExactDuplicateTeacher(tx *gorm.DB, batchID string, keeper, loser Tea
 				return err
 			}
 			softDeletedRatings++
+
+			// 胜出评价若来自 loser，在旧 keeper 评价已软删后重挂到 keeper
+			if winnerIsLoser {
+				if err := tx.Model(&TeacherRating{}).Where("id = ?", lRating.ID).Update("teacher_id", keeper.ID).Error; err != nil {
+					return err
+				}
+				migratedRatings++
+			}
 
 			// 投票去重与重挂
 			var votes []TeacherRatingVote
@@ -190,12 +196,18 @@ func migrateExactDuplicateTeacher(tx *gorm.DB, batchID string, keeper, loser Tea
 
 			// 重算 winner 评价的有用/无用统计
 			var upCount, downCount int64
-			_ = tx.Model(&TeacherRatingVote{}).Where("rating_id = ? AND vote_type = ?", winner.ID, "up").Count(&upCount).Error
-			_ = tx.Model(&TeacherRatingVote{}).Where("rating_id = ? AND vote_type = ?", winner.ID, "down").Count(&downCount).Error
-			_ = tx.Model(&TeacherRating{}).Where("id = ?", winner.ID).Updates(map[string]interface{}{
+			if err := tx.Model(&TeacherRatingVote{}).Where("rating_id = ? AND vote_type = ?", winner.ID, "up").Count(&upCount).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&TeacherRatingVote{}).Where("rating_id = ? AND vote_type = ?", winner.ID, "down").Count(&downCount).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&TeacherRating{}).Where("id = ?", winner.ID).Updates(map[string]interface{}{
 				"helpful_count":   int(upCount),
 				"unhelpful_count": int(downCount),
-			}).Error
+			}).Error; err != nil {
+				return err
+			}
 
 			// 关联提交标记为 superseded
 			var loserSubs []CourseEvaluationSubmission

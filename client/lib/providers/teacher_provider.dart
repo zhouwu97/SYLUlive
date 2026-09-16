@@ -304,13 +304,24 @@ class TeacherProvider extends ChangeNotifier {
       final rawTeacher = data['teacher'];
       final rawRatings = data['ratings'];
 
-      if (rawTeacher is! Map) {
+      final Teacher teacher;
+      if (rawTeacher is Map) {
+        teacher = Teacher.fromJson(
+          Map<String, dynamic>.from(rawTeacher),
+        );
+      } else if (data['merged'] == true || data['merged_into_id'] != null) {
+        teacher = Teacher(
+          id: teacherId,
+          name: data['name']?.toString() ?? '',
+          course: '',
+          createdAt: DateTime.now(),
+          isMerged: true,
+          mergedIntoId: (data['merged_into_id'] as num?)?.toInt(),
+          mergedIntoName: data['merged_into_name']?.toString() ?? '',
+        );
+      } else {
         throw const FormatException('教师信息为空');
       }
-
-      final teacher = Teacher.fromJson(
-        Map<String, dynamic>.from(rawTeacher),
-      );
 
       final ratings = rawRatings is List
           ? rawRatings

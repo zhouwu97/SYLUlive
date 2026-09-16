@@ -99,6 +99,15 @@ class _AdminTeacherGovernanceScreenState
   // 网络请求方法
   // ==========================================
 
+  List<dynamic> _extractList(dynamic data, String primaryKey) {
+    if (data is List) return data;
+    if (data is Map) {
+      final val = data[primaryKey] ?? data['items'] ?? data['data'] ?? data['list'];
+      if (val is List) return val;
+    }
+    return const [];
+  }
+
   Future<void> _loadCandidateGroups() async {
     if (!mounted) return;
     setState(() {
@@ -110,21 +119,14 @@ class _AdminTeacherGovernanceScreenState
       final res =
           await dio.get('/api/admin/teacher-governance/duplicate-groups');
       if (!mounted) return;
-      final data = res.data;
-      if (data is List) {
-        setState(() {
-          _candidateGroups = data
-              .whereType<Map<String, dynamic>>()
-              .map(TeacherGovernanceCandidateGroup.fromJson)
-              .toList();
-          _isLoadingGroups = false;
-        });
-      } else {
-        setState(() {
-          _candidateGroups = [];
-          _isLoadingGroups = false;
-        });
-      }
+      final items = _extractList(res.data, 'groups');
+      setState(() {
+        _candidateGroups = items
+            .whereType<Map<String, dynamic>>()
+            .map(TeacherGovernanceCandidateGroup.fromJson)
+            .toList();
+        _isLoadingGroups = false;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -153,21 +155,14 @@ class _AdminTeacherGovernanceScreenState
         queryParameters: params,
       );
       if (!mounted) return;
-      final data = res.data;
-      if (data is List) {
-        setState(() {
-          _allTeachers = data
-              .whereType<Map<String, dynamic>>()
-              .map(TeacherGovernanceTeacherItem.fromJson)
-              .toList();
-          _isLoadingTeachers = false;
-        });
-      } else {
-        setState(() {
-          _allTeachers = [];
-          _isLoadingTeachers = false;
-        });
-      }
+      final items = _extractList(res.data, 'teachers');
+      setState(() {
+        _allTeachers = items
+            .whereType<Map<String, dynamic>>()
+            .map(TeacherGovernanceTeacherItem.fromJson)
+            .toList();
+        _isLoadingTeachers = false;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -196,22 +191,15 @@ class _AdminTeacherGovernanceScreenState
         queryParameters: params,
       );
       if (!mounted) return;
-      final data = res.data;
-      if (data is List) {
-        setState(() {
-          _aliases = data
-              .whereType<Map<String, dynamic>>()
-              .map((j) =>
-                  GovernanceAliasItem.fromJson(j, defaultType: _aliasType))
-              .toList();
-          _isLoadingAliases = false;
-        });
-      } else {
-        setState(() {
-          _aliases = [];
-          _isLoadingAliases = false;
-        });
-      }
+      final items = _extractList(res.data, 'aliases');
+      setState(() {
+        _aliases = items
+            .whereType<Map<String, dynamic>>()
+            .map((j) =>
+                GovernanceAliasItem.fromJson(j, defaultType: _aliasType))
+            .toList();
+        _isLoadingAliases = false;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -232,21 +220,14 @@ class _AdminTeacherGovernanceScreenState
       final res =
           await dio.get('/api/admin/teacher-governance/merge-records');
       if (!mounted) return;
-      final data = res.data;
-      if (data is List) {
-        setState(() {
-          _records = data
-              .whereType<Map<String, dynamic>>()
-              .map(TeacherMergeRecordItem.fromJson)
-              .toList();
-          _isLoadingRecords = false;
-        });
-      } else {
-        setState(() {
-          _records = [];
-          _isLoadingRecords = false;
-        });
-      }
+      final items = _extractList(res.data, 'records');
+      setState(() {
+        _records = items
+            .whereType<Map<String, dynamic>>()
+            .map(TeacherMergeRecordItem.fromJson)
+            .toList();
+        _isLoadingRecords = false;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -1530,9 +1511,11 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
       );
       if (!mounted) return;
       final data = res.data;
-      if (data is Map<String, dynamic>) {
+      if (data is Map) {
         setState(() {
-          _preview = GovernanceMergePreviewResult.fromJson(data);
+          _preview = GovernanceMergePreviewResult.fromJson(
+            Map<String, dynamic>.from(data),
+          );
           _isLoadingPreview = false;
         });
       } else {

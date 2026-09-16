@@ -68,12 +68,12 @@ class TeacherGovernanceTeacherItem {
       name: json['name']?.toString() ?? '',
       course: json['course']?.toString() ?? '',
       subjectId: (json['course_subject_id'] ?? json['subject_id'] as num?)?.toInt(),
-      subjectName: json['subject_name']?.toString() ?? '',
+      subjectName: json['course_subject_name']?.toString() ?? json['subject_name']?.toString() ?? '',
       subjectVerified: json['subject_verified'] == true,
       verified: json['verified'] == true,
       canonicalSource: json['canonical_source']?.toString() ?? 'legacy',
       ratingCount: (json['rating_count'] as num?)?.toInt() ?? 0,
-      pendingCount: (json['pending_count'] as num?)?.toInt() ?? 0,
+      pendingCount: (json['pending_submission_count'] ?? json['pending_count'] as num?)?.toInt() ?? 0,
       aliasCount: (json['alias_count'] as num?)?.toInt() ?? 0,
       mergedIntoId: (json['merged_into_id'] as num?)?.toInt(),
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? ''),
@@ -109,21 +109,44 @@ class TeacherGovernanceCandidateGroup {
 
   factory TeacherGovernanceCandidateGroup.fromJson(Map<String, dynamic> json) {
     final rawTeachers = json['teachers'] as List? ?? [];
+    final bool isMergeable;
+    if (json.containsKey('mergeable')) {
+      isMergeable = json['mergeable'] == true;
+    } else if (json.containsKey('merge_allowed')) {
+      isMergeable = json['merge_allowed'] == true;
+    } else {
+      isMergeable = false;
+    }
+
+    final rawReasons = json['reasons'] as List? ??
+        (json['note'] != null && json['note'].toString().isNotEmpty ? [json['note']] : null) ??
+        [];
+
+    final List<String> aliasSuggestions;
+    if (json['teacher_alias_suggestions'] is List) {
+      aliasSuggestions = (json['teacher_alias_suggestions'] as List).map((e) => e.toString()).toList();
+    } else if (json['teacher_aliases'] is List) {
+      aliasSuggestions = (json['teacher_aliases'] as List)
+          .map((e) => e is Map ? (e['alias']?.toString() ?? '') : e.toString())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    } else {
+      aliasSuggestions = const [];
+    }
+
     return TeacherGovernanceCandidateGroup(
-      id: json['id']?.toString() ?? '',
+      id: json['id']?.toString() ?? json['key']?.toString() ?? '',
       courseName: json['course_name']?.toString() ?? '',
       confidence: GovernanceConfidence.fromString(json['confidence']?.toString()),
-      reasons: (json['reasons'] as List?)?.map((e) => e.toString()).toList() ?? const [],
-      mergeAllowed: json['merge_allowed'] != false,
-      mergeBlockReason: json['merge_block_reason']?.toString() ?? '',
+      reasons: rawReasons.map((e) => e.toString()).toList(),
+      mergeAllowed: isMergeable,
+      mergeBlockReason: json['merge_block_reason']?.toString() ?? json['block_reason']?.toString() ?? (isMergeable ? '' : json['note']?.toString() ?? ''),
       suggestedKeeperId: (json['suggested_keeper_id'] as num?)?.toInt() ?? 0,
       teachers: rawTeachers
           .whereType<Map<String, dynamic>>()
           .map(TeacherGovernanceTeacherItem.fromJson)
           .toList(),
-      teacherAliasSuggestions:
-          (json['teacher_alias_suggestions'] as List?)?.map((e) => e.toString()).toList() ??
-              const [],
+      teacherAliasSuggestions: aliasSuggestions,
       courseAliasSuggestions:
           (json['course_alias_suggestions'] as List?)?.map((e) => e.toString()).toList() ??
               const [],
@@ -152,7 +175,7 @@ class RatingConflictItem {
   factory RatingConflictItem.fromJson(Map<String, dynamic> json) {
     return RatingConflictItem(
       userId: (json['user_id'] as num?)?.toInt() ?? 0,
-      userNickname: json['user_nickname']?.toString() ?? '',
+      userNickname: json['user_nickname']?.toString() ?? json['nickname']?.toString() ?? '',
       winnerRatingId: (json['winner_rating_id'] as num?)?.toInt() ?? 0,
       winnerRatingStar: (json['winner_rating_star'] as num?)?.toInt() ?? 0,
       winnerCreatedAt: DateTime.tryParse(json['winner_created_at']?.toString() ?? ''),
@@ -207,19 +230,29 @@ class GovernanceMergePreviewResult {
   factory GovernanceMergePreviewResult.fromJson(Map<String, dynamic> json) {
     final keeper = json['keeper'] as Map? ?? {};
     final conflictsList = (json['conflicts'] as List?)?.map((e) => e.toString()).toList() ?? const [];
-    final rawRatingConflicts = json['rating_conflict_details'] as List? ?? [];
+    final rawRatingConflicts = (json['rating_conflict_details'] ?? json['rating_conflicts']) as List? ?? [];
+    final rawLosers = (json['loser_ids'] ?? json['losers']) as List? ?? const [];
+    final bool isMergeAllowed;
+    if (json.containsKey('merge_allowed')) {
+      isMergeAllowed = json['merge_allowed'] == true;
+    } else if (json.containsKey('mergeable')) {
+      isMergeAllowed = json['mergeable'] == true;
+    } else {
+      isMergeAllowed = true;
+    }
+
     return GovernanceMergePreviewResult(
       keeperId: (keeper['id'] as num?)?.toInt() ?? (json['keeper_id'] as num?)?.toInt() ?? 0,
-      keeperName: keeper['name']?.toString() ?? '',
-      loserIds: (json['loser_ids'] as List?)?.map((e) => (e as num).toInt()).toList() ?? const [],
+      keeperName: keeper['name']?.toString() ?? json['keeper_name']?.toString() ?? '',
+      loserIds: rawLosers.map((e) => (e as num).toInt()).toList(),
       snapshotToken: json['snapshot_token']?.toString() ?? '',
-      mergeAllowed: json['merge_allowed'] != false,
-      blockReason: json['block_reason']?.toString() ?? '',
+      mergeAllowed: isMergeAllowed,
+      blockReason: json['block_reason']?.toString() ?? json['merge_block_reason']?.toString() ?? '',
       conflicts: conflictsList,
       ratingsMigrated: (json['ratings_migrated'] as num?)?.toInt() ?? 0,
       ratingsSoftDeleted: (json['ratings_soft_deleted'] as num?)?.toInt() ?? 0,
       votesMigrated: (json['votes_migrated'] as num?)?.toInt() ?? 0,
-      votesDeduped: (json['votes_deduped'] as num?)?.toInt() ?? 0,
+      votesDeduped: (json['votes_deduped'] ?? json['vote_conflicts_deduped'] as num?)?.toInt() ?? 0,
       submissionsMigrated: (json['submissions_migrated'] as num?)?.toInt() ?? 0,
       submissionsSuperseded: (json['submissions_superseded'] as num?)?.toInt() ?? 0,
       ratingConflicts: rawRatingConflicts
@@ -234,7 +267,7 @@ class GovernanceMergePreviewResult {
               ?.whereType<Map<String, dynamic>>()
               .toList() ??
           const [],
-      subjectMerges: (json['subject_merges'] as List?)
+      subjectMerges: (json['subject_merges'] ?? json['course_merges'] as List?)
               ?.whereType<Map<String, dynamic>>()
               .toList() ??
           const [],

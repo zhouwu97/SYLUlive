@@ -128,7 +128,8 @@ func (h *TeacherGovernanceHandler) ListTeachers(c *gin.Context) {
 			limit = parsed
 		}
 	}
-	teachers, err := h.service.ListGovernanceTeachers(c.Query("q"), limit)
+	includeMerged := c.Query("include_merged") == "true" || c.Query("include_merged") == "1"
+	teachers, err := h.service.ListGovernanceTeachers(c.Query("q"), limit, includeMerged)
 	if err != nil {
 		respondGovernanceError(c, err)
 		return
@@ -138,7 +139,7 @@ func (h *TeacherGovernanceHandler) ListTeachers(c *gin.Context) {
 
 // ListAliases 读取课程/教师别名。
 func (h *TeacherGovernanceHandler) ListAliases(c *gin.Context) {
-	aliases, err := h.service.ListAliases(c.Query("type"))
+	aliases, err := h.service.ListAliases(c.Query("type"), c.Query("q"))
 	if err != nil {
 		respondGovernanceError(c, err)
 		return
@@ -191,7 +192,11 @@ func (h *TeacherGovernanceHandler) DeleteAlias(c *gin.Context) {
 		})
 		return
 	}
-	if err := h.service.DeleteAlias(adminID, c.Param("type"), uint(id)); err != nil {
+	aliasType := c.Query("type")
+	if aliasType == "" {
+		aliasType = c.Param("type")
+	}
+	if err := h.service.DeleteAlias(adminID, aliasType, uint(id)); err != nil {
 		respondGovernanceError(c, err)
 		return
 	}

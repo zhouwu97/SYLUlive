@@ -25,6 +25,7 @@ import '../services/forbidden_recovery_router.dart';
 import '../widgets/auth_expired_overlay.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import '../platform/app_platform.dart';
+import '../services/push_settings_service.dart';
 
 enum AuthState {
   unknown,
@@ -434,6 +435,11 @@ class AuthProvider extends ChangeNotifier {
   AuthState get authState => _authState;
   bool get isLoading => _isLoading;
   bool get isLoggedIn => _authState == AuthState.authenticated;
+  bool get hasRecoverableSession =>
+      _user != null &&
+      (_token != null || _refreshToken != null) &&
+      (_authState == AuthState.recoveryFailed ||
+          _authState == AuthState.recovering);
   bool get isInitialized => _initialized;
   ForbiddenRecoveryRoute? get lastForbiddenRecovery => _lastForbiddenRecovery;
 
@@ -463,11 +469,18 @@ class AuthProvider extends ChangeNotifier {
     _refreshFailureEpoch = null;
     final future = () async {
       try {
+        final installationId = await PushSettingsService.installationId();
         final response = await _dio.post(
           '/refresh',
           data: refresh == null || refresh.isEmpty
               ? null
               : {'refresh_token': refresh},
+          options: Options(
+            headers: {
+              if (installationId.isNotEmpty)
+                'X-Installation-ID': installationId,
+            },
+          ),
         );
         if (epoch != _accountSessionEpoch || response.data is! Map) {
           return false;
@@ -495,13 +508,64 @@ class AuthProvider extends ChangeNotifier {
           return true;
         });
       } on DioException catch (error) {
-        if (error.response?.statusCode == 401 ||
-            error.response?.statusCode == 400) {
+        final status = error.response?.statusCode;
+        final responseBody = error.response?.data;
+        final errorCode = responseBody is Map ? responseBody['code'] : null;
+        if (status == 401 || status == 400) {
           _refreshTerminalFailure = true;
           _refreshFailureEpoch = epoch;
+          DiagnosticLogService.instance.record(
+            level: 'warning',
+            source: '账号',
+            type: '刷新凭据已终结',
+            summary: '服务端拒绝了当前刷新凭据',
+            detail: 'HTTP $status\ncode=${errorCode ?? "unknown"}',
+            eventCode: 'auth_refresh_terminal_failure',
+            category: 'auth',
+            operation: 'refresh',
+            result: 'failure',
+            httpStatus: status,
+            metadata: <String, Object?>{
+              'statusCode': status,
+              'errorCode': errorCode?.toString() ?? 'unknown',
+              'sessionEpoch': epoch,
+            },
+          );
+        } else {
+          DiagnosticLogService.instance.record(
+            level: 'info',
+            source: '账号',
+            type: '刷新临时网络故障',
+            summary: '刷新请求网络抖动或超时，本地凭据未清除',
+            detail: error.message ?? error.toString(),
+            eventCode: 'auth_refresh_transient_failure',
+            category: 'auth',
+            operation: 'refresh',
+            result: 'retry',
+            httpStatus: status,
+            metadata: <String, Object?>{
+              'statusCode': status,
+              'sessionEpoch': epoch,
+              'errorType': error.type.toString(),
+            },
+          );
         }
         return false;
-      } catch (_) {
+      } catch (error) {
+        DiagnosticLogService.instance.record(
+          level: 'info',
+          source: '账号',
+          type: '刷新未知异常',
+          summary: '刷新过程中发生非网络异常，本地凭据未清除',
+          detail: error.toString(),
+          eventCode: 'auth_refresh_transient_failure',
+          category: 'auth',
+          operation: 'refresh',
+          result: 'retry',
+          metadata: <String, Object?>{
+            'sessionEpoch': epoch,
+          },
+        );
         return false;
       }
     }();
@@ -691,8 +755,13 @@ class AuthProvider extends ChangeNotifier {
               handler.next(error);
               return;
             }
-            _expireCurrentSession(_sessionGeneration, _token,
-                accountEpoch: requestEpoch);
+            _expireCurrentSession(
+              _sessionGeneration,
+              _token,
+              accountEpoch: requestEpoch,
+              httpStatus: 401,
+              errorCode: errorCode?.toString(),
+            );
             // 重置 overlay 标记，允许再次弹出
             AuthExpiredManager.resetSessionFlag();
             // 延迟一帧弹出重新登录提示
@@ -748,6 +817,8 @@ class AuthProvider extends ChangeNotifier {
                 return;
               }
             }
+            handler.next(error);
+            return;
           }
           handler.next(error);
         },
@@ -778,8 +849,13 @@ class AuthProvider extends ChangeNotifier {
     return next;
   }
 
-  Future<void> _expireCurrentSession(int generation, String? token,
-      {required int accountEpoch}) {
+  Future<void> _expireCurrentSession(
+    int generation,
+    String? token, {
+    required int accountEpoch,
+    int? httpStatus,
+    String? errorCode,
+  }) {
     if (_sessionExpiryFuture != null) return _sessionExpiryFuture!;
     _sessionExpiryFuture = _enqueueAuthMutation(() async {
       if (_sessionGeneration != generation ||
@@ -792,6 +868,9 @@ class AuthProvider extends ChangeNotifier {
         expectedToken: token,
         expectedAccountEpoch: accountEpoch,
         skipMutationQueue: true,
+        reason: 'token_expired_401',
+        httpStatus: httpStatus ?? 401,
+        errorCode: errorCode,
       );
     }).whenComplete(() => _sessionExpiryFuture = null);
     return _sessionExpiryFuture!;
@@ -841,7 +920,33 @@ class AuthProvider extends ChangeNotifier {
         await prefs!.remove('auth_force_logged_out');
         _setAuthState(AuthState.guest);
       } else {
-        final stored = await _credentialStore.read();
+        StoredAuthCredentials stored;
+        try {
+          stored = await _credentialStore.read();
+        } catch (storageError) {
+          debugPrint('安全存储首次读取异常: $storageError，将在 300ms 后重试');
+          await Future.delayed(const Duration(milliseconds: 300));
+          try {
+            stored = await _credentialStore.read();
+          } catch (retryError) {
+            debugPrint('安全存储重试读取依然异常: $retryError');
+            DiagnosticLogService.instance.recordError(
+              source: '账号',
+              type: '安全存储读取异常',
+              summary: '本地安全存储暂时无法读取，未清理凭据',
+              detail: retryError.toString(),
+              eventCode: 'auth_restore_storage_failure',
+              category: 'auth',
+              operation: 'restore',
+              result: 'failure',
+              durationMs: stopwatch.elapsedMilliseconds,
+            );
+            _setAuthState(AuthState.recoveryFailed);
+            _initialized = true;
+            notifyListeners();
+            return;
+          }
+        }
 
         if (kIsWeb && stored.userJson != null) {
           // Web 端不恢复 JWT 文本，只用浏览器自动管理的 HttpOnly Cookie 验证会话。
@@ -1620,6 +1725,9 @@ class AuthProvider extends ChangeNotifier {
     String? expectedToken,
     int? expectedAccountEpoch,
     bool skipMutationQueue = false,
+    String reason = 'manual_logout',
+    int? httpStatus,
+    String? errorCode,
   }) async {
     if (expectedGeneration != null &&
         (_sessionGeneration != expectedGeneration ||
@@ -1636,6 +1744,9 @@ class AuthProvider extends ChangeNotifier {
             expectedToken: expectedToken,
             expectedAccountEpoch: expectedAccountEpoch,
             skipMutationQueue: true,
+            reason: reason,
+            httpStatus: httpStatus,
+            errorCode: errorCode,
           ));
       return;
     }
@@ -1648,6 +1759,26 @@ class AuthProvider extends ChangeNotifier {
       final prefs = await AppPreferencesStore.getInstance();
       await prefs.setBool('auth_force_logged_out', true);
     } catch (_) {}
+
+    // 记录清理审计日志
+    DiagnosticLogService.instance.record(
+      level: 'info',
+      source: '账号',
+      type: '会话已清理',
+      summary: '本地会话已被清理',
+      detail: 'reason=$reason\nstatus=$httpStatus\ncode=$errorCode',
+      eventCode: 'auth_session_cleared',
+      category: 'auth',
+      operation: 'clear',
+      result: 'success',
+      httpStatus: httpStatus,
+      metadata: <String, Object?>{
+        'reason': reason,
+        'httpStatus': httpStatus,
+        'errorCode': errorCode,
+        'sessionEpoch': expectedAccountEpoch ?? _accountSessionEpoch,
+      },
+    );
 
     // 认证凭据清除成功后再提交内存状态。
     await _clearAccountNotificationState();

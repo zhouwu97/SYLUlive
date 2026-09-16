@@ -323,3 +323,107 @@ func TestLogoutRevokesAccessTokenSessionFamily(t *testing.T) {
 	require.Zero(t, familyA)
 	require.Equal(t, int64(1), familyB)
 }
+
+func TestRefreshSessionRecoveryBeyondWindowWithSameInstallationID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.User{}, &models.RefreshToken{}, &models.UserLegalConsent{}))
+	user := models.User{PasswordHash: "x", AccountStatus: "active", Role: models.RoleUser}
+	require.NoError(t, db.Create(&user).Error)
+	for _, document := range models.RequiredLegalDocuments(false) {
+		require.NoError(t, db.Create(&models.UserLegalConsent{
+			UserID: user.ID, Document: document, Version: models.LegalDocumentVersion, AcceptedAt: time.Now(),
+		}).Error)
+	}
+	h := NewAuthHandler(db, "test-secret")
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/api/refresh", nil)
+	ctx.Request.Header.Set("User-Agent", "test-device")
+	ctx.Request.Header.Set("X-Installation-ID", "install-123")
+	rawR0, _, err := h.issueRefreshSession(user.ID, ctx)
+	require.NoError(t, err)
+
+	// 1. 首次刷新 (R0 -> R1)，模拟服务器成功轮换
+	reqBody, _ := json.Marshal(map[string]string{"refresh_token": rawR0})
+	req := httptest.NewRequest("POST", "/api/refresh", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "test-device")
+	req.Header.Set("X-Installation-ID", "install-123")
+	rec := httptest.NewRecorder()
+	ctx, _ = gin.CreateTestContext(rec)
+	ctx.Request = req
+	h.Refresh(ctx)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var firstPayload map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &firstPayload))
+	rotatedR1 := firstPayload["refresh_token"].(string)
+
+	// 2. 模拟响应丢失且超过 30 秒恢复窗口（例如 10 分钟后）
+	tenMinutesAgo := time.Now().Add(-10 * time.Minute)
+	require.NoError(t, db.Model(&models.RefreshToken{}).
+		Where("token_hash = ?", refreshHash(rawR0)).
+		Update("last_used_at", tenMinutesAgo).Error)
+
+	// 3. 相同 installation ID 再次携带 R0 发起刷新，验证即使超时仍能安全恢复 R1
+	rec = httptest.NewRecorder()
+	ctx, _ = gin.CreateTestContext(rec)
+	req = httptest.NewRequest("POST", "/api/refresh", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "test-device")
+	req.Header.Set("X-Installation-ID", "install-123")
+	ctx.Request = req
+	h.Refresh(ctx)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var recoveredPayload map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &recoveredPayload))
+	require.Equal(t, rotatedR1, recoveredPayload["refresh_token"])
+}
+
+func TestRefreshSessionReusedWithDifferentInstallationID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.User{}, &models.RefreshToken{}, &models.UserLegalConsent{}))
+	user := models.User{PasswordHash: "x", AccountStatus: "active", Role: models.RoleUser}
+	require.NoError(t, db.Create(&user).Error)
+	for _, document := range models.RequiredLegalDocuments(false) {
+		require.NoError(t, db.Create(&models.UserLegalConsent{
+			UserID: user.ID, Document: document, Version: models.LegalDocumentVersion, AcceptedAt: time.Now(),
+		}).Error)
+	}
+	h := NewAuthHandler(db, "test-secret")
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/api/refresh", nil)
+	ctx.Request.Header.Set("User-Agent", "test-device")
+	ctx.Request.Header.Set("X-Installation-ID", "install-legit")
+	rawR0, _, err := h.issueRefreshSession(user.ID, ctx)
+	require.NoError(t, err)
+
+	// 1. 合法设备完成刷新 (R0 -> R1)
+	reqBody, _ := json.Marshal(map[string]string{"refresh_token": rawR0})
+	req := httptest.NewRequest("POST", "/api/refresh", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "test-device")
+	req.Header.Set("X-Installation-ID", "install-legit")
+	rec := httptest.NewRecorder()
+	ctx, _ = gin.CreateTestContext(rec)
+	ctx.Request = req
+	h.Refresh(ctx)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	// 2. 攻击者/另一台设备携带被盗旧 R0 和不同 installation ID 发送请求
+	rec = httptest.NewRecorder()
+	ctx, _ = gin.CreateTestContext(rec)
+	req = httptest.NewRequest("POST", "/api/refresh", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "test-device")
+	req.Header.Set("X-Installation-ID", "install-attacker")
+	ctx.Request = req
+	h.Refresh(ctx)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.Contains(t, rec.Body.String(), "refresh_token_reused")
+
+	// 验证整个会话族均被撤销
+	var activeCount int64
+	db.Model(&models.RefreshToken{}).Where("user_id = ? AND revoked_at IS NULL", user.ID).Count(&activeCount)
+	require.Zero(t, activeCount)
+}

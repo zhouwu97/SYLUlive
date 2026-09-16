@@ -812,6 +812,9 @@ NotificationAccountDecision _notificationAccountDecision(
     return NotificationAccountDecision.waitForAuthentication;
   }
   final authProvider = context.read<AuthProvider>();
+  if (authProvider.hasRecoverableSession) {
+    return NotificationAccountDecision.waitForAuthentication;
+  }
   if (authProvider.isLoggedIn &&
       !(authProvider.user?.legalConsentsActive ?? false)) {
     return NotificationAccountDecision.waitForAuthentication;

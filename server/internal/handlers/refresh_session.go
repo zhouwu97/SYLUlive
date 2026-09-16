@@ -131,7 +131,21 @@ func issueRefreshTokenRecordForDB(db *gorm.DB, userID uint, family string, c *gi
 	if err := db.Select("id", "token_version").First(&user, userID).Error; err != nil {
 		return "", "", err
 	}
-	row := &models.RefreshToken{UserID: userID, TokenVersion: user.TokenVersion, TokenHash: refreshHash(raw), TokenFamily: family, FamilyVersion: 2, ExpiresAt: time.Now().Add(refreshTTL()), CreatedIPHash: refreshHash(c.ClientIP()), UserAgentHash: refreshHash(c.GetHeader("User-Agent"))}
+	var installHash string
+	if installID := strings.TrimSpace(c.GetHeader("X-Installation-ID")); installID != "" {
+		installHash = refreshHash(installID)
+	}
+	row := &models.RefreshToken{
+		UserID:             userID,
+		TokenVersion:       user.TokenVersion,
+		TokenHash:          refreshHash(raw),
+		TokenFamily:        family,
+		FamilyVersion:      2,
+		ExpiresAt:          time.Now().Add(refreshTTL()),
+		CreatedIPHash:      refreshHash(c.ClientIP()),
+		UserAgentHash:      refreshHash(c.GetHeader("User-Agent")),
+		InstallationIDHash: installHash,
+	}
 	if err := db.Create(row).Error; err != nil {
 		return "", "", err
 	}
@@ -168,10 +182,27 @@ func (h *AuthHandler) revokeRefreshRotationFamilies(current models.RefreshToken,
 func (h *AuthHandler) recoverRefreshRotation(current models.RefreshToken, previousRaw string, c *gin.Context, now time.Time) (models.User, string, time.Time, error) {
 	// 只用替代记录确认本次轮换的请求指纹；current.CreatedIPHash 属于旧签发网络，
 	// 换网后的合法重试不应因此被当作重放攻击。IP 不承担设备身份证明职责。
-	if current.RevokedAt == nil || current.ReplacedBy == nil || current.LastUsedAt == nil ||
-		now.Sub(*current.LastUsedAt) < 0 || now.Sub(*current.LastUsedAt) > refreshRotationRecoveryWindow ||
-		current.UserAgentHash == "" {
+	if current.RevokedAt == nil || current.ReplacedBy == nil || current.LastUsedAt == nil {
 		return models.User{}, "", time.Time{}, errRefreshRotationNotRecoverable
+	}
+
+	requestInstallID := strings.TrimSpace(c.GetHeader("X-Installation-ID"))
+	var isSameInstallation bool
+	if requestInstallID != "" && current.InstallationIDHash != "" {
+		requestInstallHash := refreshHash(requestInstallID)
+		if requestInstallHash != current.InstallationIDHash {
+			// 明确携带了不同设备的安装标识，直接判定为重放攻击，不可恢复
+			return models.User{}, "", time.Time{}, errRefreshRotationNotRecoverable
+		}
+		isSameInstallation = true
+	}
+
+	// 若非同一个稳定安装标识重试，则必须受严格的短恢复窗口（30秒）限制
+	if !isSameInstallation {
+		if now.Sub(*current.LastUsedAt) < 0 || now.Sub(*current.LastUsedAt) > refreshRotationRecoveryWindow ||
+			current.UserAgentHash == "" {
+			return models.User{}, "", time.Time{}, errRefreshRotationNotRecoverable
+		}
 	}
 
 	newRaw := rotationRefreshToken(h.jwtSecret, previousRaw, current.ID)
@@ -183,9 +214,20 @@ func (h *AuthHandler) recoverRefreshRotation(current models.RefreshToken, previo
 		}
 		return models.User{}, "", time.Time{}, err
 	}
+
+	if isSameInstallation {
+		if replacement.InstallationIDHash != current.InstallationIDHash {
+			return models.User{}, "", time.Time{}, errRefreshRotationNotRecoverable
+		}
+	} else {
+		if replacement.UserAgentHash != refreshHash(c.GetHeader("User-Agent")) {
+			return models.User{}, "", time.Time{}, errRefreshRotationNotRecoverable
+		}
+	}
+
 	if replacement.UserID != current.UserID || replacement.TokenFamily != targetFamily ||
 		replacement.TokenHash != refreshHash(newRaw) || replacement.RevokedAt != nil ||
-		!replacement.ExpiresAt.After(now) || replacement.UserAgentHash != refreshHash(c.GetHeader("User-Agent")) {
+		!replacement.ExpiresAt.After(now) {
 		return models.User{}, "", time.Time{}, errRefreshRotationNotRecoverable
 	}
 
@@ -298,7 +340,23 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	// 轮换值可由旧凭据和服务端密钥重建，仅用于同设备短窗口内恢复“响应已丢失”。
 	newRaw := rotationRefreshToken(h.jwtSecret, input.RefreshToken, current.ID)
 	targetFamily := refreshRotationFamily(h.jwtSecret, current, input.RefreshToken)
-	newRow := &models.RefreshToken{UserID: user.ID, TokenVersion: user.TokenVersion, TokenHash: refreshHash(newRaw), TokenFamily: targetFamily, FamilyVersion: 2, ExpiresAt: now.Add(refreshTTL()), CreatedIPHash: refreshHash(c.ClientIP()), UserAgentHash: refreshHash(c.GetHeader("User-Agent"))}
+	var newInstallHash string
+	if installID := strings.TrimSpace(c.GetHeader("X-Installation-ID")); installID != "" {
+		newInstallHash = refreshHash(installID)
+	} else {
+		newInstallHash = current.InstallationIDHash
+	}
+	newRow := &models.RefreshToken{
+		UserID:             user.ID,
+		TokenVersion:       user.TokenVersion,
+		TokenHash:          refreshHash(newRaw),
+		TokenFamily:        targetFamily,
+		FamilyVersion:      2,
+		ExpiresAt:          now.Add(refreshTTL()),
+		CreatedIPHash:      refreshHash(c.ClientIP()),
+		UserAgentHash:      refreshHash(c.GetHeader("User-Agent")),
+		InstallationIDHash: newInstallHash,
+	}
 	// 所有可能依赖外部表结构的响应数据都在轮换提交前准备，避免提交后失败使客户端失去凭据。
 	access, response, err := h.prepareRefreshResponse(user, targetFamily)
 	if err != nil {

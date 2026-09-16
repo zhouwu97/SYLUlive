@@ -105,13 +105,17 @@ class PushSettingsService {
   }
 
   static Future<String> installationId() async {
-    final prefs = await _prefs();
-    final existing = prefs.getString(installationIdKey);
-    if (existing != null && existing.isNotEmpty) return existing;
-    final value =
-        '${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 32)}';
-    await prefs.setString(installationIdKey, value);
-    return value;
+    try {
+      final prefs = await _prefs();
+      final existing = prefs.getString(installationIdKey);
+      if (existing != null && existing.isNotEmpty) return existing;
+      final value =
+          '${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 32)}';
+      await prefs.setString(installationIdKey, value);
+      return value;
+    } catch (_) {
+      return '';
+    }
   }
 
   static Future<void> enable() async {

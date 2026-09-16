@@ -104,6 +104,10 @@ class AppResumeCoordinator {
     final accountId = auth.user?.id;
     final sessionGeneration = auth.sessionGeneration;
     final accountSessionEpoch = auth.accountSessionEpoch;
+    if (auth.hasRecoverableSession) {
+      await auth.refreshSession();
+      return;
+    }
     if (!auth.isLoggedIn || accountId == null || accountId <= 0) return;
 
     final messageProvider = context.read<MessageProvider>();

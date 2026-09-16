@@ -345,6 +345,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildHeader(user, AuthProvider authProvider, bool isDark) {
+    final hasSession =
+        authProvider.isLoggedIn || authProvider.hasRecoverableSession;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       child: Row(
@@ -353,7 +355,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           // 左侧：头像
           GestureDetector(
             onTap: () {
-              if (authProvider.isLoggedIn) {
+              if (hasSession) {
                 _showAvatarOptions(context, authProvider);
               } else {
                 Navigator.pushNamed(context, '/login');
@@ -400,7 +402,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () {
-                if (authProvider.isLoggedIn) {
+                if (hasSession) {
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const UserHomeScreen()),
@@ -419,7 +421,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         // 第一行：昵称与编辑按钮
                         GestureDetector(
                           onTap: () {
-                            if (authProvider.isLoggedIn) {
+                            if (hasSession) {
                               _showEditProfileDialog(context, authProvider);
                             }
                           },
@@ -439,7 +441,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              if (authProvider.isLoggedIn) ...[
+                              if (hasSession) ...[
                                 const SizedBox(width: 6),
                                 Icon(
                                   Icons.edit,
@@ -451,6 +453,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ],
                           ),
                         ),
+
+                        if (authProvider.hasRecoverableSession) ...[
+                          const SizedBox(height: 6),
+                          GestureDetector(
+                            onTap: () => authProvider.refreshSession(),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                    color: Colors.orange.withValues(alpha: 0.4)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.wifi_off,
+                                      size: 12, color: Colors.orange.shade700),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '网络异常，正在恢复 (点击重试)',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.orange.shade800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
 
                         const SizedBox(height: 8),
 
@@ -497,7 +532,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
 
                   // 最右侧箭头
-                  if (authProvider.isLoggedIn)
+                  if (hasSession)
                     Padding(
                       padding: const EdgeInsets.only(left: 8.0, right: 4.0),
                       child: Icon(

@@ -15,7 +15,8 @@ type RefreshToken struct {
 	LastUsedAt    *time.Time `json:"-"`
 	RevokedAt     *time.Time `gorm:"index" json:"-"`
 	ReplacedBy    *uint      `gorm:"column:replaced_by;index" json:"-"`
-	CreatedIPHash string     `gorm:"size:64" json:"-"`
-	UserAgentHash string     `gorm:"size:64" json:"-"`
-	CreatedAt     time.Time  `json:"created_at"`
+	CreatedIPHash      string     `gorm:"size:64" json:"-"`
+	UserAgentHash      string     `gorm:"size:64" json:"-"`
+	InstallationIDHash string     `gorm:"size:64;index" json:"-"`
+	CreatedAt          time.Time  `json:"created_at"`
 }

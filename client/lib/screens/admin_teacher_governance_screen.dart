@@ -1471,15 +1471,13 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
       final payload = {
         'keeper_id': _keeperId,
         'loser_ids': _loserIds,
-        'register_aliases': _registerAliases,
-        'course_merges': _mergeSubjectEntity
-            ? [
-                {
-                  'merge_subject_entity': true,
-                  'register_course_alias': true,
-                }
-              ]
-            : [],
+        'register_teacher_aliases': _registerAliases,
+        if (_preview != null && _preview!.courseMerges.isNotEmpty)
+          'course_merges': _preview!.courseMerges.map((cm) => {
+                'loser_subject_id': cm.loserSubjectId,
+                'keeper_subject_id': cm.keeperSubjectId,
+                'merge_subject_entity': _mergeSubjectEntity,
+              }).toList(),
       };
 
       final res = await dio.post(
@@ -1525,19 +1523,18 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
 
     try {
       final dio = context.read<AuthProvider>().dio;
+      final courseMergesPayload = (_preview?.courseMerges ?? const []).map((cm) => {
+            'loser_subject_id': cm.loserSubjectId,
+            'keeper_subject_id': cm.keeperSubjectId,
+            'merge_subject_entity': _mergeSubjectEntity,
+          }).toList();
+
       final payload = {
         'keeper_id': _keeperId,
         'loser_ids': _loserIds,
         'snapshot_token': _preview!.snapshotToken,
-        'register_aliases': _registerAliases,
-        'course_merges': _mergeSubjectEntity
-            ? [
-                {
-                  'merge_subject_entity': true,
-                  'register_course_alias': true,
-                }
-              ]
-            : [],
+        'register_teacher_aliases': _registerAliases,
+        'course_merges': courseMergesPayload,
       };
 
       final res = await dio.post(
@@ -1559,18 +1556,39 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
       final code = data is Map ? data['code']?.toString() : null;
       final err = data is Map ? data['error']?.toString() : null;
 
-      if (code == 'GOVERNANCE_SNAPSHOT_STALE') {
+      if (code == 'GOVERNANCE_SNAPSHOT_STALE' || code == 'GOVERNANCE_SNAPSHOT_REQUIRED') {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('数据已被其他人修改，已自动刷新预览快照'),
+            content: Text('数据已发生变化，请重新确认合并影响'),
             backgroundColor: Colors.orange,
           ),
         );
         _fetchPreview();
+      } else if (code == 'ALIAS_TARGET_CONFLICT') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('别名冲突：${err ?? '目标学科下已存在同名别名指向其他教师'}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      } else if (code == 'CROSS_SUBJECT_MERGE_REQUIRES_SUBJECT_DECISION') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(err ?? '跨课程合并需要明确课程合并决策'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      } else if (code == 'SUBJECT_NOT_EMPTY') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(err ?? '原课程仍有其他活动教师，不能合并课程实体'),
+            backgroundColor: Colors.red,
+          ),
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(err ?? '合并失败'),
+            content: Text(err ?? '合并失败: ${e.message}'),
             backgroundColor: Colors.red,
           ),
         );

@@ -187,6 +187,56 @@ class RatingConflictItem {
   }
 }
 
+/// 课程学科归并计划（跨学科教师合并决策）
+class GovernanceCourseMergePlan {
+  final int loserSubjectId;
+  final String loserSubjectName;
+  final int keeperSubjectId;
+  final String keeperSubjectName;
+  final bool mergeSubjectEntity;
+  final int rehungTeachers;
+  final int collisionTeachers;
+  final int relinkedSubmissions;
+  final String courseAlias;
+  final String courseAliasStatus;
+
+  const GovernanceCourseMergePlan({
+    required this.loserSubjectId,
+    this.loserSubjectName = '',
+    required this.keeperSubjectId,
+    this.keeperSubjectName = '',
+    this.mergeSubjectEntity = false,
+    this.rehungTeachers = 0,
+    this.collisionTeachers = 0,
+    this.relinkedSubmissions = 0,
+    this.courseAlias = '',
+    this.courseAliasStatus = '',
+  });
+
+  factory GovernanceCourseMergePlan.fromJson(Map<String, dynamic> json) {
+    return GovernanceCourseMergePlan(
+      loserSubjectId: (json['loser_subject_id'] as num?)?.toInt() ?? 0,
+      loserSubjectName: json['loser_subject_name']?.toString() ?? '',
+      keeperSubjectId: (json['keeper_subject_id'] as num?)?.toInt() ?? 0,
+      keeperSubjectName: json['keeper_subject_name']?.toString() ?? '',
+      mergeSubjectEntity: json['merge_subject_entity'] == true,
+      rehungTeachers: (json['rehung_teachers'] as num?)?.toInt() ?? 0,
+      collisionTeachers: (json['collision_teachers'] as num?)?.toInt() ?? 0,
+      relinkedSubmissions: (json['relinked_submissions'] as num?)?.toInt() ?? 0,
+      courseAlias: json['course_alias']?.toString() ?? '',
+      courseAliasStatus: json['course_alias_status']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson({bool? overrideMergeSubjectEntity}) {
+    return {
+      'loser_subject_id': loserSubjectId,
+      'keeper_subject_id': keeperSubjectId,
+      'merge_subject_entity': overrideMergeSubjectEntity ?? mergeSubjectEntity,
+    };
+  }
+}
+
 /// 合并预览结果
 class GovernanceMergePreviewResult {
   final int keeperId;
@@ -205,6 +255,7 @@ class GovernanceMergePreviewResult {
   final List<RatingConflictItem> ratingConflicts;
   final List<Map<String, dynamic>> teacherAliases;
   final List<Map<String, dynamic>> courseAliases;
+  final List<GovernanceCourseMergePlan> courseMerges;
   final List<Map<String, dynamic>> subjectMerges;
 
   const GovernanceMergePreviewResult({
@@ -224,6 +275,7 @@ class GovernanceMergePreviewResult {
     this.ratingConflicts = const [],
     this.teacherAliases = const [],
     this.courseAliases = const [],
+    this.courseMerges = const [],
     this.subjectMerges = const [],
   });
 
@@ -240,6 +292,12 @@ class GovernanceMergePreviewResult {
     } else {
       isMergeAllowed = true;
     }
+
+    final rawCourseMerges = (json['course_merges'] ?? json['subject_merges']) as List? ?? [];
+    final courseMergesList = rawCourseMerges
+        .whereType<Map>()
+        .map((e) => GovernanceCourseMergePlan.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
 
     return GovernanceMergePreviewResult(
       keeperId: (keeper['id'] as num?)?.toInt() ?? (json['keeper_id'] as num?)?.toInt() ?? 0,
@@ -267,6 +325,7 @@ class GovernanceMergePreviewResult {
               ?.whereType<Map<String, dynamic>>()
               .toList() ??
           const [],
+      courseMerges: courseMergesList,
       subjectMerges: (json['subject_merges'] ?? json['course_merges'] as List?)
               ?.whereType<Map<String, dynamic>>()
               .toList() ??

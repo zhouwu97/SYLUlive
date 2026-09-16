@@ -190,9 +190,16 @@ class _PostReplyComposerState extends State<PostReplyComposer>
                 ? baseEmojiHeight.clamp(0.0, widget.emojiPanelMaxHeight!)
                 : baseEmojiHeight;
 
+            final isKeyboardTakeover = !isEmoji &&
+                (keyboardInset > 0 ||
+                    controller.bottomPanel == PostReplyBottomPanel.keyboard);
+            final duration = (reduceMotion || isKeyboardTakeover)
+                ? Duration.zero
+                : AppMotion.fast;
+
             return AnimatedContainer(
               key: const ValueKey('post-reply-emoji-panel-container'),
-              duration: (reduceMotion) ? Duration.zero : AppMotion.fast,
+              duration: duration,
               curve: Curves.easeOutCubic,
               height: isEmoji ? emojiHeight : 0,
               clipBehavior: Clip.hardEdge,

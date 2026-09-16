@@ -548,12 +548,39 @@ void main() {
     expect(controller.inputHandoffActive, isFalse);
     expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
 
-    // 键盘未起来的异常场景：取消交接并保持 Emoji
+    // 键盘升起后中途回落/收起的异常场景：取消交接并保持 Emoji
     controller.toggleEmojiPanel(keyboardInset: 356);
     controller.toggleEmojiPanel();
+    controller.updateKeyboardMetrics(120);
+    expect(controller.inputHandoffActive, isTrue);
     controller.updateKeyboardMetrics(0);
     expect(controller.inputHandoffActive, isFalse);
     expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
+  });
+
+  test('交接期间初始的 0 高度不取消交接，后续键盘升起仍能成功完成交接并切入 keyboard', () {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    controller.toggleEmojiPanel(keyboardInset: 356);
+    expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
+
+    controller.toggleEmojiPanel(); // 发起交接
+    expect(controller.inputHandoffActive, isTrue);
+
+    // 初始等待阶段收到 0 高度（键盘尚未升起）：保持交接等待，不取消
+    controller.updateKeyboardMetrics(0);
+    expect(controller.inputHandoffActive, isTrue);
+    expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
+
+    // 随后系统键盘升起
+    controller.updateKeyboardMetrics(40);
+    expect(controller.inputHandoffActive, isTrue);
+
+    // 达到 90% 稳定高度，交接顺利完成
+    controller.updateKeyboardMetrics(321);
+    expect(controller.inputHandoffActive, isFalse);
+    expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
   });
 
   test('连续快速 Emoji/Keyboard 切换不残留 handoff', () {
@@ -571,7 +598,8 @@ void main() {
     controller.toggleEmojiPanel(keyboardInset: 356); // 再回 Emoji
     expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
     controller.toggleEmojiPanel(); // 再发起交接
-    controller.updateKeyboardMetrics(0); // 键盘没起来 → 取消
+    controller.updateKeyboardMetrics(120); // 升起中
+    controller.updateKeyboardMetrics(0); // 键盘中途收起回落 → 取消
     expect(controller.inputHandoffActive, isFalse);
     expect(controller.bottomPanel, PostReplyBottomPanel.emoji);
   });
@@ -911,5 +939,38 @@ void main() {
     // 焦点不应当被旧回调重新抢回
     expect(controller.focusNode.hasFocus, isFalse);
     expect(controller.isOpen, isFalse);
+  });
+
+  testWidgets('Emoji 交接完成切入键盘态时，表情容器高度单帧归零不执行收缩动画，防止双重底部占位',
+      (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_buildComposer(controller: controller));
+
+    // 打开表情面板并记录高度
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pumpAndSettle();
+    expect(controller.showEmojiPanel, isTrue);
+    final initialEmojiContainerHeight = tester
+        .getSize(find.byKey(const ValueKey('post-reply-emoji-panel-container')))
+        .height;
+    expect(initialEmojiContainerHeight, greaterThan(0));
+
+    // 点击输入框触发交接
+    await tester.tap(find.byKey(const ValueKey('post-reply-input')));
+    await tester.pump();
+    expect(controller.inputHandoffActive, isTrue);
+
+    // 系统键盘到位，交接完成
+    controller.updateKeyboardMetrics(300);
+    // 单帧 pump（不走 160ms 动画）
+    await tester.pump();
+
+    // 容器高度应在同一帧内立即为 0，不与页面键盘 padding 叠加造成双重占位
+    final immediateEmojiContainerHeight = tester
+        .getSize(find.byKey(const ValueKey('post-reply-emoji-panel-container')))
+        .height;
+    expect(immediateEmojiContainerHeight, 0);
   });
 }

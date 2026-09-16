@@ -67,6 +67,7 @@ class PostReplyComposerController extends ChangeNotifier {
   PostReplyInputHandoff _handoff = PostReplyInputHandoff.none;
   int _handoffGeneration = 0;
   int _focusGeneration = 0;
+  bool _handoffSawKeyboardRise = false;
   Timer? _handoffTimer;
   bool _disposing = false;
   int? _parentReplyId;
@@ -122,6 +123,7 @@ class PostReplyComposerController extends ChangeNotifier {
     // 再完成交接；不让 Emoji 面板在 IME 升起途中让位造成空白板。
     if (_handoff == PostReplyInputHandoff.emojiToKeyboard) {
       if (normalizedInset > 0) {
+        _handoffSawKeyboardRise = true;
         // 交接期间不改写 target：以记录的稳定高度（或 fallback）为基准，
         // 避免首帧小 inset 把目标重设导致 Emoji 提前让位。
         final target = _stableKeyboardHeight;
@@ -131,10 +133,12 @@ class PostReplyComposerController extends ChangeNotifier {
         } else if (insetChanged) {
           notifyListeners();
         }
-      } else {
-        // 键盘没有起来/异常：取消 handoff，保持 Emoji
+      } else if (_handoffSawKeyboardRise) {
+        // 已经观察到键盘升起过，但随后中途回落到 0：判定为用户主动收起软键盘，取消交接并恢复 Emoji 面板
         _cancelHandoff();
       }
+      // 如果尚未观察到键盘升起 (normalizedInset == 0 且 !_handoffSawKeyboardRise)，
+      // 属于交接发起初期等待系统 IME 启动的过渡阶段，继续保持交接等待，不提前取消。
       return;
     }
 
@@ -151,7 +155,8 @@ class PostReplyComposerController extends ChangeNotifier {
       final canShowKeyboardPanel = _isOpen ||
           focusNode.hasFocus ||
           _bottomPanel == PostReplyBottomPanel.keyboard;
-      if (_bottomPanel != PostReplyBottomPanel.emoji && canShowKeyboardPanel) {
+      if ((_bottomPanel != PostReplyBottomPanel.emoji || focusNode.hasFocus) &&
+          canShowKeyboardPanel) {
         _bottomPanel = PostReplyBottomPanel.keyboard;
       }
       if (insetChanged) {
@@ -353,6 +358,7 @@ class PostReplyComposerController extends ChangeNotifier {
   /// 发起 Emoji → Keyboard 交接：Emoji 保持显示直到 IME 稳定高度出现。
   void _beginEmojiToKeyboardHandoff() {
     _cancelHandoff();
+    _handoffSawKeyboardRise = false;
     final generation = ++_handoffGeneration;
     _handoff = PostReplyInputHandoff.emojiToKeyboard;
     notifyListeners();
@@ -378,6 +384,7 @@ class PostReplyComposerController extends ChangeNotifier {
   /// handoff 完成后调用：Emoji 让位给已稳定的 IME。
   void _completeEmojiToKeyboardHandoff() {
     _handoffTimer?.cancel();
+    _handoffSawKeyboardRise = false;
     if (_handoff != PostReplyInputHandoff.emojiToKeyboard) return;
     _handoffGeneration++;
     _handoff = PostReplyInputHandoff.none;
@@ -387,6 +394,7 @@ class PostReplyComposerController extends ChangeNotifier {
 
   void _cancelHandoff() {
     _handoffTimer?.cancel();
+    _handoffSawKeyboardRise = false;
     if (_handoff != PostReplyInputHandoff.none) {
       _handoffGeneration++;
       if (_disposing) {

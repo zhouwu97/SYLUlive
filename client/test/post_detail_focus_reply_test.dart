@@ -11,6 +11,8 @@ import 'package:shenliyuan/screens/image_viewer_screen.dart';
 import 'package:shenliyuan/screens/post_detail_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
+import 'package:shenliyuan/controllers/post_reply_composer_controller.dart';
+import 'package:shenliyuan/widgets/post_reply_composer.dart';
 
 class _AuthProvider extends ChangeNotifier implements AuthProvider {
   _AuthProvider({required this.client});
@@ -350,7 +352,8 @@ void main() {
     await upwardGesture.up();
     await tester.pump();
     final downwardGesture = await tester.startGesture(scrollStart);
-    await downwardGesture.moveBy(const Offset(0, 48));
+    await downwardGesture.moveBy(const Offset(0, 40));
+    await downwardGesture.moveBy(const Offset(0, 40));
     await downwardGesture.up();
     await tester.pumpAndSettle();
 
@@ -564,4 +567,348 @@ void main() {
 
     expect(find.text('13'), findsWidgets);
   });
+
+  testWidgets('键盘收起归零后首次点击评论直接打开回复并聚焦', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: '正文内容',
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(
+      _app(
+        initial,
+        focusReplyComposer: false,
+        replies: [
+          {
+            'id': 7,
+            'post_id': 100,
+            'author_id': 2,
+            'author': {
+              'id': 2,
+              'student_id': '2',
+              'nickname': '评论用户',
+              'created_at': '2026-08-01T00:00:00Z',
+            },
+            'content': '测试评论项',
+            'created_at': '2026-08-01T00:00:00Z',
+          },
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. 点击输入框激活输入
+    await tester.tap(find.byKey(const ValueKey('post-reply-input')));
+    await tester.pump();
+    final composer =
+        tester.widget<PostReplyComposer>(find.byType(PostReplyComposer));
+    expect(composer.controller.focusNode.hasFocus, isTrue);
+
+    // 2. 模拟系统弹出键盘
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pump();
+    expect(composer.controller.keyboardInset, 300);
+
+    // 3. 模拟系统键盘收起（返回键/手势）
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await tester.pump();
+
+    // 键盘收起到 0 后，stale focus 被清理，输入状态结束
+    expect(composer.controller.keyboardInset, 0);
+    expect(composer.controller.focusNode.hasFocus, isFalse);
+    expect(composer.controller.isOpen, isFalse);
+
+    // 4. 首次点击评论项，验证无需点第二次即可直接打开回复
+    await tester.tap(find.text('测试评论项'));
+    await tester.pumpAndSettle();
+
+    expect(composer.controller.isOpen, isTrue);
+    expect(composer.controller.focusNode.hasFocus, isTrue);
+    expect(composer.controller.parentReplyId, 7);
+  });
+
+  testWidgets('回复评论A时直接点击评论B不被遮罩拦截且直接切换回复对象', (tester) async {
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: '正文内容',
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(
+      _app(
+        initial,
+        focusReplyComposer: false,
+        replies: [
+          {
+            'id': 101,
+            'post_id': 100,
+            'author_id': 11,
+            'author': {
+              'id': 11,
+              'student_id': '11',
+              'nickname': '用户甲',
+              'created_at': '2026-08-01T00:00:00Z',
+            },
+            'content': '评论内容甲',
+            'created_at': '2026-08-01T00:00:00Z',
+          },
+          {
+            'id': 102,
+            'post_id': 100,
+            'author_id': 22,
+            'author': {
+              'id': 22,
+              'student_id': '22',
+              'nickname': '用户乙',
+              'created_at': '2026-08-01T00:00:00Z',
+            },
+            'content': '评论内容乙',
+            'created_at': '2026-08-01T00:00:00Z',
+          },
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final composer =
+        tester.widget<PostReplyComposer>(find.byType(PostReplyComposer));
+
+    // 1. 点击评论甲，锁定回复对象甲
+    await tester.tap(find.text('评论内容甲'));
+    await tester.pumpAndSettle();
+
+    expect(composer.controller.replyToUserId, 11);
+    expect(composer.controller.replyToName, '用户甲');
+    expect(composer.controller.parentReplyId, 101);
+    expect(composer.controller.isOpen, isTrue);
+    expect(composer.controller.focusNode.hasFocus, isTrue);
+
+    // 2. 键盘处于打开状态下，直接点击评论乙
+    await tester.tap(find.text('评论内容乙'));
+    await tester.pumpAndSettle();
+
+    // 点击未被遮罩吃掉，单次点击直接切换至用户乙且保持焦点打开
+    expect(composer.controller.replyToUserId, 22);
+    expect(composer.controller.replyToName, '用户乙');
+    expect(composer.controller.parentReplyId, 102);
+    expect(composer.controller.isOpen, isTrue);
+    expect(composer.controller.focusNode.hasFocus, isTrue);
+  });
+
+  testWidgets('输入框激活时向下轻微滑动20px不误收起键盘', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: List.filled(90, '用于撑开详情滚动区域的正文。').join('\n'),
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(
+      _app(
+        initial,
+        focusReplyComposer: true,
+        postContent: initial.content,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final composer =
+        tester.widget<PostReplyComposer>(find.byType(PostReplyComposer));
+    expect(composer.controller.isOpen, isTrue);
+    expect(composer.controller.focusNode.hasFocus, isTrue);
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pump();
+
+    final scrollView = find.byKey(const ValueKey('post-detail-scroll-view'));
+    final scrollStart = tester.getCenter(scrollView);
+
+    // 轻微向下移动 20px（低于 56px 阈值）
+    final downwardGesture = await tester.startGesture(scrollStart);
+    await downwardGesture.moveBy(const Offset(0, 20));
+    await downwardGesture.up();
+    await tester.pump();
+
+    // 键盘和输入框不应被误收起
+    expect(composer.controller.isOpen, isTrue);
+    expect(composer.controller.focusNode.hasFocus, isTrue);
+  });
+
+  testWidgets('输入框激活时向下真实滑动超过56px才收起输入并保留草稿', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: List.filled(90, '用于撑开详情滚动区域的正文。').join('\n'),
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(
+      _app(
+        initial,
+        focusReplyComposer: true,
+        postContent: initial.content,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final composer =
+        tester.widget<PostReplyComposer>(find.byType(PostReplyComposer));
+    await tester.enterText(
+      find.byKey(const ValueKey('post-reply-input')),
+      '56px阈值测试草稿',
+    );
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pump();
+
+    final scrollView = find.byKey(const ValueKey('post-detail-scroll-view'));
+    final scrollStart = tester.getCenter(scrollView);
+
+    // 先向上滚动一部分距离，再向下滚动超过 56px (40+40 = 80px > 18+56)
+    final upwardGesture = await tester.startGesture(scrollStart);
+    await upwardGesture.moveBy(const Offset(0, -240));
+    await upwardGesture.up();
+    await tester.pump();
+
+    final downwardGesture = await tester.startGesture(scrollStart);
+    await downwardGesture.moveBy(const Offset(0, 40));
+    await downwardGesture.moveBy(const Offset(0, 40));
+    await downwardGesture.up();
+    await tester.pumpAndSettle();
+
+    expect(composer.controller.isOpen, isFalse);
+    expect(composer.controller.focusNode.hasFocus, isFalse);
+    expect(composer.controller.textController.text, '56px阈值测试草稿');
+  });
+
+  testWidgets('键盘手动收起到0残留焦点时重新openReply重新激活焦点', (tester) async {
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: '正文内容',
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(
+      _app(
+        initial,
+        focusReplyComposer: false,
+        replies: [
+          {
+            'id': 88,
+            'post_id': 100,
+            'author_id': 8,
+            'author': {
+              'id': 8,
+              'student_id': '8',
+              'nickname': '测试人员',
+              'created_at': '2026-08-01T00:00:00Z',
+            },
+            'content': '测试焦点重新激活',
+            'created_at': '2026-08-01T00:00:00Z',
+          },
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final composer =
+        tester.widget<PostReplyComposer>(find.byType(PostReplyComposer));
+
+    // 手动制造 keyboardInset == 0 且 focusNode.hasFocus == true 的竞态环境
+    composer.controller.focusNode.requestFocus();
+    await tester.pump();
+    expect(composer.controller.focusNode.hasFocus, isTrue);
+    expect(composer.controller.keyboardInset, 0);
+
+    // 调用 openReply
+    composer.controller.openReply(
+      parentReplyId: 88,
+      replyToUserId: 8,
+      replyToName: '测试人员',
+    );
+    // 等待 layout 和下一帧 requestFocus
+    await tester.pumpAndSettle();
+
+    expect(composer.controller.focusNode.hasFocus, isTrue);
+    expect(composer.controller.isOpen, isTrue);
+    expect(composer.controller.parentReplyId, 88);
+  });
+
+  testWidgets('详情页中表情面板与键盘交接流畅且不发生塌陷', (tester) async {
+    final initial = Post(
+      id: 100,
+      title: '测试帖子',
+      content: '测试内容',
+      boardId: 1,
+      authorId: 1,
+      createdAt: DateTime(2026, 8, 1),
+      isLiked: false,
+      likeCount: 12,
+    );
+
+    await tester.pumpWidget(_app(initial, focusReplyComposer: false));
+    await tester.pumpAndSettle();
+
+    final composer =
+        tester.widget<PostReplyComposer>(find.byType(PostReplyComposer));
+
+    // 1. 打开表情面板
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pumpAndSettle();
+
+    expect(composer.controller.showEmojiPanel, isTrue);
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+
+    // 2. 再次点击表情按钮切换回键盘（触发 handoff）
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pump();
+
+    // 进入 handoff，表情面板在交接完成前保持可见
+    expect(composer.controller.inputHandoffActive, isTrue);
+    expect(composer.controller.showEmojiPanel, isTrue);
+
+    // 等待交接保护期完成
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+
+    expect(composer.controller.inputHandoffActive, isFalse);
+    expect(composer.controller.showEmojiPanel, isFalse);
+    expect(composer.controller.bottomPanel, PostReplyBottomPanel.keyboard);
+  });
 }
+

@@ -75,6 +75,11 @@ class PostReplyComposerController extends ChangeNotifier {
   double get keyboardInset => _keyboardInset;
   bool get hasObservedKeyboardHeight => _hasObservedKeyboardHeight;
   bool get inputHandoffActive => _handoff != PostReplyInputHandoff.none;
+  bool get isInputPanelVisible =>
+      _bottomPanel == PostReplyBottomPanel.emoji ||
+      _handoff != PostReplyInputHandoff.none ||
+      (_bottomPanel == PostReplyBottomPanel.keyboard &&
+          (_keyboardInset > 0 || _isOpen));
   int? get parentReplyId => _parentReplyId;
   int? get replyToUserId => _replyToUserId;
   int? get replyToReplyId => _replyToReplyId;
@@ -148,6 +153,13 @@ class PostReplyComposerController extends ChangeNotifier {
     } else {
       if (_bottomPanel == PostReplyBottomPanel.keyboard) {
         _bottomPanel = PostReplyBottomPanel.none;
+        // 软键盘由升起状态回落至 0：释放残留焦点与打开状态，避免形成孤立焦点
+        if (wasCollapsing) {
+          _isOpen = false;
+          if (focusNode.hasFocus) {
+            focusNode.unfocus();
+          }
+        }
         notifyListeners();
       } else if (insetChanged) {
         notifyListeners();
@@ -160,6 +172,13 @@ class PostReplyComposerController extends ChangeNotifier {
     _isOpen = true;
     _bottomPanel = PostReplyBottomPanel.keyboard;
     notifyListeners();
+
+    // 若 FocusNode 曾保留焦点但键盘已被系统收起（keyboardInset == 0），
+    // 单纯 requestFocus() 无法触发焦点变更事件。
+    // 先释放旧焦点，下一帧重新 requestFocus，确保重新 arm TextInput connection。
+    if (focusNode.hasFocus && _keyboardInset == 0) {
+      focusNode.unfocus();
+    }
     _focusAfterLayout();
   }
 

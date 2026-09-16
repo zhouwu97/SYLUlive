@@ -216,7 +216,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   // 评论输入激活后，沿用私信页的手势语义：下滑累计达到阈值即收起输入。
   bool _dragStartedWithInputPanel = false;
   double _keyboardDownDrag = 0;
-  static const double _keyboardDismissDragTrigger = 18;
+  static const double _keyboardDismissDragTrigger = 56;
 
   // ---- 评论排序 + 点赞状态 ----
 
@@ -2079,19 +2079,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       animation: _replyComposerActivity,
       child: child,
       builder: (context, child) {
-        final inputActive =
-            _replyComposerController.bottomPanel != PostReplyBottomPanel.none ||
-                _replyComposerController.inputHandoffActive ||
-                _replyComposerController.focusNode.hasFocus;
+        final panelVisible = _replyComposerController.isInputPanelVisible;
 
         return Listener(
           behavior: HitTestBehavior.translucent,
           onPointerDown: (_) {
             _keyboardDownDrag = 0;
-            _dragStartedWithInputPanel = inputActive;
+            _dragStartedWithInputPanel = panelVisible &&
+                (_replyComposerController.keyboardInset > 0 ||
+                    _replyComposerController.showEmojiPanel);
           },
           onPointerMove: (event) {
             if (!_dragStartedWithInputPanel) return;
+            // 键盘尚未真正弹起（仍在 0 阶段）时不响应向下拖拽收起，防止键盘弹起途中误收
+            if (_replyComposerController.keyboardInset <= 0 &&
+                !_replyComposerController.showEmojiPanel) {
+              return;
+            }
             if (event.delta.dy > 0) {
               _keyboardDownDrag += event.delta.dy;
               if (_keyboardDownDrag >= _keyboardDismissDragTrigger) {
@@ -2111,61 +2115,74 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
             _keyboardDownDrag = 0;
             _dragStartedWithInputPanel = false;
           },
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              NotificationListener<ScrollNotification>(
-                onNotification: _handleDetailScrollNotification,
-                child: child!,
-              ),
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: !inputActive,
-                  child: ExcludeSemantics(
-                    excluding: !inputActive,
-                    child: Semantics(
-                      button: true,
-                      enabled: inputActive,
-                      label: '收起评论输入',
-                      onTap: inputActive
-                          ? () => _replyComposerController.close()
-                          : null,
-                      child: GestureDetector(
-                        key: const ValueKey('post-detail-input-dismiss-layer'),
-                        behavior: HitTestBehavior.opaque,
-                        excludeFromSemantics: true,
-                        onTap: () => _replyComposerController.close(),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _handleDetailScrollNotification,
+            child: child!,
           ),
         );
       },
     );
   }
 
-  /// 评论输入激活时，下滑达到 18dp 收起键盘/表情面板但保留草稿。
+  /// 为帖子正文及媒体内容区域提供点击收起输入层的包装。
   ///
-  /// 这里监听滚动通知而不是只依赖点击空白区域，因此在详情页评论区和
-  /// 集市详情的滚动容器中都能保持与私信页一致的交互。
+  /// 仅在软键盘真正升起（keyboardInset > 0）或表情面板激活时生效，
+  /// 不跨越到评论列表上方，避免阻断用户直接点击评论项切换回复对象。
+  Widget _buildPostContentDismissWrapper({required Widget child}) {
+    return AnimatedBuilder(
+      animation: _replyComposerActivity,
+      child: child,
+      builder: (context, child) {
+        final panelVisible = _replyComposerController.isInputPanelVisible;
+
+        return Stack(
+          children: [
+            child!,
+            Positioned.fill(
+              child: IgnorePointer(
+                ignoring: !panelVisible,
+                child: ExcludeSemantics(
+                  excluding: !panelVisible,
+                  child: Semantics(
+                    button: true,
+                    enabled: panelVisible,
+                    label: '收起评论输入',
+                    onTap: panelVisible
+                        ? () => _replyComposerController.close()
+                        : null,
+                    child: GestureDetector(
+                      key: const ValueKey('post-detail-input-dismiss-layer'),
+                      behavior: HitTestBehavior.opaque,
+                      excludeFromSemantics: true,
+                      onTap: () => _replyComposerController.close(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 评论输入激活时，下滑达到 56dp 收起键盘/表情面板但保留草稿。
   bool _handleDetailScrollNotification(ScrollNotification notification) {
+    final panelVisible = _replyComposerController.isInputPanelVisible;
     if (notification is ScrollStartNotification) {
       _keyboardDownDrag = 0;
-      _dragStartedWithInputPanel = _replyComposerController.keyboardInset > 0 ||
-          _replyComposerController.bottomPanel != PostReplyBottomPanel.none ||
-          _replyComposerController.focusNode.hasFocus;
+      _dragStartedWithInputPanel = panelVisible;
     } else if (notification is ScrollUpdateNotification ||
         notification is OverscrollNotification) {
-      final dy = (notification is ScrollUpdateNotification
-              ? notification.dragDetails?.primaryDelta
-              : (notification as OverscrollNotification)
-                  .dragDetails
-                  ?.primaryDelta) ??
-          0;
-      if (_dragStartedWithInputPanel) {
+      double dy = 0;
+      if (notification is ScrollUpdateNotification) {
+        dy = notification.dragDetails?.primaryDelta ??
+            (notification.scrollDelta != null ? -notification.scrollDelta! : 0);
+      } else if (notification is OverscrollNotification) {
+        dy = notification.dragDetails?.primaryDelta ??
+            -notification.overscroll;
+      }
+      if (_dragStartedWithInputPanel && panelVisible) {
         if (dy > 0) {
           _keyboardDownDrag += dy;
           if (_keyboardDownDrag >= _keyboardDismissDragTrigger) {
@@ -2707,69 +2724,76 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildModerationBanner(isDark),
-                          if (p.title.isNotEmpty) ...[
-                            PostContentLinkText(
-                              text: p.title,
-                              selectable: true,
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : Colors.black87,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                          ],
-                          if (p.price > 0) ...[
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
+                          _buildPostContentDismissWrapper(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  '¥ ',
+                                _buildModerationBanner(isDark),
+                                if (p.title.isNotEmpty) ...[
+                                  PostContentLinkText(
+                                    text: p.title,
+                                    selectable: true,
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white : Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (p.price > 0) ...[
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      const Text(
+                                        '¥ ',
+                                        style: TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFFFF6B6B),
+                                        ),
+                                      ),
+                                      Text(
+                                        p.price.toStringAsFixed(
+                                          p.price.truncateToDouble() == p.price
+                                              ? 0
+                                              : 2,
+                                        ),
+                                        style: const TextStyle(
+                                          fontSize: 32,
+                                          fontWeight: FontWeight.w900,
+                                          color: Color(0xFFFF6B6B),
+                                          height: 1.0,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
+                                if (p.marketTags.isNotEmpty) ...[
+                                  _buildMarketTagWrap(p.marketTags, isDark),
+                                  const SizedBox(height: 16),
+                                ],
+                                PostContentLinkText(
+                                  text: p.content,
+                                  selectable: true,
                                   style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFFFF6B6B),
+                                    fontSize: 16,
+                                    height: 1.6,
+                                    color: isDark ? Colors.white70 : Colors.black87,
                                   ),
                                 ),
-                                Text(
-                                  p.price.toStringAsFixed(
-                                    p.price.truncateToDouble() == p.price
-                                        ? 0
-                                        : 2,
-                                  ),
-                                  style: const TextStyle(
-                                    fontSize: 32,
-                                    fontWeight: FontWeight.w900,
-                                    color: Color(0xFFFF6B6B),
-                                    height: 1.0,
-                                  ),
-                                ),
+                                const SizedBox(height: 24),
+                                _buildMarketSellerRow(p, isDark),
+                                if (_canUseOwnerMarketActions()) ...[
+                                  const SizedBox(height: 24),
+                                  _buildOwnerMarketActions(isDark),
+                                ],
+                                const SizedBox(height: 32),
+                                _buildActionBar(isDark),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                          ],
-                          if (p.marketTags.isNotEmpty) ...[
-                            _buildMarketTagWrap(p.marketTags, isDark),
-                            const SizedBox(height: 16),
-                          ],
-                          PostContentLinkText(
-                            text: p.content,
-                            selectable: true,
-                            style: TextStyle(
-                              fontSize: 16,
-                              height: 1.6,
-                              color: isDark ? Colors.white70 : Colors.black87,
-                            ),
                           ),
-                          const SizedBox(height: 24),
-                          _buildMarketSellerRow(p, isDark),
-                          if (_canUseOwnerMarketActions()) ...[
-                            const SizedBox(height: 24),
-                            _buildOwnerMarketActions(isDark),
-                          ],
-                          const SizedBox(height: 32),
-                          _buildActionBar(isDark),
                           const SizedBox(height: 24),
                           KeyedSubtree(
                             key: _commentsSectionKey,
@@ -2799,7 +2823,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           ),
           Expanded(
             flex: 4,
-            child: _buildInputDismissRegion(
+            child: _buildPostContentDismissWrapper(
               child: p.images.isNotEmpty
                   ? _buildMarketHeroImage(p, isDark, forceFitHeight: true)
                   : Container(
@@ -2844,7 +2868,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (p.images.isNotEmpty)
-                    _buildMarketHeroImage(p, isDark)
+                    _buildPostContentDismissWrapper(
+                      child: _buildMarketHeroImage(p, isDark),
+                    )
                   else
                     SizedBox(
                       height:
@@ -2864,69 +2890,76 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildModerationBanner(isDark),
-                          if (p.title.isNotEmpty) ...[
-                            PostContentLinkText(
-                              text: p.title,
-                              selectable: true,
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : Colors.black87,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                          ],
-                          if (p.price > 0) ...[
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
+                          _buildPostContentDismissWrapper(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  '¥ ',
+                                _buildModerationBanner(isDark),
+                                if (p.title.isNotEmpty) ...[
+                                  PostContentLinkText(
+                                    text: p.title,
+                                    selectable: true,
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white : Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (p.price > 0) ...[
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      const Text(
+                                        '¥ ',
+                                        style: TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFFFF6B6B),
+                                        ),
+                                      ),
+                                      Text(
+                                        p.price.toStringAsFixed(
+                                          p.price.truncateToDouble() == p.price
+                                              ? 0
+                                              : 2,
+                                        ),
+                                        style: const TextStyle(
+                                          fontSize: 32,
+                                          fontWeight: FontWeight.w900,
+                                          color: Color(0xFFFF6B6B),
+                                          height: 1.0,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
+                                if (p.marketTags.isNotEmpty) ...[
+                                  _buildMarketTagWrap(p.marketTags, isDark),
+                                  const SizedBox(height: 16),
+                                ],
+                                PostContentLinkText(
+                                  text: p.content,
+                                  selectable: true,
                                   style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFFFF6B6B),
+                                    fontSize: 16,
+                                    height: 1.6,
+                                    color: isDark ? Colors.white70 : Colors.black87,
                                   ),
                                 ),
-                                Text(
-                                  p.price.toStringAsFixed(
-                                    p.price.truncateToDouble() == p.price
-                                        ? 0
-                                        : 2,
-                                  ),
-                                  style: const TextStyle(
-                                    fontSize: 32,
-                                    fontWeight: FontWeight.w900,
-                                    color: Color(0xFFFF6B6B),
-                                    height: 1.0,
-                                  ),
-                                ),
+                                const SizedBox(height: 24),
+                                _buildMarketSellerRow(p, isDark),
+                                if (_canUseOwnerMarketActions()) ...[
+                                  const SizedBox(height: 24),
+                                  _buildOwnerMarketActions(isDark),
+                                ],
+                                const SizedBox(height: 32),
+                                _buildActionBar(isDark),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                          ],
-                          if (p.marketTags.isNotEmpty) ...[
-                            _buildMarketTagWrap(p.marketTags, isDark),
-                            const SizedBox(height: 16),
-                          ],
-                          PostContentLinkText(
-                            text: p.content,
-                            selectable: true,
-                            style: TextStyle(
-                              fontSize: 16,
-                              height: 1.6,
-                              color: isDark ? Colors.white70 : Colors.black87,
-                            ),
                           ),
-                          const SizedBox(height: 24),
-                          _buildMarketSellerRow(p, isDark),
-                          if (_canUseOwnerMarketActions()) ...[
-                            const SizedBox(height: 24),
-                            _buildOwnerMarketActions(isDark),
-                          ],
-                          const SizedBox(height: 32),
-                          _buildActionBar(isDark),
                           const SizedBox(height: 24),
                           KeyedSubtree(
                             key: _commentsSectionKey,
@@ -3071,29 +3104,32 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final p = _post!;
     return SingleChildScrollView(
       key: const ValueKey('post-detail-scroll-view'),
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
         children: [
           // 白色内容卡片：作者 + 标题 + 正文 + 图片 + 信息 + 操作栏
-          Container(
-            color: isDark ? const Color(0xFF131720) : Colors.white,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildModerationBanner(isDark),
-                const SizedBox(height: 12),
-                _buildWaterAuthorHeader(p, isDark),
-                if (p.title.isNotEmpty || p.content.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _buildWaterPostBody(p, isDark),
+          _buildPostContentDismissWrapper(
+            child: Container(
+              color: isDark ? const Color(0xFF131720) : Colors.white,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildModerationBanner(isDark),
+                  const SizedBox(height: 12),
+                  _buildWaterAuthorHeader(p, isDark),
+                  if (p.title.isNotEmpty || p.content.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _buildWaterPostBody(p, isDark),
+                  ],
+                  if (p.images.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _buildAdaptiveWaterImages(p, isDark),
+                  ],
+                  const SizedBox(height: 6),
+                  _buildWaterActionBar(isDark),
                 ],
-                if (p.images.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _buildAdaptiveWaterImages(p, isDark),
-                ],
-                const SizedBox(height: 6),
-                _buildWaterActionBar(isDark),
-              ],
+              ),
             ),
           ),
           // 8px 分区

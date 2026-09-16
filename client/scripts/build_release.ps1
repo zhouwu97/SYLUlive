@@ -106,8 +106,9 @@ try {
     & $apksignerPath verify --verbose $apk
     if ($LASTEXITCODE -ne 0) { throw 'apksigner verification failed.' }
 
-    if ((Get-CleanReleaseCommit) -ne $sourceCommit) {
-        throw 'Source commit changed during build; rebuild from the intended commit.'
+    $currentCommit = (Get-CleanReleaseCommit)
+    if ("$currentCommit".Trim() -ne "$sourceCommit".Trim()) {
+        throw "Source commit changed during build (expected '$sourceCommit', got '$currentCommit'); rebuild from the intended commit."
     }
 
     $target = Join-Path $OutputDirectory 'shenliyuan-release.apk'

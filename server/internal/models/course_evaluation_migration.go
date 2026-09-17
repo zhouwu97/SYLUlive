@@ -219,6 +219,7 @@ func backfillCourseSubjects(db *gorm.DB) error {
 }
 
 // dedupeCourseSubjects 合并同名学科，保留规则为"已审核优先、ID 最小优先"。
+// 在软合并模型下，只处理活动学科，并将重复者标记为 merged_into_id，绝不物理删除。
 func dedupeCourseSubjects(db *gorm.DB) error {
 	var rows []struct {
 		NormalizedName string
@@ -226,7 +227,7 @@ func dedupeCourseSubjects(db *gorm.DB) error {
 	}
 	if err := db.Model(&CourseSubject{}).
 		Select("normalized_name, COUNT(*) AS total").
-		Where("normalized_name <> ''").
+		Where("normalized_name <> '' AND merged_into_id IS NULL").
 		Group("normalized_name").Having("COUNT(*) > 1").Scan(&rows).Error; err != nil {
 		return fmt.Errorf("读取重复学科分组失败: %w", err)
 	}
@@ -237,7 +238,7 @@ func dedupeCourseSubjects(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		for _, row := range rows {
 			var subjects []CourseSubject
-			if err := tx.Where("normalized_name = ?", row.NormalizedName).
+			if err := tx.Where("normalized_name = ? AND merged_into_id IS NULL", row.NormalizedName).
 				Order("verified DESC, id ASC").Find(&subjects).Error; err != nil {
 				return err
 			}
@@ -249,7 +250,9 @@ func dedupeCourseSubjects(db *gorm.DB) error {
 				if err := rehangCourseSubjectRelations(tx, loser.ID, keeper.ID); err != nil {
 					return err
 				}
-				if err := tx.Delete(&CourseSubject{}, loser.ID).Error; err != nil {
+				// 软合并：标记 merged_into_id，绝不物理删除，维持旧 ID 跳转与合并追溯
+				if err := tx.Model(&CourseSubject{}).Where("id = ?", loser.ID).
+					Update("merged_into_id", keeper.ID).Error; err != nil {
 					return err
 				}
 			}
@@ -273,9 +276,26 @@ func rehangCourseSubjectRelations(tx *gorm.DB, loserID, keeperID uint) error {
 		Update("course_subject_id", keeperID).Error; err != nil {
 		return err
 	}
-	if err := tx.Model(&CourseSubjectAlias{}).Where("course_subject_id = ?", loserID).
-		Update("course_subject_id", keeperID).Error; err != nil {
+	var loserAliases []CourseSubjectAlias
+	if err := tx.Where("course_subject_id = ?", loserID).Find(&loserAliases).Error; err != nil {
 		return err
+	}
+	for _, alias := range loserAliases {
+		var existing CourseSubjectAlias
+		err := tx.Where("normalized_alias = ?", alias.NormalizedAlias).First(&existing).Error
+		if err == nil {
+			if existing.CourseSubjectID != keeperID {
+				if err := tx.Model(&existing).Update("course_subject_id", keeperID).Error; err != nil {
+					return err
+				}
+			}
+		} else if errors.Is(err, gorm.ErrRecordNotFound) {
+			alias.CourseSubjectID = keeperID
+			alias.ID = 0
+			if err := tx.Create(&alias).Error; err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -473,10 +493,13 @@ func recomputeTeacherRatingVoteCounts(tx *gorm.DB, teacherID uint) error {
 func ensureCourseEvaluationIndexes(db *gorm.DB) error {
 	// 兼容历史库：显式移除旧版全量唯一索引，避免阻止历史重复技术数据收敛
 	_ = db.Exec(`DROP INDEX IF EXISTS uq_teachers_subject_name`).Error
+	_ = db.Exec(`DROP INDEX IF EXISTS uq_course_subjects_normalized_name`).Error
 
 	statements := []string{
-		`CREATE UNIQUE INDEX IF NOT EXISTS uq_course_subjects_normalized_name
-		 ON course_subjects(normalized_name)`,
+		// 只有活动课程占用规范名；软合并存档行保留旧名与旧 ID。
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_course_subjects_active_normalized_name
+		 ON course_subjects(normalized_name)
+		 WHERE merged_into_id IS NULL`,
 		// 本索引是教师唯一性的唯一最终负责人：只约束活动教师，
 		// 被合并的存档行（merged_into_id 非空）不占用唯一键。
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_teachers_active_subject_name

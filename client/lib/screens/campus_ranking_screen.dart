@@ -105,7 +105,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
           if (_tabCtrl.index == 0)
             Consumer<AuthProvider>(
               builder: (context, auth, _) {
-                if (!auth.isAdmin) return const SizedBox.shrink();
+                if (auth.user?.isAdmin != true) return const SizedBox.shrink();
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: TextButton.icon(
@@ -529,7 +529,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
     final rankColor = _rankColor(rank - 1);
 
     return Padding(
-      padding: EdgeInsets.only(bottom: RankingTokens.cardGap),
+      padding: const EdgeInsets.only(bottom: RankingTokens.cardGap),
       child: Material(
         color: Colors.transparent,
         child: InkWell(

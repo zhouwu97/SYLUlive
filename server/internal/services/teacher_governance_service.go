@@ -835,6 +835,7 @@ func computeSnapshotToken(db *gorm.DB, keeperID uint, loserIDs []uint, finalTeac
 }
 
 // computeCourseMergeSnapshotToken 计算课程合并涉及实体的状态快照 Token。
+// 完整覆盖课程实体、教师实体、课程别名、教师评价、评价投票、教师别名与评价提交。
 func computeCourseMergeSnapshotToken(db *gorm.DB, keeperID uint, loserIDs []uint, finalCourseName string, pairs []CourseMergeTeacherPair) string {
 	allSubjectIDs := append([]uint{keeperID}, loserIDs...)
 	sort.Slice(allSubjectIDs, func(i, j int) bool { return allSubjectIDs[i] < allSubjectIDs[j] })
@@ -858,7 +859,9 @@ func computeCourseMergeSnapshotToken(db *gorm.DB, keeperID uint, loserIDs []uint
 
 	var teachers []models.Teacher
 	db.Where("course_subject_id IN ?", allSubjectIDs).Order("id ASC").Find(&teachers)
+	allTeacherIDs := make([]uint, 0, len(teachers))
 	for _, t := range teachers {
+		allTeacherIDs = append(allTeacherIDs, t.ID)
 		mID := uint(0)
 		if t.MergedIntoID != nil {
 			mID = *t.MergedIntoID
@@ -870,6 +873,40 @@ func computeCourseMergeSnapshotToken(db *gorm.DB, keeperID uint, loserIDs []uint
 	db.Where("course_subject_id IN ?", allSubjectIDs).Order("id ASC").Find(&aliases)
 	for _, a := range aliases {
 		fmt.Fprintf(h, "A:%d:%d:%s;", a.ID, a.CourseSubjectID, a.NormalizedAlias)
+	}
+
+	if len(allTeacherIDs) > 0 {
+		var ratings []models.TeacherRating
+		db.Where("teacher_id IN ? AND deleted_at IS NULL", allTeacherIDs).Order("id ASC").Find(&ratings)
+		ratingIDs := make([]uint, 0, len(ratings))
+		for _, r := range ratings {
+			fmt.Fprintf(h, "R:%d:%d:%d:%d:%d;", r.ID, r.TeacherID, r.UserID, r.Star, r.UpdatedAt.UnixNano())
+			ratingIDs = append(ratingIDs, r.ID)
+		}
+
+		if len(ratingIDs) > 0 {
+			var votes []models.TeacherRatingVote
+			db.Where("rating_id IN ?", ratingIDs).Order("id ASC").Find(&votes)
+			for _, v := range votes {
+				fmt.Fprintf(h, "V:%d:%d:%d:%s:%d;", v.ID, v.RatingID, v.UserID, v.VoteType, v.UpdatedAt.UnixNano())
+			}
+		}
+
+		var teacherAliases []models.TeacherAlias
+		db.Where("teacher_id IN ?", allTeacherIDs).Order("id ASC").Find(&teacherAliases)
+		for _, ta := range teacherAliases {
+			fmt.Fprintf(h, "TA:%d:%d:%d:%s;", ta.ID, ta.TeacherID, ta.CourseSubjectID, ta.NormalizedAlias)
+		}
+	}
+
+	var subs []models.CourseEvaluationSubmission
+	db.Where("course_subject_id IN ? OR teacher_id IN ?", allSubjectIDs, allTeacherIDs).Order("id ASC").Find(&subs)
+	for _, s := range subs {
+		ratingRef := uint(0)
+		if s.TeacherRatingID != nil {
+			ratingRef = *s.TeacherRatingID
+		}
+		fmt.Fprintf(h, "Sub:%d:%d:%d:%d:%s:%d:%d;", s.ID, derefUint(s.TeacherID), derefUint(s.CourseSubjectID), ratingRef, s.Status, s.Revision, s.UpdatedAt.UnixNano())
 	}
 
 	return hex.EncodeToString(h.Sum(nil))
@@ -1503,15 +1540,10 @@ func (s *TeacherGovernanceService) Merge(adminID uint, input MergeInput) (*Merge
 		}
 
 		// 2b. 自定义最终教师名称更新
+		originalKeeperName := lockedTeachers[input.KeeperID].Name
 		finalTName := strings.TrimSpace(input.FinalTeacherName)
-		if finalTName != "" && finalTName != lockedTeachers[input.KeeperID].Name {
-			if err := tx.Model(&models.Teacher{}).Where("id = ?", input.KeeperID).Updates(map[string]interface{}{
-				"name":            finalTName,
-				"name_normalized": models.NormalizeTeacherName(finalTName),
-			}).Error; err != nil {
-				return governanceErr(CodeTeacherNotFound, "更新教师规范名称失败", err)
-			}
-			plan.Keeper.Name = finalTName
+		if finalTName == "" {
+			finalTName = originalKeeperName
 		}
 
 		keeperSubject := derefUint(plan.Keeper.SubjectID)
@@ -1522,6 +1554,7 @@ func (s *TeacherGovernanceService) Merge(adminID uint, input MergeInput) (*Merge
 			registerAliases = *input.RegisterAliasesCompat
 		}
 
+		// 2c. 先合并归档全部 loser 教师，释放唯一名称占用
 		for i := range plan.Losers {
 			lp := &plan.Losers[i]
 			if lp.AlreadyMerged {
@@ -1538,8 +1571,8 @@ func (s *TeacherGovernanceService) Merge(adminID uint, input MergeInput) (*Merge
 			lp.SupersededSubmissions = stats.SupersededSubmissions
 
 			aliasAdded := false
-			if registerAliases && models.NormalizeTeacherName(lp.Teacher.Name) != models.NormalizeTeacherName(plan.Keeper.Name) {
-				if err := ensureTeacherAlias(tx, keeperSubject, lp.Teacher.Name, plan.Keeper.ID, plan.Keeper.Name, adminID); err != nil {
+			if registerAliases && models.NormalizeTeacherName(lp.Teacher.Name) != models.NormalizeTeacherName(finalTName) {
+				if err := ensureTeacherAlias(tx, keeperSubject, lp.Teacher.Name, plan.Keeper.ID, finalTName, adminID); err != nil {
 					return err
 				}
 				aliasAdded = true
@@ -1554,7 +1587,7 @@ func (s *TeacherGovernanceService) Merge(adminID uint, input MergeInput) (*Merge
 				BatchID:                   batchID,
 				KeeperID:                  plan.Keeper.ID,
 				LoserID:                   lp.Teacher.ID,
-				KeeperNameSnapshot:        plan.Keeper.Name,
+				KeeperNameSnapshot:        finalTName,
 				LoserNameSnapshot:         lp.Teacher.Name,
 				KeeperSubjectNameSnapshot: plan.Keeper.SubjectName,
 				LoserSubjectNameSnapshot:  lp.Teacher.Course,
@@ -1573,6 +1606,38 @@ func (s *TeacherGovernanceService) Merge(adminID uint, input MergeInput) (*Merge
 			}
 			if err := tx.Create(&record).Error; err != nil {
 				return governanceErr(CodeTeacherNotFound, "写入合并记录失败", err)
+			}
+		}
+
+		// 2d. 自定义最终教师名称更新（在 loser 归档释放唯一名称占用后执行）
+		if finalTName != "" && finalTName != originalKeeperName {
+			if registerAliases && models.NormalizeTeacherName(originalKeeperName) != models.NormalizeTeacherName(finalTName) {
+				if err := ensureTeacherAlias(tx, keeperSubject, originalKeeperName, plan.Keeper.ID, finalTName, adminID); err != nil {
+					return err
+				}
+			}
+			if err := tx.Model(&models.Teacher{}).Where("id = ?", input.KeeperID).Updates(map[string]interface{}{
+				"name":            finalTName,
+				"name_normalized": models.NormalizeTeacherName(finalTName),
+			}).Error; err != nil {
+				return governanceErr(CodeTeacherNotFound, "更新教师规范名称失败", err)
+			}
+			plan.Keeper.Name = finalTName
+
+			// 同步更新 keeper 关联活动提交的 teacher_name 与规范 dedup_key
+			var keeperSubs []models.CourseEvaluationSubmission
+			if err := tx.Where("teacher_id = ? AND status <> ?", plan.Keeper.ID, models.CourseEvaluationStatusSuperseded).Find(&keeperSubs).Error; err == nil {
+				for _, ks := range keeperSubs {
+					cName := ks.CourseSubjectName
+					if cName == "" {
+						cName = plan.Keeper.SubjectName
+					}
+					newDK := models.CourseEvaluationDedupKey(ks.UserID, cName, finalTName)
+					_ = tx.Model(&models.CourseEvaluationSubmission{}).Where("id = ?", ks.ID).Updates(map[string]interface{}{
+						"teacher_name": finalTName,
+						"dedup_key":    newDK,
+					}).Error
+				}
 			}
 		}
 
@@ -1692,20 +1757,66 @@ func mergeSingleTeacher(tx *gorm.DB, adminID, keeperID, loserID uint) (loserExec
 		}
 	}
 
-	// 2) 迁移未受冲突影响的普通提交
-	res := tx.Model(&models.CourseEvaluationSubmission{}).
-		Where("teacher_id = ? AND status <> ?", loser.ID, models.CourseEvaluationStatusSuperseded).
-		Updates(map[string]interface{}{
-			"teacher_id":   keeper.ID,
-			"teacher_name": keeper.Name,
-		})
-	if res.Error != nil {
-		return stats, governanceErr(CodeTeacherNotFound, "重挂提交记录失败", res.Error)
+	// 2) 迁移未受冲突影响的普通提交并维护规范 DedupKey
+	var loserSubmissions []models.CourseEvaluationSubmission
+	if err := tx.Where("teacher_id = ? AND status <> ?", loser.ID, models.CourseEvaluationStatusSuperseded).
+		Order("id ASC").Find(&loserSubmissions).Error; err != nil {
+		return stats, governanceErr(CodeTeacherNotFound, "读取被合并教师提交记录失败", err)
 	}
-	stats.RelinkedSubmissions = int(res.RowsAffected)
+
+	targetCourseName := keeper.Course
+	keeperSubjectID := derefUint(keeper.CourseSubjectID)
+	if targetCourseName == "" && keeperSubjectID > 0 {
+		var cs models.CourseSubject
+		if tx.First(&cs, keeperSubjectID).Error == nil {
+			targetCourseName = cs.Name
+		}
+	}
+
+	for _, sub := range loserSubmissions {
+		cName := targetCourseName
+		if cName == "" {
+			cName = sub.CourseSubjectName
+		}
+		newDedupKey := models.CourseEvaluationDedupKey(sub.UserID, cName, keeper.Name)
+		var existingSub models.CourseEvaluationSubmission
+		err := tx.Where("user_id = ? AND dedup_key = ? AND id <> ? AND status <> ?", sub.UserID, newDedupKey, sub.ID, models.CourseEvaluationStatusSuperseded).
+			First(&existingSub).Error
+		if err == nil {
+			// 目标教师已有对应活动提交，此提交标记为 superseded
+			if err := tx.Model(&models.CourseEvaluationSubmission{}).Where("id = ?", sub.ID).Updates(map[string]interface{}{
+				"status":              models.CourseEvaluationStatusSuperseded,
+				"moderation_reason":   "teacher_merge_submission_superseded",
+				"teacher_id":          keeper.ID,
+				"teacher_name":        keeper.Name,
+				"course_subject_id":   keeperSubjectID,
+				"course_subject_name": cName,
+			}).Error; err != nil {
+				return stats, governanceErr(CodeTeacherNotFound, "更新冲突提交状态失败", err)
+			}
+			stats.SupersededSubmissions++
+		} else if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 无冲突，重挂至目标并更新规范 DedupKey
+			updates := map[string]interface{}{
+				"teacher_id":   keeper.ID,
+				"teacher_name": keeper.Name,
+				"dedup_key":    newDedupKey,
+			}
+			if keeperSubjectID > 0 {
+				updates["course_subject_id"] = keeperSubjectID
+				updates["course_subject_name"] = cName
+			}
+			if err := tx.Model(&models.CourseEvaluationSubmission{}).Where("id = ?", sub.ID).Updates(updates).Error; err != nil {
+				return stats, governanceErr(CodeTeacherNotFound, "重挂提交记录失败", err)
+			}
+			stats.RelinkedSubmissions++
+		} else {
+			return stats, governanceErr(CodeTeacherNotFound, "查询目标提交冲突失败", err)
+		}
+	}
 
 	// 3) 别名重挂（逐条处理，防止唯一索引冲突）
-	keeperSubjectID := derefUint(keeper.CourseSubjectID)
+	keeperSubjectID = derefUint(keeper.CourseSubjectID)
 	if err := reconcileTeacherAliases(tx, loser.ID, keeper.ID, keeperSubjectID); err != nil {
 		return stats, err
 	}
@@ -1931,11 +2042,17 @@ func reconcileTeacherAliases(tx *gorm.DB, loserID, keeperID, keeperSubjectID uin
 		} else if err != nil {
 			return err
 		} else {
-			if existing.TeacherID == keeperID || existing.ID == alias.ID {
-				if existing.ID != alias.ID {
-					if err := tx.Delete(&models.TeacherAlias{}, alias.ID).Error; err != nil {
-						return governanceErr(CodeTeacherNotFound, "删除重复别名失败", err)
-					}
+			if existing.ID == alias.ID {
+				// 命中自身：更新指向 keeperID 与 keeperSubjectID
+				if err := tx.Model(&models.TeacherAlias{}).Where("id = ?", alias.ID).Updates(map[string]interface{}{
+					"teacher_id":        keeperID,
+					"course_subject_id": keeperSubjectID,
+				}).Error; err != nil {
+					return governanceErr(CodeTeacherNotFound, "重挂教师别名失败", err)
+				}
+			} else if existing.TeacherID == keeperID {
+				if err := tx.Delete(&models.TeacherAlias{}, alias.ID).Error; err != nil {
+					return governanceErr(CodeTeacherNotFound, "删除重复别名失败", err)
 				}
 			} else {
 				var owner models.Teacher
@@ -1952,6 +2069,14 @@ func reconcileTeacherAliases(tx *gorm.DB, loserID, keeperID, keeperSubjectID uin
 				}
 			}
 		}
+	}
+
+	var lingeringTeacherAliases int64
+	if err := tx.Model(&models.TeacherAlias{}).Where("teacher_id = ?", loserID).Count(&lingeringTeacherAliases).Error; err != nil {
+		return err
+	}
+	if lingeringTeacherAliases > 0 {
+		return governanceErr(CodeTeacherNotFound, fmt.Sprintf("教师别名未完全重挂，仍有 %d 条指向被合并教师", lingeringTeacherAliases), nil)
 	}
 	return nil
 }
@@ -1973,11 +2098,15 @@ func reconcileCourseSubjectAliases(tx *gorm.DB, loserSubjectID, keeperSubjectID 
 		} else if err != nil {
 			return err
 		} else {
-			if existing.CourseSubjectID == keeperSubjectID || existing.ID == alias.ID {
-				if existing.ID != alias.ID {
-					if err := tx.Delete(&models.CourseSubjectAlias{}, alias.ID).Error; err != nil {
-						return governanceErr(CodeTeacherNotFound, "删除重复课程别名失败", err)
-					}
+			if existing.ID == alias.ID {
+				// 命中自身：更新指向 keeperSubjectID
+				if err := tx.Model(&models.CourseSubjectAlias{}).Where("id = ?", alias.ID).
+					Update("course_subject_id", keeperSubjectID).Error; err != nil {
+					return governanceErr(CodeTeacherNotFound, "重挂课程别名目标失败", err)
+				}
+			} else if existing.CourseSubjectID == keeperSubjectID {
+				if err := tx.Delete(&models.CourseSubjectAlias{}, alias.ID).Error; err != nil {
+					return governanceErr(CodeTeacherNotFound, "删除重复课程别名失败", err)
 				}
 			} else {
 				var targetSub models.CourseSubject
@@ -1985,6 +2114,14 @@ func reconcileCourseSubjectAliases(tx *gorm.DB, loserSubjectID, keeperSubjectID 
 				return governanceErr(CodeAliasTargetConflict, fmt.Sprintf("课程别名 %q 已指向其他课程 %q(#%d)，无法归并", alias.Alias, targetSub.Name, targetSub.ID), nil)
 			}
 		}
+	}
+
+	var lingeringCourseAliases int64
+	if err := tx.Model(&models.CourseSubjectAlias{}).Where("course_subject_id = ?", loserSubjectID).Count(&lingeringCourseAliases).Error; err != nil {
+		return err
+	}
+	if lingeringCourseAliases > 0 {
+		return governanceErr(CodeTeacherNotFound, fmt.Sprintf("课程别名未完全重挂，仍有 %d 条指向被归并课程", lingeringCourseAliases), nil)
 	}
 	return nil
 }
@@ -2268,8 +2405,11 @@ func (s *TeacherGovernanceService) buildCourseMergePlan(db *gorm.DB, input Cours
 		migratedRatings := 0
 		softDeletedRatings := 0
 		for _, lr := range lRatings {
-			if _, exists := kUserMap[lr.UserID]; exists {
+			if kr, exists := kUserMap[lr.UserID]; exists {
 				softDeletedRatings++
+				if lr.CreatedAt.After(kr.CreatedAt) || (lr.CreatedAt.Equal(kr.CreatedAt) && lr.ID > kr.ID) {
+					migratedRatings++
+				}
 			} else {
 				migratedRatings++
 			}
@@ -2426,13 +2566,7 @@ func (s *TeacherGovernanceService) CourseMerge(adminID uint, input CourseMergeIn
 			return nil
 		}
 
-		// 2. SnapshotToken 校验
-		currentToken := computeCourseMergeSnapshotToken(tx, input.KeeperSubjectID, input.LoserSubjectIDs, plan.FinalCourseName, input.TeacherPairs)
-		if input.SnapshotToken != currentToken {
-			return governanceErr(CodeGovernanceSnapshotStale, "数据状态已发生变更，请刷新预览后重试", nil)
-		}
-
-		// 3. 锁定涉及的全部教师
+		// 2. 锁定涉及的全部教师（在校验快照前先持锁，避免并发修改竞态）
 		var allTeacherIDs []uint
 		for _, p := range plan.PairedTeacherMerges {
 			allTeacherIDs = append(allTeacherIDs, p.KeeperTeacherID, p.LoserTeacherID)
@@ -2441,19 +2575,42 @@ func (s *TeacherGovernanceService) CourseMerge(adminID uint, input CourseMergeIn
 			allTeacherIDs = append(allTeacherIDs, mt.TeacherID)
 		}
 		sort.Slice(allTeacherIDs, func(i, j int) bool { return allTeacherIDs[i] < allTeacherIDs[j] })
+		lockedTeachersMap := make(map[uint]models.Teacher, len(allTeacherIDs))
 		for _, tid := range allTeacherIDs {
 			var lt models.Teacher
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lt, tid).Error; err != nil {
 				return governanceErr(CodeTeacherNotFound, fmt.Sprintf("锁定教师 #%d 失败", tid), err)
 			}
+			lockedTeachersMap[tid] = lt
 		}
 
-		// 4. 更新目标课程名称（如果管理员自定义了规范名称）
-		finalCourseName := plan.FinalCourseName
+		// 3. SnapshotToken 校验（持锁后核验，确保执行的是管理员确认的数据状态）
+		currentToken := computeCourseMergeSnapshotToken(tx, input.KeeperSubjectID, input.LoserSubjectIDs, plan.FinalCourseName, input.TeacherPairs)
+		if input.SnapshotToken != currentToken {
+			return governanceErr(CodeGovernanceSnapshotStale, "数据状态已发生变更，请刷新预览后重试", nil)
+		}
+
 		keeperSubject := lockedSubjects[input.KeeperSubjectID]
+		finalCourseName := plan.FinalCourseName
+
+		// 4. 先标记并压平 loser 课程合并状态，释放唯一名称占用
+		for _, lsID := range input.LoserSubjectIDs {
+			if err := tx.Model(&models.CourseSubject{}).Where("merged_into_id = ?", lsID).
+				Update("merged_into_id", keeperSubject.ID).Error; err != nil {
+				return governanceErr(CodeTeacherNotFound, "压平历史课程合并链条失败", err)
+			}
+			if err := tx.Model(&models.CourseSubject{}).Where("id = ?", lsID).
+				Update("merged_into_id", keeperSubject.ID).Error; err != nil {
+				return governanceErr(CodeTeacherNotFound, "标记课程合并状态失败", err)
+			}
+		}
+
+		// 5. 更新目标课程名称（在 loser 归档释放名称占用后执行）
 		if finalCourseName != keeperSubject.Name {
-			if err := ensureCourseSubjectAliasExcluding(tx, keeperSubject.Name, keeperSubject.ID, input.LoserSubjectIDs); err != nil {
-				return err
+			if models.NormalizeCourseSubjectName(keeperSubject.Name) != models.NormalizeCourseSubjectName(finalCourseName) {
+				if err := ensureCourseSubjectAliasExcluding(tx, keeperSubject.Name, keeperSubject.ID, input.LoserSubjectIDs); err != nil {
+					return err
+				}
 			}
 			if err := tx.Model(&models.CourseSubject{}).Where("id = ?", keeperSubject.ID).Updates(map[string]interface{}{
 				"name":            finalCourseName,
@@ -2463,7 +2620,18 @@ func (s *TeacherGovernanceService) CourseMerge(adminID uint, input CourseMergeIn
 			}
 		}
 
-		// 5. 执行配对教师合并
+		// 6. 重挂原课程别名并登记原课程名为 keeper 别名
+		for _, lsID := range input.LoserSubjectIDs {
+			ls := lockedSubjects[lsID]
+			if err := reconcileCourseSubjectAliases(tx, ls.ID, keeperSubject.ID); err != nil {
+				return err
+			}
+			if err := ensureCourseSubjectAliasExcluding(tx, ls.Name, keeperSubject.ID, input.LoserSubjectIDs); err != nil {
+				return err
+			}
+		}
+
+		// 7. 执行配对教师合并
 		for _, p := range plan.PairedTeacherMerges {
 			stats, err := mergeSingleTeacher(tx, adminID, p.KeeperTeacherID, p.LoserTeacherID)
 			if err != nil {
@@ -2472,6 +2640,11 @@ func (s *TeacherGovernanceService) CourseMerge(adminID uint, input CourseMergeIn
 			finalTName := strings.TrimSpace(p.FinalTeacherName)
 			var curKeeperT models.Teacher
 			if err := tx.Select("name").First(&curKeeperT, p.KeeperTeacherID).Error; err == nil && finalTName != "" && finalTName != curKeeperT.Name {
+				if models.NormalizeTeacherName(curKeeperT.Name) != models.NormalizeTeacherName(finalTName) {
+					if err := ensureTeacherAlias(tx, keeperSubject.ID, curKeeperT.Name, p.KeeperTeacherID, finalTName, adminID); err != nil {
+						return err
+					}
+				}
 				if err := tx.Model(&models.Teacher{}).Where("id = ?", p.KeeperTeacherID).Updates(map[string]interface{}{
 					"name":            finalTName,
 					"name_normalized": models.NormalizeTeacherName(finalTName),
@@ -2488,6 +2661,16 @@ func (s *TeacherGovernanceService) CourseMerge(adminID uint, input CourseMergeIn
 				tAliasAdded = 1
 			}
 
+			loserSubjName := ""
+			if lt, ok := lockedTeachersMap[p.LoserTeacherID]; ok && lt.CourseSubjectID != nil {
+				if ls, okSub := lockedSubjects[*lt.CourseSubjectID]; okSub {
+					loserSubjName = ls.Name
+				}
+			}
+			if loserSubjName == "" {
+				loserSubjName = p.LoserTeacherName
+			}
+
 			record := models.TeacherMergeRecord{
 				BatchID:                   batchID,
 				KeeperID:                  p.KeeperTeacherID,
@@ -2495,7 +2678,7 @@ func (s *TeacherGovernanceService) CourseMerge(adminID uint, input CourseMergeIn
 				KeeperNameSnapshot:        finalTName,
 				LoserNameSnapshot:         p.LoserTeacherName,
 				KeeperSubjectNameSnapshot: finalCourseName,
-				LoserSubjectNameSnapshot:  p.LoserTeacherName,
+				LoserSubjectNameSnapshot:  loserSubjName,
 				MigratedRatings:           stats.MigratedRatings,
 				SoftDeletedRatings:        stats.SoftDeletedRatings,
 				MigratedVotes:             stats.MovedVotes,
@@ -2513,7 +2696,7 @@ func (s *TeacherGovernanceService) CourseMerge(adminID uint, input CourseMergeIn
 			}
 		}
 
-		// 6. 迁移未配对教师：更新 course_subject_id 和 course
+		// 8. 迁移未配对教师：更新 course_subject_id 和 course
 		for _, mt := range plan.MigratingTeachers {
 			if err := tx.Model(&models.Teacher{}).Where("id = ?", mt.TeacherID).Updates(map[string]interface{}{
 				"course_subject_id": keeperSubject.ID,
@@ -2527,40 +2710,55 @@ func (s *TeacherGovernanceService) CourseMerge(adminID uint, input CourseMergeIn
 			}
 		}
 
-		// 7. 统一原有教师的 course 规范名称
+		// 9. 统一原有教师的 course 规范名称
 		if err := tx.Model(&models.Teacher{}).Where("course_subject_id = ? AND merged_into_id IS NULL", keeperSubject.ID).
 			Update("course", finalCourseName).Error; err != nil {
 			return governanceErr(CodeTeacherNotFound, "更新教师课程名失败", err)
 		}
 
-		// 8. 重挂提交记录
-		if err := tx.Model(&models.CourseEvaluationSubmission{}).Where("course_subject_id IN ?", input.LoserSubjectIDs).
-			Updates(map[string]interface{}{
-				"course_subject_id":   keeperSubject.ID,
-				"course_subject_name": finalCourseName,
-			}).Error; err != nil {
-			return governanceErr(CodeTeacherNotFound, "重挂课程提交记录失败", err)
+		// 10. 重挂提交记录并同步规范 DedupKey 与冲突处理
+		var loserSubs []models.CourseEvaluationSubmission
+		if err := tx.Where("course_subject_id IN ? AND status <> ?", input.LoserSubjectIDs, models.CourseEvaluationStatusSuperseded).
+			Order("id ASC").Find(&loserSubs).Error; err == nil {
+			for _, sub := range loserSubs {
+				tName := sub.TeacherName
+				newDedupKey := models.CourseEvaluationDedupKey(sub.UserID, finalCourseName, tName)
+				var existingSub models.CourseEvaluationSubmission
+				err := tx.Where("user_id = ? AND dedup_key = ? AND id <> ? AND status <> ?", sub.UserID, newDedupKey, sub.ID, models.CourseEvaluationStatusSuperseded).
+					First(&existingSub).Error
+				if err == nil {
+					_ = tx.Model(&models.CourseEvaluationSubmission{}).Where("id = ?", sub.ID).Updates(map[string]interface{}{
+						"status":              models.CourseEvaluationStatusSuperseded,
+						"moderation_reason":   "course_merge_submission_superseded",
+						"course_subject_id":   keeperSubject.ID,
+						"course_subject_name": finalCourseName,
+					}).Error
+				} else if errors.Is(err, gorm.ErrRecordNotFound) {
+					_ = tx.Model(&models.CourseEvaluationSubmission{}).Where("id = ?", sub.ID).Updates(map[string]interface{}{
+						"course_subject_id":   keeperSubject.ID,
+						"course_subject_name": finalCourseName,
+						"dedup_key":           newDedupKey,
+					}).Error
+				}
+			}
 		}
 
-		// 9. 重挂原课程别名并登记原课程名为 keeper 别名
+		// 同步 keeper 身上已有提交的课程规范名与去重键
+		var keeperSubs []models.CourseEvaluationSubmission
+		if err := tx.Where("course_subject_id = ? AND status <> ?", keeperSubject.ID, models.CourseEvaluationStatusSuperseded).
+			Order("id ASC").Find(&keeperSubs).Error; err == nil {
+			for _, ksub := range keeperSubs {
+				newDK := models.CourseEvaluationDedupKey(ksub.UserID, finalCourseName, ksub.TeacherName)
+				_ = tx.Model(&models.CourseEvaluationSubmission{}).Where("id = ?", ksub.ID).Updates(map[string]interface{}{
+					"course_subject_name": finalCourseName,
+					"dedup_key":           newDK,
+				}).Error
+			}
+		}
+
+		// 11. 记录课程合并记录
 		for _, lsID := range input.LoserSubjectIDs {
 			ls := lockedSubjects[lsID]
-			if err := reconcileCourseSubjectAliases(tx, ls.ID, keeperSubject.ID); err != nil {
-				return err
-			}
-			if err := ensureCourseSubjectAliasExcluding(tx, ls.Name, keeperSubject.ID, input.LoserSubjectIDs); err != nil {
-				return err
-			}
-
-			if err := tx.Model(&models.CourseSubject{}).Where("merged_into_id = ?", ls.ID).
-				Update("merged_into_id", keeperSubject.ID).Error; err != nil {
-				return governanceErr(CodeTeacherNotFound, "压平历史课程合并链条失败", err)
-			}
-			if err := tx.Model(&models.CourseSubject{}).Where("id = ?", ls.ID).
-				Update("merged_into_id", keeperSubject.ID).Error; err != nil {
-				return governanceErr(CodeTeacherNotFound, "标记课程合并状态失败", err)
-			}
-
 			cRecord := models.TeacherMergeRecord{
 				BatchID:                   batchID,
 				KeeperID:                  keeperSubject.ID,

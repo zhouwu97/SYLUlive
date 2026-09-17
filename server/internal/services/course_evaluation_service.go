@@ -287,12 +287,13 @@ func (s *CourseEvaluationService) Resolve(userID uint, courseName, teacherName s
 }
 
 // resolveSubjects 依次按精确、别名、包含关系收集学科候选。
+// resolveSubjects 依次按精确、别名、包含关系收集学科候选。已软合并的旧课程绝不直接作为候选返回。
 func (s *CourseEvaluationService) resolveSubjects(courseName string) ([]CourseSubjectCandidate, error) {
 	normalized := models.NormalizeCourseSubjectName(courseName)
 	seen := map[uint]CourseSubjectCandidate{}
 
 	var exact []models.CourseSubject
-	if err := s.db.Where("normalized_name = ?", normalized).
+	if err := s.db.Where("normalized_name = ? AND merged_into_id IS NULL", normalized).
 		Order("verified DESC, id ASC").Limit(courseEvaluationMaxPageSize).Find(&exact).Error; err != nil {
 		return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取学科失败", err)
 	}
@@ -310,15 +311,15 @@ func (s *CourseEvaluationService) resolveSubjects(courseName string) ([]CourseSu
 			return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取学科别名失败", err)
 		}
 		for _, alias := range aliases {
-			if _, ok := seen[alias.CourseSubjectID]; ok {
+			canonicalSub, err := resolveCanonicalCourseSubject(s.db, alias.CourseSubjectID)
+			if err != nil || canonicalSub == nil {
 				continue
 			}
-			var subject models.CourseSubject
-			if err := s.db.First(&subject, alias.CourseSubjectID).Error; err != nil {
+			if _, ok := seen[canonicalSub.ID]; ok {
 				continue
 			}
-			seen[subject.ID] = CourseSubjectCandidate{
-				ID: subject.ID, Name: subject.Name, Verified: subject.Verified,
+			seen[canonicalSub.ID] = CourseSubjectCandidate{
+				ID: canonicalSub.ID, Name: canonicalSub.Name, Verified: canonicalSub.Verified,
 				Match: string(models.CourseSubjectMatchAlias),
 			}
 		}
@@ -326,7 +327,7 @@ func (s *CourseEvaluationService) resolveSubjects(courseName string) ([]CourseSu
 
 	if len(seen) == 0 && len([]rune(normalized)) >= 2 {
 		var contains []models.CourseSubject
-		if err := s.db.Where("normalized_name LIKE ?", "%"+escapeLike(normalized)+"%").
+		if err := s.db.Where("normalized_name LIKE ? AND merged_into_id IS NULL", "%"+escapeLike(normalized)+"%").
 			Order("verified DESC, id ASC").Limit(courseEvaluationMaxPageSize).Find(&contains).Error; err != nil {
 			return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取学科失败", err)
 		}
@@ -723,18 +724,67 @@ func (s *CourseEvaluationService) applySubmission(tx *gorm.DB, submission *model
 	return s.toSubmissionView(submission)
 }
 
+// resolveCanonicalCourseSubject 递归解引用 MergedIntoID 直至活动学科实体。
+func resolveCanonicalCourseSubject(tx *gorm.DB, subjectID uint) (*models.CourseSubject, error) {
+	if subjectID == 0 {
+		return nil, nil
+	}
+	currID := subjectID
+	seen := map[uint]bool{}
+	for i := 0; i < 10; i++ {
+		if seen[currID] {
+			return nil, fmt.Errorf("检测到课程合并环: #%d", currID)
+		}
+		seen[currID] = true
+		var s models.CourseSubject
+		if err := tx.First(&s, currID).Error; err != nil {
+			return nil, err
+		}
+		if s.MergedIntoID == nil || *s.MergedIntoID == 0 {
+			return &s, nil
+		}
+		currID = *s.MergedIntoID
+	}
+	return nil, fmt.Errorf("课程合并链条过长(>10): #%d", subjectID)
+}
+
+// resolveCanonicalTeacher 递归解引用 MergedIntoID 直至活动教师实体。
+func resolveCanonicalTeacher(tx *gorm.DB, teacherID uint) (*models.Teacher, error) {
+	if teacherID == 0 {
+		return nil, nil
+	}
+	currID := teacherID
+	seen := map[uint]bool{}
+	for i := 0; i < 10; i++ {
+		if seen[currID] {
+			return nil, fmt.Errorf("检测到教师合并环: #%d", currID)
+		}
+		seen[currID] = true
+		var t models.Teacher
+		if err := tx.First(&t, currID).Error; err != nil {
+			return nil, err
+		}
+		if t.MergedIntoID == nil || *t.MergedIntoID == 0 {
+			return &t, nil
+		}
+		currID = *t.MergedIntoID
+	}
+	return nil, fmt.Errorf("教师合并链条过长(>10): #%d", teacherID)
+}
+
 // canonicalizeTargetNames 只依据客户端提供的实体 ID 读取展示名称；名称字段不再可信。
+// 同时将已合并的旧课程/旧教师 ID 规范化重定向到最终保留实体。
 func canonicalizeTargetNames(tx *gorm.DB, input courseEvaluationInput) courseEvaluationInput {
 	if input.CourseSubjectID != nil && *input.CourseSubjectID != 0 {
-		var subject models.CourseSubject
-		if err := tx.Select("id", "name").First(&subject, *input.CourseSubjectID).Error; err == nil {
-			input.CourseName = subject.Name
+		if canonicalSub, err := resolveCanonicalCourseSubject(tx, *input.CourseSubjectID); err == nil && canonicalSub != nil {
+			input.CourseSubjectID = &canonicalSub.ID
+			input.CourseName = canonicalSub.Name
 		}
 	}
 	if input.TeacherID != nil && *input.TeacherID != 0 {
-		var teacher models.Teacher
-		if err := tx.Select("id", "name").First(&teacher, *input.TeacherID).Error; err == nil {
-			input.TeacherName = teacher.Name
+		if canonicalTeacher, err := resolveCanonicalTeacher(tx, *input.TeacherID); err == nil && canonicalTeacher != nil {
+			input.TeacherID = &canonicalTeacher.ID
+			input.TeacherName = canonicalTeacher.Name
 		}
 	}
 	return input
@@ -780,25 +830,25 @@ func deleteSubmissionRatings(tx *gorm.DB, submissionID uint, ratingID *uint) err
 }
 
 // selectSubject 确定学科。返回 (nil, candidates>0, nil) 表示需要用户确认。
+// 客户端提交的 ID 若指向已合并学科，会自动跟随解析到目标活动学科。
 func (s *CourseEvaluationService) selectSubject(tx *gorm.DB, input courseEvaluationInput) (*models.CourseSubject, []CourseSubjectCandidate, error) {
 	candidates, err := s.resolveSubjectsTx(tx, input.CourseName)
 	if err != nil {
 		return nil, nil, err
 	}
 	if input.CourseSubjectID != nil && *input.CourseSubjectID != 0 {
-		var subject models.CourseSubject
-		if err := tx.First(&subject, *input.CourseSubjectID).Error; err == nil {
-			return &subject, candidates, nil
+		if canonicalSub, err := resolveCanonicalCourseSubject(tx, *input.CourseSubjectID); err == nil && canonicalSub != nil {
+			return canonicalSub, candidates, nil
 		}
 		// 客户端提交的 ID 不可信时回退到名称解析，不直接报错。
 	}
 	switch {
 	case len(candidates) == 1 && candidates[0].Match == string(models.CourseSubjectMatchExact):
-		var subject models.CourseSubject
-		if err := tx.First(&subject, candidates[0].ID).Error; err != nil {
+		canonicalSub, err := resolveCanonicalCourseSubject(tx, candidates[0].ID)
+		if err != nil || canonicalSub == nil {
 			return nil, nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取学科失败", err)
 		}
-		return &subject, candidates, nil
+		return canonicalSub, candidates, nil
 	case len(candidates) == 0:
 		return nil, nil, nil
 	default:
@@ -806,15 +856,14 @@ func (s *CourseEvaluationService) selectSubject(tx *gorm.DB, input courseEvaluat
 	}
 }
 
-// selectTeacher 确定教师。客户端提交的 teacher_id 必须属于该学科、已审核且未被合并，
-// 否则忽略并回退到名称解析（含教师别名）。
+// selectTeacher 确定教师。客户端提交的 teacher_id 若已被合并，跟随解析到目标活动教师；
+// 最终教师必须属于该学科且已审核，否则回退到名称解析（含教师别名）。
 func (s *CourseEvaluationService) selectTeacher(tx *gorm.DB, subject *models.CourseSubject, input courseEvaluationInput) (*models.Teacher, error) {
 	if input.TeacherID != nil && *input.TeacherID != 0 {
-		var teacher models.Teacher
-		err := tx.Where("id = ? AND course_subject_id = ? AND verified = ? AND merged_into_id IS NULL", *input.TeacherID, subject.ID, true).
-			First(&teacher).Error
-		if err == nil {
-			return &teacher, nil
+		if canonicalTeacher, err := resolveCanonicalTeacher(tx, *input.TeacherID); err == nil && canonicalTeacher != nil {
+			if canonicalTeacher.CourseSubjectID != nil && *canonicalTeacher.CourseSubjectID == subject.ID && canonicalTeacher.Verified {
+				return canonicalTeacher, nil
+			}
 		}
 		// ID 不属于该学科、未审核或已被合并：不信任，继续按名称解析。
 	}
@@ -855,8 +904,8 @@ func upsertTeacherRating(tx *gorm.DB, userID, teacherID uint, submission *models
 	var rating models.TeacherRating
 	err := tx.Where("course_evaluation_submission_id = ?", submission.ID).First(&rating).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// 兼容旧入口产生的无提交关联评分；一旦复用会立即补上 canonical 关联。
-		err = tx.Where("teacher_id = ? AND user_id = ? AND course_evaluation_submission_id IS NULL", teacherID, userID).First(&rating).Error
+		// 查找该用户对该教师的既有非删除评分（即使已挂接历史/被替代的提交，也复用更新并重新绑定当前提交）
+		err = tx.Where("teacher_id = ? AND user_id = ? AND deleted_at IS NULL", teacherID, userID).First(&rating).Error
 	}
 	switch {
 	case err == nil:

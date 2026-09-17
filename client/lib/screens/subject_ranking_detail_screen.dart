@@ -150,7 +150,7 @@ class _SubjectRankingDetailScreenState
           actions: [
             Consumer<AuthProvider>(
               builder: (context, auth, _) {
-                if (!auth.isAdmin) return const SizedBox.shrink();
+                if (auth.user?.isAdmin != true) return const SizedBox.shrink();
                 return PopupMenuButton<String>(
                   icon: const Icon(Icons.more_horiz_rounded),
                   onSelected: (value) async {
@@ -321,7 +321,7 @@ class _SubjectRankingDetailScreenState
                                   final teacher = entry.value;
                                   final rankColor = _rankColor(index);
                                   return Padding(
-                                    padding: EdgeInsets.only(
+                                    padding: const EdgeInsets.only(
                                       bottom: RankingTokens.cardGap,
                                     ),
                                     child: Material(

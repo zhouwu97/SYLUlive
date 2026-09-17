@@ -38,6 +38,10 @@ func EnsureTeacherGovernanceSchema(db *gorm.DB) error {
 	if err := ensureActiveTeacherUniqueIndex(db); err != nil {
 		return err
 	}
+	_ = db.Exec(`DROP INDEX IF EXISTS uq_course_subjects_normalized_name`).Error
+	_ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_course_subjects_active_normalized_name
+		ON course_subjects(normalized_name)
+		WHERE merged_into_id IS NULL`).Error
 	if err := cleanDirtyTeacherAliases(db); err != nil {
 		return err
 	}

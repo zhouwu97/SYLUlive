@@ -44,6 +44,12 @@ func newGovTestDB(t *testing.T) *gorm.DB {
 	`).Error; err != nil {
 		t.Fatalf("创建唯一索引失败: %v", err)
 	}
+	if err := models.EnsureCourseEvaluationSchema(db); err != nil {
+		t.Fatalf("EnsureCourseEvaluationSchema 失败: %v", err)
+	}
+	if err := models.EnsureTeacherGovernanceSchema(db); err != nil {
+		t.Fatalf("EnsureTeacherGovernanceSchema 失败: %v", err)
+	}
 	return db
 }
 
@@ -781,4 +787,503 @@ func TestCourseAliasSelfConflictResolution(t *testing.T) {
 		t.Fatalf("别名状态应为 to_create，实际 %s", aliasItem.Status)
 	}
 }
+
+// TestCourseMergeReconcileAliasesAndValidateSchema 验证第1项问题：
+// 合并已有别名的课程后，历史别名与原课程名正确迁移，且下次启动通过 ValidateTeacherGovernanceSchema 校验
+func TestCourseMergeReconcileAliasesAndValidateSchema(t *testing.T) {
+	db := newGovTestDB(t)
+	svc := NewTeacherGovernanceService(db)
+
+	admin := models.User{Nickname: "超级管理员", Role: "admin"}
+	db.Create(&admin)
+
+	sKeeper := models.CourseSubject{
+		Name:           "高等数学A1",
+		NormalizedName: models.NormalizeCourseSubjectName("高等数学A1"),
+		Verified:       true,
+	}
+	sLoser := models.CourseSubject{
+		Name:           "高数（上）",
+		NormalizedName: models.NormalizeCourseSubjectName("高数（上）"),
+		Verified:       true,
+	}
+	db.Create(&sKeeper)
+	db.Create(&sLoser)
+
+	// 源课程已有别名 "高数上"
+	existingAlias := models.CourseSubjectAlias{
+		CourseSubjectID: sLoser.ID,
+		Alias:           "高数上",
+		NormalizedAlias: models.NormalizeCourseSubjectName("高数上"),
+	}
+	if err := db.Create(&existingAlias).Error; err != nil {
+		t.Fatalf("创建源课程别名失败: %v", err)
+	}
+
+	tKeeper := models.Teacher{
+		Name:            "张三",
+		Course:          "高等数学A1",
+		CourseSubjectID: &sKeeper.ID,
+		NameNormalized:  models.NormalizeTeacherName("张三"),
+		Verified:        true,
+	}
+	tLoser := models.Teacher{
+		Name:            "张老师",
+		Course:          "高数（上）",
+		CourseSubjectID: &sLoser.ID,
+		NameNormalized:  models.NormalizeTeacherName("张老师"),
+		Verified:        true,
+	}
+	db.Create(&tKeeper)
+	db.Create(&tLoser)
+
+	previewInput := CourseMergeInput{
+		KeeperSubjectID: sKeeper.ID,
+		LoserSubjectIDs: []uint{sLoser.ID},
+		FinalCourseName: "高等数学A1",
+		TeacherPairs: []CourseMergeTeacherPair{
+			{KeeperTeacherID: tKeeper.ID, LoserTeacherID: tLoser.ID, FinalTeacherName: "张三"},
+		},
+		Reason: "测试别名重挂",
+	}
+
+	preview, err := svc.PreviewCourseMerge(previewInput)
+	if err != nil {
+		t.Fatalf("PreviewCourseMerge 失败: %v", err)
+	}
+
+	mergeInput := previewInput
+	mergeInput.SnapshotToken = preview.SnapshotToken
+	_, err = svc.CourseMerge(admin.ID, mergeInput)
+	if err != nil {
+		t.Fatalf("CourseMerge 执行失败: %v", err)
+	}
+
+	// 验证1: sLoser 的 MergedIntoID 指向 sKeeper
+	var checkLoser models.CourseSubject
+	db.First(&checkLoser, sLoser.ID)
+	if checkLoser.MergedIntoID == nil || *checkLoser.MergedIntoID != sKeeper.ID {
+		t.Fatalf("源课程 MergedIntoID 应指向 keeper, 实际: %v", checkLoser.MergedIntoID)
+	}
+
+	// 验证2: 历史别名 "高数上" 重定向到 sKeeper
+	var reloadedAlias models.CourseSubjectAlias
+	if err := db.First(&reloadedAlias, existingAlias.ID).Error; err != nil {
+		t.Fatalf("读取历史别名失败: %v", err)
+	}
+	if reloadedAlias.CourseSubjectID != sKeeper.ID {
+		t.Fatalf("历史别名未重定向到 keeper, 实际 course_subject_id: %d", reloadedAlias.CourseSubjectID)
+	}
+
+	// 验证3: 原课程名 "高数（上）" 登记为 sKeeper 的别名
+	var origNameAlias models.CourseSubjectAlias
+	if err := db.Where("course_subject_id = ? AND alias = ?", sKeeper.ID, "高数（上）").First(&origNameAlias).Error; err != nil {
+		t.Fatalf("原课程名别名未正确登记: %v", err)
+	}
+
+	// 验证4: 核心验收项——合并后下次启动校验 ValidateTeacherGovernanceSchema 必须通过！
+	if err := models.ValidateTeacherGovernanceSchema(db); err != nil {
+		t.Fatalf("合并后启动数据完整性校验失败: %v", err)
+	}
+
+	// 验证5: 启动时 dedupeCourseSubjects 不应物理删除软合并的课程
+	if err := models.EnsureCourseEvaluationSchema(db); err != nil {
+		t.Fatalf("合并后再次执行 EnsureCourseEvaluationSchema 失败: %v", err)
+	}
+	var countAfter int64
+	db.Model(&models.CourseSubject{}).Where("id = ?", sLoser.ID).Count(&countAfter)
+	if countAfter != 1 {
+		t.Fatalf("软合并课程不应被物理删除, 期望保留1条记录, 实际 count: %d", countAfter)
+	}
+}
+
+// TestTeacherAndCourseMergeAdoptLoserName 验证第3项问题：
+// 采用另一条被合并实体的名称时，在生产 partial unique index 下正常执行改名并正确登记历史别名
+func TestTeacherAndCourseMergeAdoptLoserName(t *testing.T) {
+	db := newGovTestDB(t)
+	svc := NewTeacherGovernanceService(db)
+
+	admin := models.User{Nickname: "超级管理员", Role: "admin"}
+	db.Create(&admin)
+
+	s1 := models.CourseSubject{
+		Name:           "大学物理A",
+		NormalizedName: models.NormalizeCourseSubjectName("大学物理A"),
+		Verified:       true,
+	}
+	db.Create(&s1)
+
+	// 场景 A: 教师合并中 Keeper (#1 张老师) 合并 Loser (#2 张三)，最终采用 Loser 姓名 "张三"
+	tKeeper := models.Teacher{
+		Name:            "张老师",
+		Course:          "大学物理A",
+		CourseSubjectID: &s1.ID,
+		NameNormalized:  models.NormalizeTeacherName("张老师"),
+		Verified:        true,
+	}
+	tLoser := models.Teacher{
+		Name:            "张三",
+		Course:          "大学物理A",
+		CourseSubjectID: &s1.ID,
+		NameNormalized:  models.NormalizeTeacherName("张三"),
+		Verified:        true,
+	}
+	db.Create(&tKeeper)
+	db.Create(&tLoser)
+
+	previewTeacher, err := svc.PreviewMerge(MergeInput{
+		KeeperID:         tKeeper.ID,
+		LoserIDs:         []uint{tLoser.ID},
+		FinalTeacherName: "张三",
+	})
+	if err != nil {
+		t.Fatalf("PreviewMerge 失败: %v", err)
+	}
+
+	// 在存在生产索引 uq_teachers_active_subject_name 下执行改名为 loser 姓名
+	_, err = svc.Merge(admin.ID, MergeInput{
+		KeeperID:         tKeeper.ID,
+		LoserIDs:         []uint{tLoser.ID},
+		FinalTeacherName: "张三",
+		SnapshotToken:    previewTeacher.SnapshotToken,
+		Reason:           "采用被合并者姓名",
+	})
+	if err != nil {
+		t.Fatalf("教师合并最终采用被合并者姓名失败: %v", err)
+	}
+
+	var checkTKeeper models.Teacher
+	db.First(&checkTKeeper, tKeeper.ID)
+	if checkTKeeper.Name != "张三" {
+		t.Fatalf("Keeper 姓名应更新为「张三」, 实际: %q", checkTKeeper.Name)
+	}
+
+	// 验证 Keeper 自己的原名 "张老师" 是否登记为别名
+	var keeperOldAlias models.TeacherAlias
+	if err := db.Where("teacher_id = ? AND alias = ?", tKeeper.ID, "张老师").First(&keeperOldAlias).Error; err != nil {
+		t.Fatalf("Keeper 自身原名未登记为别名: %v", err)
+	}
+
+	// 场景 B: 课程合并中 Keeper (高等数学A1) 合并 Loser (高数（上）)，最终采用 Loser 课程名 "高数（上）"
+	sKeeper := models.CourseSubject{
+		Name:           "高等数学A1",
+		NormalizedName: models.NormalizeCourseSubjectName("高等数学A1"),
+		Verified:       true,
+	}
+	sLoser := models.CourseSubject{
+		Name:           "高数（上）",
+		NormalizedName: models.NormalizeCourseSubjectName("高数（上）"),
+		Verified:       true,
+	}
+	db.Create(&sKeeper)
+	db.Create(&sLoser)
+
+	coursePreviewInput := CourseMergeInput{
+		KeeperSubjectID: sKeeper.ID,
+		LoserSubjectIDs: []uint{sLoser.ID},
+		FinalCourseName: "高数（上）",
+		Reason:          "采用源课程名",
+	}
+
+	previewCourse, err := svc.PreviewCourseMerge(coursePreviewInput)
+	if err != nil {
+		t.Fatalf("PreviewCourseMerge 失败: %v", err)
+	}
+
+	courseMergeInput := coursePreviewInput
+	courseMergeInput.SnapshotToken = previewCourse.SnapshotToken
+	_, err = svc.CourseMerge(admin.ID, courseMergeInput)
+	if err != nil {
+		t.Fatalf("课程合并最终采用被合并课程原名失败: %v", err)
+	}
+
+	var checkSKeeper models.CourseSubject
+	db.First(&checkSKeeper, sKeeper.ID)
+	if checkSKeeper.Name != "高数（上）" {
+		t.Fatalf("Keeper 课程名应更新为「高数（上）」, 实际: %q", checkSKeeper.Name)
+	}
+
+	// 验证 Keeper 原课程名 "高等数学A1" 登记为别名
+	var keeperCourseOldAlias models.CourseSubjectAlias
+	if err := db.Where("course_subject_id = ? AND alias = ?", sKeeper.ID, "高等数学A1").First(&keeperCourseOldAlias).Error; err != nil {
+		t.Fatalf("Keeper 原课程名未登记为别名: %v", err)
+	}
+
+	// 验证启动校验正常通过
+	if err := models.ValidateTeacherGovernanceSchema(db); err != nil {
+		t.Fatalf("采用源名称合并后启动完整性校验失败: %v", err)
+	}
+}
+
+// TestCourseMergeSubmissionDedupKeyAndRepeatRating 验证第4项问题：
+// 评价迁移后维护 DedupKey，用户再次对合并后的教师评分不会失败
+func TestCourseMergeSubmissionDedupKeyAndRepeatRating(t *testing.T) {
+	db := newGovTestDB(t)
+	govSvc := NewTeacherGovernanceService(db)
+	evalSvc := NewCourseEvaluationService(db)
+
+	admin := models.User{Nickname: "超级管理员", Role: "admin"}
+	user := models.User{Nickname: "普通学生", Role: "user"}
+	db.Create(&admin)
+	db.Create(&user)
+
+	sKeeper := models.CourseSubject{
+		Name:           "高等数学A1",
+		NormalizedName: models.NormalizeCourseSubjectName("高等数学A1"),
+		Verified:       true,
+	}
+	sLoser := models.CourseSubject{
+		Name:           "高数（上）",
+		NormalizedName: models.NormalizeCourseSubjectName("高数（上）"),
+		Verified:       true,
+	}
+	db.Create(&sKeeper)
+	db.Create(&sLoser)
+
+	tKeeper := models.Teacher{
+		Name:            "李四",
+		Course:          "高等数学A1",
+		CourseSubjectID: &sKeeper.ID,
+		NameNormalized:  models.NormalizeTeacherName("李四"),
+		Verified:        true,
+	}
+	tLoser := models.Teacher{
+		Name:            "李老师",
+		Course:          "高数（上）",
+		CourseSubjectID: &sLoser.ID,
+		NameNormalized:  models.NormalizeTeacherName("李老师"),
+		Verified:        true,
+	}
+	db.Create(&tKeeper)
+	db.Create(&tLoser)
+
+	// 用户在旧课程旧教师下提交了评价并通过生成评分
+	initialSub, err := evalSvc.Submit(user.ID, CreateCourseEvaluationInput{
+		CourseName:      sLoser.Name,
+		CourseSubjectID: &sLoser.ID,
+		TeacherName:     tLoser.Name,
+		TeacherID:       &tLoser.ID,
+		Star:            4,
+		Comment:         "讲得不错",
+	})
+	if err != nil {
+		t.Fatalf("用户初次评价旧教师失败: %v", err)
+	}
+	if initialSub == nil {
+		t.Fatalf("初次评价返回为空")
+	}
+
+	// 执行课程合并，把 sLoser 并入 sKeeper，把 tLoser 配对并入 tKeeper
+	previewInput := CourseMergeInput{
+		KeeperSubjectID: sKeeper.ID,
+		LoserSubjectIDs: []uint{sLoser.ID},
+		FinalCourseName: "高等数学A1",
+		TeacherPairs: []CourseMergeTeacherPair{
+			{KeeperTeacherID: tKeeper.ID, LoserTeacherID: tLoser.ID, FinalTeacherName: "李四"},
+		},
+		Reason: "合并学科与教师",
+	}
+
+	preview, err := govSvc.PreviewCourseMerge(previewInput)
+	if err != nil {
+		t.Fatalf("PreviewCourseMerge 失败: %v", err)
+	}
+
+	mergeInput := previewInput
+	mergeInput.SnapshotToken = preview.SnapshotToken
+	_, err = govSvc.CourseMerge(admin.ID, mergeInput)
+	if err != nil {
+		t.Fatalf("CourseMerge 失败: %v", err)
+	}
+
+	// 检查旧提交的 DedupKey 是否已更新为新课程与新教师的规范去重键
+	var migratedSub models.CourseEvaluationSubmission
+	db.First(&migratedSub, initialSub.ID)
+	expectedDedupKey := models.CourseEvaluationDedupKey(user.ID, sKeeper.Name, tKeeper.Name)
+	if migratedSub.DedupKey != expectedDedupKey {
+		t.Fatalf("迁移后的提交 DedupKey 应更新为 %q, 实际: %q", expectedDedupKey, migratedSub.DedupKey)
+	}
+
+	// 核心验证：用户通过教师评分入口再次评分，由于 DedupKey 正确维护，会自动查找到既有提交并走 Update，
+	// 而绝不会因为找不到原提交去走新建从而触发 uq_teacher_rating_user 唯一约束冲突！
+	updatedSub, err := evalSvc.RateVerifiedTeacher(user.ID, tKeeper.ID, 5, "合并后重新打5分")
+	if err != nil {
+		t.Fatalf("合并后再次评分失败 (可能触发了唯一约束): %v", err)
+	}
+	if updatedSub.Star != 5 {
+		t.Fatalf("再次评分分数应为5, 实际: %d", updatedSub.Star)
+	}
+
+	// 验证 teacher_ratings 只有 1 条记录 (更新了原评价)，且星级为 5
+	var userRatings []models.TeacherRating
+	db.Where("teacher_id = ? AND user_id = ? AND deleted_at IS NULL", tKeeper.ID, user.ID).Find(&userRatings)
+	if len(userRatings) != 1 {
+		t.Fatalf("用户对保留教师应只有 1 条有效评分，实际有 %d 条", len(userRatings))
+	}
+	if userRatings[0].Star != 5 {
+		t.Fatalf("评分未更新为5星, 实际: %d", userRatings[0].Star)
+	}
+}
+
+// TestCourseEvaluationServiceCanonicalSubjectResolution 验证第2项问题：
+// 课程规范目标解析收口，名称解析与ID读取自动跟随合并指向，已合并课程不直接作为目标
+func TestCourseEvaluationServiceCanonicalSubjectResolution(t *testing.T) {
+	db := newGovTestDB(t)
+	evalSvc := NewCourseEvaluationService(db)
+
+	sKeeper := models.CourseSubject{
+		Name:           "高等数学A1",
+		NormalizedName: models.NormalizeCourseSubjectName("高等数学A1"),
+		Verified:       true,
+	}
+	db.Create(&sKeeper)
+
+	sLoser := models.CourseSubject{
+		Name:           "高数（上）",
+		NormalizedName: models.NormalizeCourseSubjectName("高数（上）"),
+		Verified:       true,
+		MergedIntoID:   &sKeeper.ID,
+	}
+	db.Create(&sLoser)
+
+	// 别名指向 keeper 课程
+	db.Create(&models.CourseSubjectAlias{
+		CourseSubjectID: sKeeper.ID,
+		Alias:           "高数（上）",
+		NormalizedAlias: models.NormalizeCourseSubjectName("高数（上）"),
+	})
+
+	// 1. 测试 resolveSubjects：输入已合并的旧课程名，必须命中活跃的 keeper 课程，绝不能返回已合并的 loser
+	candidates, err := evalSvc.resolveSubjects("高数（上）")
+	if err != nil {
+		t.Fatalf("resolveSubjects 失败: %v", err)
+	}
+	if len(candidates) == 0 {
+		t.Fatalf("期望命中候选课程，实际返回空")
+	}
+	for _, c := range candidates {
+		if c.ID == sLoser.ID {
+			t.Fatalf("候选列表中包含了已合并的旧课程 #%d", sLoser.ID)
+		}
+	}
+	if candidates[0].ID != sKeeper.ID {
+		t.Fatalf("首选学科应为保留学科 #%d, 实际为 #%d", sKeeper.ID, candidates[0].ID)
+	}
+
+	// 2. 测试 canonicalizeTargetNames：传入旧课程 ID，必须自动解析并转换为保留课程 ID 和名称
+	canonicalized := canonicalizeTargetNames(db, courseEvaluationInput{
+		CourseSubjectID: &sLoser.ID,
+		CourseName:      sLoser.Name,
+	})
+	if canonicalized.CourseSubjectID == nil || *canonicalized.CourseSubjectID != sKeeper.ID {
+		t.Fatalf("canonicalizeTargetNames 未将旧课程ID重定向到 keeper, 实际: %v", canonicalized.CourseSubjectID)
+	}
+	if canonicalized.CourseName != sKeeper.Name {
+		t.Fatalf("canonicalizeTargetNames 未将课程名称规范化为 keeper 名称, 实际: %q", canonicalized.CourseName)
+	}
+
+	// 3. 测试 resolveCanonicalCourseSubject 追溯
+	resolved, err := resolveCanonicalCourseSubject(db, sLoser.ID)
+	if err != nil {
+		t.Fatalf("resolveCanonicalCourseSubject 失败: %v", err)
+	}
+	if resolved == nil || resolved.ID != sKeeper.ID {
+		t.Fatalf("resolveCanonicalCourseSubject 未返回 keeper, 实际: %v", resolved)
+	}
+}
+
+// TestCourseMergeSnapshotTokenDetectsRatingAndVoteChanges 验证第5项问题：
+// 课程合并快照覆盖评价、投票和提交变化，能检测出预览后的评价变化并拒绝冲突 Token
+func TestCourseMergeSnapshotTokenDetectsRatingAndVoteChanges(t *testing.T) {
+	db := newGovTestDB(t)
+	svc := NewTeacherGovernanceService(db)
+
+	admin := models.User{Nickname: "超级管理员", Role: "admin"}
+	db.Create(&admin)
+
+	sKeeper := models.CourseSubject{
+		Name:           "高等数学A1",
+		NormalizedName: models.NormalizeCourseSubjectName("高等数学A1"),
+		Verified:       true,
+	}
+	sLoser := models.CourseSubject{
+		Name:           "高数（上）",
+		NormalizedName: models.NormalizeCourseSubjectName("高数（上）"),
+		Verified:       true,
+	}
+	db.Create(&sKeeper)
+	db.Create(&sLoser)
+
+	tKeeper := models.Teacher{
+		Name:            "张三",
+		Course:          "高等数学A1",
+		CourseSubjectID: &sKeeper.ID,
+		NameNormalized:  models.NormalizeTeacherName("张三"),
+		Verified:        true,
+	}
+	tLoser := models.Teacher{
+		Name:            "张老师",
+		Course:          "高数（上）",
+		CourseSubjectID: &sLoser.ID,
+		NameNormalized:  models.NormalizeTeacherName("张老师"),
+		Verified:        true,
+	}
+	db.Create(&tKeeper)
+	db.Create(&tLoser)
+
+	// 第一次预览生成快照 Token
+	courseInput := CourseMergeInput{
+		KeeperSubjectID: sKeeper.ID,
+		LoserSubjectIDs: []uint{sLoser.ID},
+		FinalCourseName: "高等数学A1",
+		TeacherPairs: []CourseMergeTeacherPair{
+			{KeeperTeacherID: tKeeper.ID, LoserTeacherID: tLoser.ID, FinalTeacherName: "张三"},
+		},
+		Reason: "快照验证",
+	}
+
+	preview1, err := svc.PreviewCourseMerge(courseInput)
+	if err != nil {
+		t.Fatalf("第一次 PreviewCourseMerge 失败: %v", err)
+	}
+
+	// 模拟在管理员确认前，有用户给 tLoser 新增了评价
+	newRating := models.TeacherRating{
+		TeacherID: tLoser.ID,
+		UserID:    999,
+		Star:      5,
+		Comment:   "新评价",
+	}
+	if err := db.Create(&newRating).Error; err != nil {
+		t.Fatalf("创建新评价失败: %v", err)
+	}
+
+	// 第二次预览生成快照 Token
+	preview2, err := svc.PreviewCourseMerge(courseInput)
+	if err != nil {
+		t.Fatalf("第二次 PreviewCourseMerge 失败: %v", err)
+	}
+
+	// 核心验证：评价变动后快照 Token 必须改变！
+	if preview1.SnapshotToken == preview2.SnapshotToken {
+		t.Fatalf("新增评价后快照 Token 未改变，仍为 %q", preview1.SnapshotToken)
+	}
+
+	// 用旧快照 Token 执行合并必须被拦截并返回冲突错误
+	staleInput := courseInput
+	staleInput.SnapshotToken = preview1.SnapshotToken
+	_, err = svc.CourseMerge(admin.ID, staleInput)
+	if err == nil {
+		t.Fatalf("使用过期快照 Token 执行合并应被拦截，实际未报错")
+	}
+
+	// 用新快照 Token 执行合并应成功
+	freshInput := courseInput
+	freshInput.SnapshotToken = preview2.SnapshotToken
+	_, err = svc.CourseMerge(admin.ID, freshInput)
+	if err != nil {
+		t.Fatalf("使用最新快照 Token 执行合并失败: %v", err)
+	}
+}
+
 

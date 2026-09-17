@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../models/teacher_governance.dart';
 import '../providers/auth_provider.dart';
 import '../providers/course_subject_provider.dart';
+import '../providers/teacher_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
@@ -36,6 +37,7 @@ class _AdminTeacherGovernanceScreenState
     extends State<AdminTeacherGovernanceScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  bool _hasChanged = false;
 
   // ==========================================
   // Tab 0: 课程合并 (3步式独立工作流)
@@ -46,7 +48,7 @@ class _AdminTeacherGovernanceScreenState
   final TextEditingController _finalCourseNameCtrl = TextEditingController();
   final TextEditingController _courseMergeReasonCtrl =
       TextEditingController(text: '学科与课程名称规范化合并');
-  bool _registerCourseAlias = true;
+  final bool _registerCourseAlias = true;
 
   List<TeacherGovernanceTeacherItem> _sourceCourseTeachers = [];
   List<TeacherGovernanceTeacherItem> _targetCourseTeachers = [];
@@ -585,8 +587,12 @@ class _AdminTeacherGovernanceScreenState
           ? res.data['message'].toString()
           : '课程合并成功！';
 
-      // 清除客户端课程缓存以确保榜单和详情重新加载规范数据
+      // 清除客户端课程与教师缓存以确保榜单和详情重新加载规范数据
+      _hasChanged = true;
       context.read<CourseSubjectProvider>().clearCache();
+      try {
+        context.read<TeacherProvider>().clearCache();
+      } catch (_) {}
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(msg), backgroundColor: Colors.green),
@@ -859,6 +865,11 @@ class _AdminTeacherGovernanceScreenState
         teachers: teachers,
         initialKeeperId: initialKeeperId,
         onSuccess: () {
+          _hasChanged = true;
+          context.read<CourseSubjectProvider>().clearCache();
+          try {
+            context.read<TeacherProvider>().clearCache();
+          } catch (_) {}
           _loadCandidateGroups();
           _loadTeachers();
           _loadRecords();
@@ -878,9 +889,19 @@ class _AdminTeacherGovernanceScreenState
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      appBar: AppBar(
-        centerTitle: true,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        Navigator.of(context).pop(_hasChanged);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.of(context).pop(_hasChanged),
+          ),
+          centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
         backgroundColor:
@@ -949,8 +970,9 @@ class _AdminTeacherGovernanceScreenState
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   // ============================================================================
   // Tab 0: 课程合并 (选择对象 → 确认名称与教师对应 → 预览并执行)
@@ -1419,13 +1441,39 @@ class _AdminTeacherGovernanceScreenState
             ],
           ),
           const SizedBox(height: 12),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            activeTrackColor: AppColors.brandPrimary,
-            title: Text('登记原课程名「${_sourceCourse!.name}」为别名'),
-            subtitle: const Text('后续用户搜索或提交评价时将自动解析至目标规范课程'),
-            value: _registerCourseAlias,
-            onChanged: (val) => setState(() => _registerCourseAlias = val),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? AppColors.surfaceSecondaryDark
+                  : AppColors.brandPrimary.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(
+                color: AppColors.brandPrimary.withValues(alpha: 0.25),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.info_outline_rounded,
+                  size: 18,
+                  color: AppColors.brandPrimary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '已开启规范回流：原课程名「${_sourceCourse!.name}」将自动登记为目标规范别名，旧课表提评与搜索无缝重定向。',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark
+                          ? Colors.white70
+                          : AppColors.textPrimaryLight,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
 
           const Divider(height: 24),

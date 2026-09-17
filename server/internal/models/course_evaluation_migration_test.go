@@ -320,7 +320,7 @@ func TestEnsureCourseEvaluationSchemaCreatesUniqueIndexes(t *testing.T) {
 		t.Fatalf("迁移失败: %v", err)
 	}
 	for _, name := range []string{
-		"uq_course_subjects_normalized_name",
+		"uq_course_subjects_active_normalized_name",
 		"uq_teachers_active_subject_name",
 		"uq_course_evaluation_submission_dedup",
 		"uq_teacher_rating_submission",

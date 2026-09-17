@@ -105,6 +105,20 @@ class TeacherProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 清除教师列表与详情缓存，供治理合并等场景使用。
+  void clearCache() {
+    _sessionGeneration++;
+    _searchGeneration++;
+    _detailGenerations.clear();
+    _detailRequests.clear();
+    _details.clear();
+    _teachers = [];
+    _allTeachers = [];
+    _isLoading = false;
+    _errorMessage = null;
+    notifyListeners();
+  }
+
   Future<void> loadTeachers({String? query}) {
     _searchDebounce?.cancel();
 

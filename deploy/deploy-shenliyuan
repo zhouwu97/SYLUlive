@@ -146,6 +146,8 @@ governance_endpoints=(
 	"/api/admin/teacher-governance/aliases"
 	"/api/admin/teacher-governance/courses"
 	"/api/admin/teacher-governance/duplicate-groups"
+	"/api/api/admin/teacher-governance/aliases"
+	"/api/api/admin/teacher-governance/duplicate-groups"
 )
 
 for ep in "${governance_endpoints[@]}"; do

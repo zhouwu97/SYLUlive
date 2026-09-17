@@ -2241,22 +2241,25 @@ func main() {
 
 	// 教师与课程数据治理路由 (§22)
 	teacherGovernanceHandler := handlers.NewTeacherGovernanceHandler(db)
-	govAdmin := r.Group("/api/admin/teacher-governance")
-	govAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
-	{
-		govAdmin.GET("/duplicate-groups", teacherGovernanceHandler.ListDuplicateGroups)
-		govAdmin.POST("/merge-preview", teacherGovernanceHandler.PreviewMerge)
-		govAdmin.POST("/merge", teacherGovernanceHandler.Merge)
-		govAdmin.POST("/course-merge-preview", teacherGovernanceHandler.PreviewCourseMerge)
-		govAdmin.POST("/course-merge", teacherGovernanceHandler.CourseMerge)
-		govAdmin.GET("/courses", teacherGovernanceHandler.SearchCourses)
-		govAdmin.GET("/merge-records", teacherGovernanceHandler.ListMergeRecords)
-		govAdmin.GET("/teachers", teacherGovernanceHandler.ListTeachers)
-		govAdmin.GET("/alias-targets", teacherGovernanceHandler.SearchAliasTargets)
-		govAdmin.GET("/aliases", teacherGovernanceHandler.ListAliases)
-		govAdmin.POST("/aliases", teacherGovernanceHandler.AddAlias)
-		govAdmin.DELETE("/aliases/:id", teacherGovernanceHandler.DeleteAlias)
+	registerTeacherGovernance := func(group *gin.RouterGroup) {
+		group.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+		{
+			group.GET("/duplicate-groups", teacherGovernanceHandler.ListDuplicateGroups)
+			group.POST("/merge-preview", teacherGovernanceHandler.PreviewMerge)
+			group.POST("/merge", teacherGovernanceHandler.Merge)
+			group.POST("/course-merge-preview", teacherGovernanceHandler.PreviewCourseMerge)
+			group.POST("/course-merge", teacherGovernanceHandler.CourseMerge)
+			group.GET("/courses", teacherGovernanceHandler.SearchCourses)
+			group.GET("/merge-records", teacherGovernanceHandler.ListMergeRecords)
+			group.GET("/teachers", teacherGovernanceHandler.ListTeachers)
+			group.GET("/alias-targets", teacherGovernanceHandler.SearchAliasTargets)
+			group.GET("/aliases", teacherGovernanceHandler.ListAliases)
+			group.POST("/aliases", teacherGovernanceHandler.AddAlias)
+			group.DELETE("/aliases/:id", teacherGovernanceHandler.DeleteAlias)
+		}
 	}
+	registerTeacherGovernance(r.Group("/api/admin/teacher-governance"))
+	registerTeacherGovernance(r.Group("/api/api/admin/teacher-governance"))
 
 	teacherAuth := teacher.Group("")
 

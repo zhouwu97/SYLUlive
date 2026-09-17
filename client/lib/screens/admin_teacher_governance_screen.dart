@@ -209,7 +209,7 @@ class _AdminTeacherGovernanceScreenState
       final dio = context.read<AuthProvider>().dio;
       Response? res;
       try {
-        res = await dio.get('/api/version');
+        res = await dio.get('/version');
       } catch (_) {
         try {
           res = await dio.get('/version');
@@ -303,7 +303,7 @@ class _AdminTeacherGovernanceScreenState
     try {
       final dio = context.read<AuthProvider>().dio;
       final res =
-          await dio.get('/api/admin/teacher-governance/duplicate-groups');
+          await dio.get('/admin/teacher-governance/duplicate-groups');
       if (!mounted) return;
       final items = _extractList(res.data, 'groups');
       setState(() {
@@ -358,7 +358,7 @@ class _AdminTeacherGovernanceScreenState
         params['cursor'] = _teacherNextCursor;
       }
       final res = await dio.get(
-        '/api/admin/teacher-governance/teachers',
+        '/admin/teacher-governance/teachers',
         queryParameters: params,
         cancelToken: cancelToken,
       );
@@ -459,7 +459,7 @@ class _AdminTeacherGovernanceScreenState
         params['q'] = _aliasSearchQuery.trim();
       }
       final res = await dio.get(
-        '/api/admin/teacher-governance/aliases',
+        '/admin/teacher-governance/aliases',
         queryParameters: params,
         cancelToken: cancelToken,
       );
@@ -540,7 +540,7 @@ class _AdminTeacherGovernanceScreenState
         params['cursor'] = _recordsNextCursor;
       }
       final res = await dio.get(
-        '/api/admin/teacher-governance/merge-records',
+        '/admin/teacher-governance/merge-records',
         queryParameters: params,
       );
       if (!mounted) return;
@@ -620,14 +620,14 @@ class _AdminTeacherGovernanceScreenState
     try {
       final dio = context.read<AuthProvider>().dio;
       final resSource = await dio.get(
-        '/api/admin/teacher-governance/teachers',
+        '/admin/teacher-governance/teachers',
         queryParameters: {
           'subject_id': _sourceCourse!.id,
           'include_merged': false,
         },
       );
       final resTarget = await dio.get(
-        '/api/admin/teacher-governance/teachers',
+        '/admin/teacher-governance/teachers',
         queryParameters: {
           'subject_id': _targetCourse!.id,
           'include_merged': false,
@@ -729,7 +729,7 @@ class _AdminTeacherGovernanceScreenState
       };
 
       final res = await dio.post(
-        '/api/admin/teacher-governance/course-merge-preview',
+        '/admin/teacher-governance/course-merge-preview',
         data: payload,
       );
 
@@ -835,7 +835,7 @@ class _AdminTeacherGovernanceScreenState
       };
 
       final res = await dio.post(
-        '/api/admin/teacher-governance/course-merge',
+        '/admin/teacher-governance/course-merge',
         data: payload,
       );
 
@@ -1000,7 +1000,7 @@ class _AdminTeacherGovernanceScreenState
                     payload['course_subject_id'] = selectedSubject!.id;
                   }
                   await dio.post(
-                    '/api/admin/teacher-governance/aliases',
+                    '/admin/teacher-governance/aliases',
                     data: payload,
                   );
                   if (mounted) {
@@ -1067,7 +1067,7 @@ class _AdminTeacherGovernanceScreenState
     try {
       final dio = context.read<AuthProvider>().dio;
       await dio.delete(
-        '/api/admin/teacher-governance/aliases/${item.id}',
+        '/admin/teacher-governance/aliases/${item.id}',
         queryParameters: {'type': item.type},
       );
       if (mounted) {
@@ -3633,7 +3633,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
       };
 
       final res = await dio.post(
-        '/api/admin/teacher-governance/merge-preview',
+        '/admin/teacher-governance/merge-preview',
         data: payload,
       );
       if (!mounted) return;
@@ -3718,7 +3718,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
       };
 
       final res = await dio.post(
-        '/api/admin/teacher-governance/merge',
+        '/admin/teacher-governance/merge',
         data: payload,
       );
       if (!mounted) return;
@@ -4363,7 +4363,7 @@ class _GovernanceCoursePickerModalState
     try {
       final dio = context.read<AuthProvider>().dio;
       final res = await dio.get(
-        '/api/admin/teacher-governance/courses',
+        '/admin/teacher-governance/courses',
         queryParameters: {
           if (query.trim().isNotEmpty) 'q': query.trim(),
         },
@@ -4633,7 +4633,7 @@ class _AliasTargetPickerState extends State<_AliasTargetPicker> {
     try {
       final dio = context.read<AuthProvider>().dio;
       final response = await dio.get(
-        '/api/admin/teacher-governance/alias-targets',
+        '/admin/teacher-governance/alias-targets',
         queryParameters: <String, dynamic>{
           'type': widget.targetType,
           if (query.isNotEmpty) 'q': query,

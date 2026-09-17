@@ -19,7 +19,7 @@ function Get-CleanReleaseCommit {
 }
 
 # 源码提交先固定；产物元数据在全部校验通过后才写回工作区。
-$sourceCommit = Get-CleanReleaseCommit
+$script:sourceCommit = Get-CleanReleaseCommit
 $androidRoot = Join-Path $clientRoot 'android'
 $androidAppRoot = Join-Path $androidRoot 'app'
 $propertiesPath = Join-Path $androidRoot 'key.properties'
@@ -107,8 +107,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'apksigner verification failed.' }
 
     $currentCommit = (Get-CleanReleaseCommit)
-    if ("$currentCommit".Trim() -ne "$sourceCommit".Trim()) {
-        throw "Source commit changed during build (expected '$sourceCommit', got '$currentCommit'); rebuild from the intended commit."
+    if ("$currentCommit".Trim() -ne "$script:sourceCommit".Trim()) {
+        throw "Source commit changed during build (expected '$script:sourceCommit', got '$currentCommit'); rebuild from the intended commit."
     }
 
     $target = Join-Path $OutputDirectory 'shenliyuan-release.apk'
@@ -120,7 +120,7 @@ try {
         sha256 = $hash
         version = $version
         signed = $true
-        source_commit = $sourceCommit
+        source_commit = $script:sourceCommit
         built_at_utc = [DateTime]::UtcNow.ToString('o')
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'release-manifest.json') -Encoding utf8
     Write-Host "Signed release artifact: $target"

@@ -12,7 +12,7 @@ $repoRoot = (Resolve-Path (Join-Path $clientRoot '..')).Path
 function Get-CleanReleaseCommit {
     $commit = & git -C $repoRoot rev-parse --verify HEAD
     if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve release source commit.' }
-    $changes = & git -C $repoRoot status --porcelain=v1 --untracked-files=all
+    $changes = & git -C $repoRoot status --porcelain=v1 --untracked-files=all -- . ':(exclude)client/release-artifacts'
     if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect release working tree.' }
     if ($changes) { throw 'Release requires a clean working tree. Commit source changes before building.' }
     return $commit.Trim()

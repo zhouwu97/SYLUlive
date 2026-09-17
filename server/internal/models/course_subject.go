@@ -6,6 +6,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"gorm.io/gorm"
 )
 
 // 课程评价提交状态。
@@ -37,9 +39,14 @@ type CourseSubject struct {
 	Verified       bool      `gorm:"not null;default:false;index" json:"verified"`
 	CreatedBy      *uint     `gorm:"index" json:"created_by,omitempty"`
 	// 名称出处，语义与 Teacher.CanonicalSource 一致。
-	CanonicalSource string    `gorm:"size:20;not null;default:legacy;index" json:"canonical_source"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	CanonicalSource string `gorm:"size:20;not null;default:legacy;index" json:"canonical_source"`
+
+	// 合并标记。非空表示该学科已并入目标学科，列表与统计必须过滤；
+	// 保留行本身以维持旧 ID 可跳转与合并历史可追溯。
+	MergedIntoID *uint `gorm:"index" json:"merged_into_id,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 
 	// 关联数据（非数据库字段）
 	TeacherCount int     `gorm:"-" json:"teacher_count"`
@@ -48,6 +55,11 @@ type CourseSubject struct {
 }
 
 func (CourseSubject) TableName() string { return "course_subjects" }
+
+// ScopeActiveSubjects 统一的活动学科查询范围（排除已合并学科）。
+func ScopeActiveSubjects(db *gorm.DB) *gorm.DB {
+	return db.Where("merged_into_id IS NULL")
+}
 
 // CourseSubjectAlias 标准学科的明确别名。
 // 别名只由服务端在审核通过时登记：管理员把"高等数学（上）"归入

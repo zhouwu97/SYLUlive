@@ -75,4 +75,17 @@ class CourseSubjectProvider extends ChangeNotifier {
       return null;
     }
   }
+
+  /// 清理特定学科缓存（例如课程合并后）
+  void invalidateSubject(int id) {
+    _detailCache.remove(id);
+    notifyListeners();
+  }
+
+  /// 清除全部学科缓存与列表
+  void clearCache() {
+    _detailCache.clear();
+    _subjects = const [];
+    notifyListeners();
+  }
 }

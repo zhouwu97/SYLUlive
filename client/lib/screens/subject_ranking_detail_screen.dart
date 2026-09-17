@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/course_evaluation.dart';
+import '../providers/auth_provider.dart';
 import '../providers/course_subject_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/rating_detail/ranking_tokens.dart';
+import 'admin_teacher_governance_screen.dart';
 import 'teacher_detail_screen.dart';
 
 /// 学科榜详情页。
@@ -47,6 +49,32 @@ class _SubjectRankingDetailScreenState
     final detail =
         await provider.loadSubjectDetail(widget.subjectId, force: true);
     if (!mounted) return;
+
+    // 若课程已被合并，提示并重定向至目标保留课程
+    if (detail != null &&
+        detail.isMerged &&
+        detail.mergedIntoId != null &&
+        detail.mergedIntoId! > 0) {
+      final targetName = (detail.mergedIntoName != null && detail.mergedIntoName!.isNotEmpty)
+          ? detail.mergedIntoName!
+          : widget.subjectName;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('该课程已合并至「$targetName」，正在跳转...'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => SubjectRankingDetailScreen(
+            subjectId: detail.mergedIntoId!,
+            subjectName: targetName,
+          ),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _detail = detail;
       _loading = false;
@@ -77,6 +105,10 @@ class _SubjectRankingDetailScreenState
     final accent = RankingTokens.teacherAccent(isDark);
     final detail = _detail;
     final teachers = detail?.teachers ?? const <CourseSubjectTeacher>[];
+    // 优先显示接口返回的当前规范课程名，传入名称只作为加载前的占位
+    final displayName = (detail != null && detail.name.trim().isNotEmpty)
+        ? detail.name
+        : widget.subjectName;
 
     return PopScope(
       canPop: themeProvider.predictiveBack,
@@ -89,8 +121,8 @@ class _SubjectRankingDetailScreenState
         extendBodyBehindAppBar: false,
         appBar: AppBar(
           title: Text(
-            widget.subjectName,
-            style: TextStyle(
+            displayName,
+            style: const TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w800,
             ),
@@ -115,6 +147,46 @@ class _SubjectRankingDetailScreenState
             icon: const Icon(Icons.arrow_back),
             onPressed: () => Navigator.pop(context, _changed),
           ),
+          actions: [
+            Consumer<AuthProvider>(
+              builder: (context, auth, _) {
+                if (!auth.isAdmin) return const SizedBox.shrink();
+                return PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_horiz_rounded),
+                  onSelected: (value) async {
+                    if (value == 'merge') {
+                      final changed = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => AdminTeacherGovernanceScreen(
+                            initialSubjectId: widget.subjectId,
+                            initialSubjectName: displayName,
+                            initialTab: 0,
+                          ),
+                        ),
+                      );
+                      if (changed == true && mounted) {
+                        _changed = true;
+                        await _loadDetail();
+                      }
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'merge',
+                      child: Row(
+                        children: [
+                          Icon(Icons.call_merge_rounded, size: 18),
+                          SizedBox(width: 8),
+                          Text('合并此课程'),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -175,7 +247,7 @@ class _SubjectRankingDetailScreenState
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          widget.subjectName,
+                                          displayName,
                                           style: TextStyle(
                                             fontSize: 20,
                                             fontWeight: FontWeight.w800,

@@ -47,11 +47,15 @@ func NewCourseEvaluationHandler(db *gorm.DB) *CourseEvaluationHandler {
 
 // courseSubjectView 公开学科视图。学科本身不承载评分，统计由教师评价聚合而来。
 type courseSubjectView struct {
-	ID           uint    `json:"id"`
-	Name         string  `json:"name"`
-	TeacherCount int     `json:"teacher_count"`
-	AverageStar  float64 `json:"average_star"`
-	RatingCount  int     `json:"rating_count"`
+	ID             uint    `json:"id"`
+	Name           string  `json:"name"`
+	TeacherCount   int     `json:"teacher_count"`
+	AverageStar    float64 `json:"average_star"`
+	RatingCount    int     `json:"rating_count"`
+	IsMerged       bool    `json:"is_merged,omitempty"`
+	Merged         bool    `json:"merged,omitempty"`
+	MergedIntoID   *uint   `json:"merged_into_id,omitempty"`
+	MergedIntoName string  `json:"merged_into_name,omitempty"`
 }
 
 type courseSubjectTeacherView struct {
@@ -98,7 +102,7 @@ func (h *CourseEvaluationHandler) loadSubjectStats(subjectID *uint) ([]courseSub
 			COALESCE(AVG(CAST(tr.star AS FLOAT)), 0) AS average_star`).
 		Joins("LEFT JOIN teachers t ON t.course_subject_id = cs.id AND t.verified = ? AND t.merged_into_id IS NULL", true).
 		Joins("LEFT JOIN teacher_ratings tr ON tr.teacher_id = t.id AND tr.status = ? AND tr.deleted_at IS NULL", "normal").
-		Where("cs.verified = ?", true).
+		Where("cs.verified = ? AND cs.merged_into_id IS NULL", true).
 		Group("cs.id, cs.name")
 	if subjectID != nil {
 		query = query.Where("cs.id = ?", *subjectID)
@@ -292,6 +296,29 @@ func (h *CourseEvaluationHandler) GetSubject(c *gin.Context) {
 		return
 	}
 	if len(stats) == 0 {
+		var raw models.CourseSubject
+		if err := h.db.First(&raw, subjectID).Error; err == nil && raw.MergedIntoID != nil {
+			var keeper models.CourseSubject
+			keeperName := ""
+			if err := h.db.Select("id", "name").First(&keeper, *raw.MergedIntoID).Error; err == nil {
+				keeperName = keeper.Name
+			}
+			c.JSON(http.StatusOK, courseSubjectDetailView{
+				courseSubjectView: courseSubjectView{
+					ID:             raw.ID,
+					Name:           raw.Name,
+					TeacherCount:   0,
+					AverageStar:    0,
+					RatingCount:    0,
+					IsMerged:       true,
+					Merged:         true,
+					MergedIntoID:   raw.MergedIntoID,
+					MergedIntoName: keeperName,
+				},
+				Teachers: []courseSubjectTeacherView{},
+			})
+			return
+		}
 		respondCourseEvaluationError(c, &services.CourseEvaluationError{
 			Code:    services.CodeCourseEvaluationNotFound,
 			Message: "学科不存在或未通过审核",

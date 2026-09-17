@@ -490,17 +490,25 @@ func ValidateTeacherGovernanceSchema(db *gorm.DB) error {
 		return fmt.Errorf("检测到指向非活动教师或不存在教师的别名: %d 条", invalidTeacherAliases)
 	}
 
-	// 4. 所有 CourseSubjectAlias 必须指向存在的 CourseSubject
+	// 4. 所有 CourseSubjectAlias 必须指向活动 CourseSubject
 	if db.Migrator().HasTable(&CourseSubjectAlias{}) {
+		var courseSelfCount int64
+		if err := db.Model(&CourseSubject{}).Where("merged_into_id = id").Count(&courseSelfCount).Error; err != nil {
+			return fmt.Errorf("检查课程自合并失败: %w", err)
+		}
+		if courseSelfCount > 0 {
+			return fmt.Errorf("检测到非法自合并课程记录: %d 条", courseSelfCount)
+		}
+
 		var invalidCourseAliases int64
 		if err := db.Table("course_subject_aliases csa").
 			Joins("LEFT JOIN course_subjects cs ON csa.course_subject_id = cs.id").
-			Where("cs.id IS NULL").
+			Where("cs.id IS NULL OR cs.merged_into_id IS NOT NULL").
 			Count(&invalidCourseAliases).Error; err != nil {
 			return fmt.Errorf("检查课程别名有效性失败: %w", err)
 		}
 		if invalidCourseAliases > 0 {
-			return fmt.Errorf("检测到指向不存在学科的课程别名: %d 条", invalidCourseAliases)
+			return fmt.Errorf("检测到指向已合并或不存在学科的课程别名: %d 条", invalidCourseAliases)
 		}
 	}
 

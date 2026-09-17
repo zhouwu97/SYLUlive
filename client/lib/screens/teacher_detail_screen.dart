@@ -15,6 +15,7 @@ import '../widgets/rating_detail/rating_policy_tip.dart';
 import '../widgets/rating_detail/rating_report_sheet.dart';
 import '../widgets/rating_detail/rating_bottom_input_bar.dart';
 import '../widgets/rating_detail/rating_input_sheet.dart';
+import 'admin_teacher_governance_screen.dart';
 
 class TeacherDetailScreen extends StatefulWidget {
   final int teacherId;
@@ -206,11 +207,50 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                   Icons.more_horiz,
                   color: RankingTokens.titleColor(isDark),
                 ),
-                onSelected: (value) {
-                  if (value == 'delete') _deleteTeacher(context);
+                onSelected: (value) async {
+                  if (value == 'merge') {
+                    final changed = await Navigator.push<bool>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AdminTeacherGovernanceScreen(
+                          initialTeacherId: widget.teacherId,
+                          initialTeacherName: widget.teacherName,
+                          initialTab: 1,
+                        ),
+                      ),
+                    );
+                    if (changed == true && mounted) {
+                      _didChange = true;
+                      context
+                          .read<TeacherProvider>()
+                          .loadTeacherDetail(widget.teacherId, force: true);
+                    }
+                  } else if (value == 'delete') {
+                    _deleteTeacher(context);
+                  }
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'delete', child: Text('删除教师')),
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: 'merge',
+                    child: Row(
+                      children: [
+                        Icon(Icons.call_merge_rounded, size: 18),
+                        SizedBox(width: 8),
+                        Text('合并此教师'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_outline_rounded,
+                            size: 18, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text('删除教师', style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
                 ],
               ),
           ],

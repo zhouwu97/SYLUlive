@@ -106,6 +106,9 @@ class CourseSubject {
   final int teacherCount;
   final double averageStar;
   final int ratingCount;
+  final bool isMerged;
+  final int? mergedIntoId;
+  final String? mergedIntoName;
 
   const CourseSubject({
     required this.id,
@@ -113,6 +116,9 @@ class CourseSubject {
     this.teacherCount = 0,
     this.averageStar = 0,
     this.ratingCount = 0,
+    this.isMerged = false,
+    this.mergedIntoId,
+    this.mergedIntoName,
   });
 
   factory CourseSubject.fromJson(Map<String, dynamic> json) => CourseSubject(
@@ -121,6 +127,9 @@ class CourseSubject {
         teacherCount: (json['teacher_count'] as num?)?.toInt() ?? 0,
         averageStar: (json['average_star'] as num?)?.toDouble() ?? 0,
         ratingCount: (json['rating_count'] as num?)?.toInt() ?? 0,
+        isMerged: json['is_merged'] == true || json['merged'] == true,
+        mergedIntoId: (json['merged_into_id'] as num?)?.toInt(),
+        mergedIntoName: json['merged_into_name']?.toString(),
       );
 }
 
@@ -154,6 +163,9 @@ class CourseSubjectDetail {
   final int teacherCount;
   final double averageStar;
   final int ratingCount;
+  final bool isMerged;
+  final int? mergedIntoId;
+  final String? mergedIntoName;
   final List<CourseSubjectTeacher> teachers;
 
   const CourseSubjectDetail({
@@ -162,6 +174,9 @@ class CourseSubjectDetail {
     this.teacherCount = 0,
     this.averageStar = 0,
     this.ratingCount = 0,
+    this.isMerged = false,
+    this.mergedIntoId,
+    this.mergedIntoName,
     this.teachers = const [],
   });
 
@@ -173,6 +188,9 @@ class CourseSubjectDetail {
       teacherCount: (json['teacher_count'] as num?)?.toInt() ?? 0,
       averageStar: (json['average_star'] as num?)?.toDouble() ?? 0,
       ratingCount: (json['rating_count'] as num?)?.toInt() ?? 0,
+      isMerged: json['is_merged'] == true || json['merged'] == true,
+      mergedIntoId: (json['merged_into_id'] as num?)?.toInt(),
+      mergedIntoName: json['merged_into_name']?.toString(),
       teachers: rawTeachers is List
           ? rawTeachers
               .whereType<Map<String, dynamic>>()

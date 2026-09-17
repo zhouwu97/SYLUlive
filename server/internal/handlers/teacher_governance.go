@@ -120,6 +120,68 @@ func (h *TeacherGovernanceHandler) Merge(c *gin.Context) {
 	c.JSON(http.StatusOK, plan)
 }
 
+// PreviewCourseMerge 独立课程合并预览。
+func (h *TeacherGovernanceHandler) PreviewCourseMerge(c *gin.Context) {
+	var input services.CourseMergeInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		respondGovernanceError(c, &services.TeacherGovernanceError{
+			Code:    services.CodeTeacherGovernanceInvalidInput,
+			Message: "请求体格式错误",
+			Err:     err,
+		})
+		return
+	}
+	result, err := h.service.PreviewCourseMerge(input)
+	if err != nil {
+		respondGovernanceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// CourseMerge 执行独立课程合并。
+func (h *TeacherGovernanceHandler) CourseMerge(c *gin.Context) {
+	adminID := governanceAdminID(c)
+	if adminID == 0 {
+		respondGovernanceError(c, &services.TeacherGovernanceError{
+			Code:    services.CodeTeacherGovernanceForbidden,
+			Message: "无权执行课程合并",
+		})
+		return
+	}
+	var input services.CourseMergeInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		respondGovernanceError(c, &services.TeacherGovernanceError{
+			Code:    services.CodeTeacherGovernanceInvalidInput,
+			Message: "请求体格式错误",
+			Err:     err,
+		})
+		return
+	}
+	result, err := h.service.CourseMerge(adminID, input)
+	if err != nil {
+		respondGovernanceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// SearchCourses 治理页课程搜索。
+func (h *TeacherGovernanceHandler) SearchCourses(c *gin.Context) {
+	limit := 0
+	if raw := c.Query("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			limit = parsed
+		}
+	}
+	courses, err := h.service.SearchGovernanceCourses(c.Query("q"), limit)
+	if err != nil {
+		respondGovernanceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": courses})
+}
+
 // ListTeachers 治理页"全部教师"列表。
 func (h *TeacherGovernanceHandler) ListTeachers(c *gin.Context) {
 	limit := 0
@@ -129,7 +191,14 @@ func (h *TeacherGovernanceHandler) ListTeachers(c *gin.Context) {
 		}
 	}
 	includeMerged := c.Query("include_merged") == "true" || c.Query("include_merged") == "1"
-	teachers, err := h.service.ListGovernanceTeachers(c.Query("q"), limit, includeMerged)
+	var subjectID *uint
+	if raw := c.Query("subject_id"); raw != "" {
+		if parsed, err := strconv.ParseUint(raw, 10, 64); err == nil && parsed > 0 {
+			val := uint(parsed)
+			subjectID = &val
+		}
+	}
+	teachers, err := h.service.ListGovernanceTeachers(c.Query("q"), limit, includeMerged, subjectID)
 	if err != nil {
 		respondGovernanceError(c, err)
 		return

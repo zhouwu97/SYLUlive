@@ -412,6 +412,8 @@ class AliasTargetItem {
 class TeacherMergeRecordItem {
   final int id;
   final String batchId;
+  final String action;
+  final String reason;
   final int keeperId;
   final int loserId;
   final String keeperName;
@@ -432,6 +434,8 @@ class TeacherMergeRecordItem {
   const TeacherMergeRecordItem({
     required this.id,
     required this.batchId,
+    this.action = 'teacher_merge',
+    this.reason = '',
     required this.keeperId,
     required this.loserId,
     this.keeperName = '',
@@ -454,6 +458,8 @@ class TeacherMergeRecordItem {
     return TeacherMergeRecordItem(
       id: (json['id'] as num?)?.toInt() ?? 0,
       batchId: json['batch_id']?.toString() ?? '',
+      action: json['action']?.toString() ?? 'teacher_merge',
+      reason: json['reason']?.toString() ?? '',
       keeperId: (json['keeper_id'] as num?)?.toInt() ?? 0,
       loserId: (json['loser_id'] as num?)?.toInt() ?? 0,
       keeperName: json['keeper_name_snapshot']?.toString() ?? json['keeper_name']?.toString() ?? '',
@@ -472,4 +478,234 @@ class TeacherMergeRecordItem {
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? ''),
     );
   }
+}
+
+/// 课程合并中配对的教师
+class CourseMergeTeacherPair {
+  final int loserTeacherId;
+  final int keeperTeacherId;
+  final String finalTeacherName;
+
+  const CourseMergeTeacherPair({
+    required this.loserTeacherId,
+    required this.keeperTeacherId,
+    this.finalTeacherName = '',
+  });
+
+  Map<String, dynamic> toJson() => {
+    'loser_teacher_id': loserTeacherId,
+    'keeper_teacher_id': keeperTeacherId,
+    'final_teacher_name': finalTeacherName,
+  };
+
+  factory CourseMergeTeacherPair.fromJson(Map<String, dynamic> json) =>
+      CourseMergeTeacherPair(
+        loserTeacherId: (json['loser_teacher_id'] as num?)?.toInt() ?? 0,
+        keeperTeacherId: (json['keeper_teacher_id'] as num?)?.toInt() ?? 0,
+        finalTeacherName: json['final_teacher_name']?.toString() ?? '',
+      );
+}
+
+/// 课程概览信息
+class CourseSubjectSummary {
+  final int id;
+  final String name;
+  final bool verified;
+  final int teacherCount;
+  final int ratingCount;
+  final double averageStar;
+
+  const CourseSubjectSummary({
+    required this.id,
+    required this.name,
+    this.verified = false,
+    this.teacherCount = 0,
+    this.ratingCount = 0,
+    this.averageStar = 0,
+  });
+
+  factory CourseSubjectSummary.fromJson(Map<String, dynamic> json) =>
+      CourseSubjectSummary(
+        id: (json['id'] as num?)?.toInt() ?? 0,
+        name: json['name']?.toString() ?? '',
+        verified: json['verified'] == true,
+        teacherCount: (json['teacher_count'] as num?)?.toInt() ?? 0,
+        ratingCount: (json['rating_count'] as num?)?.toInt() ?? 0,
+        averageStar: (json['average_star'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+/// 迁入教师摘要
+class MigratingTeacherSummary {
+  final int teacherId;
+  final String teacherName;
+  final String fromSubject;
+  final String toSubject;
+  final int ratingCount;
+
+  const MigratingTeacherSummary({
+    required this.teacherId,
+    required this.teacherName,
+    this.fromSubject = '',
+    this.toSubject = '',
+    this.ratingCount = 0,
+  });
+
+  factory MigratingTeacherSummary.fromJson(Map<String, dynamic> json) =>
+      MigratingTeacherSummary(
+        teacherId: (json['teacher_id'] as num?)?.toInt() ?? 0,
+        teacherName: json['teacher_name']?.toString() ?? '',
+        fromSubject: json['from_subject']?.toString() ?? '',
+        toSubject: json['to_subject']?.toString() ?? '',
+        ratingCount: (json['rating_count'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// 配对合并教师摘要
+class PairedTeacherMergeSummary {
+  final int loserTeacherId;
+  final String loserTeacherName;
+  final int keeperTeacherId;
+  final String keeperTeacherName;
+  final String finalTeacherName;
+  final int migratedRatings;
+  final int softDeletedRatings;
+  final int migratedVotes;
+
+  const PairedTeacherMergeSummary({
+    required this.loserTeacherId,
+    required this.loserTeacherName,
+    required this.keeperTeacherId,
+    required this.keeperTeacherName,
+    required this.finalTeacherName,
+    this.migratedRatings = 0,
+    this.softDeletedRatings = 0,
+    this.migratedVotes = 0,
+  });
+
+  factory PairedTeacherMergeSummary.fromJson(Map<String, dynamic> json) =>
+      PairedTeacherMergeSummary(
+        loserTeacherId: (json['loser_teacher_id'] as num?)?.toInt() ?? 0,
+        loserTeacherName: json['loser_teacher_name']?.toString() ?? '',
+        keeperTeacherId: (json['keeper_teacher_id'] as num?)?.toInt() ?? 0,
+        keeperTeacherName: json['keeper_teacher_name']?.toString() ?? '',
+        finalTeacherName: json['final_teacher_name']?.toString() ?? '',
+        migratedRatings: (json['migrated_ratings'] as num?)?.toInt() ?? 0,
+        softDeletedRatings: (json['soft_deleted_ratings'] as num?)?.toInt() ?? 0,
+        migratedVotes: (json['migrated_votes'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// 独立课程合并预览结果
+class CourseMergePreviewResult {
+  final String snapshotToken;
+  final bool mergeAllowed;
+  final String blockReason;
+  final List<String> conflicts;
+  final CourseSubjectSummary keeperSubject;
+  final List<CourseSubjectSummary> loserSubjects;
+  final String finalCourseName;
+  final List<MigratingTeacherSummary> migratingTeachers;
+  final List<PairedTeacherMergeSummary> pairedTeacherMerges;
+  final int totalRatingsMigrating;
+  final int totalRatingsDeduped;
+  final int totalVotesMigrating;
+  final int totalSubmissionsRelinked;
+  final List<String> courseAliasesToCreate;
+
+  const CourseMergePreviewResult({
+    this.snapshotToken = '',
+    this.mergeAllowed = true,
+    this.blockReason = '',
+    this.conflicts = const [],
+    this.keeperSubject = const CourseSubjectSummary(id: 0, name: ''),
+    this.loserSubjects = const [],
+    this.finalCourseName = '',
+    this.migratingTeachers = const [],
+    this.pairedTeacherMerges = const [],
+    this.totalRatingsMigrating = 0,
+    this.totalRatingsDeduped = 0,
+    this.totalVotesMigrating = 0,
+    this.totalSubmissionsRelinked = 0,
+    this.courseAliasesToCreate = const [],
+  });
+
+  factory CourseMergePreviewResult.fromJson(Map<String, dynamic> json) {
+    final rawConflicts = (json['conflicts'] as List?)?.map((e) => e.toString()).toList() ?? const [];
+    final rawLosers = (json['loser_subjects'] as List?) ?? [];
+    final rawMigrating = (json['migrating_teachers'] as List?) ?? [];
+    final rawPaired = (json['paired_teacher_merges'] as List?) ?? [];
+    final rawAliases = (json['course_aliases_to_create'] as List?)?.map((e) => e.toString()).toList() ?? const [];
+
+    return CourseMergePreviewResult(
+      snapshotToken: json['snapshot_token']?.toString() ?? '',
+      mergeAllowed: json['merge_allowed'] == true,
+      blockReason: json['block_reason']?.toString() ?? '',
+      conflicts: rawConflicts,
+      keeperSubject: json['keeper_subject'] is Map
+          ? CourseSubjectSummary.fromJson(Map<String, dynamic>.from(json['keeper_subject'] as Map))
+          : const CourseSubjectSummary(id: 0, name: ''),
+      loserSubjects: rawLosers
+          .whereType<Map>()
+          .map((e) => CourseSubjectSummary.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+      finalCourseName: json['final_course_name']?.toString() ?? '',
+      migratingTeachers: rawMigrating
+          .whereType<Map>()
+          .map((e) => MigratingTeacherSummary.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+      pairedTeacherMerges: rawPaired
+          .whereType<Map>()
+          .map((e) => PairedTeacherMergeSummary.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+      totalRatingsMigrating: (json['total_ratings_migrating'] as num?)?.toInt() ?? 0,
+      totalRatingsDeduped: (json['total_ratings_deduped'] as num?)?.toInt() ?? 0,
+      totalVotesMigrating: (json['total_votes_migrating'] as num?)?.toInt() ?? 0,
+      totalSubmissionsRelinked: (json['total_submissions_relinked'] as num?)?.toInt() ?? 0,
+      courseAliasesToCreate: rawAliases,
+    );
+  }
+
+  int get ratingsMigrated => totalRatingsMigrating;
+  int get ratingsSoftDeleted => totalRatingsDeduped;
+  int get votesMigrated => totalVotesMigrating;
+  int get submissionsSuperseded => totalSubmissionsRelinked;
+  int get courseAliasesAdded => courseAliasesToCreate.length;
+  int get teacherAliasesAdded => pairedTeacherMerges.length;
+  List<String> get ratingConflicts => conflicts;
+}
+
+/// 课程治理项（供课程搜索列表）
+class GovernanceCourseItem {
+  final int id;
+  final String name;
+  final bool verified;
+  final int teacherCount;
+  final int ratingCount;
+  final double averageStar;
+  final bool isMerged;
+  final int? mergedIntoId;
+
+  const GovernanceCourseItem({
+    required this.id,
+    required this.name,
+    this.verified = false,
+    this.teacherCount = 0,
+    this.ratingCount = 0,
+    this.averageStar = 0,
+    this.isMerged = false,
+    this.mergedIntoId,
+  });
+
+  factory GovernanceCourseItem.fromJson(Map<String, dynamic> json) =>
+      GovernanceCourseItem(
+        id: (json['id'] as num?)?.toInt() ?? 0,
+        name: json['name']?.toString() ?? '',
+        verified: json['verified'] == true,
+        teacherCount: (json['teacher_count'] as num?)?.toInt() ?? 0,
+        ratingCount: (json['rating_count'] as num?)?.toInt() ?? 0,
+        averageStar: (json['average_star'] as num?)?.toDouble() ?? 0,
+        isMerged: json['is_merged'] == true || json['merged_into_id'] != null,
+        mergedIntoId: (json['merged_into_id'] as num?)?.toInt(),
+      );
 }

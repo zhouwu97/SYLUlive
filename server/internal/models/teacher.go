@@ -100,6 +100,9 @@ type TeacherMergeRecord struct {
 	AdminID   uint   `gorm:"not null;index" json:"admin_id"`
 	AdminName string `gorm:"size:100" json:"admin_name"`
 
+	Action string `gorm:"size:30;not null;default:teacher_merge" json:"action,omitempty"`
+	Reason string `gorm:"size:500" json:"reason,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 }
 

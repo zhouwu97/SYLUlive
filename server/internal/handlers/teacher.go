@@ -31,6 +31,14 @@ func ensureTeacherCourseSubject(db *gorm.DB, courseName string, verified bool) *
 	var subject models.CourseSubject
 	err := db.Where("normalized_name = ?", normalized).Order("verified DESC, id ASC").First(&subject).Error
 	if err == nil {
+		for subject.MergedIntoID != nil && *subject.MergedIntoID != 0 {
+			var keeper models.CourseSubject
+			if err := db.First(&keeper, *subject.MergedIntoID).Error; err == nil {
+				subject = keeper
+			} else {
+				break
+			}
+		}
 		if verified && !subject.Verified {
 			_ = db.Model(&models.CourseSubject{}).Where("id = ?", subject.ID).Update("verified", true).Error
 		}
@@ -542,11 +550,27 @@ func resolveSubjectForPending(db *gorm.DB, courseName string) (*models.CourseSub
 	}
 	var subject models.CourseSubject
 	if err := db.Where("normalized_name = ?", normalized).Order("verified DESC, id ASC").First(&subject).Error; err == nil {
+		for subject.MergedIntoID != nil && *subject.MergedIntoID != 0 {
+			var keeper models.CourseSubject
+			if err := db.First(&keeper, *subject.MergedIntoID).Error; err == nil {
+				subject = keeper
+			} else {
+				break
+			}
+		}
 		return &subject, nil
 	}
 	var alias models.CourseSubjectAlias
 	if err := db.Where("normalized_alias = ?", normalized).Order("id ASC").First(&alias).Error; err == nil {
 		if err := db.First(&subject, alias.CourseSubjectID).Error; err == nil {
+			for subject.MergedIntoID != nil && *subject.MergedIntoID != 0 {
+				var keeper models.CourseSubject
+				if err := db.First(&keeper, *subject.MergedIntoID).Error; err == nil {
+					subject = keeper
+				} else {
+					break
+				}
+			}
 			return &subject, nil
 		}
 	}

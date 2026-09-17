@@ -605,3 +605,180 @@ func TestPendingTeacherMergeSubmissions(t *testing.T) {
 		t.Fatalf("应返回 CodeCrossSubjectMergeRequiresSubjectDecision，实际 %v", err)
 	}
 }
+
+// TestCourseMergeWorkflow 测试完整课程合并：保留不同教师，仅合并指定配对教师，软合并课程，登记别名
+func TestCourseMergeWorkflow(t *testing.T) {
+	db := newGovTestDB(t)
+	svc := NewTeacherGovernanceService(db)
+
+	admin := models.User{Nickname: "超级管理员", Role: "admin"}
+	db.Create(&admin)
+
+	// 准备课程：高数（上） (loser) 与 高等数学A1 (keeper)
+	sLoser := models.CourseSubject{Name: "高数（上）", NormalizedName: models.NormalizeCourseSubjectName("高数（上）"), Verified: true}
+	sKeeper := models.CourseSubject{Name: "高等数学A1", NormalizedName: models.NormalizeCourseSubjectName("高等数学A1"), Verified: true}
+	db.Create(&sLoser)
+	db.Create(&sKeeper)
+
+	// 高数（上）下有：张老师 (t1)、李四 (t2)
+	t1 := models.Teacher{Name: "张老师", Course: "高数（上）", CourseSubjectID: &sLoser.ID, NameNormalized: models.NormalizeTeacherName("张老师"), Verified: true}
+	t2 := models.Teacher{Name: "李四", Course: "高数（上）", CourseSubjectID: &sLoser.ID, NameNormalized: models.NormalizeTeacherName("李四"), Verified: true}
+	// 高等数学A1下有：张三 (t3)、王五 (t4)
+	t3 := models.Teacher{Name: "张三", Course: "高等数学A1", CourseSubjectID: &sKeeper.ID, NameNormalized: models.NormalizeTeacherName("张三"), Verified: true}
+	t4 := models.Teacher{Name: "王五", Course: "高等数学A1", CourseSubjectID: &sKeeper.ID, NameNormalized: models.NormalizeTeacherName("王五"), Verified: true}
+	db.Create(&t1)
+	db.Create(&t2)
+	db.Create(&t3)
+	db.Create(&t4)
+
+	// 评价：
+	// 用户 101 在 t1 有评星 3分（较早），在 t3 有评星 5分（较新） -> 冲突去重
+	// 用户 102 在 t1 有评星 4分 -> 迁移至 t3
+	// 用户 103 在 t2 (李四) 有评星 5分 -> 留在李四，不合并至张三
+	// 用户 105 在 t4 (王五) 有评星 4分 -> 留在王五
+	tEarly := time.Now().Add(-2 * time.Hour)
+	tLate := time.Now().Add(-1 * time.Hour)
+	r1_101 := models.TeacherRating{TeacherID: t1.ID, UserID: 101, Star: 3, Comment: "一般般", CreatedAt: tEarly, UpdatedAt: tEarly}
+	r1_102 := models.TeacherRating{TeacherID: t1.ID, UserID: 102, Star: 4, Comment: "讲得不错", CreatedAt: tEarly, UpdatedAt: tEarly}
+	r2_103 := models.TeacherRating{TeacherID: t2.ID, UserID: 103, Star: 5, Comment: "李老师好", CreatedAt: tEarly, UpdatedAt: tEarly}
+	r3_101 := models.TeacherRating{TeacherID: t3.ID, UserID: 101, Star: 5, Comment: "张老师很棒", CreatedAt: tLate, UpdatedAt: tLate}
+	r4_105 := models.TeacherRating{TeacherID: t4.ID, UserID: 105, Star: 4, Comment: "王老师很好", CreatedAt: tEarly, UpdatedAt: tEarly}
+	db.Create(&r1_101)
+	db.Create(&r1_102)
+	db.Create(&r2_103)
+	db.Create(&r3_101)
+	db.Create(&r4_105)
+
+	// 1. 预览课程合并
+	previewInput := CourseMergeInput{
+		KeeperSubjectID: sKeeper.ID,
+		LoserSubjectIDs: []uint{sLoser.ID},
+		FinalCourseName: "高等数学A1",
+		TeacherPairs: []CourseMergeTeacherPair{
+			{
+				LoserTeacherID:   t1.ID,
+				KeeperTeacherID:  t3.ID,
+				FinalTeacherName: "张三",
+			},
+		},
+		Reason: "统一高等数学课程规范名称",
+	}
+
+	preview, err := svc.PreviewCourseMerge(previewInput)
+	if err != nil {
+		t.Fatalf("PreviewCourseMerge 失败: %v", err)
+	}
+	if !preview.MergeAllowed {
+		t.Fatalf("课程合并预览应允许合并，实际被阻断: %s, 冲突: %v", preview.BlockReason, preview.Conflicts)
+	}
+	if len(preview.PairedTeacherMerges) != 1 {
+		t.Fatalf("配对教师数量应为 1，实际 %d", len(preview.PairedTeacherMerges))
+	}
+	if len(preview.MigratingTeachers) != 1 {
+		t.Fatalf("未配对迁移教师数量应为 1 (李四)，实际 %d", len(preview.MigratingTeachers))
+	}
+	if preview.MigratingTeachers[0].TeacherID != t2.ID {
+		t.Fatalf("迁移教师应为李四(#%d)，实际 #%d", t2.ID, preview.MigratingTeachers[0].TeacherID)
+	}
+	if preview.TotalRatingsDeduped != 1 {
+		t.Fatalf("去重评价数应为 1，实际 %d", preview.TotalRatingsDeduped)
+	}
+
+	// 2. 执行课程合并
+	mergeInput := previewInput
+	mergeInput.SnapshotToken = preview.SnapshotToken
+
+	execResult, err := svc.CourseMerge(admin.ID, mergeInput)
+	if err != nil {
+		t.Fatalf("CourseMerge 失败: %v", err)
+	}
+	if !execResult.MergeAllowed {
+		t.Fatalf("合并执行结果异常")
+	}
+
+	// 3. 验证课程实体与别名状态
+	var checkLoserSubject, checkKeeperSubject models.CourseSubject
+	db.First(&checkLoserSubject, sLoser.ID)
+	db.First(&checkKeeperSubject, sKeeper.ID)
+
+	if checkLoserSubject.MergedIntoID == nil || *checkLoserSubject.MergedIntoID != sKeeper.ID {
+		t.Fatalf("原课程 MergedIntoID 应指向 keeper(#%d)，实际 %v", sKeeper.ID, checkLoserSubject.MergedIntoID)
+	}
+	var courseAlias models.CourseSubjectAlias
+	if err := db.Where("course_subject_id = ? AND alias = ?", sKeeper.ID, "高数（上）").First(&courseAlias).Error; err != nil {
+		t.Fatalf("未成功登记原课程名别名: %v", err)
+	}
+
+	// 4. 验证教师状态：
+	// - t1 (张老师) 已并入 t3 (张三)
+	// - t2 (李四) 迁移至 sKeeper，但保持未合并状态！仍叫李四！
+	// - t4 (王五) 保持未合并状态！仍叫王五！
+	var checkT1, checkT2, checkT3, checkT4 models.Teacher
+	db.First(&checkT1, t1.ID)
+	db.First(&checkT2, t2.ID)
+	db.First(&checkT3, t3.ID)
+	db.First(&checkT4, t4.ID)
+
+	if checkT1.MergedIntoID == nil || *checkT1.MergedIntoID != t3.ID {
+		t.Fatalf("张老师(#%d) 应并入 张三(#%d)，实际 MergedIntoID=%v", t1.ID, t3.ID, checkT1.MergedIntoID)
+	}
+	if checkT2.MergedIntoID != nil {
+		t.Fatalf("李四(#%d) 不应被合并！其实体应保持独立，实际 MergedIntoID=%v", t2.ID, checkT2.MergedIntoID)
+	}
+	if checkT2.CourseSubjectID == nil || *checkT2.CourseSubjectID != sKeeper.ID {
+		t.Fatalf("李四(#%d) 的 course_subject_id 应更新为目标课程(#%d)，实际 %v", t2.ID, sKeeper.ID, checkT2.CourseSubjectID)
+	}
+	if checkT2.Course != "高等数学A1" {
+		t.Fatalf("李四(#%d) 的 course 字符串应更新为「高等数学A1」，实际 %q", t2.ID, checkT2.Course)
+	}
+	if checkT2.Name != "李四" {
+		t.Fatalf("李四的姓名应保留为李四，实际 %q", checkT2.Name)
+	}
+
+	if checkT4.MergedIntoID != nil {
+		t.Fatalf("王五(#%d) 不应被合并，实际 MergedIntoID=%v", t4.ID, checkT4.MergedIntoID)
+	}
+
+	// 5. 验证李四的评价没有被合并到张三名下
+	var t2Ratings []models.TeacherRating
+	db.Where("teacher_id = ? AND deleted_at IS NULL", t2.ID).Find(&t2Ratings)
+	if len(t2Ratings) != 1 || t2Ratings[0].UserID != 103 {
+		t.Fatalf("李四名下评价应保持完整 (1条，用户103)，实际数量 %d", len(t2Ratings))
+	}
+
+	// 6. 验证张三名下评价：101（保留最新的5分），102（4分）
+	var t3Ratings []models.TeacherRating
+	db.Where("teacher_id = ? AND deleted_at IS NULL", t3.ID).Find(&t3Ratings)
+	if len(t3Ratings) != 2 {
+		t.Fatalf("张三名下有效评价数应为 2，实际 %d", len(t3Ratings))
+	}
+
+	// 7. 幂等性测试：再次提交相同合并请求，应安全通过不报错
+	_, err = svc.CourseMerge(admin.ID, mergeInput)
+	if err != nil {
+		t.Fatalf("重复执行课程合并应幂等成功，实际报错: %v", err)
+	}
+}
+
+// TestCourseAliasSelfConflictResolution 验证第二处问题：课程合并过程中，原课程登记为别名时不再被自身阻断
+func TestCourseAliasSelfConflictResolution(t *testing.T) {
+	db := newGovTestDB(t)
+
+	s1 := models.CourseSubject{Name: "高等数学(一)", NormalizedName: models.NormalizeCourseSubjectName("高等数学(一)"), Verified: true}
+	s2 := models.CourseSubject{Name: "高等数学A1", NormalizedName: models.NormalizeCourseSubjectName("高等数学A1"), Verified: true}
+	db.Create(&s1)
+	db.Create(&s2)
+
+	// 直接调用 planCourseAliasExcluding，排除 s1.ID，验证不会报告冲突
+	aliasItem, conflictMsg, err := planCourseAliasExcluding(db, s1.Name, s2.ID, s2.Name, []uint{s1.ID})
+	if err != nil {
+		t.Fatalf("planCourseAliasExcluding 报错: %v", err)
+	}
+	if conflictMsg != "" {
+		t.Fatalf("排除源课程后不应报告名称自冲突，实际消息: %s", conflictMsg)
+	}
+	if aliasItem.Status != "to_create" {
+		t.Fatalf("别名状态应为 to_create，实际 %s", aliasItem.Status)
+	}
+}
+

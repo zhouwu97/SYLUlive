@@ -4,11 +4,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
 import '../models/teacher.dart';
+import '../providers/auth_provider.dart';
 import '../providers/course_subject_provider.dart';
 import '../providers/major_provider.dart';
 import '../providers/teacher_provider.dart';
 import '../utils/responsive_util.dart';
 import '../widgets/rating_detail/ranking_tokens.dart';
+import 'admin_teacher_governance_screen.dart';
 import 'major_detail_screen.dart';
 import 'subject_ranking_detail_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -99,6 +101,34 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
         backgroundColor: RankingTokens.pageBg(isDark),
         surfaceTintColor: Colors.transparent,
         foregroundColor: RankingTokens.titleColor(isDark),
+        actions: [
+          if (_tabCtrl.index == 0)
+            Consumer<AuthProvider>(
+              builder: (context, auth, _) {
+                if (!auth.isAdmin) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: TextButton.icon(
+                    style: TextButton.styleFrom(
+                      foregroundColor: accent,
+                    ),
+                    icon: const Icon(Icons.tune_rounded, size: 16),
+                    label: const Text('管理'),
+                    onPressed: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const AdminTeacherGovernanceScreen(),
+                        ),
+                      );
+                      if (mounted) {
+                        _refreshAll();
+                      }
+                    },
+                  ),
+                );
+              },
+            ),
+        ],
       ),
       body: Stack(
         children: [

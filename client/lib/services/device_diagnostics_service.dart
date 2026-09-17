@@ -40,8 +40,8 @@ class DeviceDiagnosticsInfo {
 
 class DeviceDiagnosticsService {
   static Future<DeviceDiagnosticsInfo> collect({String? currentRoute}) async {
-    String appVersion = '1.7.3';
-    String buildNumber = '1706';
+    String appVersion = '1.7.04';
+    String buildNumber = '1707';
 
     try {
       final info = await PackageInfo.fromPlatform();

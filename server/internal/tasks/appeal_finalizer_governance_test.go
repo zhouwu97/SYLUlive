@@ -17,7 +17,16 @@ func newAppealFinalizerGovernanceDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Post{}, &models.Report{}, &models.Appeal{}, &models.AppealVote{}, &models.Notification{}); err != nil {
+	if err := db.AutoMigrate(
+		&models.User{},
+		&models.Post{},
+		&models.PostImage{},
+		&models.PostRectificationReview{},
+		&models.Report{},
+		&models.Appeal{},
+		&models.AppealVote{},
+		&models.Notification{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	return db

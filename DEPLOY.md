@@ -209,10 +209,9 @@ mv /opt/shenliyuan/shenliyuan.new /opt/shenliyuan/shenliyuan
 chmod 0755 /opt/shenliyuan/shenliyuan
 systemctl restart shenliyuan
 ```
-`
 脚本内含自动冒烟自检（失败自动回滚）：
-- 检查 `/version` 与 `/health` 返回的 `git_sha` 和 `capabilities.teacher_governance_v1`
-- 检查治理路由（`/teachers`、`/merge-records`、`/aliases` 等）必须返回 `401/403`；**若返回 `404` 将立即回滚并告警**
+- 硬门禁校验：调用 Python 解析 `/version`，严格校验 `status == ok`、`git_sha == DEPLOYED_SHA` 且 `capabilities.teacher_governance_v1 == true`；
+- 治理路由探测：携带非 Android 绕过头（`X-App-Platform: deploy-smoke`），验证 `/teachers`、`/merge-records` 等治理路由必须严格返回 `401/403`；**若返回 404、426、500 等任何其他状态码，将立即回滚并报警**
 `
 手动排查与验证：
 `

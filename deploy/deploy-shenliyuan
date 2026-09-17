@@ -90,16 +90,49 @@ if ! systemctl is-active --quiet "$SERVICE_NAME"; then
 fi
 
 printf '[INFO] 执行部署后冒烟自检...\n'
-# 1. 验证版本接口与能力协商标记
+# 1. 验证版本接口与能力协商标记 (硬门禁：必须 status==ok, git_sha==DEPLOYED_SHA, teacher_governance_v1==true)
 sleep 1
-version_resp="$(curl -sS --max-time 5 http://127.0.0.1:8080/version || curl -sS --max-time 5 http://127.0.0.1:8080/health || true)"
-printf '[INFO] 版本信息: %s\n' "$version_resp"
+version_resp="$(curl -sS --max-time 5 http://127.0.0.1:8080/version || true)"
+if [[ -z "$version_resp" ]]; then
+	version_resp="$(curl -sS --max-time 5 http://127.0.0.1:8080/health || true)"
+fi
+printf '[INFO] 版本接口响应: %s\n' "$version_resp"
 
-if ! grep -q "teacher_governance_v1" <<< "$version_resp"; then
-	printf '[WARN] 版本接口未包含 teacher_governance_v1 标记，请确认已编译治理后端。\n' >&2
+python_check_cmd="
+import json, sys
+try:
+    data = json.loads(sys.argv[1])
+except Exception as e:
+    print(f'[ERR] 版本接口响应非有效 JSON: {e}', file=sys.stderr)
+    sys.exit(1)
+
+status = data.get('status')
+git_sha = data.get('git_sha', '')
+capabilities = data.get('capabilities', {})
+tg_v1 = capabilities.get('teacher_governance_v1')
+expected_sha = sys.argv[2]
+
+if status != 'ok':
+    print(f'[ERR] 服务端 status != ok (实际: {status})', file=sys.stderr)
+    sys.exit(1)
+
+if git_sha != expected_sha:
+    print(f'[ERR] 服务端 git_sha 不匹配! 部署目标={expected_sha}, 实际返回={git_sha}', file=sys.stderr)
+    sys.exit(1)
+
+if tg_v1 is not True:
+    print(f'[ERR] 服务端能力标记 teacher_governance_v1 != true (实际: {tg_v1})', file=sys.stderr)
+    sys.exit(1)
+
+print('[OK] 版本与能力硬门禁校验通过: git_sha 匹配, teacher_governance_v1 为 true')
+"
+
+if ! python3 -c "$python_check_cmd" "$version_resp" "$DEPLOYED_SHA"; then
+	printf '[ERR] 版本接口与治理能力校验未通过，触发自动回滚！\n' >&2
+	exit 1
 fi
 
-# 2. 验证治理路由注册（未登录访问返回 401/403 为路由存在；若返回 404 说明服务端路由缺失）
+# 2. 验证治理路由注册（携带非 Android 绕过头，未登录访问必须严格返回 401 或 403；其他任何状态码一律触发回滚）
 governance_endpoints=(
 	"/api/admin/teacher-governance/teachers"
 	"/api/admin/teacher-governance/merge-records"
@@ -109,12 +142,15 @@ governance_endpoints=(
 )
 
 for ep in "${governance_endpoints[@]}"; do
-	http_code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://127.0.0.1:8080${ep}" || true)"
-	if [[ "$http_code" == "404" ]]; then
-		printf '[ERR] 治理接口 %s 返回 404！服务端版本错位或路由未注册，触发回滚！\n' "$ep" >&2
+	http_code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
+		-H 'X-App-Platform: deploy-smoke' \
+		-H 'X-App-Channel: internal' \
+		-H 'X-App-Version-Name: smoke' \
+		-H 'X-App-Version-Code: 1' \
+		"http://127.0.0.1:8080${ep}" || true)"
+	if [[ "$http_code" != "401" && "$http_code" != "403" ]]; then
+		printf '[ERR] 治理接口 %s 冒烟失败！返回 HTTP 状态码: %s (严格要求 401/403，如 404/426/500/000 均不合格)，触发自动回滚！\n' "$ep" "$http_code" >&2
 		exit 1
-	elif [[ "$http_code" != "401" && "$http_code" != "403" ]]; then
-		printf '[WARN] 治理接口 %s 返回非预期的 HTTP 状态码: %s (预期 401/403)\n' "$ep" "$http_code" >&2
 	else
 		printf '[OK] 治理接口冒烟正常: %s (HTTP %s)\n' "$ep" "$http_code"
 	fi

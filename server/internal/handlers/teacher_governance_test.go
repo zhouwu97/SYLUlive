@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"shenliyuan/internal/middleware"
@@ -228,7 +229,7 @@ func TestTeacherGovernance_ProductionRouteRegistration_RealMiddleware(t *testing
 		&models.TeacherMergeRecord{},
 	)
 
-	jwtSecret := "test-secret-key-1234567890123456"
+	jwtSecret := strings.Repeat("unit-test-key-", 4)
 	teacherGovernanceHandler := NewTeacherGovernanceHandler(db)
 
 	r := gin.New()
@@ -268,11 +269,11 @@ func TestTeacherGovernance_ProductionRouteRegistration_RealMiddleware(t *testing
 		}
 	}
 
-	// 2. 访问不存在的路径，确认 404 语义隔离正常
-	reqNotFound := httptest.NewRequest(http.MethodGet, "/api/admin/teacher-governance/not-found-endpoint", nil)
+	// 2. 访问不在引擎中注册的路径，严格断言返回 404
+	reqNotFound := httptest.NewRequest(http.MethodGet, "/api/unregistered/not-found-endpoint", nil)
 	wNotFound := httptest.NewRecorder()
 	r.ServeHTTP(wNotFound, reqNotFound)
-	if wNotFound.Code != http.StatusUnauthorized { // 注意：未携带 token 时前置 AuthMiddleware 先拦截返回 401
-		// 如果中间件拦截了，也是安全的
+	if wNotFound.Code != http.StatusNotFound {
+		t.Fatalf("未注册的路由预期 404，实际为 %d", wNotFound.Code)
 	}
 }

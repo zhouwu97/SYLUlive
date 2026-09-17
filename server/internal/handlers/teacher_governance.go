@@ -190,6 +190,12 @@ func (h *TeacherGovernanceHandler) ListTeachers(c *gin.Context) {
 			limit = parsed
 		}
 	}
+	var cursor uint
+	if raw := c.Query("cursor"); raw != "" {
+		if parsed, err := strconv.ParseUint(raw, 10, 64); err == nil {
+			cursor = uint(parsed)
+		}
+	}
 	includeMerged := c.Query("include_merged") == "true" || c.Query("include_merged") == "1"
 	var subjectID *uint
 	if raw := c.Query("subject_id"); raw != "" {
@@ -198,22 +204,44 @@ func (h *TeacherGovernanceHandler) ListTeachers(c *gin.Context) {
 			subjectID = &val
 		}
 	}
-	teachers, err := h.service.ListGovernanceTeachers(c.Query("q"), limit, includeMerged, subjectID)
+	teachers, hasMore, nextCursor, err := h.service.ListGovernanceTeachers(c.Query("q"), cursor, limit, includeMerged, subjectID)
 	if err != nil {
 		respondGovernanceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": teachers})
+	c.JSON(http.StatusOK, gin.H{
+		"items":       teachers,
+		"teachers":    teachers,
+		"has_more":    hasMore,
+		"next_cursor": nextCursor,
+	})
 }
 
 // ListAliases 读取课程/教师别名。
 func (h *TeacherGovernanceHandler) ListAliases(c *gin.Context) {
-	aliases, err := h.service.ListAliases(c.Query("type"), c.Query("q"))
+	page := 1
+	if raw := c.Query("page"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+	limit := 50
+	if raw := c.Query("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	aliases, hasMore, pageNum, err := h.service.ListAliases(c.Query("type"), c.Query("q"), page, limit)
 	if err != nil {
 		respondGovernanceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": aliases})
+	c.JSON(http.StatusOK, gin.H{
+		"items":    aliases,
+		"aliases":  aliases,
+		"has_more": hasMore,
+		"page":     pageNum,
+	})
 }
 
 // AddAlias 手动登记课程/教师别名。
@@ -296,10 +324,21 @@ func (h *TeacherGovernanceHandler) ListMergeRecords(c *gin.Context) {
 			limit = parsed
 		}
 	}
-	records, err := h.service.ListMergeRecords(limit)
+	var cursor uint
+	if raw := c.Query("cursor"); raw != "" {
+		if parsed, err := strconv.ParseUint(raw, 10, 64); err == nil {
+			cursor = uint(parsed)
+		}
+	}
+	records, hasMore, nextCursor, err := h.service.ListMergeRecords(cursor, limit)
 	if err != nil {
 		respondGovernanceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": records})
+	c.JSON(http.StatusOK, gin.H{
+		"items":       records,
+		"records":     records,
+		"has_more":    hasMore,
+		"next_cursor": nextCursor,
+	})
 }

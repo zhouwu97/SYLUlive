@@ -1286,4 +1286,235 @@ func TestCourseMergeSnapshotTokenDetectsRatingAndVoteChanges(t *testing.T) {
 	}
 }
 
+func TestTeacherGovernancePagination(t *testing.T) {
+	db := newGovTestDB(t)
+	svc := NewTeacherGovernanceService(db)
+
+	subject := models.CourseSubject{Name: "大学英语", Verified: true}
+	db.Create(&subject)
+
+	for i := 1; i <= 5; i++ {
+		name := fmt.Sprintf("教师%d", i)
+		tItem := models.Teacher{
+			Name:            name,
+			NameNormalized:  models.NormalizeTeacherName(name),
+			Course:          "大学英语",
+			CourseSubjectID: &subject.ID,
+			Verified:        true,
+		}
+		if err := db.Create(&tItem).Error; err != nil {
+			t.Fatalf("创建教师失败: %v", err)
+		}
+	}
+
+	// 1. 第一页 (limit=2, cursor=0)
+	page1, hasMore1, nextCursor1, err := svc.ListGovernanceTeachers("", 0, 2, false, nil)
+	if err != nil {
+		t.Fatalf("获取第一页失败: %v", err)
+	}
+	if len(page1) != 2 {
+		t.Fatalf("预期返回 2 条，实际返回 %d", len(page1))
+	}
+	if !hasMore1 {
+		t.Fatalf("第一页应该 hasMore=true")
+	}
+	if nextCursor1 != page1[1].ID {
+		t.Fatalf("第一页 nextCursor 错误: %d != %d", nextCursor1, page1[1].ID)
+	}
+
+	// 2. 第二页 (limit=2, cursor=nextCursor1)
+	page2, hasMore2, nextCursor2, err := svc.ListGovernanceTeachers("", nextCursor1, 2, false, nil)
+	if err != nil {
+		t.Fatalf("获取第二页失败: %v", err)
+	}
+	if len(page2) != 2 {
+		t.Fatalf("预期返回 2 条，实际返回 %d", len(page2))
+	}
+	if !hasMore2 {
+		t.Fatalf("第二页应该 hasMore=true")
+	}
+	if page2[0].ID <= nextCursor1 {
+		t.Fatalf("第二页首项 ID 应该大于 cursor %d", nextCursor1)
+	}
+
+	// 3. 第三页 (limit=2, cursor=nextCursor2) -> 只有 1 条，无更多
+	page3, hasMore3, _, err := svc.ListGovernanceTeachers("", nextCursor2, 2, false, nil)
+	if err != nil {
+		t.Fatalf("获取第三页失败: %v", err)
+	}
+	if len(page3) != 1 {
+		t.Fatalf("预期最后一页返回 1 条，实际返回 %d", len(page3))
+	}
+	if hasMore3 {
+		t.Fatalf("最后一页应该 hasMore=false")
+	}
+}
+
+func TestTeacherCountMapsScoped(t *testing.T) {
+	db := newGovTestDB(t)
+
+	subject := models.CourseSubject{Name: "高等数学", Verified: true}
+	db.Create(&subject)
+
+	t1 := models.Teacher{Name: "王老师", Course: "高等数学", CourseSubjectID: &subject.ID, Verified: true}
+	t2 := models.Teacher{Name: "李老师", Course: "高等数学", CourseSubjectID: &subject.ID, Verified: true}
+	db.Create(&t1)
+	db.Create(&t2)
+
+	// 为 t1 添加评价和别名
+	db.Create(&models.TeacherRating{TeacherID: t1.ID, UserID: 101, Star: 5, Status: "normal"})
+	db.Create(&models.TeacherRating{TeacherID: t1.ID, UserID: 102, Star: 4, Status: "normal"})
+	db.Create(&models.TeacherAlias{TeacherID: t1.ID, CourseSubjectID: subject.ID, Alias: "老王", NormalizedAlias: "老王"})
+
+	// 为 t2 添加评价
+	db.Create(&models.TeacherRating{TeacherID: t2.ID, UserID: 103, Star: 3, Status: "normal"})
+
+	// 1. 测试空 teacherIDs -> 返回空 map，不报错
+	emptyMaps, err := loadTeacherCountMapsForIDs(db, []uint{})
+	if err != nil {
+		t.Fatalf("查询空 IDs 失败: %v", err)
+	}
+	if len(emptyMaps.ratings) != 0 || len(emptyMaps.aliases) != 0 {
+		t.Fatalf("空 ID 应该返回空统计")
+	}
+
+	// 2. 仅查询 t1 的统计
+	t1Maps, err := loadTeacherCountMapsForIDs(db, []uint{t1.ID})
+	if err != nil {
+		t.Fatalf("查询 t1 统计失败: %v", err)
+	}
+	if t1Maps.ratings[t1.ID] != 2 {
+		t.Fatalf("t1 评价数应为 2，实际为 %d", t1Maps.ratings[t1.ID])
+	}
+	if t1Maps.aliases[t1.ID] != 1 {
+		t.Fatalf("t1 别名数应为 1，实际为 %d", t1Maps.aliases[t1.ID])
+	}
+	if _, exists := t1Maps.ratings[t2.ID]; exists {
+		t.Fatalf("t1Maps 不应包含 t2 的评价")
+	}
+}
+
+func TestListMergeRecordsAndAliasesPagination(t *testing.T) {
+	db := newGovTestDB(t)
+	svc := NewTeacherGovernanceService(db)
+
+	subject := models.CourseSubject{Name: "物理实验", Verified: true}
+	db.Create(&subject)
+
+	// 插入 3 条别名
+	db.Create(&models.CourseSubjectAlias{CourseSubjectID: subject.ID, Alias: "大物实验", NormalizedAlias: "大物实验"})
+	db.Create(&models.CourseSubjectAlias{CourseSubjectID: subject.ID, Alias: "普通物理实验", NormalizedAlias: "普通物理实验"})
+	db.Create(&models.CourseSubjectAlias{CourseSubjectID: subject.ID, Alias: "实验物理", NormalizedAlias: "实验物理"})
+
+	// 分页查询别名 (page=1, limit=2)
+	p1, hasMore, pageNum, err := svc.ListAliases("course", "", 1, 2)
+	if err != nil {
+		t.Fatalf("ListAliases page 1 失败: %v", err)
+	}
+	if len(p1) != 2 || !hasMore || pageNum != 1 {
+		t.Fatalf("ListAliases page 1 校验失败: len=%d, hasMore=%v, page=%d", len(p1), hasMore, pageNum)
+	}
+
+	// 分页查询别名 (page=2, limit=2)
+	p2, hasMore2, pageNum2, err := svc.ListAliases("course", "", 2, 2)
+	if err != nil {
+		t.Fatalf("ListAliases page 2 失败: %v", err)
+	}
+	if len(p2) != 1 || hasMore2 || pageNum2 != 2 {
+		t.Fatalf("ListAliases page 2 校验失败: len=%d, hasMore=%v, page=%d", len(p2), hasMore2, pageNum2)
+	}
+
+	// 插入 3 条合并记录
+	for i := 1; i <= 3; i++ {
+		db.Create(&models.TeacherMergeRecord{
+			BatchID:            fmt.Sprintf("batch-%d", i),
+			KeeperID:           1,
+			LoserID:            uint(10 + i),
+			KeeperNameSnapshot: "主教师",
+			LoserNameSnapshot:  fmt.Sprintf("从教师%d", i),
+			AdminID:            1,
+		})
+	}
+
+	// 游标分页测试 (limit=2, cursor=0)
+	r1, rHasMore1, rNextCursor1, err := svc.ListMergeRecords(0, 2)
+	if err != nil {
+		t.Fatalf("ListMergeRecords 失败: %v", err)
+	}
+	if len(r1) != 2 || !rHasMore1 {
+		t.Fatalf("ListMergeRecords 第1页校验失败: len=%d, hasMore=%v", len(r1), rHasMore1)
+	}
+
+	// 第2页 (cursor=rNextCursor1)
+	r2, rHasMore2, _, err := svc.ListMergeRecords(rNextCursor1, 2)
+	if err != nil {
+		t.Fatalf("ListMergeRecords 第2页失败: %v", err)
+	}
+	if len(r2) != 1 || rHasMore2 {
+		t.Fatalf("ListMergeRecords 第2页校验失败: len=%d, hasMore=%v", len(r2), rHasMore2)
+	}
+}
+
+func TestTeacherMergeIdempotentRetryAndBoundary(t *testing.T) {
+	db := newGovTestDB(t)
+	svc := NewTeacherGovernanceService(db)
+
+	admin := models.User{Nickname: "系统管理员", Role: "admin"}
+	db.Create(&admin)
+
+	subject := models.CourseSubject{Name: "数据结构", NormalizedName: models.NormalizeCourseSubjectName("数据结构"), Verified: true}
+	db.Create(&subject)
+
+	tKeeper := models.Teacher{Name: "赵六", Course: "数据结构", CourseSubjectID: &subject.ID, NameNormalized: models.NormalizeTeacherName("赵六"), Verified: true}
+	tLoser := models.Teacher{Name: "赵小六", Course: "数据结构", CourseSubjectID: &subject.ID, NameNormalized: models.NormalizeTeacherName("赵小六"), Verified: true}
+	if err := db.Create(&tKeeper).Error; err != nil {
+		t.Fatalf("创建 tKeeper 失败: %v", err)
+	}
+	if err := db.Create(&tLoser).Error; err != nil {
+		t.Fatalf("创建 tLoser 失败: %v", err)
+	}
+
+	input := MergeInput{
+		KeeperID: tKeeper.ID,
+		LoserIDs: []uint{tLoser.ID},
+		Reason:   "重复教师清理",
+	}
+
+	preview, err := svc.PreviewMerge(input)
+	if err != nil {
+		t.Fatalf("PreviewMerge 失败: %v", err)
+	}
+	input.SnapshotToken = preview.SnapshotToken
+
+	// 第一次执行合并
+	plan, err := svc.Merge(admin.ID, input)
+	if err != nil {
+		t.Fatalf("Merge 失败: %v", err)
+	}
+	if plan == nil {
+		t.Fatalf("返回 plan 不应为空")
+	}
+
+	// 验证合并后 loser 已被标记合并且在 ScopeActiveTeachers 中不可见
+	var activeCount int64
+	models.ScopeActiveTeachers(db).Where("id = ?", tLoser.ID).Count(&activeCount)
+	if activeCount != 0 {
+		t.Fatalf("合并后 loser 应该在 ScopeActiveTeachers 中被过滤")
+	}
+
+	// 验证重复提交合并该 loser（重试/幂等场景）：应正常返回已合并或成功识别，而不抛出未知 Panic
+	_, errRetry := svc.Merge(admin.ID, input)
+	if errRetry == nil {
+		// 幂等重复执行成功
+	} else {
+		// 或者返回明确的业务错误码（如 CodeTeacherAlreadyMerged）
+		var bizErr *TeacherGovernanceError
+		if errors.As(errRetry, &bizErr) {
+			if bizErr.Code != CodeTeacherAlreadyMerged && bizErr.Code != CodeGovernanceSnapshotStale {
+				t.Fatalf("非预期的重复合并错误码: %s", bizErr.Code)
+			}
+		}
+	}
+}
+
 

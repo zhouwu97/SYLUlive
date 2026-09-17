@@ -68,21 +68,39 @@ class _AdminTeacherGovernanceScreenState
   // ==========================================
   // Tab 1: 教师合并 (全部教师与跨搜索多选合并)
   // ==========================================
+  // 服务端治理能力检测
+  // ==========================================
+  bool _isCheckingCapability = true;
+  bool _serverUnsupported = false;
+
+  // ==========================================
+  // Tab 1: 教师合并 (全部教师与跨搜索多选合并)
+  // ==========================================
   List<TeacherGovernanceTeacherItem> _allTeachers = [];
   bool _isLoadingTeachers = false;
+  bool _isLoadingMoreTeachers = false;
+  bool _hasMoreTeachers = true;
+  int? _teacherNextCursor;
   String? _teachersError;
   String _teacherSearchQuery = '';
   bool _includeMerged = false;
   // 修复跨搜索漏选 Bug: 用独立 Map 存储已选对象，不受搜索切换影响
   final Map<int, TeacherGovernanceTeacherItem> _selectedTeachers = {};
-  Timer? _searchDebounce;
+  Timer? _teacherSearchDebounce;
+  int _teacherSearchGen = 0;
+  CancelToken? _teacherCancelToken;
+  final ScrollController _teacherScrollController = ScrollController();
 
   // ==========================================
   // Tab 2: 处理记录
   // ==========================================
   List<TeacherMergeRecordItem> _records = [];
   bool _isLoadingRecords = false;
+  bool _isLoadingMoreRecords = false;
+  bool _hasMoreRecords = true;
+  int? _recordsNextCursor;
   String? _recordsError;
+  final ScrollController _recordsScrollController = ScrollController();
 
   // ==========================================
   // Tab 3: 别名管理
@@ -90,8 +108,15 @@ class _AdminTeacherGovernanceScreenState
   String _aliasType = 'teacher'; // "teacher" | "course"
   List<GovernanceAliasItem> _aliases = [];
   bool _isLoadingAliases = false;
+  bool _isLoadingMoreAliases = false;
+  bool _hasMoreAliases = true;
+  int _aliasPage = 1;
   String? _aliasesError;
   String _aliasSearchQuery = '';
+  Timer? _aliasSearchDebounce;
+  int _aliasSearchGen = 0;
+  CancelToken? _aliasCancelToken;
+  final ScrollController _aliasesScrollController = ScrollController();
 
   // ==========================================
   // Tab 4: 疑似推荐
@@ -113,6 +138,33 @@ class _AdminTeacherGovernanceScreenState
       _onTabChanged(_tabController.index);
     });
 
+    _teacherScrollController.addListener(() {
+      if (_teacherScrollController.position.pixels >=
+          _teacherScrollController.position.maxScrollExtent - 200) {
+        if (_hasMoreTeachers && !_isLoadingMoreTeachers && !_isLoadingTeachers) {
+          _loadTeachers(loadMore: true);
+        }
+      }
+    });
+
+    _recordsScrollController.addListener(() {
+      if (_recordsScrollController.position.pixels >=
+          _recordsScrollController.position.maxScrollExtent - 200) {
+        if (_hasMoreRecords && !_isLoadingMoreRecords && !_isLoadingRecords) {
+          _loadRecords(loadMore: true);
+        }
+      }
+    });
+
+    _aliasesScrollController.addListener(() {
+      if (_aliasesScrollController.position.pixels >=
+          _aliasesScrollController.position.maxScrollExtent - 200) {
+        if (_hasMoreAliases && !_isLoadingMoreAliases && !_isLoadingAliases) {
+          _loadAliases(loadMore: true);
+        }
+      }
+    });
+
     if (widget.initialSubjectId != null) {
       _sourceCourse = GovernanceCourseItem(
         id: widget.initialSubjectId!,
@@ -129,20 +181,78 @@ class _AdminTeacherGovernanceScreenState
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _onTabChanged(widget.initialTab.clamp(0, 4));
+      _checkServerCapabilities();
     });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
-    _searchDebounce?.cancel();
+    _teacherScrollController.dispose();
+    _recordsScrollController.dispose();
+    _aliasesScrollController.dispose();
+    _teacherSearchDebounce?.cancel();
+    _aliasSearchDebounce?.cancel();
+    _teacherCancelToken?.cancel();
+    _aliasCancelToken?.cancel();
     _finalCourseNameCtrl.dispose();
     _courseMergeReasonCtrl.dispose();
     super.dispose();
   }
 
+  Future<void> _checkServerCapabilities() async {
+    setState(() {
+      _isCheckingCapability = true;
+      _serverUnsupported = false;
+    });
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      Response? res;
+      try {
+        res = await dio.get('/api/version');
+      } catch (_) {
+        try {
+          res = await dio.get('/version');
+        } catch (_) {
+          try {
+            res = await dio.get('/health');
+          } catch (_) {}
+        }
+      }
+      if (!mounted) return;
+      if (res == null || res.data == null) {
+        setState(() {
+          _isCheckingCapability = false;
+          _serverUnsupported = true;
+        });
+        return;
+      }
+      final caps = ServerCapabilities.fromJson(
+        res.data is Map<String, dynamic> ? res.data : {},
+      );
+      if (!caps.teacherGovernanceV1) {
+        setState(() {
+          _isCheckingCapability = false;
+          _serverUnsupported = true;
+        });
+        return;
+      }
+      setState(() {
+        _isCheckingCapability = false;
+        _serverUnsupported = false;
+      });
+      _onTabChanged(_tabController.index);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isCheckingCapability = false;
+        _serverUnsupported = true;
+      });
+    }
+  }
+
   void _onTabChanged(int index) {
+    if (_serverUnsupported) return;
     switch (index) {
       case 0:
         // Course merge
@@ -207,37 +317,73 @@ class _AdminTeacherGovernanceScreenState
       if (!mounted) return;
       setState(() {
         _isLoadingGroups = false;
-        _groupsError = '加载疑似重复分组失败: $e';
+        _groupsError = GovernanceApiErrorMapper.format(e, fallback: '加载疑似重复分组失败');
       });
     }
   }
 
-  Future<void> _loadTeachers() async {
+  Future<void> _loadTeachers({bool loadMore = false}) async {
     if (!mounted) return;
-    setState(() {
-      _isLoadingTeachers = true;
-      _teachersError = null;
-    });
+    if (loadMore) {
+      if (!_hasMoreTeachers || _isLoadingMoreTeachers || _isLoadingTeachers) {
+        return;
+      }
+      setState(() => _isLoadingMoreTeachers = true);
+    } else {
+      _teacherCancelToken?.cancel();
+      _teacherCancelToken = CancelToken();
+      ++_teacherSearchGen;
+      setState(() {
+        _isLoadingTeachers = true;
+        _teachersError = null;
+        _teacherNextCursor = null;
+        _hasMoreTeachers = true;
+      });
+    }
+
+    final cancelToken = _teacherCancelToken;
+    final currentGen = _teacherSearchGen;
+
     try {
       final dio = context.read<AuthProvider>().dio;
       final params = <String, dynamic>{
         'include_merged': _includeMerged,
+        'limit': 50,
       };
       if (_teacherSearchQuery.trim().isNotEmpty) {
         params['q'] = _teacherSearchQuery.trim();
       }
+      if (loadMore && _teacherNextCursor != null) {
+        params['cursor'] = _teacherNextCursor;
+      }
       final res = await dio.get(
         '/api/admin/teacher-governance/teachers',
         queryParameters: params,
+        cancelToken: cancelToken,
       );
-      if (!mounted) return;
+      if (!mounted || currentGen != _teacherSearchGen) return;
+
       final items = _extractList(res.data, 'teachers');
+      final newItems = items
+          .whereType<Map<String, dynamic>>()
+          .map(TeacherGovernanceTeacherItem.fromJson)
+          .toList();
+
+      final bool hasMore = res.data is Map && res.data['has_more'] == true;
+      final int? nextCursor =
+          res.data is Map ? (res.data['next_cursor'] as num?)?.toInt() : null;
+
       setState(() {
-        _allTeachers = items
-            .whereType<Map<String, dynamic>>()
-            .map(TeacherGovernanceTeacherItem.fromJson)
-            .toList();
-        _isLoadingTeachers = false;
+        if (loadMore) {
+          _allTeachers.addAll(newItems);
+          _isLoadingMoreTeachers = false;
+        } else {
+          _allTeachers = newItems;
+          _isLoadingTeachers = false;
+        }
+        _hasMoreTeachers = hasMore;
+        _teacherNextCursor =
+            nextCursor ?? (newItems.isNotEmpty ? newItems.last.id : null);
 
         // 如果通过 initialTeacherId 打开且尚未选中，自动加入选中集合
         if (widget.initialTeacherId != null) {
@@ -248,25 +394,59 @@ class _AdminTeacherGovernanceScreenState
           }
         }
       });
-    } catch (e) {
-      if (!mounted) return;
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) return;
+      if (!mounted || currentGen != _teacherSearchGen) return;
       setState(() {
-        _isLoadingTeachers = false;
-        _teachersError = '加载教师列表失败: $e';
+        if (loadMore) {
+          _isLoadingMoreTeachers = false;
+        } else {
+          _isLoadingTeachers = false;
+        }
+        _teachersError = GovernanceApiErrorMapper.format(e, fallback: '加载教师列表失败');
+      });
+    } catch (e) {
+      if (!mounted || currentGen != _teacherSearchGen) return;
+      setState(() {
+        if (loadMore) {
+          _isLoadingMoreTeachers = false;
+        } else {
+          _isLoadingTeachers = false;
+        }
+        _teachersError = GovernanceApiErrorMapper.format(e, fallback: '加载教师列表失败');
       });
     }
   }
 
-  Future<void> _loadAliases() async {
+  Future<void> _loadAliases({bool loadMore = false}) async {
     if (!mounted) return;
-    setState(() {
-      _isLoadingAliases = true;
-      _aliasesError = null;
-    });
+    if (loadMore) {
+      if (!_hasMoreAliases || _isLoadingMoreAliases || _isLoadingAliases) {
+        return;
+      }
+      setState(() => _isLoadingMoreAliases = true);
+    } else {
+      _aliasCancelToken?.cancel();
+      _aliasCancelToken = CancelToken();
+      ++_aliasSearchGen;
+      setState(() {
+        _isLoadingAliases = true;
+        _aliasesError = null;
+        _aliasPage = 1;
+        _hasMoreAliases = true;
+      });
+    }
+
+    final cancelToken = _aliasCancelToken;
+    final currentGen = _aliasSearchGen;
+    final targetPage = loadMore ? _aliasPage + 1 : 1;
+
     try {
       final dio = context.read<AuthProvider>().dio;
       final params = <String, dynamic>{
         'type': _aliasType,
+        'page': targetPage,
+        'limit': 50,
       };
       if (_aliasSearchQuery.trim().isNotEmpty) {
         params['q'] = _aliasSearchQuery.trim();
@@ -274,50 +454,114 @@ class _AdminTeacherGovernanceScreenState
       final res = await dio.get(
         '/api/admin/teacher-governance/aliases',
         queryParameters: params,
+        cancelToken: cancelToken,
       );
-      if (!mounted) return;
+      if (!mounted || currentGen != _aliasSearchGen) return;
       final items = _extractList(res.data, 'aliases');
+      final newItems = items
+          .whereType<Map<String, dynamic>>()
+          .map((j) =>
+              GovernanceAliasItem.fromJson(j, defaultType: _aliasType))
+          .toList();
+
+      final bool hasMore = res.data is Map && res.data['has_more'] == true;
+
       setState(() {
-        _aliases = items
-            .whereType<Map<String, dynamic>>()
-            .map((j) =>
-                GovernanceAliasItem.fromJson(j, defaultType: _aliasType))
-            .toList();
-        _isLoadingAliases = false;
+        if (loadMore) {
+          _aliases.addAll(newItems);
+          _aliasPage = targetPage;
+          _isLoadingMoreAliases = false;
+        } else {
+          _aliases = newItems;
+          _aliasPage = 1;
+          _isLoadingAliases = false;
+        }
+        _hasMoreAliases = hasMore;
+      });
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) return;
+      if (!mounted || currentGen != _aliasSearchGen) return;
+      setState(() {
+        if (loadMore) {
+          _isLoadingMoreAliases = false;
+        } else {
+          _isLoadingAliases = false;
+        }
+        _aliasesError = GovernanceApiErrorMapper.format(e, fallback: '加载别名列表失败');
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || currentGen != _aliasSearchGen) return;
       setState(() {
-        _isLoadingAliases = false;
-        _aliasesError = '加载别名列表失败: $e';
+        if (loadMore) {
+          _isLoadingMoreAliases = false;
+        } else {
+          _isLoadingAliases = false;
+        }
+        _aliasesError = GovernanceApiErrorMapper.format(e, fallback: '加载别名列表失败');
       });
     }
   }
 
-  Future<void> _loadRecords() async {
+  Future<void> _loadRecords({bool loadMore = false}) async {
     if (!mounted) return;
-    setState(() {
-      _isLoadingRecords = true;
-      _recordsError = null;
-    });
+    if (loadMore) {
+      if (!_hasMoreRecords || _isLoadingMoreRecords || _isLoadingRecords) {
+        return;
+      }
+      setState(() => _isLoadingMoreRecords = true);
+    } else {
+      setState(() {
+        _isLoadingRecords = true;
+        _recordsError = null;
+        _recordsNextCursor = null;
+        _hasMoreRecords = true;
+      });
+    }
+
     try {
       final dio = context.read<AuthProvider>().dio;
-      final res =
-          await dio.get('/api/admin/teacher-governance/merge-records');
+      final params = <String, dynamic>{
+        'limit': 50,
+      };
+      if (loadMore && _recordsNextCursor != null) {
+        params['cursor'] = _recordsNextCursor;
+      }
+      final res = await dio.get(
+        '/api/admin/teacher-governance/merge-records',
+        queryParameters: params,
+      );
       if (!mounted) return;
       final items = _extractList(res.data, 'records');
+      final newItems = items
+          .whereType<Map<String, dynamic>>()
+          .map(TeacherMergeRecordItem.fromJson)
+          .toList();
+
+      final bool hasMore = res.data is Map && res.data['has_more'] == true;
+      final int? nextCursor =
+          res.data is Map ? (res.data['next_cursor'] as num?)?.toInt() : null;
+
       setState(() {
-        _records = items
-            .whereType<Map<String, dynamic>>()
-            .map(TeacherMergeRecordItem.fromJson)
-            .toList();
-        _isLoadingRecords = false;
+        if (loadMore) {
+          _records.addAll(newItems);
+          _isLoadingMoreRecords = false;
+        } else {
+          _records = newItems;
+          _isLoadingRecords = false;
+        }
+        _hasMoreRecords = hasMore;
+        _recordsNextCursor =
+            nextCursor ?? (newItems.isNotEmpty ? newItems.last.id : null);
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _isLoadingRecords = false;
-        _recordsError = '加载治理记录失败: $e';
+        if (loadMore) {
+          _isLoadingMoreRecords = false;
+        } else {
+          _isLoadingRecords = false;
+        }
+        _recordsError = GovernanceApiErrorMapper.format(e, fallback: '加载治理记录失败');
       });
     }
   }
@@ -888,6 +1132,94 @@ class _AdminTeacherGovernanceScreenState
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (_isCheckingCapability) {
+      return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.of(context).pop(_hasChanged),
+          ),
+          centerTitle: true,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          backgroundColor:
+              isDark ? AppColors.surfaceSecondaryDark : Colors.white,
+          title: Text(
+            '教师与课程数据治理',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : AppColors.textPrimaryLight,
+            ),
+          ),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_serverUnsupported) {
+      return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.of(context).pop(_hasChanged),
+          ),
+          centerTitle: true,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          backgroundColor:
+              isDark ? AppColors.surfaceSecondaryDark : Colors.white,
+          title: Text(
+            '教师与课程数据治理',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : AppColors.textPrimaryLight,
+            ),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.xxl),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.cloud_sync_outlined,
+                    size: 56, color: Colors.orange),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  '服务端尚未升级',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : AppColors.textPrimaryLight,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  '当前连接的服务端版本未提供教师与课程治理能力（teacher_governance_v1）。\n请联系系统管理员部署包含治理后端的版本后再试。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDark ? Colors.white70 : Colors.black54,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                FilledButton.icon(
+                  onPressed: _checkServerCapabilities,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('重新检测能力'),
+                  style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.brandPrimary),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return PopScope(
       canPop: false,
@@ -2127,8 +2459,8 @@ class _AdminTeacherGovernanceScreenState
                     ),
                   ),
                   onChanged: (val) {
-                    _searchDebounce?.cancel();
-                    _searchDebounce =
+                    _teacherSearchDebounce?.cancel();
+                    _teacherSearchDebounce =
                         Timer(const Duration(milliseconds: 300), () {
                       setState(() {
                         _teacherSearchQuery = val;
@@ -2169,13 +2501,37 @@ class _AdminTeacherGovernanceScreenState
                           isDark,
                         )
                       : RefreshIndicator(
-                          onRefresh: _loadTeachers,
+                          onRefresh: () => _loadTeachers(),
                           child: ListView.separated(
+                            controller: _teacherScrollController,
                             padding: const EdgeInsets.all(AppSpacing.md),
-                            itemCount: _allTeachers.length,
+                            itemCount: _allTeachers.length +
+                                (_hasMoreTeachers || _isLoadingMoreTeachers
+                                    ? 1
+                                    : 0),
                             separatorBuilder: (_, __) =>
                                 const SizedBox(height: 8),
                             itemBuilder: (ctx, index) {
+                              if (index == _allTeachers.length) {
+                                return Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 16),
+                                  child: Center(
+                                    child: _isLoadingMoreTeachers
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2),
+                                          )
+                                        : TextButton(
+                                            onPressed: () =>
+                                                _loadTeachers(loadMore: true),
+                                            child: const Text('加载更多教师'),
+                                          ),
+                                  ),
+                                );
+                              }
                               final t = _allTeachers[index];
                               final isSelected =
                                   _selectedTeachers.containsKey(t.id);
@@ -2380,13 +2736,33 @@ class _AdminTeacherGovernanceScreenState
       batchMap.putIfAbsent(r.batchId, () => []).add(r);
     }
 
+    final batchKeys = batchMap.keys.toList();
     return RefreshIndicator(
-      onRefresh: _loadRecords,
+      onRefresh: () => _loadRecords(),
       child: ListView.builder(
+        controller: _recordsScrollController,
         padding: const EdgeInsets.all(AppSpacing.md),
-        itemCount: batchMap.keys.length,
+        itemCount:
+            batchKeys.length + (_hasMoreRecords || _isLoadingMoreRecords ? 1 : 0),
         itemBuilder: (ctx, index) {
-          final batchId = batchMap.keys.elementAt(index);
+          if (index == batchKeys.length) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: _isLoadingMoreRecords
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : TextButton(
+                        onPressed: () => _loadRecords(loadMore: true),
+                        child: const Text('加载更多记录'),
+                      ),
+              ),
+            );
+          }
+          final batchId = batchKeys[index];
           final batchRecords = batchMap[batchId]!;
           final first = batchRecords.first;
           final isCourseAction =
@@ -2590,8 +2966,8 @@ class _AdminTeacherGovernanceScreenState
               ),
             ),
             onChanged: (val) {
-              _searchDebounce?.cancel();
-              _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+              _aliasSearchDebounce?.cancel();
+              _aliasSearchDebounce = Timer(const Duration(milliseconds: 300), () {
                 setState(() {
                   _aliasSearchQuery = val;
                 });
@@ -2613,13 +2989,37 @@ class _AdminTeacherGovernanceScreenState
                           isDark,
                         )
                       : RefreshIndicator(
-                          onRefresh: _loadAliases,
+                          onRefresh: () => _loadAliases(),
                           child: ListView.separated(
+                            controller: _aliasesScrollController,
                             padding: const EdgeInsets.all(AppSpacing.md),
-                            itemCount: _aliases.length,
+                            itemCount: _aliases.length +
+                                (_hasMoreAliases || _isLoadingMoreAliases
+                                    ? 1
+                                    : 0),
                             separatorBuilder: (_, __) =>
                                 const SizedBox(height: 8),
                             itemBuilder: (ctx, index) {
+                              if (index == _aliases.length) {
+                                return Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 16),
+                                  child: Center(
+                                    child: _isLoadingMoreAliases
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2),
+                                          )
+                                        : TextButton(
+                                            onPressed: () =>
+                                                _loadAliases(loadMore: true),
+                                            child: const Text('加载更多别名'),
+                                          ),
+                                  ),
+                                );
+                              }
                               final item = _aliases[index];
                               return _buildAliasListItem(item, isDark);
                             },
@@ -3909,6 +4309,8 @@ class _GovernanceCoursePickerModalState
     extends State<_GovernanceCoursePickerModal> {
   final TextEditingController _ctrl = TextEditingController();
   Timer? _debounce;
+  int _courseSearchGen = 0;
+  CancelToken? _courseCancelToken;
   List<GovernanceCourseItem> _courses = [];
   bool _isLoading = false;
   String? _error;
@@ -3922,6 +4324,7 @@ class _GovernanceCoursePickerModalState
   @override
   void dispose() {
     _debounce?.cancel();
+    _courseCancelToken?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
@@ -3934,6 +4337,11 @@ class _GovernanceCoursePickerModalState
   }
 
   Future<void> _search(String query) async {
+    _courseCancelToken?.cancel();
+    _courseCancelToken = CancelToken();
+    final cancelToken = _courseCancelToken;
+    final currentGen = ++_courseSearchGen;
+
     setState(() {
       _isLoading = true;
       _error = null;
@@ -3946,8 +4354,9 @@ class _GovernanceCoursePickerModalState
         queryParameters: {
           if (query.trim().isNotEmpty) 'q': query.trim(),
         },
+        cancelToken: cancelToken,
       );
-      if (!mounted) return;
+      if (!mounted || currentGen != _courseSearchGen) return;
       final raw = res.data is Map
           ? (res.data['courses'] ?? res.data['items'] ?? [])
           : (res.data is List ? res.data : []);
@@ -3958,11 +4367,18 @@ class _GovernanceCoursePickerModalState
             .toList();
         _isLoading = false;
       });
-    } catch (e) {
-      if (!mounted) return;
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) return;
+      if (!mounted || currentGen != _courseSearchGen) return;
       setState(() {
         _isLoading = false;
-        _error = '检索课程失败: $e';
+        _error = GovernanceApiErrorMapper.format(e, fallback: '检索课程失败');
+      });
+    } catch (e) {
+      if (!mounted || currentGen != _courseSearchGen) return;
+      setState(() {
+        _isLoading = false;
+        _error = GovernanceApiErrorMapper.format(e, fallback: '检索课程失败');
       });
     }
   }
@@ -4155,6 +4571,8 @@ class _AliasTargetPicker extends StatefulWidget {
 class _AliasTargetPickerState extends State<_AliasTargetPicker> {
   final TextEditingController _controller = TextEditingController();
   Timer? _debounce;
+  int _targetSearchGen = 0;
+  CancelToken? _targetCancelToken;
   List<AliasTargetItem> _options = const [];
   bool _isLoading = false;
   String? _errorMessage;
@@ -4173,6 +4591,7 @@ class _AliasTargetPickerState extends State<_AliasTargetPicker> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _targetCancelToken?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -4188,6 +4607,11 @@ class _AliasTargetPickerState extends State<_AliasTargetPicker> {
 
   Future<void> _search(String rawQuery) async {
     final query = rawQuery.trim();
+    _targetCancelToken?.cancel();
+    _targetCancelToken = CancelToken();
+    final cancelToken = _targetCancelToken;
+    final currentGen = ++_targetSearchGen;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -4201,18 +4625,27 @@ class _AliasTargetPickerState extends State<_AliasTargetPicker> {
           'type': widget.targetType,
           if (query.isNotEmpty) 'q': query,
         },
+        cancelToken: cancelToken,
       );
-      if (!mounted) return;
+      if (!mounted || currentGen != _targetSearchGen) return;
       setState(() {
         _options = _parseAliasTargets(response.data);
         _isLoading = false;
       });
-    } catch (e) {
-      if (!mounted) return;
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) return;
+      if (!mounted || currentGen != _targetSearchGen) return;
       setState(() {
         _options = const [];
         _isLoading = false;
-        _errorMessage = '搜索失败: $e';
+        _errorMessage = GovernanceApiErrorMapper.format(e, fallback: '搜索失败');
+      });
+    } catch (e) {
+      if (!mounted || currentGen != _targetSearchGen) return;
+      setState(() {
+        _options = const [];
+        _isLoading = false;
+        _errorMessage = GovernanceApiErrorMapper.format(e, fallback: '搜索失败');
       });
     }
   }

@@ -172,43 +172,58 @@ type teacherCountMaps struct {
 	aliases  map[uint]int
 }
 
-func loadTeacherCountMaps(db *gorm.DB) (*teacherCountMaps, error) {
+func loadTeacherCountMapsForIDs(db *gorm.DB, teacherIDs []uint) (*teacherCountMaps, error) {
 	maps := &teacherCountMaps{ratings: map[uint]int{}, pendings: map[uint]int{}, aliases: map[uint]int{}}
+	if teacherIDs != nil && len(teacherIDs) == 0 {
+		return maps, nil
+	}
+
 	var ratingRows []struct {
 		TeacherID uint
 		Total     int64
 	}
-	if err := db.Model(&models.TeacherRating{}).
+	rq := db.Model(&models.TeacherRating{}).
 		Select("teacher_id, COUNT(*) AS total").
-		Where("deleted_at IS NULL AND status = ?", "normal").
-		Group("teacher_id").Scan(&ratingRows).Error; err == nil {
+		Where("deleted_at IS NULL AND status = ?", "normal")
+	if len(teacherIDs) > 0 {
+		rq = rq.Where("teacher_id IN (?)", teacherIDs)
+	}
+	if err := rq.Group("teacher_id").Scan(&ratingRows).Error; err == nil {
 		for _, row := range ratingRows {
 			maps.ratings[row.TeacherID] = int(row.Total)
 		}
 	} else {
 		return nil, err
 	}
+
 	var pendingRows []struct {
 		TeacherID uint
 		Total     int64
 	}
-	if err := db.Model(&models.CourseEvaluationSubmission{}).
+	pq := db.Model(&models.CourseEvaluationSubmission{}).
 		Select("teacher_id, COUNT(*) AS total").
-		Where("status = ? AND teacher_id IS NOT NULL", models.CourseEvaluationStatusPending).
-		Group("teacher_id").Scan(&pendingRows).Error; err == nil {
+		Where("status = ? AND teacher_id IS NOT NULL", models.CourseEvaluationStatusPending)
+	if len(teacherIDs) > 0 {
+		pq = pq.Where("teacher_id IN (?)", teacherIDs)
+	}
+	if err := pq.Group("teacher_id").Scan(&pendingRows).Error; err == nil {
 		for _, row := range pendingRows {
 			maps.pendings[row.TeacherID] = int(row.Total)
 		}
 	} else {
 		return nil, err
 	}
+
 	var aliasRows []struct {
 		TeacherID uint
 		Total     int64
 	}
-	if err := db.Model(&models.TeacherAlias{}).
-		Select("teacher_id, COUNT(*) AS total").
-		Group("teacher_id").Scan(&aliasRows).Error; err == nil {
+	aq := db.Model(&models.TeacherAlias{}).
+		Select("teacher_id, COUNT(*) AS total")
+	if len(teacherIDs) > 0 {
+		aq = aq.Where("teacher_id IN (?)", teacherIDs)
+	}
+	if err := aq.Group("teacher_id").Scan(&aliasRows).Error; err == nil {
 		for _, row := range aliasRows {
 			maps.aliases[row.TeacherID] = int(row.Total)
 		}
@@ -216,6 +231,10 @@ func loadTeacherCountMaps(db *gorm.DB) (*teacherCountMaps, error) {
 		return nil, err
 	}
 	return maps, nil
+}
+
+func loadTeacherCountMaps(db *gorm.DB) (*teacherCountMaps, error) {
+	return loadTeacherCountMapsForIDs(db, nil)
 }
 
 func (m *teacherCountMaps) view(row governanceTeacherRow) GovernanceTeacherView {
@@ -240,7 +259,7 @@ func (m *teacherCountMaps) view(row governanceTeacherRow) GovernanceTeacherView 
 	}
 }
 
-func loadGovernanceTeacherRows(db *gorm.DB, q string, limit int, includeMerged bool, subjectID *uint) ([]governanceTeacherRow, *teacherCountMaps, error) {
+func loadGovernanceTeacherRows(db *gorm.DB, q string, cursor uint, limit int, includeMerged bool, subjectID *uint) ([]governanceTeacherRow, bool, uint, *teacherCountMaps, error) {
 	query := db.Table("teachers t").
 		Select("t.id AS id, t.name AS name, t.course AS course, t.verified AS verified, "+
 			"t.course_subject_id AS course_subject_id, t.canonical_source AS canonical_source, "+
@@ -254,25 +273,44 @@ func loadGovernanceTeacherRows(db *gorm.DB, q string, limit int, includeMerged b
 	if subjectID != nil && *subjectID != 0 {
 		query = query.Where("t.course_subject_id = ?", *subjectID)
 	}
+	if cursor > 0 {
+		query = query.Where("t.id > ?", cursor)
+	}
 	if strings.TrimSpace(q) != "" {
 		like := "%" + escapeLike(strings.TrimSpace(q)) + "%"
 		query = query.Where("t.name LIKE ? OR t.course LIKE ?", like, like)
 	}
 	if limit > 0 {
-		query = query.Limit(limit)
+		query = query.Limit(limit + 1)
 	}
 	var rows []governanceTeacherRow
 	if err := query.Order("t.id ASC").Scan(&rows).Error; err != nil {
-		return nil, nil, err
+		return nil, false, 0, nil, err
 	}
-	maps, err := loadTeacherCountMaps(db)
+
+	hasMore := false
+	var nextCursor uint
+	if limit > 0 && len(rows) > limit {
+		hasMore = true
+		rows = rows[:limit]
+		nextCursor = rows[limit-1].ID
+	} else if len(rows) > 0 {
+		nextCursor = rows[len(rows)-1].ID
+	}
+
+	teacherIDs := make([]uint, 0, len(rows))
+	for _, row := range rows {
+		teacherIDs = append(teacherIDs, row.ID)
+	}
+
+	maps, err := loadTeacherCountMapsForIDs(db, teacherIDs)
 	if err != nil {
-		return nil, nil, err
+		return nil, false, 0, nil, err
 	}
 	for i := range rows {
 		rows[i].RatingCount = maps.ratings[rows[i].ID]
 	}
-	return rows, maps, nil
+	return rows, hasMore, nextCursor, maps, nil
 }
 
 // teacherVariantKey 去掉常见称谓后缀后的变体键。
@@ -345,7 +383,7 @@ func (s *TeacherGovernanceService) ListDuplicateGroups() ([]DuplicateTeacherGrou
 	if s == nil || s.db == nil {
 		return nil, governanceErr(CodeTeacherNotFound, "治理服务不可用", nil)
 	}
-	rows, maps, err := loadGovernanceTeacherRows(s.db, "", 0, false, nil)
+	rows, _, _, maps, err := loadGovernanceTeacherRows(s.db, "", 0, 0, false, nil)
 	if err != nil {
 		return nil, governanceErr(CodeTeacherNotFound, "读取教师列表失败", err)
 	}
@@ -2891,9 +2929,15 @@ type AddAliasInput struct {
 	Alias           string `json:"alias"`
 }
 
-func (s *TeacherGovernanceService) ListAliases(aliasType, q string) ([]AliasView, error) {
+func (s *TeacherGovernanceService) ListAliases(aliasType, q string, page, limit int) ([]AliasView, bool, int, error) {
 	if s == nil || s.db == nil {
-		return nil, governanceErr(CodeTeacherNotFound, "治理服务不可用", nil)
+		return nil, false, 0, governanceErr(CodeTeacherNotFound, "治理服务不可用", nil)
+	}
+	if page <= 0 {
+		page = 1
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
 	}
 	out := []AliasView{}
 	aliasType = strings.ToLower(strings.TrimSpace(aliasType))
@@ -2901,7 +2945,7 @@ func (s *TeacherGovernanceService) ListAliases(aliasType, q string) ([]AliasView
 	if aliasType == "" || aliasType == "course" {
 		var courseAliases []models.CourseSubjectAlias
 		if err := s.db.Order("id DESC").Find(&courseAliases).Error; err != nil {
-			return nil, governanceErr(CodeTeacherNotFound, "读取课程别名失败", err)
+			return nil, false, 0, governanceErr(CodeTeacherNotFound, "读取课程别名失败", err)
 		}
 		subjectIDs := []uint{}
 		for _, a := range courseAliases {
@@ -2935,7 +2979,7 @@ func (s *TeacherGovernanceService) ListAliases(aliasType, q string) ([]AliasView
 	if aliasType == "" || aliasType == "teacher" {
 		var teacherAliases []models.TeacherAlias
 		if err := s.db.Order("id DESC").Find(&teacherAliases).Error; err != nil {
-			return nil, governanceErr(CodeTeacherNotFound, "读取教师别名失败", err)
+			return nil, false, 0, governanceErr(CodeTeacherNotFound, "读取教师别名失败", err)
 		}
 		tIDs := []uint{}
 		sIDs := []uint{}
@@ -2988,7 +3032,25 @@ func (s *TeacherGovernanceService) ListAliases(aliasType, q string) ([]AliasView
 		out = filtered
 	}
 
-	return out, nil
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+
+	offset := (page - 1) * limit
+	hasMore := false
+	if offset < len(out) {
+		end := offset + limit
+		if end < len(out) {
+			hasMore = true
+			out = out[offset:end]
+		} else {
+			out = out[offset:]
+		}
+	} else {
+		out = []AliasView{}
+	}
+
+	return out, hasMore, page, nil
 }
 
 func (s *TeacherGovernanceService) AddAlias(adminID uint, input AddAliasInput) (*AliasView, error) {
@@ -3102,16 +3164,29 @@ type MergeRecordView struct {
 	CreatedAt             time.Time `json:"created_at"`
 }
 
-func (s *TeacherGovernanceService) ListMergeRecords(limit int) ([]MergeRecordView, error) {
+func (s *TeacherGovernanceService) ListMergeRecords(cursor uint, limit int) ([]MergeRecordView, bool, uint, error) {
 	if s == nil || s.db == nil {
-		return nil, governanceErr(CodeTeacherNotFound, "治理服务不可用", nil)
+		return nil, false, 0, governanceErr(CodeTeacherNotFound, "治理服务不可用", nil)
 	}
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
+	query := s.db.Order("id DESC")
+	if cursor > 0 {
+		query = query.Where("id < ?", cursor)
+	}
 	var rows []models.TeacherMergeRecord
-	if err := s.db.Order("id DESC").Limit(limit).Find(&rows).Error; err != nil {
-		return nil, governanceErr(CodeTeacherNotFound, "读取合并记录失败", err)
+	if err := query.Limit(limit + 1).Find(&rows).Error; err != nil {
+		return nil, false, 0, governanceErr(CodeTeacherNotFound, "读取合并记录失败", err)
+	}
+	hasMore := false
+	var nextCursor uint
+	if len(rows) > limit {
+		hasMore = true
+		rows = rows[:limit]
+		nextCursor = rows[limit-1].ID
+	} else if len(rows) > 0 {
+		nextCursor = rows[len(rows)-1].ID
 	}
 	out := make([]MergeRecordView, 0, len(rows))
 	for _, row := range rows {
@@ -3137,25 +3212,25 @@ func (s *TeacherGovernanceService) ListMergeRecords(limit int) ([]MergeRecordVie
 			CreatedAt:             row.CreatedAt,
 		})
 	}
-	return out, nil
+	return out, hasMore, nextCursor, nil
 }
 
-func (s *TeacherGovernanceService) ListGovernanceTeachers(q string, limit int, includeMerged bool, subjectID *uint) ([]GovernanceTeacherView, error) {
+func (s *TeacherGovernanceService) ListGovernanceTeachers(q string, cursor uint, limit int, includeMerged bool, subjectID *uint) ([]GovernanceTeacherView, bool, uint, error) {
 	if s == nil || s.db == nil {
-		return nil, governanceErr(CodeTeacherNotFound, "治理服务不可用", nil)
+		return nil, false, 0, governanceErr(CodeTeacherNotFound, "治理服务不可用", nil)
 	}
 	if limit <= 0 || limit > 200 {
-		limit = 100
+		limit = 50
 	}
-	rows, maps, err := loadGovernanceTeacherRows(s.db, q, limit, includeMerged, subjectID)
+	rows, hasMore, nextCursor, maps, err := loadGovernanceTeacherRows(s.db, q, cursor, limit, includeMerged, subjectID)
 	if err != nil {
-		return nil, governanceErr(CodeTeacherNotFound, "读取教师数据失败", err)
+		return nil, false, 0, governanceErr(CodeTeacherNotFound, "读取教师数据失败", err)
 	}
 	out := make([]GovernanceTeacherView, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, maps.view(row))
 	}
-	return out, nil
+	return out, hasMore, nextCursor, nil
 }
 
 // AliasTargetView 别名目标搜索项（供治理工作台下拉选择）。

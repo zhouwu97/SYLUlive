@@ -44,6 +44,12 @@ import (
 	"shenliyuan/internal/tasks"
 )
 
+var (
+	GitSHA     = "dev"
+	BuildTime  = ""
+	APIVersion = "v1"
+)
+
 type externalMCPHealthReader interface {
 	Healthy() bool
 	HealthStatus() mcpclient.ExternalMCPHealthStatus
@@ -1295,7 +1301,13 @@ func main() {
 			}
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"status": "ok",
+			"status":      "ok",
+			"git_sha":     GitSHA,
+			"build_time":  BuildTime,
+			"api_version": APIVersion,
+			"capabilities": gin.H{
+				"teacher_governance_v1": true,
+			},
 			"ai": gin.H{
 				"enabled":         cfg.AIEnabled,
 				"runtime_enabled": aiRuntime != nil,
@@ -1309,6 +1321,21 @@ func main() {
 			},
 		})
 	})
+
+	// 公开版本与能力接口（无需登录），供 App 启动与治理入口预检
+	versionHandler := func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status":      "ok",
+			"git_sha":     GitSHA,
+			"build_time":  BuildTime,
+			"api_version": APIVersion,
+			"capabilities": gin.H{
+				"teacher_governance_v1": true,
+			},
+		})
+	}
+	r.GET("/version", versionHandler)
+	r.GET("/api/version", versionHandler)
 
 	// C3 完成后不再暴露个人学校设备桥接；保留代码与数据模型用于历史迁移。
 	if !cfg.SchoolDeviceCapabilityCut {

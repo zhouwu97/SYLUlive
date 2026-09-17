@@ -1,3 +1,6 @@
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+
 /// 治理候选置信度
 enum GovernanceConfidence {
   high,
@@ -708,4 +711,103 @@ class GovernanceCourseItem {
         isMerged: json['is_merged'] == true || json['merged_into_id'] != null,
         mergedIntoId: (json['merged_into_id'] as num?)?.toInt(),
       );
+}
+
+/// 治理模块统一 API 错误转换器。
+/// 将底层的网络异常、状态码（401/403/404/409/500）转化为管理员易懂的中文提示，
+/// 避免直接在页面抛出 DioException 堆栈细节，同时在控制台保留 Debug 日志。
+class GovernanceApiErrorMapper {
+  static String format(dynamic error, {String fallback = '操作失败，请稍后重试'}) {
+    if (error is DioException) {
+      debugPrint('GovernanceApiError: type=${error.type}, status=${error.response?.statusCode}, data=${error.response?.data}');
+      final statusCode = error.response?.statusCode;
+      if (statusCode == 401) {
+        return '登录状态已失效，请重新登录';
+      }
+      if (statusCode == 403) {
+        return '当前账号没有治理权限';
+      }
+      if (statusCode == 404) {
+        return '当前服务端暂未提供该治理功能（请确认服务端已升级）';
+      }
+      if (statusCode == 409) {
+        final data = error.response?.data;
+        if (data is Map) {
+          final msg = data['error'] ?? data['message'];
+          if (msg != null && msg.toString().trim().isNotEmpty) {
+            return msg.toString();
+          }
+        }
+        return '数据状态发生冲突，请刷新后重试';
+      }
+      if (statusCode != null && statusCode >= 500) {
+        final data = error.response?.data;
+        if (data is Map) {
+          final msg = data['error'] ?? data['message'];
+          if (msg != null && msg.toString().trim().isNotEmpty) {
+            return msg.toString();
+          }
+        }
+        return '治理服务暂时异常，请稍后重试';
+      }
+      if (error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.sendTimeout ||
+          error.type == DioExceptionType.receiveTimeout ||
+          error.type == DioExceptionType.connectionError) {
+        return '网络连接超时或不可达，请检查网络连接';
+      }
+      final data = error.response?.data;
+      if (data is Map) {
+        final msg = data['error'] ?? data['message'];
+        if (msg != null && msg.toString().trim().isNotEmpty) {
+          return msg.toString();
+        }
+      }
+    }
+    return fallback;
+  }
+}
+
+/// 服务端版本与治理能力声明
+class ServerCapabilities {
+  final bool teacherGovernanceV1;
+  final String gitSha;
+  final String buildTime;
+  final String apiVersion;
+
+  const ServerCapabilities({
+    this.teacherGovernanceV1 = false,
+    this.gitSha = '',
+    this.buildTime = '',
+    this.apiVersion = '',
+  });
+
+  factory ServerCapabilities.fromJson(Map<String, dynamic> json) {
+    bool hasGov = false;
+    final caps = json['capabilities'];
+    if (caps is Map) {
+      hasGov = caps['teacher_governance_v1'] == true;
+    }
+    return ServerCapabilities(
+      teacherGovernanceV1: hasGov,
+      gitSha: json['git_sha']?.toString() ?? '',
+      buildTime: json['build_time']?.toString() ?? '',
+      apiVersion: json['api_version']?.toString() ?? '',
+    );
+  }
+}
+
+/// 治理模块通用分页容器
+class GovernancePageResult<T> {
+  final List<T> items;
+  final bool hasMore;
+  final int? nextCursor;
+  final int? page;
+
+  const GovernancePageResult({
+    required this.items,
+    this.hasMore = false,
+    this.nextCursor,
+    this.page,
+  });
 }

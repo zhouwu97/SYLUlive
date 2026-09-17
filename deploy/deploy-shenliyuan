@@ -25,11 +25,12 @@ rollback_on_failure() {
 	local exit_code=$?
 	if [[ "$deploy_succeeded" -eq 0 && "$binary_replaced" -eq 1 && -n "$backup_binary" && -s "$backup_binary" ]]; then
 		printf '[WARN] 部署或冒烟检验失败，回滚上一版二进制: %s\n' "$backup_binary" >&2
-		cp -a "$backup_binary" "$CURRENT_BINARY"
+		cp -a "$backup_binary" "${CURRENT_BINARY}.rollback"
+		mv -f "${CURRENT_BINARY}.rollback" "$CURRENT_BINARY"
 		chmod 0755 "$CURRENT_BINARY"
 		systemctl restart "$SERVICE_NAME" || true
 	fi
-	rm -f -- "$NEW_BINARY"
+	rm -f -- "$NEW_BINARY" "${CURRENT_BINARY}.rollback" 2>/dev/null || true
 	exit "$exit_code"
 }
 trap rollback_on_failure EXIT
@@ -91,11 +92,17 @@ fi
 
 printf '[INFO] 执行部署后冒烟自检...\n'
 # 1. 验证版本接口与能力协商标记 (硬门禁：必须 status==ok, git_sha==DEPLOYED_SHA, teacher_governance_v1==true)
-sleep 1
-version_resp="$(curl -sS --max-time 5 http://127.0.0.1:8080/version || true)"
-if [[ -z "$version_resp" ]]; then
-	version_resp="$(curl -sS --max-time 5 http://127.0.0.1:8080/health || true)"
-fi
+version_resp=""
+for i in $(seq 1 15); do
+	version_resp="$(curl -sS --max-time 3 http://127.0.0.1:8080/version 2>/dev/null || true)"
+	if [[ -z "$version_resp" ]]; then
+		version_resp="$(curl -sS --max-time 3 http://127.0.0.1:8080/health 2>/dev/null || true)"
+	fi
+	if [[ -n "$version_resp" ]]; then
+		break
+	fi
+	sleep 1
+done
 printf '[INFO] 版本接口响应: %s\n' "$version_resp"
 
 python_check_cmd="

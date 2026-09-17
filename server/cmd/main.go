@@ -1335,7 +1335,6 @@ func main() {
 		})
 	}
 	r.GET("/version", versionHandler)
-	r.GET("/api/version", versionHandler)
 
 	// C3 完成后不再暴露个人学校设备桥接；保留代码与数据模型用于历史迁移。
 	if !cfg.SchoolDeviceCapabilityCut {
@@ -2640,6 +2639,13 @@ func main() {
 		}
 
 		response := gin.H{
+			"status":              "ok",
+			"git_sha":             GitSHA,
+			"build_time":          BuildTime,
+			"api_version":         APIVersion,
+			"capabilities": gin.H{
+				"teacher_governance_v1": true,
+			},
 			"version":             "",
 			"min_version":         "",
 			"min_version_code":    int64(0),

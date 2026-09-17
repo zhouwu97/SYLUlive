@@ -335,6 +335,7 @@ class _AdminTeacherGovernanceScreenState
       ++_teacherSearchGen;
       setState(() {
         _isLoadingTeachers = true;
+        _isLoadingMoreTeachers = false;
         _teachersError = null;
         _teacherNextCursor = null;
         _hasMoreTeachers = true;
@@ -395,7 +396,12 @@ class _AdminTeacherGovernanceScreenState
         }
       });
     } on DioException catch (e) {
-      if (CancelToken.isCancel(e)) return;
+      if (CancelToken.isCancel(e)) {
+        if (mounted && loadMore) {
+          setState(() => _isLoadingMoreTeachers = false);
+        }
+        return;
+      }
       if (!mounted || currentGen != _teacherSearchGen) return;
       setState(() {
         if (loadMore) {
@@ -431,6 +437,7 @@ class _AdminTeacherGovernanceScreenState
       ++_aliasSearchGen;
       setState(() {
         _isLoadingAliases = true;
+        _isLoadingMoreAliases = false;
         _aliasesError = null;
         _aliasPage = 1;
         _hasMoreAliases = true;
@@ -479,7 +486,12 @@ class _AdminTeacherGovernanceScreenState
         _hasMoreAliases = hasMore;
       });
     } on DioException catch (e) {
-      if (CancelToken.isCancel(e)) return;
+      if (CancelToken.isCancel(e)) {
+        if (mounted && loadMore) {
+          setState(() => _isLoadingMoreAliases = false);
+        }
+        return;
+      }
       if (!mounted || currentGen != _aliasSearchGen) return;
       setState(() {
         if (loadMore) {
@@ -512,6 +524,7 @@ class _AdminTeacherGovernanceScreenState
     } else {
       setState(() {
         _isLoadingRecords = true;
+        _isLoadingMoreRecords = false;
         _recordsError = null;
         _recordsNextCursor = null;
         _hasMoreRecords = true;

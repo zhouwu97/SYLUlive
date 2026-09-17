@@ -25,7 +25,7 @@ const (
 	CodeSubjectNotEmpty                          = "SUBJECT_NOT_EMPTY"
 	CodeAliasTargetConflict                      = "ALIAS_TARGET_CONFLICT"
 	CodeCanonicalNameConflict                    = "CANONICAL_NAME_CONFLICT"
-	CodeGovernanceSnapshotRequired              = "GOVERNANCE_SNAPSHOT_REQUIRED"
+	CodeGovernanceSnapshotRequired               = "GOVERNANCE_SNAPSHOT_REQUIRED"
 	CodeGovernanceSnapshotStale                  = "GOVERNANCE_SNAPSHOT_STALE"
 	CodeMergeRatingConflict                      = "MERGE_RATING_CONFLICT"
 	CodeInvalidGovernanceDecision                = "INVALID_GOVERNANCE_DECISION"
@@ -261,10 +261,10 @@ func (m *teacherCountMaps) view(row governanceTeacherRow) GovernanceTeacherView 
 
 func loadGovernanceTeacherRows(db *gorm.DB, q string, cursor uint, limit int, includeMerged bool, subjectID *uint) ([]governanceTeacherRow, bool, uint, *teacherCountMaps, error) {
 	query := db.Table("teachers t").
-		Select("t.id AS id, t.name AS name, t.course AS course, t.verified AS verified, "+
-			"t.course_subject_id AS course_subject_id, t.canonical_source AS canonical_source, "+
-			"t.created_at AS created_at, t.merged_into_id AS merged_into_id, "+
-			"COALESCE(cs.name, '') AS course_subject_name, COALESCE(cs.verified, false) AS course_subject_verified, "+
+		Select("t.id AS id, t.name AS name, t.course AS course, t.verified AS verified, " +
+			"t.course_subject_id AS course_subject_id, t.canonical_source AS canonical_source, " +
+			"t.created_at AS created_at, t.merged_into_id AS merged_into_id, " +
+			"COALESCE(cs.name, '') AS course_subject_name, COALESCE(cs.verified, false) AS course_subject_verified, " +
 			"0 AS rating_count").
 		Joins("LEFT JOIN course_subjects cs ON cs.id = t.course_subject_id")
 	if !includeMerged {
@@ -652,10 +652,10 @@ type courseMergePlan struct {
 // RatingConflictDetail 评价冲突明细（详尽展示给管理员）。
 // RatingConflictLoserItem 冲突中被淘汰的评价明细（供治理工作台展示）。
 type RatingConflictLoserItem struct {
-	RatingID uint   `json:"rating_id"`
-	TeacherID uint  `json:"teacher_id"`
-	Star     int    `json:"star"`
-	Comment  string `json:"comment"`
+	RatingID  uint   `json:"rating_id"`
+	TeacherID uint   `json:"teacher_id"`
+	Star      int    `json:"star"`
+	Comment   string `json:"comment"`
 }
 
 type RatingConflictDetail struct {

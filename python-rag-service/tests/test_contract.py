@@ -30,13 +30,27 @@ def test_internal_auth_uses_constant_time_comparison_without_crashing(monkeypatc
     main.SERVICE_TOKEN = "test-token"
     monkeypatch.setattr(main, "TextEmbedding", lambda **_: _ReadyTextEmbedding())
     with TestClient(main.app) as client:
-        for candidate in ("wrong-token", "token", "测试令牌", ""):
+        for candidate in ("wrong-token", "token", "invalid-token", ""):
             response = client.post(
                 "/internal/rag/analyze",
                 headers={"X-Internal-Service-Token": candidate},
                 json={"text": "学生请假规定"},
             )
             assert response.status_code == 401, candidate
+
+        # 针对含非 ASCII 的 token，HTTP header 以 bytes 形式传入避免 httpx 客户端在请求前抛 UnicodeEncodeError
+        response_bytes = client.post(
+            "/internal/rag/analyze",
+            headers={"X-Internal-Service-Token": "测试令牌".encode("utf-8")},
+            json={"text": "学生请假规定"},
+        )
+        assert response_bytes.status_code == 401
+
+    # 验证非法/非常量时间比较的直接调用：含非 ASCII 字符串稳定抛 HTTPException(401) 而不是 500/TypeError
+    import pytest
+    with pytest.raises(main.HTTPException) as exc_info:
+        main.require_internal_service("测试令牌")
+    assert exc_info.value.status_code == 401
 
 
 def test_chinese_analyze_contract(monkeypatch):

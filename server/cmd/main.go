@@ -1903,7 +1903,7 @@ func main() {
 
 		reportsAdmin.GET("", reportHandler.GetList)
 
-	reportsAdmin.PUT("/:id/handle", reportHandler.Handle)
+		reportsAdmin.PUT("/:id/handle", reportHandler.Handle)
 
 	}
 

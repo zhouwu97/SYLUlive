@@ -1516,5 +1516,3 @@ func TestTeacherMergeIdempotentRetryAndBoundary(t *testing.T) {
 		}
 	}
 }
-
-

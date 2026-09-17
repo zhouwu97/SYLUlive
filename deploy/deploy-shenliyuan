@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 
-# 沈理校园 MCP 后端安全部署脚本。
-# 只更新 MCP 分支，不执行数据库初始化、清理生产目录或强制 reset。
+# 沈理校园后端安全部署脚本。
+# 支持指定目标分支或不可变 Commit SHA，不执行破坏性数据库初始化。
+# 用法:
+#   deploy-shenliyuan [branch_or_commit_sha]
+# 示例:
+#   deploy-shenliyuan 0e4ceda2
+#   deploy-shenliyuan zhzh
 set -Eeuo pipefail
 
 readonly SOURCE_DIR="/opt/shenliyuan-src"
 readonly RUN_DIR="/opt/shenliyuan"
 readonly SERVICE_NAME="shenliyuan"
-readonly DEPLOY_BRANCH="MCP"
+readonly DEFAULT_REF="zhzh"
+readonly TARGET_REF="${1:-${DEPLOY_REF:-$DEFAULT_REF}}"
 readonly CURRENT_BINARY="${RUN_DIR}/shenliyuan"
 readonly NEW_BINARY="${RUN_DIR}/shenliyuan.new"
 
@@ -18,7 +24,7 @@ deploy_succeeded=0
 rollback_on_failure() {
 	local exit_code=$?
 	if [[ "$deploy_succeeded" -eq 0 && "$binary_replaced" -eq 1 && -n "$backup_binary" && -s "$backup_binary" ]]; then
-		printf '[WARN] 部署失败，恢复上一版二进制: %s\n' "$backup_binary" >&2
+		printf '[WARN] 部署或冒烟检验失败，回滚上一版二进制: %s\n' "$backup_binary" >&2
 		cp -a "$backup_binary" "$CURRENT_BINARY"
 		chmod 0755 "$CURRENT_BINARY"
 		systemctl restart "$SERVICE_NAME" || true
@@ -42,16 +48,28 @@ if [[ -n "$(git -C "$SOURCE_DIR" status --porcelain)" ]]; then
 	exit 1
 fi
 
-printf '[INFO] 同步分支: %s\n' "$DEPLOY_BRANCH"
-git -C "$SOURCE_DIR" fetch origin "refs/heads/${DEPLOY_BRANCH}:refs/remotes/origin/${DEPLOY_BRANCH}"
-git -C "$SOURCE_DIR" checkout "$DEPLOY_BRANCH"
-git -C "$SOURCE_DIR" pull --ff-only origin "$DEPLOY_BRANCH"
+printf '[INFO] 同步目标代码: %s\n' "$TARGET_REF"
+git -C "$SOURCE_DIR" fetch origin --tags
 
-printf '[INFO] 编译 MCP 后端: %s\n' "$(git -C "$SOURCE_DIR" rev-parse --short HEAD)"
+# 判断 TARGET_REF 是否为分支，若为分支则拉取最新并 fast-forward；若为 SHA 则直接 checkout
+if git -C "$SOURCE_DIR" show-ref --verify --quiet "refs/remotes/origin/${TARGET_REF}"; then
+	git -C "$SOURCE_DIR" checkout "$TARGET_REF"
+	git -C "$SOURCE_DIR" pull --ff-only origin "$TARGET_REF"
+else
+	git -C "$SOURCE_DIR" checkout "$TARGET_REF"
+fi
+
+DEPLOYED_SHA="$(git -C "$SOURCE_DIR" rev-parse HEAD)"
+BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+printf '[INFO] 编译后端 ./cmd (SHA: %s, Time: %s)\n' "$DEPLOYED_SHA" "$BUILD_TIME"
 cd "$SOURCE_DIR/server"
 go mod download
 rm -f -- "$NEW_BINARY"
-go build -o "$NEW_BINARY" ./cmd/main.go
+
+go build -trimpath \
+	-ldflags "-X main.GitSHA=${DEPLOYED_SHA} -X main.BuildTime=${BUILD_TIME}" \
+	-o "$NEW_BINARY" ./cmd
 
 if [[ ! -s "$NEW_BINARY" ]]; then
 	printf '[ERR] 新二进制为空，拒绝替换。\n' >&2
@@ -64,12 +82,44 @@ cp -a "$CURRENT_BINARY" "$backup_binary"
 mv -f "$NEW_BINARY" "$CURRENT_BINARY"
 binary_replaced=1
 
+printf '[INFO] 重启服务 %s...\n' "$SERVICE_NAME"
 systemctl restart "$SERVICE_NAME"
 if ! systemctl is-active --quiet "$SERVICE_NAME"; then
 	journalctl -u "$SERVICE_NAME" -n 30 --no-pager >&2 || true
 	exit 1
 fi
 
+printf '[INFO] 执行部署后冒烟自检...\n'
+# 1. 验证版本接口与能力协商标记
+sleep 1
+version_resp="$(curl -sS --max-time 5 http://127.0.0.1:8080/version || curl -sS --max-time 5 http://127.0.0.1:8080/health || true)"
+printf '[INFO] 版本信息: %s\n' "$version_resp"
+
+if ! grep -q "teacher_governance_v1" <<< "$version_resp"; then
+	printf '[WARN] 版本接口未包含 teacher_governance_v1 标记，请确认已编译治理后端。\n' >&2
+fi
+
+# 2. 验证治理路由注册（未登录访问返回 401/403 为路由存在；若返回 404 说明服务端路由缺失）
+governance_endpoints=(
+	"/api/admin/teacher-governance/teachers"
+	"/api/admin/teacher-governance/merge-records"
+	"/api/admin/teacher-governance/aliases"
+	"/api/admin/teacher-governance/courses"
+	"/api/admin/teacher-governance/duplicate-groups"
+)
+
+for ep in "${governance_endpoints[@]}"; do
+	http_code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://127.0.0.1:8080${ep}" || true)"
+	if [[ "$http_code" == "404" ]]; then
+		printf '[ERR] 治理接口 %s 返回 404！服务端版本错位或路由未注册，触发回滚！\n' "$ep" >&2
+		exit 1
+	elif [[ "$http_code" != "401" && "$http_code" != "403" ]]; then
+		printf '[WARN] 治理接口 %s 返回非预期的 HTTP 状态码: %s (预期 401/403)\n' "$ep" "$http_code" >&2
+	else
+		printf '[OK] 治理接口冒烟正常: %s (HTTP %s)\n' "$ep" "$http_code"
+	fi
+done
+
 deploy_succeeded=1
-printf '[OK] 部署完成: %s\n' "$(git -C "$SOURCE_DIR" rev-parse --short HEAD)"
+printf '[OK] 部署并自检完成: %s\n' "$DEPLOYED_SHA"
 printf '[OK] 备份文件: %s\n' "$backup_binary"

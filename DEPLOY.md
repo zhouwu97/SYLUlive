@@ -172,40 +172,53 @@ journalctl -u shenliyuan -n 50 --no-pager
 `
 ## 日常更新
 `
-以后线上更新统一使用一键脚本：
+线上更新统一使用安全部署脚本，支持传入目标分支或不可变 Commit SHA：
 `
 ```bash
+# 默认部署最新 zhzh 分支
 deploy-shenliyuan
+
+# 或指定不可变 commit SHA 部署（推荐用于正式发布版本）
+deploy-shenliyuan 0e4ceda2
+
+# 或指定其他分支
+deploy-shenliyuan main
 ```
 `
-脚本等价于下面这套流程：
+脚本核心流程与特性：
 `
 ```bash
 cd /opt/shenliyuan-src
-git fetch origin
-git checkout main
-git pull --ff-only origin main
+git fetch origin --tags
+# 检出目标分支并 fast-forward，或检出指定不可变 Commit SHA
+git checkout <target_ref>
 
 cd /opt/shenliyuan-src/server
 go mod download
-go build -o /opt/shenliyuan/shenliyuan.new ./cmd
 
+# 注入 GitSHA 与 BuildTime，按 package 编译 ./cmd
+git_sha="$(git -C /opt/shenliyuan-src rev-parse HEAD)"
+build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+go build -trimpath \
+  -ldflags "-X main.GitSHA=${git_sha} -X main.BuildTime=${build_time}" \
+  -o /opt/shenliyuan/shenliyuan.new ./cmd
+
+# 安全热备与平滑重启
 cp -a /opt/shenliyuan/shenliyuan /opt/shenliyuan/shenliyuan.bak.$(date +%Y%m%d_%H%M%S)
 mv /opt/shenliyuan/shenliyuan.new /opt/shenliyuan/shenliyuan
-chmod +x /opt/shenliyuan/shenliyuan
-
+chmod 0755 /opt/shenliyuan/shenliyuan
 systemctl restart shenliyuan
 ```
 `
-更新后立即验证：
+脚本内含自动冒烟自检（失败自动回滚）：
+- 检查 `/version` 与 `/health` 返回的 `git_sha` 和 `capabilities.teacher_governance_v1`
+- 检查治理路由（`/teachers`、`/merge-records`、`/aliases` 等）必须返回 `401/403`；**若返回 `404` 将立即回滚并告警**
+`
+手动排查与验证：
 `
 ```bash
-cd /opt/shenliyuan-src
-git log -1 --oneline
-git status --short --branch
-
 systemctl is-active shenliyuan
-curl -s http://127.0.0.1:8080/api/version
+curl -s http://127.0.0.1:8080/version
 journalctl -u shenliyuan -n 50 --no-pager
 ```
 

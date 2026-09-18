@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"shenliyuan/internal/competitionmatching"
 	"shenliyuan/internal/models"
 )
 
@@ -139,6 +140,42 @@ func TestCompetitionPreferenceCleansBeforeApplyingLimits(t *testing.T) {
 	response := decodePreferenceResponse(t, recorder)
 	if len(response.SkillTags) != 11 {
 		t.Fatalf("cleaned skills=%v", response.SkillTags)
+	}
+}
+
+// 专业簇词表必须由服务端下发：客户端要渲染可纠正的专业方向，
+// 但没有理由再抄一份 53 项词表——抄了就会漂移，写进去的错值还会被接口拒绝。
+func TestCompetitionPreferenceExposesMajorClusterOptions(t *testing.T) {
+	db := newCompetitionTestDB(t)
+	handler := NewCompetitionHandler(db)
+
+	recorder := preferenceRequest(t, handler.GetCompetitionPreference, http.MethodGet, "", 91)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	response := decodePreferenceResponse(t, recorder)
+	if len(response.MajorClusterOptions) == 0 {
+		t.Fatal("未下发专业簇词表，客户端无法提供纠正入口")
+	}
+	for _, option := range response.MajorClusterOptions {
+		if !competitionmatching.IsStandardCluster(option) {
+			t.Fatalf("下发了词表外的簇：%q", option)
+		}
+	}
+
+	// 用下发的第一个选项做一次纠正，读回必须一致，证明词表与校验口径同源。
+	picked := response.MajorClusterOptions[0]
+	payload, _ := json.Marshal(map[string]interface{}{
+		"experience_level":       "beginner",
+		"major_cluster_override": []string{picked},
+	})
+	recorder = preferenceRequest(t, handler.PutCompetitionPreference, http.MethodPut, string(payload), 91)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	response = decodePreferenceResponse(t, recorder)
+	if len(response.MajorClusterOverride) != 1 || response.MajorClusterOverride[0] != picked {
+		t.Fatalf("纠正读回不一致：%#v want=%q", response.MajorClusterOverride, picked)
 	}
 }
 

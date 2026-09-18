@@ -8,6 +8,12 @@ class CompetitionPreference {
   final bool acceptLongTermTraining;
   final String careerDirection;
   final String experienceLevel;
+  /// 用户手动纠正的专业簇。留空表示按专业名自动推断。
+  /// 这是长尾专业唯一的自救路径：推断不出来时由用户指定即可参与匹配。
+  final List<String> majorClusterOverride;
+  /// 服务端下发的专业簇词表（只读）。刻意不写死在客户端：
+  /// 目录侧新增簇时，两边各抄一份必然漂移，写进去的错值还会被接口拒绝。
+  final List<String> majorClusterOptions;
 
   const CompetitionPreference({
     this.configured = false,
@@ -19,6 +25,8 @@ class CompetitionPreference {
     this.acceptLongTermTraining = false,
     this.careerDirection = '',
     this.experienceLevel = 'beginner',
+    this.majorClusterOverride = const [],
+    this.majorClusterOptions = const [],
   });
 
   factory CompetitionPreference.fromJson(Map<String, dynamic> json) {
@@ -32,6 +40,8 @@ class CompetitionPreference {
       acceptLongTermTraining: json['accept_long_term_training'] == true,
       careerDirection: '${json['career_direction'] ?? ''}',
       experienceLevel: '${json['experience_level'] ?? 'beginner'}',
+      majorClusterOverride: _stringList(json['major_cluster_override']),
+      majorClusterOptions: _stringList(json['major_cluster_options']),
     );
   }
 
@@ -44,6 +54,8 @@ class CompetitionPreference {
         'accept_long_term_training': acceptLongTermTraining,
         'career_direction': careerDirection.trim(),
         'experience_level': experienceLevel,
+        // 显式传空数组表示清空纠正；不传则服务端保留原值。
+        'major_cluster_override': majorClusterOverride,
       };
 
   static List<String> _stringList(dynamic value) =>

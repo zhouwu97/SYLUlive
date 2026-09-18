@@ -68,6 +68,18 @@ func IsStandardCluster(value string) bool {
 	return ok
 }
 
+// ClusterOptions 返回全部专业簇，供接口层下发。
+// 客户端需要这份清单才能让用户手动纠正专业方向（边界契约 B7）：
+// 词表只有这一份，客户端不要另抄一份，否则目录侧新增标签时两边会漂移。
+// 返回顺序即 StandardClusters 的声明顺序（按学院归组），便于按学科浏览。
+func ClusterOptions() []string {
+	result := make([]string, 0, len(StandardClusters))
+	for _, cluster := range StandardClusters {
+		result = append(result, string(cluster))
+	}
+	return result
+}
+
 // IsBroadCluster 判断簇是否为宽口径标签。宽标签命中只给降权分。
 func IsBroadCluster(cluster Cluster) bool {
 	if _, ok := broadClusterExtra[cluster]; ok {

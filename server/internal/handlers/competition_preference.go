@@ -56,12 +56,15 @@ type competitionPreferenceResponse struct {
 	CareerDirection        string   `json:"career_direction"`
 	ExperienceLevel        string   `json:"experience_level"`
 	MajorClusterOverride   []string `json:"major_cluster_override"`
+	// MajorClusterOptions 是服务端下发的专业簇词表，供客户端渲染可纠正的专业方向。
+	MajorClusterOptions []string `json:"major_cluster_options"`
 }
 
 func defaultCompetitionPreferenceResponse() competitionPreferenceResponse {
 	return competitionPreferenceResponse{
 		Goals: []string{}, DirectionTags: []string{}, SkillTags: []string{}, PreferredRoles: []string{},
 		MajorClusterOverride: []string{},
+		MajorClusterOptions:  competitionmatching.ClusterOptions(),
 		ExperienceLevel:      "beginner",
 	}
 }
@@ -78,6 +81,7 @@ func competitionPreferenceResponseFromModel(preference models.UserCompetitionPre
 		CareerDirection:        preference.CareerDirection,
 		ExperienceLevel:        preference.ExperienceLevel,
 		MajorClusterOverride:   decodeStringArray(preference.MajorClusterOverride),
+		MajorClusterOptions:    competitionmatching.ClusterOptions(),
 	}
 }
 

@@ -34,6 +34,7 @@ type FeedbackTicketHandler struct {
 	db        *gorm.DB
 	uploadDir string
 	notifier  *services.NotificationService
+	security  *services.SecurityEventService
 }
 
 // createAdminFeedbackNotifications 为每位管理员创建工单更新通知。
@@ -143,6 +144,11 @@ func NewFeedbackTicketHandler(db *gorm.DB, uploadDir string, notifier *services.
 	}
 }
 
+// SetSecurityEventService 注入安全事件记录器。
+func (h *FeedbackTicketHandler) SetSecurityEventService(security *services.SecurityEventService) {
+	h.security = security
+}
+
 // CreateTicketInput 用户提交新工单参数
 type CreateTicketInput struct {
 	Type             string `json:"type" binding:"required"`
@@ -208,6 +214,13 @@ func (h *FeedbackTicketHandler) CreateTicket(c *gin.Context) {
 		return
 	}
 	if recentCount >= maxUserHourlyTickets {
+		if h.security != nil {
+			_ = h.security.Record(services.SecurityEventInput{
+				EventType: "feedback_ticket_flood", Severity: models.SecuritySeverityLow, Route: "/api/feedback/tickets", Method: c.Request.Method,
+				ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &userID, Blocked: true, Action: "rate_limited",
+				Metadata: map[string]interface{}{"window": "1h", "route_group": "feedback"},
+			})
+		}
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "提交过于频繁，请稍后再试"})
 		return
 	}
@@ -533,6 +546,13 @@ func (h *FeedbackTicketHandler) AddMessage(c *gin.Context) {
 		return
 	}
 	if msgCount >= maxUserHourlyMessages {
+		if h.security != nil {
+			_ = h.security.Record(services.SecurityEventInput{
+				EventType: "feedback_ticket_flood", Severity: models.SecuritySeverityLow, Route: "/api/feedback/tickets/:id/messages", Method: c.Request.Method,
+				ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &userID, Blocked: true, Action: "rate_limited",
+				Metadata: map[string]interface{}{"window": "1h", "route_group": "feedback"},
+			})
+		}
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "发言过于频繁，请稍后再试"})
 		return
 	}

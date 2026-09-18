@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
@@ -26,14 +27,20 @@ type ReplyHandler struct {
 	db                *gorm.DB
 	jpushAppKey       string
 	jpushMasterSecret string
+	security          *services.SecurityEventService
 }
 
 // NewReplyHandler 创建回复处理器
-func NewReplyHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *ReplyHandler {
+func NewReplyHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string, security ...*services.SecurityEventService) *ReplyHandler {
+	var securityService *services.SecurityEventService
+	if len(security) > 0 {
+		securityService = security[0]
+	}
 	return &ReplyHandler{
 		db:                db,
 		jpushAppKey:       jpushAppKey,
 		jpushMasterSecret: jpushMasterSecret,
+		security:          securityService,
 	}
 }
 
@@ -541,6 +548,10 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	}
 	input.Content = strings.TrimSpace(input.Content)
 	input.StickerID = strings.TrimSpace(input.StickerID)
+	if utf8.RuneCountInString(input.Content) > 5000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "回复内容过长"})
+		return
+	}
 	fileIDs := c.PostForm("file_ids")
 	parsedFileIDs, err := services.ParseImageFileIDs(fileIDs)
 	if err != nil {
@@ -570,6 +581,18 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	}
 	if post.Status != models.PostStatusNormal {
 		c.JSON(http.StatusConflict, gin.H{"error": "该帖子当前不允许回复"})
+		return
+	}
+	if h.replyRateLimited(userID.(uint), post.ID, input.Content) {
+		if h.security != nil {
+			uid := userID.(uint)
+			_ = h.security.Record(services.SecurityEventInput{
+				EventType: "content_reply_flood", Severity: models.SecuritySeverityMedium, Route: "/api/posts/:id/replies", Method: c.Request.Method,
+				ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &uid, TargetType: "post", TargetValue: strconv.FormatUint(uint64(post.ID), 10), Blocked: true, Action: "rate_limited",
+				Metadata: map[string]interface{}{"window": "10m/24h", "route_group": "content"},
+			})
+		}
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "评论过于频繁，请稍后再试", "code": "content_rate_limited"})
 		return
 	}
 

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"gorm.io/gorm/clause"
 	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
 func refreshTTL() time.Duration {
@@ -313,6 +315,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 			return
 		}
 		h.revokeRefreshRotationFamilies(current, input.RefreshToken)
+		h.recordRefreshTokenReuse(c, current)
 		c.JSON(401, gin.H{"error": "刷新凭据已重复使用", "code": "refresh_token_reused"})
 		return
 	}
@@ -404,6 +407,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 			return
 		}
 		h.revokeRefreshRotationFamilies(rotated, input.RefreshToken)
+		h.recordRefreshTokenReuse(c, rotated)
 		c.JSON(401, gin.H{"error": "刷新凭据已重复使用", "code": "refresh_token_reused"})
 		return
 	}
@@ -412,4 +416,19 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 	writeRefreshResponse(c, access, response, newRaw, newRow.ExpiresAt, now)
+}
+
+func (h *AuthHandler) recordRefreshTokenReuse(c *gin.Context, token models.RefreshToken) {
+	if h.security == nil {
+		return
+	}
+	userID := token.UserID
+	_ = h.security.Record(services.SecurityEventInput{
+		EventType: "refresh_token_reused", Severity: models.SecuritySeverityCritical,
+		Route: "/api/refresh", Method: http.MethodPost, ClientIP: c.ClientIP(),
+		UserAgent: c.GetHeader("User-Agent"), InstallationID: c.GetHeader("X-Installation-ID"),
+		ActorUserID: &userID, TargetType: "user", TargetValue: fmt.Sprintf("user:%d", token.UserID),
+		TargetMasked: fmt.Sprintf("用户 #%d", token.UserID), Blocked: true, Action: "blocked",
+		Metadata: map[string]interface{}{"reason": "rotated_refresh_token_reused"},
+	})
 }

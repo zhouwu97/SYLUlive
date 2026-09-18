@@ -4,9 +4,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -16,16 +19,36 @@ import (
 type SearchHandler struct {
 	db          *gorm.DB
 	postHandler *PostHandler
+	security    *services.SecurityEventService
+	searchMu    sync.Mutex
+	searchHits  map[string][]time.Time
 }
 
-func NewSearchHandler(db *gorm.DB, postHandler *PostHandler) *SearchHandler {
-	return &SearchHandler{db: db, postHandler: postHandler}
+func NewSearchHandler(db *gorm.DB, postHandler *PostHandler, security ...*services.SecurityEventService) *SearchHandler {
+	var securityService *services.SecurityEventService
+	if len(security) > 0 {
+		securityService = security[0]
+	}
+	return &SearchHandler{db: db, postHandler: postHandler, security: securityService, searchHits: make(map[string][]time.Time)}
 }
 
 func (h *SearchHandler) Search(c *gin.Context) {
 	queryText := strings.TrimSpace(c.Query("q"))
-	if queryText == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入搜索内容"})
+	if runeCount := utf8.RuneCountInString(queryText); runeCount < 2 || runeCount > 64 || onlySearchWildcards(queryText) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "搜索内容需为 2 至 64 个字符，不能只包含通配符"})
+		return
+	}
+	if _, authenticated := c.Get("user_id"); !authenticated && !h.allowAnonymousSearch(c.ClientIP(), time.Now()) {
+		if h.security != nil {
+			_ = h.security.Record(services.SecurityEventInput{
+				EventType: "search_abuse", Severity: models.SecuritySeverityMedium,
+				Route: "/api/search", Method: http.MethodGet, ClientIP: c.ClientIP(),
+				TargetType: "route", TargetValue: "/api/search", TargetMasked: "/api/search",
+				Blocked: true, Action: "throttled",
+			})
+		}
+		c.Header("Retry-After", "60")
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "搜索过于频繁，请稍后再试", "code": "search_rate_limited"})
 		return
 	}
 
@@ -59,10 +82,10 @@ func (h *SearchHandler) searchPosts(
 	limit int,
 ) {
 	searchText := strings.ToLower(queryText)
-	searchLike := "%" + searchText + "%"
+	searchLike := "%" + escapeSearchLikePattern(searchText) + "%"
 	query := h.db.Model(&models.Post{}).
 		Where("status = ?", models.PostStatusNormal).
-		Where("(LOWER(title) LIKE ? OR LOWER(content) LIKE ?)", searchLike, searchLike).
+		Where("(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(content) LIKE ? ESCAPE '\\')", searchLike, searchLike).
 		Preload("Author").
 		Preload("Images").
 		Preload("Images.File").
@@ -85,9 +108,9 @@ func (h *SearchHandler) searchPosts(
 		query = query.Order(clause.Expr{
 			SQL: `CASE
 				WHEN LOWER(title) = ? THEN 0
-				WHEN LOWER(title) LIKE ? THEN 1
-				WHEN LOWER(title) LIKE ? THEN 2
-				WHEN LOWER(content) LIKE ? THEN 3
+				WHEN LOWER(title) LIKE ? ESCAPE '\\' THEN 1
+				WHEN LOWER(title) LIKE ? ESCAPE '\\' THEN 2
+				WHEN LOWER(content) LIKE ? ESCAPE '\\' THEN 3
 				ELSE 4
 			END`,
 			Vars: []interface{}{
@@ -127,14 +150,14 @@ func (h *SearchHandler) searchUsers(
 	limit int,
 ) {
 	searchText := strings.ToLower(queryText)
-	searchLike := "%" + searchText + "%"
+	searchLike := "%" + escapeSearchLikePattern(searchText) + "%"
 	query := h.db.Model(&models.User{})
 
 	parsedID, parseIDErr := strconv.ParseUint(queryText, 10, 64)
 	if parseIDErr == nil {
-		query = query.Where("id = ? OR LOWER(nickname) LIKE ?", parsedID, searchLike)
+		query = query.Where("id = ? OR LOWER(nickname) LIKE ? ESCAPE '\\'", parsedID, searchLike)
 	} else {
-		query = query.Where("LOWER(nickname) LIKE ?", searchLike)
+		query = query.Where("LOWER(nickname) LIKE ? ESCAPE '\\'", searchLike)
 	}
 
 	if sort == "newest" {
@@ -145,8 +168,8 @@ func (h *SearchHandler) searchUsers(
 				SQL: `CASE
 					WHEN id = ? THEN 0
 					WHEN LOWER(nickname) = ? THEN 1
-					WHEN LOWER(nickname) LIKE ? THEN 2
-					WHEN LOWER(nickname) LIKE ? THEN 3
+					WHEN LOWER(nickname) LIKE ? ESCAPE '\\' THEN 2
+					WHEN LOWER(nickname) LIKE ? ESCAPE '\\' THEN 3
 					ELSE 4
 				END`,
 				Vars: []interface{}{
@@ -160,8 +183,8 @@ func (h *SearchHandler) searchUsers(
 			query = query.Order(clause.Expr{
 				SQL: `CASE
 					WHEN LOWER(nickname) = ? THEN 0
-					WHEN LOWER(nickname) LIKE ? THEN 1
-					WHEN LOWER(nickname) LIKE ? THEN 2
+				WHEN LOWER(nickname) LIKE ? ESCAPE '\\' THEN 1
+				WHEN LOWER(nickname) LIKE ? ESCAPE '\\' THEN 2
 					ELSE 3
 				END`,
 				Vars: []interface{}{
@@ -200,4 +223,42 @@ func (h *SearchHandler) searchUsers(
 		"page":  page,
 		"limit": limit,
 	})
+}
+
+func escapeSearchLikePattern(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\`+`\`)
+	value = strings.ReplaceAll(value, "%", `\%`)
+	value = strings.ReplaceAll(value, "_", `\_`)
+	return value
+}
+
+func onlySearchWildcards(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return true
+	}
+	for _, r := range value {
+		if r != '%' && r != '_' && r != '*' && r != '?' && r != '\\' {
+			return false
+		}
+	}
+	return true
+}
+
+func (h *SearchHandler) allowAnonymousSearch(source string, now time.Time) bool {
+	h.searchMu.Lock()
+	defer h.searchMu.Unlock()
+	cutoff := now.Add(-time.Minute)
+	recent := h.searchHits[source][:0]
+	for _, hit := range h.searchHits[source] {
+		if hit.After(cutoff) {
+			recent = append(recent, hit)
+		}
+	}
+	if len(recent) >= 30 {
+		h.searchHits[source] = recent
+		return false
+	}
+	h.searchHits[source] = append(recent, now)
+	return true
 }

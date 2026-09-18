@@ -115,6 +115,7 @@ type AuthHandler struct {
 
 	jwtSecret         string
 	emailVerification *services.EmailVerificationService
+	security          *services.SecurityEventService
 	schoolDataVisible bool
 }
 
@@ -145,6 +146,11 @@ func NewAuthHandlerWithEmailVerificationAndCleanup(
 		schoolDataVisible: true,
 	}
 
+}
+
+// SetSecurityEventService 接入攻击事件聚合，不改变旧构造函数签名。
+func (h *AuthHandler) SetSecurityEventService(security *services.SecurityEventService) {
+	h.security = security
 }
 
 // SetSchoolPersonalDataVisible 控制账号安全响应中的历史学校个人字段。
@@ -1258,7 +1264,7 @@ type LoginInput struct {
 	Account   string `json:"account"`
 	StudentID string `json:"student_id"`
 
-	Password string `json:"password" binding:"required"`
+	Password string `json:"password" binding:"required,max=128"`
 }
 
 // LoginEduInput 缁熶竴鐧诲綍杈撳叆锛堝﹀彿+鏁欏姟瀵嗙爜+APP瀵嗙爜锛
@@ -1484,6 +1490,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入学号或邮箱"})
 		return
 	}
+	if len([]rune(strings.TrimSpace(accountInput))) > 320 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "登录账号过长"})
+		return
+	}
 
 	now := time.Now()
 
@@ -1491,6 +1501,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	ipKey := loginThrottleScope("ip", c.ClientIP())
 	for _, scope := range []string{accountKey, ipKey} {
 		if remaining, locked := h.loginLock(scope, now); locked {
+			// 已进入锁定窗口的请求也要进入安全中心，否则管理员只能看到触发锁定的那一次。
+			h.recordLoginSecurityEvent(c, account, nil, true)
 
 			c.Header("Retry-After", strconv.Itoa(int(remaining.Round(time.Second).Seconds())))
 
@@ -1514,6 +1526,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			if ipLockFor := h.registerLoginFailure(ipKey, now); ipLockFor > lockFor {
 				lockFor = ipLockFor
 			}
+			h.recordLoginSecurityEvent(c, account, nil, lockFor > 0)
 			if lockFor > 0 {
 				c.Header("Retry-After", strconv.Itoa(int(lockFor.Round(time.Second).Seconds())))
 				c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(lockFor))})
@@ -1537,6 +1550,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		if ipLockFor > lockFor {
 			lockFor = ipLockFor
 		}
+		userID := user.ID
+		h.recordLoginSecurityEvent(c, account, &userID, lockFor > 0)
 
 		if lockFor > 0 {
 
@@ -1558,7 +1573,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	h.clearLoginFailures(accountKey)
-	h.clearLoginFailures(ipKey)
 
 	refreshToken, sessionID, refreshErr := h.issueRefreshSession(user.ID, c)
 	if refreshErr != nil {
@@ -1591,6 +1605,46 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.SetCookie("refresh_token", refreshToken, int(refreshTTL().Seconds()), "/api", "", secureRefresh, true)
 	c.JSON(http.StatusOK, payload)
 
+}
+
+func (h *AuthHandler) recordLoginSecurityEvent(c *gin.Context, account string, userID *uint, blocked bool) {
+	if h.security == nil {
+		return
+	}
+	_ = h.security.Record(services.SecurityEventInput{
+		EventType: "login_bruteforce", Severity: models.SecuritySeverityMedium,
+		Route: "/api/login", Method: http.MethodPost, ClientIP: c.ClientIP(),
+		UserAgent: c.GetHeader("User-Agent"), InstallationID: c.GetHeader("X-Installation-ID"),
+		ActorUserID: userID, TargetType: "account", TargetValue: account,
+		TargetMasked: maskLoginSecurityTarget(account), Blocked: blocked,
+		Action: func() string {
+			if blocked {
+				return "blocked"
+			}
+			return "observed"
+		}(),
+	})
+	count, err := h.security.CountDistinctTargets("login_bruteforce", c.ClientIP(), time.Now().Add(-10*time.Minute))
+	if err == nil && count >= 10 {
+		_ = h.security.Record(services.SecurityEventInput{
+			EventType: "login_password_spray", Severity: models.SecuritySeverityHigh,
+			Route: "/api/login", Method: http.MethodPost, ClientIP: c.ClientIP(),
+			UserAgent: c.GetHeader("User-Agent"), Blocked: blocked, Action: "throttled",
+			TargetType: "route", TargetValue: "/api/login", TargetMasked: "/api/login",
+			Metadata: map[string]interface{}{"distinct_targets": count, "window": "10m"},
+		})
+	}
+}
+
+func maskLoginSecurityTarget(account string) string {
+	account = strings.TrimSpace(account)
+	if strings.Contains(account, "@") {
+		return maskEmail(account)
+	}
+	if len(account) <= 4 {
+		return "***"
+	}
+	return account[:2] + "***" + account[len(account)-2:]
 }
 
 // isCookieAuthTransport 由 Web 客户端显式声明 Cookie-only 认证，避免把 JWT 放进浏览器可读响应体。

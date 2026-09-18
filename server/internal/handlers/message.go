@@ -36,6 +36,7 @@ type MessageHandler struct {
 	notifier    messageNotifier
 	rateLimiter *messageRateLimiter
 	events      *messageEventBroker
+	security    *services.SecurityEventService
 }
 
 type messageNotifier interface {
@@ -54,6 +55,11 @@ func NewMessageHandler(db *gorm.DB, notifiers ...messageNotifier) *MessageHandle
 		rateLimiter: newMessageRateLimiter(),
 		events:      newMessageEventBroker(),
 	}
+}
+
+// SetSecurityEventService 注入安全事件记录器，避免测试处理器必须依赖完整应用启动链路。
+func (h *MessageHandler) SetSecurityEventService(security *services.SecurityEventService) {
+	h.security = security
 }
 
 var _ messageNotifier = (*services.NotificationService)(nil)
@@ -684,6 +690,15 @@ func (h *MessageHandler) Send(c *gin.Context) {
 
 	// 仅有效且有发送权限的请求才消耗限流额度。
 	if !h.rateLimiter.allow(currentUserID, targetID, time.Now()) {
+		if h.security != nil {
+			uid := currentUserID
+			_ = h.security.Record(services.SecurityEventInput{
+				EventType: "private_message_flood", Severity: models.SecuritySeverityMedium, Route: "/api/messages", Method: c.Request.Method,
+				ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &uid,
+				TargetType: "user", TargetValue: fmt.Sprintf("%d", targetID), Blocked: true, Action: "rate_limited",
+				Metadata: map[string]interface{}{"window": "1m", "route_group": "messaging"},
+			})
+		}
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "发送太频繁，请稍后再试"})
 		return
 	}

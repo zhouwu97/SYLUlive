@@ -43,22 +43,25 @@ class AuthResult {
   final String? errorMessage;
   final int? statusCode;
   final String? errorCode;
+  final int? retryAfterSeconds;
 
   const AuthResult(
       {required this.success,
       this.errorMessage,
       this.statusCode,
-      this.errorCode});
+      this.errorCode,
+      this.retryAfterSeconds});
 
   factory AuthResult.success() => const AuthResult(success: true);
 
   factory AuthResult.failure(String message,
-          {int? statusCode, String? errorCode}) =>
+          {int? statusCode, String? errorCode, int? retryAfterSeconds}) =>
       AuthResult(
           success: false,
           errorMessage: message,
           statusCode: statusCode,
-          errorCode: errorCode);
+          errorCode: errorCode,
+          retryAfterSeconds: retryAfterSeconds);
 }
 
 /// 注册时提交的法律文件确认。服务端会校验并持久化每份文件的同意记录。
@@ -860,7 +863,9 @@ class AuthProvider extends ChangeNotifier {
     _sessionExpiryFuture = _enqueueAuthMutation(() async {
       if (_sessionGeneration != generation ||
           _accountSessionEpoch != accountEpoch ||
-          _token != token) return;
+          _token != token) {
+        return;
+      }
       await _clearLocalSession(
         clearPushAlias: true,
         closeAccountContext: true,
@@ -1119,8 +1124,9 @@ class AuthProvider extends ChangeNotifier {
         final userJson = Map<String, dynamic>.from(response.data);
         final candidate = _authSessionCandidate(token, userJson);
         await _saveAuthCandidate(candidate, expectedAccountEpoch: accountEpoch);
-        if (_accountSessionEpoch != accountEpoch)
+        if (_accountSessionEpoch != accountEpoch) {
           return AuthState.recoveryFailed;
+        }
         _commitAuthSession(candidate);
         _onAuthenticated();
         return AuthState.authenticated;
@@ -1395,6 +1401,12 @@ class AuthProvider extends ChangeNotifier {
       '认证请求失败: type=${e.type}, status=${e.response?.statusCode}',
     );
     return AppFeedback.dioErrorMessage(e, fallback: '操作失败，请稍后再试');
+  }
+
+  int? _parseRetryAfterSeconds(DioException e) {
+    final raw = e.response?.headers.value('retry-after');
+    final seconds = int.tryParse(raw ?? '');
+    return seconds != null && seconds > 0 ? seconds : null;
   }
 
   Future<AuthResult> register(
@@ -2103,7 +2115,9 @@ class AuthProvider extends ChangeNotifier {
       }
       return AuthResult.failure('发送失败');
     } on DioException catch (e) {
-      return AuthResult.failure(_parseDioError(e));
+      return AuthResult.failure(_parseDioError(e),
+          statusCode: e.response?.statusCode,
+          retryAfterSeconds: _parseRetryAfterSeconds(e));
     }
   }
 
@@ -2186,7 +2200,8 @@ class AuthProvider extends ChangeNotifier {
       return AuthResult.success();
     } on DioException catch (error) {
       return AuthResult.failure(_parseDioError(error),
-          statusCode: error.response?.statusCode);
+          statusCode: error.response?.statusCode,
+          retryAfterSeconds: _parseRetryAfterSeconds(error));
     }
   }
 
@@ -2243,7 +2258,8 @@ class AuthProvider extends ChangeNotifier {
       return AuthResult.success();
     } on DioException catch (error) {
       return AuthResult.failure(_parseDioError(error),
-          statusCode: error.response?.statusCode);
+          statusCode: error.response?.statusCode,
+          retryAfterSeconds: _parseRetryAfterSeconds(error));
     }
   }
 

@@ -36,6 +36,7 @@ type Config struct {
 	SMTPUser                         string // SMTP 用户名
 	SMTPPass                         string // SMTP 密码/授权码
 	SMTPFrom                         string // 发件人邮箱
+	SecurityEventHMACSecret          string // 安全中心来源/目标 HMAC 密钥，生产环境不得复用 JWT_SECRET
 	JPushAppKey                      string // 极光推送 AppKey
 	JPushMasterSecret                string // 极光推送 MasterSecret
 	SuperAdminID                     string // 超级管理员账号
@@ -110,6 +111,8 @@ type Config struct {
 	AppReleaseAllowedMarketHosts []string // 外部市场跳转允许的 HTTPS 域名
 	AccountIdentityReadMode      string   // 账号登录读路径：legacy 或 identity
 	TrustedProxyCIDRs            []string // 允许 Gin 信任 X-Forwarded-For 的代理网段
+	SecurityBlockEnabled         bool     // 来源封禁开关，建表与验收完成后再开启
+	SecurityAttributionValidFrom string   // 来源归因可信起点，起点前的历史来源仅标记为 unknown
 	// SchoolDeviceCapabilityCut 表示 C3 已完成，服务端不再提供个人学校设备能力。
 	// SchoolAcademicRoutesRetired 控制旧教务个人路由；教务绑定恢复依赖这些路由。
 	SchoolAuthorityRetired      bool
@@ -387,6 +390,39 @@ func Load() *Config {
 		panic(err)
 	}
 	trustedProxyCIDRs := splitNonEmpty(os.Getenv("TRUSTED_PROXY_CIDRS"))
+	securityBlockEnabled := envBool("SECURITY_BLOCK_ENABLED", false)
+	securityAttributionValidFrom := strings.TrimSpace(os.Getenv("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM"))
+	securityEventHMACSecret := strings.TrimSpace(os.Getenv("SECURITY_EVENT_HMAC_SECRET"))
+	if securityEventHMACSecret == "" {
+		if releaseMode {
+			panic(fmt.Errorf("release 模式必须设置 SECURITY_EVENT_HMAC_SECRET，且不得复用 JWT_SECRET"))
+		}
+		securityEventHMACSecret = jwtSecret + ":security-events"
+	}
+	if releaseMode && securityEventHMACSecret == jwtSecret {
+		panic(fmt.Errorf("SECURITY_EVENT_HMAC_SECRET 不得复用 JWT_SECRET"))
+	}
+	if releaseMode {
+		if len([]byte(securityEventHMACSecret)) < 32 {
+			panic(fmt.Errorf("生产环境 SECURITY_EVENT_HMAC_SECRET 长度至少为 32 字节"))
+		}
+		if isPlaceholderSecret(securityEventHMACSecret, []string{"change_me_in_env", "your-super-secret-security-event-key-change-this"}) {
+			panic(fmt.Errorf("生产环境必须设置安全的 SECURITY_EVENT_HMAC_SECRET 环境变量"))
+		}
+	}
+	if releaseMode {
+		if len(trustedProxyCIDRs) == 0 {
+			panic(fmt.Errorf("release 模式必须显式设置 TRUSTED_PROXY_CIDRS"))
+		}
+		for _, cidr := range trustedProxyCIDRs {
+			if strings.HasSuffix(strings.TrimSpace(cidr), "/0") {
+				panic(fmt.Errorf("TRUSTED_PROXY_CIDRS 不允许信任全网段: %s", cidr))
+			}
+			if _, _, err := net.ParseCIDR(strings.TrimSpace(cidr)); err != nil {
+				panic(fmt.Errorf("TRUSTED_PROXY_CIDRS 包含无效网段 %q", cidr))
+			}
+		}
+	}
 	// 退役开关采用显式环境变量，便于 C2/C3 分阶段发布和回滚记录。
 	// 最终开关兼容单一部署参数，但不会自动修改数据库或删除历史证据。
 	schoolAuthorityRetired := envBool("SCHOOL_AUTHORITY_RETIRED", false)
@@ -529,6 +565,7 @@ func Load() *Config {
 		SMTPUser:                         smtpUser,
 		SMTPPass:                         smtpPass,
 		SMTPFrom:                         smtpFrom,
+		SecurityEventHMACSecret:          securityEventHMACSecret,
 		JPushAppKey:                      jpushAppKey,
 		JPushMasterSecret:                jpushMasterSecret,
 		SuperAdminID:                     superAdminID,
@@ -597,6 +634,8 @@ func Load() *Config {
 		LegalConsentEnforcement:             legalConsentEnforcement,
 		AccountIdentityReadMode:             accountIdentityReadMode,
 		TrustedProxyCIDRs:                   trustedProxyCIDRs,
+		SecurityBlockEnabled:                securityBlockEnabled,
+		SecurityAttributionValidFrom:        securityAttributionValidFrom,
 		SchoolAuthorityRetired:              schoolAuthorityRetired,
 		SchoolLegacySecretsFrozen:           envBool("SCHOOL_LEGACY_SECRETS_FROZEN", true),
 		SchoolDeviceCapabilityCut:           schoolDeviceCapabilityCut,

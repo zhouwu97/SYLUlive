@@ -42,6 +42,24 @@ func (h *AcademicIdentityHandler) BindLocal(c *gin.Context) {
 		c.JSON(400, gin.H{"code": "INVALID_STUDENT_ID"})
 		return
 	}
+	// 本地登录成功后的重复回调是正常现象；相同绑定直接读回事实，避免每次都锁用户并开启写事务。
+	var existing models.AcademicIdentityBinding
+	if err := h.db.Where("user_id = ? AND provider_id = ? AND student_id = ?", userID, input.ProviderID, input.StudentID).First(&existing).Error; err == nil {
+		var user models.User
+		if userErr := h.db.Select("id", "account_status").First(&user, userID).Error; userErr != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"code": "BINDING_UNAVAILABLE", "error": "学生身份暂未同步，请稍后重试"})
+			return
+		}
+		if user.AccountStatus != "" && user.AccountStatus != "active" {
+			c.JSON(http.StatusForbidden, gin.H{"code": "ACCOUNT_RESTRICTED"})
+			return
+		}
+		h.writeVerifiedBinding(c, userID, input.ProviderID, input.StudentID)
+		return
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": "BINDING_UNAVAILABLE", "error": "学生身份暂未同步，请稍后重试"})
+		return
+	}
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		var user models.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {

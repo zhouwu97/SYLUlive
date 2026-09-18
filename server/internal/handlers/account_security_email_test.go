@@ -35,7 +35,7 @@ func TestEmailResetChallengeCannotResetNewEmailOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开数据库失败: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.EmailVerificationChallenge{}, &models.AccountSecurityAuditLog{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.EmailVerificationChallenge{}, &models.EmailVerificationRequest{}, &models.VerificationAttemptBucket{}, &models.AccountSecurityAuditLog{}); err != nil {
 		t.Fatalf("迁移测试表失败: %v", err)
 	}
 	now := time.Date(2026, time.July, 22, 12, 0, 0, 0, time.UTC)
@@ -132,6 +132,8 @@ func TestPublicEmailCodeRequestsRateLimitExistingAndUnknownAddressesEqually(t *t
 	}
 	for _, testCase := range testCases {
 		for _, email := range []string{"existing@example.com", "unknown@example.com"} {
+			// 目标额度跨 register/reset 共用；每个组合前推进冷却窗口，测试两条公开入口各自的枚举保护。
+			now = now.Add(61 * time.Second)
 			payload, err := json.Marshal(map[string]string{"email": email, "purpose": testCase.purpose})
 			if err != nil {
 				t.Fatalf("序列化公开验证码请求失败: %v", err)
@@ -149,7 +151,7 @@ func TestPublicEmailCodeRequestsRateLimitExistingAndUnknownAddressesEqually(t *t
 			}
 			second := httptest.NewRecorder()
 			router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, testCase.path, bytes.NewReader(payload)))
-			if second.Code != http.StatusTooManyRequests || !containsJSONCode(second.Body.Bytes(), "EMAIL_VERIFICATION_RATE_LIMITED") {
+			if second.Code != http.StatusTooManyRequests || !containsJSONCode(second.Body.Bytes(), "EMAIL_CODE_COOLDOWN") {
 				t.Fatalf("重复公开验证码请求未获得统一限流: path=%s email=%s status=%d body=%s", testCase.path, email, second.Code, second.Body.String())
 			}
 		}

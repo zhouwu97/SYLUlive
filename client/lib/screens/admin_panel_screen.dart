@@ -19,6 +19,7 @@ import 'shuitie_screen.dart';
 import 'admin_ai_metrics_screen.dart';
 import 'admin_appeal_review_screen.dart';
 import 'admin_teacher_governance_screen.dart';
+import 'admin_security_center_screen.dart';
 import '../widgets/global_background_wrapper.dart';
 
 class AdminPanelScreen extends StatefulWidget {
@@ -38,6 +39,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   int? _adminTasksCount; // Invitations + Removals
   int? _examPapersCount; // Exam paper submissions
   int? _courtReviewCount;
+  int? _securityCount;
   bool _hasLoadError = false;
 
   @override
@@ -74,6 +76,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       safeGet(dio.get('/admin/course-evaluations/pending',
           queryParameters: {'limit': 50})),
       safeGet(dio.get('/admin/appeals/review')),
+      safeGet(dio
+          .get('/admin/security/overview', queryParameters: {'range': '24h'})),
     ]);
 
     if (!mounted) return;
@@ -101,6 +105,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       return total;
     }
 
+    int? getSecurityCount(Response<dynamic>? response) {
+      if (response == null || response.data is! Map) return null;
+      final value = response.data['active_high_count'];
+      return value is num ? value.toInt() : null;
+    }
+
     setState(() {
       _reportsCount = getCount(responses[0]);
       _featuredCount = getCount(responses[1]);
@@ -109,6 +119,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       _adminTasksCount = sumCounts([responses[4], responses[5]]);
       _examPapersCount = getCount(responses[6]);
       _courtReviewCount = getCount(responses[9]);
+      _securityCount = getSecurityCount(responses[10]);
       _hasLoadError = responses.any((response) => response == null);
       _isLoading = false;
     });
@@ -366,6 +377,19 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       isDark: isDark,
                       children: [
                         _AdminActionPill(
+                          icon: Icons.shield_outlined,
+                          iconColor: Colors.deepOrange,
+                          title: '安全中心',
+                          subtitle: '验证码、登录、刷屏与会话攻击',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    const AdminSecurityCenterScreen()),
+                          ).then((_) => _loadCounts()),
+                        ),
+                        _AdminActionPill(
                           icon: Icons.campaign_outlined,
                           iconColor: Colors.redAccent,
                           title: '公告管理',
@@ -515,6 +539,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       context,
                       MaterialPageRoute(
                           builder: (_) => const AdminAppealReviewScreen()))
+                  .then((_) => _loadCounts()),
+            ),
+            _AdminMetricPill(
+              title: '安全事件',
+              count: _securityCount,
+              isLoading: _isLoading,
+              isDark: isDark,
+              onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const AdminSecurityCenterScreen()))
                   .then((_) => _loadCounts()),
             ),
           ],
@@ -734,7 +769,9 @@ class _AdminMetricPill extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
                 color: _hasFailed
-                    ? (isDark ? Colors.orange.withValues(alpha: 0.3) : Colors.orange[100])
+                    ? (isDark
+                        ? Colors.orange.withValues(alpha: 0.3)
+                        : Colors.orange[100])
                     : (isDark ? Colors.white24 : Colors.grey[200]),
                 borderRadius: BorderRadius.circular(10),
               ),

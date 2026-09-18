@@ -206,6 +206,9 @@ func main() {
 		&models.AcademicIdentityChallenge{},
 		&models.EmailVerificationChallenge{},
 		&models.EmailVerificationRequest{},
+		&models.VerificationAttemptBucket{},
+		&models.SecurityEvent{},
+		&models.SecurityBlock{},
 		&models.AccountSecurityAuditLog{},
 		&models.IdempotencyRecord{},
 		&models.FeedbackSubmission{},
@@ -584,6 +587,22 @@ func main() {
 	// 确保默认超级管理员
 
 	ensureSystemSuperAdmin(db, cfg.SuperAdminID, cfg.SuperAdminPass)
+	securityEvents := services.NewSecurityEventService(db, cfg.SecurityEventHMACSecret, time.Now)
+	if err := securityEvents.SetSourceAttributionValidFrom(cfg.SecurityAttributionValidFrom); err != nil {
+		log.Printf("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM 无效，将不标记历史归因起点: %v", err)
+	}
+	if err := services.PurgeSecurityData(db, time.Now()); err != nil {
+		log.Printf("清理安全账本失败: %v", err)
+	}
+	go func() {
+		ticker := time.NewTicker(12 * time.Hour)
+		defer ticker.Stop()
+		for now := range ticker.C {
+			if err := services.PurgeSecurityData(db, now); err != nil {
+				log.Printf("清理安全账本失败: %v", err)
+			}
+		}
+	}()
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -592,6 +611,12 @@ func main() {
 	r.Use(middleware.RequestTraceMiddleware(), gin.Recovery())
 	if err := r.SetTrustedProxies(cfg.TrustedProxyCIDRs); err != nil {
 		log.Fatal("配置可信代理网段失败:", err)
+	}
+	if cfg.SecurityBlockEnabled {
+		log.Println("安全来源封禁已启用；数据库异常时按 fail-open 处理并暴露 degraded 健康状态")
+		r.Use(middleware.SecurityBlockMiddleware(securityEvents))
+	} else {
+		log.Println("安全来源封禁当前关闭：请完成 schema smoke 与真实 IP 验收后设置 SECURITY_BLOCK_ENABLED=true")
 	}
 
 	// CORS 仅允许显式配置的可信来源，生产环境不能反射任意 Origin。
@@ -687,14 +712,17 @@ func main() {
 	handlers.VerifyCodeConfig.SMTPUser = cfg.SMTPUser
 	handlers.VerifyCodeConfig.SMTPPass = cfg.SMTPPass
 	handlers.VerifyCodeConfig.SMTPFrom = cfg.SMTPFrom
+	verificationMailer := services.NewSMTPVerificationMailer(services.SMTPConfig{
+		Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass, From: cfg.SMTPFrom,
+	})
 	emailVerification := services.NewEmailVerificationService(
 		db,
-		services.NewSMTPVerificationMailer(services.SMTPConfig{
-			Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass, From: cfg.SMTPFrom,
-		}),
+		verificationMailer,
 		cfg.JWTSecret,
 		time.Now,
 	)
+	emailVerification.SetSecurityEventService(securityEvents)
+	emailVerification.SetMailDispatcher(services.NewVerificationMailDispatcher(verificationMailer, 256, 3))
 
 	// 初始化处理器
 
@@ -721,13 +749,14 @@ func main() {
 		log.Println("个人教务能力已退役，跳过教务客户端初始化")
 	}
 	authHandler := handlers.NewAuthHandlerWithEmailVerificationAndCleanup(db, cfg.JWTSecret, emailVerification, eduCredentialCleanupJobs)
+	authHandler.SetSecurityEventService(securityEvents)
 	authHandler.SetSchoolPersonalDataVisible(!cfg.SchoolAuthorityRetired)
 
 	userHandler := handlers.NewUserHandler(db)
 	handlers.SetSchoolPersonalDataVisible(!cfg.SchoolAuthorityRetired)
 	privacyHandler := handlers.NewPrivacyHandlerWithEduCredentialCleanup(db, eduCredentialCleanupJobs)
 
-	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
+	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret, securityEvents)
 	topicHandler := handlers.NewTopicHandler(db)
 	postHandler.SetFeedPersonalization(cfg.HomeFeedPersonalizationShadow, cfg.HomeFeedPersonalizationPercent)
 	postHandler.SetFeedPersonalizationV5(cfg.HomeFeedV5PersonalizationShadow, cfg.HomeFeedV5PersonalizationPercent)
@@ -735,7 +764,7 @@ func main() {
 	feedEventHandler := handlers.NewFeedEventHandler(db)
 	feedMetricsHandler := handlers.NewFeedMetricsHandler(db)
 	pollHandler := handlers.NewPollHandler(db)
-	searchHandler := handlers.NewSearchHandler(db, postHandler)
+	searchHandler := handlers.NewSearchHandler(db, postHandler, securityEvents)
 	competitionHandler, competitionHandlerErr := handlers.NewCompetitionHandlerWithEvidenceStorage(
 		db, cfg.CompetitionAwardEvidenceDir, cfg.MaxFileSize,
 	)
@@ -757,12 +786,13 @@ func main() {
 		}
 	}()
 
-	replyHandler := handlers.NewReplyHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
+	replyHandler := handlers.NewReplyHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret, securityEvents)
 
 	likeHandler := handlers.NewLikeHandler(db)
 
 	messageHandler := handlers.NewMessageHandler(db, services.NewNotificationService(db, cfg.JPushAppKey, cfg.JPushMasterSecret))
 	messageHandler.SetUploadDir(cfg.UploadDir)
+	messageHandler.SetSecurityEventService(securityEvents)
 
 	announcementHandler := handlers.NewAnnouncementHandler(db)
 
@@ -825,6 +855,8 @@ func main() {
 	)
 
 	superAdminHandler := handlers.NewSuperAdminHandlerWithEmailVerification(db, emailVerification)
+	securityAdminHandler := handlers.NewSecurityAdminHandler(db, securityEvents)
+	securityAdminHandler.SetProtectionConfig(cfg.SecurityBlockEnabled, cfg.TrustedProxyCIDRs, cfg.SecurityAttributionValidFrom)
 	adminAIHandler := handlers.NewAdminAIHandler(db)
 
 	// 应用内更新：阶段 A 暴露公开版本检查接口。APK 下载路由在阶段 A5 追加。
@@ -894,6 +926,8 @@ func main() {
 
 	feedbackHandler := handlers.NewFeedbackHandler(db, cfg.UploadDir, cfg.JWTSecret)
 	feedbackTicketHandler := handlers.NewFeedbackTicketHandler(db, cfg.UploadDir, services.NewNotificationService(db, cfg.JPushAppKey, cfg.JPushMasterSecret))
+	feedbackHandler.SetSecurityEventService(securityEvents)
+	feedbackTicketHandler.SetSecurityEventService(securityEvents)
 
 	checkinHandler := handlers.NewCheckInHandler(db)
 	checkinCompensationHandler := handlers.NewCheckInCompensationHandler(db)
@@ -1300,13 +1334,32 @@ func main() {
 				ragCancel()
 			}
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"status":      "ok",
+		securityEventSchemaReady := db.Migrator().HasTable(&models.SecurityEvent{})
+		securityBlockSchemaReady := db.Migrator().HasTable(&models.SecurityBlock{})
+		securityBlockRuntimeDegraded := cfg.SecurityBlockEnabled && securityEvents.SecurityBlockDegraded()
+		securityBlockReady := !cfg.SecurityBlockEnabled || (securityBlockSchemaReady && !securityBlockRuntimeDegraded)
+		healthStatus := "ok"
+		healthHTTPStatus := http.StatusOK
+		if !securityBlockReady {
+			healthStatus = "degraded"
+			healthHTTPStatus = http.StatusServiceUnavailable
+		}
+		c.JSON(healthHTTPStatus, gin.H{
+			"status":      healthStatus,
 			"git_sha":     GitSHA,
 			"build_time":  BuildTime,
 			"api_version": APIVersion,
 			"capabilities": gin.H{
 				"teacher_governance_v1": true,
+			},
+			"security": gin.H{
+				"trusted_proxy_cidrs":             cfg.TrustedProxyCIDRs,
+				"trusted_proxy_configured":        len(cfg.TrustedProxyCIDRs) > 0,
+				"security_event_schema_ready":     securityEventSchemaReady,
+				"security_block_enabled":          cfg.SecurityBlockEnabled,
+				"security_block_schema_ready":     securityBlockSchemaReady,
+				"security_block_runtime_degraded": securityBlockRuntimeDegraded,
+				"source_attribution_valid_from":   cfg.SecurityAttributionValidFrom,
 			},
 			"ai": gin.H{
 				"enabled":         cfg.AIEnabled,
@@ -1956,6 +2009,12 @@ func main() {
 	admin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 
 	{
+		admin.GET("/security/overview", securityAdminHandler.Overview)
+		admin.GET("/security/events", securityAdminHandler.ListEvents)
+		admin.GET("/security/events/:id", securityAdminHandler.GetEvent)
+		admin.POST("/security/events/:id/resolve", securityAdminHandler.Resolve)
+		admin.POST("/security/events/:id/false-positive", securityAdminHandler.FalsePositive)
+
 		admin.POST("/posts/:id/restore", postGovernanceHandler.AdminRestorePost)
 		admin.GET("/rectification", postGovernanceHandler.ListRectification)
 		admin.POST("/rectification/:id/:decision", postGovernanceHandler.ResolveRectification)
@@ -2128,6 +2187,10 @@ func main() {
 
 	{
 
+		superAdmin.GET("/security/blocks", securityAdminHandler.ListBlocks)
+		superAdmin.POST("/security/blocks", securityAdminHandler.CreateBlock)
+		superAdmin.DELETE("/security/blocks/:id", securityAdminHandler.RevokeBlock)
+
 		superAdmin.GET("/users", superAdminHandler.GetUsers)
 		superAdmin.POST("/lottery", superAdminHandler.CreateLotteryEvent)
 		superAdmin.DELETE("/lottery/:id", superAdminHandler.DeleteLotteryEvent)
@@ -2189,9 +2252,9 @@ func main() {
 	feedbackAdmin := r.Group("/api/admin/feedback")
 	feedbackAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 	{
-		feedbackAdmin.GET("/assignees", feedbackTicketHandler.AdminListAssignees)
 		feedbackAdmin.GET("/tickets", feedbackTicketHandler.AdminListTickets)
 		feedbackAdmin.GET("/tickets/stats", feedbackTicketHandler.AdminGetStats)
+		feedbackAdmin.GET("/assignees", feedbackTicketHandler.AdminListAssignees)
 		feedbackAdmin.GET("/tickets/:id", feedbackTicketHandler.AdminGetTicketDetail)
 		feedbackAdmin.POST("/tickets/:id/messages", feedbackTicketHandler.AdminAddMessage)
 		feedbackAdmin.PATCH("/tickets/:id/status", feedbackTicketHandler.AdminUpdateStatus)
@@ -2643,10 +2706,10 @@ func main() {
 		}
 
 		response := gin.H{
-			"status":              "ok",
-			"git_sha":             GitSHA,
-			"build_time":          BuildTime,
-			"api_version":         APIVersion,
+			"status":      "ok",
+			"git_sha":     GitSHA,
+			"build_time":  BuildTime,
+			"api_version": APIVersion,
 			"capabilities": gin.H{
 				"teacher_governance_v1": true,
 			},

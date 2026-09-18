@@ -30,12 +30,28 @@ func newEmailVerificationTestService(t *testing.T, now *time.Time) (*EmailVerifi
 	if err != nil {
 		t.Fatalf("打开数据库失败: %v", err)
 	}
-	if err := db.AutoMigrate(&models.EmailVerificationChallenge{}, &models.EmailVerificationRequest{}); err != nil {
+	if err := db.AutoMigrate(&models.EmailVerificationChallenge{}, &models.EmailVerificationRequest{}, &models.VerificationAttemptBucket{}); err != nil {
 		t.Fatalf("迁移验证码表失败: %v", err)
 	}
 	mailer := &capturedVerificationMailer{}
 	service := NewEmailVerificationService(db, mailer, "test-ip-secret", func() time.Time { return *now })
 	return service, mailer, db
+}
+
+func TestEmailVerificationLimitsAreSharedAcrossPurposes(t *testing.T) {
+	now := time.Date(2026, time.July, 22, 12, 0, 0, 0, time.UTC)
+	service, _, _ := newEmailVerificationTestService(t, &now)
+	const email = "shared@example.com"
+	if err := service.Request(email, models.EmailVerificationPurposeRegister, nil, "127.0.0.1"); err != nil {
+		t.Fatalf("首次请求失败: %v", err)
+	}
+	if err := service.Request(email, models.EmailVerificationPurposeResetPassword, nil, "127.0.0.1"); !errors.Is(err, ErrSendTooFrequently) {
+		t.Fatalf("切换用途不应绕过 60 秒目标限制，错误=%v", err)
+	}
+	now = now.Add(61 * time.Second)
+	if err := service.Request(email, models.EmailVerificationPurposeResetPassword, nil, "127.0.0.1"); err != nil {
+		t.Fatalf("冷却结束后请求失败: %v", err)
+	}
 }
 
 func TestEmailVerificationConsumesCodeAndIsolatesPurpose(t *testing.T) {

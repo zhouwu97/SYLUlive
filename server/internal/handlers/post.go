@@ -27,6 +27,7 @@ type PostHandler struct {
 	db                *gorm.DB
 	jpushAppKey       string
 	jpushMasterSecret string
+	security          *services.SecurityEventService
 
 	// FEED-5：个性化 shadow 开关与 active rollout 百分比。
 	feedShadow  bool
@@ -49,8 +50,12 @@ func (h *PostHandler) SetFeedPersonalizationV5(shadow bool, percent int) {
 }
 
 // NewPostHandler 创建帖子处理器
-func NewPostHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *PostHandler {
-	return &PostHandler{db: db, jpushAppKey: jpushAppKey, jpushMasterSecret: jpushMasterSecret}
+func NewPostHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string, security ...*services.SecurityEventService) *PostHandler {
+	var securityService *services.SecurityEventService
+	if len(security) > 0 {
+		securityService = security[0]
+	}
+	return &PostHandler{db: db, jpushAppKey: jpushAppKey, jpushMasterSecret: jpushMasterSecret, security: securityService}
 }
 
 // withPostImageVariants 以一条关联查询加载 v1 状态，避免 JSON 序列化逐图访问数据库。
@@ -1468,6 +1473,12 @@ func (h *PostHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	input.Title = strings.TrimSpace(input.Title)
+	input.Content = strings.TrimSpace(input.Content)
+	if utf8.RuneCountInString(input.Title) > 120 || utf8.RuneCountInString(input.Content) > 10000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "帖子内容过长"})
+		return
+	}
 	fileIDsRaw := c.PostForm("file_ids")
 	if fileIDsRaw == "" {
 		fileIDsRaw = c.PostForm("file_ids[]")
@@ -1499,6 +1510,17 @@ func (h *PostHandler) Create(c *gin.Context) {
 	var user models.User
 	if err := h.db.Select("id").First(&user, userID).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在", "code": "authentication_required"})
+		return
+	}
+	if h.postRateLimited(user.ID) {
+		if h.security != nil {
+			_ = h.security.Record(services.SecurityEventInput{
+				EventType: "content_post_flood", Severity: models.SecuritySeverityMedium, Route: "/api/posts", Method: c.Request.Method,
+				ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &user.ID, Blocked: true, Action: "rate_limited",
+				Metadata: map[string]interface{}{"window": "5m/24h", "route_group": "content"},
+			})
+		}
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "发帖过于频繁，请稍后再试", "code": "content_rate_limited"})
 		return
 	}
 	if models.BoardID(input.BoardID) == models.BoardMarket {

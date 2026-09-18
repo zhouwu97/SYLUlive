@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -396,7 +397,11 @@ func (h *AuthHandler) ResetPasswordByEmail(c *gin.Context) {
 		return
 	}
 	var user models.User
+	var challengeID uint
+	var challengeSourceHash string
 	if err := h.emailVerification.UseValidatedChallenge(email, models.EmailVerificationPurposeResetPassword, input.Code, func(tx *gorm.DB, challenge models.EmailVerificationChallenge) error {
+		challengeID = challenge.ID
+		challengeSourceHash = challenge.RequestIPHash
 		if challenge.UserID == nil {
 			return services.ErrCodeNotFound
 		}
@@ -428,8 +433,35 @@ func (h *AuthHandler) ResetPasswordByEmail(c *gin.Context) {
 	middleware.InvalidateTokenVersionCache(user.ID)
 	revokeRefreshTokensForUser(h.db, user.ID)
 	clearLoginFailures("user:" + strconvUserID(user.ID))
-	h.writeSecurityAudit(user.ID, "password_reset_email", "")
+	auditMetadata, _ := json.Marshal(map[string]interface{}{
+		"request_id": middleware.RequestID(c), "consume_source_hash": securitySourceFingerprint(h.security, c.ClientIP()),
+		"challenge_source_hash": challengeSourceHash, "challenge_id": challengeID,
+	})
+	h.writeSecurityAudit(user.ID, "password_reset_email", string(auditMetadata))
+	if h.security != nil {
+		eventType := "password_reset_activity"
+		severity := models.SecuritySeverityInfo
+		var suspiciousCount int64
+		_ = h.db.Model(&models.SecurityEvent{}).Where("event_type = ? AND source_ip_hash = ? AND last_seen_at >= ?", "password_reset_spray", h.security.SourceFingerprint(c.ClientIP()), time.Now().Add(-24*time.Hour)).Count(&suspiciousCount).Error
+		if suspiciousCount > 0 {
+			eventType = "suspicious_password_reset_succeeded"
+			severity = models.SecuritySeverityCritical
+		}
+		_ = h.security.Record(services.SecurityEventInput{
+			EventType: eventType, Severity: severity, Route: "/api/password/email/reset", Method: c.Request.Method,
+			ClientIP: c.ClientIP(), RequestID: middleware.RequestID(c), ActorUserID: &user.ID,
+			TargetType: "email", TargetValue: email, TargetMasked: maskEmail(email), PasswordResetSucceeded: true,
+			Action: "password_reset_succeeded", Metadata: map[string]interface{}{"challenge_id": challengeID},
+		})
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "密码已重置，请使用新密码登录"})
+}
+
+func securitySourceFingerprint(security *services.SecurityEventService, clientIP string) string {
+	if security == nil || strings.TrimSpace(clientIP) == "" {
+		return ""
+	}
+	return security.SourceFingerprint(clientIP)
 }
 
 // GetAccountSecurity 返回账号安全页面所需的完整私有资料。
@@ -520,14 +552,30 @@ func writeEmailVerificationError(c *gin.Context, err error) {
 	status := http.StatusBadRequest
 	code := "EMAIL_VERIFICATION_INVALID"
 	switch {
-	case errors.Is(err, services.ErrSendTooFrequently), errors.Is(err, services.ErrEmailRateLimited), errors.Is(err, services.ErrIPRateLimited):
-		status, code = http.StatusTooManyRequests, "EMAIL_VERIFICATION_RATE_LIMITED"
+	case errors.Is(err, services.ErrSendTooFrequently):
+		status, code = http.StatusTooManyRequests, "EMAIL_CODE_COOLDOWN"
+	case errors.Is(err, services.ErrTargetHourlyLimit), errors.Is(err, services.ErrEmailRateLimited):
+		status, code = http.StatusTooManyRequests, "EMAIL_TARGET_HOURLY_LIMIT"
+	case errors.Is(err, services.ErrTargetDailyLimit):
+		status, code = http.StatusTooManyRequests, "EMAIL_TARGET_DAILY_LIMIT"
+	case errors.Is(err, services.ErrSourceRateLimited), errors.Is(err, services.ErrIPRateLimited):
+		status, code = http.StatusTooManyRequests, "EMAIL_SOURCE_RATE_LIMIT"
+	case errors.Is(err, services.ErrSourceSprayLimit), errors.Is(err, services.ErrVerificationSpray):
+		status, code = http.StatusTooManyRequests, "EMAIL_SOURCE_SPRAY_LIMIT"
 	case errors.Is(err, services.ErrMailNotConfigured):
 		status, code = http.StatusServiceUnavailable, "MAIL_UNAVAILABLE"
 	case errors.Is(err, services.ErrCodeExpired):
 		code = "EMAIL_VERIFICATION_EXPIRED"
 	case errors.Is(err, services.ErrCodeAttempts):
 		code = "EMAIL_VERIFICATION_ATTEMPTS_EXCEEDED"
+	}
+	var rateLimitErr *services.VerificationRateLimitError
+	if errors.As(err, &rateLimitErr) {
+		seconds := int(rateLimitErr.RetryAfter.Round(time.Second).Seconds())
+		if seconds < 1 {
+			seconds = 1
+		}
+		c.Header("Retry-After", strconv.Itoa(seconds))
 	}
 	c.JSON(status, gin.H{"error": err.Error(), "code": code})
 }
@@ -539,6 +587,13 @@ func isEmailVerificationError(err error) bool {
 		errors.Is(err, services.ErrCodeAttempts) ||
 		errors.Is(err, services.ErrCodeInvalid) ||
 		errors.Is(err, services.ErrPurposeInvalid) ||
+		errors.Is(err, services.ErrSendTooFrequently) ||
+		errors.Is(err, services.ErrEmailRateLimited) ||
+		errors.Is(err, services.ErrIPRateLimited) ||
+		errors.Is(err, services.ErrTargetHourlyLimit) ||
+		errors.Is(err, services.ErrTargetDailyLimit) ||
+		errors.Is(err, services.ErrSourceRateLimited) ||
+		errors.Is(err, services.ErrSourceSprayLimit) ||
 		errors.Is(err, services.ErrMailNotConfigured)
 }
 

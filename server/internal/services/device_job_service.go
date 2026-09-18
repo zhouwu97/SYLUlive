@@ -100,6 +100,14 @@ func (s *DeviceJobService) RegisterDevice(ctx context.Context, userID uint, regi
 	}
 	encodedTools, _ := json.Marshal(tools)
 	now := s.clock().UTC()
+	// 客户端会在前台恢复时重复登记；同一安装且登记内容未变化时直接返回，
+	// 避免每次心跳都写入 user_devices 并触发索引、WAL 和更新时间膨胀。
+	var cached models.UserDevice
+	if err := s.db.WithContext(ctx).
+		Where("installation_id = ? AND user_id = ?", registration.InstallationID, userID).
+		First(&cached).Error; err == nil && sameDeviceRegistration(cached, registration, encodedTools) && cached.RevokedAt == nil {
+		return &cached, nil
+	}
 	var result models.UserDevice
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing models.UserDevice
@@ -124,6 +132,10 @@ func (s *DeviceJobService) RegisterDevice(ctx context.Context, userID uint, regi
 				return err
 			}
 		}
+		if sameDeviceRegistration(existing, registration, encodedTools) && existing.RevokedAt == nil {
+			result = existing
+			return nil
+		}
 		if err := tx.Model(&models.UserDevice{}).Where("id = ?", existing.ID).Updates(map[string]interface{}{
 			"user_id": userID, "push_token": registration.PushToken, "tool_names": datatypes.JSON(encodedTools),
 			"bridge_protocol_version": registration.BridgeProtocolVersion, "client_version": registration.ClientVersion,
@@ -137,6 +149,15 @@ func (s *DeviceJobService) RegisterDevice(ctx context.Context, userID uint, regi
 		return nil, err
 	}
 	return &result, nil
+}
+
+func sameDeviceRegistration(device models.UserDevice, registration DeviceRegistration, encodedTools []byte) bool {
+	return device.UserID != 0 &&
+		device.InstallationID == registration.InstallationID &&
+		device.PushToken == registration.PushToken &&
+		string(device.ToolNames) == string(encodedTools) &&
+		device.BridgeProtocolVersion == registration.BridgeProtocolVersion &&
+		device.ClientVersion == registration.ClientVersion
 }
 
 // CreateJob 仅供经过工具白名单和用户授权的服务端调用。模型传入的参数中不能含 user_id。

@@ -40,6 +40,22 @@ func main() {
 		log.Fatalf("Unmarshal JSON failed: %v", err)
 	}
 
+	// 重新按照 Go 标准算法复算所有记录摘要与包摘要，彻底消除跨语言序列化边缘差异
+	recordHashes := make(map[string]string, len(document.Items))
+	for i := range document.Items {
+		h, err := services.ComputeCompetitionRecordHash(document.Items[i])
+		if err != nil {
+			log.Fatalf("Compute record hash for %s failed: %v", document.Items[i].CompetitionID, err)
+		}
+		document.Items[i].RecordHash = h
+		recordHashes[document.Items[i].CompetitionID] = h
+	}
+	pkgHash, err := services.ComputeCompetitionPackageHash(document, recordHashes)
+	if err != nil {
+		log.Fatalf("Compute package hash failed: %v", err)
+	}
+	document.PackageHash = pkgHash
+
 	cfg := config.Load()
 	if strings.TrimSpace(cfg.DSN) == "" {
 		log.Fatal("DSN is empty")

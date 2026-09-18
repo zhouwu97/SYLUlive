@@ -2222,6 +2222,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (!_isCurrentOperation(operation)) return;
     final start = snapshot?.semesterStart;
     _currentTerm = currentTerm.copyWith(
+      clearStartDate: start == null,
       startDate:
           start == null ? null : DateTime(start.year, start.month, start.day),
     );
@@ -2407,6 +2408,9 @@ class CourseScheduleProvider extends ChangeNotifier {
   Future<bool> switchTerm(CourseTerm term, {bool loadCache = true}) async {
     if (_userId == null) return false;
 
+    // 学期切换也必须让启动恢复和上一个学期的异步读写失效，避免旧操作
+    // 在新学期切换完成后回写课程、开学日或存档状态。
+    _contextGeneration++;
     _currentTerm = term;
     final operation = _captureOperationContext(term);
     if (operation == null ||
@@ -2425,20 +2429,44 @@ class CourseScheduleProvider extends ChangeNotifier {
     _hiddenCourseIds = {};
     _archives = [];
     _errorMessage = null;
-    _isLoading = false;
-
-    await loadSemesterStart();
-    await loadArchiveList();
+    _isLoading = true;
+    _sessionPhase = ScheduleSessionPhase.ready;
 
     bool hasCache = false;
-    if (loadCache) {
-      hasCache = await loadCachedCoursesIfAvailable();
-    } else {
-      _sourceTrustKnown = true;
-      _legacyCacheRequiresResync = false;
-      notifyListeners();
+    Future<void> loadLocalTermState() async {
+      await loadSemesterStart();
+      await loadArchiveList();
+      if (loadCache) {
+        hasCache = await loadCachedCoursesIfAvailable();
+      } else {
+        _sourceTrustKnown = true;
+        _legacyCacheRequiresResync = false;
+        notifyListeners();
+      }
     }
 
+    try {
+      await loadLocalTermState();
+    } catch (error) {
+      if (!_isCurrentOperation(operation)) return false;
+      // 本地密钥或文件通道刚恢复时可能出现一次性读取失败，重试本地快照
+      // 即可恢复已拉取的学期，不应要求用户重新访问教务系统。
+      debugPrint('切换学期读取本地快照失败，准备重试: ${error.runtimeType}');
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      if (!_isCurrentOperation(operation)) return false;
+      try {
+        await loadLocalTermState();
+      } catch (retryError) {
+        if (!_isCurrentOperation(operation)) return false;
+        _isLoading = false;
+        _errorMessage = '本机课表暂时无法读取，请稍后重试';
+        debugPrint('切换学期重试读取本地快照失败: ${retryError.runtimeType}');
+        notifyListeners();
+        return false;
+      }
+    }
+
+    _isLoading = false;
     _syncWidget();
     return hasCache;
   }

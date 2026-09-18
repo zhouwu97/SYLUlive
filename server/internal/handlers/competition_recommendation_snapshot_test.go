@@ -65,6 +65,18 @@ func TestCreateCompetitionRecommendationSnapshotUsesServerResult(t *testing.T) {
 		len(snapshot.MatchDimensions) == 0 {
 		t.Fatalf("missing catalog invalidation fields: %+v", snapshot)
 	}
+	// 快照里的匹配维度必须是真算出来的，而不是一串 unknown：
+	// 解释端与展示端必须基于同一份匹配事实，否则 AI 会引用学生看不到的「尚未确认」。
+	var dimensions map[string]string
+	if err := json.Unmarshal(snapshot.MatchDimensions, &dimensions); err != nil {
+		t.Fatal(err)
+	}
+	if dimensions["major"] != "matched" {
+		t.Fatalf("专业维度未算出：%+v", dimensions)
+	}
+	if dimensions["skill"] != "matched" {
+		t.Fatalf("技能维度未算出（偏好标签未接入打分）：%+v", dimensions)
+	}
 	if snapshot.ExpiresAt.Sub(snapshot.CreatedAt) != 30*time.Minute {
 		t.Fatalf("ttl=%s", snapshot.ExpiresAt.Sub(snapshot.CreatedAt))
 	}

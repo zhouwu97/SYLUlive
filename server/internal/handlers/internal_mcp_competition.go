@@ -14,7 +14,9 @@ import (
 
 	"shenliyuan/internal/ai"
 	"shenliyuan/internal/competitionscope"
+	"shenliyuan/internal/dto"
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
 // InternalMCPGrantMiddleware 只允许持有固定服务 Grant 的纯 MCP 读取公开事实。
@@ -210,8 +212,43 @@ func (h *CompetitionHandler) InternalMCPCompetitionCandidateContext(c *gin.Conte
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取候选事实失败"})
 		return
 	}
+	// 匹配维度必须与展示端同源：解释端此前把十个维度全部硬编码为 unknown，
+	// 于是 AI 看到的匹配情况与学生看到的完全不是一回事。
+	// 只有存在 Run Scoped Grant 主体时才能算出真实维度；服务级 Grant 无主体，
+	// 此时如实返回 unknown 并置 match_computed=false，而不是假装算过。
+	eventIDs := make([]uint, 0, len(events))
+	for _, event := range events {
+		eventIDs = append(eventIDs, event.ID)
+	}
+	matches, computed := h.internalMatchedCandidates(c.Request.Context(), eventIDs)
 	items := make([]gin.H, 0, len(events))
 	for _, event := range events {
+		dimensions := gin.H{
+			"eligibility": "unknown", "major": "unknown", "college": "unknown",
+			"grade": "unknown", "goal": "unknown", "direction": "unknown",
+			"skill": "unknown", "role": "unknown", "time": "unknown", "training": "unknown",
+		}
+		matchTier, matchBasis := "", ""
+		var matchedClusters []string
+		fitLevel := ""
+		if candidate, ok := matches[event.ID]; ok {
+			dimensions = gin.H{
+				"eligibility": candidate.MatchDimensions.Eligibility,
+				"major":       candidate.MatchDimensions.Major,
+				"college":     candidate.MatchDimensions.College,
+				"grade":       candidate.MatchDimensions.Grade,
+				"goal":        candidate.MatchDimensions.Goal,
+				"direction":   candidate.MatchDimensions.Direction,
+				"skill":       candidate.MatchDimensions.Skill,
+				"role":        candidate.MatchDimensions.Role,
+				"time":        candidate.MatchDimensions.Time,
+				"training":    candidate.MatchDimensions.Training,
+			}
+			matchTier = candidate.MatchTier
+			matchBasis = candidate.MatchBasis
+			matchedClusters = candidate.MatchedClusters
+			fitLevel = candidate.GroupKey
+		}
 		items = append(items, gin.H{
 			"competition_id": event.CompetitionID, "record_hash": event.RecordHash,
 			"dataset_version": event.DatasetVersion,
@@ -229,12 +266,13 @@ func (h *CompetitionHandler) InternalMCPCompetitionCandidateContext(c *gin.Conte
 				"evidence_summary_public":     event.EvidenceSummaryPublic,
 				"evidence_subgrade":           event.EvidenceSubgrade,
 			},
-			"match_dimensions": gin.H{
-				"eligibility": "unknown", "major": "unknown", "college": "unknown",
-				"grade": "unknown", "goal": "unknown", "direction": "unknown",
-				"skill": "unknown", "role": "unknown", "time": "unknown", "training": "unknown",
-			},
-			"risk_tags": decodeStringArray(event.RiskTags),
+			"match_dimensions": dimensions,
+			"match_tier":       matchTier,
+			"match_basis":      matchBasis,
+			"matched_clusters": matchedClusters,
+			"fit_level":        fitLevel,
+			"match_computed":   computed,
+			"risk_tags":        decodeStringArray(event.RiskTags),
 			"gates": gin.H{
 				"candidate_pool_allowed":          event.CandidatePoolAllowed,
 				"personalized_ranking_allowed":    event.PersonalizedRankingAllowed,
@@ -247,6 +285,33 @@ func (h *CompetitionHandler) InternalMCPCompetitionCandidateContext(c *gin.Conte
 	c.JSON(http.StatusOK, gin.H{
 		"status": "ok", "candidates": items, "missing_competition_ids": missing,
 	})
+}
+
+// internalMatchedCandidates 用同一套候选引擎算出这批赛事的真实匹配结果。
+// 无 Scoped Grant 主体（服务级 Grant）时返回空集与 false，调用方必须如实标注未计算。
+func (h *CompetitionHandler) internalMatchedCandidates(
+	ctx context.Context,
+	eventIDs []uint,
+) (map[uint]dto.CompetitionCandidateDTO, bool) {
+	grant, ok := ai.ScopedGrantFromContext(ctx)
+	if !ok || grant.UserID == 0 {
+		return map[uint]dto.CompetitionCandidateDTO{}, false
+	}
+	result, err := services.NewCompetitionCandidateEngine(h.db).BuildCandidates(
+		ctx, grant.UserID, services.CandidateFilter{
+			Page: 1, PageSize: len(eventIDs), EventIDs: eventIDs,
+		},
+	)
+	if err != nil {
+		return map[uint]dto.CompetitionCandidateDTO{}, false
+	}
+	matches := make(map[uint]dto.CompetitionCandidateDTO, len(eventIDs))
+	for _, group := range result.Groups {
+		for _, item := range group.Items {
+			matches[item.ID] = item
+		}
+	}
+	return matches, true
 }
 
 func (h *CompetitionHandler) InternalMCPCompetitionVerifyRecords(c *gin.Context) {

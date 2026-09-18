@@ -6,7 +6,9 @@
 ## 发布边界
 
 - Go 决定赛事是否进入公开目录和候选池。
-- 当前目录默认禁止个性化改序和强推荐。
+- 个性化改序由 `personalized_ranking_allowed` 逐条授权：未授权时该赛事顺序不受画像影响。
+  该字段自 ADR-002 起同时承载「含专业维度的确定性排序」这一窄语义
+  （不含 AI 解释、不含强推荐、不含获奖预测）。
 - Hy3 只解释 Go 已批准且已排序的候选。
 - `draft` 或 `production_load_allowed=false` 的包不得激活。
 - 数据库操作前必须完成备份，并验证备份非空且可读。
@@ -20,6 +22,13 @@ COMPETITION_CANDIDATE_ENGINE_V2_ENABLED=true
 COMPETITION_CATALOG_V2_ENABLED=false
 COMPETITION_AI_EXPLANATION_ENABLED=false
 ```
+
+`COMPETITION_CANDIDATE_ENGINE_V2_ENABLED` 的**代码默认值已改为 true**：
+客户端「适合我」固定请求 `/api/user/competitions/candidates`，而该路由只在开关为真时注册；
+默认关闭等于任何一次漏配环境变量都会让用户看到 404，表现为「点了没反应」。
+该接口只读取已发布且允许进候选池的赛事，关停它并不改变目录治理边界。
+需要临时停用排序能力时应关个性化排序（目录侧 `personalized_ranking_allowed`），
+而不是把整个路由摘掉；把本变量显式设为 `false` 仅用于排障。
 
 需要暂存 Catalog 时才开启 `COMPETITION_CATALOG_V2_ENABLED`。AI 解释必须在候选链路
 稳定后单独灰度，不能与目录激活同时放量。
@@ -138,7 +147,8 @@ validation_status=passed
 - 活动包只有一个；
 - 普通目录仍只返回已发布且允许展示的赛事；
 - `/api/user/competitions/candidates` 返回新 `dataset_version`；
-- 候选不包含 `personalized_score`，且目录禁止排名时顺序不受画像影响；
+- 候选不包含 `personalized_score` / `recommendation_tier`，也不包含内部分值；
+  允许排名时顺序必须可复现、可审计、可回滚，未授权赛事的顺序不受画像影响。
 - 服务健康检查、错误率和审计记录正常。
 
 ## 回滚

@@ -100,6 +100,10 @@ func (h *CompetitionHandler) buildCompetitionRecommendationSnapshot(
 	}
 	event.FitLevel = candidate.GroupKey
 	event.FitReasons = []string{candidate.CoreReason}
+	// 快照只保存可复算的离散事实（分组、十个匹配维度、核心依据），
+	// 刻意不保存任何分值：内部分值不是「推荐等级」，写进快照会让 AI 解释端
+	// 与展示端出现两套口径，也正是治理明令禁止 personalized_score 出现在候选链路的原因。
+	// 语义变更见 docs/design/adr/002-personalized-ranking-allowed-semantics.md。
 	event.PersonalizedScore = nil
 	event.RecommendationTier = ""
 	fitReasons, _ := json.Marshal(event.FitReasons)

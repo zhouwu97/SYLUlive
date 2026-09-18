@@ -325,6 +325,46 @@ func TestDeviceJobAccountSwitchCancelsOutstandingJobs(t *testing.T) {
 	assertDeviceJobCode(t, err, "device_not_registered")
 }
 
+func TestDeviceJobAccountSwitchRebindsIdenticalDeviceConfiguration(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	db, service := newDeviceJobFixture(t, now)
+	registration := DeviceRegistration{
+		InstallationID:        "identical-device",
+		ToolNames:             []string{"device.academic.get_cached_overview"},
+		BridgeProtocolVersion: 2,
+	}
+	if _, err := service.RegisterDevice(context.Background(), 1, registration); err != nil {
+		t.Fatal(err)
+	}
+	job, err := service.CreateJob(context.Background(), CreateDeviceJobRequest{
+		UserID: 1, RunID: "switch-run", ToolCallID: "switch-call",
+		ToolName: "device.academic.get_cached_overview", RequiredDataTypes: []string{"academic"},
+		Arguments: json.RawMessage(`{}`), ExpiresAt: now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.User{PasswordHash: "test-2"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	device, err := service.RegisterDevice(context.Background(), 2, registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if device.UserID != 2 {
+		t.Fatalf("切号后设备仍归属旧账号: user_id=%d", device.UserID)
+	}
+	var stored models.DeviceToolJob
+	if err := db.First(&stored, "id = ?", job.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != models.DeviceToolJobCancelled || stored.ErrorCode != "device_account_changed" {
+		t.Fatalf("切号必须取消旧任务: status=%s error=%s", stored.Status, stored.ErrorCode)
+	}
+	_, err = service.PendingJobs(context.Background(), 1, registration.InstallationID)
+	assertDeviceJobCode(t, err, "device_not_registered")
+}
+
 func TestDeviceJobCreateRejectsIdentityInModelArguments(t *testing.T) {
 	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
 	_, service := newDeviceJobFixture(t, now)

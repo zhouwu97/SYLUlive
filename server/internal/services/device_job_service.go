@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -105,7 +106,7 @@ func (s *DeviceJobService) RegisterDevice(ctx context.Context, userID uint, regi
 	var cached models.UserDevice
 	if err := s.db.WithContext(ctx).
 		Where("installation_id = ? AND user_id = ?", registration.InstallationID, userID).
-		First(&cached).Error; err == nil && sameDeviceRegistration(cached, registration, encodedTools) && cached.RevokedAt == nil {
+		First(&cached).Error; err == nil && sameDeviceRegistration(cached, userID, registration, encodedTools) && cached.RevokedAt == nil {
 		return &cached, nil
 	}
 	var result models.UserDevice
@@ -132,7 +133,7 @@ func (s *DeviceJobService) RegisterDevice(ctx context.Context, userID uint, regi
 				return err
 			}
 		}
-		if sameDeviceRegistration(existing, registration, encodedTools) && existing.RevokedAt == nil {
+		if existing.UserID == userID && sameDeviceRegistration(existing, userID, registration, encodedTools) && existing.RevokedAt == nil {
 			result = existing
 			return nil
 		}
@@ -151,8 +152,8 @@ func (s *DeviceJobService) RegisterDevice(ctx context.Context, userID uint, regi
 	return &result, nil
 }
 
-func sameDeviceRegistration(device models.UserDevice, registration DeviceRegistration, encodedTools []byte) bool {
-	return device.UserID != 0 &&
+func sameDeviceRegistration(device models.UserDevice, userID uint, registration DeviceRegistration, encodedTools []byte) bool {
+	return device.UserID == userID && userID != 0 &&
 		device.InstallationID == registration.InstallationID &&
 		device.PushToken == registration.PushToken &&
 		string(device.ToolNames) == string(encodedTools) &&
@@ -1143,6 +1144,7 @@ func normalizeDeviceTools(values []string) ([]string, error) {
 	for tool := range seen {
 		result = append(result, tool)
 	}
+	sort.Strings(result)
 	return result, nil
 }
 

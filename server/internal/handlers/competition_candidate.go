@@ -31,7 +31,7 @@ func (h *CompetitionHandler) ListCompetitionCandidates(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := services.NewCompetitionCandidateEngine(h.db).BuildCandidates(
+	result, err := h.candidateEngine().BuildCandidates(
 		c.Request.Context(), userID, candidateFilterFromRequest(c),
 	)
 	if err != nil {
@@ -106,7 +106,7 @@ func (h *CompetitionHandler) listLegacyFitEvents(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := services.NewCompetitionCandidateEngine(h.db).BuildCandidates(
+	result, err := h.candidateEngine().BuildCandidates(
 		c.Request.Context(), userID, candidateFilterFromRequest(c),
 	)
 	if err != nil {

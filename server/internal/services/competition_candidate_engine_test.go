@@ -32,6 +32,8 @@ func newCompetitionServiceTestDB(t *testing.T) *gorm.DB {
 		&models.CompetitionCatalogLegacyMapping{}, &models.CompetitionCatalogActivationSnapshot{},
 		// 候选引擎会读取「已加入计划」作为排序行为信号，测试库需同步建表。
 		&models.UserCompetitionCalendarItem{},
+		// 排序追踪表：采样开启时引擎会写入。
+		&models.CompetitionRankTrace{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -269,6 +271,58 @@ func TestCompetitionCandidateEnginePassesPreferenceTagsIntoScoring(t *testing.T)
 }
 
 func ptrTime(value time.Time) *time.Time { return &value }
+
+// 排序追踪是调参依据，必须满足两条：采样比例生效，且采样判定是确定性的
+// （请求路径禁止随机数，否则「同输入同输出」这条治理要求就破了）。
+func TestCompetitionCandidateEngineRankTraceSamplingIsDeterministic(t *testing.T) {
+	db := newCompetitionServiceTestDB(t)
+	user := readyCompetitionUser(t, db)
+	event := candidateEvent("NAT-070", "程序设计赛事", 60, 1, []string{"计算机类"}, nil)
+	if err := db.Select("*").Create(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 采样比例为 0 时不写任何追踪。
+	if _, err := NewCompetitionCandidateEngineWithTraceSample(db, 0).BuildCandidates(
+		context.Background(), user.ID, CandidateFilter{Page: 1, PageSize: 20},
+	); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := db.Model(&models.CompetitionRankTrace{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("比例为 0 仍写入了 %d 条追踪", count)
+	}
+
+	// 比例 100 时全量采样，同一用户重复请求写入的条数与内容稳定。
+	for round := 0; round < 3; round++ {
+		if _, err := NewCompetitionCandidateEngineWithTraceSample(db, 100).BuildCandidates(
+			context.Background(), user.ID, CandidateFilter{Page: 1, PageSize: 20},
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var traces []models.CompetitionRankTrace
+	if err := db.Order("id ASC").Find(&traces).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(traces) != 3 {
+		t.Fatalf("追踪条数=%d want=3", len(traces))
+	}
+	for _, trace := range traces {
+		if trace.EventID != event.ID || trace.AlgorithmVersion != "major-match-v1" ||
+			trace.Position != 0 || trace.MatchTier == "" || len(trace.Breakdown) == 0 {
+			t.Fatalf("追踪内容不完整：%+v", trace)
+		}
+	}
+	// 分项明细必须可复算：三次请求的明细逐字节一致。
+	if string(traces[0].Breakdown) != string(traces[1].Breakdown) ||
+		string(traces[1].Breakdown) != string(traces[2].Breakdown) {
+		t.Fatalf("分项明细不可复算：%s vs %s", traces[0].Breakdown, traces[1].Breakdown)
+	}
+}
 
 func TestCompetitionCandidateEngineReturnsProfileNotReadyWithoutCandidates(t *testing.T) {
 	db := newCompetitionServiceTestDB(t)

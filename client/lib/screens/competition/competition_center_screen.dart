@@ -13,6 +13,7 @@ import '../../models/competition.dart';
 import '../../models/competition_dashboard_summary.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/ai_assistant_service.dart';
+import '../../services/competition_signal_service.dart';
 import '../../services/domain_change_bus.dart';
 import '../../utils/app_feedback.dart';
 import '../../utils/competition_batch_action_payload.dart';
@@ -95,11 +96,16 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
 
   String _studentFocusFilter = 'all';
 
+  /// 候选链路埋点。只上报、不参与任何判定，失败静默。
+  late CompetitionSignalService _signals;
+  String _candidateAlgorithmVersion = '';
+
   @override
   void initState() {
     super.initState();
     DomainChangeBus.instance.addListener(_handleDomainChange);
     _dio = context.read<AuthProvider>().dio;
+    _signals = CompetitionSignalService(_dio);
     _searchController.addListener(_onSearchChanged);
     _scrollController.addListener(_onScroll);
     _loadAll();
@@ -363,6 +369,9 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
               .toList();
       final total = (data['total'] as num?)?.toInt() ?? items.length;
       final serverHasMore = data['has_more'] == true;
+      final algorithmVersion = isFit
+          ? data['algorithm_version']?.toString() ?? ''
+          : '';
       final reasonCode = isFit ? data['reason_code']?.toString() : null;
       final missingFields = isFit
           ? ((data['missing_fields'] as List?) ?? const [])
@@ -399,6 +408,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
           _candidateReasonCode = reasonCode;
           _candidateMissingFields = missingFields;
           _candidateUnavailable = false;
+          _candidateAlgorithmVersion = algorithmVersion;
         }
         _eventTotal = total;
         _currentPage = nextPage;
@@ -411,6 +421,15 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         _loadingMore = false;
         _eventsError = null;
       });
+      // 曝光上报放在 setState 之后、且不 await：埋点不能影响列表呈现。
+      if (isFit && items.isNotEmpty) {
+        unawaited(
+          _signals.recordImpressions(
+            items,
+            algorithmVersion: _candidateAlgorithmVersion,
+          ),
+        );
+      }
     } catch (error) {
       if (!mounted || request != _requestSerial) return;
       setState(() {
@@ -902,6 +921,16 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                   visualDensity: const VisualDensity(vertical: -2),
                   selected: _studentFocusFilter == tabs[index].$1,
                   onSelected: (_) {
+                    // 进入「适合我」即开始一次新的浏览会话：曝光按会话去重，
+                    // 换会话重新计数，避免同一用户跨天浏览被永久去重。
+                    if (tabs[index].$1 == 'fit') {
+                      _signals.startSession();
+                      unawaited(
+                        _signals.recordFitTabExposure(
+                          algorithmVersion: _candidateAlgorithmVersion,
+                        ),
+                      );
+                    }
                     setState(() => _studentFocusFilter = tabs[index].$1);
                     _loadEvents(reset: true);
                   },
@@ -1263,9 +1292,17 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   // 已移除头图、导入按钮、统计项、搜索框和筛选栏
 
   Widget _buildEventCard(CompetitionEvent event, bool isAdmin) {
+    final position = _events.indexWhere((item) => item.id == event.id);
     return CompetitionStudentEventCard(
       event: event,
       onTap: () {
+        unawaited(
+          _signals.recordClick(
+            event,
+            position: position < 0 ? 0 : position,
+            algorithmVersion: _candidateAlgorithmVersion,
+          ),
+        );
         _openDetail(event);
       },
       joined: _joinedEventIds.contains(event.id),
@@ -1274,7 +1311,16 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       onJoinedTap: _openCalendar,
       onWhyTap: event.coreReason.trim().isEmpty
           ? null
-          : () => showCompetitionMatchReasonSheet(context, event),
+          : () {
+              unawaited(
+                _signals.recordMatchReasonOpen(
+                  event,
+                  position: position < 0 ? 0 : position,
+                  algorithmVersion: _candidateAlgorithmVersion,
+                ),
+              );
+              showCompetitionMatchReasonSheet(context, event);
+            },
       showRecommendations: false,
     );
   }
@@ -1396,6 +1442,25 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         }
       });
       DomainChangeBus.instance.emit(DomainChange.competitionPlan);
+      // 只在「真的新增」时记转化；重复点击导致 already_exists 不算一次转化。
+      if (!alreadyExists) {
+        CompetitionEvent? target;
+        for (final item in _events) {
+          if (item.id == eventId) {
+            target = item;
+            break;
+          }
+        }
+        if (target != null) {
+          unawaited(
+            _signals.recordCalendarAdd(
+              target,
+              position: _events.indexOf(target),
+              algorithmVersion: _candidateAlgorithmVersion,
+            ),
+          );
+        }
+      }
       AppFeedback.showSnackBar(
         context,
         alreadyExists ? '比赛已在我的计划中' : '已加入我的竞赛计划',

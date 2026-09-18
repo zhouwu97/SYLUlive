@@ -297,7 +297,7 @@ func (h *CompetitionHandler) internalMatchedCandidates(
 	if !ok || grant.UserID == 0 {
 		return map[uint]dto.CompetitionCandidateDTO{}, false
 	}
-	result, err := services.NewCompetitionCandidateEngine(h.db).BuildCandidates(
+	result, err := h.candidateEngine().BuildCandidates(
 		ctx, grant.UserID, services.CandidateFilter{
 			Page: 1, PageSize: len(eventIDs), EventIDs: eventIDs,
 		},

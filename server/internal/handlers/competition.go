@@ -26,6 +26,7 @@ import (
 
 	"shenliyuan/internal/competitionscope"
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
 func competitionRequestContext(c *gin.Context) context.Context {
@@ -40,6 +41,22 @@ type CompetitionHandler struct {
 	evidenceDir              string
 	maxEvidenceFileSize      int64
 	candidateExplanationTool CompetitionCandidateExplanationTool
+	// rankTraceSamplePercent 是候选排序追踪的采样比例（0 表示不写）。
+	rankTraceSamplePercent int
+}
+
+// SetRankTraceSample 设置排序追踪采样比例。只影响追踪表写入，不影响候选结果与顺序。
+func (h *CompetitionHandler) SetRankTraceSample(percent int) {
+	h.rankTraceSamplePercent = percent
+}
+
+// candidateEngine 构造候选引擎，并套上本实例配置的排序追踪采样比例。
+// 统一入口是为了避免各处各自 New 引擎时漏掉采样配置（漏了就静默不写追踪，很难发现）。
+func (h *CompetitionHandler) candidateEngine() services.CompetitionCandidateEngine {
+	if h.rankTraceSamplePercent > 0 {
+		return services.NewCompetitionCandidateEngineWithTraceSample(h.db, h.rankTraceSamplePercent)
+	}
+	return services.NewCompetitionCandidateEngine(h.db)
 }
 
 var (

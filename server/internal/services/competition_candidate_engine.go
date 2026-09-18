@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/competitionmatching"
@@ -34,12 +36,28 @@ type competitionCandidateEngine struct {
 	db      *gorm.DB
 	context *CompetitionUserContextBuilder
 	now     func() time.Time
+	// traceSamplePercent 控制排序追踪的采样比例（0 表示不写）。
+	// 采样判定按 userID 取模，保持确定性：请求路径不允许出现随机数，
+	// 否则「同输入同输出」这条治理要求就破了。
+	traceSamplePercent int
 }
 
 func NewCompetitionCandidateEngine(db *gorm.DB) CompetitionCandidateEngine {
 	return &competitionCandidateEngine{
 		db: db, context: NewCompetitionUserContextBuilder(db), now: time.Now,
 	}
+}
+
+// NewCompetitionCandidateEngineWithTraceSample 构造带排序追踪采样的引擎。
+func NewCompetitionCandidateEngineWithTraceSample(
+	db *gorm.DB,
+	percent int,
+) CompetitionCandidateEngine {
+	engine := &competitionCandidateEngine{
+		db: db, context: NewCompetitionUserContextBuilder(db), now: time.Now,
+	}
+	engine.traceSamplePercent = clampTracePercent(percent)
+	return engine
 }
 
 func NewCompetitionCandidateEngineWithClock(
@@ -50,6 +68,16 @@ func NewCompetitionCandidateEngineWithClock(
 		db: db, context: NewCompetitionUserContextBuilder(db), now: now,
 	}
 	return engine
+}
+
+func clampTracePercent(percent int) int {
+	if percent < 0 {
+		return 0
+	}
+	if percent > 100 {
+		return 100
+	}
+	return percent
 }
 
 func (e *competitionCandidateEngine) BuildCandidates(
@@ -238,7 +266,54 @@ func (e *competitionCandidateEngine) BuildCandidates(
 		Rankable:      rankableCount,
 		Returned:      len(pageItems),
 	}
+	// 排序追踪是调参依据（计划 §6.2 Rank Trace）：只采样、只记录，不参与任何判定。
+	// 写入失败不影响候选结果——埋点不该让用户的列表打不开。
+	e.saveRankTrace(ctx, userID, filter, ordered, now)
 	return result, nil
+}
+
+// saveRankTrace 按确定性采样写入排序追踪。
+// 采样判定用 userID 取模而不是随机数：请求路径禁止随机性，否则同一输入可能得到不同输出。
+func (e *competitionCandidateEngine) saveRankTrace(
+	ctx context.Context,
+	userID uint,
+	filter CandidateFilter,
+	ordered []competitionmatching.Ranked,
+	now time.Time,
+) {
+	percent := e.traceSamplePercent
+	if percent <= 0 || len(ordered) == 0 {
+		return
+	}
+	if int(userID%100) >= percent {
+		return
+	}
+	limit := filter.PageSize
+	if limit <= 0 || limit > len(ordered) {
+		limit = len(ordered)
+	}
+	rows := make([]models.CompetitionRankTrace, 0, limit)
+	runKey := strconv.FormatInt(now.UnixNano(), 36)
+	for index := 0; index < limit; index++ {
+		item := ordered[index]
+		breakdown, err := json.Marshal(item.Result.Breakdown)
+		if err != nil {
+			continue
+		}
+		rows = append(rows, models.CompetitionRankTrace{
+			UserID: userID, RunKey: runKey,
+			EventID: item.ID, CompetitionID: item.CompetitionID, Position: index,
+			MatchScore: item.Result.Score, Rankable: item.Result.Rankable,
+			Breakdown: datatypes.JSON(breakdown),
+			MatchTier: item.Result.Tier, MatchBasis: item.Result.Basis,
+			AlgorithmVersion: competitionmatching.AlgorithmVersion,
+			CreatedAt:        now,
+		})
+	}
+	if len(rows) == 0 {
+		return
+	}
+	_ = e.db.WithContext(ctx).Create(&rows).Error
 }
 
 // ReasonProfileIncomplete 表示画像未就绪，候选无法生成。

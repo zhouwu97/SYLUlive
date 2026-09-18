@@ -26,7 +26,14 @@ void main() {
     expect(find.text('教务处'), findsOneWidget);
     expect(find.text('创院'), findsOneWidget);
 
-    for (final title in ['查二课', '图书馆', '沈理就业网']) {
+    for (final title in [
+      '查二课',
+      '图书馆',
+      '沈理就业网',
+      '四六级',
+      '计算机等级考试',
+      '教师资格证',
+    ]) {
       await tester.scrollUntilVisible(
         find.text(title),
         240,

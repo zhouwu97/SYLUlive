@@ -75,6 +75,27 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
       color: Color(0xFF0EA5A4),
       url: 'https://c16h22o4.github.io/',
     ),
+    _WebsiteDirectoryItem(
+      title: '四六级',
+      subtitle: 'CET 报名与成绩查询',
+      icon: Icons.translate,
+      color: Color(0xFF0EA5E9),
+      url: 'https://cet.neea.edu.cn/',
+    ),
+    _WebsiteDirectoryItem(
+      title: '计算机等级考试',
+      subtitle: 'NCRE 报名与证书查询',
+      icon: Icons.computer_outlined,
+      color: Color(0xFF6366F1),
+      url: 'https://ncre.neea.edu.cn/',
+    ),
+    _WebsiteDirectoryItem(
+      title: '教师资格证',
+      subtitle: 'NTCE 报名与认定',
+      icon: Icons.history_edu_outlined,
+      color: Color(0xFFEF4444),
+      url: 'https://ntce.neea.edu.cn/',
+    ),
   ];
 
   @override

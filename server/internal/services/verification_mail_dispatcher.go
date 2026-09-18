@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"time"
 )
@@ -15,7 +16,7 @@ type verificationMailJob struct {
 	email     string
 	purpose   string
 	code      string
-	onFailure func()
+	onFailure func(error)
 	onSuccess func()
 }
 
@@ -48,9 +49,12 @@ func newVerificationMailDispatcher(mailer VerificationMailer, queueSize, workers
 
 func (d *VerificationMailDispatcher) worker(mailer VerificationMailer) {
 	for job := range d.jobs {
-		if err := sendVerificationMailWithTimeout(mailer, job.email, job.purpose, job.code, d.sendTimeout); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), d.sendTimeout)
+		err := normalizeVerificationMailError(ctx, mailer.SendVerificationCode(ctx, job.email, job.purpose, job.code))
+		cancel()
+		if err != nil {
 			if job.onFailure != nil {
-				job.onFailure()
+				job.onFailure(err)
 			}
 		} else if job.onSuccess != nil {
 			job.onSuccess()
@@ -58,22 +62,7 @@ func (d *VerificationMailDispatcher) worker(mailer VerificationMailer) {
 	}
 }
 
-// sendVerificationMailWithTimeout 把没有上下文接口的旧 Mailer 也纳入硬超时保护，
-// 防止 SMTP 卡住时长期占满所有投递 worker。
-func sendVerificationMailWithTimeout(mailer VerificationMailer, email, purpose, code string, timeout time.Duration) error {
-	result := make(chan error, 1)
-	go func() { result <- mailer.SendVerificationCode(email, purpose, code) }()
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	select {
-	case err := <-result:
-		return err
-	case <-timer.C:
-		return ErrVerificationMailTimeout
-	}
-}
-
-func (d *VerificationMailDispatcher) Dispatch(email, purpose, code string, onFailure, onSuccess func()) error {
+func (d *VerificationMailDispatcher) Dispatch(email, purpose, code string, onFailure func(error), onSuccess func()) error {
 	if d == nil {
 		return ErrVerificationMailQueueFull
 	}

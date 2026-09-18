@@ -1,7 +1,10 @@
 package services
 
 import (
+	"context"
 	"errors"
+	"net"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +19,7 @@ type capturedVerificationMailer struct {
 	codes map[string]string
 }
 
-func (m *capturedVerificationMailer) SendVerificationCode(email string, purpose string, code string) error {
+func (m *capturedVerificationMailer) SendVerificationCode(_ context.Context, email string, purpose string, code string) error {
 	if m.codes == nil {
 		m.codes = make(map[string]string)
 	}
@@ -160,7 +163,10 @@ func TestVerificationMailDispatcherTimesOutBlockedMailer(t *testing.T) {
 	mailer := &blockingVerificationMailer{}
 	dispatcher := newVerificationMailDispatcher(mailer, 1, 1, 10*time.Millisecond)
 	failed := make(chan struct{}, 1)
-	if err := dispatcher.Dispatch("timeout@example.com", models.EmailVerificationPurposeRegister, "123456", func() {
+	if err := dispatcher.Dispatch("timeout@example.com", models.EmailVerificationPurposeRegister, "123456", func(err error) {
+		if !errors.Is(err, ErrVerificationMailTimeout) {
+			t.Errorf("超时错误=%v，期望=%v", err, ErrVerificationMailTimeout)
+		}
 		failed <- struct{}{}
 	}, nil); err != nil {
 		t.Fatalf("投递任务不应因入队失败: %v", err)
@@ -172,9 +178,48 @@ func TestVerificationMailDispatcherTimesOutBlockedMailer(t *testing.T) {
 	}
 }
 
+func TestSMTPVerificationMailerHonorsConnectionDeadline(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("启动 SMTP 测试监听失败: %v", err)
+	}
+	defer listener.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr == nil {
+			accepted <- conn
+		}
+	}()
+
+	mailer := NewSMTPVerificationMailer(SMTPConfig{
+		Host: "127.0.0.1", Port: strconv.Itoa(listener.Addr().(*net.TCPAddr).Port),
+		User: "user", Pass: "pass", From: "from@example.com",
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	err = mailer.SendVerificationCode(ctx, "to@example.com", models.EmailVerificationPurposeRegister, "123456")
+	if err == nil {
+		t.Fatal("SMTP greeting 未返回时应因连接 deadline 失败")
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("SMTP deadline 未及时生效，耗时=%v", elapsed)
+	}
+	select {
+	case conn := <-accepted:
+		_ = conn.Close()
+	default:
+	}
+}
+
 type blockingVerificationMailer struct{}
 
-func (*blockingVerificationMailer) SendVerificationCode(string, string, string) error {
-	time.Sleep(time.Second)
-	return nil
+func (*blockingVerificationMailer) SendVerificationCode(ctx context.Context, _ string, _ string, _ string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(time.Second):
+		return nil
+	}
 }

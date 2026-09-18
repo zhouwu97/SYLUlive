@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -21,12 +22,20 @@ type accountSecurityTestMailer struct {
 	codes map[string]string
 }
 
-func (m *accountSecurityTestMailer) SendVerificationCode(email string, purpose string, code string) error {
+func (m *accountSecurityTestMailer) SendVerificationCode(_ context.Context, email string, purpose string, code string) error {
 	if m.codes == nil {
 		m.codes = make(map[string]string)
 	}
 	m.codes[email+":"+purpose] = code
 	return nil
+}
+
+type failingVerificationMailer struct {
+	err error
+}
+
+func (m failingVerificationMailer) SendVerificationCode(context.Context, string, string, string) error {
+	return m.err
 }
 
 func TestEmailResetChallengeCannotResetNewEmailOwner(t *testing.T) {
@@ -154,6 +163,53 @@ func TestPublicEmailCodeRequestsRateLimitExistingAndUnknownAddressesEqually(t *t
 			if second.Code != http.StatusTooManyRequests || !containsJSONCode(second.Body.Bytes(), "EMAIL_CODE_COOLDOWN") {
 				t.Fatalf("重复公开验证码请求未获得统一限流: path=%s email=%s status=%d body=%s", testCase.path, email, second.Code, second.Body.String())
 			}
+		}
+	}
+}
+
+func TestPublicEmailCodeQueueFailureDoesNotExposeAccountExistence(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("打开数据库失败: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.EmailVerificationChallenge{}, &models.EmailVerificationRequest{}); err != nil {
+		t.Fatalf("迁移公开验证码测试表失败: %v", err)
+	}
+	now := time.Date(2026, time.July, 23, 15, 0, 0, 0, time.UTC)
+	verifiedAt := now
+	existing := models.User{Email: "existing-queue@example.com", EmailVerifiedAt: &verifiedAt, PasswordHash: "hash"}
+	if err := db.Create(&existing).Error; err != nil {
+		t.Fatalf("创建已有邮箱账号失败: %v", err)
+	}
+	verification := services.NewEmailVerificationService(
+		db,
+		failingVerificationMailer{err: services.ErrVerificationMailQueueFull},
+		"test-ip-secret",
+		func() time.Time { return now },
+	)
+	handler := NewAuthHandlerWithEmailVerification(db, "test-secret", verification)
+	router := gin.New()
+	router.POST("/register-code", handler.RequestEmailRegistrationCode)
+	router.POST("/reset-code", handler.RequestEmailPasswordResetCode)
+
+	cases := []struct {
+		path  string
+		email string
+		code  string
+	}{
+		{path: "/register-code", email: "unknown-queue@example.com", code: models.EmailVerificationPurposeRegister},
+		{path: "/reset-code", email: existing.Email, code: models.EmailVerificationPurposeResetPassword},
+	}
+	for _, tc := range cases {
+		payload, err := json.Marshal(map[string]string{"email": tc.email, "purpose": tc.code})
+		if err != nil {
+			t.Fatalf("序列化公开验证码请求失败: %v", err)
+		}
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, tc.path, bytes.NewReader(payload)))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("公开接口不应暴露投递失败: path=%s status=%d body=%s", tc.path, recorder.Code, recorder.Body.String())
 		}
 	}
 }

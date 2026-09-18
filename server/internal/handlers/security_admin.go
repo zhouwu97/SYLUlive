@@ -105,7 +105,7 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 		h.securityDatabaseError(c)
 		return
 	}
-	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND event_type IN ?", since, []string{"email_target_flood", "password_reset_spray", "verification_spray", "verification_source_rate", "verification_code_bruteforce", "password_reset_activity", "verification_activity"}).Select("COALESCE(SUM(attempt_count), 0)").Scan(&emailAbuse).Error; err != nil {
+	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND event_type IN ?", since, []string{"email_target_flood", "password_reset_spray", "verification_spray", "verification_source_rate", "verification_code_bruteforce", "verification_mail_delivery_failed", "password_reset_activity", "verification_activity"}).Select("COALESCE(SUM(attempt_count), 0)").Scan(&emailAbuse).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}

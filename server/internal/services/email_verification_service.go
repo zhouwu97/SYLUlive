@@ -1,14 +1,18 @@
 package services
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"mime"
+	"net"
 	"net/smtp"
 	"regexp"
 	"strings"
@@ -22,6 +26,9 @@ import (
 )
 
 const emailVerificationCodeTTL = 10 * time.Minute
+
+// 验证码目标冷却统一为 60 秒，所有公开/登录后验证码入口共用这一窗口。
+const emailVerificationRequestCooldown = 60 * time.Second
 
 var emailPattern = regexp.MustCompile(`^[^@\s]{1,64}@[^@\s]{1,255}$`)
 
@@ -70,7 +77,7 @@ type SMTPConfig struct {
 
 // VerificationMailer 允许测试替换邮件发送实现。
 type VerificationMailer interface {
-	SendVerificationCode(email string, purpose string, code string) error
+	SendVerificationCode(ctx context.Context, email string, purpose string, code string) error
 }
 
 // SMTPVerificationMailer 使用已有 SMTP 配置发送验证码邮件。
@@ -82,22 +89,61 @@ func NewSMTPVerificationMailer(config SMTPConfig) *SMTPVerificationMailer {
 	return &SMTPVerificationMailer{config: config}
 }
 
-func (m *SMTPVerificationMailer) SendVerificationCode(email string, purpose string, code string) error {
+func (m *SMTPVerificationMailer) SendVerificationCode(ctx context.Context, email string, purpose string, code string) error {
 	if strings.TrimSpace(m.config.Host) == "" || strings.TrimSpace(m.config.User) == "" || strings.TrimSpace(m.config.Pass) == "" || strings.TrimSpace(m.config.From) == "" {
 		return ErrMailNotConfigured
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	port := strings.TrimSpace(m.config.Port)
 	if port == "" {
 		port = "587"
 	}
-	auth := smtp.PlainAuth("", m.config.User, m.config.Pass, m.config.Host)
-	return smtp.SendMail(
-		m.config.Host+":"+port,
-		auth,
-		m.config.From,
-		[]string{email},
-		buildVerificationEmail(email, m.config.From, purpose, code),
-	)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(m.config.Host, port))
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			return err
+		}
+	}
+	client, err := smtp.NewClient(conn, m.config.Host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		if err := client.StartTLS(&tls.Config{ServerName: m.config.Host, MinVersion: tls.VersionTLS12}); err != nil {
+			return err
+		}
+	}
+	if err := client.Auth(smtp.PlainAuth("", m.config.User, m.config.Pass, m.config.Host)); err != nil {
+		return err
+	}
+	if err := client.Mail(m.config.From); err != nil {
+		return err
+	}
+	if err := client.Rcpt(email); err != nil {
+		return err
+	}
+	writer, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(writer, strings.NewReader(string(buildVerificationEmail(email, m.config.From, purpose, code)))); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	return client.Quit()
 }
 
 func buildVerificationEmail(to string, from string, purpose string, code string) []byte {
@@ -185,7 +231,8 @@ func (s *EmailVerificationService) ReservePublicRequest(email string, purpose st
 	return s.reserveRequest(normalized, purpose, clientIP, true)
 }
 
-// SendReservedPublicRequest 为已存在账号发送已完成公开限流预留的验证码。
+// SendReservedPublicRequest 为公开接口发送已完成限流预留的验证码。
+// 调用方必须保持注册/找回密码的公共响应一致，投递错误由安全事件记录。
 func (s *EmailVerificationService) SendReservedPublicRequest(email string, purpose string, userID *uint, clientIP string) error {
 	return s.createChallengeAndSend(email, purpose, userID, clientIP)
 }
@@ -238,20 +285,42 @@ func (s *EmailVerificationService) createChallengeAndSend(email string, purpose 
 		_ = s.db.Delete(&models.EmailVerificationChallenge{}, challenge.ID).Error
 	}
 	if s.dispatcher != nil {
-		if err := s.dispatcher.Dispatch(normalized, purpose, code, removeChallenge, func() {
+		if err := s.dispatcher.Dispatch(normalized, purpose, code, func(err error) {
+			removeChallenge()
+			s.recordVerificationMailFailure(normalized, purpose, clientIP, err)
+		}, func() {
 			s.recordVerificationMail(normalized, purpose, clientIP)
 		}); err != nil {
 			removeChallenge()
+			s.recordVerificationMailFailure(normalized, purpose, clientIP, err)
 			return err
 		}
 		return nil
 	}
-	if err := s.mailer.SendVerificationCode(normalized, purpose, code); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), verificationMailSendTimeout)
+	defer cancel()
+	err = normalizeVerificationMailError(ctx, s.mailer.SendVerificationCode(ctx, normalized, purpose, code))
+	if err != nil {
 		removeChallenge()
+		s.recordVerificationMailFailure(normalized, purpose, clientIP, err)
 		return err
 	}
 	s.recordVerificationMail(normalized, purpose, clientIP)
 	return nil
+}
+
+func normalizeVerificationMailError(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return ErrVerificationMailTimeout
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return ErrVerificationMailTimeout
+	}
+	return err
 }
 
 func (s *EmailVerificationService) recordVerificationMail(email, purpose, clientIP string) {
@@ -266,6 +335,20 @@ func (s *EmailVerificationService) recordVerificationMail(email, purpose, client
 		EventType: eventType, Severity: models.SecuritySeverityInfo, Route: "email_verification", Method: "SMTP",
 		ClientIP: clientIP, TargetType: "email", TargetValue: email, TargetMasked: maskEmailForSecurity(email),
 		SkipAttempt: true, MailSent: true, Action: "mail_sent", Metadata: map[string]interface{}{"purpose": purpose},
+	})
+}
+
+func (s *EmailVerificationService) recordVerificationMailFailure(email, purpose, clientIP string, err error) {
+	if s.security == nil {
+		return
+	}
+	_ = s.security.Record(SecurityEventInput{
+		EventType: "verification_mail_delivery_failed", Severity: models.SecuritySeverityMedium,
+		Route: "email_verification", Method: "SMTP", ClientIP: clientIP,
+		TargetType: "email", TargetValue: email, TargetMasked: maskEmailForSecurity(email),
+		SkipAttempt: true, Action: "mail_failed", Metadata: map[string]interface{}{
+			"purpose": purpose, "reason": err.Error(),
+		},
 	})
 }
 
@@ -314,8 +397,8 @@ func (s *EmailVerificationService) reserveRequest(normalized, purpose, clientIP 
 		var latest models.EmailVerificationRequest
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("email = ?", normalized).
 			Order("created_at DESC").First(&latest).Error
-		if err == nil && now.Sub(latest.CreatedAt) < 60*time.Second {
-			reserveErr = verificationRateLimitError(ErrSendTooFrequently, 60*time.Second-now.Sub(latest.CreatedAt))
+		if err == nil && now.Sub(latest.CreatedAt) < emailVerificationRequestCooldown {
+			reserveErr = verificationRateLimitError(ErrSendTooFrequently, emailVerificationRequestCooldown-now.Sub(latest.CreatedAt))
 		} else if targetHour >= 3 {
 			retryAfter := time.Hour
 			if !oldestTarget.CreatedAt.IsZero() {

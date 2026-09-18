@@ -89,10 +89,7 @@ func (h *AuthHandler) RequestEmailRegistrationCode(c *gin.Context) {
 	var existing models.User
 	if err := h.db.Where("email = ?", email).First(&existing).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 		// 公开接口不向外暴露发送失败，避免通过 SMTP 响应枚举已有账号。
-		if sendErr := h.emailVerification.SendReservedPublicRequest(email, input.Purpose, nil, c.ClientIP()); errors.Is(sendErr, services.ErrVerificationMailQueueFull) {
-			writeEmailVerificationError(c, sendErr)
-			return
-		}
+		_ = h.emailVerification.SendReservedPublicRequest(email, input.Purpose, nil, c.ClientIP())
 	} else if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号失败"})
 		return
@@ -370,10 +367,7 @@ func (h *AuthHandler) RequestEmailPasswordResetCode(c *gin.Context) {
 	var user models.User
 	if err := h.db.Where("email = ? AND email_verified_at IS NOT NULL", email).First(&user).Error; err == nil {
 		// 公开接口不向外暴露发送失败，避免通过 SMTP 响应枚举已有账号。
-		if sendErr := h.emailVerification.SendReservedPublicRequest(email, input.Purpose, &user.ID, c.ClientIP()); errors.Is(sendErr, services.ErrVerificationMailQueueFull) {
-			writeEmailVerificationError(c, sendErr)
-			return
-		}
+		_ = h.emailVerification.SendReservedPublicRequest(email, input.Purpose, &user.ID, c.ClientIP())
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号失败"})
 		return

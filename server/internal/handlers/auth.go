@@ -524,9 +524,15 @@ func currentLoginLock(account string, now time.Time) (time.Duration, bool) {
 
 	}
 
-	if record.LastFailureAt.IsZero() || now.Sub(record.LastFailureAt) >= loginFailureWindow ||
-		(!record.LockedUntil.IsZero() && !now.Before(record.LockedUntil)) {
+	if record.LastFailureAt.IsZero() || now.Sub(record.LastFailureAt) >= loginFailureWindow {
 		delete(loginThrottleStore.records, account)
+		return 0, false
+	}
+	if !record.LockedUntil.IsZero() && !now.Before(record.LockedUntil) {
+		// 锁定窗口结束后保留失败窗口内的累计次数，才能让 3→4→5 和
+		// 10→20→40 的渐进保护真正生效；超过 15 分钟才整体清零。
+		record.LockedUntil = time.Time{}
+		loginThrottleStore.records[account] = record
 		return 0, false
 	}
 	if record.LockedUntil.IsZero() {
@@ -544,9 +550,11 @@ func registerLoginFailure(account string, now time.Time) time.Duration {
 	defer loginThrottleStore.Unlock()
 
 	record := loginThrottleStore.records[account]
-	if record.LastFailureAt.IsZero() || now.Sub(record.LastFailureAt) >= loginFailureWindow ||
-		(!record.LockedUntil.IsZero() && !now.Before(record.LockedUntil)) {
+	if record.LastFailureAt.IsZero() || now.Sub(record.LastFailureAt) >= loginFailureWindow {
 		record = loginThrottleRecord{}
+	} else if !record.LockedUntil.IsZero() && !now.Before(record.LockedUntil) {
+		// 锁只控制当前一段时间的请求，失败计数仍在 15 分钟窗口内累计。
+		record.LockedUntil = time.Time{}
 	}
 
 	record.FailureCount++
@@ -594,9 +602,15 @@ func (h *AuthHandler) loginLock(scope string, now time.Time) (time.Duration, boo
 		}
 		return 0, false
 	}
-	if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow ||
-		(record.LockedUntil != nil && !now.Before(*record.LockedUntil)) {
+	if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow {
 		_ = h.db.Delete(&record).Error
+		return 0, false
+	}
+	if record.LockedUntil != nil && !now.Before(*record.LockedUntil) {
+		// 只清理已过期的锁，不删除 15 分钟失败窗口内的累计记录。
+		if err := h.db.Model(&record).Update("locked_until", nil).Error; err != nil {
+			return 0, false
+		}
 		return 0, false
 	}
 	if record.LockedUntil == nil {
@@ -618,9 +632,11 @@ func (h *AuthHandler) registerLoginFailure(scope string, now time.Time) time.Dur
 		} else if err != nil {
 			return err
 		}
-		if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow ||
-			(record.LockedUntil != nil && !now.Before(*record.LockedUntil)) {
+		if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow {
 			record.FailureCount = 0
+			record.LockedUntil = nil
+		} else if record.LockedUntil != nil && !now.Before(*record.LockedUntil) {
+			// 锁定结束但失败窗口未结束，保留 FailureCount 继续升级。
 			record.LockedUntil = nil
 		}
 		record.FailureCount++

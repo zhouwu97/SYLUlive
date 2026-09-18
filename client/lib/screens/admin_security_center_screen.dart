@@ -505,6 +505,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
         'verification_spray' => '验证码喷洒',
         'verification_source_rate' => '验证码来源限流',
         'verification_cooldown' => '验证码冷却拦截',
+        'verification_mail_delivery_failed' => '验证码邮件投递失败',
         'email_target_flood' => '验证码目标轰炸',
         'verification_code_bruteforce' => '验证码暴力尝试',
         'login_password_spray' => 'Password Spray',

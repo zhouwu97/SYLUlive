@@ -528,7 +528,7 @@ P3  若数据量足够（曝光 ≥ 10^4），评估 LTR / 双塔；仅当 P2 �
 | 8 | 更新既有测试中被旧行为固化的断言（**行为变更，需在说明中标注**） | 本次实现 |
 | 9 | 埋点表 + 指标聚合 + `algorithm_version` 维度（对齐 `feed_impressions` 形状） | 下一阶段 |
 | 10 | Rank Trace 5% 采样 | 下一阶段 |
-| 11 | ADR + runbook 修订 + 目录包翻转 | ADR 与 runbook 已完成（ADR-002）；目录包翻转待发布 |
+| 11 | ADR + runbook 修订 + 目录包翻转 | ADR 与 runbook 已完成（ADR-002）；翻转工具 `cmd/catalograise` 已就绪并测试，实际发布待目录包与备份门禁 |
 | 12 | 覆盖率审计脚本（离线） | 已完成：`go run ./cmd/matchingverify -audit`，报告见 `docs/reports/2026-09-18-competition-matching-coverage-audit.md` |
 
 ---

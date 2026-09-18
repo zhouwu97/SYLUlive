@@ -45,6 +45,41 @@ python tools/competition_catalog/validate_catalog_v2.py catalog.json
 离线校验只用于提前发现问题。Go 服务仍会独立复算所有 `record_hash` 和
 `package_hash`，不得跳过服务端校验。
 
+## 开放个性化排序（ADR-002）
+
+按 ADR-002，个性化排序由 `personalized_ranking_allowed` 逐条授权。翻转该字段
+**必须走目录包**，直接用 SQL 改库会在下一次目录激活时被静默回滚。
+
+翻转不能手工编辑 JSON：`record_hash` 是对整条记录取哈希、`package_hash` 再对
+所有记录摘要取哈希，手改一个布尔值就会让全包校验失败。用仓库内的工具生成：
+
+```powershell
+cd server
+# 1) 试点包：只翻转 eligible_colleges 含信息科学与工程学院的赛事（实测 109 条）
+go run ./cmd/catalograise -input catalog.json -college 信息科学与工程学院 -apply -output pilot-202609.json
+
+# 2) 试点验收通过后出全量包：翻转候选池内全部赛事（实测 275 条）
+go run ./cmd/catalograise -input catalog.json -all -apply -output full-202609.json `
+  -dataset-version 2026.09.29-v8.3-activation
+```
+
+不加 `-apply` 即为 dry-run，只打印将翻转哪些赛事，不写文件。
+
+工具的三条硬约束（与目录校验器一致，违反会直接报错退出）：
+
+- 只翻转 `candidate_pool_allowed=true` 的记录，其余 35 条保持 `false`；
+- `strong_recommendation_eligible` 全线保持 `false`，本工具不触碰强推荐语义；
+- 翻转后按服务端同一份实现重算 `record_hash` 与 `package_hash`。
+
+发布链路与常规目录包相同，且**不可与目录激活同时放量**：
+
+```text
+catalograise → validate_catalog_v2.py → 后台 import → diff 复核 → activate
+```
+
+激活前必须完成数据库备份门禁（备份 → 校验非空可读 → 记录路径与 SHA-256）。
+回滚有两级：关个性化排序开关秒级恢复目录序；目录包 rollback 恢复上一包。
+
 ## 补录已核验报名日程
 
 `tools/competition_catalog/data/verified_schedules_2026.json` 保存已核验的当届日程、

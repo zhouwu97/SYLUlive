@@ -256,6 +256,76 @@ func TestGradeGateStillEliminates(t *testing.T) {
 	}
 }
 
+// 回归用例：eligible_entry_years 线上存的是**学历层次**而不是年份
+// （310 条里 47 条有值，全部是「研究生 / 已获研究生入学资格的本科生 / 本科生」）。
+// 旧实现拿它和入学年份做全等比较，于是声明「本科生」的赛事对所有本科生都被判为不符——
+// 合规用户被淘汰，这正是「数据越全越推荐不到」的同一类缺陷。
+func TestGradeScopeUsesAcademicLevelNotEntryYear(t *testing.T) {
+	undergraduate := ResolveUser(UserProfile{
+		Major: "计算机科学与技术", College: "信息科学与工程学院",
+		EntryYear: "2023", Grade: "本科2023级",
+	})
+	postgraduate := ResolveUser(UserProfile{
+		Major: "计算机科学与技术", College: "信息科学与工程学院",
+		EntryYear: "2025", Grade: "研究生2025级",
+	})
+	if undergraduate.Postgraduate || !postgraduate.Postgraduate {
+		t.Fatalf("学历层次识别错误：本科=%v 研究生=%v", undergraduate.Postgraduate, postgraduate.Postgraduate)
+	}
+
+	openToUndergraduate := candidateWithMajors("计算机类")
+	openToUndergraduate.EntryYears = []string{"本科生"}
+	if result := Score(ScoreInput{
+		Candidate: openToUndergraduate, User: undergraduate, Now: testNow(),
+	}); result.GroupKey == "" {
+		t.Fatal("声明面向本科生的赛事不得淘汰本科生")
+	}
+	if result := Score(ScoreInput{
+		Candidate: openToUndergraduate, User: postgraduate, Now: testNow(),
+	}); result.GroupKey != "" {
+		t.Fatal("声明面向本科生的赛事应淘汰研究生")
+	}
+
+	openToPostgraduate := candidateWithMajors("计算机类")
+	openToPostgraduate.EntryYears = []string{"研究生", "已获研究生入学资格的本科生"}
+	if result := Score(ScoreInput{
+		Candidate: openToPostgraduate, User: postgraduate, Now: testNow(),
+	}); result.GroupKey == "" {
+		t.Fatal("声明面向研究生的赛事不得淘汰研究生")
+	}
+	if result := Score(ScoreInput{
+		Candidate: openToPostgraduate, User: undergraduate, Now: testNow(),
+	}); result.GroupKey != "" {
+		t.Fatal("声明面向研究生的赛事应淘汰本科生")
+	}
+}
+
+// 四位年份仍按年份比对：字段将来真的填年份时不需要再改门禁。
+func TestGradeScopeStillHonoursExplicitYears(t *testing.T) {
+	candidate := candidateWithMajors("计算机类")
+	candidate.EntryYears = []string{"2024", "2025"}
+	user := ResolveUser(UserProfile{Major: "计算机科学与技术", EntryYear: "2023", Grade: "本科2023级"})
+	if result := Score(ScoreInput{Candidate: candidate, User: user, Now: testNow()}); result.GroupKey != "" {
+		t.Fatal("入学年份不在范围内应淘汰")
+	}
+	matched := ResolveUser(UserProfile{Major: "计算机科学与技术", EntryYear: "2024", Grade: "本科2024级"})
+	if result := Score(ScoreInput{Candidate: candidate, User: matched, Now: testNow()}); result.GroupKey == "" {
+		t.Fatal("入学年份在范围内不应淘汰")
+	}
+}
+
+// 无法识别的取值不得造成淘汰：把不认识的值当成「不符」，
+// 与「标注越全越推荐不到」是同一个错误。
+func TestUnknownEntryScopeDoesNotEliminate(t *testing.T) {
+	candidate := candidateWithMajors("计算机类")
+	candidate.EntryYears = []string{"在校生"}
+	if result := Score(ScoreInput{
+		Candidate: candidate, User: userWithMajor("计算机科学与技术"), Now: testNow(),
+	}); result.GroupKey == "" {
+		t.Fatal("无法识别的年级取值不得淘汰")
+	}
+}
+
 func TestUnauthorizedCandidateIsMatchedButNotRankable(t *testing.T) {
 	// 边界契约 B11（修正版）：授权只约束「是否参与排序」，
 	// 不约束「是否计算匹配」。否则目录尚未普遍授权时（现状 310/310 为 false）

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"shenliyuan/internal/competitionmatching"
@@ -72,6 +73,8 @@ func main() {
 	entryYear := flag.String("year", "2023", "入学年份")
 	assumeAuthorized := flag.Bool("assume-authorized", false,
 		"模拟目录已授权个性化排序（用于评估阶段 2 翻转 personalized_ranking_allowed 后的预期效果）")
+	audit := flag.Bool("audit", false,
+		"输出覆盖率审计报告：簇引用分布、无专业映射的簇、未识别标签、宽口径标签分布、疑似标签错配")
 	flag.Parse()
 	if *catalogPath == "" {
 		fmt.Fprintln(os.Stderr, "必须指定 -catalog")
@@ -113,6 +116,11 @@ func main() {
 			TeamSizeMax:                item.TeamSizeMax,
 			PersonalizedRankingAllowed: item.PersonalizedRankingAllowed || *assumeAuthorized,
 		})
+	}
+
+	if *audit {
+		printCoverageAudit(items, candidates, unknownLabels)
+		return
 	}
 
 	fmt.Printf("算法版本: %s\n", competitionmatching.AlgorithmVersion)
@@ -242,6 +250,317 @@ func authorizedCount(items []catalogItem) int {
 		}
 	}
 	return count
+}
+
+// truncate 按字符截断长标题，保证审计输出在终端里可读。
+func truncate(value string, limit int) string {
+	runes := []rune(strings.TrimSpace(value))
+	if len(runes) <= limit {
+		return string(runes)
+	}
+	return string(runes[:limit]) + "…"
+}
+
+// mismatchRule 是「赛事名称里的学科词 → 应当出现的专业簇」。
+//
+// 用途只有一个：把人工复核从「逐条读 310 条」变成「只读被标出来的那几条」。
+// 刻意做得保守——只在标题命中了明确的学科词、而 eligible_majors 与预期簇**完全无交集**时
+// 才列为疑似错配；命中不了任何关键词的赛事直接跳过，不产生噪声。
+type mismatchRule struct {
+	keyword string
+	// excluded 用于挡住复合词误命中：例如「程序设计」「电子设计」都含「设计」，
+	// 但它们指向的是计算机与电子信息方向，不是艺术设计。
+	excluded []string
+	expected []competitionmatching.Cluster
+}
+
+var expectedClustersByKeyword = []mismatchRule{
+	{"化学", nil, []competitionmatching.Cluster{"化学工程与工艺", "应用化学", "化学相关", "材料类", "生命健康相关"}},
+	{"化工", nil, []competitionmatching.Cluster{"化学工程与工艺", "应用化学", "化学相关", "材料类", "生命健康相关"}},
+	{"数学", nil, []competitionmatching.Cluster{"数学类", "数学与应用数学", "统计学类", "数据科学类"}},
+	{"会计", nil, []competitionmatching.Cluster{"会计学", "财务管理", "工商管理类"}},
+	{"财务", nil, []competitionmatching.Cluster{"会计学", "财务管理", "工商管理类"}},
+	{"金融", nil, []competitionmatching.Cluster{"金融学", "经济学类", "国际经济与贸易", "工商管理类"}},
+	{"机械", nil, []competitionmatching.Cluster{"机械类", "车辆工程", "工业设计", "材料成型及控制工程", "工程设计相关", "工科相关专业"}},
+	{"车辆", nil, []competitionmatching.Cluster{"车辆工程", "机械类", "工科相关专业"}},
+	{"汽车", nil, []competitionmatching.Cluster{"车辆工程", "机械类", "工科相关专业"}},
+	{"电子", []string{"电子商务", "电子数据"}, []competitionmatching.Cluster{"电子信息类", "通信工程", "集成电路相关", "微电子相关", "自动化类", "机器人工程"}},
+	{"光电", nil, []competitionmatching.Cluster{"电子信息类", "工科相关专业"}},
+	{"芯片", nil, []competitionmatching.Cluster{"集成电路相关", "微电子相关", "电子信息类"}},
+	{"集成电路", nil, []competitionmatching.Cluster{"集成电路相关", "微电子相关", "电子信息类"}},
+	{"电气", nil, []competitionmatching.Cluster{"电气工程类", "自动化类", "工科相关专业"}},
+	{"计算机", nil, []competitionmatching.Cluster{"计算机类", "软件工程", "网络工程", "数据科学类", "智能科学类"}},
+	{"软件", nil, []competitionmatching.Cluster{"软件工程", "计算机类", "网络工程", "数据科学类"}},
+	{"算法", nil, []competitionmatching.Cluster{"计算机类", "软件工程", "数据科学类", "数学类"}},
+	{"人工智能", nil, []competitionmatching.Cluster{"智能科学类", "计算机类", "数据科学类", "电子信息类"}},
+	{"材料", nil, []competitionmatching.Cluster{"材料类", "金属材料工程相关", "材料成型及控制工程"}},
+	{"环境", nil, []competitionmatching.Cluster{"环境工程", "化学工程与工艺", "应用化学", "工科相关专业"}},
+	{"机器人", nil, []competitionmatching.Cluster{"机器人工程", "自动化类", "机械类", "电子信息类", "计算机类"}},
+	{"物联网", nil, []competitionmatching.Cluster{"计算机类", "网络工程", "电子信息类", "通信工程", "数据科学类"}},
+	{"物流", nil, []competitionmatching.Cluster{"物流管理相关", "管理科学与工程类", "工商管理类"}},
+	{"英语", nil, []competitionmatching.Cluster{"英语", "翻译", "人文社科相关", "国际交流相关"}},
+	{"翻译", nil, []competitionmatching.Cluster{"翻译", "英语", "俄语", "人文社科相关", "国际交流相关"}},
+	{"俄语", nil, []competitionmatching.Cluster{"俄语", "翻译", "人文社科相关", "国际交流相关"}},
+	{"设计", []string{
+		"程序设计", "电子设计", "机械设计", "结构设计", "系统设计", "电路设计",
+		"集成电路设计", "电气设计", "车辆设计", "交通设计", "仿真设计", "算法设计",
+		"智能设计", "外观设计", "网站设计", "电路与系统设计",
+		"物联网设计", "机器人设计", "软件设计", "网络设计", "通信设计",
+		"光电设计", "物流设计", "商业设计", "汽车设计", "能源设计",
+	}, []competitionmatching.Cluster{"视觉传达设计", "环境设计", "产品设计", "动画", "数字媒体相关", "工业设计"}},
+	{"艺术", nil, []competitionmatching.Cluster{"视觉传达设计", "环境设计", "产品设计", "动画", "数字媒体相关", "工业设计"}},
+	{"动画", nil, []competitionmatching.Cluster{"动画", "数字媒体相关", "视觉传达设计"}},
+	{"医学", nil, []competitionmatching.Cluster{"生命健康相关"}},
+	{"药", nil, []competitionmatching.Cluster{"化学工程与工艺", "应用化学", "生命健康相关"}},
+}
+
+// printCoverageAudit 输出覆盖率审计报告（计划 §10.3）。
+//
+// 这份报告是阶段 1 验收的直接证据，也是交给学院教务员核对映射表的输入。
+// 关键设计：判定全部复用 competitionmatching 的同一份词表与解析函数，
+// 因此报告里的「无映射」「未识别」与线上匹配的口径必然一致。
+func printCoverageAudit(items []catalogItem, candidates []competitionmatching.Candidate, unknownLabels map[string]int) {
+	fmt.Printf("算法版本: %s\n", competitionmatching.AlgorithmVersion)
+	fmt.Printf("目录赛事数: %d（快照声明 %d）\n\n", len(items), len(items))
+	clusterRefs := map[competitionmatching.Cluster]int{}
+	exactMajorRefs := map[string]int{}
+	clusterEvents := map[competitionmatching.Cluster][]string{}
+	for index := range candidates {
+		for _, cluster := range candidates[index].ClusterScope.Clusters {
+			clusterRefs[cluster]++
+			clusterEvents[cluster] = append(clusterEvents[cluster], candidates[index].CompetitionID)
+		}
+		for _, major := range candidates[index].ClusterScope.ExactMajors {
+			exactMajorRefs[major]++
+		}
+	}
+
+	fmt.Println("=== 1. 专业簇引用分布（目录侧实际在用）===")
+	type clusterCount struct {
+		cluster competitionmatching.Cluster
+		count   int
+	}
+	used := make([]clusterCount, 0, len(clusterRefs))
+	for cluster, count := range clusterRefs {
+		used = append(used, clusterCount{cluster, count})
+	}
+	sort.Slice(used, func(i, j int) bool {
+		if used[i].count != used[j].count {
+			return used[i].count > used[j].count
+		}
+		return used[i].cluster < used[j].cluster
+	})
+	for _, entry := range used {
+		mark := ""
+		if competitionmatching.IsBroadCluster(entry.cluster) {
+			mark = "  [宽口径]"
+		}
+		fmt.Printf("  %-24s %4d 场%s\n", entry.cluster, entry.count, mark)
+	}
+
+	fmt.Println("\n=== 2. 词表里没有任何赛事引用的簇（可考虑收敛词表）===")
+	unused := make([]string, 0)
+	for _, cluster := range competitionmatching.ClusterOptions() {
+		if clusterRefs[competitionmatching.Cluster(cluster)] == 0 {
+			unused = append(unused, cluster)
+		}
+	}
+	if len(unused) == 0 {
+		fmt.Println("  无")
+	} else {
+		sort.Strings(unused)
+		fmt.Printf("  %d 项：%s\n", len(unused), strings.Join(unused, "、"))
+	}
+
+	fmt.Println("\n=== 3. 没有任何标准专业映射到的簇（该方向的学生只能靠兜底命中）===")
+	mapped := map[competitionmatching.Cluster]int{}
+	for _, clusters := range competitionmatching.MajorClusterMap() {
+		for _, cluster := range clusters {
+			mapped[cluster]++
+		}
+	}
+	orphan := make([]competitionmatching.Cluster, 0)
+	for _, cluster := range competitionmatching.ClusterOptions() {
+		if mapped[competitionmatching.Cluster(cluster)] == 0 {
+			orphan = append(orphan, competitionmatching.Cluster(cluster))
+		}
+	}
+	if len(orphan) == 0 {
+		fmt.Println("  无")
+	} else {
+		for _, cluster := range orphan {
+			fmt.Printf("  %-24s 被 %d 场赛事引用\n", cluster, clusterRefs[cluster])
+		}
+		fmt.Println("  → 处理方式：在 academic_majors 中补上对应专业，或在目录侧把该簇收敛到相邻方向。")
+	}
+
+	fmt.Println("\n=== 4. 宽口径「-相关」类标签分布（噪声来源，对应计划 D3）===")
+	broad := make([]competitionmatching.Cluster, 0)
+	for cluster := range clusterRefs {
+		if competitionmatching.IsBroadCluster(cluster) {
+			broad = append(broad, cluster)
+		}
+	}
+	sort.Slice(broad, func(i, j int) bool { return clusterRefs[broad[i]] > clusterRefs[broad[j]] })
+	for _, cluster := range broad {
+		fmt.Printf("  %-24s %4d 场\n", cluster, clusterRefs[cluster])
+	}
+	if len(broad) == 0 {
+		fmt.Println("  无")
+	}
+
+	fmt.Println("\n=== 5. 目录侧未识别标签（必须逐项登记，对应边界契约 B14）===")
+	if len(unknownLabels) == 0 {
+		fmt.Println("  无")
+	} else {
+		keys := make([]string, 0, len(unknownLabels))
+		for key := range unknownLabels {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			fmt.Printf("  %-24s 出现 %d 次\n", key, unknownLabels[key])
+		}
+	}
+
+	fmt.Println("\n=== 6. 疑似标签错配（标题学科词与 eligible_majors 无交集，须人工复核）===")
+	suspects := 0
+	for index := range items {
+		item := items[index]
+		candidate := candidates[index]
+		if len(candidate.ClusterScope.Clusters) == 0 {
+			continue
+		}
+		offer := map[competitionmatching.Cluster]struct{}{}
+		for _, cluster := range candidate.ClusterScope.Clusters {
+			offer[cluster] = struct{}{}
+		}
+		for _, rule := range expectedClustersByKeyword {
+			if !strings.Contains(item.Title, rule.keyword) {
+				continue
+			}
+			// 复合词误命中：标题里的学科词只是另一个词的组成部分，跳过该规则。
+			excluded := false
+			for _, value := range rule.excluded {
+				if strings.Contains(item.Title, value) {
+					excluded = true
+					break
+				}
+			}
+			if excluded {
+				continue
+			}
+			matched := false
+			for _, expected := range rule.expected {
+				if _, ok := offer[expected]; ok {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
+			suspects++
+			labels := make([]string, 0, len(candidate.ClusterScope.Clusters))
+			for _, cluster := range candidate.ClusterScope.Clusters {
+				labels = append(labels, string(cluster))
+			}
+			fmt.Printf("  %-12s %s\n", item.CompetitionID, truncate(item.Title, 40))
+			fmt.Printf("  %-12s   标题含「%s」，但只面向 %s\n", "", rule.keyword, strings.Join(labels, "、"))
+			break
+		}
+	}
+	if suspects == 0 {
+		fmt.Println("  无")
+	} else {
+		fmt.Printf("  共 %d 条待复核。修复必须走 admin catalog 的 validate → import → diff → activate，禁止直接改库。\n", suspects)
+	}
+
+	fmt.Println("\n=== 7. 赛事直接标注标准专业全名的情况（legacy 兼容路径）===")
+	if len(exactMajorRefs) == 0 {
+		fmt.Println("  无（目录已全部使用簇口径）")
+	} else {
+		keys := make([]string, 0, len(exactMajorRefs))
+		for key := range exactMajorRefs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			fmt.Printf("  %-24s %4d 场\n", key, exactMajorRefs[key])
+		}
+	}
+
+	printGradeGateAudit(candidates, "2023")
+}
+
+// printGradeGateAudit 追问「年级门淘汰掉的到底是哪些赛事」。
+//
+// 年级是唯一保留的淘汰原因，因此必须能逐项说清：这 47 条是真实不适配，
+// 还是口径不一致导致的误伤。判定复用 competitionmatching.ResolveEntryScope，
+// 因此这里报出的「真实不适配」与线上门禁的结论必然一致。
+func printGradeGateAudit(candidates []competitionmatching.Candidate, entryYear string) {
+	fmt.Println("\n=== 8. 年级门淘汰明细（唯一保留的淘汰原因）===")
+	undergraduate := competitionmatching.ResolveUser(competitionmatching.UserProfile{
+		Major: "计算机科学与技术", College: "信息科学与工程学院",
+		EntryYear: entryYear, Grade: "本科" + entryYear + "级",
+	})
+	postgraduate := competitionmatching.ResolveUser(competitionmatching.UserProfile{
+		Major: "计算机科学与技术", College: "信息科学与工程学院",
+		EntryYear: entryYear, Grade: "研究生" + entryYear + "级",
+	})
+
+	for _, probe := range []struct {
+		label string
+		user  competitionmatching.ResolvedUser
+	}{{"本科生", undergraduate}, {"研究生", postgraduate}} {
+		grouped := map[string]int{}
+		dropped := 0
+		for index := range candidates {
+			scope := competitionmatching.ResolveEntryScope(candidates[index].EntryYears)
+			if scope.Empty || scope.Allows(probe.user) {
+				continue
+			}
+			dropped++
+			grouped[strings.Join(candidates[index].EntryYears, " / ")]++
+		}
+		fmt.Printf("  %s画像被淘汰 %d 条：\n", probe.label, dropped)
+		keys := make([]string, 0, len(grouped))
+		for key := range grouped {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(i, j int) bool {
+			if grouped[keys[i]] != grouped[keys[j]] {
+				return grouped[keys[i]] > grouped[keys[j]]
+			}
+			return keys[i] < keys[j]
+		})
+		for _, key := range keys {
+			fmt.Printf("    %-46s %3d 条\n", truncate(key, 44), grouped[key])
+		}
+	}
+
+	fmt.Println("  说明：该字段线上存的是学历层次（研究生 / 已获研究生入学资格的本科生 / 本科生），")
+	fmt.Println("        不是四位年份；门禁按层次语义比对，四位年份仍按年份比对，")
+	fmt.Println("        无法识别的取值一律放行（不得因为「不认识」而淘汰）。")
+	fmt.Println("  另需登记：无法识别的年级取值清单——")
+	unknown := map[string]int{}
+	for index := range candidates {
+		for _, value := range competitionmatching.ResolveEntryScope(candidates[index].EntryYears).Unknown {
+			unknown[value]++
+		}
+	}
+	if len(unknown) == 0 {
+		fmt.Println("    无")
+	} else {
+		keys := make([]string, 0, len(unknown))
+		for key := range unknown {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			fmt.Printf("    %-46s %3d 条\n", key, unknown[key])
+		}
+	}
 }
 
 func rankIDs(

@@ -11,6 +11,8 @@ type UserProfile struct {
 	Major     string
 	College   string
 	EntryYear string
+	// Grade 是教务口径的年级原文（如「本科2023级」），用于判断学历层次。
+	Grade string
 	// ClusterOverride 来自用户手动纠正（user_competition_preferences.major_cluster_override）。
 	// 一旦存在就完全取代字典推断——用户显式意图优先于系统推断。
 	ClusterOverride []string
@@ -22,6 +24,9 @@ type ResolvedUser struct {
 	College   string
 	Major     string
 	EntryYear string
+	// Postgraduate 表示用户是研究生（含硕士、博士）。学籍是本科还是研究生
+	// 决定能否命中「研究生」这类参赛范围，光有入学年份判断不出来。
+	Postgraduate bool
 	// Unmapped 为 true 表示专业名无法映射到任何簇。
 	// 调用方必须把这种情况作为可见缺口上报，而不是当成普通的「未命中」。
 	Unmapped bool
@@ -32,9 +37,10 @@ type ResolvedUser struct {
 // ResolveUser 解析用户侧专业簇。
 func ResolveUser(profile UserProfile) ResolvedUser {
 	result := ResolvedUser{
-		College:   strings.TrimSpace(profile.College),
-		Major:     strings.TrimSpace(profile.Major),
-		EntryYear: strings.TrimSpace(profile.EntryYear),
+		College:      strings.TrimSpace(profile.College),
+		Major:        strings.TrimSpace(profile.Major),
+		EntryYear:    strings.TrimSpace(profile.EntryYear),
+		Postgraduate: isPostgraduateGrade(profile.Grade),
 	}
 	if values := normalizeClusterValues(profile.ClusterOverride); len(values) > 0 {
 		result.Clusters = values
@@ -48,6 +54,23 @@ func ResolveUser(profile UserProfile) ResolvedUser {
 	}
 	result.Clusters = clusters
 	return result
+}
+
+// postgraduateGradeKeywords 用于判断学历层次。教务年级字段是自由文本，
+// 因此这里只做关键词判定，判不出来时按本科处理（在校生的默认情形）。
+var postgraduateGradeKeywords = []string{"研究生", "硕士", "博士", "mba", "mpa", "mem"}
+
+func isPostgraduateGrade(grade string) bool {
+	value := strings.ToLower(strings.TrimSpace(grade))
+	if value == "" {
+		return false
+	}
+	for _, keyword := range postgraduateGradeKeywords {
+		if strings.Contains(value, keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 // EventMajorScope 是赛事侧解析结果。
@@ -169,4 +192,89 @@ func ContainsFold(values []string, expected string) bool {
 		}
 	}
 	return false
+}
+
+// EntryScope 是赛事 side `eligible_entry_years` 的解析结果。
+//
+// 字段名叫「entry_years」，但线上实际取值是**学历层次**而不是年份：
+// 310 条里 47 条有值，全部是「研究生 / 已获研究生入学资格的本科生 / 本科生」，
+// 没有一条是四位年份。旧实现拿它和用户的入学年份做字符串全等比较，
+// 于是「本科生」这两条赛事对任何本科生都被判为不符——**真正合规的用户被淘汰**。
+// 解析成两类口径后，门禁才按语义生效：层次归层次，年份归年份。
+type EntryScope struct {
+	// Postgraduate 表示赛事面向研究生（含已获研究生入学资格的本科生）。
+	Postgraduate bool
+	// Undergraduate 表示赛事面向本科生。
+	Undergraduate bool
+	// Years 是四位入学年份，字段将来若真的填年份，按年份比对。
+	Years map[string]struct{}
+	// Unknown 是无法识别的取值。必须可见（与 B14 同理），且不得据此淘汰。
+	Unknown []string
+	// Empty 表示赛事没有声明年级范围（310 条里 263 条如此），一律放行。
+	Empty bool
+}
+
+// ResolveEntryScope 解析赛事声明的参赛年级范围。
+func ResolveEntryScope(values []string) EntryScope {
+	scope := EntryScope{Years: map[string]struct{}{}}
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+		if isFourDigitYear(value) {
+			scope.Years[value] = struct{}{}
+			continue
+		}
+		normalized := NormalizeMajor(value)
+		switch {
+		case strings.Contains(normalized, "研究生") || strings.Contains(normalized, "硕士") ||
+			strings.Contains(normalized, "博士"):
+			scope.Postgraduate = true
+		case strings.Contains(normalized, "本科") || strings.Contains(normalized, "专科"):
+			scope.Undergraduate = true
+		default:
+			scope.Unknown = append(scope.Unknown, value)
+		}
+	}
+	scope.Empty = !scope.Postgraduate && !scope.Undergraduate && len(scope.Years) == 0
+	return scope
+}
+
+// Allows 判断用户是否落在赛事声明的年级范围内。
+//
+// 保守原则与其它资格字段一致：**只有口径明确时才可以淘汰**。
+// 若赛事只声明了无法识别的取值，一律放行——把不认识的值当成「不符」
+// 正是「数据越全、越推荐不到」那类缺陷的成因。
+func (s EntryScope) Allows(user ResolvedUser) bool {
+	if s.Empty {
+		return true
+	}
+	if len(s.Years) > 0 {
+		if _, ok := s.Years[user.EntryYear]; ok {
+			return true
+		}
+	}
+	if s.Postgraduate && user.Postgraduate {
+		return true
+	}
+	if s.Undergraduate && !user.Postgraduate {
+		return true
+	}
+	if len(s.Years) == 0 && !s.Postgraduate && !s.Undergraduate {
+		return true
+	}
+	return false
+}
+
+func isFourDigitYear(value string) bool {
+	if len(value) != 4 {
+		return false
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
 }

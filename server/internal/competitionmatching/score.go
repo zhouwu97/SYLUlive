@@ -170,9 +170,11 @@ func Score(input ScoreInput) Result {
 		},
 	}
 
-	// 年级资格：唯一保留的硬门（唯一有明确排他语义的字段）。
-	if len(candidate.EntryYears) > 0 {
-		if !ContainsFold(candidate.EntryYears, user.EntryYear) {
+	// 年级资格：唯一保留的硬门，且只在口径明确时生效。
+	// eligible_entry_years 线上实际是「学历层次」而不是年份，按层次语义比对，
+	// 否则「本科生」这类声明会把所有本科生误判为不符（详见 EntryScope 注释）。
+	if scope := ResolveEntryScope(candidate.EntryYears); !scope.Empty {
+		if !scope.Allows(user) {
 			result.Tier = TierNone
 			result.GroupKey = ""
 			return result

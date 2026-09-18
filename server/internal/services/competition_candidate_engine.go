@@ -132,6 +132,7 @@ func (e *competitionCandidateEngine) BuildCandidates(
 
 	resolvedUser := competitionmatching.ResolveUser(competitionmatching.UserProfile{
 		Major: userContext.Major, College: userContext.College, EntryYear: userContext.EntryYear,
+		Grade:           userContext.Grade,
 		ClusterOverride: userContext.MajorClusterOverride,
 	})
 	if resolvedUser.Unmapped {

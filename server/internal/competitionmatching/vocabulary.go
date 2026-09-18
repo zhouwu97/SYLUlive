@@ -339,6 +339,16 @@ func IsKnownSkill(value string) bool {
 	return bridgeLookup(skillClusters, value) != nil
 }
 
+// MajorClusterMap 返回「标准专业名 → 专业簇」种子映射的副本，供离线覆盖率审计使用。
+// 返回副本而不是原表：审计工具不应该有能力改到线上匹配用的词表。
+func MajorClusterMap() map[string][]Cluster {
+	result := make(map[string][]Cluster, len(standardMajorClusters))
+	for major, clusters := range standardMajorClusters {
+		result[major] = dedupeClusters(clusters)
+	}
+	return result
+}
+
 // LookupMajorClusters 返回标准专业名对应的专业簇。
 //
 // 返回值 mapped 为 false 表示该专业名既不在种子映射里，也无法粗归类——

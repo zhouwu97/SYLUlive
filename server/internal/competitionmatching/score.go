@@ -322,12 +322,25 @@ func scorePreference(
 		direction = DimUnknown
 	}
 
-	// 技能：赛事标签命中用户技能词。
+	// 技能：用户技能词经桥接落到专业簇，再看赛事是否覆盖。
+	//
+	// 刻意**不**拿技能词去和 candidate.Tags 做等值比较：目录的 22 个标签是
+	// 「智能制造」「工程实践」这类粗分类，与技能词表零重叠，那样做命中率恒为 0，
+	// 会让「技能」维度永远停留在「尚未确认」（死分量）。
 	if len(preference.SkillTags) > 0 {
-		hit := countTagHits(preference.SkillTags, candidate.Tags)
+		hit := 0
+		for _, tag := range preference.SkillTags {
+			for _, cluster := range ClusterBridgeForSkill(tag) {
+				if _, ok := offer[cluster]; ok {
+					hit++
+					break
+				}
+			}
+		}
 		if hit > 0 {
 			points += minInt(hit*4, 8)
 			skill = DimMatched
+			*reasons = appendUnique(*reasons, "你具备的技能与该赛事方向相符")
 		} else {
 			skill = DimUnmatched
 		}
@@ -335,13 +348,7 @@ func scorePreference(
 
 	// 角色：沿用 competitionRoleKeywords 的闭集关键词，不做自由文本相似度。
 	if len(preference.PreferredRoles) > 0 {
-		text := searchableText(candidate)
-		hit := 0
-		for _, role := range preference.PreferredRoles {
-			if roleKeywordHit(role, text) {
-				hit++
-			}
-		}
+		hit := countRoleKeywordHits(preference.PreferredRoles, searchableText(candidate))
 		if hit > 0 {
 			points += minInt(hit*5, 10)
 			role = DimMatched
@@ -539,23 +546,15 @@ func searchableText(candidate Candidate) string {
 	return strings.ToLower(strings.Join(parts, " "))
 }
 
-func countTagHits(wanted []string, tags []string) int {
-	offer := make(map[string]struct{}, len(tags))
-	for _, tag := range tags {
-		offer[NormalizeMajor(tag)] = struct{}{}
-	}
+func countRoleKeywordHits(wanted []string, text string) int {
 	seen := make(map[string]struct{}, len(wanted))
 	hit := 0
 	for _, value := range wanted {
-		key := NormalizeMajor(value)
-		if key == "" {
+		if _, exists := seen[value]; exists {
 			continue
 		}
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		if _, ok := offer[key]; ok {
-			seen[key] = struct{}{}
+		if roleKeywordHit(value, text) {
+			seen[value] = struct{}{}
 			hit++
 		}
 	}
@@ -630,12 +629,6 @@ var tagBridge = map[string][]Cluster{
 	"文化传播":  {"人文社科相关", "国际交流相关"},
 	"数学建模":  {"数学类", "数学与应用数学", "统计学类"},
 	"仿真决策":  {"数学类", "管理科学与工程类"},
-}
-
-// ClusterBridgeForDirection 把用户填的方向标签桥接到专业簇。
-// 方向标签本身不是簇，需要这层桥接才能与赛事簇求交集。
-func ClusterBridgeForDirection(direction string) []Cluster {
-	return tagBridge[strings.TrimSpace(direction)]
 }
 
 // offerClusterSet 汇总赛事可提供的簇（含类别与标签桥接），用于偏好命中判定。

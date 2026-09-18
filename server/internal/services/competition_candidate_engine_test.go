@@ -226,6 +226,48 @@ func TestCompetitionCandidateEngineUsesCatalogOrderWithoutImportanceOrDeadlinePr
 	}
 }
 
+func TestCompetitionCandidateEnginePassesPreferenceTagsIntoScoring(t *testing.T) {
+	// 回归用例：画像层此前漏读 user_competition_preferences.skill_tags，
+	// 引擎里取到的 SkillTags 恒为空，导致「技能」维度永远显示「尚未确认」、
+	// 技能分恒为 0 的死分量。本用例同时覆盖方向与技能两条桥接链路。
+	db := newCompetitionServiceTestDB(t)
+	user := readyCompetitionUser(t, db)
+	preference := models.UserCompetitionPreference{
+		UserID: user.ID, Goals: competitionJSON(),
+		DirectionTags: competitionJSON("程序设计"), SkillTags: competitionJSON("Python"),
+		PreferredRoles: competitionJSON(), ExperienceLevel: "beginner",
+	}
+	if err := db.Create(&preference).Error; err != nil {
+		t.Fatal(err)
+	}
+	// 赛事只带目录真实的粗分类标签，与方向词、技能词零重叠。
+	event := candidateEvent("NAT-041", "程序设计赛事", 50, 1, []string{"计算机类"}, nil)
+	event.Tags = competitionJSON("工程实践")
+	if err := db.Select("*").Create(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := NewCompetitionCandidateEngine(db).BuildCandidates(
+		context.Background(), user.ID, CandidateFilter{Page: 1, PageSize: 20},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 1 {
+		t.Fatalf("total=%d groups=%+v", result.Total, result.Groups)
+	}
+	item := result.Groups[0].Items[0]
+	if item.MatchDimensions.Direction != "matched" {
+		t.Fatalf("方向标签未接入打分：%+v", item.MatchDimensions)
+	}
+	if item.MatchDimensions.Skill != "matched" {
+		t.Fatalf("技能标签未接入打分：%+v", item.MatchDimensions)
+	}
+	if item.MatchTier == "" || item.MatchTier == "none" {
+		t.Fatalf("命中专业簇与偏好后不应无档位：%q", item.MatchTier)
+	}
+}
+
 func ptrTime(value time.Time) *time.Time { return &value }
 
 func TestCompetitionCandidateEngineReturnsProfileNotReadyWithoutCandidates(t *testing.T) {

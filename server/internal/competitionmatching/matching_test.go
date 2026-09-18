@@ -435,3 +435,95 @@ func TestRankIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// —— 偏好桥接：方向与技能都不是簇词表里的词，必须桥接后才可能命中 ——
+
+func TestPreferenceBridgesCoverClientVocabulary(t *testing.T) {
+	// 这些值必须与 client/lib/models/competition_preference.dart 的受控词表一致。
+	// 桥接表缺项的表现不是「匹配不精确」，而是「偏好分量恒为 0」的死分量：
+	// 用户把方向与技能选满，分值仍然是 0、维度仍然显示「尚未确认」。
+	directions := []string{
+		"程序设计", "数学建模", "电子设计", "机械制造", "创新创业", "商业分析",
+		"外语", "艺术设计", "生命科学", "智能汽车", "机器人",
+	}
+	skills := []string{
+		"C++", "Python", "算法", "建模", "数据分析", "硬件",
+		"嵌入式", "机械设计", "文案", "答辩", "设计", "项目管理",
+	}
+	for _, value := range directions {
+		assertBridgedClusters(t, "方向", value, ClusterBridgeForDirection(value))
+	}
+	for _, value := range skills {
+		assertBridgedClusters(t, "技能", value, ClusterBridgeForSkill(value))
+	}
+}
+
+func assertBridgedClusters(t *testing.T, kind, source string, clusters []Cluster) {
+	t.Helper()
+	if len(clusters) == 0 {
+		t.Fatalf("%s %q 没有桥接到任何专业簇", kind, source)
+	}
+	for _, cluster := range clusters {
+		if !IsStandardCluster(string(cluster)) {
+			t.Fatalf("%s %q 桥接到了词表外的簇 %q", kind, source, cluster)
+		}
+	}
+}
+
+func TestDirectionAndSkillTagsProducePreferencePoints(t *testing.T) {
+	// 赛事只带目录真实的粗分类标签（「工程实践」这类），
+	// 与方向词、技能词零重叠，命中因此只能来自簇桥接。
+	candidate := candidateWithMajors("计算机类")
+	candidate.Tags = []string{"工程实践", "智能制造"}
+	result := Score(ScoreInput{
+		Candidate: candidate,
+		User:      userWithMajor("计算机科学与技术"),
+		Preference: Preference{
+			Configured: true, DirectionTags: []string{"程序设计"}, SkillTags: []string{"Python"},
+		},
+		Now: testNow(),
+	})
+	if result.Dimensions.Direction != DimMatched {
+		t.Fatalf("方向应按簇桥接命中，实际=%q", result.Dimensions.Direction)
+	}
+	if result.Dimensions.Skill != DimMatched {
+		t.Fatalf("技能应按簇桥接命中，实际=%q", result.Dimensions.Skill)
+	}
+	if result.Breakdown.Preference < 12 {
+		t.Fatalf("方向 8 分与技能 4 分应有 12 分，实际=%d", result.Breakdown.Preference)
+	}
+}
+
+func TestSkillTagWithoutBridgedClusterIsUnmatched(t *testing.T) {
+	// 赛事不开放专业簇，类别与标签桥接也覆盖不到时，
+	// 技能必须记为未命中，而不是靠标签等值比较碰运气。
+	candidate := candidateWithMajors()
+	candidate.Tags = []string{"工程实践"}
+	result := Score(ScoreInput{
+		Candidate:  candidate,
+		User:       userWithMajor("计算机科学与技术"),
+		Preference: Preference{Configured: true, SkillTags: []string{"Python"}},
+		Now:        testNow(),
+	})
+	if result.Dimensions.Skill != DimUnmatched {
+		t.Fatalf("无可桥接簇时技能应为未命中，实际=%q", result.Dimensions.Skill)
+	}
+	if result.Breakdown.Preference != 0 {
+		t.Fatalf("未命中不应给分，实际=%d", result.Breakdown.Preference)
+	}
+}
+
+func TestSkillPointsAreCapped(t *testing.T) {
+	candidate := candidateWithMajors("计算机类")
+	result := Score(ScoreInput{
+		Candidate: candidate, User: userWithMajor("计算机科学与技术"),
+		Preference: Preference{
+			Configured: true,
+			SkillTags:  []string{"Python", "算法", "数据分析", "硬件", "设计"},
+		},
+		Now: testNow(),
+	})
+	if result.Breakdown.Preference != 8 {
+		t.Fatalf("技能分应封顶 8，实际=%d", result.Breakdown.Preference)
+	}
+}

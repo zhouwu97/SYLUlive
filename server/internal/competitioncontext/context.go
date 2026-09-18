@@ -33,6 +33,10 @@ type UserContext struct {
 	Major                  string              `json:"major"`
 	Goals                  []string            `json:"goals"`
 	DirectionTags          []string            `json:"direction_tags"`
+	// SkillTags 是用户在偏好页选择的技能标签（受控词表）。
+	// 与 Skills 不是一回事：Skills 是从获奖经历汇总的能力画像，
+	// SkillTags 是用户自述的技能偏好，用于「技能与赛事方向是否相符」的打分。
+	SkillTags              []string            `json:"skill_tags"`
 	Skills                 []CapabilitySummary `json:"skills"`
 	Roles                  []CapabilitySummary `json:"roles"`
 	PreferredRoles         []string            `json:"preferred_roles"`
@@ -60,6 +64,7 @@ func (b *Builder) BuildCompetitionUserContext(
 	var result UserContext
 	result.Goals = []string{}
 	result.DirectionTags = []string{}
+	result.SkillTags = []string{}
 	result.Skills = []CapabilitySummary{}
 	result.Roles = []CapabilitySummary{}
 	result.PreferredRoles = []string{}
@@ -85,6 +90,7 @@ func (b *Builder) BuildCompetitionUserContext(
 		result.PreferenceConfigured = true
 		result.Goals = decodeCompetitionStringArray(preference.Goals)
 		result.DirectionTags = decodeCompetitionStringArray(preference.DirectionTags)
+		result.SkillTags = decodeCompetitionStringArray(preference.SkillTags)
 		result.PreferredRoles = decodeCompetitionStringArray(preference.PreferredRoles)
 		result.WeeklyHours = preference.WeeklyHours
 		result.AcceptLongTermTraining = preference.AcceptLongTermTraining

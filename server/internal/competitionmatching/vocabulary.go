@@ -234,6 +234,69 @@ var broadMajorSubstring = []struct {
 	{"安全", "环境工程"},
 }
 
+// directionClusters 把客户端「感兴趣的方向」受控词表（11 项，
+// client/lib/models/competition_preference.dart:61-73）桥接到专业簇。
+//
+// 这层桥接是必需的：方向词与目录侧的簇标签、标签词表都不同名
+// （目录的 22 个标签是「智能制造」「工程实践」这类粗分类，不是方向词）。
+// 缺少映射的表现不是「匹配不准」，而是「偏好分量恒为 0」的死分量：
+// 用户把方向选满，分值仍然是 0。
+// 键必须已归一（NormalizeMajor 后的小写形式）。
+var directionClusters = map[string][]Cluster{
+	"程序设计": {"计算机类", "软件工程", "数据科学类"},
+	"数学建模": {"数学类", "数学与应用数学", "统计学类"},
+	"电子设计": {"电子信息类", "通信工程", "自动化类"},
+	"机械制造": {"机械类", "材料成型及控制工程", "工业设计"},
+	"创新创业": {"工商管理类", "管理科学与工程类", "经济学类"},
+	"商业分析": {"工商管理类", "会计学", "金融学", "经济学类"},
+	"外语":   {"英语", "俄语", "翻译"},
+	"艺术设计": {"视觉传达设计", "环境设计", "产品设计", "动画", "工业设计"},
+	"生命科学": {"生命健康相关", "应用化学", "环境工程"},
+	"智能汽车": {"车辆工程", "自动化类", "电子信息类", "机器人工程"},
+	"机器人":  {"机器人工程", "自动化类", "机械类"},
+}
+
+// skillClusters 把客户端「已具备技能」受控词表（12 项，
+// client/lib/models/competition_preference.dart:75-88）桥接到专业簇。
+//
+// 同样必须桥接：技能词（Python / 硬件 / 答辩）与目录的 22 个标签词表**零重叠**，
+// 直接拿技能词去和 competition_events.tags 做等值比较，命中率恒为 0——
+// 这就是「技能」维度此前永远显示「尚未确认」的第二个原因。
+var skillClusters = map[string][]Cluster{
+	"c++":    {"计算机类", "软件工程"},
+	"python": {"计算机类", "软件工程", "数据科学类"},
+	"算法":     {"计算机类", "数学类", "数学与应用数学"},
+	"建模":     {"数学类", "数学与应用数学", "管理科学与工程类"},
+	"数据分析":   {"数据科学类", "统计学类", "计算机类"},
+	"硬件":     {"电子信息类", "微电子相关"},
+	"嵌入式":    {"电子信息类", "自动化类", "机器人工程"},
+	"机械设计":   {"机械类", "工业设计", "材料成型及控制工程"},
+	"文案":     {"人文社科相关", "国际交流相关"},
+	"答辩":     {"人文社科相关", "工商管理类"},
+	"设计":     {"工业设计", "视觉传达设计", "产品设计", "环境设计", "动画"},
+	"项目管理":   {"管理科学与工程类", "工商管理类", "工商管理"},
+}
+
+// ClusterBridgeForDirection 把用户填写/选择的方向标签桥接到专业簇。
+// 方向词不是簇，需要这层桥接才能与赛事可提供的簇求交集。
+func ClusterBridgeForDirection(direction string) []Cluster {
+	return bridgeLookup(directionClusters, direction)
+}
+
+// ClusterBridgeForSkill 把用户选择/填写的技能标签桥接到专业簇。
+func ClusterBridgeForSkill(skill string) []Cluster {
+	return bridgeLookup(skillClusters, skill)
+}
+
+// bridgeLookup 按归一化键查桥接表；未登记的词返回 nil，由调用方按未命中处理。
+func bridgeLookup(table map[string][]Cluster, value string) []Cluster {
+	key := NormalizeMajor(value)
+	if key == "" {
+		return nil
+	}
+	return table[key]
+}
+
 // LookupMajorClusters 返回标准专业名对应的专业簇。
 //
 // 返回值 mapped 为 false 表示该专业名既不在种子映射里，也无法粗归类——

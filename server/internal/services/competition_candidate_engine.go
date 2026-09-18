@@ -133,6 +133,7 @@ func (e *competitionCandidateEngine) BuildCandidates(
 		Configured:             userContext.PreferenceConfigured,
 		Goals:                  userContext.Goals,
 		DirectionTags:          userContext.DirectionTags,
+		SkillTags:              userContext.SkillTags,
 		PreferredRoles:         userContext.PreferredRoles,
 		WeeklyHours:            userContext.WeeklyHours,
 		AcceptLongTermTraining: userContext.AcceptLongTermTraining,
@@ -144,19 +145,16 @@ func (e *competitionCandidateEngine) BuildCandidates(
 	byEventID := make(map[uint]dto.CompetitionCandidateDTO, len(events))
 	for _, event := range events {
 		candidate := buildMatchingCandidate(event)
+		// 行为信号是逐赛事的，因此在用户偏好基底上叠加一层的副本，
+		// 避免逐条重建整个偏好对象时漏字段。
+		eventPreference := preference
+		eventPreference.JoinedPlan = joinedPlans[event.ID]
+		eventPreference.HasAward = awardedEvents[event.ID]
 		scored := competitionmatching.Score(competitionmatching.ScoreInput{
-			Candidate: candidate,
-			User:      resolvedUser,
-			Preference: competitionmatching.Preference{
-				Configured: preference.Configured, Goals: preference.Goals,
-				DirectionTags: preference.DirectionTags, SkillTags: preference.SkillTags,
-				PreferredRoles: preference.PreferredRoles, WeeklyHours: preference.WeeklyHours,
-				AcceptLongTermTraining: preference.AcceptLongTermTraining,
-				CareerDirection:        preference.CareerDirection,
-				JoinedPlan:             joinedPlans[event.ID],
-				HasAward:               awardedEvents[event.ID],
-			},
-			Now: now,
+			Candidate:  candidate,
+			User:       resolvedUser,
+			Preference: eventPreference,
+			Now:        now,
 		})
 		// GroupKey 为空表示命中唯一保留的硬门（年级不符），此时才允许淘汰。
 		if scored.GroupKey == "" {

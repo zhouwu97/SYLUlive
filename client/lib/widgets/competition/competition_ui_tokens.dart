@@ -30,6 +30,10 @@ class CompetitionUiTokens {
   static Color warningColor(bool isDark) =>
       isDark ? const Color(0xFFFFB74D) : const Color(0xFFF2994A);
 
+  /// 警告类提示的浅底，与 accentSoft 同构，避免各页面各自手调透明度。
+  static Color warningSoft(bool isDark) =>
+      warningColor(isDark).withValues(alpha: 0.12);
+
   static Color upcomingColor(bool isDark) =>
       isDark ? const Color(0xFFE57373) : const Color(0xFFE76F51);
 

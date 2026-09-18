@@ -144,8 +144,10 @@ func legacyCandidateMap(candidate dto.CompetitionCandidateDTO) map[string]interf
 	result["fit_level"] = candidate.GroupKey
 	result["fit_reasons"] = []string{candidate.CoreReason}
 	result["gates"] = candidate.Gates
-	// 兼容层明确不写 personalized_score 和 recommendation_tier。
-	delete(result, "personalized_score")
-	delete(result, "recommendation_tier")
+	// 兼容层明确不写任何分值与档位：既有的 personalized_score / recommendation_tier
+	// 已不再产生，这里连同内部匹配分一起删除，避免任何形式的分数泄漏。
+	for _, field := range []string{"personalized_score", "recommendation_tier", "match_score"} {
+		delete(result, field)
+	}
 	return result
 }

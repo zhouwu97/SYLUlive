@@ -69,7 +69,12 @@ func TestCompetitionPreferenceMatchingDoesNotChangeCandidateOrder(t *testing.T) 
 		t.Fatalf("preference_configured=%v", response["preference_configured"])
 	}
 	items := response["items"].([]interface{})
-	if len(items) != 2 {
+	// 行为变更（本次修复）：专业不命中的赛事不再被丢弃，而是降级到通用池。
+	// 旧实现断言 len(items)==2，其隐含前提是「专业范围不命中即淘汰」——
+	// 这正是导致「适合我」不可用的核心缺陷（详见
+	// docs/plans/competition-recommendation-plan.md §2 P0-2）。
+	// 现在应为 3 条：2 条专业直接相关 + 1 条降级到通用候选。
+	if len(items) != 3 {
 		t.Fatalf("items=%v", items)
 	}
 	first := items[0].(map[string]interface{})
@@ -79,6 +84,13 @@ func TestCompetitionPreferenceMatchingDoesNotChangeCandidateOrder(t *testing.T) 
 	second := items[1].(map[string]interface{})
 	if second["title"] != "Python 程序设计挑战赛" {
 		t.Fatalf("preference changed deterministic order: %v", items)
+	}
+	if first["fit_level"] != "major_match" || second["fit_level"] != "major_match" {
+		t.Fatalf("专业直接相关的赛事应进入 major_match: %v", items)
+	}
+	third := items[2].(map[string]interface{})
+	if third["title"] != "其他专业赛事" || third["fit_level"] != "general_match" {
+		t.Fatalf("专业不命中的赛事应降级而非丢弃: %v", third)
 	}
 	for _, item := range []map[string]interface{}{first, second} {
 		if _, exists := item["personalized_score"]; exists {

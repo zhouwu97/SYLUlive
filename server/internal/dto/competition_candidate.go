@@ -74,6 +74,13 @@ type CompetitionCandidateDTO struct {
 	EvidenceSubgrade      string             `json:"evidence_subgrade"`
 	DatasetVersion        string             `json:"dataset_version"`
 
+	// 以下为匹配结果。按既有约定「不向学生暴露伪精确总分」，
+	// 只暴露离散档位、离散依据与命中的专业簇，分值仅供内部排序。
+	MatchTier       string   `json:"match_tier,omitempty"`
+	MatchBasis      string   `json:"match_basis,omitempty"`
+	MatchedClusters []string `json:"matched_clusters,omitempty"`
+	MatchScore      int      `json:"-"`
+
 	// 以下字段只用于 Go 到 Hy3 的受控上下文，不进入学生候选响应。
 	RecordHash         string                `json:"-"`
 	Gates              RecommendationGateDTO `json:"-"`
@@ -105,4 +112,10 @@ type CompetitionCandidateResultDTO struct {
 	Total                int                            `json:"total"`
 	Page                 int                            `json:"page"`
 	PageSize             int                            `json:"page_size"`
+	// HasMore 由服务端判定，替代客户端按 total 与去重条数推断（旧实现会提前停止加载）。
+	HasMore bool `json:"has_more"`
+	// ReasonCode 说明结果为空或受限的原因，避免前端只能显示空白。
+	ReasonCode string `json:"reason_code,omitempty"`
+	// AlgorithmVersion 随响应返回，便于埋点按算法版本切分指标。
+	AlgorithmVersion string `json:"algorithm_version,omitempty"`
 }

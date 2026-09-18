@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	// 使用纯 Go 驱动，与包内多数测试保持一致；cgo 版需要 C 工具链，
+	// 在无 CGO 的环境下无法运行，会导致这批测试被静默跳过验证。
+	"github.com/glebarez/sqlite"
 	"gorm.io/datatypes"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
@@ -28,6 +30,8 @@ func newCompetitionServiceTestDB(t *testing.T) *gorm.DB {
 		&models.CompetitionCategory{}, &models.CompetitionCatalogPackage{},
 		&models.CompetitionEvent{}, &models.CompetitionCatalogAuditLog{},
 		&models.CompetitionCatalogLegacyMapping{}, &models.CompetitionCatalogActivationSnapshot{},
+		// 候选引擎会读取「已加入计划」作为排序行为信号，测试库需同步建表。
+		&models.UserCompetitionCalendarItem{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +137,10 @@ func TestCompetitionCandidateEngineFiltersEligibilityAndCandidateGate(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Total != 3 {
+	// 行为变更（本次修复）：NAT-002 的专业范围（机械工程）与用户专业
+	// （计算机科学与技术）不匹配时，旧实现直接丢弃；现在必须降级到通用候选。
+	// 详见 docs/plans/competition-recommendation-plan.md §2 P0-2。
+	if result.Total != 4 {
 		t.Fatalf("total=%d groups=%+v", result.Total, result.Groups)
 	}
 	if len(result.Groups) != 3 ||
@@ -141,6 +148,20 @@ func TestCompetitionCandidateEngineFiltersEligibilityAndCandidateGate(t *testing
 		result.Groups[1].Key != "college_match" ||
 		result.Groups[2].Key != "general_match" {
 		t.Fatalf("unexpected groups: %+v", result.Groups)
+	}
+	wantCounts := map[string]int{"major_match": 1, "college_match": 1, "general_match": 2}
+	for _, group := range result.Groups {
+		if group.Count != wantCounts[group.Key] {
+			t.Fatalf("分组 %s 计数=%d want=%d", group.Key, group.Count, wantCounts[group.Key])
+		}
+	}
+	// blocked 赛事必须仍然被治理门排除，不得因本次改动泄漏进结果。
+	for _, group := range result.Groups {
+		for _, item := range group.Items {
+			if item.CompetitionID == "NAT-005" {
+				t.Fatal("候选池未开放的赛事不得进入结果")
+			}
+		}
 	}
 }
 

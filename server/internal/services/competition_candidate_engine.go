@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/competitionmatching"
 	"shenliyuan/internal/competitionscope"
 	"shenliyuan/internal/dto"
 	"shenliyuan/internal/models"
@@ -69,7 +69,10 @@ func (e *competitionCandidateEngine) BuildCandidates(
 	}
 	result.ProfileReady = userContext.ProfileReady
 	result.PreferenceConfigured = userContext.PreferenceConfigured
+	result.AlgorithmVersion = competitionmatching.AlgorithmVersion
 	if !userContext.ProfileReady {
+		// 不再静默返回空结果：客户端需要能区分「没匹配到」与「画像没准备好」。
+		result.ReasonCode = ReasonProfileIncomplete
 		return result, nil
 	}
 	scope, err := competitionscope.Resolve(ctx, e.db)
@@ -107,61 +110,194 @@ func (e *competitionCandidateEngine) BuildCandidates(
 	if err := query.Find(&events).Error; err != nil {
 		return result, err
 	}
-	grouped := map[string][]dto.CompetitionCandidateDTO{
-		"major_match": {}, "college_match": {}, "general_match": {},
+
+	// 行为信号：一次性聚合，禁止逐候选查库（与 Feed 的既有约定一致）。
+	joinedPlans, err := e.loadJoinedPlanEventIDs(ctx, userID)
+	if err != nil {
+		return result, err
 	}
+	awardedEvents, err := e.loadAwardedClaimEventIDs(ctx, userID)
+	if err != nil {
+		return result, err
+	}
+
+	resolvedUser := competitionmatching.ResolveUser(competitionmatching.UserProfile{
+		Major: userContext.Major, College: userContext.College, EntryYear: userContext.EntryYear,
+	})
+	if resolvedUser.Unmapped {
+		// 专业无映射必须作为可见缺口上报：否则「某些专业永远匹配不到」
+		// 会以完全静默的方式复发，也就是本次要修的故障。
+		result.ReasonCode = ReasonClusterUnmapped
+	}
+	preference := competitionmatching.Preference{
+		Configured:             userContext.PreferenceConfigured,
+		Goals:                  userContext.Goals,
+		DirectionTags:          userContext.DirectionTags,
+		PreferredRoles:         userContext.PreferredRoles,
+		WeeklyHours:            userContext.WeeklyHours,
+		AcceptLongTermTraining: userContext.AcceptLongTermTraining,
+		CareerDirection:        userContext.CareerDirection,
+	}
+
+	now := e.now()
+	ranked := make([]competitionmatching.Ranked, 0, len(events))
+	byEventID := make(map[uint]dto.CompetitionCandidateDTO, len(events))
 	for _, event := range events {
-		candidate, ok := buildCompetitionCandidate(event, userContext, e.now())
-		if !ok {
+		candidate := buildMatchingCandidate(event)
+		scored := competitionmatching.Score(competitionmatching.ScoreInput{
+			Candidate: candidate,
+			User:      resolvedUser,
+			Preference: competitionmatching.Preference{
+				Configured: preference.Configured, Goals: preference.Goals,
+				DirectionTags: preference.DirectionTags, SkillTags: preference.SkillTags,
+				PreferredRoles: preference.PreferredRoles, WeeklyHours: preference.WeeklyHours,
+				AcceptLongTermTraining: preference.AcceptLongTermTraining,
+				CareerDirection:        preference.CareerDirection,
+				JoinedPlan:             joinedPlans[event.ID],
+				HasAward:               awardedEvents[event.ID],
+			},
+			Now: now,
+		})
+		// GroupKey 为空表示命中唯一保留的硬门（年级不符），此时才允许淘汰。
+		if scored.GroupKey == "" {
 			continue
 		}
-		grouped[candidate.GroupKey] = append(grouped[candidate.GroupKey], candidate)
-		if candidate.Gates.PersonalizedRankingAllowed {
+		dtoItem := buildCompetitionCandidateDTO(event, scored)
+		byEventID[event.ID] = dtoItem
+		if dtoItem.Gates.PersonalizedRankingAllowed {
 			result.Catalog.PersonalizedRankingAllowed = true
 		}
-	}
-	for key := range grouped {
-		sort.SliceStable(grouped[key], func(i, j int) bool {
-			return competitionCandidateLess(grouped[key][i], grouped[key][j])
+		ranked = append(ranked, competitionmatching.Ranked{
+			ID: event.ID, CompetitionID: dtoItem.CompetitionID, CatalogOrder: event.CatalogOrder,
+			Rating: event.CompetitionRating, Importance: event.ImportanceScore, Result: scored,
 		})
 	}
 
-	orderedKeys := []string{"major_match", "college_match", "general_match"}
-	all := make([]dto.CompetitionCandidateDTO, 0)
-	for _, key := range orderedKeys {
-		all = append(all, grouped[key]...)
-	}
-	for index := range all {
-		all[index].RuleOrder = index + 1
-	}
-	result.Total = len(all)
+	ordered := competitionmatching.Rank(ranked, competitionmatching.RankOptions{PageSize: filter.PageSize})
+	result.Total = len(ordered)
 	start := (filter.Page - 1) * filter.PageSize
-	if start > len(all) {
-		start = len(all)
+	if start > len(ordered) {
+		start = len(ordered)
 	}
 	end := start + filter.PageSize
-	if end > len(all) {
-		end = len(all)
+	if end > len(ordered) {
+		end = len(ordered)
 	}
-	pageItems := all[start:end]
+	pageItems := ordered[start:end]
+	result.HasMore = end < len(ordered)
+
 	labels := map[string]string{
 		"major_match": "专业直接相关", "college_match": "学院范围相关",
 		"general_match": "通用候选",
 	}
+	grouped := map[string][]dto.CompetitionCandidateDTO{
+		"major_match": {}, "college_match": {}, "general_match": {},
+	}
+	orderedKeys := []string{"major_match", "college_match", "general_match"}
+	for index, item := range pageItems {
+		mapped := byEventID[item.ID]
+		mapped.RuleOrder = start + index + 1
+		grouped[mapped.GroupKey] = append(grouped[mapped.GroupKey], mapped)
+	}
+	// 组内计数需要按全量而非当前页统计，否则分组标题的条数会随翻页变化。
+	fullCounts := map[string]int{}
+	for _, item := range ordered {
+		fullCounts[byEventID[item.ID].GroupKey]++
+	}
 	for _, key := range orderedKeys {
-		items := make([]dto.CompetitionCandidateDTO, 0)
-		for _, item := range pageItems {
-			if item.GroupKey == key {
-				items = append(items, item)
-			}
+		if len(grouped[key]) == 0 {
+			continue
 		}
-		if len(items) > 0 {
-			result.Groups = append(result.Groups, dto.CompetitionCandidateGroupDTO{
-				Key: key, Label: labels[key], Count: len(grouped[key]), Items: items,
-			})
-		}
+		result.Groups = append(result.Groups, dto.CompetitionCandidateGroupDTO{
+			Key: key, Label: labels[key], Count: fullCounts[key], Items: grouped[key],
+		})
+	}
+	if result.Total == 0 && result.ReasonCode == "" {
+		result.ReasonCode = ReasonNoCandidate
 	}
 	return result, nil
+}
+
+// ReasonProfileIncomplete 表示画像未就绪，候选无法生成。
+const ReasonProfileIncomplete = "profile_incomplete"
+
+// ReasonClusterUnmapped 表示用户专业无簇映射，结果已降级为学院/通用匹配。
+const ReasonClusterUnmapped = "cluster_unmapped"
+
+// ReasonNoCandidate 表示管线正常但确实没有候选。
+const ReasonNoCandidate = "no_candidate"
+
+// loadJoinedPlanEventIDs 返回用户已加入计划的官方赛事 ID 集合。
+func (e *competitionCandidateEngine) loadJoinedPlanEventIDs(
+	ctx context.Context,
+	userID uint,
+) (map[uint]bool, error) {
+	var ids []uint
+	if err := e.db.WithContext(ctx).Model(&models.UserCompetitionCalendarItem{}).
+		Where("user_id = ? AND source_type = ? AND source_event_id IS NOT NULL", userID, "official").
+		Distinct().Pluck("source_event_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[uint]bool, len(ids))
+	for _, id := range ids {
+		result[id] = true
+	}
+	return result, nil
+}
+
+// loadAwardedClaimEventIDs 返回用户已申报过竞赛经历的赛事 ID 集合，避免重复推荐。
+func (e *competitionCandidateEngine) loadAwardedClaimEventIDs(
+	ctx context.Context,
+	userID uint,
+) (map[uint]bool, error) {
+	var ids []uint
+	if err := e.db.WithContext(ctx).Model(&models.UserCompetitionAward{}).
+		Where("user_id = ? AND competition_event_id IS NOT NULL", userID).
+		Distinct().Pluck("competition_event_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[uint]bool, len(ids))
+	for _, id := range ids {
+		result[id] = true
+	}
+	return result, nil
+}
+
+// buildMatchingCandidate 把赛事模型投影为匹配所需的纯数据输入。
+func buildMatchingCandidate(event models.CompetitionEvent) competitionmatching.Candidate {
+	categorySlug := ""
+	if event.PrimaryCategory != nil {
+		categorySlug = event.PrimaryCategory.Slug
+	}
+	return competitionmatching.Candidate{
+		ID: event.ID, CompetitionID: event.CompetitionID, CatalogOrder: event.CatalogOrder,
+		ClusterScope:            competitionmatching.ResolveEventMajors(decodeCompetitionStringArray(event.EligibleMajors)),
+		Colleges:                decodeCompetitionStringArray(event.EligibleColleges),
+		EntryYears:              decodeCompetitionStringArray(event.EligibleEntryYears),
+		Tags:                    decodeCompetitionStringArray(event.Tags),
+		CategorySlug:            categorySlug,
+		RiskTags:                decodeCompetitionStringArray(event.RiskTags),
+		Rating:                  effectiveCompetitionRating(event),
+		ImportanceScore:         event.ImportanceScore,
+		SchoolRecognitionStatus: event.SchoolRecognitionStatus,
+		TimeStatus:              event.TimeStatus,
+		RegistrationEnd:         event.RegistrationEnd,
+		EventStart:              event.EventStart,
+		EvidenceSubgrade:        event.EvidenceSubgrade,
+		ParticipationType:       event.ParticipationType,
+		TeamSizeMin:             event.TeamSizeMin,
+		TeamSizeMax:             event.TeamSizeMax,
+		// 与 DTO 的 Gates 保持同一判定，避免打分授权与对外授权口径不一致。
+		PersonalizedRankingAllowed: competitionEventRankingAllowed(event),
+	}
+}
+
+// effectiveCompetitionRating 兼容旧客户端字段，优先使用赛事价值评级。
+func effectiveCompetitionRating(event models.CompetitionEvent) string {
+	if value := strings.TrimSpace(event.CompetitionRating); value != "" {
+		return value
+	}
+	return strings.TrimSpace(event.RecommendationLevel)
 }
 
 func normalizeCandidateFilter(filter CandidateFilter) CandidateFilter {
@@ -206,13 +342,25 @@ func applyCandidateDateFilter(query **gorm.DB, status string, now time.Time) {
 	}
 }
 
-func buildCompetitionCandidate(
-	event models.CompetitionEvent,
-	context CompetitionUserContext,
-	now time.Time,
-) (dto.CompetitionCandidateDTO, bool) {
+// competitionEventLegacyCompatible 判断赛事是否来自旧数据（无目录包治理字段）。
+func competitionEventLegacyCompatible(event models.CompetitionEvent) bool {
 	datasetVersion := strings.TrimSpace(event.DatasetVersion)
-	legacyCompatible := datasetVersion == "" || datasetVersion == "legacy"
+	return datasetVersion == "" || datasetVersion == "legacy"
+}
+
+// competitionEventRankingAllowed 判定赛事是否被授权参与个性化排序。
+// legacy 赛事一律不授权——这与既有实现保持一致，不得放宽。
+func competitionEventRankingAllowed(event models.CompetitionEvent) bool {
+	return event.PersonalizedRankingAllowed && !competitionEventLegacyCompatible(event)
+}
+
+// buildCompetitionCandidateDTO 把赛事模型与匹配结果组装为对外 DTO。
+func buildCompetitionCandidateDTO(
+	event models.CompetitionEvent,
+	scored competitionmatching.Result,
+) dto.CompetitionCandidateDTO {
+	datasetVersion := strings.TrimSpace(event.DatasetVersion)
+	legacyCompatible := competitionEventLegacyCompatible(event)
 	if datasetVersion == "" {
 		datasetVersion = "legacy"
 	}
@@ -228,36 +376,19 @@ func buildCompetitionCandidate(
 	if aiMode == "" {
 		aiMode = "candidate_explanation"
 	}
-	years := decodeCompetitionStringArray(event.EligibleEntryYears)
-	colleges := decodeCompetitionStringArray(event.EligibleColleges)
-	majors := decodeCompetitionStringArray(event.EligibleMajors)
+
+	// 离散匹配维度由打分器给出：这修掉了此前 6 个维度恒为 unknown 的问题。
 	dimensions := dto.MatchDimensionsDTO{
-		Eligibility: "matched", Major: "unrestricted", College: "unrestricted",
-		Grade: "unrestricted", Goal: "unknown", Direction: "unknown", Skill: "unknown",
-		Role: "unknown", Time: "unknown", Training: "unknown",
-	}
-	if len(years) > 0 {
-		if !containsCandidateValue(years, context.EntryYear) {
-			return dto.CompetitionCandidateDTO{}, false
-		}
-		dimensions.Grade = "matched"
-	}
-	groupKey := "general_match"
-	coreReason := "符合当前参赛资格，可作为通用候选"
-	if len(majors) > 0 {
-		if !containsCandidateValue(majors, context.Major) {
-			return dto.CompetitionCandidateDTO{}, false
-		}
-		dimensions.Major = "matched"
-		groupKey = "major_match"
-		coreReason = "与你的专业方向直接相关"
-	} else if len(colleges) > 0 {
-		if !containsCandidateValue(colleges, context.College) {
-			return dto.CompetitionCandidateDTO{}, false
-		}
-		dimensions.College = "matched"
-		groupKey = "college_match"
-		coreReason = "面向你所在学院开放"
+		Eligibility: "matched",
+		Major:       scored.Dimensions.Major,
+		College:     scored.Dimensions.College,
+		Grade:       scored.Dimensions.Grade,
+		Goal:        scored.Dimensions.Goal,
+		Direction:   scored.Dimensions.Direction,
+		Skill:       scored.Dimensions.Skill,
+		Role:        scored.Dimensions.Role,
+		Time:        scored.Dimensions.Time,
+		Training:    scored.Dimensions.Training,
 	}
 
 	questions := []string{}
@@ -266,31 +397,39 @@ func buildCompetitionCandidate(
 		hasPendingInformation = true
 		questions = append(questions, "当届报名或比赛时间尚未核实，请查看官方通知")
 	}
-	if context.WeeklyHours > 0 {
-		questions = append(questions, "每周训练投入仍需确认")
-	}
 	riskTags := decodeCompetitionStringArray(event.RiskTags)
 	cautions := PublicCompetitionRisks(riskTags)
 	public := publicCompetitionDTO(event)
 	public.CompetitionID = competitionID
+
+	coreReason := "符合当前参赛资格，可作为通用候选"
+	if len(scored.Reasons) > 0 {
+		coreReason = scored.Reasons[0]
+	}
+	matchedClusters := make([]string, 0, len(scored.MatchedClusters))
+	for _, cluster := range scored.MatchedClusters {
+		matchedClusters = append(matchedClusters, string(cluster))
+	}
 	return dto.CompetitionCandidateDTO{
 		CompetitionPublicDTO: public,
 		ImportanceScore:      event.ImportanceScore, CatalogOrder: event.CatalogOrder,
-		GroupKey: groupKey, HasPendingInformation: hasPendingInformation,
+		GroupKey: scored.GroupKey, HasPendingInformation: hasPendingInformation,
 		MatchDimensions: dimensions, CoreReason: coreReason,
 		Cautions: cautions, Questions: questions, EvidenceSubgrade: event.EvidenceSubgrade,
 		DatasetVersion: datasetVersion, RecordHash: event.RecordHash,
+		MatchTier: scored.Tier, MatchBasis: scored.Basis, MatchedClusters: matchedClusters,
+		MatchScore:         scored.Score,
 		ManualRatingReason: event.ManualRatingReasonPublic,
 		MajorFitSummary:    event.MajorFitSummaryPublic,
 		EvidenceSummary:    event.EvidenceSummaryPublic,
 		RiskTags:           riskTags,
 		Gates: dto.RecommendationGateDTO{
 			CandidatePoolAllowed:         event.CandidatePoolAllowed || legacyCompatible,
-			PersonalizedRankingAllowed:   event.PersonalizedRankingAllowed && !legacyCompatible,
+			PersonalizedRankingAllowed:   competitionEventRankingAllowed(event),
 			StrongRecommendationEligible: event.StrongRecommendationEligible && !legacyCompatible,
 			PermissionLevel:              permissionLevel, AIMode: aiMode,
 		},
-	}, true
+	}
 }
 
 func publicCompetitionDTO(event models.CompetitionEvent) dto.CompetitionPublicDTO {
@@ -322,25 +461,10 @@ func publicCompetitionDTO(event models.CompetitionEvent) dto.CompetitionPublicDT
 	}
 }
 
-func competitionCandidateLess(left, right dto.CompetitionCandidateDTO) bool {
-	if left.CatalogOrder != right.CatalogOrder {
-		return left.CatalogOrder < right.CatalogOrder
-	}
-	if left.CompetitionID != right.CompetitionID {
-		return left.CompetitionID < right.CompetitionID
-	}
-	return left.ID < right.ID
-}
-
-func containsCandidateValue(values []string, expected string) bool {
-	expected = strings.TrimSpace(strings.ToLower(expected))
-	for _, value := range values {
-		if strings.TrimSpace(strings.ToLower(value)) == expected {
-			return true
-		}
-	}
-	return false
-}
+// 已删除 competitionCandidateLess 与 containsCandidateValue：
+// 前者只按目录序比较（导致排序与专业无关），后者做专业名全等判定
+// （导致主流专业命中为 0 且不命中即淘汰）。两者是本次故障的直接原因，
+// 保留会诱导被重新引用。排序改由 competitionmatching.Rank 统一负责。
 
 // PublicCompetitionRisks 只返回已登记的公开风险文案，未知代码不直接透传给学生。
 func PublicCompetitionRisks(values []string) []string {

@@ -97,7 +97,10 @@ class DeviceToolWorker {
         return;
       }
       final installationId = await _installationIdProvider();
-      await _register(installationId);
+      if (!await _register(installationId)) {
+        _setBridgeStatus(DeviceBridgeStatus.offline);
+        return;
+      }
       final job = await _client.get(installationId, jobId);
       await _processJob(job, installationId, context);
       _setBridgeStatus(DeviceBridgeStatus.connected);
@@ -128,7 +131,10 @@ class DeviceToolWorker {
         return;
       }
       final installationId = await _installationIdProvider();
-      await _register(installationId);
+      if (!await _register(installationId)) {
+        _setBridgeStatus(DeviceBridgeStatus.offline);
+        return;
+      }
       final jobs = await _client.pending(installationId);
       for (final job in jobs) {
         if (!await context.isCurrent()) {
@@ -144,13 +150,19 @@ class DeviceToolWorker {
     }
   }
 
-  Future<void> _register(String installationId) {
-    return _client.register(
+  Future<bool> _register(String installationId) async {
+    if (_client is DeviceJobCapabilityProbe &&
+        !await (_client as DeviceJobCapabilityProbe)
+            .ensureDeviceBridgeAvailable()) {
+      return false;
+    }
+    await _client.register(
       installationId: installationId,
       toolNames: DeviceToolRegistry.supportedToolNames.toList(growable: false),
       bridgeProtocolVersion: bridgeProtocolVersion,
       clientVersion: clientVersion,
     );
+    return true;
   }
 
   Future<void> _processJob(

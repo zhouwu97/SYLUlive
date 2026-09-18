@@ -86,6 +86,7 @@ services:
     expose:
       - "8080"
     environment:
+      - SERVER_LISTEN_ADDR=${SERVER_LISTEN_ADDR:-0.0.0.0:8080}
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
       - ACCESS_TOKEN_TTL=${ACCESS_TOKEN_TTL:-30m}
       - REFRESH_TOKEN_TTL=${REFRESH_TOKEN_TTL:-720h}
@@ -102,7 +103,7 @@ services:
       - TRUSTED_PROXY_CIDRS=${TRUSTED_PROXY_CIDRS:?set TRUSTED_PROXY_CIDRS in .env}
       - SECURITY_EVENT_HMAC_SECRET=${SECURITY_EVENT_HMAC_SECRET:?set SECURITY_EVENT_HMAC_SECRET in .env}
       - SECURITY_BLOCK_ENABLED=${SECURITY_BLOCK_ENABLED:-false}
-      - SECURITY_SOURCE_ATTRIBUTION_VALID_FROM=${SECURITY_SOURCE_ATTRIBUTION_VALID_FROM:-}
+      - SECURITY_SOURCE_ATTRIBUTION_VALID_FROM=${SECURITY_SOURCE_ATTRIBUTION_VALID_FROM:?set SECURITY_SOURCE_ATTRIBUTION_VALID_FROM in .env}
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
       # release 模式下 Go 拒绝在缺失或空置这两个开关时启动，必须由 .env 显式提供（生产目标值均为 true）。
       # 异常回退：在 .env 改为 false 并重启 Go（保留已生成变体 / 改回 Go 直接投递）。

@@ -75,3 +75,13 @@ type VerificationAttemptBucket struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
+
+// VerificationAttempt 保存单次验证码失败，仅保留不可逆摘要，按创建时间支持真实滚动窗口统计。
+// 与固定时间桶不同，窗口边界不会漏算或重复计算攻击尝试。
+type VerificationAttempt struct {
+	ID         uint      `gorm:"primaryKey"`
+	TargetHash string    `gorm:"size:64;not null;index"`
+	SourceHash string    `gorm:"size:64;not null;index"`
+	Purpose    string    `gorm:"size:32;not null;index"`
+	CreatedAt  time.Time `gorm:"index"`
+}

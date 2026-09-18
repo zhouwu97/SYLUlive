@@ -207,6 +207,7 @@ func main() {
 		&models.EmailVerificationChallenge{},
 		&models.EmailVerificationRequest{},
 		&models.VerificationAttemptBucket{},
+		&models.VerificationAttempt{},
 		&models.SecurityEvent{},
 		&models.SecurityBlock{},
 		&models.AccountSecurityAuditLog{},
@@ -1351,6 +1352,7 @@ func main() {
 			"api_version": APIVersion,
 			"capabilities": gin.H{
 				"teacher_governance_v1": true,
+				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
 			},
 			"security": gin.H{
 				"trusted_proxy_cidrs":             cfg.TrustedProxyCIDRs,
@@ -1384,6 +1386,7 @@ func main() {
 			"api_version": APIVersion,
 			"capabilities": gin.H{
 				"teacher_governance_v1": true,
+				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
 			},
 		})
 	}
@@ -2712,6 +2715,7 @@ func main() {
 			"api_version": APIVersion,
 			"capabilities": gin.H{
 				"teacher_governance_v1": true,
+				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
 			},
 			"version":             "",
 			"min_version":         "",
@@ -2748,9 +2752,9 @@ func main() {
 		c.JSON(http.StatusOK, response)
 	})
 
-	log.Println("服务器启动在 :8080")
+	log.Printf("服务器启动在 %s", cfg.ServerListenAddr)
 	server := &http.Server{
-		Addr:              ":8080",
+		Addr:              cfg.ServerListenAddr,
 		Handler:           r,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       60 * time.Second,

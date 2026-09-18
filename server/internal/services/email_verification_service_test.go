@@ -30,7 +30,7 @@ func newEmailVerificationTestService(t *testing.T, now *time.Time) (*EmailVerifi
 	if err != nil {
 		t.Fatalf("打开数据库失败: %v", err)
 	}
-	if err := db.AutoMigrate(&models.EmailVerificationChallenge{}, &models.EmailVerificationRequest{}, &models.VerificationAttemptBucket{}); err != nil {
+	if err := db.AutoMigrate(&models.EmailVerificationChallenge{}, &models.EmailVerificationRequest{}, &models.VerificationAttemptBucket{}, &models.VerificationAttempt{}, &models.SecurityEvent{}); err != nil {
 		t.Fatalf("迁移验证码表失败: %v", err)
 	}
 	mailer := &capturedVerificationMailer{}
@@ -124,4 +124,57 @@ func TestUseValidatedChallengeConsumesOnlyAfterBusinessCommit(t *testing.T) {
 	if err := service.Validate(email, models.EmailVerificationPurposeRegister, code, true); err != nil {
 		t.Fatalf("业务失败后验证码应仍可使用: %v", err)
 	}
+}
+
+func TestVerificationFailureUsesCurrentRequestSourceAndRollingWindow(t *testing.T) {
+	now := time.Date(2026, time.July, 22, 12, 10, 1, 0, time.UTC)
+	service, mailer, db := newEmailVerificationTestService(t, &now)
+	security := NewSecurityEventService(db, "security-test-secret", func() time.Time { return now })
+	service.SetSecurityEventService(security)
+	const email = "rolling@example.com"
+	if err := service.Request(email, models.EmailVerificationPurposeRegister, nil, "203.0.113.10"); err != nil {
+		t.Fatalf("请求验证码失败: %v", err)
+	}
+	for i := 0; i < 19; i++ {
+		if err := db.Create(&models.VerificationAttempt{
+			TargetHash: service.hashValue(email), SourceHash: service.hashIP("203.0.113.11"),
+			Purpose: models.EmailVerificationPurposeRegister, CreatedAt: now.Add(-2 * time.Second),
+		}).Error; err != nil {
+			t.Fatalf("写入历史失败尝试失败: %v", err)
+		}
+	}
+	if err := service.ValidateWithClientIP(email, models.EmailVerificationPurposeRegister, "000000", false, "203.0.113.11"); !errors.Is(err, ErrCodeAttempts) {
+		t.Fatalf("滚动窗口未计入边界内失败尝试: %v", err)
+	}
+	var latest models.VerificationAttempt
+	if err := db.Order("id DESC").First(&latest).Error; err != nil {
+		t.Fatalf("读取当前失败尝试失败: %v", err)
+	}
+	if latest.SourceHash != security.Hash("203.0.113.11") || latest.SourceHash == security.Hash("203.0.113.10") {
+		t.Fatalf("验证码失败来源未使用当前请求来源: %+v", latest)
+	}
+	_ = mailer
+}
+
+func TestVerificationMailDispatcherTimesOutBlockedMailer(t *testing.T) {
+	mailer := &blockingVerificationMailer{}
+	dispatcher := newVerificationMailDispatcher(mailer, 1, 1, 10*time.Millisecond)
+	failed := make(chan struct{}, 1)
+	if err := dispatcher.Dispatch("timeout@example.com", models.EmailVerificationPurposeRegister, "123456", func() {
+		failed <- struct{}{}
+	}, nil); err != nil {
+		t.Fatalf("投递任务不应因入队失败: %v", err)
+	}
+	select {
+	case <-failed:
+	case <-time.After(time.Second):
+		t.Fatal("邮件发送超时后未触发失败回调")
+	}
+}
+
+type blockingVerificationMailer struct{}
+
+func (*blockingVerificationMailer) SendVerificationCode(string, string, string) error {
+	time.Sleep(time.Second)
+	return nil
 }

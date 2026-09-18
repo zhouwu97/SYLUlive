@@ -379,15 +379,6 @@ func (s *EmailVerificationService) reserveRequest(normalized, purpose, clientIP 
 			ClientIP: clientIP, TargetType: "email", TargetValue: normalized, TargetMasked: maskEmailForSecurity(normalized),
 			Action: "request_accepted", Metadata: map[string]interface{}{"purpose": purpose},
 		})
-		var targetRecent int64
-		if err := s.db.Model(&models.EmailVerificationRequest{}).
-			Where("email = ? AND created_at >= ?", normalized, now.Add(-time.Hour)).Count(&targetRecent).Error; err == nil && targetRecent >= 3 {
-			_ = s.security.Record(SecurityEventInput{
-				EventType: "email_target_flood", Severity: models.SecuritySeverityHigh, Route: "email_verification", Method: "POST",
-				ClientIP: clientIP, TargetType: "email", TargetValue: normalized, TargetMasked: maskEmailForSecurity(normalized),
-				Blocked: false, Action: "observed", Metadata: map[string]interface{}{"purpose": purpose, "count": targetRecent, "window": "1h"},
-			})
-		}
 	}
 	return nil
 }
@@ -396,10 +387,21 @@ func (s *EmailVerificationService) recordAbuse(email, purpose, clientIP string, 
 	if s.security == nil {
 		return
 	}
-	eventType := "email_target_flood"
-	severity := models.SecuritySeverityHigh
-	if errors.Is(err, ErrVerificationSpray) {
-		eventType = "password_reset_spray"
+	eventType := "verification_cooldown"
+	severity := models.SecuritySeverityInfo
+	switch {
+	case errors.Is(err, ErrTargetHourlyLimit), errors.Is(err, ErrTargetDailyLimit):
+		eventType = "email_target_flood"
+		severity = models.SecuritySeverityHigh
+	case errors.Is(err, ErrSourceRateLimited):
+		eventType = "verification_source_rate"
+		severity = models.SecuritySeverityMedium
+	case errors.Is(err, ErrVerificationSpray):
+		eventType = "verification_spray"
+		severity = models.SecuritySeverityHigh
+		if purpose == models.EmailVerificationPurposeResetPassword {
+			eventType = "password_reset_spray"
+		}
 	}
 	_ = s.security.Record(SecurityEventInput{
 		EventType: eventType, Severity: severity, Route: "email_verification", Method: "POST",
@@ -423,6 +425,12 @@ func maskEmailForSecurity(email string) string {
 }
 
 func (s *EmailVerificationService) Validate(email string, purpose string, code string, consume bool) error {
+	return s.ValidateWithClientIP(email, purpose, code, consume, "")
+}
+
+// ValidateWithClientIP 使用当前验证码校验请求的来源记录失败尝试。
+// clientIP 只在服务内转换为 HMAC 摘要，不会进入数据库。
+func (s *EmailVerificationService) ValidateWithClientIP(email string, purpose string, code string, consume bool, clientIP string) error {
 	if s == nil || s.db == nil {
 		return ErrCodeNotFound
 	}
@@ -459,7 +467,7 @@ func (s *EmailVerificationService) Validate(email string, purpose string, code s
 			if err := tx.Model(&challenge).Update("attempts", challenge.Attempts+1).Error; err != nil {
 				return err
 			}
-			exceeded, err := s.recordVerificationFailure(tx, normalized, purpose, challenge.RequestIPHash, now)
+			exceeded, err := s.recordVerificationFailure(tx, normalized, purpose, challenge.RequestIPHash, clientIP, now)
 			if err != nil {
 				return err
 			}
@@ -488,6 +496,17 @@ func (s *EmailVerificationService) UseValidatedChallenge(
 	email string,
 	purpose string,
 	code string,
+	fn func(tx *gorm.DB, challenge models.EmailVerificationChallenge) error,
+) error {
+	return s.UseValidatedChallengeWithClientIP(email, purpose, code, "", fn)
+}
+
+// UseValidatedChallengeWithClientIP 在校验验证码的同时绑定当前请求来源，供改密、注册等业务事务使用。
+func (s *EmailVerificationService) UseValidatedChallengeWithClientIP(
+	email string,
+	purpose string,
+	code string,
+	clientIP string,
 	fn func(tx *gorm.DB, challenge models.EmailVerificationChallenge) error,
 ) error {
 	if s == nil || s.db == nil {
@@ -530,7 +549,7 @@ func (s *EmailVerificationService) UseValidatedChallenge(
 			if err := tx.Model(&challenge).Update("attempts", challenge.Attempts+1).Error; err != nil {
 				return err
 			}
-			exceeded, err := s.recordVerificationFailure(tx, normalized, purpose, challenge.RequestIPHash, now)
+			exceeded, err := s.recordVerificationFailure(tx, normalized, purpose, challenge.RequestIPHash, clientIP, now)
 			if err != nil {
 				return err
 			}
@@ -552,44 +571,31 @@ func (s *EmailVerificationService) UseValidatedChallenge(
 	return validationErr
 }
 
-func (s *EmailVerificationService) recordVerificationFailure(tx *gorm.DB, email, purpose, sourceHash string, now time.Time) (bool, error) {
+func (s *EmailVerificationService) recordVerificationFailure(tx *gorm.DB, email, purpose, challengeSourceHash, clientIP string, now time.Time) (bool, error) {
 	// 旧版单元测试或滚动迁移期间可能尚未建新表；challenge 自身的五次上限仍然有效，
 	// 这里不能因为安全统计表缺失而把正常验证码校验整体打成 500。
-	if !tx.Migrator().HasTable(&models.VerificationAttemptBucket{}) {
+	if !tx.Migrator().HasTable(&models.VerificationAttempt{}) {
 		return false, nil
 	}
-	bucketStart := now.Truncate(10 * time.Minute)
-	targetValue := "target:" + s.hashValue(email)
-	sourceValue := "source:" + strings.TrimSpace(sourceHash)
-	for _, scope := range []struct{ kind, value string }{
-		{kind: "target", value: targetValue},
-		{kind: "source", value: sourceValue},
-	} {
-		key := fmt.Sprintf("%s|%s|%d", scope.kind, scope.value, bucketStart.Unix())
-		row := models.VerificationAttemptBucket{
-			BucketKey: key, ScopeType: scope.kind, ScopeValue: scope.value,
-			Purpose: "all", BucketStart: bucketStart, FailureCount: 1,
-			CreatedAt: now, UpdatedAt: now,
-		}
-		if err := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "bucket_key"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{
-				"failure_count": gorm.Expr("failure_count + 1"),
-				"updated_at":    now,
-			}),
-		}).Create(&row).Error; err != nil {
-			return false, err
-		}
+	sourceHash := strings.TrimSpace(challengeSourceHash)
+	if strings.TrimSpace(clientIP) != "" {
+		sourceHash = s.hashIP(clientIP)
 	}
-	var targetFailures, sourceFailures int64
-	if err := tx.Model(&models.VerificationAttemptBucket{}).
-		Where("scope_type = ? AND scope_value = ? AND bucket_start >= ?", "target", targetValue, now.Add(-10*time.Minute)).
-		Select("COALESCE(SUM(failure_count), 0)").Scan(&targetFailures).Error; err != nil {
+	targetHash := s.hashValue(email)
+	if err := tx.Create(&models.VerificationAttempt{
+		TargetHash: targetHash, SourceHash: sourceHash, Purpose: purpose, CreatedAt: now,
+	}).Error; err != nil {
 		return false, err
 	}
-	if err := tx.Model(&models.VerificationAttemptBucket{}).
-		Where("scope_type = ? AND scope_value = ? AND bucket_start >= ?", "source", sourceValue, now.Add(-10*time.Minute)).
-		Select("COALESCE(SUM(failure_count), 0)").Scan(&sourceFailures).Error; err != nil {
+	var targetFailures, sourceFailures int64
+	if err := tx.Model(&models.VerificationAttempt{}).
+		Where("target_hash = ? AND created_at >= ?", targetHash, now.Add(-10*time.Minute)).
+		Count(&targetFailures).Error; err != nil {
+		return false, err
+	}
+	if err := tx.Model(&models.VerificationAttempt{}).
+		Where("source_hash = ? AND created_at >= ?", sourceHash, now.Add(-10*time.Minute)).
+		Count(&sourceFailures).Error; err != nil {
 		return false, err
 	}
 	if targetFailures >= 20 || sourceFailures >= 50 {

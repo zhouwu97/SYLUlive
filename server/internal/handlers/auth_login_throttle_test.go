@@ -58,3 +58,18 @@ func TestLoginThrottleEscalatesAndClears(t *testing.T) {
 		t.Fatalf("expected account to be cleared after success/reset")
 	}
 }
+
+func TestLoginSourceThrottleDoesNotLockAfterThreeFailures(t *testing.T) {
+	source := loginThrottleScope("ip", "203.0.113.20")
+	clearLoginFailures(source)
+	base := time.Date(2026, 5, 6, 12, 0, 0, 0, time.UTC)
+	for i := 1; i <= 9; i++ {
+		if got := registerLoginFailure(source, base); got != 0 {
+			t.Fatalf("共享来源第 %d 次失败不应锁定，得到 %v", i, got)
+		}
+	}
+	if got := registerLoginFailure(source, base); got != time.Minute {
+		t.Fatalf("共享来源第 10 次失败应进入短暂保护，得到 %v", got)
+	}
+	clearLoginFailures(source)
+}

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config 应用配置
@@ -111,6 +112,7 @@ type Config struct {
 	AppReleaseAllowedMarketHosts []string // 外部市场跳转允许的 HTTPS 域名
 	AccountIdentityReadMode      string   // 账号登录读路径：legacy 或 identity
 	TrustedProxyCIDRs            []string // 允许 Gin 信任 X-Forwarded-For 的代理网段
+	ServerListenAddr             string   // Go HTTP 服务监听地址；公网部署应只由 Nginx 对外提供入口
 	SecurityBlockEnabled         bool     // 来源封禁开关，建表与验收完成后再开启
 	SecurityAttributionValidFrom string   // 来源归因可信起点，起点前的历史来源仅标记为 unknown
 	// SchoolDeviceCapabilityCut 表示 C3 已完成，服务端不再提供个人学校设备能力。
@@ -209,7 +211,14 @@ func Load() *Config {
 			"SCHOOL_AUTHORITY_RETIRED",
 			"SCHOOL_DEVICE_CAPABILITY_CUT",
 			"SCHOOL_ACADEMIC_ROUTES_RETIRED",
+			"SECURITY_BLOCK_ENABLED",
 		)
+		if strings.TrimSpace(os.Getenv("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM")) == "" {
+			panic(fmt.Errorf("release 模式必须显式设置 SECURITY_SOURCE_ATTRIBUTION_VALID_FROM"))
+		}
+		if _, err := time.Parse(time.RFC3339, strings.TrimSpace(os.Getenv("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM"))); err != nil {
+			panic(fmt.Errorf("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM 必须是 RFC3339 时间"))
+		}
 	}
 
 	// 图片管线两个开关直接影响生产资源链路（worker 写盘、Nginx 直传）。release 模式
@@ -390,6 +399,13 @@ func Load() *Config {
 		panic(err)
 	}
 	trustedProxyCIDRs := splitNonEmpty(os.Getenv("TRUSTED_PROXY_CIDRS"))
+	serverListenAddr := strings.TrimSpace(os.Getenv("SERVER_LISTEN_ADDR"))
+	if serverListenAddr == "" {
+		serverListenAddr = "127.0.0.1:8080"
+	}
+	if _, _, err := net.SplitHostPort(serverListenAddr); err != nil {
+		panic(fmt.Errorf("SERVER_LISTEN_ADDR 必须是 host:port 地址"))
+	}
 	securityBlockEnabled := envBool("SECURITY_BLOCK_ENABLED", false)
 	securityAttributionValidFrom := strings.TrimSpace(os.Getenv("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM"))
 	securityEventHMACSecret := strings.TrimSpace(os.Getenv("SECURITY_EVENT_HMAC_SECRET"))
@@ -634,6 +650,7 @@ func Load() *Config {
 		LegalConsentEnforcement:             legalConsentEnforcement,
 		AccountIdentityReadMode:             accountIdentityReadMode,
 		TrustedProxyCIDRs:                   trustedProxyCIDRs,
+		ServerListenAddr:                    serverListenAddr,
 		SecurityBlockEnabled:                securityBlockEnabled,
 		SecurityAttributionValidFrom:        securityAttributionValidFrom,
 		SchoolAuthorityRetired:              schoolAuthorityRetired,

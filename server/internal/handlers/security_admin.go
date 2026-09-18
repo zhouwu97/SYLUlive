@@ -105,7 +105,7 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 		h.securityDatabaseError(c)
 		return
 	}
-	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND event_type IN ?", since, []string{"email_target_flood", "password_reset_spray", "verification_code_bruteforce", "password_reset_activity", "verification_activity"}).Select("COALESCE(SUM(attempt_count), 0)").Scan(&emailAbuse).Error; err != nil {
+	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND event_type IN ?", since, []string{"email_target_flood", "password_reset_spray", "verification_spray", "verification_source_rate", "verification_code_bruteforce", "password_reset_activity", "verification_activity"}).Select("COALESCE(SUM(attempt_count), 0)").Scan(&emailAbuse).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
@@ -261,6 +261,10 @@ func (h *SecurityAdminHandler) ListBlocks(c *gin.Context) {
 }
 
 func (h *SecurityAdminHandler) CreateBlock(c *gin.Context) {
+	if !h.securityBlockEnabled {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": "security_block_disabled", "error": "来源封禁功能当前未启用"})
+		return
+	}
 	var input securityBlockInput
 	if err := c.ShouldBindJSON(&input); err != nil || !isAllowedBlockDuration(input.DurationMin) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "封禁时长只能是 15 分钟、1 小时或 24 小时"})
@@ -269,6 +273,19 @@ func (h *SecurityAdminHandler) CreateBlock(c *gin.Context) {
 	key := strings.TrimSpace(input.SourceKey)
 	if len(key) != 64 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "来源指纹无效"})
+		return
+	}
+	var sourceEvent models.SecurityEvent
+	if err := h.db.Where("source_ip_hash = ?", key).Order("last_seen_at DESC").First(&sourceEvent).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusConflict, gin.H{"code": "security_source_not_found", "error": "来源指纹没有可核验的安全事件"})
+			return
+		}
+		h.securityDatabaseError(c)
+		return
+	}
+	if !sourceEvent.SourceAttributionValid || (!h.attributionCutoff.IsZero() && sourceEvent.FirstSeenAt.Before(h.attributionCutoff)) {
+		c.JSON(http.StatusConflict, gin.H{"code": "security_source_attribution_invalid", "error": "历史来源归因不可信，不能创建封禁"})
 		return
 	}
 	prefix := strings.TrimSpace(input.RoutePrefix)

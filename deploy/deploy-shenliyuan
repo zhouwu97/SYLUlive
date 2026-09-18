@@ -13,6 +13,7 @@ readonly SOURCE_DIR="/opt/shenliyuan-src"
 readonly RUN_DIR="/opt/shenliyuan"
 readonly SERVICE_NAME="shenliyuan"
 readonly DEFAULT_REF="zhzh"
+readonly REQUIRED_GO_VERSION="1.25.13"
 readonly TARGET_REF="${1:-${DEPLOY_REF:-$DEFAULT_REF}}"
 readonly CURRENT_BINARY="${RUN_DIR}/shenliyuan"
 readonly NEW_BINARY="${RUN_DIR}/shenliyuan.new"
@@ -41,6 +42,38 @@ fi
 
 if [[ ! -d "$SOURCE_DIR/.git" || ! -f "$SOURCE_DIR/server/go.mod" ]]; then
 	printf '[ERR] 源码目录不完整: %s\n' "$SOURCE_DIR" >&2
+	exit 1
+fi
+
+require_security_env() {
+	local env_file="${RUN_DIR}/.env"
+	if [[ ! -f "$env_file" ]]; then
+		printf '[ERR] 缺少生产环境文件: %s\n' "$env_file" >&2
+		exit 1
+	fi
+	for key in TRUSTED_PROXY_CIDRS SECURITY_EVENT_HMAC_SECRET SECURITY_BLOCK_ENABLED SECURITY_SOURCE_ATTRIBUTION_VALID_FROM; do
+		if ! grep -Eq "^${key}=[^[:space:]]" "$env_file"; then
+			printf '[ERR] 生产 .env 缺少安全变量: %s\n' "$key" >&2
+			exit 1
+		fi
+	done
+	local listen_addr
+	listen_addr="$(sed -n 's/^SERVER_LISTEN_ADDR=//p' "$env_file" | tail -n 1)"
+	if [[ "$listen_addr" == 0.0.0.0:* || "$listen_addr" == \:* ]]; then
+		printf '[ERR] SERVER_LISTEN_ADDR 必须绑定回环地址，公网流量只能经过 Nginx: %s\n' "$listen_addr" >&2
+		exit 1
+	fi
+}
+
+require_security_env
+
+if ! command -v go >/dev/null 2>&1; then
+	printf '[ERR] 缺少 Go %s+，拒绝部署。\n' "$REQUIRED_GO_VERSION" >&2
+	exit 1
+fi
+GO_VERSION="$(go version | sed -n 's/^go version go\([0-9][0-9.]*\).*/\1/p')"
+if [[ -z "$GO_VERSION" || "$(printf '%s\n' "$REQUIRED_GO_VERSION" "$GO_VERSION" | sort -V | head -n 1) != "$REQUIRED_GO_VERSION" ]]; then
+	printf '[ERR] Go 版本过低，需要 %s+，当前为 %s。\n' "$REQUIRED_GO_VERSION" "${GO_VERSION:-unknown}" >&2
 	exit 1
 fi
 

@@ -22,6 +22,9 @@ func PurgeSecurityData(db *gorm.DB, now time.Time) error {
 		if err := tx.Where("bucket_start < ?", now.Add(-48*time.Hour)).Delete(&models.VerificationAttemptBucket{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("created_at < ?", now.Add(-48*time.Hour)).Delete(&models.VerificationAttempt{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("created_at < ?", now.Add(-14*24*time.Hour)).Delete(&models.EmailVerificationRequest{}).Error; err != nil {
 			return err
 		}

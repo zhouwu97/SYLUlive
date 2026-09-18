@@ -89,7 +89,10 @@ func (h *AuthHandler) RequestEmailRegistrationCode(c *gin.Context) {
 	var existing models.User
 	if err := h.db.Where("email = ?", email).First(&existing).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 		// 公开接口不向外暴露发送失败，避免通过 SMTP 响应枚举已有账号。
-		_ = h.emailVerification.SendReservedPublicRequest(email, input.Purpose, nil, c.ClientIP())
+		if sendErr := h.emailVerification.SendReservedPublicRequest(email, input.Purpose, nil, c.ClientIP()); errors.Is(sendErr, services.ErrVerificationMailQueueFull) {
+			writeEmailVerificationError(c, sendErr)
+			return
+		}
 	} else if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号失败"})
 		return
@@ -132,7 +135,7 @@ func (h *AuthHandler) RegisterWithEmail(c *gin.Context) {
 		user.Nickname = "邮箱用户"
 	}
 	useGeneratedNickname := strings.TrimSpace(input.Nickname) == ""
-	if err := h.emailVerification.UseValidatedChallenge(email, models.EmailVerificationPurposeRegister, input.Code, func(tx *gorm.DB, _ models.EmailVerificationChallenge) error {
+	if err := h.emailVerification.UseValidatedChallengeWithClientIP(email, models.EmailVerificationPurposeRegister, input.Code, c.ClientIP(), func(tx *gorm.DB, _ models.EmailVerificationChallenge) error {
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
@@ -220,7 +223,7 @@ func (h *AuthHandler) UpdateUserEmail(c *gin.Context) {
 		writeEmailVerificationError(c, services.ErrMailNotConfigured)
 		return
 	}
-	if err := h.emailVerification.UseValidatedChallenge(email, purpose, input.Code, func(tx *gorm.DB, challenge models.EmailVerificationChallenge) error {
+	if err := h.emailVerification.UseValidatedChallengeWithClientIP(email, purpose, input.Code, c.ClientIP(), func(tx *gorm.DB, challenge models.EmailVerificationChallenge) error {
 		if challenge.UserID == nil || *challenge.UserID != userID {
 			return services.ErrCodeNotFound
 		}
@@ -367,7 +370,10 @@ func (h *AuthHandler) RequestEmailPasswordResetCode(c *gin.Context) {
 	var user models.User
 	if err := h.db.Where("email = ? AND email_verified_at IS NOT NULL", email).First(&user).Error; err == nil {
 		// 公开接口不向外暴露发送失败，避免通过 SMTP 响应枚举已有账号。
-		_ = h.emailVerification.SendReservedPublicRequest(email, input.Purpose, &user.ID, c.ClientIP())
+		if sendErr := h.emailVerification.SendReservedPublicRequest(email, input.Purpose, &user.ID, c.ClientIP()); errors.Is(sendErr, services.ErrVerificationMailQueueFull) {
+			writeEmailVerificationError(c, sendErr)
+			return
+		}
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号失败"})
 		return
@@ -399,7 +405,7 @@ func (h *AuthHandler) ResetPasswordByEmail(c *gin.Context) {
 	var user models.User
 	var challengeID uint
 	var challengeSourceHash string
-	if err := h.emailVerification.UseValidatedChallenge(email, models.EmailVerificationPurposeResetPassword, input.Code, func(tx *gorm.DB, challenge models.EmailVerificationChallenge) error {
+	if err := h.emailVerification.UseValidatedChallengeWithClientIP(email, models.EmailVerificationPurposeResetPassword, input.Code, c.ClientIP(), func(tx *gorm.DB, challenge models.EmailVerificationChallenge) error {
 		challengeID = challenge.ID
 		challengeSourceHash = challenge.RequestIPHash
 		if challenge.UserID == nil {
@@ -442,14 +448,21 @@ func (h *AuthHandler) ResetPasswordByEmail(c *gin.Context) {
 		eventType := "password_reset_activity"
 		severity := models.SecuritySeverityInfo
 		var suspiciousCount int64
-		_ = h.db.Model(&models.SecurityEvent{}).Where("event_type = ? AND source_ip_hash = ? AND last_seen_at >= ?", "password_reset_spray", h.security.SourceFingerprint(c.ClientIP()), time.Now().Add(-24*time.Hour)).Count(&suspiciousCount).Error
+		// 改密请求可能与发码请求来自不同出口；关联必须使用 challenge 创建时记录的
+		// 来源摘要和同一目标摘要，不能只看最终消费验证码的 HTTP 来源。
+		if challengeSourceHash != "" {
+			_ = h.db.Model(&models.SecurityEvent{}).
+				Where("event_type IN ? AND source_ip_hash = ? AND target_hash = ? AND last_seen_at >= ?",
+					[]string{"password_reset_spray", "verification_code_bruteforce"}, challengeSourceHash,
+					h.security.Hash(email), time.Now().Add(-24*time.Hour)).Count(&suspiciousCount).Error
+		}
 		if suspiciousCount > 0 {
 			eventType = "suspicious_password_reset_succeeded"
 			severity = models.SecuritySeverityCritical
 		}
 		_ = h.security.Record(services.SecurityEventInput{
 			EventType: eventType, Severity: severity, Route: "/api/password/email/reset", Method: c.Request.Method,
-			ClientIP: c.ClientIP(), RequestID: middleware.RequestID(c), ActorUserID: &user.ID,
+			SourceHash: challengeSourceHash, RequestID: middleware.RequestID(c), ActorUserID: &user.ID,
 			TargetType: "email", TargetValue: email, TargetMasked: maskEmail(email), PasswordResetSucceeded: true,
 			Action: "password_reset_succeeded", Metadata: map[string]interface{}{"challenge_id": challengeID},
 		})
@@ -504,11 +517,11 @@ func (h *AuthHandler) requestEmailCode(c *gin.Context, email string, purpose str
 	return h.emailVerification.Request(email, purpose, userID, c.ClientIP())
 }
 
-func (h *AuthHandler) validateEmailCode(email string, purpose string, code string, consume bool) error {
+func (h *AuthHandler) validateEmailCode(c *gin.Context, email string, purpose string, code string, consume bool) error {
 	if h.emailVerification == nil {
 		return services.ErrMailNotConfigured
 	}
-	return h.emailVerification.Validate(email, purpose, code, consume)
+	return h.emailVerification.ValidateWithClientIP(email, purpose, code, consume, c.ClientIP())
 }
 
 func (h *AuthHandler) issueAuthSession(c *gin.Context, user models.User, status int) {
@@ -564,6 +577,8 @@ func writeEmailVerificationError(c *gin.Context, err error) {
 		status, code = http.StatusTooManyRequests, "EMAIL_SOURCE_SPRAY_LIMIT"
 	case errors.Is(err, services.ErrMailNotConfigured):
 		status, code = http.StatusServiceUnavailable, "MAIL_UNAVAILABLE"
+	case errors.Is(err, services.ErrVerificationMailQueueFull), errors.Is(err, services.ErrVerificationMailTimeout):
+		status, code = http.StatusServiceUnavailable, "MAIL_QUEUE_BUSY"
 	case errors.Is(err, services.ErrCodeExpired):
 		code = "EMAIL_VERIFICATION_EXPIRED"
 	case errors.Is(err, services.ErrCodeAttempts):
@@ -594,7 +609,9 @@ func isEmailVerificationError(err error) bool {
 		errors.Is(err, services.ErrTargetDailyLimit) ||
 		errors.Is(err, services.ErrSourceRateLimited) ||
 		errors.Is(err, services.ErrSourceSprayLimit) ||
-		errors.Is(err, services.ErrMailNotConfigured)
+		errors.Is(err, services.ErrMailNotConfigured) ||
+		errors.Is(err, services.ErrVerificationMailQueueFull) ||
+		errors.Is(err, services.ErrVerificationMailTimeout)
 }
 
 func maskEmail(email string) string {

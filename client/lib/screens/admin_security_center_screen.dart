@@ -502,6 +502,9 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
 
   String _eventTitle(SecurityEvent event) => switch (event.eventType) {
         'password_reset_spray' => '密码重置喷洒',
+        'verification_spray' => '验证码喷洒',
+        'verification_source_rate' => '验证码来源限流',
+        'verification_cooldown' => '验证码冷却拦截',
         'email_target_flood' => '验证码目标轰炸',
         'verification_code_bruteforce' => '验证码暴力尝试',
         'login_password_spray' => 'Password Spray',

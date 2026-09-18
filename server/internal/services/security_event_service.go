@@ -179,6 +179,11 @@ func (s *SecurityEventService) Record(input SecurityEventInput) error {
 			"last_seen_at":                 now,
 			"updated_at":                   now,
 			"status":                       status,
+			// 同一五分钟聚合桶再次出现新攻击时重新激活事件，旧的处置结果必须清掉，
+			// 否则后台会同时显示 active 和历史 resolved_at，造成错误判断。
+			"resolved_at":     nil,
+			"resolved_by":     nil,
+			"resolution_note": "",
 		}),
 	}).Create(&event).Error
 }

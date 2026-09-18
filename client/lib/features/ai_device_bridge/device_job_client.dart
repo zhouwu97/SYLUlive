@@ -54,8 +54,14 @@ abstract interface class DeviceJobApi {
   );
 }
 
+/// 可选能力探测接口。旧的测试替身和兼容实现不需要实现它；真实 HTTP
+/// 客户端在登记或拉取任务前先确认服务端仍公开设备桥接能力。
+abstract interface class DeviceJobCapabilityProbe {
+  Future<bool> ensureDeviceBridgeAvailable();
+}
+
 /// Device Job API 只传 installation_id 和最小化结果，不持久化或记录个人快照。
-class DioDeviceJobClient implements DeviceJobApi {
+class DioDeviceJobClient implements DeviceJobApi, DeviceJobCapabilityProbe {
   DioDeviceJobClient(
     this._dio, {
     DeviceJobDiagnosticWriter? diagnosticWriter,
@@ -63,6 +69,26 @@ class DioDeviceJobClient implements DeviceJobApi {
 
   final Dio _dio;
   final DeviceJobDiagnosticWriter _diagnosticWriter;
+  bool? _deviceBridgeAvailable;
+
+  @override
+  Future<bool> ensureDeviceBridgeAvailable() async {
+    final cached = _deviceBridgeAvailable;
+    if (cached != null) return cached;
+    try {
+      final response = await _dio.get<Map<String, dynamic>>('/version');
+      final capabilities = response.data?['capabilities'];
+      final available =
+          capabilities is Map && capabilities['device_bridge_v1'] == true;
+      // 缺少能力字段也按不可用处理，避免旧客户端在能力已下线时持续打 404。
+      _deviceBridgeAvailable = available;
+      return available;
+    } on DioException {
+      // 能力未知时 fail closed；下一次进程启动会重新探测，不把探测失败变成设备任务错误日志。
+      _deviceBridgeAvailable = false;
+      return false;
+    }
+  }
 
   @override
   Future<void> register({

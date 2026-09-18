@@ -454,6 +454,28 @@ func loginLockDurationForFailures(failures int) time.Duration {
 
 }
 
+// loginSourceLockDurationForFailures 对共享出口提高阈值，避免校园网/运营商 CGNAT
+// 因为少数账号输错密码就连带锁住其他用户；账号维度仍使用较早的保护阈值。
+func loginSourceLockDurationForFailures(failures int) time.Duration {
+	switch {
+	case failures >= 40:
+		return 15 * time.Minute
+	case failures >= 20:
+		return 5 * time.Minute
+	case failures >= 10:
+		return time.Minute
+	default:
+		return 0
+	}
+}
+
+func loginLockDurationForScope(scope string, failures int) time.Duration {
+	if strings.HasPrefix(scope, "ip:") {
+		return loginSourceLockDurationForFailures(failures)
+	}
+	return loginLockDurationForFailures(failures)
+}
+
 func formatRetryAfterCN(d time.Duration) string {
 
 	if d <= 0 {
@@ -530,7 +552,7 @@ func registerLoginFailure(account string, now time.Time) time.Duration {
 	record.FailureCount++
 	record.LastFailureAt = now
 
-	lockFor := loginLockDurationForFailures(record.FailureCount)
+	lockFor := loginLockDurationForScope(account, record.FailureCount)
 
 	if lockFor > 0 {
 
@@ -603,7 +625,7 @@ func (h *AuthHandler) registerLoginFailure(scope string, now time.Time) time.Dur
 		}
 		record.FailureCount++
 		record.LastFailureAt = &now
-		lockFor = loginLockDurationForFailures(record.FailureCount)
+		lockFor = loginLockDurationForScope(scope, record.FailureCount)
 		if lockFor > 0 {
 			until := now.Add(lockFor)
 			record.LockedUntil = &until
@@ -870,7 +892,7 @@ func (h *AuthHandler) VerifyCode(c *gin.Context) {
 	}
 	if h.emailVerification != nil {
 		// 兼容校验不消费验证码，随后 /register 会原子消费它。
-		if err := h.validateEmailCode(qq+"@qq.com", models.EmailVerificationPurposeRegister, input.Code, false); err != nil {
+		if err := h.validateEmailCode(c, qq+"@qq.com", models.EmailVerificationPurposeRegister, input.Code, false); err != nil {
 			writeEmailVerificationError(c, err)
 			return
 		}
@@ -1032,7 +1054,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return recordLegalConsents(tx, user.ID, input.LegalConsentInput, false)
 	}
 	if h.emailVerification != nil {
-		err = h.emailVerification.UseValidatedChallenge(email, models.EmailVerificationPurposeRegister, input.Code, func(tx *gorm.DB, _ models.EmailVerificationChallenge) error {
+		err = h.emailVerification.UseValidatedChallengeWithClientIP(email, models.EmailVerificationPurposeRegister, input.Code, c.ClientIP(), func(tx *gorm.DB, _ models.EmailVerificationChallenge) error {
 			return createUser(tx)
 		})
 	} else {

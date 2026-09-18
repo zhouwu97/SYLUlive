@@ -35,7 +35,7 @@ func TestEmailResetChallengeCannotResetNewEmailOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开数据库失败: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.EmailVerificationChallenge{}, &models.EmailVerificationRequest{}, &models.VerificationAttemptBucket{}, &models.AccountSecurityAuditLog{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.EmailVerificationChallenge{}, &models.EmailVerificationRequest{}, &models.VerificationAttemptBucket{}, &models.VerificationAttempt{}, &models.AccountSecurityAuditLog{}); err != nil {
 		t.Fatalf("迁移测试表失败: %v", err)
 	}
 	now := time.Date(2026, time.July, 22, 12, 0, 0, 0, time.UTC)

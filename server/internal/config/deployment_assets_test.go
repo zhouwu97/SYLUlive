@@ -13,15 +13,21 @@ import (
 func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 	repoRoot := deploymentRepoRoot(t)
 
-	deployScript, err := os.ReadFile(filepath.Join(repoRoot, "deploy.sh"))
+	legacyDeployScript, err := os.ReadFile(filepath.Join(repoRoot, "deploy.sh"))
 	if err != nil {
 		t.Fatalf("读取部署脚本失败: %v", err)
 	}
+	if !strings.Contains(string(legacyDeployScript), "deploy.sh 已废弃") {
+		t.Fatal("旧版 deploy.sh 必须明确 fail closed，不能继续作为生产入口")
+	}
+	deployScript, err := os.ReadFile(filepath.Join(repoRoot, "deploy", "deploy-shenliyuan"))
+	if err != nil {
+		t.Fatalf("读取安全部署脚本失败: %v", err)
+	}
 	deployScriptText := string(deployScript)
-	if !strings.Contains(deployScriptText, `GO_VER="go1.25.13"`) ||
-		!strings.Contains(deployScriptText, `"1.25.13" "$v"`) ||
-		!strings.Contains(deployScriptText, `head -1)" = "1.25.13"`) {
-		t.Fatal("部署脚本必须安装并要求 Go 1.25.13，以满足 server/go.mod 的安全版本要求")
+	if !strings.Contains(deployScriptText, `REQUIRED_GO_VERSION="1.25.13"`) ||
+		!strings.Contains(deployScriptText, "require_security_env") {
+		t.Fatal("安全部署脚本必须检查 Go 1.25.13+ 和生产安全环境变量")
 	}
 
 	configSource, err := os.ReadFile(filepath.Join(repoRoot, "server", "internal", "config", "config.go"))
@@ -35,9 +41,6 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 	} {
 		if !strings.Contains(string(configSource), placeholder) {
 			t.Fatalf("config.go 必须继续拒绝 JWT 占位符 %q", placeholder)
-		}
-		if !strings.Contains(deployScriptText, placeholder) {
-			t.Fatalf("deploy.sh 必须识别并轮换 config.go 拒绝的 JWT 占位符 %q", placeholder)
 		}
 	}
 

@@ -497,6 +497,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       actionText = '公众法庭结案结果';
     } else if (type == 'feedback_update') {
       actionText = '反馈工单有新回复';
+    } else if (type == 'feedback_admin_update') {
+      actionText = '有新的用户工单';
     }
 
     return InkWell(
@@ -588,12 +590,17 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                 ),
               ),
             );
-          } else if (type == 'feedback_update' && relatedId != null) {
+          } else if ((type == 'feedback_update' ||
+                  type == 'feedback_admin_update') &&
+              relatedId != null) {
             if (!mounted) return;
             await Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => FeedbackDetailScreen(ticketId: relatedId),
+                builder: (_) => FeedbackDetailScreen(
+                  ticketId: relatedId,
+                  isAdmin: type == 'feedback_admin_update',
+                ),
               ),
             );
           }

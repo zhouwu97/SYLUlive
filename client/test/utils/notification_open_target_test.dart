@@ -88,6 +88,20 @@ void main() {
       expect(target.recipientUserId, 7);
     });
 
+    test('管理员工单通知必须打开管理员视角', () {
+      final target = NotificationOpenTarget.parse({
+        'extras': {
+          'type': 'feedback_admin_update',
+          'ticket_id': 654,
+          notificationRecipientUserIdKey: 99,
+        },
+      });
+
+      expect(target, isNotNull);
+      expect(target!.ticketId, 654);
+      expect(target.isAdminView, isTrue);
+    });
+
     test('保留原生事件 ID 供导航成功后确认', () {
       final target = NotificationOpenTarget.parse({
         'type': 'reply',

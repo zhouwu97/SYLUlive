@@ -28,12 +28,13 @@ const (
 
 // 工单消息类型
 const (
-	FeedbackMsgText         = "text"          // 文本
-	FeedbackMsgImage        = "image"         // 图片
-	FeedbackMsgSystem       = "system"        // 系统提示
-	FeedbackMsgStatusChange = "status_change" // 状态变更
-	FeedbackMsgRequestInfo  = "request_info"  // 请求补充信息
-	FeedbackMsgInternalNote = "internal_note" // 内部备注（仅管理员可见）
+	FeedbackMsgText              = "text"               // 文本
+	FeedbackMsgImage             = "image"              // 图片
+	FeedbackMsgInitialSubmission = "initial_submission" // 初始提交（详情页专用展示）
+	FeedbackMsgSystem            = "system"             // 系统提示
+	FeedbackMsgStatusChange      = "status_change"      // 状态变更
+	FeedbackMsgRequestInfo       = "request_info"       // 请求补充信息
+	FeedbackMsgInternalNote      = "internal_note"      // 内部备注（仅管理员可见）
 )
 
 // 工单优先级常量

@@ -17,14 +17,29 @@ class AdminFeedbackScreen extends StatefulWidget {
 class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<String> _tabs = ['未查看', '待受理', '处理中', '待补充', '测试中', '已解决'];
+  final List<String> _tabs = [
+    '全部',
+    '未查看',
+    '待受理',
+    '处理中',
+    '待补充',
+    '测试中',
+    '已解决',
+    '已关闭'
+  ];
 
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _listScrollController = ScrollController();
   bool _showSearch = false;
 
   List<FeedbackTicket> _tickets = [];
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = false;
+  int _page = 1;
+  int _requestGeneration = 0;
   String? _error;
+  String? _statsError;
 
   // 概览统计数据
   int _pendingCount = 0;
@@ -41,6 +56,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
         _loadTickets();
       }
     });
+    _listScrollController.addListener(_onListScroll);
     _loadStats();
     _loadTickets();
   }
@@ -49,23 +65,28 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _listScrollController.dispose();
     super.dispose();
   }
 
   String _filterForTabIndex(int index) {
     switch (index) {
       case 0:
-        return 'unviewed';
+        return 'all';
       case 1:
-        return 'pending';
+        return 'unviewed';
       case 2:
-        return 'processing';
+        return 'pending';
       case 3:
-        return 'waiting_user';
+        return 'processing';
       case 4:
-        return 'testing';
+        return 'waiting_user';
       case 5:
+        return 'testing';
+      case 6:
         return 'resolved';
+      case 7:
+        return 'closed';
       default:
         return 'all';
     }
@@ -85,14 +106,38 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
           });
         }
       }
-    } catch (_) {}
+      if (mounted) setState(() => _statsError = null);
+    } catch (_) {
+      if (mounted) setState(() => _statsError = '概览数据暂不可用');
+    }
   }
 
-  Future<void> _loadTickets() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  void _onListScroll() {
+    if (!_listScrollController.hasClients ||
+        _listScrollController.position.extentAfter > 240 ||
+        _loadingMore ||
+        !_hasMore) {
+      return;
+    }
+    _loadTickets(append: true);
+  }
+
+  Future<void> _loadTickets({bool append = false}) async {
+    if (append && (_loading || _loadingMore || !_hasMore)) return;
+    final generation = ++_requestGeneration;
+    final page = append ? _page + 1 : 1;
+    if (mounted) {
+      setState(() {
+        if (append) {
+          _loadingMore = true;
+        } else {
+          _loading = true;
+          _error = null;
+          _page = 1;
+          _hasMore = false;
+        }
+      });
+    }
 
     try {
       final auth = context.read<AuthProvider>();
@@ -104,8 +149,8 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
         queryParameters: {
           'status_filter': filter,
           if (search.isNotEmpty) 'search': search,
-          'page': 1,
-          'limit': 50,
+          'page': page,
+          'limit': 20,
         },
       );
 
@@ -115,28 +160,42 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
             .map((e) => FeedbackTicket.fromJson(e as Map<String, dynamic>))
             .toList();
 
-        if (mounted) {
+        final hasMore = res.data['has_more'] as bool? ??
+            tickets.length >= (res.data['limit'] as int? ?? 20);
+        if (mounted && generation == _requestGeneration) {
           setState(() {
-            _tickets = tickets;
+            _tickets = append ? [..._tickets, ...tickets] : tickets;
+            _page = page;
+            _hasMore = hasMore;
             _loading = false;
+            _loadingMore = false;
           });
         }
       } else {
-        if (mounted) {
+        if (mounted && generation == _requestGeneration) {
           setState(() {
             _loading = false;
+            _loadingMore = false;
             _error = '工单列表加载失败';
           });
         }
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _requestGeneration) {
         setState(() {
           _loading = false;
+          _loadingMore = false;
           _error = '网络连接异常';
         });
       }
     }
+  }
+
+  void _selectTab(int index) {
+    if (index < 0 || index >= _tabs.length || _tabController.index == index) {
+      return;
+    }
+    _tabController.animateTo(index);
   }
 
   String _formatTimeAgo(DateTime dt) {
@@ -145,7 +204,8 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
     if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
     if (diff.inHours < 24) return '${diff.inHours}小时前';
     if (diff.inDays == 1) return '昨天';
-    return '${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    final local = dt.toLocal();
+    return '${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
   }
 
   Widget _buildStatsHeader(bool isDark) {
@@ -160,16 +220,27 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
           width: 0.8,
         ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
         children: [
-          _buildStatItem('待处理', '$_pendingCount', Colors.orange),
-          _buildStatDivider(isDark),
-          _buildStatItem('待补充', '$_waitingCount', const Color(0xFFEA580C)),
-          _buildStatDivider(isDark),
-          _buildStatItem('测试中', '$_testingCount', Colors.teal),
-          _buildStatDivider(isDark),
-          _buildStatItem('未查看', '$_unviewedCount', Colors.red),
+          if (_statsError != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(_statsError!,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildStatItem('待受理', '$_pendingCount', Colors.orange, 2),
+              _buildStatDivider(isDark),
+              _buildStatItem(
+                  '待补充', '$_waitingCount', const Color(0xFFEA580C), 4),
+              _buildStatDivider(isDark),
+              _buildStatItem('测试中', '$_testingCount', Colors.teal, 5),
+              _buildStatDivider(isDark),
+              _buildStatItem('未查看', '$_unviewedCount', Colors.red, 1),
+            ],
+          ),
         ],
       ),
     );
@@ -183,23 +254,30 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
     );
   }
 
-  Widget _buildStatItem(String label, String count, Color color) {
-    return Column(
-      children: [
-        Text(
-          count,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
+  Widget _buildStatItem(String label, String count, Color color, int tabIndex) {
+    return InkWell(
+      onTap: () => _selectTab(tabIndex),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        child: Column(
+          children: [
+            Text(
+              count,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
         ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: Colors.grey),
-        ),
-      ],
+      ),
     );
   }
 
@@ -216,9 +294,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
         color: cardBg,
         borderRadius: BorderRadius.circular(AppRadius.lg),
         border: Border.all(
-          color: isUnviewed
-              ? Colors.red.withValues(alpha: 0.5)
-              : borderColor,
+          color: isUnviewed ? Colors.red.withValues(alpha: 0.5) : borderColor,
           width: isUnviewed ? 1.2 : 0.8,
         ),
       ),
@@ -279,7 +355,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
                       ),
                     ] else ...[
                       Text(
-                        ticket.statusDisplayName,
+                        ticket.adminStatusDisplayName,
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -328,6 +404,24 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
                   overflow: TextOverflow.ellipsis,
                 ),
 
+                const SizedBox(height: 8),
+
+                Row(
+                  children: [
+                    Icon(Icons.person_outline,
+                        size: 14, color: isDark ? Colors.white54 : Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      ticket.assigneeAdminName == null
+                          ? '未分配'
+                          : '负责人：${ticket.assigneeAdminName}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.white54 : Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
 
                 // 底部单号、类型、时间
@@ -477,10 +571,23 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
                         ),
                       )
                     : _tickets.isEmpty
-                        ? const Center(
-                            child: Text(
-                              '暂无符合条件的工单',
-                              style: TextStyle(color: Colors.grey),
+                        ? RefreshIndicator(
+                            onRefresh: () async {
+                              await _loadStats();
+                              await _loadTickets();
+                            },
+                            color: AppColors.brandPrimary,
+                            child: ListView(
+                              controller: _listScrollController,
+                              physics: const AlwaysScrollableScrollPhysics(
+                                parent: BouncingScrollPhysics(),
+                              ),
+                              children: const [
+                                SizedBox(height: 180),
+                                Center(
+                                    child: Text('暂无符合条件的工单',
+                                        style: TextStyle(color: Colors.grey))),
+                              ],
                             ),
                           )
                         : RefreshIndicator(
@@ -490,13 +597,22 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
                             },
                             color: AppColors.brandPrimary,
                             child: ListView.builder(
+                              controller: _listScrollController,
                               physics: const AlwaysScrollableScrollPhysics(
                                 parent: BouncingScrollPhysics(),
                               ),
                               padding: const EdgeInsets.only(bottom: 24),
-                              itemCount: _tickets.length,
-                              itemBuilder: (_, idx) =>
-                                  _buildAdminTicketCard(_tickets[idx], isDark),
+                              itemCount:
+                                  _tickets.length + (_loadingMore ? 1 : 0),
+                              itemBuilder: (_, idx) => idx >= _tickets.length
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(16),
+                                      child: Center(
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2)),
+                                    )
+                                  : _buildAdminTicketCard(
+                                      _tickets[idx], isDark),
                             ),
                           ),
           ),

@@ -12,6 +12,7 @@ class FeedbackTicket {
   final String? statusNote;
   final String priority;
   final int? assigneeAdminId;
+  final String? assigneeAdminName;
   final bool adminViewed;
   final DateTime? adminFirstViewedAt;
   final int userUnreadCount;
@@ -43,6 +44,7 @@ class FeedbackTicket {
     this.statusNote,
     this.priority = 'P2',
     this.assigneeAdminId,
+    this.assigneeAdminName,
     this.adminViewed = false,
     this.adminFirstViewedAt,
     this.userUnreadCount = 0,
@@ -76,6 +78,9 @@ class FeedbackTicket {
       statusNote: json['status_note'] as String?,
       priority: json['priority'] as String? ?? 'P2',
       assigneeAdminId: json['assignee_admin_id'] as int?,
+      assigneeAdminName: json['assignee_admin'] is Map
+          ? (json['assignee_admin']['nickname'] as String?)
+          : null,
       adminViewed: json['admin_viewed'] as bool? ?? false,
       adminFirstViewedAt: json['admin_first_viewed_at'] != null
           ? DateTime.tryParse(json['admin_first_viewed_at'] as String)
@@ -100,8 +105,8 @@ class FeedbackTicket {
           ? DateTime.tryParse(json['closed_at'] as String)
           : null,
       attachments: (json['attachments'] as List<dynamic>?)
-              ?.map((e) =>
-                  FeedbackAttachment.fromJson(e as Map<String, dynamic>))
+              ?.map(
+                  (e) => FeedbackAttachment.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
     );
@@ -119,21 +124,27 @@ class FeedbackTicket {
   }
 
   String get statusDisplayName {
+    return statusLabel(isAdmin: false);
+  }
+
+  String get adminStatusDisplayName {
+    return statusLabel(isAdmin: true);
+  }
+
+  String statusLabel({required bool isAdmin}) {
     switch (status) {
       case 'pending':
-        return adminViewed ? '待受理' : '待受理 · 未查看';
+        return '待受理';
       case 'accepted':
         return '已受理';
       case 'waiting_user':
-        return '待你补充';
+        return isAdmin ? '待用户补充' : '待你补充';
       case 'investigating':
         return '定位中';
       case 'fixing':
         return '修复中';
       case 'testing':
-        return statusNote != null && statusNote!.isNotEmpty
-            ? '测试中 · $statusNote'
-            : '测试中';
+        return '测试中';
       case 'resolved':
         return '已解决';
       case 'closed':
@@ -144,12 +155,47 @@ class FeedbackTicket {
   }
 }
 
+class FeedbackInitialSubmission {
+  final int messageId;
+  final String senderType;
+  final int senderId;
+  final String content;
+  final DateTime createdAt;
+  final List<FeedbackAttachment> attachments;
+
+  const FeedbackInitialSubmission({
+    required this.messageId,
+    required this.senderType,
+    required this.senderId,
+    required this.content,
+    required this.createdAt,
+    this.attachments = const [],
+  });
+
+  factory FeedbackInitialSubmission.fromJson(Map<String, dynamic> json) {
+    return FeedbackInitialSubmission(
+      messageId: json['message_id'] as int? ?? 0,
+      senderType: json['sender_type'] as String? ?? 'user',
+      senderId: json['sender_id'] as int? ?? 0,
+      content: json['content'] as String? ?? '',
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+          DateTime.now(),
+      attachments: (json['attachments'] as List<dynamic>?)
+              ?.map(
+                  (e) => FeedbackAttachment.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
+    );
+  }
+}
+
 class FeedbackMessage {
   final int id;
   final int ticketId;
   final String senderType; // 'user', 'admin', 'system'
   final int senderId;
-  final String messageType; // 'text', 'image', 'system', 'status_change', 'request_info', 'internal_note'
+  final String
+      messageType; // 'initial_submission', 'text', 'image', 'system', 'status_change', 'request_info', 'internal_note'
   final String content;
   final String? metadataJson;
   final bool visibleToUser;
@@ -182,8 +228,8 @@ class FeedbackMessage {
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
           DateTime.now(),
       attachments: (json['attachments'] as List<dynamic>?)
-              ?.map((e) =>
-                  FeedbackAttachment.fromJson(e as Map<String, dynamic>))
+              ?.map(
+                  (e) => FeedbackAttachment.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
     );

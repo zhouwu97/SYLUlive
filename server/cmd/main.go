@@ -2189,6 +2189,7 @@ func main() {
 	feedbackAdmin := r.Group("/api/admin/feedback")
 	feedbackAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 	{
+		feedbackAdmin.GET("/assignees", feedbackTicketHandler.AdminListAssignees)
 		feedbackAdmin.GET("/tickets", feedbackTicketHandler.AdminListTickets)
 		feedbackAdmin.GET("/tickets/stats", feedbackTicketHandler.AdminGetStats)
 		feedbackAdmin.GET("/tickets/:id", feedbackTicketHandler.AdminGetTicketDetail)

@@ -88,6 +88,7 @@ class NotificationOpenTarget {
     this.postId,
     this.replyId,
     this.ticketId,
+    this.isAdminView = false,
     this.nativeOpenId,
     this.recipientUserId,
   });
@@ -96,6 +97,7 @@ class NotificationOpenTarget {
   final int? postId;
   final int? replyId;
   final int? ticketId;
+  final bool isAdminView;
   final String? nativeOpenId;
   final int? recipientUserId;
   final DateTime createdAt;
@@ -112,6 +114,7 @@ class NotificationOpenTarget {
         postId == other.postId &&
         replyId == other.replyId &&
         ticketId == other.ticketId &&
+        isAdminView == other.isAdminView &&
         recipientUserId == other.recipientUserId;
   }
 
@@ -147,10 +150,12 @@ class NotificationOpenTarget {
           createdAt: now ?? DateTime.now(),
         );
       case 'feedback_ticket':
+      case 'feedback_admin_update':
         if (ticketId == null) return null;
         return NotificationOpenTarget(
           type: NotificationOpenType.feedbackTicket,
           ticketId: ticketId,
+          isAdminView: type == 'feedback_admin_update',
           nativeOpenId: extras[nativeNotificationOpenIdKey]?.toString(),
           recipientUserId: _positiveId(
             extras[notificationRecipientUserIdKey],

@@ -592,6 +592,7 @@ Future<void> _handleNativeNotificationOpen(String raw) async {
       _storeOrOpenNotificationTarget(target);
       return;
     case 'feedback_ticket':
+    case 'feedback_admin_update':
       final target = NotificationOpenTarget.parse(payload);
       if (target == null) {
         await _ackNativeNotificationOpen(event.id);
@@ -770,7 +771,11 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
       }
       navigator.push(
         MaterialPageRoute(
-          builder: (_) => FeedbackDetailScreen(ticketId: ticketId),
+          builder: (_) => FeedbackDetailScreen(
+            ticketId: ticketId,
+            // 通知入口明确携带管理员视角，不能根据当前账号角色推断。
+            isAdmin: target.isAdminView,
+          ),
         ),
       );
       _ackNativeNotificationOpen(target.nativeOpenId).ignore();

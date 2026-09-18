@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"shenliyuan/internal/competitionmatching"
 	"shenliyuan/internal/models"
 )
 
@@ -38,6 +39,10 @@ type competitionPreferenceInput struct {
 	AcceptLongTermTraining bool     `json:"accept_long_term_training"`
 	CareerDirection        string   `json:"career_direction"`
 	ExperienceLevel        string   `json:"experience_level"`
+	// MajorClusterOverride 用指针区分「没传」与「传了空数组」：
+	// 本接口是整体覆盖语义，若把「没传」当成「清空」，
+	// 尚未升级的客户端每次保存偏好都会静默抹掉用户已填的专业纠正。
+	MajorClusterOverride *[]string `json:"major_cluster_override"`
 }
 
 type competitionPreferenceResponse struct {
@@ -50,12 +55,14 @@ type competitionPreferenceResponse struct {
 	AcceptLongTermTraining bool     `json:"accept_long_term_training"`
 	CareerDirection        string   `json:"career_direction"`
 	ExperienceLevel        string   `json:"experience_level"`
+	MajorClusterOverride   []string `json:"major_cluster_override"`
 }
 
 func defaultCompetitionPreferenceResponse() competitionPreferenceResponse {
 	return competitionPreferenceResponse{
 		Goals: []string{}, DirectionTags: []string{}, SkillTags: []string{}, PreferredRoles: []string{},
-		ExperienceLevel: "beginner",
+		MajorClusterOverride: []string{},
+		ExperienceLevel:      "beginner",
 	}
 }
 
@@ -70,6 +77,7 @@ func competitionPreferenceResponseFromModel(preference models.UserCompetitionPre
 		AcceptLongTermTraining: preference.AcceptLongTermTraining,
 		CareerDirection:        preference.CareerDirection,
 		ExperienceLevel:        preference.ExperienceLevel,
+		MajorClusterOverride:   decodeStringArray(preference.MajorClusterOverride),
 	}
 }
 
@@ -119,12 +127,18 @@ func (h *CompetitionHandler) PutCompetitionPreference(c *gin.Context) {
 		SkillTags: jsonArray(normalized.SkillTags), PreferredRoles: jsonArray(normalized.PreferredRoles),
 		WeeklyHours: normalized.WeeklyHours, AcceptLongTermTraining: normalized.AcceptLongTermTraining,
 		CareerDirection: normalized.CareerDirection, ExperienceLevel: normalized.ExperienceLevel,
+		MajorClusterOverride: jsonArray([]string{}),
 	}
 	updates := map[string]interface{}{
 		"goals": preference.Goals, "direction_tags": preference.DirectionTags,
 		"skill_tags": preference.SkillTags, "preferred_roles": preference.PreferredRoles,
 		"weekly_hours": preference.WeeklyHours, "accept_long_term_training": preference.AcceptLongTermTraining,
 		"career_direction": preference.CareerDirection, "experience_level": preference.ExperienceLevel,
+	}
+	// 只有显式传了该字段才覆盖，避免旧客户端保存偏好时把用户已填的专业纠正抹掉。
+	if normalized.MajorClusterOverride != nil {
+		preference.MajorClusterOverride = jsonArray(*normalized.MajorClusterOverride)
+		updates["major_cluster_override"] = preference.MajorClusterOverride
 	}
 	if err := h.db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "user_id"}}, DoUpdates: clause.Assignments(updates),
@@ -155,6 +169,10 @@ func normalizeCompetitionPreferenceInput(input competitionPreferenceInput) (comp
 	input.DirectionTags = cleanPreferenceValues(input.DirectionTags)
 	input.SkillTags = cleanPreferenceValues(input.SkillTags)
 	input.PreferredRoles = cleanPreferenceValues(input.PreferredRoles)
+	if input.MajorClusterOverride != nil {
+		cleaned := cleanPreferenceValues(*input.MajorClusterOverride)
+		input.MajorClusterOverride = &cleaned
+	}
 	input.CareerDirection = strings.TrimSpace(input.CareerDirection)
 	input.ExperienceLevel = strings.TrimSpace(input.ExperienceLevel)
 	if input.ExperienceLevel == "" {
@@ -172,11 +190,28 @@ func normalizeCompetitionPreferenceInput(input competitionPreferenceInput) (comp
 	if len(input.PreferredRoles) > 3 {
 		return input, errors.New("偏好角色最多选择 3 个")
 	}
+	if input.MajorClusterOverride != nil && len(*input.MajorClusterOverride) > 3 {
+		return input, errors.New("专业方向纠正最多选择 3 个")
+	}
 	if err := validatePreferenceEnums(input.Goals, competitionPreferenceGoals, "用户目标"); err != nil {
 		return input, err
 	}
 	if err := validatePreferenceEnums(input.PreferredRoles, competitionPreferenceRoles, "偏好角色"); err != nil {
 		return input, err
+	}
+	// 方向与技能必须落在受控词表内：这两个字段直接决定「偏好」分量的命中判定，
+	// 写入一个词表外的值不会报错、也不会生效，只会变成用户看不到的死选项。
+	if err := validatePreferenceValues(input.DirectionTags, competitionmatching.IsKnownDirection, "比赛方向"); err != nil {
+		return input, err
+	}
+	if err := validatePreferenceValues(input.SkillTags, competitionmatching.IsKnownSkill, "技能方向"); err != nil {
+		return input, err
+	}
+	// 专业方向纠正必须落在目录真实使用的 53 个专业簇内，否则匹配时会被静默丢弃。
+	if input.MajorClusterOverride != nil {
+		if err := validatePreferenceValues(*input.MajorClusterOverride, competitionmatching.IsStandardCluster, "专业方向纠正"); err != nil {
+			return input, err
+		}
 	}
 	if _, ok := competitionExperienceLevels[input.ExperienceLevel]; !ok {
 		return input, errors.New("未知的竞赛经验等级")
@@ -215,6 +250,17 @@ func cleanPreferenceValues(values []string) []string {
 func validatePreferenceEnums(values []string, allowed map[string]struct{}, field string) error {
 	for _, value := range values {
 		if _, ok := allowed[value]; !ok {
+			return fmt.Errorf("%s包含未知选项：%s", field, value)
+		}
+	}
+	return nil
+}
+
+// validatePreferenceValues 用受控词表的判定函数校验取值，
+// 适用于词表定义在匹配包（competitionmatching）里的字段，避免两处词表各写一遍而漂移。
+func validatePreferenceValues(values []string, allowed func(string) bool, field string) error {
+	for _, value := range values {
+		if !allowed(value) {
 			return fmt.Errorf("%s包含未知选项：%s", field, value)
 		}
 	}

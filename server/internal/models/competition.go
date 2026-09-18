@@ -132,6 +132,12 @@ type UserCompetitionPreference struct {
 	SkillTags      datatypes.JSON `gorm:"not null" json:"skill_tags"`
 	PreferredRoles datatypes.JSON `gorm:"not null" json:"preferred_roles"`
 
+	// MajorClusterOverride 保存用户手动纠正的专业簇，用于覆盖系统按专业名推断的结果。
+	// 这是映射漏配时的唯一降级路径：长尾专业推断不出来时，用户自己指定即可参与匹配。
+	// 刻意允许为空（不设 not null）：这是给已有表新增的列，
+	// 设成非空会要求存量行先回填，让一次纯新增变成有风险的迁移。
+	MajorClusterOverride datatypes.JSON `json:"major_cluster_override"`
+
 	WeeklyHours            int  `gorm:"not null;default:0" json:"weekly_hours"`
 	AcceptLongTermTraining bool `gorm:"not null;default:false" json:"accept_long_term_training"`
 

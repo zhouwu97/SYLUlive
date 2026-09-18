@@ -10,6 +10,7 @@ package competitionmatching
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -295,6 +296,35 @@ func bridgeLookup(table map[string][]Cluster, value string) []Cluster {
 		return nil
 	}
 	return table[key]
+}
+
+// DirectionOptions 返回受控的方向词表（与客户端 competitionDirectionOptions 一致）。
+// 供接口层做入参校验：写进来的值必须能被桥接，否则就是一个不会生效的死选项。
+func DirectionOptions() []string {
+	return sortedBridgeKeys(directionClusters)
+}
+
+// SkillOptions 返回受控的技能词表（与客户端 competitionSkillOptions 一致）。
+func SkillOptions() []string {
+	return sortedBridgeKeys(skillClusters)
+}
+
+func sortedBridgeKeys(table map[string][]Cluster) []string {
+	keys := make([]string, 0, len(table))
+	for key := range table {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// IsKnownDirection / IsKnownSkill 判断值是否落在受控词表内（大小写与空白不敏感）。
+func IsKnownDirection(value string) bool {
+	return bridgeLookup(directionClusters, value) != nil
+}
+
+func IsKnownSkill(value string) bool {
+	return bridgeLookup(skillClusters, value) != nil
 }
 
 // LookupMajorClusters 返回标准专业名对应的专业簇。

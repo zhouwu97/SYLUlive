@@ -168,3 +168,64 @@ func TestCompetitionPreferenceRejectsMultipleJSONObjects(t *testing.T) {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
+
+// 专业簇纠正的读写语义：显式传值才覆盖，不传必须保留。
+// 该接口是整体覆盖语义，如果把「没传」当成「清空」，
+// 尚未升级的客户端每次保存偏好都会静默抹掉用户已填的专业纠正。
+func TestCompetitionPreferencePersistsMajorClusterOverride(t *testing.T) {
+	db := newCompetitionTestDB(t)
+	handler := NewCompetitionHandler(db)
+
+	created := `{"experience_level":"beginner","major_cluster_override":["计算机类"," 软件工程 ","计算机类"]}`
+	recorder := preferenceRequest(t, handler.PutCompetitionPreference, http.MethodPut, created, 61)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	response := decodePreferenceResponse(t, recorder)
+	if strings.Join(response.MajorClusterOverride, ",") != "计算机类,软件工程" {
+		t.Fatalf("纠正未去重归一：%#v", response.MajorClusterOverride)
+	}
+
+	// 未传该字段的保存：旧客户端行为，必须保留已有值。
+	withoutField := `{"goals":["ability"],"experience_level":"beginner"}`
+	recorder = preferenceRequest(t, handler.PutCompetitionPreference, http.MethodPut, withoutField, 61)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	response = decodePreferenceResponse(t, recorder)
+	if strings.Join(response.MajorClusterOverride, ",") != "计算机类,软件工程" {
+		t.Fatalf("未传该字段时不得清空：%#v", response.MajorClusterOverride)
+	}
+
+	// 显式传空数组才是清空。
+	cleared := `{"goals":["ability"],"experience_level":"beginner","major_cluster_override":[]}`
+	recorder = preferenceRequest(t, handler.PutCompetitionPreference, http.MethodPut, cleared, 61)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	response = decodePreferenceResponse(t, recorder)
+	if len(response.MajorClusterOverride) != 0 {
+		t.Fatalf("显式空数组应清空：%#v", response.MajorClusterOverride)
+	}
+}
+
+// 方向、技能与专业纠正都必须落在受控词表内：
+// 词表外的值不会报错也不会生效，只会变成用户看不见的死选项。
+func TestCompetitionPreferenceRejectsValuesOutsideControlledVocabulary(t *testing.T) {
+	db := newCompetitionTestDB(t)
+	handler := NewCompetitionHandler(db).PutCompetitionPreference
+	tests := map[string]string{
+		"unknown direction": `{"direction_tags":["量子计算"],"experience_level":"beginner"}`,
+		"unknown skill":     `{"skill_tags":["开飞船"],"experience_level":"beginner"}`,
+		"unknown cluster":   `{"major_cluster_override":["不存在的专业簇"],"experience_level":"beginner"}`,
+		"too many clusters": `{"major_cluster_override":["计算机类","软件工程","机械类","会计学"],"experience_level":"beginner"}`,
+	}
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			recorder := preferenceRequest(t, handler, http.MethodPut, body, 71)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}

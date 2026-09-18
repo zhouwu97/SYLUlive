@@ -71,8 +71,10 @@ func (e *competitionCandidateEngine) BuildCandidates(
 	result.PreferenceConfigured = userContext.PreferenceConfigured
 	result.AlgorithmVersion = competitionmatching.AlgorithmVersion
 	if !userContext.ProfileReady {
-		// 不再静默返回空结果：客户端需要能区分「没匹配到」与「画像没准备好」。
+		// 不再静默返回空结果：客户端需要能区分「没匹配到」与「画像没准备好」，
+		// 并且要知道具体缺什么才能给出可操作的引导。
 		result.ReasonCode = ReasonProfileIncomplete
+		result.MissingFields = userContext.MissingProfileFields()
 		return result, nil
 	}
 	scope, err := competitionscope.Resolve(ctx, e.db)
@@ -89,6 +91,13 @@ func (e *competitionCandidateEngine) BuildCandidates(
 	}
 	if len(filter.EventIDs) > 0 {
 		query = query.Where("competition_events.id IN ?", filter.EventIDs)
+	}
+	// 诊断计数：只走治理门（含显式 ID 限定）时的条数。
+	// 线上「为什么是 0 条」通常卡在治理门与筛选条件之间，
+	// 把两个数都返回就不必再靠猜。Session 复制条件以避免计数语句污染后续查询。
+	var scopedTotal int64
+	if err := query.Session(&gorm.Session{}).Count(&scopedTotal).Error; err != nil {
+		return result, err
 	}
 	if value := strings.TrimSpace(filter.Keyword); value != "" {
 		pattern := "%" + strings.ToLower(value) + "%"
@@ -123,6 +132,7 @@ func (e *competitionCandidateEngine) BuildCandidates(
 
 	resolvedUser := competitionmatching.ResolveUser(competitionmatching.UserProfile{
 		Major: userContext.Major, College: userContext.College, EntryYear: userContext.EntryYear,
+		ClusterOverride: userContext.MajorClusterOverride,
 	})
 	if resolvedUser.Unmapped {
 		// 专业无映射必须作为可见缺口上报：否则「某些专业永远匹配不到」
@@ -143,6 +153,8 @@ func (e *competitionCandidateEngine) BuildCandidates(
 	now := e.now()
 	ranked := make([]competitionmatching.Ranked, 0, len(events))
 	byEventID := make(map[uint]dto.CompetitionCandidateDTO, len(events))
+	gradeExcluded := 0
+	rankableCount := 0
 	for _, event := range events {
 		candidate := buildMatchingCandidate(event)
 		// 行为信号是逐赛事的，因此在用户偏好基底上叠加一层的副本，
@@ -158,12 +170,14 @@ func (e *competitionCandidateEngine) BuildCandidates(
 		})
 		// GroupKey 为空表示命中唯一保留的硬门（年级不符），此时才允许淘汰。
 		if scored.GroupKey == "" {
+			gradeExcluded++
 			continue
 		}
 		dtoItem := buildCompetitionCandidateDTO(event, scored)
 		byEventID[event.ID] = dtoItem
 		if dtoItem.Gates.PersonalizedRankingAllowed {
 			result.Catalog.PersonalizedRankingAllowed = true
+			rankableCount++
 		}
 		ranked = append(ranked, competitionmatching.Ranked{
 			ID: event.ID, CompetitionID: dtoItem.CompetitionID, CatalogOrder: event.CatalogOrder,
@@ -212,6 +226,16 @@ func (e *competitionCandidateEngine) BuildCandidates(
 	}
 	if result.Total == 0 && result.ReasonCode == "" {
 		result.ReasonCode = ReasonNoCandidate
+	}
+	result.Diagnostics = &dto.CompetitionCandidateDiagnosticsDTO{
+		Scoped:        int(scopedTotal),
+		Matched:       len(events),
+		GradeExcluded: gradeExcluded,
+		MajorMatch:    fullCounts["major_match"],
+		CollegeMatch:  fullCounts["college_match"],
+		GeneralMatch:  fullCounts["general_match"],
+		Rankable:      rankableCount,
+		Returned:      len(pageItems),
 	}
 	return result, nil
 }

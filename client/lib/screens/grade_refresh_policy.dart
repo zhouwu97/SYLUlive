@@ -92,24 +92,40 @@ bool allowReducedGradeOverwrite({
 /// - 用户在提示之后**再次**明确刷新时调用 [consume] 取回确认；
 /// - 确认只对同一账号 / 教务身份 / 学期（[scope]）有效：期间切号或切学期，
 ///   scope 不同则 [consume] 失败，旧确认不会作用到新上下文。
+///
+/// 确认还必须绑定**具体候选结果**（[signature]）：只按作用域放行是不够的，
+/// 「20 门 -> 19 门」的提示不能被复用成「19 门 -> 0 门」的覆盖授权——
+/// 重新请求后结果再次变化时，用户并没有对新的结果点过头。因此 [warn] 记录
+/// 提醒时那份结果的指纹，[consume] 把它交回调用方，由调用方与本次实际返回的
+/// 结果指纹比较，只有完全一致才承认这是一次有效确认。
 class GradeReductionConfirmation {
   String? _pendingScope;
+  String? _pendingSignature;
 
   /// 记录「已就本次减少给出过提示」，等待用户再次确认。
-  void warn(String scope) {
+  ///
+  /// [signature] 是本次减少结果（将被写入的候选课程集合）的稳定指纹。
+  void warn(String scope, String signature) {
     _pendingScope = scope;
+    _pendingSignature = signature;
   }
 
   /// 尝试把上一次提示消费成一次覆盖确认。
-  bool consume(String scope) {
-    if (_pendingScope == null || _pendingScope != scope) return false;
+  ///
+  /// 返回 [warn] 时记录的候选结果指纹；作用域不匹配或没有待确认提示时返回 null。
+  /// 无论返回什么，待确认状态都会被清空（一次性消费）。
+  String? consume(String scope) {
+    if (_pendingScope == null || _pendingScope != scope) return null;
+    final signature = _pendingSignature;
     _pendingScope = null;
-    return true;
+    _pendingSignature = null;
+    return signature;
   }
 
   /// 上下文变化（切号 / 切学期）时废弃未消费的确认。
   void reset() {
     _pendingScope = null;
+    _pendingSignature = null;
   }
 
   /// 是否存在待用户确认的减少提示（仅用于测试与诊断）。

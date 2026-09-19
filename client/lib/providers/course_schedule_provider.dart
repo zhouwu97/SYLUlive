@@ -954,6 +954,9 @@ class CourseScheduleProvider extends ChangeNotifier {
     _ScheduleOperationContext operation,
     ScheduleTermSnapshot? snapshot,
   ) async {
+    // 任何内存写入之前先确认操作仍然有效：本方法可能在切换学期之后才返回，
+    // 晚到的旧学期结果一旦写入就会污染新学期的课程、隐藏状态与调节层。
+    if (!_isCurrentOperation(operation)) return false;
     final cached = snapshot == null || snapshot.courses.isEmpty
         ? const <CourseBlock>[]
         : snapshot.courses.map(CourseBlock.fromJson).toList();
@@ -972,14 +975,17 @@ class CourseScheduleProvider extends ChangeNotifier {
     final coalesced = _coalesceGraduateCourses(cached);
     // 一律使用固定操作上下文中的学期与来源账号，不在 await 之后重新读取可变字段。
     final termId = operation.term.id;
-    _hiddenCourseIds = snapshot!.hiddenCourseIds.toSet();
-    final sourceRestored = _restoreSourceModels(snapshot, termId: termId);
-    _overrides = await _overrideRepository.loadOverrides(
+    // 先把调节层读到局部变量：读取期间可能发生新的学期切换，
+    // 必须重新校验后再提交，避免旧学期的调节层覆盖新学期的内存。
+    final loadedOverrides = await _overrideRepository.loadOverrides(
       semesterId: termId,
       accountId:
           operation.sourceAccountId.isEmpty ? null : operation.sourceAccountId,
     );
     if (!_isCurrentOperation(operation)) return false;
+    _hiddenCourseIds = snapshot!.hiddenCourseIds.toSet();
+    final sourceRestored = _restoreSourceModels(snapshot, termId: termId);
+    _overrides = loadedOverrides;
     if (sourceRestored) {
       _syncResolvedSchedule();
     } else {
@@ -989,6 +995,9 @@ class CourseScheduleProvider extends ChangeNotifier {
     }
     if (sourceRestored && _courses.length != cached.length) {
       await _saveToCache(_courses);
+      // 落盘同样让出控制权：写盘后必须再次校验，
+      // 避免旧操作覆盖新学期的 loading/error 状态并发出错误的通知。
+      if (!_isCurrentOperation(operation)) return false;
     }
     _isLoading = false;
     if (sourceRestored) _errorMessage = null;
@@ -2516,11 +2525,22 @@ class CourseScheduleProvider extends ChangeNotifier {
     // 学期切换也必须让启动恢复和上一个学期的异步读写失效，避免旧操作
     // 在新学期切换完成后回写课程、开学日或存档状态。
     _contextGeneration++;
+    // 目标学期只有在选定学期落盘成功后才算切换完成。
+    // CourseTerm 未实现值相等，且内存学期字段是唯一判定口径，因此这里先暂存原值。
+    final previousTerm = _currentTerm;
     _currentTerm = term;
     final operation = _captureOperationContext(term);
     if (operation == null ||
         operation.store == null ||
         !await _saveOperationSelectedTerm(operation, term)) {
+      // 落盘失败（本地密钥/文件通道刚恢复、写盘异常等）时必须回退到原学期：
+      // 此时课程、开学日、存档等内存数据都还没被清空，回退后状态自洽，
+      // 不会留下「学期已是目标学期、课程还是原学期」的混合状态。
+      // 只有期间没有发生新的学期切换（generation 未变）时才回退，避免覆盖更新的选择。
+      if (operation != null && operation.generation == _contextGeneration) {
+        _currentTerm = previousTerm;
+        notifyListeners();
+      }
       return false;
     }
     _courses = [];

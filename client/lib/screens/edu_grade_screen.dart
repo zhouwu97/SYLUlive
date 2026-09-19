@@ -59,7 +59,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   ///
   /// 减少保护要求：首次遇到减少只提示、不写入；用户在明确提示之后**再次**发起刷新
   /// 才算确认覆盖。确认只对同一账号 / 教务身份 / 学期有效，期间切号或切学期一律失效，
-  /// 且重新请求后数量再次变化时必须重新判断，不能复用旧确认。
+  /// 且确认绑定提示时那份**具体候选结果**：重新请求后数量或课程集合再次变化时
+  /// 必须重新判断、重新提示，不能复用旧确认（例如 20 -> 19 的确认不得授权 19 -> 0）。
   final GradeReductionConfirmation _reductionConfirmation =
       GradeReductionConfirmation();
 
@@ -70,14 +71,24 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   /// 消费一次「减少确认」：仅当上一次提示与当前上下文完全一致时才成立。
-  bool _consumeReductionConfirmation() {
+  /// 返回上次提示所对应的候选结果指纹（无待确认提示时返回 null）。
+  String? _consumeReductionConfirmation() {
     return _reductionConfirmation.consume(_gradeContextScope());
   }
 
-  /// 保留旧结果并提示「本次返回成绩减少」，同时记录该提示所属的上下文，
+  /// 「减少确认」要绑定的具体候选结果指纹：课程集合与门数的稳定标识。
+  ///
+  /// 只看门数不够——「20 门减到 19 门」的确认不能被复用来授权「19 门减到 0 门」：
+  /// 重新请求后结果再次变化时，用户并没有对新的结果点过头。
+  String _gradeReductionSignature(List<EduGrade> grades) {
+    final keys = grades.map(GradeStableKey.of).toList()..sort();
+    return '${keys.length}#${keys.join(',')}';
+  }
+
+  /// 保留旧结果并提示「本次返回成绩减少」，同时记录该提示所属的上下文与候选结果，
   /// 以便用户**再次**发起刷新时把这次提示消费成确认（计划 8.5）。
-  void _rememberReductionWarning(int removedCount) {
-    _reductionConfirmation.warn(_gradeContextScope());
+  void _rememberReductionWarning(int removedCount, String signature) {
+    _reductionConfirmation.warn(_gradeContextScope(), signature);
     if (mounted) {
       _showSnackBar('本次返回成绩减少 $removedCount 门，已保留上次结果，请再次下拉刷新确认');
     }
@@ -241,6 +252,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _academicRequestGeneration++;
       _requirementRequestGeneration++;
       _creditRequirementsLoadFuture = null;
+      // 切号 / 切教务身份 / 切上下文：旧的「减少确认」不能作用到新账号的新结果上。
+      _reductionConfirmation.reset();
       setState(() {
         _grades = [];
         _academicSituation = null;
@@ -675,7 +688,12 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           _isInitialLoading = false;
           _isRefreshing = false;
         });
-        _rememberReductionWarning(diff.removed.length);
+        // 这条路径（首屏加载 / 重试 / 切学期）不携带用户确认，因此只提示、不覆盖；
+        // 提示同样绑定本次返回的具体候选，避免之后用旧提示授权另一份结果。
+        _rememberReductionWarning(
+          diff.removed.length,
+          _gradeReductionSignature(newGrades),
+        );
         return;
       }
 
@@ -764,9 +782,13 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     // 它**不能**由 silent=false 或 forceRefresh=true 顺带授予：
     // 自动 / 前台恢复（silent）永远不允许；用户明确刷新也只有在
     // 「上一次已经提示过减少、且上下文未变」时才算确认（计划 8.5）。
+    // 静默刷新不消费确认：确认必须由用户明确的刷新动作消耗，
+    // 否则一次后台刷新就会把待用户确认的减少悄悄转成覆盖授权。
+    final pendingReductionSignature =
+        silent ? null : _consumeReductionConfirmation();
     final allowReducedCount = allowReducedGradeOverwrite(
       silent: silent,
-      userConfirmedReduction: _consumeReductionConfirmation(),
+      userConfirmedReduction: pendingReductionSignature != null,
     );
 
     final result = await _eduProvider!.fetchGrades(
@@ -814,18 +836,23 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
       // 减少保护必须在这里也成立：provider 只保证不把减少后的结果写进磁盘基线，
       // 内存列表由页面负责，否则一次未确认的自动/静默刷新仍会把页面上的可信结果冲掉。
-      if (oldGrades.isNotEmpty &&
-          newGrades.length < oldGrades.length &&
-          !allowReducedCount) {
-        setState(() {
-          _isRefreshing = false;
-        });
-        // 静默（前台恢复）刷新不打断用户，因此不提示、也不记录确认上下文：
-        // 之后用户第一次手动刷新会先看到提示，第二次才真正确认覆盖。
-        if (mounted && !silent) {
-          _rememberReductionWarning(diff.removed.length);
+      if (oldGrades.isNotEmpty && newGrades.length < oldGrades.length) {
+        // 确认必须绑定「用户当时看到的那份具体结果」：重新请求后结果若再次变化
+        //（例如 20 -> 19 的提示之后又返回 0），旧确认一律作废，必须按新结果重新提示。
+        final candidateSignature = _gradeReductionSignature(newGrades);
+        final reductionConfirmedByUser =
+            allowReducedCount && pendingReductionSignature == candidateSignature;
+        if (!reductionConfirmedByUser) {
+          setState(() {
+            _isRefreshing = false;
+          });
+          // 静默（前台恢复）刷新不打断用户，因此不提示、也不记录确认上下文：
+          // 之后用户第一次手动刷新会先看到提示，第二次才真正确认覆盖。
+          if (mounted && !silent) {
+            _rememberReductionWarning(diff.removed.length, candidateSignature);
+          }
+          return null;
         }
-        return null;
       }
 
       if (diff.hasChanges && diff.added.isNotEmpty) {
@@ -926,6 +953,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     if (year == _selectedYear && semester == _selectedSemester) return true;
     if (_eduProvider == null) return false;
     final generation = ++_requestGeneration;
+    // 切学期后成绩基线整体更换，旧的「减少确认」不再适用，必须作废重新提示。
+    _reductionConfirmation.reset();
     setState(() {
       _selectedYear = year;
       _selectedSemester = semester;

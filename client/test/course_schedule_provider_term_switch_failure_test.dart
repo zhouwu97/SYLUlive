@@ -21,6 +21,7 @@ class _FaultInjectableFileBackend extends MemoryPersonalSnapshotFileBackend {
   bool _sawWrite = false;
   bool failNextReadAfterFirstWrite = false;
   bool failAllReadsAfterFirstWrite = false;
+  bool _failNextWrite = false;
 
   int readCount = 0;
   int writeCount = 0;
@@ -36,10 +37,19 @@ class _FaultInjectableFileBackend extends MemoryPersonalSnapshotFileBackend {
     failAllReadsAfterFirstWrite = !failOnlyOnce;
   }
 
+  /// 让**下一次写入**失败，用于验证「选中学期落盘失败」路径。
+  ///
+  /// switchTerm 的第一次写入就是「选中学期」，因此在切学期开始时武装即等价于
+  /// 「在任何课表/开学日写入之前就失败」。
+  void armNextWriteFailure() {
+    _failNextWrite = true;
+  }
+
   /// 停止注入故障，用于验证故障之后数据是否仍然完好可读。
   void disarm() {
     failNextReadAfterFirstWrite = false;
     failAllReadsAfterFirstWrite = false;
+    _failNextWrite = false;
   }
 
   bool get _shouldFail {
@@ -67,6 +77,10 @@ class _FaultInjectableFileBackend extends MemoryPersonalSnapshotFileBackend {
     required PersonalDataType type,
     required Uint8List bytes,
   }) async {
+    if (_failNextWrite) {
+      _failNextWrite = false;
+      throw StateError('测试：本地课表快照写入失败');
+    }
     await super.write(accountHash: accountHash, type: type, bytes: bytes);
     writeCount++;
     _sawWrite = true;
@@ -258,6 +272,42 @@ void main() {
     expect(provider.courses.single.name, '学期 A 课程');
     expect(provider.semesterStart, startA,
         reason: '读取失败不得把已保存的开学周清掉，重试后必须恢复');
+  });
+
+  test('SCHED-05 选中学期落盘失败：回退到原学期，不得留下「学期与课程不一致」的混合状态', () async {
+    final provider = await seedTwoTerms();
+    addTearDown(provider.dispose);
+
+    // 先稳定停在 A。
+    expect(await provider.switchTerm(termA), isTrue);
+    expect(provider.currentTerm.id, termA.id);
+    expect(provider.courses.single.name, '学期 A 课程');
+    final startBefore = provider.semesterStart;
+    final entriesBefore = Map.of(files.values);
+
+    // 切学期最早的写入就是「选中学期」：它在任何课表/开学日写入之前失败。
+    files.armNextWriteFailure();
+    final ok = await provider.switchTerm(termB);
+
+    expect(ok, isFalse, reason: '选中学期都存不下时不得报告切换成功');
+    expect(provider.currentTerm.id, termA.id,
+        reason: '落盘失败必须回退到原学期，不能停在「学期已是 B、课程还是 A」的混合状态');
+    expect(provider.courses.single.name, '学期 A 课程',
+        reason: '课程仍是 A 的，学期也必须保持一致');
+    expect(provider.semesterStart, startBefore, reason: '开学周不得被清掉');
+    expect(provider.errorMessage, isNull,
+        reason: '这是写盘失败而不是本地读取失败，不应进入可恢复错误态');
+    expect(files.values, entriesBefore,
+        reason: '失败的写入不得落盘，密文记录集合必须保持不变');
+
+    // 故障消失后仍可正常切换，且两个学期的数据都完好。
+    expect(await provider.switchTerm(termB), isTrue);
+    expect(provider.currentTerm.id, termB.id);
+    expect(provider.courses.single.name, '学期 B 课程');
+    expect(provider.semesterStart, startB);
+    expect(await provider.switchTerm(termA), isTrue);
+    expect(provider.courses.single.name, '学期 A 课程');
+    expect(provider.semesterStart, startA);
   });
 
   test('SCHED-04 目标学期明确缺失与合法空快照都与读取失败可区分，且 loading 正常结束', () async {

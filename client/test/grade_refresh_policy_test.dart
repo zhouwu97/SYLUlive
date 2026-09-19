@@ -167,45 +167,69 @@ void main() {
     });
   });
 
-  group('GradeReductionConfirmation —— 减少确认的作用域与一次性语义（计划 8.5）', () {
+  group('GradeReductionConfirmation —— 减少确认的作用域 / 候选绑定 / 一次性语义（计划 8.5）', () {
+    const scope = '1001|2403130233|2025|1';
+    const nineteenGrades = '19#A,B,C';
+    const zeroGrades = '0#';
+
     test('首次提示不授予确认，第二次才消费成功，且只能消费一次', () {
       final confirmation = GradeReductionConfirmation();
       expect(confirmation.hasPendingWarning, isFalse);
       // 首次遇到减少：只提示。
-      confirmation.warn('1001|2403130233|2025|1');
+      confirmation.warn(scope, nineteenGrades);
       expect(confirmation.hasPendingWarning, isTrue);
-      // 用户再次明确刷新 → 确认生效。
-      expect(confirmation.consume('1001|2403130233|2025|1'), isTrue);
+      // 用户再次明确刷新 → 确认生效，并交回候选指纹供与实际结果比对。
+      expect(confirmation.consume(scope), nineteenGrades);
       // 已经消费过，不能重复授予。
-      expect(confirmation.consume('1001|2403130233|2025|1'), isFalse);
+      expect(confirmation.consume(scope), isNull);
       expect(confirmation.hasPendingWarning, isFalse);
     });
 
     test('GRADE-06 确认期间切学期：旧确认不能作用到新上下文', () {
       final confirmation = GradeReductionConfirmation();
-      confirmation.warn('1001|2403130233|2025|1');
+      confirmation.warn(scope, nineteenGrades);
       // 切到另一个学期后才发起刷新。
-      expect(confirmation.consume('1001|2403130233|2025|2'), isFalse);
+      expect(confirmation.consume('1001|2403130233|2025|2'), isNull);
     });
 
     test('GRADE-06 确认期间切号：旧确认作废', () {
       final confirmation = GradeReductionConfirmation();
-      confirmation.warn('1001|2403130233|2025|1');
-      expect(confirmation.consume('2002|2403130233|2025|1'), isFalse);
+      confirmation.warn(scope, nineteenGrades);
+      expect(confirmation.consume('2002|2403130233|2025|1'), isNull);
     });
 
     test('确认期间切换教务身份（本科→研究生）同样作废', () {
       final confirmation = GradeReductionConfirmation();
-      confirmation.warn('1001|sylu_undergraduate:2403130233|2025|1');
-      expect(confirmation.consume('1001|sylu_graduate:G-001|2025|1'), isFalse);
+      confirmation.warn('1001|sylu_undergraduate:2403130233|2025|1', nineteenGrades);
+      expect(confirmation.consume('1001|sylu_graduate:G-001|2025|1'), isNull);
     });
 
     test('reset 后未消费的提示被废弃', () {
       final confirmation = GradeReductionConfirmation();
-      confirmation.warn('1001|2403130233|2025|1');
+      confirmation.warn(scope, nineteenGrades);
       confirmation.reset();
       expect(confirmation.hasPendingWarning, isFalse);
-      expect(confirmation.consume('1001|2403130233|2025|1'), isFalse);
+      expect(confirmation.consume(scope), isNull);
+    });
+
+    test('GRADE-07 确认绑定具体候选：20→19 的确认不得授权 19→0', () {
+      final confirmation = GradeReductionConfirmation();
+      // 第一次减少：20 门 -> 19 门，记录这份候选。
+      confirmation.warn(scope, nineteenGrades);
+      // 用户再次刷新，取回确认。
+      final confirmed = confirmation.consume(scope);
+      expect(confirmed, nineteenGrades);
+      // 但本次实际返回 0 门，与确认过的候选不一致 → 不能凭旧确认覆盖。
+      expect(confirmed == zeroGrades, isFalse);
+    });
+
+    test('重新提示后候选指纹随之更新，旧指纹不再被承认', () {
+      final confirmation = GradeReductionConfirmation();
+      confirmation.warn(scope, nineteenGrades);
+      // 结果再次变化：页面用新候选重新提示。
+      confirmation.warn(scope, zeroGrades);
+      expect(confirmation.consume(scope), zeroGrades);
+      expect(confirmation.consume(scope), isNull);
     });
   });
 }

@@ -123,14 +123,18 @@ func feedbackTicketUserRequest(
 	path string,
 	userID uint,
 	body string,
-	call func(*gin.Context),
 ) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
-	context, _ := gin.CreateTestContext(recorder)
-	context.Request = httptest.NewRequest(method, path, bytes.NewBufferString(body))
-	context.Request.Header.Set("Content-Type", "application/json")
-	context.Set("user_id", userID)
-	call(context)
+	router := gin.New()
+	router.Use(func(context *gin.Context) {
+		context.Set("user_id", userID)
+		context.Next()
+	})
+	router.POST("/api/feedback/tickets/:id/messages", handler.AddMessage)
+	router.POST("/api/feedback/tickets/:id/confirm-resolved", handler.ConfirmResolved)
+	request := httptest.NewRequest(method, path, bytes.NewBufferString(body))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
 	return recorder
 }
 
@@ -220,7 +224,6 @@ func TestFeedbackTicketMessageClosePostgres(t *testing.T) {
 			fmt.Sprintf("/api/feedback/tickets/%d/messages", ticket.ID),
 			user.ID,
 			`{"content":"补充复现信息"}`,
-			handler.AddMessage,
 		)
 		responses <- response.Code
 	}()
@@ -233,7 +236,6 @@ func TestFeedbackTicketMessageClosePostgres(t *testing.T) {
 			fmt.Sprintf("/api/feedback/tickets/%d/confirm-resolved", ticket.ID),
 			user.ID,
 			"",
-			handler.ConfirmResolved,
 		)
 		responses <- response.Code
 	}()

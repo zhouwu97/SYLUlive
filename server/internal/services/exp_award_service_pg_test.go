@@ -13,11 +13,13 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"shenliyuan/internal/academiccalendar"
 	"shenliyuan/internal/models"
 )
 
 func openExpAwardPG(t *testing.T) *gorm.DB {
 	t.Helper()
+	require.NoError(t, academiccalendar.InitializeTimezone())
 	dsn := strings.TrimSpace(os.Getenv("TEST_DATABASE_DSN"))
 	if dsn == "" {
 		requireIntegrationEnv(t, "TEST_DATABASE_DSN 未设置，跳过经验奖励 PostgreSQL 幂等测试")

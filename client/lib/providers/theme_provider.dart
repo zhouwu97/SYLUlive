@@ -180,6 +180,12 @@ class ThemeProvider extends ChangeNotifier {
   );
   static const String _defaultPhoneWallpaper = 'morenbeijing.jpeg';
 
+  static const bool _defaultPredictiveBack = false;
+  static const double _defaultBackgroundBlur = 0.0;
+  static const bool _defaultFrostedGlass = false;
+
+  static const String _frostedGlassKey = 'frosted_glass_enabled';
+
   bool _isLoaded = false;
   bool _isDarkMode = false;
   bool _followSystem = true;
@@ -189,8 +195,9 @@ class ThemeProvider extends ChangeNotifier {
   String? _landscapeBackgroundImage;
   bool _backgroundFillScreen = false;
   bool _landscapeBackgroundFillScreen = false;
-  double _backgroundBlur = 10;
+  double _backgroundBlur = _defaultBackgroundBlur;
   double _componentOpacity = 0.7;
+  bool _frostedGlass = _defaultFrostedGlass;
   bool _liquidGlass = false;
   bool _floatingNavBar = true;
   BottomNavStyle _bottomNavStyle = BottomNavStyle.floating;
@@ -199,7 +206,7 @@ class ThemeProvider extends ChangeNotifier {
   double _bottomNavAnimationIntensity = 0.65;
   bool _bottomNavLiquidGlassConfirmed = false;
   final DevicePerformanceLevel? _performanceLevelOverride;
-  bool _predictiveBack = true;
+  bool _predictiveBack = _defaultPredictiveBack;
   bool _startOnTimetable = false;
   StartupDestinationMode _startupDestination = StartupDestinationMode.home;
   bool _marketIsListView = false;
@@ -221,6 +228,7 @@ class ThemeProvider extends ChangeNotifier {
   bool get landscapeBackgroundFillScreen => _landscapeBackgroundFillScreen;
   double get backgroundBlur => _backgroundBlur;
   double get componentOpacity => _componentOpacity;
+  bool get frostedGlass => _frostedGlass;
   bool get liquidGlass => _liquidGlass;
   bool get floatingNavBar => _floatingNavBar;
   bool get predictiveBack => _predictiveBack;
@@ -381,8 +389,11 @@ class ThemeProvider extends ChangeNotifier {
     _backgroundFillScreen = prefs.getBool(_backgroundFillScreenKey) ?? false;
     _landscapeBackgroundFillScreen =
         prefs.getBool(_landscapeBackgroundFillScreenKey) ?? false;
-    _backgroundBlur = prefs.getDouble(_backgroundBlurKey) ?? 10;
+    _backgroundBlur =
+        prefs.getDouble(_backgroundBlurKey) ?? _defaultBackgroundBlur;
     _componentOpacity = prefs.getDouble(_componentOpacityKey) ?? 0.7;
+    _frostedGlass =
+        prefs.getBool(_frostedGlassKey) ?? _defaultFrostedGlass;
     final storedStyle = BottomNavStyleStorage.fromStorage(
       prefs.getString(_bottomNavStyleKey),
     );
@@ -412,7 +423,8 @@ class ThemeProvider extends ChangeNotifier {
             .toDouble();
     _bottomNavLiquidGlassConfirmed =
         prefs.getBool(_bottomNavLiquidGlassConfirmedKey) ?? false;
-    _predictiveBack = prefs.getBool(_predictiveBackKey) ?? true;
+    _predictiveBack =
+        prefs.getBool(_predictiveBackKey) ?? _defaultPredictiveBack;
     _startOnTimetable = prefs.getBool(_startOnTimetableKey) ?? false;
     _marketIsListView = prefs.getBool(_marketIsListViewKey) ?? false;
 
@@ -604,6 +616,15 @@ class ThemeProvider extends ChangeNotifier {
     _predictiveBack = value;
     final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool(_predictiveBackKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setFrostedGlass(bool value) async {
+    if (_frostedGlass == value) return;
+
+    _frostedGlass = value;
+    final prefs = await AppPreferencesStore.getInstance();
+    await prefs.setBool(_frostedGlassKey, value);
     notifyListeners();
   }
 

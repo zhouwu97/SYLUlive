@@ -375,6 +375,33 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ],
         ),
 
+        // 交互与视觉效果
+        SettingsSection(
+          title: '交互与视觉效果',
+          children: [
+            if (Platform.isAndroid ||
+                Theme.of(context).platform == TargetPlatform.android)
+              SettingsTile(
+                icon: Icons.swipe_right_alt_rounded,
+                title: '预测性返回手势',
+                subtitle: 'Android 14+ 返回时预览上一页，默认关闭',
+                trailing: SettingsSwitch(
+                  value: themeProvider.predictiveBack,
+                  onChanged: themeProvider.setPredictiveBack,
+                ),
+              ),
+            SettingsTile(
+              icon: Icons.blur_on_rounded,
+              title: '毛玻璃卡片',
+              subtitle: '为部分卡片和弹层启用背景模糊，可能增加 GPU 开销',
+              trailing: SettingsSwitch(
+                value: themeProvider.frostedGlass,
+                onChanged: themeProvider.setFrostedGlass,
+              ),
+            ),
+          ],
+        ),
+
         // 自定义背景设置
         SettingsSection(
           title: '自定义背景偏好',

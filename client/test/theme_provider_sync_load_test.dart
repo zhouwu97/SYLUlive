@@ -39,4 +39,31 @@ void main() {
     expect(provider.isLoaded, isTrue);
     expect(provider.startupDestination, StartupDestinationMode.timetable);
   });
+
+  test('新用户默认关闭预测性返回和毛玻璃，背景模糊为 0', () async {
+    AppPreferencesStore.setMockInitialValues({});
+    await AppPreferencesStore.getInstance();
+
+    final provider = ThemeProvider();
+
+    expect(provider.predictiveBack, isFalse);
+    expect(provider.frostedGlass, isFalse);
+    expect(provider.backgroundBlur, 0);
+    expect(provider.liquidGlass, isFalse);
+  });
+
+  test('显式保存的预测性返回和毛玻璃设置不会被默认值覆盖', () async {
+    AppPreferencesStore.setMockInitialValues({
+      'predictive_back_enabled': true,
+      'frosted_glass_enabled': true,
+      'background_blur': 16.0,
+    });
+
+    await AppPreferencesStore.getInstance();
+    final provider = ThemeProvider();
+
+    expect(provider.predictiveBack, isTrue);
+    expect(provider.frostedGlass, isTrue);
+    expect(provider.backgroundBlur, 16);
+  });
 }

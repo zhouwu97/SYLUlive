@@ -80,7 +80,7 @@ jobs:
         working-directory: server
         run: >-
           go test -tags=integration -p 1 ./internal/handlers ./internal/services
-          -run '^(TestPostPublishQuota|TestReplyRejectedWhenPostHidden|TestSecurityEvent)'
+          -run '^(TestPostPublishQuota|TestReplyRejectedWhenPostHidden|TestSecurityEvent|TestFeedbackTicket.*Postgres)'
           -count=1
 
   migration-upgrade:

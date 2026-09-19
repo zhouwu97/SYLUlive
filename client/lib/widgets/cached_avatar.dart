@@ -12,12 +12,24 @@ String avatarImageVariantUrl(String url, String variant) {
   return ApiConstants.fullUrl(ApiConstants.imageVariant(normalized, variant));
 }
 
+/// 头像列表只在缩略图不可用时回退一次原图；两条地址都失败后由组件显示占位。
+List<String> avatarImageCandidates(String url) {
+  final normalized = url.trim();
+  if (normalized.isEmpty) return const [];
+  final originalUrl = ApiConstants.fullUrl(normalized);
+  final thumbUrl = avatarImageVariantUrl(normalized, 'thumb');
+  if (thumbUrl.isEmpty || thumbUrl == originalUrl) return [originalUrl];
+  return [thumbUrl, originalUrl];
+}
+
 ImageViewerItem avatarViewerItem(String url) {
+  final candidates = avatarImageCandidates(url);
+  final originalUrl = candidates.isEmpty ? '' : candidates.last;
   return ImageViewerItem(
-    thumbUrl: avatarImageVariantUrl(url, 'thumb'),
+    thumbUrl: candidates.isEmpty ? '' : candidates.first,
     previewUrl: avatarImageVariantUrl(url, 'medium'),
     viewerUrl: avatarImageVariantUrl(url, 'viewer'),
-    originalUrl: ApiConstants.fullUrl(url),
+    originalUrl: originalUrl,
     useProgressiveLoading: true,
     // 头像接口暂未返回 variant_status，变体尚未生成时允许回退原图。
     allowOriginalPreviewFallback: true,
@@ -141,7 +153,8 @@ class _CachedAvatarState extends State<CachedAvatar> {
       _retryAttempt = 0;
       _retryScheduled = false;
     }
-    final displayUrl = avatarImageVariantUrl(url, 'thumb');
+    final candidates = avatarImageCandidates(url);
+    final displayUrl = _retryAttempt == 0 ? candidates.first : candidates.last;
     final effectiveUrl = _effectiveUrl(displayUrl.isEmpty ? url : displayUrl);
     if (effectiveUrl == _providerUrl && _imageProvider != null) return;
     _providerUrl = effectiveUrl;
@@ -173,7 +186,8 @@ class _CachedAvatarState extends State<CachedAvatar> {
       return;
     }
     _retryScheduled = true;
-    final cacheUrl = avatarImageVariantUrl(sourceUrl, 'thumb');
+    final candidates = avatarImageCandidates(sourceUrl);
+    final cacheUrl = _retryAttempt == 0 ? candidates.first : candidates.last;
     AvatarCache.evict(cacheUrl.isEmpty ? sourceUrl : cacheUrl).whenComplete(() {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || widget.imageUrl != sourceUrl) return;

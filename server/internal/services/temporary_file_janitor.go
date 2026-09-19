@@ -32,6 +32,9 @@ var temporaryFileReferenceTables = []string{
 type TemporaryFileJanitorConfig struct {
 	TTL       time.Duration
 	BatchSize int
+	// NotBefore 是本次清理启用的历史边界。生产启动时设置为服务启动时间，
+	// 保护尚未完成审计的旧 temporary；deleting 状态不受该边界影响，仍会重试。
+	NotBefore time.Time
 }
 
 // TemporaryFileJanitorReport 汇总一轮有限批量清理结果。
@@ -105,9 +108,13 @@ func (j *TemporaryFileJanitor) Run(ctx context.Context) (TemporaryFileJanitorRep
 	}
 	cutoff := j.now().Add(-j.config.TTL)
 	var files []models.File
-	if err := j.db.WithContext(ctx).
-		Where("(status = ? AND claimed_at IS NULL AND created_at < ?) OR status = ?", models.FileStatusTemporary, cutoff, models.FileStatusDeleting).
-		Order("id ASC").Limit(j.config.BatchSize).Find(&files).Error; err != nil {
+	query := j.db.WithContext(ctx)
+	if j.config.NotBefore.IsZero() {
+		query = query.Where("(status = ? AND claimed_at IS NULL AND created_at < ?) OR status = ?", models.FileStatusTemporary, cutoff, models.FileStatusDeleting)
+	} else {
+		query = query.Where("(status = ? AND claimed_at IS NULL AND created_at < ? AND created_at >= ?) OR status = ?", models.FileStatusTemporary, cutoff, j.config.NotBefore, models.FileStatusDeleting)
+	}
+	if err := query.Order("id ASC").Limit(j.config.BatchSize).Find(&files).Error; err != nil {
 		return report, err
 	}
 	report.Scanned = len(files)

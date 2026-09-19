@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -72,6 +73,36 @@ func TestLoadImageVariantWorkerIsDisabledByDefaultAndCanBeEnabled(t *testing.T) 
 
 	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "true")
 	require.True(t, Load().ImageVariantWorkerEnabled)
+}
+
+func TestLoadUploadProtectionDefaultsAndOverrides(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	cfg := Load()
+	require.Equal(t, 30, cfg.UploadPerMinuteCountLimit)
+	require.Equal(t, int64(100*1024*1024), cfg.UploadHourlyBytesLimit)
+	require.Equal(t, 6*time.Hour, cfg.UploadTemporaryTTL)
+	require.Equal(t, 70, cfg.UploadDiskWarnPercent)
+	require.Equal(t, 90, cfg.UploadDiskCriticalPercent)
+
+	t.Setenv("UPLOAD_PER_MINUTE_COUNT_LIMIT", "7")
+	t.Setenv("UPLOAD_HOURLY_BYTES_LIMIT", "12345")
+	t.Setenv("UPLOAD_TEMPORARY_TTL_HOURS", "12")
+	t.Setenv("UPLOAD_DISK_WARN_PERCENT", "60")
+	t.Setenv("UPLOAD_DISK_SEVERE_PERCENT", "75")
+	t.Setenv("UPLOAD_DISK_CRITICAL_PERCENT", "85")
+	custom := Load()
+	require.Equal(t, 7, custom.UploadPerMinuteCountLimit)
+	require.Equal(t, int64(12345), custom.UploadHourlyBytesLimit)
+	require.Equal(t, 12*time.Hour, custom.UploadTemporaryTTL)
+	require.Equal(t, 60, custom.UploadDiskWarnPercent)
+	require.Equal(t, 85, custom.UploadDiskCriticalPercent)
+}
+
+func TestLoadRejectsInvalidUploadDiskWatermarkOrder(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("UPLOAD_DISK_WARN_PERCENT", "90")
+	t.Setenv("UPLOAD_DISK_SEVERE_PERCENT", "80")
+	require.Panics(t, func() { _ = Load() })
 }
 
 func TestLoadReleaseRequiresExplicitImagePipelineSwitches(t *testing.T) {

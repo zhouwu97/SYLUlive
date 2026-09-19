@@ -43,7 +43,13 @@ func StartUploadMaintenanceCron(ctx context.Context, db *gorm.DB, uploadDir stri
 		consistencyInterval = 6 * time.Hour
 	}
 
-	janitor := services.NewTemporaryFileJanitor(db, uploadDir, services.TemporaryFileJanitorConfig{TTL: ttl, BatchSize: batchSize})
+	// 首次启用只处理启动之后产生的临时文件，给历史 temporary 留出人工对账窗口。
+	// 已进入 deleting 的记录仍会被重试，避免中断清理任务留下半成品。
+	janitor := services.NewTemporaryFileJanitor(db, uploadDir, services.TemporaryFileJanitorConfig{
+		TTL:       ttl,
+		BatchSize: batchSize,
+		NotBefore: time.Now(),
+	})
 	scanner := services.NewStorageConsistencyScanner(db, uploadDir)
 	cron.wg.Add(2)
 	go func() {

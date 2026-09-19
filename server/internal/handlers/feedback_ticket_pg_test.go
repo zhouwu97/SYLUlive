@@ -256,11 +256,16 @@ func TestFeedbackTicketMessageClosePostgres(t *testing.T) {
 	var stored models.FeedbackTicket
 	require.NoError(t, db.First(&stored, ticket.ID).Error)
 	require.Equal(t, models.FeedbackStatusClosed, stored.Status)
-	var userMessages int64
+	var userTextMessages int64
 	require.NoError(t, db.Model(&models.FeedbackMessage{}).
-		Where("ticket_id = ? AND sender_type = ?", ticket.ID, "user").
-		Count(&userMessages).Error)
-	require.LessOrEqual(t, userMessages, int64(1))
+		Where("ticket_id = ? AND sender_type = ? AND message_type = ?", ticket.ID, "user", models.FeedbackMsgText).
+		Count(&userTextMessages).Error)
+	require.LessOrEqual(t, userTextMessages, int64(1))
+	var statusMessages int64
+	require.NoError(t, db.Model(&models.FeedbackMessage{}).
+		Where("ticket_id = ? AND sender_type = ? AND message_type = ?", ticket.ID, "user", models.FeedbackMsgStatusChange).
+		Count(&statusMessages).Error)
+	require.EqualValues(t, 1, statusMessages)
 	var historyCount int64
 	require.NoError(t, db.Model(&models.FeedbackStatusHistory{}).
 		Where("ticket_id = ?", ticket.ID).

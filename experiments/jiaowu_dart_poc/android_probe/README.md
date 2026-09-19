@@ -1,5 +1,7 @@
 # Jiaowu Android Probe
 
+> 状态：诊断工具。用于人工真机回归，不是正式客户端，也不应把测试输出或真实个人成绩提交到仓库。
+
 Batch 7.1 Grade Detail 的 Android 真机验证应用。
 
 ## 功能
@@ -30,7 +32,7 @@ Batch 7.1 Grade Detail 的 Android 真机验证应用。
 ### 2. 验证设备连接
 
 ```bash
-cd E:/AI/xynewui/experiments/jiaowu_dart_poc/android_probe
+cd experiments/jiaowu_dart_poc/android_probe
 flutter devices
 ```
 
@@ -60,23 +62,12 @@ flutter run -d <设备ID>
 [时间] 开始登录...
 [时间] ✓ 登录成功
 [时间] 获取 Profile...
-[时间] ✓ Profile: <TEST_PROFILE>
+[时间] ✓ Profile: <REDACTED_PROFILE>
 [时间] 获取成绩列表...
-[时间] ✓ 成绩列表: 13 条
-[时间] 开始查询成绩详情 (2 门课程)...
-[时间] 查询课程 1: 数据通信与机器人控制
-[时间]   ✓ 总评: 良好
-[时间]   ✓ 分项数: 4
-[时间]     - 平时成绩: 100 40%
-[时间]     - 作品成绩: 83 30%
-[时间]     - 课程报告: 82 30%
-[时间]     - 总评: 良好
-[时间] 查询课程 2: 信号与系统
-[时间]   ✓ 总评: 55.8
-[时间]   ✓ 分项数: 3
-[时间]     - 平时: 84.7 50%
-[时间]     - 期末: 27 50%
-[时间]     - 总评: 55.8
+[时间] ✓ 成绩列表: <COUNT> 条
+[时间] 开始查询成绩详情...
+[时间] 查询课程: <REDACTED_COURSE>
+[时间] ✓ 详情解析完成
 [时间]
 [时间] ========================================
 [时间] ✓ Android Probe 完成
@@ -102,7 +93,7 @@ android_probe/build/app/outputs/flutter-apk/app-release.apk
 
 已配置：
 - `INTERNET` 权限
-- `usesCleartextTraffic="true"`（允许 HTTP 流量）
+- `usesCleartextTraffic="true"`（仅供隔离诊断环境；正式客户端不得因此放宽传输安全）
 
 ## 依赖
 

@@ -17,7 +17,8 @@
 - [本地存储清单](./local-storage-inventory.md)
 - [第三方服务清单](./third-party-service-inventory.md)
 - [隐私发布检查](./privacy-release-checklist.md)
-- [部署专项文档](../deploy/)
+- [部署专项文档](./ops/)
+- [部署配置与脚本](../deploy/)
 
 ## 隐私与安全
 

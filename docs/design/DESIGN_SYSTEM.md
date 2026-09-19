@@ -2,8 +2,8 @@
 
 - 状态：**冻结 v1**（2026-08-09）
 - 适用范围：`client/` 全部 Flutter UI。本文是设计决策的执行合同——AI 助手与人工开发在修改任何 UI 前必须阅读本文、`MOTION.md` 与 `adr/`。
-- 基线：`MCP` 分支当前 HEAD。
-- 动效契约见 `MOTION.md`；设计 QA / Golden 协议在 PR2 作为 `DESIGN_QA.md` 落地；本文件只定义「是什么」。
+- 基线：当前 `client/` 实现、已接受的设计 ADR 和本目录中的 QA 契约。
+- 动效契约见 `MOTION.md`；设计 QA / Golden 协议见 `DESIGN_QA.md`；本文件只定义「是什么」。
 
 ## 1. 产品身份
 
@@ -28,7 +28,7 @@
 | `accentPurple` | `#8B5CF6` | 次级强调 |
 | `accentPink` | `#EC4899` | 次级强调 |
 
-- **暂态**：`ColorScheme.fromSeed(#6366F1)` 在 QA/Golden 基建就绪（PR5）前保持不变，这是登记的 known debt（§11-6）。
+- **暂态**：`ColorScheme.fromSeed(#6366F1)` 在主题语义收敛完成前保持不变，这是登记的 known debt（§11-6）。
 - 任何新 Feature 不得引入第三个「全局品牌主色」候选。
 
 ## 3. 色彩语义层（目标结构）
@@ -60,7 +60,7 @@ Component Token（组件内部派生）
 
 ### 业务功能色（保留）
 
-`CampusTheme.blue #2F80ED` / `orange #F2994A` / `green #10B981` / `cyan #0EA5A4` / `red #E54848` 作为状态/业务色保留，语义在 PR5 token 化时逐一登记。
+`CampusTheme.blue #2F80ED` / `orange #F2994A` / `green #10B981` / `cyan #0EA5A4` / `red #E54848` 作为状态/业务色保留，语义在主题 token 收敛阶段逐一登记。
 
 ## 4. 圆角 Token（canonical）
 
@@ -123,7 +123,7 @@ Component Token（组件内部派生）
 
 禁止：`Card > Card > Pill` 多层嵌套包装。内容组优先用 spacing 与 divider；只有真正需要独立表面语义才升级层级。
 
-## 8. AppBar 契约（目标，PR5 落地）
+## 8. AppBar 契约（主题语义收敛目标）
 
 | 项 | 值 |
 | --- | --- |
@@ -139,11 +139,11 @@ Component Token（组件内部派生）
 
 - 高频触控目标 ≥ **44×44 logical px**；视觉元素可以只有 20×20，但命中区不得缩到 20×20。
 - `VisualDensity.compact` 保留它「视觉紧凑」的意图，但**视觉紧凑 ≠ 交互区域紧凑**——后续重点审计 IconButton / Tab / nav / message actions / chips / toolbar actions。
-- 最终完整无障碍契约（大字号、Reduced Motion、Screen Reader、对比度）在 PR2 `ACCESSIBILITY.md` 并随 PR5 验收。
+- 最终完整无障碍契约（大字号、Reduced Motion、Screen Reader、对比度）以当前 `ACCESSIBILITY.md` 和设计 QA 为准。
 
 ## 10. AI / 人工修改 UI 前必须遵守
 
-（PR2 将把此清单做成可执行的 agent skill；本文是规则的源头）
+（本清单由 DESIGN_QA 和客户端设计 skill 执行；本文是规则的源头）
 
 1. **不得**在未检查现有 token 的情况下发明新 accent 色。
 2. **不得**为单个页面引入新 radius 值（新增 radius == 需要先改本表）。
@@ -170,7 +170,9 @@ Component Token（组件内部派生）
 | 8 | FAB 圆角 | 14 | 16 | PR5 |
 | 9 | 食堂 Feature Token | `CanteenTheme` 引入 `radiusSm=10 / radiusMd=14 / radiusLg=20`（偏离 canonical 8/12/16）且 feature 层重定义 page/text/border 中性色（`#F8F7F4`/`#202124`/`#EAE8E3`），违反「Feature Token 不得重定义全局中性色」 | 食堂视觉作为独立 Feature Token 收敛；radius 偏离属 deliberate（图片 14px、chip 10px），由食堂页面统一引用 `CanteenTheme`，不扩散到其他模块 | PR6 时评估是否将 10/14 提升为全局档位 |
 
-## 12. 路线图（冻结）
+## 12. 历史迁移记录
+
+以下 PR 编号是设计系统形成过程中的历史记录，不代表当前仓库仍按这些编号发布，也不构成生产上线前的验收清单。
 
 | 顺序 | 内容 |
 | --- | --- |

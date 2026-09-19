@@ -1,5 +1,7 @@
 # jiaowu_mobile_probe
 
+> 状态：主 App 外的人工诊断探针。用于网络、TLS、验证码和真实设备回归，不承载正式产品页面。
+
 SYLU 教务系统 Android transport 探针。它通过 path dependency 使用
 `../jiaowu_dart_poc`，用于验证真实设备上的 DNS、TCP/TLS、登录页和 CSRF，
 不替代主 App，也不修改教务协议实现。

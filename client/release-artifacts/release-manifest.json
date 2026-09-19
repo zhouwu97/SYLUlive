@@ -1,8 +1,9 @@
 ﻿{
     "artifact":  "E:\\AI\\xynewui\\client\\release-artifacts\\shenliyuan-release.apk",
-    "sha256":  "b71a560b95ede80433d3183bbd75148cdf2bb470159fb0140e363187d72c15dd",
+    "sha256":  "489173d02b798a5e5eec3ce6a4efb6e179603da41271a5f3c2ec8be8b19e0f1c",
     "version":  "1.7.4+1707",
     "signed":  true,
-    "source_commit":  "afc6a7c31d7f8cb78f224333e94ad898e279a80d",
-    "built_at_utc":  "2026-09-17T14:03:08.2629170Z"
+    "source_commit":  "e1e39c9f79cb2a39f9d52cd7998984ac41268eb5",
+    "source_dirty":  true,
+    "built_at_utc":  "2026-09-19T10:06:23Z"
 }

@@ -991,6 +991,7 @@ class EduProvider extends ChangeNotifier {
     String year,
     int semester, {
     bool allowReducedCount = false,
+    String? approvedReductionSignature,
   }) async {
     // 捕获请求发起时的用户 ID，防止 await 后 _userId 被切换
     final requestUserId = _userId;
@@ -1026,9 +1027,23 @@ class EduProvider extends ChangeNotifier {
           existing.grades.isNotEmpty &&
           grades.length < existing.grades.length;
 
+      // 页面传入的确认必须绑定本次候选，而不是仅绑定“减少”这个事实。
+      // 在提交内存和密文前完成校验，避免页面稍后拒绝时可信基线已经被覆盖。
+      final candidateSignature =
+          (grades.map(GradeStableKey.of).toList()..sort());
+      final candidateFingerprint =
+          '${candidateSignature.length}#${candidateSignature.join(',')}';
+      final isApprovedCandidate = approvedReductionSignature == null ||
+          approvedReductionSignature == candidateFingerprint;
+      final shouldProtectApprovedShrink = existing != null &&
+          existing.grades.isNotEmpty &&
+          grades.length < existing.grades.length &&
+          allowReducedCount &&
+          !isApprovedCandidate;
+
       // 异常减少保护：静默刷新时若返回门数异常少于已知缓存，不破坏性覆写旧快照
       String? storageWarning;
-      if (!isUnexpectedShrink) {
+      if (!isUnexpectedShrink && !shouldProtectApprovedShrink) {
         if (requestSourceAccountId.isNotEmpty) {
           _gradeCache[cacheKey] = GradeCacheEntry(
             grades: grades,

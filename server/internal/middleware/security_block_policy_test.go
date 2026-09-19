@@ -75,6 +75,9 @@ func TestSensitiveSecurityRouteCoversRegisteredRoutes(t *testing.T) {
 		"/healthz",
 		"/api/announcements",
 		"/api/canteen/rankings",
+		"/api/loginfoo",
+		"/api/postscript",
+		"/api/searching",
 	}
 	for _, path := range mustNotCover {
 		require.False(t, SensitiveSecurityRoute(path), "策略不应纳入：%s", path)

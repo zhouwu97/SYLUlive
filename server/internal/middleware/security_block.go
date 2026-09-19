@@ -93,18 +93,24 @@ func SecurityBlockMiddleware(checker SecurityBlockChecker) gin.HandlerFunc {
 //
 // 决策依据来自路由注册与审计证据，不凭字符串猜测新增兼容别名。
 func SensitiveSecurityRoute(path string) bool {
-	return strings.HasPrefix(path, "/api/login") ||
-		strings.HasPrefix(path, "/api/password/") ||
-		strings.HasPrefix(path, "/api/register") ||
-		strings.HasPrefix(path, "/api/forgot_password") ||
-		strings.HasPrefix(path, "/api/refresh") ||
-		strings.HasPrefix(path, "/api/auth/refresh") ||
-		strings.HasPrefix(path, "/api/change_password") ||
-		strings.HasPrefix(path, "/api/user/email") ||
-		strings.HasPrefix(path, "/api/send_code") ||
-		strings.HasPrefix(path, "/api/verify_code") ||
-		strings.HasPrefix(path, "/api/search") ||
-		strings.HasPrefix(path, "/api/posts") ||
-		strings.HasPrefix(path, "/api/messages") ||
-		strings.HasPrefix(path, "/api/feedback")
+	return securityRoutePrefix(path, "/api/login") ||
+		securityRoutePrefix(path, "/api/login_edu") ||
+		securityRoutePrefix(path, "/api/password") ||
+		securityRoutePrefix(path, "/api/register") ||
+		securityRoutePrefix(path, "/api/forgot_password") ||
+		securityRoutePrefix(path, "/api/refresh") ||
+		securityRoutePrefix(path, "/api/auth/refresh") ||
+		securityRoutePrefix(path, "/api/change_password") ||
+		securityRoutePrefix(path, "/api/user/email") ||
+		securityRoutePrefix(path, "/api/send_code") ||
+		securityRoutePrefix(path, "/api/verify_code") ||
+		securityRoutePrefix(path, "/api/search") ||
+		securityRoutePrefix(path, "/api/posts") ||
+		securityRoutePrefix(path, "/api/messages") ||
+		securityRoutePrefix(path, "/api/feedback")
+}
+
+// securityRoutePrefix 只匹配完整路由段，避免把 /api/postsomething 误当成 /api/posts。
+func securityRoutePrefix(path, prefix string) bool {
+	return path == prefix || strings.HasPrefix(path, prefix+"/")
 }

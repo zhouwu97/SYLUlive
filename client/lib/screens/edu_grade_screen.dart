@@ -313,7 +313,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _sessionReadBlocked = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _academicContext != sessionContext) return;
-        unawaited(_loadGrades());
+        // 登录/恢复成功是明确的会话边界，不能被新鲜缓存的 cache-only 决策吞掉；
+        // 先展示缓存，再主动拉取一次，保证重新认证后页面拿到最新成绩。
+        unawaited(_loadGrades(forceRefresh: true));
         unawaited(_loadAcademicSituation());
         if (_section == GradeCenterSection.overview) {
           unawaited(_loadCreditRequirements());
@@ -666,15 +668,15 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         setState(() {
           _grades = newGrades;
           _lastUpdatedAt = entry?.updatedAt ?? DateTime.now();
-          _pageState = newGrades.isEmpty
-              ? GradePageState.empty
-              : GradePageState.content;
+          _pageState =
+              newGrades.isEmpty ? GradePageState.empty : GradePageState.content;
           _isInitialLoading = false;
           _isRefreshing = false;
           _errorMessage = null;
         });
         _prefetchGradeDetails(newGrades);
-        if (_eduProvider?.academicCapabilities.supportsAcademicSituation ?? true) {
+        if (_eduProvider?.academicCapabilities.supportsAcademicSituation ??
+            true) {
           unawaited(_loadAcademicSituation(forceRefresh: true));
         }
         return;
@@ -699,16 +701,16 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
       if (diff.hasChanges && diff.added.isNotEmpty) {
         _newlyAddedGradeKeys.addAll(
-          diff.added.map((g) => _scopedGradeKey(_selectedYear, _selectedSemester, g)),
+          diff.added
+              .map((g) => _scopedGradeKey(_selectedYear, _selectedSemester, g)),
         );
       }
 
       setState(() {
         _grades = newGrades;
         _lastUpdatedAt = entry?.updatedAt ?? DateTime.now();
-        _pageState = newGrades.isEmpty
-            ? GradePageState.empty
-            : GradePageState.content;
+        _pageState =
+            newGrades.isEmpty ? GradePageState.empty : GradePageState.content;
         _isInitialLoading = false;
         _isRefreshing = false;
         _errorMessage = null;
@@ -725,7 +727,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       }
 
       // 联动刷新官方 GPA（后台静默进行，不阻塞成绩列表）
-      if (_eduProvider?.academicCapabilities.supportsAcademicSituation ?? true) {
+      if (_eduProvider?.academicCapabilities.supportsAcademicSituation ??
+          true) {
         unawaited(_loadAcademicSituation(forceRefresh: true));
       }
     } else {
@@ -760,7 +763,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     if (_eduProvider == null) return null;
 
     final hasCredibleBaseline =
-        _eduProvider!.getCachedGrades(_selectedYear, _selectedSemester) != null ||
+        _eduProvider!.getCachedGrades(_selectedYear, _selectedSemester) !=
+                null ||
             _grades.isNotEmpty;
 
     setState(() => _isRefreshing = true);
@@ -795,6 +799,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _selectedYear,
       _selectedSemester,
       allowReducedCount: allowReducedCount,
+      approvedReductionSignature: pendingReductionSignature,
     );
 
     if (!mounted || _requestGeneration != gen) {
@@ -815,9 +820,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         setState(() {
           _grades = newGrades;
           _lastUpdatedAt = entry?.updatedAt ?? DateTime.now();
-          _pageState = newGrades.isEmpty
-              ? GradePageState.empty
-              : GradePageState.content;
+          _pageState =
+              newGrades.isEmpty ? GradePageState.empty : GradePageState.content;
           _isRefreshing = false;
           // 计划 8.6：成功路径必须清除对应错误，否则加载成功后页面仍停在 error 提示上。
           _errorMessage = null;
@@ -826,7 +830,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         if (mounted && !silent) {
           _showSnackBar('已是最新 · 刚刚同步');
         }
-        if (_eduProvider?.academicCapabilities.supportsAcademicSituation ?? true) {
+        if (_eduProvider?.academicCapabilities.supportsAcademicSituation ??
+            true) {
           unawaited(_loadAcademicSituation(forceRefresh: true));
         }
         return newGrades;
@@ -840,8 +845,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         // 确认必须绑定「用户当时看到的那份具体结果」：重新请求后结果若再次变化
         //（例如 20 -> 19 的提示之后又返回 0），旧确认一律作废，必须按新结果重新提示。
         final candidateSignature = _gradeReductionSignature(newGrades);
-        final reductionConfirmedByUser =
-            allowReducedCount && pendingReductionSignature == candidateSignature;
+        final reductionConfirmedByUser = allowReducedCount &&
+            pendingReductionSignature == candidateSignature;
         if (!reductionConfirmedByUser) {
           setState(() {
             _isRefreshing = false;
@@ -857,16 +862,16 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
       if (diff.hasChanges && diff.added.isNotEmpty) {
         _newlyAddedGradeKeys.addAll(
-          diff.added.map((g) => _scopedGradeKey(_selectedYear, _selectedSemester, g)),
+          diff.added
+              .map((g) => _scopedGradeKey(_selectedYear, _selectedSemester, g)),
         );
       }
 
       setState(() {
         _grades = newGrades;
         _lastUpdatedAt = entry?.updatedAt ?? DateTime.now();
-        _pageState = newGrades.isEmpty
-            ? GradePageState.empty
-            : GradePageState.content;
+        _pageState =
+            newGrades.isEmpty ? GradePageState.empty : GradePageState.content;
         _isRefreshing = false;
         // 计划 8.6：手动重试成功后必须清除之前的错误提示。
         _errorMessage = null;
@@ -888,7 +893,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       }
 
       // 联动刷新官方 GPA（后台静默进行，不阻塞成绩列表）
-      if (_eduProvider?.academicCapabilities.supportsAcademicSituation ?? true) {
+      if (_eduProvider?.academicCapabilities.supportsAcademicSituation ??
+          true) {
         unawaited(_loadAcademicSituation(forceRefresh: true));
       }
 
@@ -1081,7 +1087,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
             index: _section.index,
             children: [
               RefreshIndicator(
-                onRefresh: () => _refreshGrades(silent: false, forceRefresh: true),
+                onRefresh: () =>
+                    _refreshGrades(silent: false, forceRefresh: true),
                 child: CustomScrollView(
                   key: const ValueKey('grade_term_scroll_view'),
                   controller: _termScrollController,

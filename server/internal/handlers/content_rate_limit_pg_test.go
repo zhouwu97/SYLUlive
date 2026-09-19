@@ -269,6 +269,7 @@ func TestPostPublishQuotaConcurrentSinglePool(t *testing.T) {
 	require.Equal(t, concurrency-outcome.created, outcome.limited)
 	require.Zero(t, outcome.unavailable, "不应出现额度服务暂不可用")
 	require.Zero(t, outcome.other, "不应出现 500 等其它状态：%v", outcome.otherBodies)
+	barrier.assertFullyAligned(t)
 
 	var total int64
 	require.NoError(t, db.Model(&models.Post{}).Where("author_id = ?", user.ID).Count(&total).Error)
@@ -318,6 +319,7 @@ func TestPostPublishQuotaAcrossIndependentPools(t *testing.T) {
 	var total int64
 	require.NoError(t, primary.Model(&models.Post{}).Where("author_id = ?", user.ID).Count(&total).Error)
 	require.EqualValues(t, services.PostPublishShortLimit, total)
+	barrier.assertFullyAligned(t)
 }
 
 // RATE-08（用户维度）：并发发帖不得因为全局串行而互相挤压——不同账号的额度彼此独立，

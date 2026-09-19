@@ -734,7 +734,10 @@ func main() {
 		time.Now,
 	)
 	emailVerification.SetSecurityEventService(securityEvents)
-	emailVerification.SetMailDispatcher(services.NewVerificationMailDispatcher(verificationMailer, 256, 3))
+	// 验证码挑战与 SMTP 投递必须共享同一次请求的结果语义：如果进程在
+	// 内存队列消费前退出，异步队列会留下用户永远收不到的有效验证码。
+	// 当前生产链路使用服务内置的超时同步发送；需要可恢复异步投递时应先接入
+	// 数据库 outbox，再重新启用 VerificationMailDispatcher。
 
 	// 初始化处理器
 

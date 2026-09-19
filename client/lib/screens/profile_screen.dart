@@ -24,7 +24,7 @@ import '../utils/update_checker.dart';
 import '../utils/responsive_util.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
-import '../widgets/app_cached_image.dart';
+import 'image_viewer_screen.dart';
 import '../config/api_constants.dart';
 import '../config/private_chat_policy.dart';
 import 'edu_screen.dart';
@@ -465,7 +465,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 color: Colors.orange.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
-                                    color: Colors.orange.withValues(alpha: 0.4)),
+                                    color:
+                                        Colors.orange.withValues(alpha: 0.4)),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -763,7 +764,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return FutureBuilder<Map<String, int>>(
       future: _adminOverviewFuture,
       builder: (_, snap) {
-        final overview = snap.data ?? const {'admin': 0, 'super': 0, 'feedback': 0};
+        final overview =
+            snap.data ?? const {'admin': 0, 'super': 0, 'feedback': 0};
         final adminTodo = overview['admin'] ?? 0;
         final superTodo = overview['super'] ?? 0;
         final feedbackTodo = overview['feedback'] ?? 0;
@@ -948,7 +950,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     var feedbackPendingCount = 0;
     try {
-      final feedbackStatsResp = await auth.dio.get('/admin/feedback/tickets/stats');
+      final feedbackStatsResp =
+          await auth.dio.get('/admin/feedback/tickets/stats');
       if (feedbackStatsResp.data != null) {
         feedbackPendingCount =
             (feedbackStatsResp.data['pending_count'] as num?)?.toInt() ?? 0;
@@ -1446,20 +1449,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showAvatarPreview(BuildContext context, String url) {
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: InteractiveViewer(
-            child: AppCachedImage.public(
-              imageUrl: url,
-              fit: BoxFit.contain,
-              memCacheWidth: 2048,
-              memCacheHeight: 2048,
-            ),
-          ),
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ImageViewerScreen(
+          items: [avatarViewerItem(url)],
+          initialIndex: 0,
         ),
       ),
     );
@@ -1515,6 +1509,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final cropped = await ImageCropper().cropImage(
         sourcePath: image.path,
         aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        maxWidth: 1024,
+        maxHeight: 1024,
+        compressQuality: 85,
         uiSettings: [
           AndroidUiSettings(
             toolbarTitle: '裁剪头像',
@@ -1597,19 +1594,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(backgroundColor: Colors.transparent),
-          body: Center(
-            child: InteractiveViewer(
-              child: AppCachedImage.public(
-                imageUrl: avatarUrl,
-                fit: BoxFit.contain,
-                memCacheWidth: 2048,
-                memCacheHeight: 2048,
-              ),
-            ),
-          ),
+        builder: (_) => ImageViewerScreen(
+          items: [avatarViewerItem(avatarUrl)],
+          initialIndex: 0,
         ),
       ),
     );

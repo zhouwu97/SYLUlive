@@ -2,6 +2,28 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
+import '../config/api_constants.dart';
+import '../screens/image_viewer_screen.dart';
+
+/// 头像列表展示只取服务端缩略图；查看器再按帖子图片链路逐级加载。
+String avatarImageVariantUrl(String url, String variant) {
+  final normalized = url.trim();
+  if (normalized.isEmpty) return '';
+  return ApiConstants.fullUrl(ApiConstants.imageVariant(normalized, variant));
+}
+
+ImageViewerItem avatarViewerItem(String url) {
+  return ImageViewerItem(
+    thumbUrl: avatarImageVariantUrl(url, 'thumb'),
+    previewUrl: avatarImageVariantUrl(url, 'medium'),
+    viewerUrl: avatarImageVariantUrl(url, 'viewer'),
+    originalUrl: ApiConstants.fullUrl(url),
+    useProgressiveLoading: true,
+    // 头像接口暂未返回 variant_status，变体尚未生成时允许回退原图。
+    allowOriginalPreviewFallback: true,
+  );
+}
+
 class _AvatarCacheManager extends CacheManager with ImageCacheManager {
   _AvatarCacheManager()
       : super(
@@ -119,7 +141,8 @@ class _CachedAvatarState extends State<CachedAvatar> {
       _retryAttempt = 0;
       _retryScheduled = false;
     }
-    final effectiveUrl = _effectiveUrl(url);
+    final displayUrl = avatarImageVariantUrl(url, 'thumb');
+    final effectiveUrl = _effectiveUrl(displayUrl.isEmpty ? url : displayUrl);
     if (effectiveUrl == _providerUrl && _imageProvider != null) return;
     _providerUrl = effectiveUrl;
     _imageProvider = AvatarCache.provider(
@@ -150,7 +173,8 @@ class _CachedAvatarState extends State<CachedAvatar> {
       return;
     }
     _retryScheduled = true;
-    AvatarCache.evict(sourceUrl).whenComplete(() {
+    final cacheUrl = avatarImageVariantUrl(sourceUrl, 'thumb');
+    AvatarCache.evict(cacheUrl.isEmpty ? sourceUrl : cacheUrl).whenComplete(() {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || widget.imageUrl != sourceUrl) return;
         setState(() {

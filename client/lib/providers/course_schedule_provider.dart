@@ -2539,6 +2539,8 @@ class CourseScheduleProvider extends ChangeNotifier {
       // 只有期间没有发生新的学期切换（generation 未变）时才回退，避免覆盖更新的选择。
       if (operation != null && operation.generation == _contextGeneration) {
         _currentTerm = previousTerm;
+        _errorMessage = '本机课表暂时无法切换学期，请稍后重试';
+        _sessionPhase = ScheduleSessionPhase.ready;
         notifyListeners();
       }
       return false;
@@ -2609,6 +2611,8 @@ class CourseScheduleProvider extends ChangeNotifier {
     // 只有当前操作成功提交后，才把这次切换标记为 ready。
     _sessionPhase = ScheduleSessionPhase.ready;
     _syncWidget();
+    // 直接监听 Provider 的调用方也必须能观察到最终 ready 状态。
+    notifyListeners();
     return hasCache;
   }
 

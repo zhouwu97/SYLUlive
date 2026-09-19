@@ -7,6 +7,7 @@ import '../platform/contracts/external_navigator.dart';
 import '../app_bootstrap.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_radius.dart';
 import '../widgets/glass_container.dart';
 import '../services/physical_credential_store.dart';
 import 'erke_score_screen.dart';
@@ -451,7 +452,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.06),
@@ -461,7 +462,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         child: frostedGlass
             ? BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
@@ -608,7 +609,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.06),
@@ -618,7 +619,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           child: frostedGlass
               ? BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
@@ -774,13 +775,13 @@ class _WebsiteDirectoryCard extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         onTap: () => _openWebsiteDirectoryItem(context, item),
         child: Ink(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           decoration: BoxDecoration(
             color: backgroundColor,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
             border: Border.all(color: borderColor),
             boxShadow: [
               BoxShadow(

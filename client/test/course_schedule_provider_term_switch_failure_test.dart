@@ -147,7 +147,8 @@ void main() {
 
   /// 播种 A、B 两个学期的课程与开学周，返回一个已就绪的 provider。
   Future<CourseScheduleProvider> seedTwoTerms([Dio? dio]) async {
-    final provider = createProvider(dio)..syncSessionContext('1001', '2403130233');
+    final provider = createProvider(dio)
+      ..syncSessionContext('1001', '2403130233');
     for (var i = 0; i < 40 && !provider.isSessionReady; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -270,8 +271,7 @@ void main() {
     expect(provider.errorMessage, isNull);
     expect(provider.isSessionReady, isTrue);
     expect(provider.courses.single.name, '学期 A 课程');
-    expect(provider.semesterStart, startA,
-        reason: '读取失败不得把已保存的开学周清掉，重试后必须恢复');
+    expect(provider.semesterStart, startA, reason: '读取失败不得把已保存的开学周清掉，重试后必须恢复');
   });
 
   test('SCHED-05 选中学期落盘失败：回退到原学期，不得留下「学期与课程不一致」的混合状态', () async {
@@ -295,10 +295,8 @@ void main() {
     expect(provider.courses.single.name, '学期 A 课程',
         reason: '课程仍是 A 的，学期也必须保持一致');
     expect(provider.semesterStart, startBefore, reason: '开学周不得被清掉');
-    expect(provider.errorMessage, isNull,
-        reason: '这是写盘失败而不是本地读取失败，不应进入可恢复错误态');
-    expect(files.values, entriesBefore,
-        reason: '失败的写入不得落盘，密文记录集合必须保持不变');
+    expect(provider.errorMessage, '本机课表暂时无法切换学期，请稍后重试');
+    expect(files.values, entriesBefore, reason: '失败的写入不得落盘，密文记录集合必须保持不变');
 
     // 故障消失后仍可正常切换，且两个学期的数据都完好。
     expect(await provider.switchTerm(termB), isTrue);
@@ -325,21 +323,18 @@ void main() {
     expect(await provider.switchTerm(manyTerms, loadCache: true), isFalse,
         reason: '没有本地课表时切换本身不算成功');
     expect(provider.isLoading, isFalse);
-    expect(provider.errorMessage, isNull,
-        reason: '明确缺失不是错误，不能展示可恢复错误态');
+    expect(provider.errorMessage, isNull, reason: '明确缺失不是错误，不能展示可恢复错误态');
     expect(provider.sessionPhase, ScheduleSessionPhase.ready,
         reason: '明确缺失是正常结果，会话应进入 ready');
     expect(provider.courses, isEmpty);
-    expect(provider.semesterStart, isNull,
-        reason: '目标学期确实没有日期时才允许把日期视为未设置');
+    expect(provider.semesterStart, isNull, reason: '目标学期确实没有日期时才允许把日期视为未设置');
 
     // 情形二：目标学期存在合法但课程为空的快照。
     await provider.applyFetchedCoursesForTerm(term: manyTerms, rawCourses: []);
     expect(await provider.switchTerm(termA), isTrue);
     await provider.switchTerm(manyTerms, loadCache: true);
     expect(provider.isLoading, isFalse);
-    expect(provider.errorMessage, isNull,
-        reason: '合法空快照是有效结果，不是读取失败');
+    expect(provider.errorMessage, isNull, reason: '合法空快照是有效结果，不是读取失败');
     expect(provider.sessionPhase, ScheduleSessionPhase.ready);
   });
 }

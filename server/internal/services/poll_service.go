@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -26,6 +27,9 @@ const (
 	PollCodeCreationLimit      = "poll_creation_limit"
 	PollCodePermissionDenied   = "poll_permission_denied"
 	PollCodeInvalidInput       = "invalid_poll_input"
+	// PollCodeServiceUnavailable 表示共享发布额度暂时无法判定（计数查询失败）。
+	// 与普通发帖一致：不能把"数不出来"当成"零次发布"，也不能报成用户错误。
+	PollCodeServiceUnavailable = "poll_service_unavailable"
 )
 
 // PollError 为客户端提供稳定错误码，避免依赖中文文案判断状态。
@@ -89,7 +93,7 @@ func (s *PollService) SetNowForTest(now func() time.Time) {
 	}
 }
 
-func (s *PollService) Create(userID uint, role string, input CreatePollInput) (models.Post, error) {
+func (s *PollService) Create(ctx context.Context, userID uint, role string, input CreatePollInput) (models.Post, error) {
 	if userID == 0 {
 		return models.Post{}, newPollError(PollCodePermissionDenied, "请先登录")
 	}
@@ -100,31 +104,38 @@ func (s *PollService) Create(userID uint, role string, input CreatePollInput) (m
 	unlock := s.acquirePollWriteLock()
 	defer unlock()
 
-	now := s.now()
+	// 注意：这里不取时间。额度计数窗口的上界是 created_at <= now，时间必须在
+	// 拿到用户行锁之后再取，否则等锁期间以更晚时间提交的普通发帖会被旧 now 过滤掉。
 	post := models.Post{
-		Title:          input.Title,
-		Content:        input.Description,
-		BoardID:        models.BoardShuitie,
-		AuthorID:       userID,
-		PostType:       "poll",
-		ContentKind:    models.PostContentKindPoll,
-		Status:         models.PostStatusNormal,
-		CreatedAt:      now,
-		LastActivityAt: now,
+		Title:       input.Title,
+		Content:     input.Description,
+		BoardID:     models.BoardShuitie,
+		AuthorID:    userID,
+		PostType:    "poll",
+		ContentKind: models.PostContentKindPoll,
+		Status:      models.PostStatusNormal,
 	}
-	err = s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// PostgreSQL 使用用户行锁把“额度检查 + 创建”串成一个事务；
 		// SQLite 由 acquirePollWriteLock 提供同等的测试环境串行语义。
 		var user models.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&user, userID).Error; err != nil {
 			return newPollError(PollCodePermissionDenied, "用户不存在")
 		}
+		// 拿到共享用户行锁之后才取时刻，并让计数窗口上界、CreatedAt、LastActivityAt
+		// 使用同一时刻，保证与普通发帖遵循同一套共享额度协议。
+		now := s.now()
+		post.CreatedAt = now
+		post.LastActivityAt = now
 		if !isAdminRole(role) {
 			// 投票创建同样写入 posts 记录，必须遵守与普通发帖相同的发布额度协议，
 			// 否则并发投票可以绕过 5 分钟 / 24 小时发帖额度。
 			if err := CheckPostPublishQuota(tx, userID, now); err != nil {
 				if errors.Is(err, ErrContentRateLimited) {
 					return newPollError(PollCodeCreationLimit, "发帖过于频繁，请稍后再试")
+				}
+				if errors.Is(err, ErrContentQuotaUnavailable) {
+					return newPollError(PollCodeServiceUnavailable, "发布额度暂时无法校验，请稍后再试")
 				}
 				return err
 			}

@@ -252,11 +252,10 @@ func (s *SecurityEventService) IsBlockedContext(ctx context.Context, clientIP, r
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, securityAuditTimeout)
-		defer cancel()
-	}
+	// 同 RecordContext：始终派生 2s 上限，父 deadline 更早时自动以父为准。
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, securityAuditTimeout)
+	defer cancel()
 	hash := s.Hash(clientIP)
 	var count int64
 	err := s.db.WithContext(ctx).Model(&models.SecurityBlock{}).

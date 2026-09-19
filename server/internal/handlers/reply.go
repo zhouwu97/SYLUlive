@@ -656,11 +656,14 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	}
 
 	var stickerID *string
+	// storedContent 用于持久化与展示；input.Content（真实文本）用于重复内容判定。
+	// 纯表情回复的文本回退不能参与去重，否则两个不同表情会因回退文案相同被误判为重复。
+	storedContent := input.Content
 	if input.StickerID != "" {
 		stickerID = &input.StickerID
-		if input.Content == "" {
+		if storedContent == "" {
 			// 旧客户端按普通评论展示纯表情的文本回退。
-			input.Content = stickerFallbackText
+			storedContent = stickerFallbackText
 		}
 	}
 	reply := models.Reply{
@@ -669,7 +672,7 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		ReplyToUserID:  input.ReplyToUserID,
 		ReplyToReplyID: input.ReplyToReplyID,
 		AuthorID:       userID.(uint),
-		Content:        input.Content,
+		Content:        storedContent,
 		StickerID:      stickerID,
 		Status:         models.ReplyStatusNormal,
 		CreatedAt:      time.Now(),
@@ -686,12 +689,13 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 			return lockErr
 		}
 		// 同一事务内复核帖子可写状态：治理可能已在本次检查之后隐藏了帖子，
-		// 不能在帖子已不可回复后仍然写入新回复。
-		var writable models.Post
-		if err := tx.Select("id", "status").First(&writable, postID).Error; err != nil {
+		// 不能在帖子已不可回复后仍然写入新回复。这里对帖子行加行锁，让复核结果权威：
+		// 治理对同一行的更新会阻塞到本事务提交，避免"复核通过 -> 治理隐藏 -> 仍提交回复"。
+		status, err := services.LockPostStatusForReply(tx, uint(postID))
+		if err != nil {
 			return err
 		}
-		if writable.Status != models.PostStatusNormal {
+		if status != models.PostStatusNormal {
 			return errPostNotReplyable
 		}
 		txNow := time.Now()
@@ -716,10 +720,22 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 				}
 			}
 		}
-		return tx.Model(&models.Post{}).Where("id = ?", postID).Updates(map[string]interface{}{
-			"reply_count":      gorm.Expr("reply_count + 1"),
-			"last_activity_at": reply.CreatedAt,
-		}).Error
+		// 统计更新再次带上 status = normal 并校验影响行数：行锁在 PostgreSQL 上已能挡住治理，
+		// 但在 SQLite（无行锁）等环境下，这里是"帖子在复核之后被隐藏"的最后一道闸门。
+		// 影响 0 行说明帖子已不可回复，回滚整个事务，不能留下挂在隐藏帖子上的回复。
+		result := tx.Model(&models.Post{}).
+			Where("id = ? AND status = ?", postID, models.PostStatusNormal).
+			Updates(map[string]interface{}{
+				"reply_count":      gorm.Expr("reply_count + 1"),
+				"last_activity_at": reply.CreatedAt,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return errPostNotReplyable
+		}
+		return nil
 	})
 	if err != nil {
 		if errors.Is(err, services.ErrInvalidImageFileReference) {

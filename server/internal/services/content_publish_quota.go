@@ -77,6 +77,21 @@ func LockUserForContentWrite(tx *gorm.DB, userID uint) error {
 	return nil
 }
 
+// LockPostStatusForReply 在同一事务内对目标帖子行加行锁并返回其当前状态。
+// 治理（隐藏/删除）在 PostgreSQL 上也会更新同一行，"复核 + 写入回复"必须与治理串行化，
+// 否则复核读到 normal 之后治理立即隐藏，事务仍会把回复提交到已不可回复的帖子上。
+// SQLite 无行锁语义，此处依赖调用方 AcquireContentWriteSerialLock 提供的进程内串行。
+func LockPostStatusForReply(tx *gorm.DB, postID uint) (models.PostStatus, error) {
+	if tx == nil || postID == 0 {
+		return "", fmt.Errorf("%w: 缺少目标帖子", ErrContentQuotaUnavailable)
+	}
+	var post models.Post
+	if err := tx.Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).Select("id", "status").First(&post, postID).Error; err != nil {
+		return "", err
+	}
+	return post.Status, nil
+}
+
 // CheckPostPublishQuota 在同一事务内检查发帖额度。
 // 失败路径不区分“额度已满”和“查询不可用”：前者是用户可见的 429，后者是 503。
 func CheckPostPublishQuota(tx *gorm.DB, userID uint, now time.Time) error {

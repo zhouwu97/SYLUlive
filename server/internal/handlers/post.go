@@ -1280,8 +1280,8 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 		pinned = []models.Post{}
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"pinned_posts":      pinned,
-		"posts":             posts,
+		"pinned_posts": pinned,
+		"posts":        posts,
 		// total 语义：原始快照候选数（含当前已不可见的候选），不是精确可见数量。
 		"total":             len(ids),
 		"total_kind":        "snapshot_candidates",
@@ -1755,8 +1755,8 @@ func (h *PostHandler) Create(c *gin.Context) {
 			}
 			c.Header("Retry-After", "60")
 			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error": "发帖过于频繁，请稍后再试",
-				"code":  "content_rate_limited",
+				"error":  "发帖过于频繁，请稍后再试",
+				"code":   "content_rate_limited",
 				"reason": "publish_quota_exhausted",
 			})
 			return

@@ -44,7 +44,7 @@ func openSecurityEventPG(t *testing.T, maxOpenConns int) *gorm.DB {
 	t.Helper()
 	dsn := strings.TrimSpace(os.Getenv("TEST_DATABASE_DSN"))
 	if dsn == "" {
-		t.Skip("TEST_DATABASE_DSN 未设置，跳过 PostgreSQL 安全事件并发集成测试")
+		requireIntegrationEnv(t, "TEST_DATABASE_DSN 未设置，跳过 PostgreSQL 安全事件并发集成测试")
 	}
 	// 只保留真正的 SQL 错误：并发场景下 SLOW SQL 日志会淹没真正的失败原因。
 	quiet := logger.New(log.New(io.Discard, "", 0), logger.Config{

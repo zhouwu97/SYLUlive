@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -68,7 +69,7 @@ func TestPollServiceCreateAndResultVisibility(t *testing.T) {
 	service := NewPollService(db)
 	service.SetNowForTest(func() time.Time { return now })
 
-	created, err := service.Create(owner.ID, string(owner.Role), pollInput(now))
+	created, err := service.Create(context.Background(), owner.ID, string(owner.Role), pollInput(now))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +127,7 @@ func TestPollServiceCreateSerializesPerUserQuota(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := service.Create(owner.ID, string(owner.Role), pollInput(now))
+			_, err := service.Create(context.Background(), owner.ID, string(owner.Role), pollInput(now))
 			results <- err
 		}()
 	}
@@ -163,7 +164,7 @@ func TestPollServicePrivateResultsOnlyVisibleToOwner(t *testing.T) {
 
 	input := pollInput(now)
 	input.ResultsVisibility = models.PollResultsPrivate
-	created, err := service.Create(owner.ID, string(owner.Role), input)
+	created, err := service.Create(context.Background(), owner.ID, string(owner.Role), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,11 +205,11 @@ func TestPollServiceValidationAndRulesLock(t *testing.T) {
 
 	invalid := pollInput(now)
 	invalid.Options = []string{"重复", " 重复 "}
-	_, err := service.Create(owner.ID, string(owner.Role), invalid)
+	_, err := service.Create(context.Background(), owner.ID, string(owner.Role), invalid)
 	requirePollCode(t, err, PollCodeInvalidOption)
 
 	input := pollInput(now)
-	created, err := service.Create(owner.ID, string(owner.Role), input)
+	created, err := service.Create(context.Background(), owner.ID, string(owner.Role), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +218,7 @@ func TestPollServiceValidationAndRulesLock(t *testing.T) {
 
 	otherInput := pollInput(now)
 	otherInput.Title = "另一个投票"
-	other, err := service.Create(voter.ID, string(voter.Role), otherInput)
+	other, err := service.Create(context.Background(), voter.ID, string(voter.Role), otherInput)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +252,7 @@ func TestPollServiceCloseDeleteAndRecalculate(t *testing.T) {
 	service.SetNowForTest(func() time.Time { return now })
 	input := pollInput(now)
 	input.ResultsVisibility = models.PollResultsAfterEnd
-	created, err := service.Create(owner.ID, string(owner.Role), input)
+	created, err := service.Create(context.Background(), owner.ID, string(owner.Role), input)
 	if err != nil {
 		t.Fatal(err)
 	}

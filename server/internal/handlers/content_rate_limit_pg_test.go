@@ -41,7 +41,7 @@ func openPostQuotaPG(t *testing.T, maxOpenConns int) *gorm.DB {
 	t.Helper()
 	dsn := strings.TrimSpace(os.Getenv("TEST_DATABASE_DSN"))
 	if dsn == "" {
-		t.Skip("TEST_DATABASE_DSN 未设置，跳过 PostgreSQL 发布额度并发集成测试")
+		requireIntegrationEnv(t, "TEST_DATABASE_DSN 未设置，跳过 PostgreSQL 发布额度并发集成测试")
 	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
@@ -88,37 +88,85 @@ func seedQuotaPGPost(t *testing.T, db *gorm.DB, authorID uint, status models.Pos
 // 时刻读到同一份未提交状态，从而确定性地暴露超发。
 type quotaStartBarrierKey struct{}
 
-type quotaStartBarrier struct {
+// quotaRequestGate 是**每个请求各自持有**的栅栏句柄。
+//
+// 之前的实现把 sync.Once 直接挂在共享 barrier 上，结果只有第一个到达的请求
+// 真正参与对齐，其余请求被 sync.Once 直接跳过：arrived 永远等不齐，栅栏只能靠
+// 超时兜底放行——用例表面通过，实际退化成“没有任何请求被对齐”，
+// 于是“检查与写入分离”的实现也能蒙混过关。把 Once 下沉到请求级即可修复。
+type quotaRequestGate struct {
+	barrier *quotaStartBarrier
 	once    sync.Once
+}
+
+type quotaStartBarrier struct {
+	total   int
 	arrived *sync.WaitGroup
 	release chan struct{}
+	timeout time.Duration
+
+	mu                sync.Mutex
+	arrivedCount      int
+	releasedByTimeout bool
 }
 
 func newQuotaStartBarrier(total int, timeout time.Duration) *quotaStartBarrier {
 	arrived := &sync.WaitGroup{}
 	arrived.Add(total)
-	barrier := &quotaStartBarrier{arrived: arrived, release: make(chan struct{})}
+	barrier := &quotaStartBarrier{
+		total:   total,
+		arrived: arrived,
+		release: make(chan struct{}),
+		timeout: timeout,
+	}
 	go func() {
 		done := make(chan struct{})
 		go func() { arrived.Wait(); close(done) }()
 		select {
 		case <-done:
 		case <-time.After(timeout):
+			barrier.mu.Lock()
+			barrier.releasedByTimeout = true
+			barrier.mu.Unlock()
 		}
 		close(barrier.release)
 	}()
 	return barrier
 }
 
+// arrive 记录本请求已到达栅栏，然后阻塞到全部请求到齐（或被超时兜底放行）。
+func (b *quotaStartBarrier) arrive() {
+	b.mu.Lock()
+	b.arrivedCount++
+	b.mu.Unlock()
+	b.arrived.Done()
+	<-b.release
+}
+
+// assertFullyAligned 校验栅栏确实由“全部请求到达”放行。
+//
+// 这一点必须在用例里显式断言：如果栅栏是被超时放行的，说明请求根本没有重叠，
+// 那么该用例就不再能证明并发正确性。此时必须让测试失败，而不是静默通过
+// （这正是原实现的隐患：超时放行等价于“永远通过”）。
+func (b *quotaStartBarrier) assertFullyAligned(t *testing.T) {
+	t.Helper()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.releasedByTimeout {
+		t.Fatalf("并发栅栏被超时(%s)放行：仅 %d/%d 个请求在窗口内到齐，用例无法证明并发正确性",
+			b.timeout, b.arrivedCount, b.total)
+	}
+	if b.arrivedCount != b.total {
+		t.Fatalf("并发栅栏到达数不符：%d/%d", b.arrivedCount, b.total)
+	}
+}
+
 // waitOnFirstQuery 是该请求的第一次数据库查询时执行一次；对齐后等待放行。
-func (b *quotaStartBarrier) waitOnFirstQuery() {
-	if b == nil {
+func (g *quotaRequestGate) waitOnFirstQuery() {
+	if g == nil || g.barrier == nil {
 		return
 	}
-	b.once.Do(func() {
-		b.arrived.Done()
-		<-b.release
-	})
+	g.once.Do(func() { g.barrier.arrive() })
 }
 
 // installQuotaStartBarrier 在请求上下文里挂载对齐栅栏。
@@ -127,8 +175,8 @@ func installQuotaStartBarrier(db *gorm.DB) error {
 		if tx.Statement == nil || tx.Statement.Context == nil {
 			return
 		}
-		if barrier, ok := tx.Statement.Context.Value(quotaStartBarrierKey{}).(*quotaStartBarrier); ok {
-			barrier.waitOnFirstQuery()
+		if gate, ok := tx.Statement.Context.Value(quotaStartBarrierKey{}).(*quotaRequestGate); ok {
+			gate.waitOnFirstQuery()
 		}
 	})
 }
@@ -145,7 +193,9 @@ func createPostViaHandler(t *testing.T, h *PostHandler, userID uint, seed string
 	req := httptest.NewRequest(http.MethodPost, "/api/posts", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if barrier != nil {
-		req = req.WithContext(context.WithValue(req.Context(), quotaStartBarrierKey{}, barrier))
+		// 每个请求各自一个 gate：只有请求级 Once 才能让所有请求都真正参与对齐。
+		gate := &quotaRequestGate{barrier: barrier}
+		req = req.WithContext(context.WithValue(req.Context(), quotaStartBarrierKey{}, gate))
 	}
 	c.Request = req
 	c.Set("user_id", userID)
@@ -273,11 +323,14 @@ func TestPostPublishQuotaAcrossIndependentPools(t *testing.T) {
 // RATE-08（用户维度）：并发发帖不得因为全局串行而互相挤压——不同账号的额度彼此独立，
 // 各自都能在并发下用满自己的剩余配额。
 func TestPostPublishQuotaConcurrentUsersAreIndependent(t *testing.T) {
-	db := openPostQuotaPG(t, 24)
-	setupPostQuotaSchema(t, db)
-
 	const users = 4
 	const perUser = 8
+	// 连接数必须 >= 并发请求数：额度检查在事务内，栅栏对齐时每个请求都占着一条连接。
+	// 池子小于并发数会让部分请求卡在「等连接」而永远到不了栅栏，
+	// 栅栏只能靠超时放行——那正是 assertFullyAligned 要拦住的情况。
+	db := openPostQuotaPG(t, users*perUser+4)
+	setupPostQuotaSchema(t, db)
+
 	userIDs := make([]uint, 0, users)
 	for i := 0; i < users; i++ {
 		userIDs = append(userIDs, seedQuotaPGUser(t, db, fmt.Sprintf("quota-user-%d", i)).ID)
@@ -304,6 +357,7 @@ func TestPostPublishQuotaConcurrentUsersAreIndependent(t *testing.T) {
 	}
 	close(start)
 	wg.Wait()
+	barrier.assertFullyAligned(t)
 
 	for u := 0; u < users; u++ {
 		outcome := classifyQuotaOutcomes(t, results[u])

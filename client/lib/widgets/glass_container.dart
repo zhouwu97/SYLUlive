@@ -44,7 +44,7 @@ class GlassContainer extends StatelessWidget {
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final useLiquidGlass = themeProvider.liquidGlass && blur > 0;
+    final useFrostedGlass = themeProvider.frostedGlass && blur > 0;
     final compOpacity = themeProvider.componentOpacity;
     final useCleanDefaultSurface = themeProvider.isCleanBackgroundMode &&
         backgroundColor == null &&
@@ -82,7 +82,7 @@ class GlassContainer extends StatelessWidget {
                   ),
                 ),
               ),
-            if (useLiquidGlass)
+            if (useFrostedGlass)
               BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
                 child: Container(
@@ -124,7 +124,7 @@ class GlassContainer extends StatelessWidget {
                 padding: padding,
                 child: child,
               ),
-            if (useLiquidGlass && showHighlight)
+            if (useFrostedGlass && showHighlight)
               Positioned(
                 top: 0,
                 left: borderRadius * 0.5,

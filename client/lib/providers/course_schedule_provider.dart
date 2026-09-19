@@ -261,6 +261,26 @@ enum ScheduleSessionPhase {
   ready,
 }
 
+/// 本地课表快照**读取失败**：文件通道、密钥通道、解密或快照 JSON 解析出错。
+///
+/// 必须与另外两种情况严格区分：
+/// - 「该学期确实没有本地快照」由读取返回 `null` 表达；
+/// - 「操作已失效」（切学期、切号、退出、dispose 之后的旧操作）由
+///   [_CourseScheduleProvider._isCurrentOperation] 判断后静默丢弃，**不抛异常**。
+///
+/// 为什么需要这个类型：读取失败以前被并入 `null` 返回，切学期路径因此把一次密钥通道抖动
+/// 呈现成「该学期没有本机课表」，并顺带清掉开学周、让本地重试永远接不到真实错误。
+/// 抛出明确异常后，调用方才能保留原密文、展示可恢复状态并真正执行一次本地重试。
+class _ScheduleLocalReadFailure implements Exception {
+  const _ScheduleLocalReadFailure(this.cause);
+
+  /// 原始异常，仅用于日志中的类型判断，不向界面透出。
+  final Object cause;
+
+  @override
+  String toString() => '_ScheduleLocalReadFailure(${cause.runtimeType})';
+}
+
 /// 课表数据提供者 —— 只负责课程网格数据，不管理教务绑定
 /// 绑定状态由 [EduProvider] 统一管理，本 Provider 只负责拉取和展示本地课程
 class CourseScheduleProvider extends ChangeNotifier {
@@ -660,6 +680,47 @@ class CourseScheduleProvider extends ChangeNotifier {
     }
   }
 
+  /// 切学期路径专用的本地快照读取：把「读取失败」从「明确缺失」中分离出来。
+  ///
+  /// [_loadOperationSnapshot] 在读取失败时返回 null，把失败并入了缺失。对后台预热来说
+  /// 这样可以接受，但切学期不能沿用：一次密钥通道抖动会被界面呈现成「该学期没有课表」，
+  /// 并且连带清掉开学周、让本地重试永远接不到真实错误（计划 7.1 / 7.2）。
+  ///
+  /// 本方法的三种结果互相可区分：
+  /// - 返回 `null`：目标学期**明确缺失**本地快照；
+  /// - 抛出 [_ScheduleLocalReadFailure]：**读取失败**，调用方必须重试或展示可恢复状态，
+  ///   且必须保留密文、不清开学周、不触发学校密码框；
+  /// - 操作已失效：返回 `null` 并静默丢弃，不改变当前页面、小组件或错误状态。
+  ///
+  /// 这里刻意不沿用「看 _sessionPhase 是否为 restoringCache 才决定是否抛出」的条件：
+  /// 一个读取函数的错误传播语义不应该依赖另一个可变的全局阶段字段，
+  /// 那正是本次缺陷的成因。
+  Future<ScheduleTermSnapshot?> _readTermSnapshotStrict(
+    _ScheduleOperationContext context,
+  ) async {
+    // 不走 _resolveOperationStore：它把「store 为空」和「操作已失效」都收敛成 null，
+    // 而这两种情况的处理方式完全不同，必须在这里分开判断。
+    final store = context.store;
+    if (store == null) {
+      if (!_isCurrentOperation(context)) return null;
+      throw const _ScheduleLocalReadFailure('本地存储通道尚未就绪');
+    }
+    await context.storeReady;
+    if (!_isCurrentOperation(context)) return null;
+    try {
+      final snapshot = await store.readTerm(
+        year: context.year,
+        semester: context.semester,
+      );
+      if (!_isCurrentOperation(context)) return null;
+      return snapshot;
+    } catch (error) {
+      if (!_isCurrentOperation(context)) return null;
+      debugPrint('切换学期读取加密课表失败: ${error.runtimeType}');
+      throw _ScheduleLocalReadFailure(error);
+    }
+  }
+
   Future<bool> _saveOperationCourses(
     _ScheduleOperationContext context,
     List<CourseBlock> courses,
@@ -872,9 +933,31 @@ class CourseScheduleProvider extends ChangeNotifier {
     return cached != null && cached.isNotEmpty;
   }
 
+  /// 从当前学期的加密快照恢复课程，返回是否恢复出课程。
+  ///
+  /// 保持无参签名：切学期路径复核快照与课程共用的是私有实现
+  /// [_applyTermSnapshotToMemory]，不通过修改公开签名来传递已读快照，
+  /// 避免破坏已有子类与测试替身的 override。
   Future<bool> loadCachedCoursesIfAvailable() async {
-    final cached = await _loadFromCache();
-    if (cached == null || cached.isEmpty) {
+    final operation = _captureOperationContext();
+    if (operation == null) return false;
+    final snapshot = await _loadOperationSnapshot(operation);
+    if (!_isCurrentOperation(operation)) return false;
+    return _applyTermSnapshotToMemory(operation, snapshot);
+  }
+
+  /// 用一份已读取的固定操作快照提交课程、来源模型、隐藏状态与调节层。
+  ///
+  /// [snapshot] 为 null 或课程为空表示**明确缺失**（该学期确实没有本地课表），
+  /// 而不是读取失败——读取失败已经在调用方拿到快照之前抛出。
+  Future<bool> _applyTermSnapshotToMemory(
+    _ScheduleOperationContext operation,
+    ScheduleTermSnapshot? snapshot,
+  ) async {
+    final cached = snapshot == null || snapshot.courses.isEmpty
+        ? const <CourseBlock>[]
+        : snapshot.courses.map(CourseBlock.fromJson).toList();
+    if (cached.isEmpty) {
       if (_courses.isEmpty) {
         _baseSchedule = [];
         _manualCourses = [];
@@ -886,17 +969,15 @@ class CourseScheduleProvider extends ChangeNotifier {
       _legacyCacheRequiresResync = false;
       return false;
     }
-    final operation = _captureOperationContext();
-    final snapshot =
-        operation == null ? null : await _loadOperationSnapshot(operation);
-    if (operation == null || !_isCurrentOperation(operation)) return false;
     final coalesced = _coalesceGraduateCourses(cached);
-    final termId = currentTerm.id;
-    _hiddenCourseIds = snapshot?.hiddenCourseIds.toSet() ?? <int>{};
-    final sourceRestored = _restoreSourceModels(snapshot);
+    // 一律使用固定操作上下文中的学期与来源账号，不在 await 之后重新读取可变字段。
+    final termId = operation.term.id;
+    _hiddenCourseIds = snapshot!.hiddenCourseIds.toSet();
+    final sourceRestored = _restoreSourceModels(snapshot, termId: termId);
     _overrides = await _overrideRepository.loadOverrides(
       semesterId: termId,
-      accountId: _sourceAccountId,
+      accountId:
+          operation.sourceAccountId.isEmpty ? null : operation.sourceAccountId,
     );
     if (!_isCurrentOperation(operation)) return false;
     if (sourceRestored) {
@@ -915,11 +996,18 @@ class CourseScheduleProvider extends ChangeNotifier {
     return true;
   }
 
-  bool _restoreSourceModels(ScheduleTermSnapshot? snapshot) {
+  /// 用固定操作上下文的学期提交来源模型。
+  ///
+  /// [termId] 必须来自发起该次操作的学期，不能用 await 之后可能已经变化的
+  /// [_currentTerm]——否则切学期过程中读到的来源快照会被当成新学期数据。
+  bool _restoreSourceModels(
+    ScheduleTermSnapshot? snapshot, {
+    String? termId,
+  }) {
     final base = snapshot?.baseCourses ?? const <Map<String, dynamic>>[];
     final manual = snapshot?.manualCourses ?? const <Map<String, dynamic>>[];
     if (snapshot?.sourceSnapshotPresent == true) {
-      final currentTermId = currentTerm.id;
+      final currentTermId = termId ?? currentTerm.id;
       final filteredBase = base
           .map(CourseBlock.fromJson)
           .where((b) =>
@@ -937,11 +1025,11 @@ class CourseScheduleProvider extends ChangeNotifier {
 
       final restoredBase = _convertToCourses(
         filteredBase,
-        currentTerm.id,
+        currentTermId,
       );
       final restoredManual = _convertToCourses(
         filteredManual,
-        currentTerm.id,
+        currentTermId,
       ).map((course) => course.copyWith(source: CourseSource.manual)).toList();
       _baseSchedule = restoredBase;
       _manualCourses = restoredManual;
@@ -2215,13 +2303,30 @@ class CourseScheduleProvider extends ChangeNotifier {
   }
 
   /// 从加密课表快照加载当前学期起始日期。
+  ///
+  /// 读取失败会抛出 [_ScheduleLocalReadFailure] 而不再返回 null，因此本方法
+  /// **不会**在读取失败时清空开学周：清空只发生在「成功读取且目标快照确实没有日期」
+  /// 与「明确缺失」这两种情况（计划 7.5）。
+  /// 保持无参签名，理由同 [loadCachedCoursesIfAvailable]。
   Future<void> loadSemesterStart() async {
     final operation = _captureOperationContext();
     if (operation == null) return;
     final snapshot = await _loadOperationSnapshot(operation);
     if (!_isCurrentOperation(operation)) return;
+    _commitSemesterStart(operation, snapshot);
+  }
+
+  /// 用固定操作上下文提交开学日。
+  ///
+  /// 读取失败不会走到这里——异常在到达本方法之前就已经抛出，所以这里可以安全地
+  /// 把「快照没有日期」判定为「目标学期日期未设置」，并直接从**固定操作上下文**的
+  /// 学期取字段，不再依赖 await 之后可能已经变化的 [_currentTerm]。
+  void _commitSemesterStart(
+    _ScheduleOperationContext operation,
+    ScheduleTermSnapshot? snapshot,
+  ) {
     final start = snapshot?.semesterStart;
-    _currentTerm = currentTerm.copyWith(
+    _currentTerm = operation.term.copyWith(
       clearStartDate: start == null,
       startDate:
           start == null ? null : DateTime(start.year, start.month, start.day),
@@ -2430,14 +2535,24 @@ class CourseScheduleProvider extends ChangeNotifier {
     _archives = [];
     _errorMessage = null;
     _isLoading = true;
-    _sessionPhase = ScheduleSessionPhase.ready;
+    // 关键：读取完成之前不能宣告 ready。
+    // 原实现先置 ready，而读取函数只在 restoringCache 阶段才重新抛出读取异常，
+    // 于是读取失败被吞成 null、再被当成「该学期没有课表」，本地重试也接不到真实错误。
+    // 这里保持在 restoringCache 阶段，成功提交后才置 ready，最终失败才置 restoreFailed。
+    _sessionPhase = ScheduleSessionPhase.restoringCache;
 
     bool hasCache = false;
     Future<void> loadLocalTermState() async {
-      await loadSemesterStart();
+      // 一次严格读取，同时供开学日与课程提交使用（计划 7.4.3：
+      // 避免为了日期、课程、调整层分别整读一次保险箱）。
+      // 读取失败会抛 _ScheduleLocalReadFailure，而不是被当成「没有课表」。
+      final snapshot = await _readTermSnapshotStrict(operation);
+      if (!_isCurrentOperation(operation)) return;
+      _commitSemesterStart(operation, snapshot);
       await loadArchiveList();
+      if (!_isCurrentOperation(operation)) return;
       if (loadCache) {
-        hasCache = await loadCachedCoursesIfAvailable();
+        hasCache = await _applyTermSnapshotToMemory(operation, snapshot);
       } else {
         _sourceTrustKnown = true;
         _legacyCacheRequiresResync = false;
@@ -2451,6 +2566,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       if (!_isCurrentOperation(operation)) return false;
       // 本地密钥或文件通道刚恢复时可能出现一次性读取失败，重试本地快照
       // 即可恢复已拉取的学期，不应要求用户重新访问教务系统。
+      // 只补一次重读，不做 150/300/500ms 的渐进延迟重试碰运气。
       debugPrint('切换学期读取本地快照失败，准备重试: ${error.runtimeType}');
       await Future<void>.delayed(const Duration(milliseconds: 150));
       if (!_isCurrentOperation(operation)) return false;
@@ -2458,15 +2574,20 @@ class CourseScheduleProvider extends ChangeNotifier {
         await loadLocalTermState();
       } catch (retryError) {
         if (!_isCurrentOperation(operation)) return false;
+        // 最终失败：保留密文、不清开学周、不触发学校密码框，给出可恢复状态。
         _isLoading = false;
-        _errorMessage = '本机课表暂时无法读取，请稍后重试';
+        _sessionPhase = ScheduleSessionPhase.restoreFailed;
+        _errorMessage = '本机课表暂时无法读取，已保存的数据未删除';
         debugPrint('切换学期重试读取本地快照失败: ${retryError.runtimeType}');
         notifyListeners();
         return false;
       }
     }
 
+    if (!_isCurrentOperation(operation)) return false;
     _isLoading = false;
+    // 只有当前操作成功提交后，才把这次切换标记为 ready。
+    _sessionPhase = ScheduleSessionPhase.ready;
     _syncWidget();
     return hasCache;
   }

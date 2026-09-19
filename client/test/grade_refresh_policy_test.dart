@@ -1,0 +1,211 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shenliyuan/screens/grade_refresh_policy.dart';
+
+void main() {
+  const freshFor = Duration(minutes: 15);
+  const backoff = Duration(minutes: 2);
+  final now = DateTime(2026, 9, 19, 12, 0, 0);
+
+  group('decideGradeLoad —— 计划 8.3 自动刷新决策表', () {
+    test('GRADE-01 新鲜缓存 + 最近失败：显示缓存且不请求', () {
+      // 这是 [E04] 的原始缺陷：原实现要求「不在退避期」才使用缓存，
+      // 于是这一行会落到后台刷新分支，在退避期内照样发请求。
+      final decision = decideGradeLoad(
+        hasCredibleCache: true,
+        isFresh: true,
+        inFailureBackoff: true,
+        userInitiated: false,
+      );
+      expect(decision, GradeLoadDecision.cacheOnly);
+    });
+
+    test('新鲜缓存且不在退避期：显示缓存且不请求', () {
+      expect(
+        decideGradeLoad(
+          hasCredibleCache: true,
+          isFresh: true,
+          inFailureBackoff: false,
+          userInitiated: false,
+        ),
+        GradeLoadDecision.cacheOnly,
+      );
+    });
+
+    test('GRADE-02 过期缓存 + 退避期内（自动/resume）：显示旧结果，不自动请求', () {
+      expect(
+        decideGradeLoad(
+          hasCredibleCache: true,
+          isFresh: false,
+          inFailureBackoff: true,
+          userInitiated: false,
+        ),
+        GradeLoadDecision.cacheOnly,
+      );
+    });
+
+    test('GRADE-02 过期缓存 + 退避到期：显示缓存并至多启动一次后台刷新', () {
+      expect(
+        decideGradeLoad(
+          hasCredibleCache: true,
+          isFresh: false,
+          inFailureBackoff: false,
+          userInitiated: false,
+        ),
+        GradeLoadDecision.cacheThenRefresh,
+      );
+    });
+
+    test('无可信缓存：进入完整加载（失败时才展示错误/重试入口）', () {
+      for (final inBackoff in [true, false]) {
+        expect(
+          decideGradeLoad(
+            hasCredibleCache: false,
+            isFresh: false,
+            inFailureBackoff: inBackoff,
+            userInitiated: false,
+          ),
+          GradeLoadDecision.fullLoad,
+        );
+      }
+    });
+
+    test('用户明确刷新：可绕过时间退避，但仍有缓存时先展示缓存', () {
+      expect(
+        decideGradeLoad(
+          hasCredibleCache: true,
+          isFresh: false,
+          inFailureBackoff: true,
+          userInitiated: true,
+        ),
+        GradeLoadDecision.cacheThenRefresh,
+      );
+      expect(
+        decideGradeLoad(
+          hasCredibleCache: true,
+          isFresh: true,
+          inFailureBackoff: false,
+          userInitiated: true,
+        ),
+        GradeLoadDecision.cacheThenRefresh,
+      );
+    });
+  });
+
+  group('gradeCacheIsFresh / gradeInFailureBackoff 边界', () {
+    test('恰好等于新鲜期仍算新鲜，超过则不再新鲜', () {
+      expect(
+        gradeCacheIsFresh(updatedAt: now.subtract(freshFor), now: now, freshFor: freshFor),
+        isTrue,
+      );
+      expect(
+        gradeCacheIsFresh(
+          updatedAt: now.subtract(freshFor + const Duration(seconds: 1)),
+          now: now,
+          freshFor: freshFor,
+        ),
+        isFalse,
+      );
+    });
+
+    test('没有失败记录时不在退避期', () {
+      expect(
+        gradeInFailureBackoff(lastFailureAt: null, now: now, backoff: backoff),
+        isFalse,
+      );
+    });
+
+    test('退避期内为真，超过退避期后为假', () {
+      expect(
+        gradeInFailureBackoff(
+          lastFailureAt: now.subtract(backoff - const Duration(seconds: 1)),
+          now: now,
+          backoff: backoff,
+        ),
+        isTrue,
+      );
+      expect(
+        gradeInFailureBackoff(
+          lastFailureAt: now.subtract(backoff + const Duration(seconds: 1)),
+          now: now,
+          backoff: backoff,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('allowReducedGradeOverwrite —— 权限不得顺带授予（计划 8.2）', () {
+    test('自动/前台恢复（silent）永远不允许覆盖可信基线', () {
+      // 即使别处传了 forceRefresh=true，静默刷新也不能确认减少。
+      expect(
+        allowReducedGradeOverwrite(
+          silent: true,
+          userConfirmedReduction: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('非静默但没有用户确认时也不允许', () {
+      expect(
+        allowReducedGradeOverwrite(
+          silent: false,
+          userConfirmedReduction: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('非静默且用户已确认时才允许', () {
+      expect(
+        allowReducedGradeOverwrite(
+          silent: false,
+          userConfirmedReduction: true,
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  group('GradeReductionConfirmation —— 减少确认的作用域与一次性语义（计划 8.5）', () {
+    test('首次提示不授予确认，第二次才消费成功，且只能消费一次', () {
+      final confirmation = GradeReductionConfirmation();
+      expect(confirmation.hasPendingWarning, isFalse);
+      // 首次遇到减少：只提示。
+      confirmation.warn('1001|2403130233|2025|1');
+      expect(confirmation.hasPendingWarning, isTrue);
+      // 用户再次明确刷新 → 确认生效。
+      expect(confirmation.consume('1001|2403130233|2025|1'), isTrue);
+      // 已经消费过，不能重复授予。
+      expect(confirmation.consume('1001|2403130233|2025|1'), isFalse);
+      expect(confirmation.hasPendingWarning, isFalse);
+    });
+
+    test('GRADE-06 确认期间切学期：旧确认不能作用到新上下文', () {
+      final confirmation = GradeReductionConfirmation();
+      confirmation.warn('1001|2403130233|2025|1');
+      // 切到另一个学期后才发起刷新。
+      expect(confirmation.consume('1001|2403130233|2025|2'), isFalse);
+    });
+
+    test('GRADE-06 确认期间切号：旧确认作废', () {
+      final confirmation = GradeReductionConfirmation();
+      confirmation.warn('1001|2403130233|2025|1');
+      expect(confirmation.consume('2002|2403130233|2025|1'), isFalse);
+    });
+
+    test('确认期间切换教务身份（本科→研究生）同样作废', () {
+      final confirmation = GradeReductionConfirmation();
+      confirmation.warn('1001|sylu_undergraduate:2403130233|2025|1');
+      expect(confirmation.consume('1001|sylu_graduate:G-001|2025|1'), isFalse);
+    });
+
+    test('reset 后未消费的提示被废弃', () {
+      final confirmation = GradeReductionConfirmation();
+      confirmation.warn('1001|2403130233|2025|1');
+      confirmation.reset();
+      expect(confirmation.hasPendingWarning, isFalse);
+      expect(confirmation.consume('1001|2403130233|2025|1'), isFalse);
+    });
+  });
+}

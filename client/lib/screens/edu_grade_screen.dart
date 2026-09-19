@@ -23,6 +23,7 @@ import '../widgets/edu_grade/improvement_course_section.dart';
 import '../widgets/edu_grade/academic_situation_card.dart';
 import 'edu_grade_detail_screen.dart';
 import '../widgets/edu_grade/grade_manage_drawer.dart';
+import 'grade_refresh_policy.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 class EduGradeScreen extends StatefulWidget {
@@ -52,6 +53,34 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
   String _scopedGradeKey(String year, int semester, EduGrade grade) {
     return '$year|$semester|${GradeStableKey.of(grade)}';
+  }
+
+  /// 已经向用户提示过「本次返回成绩减少」的确认状态（计划 8.5）。
+  ///
+  /// 减少保护要求：首次遇到减少只提示、不写入；用户在明确提示之后**再次**发起刷新
+  /// 才算确认覆盖。确认只对同一账号 / 教务身份 / 学期有效，期间切号或切学期一律失效，
+  /// 且重新请求后数量再次变化时必须重新判断，不能复用旧确认。
+  final GradeReductionConfirmation _reductionConfirmation =
+      GradeReductionConfirmation();
+
+  /// 当前成绩上下文的稳定标识：账号 / 教务身份 / 学期。
+  String _gradeContextScope() {
+    return '${_lastUserId ?? ''}|${_academicIdentityKey ?? ''}'
+        '|$_selectedYear|$_selectedSemester';
+  }
+
+  /// 消费一次「减少确认」：仅当上一次提示与当前上下文完全一致时才成立。
+  bool _consumeReductionConfirmation() {
+    return _reductionConfirmation.consume(_gradeContextScope());
+  }
+
+  /// 保留旧结果并提示「本次返回成绩减少」，同时记录该提示所属的上下文，
+  /// 以便用户**再次**发起刷新时把这次提示消费成确认（计划 8.5）。
+  void _rememberReductionWarning(int removedCount) {
+    _reductionConfirmation.warn(_gradeContextScope());
+    if (mounted) {
+      _showSnackBar('本次返回成绩减少 $removedCount 门，已保留上次结果，请再次下拉刷新确认');
+    }
   }
 
   String _selectedYear = '';
@@ -548,8 +577,19 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       final inFailureBackoff = _lastFetchFailureTime != null &&
           now.difference(_lastFetchFailureTime!) < _failureRetryCooldown;
 
-      if (!isStale && !forceRefresh && !inFailureBackoff) {
-        // 15分钟内缓存视为新鲜：直接展示，不发起网络校验
+      // 计划 8.3 决策表由 grade_refresh_policy 统一实现：
+      // 新鲜期与失败退避期都只约束「自动」触发——处于退避期不请求，
+      // 缓存新鲜时同样不请求；只有用户明确刷新才允许绕过时间退避。
+      // 原实现把「不在退避期」也当成使用缓存的前提，于是「新鲜缓存 + 最近失败」
+      // 反而落到了后台刷新分支，在退避期内照样发起网络请求。
+      final decision = decideGradeLoad(
+        hasCredibleCache: true,
+        isFresh: !isStale,
+        inFailureBackoff: inFailureBackoff,
+        userInitiated: forceRefresh,
+      );
+
+      if (decision == GradeLoadDecision.cacheOnly) {
         setState(() {
           _grades = cache.grades;
           _lastUpdatedAt = cache.updatedAt;
@@ -635,9 +675,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           _isInitialLoading = false;
           _isRefreshing = false;
         });
-        if (mounted) {
-          _showSnackBar('本次返回成绩减少 ${diff.removed.length} 门，已保留上次结果，请下拉刷新确认');
-        }
+        _rememberReductionWarning(diff.removed.length);
         return;
       }
 
@@ -722,11 +760,19 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     }
     if (!mounted || _requestGeneration != gen) return null;
 
-    // 手动刷新允许确认覆盖减少后的数量
+    // 计划 8.2：三项权限必须分离。这里是「是否允许减少后的结果覆盖可信基线」。
+    // 它**不能**由 silent=false 或 forceRefresh=true 顺带授予：
+    // 自动 / 前台恢复（silent）永远不允许；用户明确刷新也只有在
+    // 「上一次已经提示过减少、且上下文未变」时才算确认（计划 8.5）。
+    final allowReducedCount = allowReducedGradeOverwrite(
+      silent: silent,
+      userConfirmedReduction: _consumeReductionConfirmation(),
+    );
+
     final result = await _eduProvider!.fetchGrades(
       _selectedYear,
       _selectedSemester,
-      allowReducedCount: true,
+      allowReducedCount: allowReducedCount,
     );
 
     if (!mounted || _requestGeneration != gen) {
@@ -751,6 +797,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
               ? GradePageState.empty
               : GradePageState.content;
           _isRefreshing = false;
+          // 计划 8.6：成功路径必须清除对应错误，否则加载成功后页面仍停在 error 提示上。
+          _errorMessage = null;
         });
         _prefetchGradeDetails(newGrades);
         if (mounted && !silent) {
@@ -763,6 +811,22 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       }
 
       final diff = GradeDiff.compute(oldGrades, newGrades);
+
+      // 减少保护必须在这里也成立：provider 只保证不把减少后的结果写进磁盘基线，
+      // 内存列表由页面负责，否则一次未确认的自动/静默刷新仍会把页面上的可信结果冲掉。
+      if (oldGrades.isNotEmpty &&
+          newGrades.length < oldGrades.length &&
+          !allowReducedCount) {
+        setState(() {
+          _isRefreshing = false;
+        });
+        // 静默（前台恢复）刷新不打断用户，因此不提示、也不记录确认上下文：
+        // 之后用户第一次手动刷新会先看到提示，第二次才真正确认覆盖。
+        if (mounted && !silent) {
+          _rememberReductionWarning(diff.removed.length);
+        }
+        return null;
+      }
 
       if (diff.hasChanges && diff.added.isNotEmpty) {
         _newlyAddedGradeKeys.addAll(
@@ -777,6 +841,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
             ? GradePageState.empty
             : GradePageState.content;
         _isRefreshing = false;
+        // 计划 8.6：手动重试成功后必须清除之前的错误提示。
+        _errorMessage = null;
       });
       _prefetchGradeDetails(newGrades);
 

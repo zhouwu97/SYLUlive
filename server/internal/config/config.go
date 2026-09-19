@@ -31,6 +31,18 @@ type Config struct {
 	ExamPaperStorageSigningSecret    string // 试卷文件签名密钥
 	ExamPaperStorageReceiptSecret    string // 试卷上传回执密钥
 	MaxFileSize                      int64  // 最大文件大小(字节)
+	UploadPerMinuteCountLimit        int    // 单账号每分钟新文件数量上限
+	UploadHourlyBytesLimit           int64  // 单账号每小时新文件字节上限
+	UploadTemporaryUserCount         int    // 单账号未 claim 临时文件数量上限
+	UploadTemporaryUserBytes         int64  // 单账号未 claim 临时文件字节上限
+	UploadTemporaryGlobalBytes       int64  // 服务级未 claim 临时文件字节上限
+	UploadDiskWarnPercent            int    // 磁盘使用率告警水位
+	UploadDiskSeverePercent          int    // 磁盘使用率严重告警水位
+	UploadDiskCriticalPercent        int    // 磁盘使用率上传熔断水位
+	UploadTemporaryTTL               time.Duration
+	UploadTemporaryJanitorInterval   time.Duration
+	UploadTemporaryJanitorBatchSize  int
+	UploadConsistencyInterval        time.Duration
 	EduServiceURL                    string // Python教务服务地址
 	SMTPHost                         string // SMTP 地址
 	SMTPPort                         string // SMTP 端口
@@ -187,6 +199,21 @@ func Load() *Config {
 		uploadDir = "./uploads"
 	}
 	imageVariantWorkerEnabled := envBool("IMAGE_VARIANT_WORKER_ENABLED", false)
+	uploadPerMinuteCountLimit := envIntInRange("UPLOAD_PER_MINUTE_COUNT_LIMIT", 30, 1, 10000)
+	uploadHourlyBytesLimit := envInt64InRange("UPLOAD_HOURLY_BYTES_LIMIT", 100*1024*1024, 1, 1<<50)
+	uploadTemporaryUserCount := envIntInRange("UPLOAD_TEMPORARY_USER_COUNT_LIMIT", 100, 1, 1_000_000)
+	uploadTemporaryUserBytes := envInt64InRange("UPLOAD_TEMPORARY_USER_BYTES_LIMIT", 512*1024*1024, 1, 1<<50)
+	uploadTemporaryGlobalBytes := envInt64InRange("UPLOAD_TEMPORARY_GLOBAL_BYTES_LIMIT", 5*1024*1024*1024, 1, 1<<55)
+	uploadDiskWarnPercent := envIntInRange("UPLOAD_DISK_WARN_PERCENT", 70, 1, 99)
+	uploadDiskSeverePercent := envIntInRange("UPLOAD_DISK_SEVERE_PERCENT", 80, 1, 99)
+	uploadDiskCriticalPercent := envIntInRange("UPLOAD_DISK_CRITICAL_PERCENT", 90, 1, 99)
+	if uploadDiskSeverePercent < uploadDiskWarnPercent || uploadDiskCriticalPercent < uploadDiskSeverePercent {
+		panic(fmt.Errorf("UPLOAD_DISK_*_PERCENT 必须满足 warning <= severe <= critical"))
+	}
+	uploadTemporaryTTL := time.Duration(envIntInRange("UPLOAD_TEMPORARY_TTL_HOURS", 6, 1, 168)) * time.Hour
+	uploadTemporaryJanitorInterval := time.Duration(envIntInRange("UPLOAD_TEMPORARY_JANITOR_INTERVAL_MINUTES", 60, 1, 1440)) * time.Minute
+	uploadTemporaryJanitorBatchSize := envIntInRange("UPLOAD_TEMPORARY_JANITOR_BATCH_SIZE", 200, 1, 5000)
+	uploadConsistencyInterval := time.Duration(envIntInRange("UPLOAD_CONSISTENCY_INTERVAL_HOURS", 6, 1, 168)) * time.Hour
 
 	examPaperDir := os.Getenv("EXAM_PAPER_DIR")
 	if examPaperDir == "" {
@@ -575,6 +602,18 @@ func Load() *Config {
 		ExamPaperStorageSigningSecret:    examPaperStorageSigningSecret,
 		ExamPaperStorageReceiptSecret:    examPaperStorageReceiptSecret,
 		MaxFileSize:                      10 * 1024 * 1024, // 10MB
+		UploadPerMinuteCountLimit:        uploadPerMinuteCountLimit,
+		UploadHourlyBytesLimit:           uploadHourlyBytesLimit,
+		UploadTemporaryUserCount:         uploadTemporaryUserCount,
+		UploadTemporaryUserBytes:         uploadTemporaryUserBytes,
+		UploadTemporaryGlobalBytes:       uploadTemporaryGlobalBytes,
+		UploadDiskWarnPercent:            uploadDiskWarnPercent,
+		UploadDiskSeverePercent:          uploadDiskSeverePercent,
+		UploadDiskCriticalPercent:        uploadDiskCriticalPercent,
+		UploadTemporaryTTL:               uploadTemporaryTTL,
+		UploadTemporaryJanitorInterval:   uploadTemporaryJanitorInterval,
+		UploadTemporaryJanitorBatchSize:  uploadTemporaryJanitorBatchSize,
+		UploadConsistencyInterval:        uploadConsistencyInterval,
 		EduServiceURL:                    eduServiceURL,
 		SMTPHost:                         smtpHost,
 		SMTPPort:                         smtpPort,

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -124,9 +125,10 @@ func atomicWriteFile(dstPath string, src io.Reader) error {
 
 // UploadHandler 上传处理器
 type UploadHandler struct {
-	db        *gorm.DB
-	uploadDir string
-	maxSize   int64
+	db               *gorm.DB
+	uploadDir        string
+	maxSize          int64
+	uploadProtection *services.UploadProtection
 }
 
 // NewUploadHandler 创建上传处理器
@@ -136,6 +138,54 @@ func NewUploadHandler(uploadDir string, maxSize int64, db *gorm.DB) *UploadHandl
 		uploadDir: uploadDir,
 		maxSize:   maxSize,
 	}
+}
+
+// SetUploadProtection 接入账号配额、磁盘熔断和临时文件事务保护。
+// 保持构造函数兼容，便于图片读取路由和历史测试按原方式创建处理器。
+func (h *UploadHandler) SetUploadProtection(protection *services.UploadProtection) {
+	h.uploadProtection = protection
+}
+
+func writeUploadProtectionError(c *gin.Context, err error) bool {
+	switch {
+	case errors.Is(err, services.ErrUploadQuotaExceeded):
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error": "上传频率或临时空间额度已用尽",
+			"code":  "upload_quota_exceeded",
+		})
+		return true
+	case errors.Is(err, services.ErrUploadStoragePressure):
+		c.JSON(http.StatusInsufficientStorage, gin.H{
+			"error": "文件存储空间紧张，请稍后重试",
+			"code":  "storage_capacity_exhausted",
+		})
+		return true
+	case errors.Is(err, services.ErrUploadProtectionUnavailable):
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "上传保护暂时不可用，请稍后重试",
+			"code":  "upload_protection_unavailable",
+		})
+		return true
+	default:
+		return false
+	}
+}
+
+// persistTemporaryFile 将新文件的写盘和数据库创建统一到上传保护事务。
+func (h *UploadHandler) persistTemporaryFile(ctx context.Context, record *models.File, write func() error) (services.UploadPersistResult, error) {
+	if h.uploadProtection != nil {
+		return h.uploadProtection.PersistTemporaryFile(ctx, record, write)
+	}
+	if err := write(); err != nil {
+		return services.UploadPersistResult{}, err
+	}
+	if err := h.createOrGetFile(record); err != nil {
+		return services.UploadPersistResult{}, err
+	}
+	if err := h.grantFileToUser(record.ID, record.UploaderID); err != nil {
+		return services.UploadPersistResult{}, err
+	}
+	return services.UploadPersistResult{File: *record}, nil
 }
 
 // isAuthorizedForPrivateFile 检查请求是否有权访问私有待审核文件（管理员/超级管理员/文件上传者）
@@ -391,6 +441,15 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 			return
 		}
 		// 磁盘文件丢失 → 恢复到 existing.Path 指向的磁盘位置，保证所有历史引用与返回 URL 仍然有效。
+		if h.uploadProtection != nil {
+			if err := h.uploadProtection.CheckDisk(c.Request.Context()); err != nil {
+				if writeUploadProtectionError(c, err) {
+					return
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "恢复文件前容量检查失败"})
+				return
+			}
+		}
 		if _, err := src.Seek(0, io.SeekStart); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取文件失败"})
 			return
@@ -428,19 +487,10 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// 保存新文件（使用规范化扩展名，与真实内容一致）
+	// 保存新文件（使用规范化扩展名，与真实内容一致）。配额检查必须覆盖写盘和
+	// files/grant 创建，避免并发请求在检查后同时落盘。
 	dir1 := filepath.Join(h.uploadDir, hashStr[:2])
 	dstPath := filepath.Join(dir1, hashStr+canonicalExt)
-	if _, err := src.Seek(0, io.SeekStart); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取文件失败"})
-		return
-	}
-	if err := atomicWriteFile(dstPath, src); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存文件失败"})
-		return
-	}
-
-	// 创建文件记录
 	fileRecord := models.File{
 		Hash:        hashStr,
 		Path:        "/uploads/" + hashStr[:2] + "/" + hashStr + canonicalExt,
@@ -450,24 +500,33 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		Height:      meta.Height,
 		RefCount:    1,
 		UploaderID:  c.GetUint("user_id"),
-		Status:      "temporary",
+		Status:      models.FileStatusTemporary,
 		AccessScope: models.FileAccessPrivate,
 	}
-
-	if err := h.createOrGetFile(&fileRecord); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建文件记录失败"})
+	result, err := h.persistTemporaryFile(c.Request.Context(), &fileRecord, func() error {
+		if _, err := src.Seek(0, io.SeekStart); err != nil {
+			return fmt.Errorf("读取文件失败: %w", err)
+		}
+		return atomicWriteFile(dstPath, src)
+	})
+	if err != nil {
+		if writeUploadProtectionError(c, err) {
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存文件记录失败"})
 		return
 	}
-	if err := h.grantFileToUser(fileRecord.ID, c.GetUint("user_id")); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
-		return
-	}
+	fileRecord = result.File
 
-	c.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		"file_id": fileRecord.ID,
 		"url":     fileRecord.Path,
 		"hash":    hashStr,
-	})
+	}
+	if result.Reused {
+		response["reused"] = true
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // UploadMultiple 批量上传
@@ -551,6 +610,15 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 				continue
 			}
 			// 磁盘文件丢失 → 恢复到 existing.Path 指向的磁盘位置
+			if h.uploadProtection != nil {
+				if protectionErr := h.uploadProtection.CheckDisk(c.Request.Context()); protectionErr != nil {
+					if writeUploadProtectionError(c, protectionErr) {
+						return
+					}
+					results = append(results, gin.H{"error": "恢复文件前容量检查失败"})
+					continue
+				}
+			}
 			err = func() error {
 				src2, err := file.Open()
 				if err != nil {
@@ -587,24 +655,10 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 			continue
 		}
 
-		// 保存新文件（使用规范化扩展名，与真实内容一致）
+		// 保存新文件（使用规范化扩展名，与真实内容一致）。每个文件在自己的事务
+		// 中完成额度检查，批量请求超额时允许已经成功的项保留并返回逐项结果。
 		dir1 := filepath.Join(h.uploadDir, hashStr[:2])
 		dstPath := filepath.Join(dir1, hashStr+canonicalExt)
-		err = func() error {
-			src2, err := file.Open()
-			if err != nil {
-				return fmt.Errorf("保存文件时读取失败")
-			}
-			defer src2.Close()
-			return atomicWriteFile(dstPath, src2)
-		}()
-
-		if err != nil {
-			results = append(results, gin.H{"error": err.Error()})
-			continue
-		}
-
-		// 创建文件记录
 		fileRecord := models.File{
 			Hash:        hashStr,
 			Path:        "/uploads/" + hashStr[:2] + "/" + hashStr + canonicalExt,
@@ -614,24 +668,36 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 			Height:      meta.Height,
 			RefCount:    1,
 			UploaderID:  c.GetUint("user_id"),
-			Status:      "temporary",
+			Status:      models.FileStatusTemporary,
 			AccessScope: models.FileAccessPrivate,
 		}
-		if err := h.createOrGetFile(&fileRecord); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-			return
+		persisted, persistErr := h.persistTemporaryFile(c.Request.Context(), &fileRecord, func() error {
+			src2, openErr := file.Open()
+			if openErr != nil {
+				return fmt.Errorf("保存文件时读取失败")
+			}
+			defer src2.Close()
+			return atomicWriteFile(dstPath, src2)
+		})
+		if persistErr != nil {
+			if writeUploadProtectionError(c, persistErr) {
+				return
+			}
+			results = append(results, gin.H{"error": persistErr.Error()})
+			continue
 		}
-		if err := h.grantFileToUser(fileRecord.ID, c.GetUint("user_id")); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
-			return
-		}
+		fileRecord = persisted.File
 		createdFiles = append(createdFiles, fileRecord)
 
-		results = append(results, gin.H{
+		item := gin.H{
 			"file_id": fileRecord.ID,
 			"url":     fileRecord.Path,
 			"hash":    hashStr,
-		})
+		}
+		if persisted.Reused {
+			item["reused"] = true
+		}
+		results = append(results, item)
 	}
 
 	c.JSON(http.StatusOK, gin.H{

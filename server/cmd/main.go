@@ -821,6 +821,20 @@ func main() {
 	invitationHandler := handlers.NewInvitationHandler(db, cfg.JWTSecret)
 
 	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
+	uploadProtectionConfig := services.UploadProtectionConfig{
+		PerMinuteCountLimit:  cfg.UploadPerMinuteCountLimit,
+		HourlyBytesLimit:     cfg.UploadHourlyBytesLimit,
+		TemporaryUserCount:   cfg.UploadTemporaryUserCount,
+		TemporaryUserBytes:   cfg.UploadTemporaryUserBytes,
+		TemporaryGlobalBytes: cfg.UploadTemporaryGlobalBytes,
+		DiskWarnPercent:      cfg.UploadDiskWarnPercent,
+		DiskSeverePercent:    cfg.UploadDiskSeverePercent,
+		DiskCriticalPercent:  cfg.UploadDiskCriticalPercent,
+	}
+	if err := uploadProtectionConfig.Validate(); err != nil {
+		log.Fatalf("上传保护配置无效: %v", err)
+	}
+	uploadHandler.SetUploadProtection(services.NewUploadProtection(db, cfg.UploadDir, uploadProtectionConfig))
 
 	emojiFavoriteService := services.NewEmojiFavoriteService(db, cfg.UploadDir)
 	emojiFavoriteHandler := handlers.NewEmojiFavoriteHandler(emojiFavoriteService)
@@ -1306,6 +1320,15 @@ func main() {
 		}
 	}
 	idempotencyCleanupCron := tasks.StartIdempotencyCleanupCron(appCtx, db)
+	uploadMaintenanceCron := tasks.StartUploadMaintenanceCron(
+		appCtx,
+		db,
+		cfg.UploadDir,
+		cfg.UploadTemporaryTTL,
+		cfg.UploadTemporaryJanitorInterval,
+		cfg.UploadTemporaryJanitorBatchSize,
+		cfg.UploadConsistencyInterval,
+	)
 
 	// 应用内更新：公开版本检查接口，不需要登录。下载路由在阶段 A5 追加。
 	appPublic := r.Group("/api/app")
@@ -2786,6 +2809,9 @@ func main() {
 	}
 	if idempotencyCleanupCron != nil {
 		idempotencyCleanupCron.Wait()
+	}
+	if uploadMaintenanceCron != nil {
+		uploadMaintenanceCron.Wait()
 	}
 	if feedMetricsCron != nil {
 		feedMetricsCron.Wait()

@@ -19,7 +19,7 @@ Go 的 8080 只允许本机或 Docker 内部访问，公网流量必须经过 Ng
 
 - 服务器操作系统：Ubuntu 20.04+
 - 数据库：PostgreSQL 15 / pgvector
-- 运行环境：Go 1.25.13+（`deploy.sh` 会自动处理）
+- 运行环境：Go 1.25.13+。`deploy/deploy-shenliyuan` 会在部署前校验 Go 版本；未安装或版本过低时直接拒绝部署，不会自动安装或升级 Go。
 
 ## 正式发布
 
@@ -36,7 +36,7 @@ SECURITY_SOURCE_ATTRIBUTION_VALID_FROM=<真实来源修复生效时间>
 3. 使用最终 SHA 部署：
 
 ~~~bash
-deploy-shenliyuan <commit-sha>
+./deploy/deploy-shenliyuan <完整 commit SHA>
 ~~~
 
 4. 验证 health、version、监听地址、Nginx 配置和数据库迁移。

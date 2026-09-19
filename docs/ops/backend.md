@@ -11,7 +11,7 @@
 生产更新使用 deploy/deploy-shenliyuan，并传入分支或不可变 SHA：
 
 ~~~bash
-deploy-shenliyuan 9c493647
+/opt/shenliyuan-src/deploy/deploy-shenliyuan <完整 commit SHA>
 ~~~
 
 发布前确保 .env 已配置 JWT_SECRET、DSN、TRUSTED_PROXY_CIDRS、SECURITY_EVENT_HMAC_SECRET、SECURITY_SOURCE_ATTRIBUTION_VALID_FROM 以及 Compose 强制要求的上传和法律合规开关。

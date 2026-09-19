@@ -24,6 +24,8 @@
 <p>
   <img src="https://img.shields.io/badge/用户-近%20500%20人-111827" alt="近 500 名用户">
   <img src="https://img.shields.io/badge/Android-正式版本-3DDC84?logo=android&logoColor=white" alt="Android 正式版本">
+  <img src="https://img.shields.io/badge/Go-1.25.13+-00ADD8?logo=go&logoColor=white" alt="Go 1.25.13+">
+  <img src="https://img.shields.io/badge/Flutter-3.22+-02569B?logo=flutter&logoColor=white" alt="Flutter 3.22+">
   <img src="https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white" alt="GitHub Actions CI">
   <img src="https://img.shields.io/badge/License-MIT-22C55E" alt="MIT License">
 </p>

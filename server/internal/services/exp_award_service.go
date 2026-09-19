@@ -9,6 +9,7 @@ import (
 	"shenliyuan/internal/models"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // 全局经验发放量
@@ -55,19 +56,15 @@ func AwardDailyGlobalExp(db *gorm.DB, userID uint, action string, exp int, refTy
 			Date:      today,
 			ExpEarned: exp,
 		}
-		if err := tx.Create(&expLog).Error; err != nil {
-			// 唯一约束冲突 → 今天已发，不算错误
-			if errors.Is(err, gorm.ErrDuplicatedKey) {
-				return nil
-			}
-			// 旧版 SQLite/MySQL 没有专门 ErrDuplicatedKey 时退到错误本身
-			// 通过尝试查询来确认今天是否已有记录
-			var existing models.ExpLog
-			lookupErr := tx.Where("user_id = ? AND action = ? AND date = ?", userID, action, today).First(&existing).Error
-			if lookupErr == nil {
-				return nil // 今天已发
-			}
-			return err
+		result := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}, {Name: "action"}, {Name: "date"}},
+			DoNothing: true,
+		}).Create(&expLog)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil // 今天已发，保持事务可继续提交
 		}
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("exp", gorm.Expr("exp + ?", exp)).Error; err != nil {
 			return err
@@ -131,16 +128,15 @@ func AwardDailySectionExp(db *gorm.DB, userID uint, sectionID uint, sectionSlug 
 			RefType:   refType,
 			RefID:     refID,
 		}
-		if err := tx.Create(&expLog).Error; err != nil {
-			if errors.Is(err, gorm.ErrDuplicatedKey) {
-				return nil
-			}
-			var existing models.WaterSectionExpLog
-			lookupErr := tx.Where("user_id = ? AND section_id = ? AND action = ? AND date = ?", userID, sectionID, action, today).First(&existing).Error
-			if lookupErr == nil {
-				return nil
-			}
-			return err
+		result := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}, {Name: "section_id"}, {Name: "action"}, {Name: "date"}},
+			DoNothing: true,
+		}).Create(&expLog)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil // 今天已发，保持事务可继续提交
 		}
 		// 更新或创建 stats
 		var stat models.WaterSectionUserStat
@@ -158,8 +154,15 @@ func AwardDailySectionExp(db *gorm.DB, userID uint, sectionID uint, sectionSlug 
 			case GlobalActionReplyDaily:
 				stat.ReplyCount = 1
 			}
-			if err := tx.Create(&stat).Error; err != nil {
-				// 并发冲突退化为更新路径
+			createResult := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "user_id"}, {Name: "section_id"}},
+				DoNothing: true,
+			}).Create(&stat)
+			if createResult.Error != nil {
+				return createResult.Error
+			}
+			if createResult.RowsAffected == 0 {
+				// 并发创建已存在时，继续更新同一行，避免唯一键错误中止事务。
 				if err := tx.Where("user_id = ? AND section_id = ?", userID, sectionID).First(&stat).Error; err != nil {
 					return err
 				}

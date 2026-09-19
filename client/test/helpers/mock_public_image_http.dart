@@ -96,11 +96,16 @@ class _FakePathProviderPlatform extends PathProviderPlatform {
 Future<void> driveMockPublicImageLoads(
   WidgetTester tester, {
   int windows = 15,
+  bool Function()? until,
 }) async {
   for (var i = 0; i < windows; i++) {
+    if (until?.call() ?? false) return;
     await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 100)));
     await tester.pump(const Duration(milliseconds: 100));
+    // CI 并发运行整套 widget 测试时，文件 IO 可能明显慢于单测；
+    // 已完成的图片直接结束等待，避免依赖固定窗口导致偶发误报。
+    if (until?.call() ?? false) return;
   }
 }
 

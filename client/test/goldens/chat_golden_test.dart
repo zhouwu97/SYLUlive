@@ -8,6 +8,7 @@ import 'package:shenliyuan/providers/message_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/chat_detail_screen.dart';
 import 'package:shenliyuan/screens/chat_list_screen.dart';
+import 'package:shenliyuan/config/private_chat_policy.dart';
 
 import '../helpers/chat_test_fakes.dart';
 import '../helpers/golden_test_app.dart';
@@ -20,6 +21,11 @@ import '../helpers/load_test_fonts.dart';
 /// - 头像全部走空 URL fallback，避免 CachedNetworkImage 网络抖动；
 /// - 不含 pending/loading spinner 场景（无限动画不可 golden）。
 void main() {
+  if (!PrivateChatPolicy.enabled) {
+    test('私聊功能关闭时跳过旧 Golden 测试', () {}, skip: PrivateChatPolicy.disabledHint);
+    return;
+  }
+
   setUpAll(() async {
     await loadTestFonts();
   });
@@ -64,7 +70,8 @@ void main() {
       await _settle(tester, provider);
       await expectLater(
         find.byType(MaterialApp),
-        matchesGoldenFile('baselines/chat/chat_list_populated_light_390x844.png'),
+        matchesGoldenFile(
+            'baselines/chat/chat_list_populated_light_390x844.png'),
       );
       await _dispose(tester, provider);
     });
@@ -90,7 +97,8 @@ void main() {
       await _settle(tester, provider);
       await expectLater(
         find.byType(MaterialApp),
-        matchesGoldenFile('baselines/chat/chat_list_populated_dark_360x800.png'),
+        matchesGoldenFile(
+            'baselines/chat/chat_list_populated_dark_360x800.png'),
       );
       await _dispose(tester, provider);
     });
@@ -184,7 +192,8 @@ void main() {
       await _settle(tester, provider);
       await expectLater(
         find.byType(MaterialApp),
-        matchesGoldenFile('baselines/chat/chat_detail_bubbles_light_390x844.png'),
+        matchesGoldenFile(
+            'baselines/chat/chat_detail_bubbles_light_390x844.png'),
       );
       await _dispose(tester, provider);
     });

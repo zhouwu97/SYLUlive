@@ -9,11 +9,17 @@ import 'package:shenliyuan/providers/message_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/chat_detail_screen.dart';
 import 'package:shenliyuan/screens/chat_list_screen.dart';
+import 'package:shenliyuan/config/private_chat_policy.dart';
 
 import 'helpers/chat_test_fakes.dart';
 
 /// PR3：私信链路统一三态占位（加载 / 空态 / 错误态）的交互契约测试。
 void main() {
+  if (!PrivateChatPolicy.enabled) {
+    test('私聊功能关闭时跳过旧占位态测试', () {}, skip: PrivateChatPolicy.disabledHint);
+    return;
+  }
+
   group('ChatListScreen state placeholders', () {
     testWidgets('loading shows placeholder while conversations are in flight',
         (tester) async {
@@ -33,8 +39,7 @@ void main() {
       await _disposePage(tester, provider);
     });
 
-    testWidgets('error shows title, reason and a retry button',
-        (tester) async {
+    testWidgets('error shows title, reason and a retry button', (tester) async {
       final provider = MessageProvider(chatListDio(fail: true));
       await _pumpList(tester, provider);
 

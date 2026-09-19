@@ -12,6 +12,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/chat_detail_screen.dart';
 import 'package:shenliyuan/screens/chat_list_screen.dart';
 import 'package:shenliyuan/utils/app_navigator.dart' show appRouteObserver;
+import 'package:shenliyuan/config/private_chat_policy.dart';
 
 class _FakeAuthProvider extends ChangeNotifier implements AuthProvider {
   _FakeAuthProvider(this.currentUser);
@@ -146,6 +147,11 @@ Future<void> _settleFrames(WidgetTester tester, {int count = 8}) async {
 }
 
 void main() {
+  if (!PrivateChatPolicy.enabled) {
+    test('私聊功能关闭时跳过旧实时链路测试', () {}, skip: PrivateChatPolicy.disabledHint);
+    return;
+  }
+
   group('MessageProvider realtime state', () {
     test('connecting → connected → reconnecting → connected → disconnected',
         () async {

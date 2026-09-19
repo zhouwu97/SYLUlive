@@ -23,6 +23,7 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"gorm.io/gorm/logger"
 
 	"shenliyuan/internal/academiccalendar"
 	"shenliyuan/internal/ai"
@@ -169,7 +170,17 @@ func main() {
 		log.Fatal("DSN 不能为空，后端仅支持 PostgreSQL")
 	}
 
-	db, err = gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{})
+	db, err = gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{
+		// 日志使用参数化形式输出 SQL：SQL 语句本体（含表名/列名）保留，绑定值不落日志。
+		// 否则 GORM 的错误日志会把帖子正文、联系方式、邮箱等绑定值内联打印出来，
+		// 出现“HTTP 响应脱敏了、日志却把请求体完整写出来”的旁路泄漏。
+		Logger: logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), logger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true,
+			ParameterizedQueries:      true,
+		}),
+	})
 	if err != nil {
 		log.Fatal("数据库连接失败:", err)
 	}

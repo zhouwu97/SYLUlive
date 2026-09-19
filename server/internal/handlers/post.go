@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 
@@ -73,6 +74,10 @@ type Snapshot struct {
 	AlgorithmVersion string
 	Sort             string
 	FeedKind         string
+	// FilterKey 是生成快照时的筛选指纹（版块/类型/排序/标签/话题/搜索/增量）。
+	// loadmore 必须校验一致，避免换版块或换排序后仍复用旧 ID 列表。
+	// 空值表示旧路径或测试直接写入的快照，此时跳过该项校验。
+	FilterKey string
 }
 
 // latestFeedCursor 是最新 Feed 的稳定游标。created_at 相同时使用 ID
@@ -389,18 +394,39 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 	scene := c.Query("scene") // refresh 或 loadmore
 	sessionID := c.Query("session_id")
-	offsetStr := c.Query("offset")
 
-	page, limit, paginationOffset := ParsePagination(c, 20, 50)
-	offset, _ := strconv.Atoi(offsetStr)
-
-	// 如果是常规分页（没有传入scene或者只是普通请求），默认使用 offset
-	if scene == "" && offset == 0 {
+	// 分页参数统一在真实请求入口校验：显式传负数、非数字、超出 int 表示范围
+	// 一律 400，不再由 Atoi 错误被丢弃后碰巧得到 0 继续进入切片。
+	page, limit, paginationOffset, paginationErr := ParsePaginationStrict(c, 20, 50)
+	if paginationErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "分页参数无效",
+			"code":  "invalid_pagination",
+			"field": paginationErr.Error(),
+		})
+		return
+	}
+	offset, offsetProvided, offsetErr := ParseOffsetStrict(c, paginationOffset)
+	if offsetErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "分页参数无效",
+			"code":  "invalid_pagination",
+			"field": offsetErr.Error(),
+		})
+		return
+	}
+	// 常规分页（未带 scene）显式传 offset=0 时沿用 page 推导出的偏移，
+	// 保持与旧行为一致的兼容语义。
+	if !offsetProvided || (scene == "" && offset == 0) {
 		offset = paginationOffset
 	}
 
 	var posts []models.Post
 	var total int64
+	// nextOffset/hasMore 是本轮新增的分页元数据：next_offset 表示原始候选
+	// 消费位置，has_more 表示是否还有未扫描候选（不保证它们最终都公开）。
+	nextOffset := offset
+	hasMore := false
 	now := time.Now()
 	var requestedBoardID *models.BoardID
 	var waterSectionFeedID uint
@@ -437,52 +463,49 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	if scene == "loadmore" && sessionID != "" {
 		if val, ok := ActiveSnapshots.Load(sessionID); ok {
 			snapshot := val.(Snapshot)
-			if time.Now().Before(snapshot.ExpiredAt) && snapshot.FeedKind == genericFeedKind {
-				// 计算切片边界
-				end := offset + limit
-				if offset < len(snapshot.PostIDs) {
-					if end > len(snapshot.PostIDs) {
-						end = len(snapshot.PostIDs)
-					}
-					targetIDs := snapshot.PostIDs[offset:end]
+			// 快照必须同时满足：未过期、类型一致、筛选指纹一致、归属用户一致。
+			// 任一不满足都说明这份 ID 列表不属于当前请求上下文，不能复用。
+			if time.Now().Before(snapshot.ExpiredAt) && snapshotUsable(&snapshot, genericFeedKind, snapshotFilterKey(c), optionalFeedUserID(c)) {
+				window := sliceFeedWindow(len(snapshot.PostIDs), offset, limit)
+				targetIDs := snapshot.PostIDs[window.Start:window.End]
 
-					if len(targetIDs) > 0 {
-						var rawPosts []models.Post
-						if err := h.db.Model(&models.Post{}).Where("id IN ?", targetIDs).Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).Find(&rawPosts).Error; err != nil {
-							log.Printf("[DB_ERROR] GetList hot-feed Find failed: %v", err)
-							c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
-							return
-						}
-
-						// 重组排序
-						postMap := make(map[uint]models.Post)
-						for _, p := range rawPosts {
-							postMap[p.ID] = p
-						}
-						for _, id := range targetIDs {
-							if p, exists := postMap[id]; exists {
-								posts = append(posts, p)
-							}
-						}
-					}
-
-					// 直接返回，不再走正常查询
-					h.hydratePosts(c, posts, time.Now())
-					if posts == nil {
-						posts = []models.Post{}
-					}
-					c.JSON(http.StatusOK, gin.H{
-						"posts":      posts,
-						"total":      len(snapshot.PostIDs),
-						"page":       page,
-						"limit":      limit,
-						"session_id": sessionID,
-					})
+				// 固定候选窗口后应用当前可见性过滤，允许短页；
+				// 不跨全量快照循环补满一页，避免一次请求变成不受控扫描。
+				visiblePosts, loadErr := h.loadPostsInOrder(targetIDs, publicPostStatuses)
+				if loadErr != nil {
+					log.Printf("[DB_ERROR] GetList hot-feed Find failed: %v", loadErr)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
 					return
 				}
-			} else {
-				deleteSnapshot(sessionID)
+				shortPage := len(visiblePosts) < len(targetIDs)
+				if shortPage && !supportsFeedPaginationMeta(c) {
+					// 旧客户端按“已返回条数”推进 offset，过滤后的短页会让它重复扫描
+					// 同一批候选甚至在尾部空转。安全优先：让它刷新当前列表，
+					// 而不是返回受限内容来维持旧体验。
+					c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
+					return
+				}
+
+				posts = visiblePosts
+				h.hydratePosts(c, posts, time.Now())
+				if posts == nil {
+					posts = []models.Post{}
+				}
+				c.JSON(http.StatusOK, gin.H{
+					"posts": posts,
+					// total 语义：原始快照候选数（含当前已不可见的候选），
+					// 不代表当前精确可见数量；不为了显示总数做全表扫描。
+					"total":       len(snapshot.PostIDs),
+					"total_kind":  "snapshot_candidates",
+					"page":        page,
+					"limit":       limit,
+					"session_id":  sessionID,
+					"next_offset": window.NextOffset,
+					"has_more":    window.HasMore,
+				})
+				return
 			}
+			deleteSnapshot(sessionID)
 		}
 	}
 
@@ -792,11 +815,15 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		}
 
 		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
+		// 快照记录归属用户与筛选指纹：loadmore 时必须两项都一致才允许复用，
+		// 避免把 A 用户的列表或另一个版块/排序的结果返回给当前请求。
 		storeSnapshot(sessionID, Snapshot{
+			UserID:    optionalFeedUserID(c),
 			PostIDs:   allIDs,
 			ExpiredAt: time.Now().Add(10 * time.Minute),
 			Sort:      sort,
 			FeedKind:  genericFeedKind,
+			FilterKey: snapshotFilterKey(c),
 		})
 
 		// 自动销毁
@@ -804,40 +831,29 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			deleteSnapshot(sessionID)
 		})
 
-		// 取出第一页
-		end := limit
-		if end > len(allIDs) {
-			end = len(allIDs)
+		// 取出第一页：固定候选窗口后按当前可见状态过滤，允许短页。
+		window := sliceFeedWindow(len(allIDs), 0, limit)
+		firstPage, firstPageErr := h.loadPostsInOrder(allIDs[window.Start:window.End], publicPostStatuses)
+		if firstPageErr != nil {
+			log.Printf("[DB_ERROR] GetList common feed Find failed: %v", firstPageErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
+			return
 		}
-		if len(allIDs) > 0 {
-			targetIDs := allIDs[:end]
-			var rawPosts []models.Post
-			if err := h.db.Model(&models.Post{}).Where("id IN ?", targetIDs).Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).Find(&rawPosts).Error; err != nil {
-				log.Printf("[DB_ERROR] GetList common feed Find failed: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
-				return
-			}
-
-			postMap := make(map[uint]models.Post)
-			for _, p := range rawPosts {
-				postMap[p.ID] = p
-			}
-			for _, id := range targetIDs {
-				if p, exists := postMap[id]; exists {
-					posts = append(posts, p)
-				}
-			}
-		}
+		posts = firstPage
+		nextOffset = window.NextOffset
+		hasMore = window.HasMore
 	} else {
 		if scene == "loadmore" && (sort == "all" || sort == "hot") {
 			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
 			return
 		}
-		// 普通查询分页
+		// 普通查询分页：offset 已在入口校验为 0..MaxInt，且不会与 limit 相加溢出。
 		if err := query.Offset(offset).Limit(limit).Find(&posts).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
 			return
 		}
+		nextOffset = offset + len(posts)
+		hasMore = int64(nextOffset) < total
 	}
 	h.hydratePosts(c, posts, now)
 	if posts == nil {
@@ -850,6 +866,10 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		"page":       page,
 		"limit":      limit,
 		"session_id": sessionID,
+		// next_offset 是原始候选消费位置（不是已显示条数）：
+		// 可见性过滤会产生短页，按已显示条数推进会重复扫描同一批候选。
+		"next_offset": nextOffset,
+		"has_more":    hasMore,
 	})
 }
 
@@ -1236,17 +1256,19 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 			ids = append(ids, post.ID)
 		}
 	}
-	end := offset + limit
-	if end > len(ids) {
-		end = len(ids)
-	}
-	if offset > len(ids) {
-		offset = len(ids)
-	}
-	pageIDs := ids[offset:end]
-	posts, err := h.loadPostsInOrder(pageIDs)
+	// 固定候选窗口后按当前可见状态过滤：快照生成后帖子可能已被删除/隐藏，
+	// 不能把历史快照当成访问许可。过滤后允许短页，由 next_offset 负责推进。
+	window := sliceFeedWindow(len(ids), offset, limit)
+	pageIDs := ids[window.Start:window.End]
+	posts, err := h.loadPostsInOrder(pageIDs, homeFeedPostStatuses)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
+		return
+	}
+	shortPage := len(posts) < len(pageIDs)
+	if scene == "loadmore" && shortPage && !supportsFeedPaginationMeta(c) {
+		// 旧客户端无法按 next_offset 推进：安全优先，要求刷新列表。
+		c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
 		return
 	}
 	h.hydratePosts(c, posts, now)
@@ -1257,7 +1279,19 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 	if pinned == nil {
 		pinned = []models.Post{}
 	}
-	c.JSON(http.StatusOK, gin.H{"pinned_posts": pinned, "posts": posts, "total": len(ids), "page": page, "limit": limit, "session_id": sessionID, "algorithm_version": algorithm})
+	c.JSON(http.StatusOK, gin.H{
+		"pinned_posts":      pinned,
+		"posts":             posts,
+		// total 语义：原始快照候选数（含当前已不可见的候选），不是精确可见数量。
+		"total":             len(ids),
+		"total_kind":        "snapshot_candidates",
+		"page":              page,
+		"limit":             limit,
+		"session_id":        sessionID,
+		"algorithm_version": algorithm,
+		"next_offset":       window.NextOffset,
+		"has_more":          window.HasMore,
+	})
 }
 
 // getHomeLatestFeedV2 使用数据库 keyset 游标读取“最新”Feed，不再先把结果
@@ -1306,7 +1340,8 @@ func (h *PostHandler) getHomeLatestFeedV2(c *gin.Context, pinned []models.Post, 
 	for _, post := range rows {
 		ids = append(ids, post.ID)
 	}
-	posts, err := h.loadPostsInOrder(ids)
+	// 同一请求内的两次查询之间帖子可能已被删除/隐藏，二次回读仍按状态过滤。
+	posts, err := h.loadPostsInOrder(ids, homeFeedPostStatuses)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取最新帖子失败"})
 		return
@@ -1334,7 +1369,9 @@ func (h *PostHandler) getHomeLatestFeedV2(c *gin.Context, pinned []models.Post, 
 		"session_id":        "",
 		"algorithm_version": algorithm,
 		"has_more":          hasMore,
-		"next_cursor":       nextCursor,
+		// 兼容仅使用 page/offset 的旧客户端：next_offset 是原始候选消费位置。
+		"next_offset": offset + len(rows),
+		"next_cursor": nextCursor,
 		"next_cursor_token": func() string {
 			if nextCursor == nil {
 				return ""
@@ -1344,12 +1381,21 @@ func (h *PostHandler) getHomeLatestFeedV2(c *gin.Context, pinned []models.Post, 
 	})
 }
 
-func (h *PostHandler) loadPostsInOrder(ids []uint) ([]models.Post, error) {
+// loadPostsInOrder 按给定 ID 顺序回读帖子。
+//
+// 关键约束：这里必须按**数据库当前可见状态**过滤，不能只凭 `id IN (...)`。
+// 快照只保存 ID，帖子在快照生成后可能被删除或治理隐藏；按 ID 直接回读会把
+// 正文、图片地址、联系方式等载荷重新返回给公共读取方。
+//
+// statuses 为空时回退到 publicPostStatuses（正向白名单），未知状态默认不公开。
+func (h *PostHandler) loadPostsInOrder(ids []uint, statuses []models.PostStatus) ([]models.Post, error) {
 	if len(ids) == 0 {
 		return []models.Post{}, nil
 	}
+	query := h.db.Model(&models.Post{}).Where("posts.id IN ?", ids)
+	query = applyPublicPostStatus(query, statuses)
 	var raw []models.Post
-	if err := h.db.Where("id IN ?", ids).Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).Find(&raw).Error; err != nil {
+	if err := query.Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).Find(&raw).Error; err != nil {
 		return nil, err
 	}
 	byID := make(map[uint]models.Post, len(raw))
@@ -1418,15 +1464,11 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 		time.AfterFunc(10*time.Minute, func() { deleteSnapshot(sessionID) })
 	}
 
-	end := offset + limit
-	if end > len(ids) {
-		end = len(ids)
-	}
-	if offset > len(ids) {
-		offset = len(ids)
-	}
-	pageIDs := ids[offset:end]
-	posts, err := h.loadPostsInOrder(pageIDs)
+	window := sliceFeedWindow(len(ids), offset, limit)
+	pageIDs := ids[window.Start:window.End]
+	// 旧版首页快照里可能混入置顶帖（normal/sold/closed），因此这里使用公共
+	// 可见状态白名单而不是首页水帖的 normal-only 约束，避免误伤合法置顶。
+	posts, err := h.loadPostsInOrder(pageIDs, publicPostStatuses)
 	if err != nil {
 		log.Printf("[DB_ERROR] legacy home feed load posts: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -1435,16 +1477,25 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 		})
 		return
 	}
+	shortPage := len(posts) < len(pageIDs)
+	if scene == "loadmore" && shortPage && !supportsFeedPaginationMeta(c) {
+		c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
+		return
+	}
 	h.hydratePosts(c, posts, now)
 	if posts == nil {
 		posts = []models.Post{}
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"posts":      posts,
-		"total":      len(ids),
-		"page":       page,
-		"limit":      limit,
-		"session_id": sessionID,
+		"posts": posts,
+		// total 语义：原始快照候选数（含已不可见候选）。
+		"total":       len(ids),
+		"total_kind":  "snapshot_candidates",
+		"page":        page,
+		"limit":       limit,
+		"session_id":  sessionID,
+		"next_offset": window.NextOffset,
+		"has_more":    window.HasMore,
 	})
 }
 
@@ -1510,17 +1561,6 @@ func (h *PostHandler) Create(c *gin.Context) {
 	var user models.User
 	if err := h.db.Select("id").First(&user, userID).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在", "code": "authentication_required"})
-		return
-	}
-	if h.postRateLimited(user.ID) {
-		if h.security != nil {
-			_ = h.security.Record(services.SecurityEventInput{
-				EventType: "content_post_flood", Severity: models.SecuritySeverityMedium, Route: "/api/posts", Method: c.Request.Method,
-				ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &user.ID, Blocked: true, Action: "rate_limited",
-				Metadata: map[string]interface{}{"window": "5m/24h", "route_group": "content"},
-			})
-		}
-		c.JSON(http.StatusTooManyRequests, gin.H{"error": "发帖过于频繁，请稍后再试", "code": "content_rate_limited"})
 		return
 	}
 	if models.BoardID(input.BoardID) == models.BoardMarket {
@@ -1621,7 +1661,26 @@ func (h *PostHandler) Create(c *gin.Context) {
 		}
 	}
 
-	err = h.db.Transaction(func(tx *gorm.DB) error {
+	// 额度检查与内容创建必须在同一事务内完成：先锁定发布用户行，等待锁结束后
+	// 再执行计数查询（READ COMMITTED 下才能看到此前已提交的内容），最后才创建正文。
+	// 原实现把 Count 放在事务外且忽略错误，Count 失败会被当作 0 次直接放行。
+	releaseSerial := services.AcquireContentWriteSerialLock(h.db)
+	defer releaseSerial()
+
+	// 使用请求 context 启动事务：客户端断开时事务随之取消，避免无界等待。
+	// 隔离级别保持数据库默认（PostgreSQL 为 READ COMMITTED），不在此处改动全局设置。
+	err = h.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if lockErr := services.LockUserForContentWrite(tx, user.ID); lockErr != nil {
+			return lockErr
+		}
+		// 等待锁之后再确定发表时刻，避免长时间等待导致额度窗口与 CreatedAt 不一致。
+		txNow := time.Now()
+		if quotaErr := services.CheckPostPublishQuota(tx, user.ID, txNow); quotaErr != nil {
+			return quotaErr
+		}
+		post.CreatedAt = txNow
+		post.LastActivityAt = txNow
+		now = txNow
 		if _, err := services.ValidateImageFileIDs(tx, fileIDs, 9, userID.(uint)); err != nil {
 			return err
 		}
@@ -1685,8 +1744,44 @@ func (h *PostHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": topicErr.Error(), "code": "invalid_topics"})
 			return
 		}
-		log.Printf("创建帖子失败: %v (user_id=%v, board_id=%v)", err, userID, input.BoardID)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建帖子失败: %v", err)})
+		if errors.Is(err, services.ErrContentRateLimited) {
+			// 额度已满：保留兼容的 content_rate_limited，不触发登出/封号/积分处罚。
+			if h.security != nil {
+				_ = h.security.Record(services.SecurityEventInput{
+					EventType: "content_post_flood", Severity: models.SecuritySeverityMedium, Route: "/api/posts", Method: c.Request.Method,
+					ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &user.ID, Blocked: true, Action: "rate_limited",
+					Metadata: map[string]interface{}{"window": "5m/24h", "route_group": "content"},
+				})
+			}
+			c.Header("Retry-After", "60")
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error": "发帖过于频繁，请稍后再试",
+				"code":  "content_rate_limited",
+				"reason": "publish_quota_exhausted",
+			})
+			return
+		}
+		if errors.Is(err, services.ErrContentQuotaUnavailable) {
+			// 额度服务暂不可用：属服务端问题，不能当作“0 次”放行，也不能算作用户违规。
+			requestID := middleware.EnsureRequestID(c)
+			log.Printf("[POST_QUOTA_UNAVAILABLE] request_id=%s user_id=%v err=%v", requestID, userID, err)
+			c.Header("Retry-After", "5")
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":      "服务暂时不可用，请稍后重试",
+				"code":       "content_quota_unavailable",
+				"request_id": requestID,
+			})
+			return
+		}
+		// 内部错误只写日志，不拼进响应体：数据库/驱动错误可能包含 SQL 片段、
+		// 表结构甚至连接信息。对外只给稳定文案与可追踪的 request_id。
+		requestID := middleware.EnsureRequestID(c)
+		log.Printf("[POST_CREATE_FAILED] request_id=%s user_id=%v board_id=%v err=%v", requestID, userID, input.BoardID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":      "创建帖子失败，请稍后重试",
+			"code":       "post_create_failed",
+			"request_id": requestID,
+		})
 		return
 	}
 

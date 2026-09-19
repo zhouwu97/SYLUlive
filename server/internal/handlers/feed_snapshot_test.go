@@ -23,7 +23,12 @@ func newFeedSnapshotTestDB(t *testing.T) *gorm.DB {
 	seq := atomic.AddInt64(&feedSnapshotTestDBSeq, 1)
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:snapshot_%d?mode=memory&cache=shared", seq)), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.Post{}, &models.User{}, &models.FeedFeedback{}, &models.UserHiddenAuthor{}))
+	// 回归目标包含“真实存在的公开帖子”这一情形，因此需要帖子图片相关表，
+	// 否则 loadPostsInOrder 的 Preload("Images") 会因缺表而直接失败。
+	require.NoError(t, db.AutoMigrate(
+		&models.Post{}, &models.User{}, &models.FeedFeedback{}, &models.UserHiddenAuthor{},
+		&models.PostImage{}, &models.File{}, &models.ImageVariant{},
+	))
 	return db
 }
 
@@ -41,9 +46,19 @@ func TestHomeFeedV2SnapshotUserIDBinding(t *testing.T) {
 	h := NewPostHandler(db, "", "")
 	now := time.Now()
 
+	// 快照里必须是真实存在的公开帖子：本用例只验证归属校验，
+	// 悬空 ID 会命中“可见性过滤后短页”的分支而返回 409，不属于本用例关注点。
+	author := models.User{Nickname: "作者", PasswordHash: "x"}
+	require.NoError(t, db.Create(&author).Error)
+	snapPost := models.Post{
+		BoardID: models.BoardShuitie, AuthorID: author.ID,
+		Title: "快照帖", Content: "x", Status: models.PostStatusNormal,
+	}
+	require.NoError(t, db.Create(&snapPost).Error)
+
 	// 用户 1 创建综合快照。
 	storeSnapshot("sessA", Snapshot{
-		UserID: 1, PostIDs: []uint{99}, ExpiredAt: now.Add(10 * time.Minute),
+		UserID: 1, PostIDs: []uint{snapPost.ID}, ExpiredAt: now.Add(10 * time.Minute),
 		AlgorithmVersion: "home_all_v2", Sort: "all", FeedKind: "home_v2",
 	})
 

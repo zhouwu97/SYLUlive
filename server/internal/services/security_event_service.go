@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,13 +10,13 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 )
 
@@ -47,10 +48,12 @@ type SecurityEventInput struct {
 
 // SecurityEventService 负责来源摘要、目标摘要和五分钟聚合写入。
 type SecurityEventService struct {
-	db                   *gorm.DB
-	secret               []byte
-	now                  func() time.Time
-	mu                   sync.Mutex
+	db     *gorm.DB
+	secret []byte
+	now    func() time.Time
+	// 说明：这里曾经有一个 sync.Mutex 包住事件 UPSERT。它只保护那一句数据库写入，
+	// 并不保护其它需要串行的内存状态，却让不同来源的并发事件互相阻塞；
+	// 单条原子 UPSERT 本身已由数据库保证正确性，因此该 mutex 已移除。
 	attributionValidFrom time.Time
 	blockDegraded        atomic.Bool
 }
@@ -105,9 +108,54 @@ func MaskSecurityFingerprint(value string) string {
 	return value[:4] + "…" + value[len(value)-4:]
 }
 
+// securityAuditTimeout 是安全事件写入与封禁查询的等待上限。
+// 这些是附加安全层，不能无界地拖住被封禁请求或安全中心的后台操作。
+const securityAuditTimeout = 2 * time.Second
+
+// securityEventsTable 是 SecurityEvent 的默认表名（模型未自定义 TableName，
+// 连接也未配置 NamingStrategy/TablePrefix）。
+//
+// 为什么累加表达式必须显式限定目标表：
+// PostgreSQL 的 INSERT ... ON CONFLICT (bucket_key) DO UPDATE 会把**目标表和 excluded
+// 伪表同时**放进 SET 表达式的名称作用域，于是未限定的 "attempt_count + 1" 会被判定为
+// ambiguous 并返回 SQLSTATE 42702（列引用不明确）。SQLite 则会静默按目标表解析。
+// 结果是这条缺陷在 SQLite 测试下完全不可见，只在 PostgreSQL 上表现为
+// “同一个五分钟桶里第二次及以后的事件永远写不进去”，安全中心计数长期停留在首次值。
+const securityEventsTable = "security_events"
+
+// securityEventIncrement 生成“目标表现有值 + delta”的累加表达式，列名限定到目标表，
+// 以避开 PostgreSQL ON CONFLICT DO UPDATE 的列引用歧义（见 securityEventsTable 注释）。
+func securityEventIncrement(column string, delta int) clause.Expr {
+	return gorm.Expr(securityEventsTable+"."+column+" + ?", delta)
+}
+
+// Record 写入一条安全观察事件。
+//
+// 该方法不接收 context，供不掌握请求 context 的后台/异步调用方使用。
+// HTTP 请求链路请使用 RecordContext，以便客户端中断时随之取消。
 func (s *SecurityEventService) Record(input SecurityEventInput) error {
+	return s.RecordContext(context.Background(), input)
+}
+
+// RecordContext 在给定 context 下写入安全事件。
+//
+// 并发语义：事件写入是**单条原子 UPSERT**（bucket_key 上的 ON CONFLICT DO UPDATE），
+// 数据库本身保证同桶计数的正确性，因此这里不再用全局 mutex 把无关事件的 I/O 串起来。
+// 原有那层 mutex 只保护这一条 UPSERT，没有保护其它必须串行的内存状态；保留它只会让
+// 不同来源的并发事件互相阻塞。同桶 attempt/blocked/mail_sent 等计数语义不变，
+// 一次请求仍然只计一次；数据库错误继续向上返回，不会被静默伪装成成功。
+func (s *SecurityEventService) RecordContext(ctx context.Context, input SecurityEventInput) error {
 	if s == nil || s.db == nil {
 		return nil
+	}
+	// 不丢失 HTTP 请求取消，同时给出有限等待预算。
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, securityAuditTimeout)
+		defer cancel()
 	}
 	if strings.TrimSpace(input.EventType) == "" {
 		return errors.New("安全事件类型不能为空")
@@ -167,15 +215,13 @@ func (s *SecurityEventService) Record(input SecurityEventInput) error {
 		FirstSeenAt: now, LastSeenAt: now, CreatedAt: now, UpdatedAt: now,
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.db.Clauses(clause.OnConflict{
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "bucket_key"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
-			"attempt_count":                gorm.Expr("attempt_count + ?", attemptCount),
-			"blocked_count":                gorm.Expr("blocked_count + ?", boolInt(input.Blocked)),
-			"mail_sent_count":              gorm.Expr("mail_sent_count + ?", boolInt(input.MailSent)),
-			"password_reset_success_count": gorm.Expr("password_reset_success_count + ?", boolInt(input.PasswordResetSucceeded)),
+			"attempt_count":                securityEventIncrement("attempt_count", attemptCount),
+			"blocked_count":                securityEventIncrement("blocked_count", boolInt(input.Blocked)),
+			"mail_sent_count":              securityEventIncrement("mail_sent_count", boolInt(input.MailSent)),
+			"password_reset_success_count": securityEventIncrement("password_reset_success_count", boolInt(input.PasswordResetSucceeded)),
 			"last_seen_at":                 now,
 			"updated_at":                   now,
 			"status":                       status,
@@ -188,28 +234,50 @@ func (s *SecurityEventService) Record(input SecurityEventInput) error {
 	}).Create(&event).Error
 }
 
+// IsBlocked 在默认超时预算内判断来源是否处于临时封禁。
+// HTTP 链路请使用 IsBlockedContext。
 func (s *SecurityEventService) IsBlocked(clientIP, route string) (bool, error) {
+	return s.IsBlockedContext(context.Background(), clientIP, route)
+}
+
+// IsBlockedContext 在给定 context 下判断来源是否被临时封禁。
+//
+// 封禁查询与随后的封禁计数写入都受 context 约束：被封禁请求同步记录事件是既有
+// 设计（安全中心需要看到封禁实际挡住了多少请求），但不能因此无界等待。
+// 这里的写入属于安全观察事件，失败不会覆盖已完成的正常业务结果。
+func (s *SecurityEventService) IsBlockedContext(ctx context.Context, clientIP, route string) (bool, error) {
 	if s == nil || s.db == nil || strings.TrimSpace(clientIP) == "" {
 		return false, nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, securityAuditTimeout)
+		defer cancel()
+	}
 	hash := s.Hash(clientIP)
 	var count int64
-	err := s.db.Model(&models.SecurityBlock{}).
+	err := s.db.WithContext(ctx).Model(&models.SecurityBlock{}).
 		Where("scope_type = ? AND scope_value = ? AND expires_at > ? AND revoked_at IS NULL", "ip_hash", hash, s.now()).
 		Where("route_prefix = '' OR ? LIKE route_prefix || '%'", route).
 		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
 	blocked := count > 0
 	if blocked {
 		// 封禁层本身也要留下聚合计数，否则安全中心只能看到管理员创建了封禁，
 		// 看不到封禁实际挡住了多少请求。
-		_ = s.Record(SecurityEventInput{
+		_ = s.RecordContext(ctx, SecurityEventInput{
 			EventType: "security_blocked_request", Severity: models.SecuritySeverityHigh,
 			Route: route, Method: "BLOCK", ClientIP: clientIP,
 			TargetType: "route", TargetValue: route, TargetMasked: route,
 			Blocked: true, Action: "blocked",
 		})
 	}
-	return blocked, err
+	return blocked, nil
 }
 
 func (s *SecurityEventService) CountDistinctTargets(eventType, clientIP string, since time.Time) (int64, error) {
@@ -272,21 +340,13 @@ func boolInt(value bool) int {
 	return 0
 }
 
+// IsSensitiveSecurityRoute 委托到 middleware.SensitiveSecurityRoute。
+//
+// services 已经依赖 middleware（见 user_role.go），因此这里是安全的复用方向，
+// 不会再产生包循环。保留本函数只为兼容既有调用方；新增代码请直接使用
+// middleware.SensitiveSecurityRoute，避免再次出现两份分叉的策略清单。
 func IsSensitiveSecurityRoute(path string) bool {
-	return strings.HasPrefix(path, "/api/login") ||
-		strings.HasPrefix(path, "/api/password/") ||
-		strings.HasPrefix(path, "/api/register") ||
-		strings.HasPrefix(path, "/api/forgot_password") ||
-		strings.HasPrefix(path, "/api/refresh") ||
-		strings.HasPrefix(path, "/api/auth/refresh") ||
-		strings.HasPrefix(path, "/api/change_password") ||
-		strings.HasPrefix(path, "/api/user/email") ||
-		strings.HasPrefix(path, "/api/send_code") ||
-		strings.HasPrefix(path, "/api/verify_code") ||
-		strings.HasPrefix(path, "/api/search") ||
-		strings.HasPrefix(path, "/api/posts") ||
-		strings.HasPrefix(path, "/api/messages") ||
-		strings.HasPrefix(path, "/api/feedback")
+	return middleware.SensitiveSecurityRoute(path)
 }
 
 func SecurityHTTPMethod(method string) string {

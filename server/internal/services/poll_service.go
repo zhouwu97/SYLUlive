@@ -120,6 +120,14 @@ func (s *PollService) Create(userID uint, role string, input CreatePollInput) (m
 			return newPollError(PollCodePermissionDenied, "用户不存在")
 		}
 		if !isAdminRole(role) {
+			// 投票创建同样写入 posts 记录，必须遵守与普通发帖相同的发布额度协议，
+			// 否则并发投票可以绕过 5 分钟 / 24 小时发帖额度。
+			if err := CheckPostPublishQuota(tx, userID, now); err != nil {
+				if errors.Is(err, ErrContentRateLimited) {
+					return newPollError(PollCodeCreationLimit, "发帖过于频繁，请稍后再试")
+				}
+				return err
+			}
 			if err := s.checkCreationLimit(tx, userID, now); err != nil {
 				return err
 			}

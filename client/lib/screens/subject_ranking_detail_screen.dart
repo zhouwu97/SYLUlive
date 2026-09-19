@@ -83,7 +83,7 @@ class _SubjectRankingDetailScreenState
   }
 
   Future<void> _openTeacherDetail(CourseSubjectTeacher teacher) async {
-    final changed = await Navigator.push<bool>(
+    await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => TeacherDetailScreen(
@@ -92,9 +92,9 @@ class _SubjectRankingDetailScreenState
         ),
       ),
     );
-    if (changed != true || !mounted) return;
+    if (!mounted) return;
     _changed = true;
-    // 评分返回后按学科 ID 重新加载教师与统计。
+    // 教师评价返回后（无论手势返回还是点击返回）按学科 ID 重新加载教师与统计。
     await _loadDetail();
   }
 
@@ -155,7 +155,7 @@ class _SubjectRankingDetailScreenState
                   icon: const Icon(Icons.more_horiz_rounded),
                   onSelected: (value) async {
                     if (value == 'merge') {
-                      final changed = await Navigator.push<bool>(
+                      await Navigator.push<bool>(
                         context,
                         MaterialPageRoute(
                           builder: (_) => AdminTeacherGovernanceScreen(
@@ -165,10 +165,9 @@ class _SubjectRankingDetailScreenState
                           ),
                         ),
                       );
-                      if (changed == true && mounted) {
-                        _changed = true;
-                        await _loadDetail();
-                      }
+                      if (!context.mounted) return;
+                      _changed = true;
+                      await _loadDetail();
                     }
                   },
                   itemBuilder: (context) => [

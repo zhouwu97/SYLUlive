@@ -395,21 +395,22 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
               count: subject.ratingCount,
               extraLabel: subject.ratingCount > 0 ? '学科评分' : '暂无评分',
               icon: Icons.auto_stories_outlined,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => SubjectRankingDetailScreen(
-                    subjectId: subject.id,
-                    subjectName: subject.name,
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SubjectRankingDetailScreen(
+                      subjectId: subject.id,
+                      subjectName: subject.name,
+                    ),
                   ),
-                ),
-              ).then((changed) async {
-                if (changed != true || !mounted) return;
-                // 学科详情内发布评价后刷新学科榜统计。
+                );
+                if (!mounted) return;
+                // 学科详情返回后（无论手势返回还是点击返回）刷新学科榜统计。
                 await context
                     .read<CourseSubjectProvider>()
                     .loadSubjects(force: true);
-              }),
+              },
             );
           }
 
@@ -1001,7 +1002,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
                                 ),
                               ),
                               TextButton(
-                                onPressed: () {
+                                onPressed: () async {
                                   // 旧"添加授课教师"入口继续走 /teachers；
                                   // 这里跳转学科详情时按标准学科 ID 传递。
                                   final subject = context
@@ -1012,7 +1013,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
                                       .firstOrNull;
                                   Navigator.pop(sheetContext);
                                   if (mounted && subject != null) {
-                                    Navigator.push(
+                                    await Navigator.push(
                                       context,
                                       MaterialPageRoute(
                                         builder: (_) =>
@@ -1022,6 +1023,11 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
                                         ),
                                       ),
                                     );
+                                    if (mounted) {
+                                      await context
+                                          .read<CourseSubjectProvider>()
+                                          .loadSubjects(force: true);
+                                    }
                                   }
                                 },
                                 style: TextButton.styleFrom(

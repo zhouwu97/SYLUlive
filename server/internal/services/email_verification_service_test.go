@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"net"
@@ -175,6 +176,127 @@ func TestVerificationMailDispatcherTimesOutBlockedMailer(t *testing.T) {
 	case <-failed:
 	case <-time.After(time.Second):
 		t.Fatal("邮件发送超时后未触发失败回调")
+	}
+}
+
+func TestSMTPVerificationMailerTreatsDataAcceptedAsSuccessWhenQuitFails(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("启动 SMTP 测试监听失败: %v", err)
+	}
+	defer listener.Close()
+
+	serverDone := make(chan error, 1)
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			serverDone <- acceptErr
+			return
+		}
+		defer conn.Close()
+
+		reader := bufio.NewReader(conn)
+		writer := bufio.NewWriter(conn)
+		writeResponse := func(response string) error {
+			if _, err := writer.WriteString(response + "\r\n"); err != nil {
+				return err
+			}
+			return writer.Flush()
+		}
+		readCommand := func() (string, error) {
+			line, err := reader.ReadString('\n')
+			return strings.TrimSpace(line), err
+		}
+		expectPrefix := func(prefix string) error {
+			line, err := readCommand()
+			if err != nil {
+				return err
+			}
+			if !strings.HasPrefix(strings.ToUpper(line), prefix) {
+				return errors.New("unexpected SMTP command: " + line)
+			}
+			return nil
+		}
+
+		if err := writeResponse("220 test.smtp ESMTP"); err != nil {
+			serverDone <- err
+			return
+		}
+		if err := expectPrefix("EHLO"); err != nil {
+			serverDone <- err
+			return
+		}
+		if _, err := writer.WriteString("250-test.smtp\r\n250 AUTH PLAIN\r\n"); err != nil {
+			serverDone <- err
+			return
+		}
+		if err := writer.Flush(); err != nil {
+			serverDone <- err
+			return
+		}
+		if err := expectPrefix("AUTH PLAIN"); err != nil {
+			serverDone <- err
+			return
+		}
+		if err := writeResponse("235 2.7.0 Authentication successful"); err != nil {
+			serverDone <- err
+			return
+		}
+		for _, response := range []string{"MAIL FROM:", "RCPT TO:"} {
+			if err := expectPrefix(response); err != nil {
+				serverDone <- err
+				return
+			}
+			if err := writeResponse("250 2.0.0 OK"); err != nil {
+				serverDone <- err
+				return
+			}
+		}
+		if err := expectPrefix("DATA"); err != nil {
+			serverDone <- err
+			return
+		}
+		if err := writeResponse("354 End data with <CR><LF>.<CR><LF>"); err != nil {
+			serverDone <- err
+			return
+		}
+		for {
+			line, err := readCommand()
+			if err != nil {
+				serverDone <- err
+				return
+			}
+			if line == "." {
+				break
+			}
+		}
+		if err := writeResponse("250 2.0.0 queued"); err != nil {
+			serverDone <- err
+			return
+		}
+		if err := expectPrefix("QUIT"); err != nil {
+			serverDone <- err
+			return
+		}
+		// 模拟 SMTP 服务端已接受 DATA，但在 QUIT 阶段直接断开连接。
+		serverDone <- nil
+	}()
+
+	mailer := NewSMTPVerificationMailer(SMTPConfig{
+		Host: "127.0.0.1", Port: strconv.Itoa(listener.Addr().(*net.TCPAddr).Port),
+		User: "user", Pass: "pass", From: "from@example.com",
+	})
+	err = mailer.SendVerificationCode(context.Background(), "to@example.com", models.EmailVerificationPurposeRegister, "123456")
+	if err != nil {
+		t.Fatalf("DATA 已被 SMTP 服务端接受时，QUIT 失败不应判定投递失败: %v", err)
+	}
+	select {
+	case serverErr := <-serverDone:
+		if serverErr != nil {
+			t.Fatalf("SMTP 测试服务端交互失败: %v", serverErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("SMTP 测试服务端未完成交互")
 	}
 }
 

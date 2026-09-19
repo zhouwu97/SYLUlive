@@ -143,7 +143,9 @@ func (m *SMTPVerificationMailer) SendVerificationCode(ctx context.Context, email
 	if err := writer.Close(); err != nil {
 		return err
 	}
-	return client.Quit()
+	// DATA 结束后 SMTP 服务端已确认接收邮件；QUIT 仅是会话收尾，失败不应撤销已提交的验证码。
+	_ = client.Quit()
+	return nil
 }
 
 func buildVerificationEmail(to string, from string, purpose string, code string) []byte {

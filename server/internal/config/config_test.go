@@ -81,12 +81,14 @@ func TestLoadUploadProtectionDefaultsAndOverrides(t *testing.T) {
 	require.Equal(t, 30, cfg.UploadPerMinuteCountLimit)
 	require.Equal(t, int64(100*1024*1024), cfg.UploadHourlyBytesLimit)
 	require.Equal(t, 6*time.Hour, cfg.UploadTemporaryTTL)
+	require.True(t, cfg.UploadTemporaryCleanupNotBefore.IsZero())
 	require.Equal(t, 70, cfg.UploadDiskWarnPercent)
 	require.Equal(t, 90, cfg.UploadDiskCriticalPercent)
 
 	t.Setenv("UPLOAD_PER_MINUTE_COUNT_LIMIT", "7")
 	t.Setenv("UPLOAD_HOURLY_BYTES_LIMIT", "12345")
 	t.Setenv("UPLOAD_TEMPORARY_TTL_HOURS", "12")
+	t.Setenv("UPLOAD_TEMPORARY_CLEANUP_NOT_BEFORE", "2026-09-20T12:30:00+08:00")
 	t.Setenv("UPLOAD_DISK_WARN_PERCENT", "60")
 	t.Setenv("UPLOAD_DISK_SEVERE_PERCENT", "75")
 	t.Setenv("UPLOAD_DISK_CRITICAL_PERCENT", "85")
@@ -94,8 +96,15 @@ func TestLoadUploadProtectionDefaultsAndOverrides(t *testing.T) {
 	require.Equal(t, 7, custom.UploadPerMinuteCountLimit)
 	require.Equal(t, int64(12345), custom.UploadHourlyBytesLimit)
 	require.Equal(t, 12*time.Hour, custom.UploadTemporaryTTL)
+	require.Equal(t, time.Date(2026, 9, 20, 12, 30, 0, 0, time.FixedZone("UTC+8", 8*60*60)).Unix(), custom.UploadTemporaryCleanupNotBefore.Unix())
 	require.Equal(t, 60, custom.UploadDiskWarnPercent)
 	require.Equal(t, 85, custom.UploadDiskCriticalPercent)
+}
+
+func TestLoadRejectsInvalidUploadCleanupBoundary(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("UPLOAD_TEMPORARY_CLEANUP_NOT_BEFORE", "2026-09-20 12:30:00")
+	require.Panics(t, func() { _ = Load() })
 }
 
 func TestLoadRejectsInvalidUploadDiskWatermarkOrder(t *testing.T) {

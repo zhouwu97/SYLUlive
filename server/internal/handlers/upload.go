@@ -166,6 +166,12 @@ func writeUploadProtectionError(c *gin.Context, err error) bool {
 			"code":  "upload_protection_unavailable",
 		})
 		return true
+	case errors.Is(err, services.ErrFileBeingDeleted):
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "文件正在整理，请稍后重试",
+			"code":  "file_being_deleted",
+		})
+		return true
 	default:
 		return false
 	}
@@ -186,6 +192,21 @@ func (h *UploadHandler) persistTemporaryFile(ctx context.Context, record *models
 		return services.UploadPersistResult{}, err
 	}
 	return services.UploadPersistResult{File: *record}, nil
+}
+
+// persistOrReuseProtected 先在文件哈希锁内处理已有记录，再回退到新文件配额事务。
+// 这样恢复缺失物理文件时，janitor 不能在写盘和 grant 之间插入 deleting 状态。
+func (h *UploadHandler) persistOrReuseProtected(ctx context.Context, record *models.File, write func(string) error) (services.UploadPersistResult, error) {
+	if h.uploadProtection == nil {
+		return services.UploadPersistResult{}, fmt.Errorf("上传保护未启用")
+	}
+	result, found, err := h.uploadProtection.ReuseOrRestoreFile(ctx, record, write)
+	if err != nil || found {
+		return result, err
+	}
+	return h.uploadProtection.PersistTemporaryFile(ctx, record, func() error {
+		return write(record.Path)
+	})
 }
 
 // isAuthorizedForPrivateFile 检查请求是否有权访问私有待审核文件（管理员/超级管理员/文件上传者）
@@ -417,10 +438,54 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	}
 	hashStr := hex.EncodeToString(hash.Sum(nil))
 
+	if h.uploadProtection != nil {
+		dir1 := filepath.Join(h.uploadDir, hashStr[:2])
+		dstPath := filepath.Join(dir1, hashStr+canonicalExt)
+		fileRecord := models.File{
+			Hash:        hashStr,
+			Path:        "/uploads/" + hashStr[:2] + "/" + hashStr + canonicalExt,
+			Size:        file.Size,
+			MimeType:    meta.MimeType,
+			Width:       meta.Width,
+			Height:      meta.Height,
+			RefCount:    1,
+			UploaderID:  c.GetUint("user_id"),
+			Status:      models.FileStatusTemporary,
+			AccessScope: models.FileAccessPrivate,
+		}
+		result, persistErr := h.persistOrReuseProtected(c.Request.Context(), &fileRecord, func(path string) error {
+			if _, err := src.Seek(0, io.SeekStart); err != nil {
+				return fmt.Errorf("读取文件失败: %w", err)
+			}
+			if path == "" {
+				path = dstPath
+			}
+			return atomicWriteFile(path, src)
+		})
+		if persistErr != nil {
+			if writeUploadProtectionError(c, persistErr) {
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存文件记录失败"})
+			return
+		}
+		fileRecord = result.File
+		response := gin.H{"file_id": fileRecord.ID, "url": fileRecord.Path, "hash": fileRecord.Hash}
+		if result.Reused {
+			response["reused"] = true
+		}
+		c.JSON(http.StatusOK, response)
+		return
+	}
+
 	// 相同内容直接复用已有文件记录，避免违反 files.hash 唯一索引。
 	var existing models.File
 	err = h.db.Where("hash = ?", hashStr).First(&existing).Error
 	if err == nil {
+		if existing.Status == models.FileStatusDeleting {
+			writeUploadProtectionError(c, services.ErrFileBeingDeleted)
+			return
+		}
 		// 确认磁盘文件仍然存在再复用，防止"数据库有记录但物理文件丢失"返回 404。
 		diskPath, pathErr := services.ResolveUploadPath(h.uploadDir, existing.Path)
 		if pathErr != nil {
@@ -429,6 +494,9 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		}
 		if _, statErr := os.Stat(diskPath); statErr == nil {
 			if err := h.grantFileToUser(existing.ID, c.GetUint("user_id")); err != nil {
+				if writeUploadProtectionError(c, err) {
+					return
+				}
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
 				return
 			}
@@ -469,6 +537,9 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 			return
 		}
 		if err := h.grantFileToUser(existing.ID, c.GetUint("user_id")); err != nil {
+			if writeUploadProtectionError(c, err) {
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
 			return
 		}
@@ -584,19 +655,73 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 		canonicalExt := canonicalImageExt(meta.MimeType)
 
 		hash := sha256.New()
-		io.Copy(hash, src)
+		if _, copyErr := io.Copy(hash, src); copyErr != nil {
+			src.Close()
+			results = append(results, gin.H{"error": "计算文件哈希失败: " + file.Filename})
+			continue
+		}
 		src.Close()
 		hashStr := hex.EncodeToString(hash.Sum(nil))
+
+		if h.uploadProtection != nil {
+			dir1 := filepath.Join(h.uploadDir, hashStr[:2])
+			dstPath := filepath.Join(dir1, hashStr+canonicalExt)
+			fileRecord := models.File{
+				Hash:        hashStr,
+				Path:        "/uploads/" + hashStr[:2] + "/" + hashStr + canonicalExt,
+				Size:        file.Size,
+				MimeType:    meta.MimeType,
+				Width:       meta.Width,
+				Height:      meta.Height,
+				RefCount:    1,
+				UploaderID:  c.GetUint("user_id"),
+				Status:      models.FileStatusTemporary,
+				AccessScope: models.FileAccessPrivate,
+			}
+			persisted, persistErr := h.persistOrReuseProtected(c.Request.Context(), &fileRecord, func(path string) error {
+				if path == "" {
+					path = dstPath
+				}
+				src2, openErr := file.Open()
+				if openErr != nil {
+					return fmt.Errorf("保存文件时读取失败")
+				}
+				defer src2.Close()
+				return atomicWriteFile(path, src2)
+			})
+			if persistErr != nil {
+				if writeUploadProtectionError(c, persistErr) {
+					return
+				}
+				results = append(results, gin.H{"error": persistErr.Error()})
+				continue
+			}
+			fileRecord = persisted.File
+			createdFiles = append(createdFiles, fileRecord)
+			item := gin.H{"file_id": fileRecord.ID, "url": fileRecord.Path, "hash": fileRecord.Hash}
+			if persisted.Reused {
+				item["reused"] = true
+			}
+			results = append(results, item)
+			continue
+		}
 
 		// 相同内容直接复用已有文件记录，跳过磁盘写入
 		var existing models.File
 		if err := h.db.Where("hash = ?", hashStr).First(&existing).Error; err == nil {
+			if existing.Status == models.FileStatusDeleting {
+				writeUploadProtectionError(c, services.ErrFileBeingDeleted)
+				return
+			}
 			diskPath, pathErr := services.ResolveUploadPath(h.uploadDir, existing.Path)
 			if pathErr != nil {
 				continue
 			}
 			if _, statErr := os.Stat(diskPath); statErr == nil {
 				if err := h.grantFileToUser(existing.ID, c.GetUint("user_id")); err != nil {
+					if writeUploadProtectionError(c, err) {
+						return
+					}
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
 					return
 				}
@@ -642,6 +767,9 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 				continue
 			}
 			if err := h.grantFileToUser(existing.ID, c.GetUint("user_id")); err != nil {
+				if writeUploadProtectionError(c, err) {
+					return
+				}
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
 				return
 			}
@@ -723,8 +851,17 @@ func (h *UploadHandler) grantFileToUser(fileID, userID uint) error {
 	if userID == 0 {
 		return fmt.Errorf("缺少上传用户")
 	}
-	return h.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.FileUploadGrant{
-		FileID: fileID,
-		UserID: userID,
-	}).Error
+	return h.db.Transaction(func(tx *gorm.DB) error {
+		var file models.File
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status").First(&file, fileID).Error; err != nil {
+			return err
+		}
+		if file.Status == models.FileStatusDeleting {
+			return fmt.Errorf("%w: 文件正在清理", services.ErrFileBeingDeleted)
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.FileUploadGrant{
+			FileID: fileID,
+			UserID: userID,
+		}).Error
+	})
 }

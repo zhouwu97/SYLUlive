@@ -19,6 +19,7 @@ type StorageConsistencyReport struct {
 	MissingPhysical     int
 	OrphanPhysical      int
 	TemporaryReferenced int
+	TemporaryClaimed    int
 }
 
 // StorageConsistencyScanner 只报告异常，不自动修复或删除文件。
@@ -60,6 +61,9 @@ func (s *StorageConsistencyScanner) Run(ctx context.Context) (StorageConsistency
 			}
 		}
 		if file.Status == models.FileStatusTemporary {
+			if file.ClaimedAt != nil {
+				report.TemporaryClaimed++
+			}
 			referenced, refErr := hasBusinessFileReference(s.db, file.ID, func(table string) bool {
 				return s.db.Migrator().HasTable(table)
 			})

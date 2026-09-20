@@ -78,6 +78,132 @@ func TestTemporaryFileJanitorRetriesDeletingRowWhenPhysicalFileIsMissing(t *test
 	require.ErrorIs(t, db.First(&models.File{}, file.ID).Error, gorm.ErrRecordNotFound)
 }
 
+func TestTemporaryFileJanitorRestoresDeletingFileWhenReferenceAppears(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if sqlDB, closeErr := db.DB(); closeErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	require.NoError(t, db.AutoMigrate(&models.File{}, &models.FileUploadGrant{}))
+	require.NoError(t, db.Exec("CREATE TABLE IF NOT EXISTS post_images (id INTEGER PRIMARY KEY, file_id INTEGER NOT NULL)").Error)
+	dir := t.TempDir()
+	created := time.Now().Add(-2 * time.Hour)
+	file := models.File{
+		Hash: "deleting-referenced", Path: "/uploads/referenced.png", Size: 1,
+		MimeType: "image/png", UploaderID: 1, Status: models.FileStatusDeleting,
+		AccessScope: models.FileAccessPrivate, CreatedAt: created,
+	}
+	require.NoError(t, db.Create(&file).Error)
+	path := filepath.Join(dir, "referenced.png")
+	require.NoError(t, os.WriteFile(path, []byte("x"), 0644))
+	require.NoError(t, db.Exec("INSERT INTO post_images(file_id) VALUES (?)", file.ID).Error)
+
+	janitor := NewTemporaryFileJanitor(db, dir, TemporaryFileJanitorConfig{TTL: time.Hour, BatchSize: 10})
+	report, err := janitor.Run(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, report.RetainedReferenced)
+	require.Zero(t, report.Errors)
+	require.FileExists(t, path)
+	var restored models.File
+	require.NoError(t, db.First(&restored, file.ID).Error)
+	require.Equal(t, models.FileStatusActive, restored.Status)
+	require.NotNil(t, restored.ClaimedAt)
+}
+
+func TestTemporaryFileJanitorRestoresClaimedDeletingFile(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if sqlDB, closeErr := db.DB(); closeErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	require.NoError(t, db.AutoMigrate(&models.File{}, &models.FileUploadGrant{}))
+	dir := t.TempDir()
+	claimedAt := time.Now().Add(-time.Hour)
+	file := models.File{
+		Hash: "deleting-claimed", Path: "/uploads/claimed.png", Size: 1,
+		MimeType: "image/png", UploaderID: 1, Status: models.FileStatusDeleting,
+		AccessScope: models.FileAccessPrivate, ClaimedAt: &claimedAt, CreatedAt: claimedAt,
+	}
+	require.NoError(t, db.Create(&file).Error)
+	path := filepath.Join(dir, "claimed.png")
+	require.NoError(t, os.WriteFile(path, []byte("x"), 0644))
+
+	janitor := NewTemporaryFileJanitor(db, dir, TemporaryFileJanitorConfig{TTL: time.Hour, BatchSize: 10})
+	report, err := janitor.Run(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, report.SkippedClaimed)
+	require.Zero(t, report.Errors)
+	require.FileExists(t, path)
+	var restored models.File
+	require.NoError(t, db.First(&restored, file.ID).Error)
+	require.Equal(t, models.FileStatusActive, restored.Status)
+}
+
+func TestTemporaryFileJanitorKeepsRecentlyGrantedTemporaryFile(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if sqlDB, closeErr := db.DB(); closeErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	require.NoError(t, db.AutoMigrate(&models.File{}, &models.FileUploadGrant{}))
+	dir := t.TempDir()
+	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	file := models.File{
+		Hash: "recent-grant", Path: "/uploads/recent-grant.png", Size: 1,
+		MimeType: "image/png", UploaderID: 1, Status: models.FileStatusTemporary,
+		AccessScope: models.FileAccessPrivate, CreatedAt: now.Add(-8 * time.Hour),
+	}
+	require.NoError(t, db.Create(&file).Error)
+	path := filepath.Join(dir, "recent-grant.png")
+	require.NoError(t, os.WriteFile(path, []byte("x"), 0644))
+	require.NoError(t, db.Create(&models.FileUploadGrant{
+		FileID: file.ID, UserID: 1, CreatedAt: now.Add(-10 * time.Minute),
+	}).Error)
+
+	janitor := NewTemporaryFileJanitor(db, dir, TemporaryFileJanitorConfig{TTL: time.Hour, BatchSize: 10})
+	janitor.SetNow(func() time.Time { return now })
+	report, err := janitor.Run(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, report.RetainedRecentGrant)
+	require.Zero(t, report.Removed)
+	require.FileExists(t, path)
+	var retained models.File
+	require.NoError(t, db.First(&retained, file.ID).Error)
+	require.Equal(t, models.FileStatusTemporary, retained.Status)
+}
+
+func TestTemporaryFileJanitorOnlyRetriesDeletingWithoutCleanupBoundary(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if sqlDB, closeErr := db.DB(); closeErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	require.NoError(t, db.AutoMigrate(&models.File{}, &models.FileUploadGrant{}))
+	dir := t.TempDir()
+	created := time.Now().Add(-8 * time.Hour)
+	temporary := models.File{Hash: "historical-temp", Path: "/uploads/historical-temp.png", Size: 1, MimeType: "image/png", Status: models.FileStatusTemporary, CreatedAt: created}
+	deleting := models.File{Hash: "retry-deleting", Path: "/uploads/retry-deleting.png", Size: 1, MimeType: "image/png", Status: models.FileStatusDeleting, CreatedAt: created}
+	require.NoError(t, db.Create(&temporary).Error)
+	require.NoError(t, db.Create(&deleting).Error)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "retry-deleting.png"), []byte("x"), 0644))
+
+	janitor := NewTemporaryFileJanitor(db, dir, TemporaryFileJanitorConfig{TTL: time.Hour, BatchSize: 10, OnlyRetryDeleting: true})
+	report, err := janitor.Run(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, report.Removed)
+	var retained models.File
+	require.NoError(t, db.First(&retained, temporary.ID).Error)
+	require.Equal(t, models.FileStatusTemporary, retained.Status)
+}
+
 func TestTemporaryFileJanitorHonorsNotBeforeForHistoricalBacklog(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
 	require.NoError(t, err)

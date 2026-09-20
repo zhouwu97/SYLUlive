@@ -188,6 +188,23 @@ func TestClaimPrivateFilesActivatesButKeepsPrivate(t *testing.T) {
 	}
 }
 
+func TestClaimsRejectFileMarkedDeleting(t *testing.T) {
+	db := newFileReferenceTestDB(t)
+	file := models.File{
+		Hash: "deleting", Path: "/uploads/deleting.png", MimeType: "image/png",
+		Status: models.FileStatusDeleting, AccessScope: models.FileAccessPrivate,
+	}
+	if err := db.Create(&file).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := ClaimPrivateFiles(db, []uint{file.ID}); !errors.Is(err, ErrFileBeingDeleted) {
+		t.Fatalf("expected private claim to reject deleting file, got %v", err)
+	}
+	if err := ClaimPublicImageFiles(db, []uint{file.ID}); !errors.Is(err, ErrFileBeingDeleted) {
+		t.Fatalf("expected public claim to reject deleting file, got %v", err)
+	}
+}
+
 // 迁移菜品实拍、帖子、回复等可能共享同一 SHA 文件的公开引用表。
 func newReconcileTestDB(t *testing.T) *gorm.DB {
 	t.Helper()

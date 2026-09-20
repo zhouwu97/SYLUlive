@@ -1327,6 +1327,7 @@ func main() {
 		cfg.UploadTemporaryTTL,
 		cfg.UploadTemporaryJanitorInterval,
 		cfg.UploadTemporaryJanitorBatchSize,
+		cfg.UploadTemporaryCleanupNotBefore,
 		cfg.UploadConsistencyInterval,
 	)
 

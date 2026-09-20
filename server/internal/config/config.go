@@ -42,6 +42,7 @@ type Config struct {
 	UploadTemporaryTTL               time.Duration
 	UploadTemporaryJanitorInterval   time.Duration
 	UploadTemporaryJanitorBatchSize  int
+	UploadTemporaryCleanupNotBefore  time.Time
 	UploadConsistencyInterval        time.Duration
 	EduServiceURL                    string // Python教务服务地址
 	SMTPHost                         string // SMTP 地址
@@ -213,6 +214,14 @@ func Load() *Config {
 	uploadTemporaryTTL := time.Duration(envIntInRange("UPLOAD_TEMPORARY_TTL_HOURS", 6, 1, 168)) * time.Hour
 	uploadTemporaryJanitorInterval := time.Duration(envIntInRange("UPLOAD_TEMPORARY_JANITOR_INTERVAL_MINUTES", 60, 1, 1440)) * time.Minute
 	uploadTemporaryJanitorBatchSize := envIntInRange("UPLOAD_TEMPORARY_JANITOR_BATCH_SIZE", 200, 1, 5000)
+	var uploadTemporaryCleanupNotBefore time.Time
+	if raw := strings.TrimSpace(os.Getenv("UPLOAD_TEMPORARY_CLEANUP_NOT_BEFORE")); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			panic(fmt.Errorf("UPLOAD_TEMPORARY_CLEANUP_NOT_BEFORE 必须是 RFC3339 时间: %w", err))
+		}
+		uploadTemporaryCleanupNotBefore = parsed
+	}
 	uploadConsistencyInterval := time.Duration(envIntInRange("UPLOAD_CONSISTENCY_INTERVAL_HOURS", 6, 1, 168)) * time.Hour
 
 	examPaperDir := os.Getenv("EXAM_PAPER_DIR")
@@ -613,6 +622,7 @@ func Load() *Config {
 		UploadTemporaryTTL:               uploadTemporaryTTL,
 		UploadTemporaryJanitorInterval:   uploadTemporaryJanitorInterval,
 		UploadTemporaryJanitorBatchSize:  uploadTemporaryJanitorBatchSize,
+		UploadTemporaryCleanupNotBefore:  uploadTemporaryCleanupNotBefore,
 		UploadConsistencyInterval:        uploadConsistencyInterval,
 		EduServiceURL:                    eduServiceURL,
 		SMTPHost:                         smtpHost,

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -26,6 +27,15 @@ var (
 const uploadQuotaAdvisoryLockKey int64 = 0x53594c55504c44
 
 var uploadQuotaSQLiteLock sync.Mutex
+
+func lockUploadHash(tx *gorm.DB, hash string) error {
+	if tx.Dialector != nil && tx.Dialector.Name() == "postgres" {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", hash).Error; err != nil {
+			return fmt.Errorf("%w: 锁定文件哈希失败: %v", ErrUploadProtectionUnavailable, err)
+		}
+	}
+	return nil
+}
 
 // UploadProtectionConfig 集中描述上传接口的资源上限。所有字节字段均为字节数。
 type UploadProtectionConfig struct {
@@ -94,32 +104,30 @@ type UploadProtection struct {
 
 // NewUploadProtection 创建上传保护服务。
 func NewUploadProtection(db *gorm.DB, uploadDir string, config UploadProtectionConfig) *UploadProtection {
+	defaults := DefaultUploadProtectionConfig()
+	if config.PerMinuteCountLimit == 0 {
+		config.PerMinuteCountLimit = defaults.PerMinuteCountLimit
+	}
+	if config.HourlyBytesLimit == 0 {
+		config.HourlyBytesLimit = defaults.HourlyBytesLimit
+	}
+	if config.TemporaryUserCount == 0 {
+		config.TemporaryUserCount = defaults.TemporaryUserCount
+	}
+	if config.TemporaryUserBytes == 0 {
+		config.TemporaryUserBytes = defaults.TemporaryUserBytes
+	}
+	if config.TemporaryGlobalBytes == 0 {
+		config.TemporaryGlobalBytes = defaults.TemporaryGlobalBytes
+	}
 	if config.DiskWarnPercent == 0 {
-		defaults := DefaultUploadProtectionConfig()
-		if config.PerMinuteCountLimit == 0 {
-			config.PerMinuteCountLimit = defaults.PerMinuteCountLimit
-		}
-		if config.HourlyBytesLimit == 0 {
-			config.HourlyBytesLimit = defaults.HourlyBytesLimit
-		}
-		if config.TemporaryUserCount == 0 {
-			config.TemporaryUserCount = defaults.TemporaryUserCount
-		}
-		if config.TemporaryUserBytes == 0 {
-			config.TemporaryUserBytes = defaults.TemporaryUserBytes
-		}
-		if config.TemporaryGlobalBytes == 0 {
-			config.TemporaryGlobalBytes = defaults.TemporaryGlobalBytes
-		}
-		if config.DiskWarnPercent == 0 {
-			config.DiskWarnPercent = defaults.DiskWarnPercent
-		}
-		if config.DiskSeverePercent == 0 {
-			config.DiskSeverePercent = defaults.DiskSeverePercent
-		}
-		if config.DiskCriticalPercent == 0 {
-			config.DiskCriticalPercent = defaults.DiskCriticalPercent
-		}
+		config.DiskWarnPercent = defaults.DiskWarnPercent
+	}
+	if config.DiskSeverePercent == 0 {
+		config.DiskSeverePercent = defaults.DiskSeverePercent
+	}
+	if config.DiskCriticalPercent == 0 {
+		config.DiskCriticalPercent = defaults.DiskCriticalPercent
 	}
 	return &UploadProtection{
 		db:        db,
@@ -254,18 +262,33 @@ func (p *UploadProtection) PersistTemporaryFile(ctx context.Context, record *mod
 		return UploadPersistResult{}, fmt.Errorf("%w: 上传保护未初始化", ErrUploadProtectionUnavailable)
 	}
 	var result UploadPersistResult
+	targetPath := record.Path
+	writeAttempted := false
+	pathExistedBefore := false
 	var unlock func()
 	if p.db.Dialector != nil && p.db.Dialector.Name() == "sqlite" {
 		uploadQuotaSQLiteLock.Lock()
 		unlock = uploadQuotaSQLiteLock.Unlock
 		defer unlock()
 	}
-	err := p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) (txErr error) {
+		defer func() {
+			if txErr != nil && writeAttempted && !pathExistedBefore {
+				if path, pathErr := ResolveUploadPath(p.uploadDir, targetPath); pathErr == nil {
+					// SQLite 由外层进程锁保护；PostgreSQL 由 hash advisory lock
+					// 保护同一内容的并发请求，避免清理掉其他请求正在写入的同一路径。
+					_ = os.Remove(path)
+				}
+			}
+		}()
+		if err := lockUploadHash(tx, record.Hash); err != nil {
+			return err
+		}
 		var existing models.File
-		err := tx.Where("hash = ?", record.Hash).First(&existing).Error
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("hash = ?", record.Hash).First(&existing).Error
 		if err == nil {
 			if existing.Status == models.FileStatusDeleting {
-				return fmt.Errorf("%w: 文件正在清理", ErrUploadProtectionUnavailable)
+				return fmt.Errorf("%w: 文件正在清理", ErrFileBeingDeleted)
 			}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.FileUploadGrant{FileID: existing.ID, UserID: record.UploaderID}).Error; err != nil {
 				return err
@@ -282,20 +305,154 @@ func (p *UploadProtection) PersistTemporaryFile(ctx context.Context, record *mod
 		if err := p.CheckDisk(ctx); err != nil {
 			return err
 		}
+		if path, resolveErr := ResolveUploadPath(p.uploadDir, targetPath); resolveErr == nil {
+			if _, statErr := os.Stat(path); statErr == nil {
+				pathExistedBefore = true
+			} else if !errors.Is(statErr, os.ErrNotExist) {
+				pathExistedBefore = true
+			}
+		}
+		writeAttempted = true
 		if err := write(); err != nil {
 			return err
 		}
-		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "hash"}}, DoNothing: true}).Create(record).Error; err != nil {
-			return err
+		createResult := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "hash"}}, DoNothing: true}).Create(record)
+		if createResult.Error != nil {
+			return createResult.Error
 		}
 		if err := tx.Where("hash = ?", record.Hash).First(record).Error; err != nil {
 			return err
 		}
+		if record.Status == models.FileStatusDeleting {
+			return fmt.Errorf("%w: 文件正在清理", ErrFileBeingDeleted)
+		}
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.FileUploadGrant{FileID: record.ID, UserID: record.UploaderID}).Error; err != nil {
 			return err
 		}
-		result = UploadPersistResult{File: *record}
+		result = UploadPersistResult{File: *record, Reused: createResult.RowsAffected == 0}
 		return nil
 	})
+	if err != nil && writeAttempted && !pathExistedBefore {
+		// GORM 可能在 callback 成功后才于 COMMIT 阶段返回错误；此时 callback
+		// 内的 defer 已经错过清理窗口，再用同一 hash 锁复核一次数据库再清理。
+		if cleanupErr := p.cleanupFailedTemporaryPath(record.Hash, targetPath); cleanupErr != nil {
+			log.Printf("[UPLOAD_CLEANUP] 事务失败后的物理文件清理失败: hash=%s error=%v", record.Hash, cleanupErr)
+		}
+	}
 	return result, err
+}
+
+// ReuseOrRestoreFile 在同一哈希锁和文件行锁内复用已有文件，或在物理文件
+// 缺失时安全恢复。写盘期间 janitor 无法把该记录标记为 deleting，避免恢复文件
+// 与隔离删除交叉产生“源路径和 trash 同时存在”的坏状态。
+// found=false 表示事务内没有该哈希记录，调用方应继续走新文件配额流程。
+func (p *UploadProtection) ReuseOrRestoreFile(ctx context.Context, record *models.File, write func(string) error) (result UploadPersistResult, found bool, err error) {
+	if p == nil || p.db == nil || record == nil || write == nil || record.UploaderID == 0 {
+		return result, false, fmt.Errorf("%w: 复用上传文件参数无效", ErrUploadProtectionUnavailable)
+	}
+	writeAttempted := false
+	pathExistedBefore := false
+	var writtenPath string
+	var unlock func()
+	if p.db.Dialector != nil && p.db.Dialector.Name() == "sqlite" {
+		uploadQuotaSQLiteLock.Lock()
+		unlock = uploadQuotaSQLiteLock.Unlock
+		defer unlock()
+	}
+	err = p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) (txErr error) {
+		defer func() {
+			if txErr != nil && writeAttempted && !pathExistedBefore && writtenPath != "" {
+				_ = os.Remove(writtenPath)
+			}
+		}()
+		if err := lockUploadHash(tx, record.Hash); err != nil {
+			return err
+		}
+		var existing models.File
+		lookupErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("hash = ?", record.Hash).First(&existing).Error
+		if errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if lookupErr != nil {
+			return lookupErr
+		}
+		found = true
+		if existing.Status == models.FileStatusDeleting {
+			return fmt.Errorf("%w: 文件正在清理", ErrFileBeingDeleted)
+		}
+		path, pathErr := ResolveUploadPath(p.uploadDir, existing.Path)
+		if pathErr != nil {
+			return fmt.Errorf("文件路径记录非法: %w", pathErr)
+		}
+		info, statErr := os.Stat(path)
+		if statErr == nil {
+			if info.IsDir() {
+				return fmt.Errorf("文件路径指向目录")
+			}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.FileUploadGrant{FileID: existing.ID, UserID: record.UploaderID}).Error; err != nil {
+				return err
+			}
+			result = UploadPersistResult{File: existing, Reused: true}
+			return nil
+		}
+		if !errors.Is(statErr, os.ErrNotExist) {
+			return statErr
+		}
+		if err := p.CheckDisk(ctx); err != nil {
+			return err
+		}
+		pathExistedBefore = false
+		writeAttempted = true
+		writtenPath = path
+		if err := write(path); err != nil {
+			return err
+		}
+		updates := map[string]interface{}{
+			"size":      record.Size,
+			"mime_type": record.MimeType,
+			"width":     record.Width,
+			"height":    record.Height,
+		}
+		updateResult := tx.Model(&models.File{}).Where("id = ? AND status <> ?", existing.ID, models.FileStatusDeleting).Updates(updates)
+		if updateResult.Error != nil {
+			return updateResult.Error
+		}
+		if updateResult.RowsAffected != 1 {
+			return fmt.Errorf("%w: 文件状态已变化", ErrFileBeingDeleted)
+		}
+		existing.Size = record.Size
+		existing.MimeType = record.MimeType
+		existing.Width = record.Width
+		existing.Height = record.Height
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.FileUploadGrant{FileID: existing.ID, UserID: record.UploaderID}).Error; err != nil {
+			return err
+		}
+		result = UploadPersistResult{File: existing, Reused: false}
+		return nil
+	})
+	return result, found, err
+}
+
+func (p *UploadProtection) cleanupFailedTemporaryPath(hash, publicPath string) error {
+	return p.db.Transaction(func(tx *gorm.DB) error {
+		if err := lockUploadHash(tx, hash); err != nil {
+			return err
+		}
+		var existing models.File
+		lookupErr := tx.Where("hash = ?", hash).First(&existing).Error
+		if lookupErr == nil {
+			return nil
+		}
+		if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+			return lookupErr
+		}
+		path, err := ResolveUploadPath(p.uploadDir, publicPath)
+		if err != nil {
+			return err
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	})
 }

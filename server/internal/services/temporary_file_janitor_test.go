@@ -78,6 +78,46 @@ func TestTemporaryFileJanitorRetriesDeletingRowWhenPhysicalFileIsMissing(t *test
 	require.ErrorIs(t, db.First(&models.File{}, file.ID).Error, gorm.ErrRecordNotFound)
 }
 
+func TestTemporaryFileJanitorRetriesAfterDatabaseDeleteFailure(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if sqlDB, closeErr := db.DB(); closeErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	require.NoError(t, db.AutoMigrate(&models.File{}, &models.FileUploadGrant{}))
+	dir := t.TempDir()
+	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	file := models.File{
+		Hash: "delete-retry", Path: "/uploads/retry.png", Size: 1,
+		MimeType: "image/png", UploaderID: 1, Status: models.FileStatusTemporary,
+		AccessScope: models.FileAccessPrivate, CreatedAt: now.Add(-8 * time.Hour),
+	}
+	require.NoError(t, db.Create(&file).Error)
+	path := filepath.Join(dir, "retry.png")
+	require.NoError(t, os.WriteFile(path, []byte("x"), 0644))
+	// 模拟数据库最终删除失败，确认物理文件删除后仍能靠 deleting 状态重试收尾。
+	require.NoError(t, db.Exec("CREATE TRIGGER fail_file_delete BEFORE DELETE ON files BEGIN SELECT RAISE(ABORT, 'delete blocked'); END").Error)
+	janitor := NewTemporaryFileJanitor(db, dir, TemporaryFileJanitorConfig{TTL: time.Hour, BatchSize: 10})
+	janitor.SetNow(func() time.Time { return now })
+	first, err := janitor.Run(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, first.Errors)
+	require.Zero(t, first.Removed)
+	require.NoFileExists(t, path)
+	var deleting models.File
+	require.NoError(t, db.First(&deleting, file.ID).Error)
+	require.Equal(t, models.FileStatusDeleting, deleting.Status)
+	require.NoError(t, db.Exec("DROP TRIGGER fail_file_delete").Error)
+
+	second, err := janitor.Run(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, second.Removed)
+	require.Zero(t, second.Errors)
+	require.ErrorIs(t, db.First(&models.File{}, file.ID).Error, gorm.ErrRecordNotFound)
+}
+
 func TestTemporaryFileJanitorRestoresDeletingFileWhenReferenceAppears(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
 	require.NoError(t, err)

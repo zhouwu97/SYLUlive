@@ -279,9 +279,9 @@ func (j *TemporaryFileJanitor) processFile(ctx context.Context, fileID uint, cut
 
 	// 物理文件已经移入同一文件系统的 .trash 隔离目录后重新锁行复核引用。
 	// 若发现业务引用，先恢复原路径再把记录恢复 active；只有最终确认无引用时
-	// 才删除数据库记录并在事务提交后清理 trash 文件。
+	// 才在删除数据库记录前清理 trash 文件。这样物理删除失败会回滚数据库变更，
+	// 不会留下数据库已删除但隔离副本永久无人回收的垃圾。
 	restoreNeeded := false
-	deleteCommitted := false
 	finalErr := j.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current models.File
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, file.ID).Error; err != nil {
@@ -357,6 +357,13 @@ func (j *TemporaryFileJanitor) processFile(ctx context.Context, fileID uint, cut
 			if err := restoreTemporaryFileQuarantine(quarantine); err != nil {
 				return err
 			}
+			quarantine.moved = false
+		}
+		if quarantine.moved {
+			if err := os.Remove(quarantine.trash); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("删除临时文件隔离副本失败，保留 deleting 状态: %w", err)
+			}
+			quarantine.moved = false
 		}
 		if err := tx.Where("file_id = ?", current.ID).Delete(&models.FileUploadGrant{}).Error; err != nil {
 			return err
@@ -368,7 +375,6 @@ func (j *TemporaryFileJanitor) processFile(ctx context.Context, fileID uint, cut
 		if deleteResult.RowsAffected == 1 {
 			result.removed = true
 			result.removedBytes = current.Size
-			deleteCommitted = true
 		}
 		return nil
 	})
@@ -381,11 +387,6 @@ func (j *TemporaryFileJanitor) processFile(ctx context.Context, fileID uint, cut
 	if restoreNeeded {
 		if err := restoreTemporaryFileQuarantine(quarantine); err != nil && result.err == nil {
 			result.err = err
-		}
-	}
-	if deleteCommitted && quarantine.moved {
-		if err := os.Remove(quarantine.trash); err != nil && !errors.Is(err, os.ErrNotExist) && result.err == nil {
-			result.err = fmt.Errorf("清理临时文件隔离副本失败: %w", err)
 		}
 	}
 	return result

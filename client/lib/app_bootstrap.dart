@@ -1,4 +1,5 @@
 import 'features/academic/data/academic_account_config_client.dart';
+import 'features/emoji/application/emoji_recent_manager.dart';
 import 'dart:async';
 import 'dart:ui';
 import 'package:dio/dio.dart';
@@ -1504,6 +1505,7 @@ class MyApp extends StatelessWidget {
           update: (_, auth, service) {
             final nextUserId = auth.user?.id.toString();
             service!.syncSessionUser(nextUserId);
+            EmojiRecentManager.instance.switchUser(nextUserId);
             if (nextUserId != null) {
               unawaited(service.syncFromServer());
             }

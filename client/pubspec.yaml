@@ -57,6 +57,7 @@ dependencies:
   gal: ^2.3.2
   image: ^4.9.2
   tflite_flutter: ^0.12.1
+  archive: 4.2.0
 
 dev_dependencies:
   flutter_test:

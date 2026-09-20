@@ -7,6 +7,11 @@ import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../config/api_constants.dart';
+import '../features/emoji/application/emoji_recent_manager.dart';
+import '../features/emoji/adapters/builtin_sticker_adapter.dart';
+import '../features/emoji/adapters/favorite_item_adapter.dart';
+import '../features/emoji/domain/emoji_asset_ref.dart';
+import '../widgets/emoji/sticker_catalog.dart';
 import '../config/private_chat_policy.dart';
 import '../models/conversation.dart';
 import '../models/message_send_state.dart';
@@ -44,6 +49,7 @@ class MessageProvider extends ChangeNotifier {
   final bool _enableRealtime;
   final Random _random = Random.secure();
   final AsyncActionGuard _sendActionGuard = AsyncActionGuard();
+  final Map<String, EmojiAssetRef> _pendingEmojiAssets = {};
 
   List<Conversation> _conversations = [];
   List<Message> _messages = [];
@@ -215,6 +221,7 @@ class MessageProvider extends ChangeNotifier {
     _lastMarkedReadMessageIds.clear();
     _drafts.clear();
     _pendingMessages.clear();
+    _pendingEmojiAssets.clear();
 
     _conversationLoading = false;
     _messageLoading = false;
@@ -650,6 +657,7 @@ class MessageProvider extends ChangeNotifier {
     String? stickerId,
     int? senderId,
     String? localImagePath,
+    EmojiAssetRef? emojiAsset,
   }) {
     final trimmed = content.trim();
     final normalizedStickerId = stickerId?.trim();
@@ -666,6 +674,17 @@ class MessageProvider extends ChangeNotifier {
       senderId: senderId,
       localImagePath: localImagePath,
     );
+    final sticker = appStickerById(normalizedStickerId);
+    final asset = emojiAsset ??
+        (sticker == null
+            ? null
+            : EmojiAssetRef(
+                assetKey: BuiltinStickerAdapter().adapt(sticker).key.serialized,
+                packId: BuiltinStickerAdapter().adapt(sticker).key.packId,
+              ));
+    if (asset != null) {
+      _pendingEmojiAssets[pending.clientMessageId!] = asset;
+    }
     return _sendPendingMessage(targetUserId, pending.clientMessageId!);
   }
 
@@ -673,6 +692,7 @@ class MessageProvider extends ChangeNotifier {
     int targetUserId,
     XFile image, {
     int? senderId,
+    EmojiAssetRef? emojiAsset,
   }) async {
     final sessionRequest = _captureSessionRequest();
     final pending = _insertPendingMessage(
@@ -682,6 +702,7 @@ class MessageProvider extends ChangeNotifier {
       localImagePath: image.path,
     );
     final clientMessageId = pending.clientMessageId!;
+    if (emojiAsset != null) _pendingEmojiAssets[clientMessageId] = emojiAsset;
     try {
       final fileId = await _uploadImage(
         image,
@@ -746,6 +767,8 @@ class MessageProvider extends ChangeNotifier {
         content,
         fileId: fileId,
         senderId: senderId,
+        emojiAsset: EmojiAssetRef(
+            assetKey: FavoriteItemAdapter().adapt(favorite).key.serialized),
       );
     } catch (_) {
       if (_ownsSessionRequest(sessionRequest)) {
@@ -850,6 +873,7 @@ class MessageProvider extends ChangeNotifier {
   }
 
   void deleteFailedMessage(String clientMessageId) {
+    _pendingEmojiAssets.remove(clientMessageId);
     _messages.removeWhere(
       (message) =>
           message.clientMessageId == clientMessageId && message.isFailed,
@@ -938,6 +962,10 @@ class MessageProvider extends ChangeNotifier {
           'content': pending.content,
           if (pending.fileId != null) 'file_id': pending.fileId,
           if (pending.isSticker) 'sticker_id': pending.stickerId,
+          if (_pendingEmojiAssets[clientMessageId] case final asset?) ...{
+            'asset_key': asset.assetKey,
+            if (asset.packId != null) 'pack_id': asset.packId,
+          },
           'client_message_id': clientMessageId,
         },
         cancelToken: sessionRequest.cancelToken,
@@ -958,6 +986,16 @@ class MessageProvider extends ChangeNotifier {
           Map<String, dynamic>.from(response.data as Map),
         );
         _replacePendingWithServer(clientMessageId, serverMessage);
+        final sticker = appStickerById(pending.stickerId);
+        final emojiAsset = _pendingEmojiAssets.remove(clientMessageId);
+        unawaited(EmojiRecentManager.instance.recordConfirmed([
+          ...EmojiRecentManager.unicodeIn(pending.content),
+          if (sticker != null)
+            EmojiAssetRef(
+                assetKey:
+                    BuiltinStickerAdapter().adapt(sticker).key.serialized),
+          if (emojiAsset != null) emojiAsset,
+        ], accountId: pending.senderId.toString()));
         // 发送成功后后台校验服务器图片资源可用性，避免发送方本地预览
         // 掩盖服务器坏图；仅记录诊断，不改动消息发送状态。
         if (serverMessage.fileId != null) {

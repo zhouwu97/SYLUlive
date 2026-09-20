@@ -70,6 +70,8 @@ type Message struct {
 	Content         string     `gorm:"type:text" json:"content"`
 	FileID          *uint      `json:"file_id"`                                   // 可选图片
 	StickerID       *string    `gorm:"size:64;index" json:"sticker_id,omitempty"` // 公共表情白名单 ID
+	AssetKey        *string    `gorm:"size:512" json:"asset_key,omitempty"`
+	PackID          *string    `gorm:"size:128" json:"pack_id,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
 	ReadAt          *time.Time `gorm:"index:idx_messages_conversation_read_sender,priority:2" json:"read_at"`
 	Sender          User       `gorm:"foreignKey:SenderID" json:"sender"`

@@ -666,7 +666,7 @@ func TestMessageSendAllowsTextWithSticker(t *testing.T) {
 	response := performMessageRequest(
 		t, handler.Send, http.MethodPost, "/api/messages/2",
 		gin.Params{{Key: "user_id", Value: "2"}}, 1,
-		`{"content":"晚安","sticker_id":"`+stickerID+`"}`,
+		`{"content":"晚安","sticker_id":"`+stickerID+`","asset_key":"builtin:test:a","pack_id":"test"}`,
 	)
 	if response.Code != http.StatusCreated {
 		t.Fatalf("send text with sticker status=%d body=%s", response.Code, response.Body.String())
@@ -681,6 +681,14 @@ func TestMessageSendAllowsTextWithSticker(t *testing.T) {
 	}
 	if message.StickerID == nil || *message.StickerID != stickerID {
 		t.Fatalf("sticker_id=%v body=%s", message.StickerID, response.Body.String())
+	}
+
+	if message.AssetKey == nil || *message.AssetKey != "builtin:test:a" || message.PackID == nil || *message.PackID != "test" {
+		t.Fatalf("resource identity missing: %+v", message)
+	}
+	var saved models.Message
+	if err := db.First(&saved, message.ID).Error; err != nil || saved.AssetKey == nil || *saved.AssetKey != *message.AssetKey {
+		t.Fatalf("resource identity not persisted: %v", err)
 	}
 }
 

@@ -26,6 +26,8 @@ type Reply struct {
 	AuthorID       uint        `gorm:"not null" json:"author_id"`
 	Content        string      `gorm:"type:text" json:"content"`
 	StickerID      *string     `gorm:"size:64;index" json:"sticker_id,omitempty"`
+	AssetKey       *string     `gorm:"size:512" json:"asset_key,omitempty"`
+	PackID         *string     `gorm:"size:128" json:"pack_id,omitempty"`
 	Status         ReplyStatus `gorm:"default:normal;index:idx_replies_post_status_created,priority:2" json:"status"`
 	LikeCount      int         `gorm:"default:0" json:"like_count"`
 	IsLiked        bool        `gorm:"-" json:"is_liked"`

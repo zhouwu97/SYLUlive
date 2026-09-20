@@ -1,9 +1,20 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../config/api_constants.dart';
+import '../../features/emoji/application/emoji_recent_manager.dart';
+import '../../features/emoji/adapters/favorite_item_adapter.dart';
+import '../../features/emoji/domain/emoji_recent_record.dart';
+import '../../features/emoji/presentation/emoji_management_screen.dart';
+import '../../features/emoji/data/emoji_pack_runtime.dart';
+import '../../features/emoji/data/emoji_pack_local_store.dart';
+import '../../features/emoji/domain/emoji_pack_installation.dart';
+import '../../features/emoji/domain/emoji_pack.dart';
+import '../../features/emoji/domain/emoji_asset_ref.dart';
+import '../../features/emoji/domain/emoji_pack_manifest.dart';
 import '../../services/emoji_favorite_repository.dart';
 import '../../services/emoji_favorite_service.dart';
 import '../../theme/app_colors.dart';
@@ -27,6 +38,8 @@ class AppEmojiPanel extends StatefulWidget {
   final Map<String, String> favoriteImageHeaders;
   final bool enabled;
   final EmojiFavoriteService? favoriteService;
+  final EmojiRecentManager? recentManager;
+  final void Function(String path, EmojiAssetRef asset)? onPackAssetSelected;
 
   const AppEmojiPanel({
     super.key,
@@ -40,6 +53,8 @@ class AppEmojiPanel extends StatefulWidget {
     this.favoriteImageHeaders = const <String, String>{},
     this.enabled = true,
     this.favoriteService,
+    this.recentManager,
+    this.onPackAssetSelected,
   });
 
   @override
@@ -49,19 +64,30 @@ class AppEmojiPanel extends StatefulWidget {
 class _AppEmojiPanelState extends State<AppEmojiPanel> {
   static const int _favoriteTabIndex = 0;
   static const int _emojiTabIndex = 1;
-  static const int _stickerTabStartIndex = 2;
+  static const int _recentTabIndex = 2;
+  static const int _stickerTabStartIndex = 3;
 
   late final PageController _pageController;
   late final ScrollController _tabScrollController;
   late final EmojiFavoriteService _favoriteService;
+  late final EmojiRecentManager _recentManager;
+  List<EmojiRecentRecord> _recent = const [];
+  Object? _recentError;
+  bool _recentLoading = true;
+  int _recentGeneration = 0;
+  int _packGeneration = 0;
+  String? _displayedAccount;
+  EmojiPackLocalStore? _packStore;
+  List<EmojiPackInstallation> _installedPacks = const [];
+  int get _installedTabStart =>
+      _stickerTabStartIndex +
+      (widget.onStickerSelected == null ? 0 : appStickerGroups.length);
 
   int _tabIndex = _favoriteTabIndex;
   bool _initialTabResolved = false;
   List<EmojiFavoriteItem> _favorites = const [];
 
-  int get _tabCount =>
-      _stickerTabStartIndex +
-      (widget.onStickerSelected == null ? 0 : appStickerGroups.length);
+  int get _tabCount => _installedTabStart + _installedPacks.length;
 
   List<EmojiFavoriteItem> get _visibleFavorites => _favorites.where((item) {
         if (item.type == EmojiFavoriteType.image) {
@@ -77,11 +103,17 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
     _tabScrollController = ScrollController();
     _favoriteService = widget.favoriteService ?? EmojiFavoriteService.instance;
     _favoriteService.addListener(_handleFavoritesChanged);
+    _recentManager = widget.recentManager ?? EmojiRecentManager.instance;
+    _recentManager.addListener(_handleRecentChanged);
+    _displayedAccount = _recentManager.userId;
+    if (widget.onPackAssetSelected != null) unawaited(_loadInstalledPacks());
+    unawaited(_loadRecent());
     unawaited(_loadFavorites());
   }
 
   @override
   void dispose() {
+    _recentManager.removeListener(_handleRecentChanged);
     _favoriteService.removeListener(_handleFavoritesChanged);
     _pageController.dispose();
     _tabScrollController.dispose();
@@ -90,6 +122,199 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
 
   void _handleFavoritesChanged() {
     unawaited(_loadFavorites());
+  }
+
+  void _handleRecentChanged() {
+    if (_displayedAccount != _recentManager.userId) {
+      _displayedAccount = _recentManager.userId;
+      _favorites = const [];
+      _installedPacks = const [];
+      _packStore = null;
+      if (widget.onPackAssetSelected != null) unawaited(_loadInstalledPacks());
+    }
+    // 账号切换后立即丢弃旧视图，异步加载结果也必须属于当前代次。
+    if (mounted) {
+      setState(() {
+        _recent = const [];
+        _recentLoading = true;
+      });
+    }
+    unawaited(_loadRecent());
+  }
+
+  Future<void> _loadInstalledPacks() async {
+    final generation = ++_packGeneration;
+    try {
+      final store = await EmojiPackRuntime.forAccount(_recentManager.userId);
+      final packs = await store.load();
+      if (!mounted || generation != _packGeneration) return;
+      setState(() {
+        _packStore = store;
+        _installedPacks = packs
+            .where((p) =>
+                p.enabled && p.status == EmojiPackInstallStatus.installed)
+            .toList();
+      });
+      if (_tabIndex >= _tabCount && _pageController.hasClients) {
+        _pageController.jumpToPage(_emojiTabIndex);
+      }
+    } catch (_) {
+      // 存储尚未就绪时，APK 内置表情仍可使用；管理页负责显示可重试错误。
+    }
+  }
+
+  Widget _buildInstalledGrid(EmojiPackInstallation pack) => GridView.builder(
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 72,
+          mainAxisExtent: 72,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8),
+      itemCount: pack.manifest.assets.length,
+      itemBuilder: (context, index) =>
+          _buildPackCell(pack, pack.manifest.assets[index]));
+
+  Widget _buildPackCell(EmojiPackInstallation pack, EmojiManifestAsset asset) {
+    final path =
+        '${_packStore!.versionDirectory(pack.packId, pack.version).path}/${asset.path}';
+    final namespace = pack.trustLevel == EmojiPackTrustLevel.serverOfficial
+        ? 'official'
+        : 'local';
+    return Semantics(
+        button: true,
+        label: asset.name,
+        child: InkWell(
+            onTap: widget.enabled
+                ? () => widget.onPackAssetSelected?.call(
+                    path,
+                    EmojiAssetRef(
+                        assetKey: '$namespace:${pack.packId}:${asset.id}',
+                        packId: pack.packId,
+                        contentHash: asset.sha256,
+                        width: asset.width,
+                        height: asset.height,
+                        mimeType: asset.mimeType))
+                : null,
+            child: Image.file(File(path),
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) =>
+                    const Icon(Icons.broken_image_outlined))));
+  }
+
+  Future<void> _loadRecent() async {
+    final generation = ++_recentGeneration;
+    try {
+      final records = await _recentManager.load();
+      if (!mounted || generation != _recentGeneration) return;
+      setState(() {
+        _recent = records;
+        _recentLoading = false;
+        _recentError = null;
+      });
+    } catch (error) {
+      if (!mounted || generation != _recentGeneration) return;
+      setState(() {
+        _recentError = error;
+        _recentLoading = false;
+      });
+    }
+  }
+
+  Widget _buildRecentGrid(Color muted) {
+    if (_recentLoading) return const Center(child: CircularProgressIndicator());
+    if (_recentError != null) {
+      return Center(
+          child: TextButton(
+              onPressed: _loadRecent, child: const Text('读取失败，点击重试')));
+    }
+    final favorites = <String, EmojiFavoriteItem>{};
+    final installed = <String, (EmojiPackInstallation, EmojiManifestAsset)>{};
+    for (final pack in _installedPacks) {
+      final namespace = pack.trustLevel == EmojiPackTrustLevel.serverOfficial
+          ? 'official'
+          : 'local';
+      for (final asset in pack.manifest.assets) {
+        installed['$namespace:${pack.packId}:${asset.id}'] = (pack, asset);
+      }
+    }
+    for (final item in _favorites) {
+      try {
+        favorites[FavoriteItemAdapter().adapt(item).key.serialized] = item;
+      } on FormatException {
+        continue;
+      }
+    }
+    final records = _recent
+        .where((e) =>
+            e.key.namespace == 'unicode' ||
+            (e.key.namespace == 'builtin' &&
+                appStickerById(e.key.assetId) != null) ||
+            favorites.containsKey(e.assetKey) ||
+            installed.containsKey(e.assetKey))
+        .toList();
+    if (records.isEmpty) return const Center(child: Text('发送表情后会显示在这里'));
+    return Column(children: [
+      Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+              onPressed: widget.enabled
+                  ? () async {
+                      try {
+                        await _recentManager.clear();
+                      } catch (_) {
+                        if (mounted) {
+                          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                              const SnackBar(content: Text('清空失败，请重试')));
+                        }
+                      }
+                    }
+                  : null,
+              child: const Text('清空最近'))),
+      Expanded(
+          child: GridView.builder(
+        key: const ValueKey('emoji-recent-grid'),
+        padding: const EdgeInsets.all(12),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 66,
+            mainAxisExtent: 64,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8),
+        itemCount: records.length,
+        itemBuilder: (context, index) {
+          final record = records[index];
+          final installedAsset = installed[record.assetKey];
+          if (installedAsset != null) {
+            return _buildPackCell(installedAsset.$1, installedAsset.$2);
+          }
+          final favorite = favorites[record.assetKey];
+          if (favorite != null) {
+            return _buildFavoriteCell(favorite, muted, allowRemove: false);
+          }
+          final sticker = record.key.namespace == 'builtin'
+              ? appStickerById(record.key.assetId)
+              : null;
+          return Semantics(
+              button: true,
+              label: sticker?.label ?? record.key.assetId,
+              child: InkWell(
+                  onTap: !widget.enabled
+                      ? null
+                      : () {
+                          if (sticker != null) {
+                            widget.onStickerSelected?.call(sticker);
+                          } else {
+                            widget.onEmojiSelected(record.key.assetId);
+                          }
+                        },
+                  child: Center(
+                      child: sticker == null
+                          ? Text(record.key.assetId,
+                              style: const TextStyle(fontSize: 28))
+                          : Image.asset(sticker.thumbnailAsset,
+                              fit: BoxFit.contain))));
+        },
+      )),
+    ]);
   }
 
   Future<void> _loadFavorites() async {
@@ -266,6 +491,11 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
                 if (index == _emojiTabIndex) {
                   return _buildEmojiGrid();
                 }
+                if (index == _recentTabIndex) return _buildRecentGrid(muted);
+                if (index >= _installedTabStart) {
+                  return _buildInstalledGrid(
+                      _installedPacks[index - _installedTabStart]);
+                }
                 return _buildStickerGrid(
                   appStickerGroups[index - _stickerTabStartIndex],
                   muted,
@@ -403,7 +633,8 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
     );
   }
 
-  Widget _buildFavoriteCell(EmojiFavoriteItem item, Color muted) {
+  Widget _buildFavoriteCell(EmojiFavoriteItem item, Color muted,
+      {bool allowRemove = true}) {
     final sticker = item.type == EmojiFavoriteType.sticker
         ? appStickerById(item.stickerId)
         : null;
@@ -422,7 +653,8 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
                 }
               }
             : null,
-        onLongPress: widget.enabled ? () => _removeFavorite(item) : null,
+        onLongPress:
+            widget.enabled && allowRemove ? () => _removeFavorite(item) : null,
         borderRadius: BorderRadius.circular(12),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
@@ -626,7 +858,7 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
             child: ListView.builder(
               controller: _tabScrollController,
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               itemCount: _tabCount,
               itemBuilder: (context, index) => _buildTab(
                 theme: theme,
@@ -634,6 +866,22 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
                 index: index,
               ),
             ),
+          ),
+          SizedBox(
+            width: 44,
+            child: IconButton(
+                tooltip: '表情管理',
+                icon: const Icon(Icons.settings_outlined),
+                onPressed: widget.enabled
+                    ? () async {
+                        await Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                                builder: (_) => const EmojiManagementScreen()));
+                        if (mounted && widget.onPackAssetSelected != null) {
+                          await _loadInstalledPacks();
+                        }
+                      }
+                    : null),
           ),
           SizedBox(
             width: 44,
@@ -674,6 +922,11 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
         size: 22,
         color: selected ? selectedColor : muted,
       );
+    } else if (index == _recentTabIndex) {
+      key = const ValueKey('emoji-tab-recent');
+      tooltip = '最近使用';
+      icon =
+          Icon(Icons.history_rounded, color: selected ? selectedColor : muted);
     } else if (index == _emojiTabIndex) {
       key = const ValueKey('emoji-tab-face');
       tooltip = '普通表情';
@@ -682,6 +935,12 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
         size: 23,
         color: selected ? selectedColor : muted,
       );
+    } else if (index >= _installedTabStart) {
+      final pack = _installedPacks[index - _installedTabStart];
+      key = ValueKey('installed-pack-${pack.packId}');
+      tooltip = pack.name;
+      icon = Icon(Icons.collections_outlined,
+          color: selected ? selectedColor : muted);
     } else {
       final group = appStickerGroups[index - _stickerTabStartIndex];
       key = ValueKey('sticker-pack-tab-${group.id}');

@@ -93,6 +93,8 @@ func TestReplyCreateAllowsTextWithSticker(t *testing.T) {
 	response := performReplyRequest(t, handler.Create, post.ID, url.Values{
 		"content":    {"晚安"},
 		"sticker_id": {stickerID},
+		"asset_key":  {"builtin:test:a"},
+		"pack_id":    {"test"},
 	})
 	if response.Code != http.StatusCreated {
 		t.Fatalf("create text with sticker reply status=%d body=%s", response.Code, response.Body.String())
@@ -107,6 +109,14 @@ func TestReplyCreateAllowsTextWithSticker(t *testing.T) {
 	}
 	if reply.StickerID == nil || *reply.StickerID != stickerID {
 		t.Fatalf("sticker_id=%v body=%s", reply.StickerID, response.Body.String())
+	}
+
+	if reply.AssetKey == nil || *reply.AssetKey != "builtin:test:a" || reply.PackID == nil || *reply.PackID != "test" {
+		t.Fatalf("resource identity missing: %+v", reply)
+	}
+	var saved models.Reply
+	if err := db.First(&saved, reply.ID).Error; err != nil || saved.AssetKey == nil || *saved.AssetKey != *reply.AssetKey {
+		t.Fatalf("resource identity not persisted: %v", err)
 	}
 }
 

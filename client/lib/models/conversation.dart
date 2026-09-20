@@ -72,6 +72,8 @@ class Message {
   final String content;
   final int? fileId;
   final String? stickerId;
+  final String? assetKey;
+  final String? packId;
   final DateTime createdAt;
   final DateTime? readAt;
   final User? sender;
@@ -88,6 +90,8 @@ class Message {
     required this.content,
     this.fileId,
     this.stickerId,
+    this.assetKey,
+    this.packId,
     required this.createdAt,
     this.readAt,
     this.sender,
@@ -106,6 +110,8 @@ class Message {
       content: json['content'] ?? '',
       fileId: json['file_id'],
       stickerId: json['sticker_id']?.toString(),
+      assetKey: json['asset_key']?.toString(),
+      packId: json['pack_id']?.toString(),
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
       readAt:
           json['read_at'] != null ? DateTime.tryParse(json['read_at']) : null,
@@ -148,6 +154,8 @@ class Message {
     String? content,
     int? fileId,
     String? stickerId,
+    String? assetKey,
+    String? packId,
     DateTime? createdAt,
     DateTime? readAt,
     User? sender,
@@ -165,6 +173,8 @@ class Message {
       content: content ?? this.content,
       fileId: fileId ?? this.fileId,
       stickerId: stickerId ?? this.stickerId,
+      assetKey: assetKey ?? this.assetKey,
+      packId: packId ?? this.packId,
       createdAt: createdAt ?? this.createdAt,
       readAt: readAt ?? this.readAt,
       sender: sender ?? this.sender,

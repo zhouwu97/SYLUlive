@@ -83,6 +83,8 @@ type PrivateMessageDTO struct {
 	Content         string                    `json:"content"`
 	FileID          *uint                     `json:"file_id"`
 	StickerID       *string                   `json:"sticker_id,omitempty"`
+	AssetKey        *string                   `json:"asset_key,omitempty" binding:"omitempty,max=512"`
+	PackID          *string                   `json:"pack_id,omitempty" binding:"omitempty,max=128"`
 	CreatedAt       time.Time                 `json:"created_at"`
 	ReadAt          *time.Time                `json:"read_at"`
 	Sender          models.PublicUserResponse `json:"sender"`
@@ -112,6 +114,8 @@ func privateMessageResponse(message models.Message) PrivateMessageDTO {
 		Content:         message.Content,
 		FileID:          message.FileID,
 		StickerID:       message.StickerID,
+		AssetKey:        message.AssetKey,
+		PackID:          message.PackID,
 		CreatedAt:       message.CreatedAt,
 		ReadAt:          message.ReadAt,
 		Sender:          models.PublicUser(message.Sender),
@@ -209,6 +213,8 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 		Content         string          `json:"content"`
 		FileID          *uint           `json:"file_id"`
 		StickerID       *string         `json:"sticker_id,omitempty"`
+		AssetKey        *string         `json:"asset_key,omitempty" binding:"omitempty,max=512"`
+		PackID          *string         `json:"pack_id,omitempty" binding:"omitempty,max=128"`
 		CreatedAt       time.Time       `json:"created_at"`
 		ReadAt          *time.Time      `json:"read_at"`
 		File            *MessageFileDTO `json:"file"`
@@ -296,6 +302,8 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 					Content:         message.Content,
 					FileID:          message.FileID,
 					StickerID:       message.StickerID,
+					AssetKey:        message.AssetKey,
+					PackID:          message.PackID,
 					CreatedAt:       message.CreatedAt,
 					ReadAt:          message.ReadAt,
 					File:            privateMessageFileResponse(message.File),
@@ -535,6 +543,8 @@ type SendMessageInput struct {
 	Content         string  `json:"content"`
 	FileID          *uint   `json:"file_id"`
 	StickerID       *string `json:"sticker_id"`
+	AssetKey        *string `json:"asset_key,omitempty" binding:"omitempty,max=512"`
+	PackID          *string `json:"pack_id,omitempty" binding:"omitempty,max=128"`
 	ClientMessageID *string `json:"client_message_id"`
 }
 
@@ -724,6 +734,8 @@ func (h *MessageHandler) Send(c *gin.Context) {
 			Content:         input.Content,
 			FileID:          input.FileID,
 			StickerID:       input.StickerID,
+			AssetKey:        input.AssetKey,
+			PackID:          input.PackID,
 		}
 		if err := tx.Create(&message).Error; err != nil {
 			return err

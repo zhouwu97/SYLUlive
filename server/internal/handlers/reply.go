@@ -222,7 +222,7 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 		}
 		args = append(args, maxChildrenPreviewPerRoot)
 		rawSQL := fmt.Sprintf(`
-			SELECT id, post_id, parent_reply_id, author_id, content, sticker_id, status,
+			SELECT id, post_id, parent_reply_id, author_id, content, sticker_id, asset_key, pack_id, status,
 			       like_count, created_at, updated_at, reply_to_user_id, reply_to_reply_id
 			FROM (
 				SELECT r.*, ROW_NUMBER() OVER (PARTITION BY r.parent_reply_id ORDER BY r.created_at ASC, r.id ASC) AS rn
@@ -525,11 +525,13 @@ func (h *ReplyHandler) GetChildren(c *gin.Context) {
 
 // CreateReplyInput 创建回复输入
 type CreateReplyInput struct {
-	Content        string `form:"content"`
-	StickerID      string `form:"sticker_id"`
-	ParentReplyID  *uint  `form:"parent_reply_id"`
-	ReplyToUserID  *uint  `form:"reply_to_user_id"`
-	ReplyToReplyID *uint  `form:"reply_to_reply_id"`
+	Content        string  `form:"content"`
+	StickerID      string  `form:"sticker_id"`
+	AssetKey       *string `form:"asset_key" binding:"omitempty,max=512"`
+	PackID         *string `form:"pack_id" binding:"omitempty,max=128"`
+	ParentReplyID  *uint   `form:"parent_reply_id"`
+	ReplyToUserID  *uint   `form:"reply_to_user_id"`
+	ReplyToReplyID *uint   `form:"reply_to_reply_id"`
 }
 
 // Create 创建回复
@@ -674,6 +676,8 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		AuthorID:       userID.(uint),
 		Content:        storedContent,
 		StickerID:      stickerID,
+		AssetKey:       input.AssetKey,
+		PackID:         input.PackID,
 		Status:         models.ReplyStatusNormal,
 		CreatedAt:      time.Now(),
 	}

@@ -209,6 +209,7 @@ func main() {
 	}
 
 	if err := db.AutoMigrate(
+		&models.PostBookmark{},
 
 		&models.User{},
 		&models.AcademicIdentityBinding{},
@@ -621,6 +622,7 @@ func main() {
 	})))
 	r := gin.New()
 	r.Use(middleware.RequestTraceMiddleware(), gin.Recovery())
+	r.Use(middleware.BrowserOriginGuard())
 	if err := r.SetTrustedProxies(cfg.TrustedProxyCIDRs); err != nil {
 		log.Fatal("配置可信代理网段失败:", err)
 	}
@@ -1523,6 +1525,7 @@ func main() {
 	{
 
 		user.GET("/profile", userHandler.GetProfile)
+		user.GET("/bookmarks", postHandler.ListBookmarks)
 		user.GET("/canteen-reviews", canteenHandler.GetMyCanteenReviews)
 		user.GET("/canteen-contributions", canteenHandler.GetMyCanteenContributions)
 
@@ -1861,6 +1864,8 @@ func main() {
 	{
 
 		postsAuth.POST("", postHandler.Create)
+		postsAuth.PUT("/:id/bookmark", postHandler.PutBookmark)
+		postsAuth.DELETE("/:id/bookmark", postHandler.DeleteBookmark)
 
 		postsAuth.PUT("/:id", postHandler.Update)
 
@@ -1960,6 +1965,12 @@ func main() {
 	}
 
 	// 账号级自定义表情收藏路由。
+	emojiPacks := r.Group("/api/emoji/packs")
+	emojiPacks.GET("", handlers.ListEmojiPacks)
+	emojiPacks.GET("/:id", handlers.GetEmojiPack)
+	emojiPacks.GET("/:id/manifest", handlers.GetEmojiPackManifest)
+	emojiPacks.GET("/:id/assets/:assetId", handlers.GetEmojiPackAsset)
+
 	emojiFavorites := r.Group("/api/emoji/favorites")
 	emojiFavorites.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{

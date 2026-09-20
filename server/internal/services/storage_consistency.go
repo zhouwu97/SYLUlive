@@ -30,7 +30,17 @@ type StorageConsistencyScanner struct {
 
 // NewStorageConsistencyScanner 创建存储一致性巡检器。
 func NewStorageConsistencyScanner(db *gorm.DB, uploadDir string) *StorageConsistencyScanner {
-	return &StorageConsistencyScanner{db: db, uploadDir: uploadDir}
+	root := strings.TrimSpace(uploadDir)
+	if root == "" {
+		root = strings.TrimSpace(os.Getenv("UPLOAD_DIR"))
+		if root == "" {
+			root = "uploads"
+		}
+	}
+	if absolute, err := filepath.Abs(filepath.Clean(root)); err == nil {
+		root = absolute
+	}
+	return &StorageConsistencyScanner{db: db, uploadDir: root}
 }
 
 // Run 扫描 files 表和 uploads 目录。派生图片变体、表情缩略图也加入已知路径，

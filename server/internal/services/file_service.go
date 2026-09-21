@@ -3,6 +3,7 @@ package services
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,11 +16,12 @@ import (
 )
 
 type FileService struct {
-	db *gorm.DB
+	db        *gorm.DB
+	uploadDir string
 }
 
-func NewFileService(db *gorm.DB) *FileService {
-	return &FileService{db: db}
+func NewFileService(db *gorm.DB, uploadDir string) *FileService {
+	return &FileService{db: db, uploadDir: uploadDir}
 }
 
 func (s *FileService) SaveFile(file *gin.Context, formName string) (*models.File, error) {
@@ -95,12 +97,18 @@ func (s *FileService) DeleteFile(id uint) error {
 	if err := s.db.First(&file, id).Error; err != nil {
 		return err
 	}
-	file.RefCount--
-	if file.RefCount <= 0 {
-		os.Remove(file.Path)
-		return s.db.Delete(&file).Error
+	if file.RefCount > 1 {
+		file.RefCount--
+		return s.db.Save(&file).Error
 	}
-	return s.db.Save(&file).Error
+	diskPath, err := ResolveUploadPath(s.uploadDir, file.Path)
+	if err != nil {
+		return fmt.Errorf("文件路径非法，物理删除未执行，保留数据库记录: %w", err)
+	}
+	if err := os.Remove(diskPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("删除物理文件失败，保留数据库记录: %w", err)
+	}
+	return s.db.Delete(&file).Error
 }
 
 func (s *FileService) GetFile(id uint) (*models.File, error) {

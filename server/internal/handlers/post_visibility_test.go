@@ -81,7 +81,7 @@ func decodeFeedList(t *testing.T, w *httptest.ResponseRecorder) feedListBody {
 	return body
 }
 
-// VIS-01/VIS-02：快照生成后被治理隐藏或作者删除的帖子，下一次公共读取不得再返回。
+// VIS-01/VIS-02：快照生成后被治理隐藏、作者删除或标记已售的帖子，下一次公共读取不得再返回。
 func TestSnapshotReplayExcludesHiddenAndDeletedPosts(t *testing.T) {
 	db := newPostFeedTestDB(t)
 	h := NewPostHandler(db, "", "")
@@ -101,11 +101,13 @@ func TestSnapshotReplayExcludesHiddenAndDeletedPosts(t *testing.T) {
 	require.True(t, body.HasMore)
 	require.Equal(t, 10, body.NextOffset)
 
-	// 快照建立后再隐藏第 3 条、删除第 5 条（只改状态，记录仍存在）。
+	// 快照建立后再隐藏第 3 条、删除第 5 条、标记第 7 条已售（只改状态，记录仍存在）。
 	hiddenID := posts[2].ID
 	deletedID := posts[4].ID
+	soldID := posts[6].ID
 	require.NoError(t, db.Model(&models.Post{}).Where("id = ?", hiddenID).Update("status", models.PostStatusModeratedHidden).Error)
 	require.NoError(t, db.Model(&models.Post{}).Where("id = ?", deletedID).Update("status", models.PostStatusDeleted).Error)
+	require.NoError(t, db.Model(&models.Post{}).Where("id = ?", soldID).Update("status", models.PostStatusSold).Error)
 
 	second := getListRequest(t, h, 0, fmt.Sprintf("board=2&sort=all&scene=loadmore&session_id=%s&offset=0&limit=10&capabilities=%s", body.SessionID, paginationMetaCapability))
 	require.Equal(t, http.StatusOK, second.Code, second.Body.String())
@@ -113,13 +115,15 @@ func TestSnapshotReplayExcludesHiddenAndDeletedPosts(t *testing.T) {
 	for _, post := range secondBody.Posts {
 		require.NotEqual(t, hiddenID, post.ID, "治理隐藏的帖子不得从快照回读返回")
 		require.NotEqual(t, deletedID, post.ID, "已删除的帖子不得从快照回读返回")
+		require.NotEqual(t, soldID, post.ID, "已售商品不得从集市快照回读返回")
 	}
 	// 不能只靠前端隐藏：正文本身也不能出现在响应里。
 	raw := second.Body.String()
 	require.NotContains(t, raw, posts[2].Content)
 	require.NotContains(t, raw, posts[4].Content)
+	require.NotContains(t, raw, posts[6].Content)
 	// 短页但必须按原始候选位置推进。
-	require.Equal(t, 8, len(secondBody.Posts))
+	require.Equal(t, 7, len(secondBody.Posts))
 	require.Equal(t, 10, secondBody.NextOffset)
 }
 
@@ -158,6 +162,32 @@ func TestPublicReadKeepsSoldAndClosedButDropsUnknownStatus(t *testing.T) {
 	empty, err := h.loadPostsInOrder(nil, publicPostStatuses)
 	require.NoError(t, err)
 	require.Empty(t, empty)
+}
+
+// 集市公共列表只展示仍在进行中的出售内容和其他未售完的集市状态；已售商品
+// 仍由详情与个人记录接口保留，不应继续占用公共列表的位置。
+func TestMarketListExcludesSoldPosts(t *testing.T) {
+	db := newPostFeedTestDB(t)
+	h := NewPostHandler(db, "", "")
+	author := seedFeedAuthor(t, db)
+
+	normal := seedFeedPost(t, db, author, models.BoardMarket, models.PostStatusNormal, "在售商品")
+	sold := seedFeedPost(t, db, author, models.BoardMarket, models.PostStatusSold, "已售商品")
+	closed := seedFeedPost(t, db, author, models.BoardMarket, models.PostStatusClosed, "已结束求购")
+
+	for _, query := range []string{"board=2&sort=time&limit=20", "board=2&sort=all&limit=20"} {
+		response := getListRequest(t, h, 0, query)
+		require.Equal(t, http.StatusOK, response.Code, "query=%s body=%s", query, response.Body.String())
+		body := decodeFeedList(t, response)
+		ids := make(map[uint]bool, len(body.Posts))
+		for _, post := range body.Posts {
+			ids[post.ID] = true
+		}
+		require.True(t, ids[normal.ID], "query=%s should keep normal post", query)
+		require.True(t, ids[closed.ID], "query=%s should keep closed non-sale post", query)
+		require.False(t, ids[sold.ID], "query=%s must exclude sold post", query)
+		require.NotContains(t, response.Body.String(), "已售商品")
+	}
 }
 
 // VIS-04/PAGE-07：同一份快照不能跨用户、跨筛选参数复用。

@@ -381,6 +381,14 @@ func supportsPollRequest(c *gin.Context) bool {
 // GetList 获取帖子列表
 func (h *PostHandler) GetList(c *gin.Context) {
 	boardIDStr := c.Query("board")
+	var requestedBoardID *models.BoardID
+	if boardIDStr != "" {
+		if boardID, err := strconv.Atoi(boardIDStr); err == nil {
+			bid := models.BoardID(boardID)
+			requestedBoardID = &bid
+		}
+	}
+	visiblePostStatuses := publicPostStatusesForBoard(requestedBoardID)
 	postType := c.Query("type")
 	searchQuery := strings.TrimSpace(strings.ToLower(c.Query("q")))
 	sort := c.DefaultQuery("sort", "time")
@@ -428,7 +436,6 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	nextOffset := offset
 	hasMore := false
 	now := time.Now()
-	var requestedBoardID *models.BoardID
 	var waterSectionFeedID uint
 
 	isHomeFeedV2 := boardIDStr == "1" &&
@@ -471,7 +478,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 				// 固定候选窗口后应用当前可见性过滤，允许短页；
 				// 不跨全量快照循环补满一页，避免一次请求变成不受控扫描。
-				visiblePosts, loadErr := h.loadPostsInOrder(targetIDs, publicPostStatuses)
+				visiblePosts, loadErr := h.loadPostsInOrder(targetIDs, visiblePostStatuses)
 				if loadErr != nil {
 					log.Printf("[DB_ERROR] GetList hot-feed Find failed: %v", loadErr)
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
@@ -511,20 +518,15 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 	// 走正常的查询（或 refresh 阶段）
 	query := h.db.Model(&models.Post{}).
-		Where("posts.status IN ?", []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed}).
+		Where("posts.status IN ?", visiblePostStatuses).
 		Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
 		Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants)
 	if !supportsPoll {
 		query = query.Where("posts.content_kind <> ?", models.PostContentKindPoll)
 	}
 
-	if boardIDStr != "" {
-		boardID, err := strconv.Atoi(boardIDStr)
-		if err == nil {
-			bid := models.BoardID(boardID)
-			requestedBoardID = &bid
-			query = query.Where("board_id = ?", boardID)
-		}
+	if requestedBoardID != nil {
+		query = query.Where("board_id = ?", *requestedBoardID)
 	}
 
 	query = applyPostTypeFilter(query, requestedBoardID, postType)
@@ -765,7 +767,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		} else {
 			// 这里必须清除Preload等，单纯Pluck
 			snapshotQuery := h.db.Model(&models.Post{}).
-				Where("posts.status IN ?", []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed}).
+				Where("posts.status IN ?", visiblePostStatuses).
 				Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)")
 			if !supportsPoll {
 				snapshotQuery = snapshotQuery.Where("posts.content_kind <> ?", models.PostContentKindPoll)
@@ -833,7 +835,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 		// 取出第一页：固定候选窗口后按当前可见状态过滤，允许短页。
 		window := sliceFeedWindow(len(allIDs), 0, limit)
-		firstPage, firstPageErr := h.loadPostsInOrder(allIDs[window.Start:window.End], publicPostStatuses)
+		firstPage, firstPageErr := h.loadPostsInOrder(allIDs[window.Start:window.End], visiblePostStatuses)
 		if firstPageErr != nil {
 			log.Printf("[DB_ERROR] GetList common feed Find failed: %v", firstPageErr)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})

@@ -82,6 +82,11 @@ class _MarketScreenState extends State<MarketScreen> {
           ? _marketPostTypes
           : widget.onlyPostTypes!;
 
+  bool _isMarketListingVisible(Post post) {
+    // 服务端已售商品不再进入公共集市；这里同步过滤缓存和状态更新瞬间的旧数据。
+    return post.status != 'sold';
+  }
+
   String? get _selectedServerType => _typeFilter == 'all' ? null : _typeFilter;
 
   String get _defaultPublishTypeForCurrentView {
@@ -286,9 +291,10 @@ class _MarketScreenState extends State<MarketScreen> {
 
   List<Post> _applyLocalTypeFilter(List<Post> posts) {
     return posts.where((post) {
+      final statusVisible = _isMarketListingVisible(post);
       final typeAllowed = _allowedTypes.contains(post.postType);
       final typeMatched = _typeFilter == 'all' || post.postType == _typeFilter;
-      return typeAllowed && typeMatched;
+      return statusVisible && typeAllowed && typeMatched;
     }).toList();
   }
 

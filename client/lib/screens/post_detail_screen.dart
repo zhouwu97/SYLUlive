@@ -1927,7 +1927,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: actionLabel,
-      message: '确认后这条发布会保留在主页和集市记录中，并显示为$actionLabel，不会删除这条发布。',
+      message: '确认后这条发布会保留在主页和个人集市记录中，不会删除这条发布，也不再出现在公共集市列表。',
       confirmText: actionLabel,
     );
     if (!confirmed) return;
@@ -1955,7 +1955,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '标记已售出',
-      message: '标记后商品会保留在主页和集市记录中，并显示为已售出，不会删除这条发布。',
+      message: '标记后商品会保留在主页和个人集市记录中，不会删除这条发布，也不再出现在公共集市列表。',
       confirmText: '标记已售出',
     );
     if (!confirmed) return;

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -78,6 +79,10 @@ func (h *CampusArticleHandler) List(c *gin.Context) {
 
 	query := h.db.Model(&models.CampusArticle{}).
 		Where("source IN ?", allowedCampusSources)
+	if keyword := strings.TrimSpace(c.Query("q")); keyword != "" {
+		pattern := "%" + strings.ToLower(keyword) + "%"
+		query = query.Where("LOWER(title) LIKE ? OR LOWER(content_text) LIKE ?", pattern, pattern)
+	}
 
 	if category != "" {
 		if !allowedCampusCategories[category] {

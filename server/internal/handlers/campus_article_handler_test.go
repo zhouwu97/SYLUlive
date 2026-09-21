@@ -55,6 +55,33 @@ func TestListEmpty(t *testing.T) {
 	}
 }
 
+func TestListSearchRespectsApprovedSources(t *testing.T) {
+	db := setupTestDB(t)
+	for _, a := range []models.CampusArticle{
+		{Source: "jwc", SourceArticleID: "s1", SourceURL: "https://jwc.sylu.edu.cn/s1", Title: "教务通知", ContentText: "服务电话 123", ContentHash: "s1", Attachments: datatypes.JSON([]byte("[]"))},
+		{Source: "other", SourceArticleID: "s2", SourceURL: "https://example.test/s2", Title: "服务电话", ContentHash: "s2", Attachments: datatypes.JSON([]byte("[]"))},
+		{Source: "jwc", SourceArticleID: "s3", SourceURL: "https://jwc.sylu.edu.cn/s3", Title: "无关通知", ContentHash: "s3", Attachments: datatypes.JSON([]byte("[]"))},
+	} {
+		if err := db.Create(&a).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := gin.New()
+	r.GET("/articles", (&CampusArticleHandler{db: db}).List)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/articles?q=%E7%94%B5%E8%AF%9D", nil))
+	var result ListResponse
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 1 || result.Items[0].Title != "教务通知" {
+		t.Fatalf("unexpected search result: %+v", result.Items)
+	}
+}
+
 func TestListWithData(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupTestDB(t)

@@ -590,7 +590,7 @@ func writeAIRuntimeError(c *gin.Context, err error) {
 			status = http.StatusConflict
 		case "ai_run_not_waiting_consent", "ai_run_expired", "ai_run_consent_scope_mismatch", "ai_run_consent_conflict":
 			status = http.StatusConflict
-		case "invalid_client_request_id", "invalid_conversation_id", "invalid_run_id", "invalid_run_consent":
+		case "consent_required", "consent_used", "invalid_summary", "invalid_model", "invalid_request", "invalid_client_request_id", "invalid_conversation_id", "invalid_run_id", "invalid_run_consent":
 			status = http.StatusBadRequest
 		case "invalid_agent_user_signal", "invalid_agent_failure_reason", "invalid_agent_feedback":
 			status = http.StatusBadRequest

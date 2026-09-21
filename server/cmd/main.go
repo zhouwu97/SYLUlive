@@ -2726,6 +2726,8 @@ func main() {
 		{
 			aiProtected.DELETE("/observability", aiRuntimeHandler.DeleteUserObservability)
 			aiProtected.POST("/runs", aiRuntimeHandler.CreateRun)
+			aiProtected.POST("/local-analysis", aiRuntimeHandler.LocalAnalysis)
+			aiProtected.GET("/local-analysis/settings", aiRuntimeHandler.LocalAnalysisSettings)
 			aiProtected.GET("/runs/:id", aiRuntimeHandler.GetRun)
 			aiProtected.GET("/runs/:id/metrics", aiRuntimeHandler.GetRunMetrics)
 			aiProtected.DELETE("/runs/:id/observability", aiRuntimeHandler.DeleteRunObservability)

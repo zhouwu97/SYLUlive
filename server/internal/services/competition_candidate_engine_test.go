@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	// 使用纯 Go 驱动，与包内多数测试保持一致；cgo 版需要 C 工具链，
+	// 在无 CGO 的环境下无法运行，会导致这批测试被静默跳过验证。
+	"github.com/glebarez/sqlite"
 	"gorm.io/datatypes"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
@@ -28,6 +30,10 @@ func newCompetitionServiceTestDB(t *testing.T) *gorm.DB {
 		&models.CompetitionCategory{}, &models.CompetitionCatalogPackage{},
 		&models.CompetitionEvent{}, &models.CompetitionCatalogAuditLog{},
 		&models.CompetitionCatalogLegacyMapping{}, &models.CompetitionCatalogActivationSnapshot{},
+		// 候选引擎会读取「已加入计划」作为排序行为信号，测试库需同步建表。
+		&models.UserCompetitionCalendarItem{},
+		// 排序追踪表：采样开启时引擎会写入。
+		&models.CompetitionRankTrace{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +139,10 @@ func TestCompetitionCandidateEngineFiltersEligibilityAndCandidateGate(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Total != 3 {
+	// 行为变更（本次修复）：NAT-002 的专业范围（机械工程）与用户专业
+	// （计算机科学与技术）不匹配时，旧实现直接丢弃；现在必须降级到通用候选。
+	// 详见 docs/plans/competition-recommendation-plan.md §2 P0-2。
+	if result.Total != 4 {
 		t.Fatalf("total=%d groups=%+v", result.Total, result.Groups)
 	}
 	if len(result.Groups) != 3 ||
@@ -141,6 +150,20 @@ func TestCompetitionCandidateEngineFiltersEligibilityAndCandidateGate(t *testing
 		result.Groups[1].Key != "college_match" ||
 		result.Groups[2].Key != "general_match" {
 		t.Fatalf("unexpected groups: %+v", result.Groups)
+	}
+	wantCounts := map[string]int{"major_match": 1, "college_match": 1, "general_match": 2}
+	for _, group := range result.Groups {
+		if group.Count != wantCounts[group.Key] {
+			t.Fatalf("分组 %s 计数=%d want=%d", group.Key, group.Count, wantCounts[group.Key])
+		}
+	}
+	// blocked 赛事必须仍然被治理门排除，不得因本次改动泄漏进结果。
+	for _, group := range result.Groups {
+		for _, item := range group.Items {
+			if item.CompetitionID == "NAT-005" {
+				t.Fatal("候选池未开放的赛事不得进入结果")
+			}
+		}
 	}
 }
 
@@ -205,7 +228,101 @@ func TestCompetitionCandidateEngineUsesCatalogOrderWithoutImportanceOrDeadlinePr
 	}
 }
 
+func TestCompetitionCandidateEnginePassesPreferenceTagsIntoScoring(t *testing.T) {
+	// 回归用例：画像层此前漏读 user_competition_preferences.skill_tags，
+	// 引擎里取到的 SkillTags 恒为空，导致「技能」维度永远显示「尚未确认」、
+	// 技能分恒为 0 的死分量。本用例同时覆盖方向与技能两条桥接链路。
+	db := newCompetitionServiceTestDB(t)
+	user := readyCompetitionUser(t, db)
+	preference := models.UserCompetitionPreference{
+		UserID: user.ID, Goals: competitionJSON(),
+		DirectionTags: competitionJSON("程序设计"), SkillTags: competitionJSON("Python"),
+		PreferredRoles: competitionJSON(), ExperienceLevel: "beginner",
+	}
+	if err := db.Create(&preference).Error; err != nil {
+		t.Fatal(err)
+	}
+	// 赛事只带目录真实的粗分类标签，与方向词、技能词零重叠。
+	event := candidateEvent("NAT-041", "程序设计赛事", 50, 1, []string{"计算机类"}, nil)
+	event.Tags = competitionJSON("工程实践")
+	if err := db.Select("*").Create(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := NewCompetitionCandidateEngine(db).BuildCandidates(
+		context.Background(), user.ID, CandidateFilter{Page: 1, PageSize: 20},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 1 {
+		t.Fatalf("total=%d groups=%+v", result.Total, result.Groups)
+	}
+	item := result.Groups[0].Items[0]
+	if item.MatchDimensions.Direction != "matched" {
+		t.Fatalf("方向标签未接入打分：%+v", item.MatchDimensions)
+	}
+	if item.MatchDimensions.Skill != "matched" {
+		t.Fatalf("技能标签未接入打分：%+v", item.MatchDimensions)
+	}
+	if item.MatchTier == "" || item.MatchTier == "none" {
+		t.Fatalf("命中专业簇与偏好后不应无档位：%q", item.MatchTier)
+	}
+}
+
 func ptrTime(value time.Time) *time.Time { return &value }
+
+// 排序追踪是调参依据，必须满足两条：采样比例生效，且采样判定是确定性的
+// （请求路径禁止随机数，否则「同输入同输出」这条治理要求就破了）。
+func TestCompetitionCandidateEngineRankTraceSamplingIsDeterministic(t *testing.T) {
+	db := newCompetitionServiceTestDB(t)
+	user := readyCompetitionUser(t, db)
+	event := candidateEvent("NAT-070", "程序设计赛事", 60, 1, []string{"计算机类"}, nil)
+	if err := db.Select("*").Create(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 采样比例为 0 时不写任何追踪。
+	if _, err := NewCompetitionCandidateEngineWithTraceSample(db, 0).BuildCandidates(
+		context.Background(), user.ID, CandidateFilter{Page: 1, PageSize: 20},
+	); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := db.Model(&models.CompetitionRankTrace{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("比例为 0 仍写入了 %d 条追踪", count)
+	}
+
+	// 比例 100 时全量采样，同一用户重复请求写入的条数与内容稳定。
+	for round := 0; round < 3; round++ {
+		if _, err := NewCompetitionCandidateEngineWithTraceSample(db, 100).BuildCandidates(
+			context.Background(), user.ID, CandidateFilter{Page: 1, PageSize: 20},
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var traces []models.CompetitionRankTrace
+	if err := db.Order("id ASC").Find(&traces).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(traces) != 3 {
+		t.Fatalf("追踪条数=%d want=3", len(traces))
+	}
+	for _, trace := range traces {
+		if trace.EventID != event.ID || trace.AlgorithmVersion != "major-match-v1" ||
+			trace.Position != 0 || trace.MatchTier == "" || len(trace.Breakdown) == 0 {
+			t.Fatalf("追踪内容不完整：%+v", trace)
+		}
+	}
+	// 分项明细必须可复算：三次请求的明细逐字节一致。
+	if string(traces[0].Breakdown) != string(traces[1].Breakdown) ||
+		string(traces[1].Breakdown) != string(traces[2].Breakdown) {
+		t.Fatalf("分项明细不可复算：%s vs %s", traces[0].Breakdown, traces[1].Breakdown)
+	}
+}
 
 func TestCompetitionCandidateEngineReturnsProfileNotReadyWithoutCandidates(t *testing.T) {
 	db := newCompetitionServiceTestDB(t)
@@ -221,6 +338,125 @@ func TestCompetitionCandidateEngineReturnsProfileNotReadyWithoutCandidates(t *te
 	}
 	if result.ProfileReady || result.Total != 0 || len(result.Groups) != 0 {
 		t.Fatalf("unexpected result: %+v", result)
+	}
+	// 画像未就绪时必须说明缺什么，前端才能给出可操作的引导，
+	// 而不是让用户对着一个空列表自己猜（旧实现只有一句 404 或空白）。
+	if result.ReasonCode != ReasonProfileIncomplete {
+		t.Fatalf("reason_code=%q", result.ReasonCode)
+	}
+	if len(result.MissingFields) == 0 {
+		t.Fatal("画像未就绪时必须列出缺失字段")
+	}
+}
+
+// 用户手动纠正的专业簇必须优先于按专业名推断的结果（边界契约 B7）。
+// 这是长尾专业唯一的自救路径：推断不出来时，用户自己指定即可参与匹配。
+func TestCompetitionCandidateEngineHonoursMajorClusterOverride(t *testing.T) {
+	db := newCompetitionServiceTestDB(t)
+	user := readyCompetitionUser(t, db)
+	// 把专业换成一个字典里没有、粗归类也命中不了的名称。
+	if err := db.Model(&models.User{}).Where("id = ?", user.ID).
+		Update("edu_major", "丝路特色试验班").Error; err != nil {
+		t.Fatal(err)
+	}
+	preference := models.UserCompetitionPreference{
+		UserID: user.ID, Goals: competitionJSON(),
+		DirectionTags: competitionJSON(), SkillTags: competitionJSON(),
+		PreferredRoles: competitionJSON(), ExperienceLevel: "beginner",
+	}
+	if err := db.Create(&preference).Error; err != nil {
+		t.Fatal(err)
+	}
+	event := candidateEvent("NAT-050", "计算机类赛事", 50, 1, []string{"计算机类"}, nil)
+	if err := db.Select("*").Create(&event).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 纠正之前：专业无法映射，必须上报可见缺口，且事件只能落进通用池。
+	result, err := NewCompetitionCandidateEngine(db).BuildCandidates(
+		context.Background(), user.ID, CandidateFilter{Page: 1, PageSize: 20},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ReasonCode != ReasonClusterUnmapped {
+		t.Fatalf("专业无映射必须上报缺口，实际 reason_code=%q", result.ReasonCode)
+	}
+	if result.Groups[0].Key != "general_match" {
+		t.Fatalf("纠正前不应进入专业相关组：%+v", result.Groups)
+	}
+
+	// 用户手动纠正为「计算机类」后，应立即按专业相关命中（无需重启、无需缓存刷新）。
+	override := competitionJSON("计算机类")
+	if err := db.Model(&models.UserCompetitionPreference{}).Where("user_id = ?", user.ID).
+		Update("major_cluster_override", override).Error; err != nil {
+		t.Fatal(err)
+	}
+	result, err = NewCompetitionCandidateEngine(db).BuildCandidates(
+		context.Background(), user.ID, CandidateFilter{Page: 1, PageSize: 20},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ReasonCode != "" {
+		t.Fatalf("已纠正后不应再上报缺口：%q", result.ReasonCode)
+	}
+	if len(result.Groups) != 1 || result.Groups[0].Key != "major_match" {
+		t.Fatalf("纠正后应进入专业相关组：%+v", result.Groups)
+	}
+	if item := result.Groups[0].Items[0]; len(item.MatchedClusters) == 0 ||
+		item.MatchedClusters[0] != "计算机类" {
+		t.Fatalf("未回传命中的专业簇：%+v", item.MatchedClusters)
+	}
+}
+
+// 诊断计数必须能解释「为什么是 0 条」：治理门条数、筛选后条数、年级淘汰数与分组计数。
+func TestCompetitionCandidateEngineReportsPipelineDiagnostics(t *testing.T) {
+	db := newCompetitionServiceTestDB(t)
+	user := readyCompetitionUser(t, db)
+	events := []models.CompetitionEvent{
+		candidateEvent("NAT-060", "专业赛事", 60, 1, []string{"计算机类"}, nil),
+		candidateEvent("NAT-061", "学院赛事", 50, 2, nil, []string{"信息科学与工程学院"}),
+		candidateEvent("NAT-062", "通用赛事", 40, 3, nil, nil),
+	}
+	gradeBlocked := candidateEvent("NAT-063", "研究生赛事", 90, 4, []string{"计算机类"}, nil)
+	gradeBlocked.EligibleEntryYears = competitionJSON("研究生")
+	events = append(events, gradeBlocked)
+	blocked := candidateEvent("NAT-064", "候选池外赛事", 100, 5, nil, nil)
+	blocked.CandidatePoolAllowed = false
+	events = append(events, blocked)
+	for index := range events {
+		if err := db.Select("*").Create(&events[index]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := NewCompetitionCandidateEngine(db).BuildCandidates(
+		context.Background(), user.ID, CandidateFilter{Page: 1, PageSize: 20},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostics := result.Diagnostics
+	if diagnostics == nil {
+		t.Fatal("缺少管线诊断计数")
+	}
+	// 治理门排除 NAT-064：310 条在真实目录下的对应关系就是 275 条进候选池。
+	if diagnostics.Scoped != 4 || diagnostics.Matched != 4 {
+		t.Fatalf("治理门计数错误：%+v", diagnostics)
+	}
+	if diagnostics.GradeExcluded != 1 {
+		t.Fatalf("年级淘汰计数错误：%+v", diagnostics)
+	}
+	if diagnostics.MajorMatch != 1 || diagnostics.CollegeMatch != 1 || diagnostics.GeneralMatch != 1 {
+		t.Fatalf("分组计数错误：%+v", diagnostics)
+	}
+	if diagnostics.Returned != 3 || diagnostics.Returned != result.Total {
+		t.Fatalf("返回条数错误：%+v total=%d", diagnostics, result.Total)
+	}
+	// 目录未授权时不得声明任何赛事参与个性化排序。
+	if diagnostics.Rankable != 0 || result.Catalog.PersonalizedRankingAllowed {
+		t.Fatalf("未授权目录不应有可排序赛事：%+v", diagnostics)
 	}
 }
 

@@ -207,6 +207,43 @@ String competitionManualRatingShort(String level) {
   return value.isEmpty ? '' : '价值 $value';
 }
 
+/// 匹配档位的展示文案。返回空字符串表示没有匹配信息
+/// （目录列表接口返回的赛事不会带 match_tier），此时卡片不应出现匹配度徽标。
+///
+/// 刻意只暴露离散档位：内部分值属于排序依据，把「87 分」渲染给学生会变成伪精确结论。
+String competitionMatchTierLabel(String tier) => switch (tier.trim()) {
+      'strong' => '高度匹配',
+      'suitable' => '较为匹配',
+      'explore' => '可以探索',
+      _ => '',
+    };
+
+/// 命中依据的展示文案，与 match_basis 的离散取值一一对应。
+String competitionMatchBasisLabel(String basis) => switch (basis.trim()) {
+      'major_cluster' => '专业直接相关',
+      'college' => '学院范围相关',
+      'tag_bridge' => '方向相近',
+      'general' => '通用候选',
+      _ => '',
+    };
+
+/// 卡片上的命中依据短文案，形如「计算机类 · 专业直接相关」。
+/// 最多展示两个命中簇：簇标签可能较长，多写会把标题挤掉。
+String competitionMatchBasisSummary({
+  required String basis,
+  required List<String> clusters,
+}) {
+  final label = competitionMatchBasisLabel(basis);
+  final visible = clusters
+      .map((cluster) => cluster.trim())
+      .where((cluster) => cluster.isNotEmpty)
+      .take(2)
+      .join('、');
+  if (visible.isEmpty) return label;
+  if (label.isEmpty) return visible;
+  return '$visible · $label';
+}
+
 String competitionManualRatingLabel(String level) {
   final value = level.trim();
   return value.isEmpty ? '未评级' : value;

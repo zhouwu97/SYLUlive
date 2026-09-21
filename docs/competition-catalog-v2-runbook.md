@@ -6,7 +6,9 @@
 ## 发布边界
 
 - Go 决定赛事是否进入公开目录和候选池。
-- 当前目录默认禁止个性化改序和强推荐。
+- 个性化改序由 `personalized_ranking_allowed` 逐条授权：未授权时该赛事顺序不受画像影响。
+  该字段自 ADR-002 起同时承载「含专业维度的确定性排序」这一窄语义
+  （不含 AI 解释、不含强推荐、不含获奖预测）。
 - Hy3 只解释 Go 已批准且已排序的候选。
 - `draft` 或 `production_load_allowed=false` 的包不得激活。
 - 数据库操作前必须完成备份，并验证备份非空且可读。
@@ -20,6 +22,13 @@ COMPETITION_CANDIDATE_ENGINE_V2_ENABLED=true
 COMPETITION_CATALOG_V2_ENABLED=false
 COMPETITION_AI_EXPLANATION_ENABLED=false
 ```
+
+`COMPETITION_CANDIDATE_ENGINE_V2_ENABLED` 的**代码默认值已改为 true**：
+客户端「适合我」固定请求 `/api/user/competitions/candidates`，而该路由只在开关为真时注册；
+默认关闭等于任何一次漏配环境变量都会让用户看到 404，表现为「点了没反应」。
+该接口只读取已发布且允许进候选池的赛事，关停它并不改变目录治理边界。
+需要临时停用排序能力时应关个性化排序（目录侧 `personalized_ranking_allowed`），
+而不是把整个路由摘掉；把本变量显式设为 `false` 仅用于排障。
 
 需要暂存 Catalog 时才开启 `COMPETITION_CATALOG_V2_ENABLED`。AI 解释必须在候选链路
 稳定后单独灰度，不能与目录激活同时放量。
@@ -35,6 +44,41 @@ python tools/competition_catalog/validate_catalog_v2.py catalog.json
 
 离线校验只用于提前发现问题。Go 服务仍会独立复算所有 `record_hash` 和
 `package_hash`，不得跳过服务端校验。
+
+## 开放个性化排序（ADR-002）
+
+按 ADR-002，个性化排序由 `personalized_ranking_allowed` 逐条授权。翻转该字段
+**必须走目录包**，直接用 SQL 改库会在下一次目录激活时被静默回滚。
+
+翻转不能手工编辑 JSON：`record_hash` 是对整条记录取哈希、`package_hash` 再对
+所有记录摘要取哈希，手改一个布尔值就会让全包校验失败。用仓库内的工具生成：
+
+```powershell
+cd server
+# 1) 试点包：只翻转 eligible_colleges 含信息科学与工程学院的赛事（实测 109 条）
+go run ./cmd/catalograise -input catalog.json -college 信息科学与工程学院 -apply -output pilot-202609.json
+
+# 2) 试点验收通过后出全量包：翻转候选池内全部赛事（实测 275 条）
+go run ./cmd/catalograise -input catalog.json -all -apply -output full-202609.json `
+  -dataset-version 2026.09.29-v8.3-activation
+```
+
+不加 `-apply` 即为 dry-run，只打印将翻转哪些赛事，不写文件。
+
+工具的三条硬约束（与目录校验器一致，违反会直接报错退出）：
+
+- 只翻转 `candidate_pool_allowed=true` 的记录，其余 35 条保持 `false`；
+- `strong_recommendation_eligible` 全线保持 `false`，本工具不触碰强推荐语义；
+- 翻转后按服务端同一份实现重算 `record_hash` 与 `package_hash`。
+
+发布链路与常规目录包相同，且**不可与目录激活同时放量**：
+
+```text
+catalograise → validate_catalog_v2.py → 后台 import → diff 复核 → activate
+```
+
+激活前必须完成数据库备份门禁（备份 → 校验非空可读 → 记录路径与 SHA-256）。
+回滚有两级：关个性化排序开关秒级恢复目录序；目录包 rollback 恢复上一包。
 
 ## 补录已核验报名日程
 
@@ -138,7 +182,8 @@ validation_status=passed
 - 活动包只有一个；
 - 普通目录仍只返回已发布且允许展示的赛事；
 - `/api/user/competitions/candidates` 返回新 `dataset_version`；
-- 候选不包含 `personalized_score`，且目录禁止排名时顺序不受画像影响；
+- 候选不包含 `personalized_score` / `recommendation_tier`，也不包含内部分值；
+  允许排名时顺序必须可复现、可审计、可回滚，未授权赛事的顺序不受画像影响。
 - 服务健康检查、错误率和审计记录正常。
 
 ## 回滚

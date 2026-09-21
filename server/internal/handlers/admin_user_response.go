@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"strconv"
+	"strings"
 	"time"
 
 	"shenliyuan/internal/models"
+
+	"gorm.io/gorm"
 )
 
 // AdminUserBriefResponse 是管理员列表使用的最小用户资料，包含管理所需的账号标识。
@@ -29,20 +33,83 @@ type AdminUserResponse struct {
 	CreatedAt   time.Time   `json:"created_at"`
 }
 
-func adminUserBriefResponse(user models.User) AdminUserBriefResponse {
+// loadAdminAcademicStudentIDs 从新的教务身份表批量读取管理员页面需要展示的学号。
+// users.student_id 只保留为旧数据兼容字段，不能再作为教务绑定事实来源。
+func loadAdminAcademicStudentIDs(db *gorm.DB, users []models.User) (map[uint]string, error) {
+	studentIDs := make(map[uint]string, len(users))
+	if db == nil || len(users) == 0 || !db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
+		return studentIDs, nil
+	}
+
+	userIDs := make([]uint, 0, len(users))
+	for _, user := range users {
+		userIDs = append(userIDs, user.ID)
+	}
+
+	var bindings []models.AcademicIdentityBinding
+	if err := db.
+		Select("user_id", "provider_id", "student_id", "verified_at").
+		Where("user_id IN ? AND verified_at > ?", userIDs, time.Time{}).
+		Order("user_id ASC, provider_id DESC, student_id ASC").
+		Find(&bindings).Error; err != nil {
+		return nil, err
+	}
+	for _, binding := range bindings {
+		if _, exists := studentIDs[binding.UserID]; exists {
+			continue
+		}
+		if studentID := strings.TrimSpace(binding.StudentID); studentID != "" {
+			studentIDs[binding.UserID] = studentID
+		}
+	}
+	return studentIDs, nil
+}
+
+func adminStudentID(user models.User, academicStudentIDs map[uint]string) string {
+	if studentID := strings.TrimSpace(academicStudentIDs[user.ID]); studentID != "" {
+		return studentID
+	}
+	return strings.TrimSpace(user.StudentID)
+}
+
+// withAdminUserSearch 让管理端可按内部 ID、旧账号字段、昵称或已验证教务学号搜索。
+func withAdminUserSearch(query, db *gorm.DB, keyword string) *gorm.DB {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return query
+	}
+
+	like := "%" + strings.ToLower(keyword) + "%"
+	conditions := "LOWER(student_id) LIKE ? OR LOWER(nickname) LIKE ?"
+	args := []interface{}{like, like}
+	if userID, err := strconv.ParseUint(keyword, 10, 64); err == nil {
+		conditions = "id = ? OR " + conditions
+		args = append([]interface{}{userID}, args...)
+	}
+	if db != nil && db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
+		identityOwners := db.Model(&models.AcademicIdentityBinding{}).
+			Select("user_id").
+			Where("verified_at > ? AND LOWER(student_id) LIKE ?", time.Time{}, like)
+		conditions += " OR id IN (?)"
+		args = append(args, identityOwners)
+	}
+	return query.Where(conditions, args...)
+}
+
+func adminUserBriefResponse(user models.User, studentID string) AdminUserBriefResponse {
 	return AdminUserBriefResponse{
 		ID:        user.ID,
-		StudentID: user.StudentID,
+		StudentID: studentID,
 		Nickname:  user.Nickname,
 		Avatar:    user.Avatar,
 		Role:      user.Role,
 	}
 }
 
-func adminUserResponse(user models.User) AdminUserResponse {
+func adminUserResponse(user models.User, studentID string) AdminUserResponse {
 	return AdminUserResponse{
 		ID:          user.ID,
-		StudentID:   user.StudentID,
+		StudentID:   studentID,
 		Nickname:    user.Nickname,
 		Avatar:      user.Avatar,
 		Role:        user.Role,

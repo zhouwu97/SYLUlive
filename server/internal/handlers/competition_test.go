@@ -39,6 +39,7 @@ func newCompetitionTestDB(t *testing.T) *gorm.DB {
 		&models.CompetitionAwardVerificationLog{}, &models.CompetitionAwardEvidenceFile{},
 		&models.CompetitionAwardEvidence{},
 		&models.CompetitionAwardEvidenceAccessLog{},
+		&models.CompetitionCandidateSignals{}, &models.CompetitionRankTrace{},
 	); err != nil {
 		t.Fatal(err)
 	}

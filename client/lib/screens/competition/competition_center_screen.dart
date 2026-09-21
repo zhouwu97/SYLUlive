@@ -13,6 +13,7 @@ import '../../models/competition.dart';
 import '../../models/competition_dashboard_summary.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/ai_assistant_service.dart';
+import '../../services/competition_signal_service.dart';
 import '../../services/domain_change_bus.dart';
 import '../../utils/app_feedback.dart';
 import '../../utils/competition_batch_action_payload.dart';
@@ -30,6 +31,7 @@ import '../../widgets/competition/competition_batch_confirm_dialog.dart';
 import '../../widgets/competition/competition_batch_action_sheet.dart';
 import 'competition_calendar_item_detail_screen.dart';
 import 'competition_my_hub_screen.dart';
+import 'competition_preference_screen.dart';
 
 import 'competition_admin_center_screen.dart';
 import '../ai/ai_assistant_screen.dart';
@@ -74,6 +76,14 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   int _stateRequestSerial = 0;
   bool _hasMore = false;
   bool _profileReady = false;
+  /// 候选接口返回的空结果原因（profile_incomplete / cluster_unmapped / no_candidate）。
+  /// 没有它时「没匹配到」与「画像没准备好」在前端长得一模一样，都只是一片空白。
+  String? _candidateReasonCode;
+  /// 画像就绪还缺哪些字段，用于给出可操作的引导。
+  List<String> _candidateMissingFields = const [];
+  /// 候选接口不可用（404/5xx）时为 true：必须显式提示并允许切回全部，
+  /// 而不是把失败伪装成「没有符合条件的比赛」。
+  bool _candidateUnavailable = false;
   String? _categorySlug;
   final Set<String> _recommendations = {};
   final Set<String> _recognitions = {};
@@ -86,11 +96,16 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
 
   String _studentFocusFilter = 'all';
 
+  /// 候选链路埋点。只上报、不参与任何判定，失败静默。
+  late CompetitionSignalService _signals;
+  String _candidateAlgorithmVersion = '';
+
   @override
   void initState() {
     super.initState();
     DomainChangeBus.instance.addListener(_handleDomainChange);
     _dio = context.read<AuthProvider>().dio;
+    _signals = CompetitionSignalService(_dio);
     _searchController.addListener(_onSearchChanged);
     _scrollController.addListener(_onScroll);
     _loadAll();
@@ -292,9 +307,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
           ..addAll(joined);
         _stateLoading = false;
         _stateError = null;
-        if (!_profileReady && _studentFocusFilter == 'fit') {
-          _studentFocusFilter = 'all';
-        }
+        // 刻意不再自动切回「全部」：静默切换会让用户以为自己点错了，
+        // 也看不到任何解释。保持选中，由候选提示区给出明确的未就绪引导。
       });
     } catch (error) {
       if (mounted && request == _stateRequestSerial) {
@@ -354,6 +368,16 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
               )
               .toList();
       final total = (data['total'] as num?)?.toInt() ?? items.length;
+      final serverHasMore = data['has_more'] == true;
+      final algorithmVersion = isFit
+          ? data['algorithm_version']?.toString() ?? ''
+          : '';
+      final reasonCode = isFit ? data['reason_code']?.toString() : null;
+      final missingFields = isFit
+          ? ((data['missing_fields'] as List?) ?? const [])
+              .map((value) => '$value')
+              .toList(growable: false)
+          : const <String>[];
       if (!mounted || request != _requestSerial) return;
       setState(() {
         if (reset) {
@@ -381,21 +405,59 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                 : null,
           );
           _profileReady = data['profile_ready'] == true;
+          _candidateReasonCode = reasonCode;
+          _candidateMissingFields = missingFields;
+          _candidateUnavailable = false;
+          _candidateAlgorithmVersion = algorithmVersion;
         }
         _eventTotal = total;
         _currentPage = nextPage;
-        // 服务端返回不足一页即视为到底。只比较 total 会在跨页重复项出现时失效：
-        // 去重后的 _events.length 永远追不上 total，滚动到底会无限翻页空转。
-        _hasMore = items.length >= _pageSize && _events.length < total;
+        // 候选接口由服务端给出 has_more（含总数与去重条数不一致的情况），
+        // 客户端不要再自己推断；其余列表接口仍沿用「返回不足一页即到底」的兜底判断。
+        _hasMore = isFit
+            ? serverHasMore
+            : items.length >= _pageSize && _events.length < total;
         _eventsLoading = false;
         _loadingMore = false;
         _eventsError = null;
       });
+      // 曝光上报放在 setState 之后、且不 await：埋点不能影响列表呈现。
+      if (isFit && items.isNotEmpty) {
+        unawaited(
+          _signals.recordImpressions(
+            items,
+            algorithmVersion: _candidateAlgorithmVersion,
+          ),
+        );
+      }
     } catch (error) {
       if (!mounted || request != _requestSerial) return;
       setState(() {
         _eventsLoading = false;
         _loadingMore = false;
+        final isFit = _studentFocusFilter == 'fit';
+        final statusCode = error is DioException
+            ? error.response?.statusCode
+            : null;
+        // 候选接口在开关关闭的环境里根本没有注册（404），
+        // 服务端异常时则是 5xx。这两种情况必须说「服务不可用」，
+        // 不能让用户看到「暂时没有符合条件的比赛」而去反复调整筛选条件。
+        final unavailable =
+            isFit &&
+            (statusCode == 404 ||
+                statusCode == 500 ||
+                statusCode == 502 ||
+                statusCode == 503 ||
+                statusCode == 504);
+        if (isFit) {
+          _candidateUnavailable = unavailable;
+          _eventsError = unavailable
+              ? '匹配服务暂不可用，可以先浏览全部比赛'
+              : (error is DioException
+                    ? AppFeedback.dioErrorMessage(error, fallback: '匹配服务加载失败')
+                    : '比赛数据解析失败');
+          return;
+        }
         _eventsError = error is DioException
             ? AppFeedback.dioErrorMessage(error, fallback: '比赛加载失败')
             : '比赛数据解析失败';
@@ -576,7 +638,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         onRetry: _loadCompetitionDashboard,
       ),
       _buildStudentFocusTabs(isDark),
-      if (_studentFocusFilter == 'fit') _buildCandidateNotice(isDark),
+      if (_showCandidateNotice) _buildCandidateNotice(isDark),
       _buildSectionTitle(
         title: _studentFocusTitle,
         subtitle: _eventsLoading
@@ -859,6 +921,16 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                   visualDensity: const VisualDensity(vertical: -2),
                   selected: _studentFocusFilter == tabs[index].$1,
                   onSelected: (_) {
+                    // 进入「适合我」即开始一次新的浏览会话：曝光按会话去重，
+                    // 换会话重新计数，避免同一用户跨天浏览被永久去重。
+                    if (tabs[index].$1 == 'fit') {
+                      _signals.startSession();
+                      unawaited(
+                        _signals.recordFitTabExposure(
+                          algorithmVersion: _candidateAlgorithmVersion,
+                        ),
+                      );
+                    }
                     setState(() => _studentFocusFilter = tabs[index].$1);
                     _loadEvents(reset: true);
                   },
@@ -890,7 +962,59 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     );
   }
 
+  /// 候选提示区只在「有内容可解释」时出现：空结果与服务不可用由空态承担说明与引导，
+  /// 否则同一屏会出现两套措辞相近的解释和两个重复的按钮。
+  bool get _showCandidateNotice =>
+      _studentFocusFilter == 'fit' && _events.isNotEmpty;
+
+  /// 候选提示区的四态：服务不可用 / 画像未就绪 / 有结果 / 零结果。
+  ///
+  /// 四态共用同一块 surface，是为了让「有没有解释」不再取决于是否有数据：
+  /// 旧实现在零结果与未就绪时都不给任何说明，用户只能看到一个空列表。
   Widget _buildCandidateNotice(bool isDark) {
+    final String title;
+    final String message;
+    final String actionText;
+    final VoidCallback onActionTap;
+    final bool warning;
+
+    if (_candidateUnavailable) {
+      warning = true;
+      title = '匹配服务暂不可用';
+      message = '可以先浏览全部比赛，稍后回到「适合我」重试';
+      actionText = '查看全部';
+      onActionTap = _switchToAllEvents;
+    } else if (!_profileReady) {
+      warning = false;
+      title = '完善教务身份后可生成匹配候选';
+      final missing = _candidateMissingFields
+          .map(_profileFieldLabel)
+          .where((label) => label.isNotEmpty)
+          .toList();
+      message = missing.isEmpty
+          ? '需要先完成教务身份核验，匹配依据来自你的专业、学院与年级'
+          : '还需要补全：${missing.join('、')}';
+      actionText = '去完善';
+      onActionTap = () => _openCompetitionHub();
+    } else if (_eventTotal > 0) {
+      warning = false;
+      title = '根据专业、资格和目标筛出 $_eventTotal 项候选';
+      message = '当前为候选解释，不代表获奖概率';
+      actionText = '查看依据';
+      onActionTap = _openCandidateBasis;
+    } else {
+      warning = false;
+      title = '暂未找到匹配的比赛';
+      message = _candidateReasonCode == 'cluster_unmapped'
+          ? '你的专业还没有匹配口径，可以手动指定专业方向'
+          : '可以补充偏好，或放宽筛选条件再看看';
+      actionText = '去设置偏好';
+      onActionTap = () => unawaited(_openPreference());
+    }
+
+    final accent = warning
+        ? CompetitionUiTokens.warningColor(isDark)
+        : CompetitionUiTokens.accent(isDark);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         CompetitionUiTokens.pagePadding,
@@ -901,15 +1025,21 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
         decoration: BoxDecoration(
-          color: CompetitionUiTokens.accentSoft(isDark),
+          color: warning
+              ? CompetitionUiTokens.warningSoft(isDark)
+              : CompetitionUiTokens.accentSoft(isDark),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           children: [
             Icon(
-              Icons.auto_awesome_outlined,
+              warning
+                  ? Icons.cloud_off_outlined
+                  : (_profileReady
+                        ? Icons.auto_awesome_outlined
+                        : Icons.badge_outlined),
               size: 18,
-              color: CompetitionUiTokens.accent(isDark),
+              color: accent,
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -917,9 +1047,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _profileReady
-                        ? '根据专业、资格和目标筛出 $_eventTotal 项候选'
-                        : '完善教务身份后可生成匹配候选',
+                    title,
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
                       color: CompetitionUiTokens.titleColor(isDark),
@@ -927,7 +1055,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '当前为候选解释，不代表获奖概率',
+                    message,
                     style: TextStyle(
                       fontSize: 12,
                       color: CompetitionUiTokens.subColor(isDark),
@@ -936,14 +1064,62 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                 ],
               ),
             ),
-            TextButton(
-              onPressed: _openCandidateBasis,
-              child: const Text('查看依据'),
-            ),
+            TextButton(onPressed: onActionTap, child: Text(actionText)),
           ],
         ),
       ),
     );
+  }
+
+  /// 画像未就绪的字段码转成用户看得懂的说法。未知字段码直接不显示，
+  /// 宁可少说一句，也不要把内部字段名甩给用户。
+  String _profileFieldLabel(String field) {
+    switch (field) {
+      case 'entry_year':
+        return '年级';
+      case 'college':
+        return '学院';
+      case 'major':
+        return '专业';
+      case 'academic_identity':
+        return '教务身份核验';
+      default:
+        return '';
+    }
+  }
+
+  void _switchToAllEvents() {
+    setState(() {
+      _studentFocusFilter = 'all';
+      _candidateReasonCode = null;
+      _candidateMissingFields = const [];
+      _candidateUnavailable = false;
+    });
+    _loadEvents(reset: true);
+  }
+
+  /// 打开偏好设置页，返回后立即重新匹配：
+  /// 偏好是可选增强，但改完必须让用户看到结果发生变化，否则等于没有反馈。
+  Future<void> _openPreference() async {
+    var auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      await Navigator.pushNamed(context, '/login');
+      if (!mounted) return;
+      auth = context.read<AuthProvider>();
+      if (!auth.isLoggedIn) return;
+    }
+    final accountID = auth.user?.id;
+    if (accountID == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            CompetitionPreferenceScreen(dio: auth.dio, accountKey: accountID),
+      ),
+    );
+    if (!mounted || context.read<AuthProvider>().user?.id != accountID) return;
+    if (_studentFocusFilter == 'fit') {
+      await _loadEvents(reset: true);
+    }
   }
 
   Widget _buildSectionTitle({
@@ -995,13 +1171,51 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     }
     if (_events.isEmpty) {
       if (_eventsError != null) {
+        // 候选接口不可用时，除了重试还要给一条明确的退路：
+        // 用户此刻最需要的是看到内容，而不是盯着一个报错反复刷新。
+        if (_candidateUnavailable && _studentFocusFilter == 'fit') {
+          return CompetitionEmptyState(
+            title: '匹配服务暂不可用',
+            message: _eventsError!,
+            primaryText: '重试',
+            onPrimaryTap: () => _loadEvents(reset: true),
+            secondaryText: '查看全部比赛',
+            onSecondaryTap: _switchToAllEvents,
+          );
+        }
         return CompetitionEmptyState(
-          title: '比赛加载失败',
+          title: _studentFocusFilter == 'fit' ? '匹配候选加载失败' : '比赛加载失败',
           message: _eventsError!,
           primaryText: '重试',
           onPrimaryTap: () => _loadEvents(reset: true),
           secondaryText: '刷新全部',
           onSecondaryTap: _loadAll,
+        );
+      }
+      // 候选为空不是「没有比赛」，而是「没有匹配到」，两者的下一步动作完全不同：
+      // 前者给导入计划，后者必须给「去完善画像 / 去设置偏好」。
+      if (_studentFocusFilter == 'fit') {
+        if (!_profileReady) {
+          return CompetitionEmptyState(
+            title: '先完善教务身份',
+            message: _candidateMissingFields.isEmpty
+                ? '匹配依据来自你的专业、学院与年级，补全后即可生成候选。'
+                : '还需要补全：${_candidateMissingFields.map(_profileFieldLabel).where((label) => label.isNotEmpty).join('、')}。',
+            primaryText: '去完善',
+            onPrimaryTap: () => _openCompetitionHub(),
+            secondaryText: '浏览全部比赛',
+            onSecondaryTap: _switchToAllEvents,
+          );
+        }
+        return CompetitionEmptyState(
+          title: '暂未找到匹配的比赛',
+          message: _candidateReasonCode == 'cluster_unmapped'
+              ? '你的专业还没有匹配口径，可以手动指定专业方向后再试。'
+              : '可以补充偏好方向与技能，或放宽筛选条件再看看。',
+          primaryText: '去设置偏好',
+          onPrimaryTap: () => unawaited(_openPreference()),
+          secondaryText: '浏览全部比赛',
+          onSecondaryTap: _switchToAllEvents,
         );
       }
       return CompetitionEmptyState(
@@ -1078,9 +1292,17 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   // 已移除头图、导入按钮、统计项、搜索框和筛选栏
 
   Widget _buildEventCard(CompetitionEvent event, bool isAdmin) {
+    final position = _events.indexWhere((item) => item.id == event.id);
     return CompetitionStudentEventCard(
       event: event,
       onTap: () {
+        unawaited(
+          _signals.recordClick(
+            event,
+            position: position < 0 ? 0 : position,
+            algorithmVersion: _candidateAlgorithmVersion,
+          ),
+        );
         _openDetail(event);
       },
       joined: _joinedEventIds.contains(event.id),
@@ -1089,7 +1311,16 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       onJoinedTap: _openCalendar,
       onWhyTap: event.coreReason.trim().isEmpty
           ? null
-          : () => showCompetitionMatchReasonSheet(context, event),
+          : () {
+              unawaited(
+                _signals.recordMatchReasonOpen(
+                  event,
+                  position: position < 0 ? 0 : position,
+                  algorithmVersion: _candidateAlgorithmVersion,
+                ),
+              );
+              showCompetitionMatchReasonSheet(context, event);
+            },
       showRecommendations: false,
     );
   }
@@ -1211,6 +1442,25 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         }
       });
       DomainChangeBus.instance.emit(DomainChange.competitionPlan);
+      // 只在「真的新增」时记转化；重复点击导致 already_exists 不算一次转化。
+      if (!alreadyExists) {
+        CompetitionEvent? target;
+        for (final item in _events) {
+          if (item.id == eventId) {
+            target = item;
+            break;
+          }
+        }
+        if (target != null) {
+          unawaited(
+            _signals.recordCalendarAdd(
+              target,
+              position: _events.indexOf(target),
+              algorithmVersion: _candidateAlgorithmVersion,
+            ),
+          );
+        }
+      }
       AppFeedback.showSnackBar(
         context,
         alreadyExists ? '比赛已在我的计划中' : '已加入我的竞赛计划',

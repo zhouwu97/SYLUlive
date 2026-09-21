@@ -33,6 +33,10 @@ type UserContext struct {
 	Major                  string              `json:"major"`
 	Goals                  []string            `json:"goals"`
 	DirectionTags          []string            `json:"direction_tags"`
+	// SkillTags 是用户在偏好页选择的技能标签（受控词表）。
+	// 与 Skills 不是一回事：Skills 是从获奖经历汇总的能力画像，
+	// SkillTags 是用户自述的技能偏好，用于「技能与赛事方向是否相符」的打分。
+	SkillTags              []string            `json:"skill_tags"`
 	Skills                 []CapabilitySummary `json:"skills"`
 	Roles                  []CapabilitySummary `json:"roles"`
 	PreferredRoles         []string            `json:"preferred_roles"`
@@ -40,8 +44,33 @@ type UserContext struct {
 	AcceptLongTermTraining bool                `json:"accept_long_term_training"`
 	CareerDirection        string              `json:"career_direction"`
 	ExperienceLevel        string              `json:"experience_level"`
-	ProfileReady           bool                `json:"-"`
-	PreferenceConfigured   bool                `json:"-"`
+	// MajorClusterOverride 是用户手动纠正的专业簇，优先于按专业名推断的结果。
+	MajorClusterOverride []string `json:"major_cluster_override"`
+	ProfileReady         bool     `json:"-"`
+	PreferenceConfigured bool     `json:"-"`
+}
+
+// MissingProfileFields 列出画像就绪所缺的字段，供前端给出可操作的引导。
+// 返回空切片表示画像已就绪。顺序固定，便于前端与测试稳定断言。
+func (c UserContext) MissingProfileFields() []string {
+	if c.ProfileReady {
+		return []string{}
+	}
+	result := make([]string, 0, 4)
+	if c.EntryYear == "" {
+		result = append(result, "entry_year")
+	}
+	if c.College == "" {
+		result = append(result, "college")
+	}
+	if c.Major == "" {
+		result = append(result, "major")
+	}
+	if len(result) == 0 {
+		// 三项都填了却仍未就绪，只可能是身份核验没过。
+		result = append(result, "academic_identity")
+	}
+	return result
 }
 
 type Builder struct {
@@ -60,6 +89,8 @@ func (b *Builder) BuildCompetitionUserContext(
 	var result UserContext
 	result.Goals = []string{}
 	result.DirectionTags = []string{}
+	result.SkillTags = []string{}
+	result.MajorClusterOverride = []string{}
 	result.Skills = []CapabilitySummary{}
 	result.Roles = []CapabilitySummary{}
 	result.PreferredRoles = []string{}
@@ -85,11 +116,13 @@ func (b *Builder) BuildCompetitionUserContext(
 		result.PreferenceConfigured = true
 		result.Goals = decodeCompetitionStringArray(preference.Goals)
 		result.DirectionTags = decodeCompetitionStringArray(preference.DirectionTags)
+		result.SkillTags = decodeCompetitionStringArray(preference.SkillTags)
 		result.PreferredRoles = decodeCompetitionStringArray(preference.PreferredRoles)
 		result.WeeklyHours = preference.WeeklyHours
 		result.AcceptLongTermTraining = preference.AcceptLongTermTraining
 		result.CareerDirection = strings.TrimSpace(preference.CareerDirection)
 		result.ExperienceLevel = strings.TrimSpace(preference.ExperienceLevel)
+		result.MajorClusterOverride = decodeCompetitionStringArray(preference.MajorClusterOverride)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return result, err
 	}

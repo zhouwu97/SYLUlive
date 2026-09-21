@@ -60,6 +60,8 @@ Map<String, dynamic> _preference({
   bool longTerm = false,
   String career = '',
   String experience = 'beginner',
+  List<String> clusters = const [],
+  List<String> clusterOptions = const [],
 }) {
   return {
     'configured': configured,
@@ -71,6 +73,8 @@ Map<String, dynamic> _preference({
     'accept_long_term_training': longTerm,
     'career_direction': career,
     'experience_level': experience,
+    'major_cluster_override': clusters,
+    'major_cluster_options': clusterOptions,
   };
 }
 
@@ -108,6 +112,37 @@ void main() {
       find.byKey(const Key('competition-preference-save')),
     );
     expect(save.onPressed, isNull);
+  });
+
+  testWidgets('专业方向可纠正并随保存提交', (tester) async {
+    final adapter = _PreferenceAdapter((options, _) {
+      return _jsonResponse(_preference(
+        configured: true,
+        clusters: options.method == 'PUT'
+            ? ['计算机类', '机械类']
+            : ['计算机类'],
+        clusterOptions: ['计算机类', '机械类', '会计学'],
+      ));
+    });
+    await _pumpLoaded(tester, _app(_dio(adapter)));
+
+    expect(find.text('专业方向（可纠正）'), findsOneWidget);
+    final selected = tester.widget<FilterChip>(
+      find.widgetWithText(FilterChip, '计算机类'),
+    );
+    expect(selected.selected, isTrue);
+
+    // 手动补充一个系统没推断出来的方向，再保存。
+    await tester.tap(find.widgetWithText(FilterChip, '机械类'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('competition-preference-save')));
+    await tester.pumpAndSettle();
+
+    final body = adapter.putBodies.single;
+    expect(
+      (body['major_cluster_override'] as List).toSet(),
+      {'计算机类', '机械类'},
+    );
   });
 
   testWidgets('修改后启用保存并在返回时确认未保存修改', (tester) async {

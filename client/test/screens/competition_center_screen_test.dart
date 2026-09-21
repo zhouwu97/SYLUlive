@@ -510,7 +510,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('比赛 1'), findsNothing);
-      expect(find.text('比赛加载失败'), findsOneWidget);
+      // 行为变更（本次修复）：候选接口 5xx 时必须说「服务不可用」，
+      // 不能复用目录列表的「比赛加载失败」——那会让用户以为是内容为空或者数据有问题，
+      // 从而去反复调筛选条件。同时给出「查看全部比赛」这条退路。
+      expect(find.text('匹配服务暂不可用'), findsOneWidget);
+      expect(find.text('查看全部比赛'), findsOneWidget);
       await tester.ensureVisible(find.text('重试'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('重试'));
@@ -519,6 +523,219 @@ void main() {
       expect(candidateAttempts, 2);
       expect(find.text('比赛 9'), findsOneWidget);
       expect(find.text('专业匹配 · 1项'), findsOneWidget);
+    });
+
+    testWidgets('画像未就绪时保持「适合我」选中并说明缺什么', (tester) async {
+      final adapter = _CompetitionAdapter((options) {
+        switch (options.path) {
+          case '/competitions/events':
+            return _json({
+              'items': [_event(1)],
+              'total': 1,
+            });
+          case '/user/competitions/state':
+            return _json({
+              'joined_event_ids': const [],
+              'calendar_count': 0,
+              'profile_ready': false,
+            });
+          case '/user/competitions/dashboard':
+            return _json({
+              'preference_configured': false,
+              'capability_ready': false,
+            });
+          case '/user/competitions/candidates':
+            return _json({
+              'total': 0,
+              'profile_ready': false,
+              'reason_code': 'profile_incomplete',
+              'missing_fields': ['major'],
+              'catalog': const {'dataset_version': 'catalog-2026-07'},
+              'groups': const [],
+            });
+          default:
+            return _catalogStub(options);
+        }
+      });
+
+      await _pump(
+        tester,
+        _dio(adapter),
+        const CompetitionCenterScreen(),
+        loggedIn: true,
+      );
+
+      await tester.tap(find.text('适合我'));
+      await tester.pumpAndSettle();
+
+      // 行为变更（本次修复）：旧实现会把筛选静默切回「全部」，用户只会看到选中态消失。
+      final chip = tester.widget<ChoiceChip>(
+        find.widgetWithText(ChoiceChip, '适合我'),
+      );
+      expect(chip.selected, isTrue);
+      expect(find.text('先完善教务身份'), findsOneWidget);
+      expect(find.text('还需要补全：专业。'), findsOneWidget);
+      expect(find.text('去完善'), findsOneWidget);
+    });
+
+    testWidgets('候选零结果时指向偏好设置而不是导入计划', (tester) async {
+      final adapter = _CompetitionAdapter((options) {
+        switch (options.path) {
+          case '/competitions/events':
+            return _json({
+              'items': [_event(1)],
+              'total': 1,
+            });
+          case '/user/competitions/state':
+            return _json({
+              'joined_event_ids': const [],
+              'calendar_count': 0,
+              'profile_ready': true,
+            });
+          case '/user/competitions/dashboard':
+            return _json({
+              'preference_configured': true,
+              'capability_ready': true,
+            });
+          case '/user/competitions/candidates':
+            return _json({
+              'total': 0,
+              'profile_ready': true,
+              'reason_code': 'no_candidate',
+              'catalog': const {'dataset_version': 'catalog-2026-07'},
+              'groups': const [],
+            });
+          default:
+            return _catalogStub(options);
+        }
+      });
+
+      await _pump(
+        tester,
+        _dio(adapter),
+        const CompetitionCenterScreen(),
+        loggedIn: true,
+      );
+
+      await tester.tap(find.text('适合我'));
+      await tester.pumpAndSettle();
+
+      // 零结果不是「没有比赛」：下一步动作必须是补偏好，而不是导入计划。
+      expect(find.text('暂未找到匹配的比赛'), findsOneWidget);
+      expect(find.text('去设置偏好'), findsOneWidget);
+      expect(find.text('导入计划'), findsNothing);
+    });
+
+    testWidgets('候选提示区在 1.3 倍字号与深色模式下不溢出', (tester) async {
+      final adapter = _CompetitionAdapter((options) {
+        switch (options.path) {
+          case '/user/competitions/state':
+            return _json({
+              'joined_event_ids': const [],
+              'calendar_count': 0,
+              'profile_ready': true,
+            });
+          case '/user/competitions/dashboard':
+            return _json({
+              'preference_configured': true,
+              'capability_ready': true,
+            });
+          case '/user/competitions/candidates':
+            return _json({
+              'total': 1,
+              'has_more': false,
+              'profile_ready': true,
+              'catalog': const {'dataset_version': 'catalog-2026-07'},
+              'groups': [
+                {
+                  'key': 'major_match',
+                  'label': '专业匹配',
+                  'count': 1,
+                  'items': [_candidateEvent(8)],
+                },
+              ],
+            });
+          default:
+            return _catalogStub(options);
+        }
+      });
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<AuthProvider>(
+          create: (_) => _TestAuthProvider(_dio(adapter), loggedIn: true),
+          child: MaterialApp(
+            theme: ThemeData(brightness: Brightness.dark),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: const TextScaler.linear(1.3),
+              ),
+              child: child!,
+            ),
+            home: const CompetitionCenterScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('适合我'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('根据专业、资格和目标筛出 1 项候选'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('信任服务端 has_more，不在整页返回时继续翻页', (tester) async {
+      final pages = <int>[];
+      final adapter = _CompetitionAdapter((options) {
+        switch (options.path) {
+          case '/user/competitions/state':
+            return _json({
+              'joined_event_ids': const [],
+              'calendar_count': 0,
+              'profile_ready': true,
+            });
+          case '/user/competitions/dashboard':
+            return _json({
+              'preference_configured': true,
+              'capability_ready': true,
+            });
+          case '/user/competitions/candidates':
+            final page = (options.queryParameters['page'] as num).toInt();
+            pages.add(page);
+            // 返回整页但 total 远大于去重后的条数：旧逻辑会据此一直翻页空转。
+            return _json({
+              'total': 100,
+              'has_more': false,
+              'profile_ready': true,
+              'catalog': const {'dataset_version': 'catalog-2026-07'},
+              'groups': [
+                {
+                  'key': 'major_match',
+                  'label': '专业匹配',
+                  'count': 20,
+                  'items': [
+                    for (var i = 1; i <= 20; i++) _candidateEvent(i),
+                  ],
+                },
+              ],
+            });
+          default:
+            return _catalogStub(options);
+        }
+      });
+
+      await _pump(
+        tester,
+        _dio(adapter),
+        const CompetitionCenterScreen(),
+        loggedIn: true,
+      );
+
+      await tester.tap(find.text('适合我'));
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView).first, const Offset(0, -6000));
+      await tester.pumpAndSettle();
+
+      expect(pages, [1]);
     });
   });
 }

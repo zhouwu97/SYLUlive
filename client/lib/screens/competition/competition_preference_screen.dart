@@ -28,6 +28,8 @@ class _CompetitionPreferenceScreenState
   final Set<String> _directions = {};
   final Set<String> _skills = {};
   final Set<String> _roles = {};
+  final Set<String> _clusters = {};
+  List<String> _clusterOptions = const [];
   int _weeklyHours = 0;
   bool _acceptLongTermTraining = false;
   String _experienceLevel = 'beginner';
@@ -79,6 +81,7 @@ class _CompetitionPreferenceScreenState
       values(_directions),
       values(_skills),
       values(_roles),
+      values(_clusters),
       '$_weeklyHours',
       '$_acceptLongTermTraining',
       _experienceLevel,
@@ -92,6 +95,8 @@ class _CompetitionPreferenceScreenState
     _directions.clear();
     _skills.clear();
     _roles.clear();
+    _clusters.clear();
+    _clusterOptions = const [];
     _careerController.clear();
     _weeklyHours = 0;
     _acceptLongTermTraining = false;
@@ -148,6 +153,10 @@ class _CompetitionPreferenceScreenState
     _roles
       ..clear()
       ..addAll(preference.preferredRoles);
+    _clusters
+      ..clear()
+      ..addAll(preference.majorClusterOverride);
+    _clusterOptions = preference.majorClusterOptions;
     _weeklyHours =
         competitionWeeklyHourLabels.containsKey(preference.weeklyHours)
             ? preference.weeklyHours
@@ -189,6 +198,7 @@ class _CompetitionPreferenceScreenState
       acceptLongTermTraining: _acceptLongTermTraining,
       careerDirection: _careerController.text,
       experienceLevel: _experienceLevel,
+      majorClusterOverride: _clusters.toList(),
     );
     try {
       final response = await widget.dio.put(
@@ -305,6 +315,19 @@ class _CompetitionPreferenceScreenState
                                     ),
                                     isDark: isDark,
                                   ),
+                                  if (_clusterOptions.isNotEmpty)
+                                    _section(
+                                      title: '专业方向（可纠正）',
+                                      subtitle: '不填则按你的专业名自动推断；'
+                                          '推断结果不对时，可在这里手动指定，最多 3 项',
+                                      child: _plainChips(
+                                        _clusterOptions,
+                                        _clusters,
+                                        (value) => _toggle(_clusters, value, 3),
+                                        isDark,
+                                      ),
+                                      isDark: isDark,
+                                    ),
                                 ],
                               ),
                               _groupCard(

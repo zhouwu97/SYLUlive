@@ -113,4 +113,52 @@ void main() {
 
     expect(find.textContaining('偏好匹配'), findsNothing);
   });
+
+  testWidgets('候选卡片展示匹配度徽标与命中依据', (WidgetTester tester) async {
+    final event = CompetitionEvent(
+      id: 5,
+      title: 'Candidate Competition',
+      coreReason: '你的专业属于计算机类，该赛事面向同一方向开放',
+      matchTier: 'strong',
+      matchBasis: 'major_cluster',
+      matchedClusters: const ['计算机类', '软件工程'],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CompetitionStudentEventCard(
+            event: event,
+            onTap: () {},
+            onAddPlan: () {},
+            onJoinedTap: () {},
+          ),
+        ),
+      ),
+    );
+
+    // 徽标必须同时有文字与图标：只靠颜色无法表达档位（ACCESSIBILITY §Dark）。
+    expect(find.text('高度匹配'), findsOneWidget);
+    expect(find.byIcon(Icons.auto_awesome_rounded), findsOneWidget);
+    expect(find.text('计算机类、软件工程 · 专业直接相关'), findsOneWidget);
+  });
+
+  testWidgets('目录卡片不带匹配信息时不出现匹配度徽标', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CompetitionStudentEventCard(
+            event: CompetitionEvent(id: 6, title: 'Directory Competition'),
+            onTap: () {},
+            onAddPlan: () {},
+            onJoinedTap: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('高度匹配'), findsNothing);
+    expect(find.text('可以探索'), findsNothing);
+    expect(find.byIcon(Icons.auto_awesome_rounded), findsNothing);
+  });
 }

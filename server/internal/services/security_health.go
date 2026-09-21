@@ -8,10 +8,10 @@ import (
 // 附加安全层的运行态词汇。旧客户端按 ready 判绿，其余值一律落到告警色，
 // 因此这里宁可把「不知道」报出来，也不能在探测失效时继续显示 ready。
 const (
-	SecurityLayerReady        = "ready"
-	SecurityLayerDegraded     = "degraded"
-	SecurityLayerUnavailable  = "unavailable"
-	SecurityLayerUnknown      = "unknown"
+	SecurityLayerReady         = "ready"
+	SecurityLayerDegraded      = "degraded"
+	SecurityLayerUnavailable   = "unavailable"
+	SecurityLayerUnknown       = "unknown"
 	SecurityLayerNotConfigured = "not_configured"
 )
 
@@ -37,12 +37,12 @@ type SecurityHealthLayer struct {
 
 // SecurityHealthSnapshot 是 SecurityHealthLayer 的只读快照。
 type SecurityHealthSnapshot struct {
-	Attempted             bool
-	ConsecutiveFailures   int
-	TotalSuccesses        int64
-	TotalFailures         int64
-	LastSuccessAt         time.Time
-	LastFailureAt         time.Time
+	Attempted           bool
+	ConsecutiveFailures int
+	TotalSuccesses      int64
+	TotalFailures       int64
+	LastSuccessAt       time.Time
+	LastFailureAt       time.Time
 }
 
 func newSecurityHealthLayer(now func() time.Time) *SecurityHealthLayer {
@@ -114,10 +114,10 @@ func (s SecurityHealthSnapshot) Status() string {
 // Detail 导出诊断字段，时间戳只在存在时才带上，避免客户端把零值日期显示出来。
 func (s SecurityHealthSnapshot) Detail() map[string]interface{} {
 	out := map[string]interface{}{
-		"attempted":             s.Attempted,
-		"consecutive_failures":  s.ConsecutiveFailures,
-		"total_successes":       s.TotalSuccesses,
-		"total_failures":        s.TotalFailures,
+		"attempted":            s.Attempted,
+		"consecutive_failures": s.ConsecutiveFailures,
+		"total_successes":      s.TotalSuccesses,
+		"total_failures":       s.TotalFailures,
 	}
 	if !s.LastSuccessAt.IsZero() {
 		out["last_success_at"] = s.LastSuccessAt

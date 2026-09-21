@@ -286,6 +286,41 @@ func TestSecurityOverviewBlockStateTracksFailOpen(t *testing.T) {
 	}
 }
 
+// 验证码额度一行不能再由 handler 凭空写死 "enabled"。
+func TestSecurityOverviewReportsVerificationLimitState(t *testing.T) {
+	handler, _, db := newSecurityAdminTestEnvWithService(t)
+
+	// 没有接入探测源时如实报 unknown，而不是沿用那个永远为真的字符串。
+	if state := securityProtectionState(t, handler, "verification_daily_limit_state"); state["runtime"] != services.SecurityLayerUnknown || state["reason"] != "probe_not_wired" {
+		t.Fatalf("未接入探测时应报 unknown/probe_not_wired，实际 %v", state)
+	}
+
+	if err := db.AutoMigrate(&models.EmailVerificationRequest{}); err != nil {
+		t.Fatalf("迁移验证码请求表失败: %v", err)
+	}
+	handler.SetVerificationLimitProber(services.NewEmailVerificationService(db, nil, "ip-secret", time.Now))
+	state := securityProtectionState(t, handler, "verification_daily_limit_state")
+	if state["runtime"] != services.SecurityLayerReady {
+		t.Fatalf("额度窗口可读时应报 ready，实际 %v", state["runtime"])
+	}
+	// 阈值必须来自服务里的真实常量：管理员要能据此判断「6 次/天」到底生效没有。
+	detail, _ := state["detail"].(map[string]any)
+	if got := detail["target_daily_limit"]; got != float64(6) {
+		t.Fatalf("应上报每日额度 6，实际 %v", got)
+	}
+	if got := securityProtectionField(t, handler, "verification_daily_limit"); got != services.SecurityLayerReady {
+		t.Fatalf("扁平字段应与运行态一致，实际 %q", got)
+	}
+
+	// 窗口表读不动时限流实际已经失效，这一行必须变色。
+	if err := db.Migrator().DropTable(&models.EmailVerificationRequest{}); err != nil {
+		t.Fatalf("删除验证码请求表失败: %v", err)
+	}
+	if state := securityProtectionState(t, handler, "verification_daily_limit_state"); state["runtime"] != services.SecurityLayerUnavailable || state["reason"] != "verification_window_read_failed" {
+		t.Fatalf("额度窗口不可读时应报 unavailable，实际 %v", state)
+	}
+}
+
 func newSecurityAdminTestEnvWithService(t *testing.T) (*SecurityAdminHandler, *services.SecurityEventService, *gorm.DB) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

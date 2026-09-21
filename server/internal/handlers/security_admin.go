@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -43,6 +44,7 @@ type SecurityAdminHandler struct {
 	db                   *gorm.DB
 	security             *services.SecurityEventService
 	securityBlockEnabled bool
+	verificationLimits   verificationLimitProber
 	trustedProxyCIDRs    []string
 	attributionValidFrom string
 	attributionCutoff    time.Time
@@ -130,6 +132,25 @@ func (h *SecurityAdminHandler) securityEventCollectionState() gin.H {
 		}
 	}
 	return protectionLayerState(true, runtime, reason, snapshot.Detail())
+}
+
+// verificationLimitProber 由验证码服务实现，让安全中心问到的是真实阈值而不是写死的字符串。
+type verificationLimitProber interface {
+	LimitStatus(ctx context.Context) services.VerificationLimitStatus
+}
+
+// SetVerificationLimitProber 注入验证码额度服务。未注入时安全中心报 unknown，
+// 而不是退回历史上那个恒真的 "enabled"。
+func (h *SecurityAdminHandler) SetVerificationLimitProber(prober verificationLimitProber) {
+	h.verificationLimits = prober
+}
+
+func (h *SecurityAdminHandler) verificationLimitState(ctx context.Context) gin.H {
+	if h.verificationLimits == nil {
+		return protectionLayerState(true, services.SecurityLayerUnknown, "probe_not_wired", nil)
+	}
+	status := h.verificationLimits.LimitStatus(ctx)
+	return protectionLayerState(status.Configured, status.Runtime, status.Reason, status.Detail)
 }
 
 func (h *SecurityAdminHandler) securityBlockState() gin.H {
@@ -239,6 +260,7 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 	}
 	eventCollection := h.securityEventCollectionState()
 	blockState := h.securityBlockState()
+	verificationLimit := h.verificationLimitState(c.Request.Context())
 	c.JSON(http.StatusOK, gin.H{
 		"range": rangeName, "active_high_count": activeHigh, "total_events": total,
 		// 客户端首页口径：高危待处理 = 待处置 + 未处理 + 高危/严重。
@@ -259,8 +281,11 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 			// 口径收窄时宁可让旧版本多报一次警，也不能继续假绿。
 			"security_event_collection":       eventCollection["runtime"],
 			"security_event_collection_state": eventCollection,
-			"verification_daily_limit":        "enabled",
-			"source_attribution_valid_from":   h.attributionValidFrom,
+			// 验证码额度同样拆成配置态与运行态：阈值来自服务常量，运行态来自一次
+			// 带超时的只读探测，不再由 handler 凭空写死 "enabled"。
+			"verification_daily_limit":       verificationLimit["runtime"],
+			"verification_daily_limit_state": verificationLimit,
+			"source_attribution_valid_from":  h.attributionValidFrom,
 		},
 	})
 }

@@ -892,6 +892,8 @@ func main() {
 	superAdminHandler := handlers.NewSuperAdminHandlerWithEmailVerification(db, emailVerification)
 	securityAdminHandler := handlers.NewSecurityAdminHandler(db, securityEvents)
 	securityAdminHandler.SetProtectionConfig(cfg.SecurityBlockEnabled, cfg.TrustedProxyCIDRs, cfg.SecurityAttributionValidFrom)
+	// 安全中心的验证码额度一行要报真实阈值与可读性，而不是写死的 enabled。
+	securityAdminHandler.SetVerificationLimitProber(emailVerification)
 	adminAIHandler := handlers.NewAdminAIHandler(db)
 
 	// 应用内更新：阶段 A 暴露公开版本检查接口。APK 下载路由在阶段 A5 追加。

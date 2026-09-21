@@ -30,6 +30,17 @@ const emailVerificationCodeTTL = 10 * time.Minute
 // 验证码目标冷却统一为 60 秒，所有公开/登录后验证码入口共用这一窗口。
 const emailVerificationRequestCooldown = 60 * time.Second
 
+// 验证码额度阈值。写成具名常量不是为了调参，而是让安全中心能把「当前生效的额度」
+// 原样报给管理员：此前 protection.verification_daily_limit 直接返回写死的 "enabled"，
+// 既没有说清额度是多少，也没有说清这层保护此刻是否真的查得动。
+const (
+	verificationTargetHourlyLimit  = 3
+	verificationTargetDailyLimit   = 6
+	verificationSourceTenMinLimit  = 30
+	verificationSourceHourlyLimit  = 100
+	verificationSourceSprayTargets = 8
+)
+
 var emailPattern = regexp.MustCompile(`^[^@\s]{1,64}@[^@\s]{1,255}$`)
 
 var (
@@ -191,6 +202,47 @@ func (s *EmailVerificationService) SetSecurityEventService(security *SecurityEve
 // SetMailDispatcher 启用有界邮件队列；未注入时保留测试与本地调用的同步发送语义。
 func (s *EmailVerificationService) SetMailDispatcher(dispatcher *VerificationMailDispatcher) {
 	s.dispatcher = dispatcher
+}
+
+// VerificationLimitStatus 是验证码额度保护上报给安全中心的结果。
+type VerificationLimitStatus struct {
+	Configured bool
+	Runtime    string
+	Reason     string
+	Detail     map[string]interface{}
+}
+
+// LimitStatus 分开汇报验证码额度的「配置」与「运行态」。
+//
+// configured 来自常量：额度编译在程序里，不存在“配置里开了但代码没实现”。
+// runtime 由一次只读探测给出——额度判断依赖 EmailVerificationRequest 的窗口计数，
+// 这张表读不动时限流实际上已经失效，只凭“代码里有这段逻辑”报 ready 是不诚实的。
+// 探测用 LIMIT 1 存在性查询，不做全表计数，避免安全中心刷新本身变成负载来源。
+func (s *EmailVerificationService) LimitStatus(ctx context.Context) VerificationLimitStatus {
+	detail := map[string]interface{}{
+		"target_hourly_limit":           verificationTargetHourlyLimit,
+		"target_daily_limit":            verificationTargetDailyLimit,
+		"source_ten_minute_limit":       verificationSourceTenMinLimit,
+		"source_hourly_limit":           verificationSourceHourlyLimit,
+		"source_spray_distinct_targets": verificationSourceSprayTargets,
+		"target_cooldown_seconds":       int(emailVerificationRequestCooldown / time.Second),
+	}
+	if s == nil || s.db == nil {
+		return VerificationLimitStatus{Configured: false, Runtime: SecurityLayerNotConfigured,
+			Reason: "verification_service_absent", Detail: detail}
+	}
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, securityAuditTimeout)
+		defer cancel()
+	}
+	var probe []int
+	if err := s.db.WithContext(ctx).Model(&models.EmailVerificationRequest{}).
+		Select("1").Limit(1).Scan(&probe).Error; err != nil {
+		return VerificationLimitStatus{Configured: true, Runtime: SecurityLayerUnavailable,
+			Reason: "verification_window_read_failed", Detail: detail}
+	}
+	return VerificationLimitStatus{Configured: true, Runtime: SecurityLayerReady, Detail: detail}
 }
 
 func NormalizeEmail(input string) (string, error) {
@@ -401,21 +453,21 @@ func (s *EmailVerificationService) reserveRequest(normalized, purpose, clientIP 
 			Order("created_at DESC").First(&latest).Error
 		if err == nil && now.Sub(latest.CreatedAt) < emailVerificationRequestCooldown {
 			reserveErr = verificationRateLimitError(ErrSendTooFrequently, emailVerificationRequestCooldown-now.Sub(latest.CreatedAt))
-		} else if targetHour >= 3 {
+		} else if targetHour >= verificationTargetHourlyLimit {
 			retryAfter := time.Hour
 			if !oldestTarget.CreatedAt.IsZero() {
 				retryAfter = time.Hour - now.Sub(oldestTarget.CreatedAt)
 			}
 			reserveErr = verificationRateLimitError(ErrTargetHourlyLimit, retryAfter)
-		} else if targetDay >= 6 {
+		} else if targetDay >= verificationTargetDailyLimit {
 			retryAfter := 24 * time.Hour
 			if !oldestTargetDay.CreatedAt.IsZero() {
 				retryAfter = 24*time.Hour - now.Sub(oldestTargetDay.CreatedAt)
 			}
 			reserveErr = verificationRateLimitError(ErrTargetDailyLimit, retryAfter)
-		} else if sourceTenMinutes >= 30 || sourceHour >= 100 {
+		} else if sourceTenMinutes >= verificationSourceTenMinLimit || sourceHour >= verificationSourceHourlyLimit {
 			retryAfter := time.Hour
-			if sourceTenMinutes >= 30 && !oldestSourceTenMinutes.CreatedAt.IsZero() {
+			if sourceTenMinutes >= verificationSourceTenMinLimit && !oldestSourceTenMinutes.CreatedAt.IsZero() {
 				retryAfter = 10*time.Minute - now.Sub(oldestSourceTenMinutes.CreatedAt)
 			} else if !oldestSourceHour.CreatedAt.IsZero() {
 				retryAfter = time.Hour - now.Sub(oldestSourceHour.CreatedAt)

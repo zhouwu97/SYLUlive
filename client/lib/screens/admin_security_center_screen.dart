@@ -620,7 +620,10 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
         DateTime.tryParse(detail['last_failure_at']?.toString() ?? '');
     final lastSuccess =
         DateTime.tryParse(detail['last_success_at']?.toString() ?? '');
+    final dailyLimit = (detail['target_daily_limit'] as num?)?.toInt();
     final parts = <String>[];
+    // 额度这一行要给出真实阈值，否则「正常」仍然只是一个没有内容的绿色。
+    if (dailyLimit != null) parts.add('每邮箱 $dailyLimit 次/天');
     if (failures > 0) parts.add('连续失败 $failures 次');
     if (lastFailure != null) parts.add('最近失败 ${_formatTime(lastFailure)}');
     if (lastSuccess != null) parts.add('最近成功 ${_formatTime(lastSuccess)}');

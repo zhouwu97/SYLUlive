@@ -84,7 +84,7 @@ void main() {
     await themeProvider.loadThemeForTesting();
   });
 
-  testWidgets('外观与显示页面正确展示各配置项', (tester) async {
+  testWidgets('界面设置页面正确展示各配置项', (tester) async {
     await tester.pumpWidget(
       _buildTestApp(
         auth: authProvider,
@@ -93,7 +93,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('外观与显示'), findsOneWidget);
+    expect(find.text('界面设置'), findsOneWidget);
     expect(find.text('实时预览'), findsOneWidget);
     expect(find.text('简洁模式'), findsOneWidget);
     expect(find.text('自定义背景'), findsOneWidget);

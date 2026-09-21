@@ -213,7 +213,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0),
               iconColor:
                   isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72),
-              title: '外观与显示',
+              title: '界面设置',
               subtitle: _getAppearanceSummary(themeProvider),
               onTap: () {
                 Navigator.push(

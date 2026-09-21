@@ -17,7 +17,7 @@ import '../../widgets/app_cached_image.dart';
 import 'widgets/background_picker_sheet.dart';
 import 'bottom_navigation_settings_screen.dart';
 
-/// 外观与显示二级设置页
+/// 界面设置二级页
 class AppearanceSettingsScreen extends StatelessWidget {
   const AppearanceSettingsScreen({super.key});
 
@@ -292,7 +292,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
         themeProvider.isCustomBackgroundMode && themeProvider.hasAnyBackground;
 
     return SettingsPageScaffold(
-      title: '外观与显示',
+      title: '界面设置',
       children: [
         // 智能实时自适应微缩预览卡片
         _buildLivePreviewCard(context, themeProvider),

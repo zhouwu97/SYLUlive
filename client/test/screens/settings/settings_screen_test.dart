@@ -61,7 +61,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 6 个一级入口
-    expect(find.text('外观与显示'), findsOneWidget);
+    expect(find.text('界面设置'), findsOneWidget);
     expect(find.text('通知与后台'), findsOneWidget);
     expect(find.text('账号与安全'), findsOneWidget);
     expect(find.text('隐私与数据'), findsOneWidget);

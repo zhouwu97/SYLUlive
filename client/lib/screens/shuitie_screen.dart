@@ -2460,13 +2460,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                               } else {
                                 Navigator.push(
                                   context,
-                                  MaterialPageRoute(
-                                    builder: (_) => PostDetailScreen(
-                                      postId: post.id,
-                                      isMarket: false,
-                                      initialPost: post,
-                                    ),
-                                  ),
+                                  buildPostDetailRoute(post),
                                 );
                               }
                             },

@@ -2,6 +2,20 @@
 
 该服务只暴露给 Go 后端的内部网络。Go 保留 JWT、配额、预算、客户端 SSE、来源二次校验、结算和知识写入事务；Python 使用 LCEL Runnable 编排政策 RAG，并使用 LangChain `Document`、`TextSplitter`、`Embeddings` 完成政策分块和向量化。
 
+## Quick Start
+
+本地启动默认监听 `127.0.0.1:8001`；生产通过 Compose 内部网络访问，不直接暴露公网。
+
+```bash
+pip install -r requirements.txt
+pytest -q
+uvicorn app.main:app --host 127.0.0.1 --port 8001
+```
+
+服务只接收 Go 后端的内部请求。Provider 地址、模型、Token 和数据库 DSN 必须来自部署环境，不能由请求体覆盖；默认不启用 LangSmith、不下载模型、不把完整问题、Prompt、答案或 JWT 写入观测数据。
+
+关键开关：`RAG_RETRIEVER_ENABLED`、`RAG_RERANKER_ENABLED`、`RAG_GENERATION_ENABLED`、`RAG_DATABASE_DSN`、`RAG_PROVIDER_ALLOWED_BASE_URLS`。生产启用、灰度和回滚流程见 [`docs/ops/rag.md`](../docs/ops/rag.md) 与 [`docs/ai/t09-langchain-rag-release-runbook.md`](../docs/ai/t09-langchain-rag-release-runbook.md)。
+
 `/internal/rag/knowledge/chunk` 返回展示正文、检索专用 embedding 文本和可审计 metadata。两者严格分离：数据库 chunk 正文不混入标题、部门或别名。embedding 响应报告模型名、模型版本和真实维度；服务不补零、不截断向量。改变模型或维度前必须先执行 `server/sql/20260727_ai_langchain_ingestion.sql`，并通过模型注册表与影子向量索引完成切换。
 
 ## 锁定兼容矩阵

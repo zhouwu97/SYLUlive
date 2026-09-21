@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/emoji_favorite_service.dart';
+import '../features/emoji/domain/emoji_asset_ref.dart';
 import '../utils/text_editing_helper.dart';
 import '../widgets/emoji/sticker_catalog.dart';
 
@@ -27,6 +28,7 @@ class PostReplyDraft {
     this.sticker,
     this.favoriteImage,
     this.localImage,
+    this.emojiAsset,
   });
 
   final String text;
@@ -37,6 +39,7 @@ class PostReplyDraft {
   final AppSticker? sticker;
   final EmojiFavoriteItem? favoriteImage;
   final XFile? localImage;
+  final EmojiAssetRef? emojiAsset;
 
   bool get isEmpty =>
       text.trim().isEmpty &&
@@ -77,6 +80,7 @@ class PostReplyComposerController extends ChangeNotifier {
   AppSticker? _sticker;
   EmojiFavoriteItem? _favoriteImage;
   XFile? _localImage;
+  EmojiAssetRef? _emojiAsset;
 
   bool get isOpen => _isOpen;
   PostReplyBottomPanel get bottomPanel => _bottomPanel;
@@ -109,6 +113,7 @@ class PostReplyComposerController extends ChangeNotifier {
         sticker: _sticker,
         favoriteImage: _favoriteImage,
         localImage: _localImage,
+        emojiAsset: _emojiAsset,
       );
 
   void updateKeyboardMetrics(double inset) {
@@ -307,6 +312,7 @@ class PostReplyComposerController extends ChangeNotifier {
     _sticker = null;
     _favoriteImage = null;
     _localImage = null;
+    _emojiAsset = null;
     notifyListeners();
   }
 
@@ -415,6 +421,7 @@ class PostReplyComposerController extends ChangeNotifier {
   }
 
   void selectSticker(AppSticker value) {
+    _emojiAsset = null;
     _sticker = value;
     _favoriteImage = null;
     _localImage = null;
@@ -428,6 +435,7 @@ class PostReplyComposerController extends ChangeNotifier {
   }
 
   void selectFavoriteImage(EmojiFavoriteItem value) {
+    _emojiAsset = null;
     if (value.type != EmojiFavoriteType.image) return;
     _favoriteImage = value;
     _sticker = null;
@@ -441,7 +449,8 @@ class PostReplyComposerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void selectLocalImage(XFile value) {
+  void selectLocalImage(XFile value, {EmojiAssetRef? emojiAsset}) {
+    _emojiAsset = emojiAsset;
     _localImage = value;
     _sticker = null;
     _favoriteImage = null;
@@ -449,6 +458,7 @@ class PostReplyComposerController extends ChangeNotifier {
   }
 
   void removeLocalImage() {
+    _emojiAsset = null;
     if (_localImage == null) return;
     _localImage = null;
     notifyListeners();

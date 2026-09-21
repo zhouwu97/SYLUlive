@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -131,7 +132,7 @@ func (h *AuthHandler) RegisterWithEmail(c *gin.Context) {
 		user.Nickname = "邮箱用户"
 	}
 	useGeneratedNickname := strings.TrimSpace(input.Nickname) == ""
-	if err := h.emailVerification.UseValidatedChallenge(email, models.EmailVerificationPurposeRegister, input.Code, func(tx *gorm.DB, _ models.EmailVerificationChallenge) error {
+	if err := h.emailVerification.UseValidatedChallengeWithClientIP(email, models.EmailVerificationPurposeRegister, input.Code, c.ClientIP(), func(tx *gorm.DB, _ models.EmailVerificationChallenge) error {
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
@@ -219,7 +220,7 @@ func (h *AuthHandler) UpdateUserEmail(c *gin.Context) {
 		writeEmailVerificationError(c, services.ErrMailNotConfigured)
 		return
 	}
-	if err := h.emailVerification.UseValidatedChallenge(email, purpose, input.Code, func(tx *gorm.DB, challenge models.EmailVerificationChallenge) error {
+	if err := h.emailVerification.UseValidatedChallengeWithClientIP(email, purpose, input.Code, c.ClientIP(), func(tx *gorm.DB, challenge models.EmailVerificationChallenge) error {
 		if challenge.UserID == nil || *challenge.UserID != userID {
 			return services.ErrCodeNotFound
 		}
@@ -396,7 +397,11 @@ func (h *AuthHandler) ResetPasswordByEmail(c *gin.Context) {
 		return
 	}
 	var user models.User
-	if err := h.emailVerification.UseValidatedChallenge(email, models.EmailVerificationPurposeResetPassword, input.Code, func(tx *gorm.DB, challenge models.EmailVerificationChallenge) error {
+	var challengeID uint
+	var challengeSourceHash string
+	if err := h.emailVerification.UseValidatedChallengeWithClientIP(email, models.EmailVerificationPurposeResetPassword, input.Code, c.ClientIP(), func(tx *gorm.DB, challenge models.EmailVerificationChallenge) error {
+		challengeID = challenge.ID
+		challengeSourceHash = challenge.RequestIPHash
 		if challenge.UserID == nil {
 			return services.ErrCodeNotFound
 		}
@@ -428,8 +433,42 @@ func (h *AuthHandler) ResetPasswordByEmail(c *gin.Context) {
 	middleware.InvalidateTokenVersionCache(user.ID)
 	revokeRefreshTokensForUser(h.db, user.ID)
 	clearLoginFailures("user:" + strconvUserID(user.ID))
-	h.writeSecurityAudit(user.ID, "password_reset_email", "")
+	auditMetadata, _ := json.Marshal(map[string]interface{}{
+		"request_id": middleware.RequestID(c), "consume_source_hash": securitySourceFingerprint(h.security, c.ClientIP()),
+		"challenge_source_hash": challengeSourceHash, "challenge_id": challengeID,
+	})
+	h.writeSecurityAudit(user.ID, "password_reset_email", string(auditMetadata))
+	if h.security != nil {
+		eventType := "password_reset_activity"
+		severity := models.SecuritySeverityInfo
+		var suspiciousCount int64
+		// 改密请求可能与发码请求来自不同出口；关联必须使用 challenge 创建时记录的
+		// 来源摘要和同一目标摘要，不能只看最终消费验证码的 HTTP 来源。
+		if challengeSourceHash != "" {
+			_ = h.db.Model(&models.SecurityEvent{}).
+				Where("event_type IN ? AND source_ip_hash = ? AND target_hash = ? AND last_seen_at >= ?",
+					[]string{"password_reset_spray", "verification_code_bruteforce"}, challengeSourceHash,
+					h.security.Hash(email), time.Now().Add(-24*time.Hour)).Count(&suspiciousCount).Error
+		}
+		if suspiciousCount > 0 {
+			eventType = "suspicious_password_reset_succeeded"
+			severity = models.SecuritySeverityCritical
+		}
+		_ = h.security.Record(services.SecurityEventInput{
+			EventType: eventType, Severity: severity, Route: "/api/password/email/reset", Method: c.Request.Method,
+			SourceHash: challengeSourceHash, RequestID: middleware.RequestID(c), ActorUserID: &user.ID,
+			TargetType: "email", TargetValue: email, TargetMasked: maskEmail(email), PasswordResetSucceeded: true,
+			Action: "password_reset_succeeded", Metadata: map[string]interface{}{"challenge_id": challengeID},
+		})
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "密码已重置，请使用新密码登录"})
+}
+
+func securitySourceFingerprint(security *services.SecurityEventService, clientIP string) string {
+	if security == nil || strings.TrimSpace(clientIP) == "" {
+		return ""
+	}
+	return security.SourceFingerprint(clientIP)
 }
 
 // GetAccountSecurity 返回账号安全页面所需的完整私有资料。
@@ -472,11 +511,11 @@ func (h *AuthHandler) requestEmailCode(c *gin.Context, email string, purpose str
 	return h.emailVerification.Request(email, purpose, userID, c.ClientIP())
 }
 
-func (h *AuthHandler) validateEmailCode(email string, purpose string, code string, consume bool) error {
+func (h *AuthHandler) validateEmailCode(c *gin.Context, email string, purpose string, code string, consume bool) error {
 	if h.emailVerification == nil {
 		return services.ErrMailNotConfigured
 	}
-	return h.emailVerification.Validate(email, purpose, code, consume)
+	return h.emailVerification.ValidateWithClientIP(email, purpose, code, consume, c.ClientIP())
 }
 
 func (h *AuthHandler) issueAuthSession(c *gin.Context, user models.User, status int) {
@@ -520,14 +559,32 @@ func writeEmailVerificationError(c *gin.Context, err error) {
 	status := http.StatusBadRequest
 	code := "EMAIL_VERIFICATION_INVALID"
 	switch {
-	case errors.Is(err, services.ErrSendTooFrequently), errors.Is(err, services.ErrEmailRateLimited), errors.Is(err, services.ErrIPRateLimited):
-		status, code = http.StatusTooManyRequests, "EMAIL_VERIFICATION_RATE_LIMITED"
+	case errors.Is(err, services.ErrSendTooFrequently):
+		status, code = http.StatusTooManyRequests, "EMAIL_CODE_COOLDOWN"
+	case errors.Is(err, services.ErrTargetHourlyLimit), errors.Is(err, services.ErrEmailRateLimited):
+		status, code = http.StatusTooManyRequests, "EMAIL_TARGET_HOURLY_LIMIT"
+	case errors.Is(err, services.ErrTargetDailyLimit):
+		status, code = http.StatusTooManyRequests, "EMAIL_TARGET_DAILY_LIMIT"
+	case errors.Is(err, services.ErrSourceRateLimited), errors.Is(err, services.ErrIPRateLimited):
+		status, code = http.StatusTooManyRequests, "EMAIL_SOURCE_RATE_LIMIT"
+	case errors.Is(err, services.ErrSourceSprayLimit), errors.Is(err, services.ErrVerificationSpray):
+		status, code = http.StatusTooManyRequests, "EMAIL_SOURCE_SPRAY_LIMIT"
 	case errors.Is(err, services.ErrMailNotConfigured):
 		status, code = http.StatusServiceUnavailable, "MAIL_UNAVAILABLE"
+	case errors.Is(err, services.ErrVerificationMailQueueFull), errors.Is(err, services.ErrVerificationMailTimeout):
+		status, code = http.StatusServiceUnavailable, "MAIL_QUEUE_BUSY"
 	case errors.Is(err, services.ErrCodeExpired):
 		code = "EMAIL_VERIFICATION_EXPIRED"
 	case errors.Is(err, services.ErrCodeAttempts):
 		code = "EMAIL_VERIFICATION_ATTEMPTS_EXCEEDED"
+	}
+	var rateLimitErr *services.VerificationRateLimitError
+	if errors.As(err, &rateLimitErr) {
+		seconds := int(rateLimitErr.RetryAfter.Round(time.Second).Seconds())
+		if seconds < 1 {
+			seconds = 1
+		}
+		c.Header("Retry-After", strconv.Itoa(seconds))
 	}
 	c.JSON(status, gin.H{"error": err.Error(), "code": code})
 }
@@ -539,7 +596,16 @@ func isEmailVerificationError(err error) bool {
 		errors.Is(err, services.ErrCodeAttempts) ||
 		errors.Is(err, services.ErrCodeInvalid) ||
 		errors.Is(err, services.ErrPurposeInvalid) ||
-		errors.Is(err, services.ErrMailNotConfigured)
+		errors.Is(err, services.ErrSendTooFrequently) ||
+		errors.Is(err, services.ErrEmailRateLimited) ||
+		errors.Is(err, services.ErrIPRateLimited) ||
+		errors.Is(err, services.ErrTargetHourlyLimit) ||
+		errors.Is(err, services.ErrTargetDailyLimit) ||
+		errors.Is(err, services.ErrSourceRateLimited) ||
+		errors.Is(err, services.ErrSourceSprayLimit) ||
+		errors.Is(err, services.ErrMailNotConfigured) ||
+		errors.Is(err, services.ErrVerificationMailQueueFull) ||
+		errors.Is(err, services.ErrVerificationMailTimeout)
 }
 
 func maskEmail(email string) string {

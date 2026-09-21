@@ -4,6 +4,34 @@ import 'package:shenliyuan/features/ai_device_bridge/device_job_client.dart';
 import 'package:shenliyuan/features/ai_device_bridge/device_job_models.dart';
 
 void main() {
+  test('服务端关闭设备桥接能力时只探测版本，不发送登记请求', () async {
+    final dio = Dio();
+    final requests = <RequestOptions>[];
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requests.add(options);
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 200,
+              data: const <String, dynamic>{
+                'capabilities': <String, dynamic>{'device_bridge_v1': false},
+              },
+            ),
+          );
+        },
+      ),
+    );
+    final client = DioDeviceJobClient(dio, diagnosticWriter: (_) async {});
+
+    expect(await client.ensureDeviceBridgeAvailable(), isFalse);
+    expect(await client.ensureDeviceBridgeAvailable(), isFalse);
+    expect(requests, hasLength(1));
+    expect(requests.single.method, 'GET');
+    expect(requests.single.uri.path, '/version');
+  });
+
   test('设备任务请求失败包含阶段、网络类型和重试上下文', () async {
     final dio = Dio();
     dio.interceptors.add(

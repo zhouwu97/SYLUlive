@@ -350,7 +350,9 @@ void main() {
           '/majors/pending': <Object>[],
           '/admin/invitations/pending': <Object>[],
           '/admin/removals/pending': <Object>[],
+          '/canteens/pending': {'items': <Object>[]},
           '/admin/course-evaluations/pending': {'items': <Object>[]},
+          '/admin/rectification': <Object>[],
         },
       ),
     );

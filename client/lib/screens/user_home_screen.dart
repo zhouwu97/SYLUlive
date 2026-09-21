@@ -705,7 +705,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                     context,
                     MaterialPageRoute(
                       builder: (_) => ImageViewerScreen(
-                        imageUrls: [ApiConstants.fullUrl(user.avatar)],
+                        items: [avatarViewerItem(user.avatar)],
+                        initialIndex: 0,
                       ),
                     ),
                   );

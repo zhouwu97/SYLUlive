@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -27,6 +28,10 @@ func TestValidateExternalMCPConfigAcceptsBareIPv6AndRejectsUnsafeValues(t *testi
 
 func TestLoadExamPaperDirDefaultsByEnvironmentAndAllowsOverride(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret-0123456789-abcdefghij")
+	t.Setenv("SECURITY_EVENT_HMAC_SECRET", "security-test-secret-01234567890")
+	t.Setenv("TRUSTED_PROXY_CIDRS", "127.0.0.1/32")
+	t.Setenv("SECURITY_BLOCK_ENABLED", "false")
+	t.Setenv("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM", "2026-01-01T00:00:00Z")
 	t.Setenv("SUPER_ADMIN_ID", "root-admin")
 	t.Setenv("SUPER_ADMIN_PASSWORD", "test-password")
 	t.Setenv("EDU_SERVICE_TOKEN", "test-service-token")
@@ -68,6 +73,45 @@ func TestLoadImageVariantWorkerIsDisabledByDefaultAndCanBeEnabled(t *testing.T) 
 
 	t.Setenv("IMAGE_VARIANT_WORKER_ENABLED", "true")
 	require.True(t, Load().ImageVariantWorkerEnabled)
+}
+
+func TestLoadUploadProtectionDefaultsAndOverrides(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	cfg := Load()
+	require.Equal(t, 30, cfg.UploadPerMinuteCountLimit)
+	require.Equal(t, int64(100*1024*1024), cfg.UploadHourlyBytesLimit)
+	require.Equal(t, 6*time.Hour, cfg.UploadTemporaryTTL)
+	require.True(t, cfg.UploadTemporaryCleanupNotBefore.IsZero())
+	require.Equal(t, 70, cfg.UploadDiskWarnPercent)
+	require.Equal(t, 90, cfg.UploadDiskCriticalPercent)
+
+	t.Setenv("UPLOAD_PER_MINUTE_COUNT_LIMIT", "7")
+	t.Setenv("UPLOAD_HOURLY_BYTES_LIMIT", "12345")
+	t.Setenv("UPLOAD_TEMPORARY_TTL_HOURS", "12")
+	t.Setenv("UPLOAD_TEMPORARY_CLEANUP_NOT_BEFORE", "2026-09-20T12:30:00+08:00")
+	t.Setenv("UPLOAD_DISK_WARN_PERCENT", "60")
+	t.Setenv("UPLOAD_DISK_SEVERE_PERCENT", "75")
+	t.Setenv("UPLOAD_DISK_CRITICAL_PERCENT", "85")
+	custom := Load()
+	require.Equal(t, 7, custom.UploadPerMinuteCountLimit)
+	require.Equal(t, int64(12345), custom.UploadHourlyBytesLimit)
+	require.Equal(t, 12*time.Hour, custom.UploadTemporaryTTL)
+	require.Equal(t, time.Date(2026, 9, 20, 12, 30, 0, 0, time.FixedZone("UTC+8", 8*60*60)).Unix(), custom.UploadTemporaryCleanupNotBefore.Unix())
+	require.Equal(t, 60, custom.UploadDiskWarnPercent)
+	require.Equal(t, 85, custom.UploadDiskCriticalPercent)
+}
+
+func TestLoadRejectsInvalidUploadCleanupBoundary(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("UPLOAD_TEMPORARY_CLEANUP_NOT_BEFORE", "2026-09-20 12:30:00")
+	require.Panics(t, func() { _ = Load() })
+}
+
+func TestLoadRejectsInvalidUploadDiskWatermarkOrder(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("UPLOAD_DISK_WARN_PERCENT", "90")
+	t.Setenv("UPLOAD_DISK_SEVERE_PERCENT", "80")
+	require.Panics(t, func() { _ = Load() })
 }
 
 func TestLoadReleaseRequiresExplicitImagePipelineSwitches(t *testing.T) {
@@ -125,6 +169,10 @@ func TestLoadReleaseRejectsPlaceholderSecrets(t *testing.T) {
 func TestLoadReleaseRejectsExamPaperDirInsidePublicUploads(t *testing.T) {
 	t.Setenv("GIN_MODE", "release")
 	t.Setenv("JWT_SECRET", "realistic-release-secret-0123456789")
+	t.Setenv("SECURITY_EVENT_HMAC_SECRET", "security-release-secret-0123456789")
+	t.Setenv("TRUSTED_PROXY_CIDRS", "127.0.0.1/32")
+	t.Setenv("SECURITY_BLOCK_ENABLED", "false")
+	t.Setenv("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM", "2026-01-01T00:00:00Z")
 	t.Setenv("SUPER_ADMIN_ID", "admin")
 	t.Setenv("SUPER_ADMIN_PASSWORD", "realistic-admin-password")
 	t.Setenv("UPLOAD_DIR", "/opt/shenliyuan/uploads")
@@ -286,6 +334,10 @@ func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Helper()
 	t.Setenv("GIN_MODE", ginMode)
 	t.Setenv("JWT_SECRET", "realistic-release-secret-0123456789")
+	t.Setenv("SECURITY_EVENT_HMAC_SECRET", "security-release-secret-0123456789")
+	t.Setenv("TRUSTED_PROXY_CIDRS", "127.0.0.1/32")
+	t.Setenv("SECURITY_BLOCK_ENABLED", "false")
+	t.Setenv("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM", "2026-01-01T00:00:00Z")
 	t.Setenv("SUPER_ADMIN_ID", "admin")
 	t.Setenv("SUPER_ADMIN_PASSWORD", "realistic-admin-password")
 	t.Setenv("EDU_SERVICE_TOKEN", "test-service-token")

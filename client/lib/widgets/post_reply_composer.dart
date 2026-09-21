@@ -215,6 +215,7 @@ class _PostReplyComposerState extends State<PostReplyComposer>
                       onEmojiSelected: (emoji) =>
                           insertAtSelection(controller.textController, emoji),
                       onStickerSelected: controller.selectSticker,
+                      onPackAssetSelected: (path, asset) => controller.selectLocalImage(XFile(path), emojiAsset: asset),
                       onFavoriteImageSelected: controller.selectFavoriteImage,
                       onAddImage: widget.pickImage != null ? _pickImage : null,
                       favoriteImageHeaders: _favoriteImageHeaders(context),

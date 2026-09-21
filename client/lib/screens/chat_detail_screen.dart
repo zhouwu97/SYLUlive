@@ -929,6 +929,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       key: const ValueKey('chat-emoji-panel'),
       onEmojiSelected: _insertEmoji,
       onStickerSelected: _sendSticker,
+      onPackAssetSelected: (path, asset) {
+        if (!_canStartOutgoingMessage) return;
+        _reserveFirstContactAllowanceIfNeeded();
+        final future = context.read<MessageProvider>().sendImageMessage(widget.targetUser.id,
+          XFile(path), emojiAsset: asset, senderId: context.read<AuthProvider>().user?.id);
+        _lastMessageActivity = DateTime.now();
+        unawaited(_scrollToLatestMessage(intent: ChatScrollIntent.ownSend));
+        unawaited(_completeOutgoingSend(future));
+      },
       onFavoriteImageSelected: _sendFavorite,
       onAddImage: _pickAndAddFavoriteImage,
       favoriteImageHeaders: _privateMediaHeaders(),

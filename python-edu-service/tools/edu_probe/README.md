@@ -1,5 +1,7 @@
 # Edu Grade Structure Probe
 
+> 状态：Historical diagnostic probe。用于复现和审计历史教务响应结构，不是生产抓取器，也不应被新客户端直接调用。
+
 Isolated probe tool for investigating the academic affairs grade API structure.
 
 ## crawler_probe.py Provenance

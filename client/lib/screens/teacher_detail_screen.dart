@@ -209,7 +209,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                 ),
                 onSelected: (value) async {
                   if (value == 'merge') {
-                    final changed = await Navigator.push<bool>(
+                    await Navigator.push<bool>(
                       context,
                       MaterialPageRoute(
                         builder: (_) => AdminTeacherGovernanceScreen(
@@ -219,12 +219,11 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                         ),
                       ),
                     );
-                    if (changed == true && mounted) {
-                      _didChange = true;
-                      context
-                          .read<TeacherProvider>()
-                          .loadTeacherDetail(widget.teacherId, force: true);
-                    }
+                    if (!context.mounted) return;
+                    _didChange = true;
+                    context
+                        .read<TeacherProvider>()
+                        .loadTeacherDetail(widget.teacherId, force: true);
                   } else if (value == 'delete') {
                     _deleteTeacher(context);
                   }

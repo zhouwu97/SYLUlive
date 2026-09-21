@@ -19,6 +19,10 @@ import (
 
 var ErrInvalidImageFileReference = errors.New("invalid image file reference")
 
+// ErrFileBeingDeleted 表示业务引用与后台清理任务发生竞争。
+// 调用方应回滚当前业务事务并让客户端稍后重试，不能把 deleting 文件重新复活。
+var ErrFileBeingDeleted = fmt.Errorf("%w: file is being deleted", ErrInvalidImageFileReference)
+
 // ParseImageFileIDs 严格解析客户端提交的图片 ID，不接受部分成功。
 func ParseImageFileIDs(raw string) ([]uint, error) {
 	raw = strings.TrimSpace(raw)
@@ -58,7 +62,8 @@ func ValidateImageFileIDs(tx *gorm.DB, fileIDs []uint, maxCount int, ownerIDs ..
 	}
 
 	var files []models.File
-	if err := tx.Where("id IN ?", fileIDs).Find(&files).Error; err != nil {
+	lockIDs := uniqueFileIDs(fileIDs)
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", lockIDs).Order("id ASC").Find(&files).Error; err != nil {
 		return nil, err
 	}
 	if len(files) != len(fileIDs) {
@@ -72,6 +77,9 @@ func ValidateImageFileIDs(tx *gorm.DB, fileIDs []uint, maxCount int, ownerIDs ..
 	ordered := make([]models.File, 0, len(fileIDs))
 	for _, id := range fileIDs {
 		file := byID[id]
+		if file.Status == models.FileStatusDeleting {
+			return nil, fmt.Errorf("%w: 文件 %d 正在清理", ErrFileBeingDeleted, id)
+		}
 		if len(ownerIDs) > 0 && ownerIDs[0] != 0 &&
 			file.AccessScope != models.FileAccessPublic && file.UploaderID != ownerIDs[0] {
 			var grants int64
@@ -109,8 +117,11 @@ func claimPublicFiles(tx *gorm.DB, fileIDs []uint) error {
 		return nil
 	}
 	return tx.Transaction(func(claimTx *gorm.DB) error {
+		if _, err := lockClaimableFiles(claimTx, fileIDs); err != nil {
+			return err
+		}
 		now := time.Now()
-		if err := claimTx.Model(&models.File{}).Where("id IN ?", fileIDs).Updates(map[string]interface{}{
+		if err := claimTx.Model(&models.File{}).Where("id IN ? AND status <> ?", fileIDs, models.FileStatusDeleting).Updates(map[string]interface{}{
 			"status":       "active",
 			"claimed_at":   &now,
 			"access_scope": models.FileAccessPublic,
@@ -119,6 +130,45 @@ func claimPublicFiles(tx *gorm.DB, fileIDs []uint) error {
 		}
 		return CreatePublicImageVariantTasks(claimTx, fileIDs)
 	})
+}
+
+// lockClaimableFiles 在业务事务内锁定文件行，确保 janitor 标记 deleting 后，
+// 任何新的业务引用都会等待并在文件已删除时整体回滚。
+func lockClaimableFiles(tx *gorm.DB, fileIDs []uint) ([]models.File, error) {
+	ids := uniqueFileIDs(fileIDs)
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var files []models.File
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", ids).Order("id ASC").Find(&files).Error; err != nil {
+		return nil, err
+	}
+	if len(files) != len(ids) {
+		return nil, fmt.Errorf("%w: 文件记录不存在", ErrInvalidImageFileReference)
+	}
+	for _, file := range files {
+		if file.Status == models.FileStatusDeleting {
+			return nil, fmt.Errorf("%w: 文件 %d 正在清理", ErrFileBeingDeleted, file.ID)
+		}
+	}
+	return files, nil
+}
+
+func uniqueFileIDs(fileIDs []uint) []uint {
+	seen := make(map[uint]struct{}, len(fileIDs))
+	ids := make([]uint, 0, len(fileIDs))
+	for _, id := range fileIDs {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
 }
 
 // ClaimPublicImagePaths 将直接保存 URL 的公开图片引用升级为 public。
@@ -220,11 +270,16 @@ func ClaimPrivateFiles(tx *gorm.DB, fileIDs []uint) error {
 	if len(fileIDs) == 0 {
 		return nil
 	}
-	now := time.Now()
-	return tx.Model(&models.File{}).Where("id IN ?", fileIDs).Updates(map[string]interface{}{
-		"status":     "active",
-		"claimed_at": &now,
-	}).Error
+	return tx.Transaction(func(claimTx *gorm.DB) error {
+		if _, err := lockClaimableFiles(claimTx, fileIDs); err != nil {
+			return err
+		}
+		now := time.Now()
+		return claimTx.Model(&models.File{}).Where("id IN ? AND status <> ?", fileIDs, models.FileStatusDeleting).Updates(map[string]interface{}{
+			"status":     "active",
+			"claimed_at": &now,
+		}).Error
+	})
 }
 
 // ClaimPrivateMessageFile 在私信引用附件后激活文件，但保持 private 访问范围。
@@ -232,18 +287,23 @@ func ClaimPrivateMessageFile(tx *gorm.DB, fileID uint) error {
 	if fileID == 0 {
 		return fmt.Errorf("%w: 文件 ID 不能为 0", ErrInvalidImageFileReference)
 	}
-	now := time.Now()
-	result := tx.Model(&models.File{}).Where("id = ?", fileID).Updates(map[string]interface{}{
-		"status":     "active",
-		"claimed_at": &now,
+	return tx.Transaction(func(claimTx *gorm.DB) error {
+		if _, err := lockClaimableFiles(claimTx, []uint{fileID}); err != nil {
+			return err
+		}
+		now := time.Now()
+		result := claimTx.Model(&models.File{}).Where("id = ? AND status <> ?", fileID, models.FileStatusDeleting).Updates(map[string]interface{}{
+			"status":     "active",
+			"claimed_at": &now,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("%w: 文件记录不存在", ErrInvalidImageFileReference)
+		}
+		return nil
 	})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return fmt.Errorf("%w: 文件记录不存在", ErrInvalidImageFileReference)
-	}
-	return nil
 }
 
 // ResolveUploadPath 将 /uploads/ 下的数据库路径解析为磁盘路径，并拒绝路径穿越。
@@ -381,6 +441,9 @@ func ReconcileFilePublicAccess(tx *gorm.DB, fileIDs ...uint) error {
 				continue
 			}
 			return err
+		}
+		if file.Status == models.FileStatusDeleting {
+			continue
 		}
 		hasPublic, err := HasActivePublicReferences(tx, file.ID, file.Path)
 		if err != nil {

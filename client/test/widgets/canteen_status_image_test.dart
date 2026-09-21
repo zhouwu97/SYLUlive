@@ -19,7 +19,16 @@ void main() {
               imageUrl: '/uploads/cached.jpg', variant: 'medium'),
         ));
     await tester.pumpWidget(page());
-    await driveMockPublicImageLoads(tester);
+    await driveMockPublicImageLoads(
+      tester,
+      windows: 45,
+      until: () =>
+          requests.contains('/uploads/cached_v1_medium.jpg') &&
+          find
+              .byWidgetPredicate((w) => w is RawImage && w.image != null)
+              .evaluate()
+              .isNotEmpty,
+    );
     expect(find.byWidgetPredicate((w) => w is RawImage && w.image != null),
         findsWidgets);
     final firstRequests = List<String>.of(requests);
@@ -30,7 +39,14 @@ void main() {
     PaintingBinding.instance.imageCache.clear();
     PaintingBinding.instance.imageCache.clearLiveImages();
     await tester.pumpWidget(page());
-    await driveMockPublicImageLoads(tester);
+    await driveMockPublicImageLoads(
+      tester,
+      windows: 45,
+      until: () => find
+          .byWidgetPredicate((w) => w is RawImage && w.image != null)
+          .evaluate()
+          .isNotEmpty,
+    );
     await flushMockPublicImageTimers(tester);
     expect(find.byWidgetPredicate((w) => w is RawImage && w.image != null),
         findsWidgets);
@@ -56,7 +72,14 @@ void main() {
     PaintingBinding.instance.imageCache.clear();
     PaintingBinding.instance.imageCache.clearLiveImages();
     await tester.pumpWidget(page());
-    await driveMockPublicImageLoads(tester);
+    await driveMockPublicImageLoads(
+      tester,
+      windows: 45,
+      until: () => find
+          .byWidgetPredicate((w) => w is RawImage && w.image != null)
+          .evaluate()
+          .isNotEmpty,
+    );
     await flushMockPublicImageTimers(tester);
     expect(find.byWidgetPredicate((w) => w is RawImage && w.image != null),
         findsOneWidget);

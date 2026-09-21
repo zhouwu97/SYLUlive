@@ -14,6 +14,7 @@ import (
 	"shenliyuan/internal/models"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -224,6 +225,15 @@ func (s *EmojiFavoriteService) createCustom(ctx context.Context, userID, fileID 
 	var result *EmojiFavoriteView
 	var newPaths []string
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 收藏会新增 user_emoji_assets 引用，先锁住源文件行，
+		// 防止 janitor 在引用提交前把 temporary 文件物理删除。
+		var lockedSource models.File
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedSource, source.ID).Error; err != nil {
+			return err
+		}
+		if lockedSource.Status == models.FileStatusDeleting {
+			return fmt.Errorf("%w: 文件正在清理", ErrFileBeingDeleted)
+		}
 		var duplicateCount int64
 		if err := tx.Model(&models.UserEmojiAsset{}).
 			Joins("JOIN files ON files.id = user_emoji_assets.file_id").

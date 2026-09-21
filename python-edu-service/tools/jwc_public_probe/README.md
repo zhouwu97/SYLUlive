@@ -19,8 +19,9 @@ notifications, we need to confirm the public site's HTML structure:
 5. Page encoding, image/relative-URL completion rule, sticky-post detection
 6. Failure/404 behavior
 
-This probe is **throwaway** — it produces a structure report for human review.
-After the report is approved, a separate production crawler will be built.
+This probe is a **historical diagnostic tool**. The repository now contains a
+separate public-information sync path (`jwc_sync_service.go`); this probe is
+kept for regression checks and does not define the production crawler contract.
 
 ## Usage
 
@@ -87,9 +88,9 @@ tools/jwc_public_probe/
 - All raw output files in `output/` are gitignored
 - Only the structure report (`report/jwc_structure_report.md`), scripts, tests, and this README are committed
 
-## Stopping Condition
+## Scope boundary
 
-After the structure report is generated, **STOP**. Do NOT modify:
+This tool may update only its own fixtures, tests and report. Do NOT modify:
 
 - `python-edu-service/services/` (production crawler — separate future task)
 - `python-edu-service/routers/` (API routes)
@@ -100,4 +101,5 @@ After the structure report is generated, **STOP**. Do NOT modify:
 - Database models or migrations
 - Software announcement logic (`/notices`, `/announcements`)
 
-Wait for human review of the structure report before any production changes.
+Production public-information changes must go through the current Go service
+and its normal review, migration and release checks.

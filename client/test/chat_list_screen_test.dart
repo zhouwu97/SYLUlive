@@ -7,6 +7,7 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/message_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/chat_list_screen.dart';
+import 'package:shenliyuan/config/private_chat_policy.dart';
 
 class _FakeAuthProvider extends ChangeNotifier implements AuthProvider {
   _FakeAuthProvider(this.currentUser);
@@ -24,6 +25,11 @@ class _FakeAuthProvider extends ChangeNotifier implements AuthProvider {
 }
 
 void main() {
+  if (!PrivateChatPolicy.enabled) {
+    test('私聊功能关闭时跳过旧页面链路测试', () {}, skip: PrivateChatPolicy.disabledHint);
+    return;
+  }
+
   testWidgets('conversation search filters local nickname and latest message',
       (tester) async {
     tester.view.physicalSize = const Size(400, 800);

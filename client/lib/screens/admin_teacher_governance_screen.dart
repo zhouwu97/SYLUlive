@@ -100,6 +100,8 @@ class _AdminTeacherGovernanceScreenState
   bool _hasMoreRecords = true;
   int? _recordsNextCursor;
   String? _recordsError;
+  int _recordsRequestGen = 0;
+  CancelToken? _recordsCancelToken;
   final ScrollController _recordsScrollController = ScrollController();
 
   // ==========================================
@@ -194,6 +196,7 @@ class _AdminTeacherGovernanceScreenState
     _teacherSearchDebounce?.cancel();
     _aliasSearchDebounce?.cancel();
     _teacherCancelToken?.cancel();
+    _recordsCancelToken?.cancel();
     _aliasCancelToken?.cancel();
     _finalCourseNameCtrl.dispose();
     _courseMergeReasonCtrl.dispose();
@@ -208,16 +211,27 @@ class _AdminTeacherGovernanceScreenState
     try {
       final dio = context.read<AuthProvider>().dio;
       Response? res;
-      try {
-        res = await dio.get('/version');
-      } catch (_) {
-        try {
-          res = await dio.get('/version');
-        } catch (_) {
-          try {
-            res = await dio.get('/health');
-          } catch (_) {}
+      final configuredBaseUrl =
+          dio.options.baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
+      final endpoints = <String>['/version'];
+      if (configuredBaseUrl.endsWith('/api')) {
+        final serverRoot = configuredBaseUrl.substring(
+          0,
+          configuredBaseUrl.length - '/api'.length,
+        );
+        if (serverRoot.startsWith('http://') ||
+            serverRoot.startsWith('https://')) {
+          endpoints.add('$serverRoot/version');
         }
+      } else {
+        endpoints.add('/api/version');
+      }
+      endpoints.add('/health');
+      for (final endpoint in endpoints) {
+        try {
+          res = await dio.get(endpoint);
+          break;
+        } catch (_) {}
       }
       if (!mounted) return;
       if (res == null || res.data == null) {
@@ -522,6 +536,9 @@ class _AdminTeacherGovernanceScreenState
       }
       setState(() => _isLoadingMoreRecords = true);
     } else {
+      _recordsCancelToken?.cancel();
+      _recordsCancelToken = CancelToken();
+      _recordsRequestGen++;
       setState(() {
         _isLoadingRecords = true;
         _isLoadingMoreRecords = false;
@@ -530,6 +547,9 @@ class _AdminTeacherGovernanceScreenState
         _hasMoreRecords = true;
       });
     }
+
+    final requestGen = _recordsRequestGen;
+    final cancelToken = _recordsCancelToken;
 
     try {
       final dio = context.read<AuthProvider>().dio;
@@ -542,8 +562,9 @@ class _AdminTeacherGovernanceScreenState
       final res = await dio.get(
         '/admin/teacher-governance/merge-records',
         queryParameters: params,
+        cancelToken: cancelToken,
       );
-      if (!mounted) return;
+      if (!mounted || requestGen != _recordsRequestGen) return;
       final items = _extractList(res.data, 'records');
       final newItems = items
           .whereType<Map<String, dynamic>>()
@@ -566,8 +587,23 @@ class _AdminTeacherGovernanceScreenState
         _recordsNextCursor =
             nextCursor ?? (newItems.isNotEmpty ? newItems.last.id : null);
       });
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e) ||
+          !mounted ||
+          requestGen != _recordsRequestGen) {
+        return;
+      }
+      setState(() {
+        if (loadMore) {
+          _isLoadingMoreRecords = false;
+        } else {
+          _isLoadingRecords = false;
+        }
+        _recordsError =
+            GovernanceApiErrorMapper.format(e, fallback: '加载治理记录失败');
+      });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestGen != _recordsRequestGen) return;
       setState(() {
         if (loadMore) {
           _isLoadingMoreRecords = false;

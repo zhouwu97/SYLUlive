@@ -7,6 +7,7 @@ import '../platform/contracts/external_navigator.dart';
 import '../app_bootstrap.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_radius.dart';
 import '../widgets/glass_container.dart';
 import '../services/physical_credential_store.dart';
 import 'erke_score_screen.dart';
@@ -108,6 +109,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
     final useCustomBackground = themeProvider.shouldShowCustomBackground;
+    final frostedGlass = themeProvider.frostedGlass;
     final cleanLightMode = !useCustomBackground && !isDark;
     final foregroundColor =
         cleanLightMode ? const Color(0xFF1F2937) : Colors.white;
@@ -231,6 +233,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                   ),
                                 ),
                                 useCustomBackground: useCustomBackground,
+                                frostedGlass: frostedGlass,
                               ),
                               _buildToolCard(
                                 context,
@@ -240,6 +243,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 subtitle: '扫码核验 / 查询',
                                 onTap: () => _openPhysicalTest(context),
                                 useCustomBackground: useCustomBackground,
+                                frostedGlass: frostedGlass,
                               ),
                               _buildToolCard(
                                 context,
@@ -254,14 +258,15 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                   ),
                                 ),
                                 useCustomBackground: useCustomBackground,
+                                frostedGlass: frostedGlass,
                               ),
                               _buildToolCard(
                                 context,
                                 icon: Icons.library_books_outlined,
                                 color: const Color(0xFFEC6F5B),
-                                title: '\u8bd5\u5377\u5e93',
+                                title: '试卷库',
                                 subtitle:
-                                    '\u5386\u5e74\u8bd5\u5377 / \u6295\u7a3f\u5ba1\u6838',
+                                    '历年试卷 / 投稿审核',
                                 onTap: () => Navigator.push(
                                   context,
                                   MaterialPageRoute(
@@ -270,6 +275,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                   ),
                                 ),
                                 useCustomBackground: useCustomBackground,
+                                frostedGlass: frostedGlass,
                               ),
                               _buildToolCard(
                                 context,
@@ -279,6 +285,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 subtitle: '用得到的网站',
                                 onTap: () => _showWebsiteDirectory(context),
                                 useCustomBackground: useCustomBackground,
+                                frostedGlass: frostedGlass,
                               ),
                             ],
                           ),
@@ -309,6 +316,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 subtitle: '点击即玩',
                                 onTap: () => _launchCloudGenshin(context),
                                 useCustomBackground: useCustomBackground,
+                                frostedGlass: frostedGlass,
                               ),
                               _buildToolCard(
                                 context,
@@ -322,11 +330,16 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                       builder: (_) => const LotteryScreen()),
                                 ),
                                 useCustomBackground: useCustomBackground,
+                                frostedGlass: frostedGlass,
                               ),
                             ],
                           ),
                           const SizedBox(height: 24),
-                          _buildMoreToolsCard(isDark, useCustomBackground),
+                          _buildMoreToolsCard(
+                            isDark,
+                            useCustomBackground,
+                            frostedGlass: frostedGlass,
+                          ),
                         ],
                       );
                     },
@@ -364,7 +377,11 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     );
   }
 
-  Widget _buildMoreToolsCard(bool isDark, bool useCustomBackground) {
+  Widget _buildMoreToolsCard(
+    bool isDark,
+    bool useCustomBackground, {
+    bool frostedGlass = false,
+  }) {
     final backgroundColor = isDark
         ? Colors.black.withValues(alpha: 0.65)
         : useCustomBackground
@@ -376,9 +393,66 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
             ? Colors.white.withValues(alpha: 0.65)
             : const Color(0xFFEEF0F5);
 
+    final cardContent = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        border: Border.all(color: borderColor, width: 1),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFF5B8DEF).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.auto_stories_outlined,
+                color: Color(0xFF5B8DEF), size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '更多工具',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                    color:
+                        isDark ? Colors.white : const Color(0xFF20232A),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '更多校园功能正在完善',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                    color:
+                        isDark ? Colors.white60 : const Color(0xFF7D8492),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '开发中',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: isDark ? Colors.white54 : const Color(0xFF94A3B8),
+            ),
+          ),
+        ],
+      ),
+    );
+
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.06),
@@ -388,66 +462,13 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: backgroundColor,
-              border: Border.all(color: borderColor, width: 1),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF5B8DEF).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.auto_stories_outlined,
-                      color: Color(0xFF5B8DEF), size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '更多工具',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
-                          color:
-                              isDark ? Colors.white : const Color(0xFF20232A),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '更多校园功能正在完善',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w400,
-                          color:
-                              isDark ? Colors.white60 : const Color(0xFF7D8492),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Text(
-                  '开发中',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: isDark ? Colors.white54 : const Color(0xFF94A3B8),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        child: frostedGlass
+            ? BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                child: cardContent,
+              )
+            : cardContent,
       ),
     );
   }
@@ -516,6 +537,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     required String subtitle,
     required VoidCallback onTap,
     required bool useCustomBackground,
+    bool frostedGlass = false,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final backgroundColor = isDark
@@ -529,11 +551,65 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
             ? Colors.white.withValues(alpha: 0.65)
             : const Color(0xFFEEF0F5);
 
+    final cardContent = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        border: Border.all(color: borderColor, width: 1),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                    color:
+                        isDark ? Colors.white : const Color(0xFF20232A),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                    color: isDark
+                        ? Colors.white60
+                        : const Color(0xFF7D8492),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.06),
@@ -543,63 +619,13 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: backgroundColor,
-                border: Border.all(color: borderColor, width: 1),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, color: color, size: 22),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                            color:
-                                isDark ? Colors.white : const Color(0xFF20232A),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w400,
-                            color: isDark
-                                ? Colors.white60
-                                : const Color(0xFF7D8492),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          child: frostedGlass
+              ? BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                  child: cardContent,
+                )
+              : cardContent,
         ),
       ),
     );
@@ -749,13 +775,13 @@ class _WebsiteDirectoryCard extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         onTap: () => _openWebsiteDirectoryItem(context, item),
         child: Ink(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           decoration: BoxDecoration(
             color: backgroundColor,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
             border: Border.all(color: borderColor),
             boxShadow: [
               BoxShadow(

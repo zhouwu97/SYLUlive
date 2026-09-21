@@ -12,13 +12,21 @@ const (
 	FileAccessPublic  FileAccessScope = "public"
 )
 
+// 文件状态用于区分临时上传、物理删除中的中间态和已完成业务认领。
+// deleting 状态让清理任务在磁盘删除失败时可以安全重试，不会把数据库记录静默丢掉。
+const (
+	FileStatusTemporary = "temporary"
+	FileStatusDeleting  = "deleting"
+	FileStatusActive    = "active"
+)
+
 // File 文件模型（SHA256哈希去重）
 type File struct {
-	ID          uint            `gorm:"primaryKey" json:"id"`
-	Hash        string          `gorm:"uniqueIndex;size:64;not null" json:"hash"` // SHA256哈希
-	Path        string          `gorm:"size:500;not null" json:"path"`
-	Size        int64           `gorm:"not null" json:"size"`
-	MimeType    string          `gorm:"size:100;not null" json:"mime_type"`
+	ID       uint   `gorm:"primaryKey" json:"id"`
+	Hash     string `gorm:"uniqueIndex;size:64;not null" json:"hash"` // SHA256哈希
+	Path     string `gorm:"size:500;not null" json:"path"`
+	Size     int64  `gorm:"not null" json:"size"`
+	MimeType string `gorm:"size:100;not null" json:"mime_type"`
 	// 图片元数据；旧数据为 0，客户端回退到 intrinsic 布局。
 	Width       int             `gorm:"not null;default:0" json:"width"`
 	Height      int             `gorm:"not null;default:0" json:"height"`

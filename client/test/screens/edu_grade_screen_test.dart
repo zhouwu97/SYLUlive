@@ -199,6 +199,7 @@ class _FakeEduProvider extends EduProvider {
     String year,
     int semester, {
     bool allowReducedCount = false,
+    String? approvedReductionSignature,
   }) {
     fetchGradesCallCount++;
     if (holdRefreshAfterInitial && fetchGradesCallCount > 1) {

@@ -1,7 +1,7 @@
 # SYLUlive 动效契约（Motion System）
 
 - 状态：**冻结 v1（合同修订；movement 曲线待真机 A/B）**（2026-08-09）
-- 基线：`MCP` 分支当前工作树
+- 基线：当前 `client/` 实现和已接受的设计 ADR
 - 重要：**AppMotion 已存在且在用（`client/lib/theme/app_motion.dart`），本协议以它为唯一权威实现，不创建第二套 AppMotion**。`client/lib/utils/app_motion.dart` 仅作为临时 deprecated export shim。
 
 ## 1. 第一原则：频率优先
@@ -126,7 +126,7 @@ UI 动画通常 ≤ 300ms；BottomSheet / 大型 Modal / 页面转场可按系�
 当前仓库环境未连接 Android 真机；本分支只记录静态/Widget 验证结果，真机体验需在设备可用后补录。
 证据登记见 [`FEEL_CHECK.md`](./FEEL_CHECK.md)。
 
-## 9. Motion Audit 方法论（PR4 前执行）
+## 9. Motion Audit 方法论
 
 扫描 `AnimatedContainer / AnimatedOpacity / AnimatedSwitcher / AnimationController / Tween / CurvedAnimation / SlideTransition / ScaleTransition / FadeTransition / Hero / Transform / showModalBottomSheet / PageRouteBuilder`，分类：`HIGH`（高频、有目的）/ `MEDIUM` / `LOW`（低频装饰）/ `MISSED OPPORTUNITY`（该有反馈但没有）。
 

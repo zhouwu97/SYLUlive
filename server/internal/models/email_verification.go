@@ -29,10 +29,10 @@ type EmailVerificationChallenge struct {
 // 即使邮箱未绑定账号也会写入，避免响应路径泄露账号是否存在。
 type EmailVerificationRequest struct {
 	ID            uint      `gorm:"primaryKey"`
-	Email         string    `gorm:"size:320;not null;index"`
+	Email         string    `gorm:"size:320;not null;index:idx_email_verification_request_email_created,priority:1"`
 	Purpose       string    `gorm:"size:32;not null;index"`
-	RequestIPHash string    `gorm:"size:64;not null;index"`
-	CreatedAt     time.Time `gorm:"index"`
+	RequestIPHash string    `gorm:"size:64;not null;index:idx_email_verification_request_ip_created,priority:1"`
+	CreatedAt     time.Time `gorm:"index:idx_email_verification_request_email_created,priority:2;index:idx_email_verification_request_ip_created,priority:2"`
 }
 
 // AccountSecurityAuditLog 记录身份和教务连接的安全关键操作。

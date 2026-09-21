@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 	"shenliyuan/internal/utils"
@@ -878,8 +880,20 @@ func (h *WaterTeamHandler) CreateTeamRecruitment(c *gin.Context) {
 	// 分类是组队大厅的业务分类；底层统一关联比赛竞赛版块的内部标签。
 	sectionSlug := "competition"
 
+	// 组队招募同样创建 posts 记录，因此必须与普通发帖遵守同一份配额协议：
+	// 先锁发布用户行，再在同一事务内计数，否则并发/跨入口可以绕过发帖额度。
+	releaseSerial := services.AcquireContentWriteSerialLock(h.db)
+	defer releaseSerial()
+
 	var detail TeamRecruitmentDetail
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if lockErr := services.LockUserForContentWrite(tx, userID); lockErr != nil {
+			return lockErr
+		}
+		txNow := time.Now()
+		if quotaErr := services.CheckPostPublishQuota(tx, userID, txNow); quotaErr != nil {
+			return quotaErr
+		}
 		if err := services.ClaimPublicImageFiles(tx, req.ImageFileIDs); err != nil {
 			return err
 		}
@@ -897,13 +911,15 @@ func (h *WaterTeamHandler) CreateTeamRecruitment(c *gin.Context) {
 
 		// 创建 Post
 		post := models.Post{
-			Title:      req.Title,
-			Content:    req.Description,
-			BoardID:    models.BoardShuitie,
-			AuthorID:   userID,
-			PostType:   sectionSlug,
-			WaterTagID: &tagID,
-			Status:     models.PostStatusNormal,
+			Title:          req.Title,
+			Content:        req.Description,
+			BoardID:        models.BoardShuitie,
+			AuthorID:       userID,
+			PostType:       sectionSlug,
+			WaterTagID:     &tagID,
+			Status:         models.PostStatusNormal,
+			CreatedAt:      txNow,
+			LastActivityAt: txNow,
 		}
 		if err := tx.Create(&post).Error; err != nil {
 			return err
@@ -987,11 +1003,34 @@ func (h *WaterTeamHandler) CreateTeamRecruitment(c *gin.Context) {
 	})
 
 	if err != nil {
-		switch err.Error() {
-		case "user_muted":
+		switch {
+		case err.Error() == "user_muted":
 			c.JSON(http.StatusForbidden, gin.H{"error": "你已被禁言，暂时无法发布组队"})
+		case errors.Is(err, services.ErrContentRateLimited):
+			c.Header("Retry-After", "60")
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error":  "发帖过于频繁，请稍后再试",
+				"code":   "content_rate_limited",
+				"reason": "publish_quota_exhausted",
+			})
+		case errors.Is(err, services.ErrContentQuotaUnavailable):
+			requestID := middleware.EnsureRequestID(c)
+			log.Printf("[TEAM_QUOTA_UNAVAILABLE] request_id=%s user_id=%v err=%v", requestID, userID, err)
+			c.Header("Retry-After", "5")
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":      "服务暂时不可用，请稍后重试",
+				"code":       "content_quota_unavailable",
+				"request_id": requestID,
+			})
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "创建组队失败: " + err.Error()})
+			// 内部错误只写日志，不拼进响应体。
+			requestID := middleware.EnsureRequestID(c)
+			log.Printf("[TEAM_CREATE_FAILED] request_id=%s user_id=%v err=%v", requestID, userID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":      "创建组队失败，请稍后重试",
+				"code":       "team_create_failed",
+				"request_id": requestID,
+			})
 		}
 		return
 	}

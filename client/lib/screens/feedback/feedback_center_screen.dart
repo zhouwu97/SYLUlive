@@ -132,7 +132,8 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
     if (diff.inHours < 24) return '${diff.inHours}小时前更新';
     if (diff.inDays == 1) return '昨天更新';
     if (diff.inDays < 7) return '${diff.inDays}天前更新';
-    return '${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}更新';
+    final local = dt.toLocal();
+    return '${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}更新';
   }
 
   Color _getStatusColor(String status, bool isDark) {

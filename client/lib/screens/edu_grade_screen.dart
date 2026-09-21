@@ -23,6 +23,7 @@ import '../widgets/edu_grade/improvement_course_section.dart';
 import '../widgets/edu_grade/academic_situation_card.dart';
 import 'edu_grade_detail_screen.dart';
 import '../widgets/edu_grade/grade_manage_drawer.dart';
+import 'grade_refresh_policy.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 class EduGradeScreen extends StatefulWidget {
@@ -52,6 +53,45 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
   String _scopedGradeKey(String year, int semester, EduGrade grade) {
     return '$year|$semester|${GradeStableKey.of(grade)}';
+  }
+
+  /// 已经向用户提示过「本次返回成绩减少」的确认状态（计划 8.5）。
+  ///
+  /// 减少保护要求：首次遇到减少只提示、不写入；用户在明确提示之后**再次**发起刷新
+  /// 才算确认覆盖。确认只对同一账号 / 教务身份 / 学期有效，期间切号或切学期一律失效，
+  /// 且确认绑定提示时那份**具体候选结果**：重新请求后数量或课程集合再次变化时
+  /// 必须重新判断、重新提示，不能复用旧确认（例如 20 -> 19 的确认不得授权 19 -> 0）。
+  final GradeReductionConfirmation _reductionConfirmation =
+      GradeReductionConfirmation();
+
+  /// 当前成绩上下文的稳定标识：账号 / 教务身份 / 学期。
+  String _gradeContextScope() {
+    return '${_lastUserId ?? ''}|${_academicIdentityKey ?? ''}'
+        '|$_selectedYear|$_selectedSemester';
+  }
+
+  /// 消费一次「减少确认」：仅当上一次提示与当前上下文完全一致时才成立。
+  /// 返回上次提示所对应的候选结果指纹（无待确认提示时返回 null）。
+  String? _consumeReductionConfirmation() {
+    return _reductionConfirmation.consume(_gradeContextScope());
+  }
+
+  /// 「减少确认」要绑定的具体候选结果指纹：课程集合与门数的稳定标识。
+  ///
+  /// 只看门数不够——「20 门减到 19 门」的确认不能被复用来授权「19 门减到 0 门」：
+  /// 重新请求后结果再次变化时，用户并没有对新的结果点过头。
+  String _gradeReductionSignature(List<EduGrade> grades) {
+    final keys = grades.map(GradeStableKey.of).toList()..sort();
+    return '${keys.length}#${keys.join(',')}';
+  }
+
+  /// 保留旧结果并提示「本次返回成绩减少」，同时记录该提示所属的上下文与候选结果，
+  /// 以便用户**再次**发起刷新时把这次提示消费成确认（计划 8.5）。
+  void _rememberReductionWarning(int removedCount, String signature) {
+    _reductionConfirmation.warn(_gradeContextScope(), signature);
+    if (mounted) {
+      _showSnackBar('本次返回成绩减少 $removedCount 门，已保留上次结果，请再次下拉刷新确认');
+    }
   }
 
   String _selectedYear = '';
@@ -212,6 +252,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _academicRequestGeneration++;
       _requirementRequestGeneration++;
       _creditRequirementsLoadFuture = null;
+      // 切号 / 切教务身份 / 切上下文：旧的「减少确认」不能作用到新账号的新结果上。
+      _reductionConfirmation.reset();
       setState(() {
         _grades = [];
         _academicSituation = null;
@@ -271,7 +313,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _sessionReadBlocked = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _academicContext != sessionContext) return;
-        unawaited(_loadGrades());
+        // 登录/恢复成功是明确的会话边界，不能被新鲜缓存的 cache-only 决策吞掉；
+        // 先展示缓存，再主动拉取一次，保证重新认证后页面拿到最新成绩。
+        unawaited(_loadGrades(forceRefresh: true));
         unawaited(_loadAcademicSituation());
         if (_section == GradeCenterSection.overview) {
           unawaited(_loadCreditRequirements());
@@ -548,8 +592,19 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       final inFailureBackoff = _lastFetchFailureTime != null &&
           now.difference(_lastFetchFailureTime!) < _failureRetryCooldown;
 
-      if (!isStale && !forceRefresh && !inFailureBackoff) {
-        // 15分钟内缓存视为新鲜：直接展示，不发起网络校验
+      // 计划 8.3 决策表由 grade_refresh_policy 统一实现：
+      // 新鲜期与失败退避期都只约束「自动」触发——处于退避期不请求，
+      // 缓存新鲜时同样不请求；只有用户明确刷新才允许绕过时间退避。
+      // 原实现把「不在退避期」也当成使用缓存的前提，于是「新鲜缓存 + 最近失败」
+      // 反而落到了后台刷新分支，在退避期内照样发起网络请求。
+      final decision = decideGradeLoad(
+        hasCredibleCache: true,
+        isFresh: !isStale,
+        inFailureBackoff: inFailureBackoff,
+        userInitiated: forceRefresh,
+      );
+
+      if (decision == GradeLoadDecision.cacheOnly) {
         setState(() {
           _grades = cache.grades;
           _lastUpdatedAt = cache.updatedAt;
@@ -613,15 +668,15 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         setState(() {
           _grades = newGrades;
           _lastUpdatedAt = entry?.updatedAt ?? DateTime.now();
-          _pageState = newGrades.isEmpty
-              ? GradePageState.empty
-              : GradePageState.content;
+          _pageState =
+              newGrades.isEmpty ? GradePageState.empty : GradePageState.content;
           _isInitialLoading = false;
           _isRefreshing = false;
           _errorMessage = null;
         });
         _prefetchGradeDetails(newGrades);
-        if (_eduProvider?.academicCapabilities.supportsAcademicSituation ?? true) {
+        if (_eduProvider?.academicCapabilities.supportsAcademicSituation ??
+            true) {
           unawaited(_loadAcademicSituation(forceRefresh: true));
         }
         return;
@@ -635,24 +690,27 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           _isInitialLoading = false;
           _isRefreshing = false;
         });
-        if (mounted) {
-          _showSnackBar('本次返回成绩减少 ${diff.removed.length} 门，已保留上次结果，请下拉刷新确认');
-        }
+        // 这条路径（首屏加载 / 重试 / 切学期）不携带用户确认，因此只提示、不覆盖；
+        // 提示同样绑定本次返回的具体候选，避免之后用旧提示授权另一份结果。
+        _rememberReductionWarning(
+          diff.removed.length,
+          _gradeReductionSignature(newGrades),
+        );
         return;
       }
 
       if (diff.hasChanges && diff.added.isNotEmpty) {
         _newlyAddedGradeKeys.addAll(
-          diff.added.map((g) => _scopedGradeKey(_selectedYear, _selectedSemester, g)),
+          diff.added
+              .map((g) => _scopedGradeKey(_selectedYear, _selectedSemester, g)),
         );
       }
 
       setState(() {
         _grades = newGrades;
         _lastUpdatedAt = entry?.updatedAt ?? DateTime.now();
-        _pageState = newGrades.isEmpty
-            ? GradePageState.empty
-            : GradePageState.content;
+        _pageState =
+            newGrades.isEmpty ? GradePageState.empty : GradePageState.content;
         _isInitialLoading = false;
         _isRefreshing = false;
         _errorMessage = null;
@@ -669,7 +727,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       }
 
       // 联动刷新官方 GPA（后台静默进行，不阻塞成绩列表）
-      if (_eduProvider?.academicCapabilities.supportsAcademicSituation ?? true) {
+      if (_eduProvider?.academicCapabilities.supportsAcademicSituation ??
+          true) {
         unawaited(_loadAcademicSituation(forceRefresh: true));
       }
     } else {
@@ -704,7 +763,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     if (_eduProvider == null) return null;
 
     final hasCredibleBaseline =
-        _eduProvider!.getCachedGrades(_selectedYear, _selectedSemester) != null ||
+        _eduProvider!.getCachedGrades(_selectedYear, _selectedSemester) !=
+                null ||
             _grades.isNotEmpty;
 
     setState(() => _isRefreshing = true);
@@ -722,11 +782,24 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     }
     if (!mounted || _requestGeneration != gen) return null;
 
-    // 手动刷新允许确认覆盖减少后的数量
+    // 计划 8.2：三项权限必须分离。这里是「是否允许减少后的结果覆盖可信基线」。
+    // 它**不能**由 silent=false 或 forceRefresh=true 顺带授予：
+    // 自动 / 前台恢复（silent）永远不允许；用户明确刷新也只有在
+    // 「上一次已经提示过减少、且上下文未变」时才算确认（计划 8.5）。
+    // 静默刷新不消费确认：确认必须由用户明确的刷新动作消耗，
+    // 否则一次后台刷新就会把待用户确认的减少悄悄转成覆盖授权。
+    final pendingReductionSignature =
+        silent ? null : _consumeReductionConfirmation();
+    final allowReducedCount = allowReducedGradeOverwrite(
+      silent: silent,
+      userConfirmedReduction: pendingReductionSignature != null,
+    );
+
     final result = await _eduProvider!.fetchGrades(
       _selectedYear,
       _selectedSemester,
-      allowReducedCount: true,
+      allowReducedCount: allowReducedCount,
+      approvedReductionSignature: pendingReductionSignature,
     );
 
     if (!mounted || _requestGeneration != gen) {
@@ -747,16 +820,18 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         setState(() {
           _grades = newGrades;
           _lastUpdatedAt = entry?.updatedAt ?? DateTime.now();
-          _pageState = newGrades.isEmpty
-              ? GradePageState.empty
-              : GradePageState.content;
+          _pageState =
+              newGrades.isEmpty ? GradePageState.empty : GradePageState.content;
           _isRefreshing = false;
+          // 计划 8.6：成功路径必须清除对应错误，否则加载成功后页面仍停在 error 提示上。
+          _errorMessage = null;
         });
         _prefetchGradeDetails(newGrades);
         if (mounted && !silent) {
           _showSnackBar('已是最新 · 刚刚同步');
         }
-        if (_eduProvider?.academicCapabilities.supportsAcademicSituation ?? true) {
+        if (_eduProvider?.academicCapabilities.supportsAcademicSituation ??
+            true) {
           unawaited(_loadAcademicSituation(forceRefresh: true));
         }
         return newGrades;
@@ -764,19 +839,42 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
       final diff = GradeDiff.compute(oldGrades, newGrades);
 
+      // 减少保护必须在这里也成立：provider 只保证不把减少后的结果写进磁盘基线，
+      // 内存列表由页面负责，否则一次未确认的自动/静默刷新仍会把页面上的可信结果冲掉。
+      if (oldGrades.isNotEmpty && newGrades.length < oldGrades.length) {
+        // 确认必须绑定「用户当时看到的那份具体结果」：重新请求后结果若再次变化
+        //（例如 20 -> 19 的提示之后又返回 0），旧确认一律作废，必须按新结果重新提示。
+        final candidateSignature = _gradeReductionSignature(newGrades);
+        final reductionConfirmedByUser = allowReducedCount &&
+            pendingReductionSignature == candidateSignature;
+        if (!reductionConfirmedByUser) {
+          setState(() {
+            _isRefreshing = false;
+          });
+          // 静默（前台恢复）刷新不打断用户，因此不提示、也不记录确认上下文：
+          // 之后用户第一次手动刷新会先看到提示，第二次才真正确认覆盖。
+          if (mounted && !silent) {
+            _rememberReductionWarning(diff.removed.length, candidateSignature);
+          }
+          return null;
+        }
+      }
+
       if (diff.hasChanges && diff.added.isNotEmpty) {
         _newlyAddedGradeKeys.addAll(
-          diff.added.map((g) => _scopedGradeKey(_selectedYear, _selectedSemester, g)),
+          diff.added
+              .map((g) => _scopedGradeKey(_selectedYear, _selectedSemester, g)),
         );
       }
 
       setState(() {
         _grades = newGrades;
         _lastUpdatedAt = entry?.updatedAt ?? DateTime.now();
-        _pageState = newGrades.isEmpty
-            ? GradePageState.empty
-            : GradePageState.content;
+        _pageState =
+            newGrades.isEmpty ? GradePageState.empty : GradePageState.content;
         _isRefreshing = false;
+        // 计划 8.6：手动重试成功后必须清除之前的错误提示。
+        _errorMessage = null;
       });
       _prefetchGradeDetails(newGrades);
 
@@ -795,7 +893,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       }
 
       // 联动刷新官方 GPA（后台静默进行，不阻塞成绩列表）
-      if (_eduProvider?.academicCapabilities.supportsAcademicSituation ?? true) {
+      if (_eduProvider?.academicCapabilities.supportsAcademicSituation ??
+          true) {
         unawaited(_loadAcademicSituation(forceRefresh: true));
       }
 
@@ -860,6 +959,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     if (year == _selectedYear && semester == _selectedSemester) return true;
     if (_eduProvider == null) return false;
     final generation = ++_requestGeneration;
+    // 切学期后成绩基线整体更换，旧的「减少确认」不再适用，必须作废重新提示。
+    _reductionConfirmation.reset();
     setState(() {
       _selectedYear = year;
       _selectedSemester = semester;
@@ -986,7 +1087,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
             index: _section.index,
             children: [
               RefreshIndicator(
-                onRefresh: () => _refreshGrades(silent: false, forceRefresh: true),
+                onRefresh: () =>
+                    _refreshGrades(silent: false, forceRefresh: true),
                 child: CustomScrollView(
                   key: const ValueKey('grade_term_scroll_view'),
                   controller: _termScrollController,

@@ -63,21 +63,28 @@
 
 ## 3. 教务系统 (Edu)
 
-服务端按应用账号持久化教务绑定和加密授权，重新登录或重装客户端后可自动恢复；
-课表、成绩等拉取结果仍按应用账号隔离并缓存到客户端。只有显式解除绑定才会撤销服务端授权。
+教务接口处于本地化迁移期，必须区分路由状态：
+
+- **Active**：新版客户端可以使用的账号、社区、公共服务和用户明确授权的结构化快照接口。
+- **Migration compatibility**：仅供旧客户端迁移、回归或受控内部环境使用的教务兼容接口。
+- **Retired**：已退役并固定返回 `410` 的旧登录、注册或教务入口；客户端必须依据能力探测停止调用。
+
+个人教务访问的目标路径是客户端直接连接学校系统。迁移期兼容服务是否加载由 `SCHOOL_AUTHORITY_RETIRED` 控制，Go 服务端旧教务路由还受 `SCHOOL_ACADEMIC_ROUTES_RETIRED` 控制；两者均不能在文档中被默认当作生产 Active 能力。
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/edu/bind` | 绑定并加密保存当前应用账号的教务授权 |
-| `DELETE` | `/api/edu/bind` | 显式解除绑定并撤销服务端授权 |
-| `GET` | `/api/edu/status` | 查询绑定状态和会话恢复状态，不返回密码或 Cookie |
-| `POST` | `/api/edu/session/resume` | 恢复已保存授权的教务会话 |
-| `POST` | `/api/edu/courses` | 拉取课表，结果由客户端缓存 |
-| `POST` | `/api/edu/grades` | 拉取成绩，结果由客户端缓存 |
-| `POST` | `/api/exam/extract` | 融智云考题库一键提取 |
-| `POST` | `/api/erke/scores` | 青年之声（第二课堂）学分查询 |
+| `POST` | `/api/edu/bind` | **Migration compatibility**：旧客户端教务绑定；生产状态以开关为准 |
+| `DELETE` | `/api/edu/bind` | **Migration compatibility**：撤销迁移期绑定 |
+| `GET` | `/api/edu/status` | **Migration compatibility**：查询迁移期绑定状态 |
+| `POST` | `/api/edu/session/resume` | **Migration compatibility**：恢复迁移期教务会话 |
+| `POST` | `/api/edu/courses` | **Migration compatibility**：旧客户端课表读取 |
+| `POST` | `/api/edu/grades` | **Migration compatibility**：旧客户端成绩读取 |
+| `POST` | `/api/exam/extract` | **Migration compatibility**：旧教务考题提取能力 |
+| `POST` | `/api/erke/scores` | **Migration compatibility**：旧二课读取能力 |
 
-### 已授权二课快照
+旧登录、注册和密码找回入口 `/api/login_edu`、`/api/register_with_edu`、`/api/forgot_password` 等已退役并返回 `410`，不应继续接入新客户端。
+
+### Active：已授权二课快照
 
 以下接口均需 JWT。它们只接受手机已解析的结构化二课数据，用于校园 Agent 的后续分析；服务端拒绝密码、Cookie、会话、设备密钥和原始 HTML，客户端传入的哈希不会被信任。
 

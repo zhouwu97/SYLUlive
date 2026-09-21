@@ -998,6 +998,84 @@ void main() {
     restored.dispose();
   });
 
+  test('切换已拉取学期恢复课程与开学周，重新拉取不清除开学周', () async {
+    final provider = createProvider()..syncSessionContext('1001', '2403130233');
+    addTearDown(provider.dispose);
+    for (var i = 0; i < 20 && !provider.isSessionReady; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(provider.isSessionReady, isTrue);
+
+    final termA = CourseTerm(
+      id: '2025_1',
+      year: '2025',
+      semester: 1,
+      title: '2025-2026 第一学期',
+      maxWeek: 20,
+    );
+    final termB = CourseTerm(
+      id: '2025_2',
+      year: '2025',
+      semester: 2,
+      title: '2025-2026 第二学期',
+      maxWeek: 20,
+    );
+    final startA = DateTime(2025, 9, 1);
+    final startB = DateTime(2026, 3, 2);
+
+    await provider.applyFetchedCoursesForTerm(
+      term: termA,
+      rawCourses: [
+        {
+          'name': '学期 A 课程',
+          'time': 1,
+          'end_time': 2,
+          'week_day': 1,
+          'weeks': [1, 2],
+        },
+      ],
+    );
+    await provider.setSemesterStart(startA);
+
+    await provider.applyFetchedCoursesForTerm(
+      term: termB,
+      rawCourses: [
+        {
+          'name': '学期 B 课程',
+          'time': 3,
+          'end_time': 4,
+          'week_day': 2,
+          'weeks': [1, 2],
+        },
+      ],
+    );
+    await provider.setSemesterStart(startB);
+
+    expect(await provider.switchTerm(termA), isTrue);
+    expect(provider.courses.single.name, '学期 A 课程');
+    expect(provider.semesterStart, startA);
+
+    // 对已有缓存学期再次拉取时，仍应沿用其已保存的开学周。
+    await provider.applyFetchedCoursesForTerm(
+      term: termA,
+      rawCourses: [
+        {
+          'name': '学期 A 更新课程',
+          'time': 1,
+          'end_time': 2,
+          'week_day': 3,
+          'weeks': [1, 2],
+        },
+      ],
+    );
+    expect(provider.courses.single.name, '学期 A 更新课程');
+    expect(provider.semesterStart, startA);
+
+    expect(await provider.switchTerm(termB), isTrue);
+    expect(provider.courses.single.name, '学期 B 课程');
+    expect(provider.semesterStart, startB);
+  });
+
   test('P2: 注入第二阶段快照存储失败，自定义课程回滚内存，调课规则保留可恢复状态', () async {
     final provider = createProvider()..syncSessionContext('1001', '2403130233');
     for (var i = 0; i < 20 && !provider.isSessionReady; i++) {

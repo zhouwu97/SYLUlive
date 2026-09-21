@@ -17,6 +17,7 @@ import 'package:shenliyuan/utils/app_navigator.dart';
 import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
 import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
 import 'package:shenliyuan/widgets/emoji/sticker_composer_preview.dart';
+import 'package:shenliyuan/config/private_chat_policy.dart';
 
 class _FakeAuthProvider extends ChangeNotifier implements AuthProvider {
   _FakeAuthProvider(this.currentUser);
@@ -37,6 +38,11 @@ class _FakeAuthProvider extends ChangeNotifier implements AuthProvider {
 }
 
 void main() {
+  if (!PrivateChatPolicy.enabled) {
+    test('私聊功能关闭时跳过旧详情页链路测试', () {}, skip: PrivateChatPolicy.disabledHint);
+    return;
+  }
+
   testWidgets('empty composer keeps send visible and text enables it',
       (tester) async {
     final provider = MessageProvider(_chatDio());
@@ -258,8 +264,7 @@ void main() {
     await _disposeChat(tester, provider);
   });
 
-  testWidgets(
-      'keyboard opened then collapsed reopens cleanly on the next tap',
+  testWidgets('keyboard opened then collapsed reopens cleanly on the next tap',
       (tester) async {
     tester.view.physicalSize = const Size(400, 900);
     tester.view.devicePixelRatio = 1;
@@ -979,8 +984,7 @@ void main() {
     await _disposeChat(tester, provider);
   });
 
-  testWidgets('连续快速 Emoji/Keyboard/Emoji 切换不残留交接状态',
-      (tester) async {
+  testWidgets('连续快速 Emoji/Keyboard/Emoji 切换不残留交接状态', (tester) async {
     tester.view.physicalSize = const Size(400, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -1039,8 +1043,7 @@ void main() {
     await _disposeChat(tester, provider);
   });
 
-  testWidgets('disableAnimations 时 Emoji 面板高度动画立即完成',
-      (tester) async {
+  testWidgets('disableAnimations 时 Emoji 面板高度动画立即完成', (tester) async {
     tester.view.physicalSize = const Size(400, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);

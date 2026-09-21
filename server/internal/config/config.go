@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config 应用配置
@@ -30,12 +31,26 @@ type Config struct {
 	ExamPaperStorageSigningSecret    string // 试卷文件签名密钥
 	ExamPaperStorageReceiptSecret    string // 试卷上传回执密钥
 	MaxFileSize                      int64  // 最大文件大小(字节)
+	UploadPerMinuteCountLimit        int    // 单账号每分钟新文件数量上限
+	UploadHourlyBytesLimit           int64  // 单账号每小时新文件字节上限
+	UploadTemporaryUserCount         int    // 单账号未 claim 临时文件数量上限
+	UploadTemporaryUserBytes         int64  // 单账号未 claim 临时文件字节上限
+	UploadTemporaryGlobalBytes       int64  // 服务级未 claim 临时文件字节上限
+	UploadDiskWarnPercent            int    // 磁盘使用率告警水位
+	UploadDiskSeverePercent          int    // 磁盘使用率严重告警水位
+	UploadDiskCriticalPercent        int    // 磁盘使用率上传熔断水位
+	UploadTemporaryTTL               time.Duration
+	UploadTemporaryJanitorInterval   time.Duration
+	UploadTemporaryJanitorBatchSize  int
+	UploadTemporaryCleanupNotBefore  time.Time
+	UploadConsistencyInterval        time.Duration
 	EduServiceURL                    string // Python教务服务地址
 	SMTPHost                         string // SMTP 地址
 	SMTPPort                         string // SMTP 端口
 	SMTPUser                         string // SMTP 用户名
 	SMTPPass                         string // SMTP 密码/授权码
 	SMTPFrom                         string // 发件人邮箱
+	SecurityEventHMACSecret          string // 安全中心来源/目标 HMAC 密钥，生产环境不得复用 JWT_SECRET
 	JPushAppKey                      string // 极光推送 AppKey
 	JPushMasterSecret                string // 极光推送 MasterSecret
 	SuperAdminID                     string // 超级管理员账号
@@ -110,6 +125,9 @@ type Config struct {
 	AppReleaseAllowedMarketHosts []string // 外部市场跳转允许的 HTTPS 域名
 	AccountIdentityReadMode      string   // 账号登录读路径：legacy 或 identity
 	TrustedProxyCIDRs            []string // 允许 Gin 信任 X-Forwarded-For 的代理网段
+	ServerListenAddr             string   // Go HTTP 服务监听地址；公网部署应只由 Nginx 对外提供入口
+	SecurityBlockEnabled         bool     // 来源封禁开关，建表与验收完成后再开启
+	SecurityAttributionValidFrom string   // 来源归因可信起点，起点前的历史来源仅标记为 unknown
 	// SchoolDeviceCapabilityCut 表示 C3 已完成，服务端不再提供个人学校设备能力。
 	// SchoolAcademicRoutesRetired 控制旧教务个人路由；教务绑定恢复依赖这些路由。
 	SchoolAuthorityRetired      bool
@@ -185,6 +203,29 @@ func Load() *Config {
 		uploadDir = "./uploads"
 	}
 	imageVariantWorkerEnabled := envBool("IMAGE_VARIANT_WORKER_ENABLED", false)
+	uploadPerMinuteCountLimit := envIntInRange("UPLOAD_PER_MINUTE_COUNT_LIMIT", 30, 1, 10000)
+	uploadHourlyBytesLimit := envInt64InRange("UPLOAD_HOURLY_BYTES_LIMIT", 100*1024*1024, 1, 1<<50)
+	uploadTemporaryUserCount := envIntInRange("UPLOAD_TEMPORARY_USER_COUNT_LIMIT", 100, 1, 1_000_000)
+	uploadTemporaryUserBytes := envInt64InRange("UPLOAD_TEMPORARY_USER_BYTES_LIMIT", 512*1024*1024, 1, 1<<50)
+	uploadTemporaryGlobalBytes := envInt64InRange("UPLOAD_TEMPORARY_GLOBAL_BYTES_LIMIT", 5*1024*1024*1024, 1, 1<<55)
+	uploadDiskWarnPercent := envIntInRange("UPLOAD_DISK_WARN_PERCENT", 70, 1, 99)
+	uploadDiskSeverePercent := envIntInRange("UPLOAD_DISK_SEVERE_PERCENT", 80, 1, 99)
+	uploadDiskCriticalPercent := envIntInRange("UPLOAD_DISK_CRITICAL_PERCENT", 90, 1, 99)
+	if uploadDiskSeverePercent < uploadDiskWarnPercent || uploadDiskCriticalPercent < uploadDiskSeverePercent {
+		panic(fmt.Errorf("UPLOAD_DISK_*_PERCENT 必须满足 warning <= severe <= critical"))
+	}
+	uploadTemporaryTTL := time.Duration(envIntInRange("UPLOAD_TEMPORARY_TTL_HOURS", 6, 1, 168)) * time.Hour
+	uploadTemporaryJanitorInterval := time.Duration(envIntInRange("UPLOAD_TEMPORARY_JANITOR_INTERVAL_MINUTES", 60, 1, 1440)) * time.Minute
+	uploadTemporaryJanitorBatchSize := envIntInRange("UPLOAD_TEMPORARY_JANITOR_BATCH_SIZE", 200, 1, 5000)
+	var uploadTemporaryCleanupNotBefore time.Time
+	if raw := strings.TrimSpace(os.Getenv("UPLOAD_TEMPORARY_CLEANUP_NOT_BEFORE")); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			panic(fmt.Errorf("UPLOAD_TEMPORARY_CLEANUP_NOT_BEFORE 必须是 RFC3339 时间: %w", err))
+		}
+		uploadTemporaryCleanupNotBefore = parsed
+	}
+	uploadConsistencyInterval := time.Duration(envIntInRange("UPLOAD_CONSISTENCY_INTERVAL_HOURS", 6, 1, 168)) * time.Hour
 
 	examPaperDir := os.Getenv("EXAM_PAPER_DIR")
 	if examPaperDir == "" {
@@ -209,7 +250,14 @@ func Load() *Config {
 			"SCHOOL_AUTHORITY_RETIRED",
 			"SCHOOL_DEVICE_CAPABILITY_CUT",
 			"SCHOOL_ACADEMIC_ROUTES_RETIRED",
+			"SECURITY_BLOCK_ENABLED",
 		)
+		if strings.TrimSpace(os.Getenv("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM")) == "" {
+			panic(fmt.Errorf("release 模式必须显式设置 SECURITY_SOURCE_ATTRIBUTION_VALID_FROM"))
+		}
+		if _, err := time.Parse(time.RFC3339, strings.TrimSpace(os.Getenv("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM"))); err != nil {
+			panic(fmt.Errorf("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM 必须是 RFC3339 时间"))
+		}
 	}
 
 	// 图片管线两个开关直接影响生产资源链路（worker 写盘、Nginx 直传）。release 模式
@@ -390,6 +438,46 @@ func Load() *Config {
 		panic(err)
 	}
 	trustedProxyCIDRs := splitNonEmpty(os.Getenv("TRUSTED_PROXY_CIDRS"))
+	serverListenAddr := strings.TrimSpace(os.Getenv("SERVER_LISTEN_ADDR"))
+	if serverListenAddr == "" {
+		serverListenAddr = "127.0.0.1:8080"
+	}
+	if _, _, err := net.SplitHostPort(serverListenAddr); err != nil {
+		panic(fmt.Errorf("SERVER_LISTEN_ADDR 必须是 host:port 地址"))
+	}
+	securityBlockEnabled := envBool("SECURITY_BLOCK_ENABLED", false)
+	securityAttributionValidFrom := strings.TrimSpace(os.Getenv("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM"))
+	securityEventHMACSecret := strings.TrimSpace(os.Getenv("SECURITY_EVENT_HMAC_SECRET"))
+	if securityEventHMACSecret == "" {
+		if releaseMode {
+			panic(fmt.Errorf("release 模式必须设置 SECURITY_EVENT_HMAC_SECRET，且不得复用 JWT_SECRET"))
+		}
+		securityEventHMACSecret = jwtSecret + ":security-events"
+	}
+	if releaseMode && securityEventHMACSecret == jwtSecret {
+		panic(fmt.Errorf("SECURITY_EVENT_HMAC_SECRET 不得复用 JWT_SECRET"))
+	}
+	if releaseMode {
+		if len([]byte(securityEventHMACSecret)) < 32 {
+			panic(fmt.Errorf("生产环境 SECURITY_EVENT_HMAC_SECRET 长度至少为 32 字节"))
+		}
+		if isPlaceholderSecret(securityEventHMACSecret, []string{"change_me_in_env", "your-super-secret-security-event-key-change-this"}) {
+			panic(fmt.Errorf("生产环境必须设置安全的 SECURITY_EVENT_HMAC_SECRET 环境变量"))
+		}
+	}
+	if releaseMode {
+		if len(trustedProxyCIDRs) == 0 {
+			panic(fmt.Errorf("release 模式必须显式设置 TRUSTED_PROXY_CIDRS"))
+		}
+		for _, cidr := range trustedProxyCIDRs {
+			if strings.HasSuffix(strings.TrimSpace(cidr), "/0") {
+				panic(fmt.Errorf("TRUSTED_PROXY_CIDRS 不允许信任全网段: %s", cidr))
+			}
+			if _, _, err := net.ParseCIDR(strings.TrimSpace(cidr)); err != nil {
+				panic(fmt.Errorf("TRUSTED_PROXY_CIDRS 包含无效网段 %q", cidr))
+			}
+		}
+	}
 	// 退役开关采用显式环境变量，便于 C2/C3 分阶段发布和回滚记录。
 	// 最终开关兼容单一部署参数，但不会自动修改数据库或删除历史证据。
 	schoolAuthorityRetired := envBool("SCHOOL_AUTHORITY_RETIRED", false)
@@ -533,12 +621,26 @@ func Load() *Config {
 		ExamPaperStorageSigningSecret:    examPaperStorageSigningSecret,
 		ExamPaperStorageReceiptSecret:    examPaperStorageReceiptSecret,
 		MaxFileSize:                      10 * 1024 * 1024, // 10MB
+		UploadPerMinuteCountLimit:        uploadPerMinuteCountLimit,
+		UploadHourlyBytesLimit:           uploadHourlyBytesLimit,
+		UploadTemporaryUserCount:         uploadTemporaryUserCount,
+		UploadTemporaryUserBytes:         uploadTemporaryUserBytes,
+		UploadTemporaryGlobalBytes:       uploadTemporaryGlobalBytes,
+		UploadDiskWarnPercent:            uploadDiskWarnPercent,
+		UploadDiskSeverePercent:          uploadDiskSeverePercent,
+		UploadDiskCriticalPercent:        uploadDiskCriticalPercent,
+		UploadTemporaryTTL:               uploadTemporaryTTL,
+		UploadTemporaryJanitorInterval:   uploadTemporaryJanitorInterval,
+		UploadTemporaryJanitorBatchSize:  uploadTemporaryJanitorBatchSize,
+		UploadTemporaryCleanupNotBefore:  uploadTemporaryCleanupNotBefore,
+		UploadConsistencyInterval:        uploadConsistencyInterval,
 		EduServiceURL:                    eduServiceURL,
 		SMTPHost:                         smtpHost,
 		SMTPPort:                         smtpPort,
 		SMTPUser:                         smtpUser,
 		SMTPPass:                         smtpPass,
 		SMTPFrom:                         smtpFrom,
+		SecurityEventHMACSecret:          securityEventHMACSecret,
 		JPushAppKey:                      jpushAppKey,
 		JPushMasterSecret:                jpushMasterSecret,
 		SuperAdminID:                     superAdminID,
@@ -607,6 +709,9 @@ func Load() *Config {
 		LegalConsentEnforcement:             legalConsentEnforcement,
 		AccountIdentityReadMode:             accountIdentityReadMode,
 		TrustedProxyCIDRs:                   trustedProxyCIDRs,
+		ServerListenAddr:                    serverListenAddr,
+		SecurityBlockEnabled:                securityBlockEnabled,
+		SecurityAttributionValidFrom:        securityAttributionValidFrom,
 		SchoolAuthorityRetired:              schoolAuthorityRetired,
 		SchoolLegacySecretsFrozen:           envBool("SCHOOL_LEGACY_SECRETS_FROZEN", true),
 		SchoolDeviceCapabilityCut:           schoolDeviceCapabilityCut,

@@ -4,8 +4,15 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/providers/message_provider.dart';
 import 'package:shenliyuan/services/emoji_favorite_service.dart';
+import 'package:shenliyuan/config/private_chat_policy.dart';
 
 void main() {
+  if (!PrivateChatPolicy.enabled) {
+    test('私聊功能关闭时跳过旧 Provider 链路测试', () {},
+        skip: PrivateChatPolicy.disabledHint);
+    return;
+  }
+
   test('resolves an existing conversation before loading its messages',
       () async {
     final dio = Dio();
@@ -303,7 +310,8 @@ void main() {
               // 会话 42 的翻页请求先挂住，模拟"在途"。
               olderGate.future.then((_) {
                 handler.resolve(
-                  Response(requestOptions: options, statusCode: 200, data: const []),
+                  Response(
+                      requestOptions: options, statusCode: 200, data: const []),
                 );
               });
               return;

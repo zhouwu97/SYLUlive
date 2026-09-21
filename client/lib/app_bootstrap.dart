@@ -1,4 +1,5 @@
 import 'features/academic/data/academic_account_config_client.dart';
+import 'features/emoji/application/emoji_recent_manager.dart';
 import 'dart:async';
 import 'dart:ui';
 import 'package:dio/dio.dart';
@@ -592,6 +593,7 @@ Future<void> _handleNativeNotificationOpen(String raw) async {
       _storeOrOpenNotificationTarget(target);
       return;
     case 'feedback_ticket':
+    case 'feedback_admin_update':
       final target = NotificationOpenTarget.parse(payload);
       if (target == null) {
         await _ackNativeNotificationOpen(event.id);
@@ -770,7 +772,11 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
       }
       navigator.push(
         MaterialPageRoute(
-          builder: (_) => FeedbackDetailScreen(ticketId: ticketId),
+          builder: (_) => FeedbackDetailScreen(
+            ticketId: ticketId,
+            // 通知入口明确携带管理员视角，不能根据当前账号角色推断。
+            isAdmin: target.isAdminView,
+          ),
         ),
       );
       _ackNativeNotificationOpen(target.nativeOpenId).ignore();
@@ -1499,6 +1505,7 @@ class MyApp extends StatelessWidget {
           update: (_, auth, service) {
             final nextUserId = auth.user?.id.toString();
             service!.syncSessionUser(nextUserId);
+            EmojiRecentManager.instance.switchUser(nextUserId);
             if (nextUserId != null) {
               unawaited(service.syncFromServer());
             }

@@ -38,6 +38,12 @@ type FeedbackHandler struct {
 	db              *gorm.DB
 	uploadDir       string
 	rateLimitSecret string
+	security        *services.SecurityEventService
+}
+
+// SetSecurityEventService 注入安全事件记录器。
+func (h *FeedbackHandler) SetSecurityEventService(security *services.SecurityEventService) {
+	h.security = security
 }
 
 // NewFeedbackHandler 创建反馈处理器

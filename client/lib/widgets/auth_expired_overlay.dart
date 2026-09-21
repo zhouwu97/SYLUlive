@@ -1,17 +1,21 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
 
 class AuthExpiredOverlay extends StatefulWidget {
   final VoidCallback onDismiss;
   final VoidCallback onRelogin;
+  final bool? frostedGlass;
 
   const AuthExpiredOverlay({
     super.key,
     required this.onDismiss,
     required this.onRelogin,
+    this.frostedGlass,
   });
 
   @override
@@ -86,6 +90,110 @@ class _AuthExpiredOverlayState extends State<AuthExpiredOverlay>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = Theme.of(context).colorScheme.primary;
+    final frostedGlass = widget.frostedGlass ??
+        (() {
+          try {
+            return context.watch<ThemeProvider>().frostedGlass;
+          } catch (_) {
+            return false;
+          }
+        })();
+
+    final overlayBody = Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.orange[400]!,
+                      Colors.red[400]!,
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '登录已过期',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimaryLight,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '请重新登录以继续使用',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondaryLight,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: _handleDismiss,
+                icon: Icon(
+                  Icons.close,
+                  color: isDark
+                      ? AppColors.iconMutedDark
+                      : AppColors.iconMutedLight,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: _GlassButton(
+                  onPressed: _handleDismiss,
+                  isDark: isDark,
+                  child: const Text('暂时不管'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _GradientButton(
+                  onPressed: _handleRelogin,
+                  colors: [
+                    primary,
+                    primary.withValues(alpha: 0.85),
+                  ],
+                  child: const Text(
+                    '重新登录',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
 
     return FadeTransition(
       opacity: _fadeAnimation,
@@ -131,104 +239,12 @@ class _AuthExpiredOverlayState extends State<AuthExpiredOverlay>
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(20),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Colors.orange[400]!,
-                                      Colors.red[400]!,
-                                    ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Icon(
-                                  Icons.warning_amber_rounded,
-                                  color: Colors.white,
-                                  size: 28,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '登录已过期',
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark
-                                            ? AppColors.textPrimaryDark
-                                            : AppColors.textPrimaryLight,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '请重新登录以继续使用',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: isDark
-                                            ? AppColors.textSecondaryDark
-                                            : AppColors.textSecondaryLight,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              IconButton(
-                                onPressed: _handleDismiss,
-                                icon: Icon(
-                                  Icons.close,
-                                  color: isDark
-                                      ? AppColors.iconMutedDark
-                                      : AppColors.iconMutedLight,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _GlassButton(
-                                  onPressed: _handleDismiss,
-                                  isDark: isDark,
-                                  child: const Text('暂时不管'),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _GradientButton(
-                                  onPressed: _handleRelogin,
-                                  colors: [
-                                    primary,
-                                    primary.withValues(alpha: 0.85),
-                                  ],
-                                  child: const Text(
-                                    '重新登录',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  child: frostedGlass
+                      ? BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                          child: overlayBody,
+                        )
+                      : overlayBody,
                 ),
               ),
             ),

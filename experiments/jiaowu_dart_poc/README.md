@@ -1,5 +1,7 @@
 # jiaowu_dart_poc
 
+> 状态：当前主 App 已通过 path dependency 接入；本目录同时保留协议回归和差分探针，不再是“全部通过后才接入”的纯待接入原型。
+
 SYLUlive 教务客户端的独立纯 Dart 协议实验包。它与 `client/` 和现有
 `python-edu-service/` 解耦，用 Python crawler 作为协议基准，先验证：
 
@@ -96,11 +98,11 @@ CLI 会安全退出并提示使用 Mobile Probe 完成图片挑战。`--action c
 
 公钥的 `_` 参数在 README 中用空格展示仅为避免视觉误读，代码使用精确的 `_`。
 
-## 后续 Gate
+## 当前维护 Gate
 
 1. P0：`dart analyze`、fixture 测试、RSA 私钥解密测试、登录探活。
 2. P1：课表 Desktop/Mobile fallback、RawCourse、周次解析、CLI canonical JSON。
 3. P1：Python ↔ Dart 真实课表 canonical JSON 差分。
 4. P1：成绩列表 warmup、分页、严格解析、CLI canonical JSON 与真实差分。
 5. P2：最小 Flutter Android 真机 Probe。
-6. 全部通过后，才通过 path dependency 接入主 App。
+6. 真实教务协议变化时，先更新 fixture、差分报告和安全边界，再同步主 App 使用的 path dependency。

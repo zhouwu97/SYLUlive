@@ -1,3 +1,4 @@
+import 'package:shenliyuan/features/emoji/domain/emoji_asset_ref.dart';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -19,6 +20,8 @@ void main() {
     final dio = Dio();
     final requestPaths = <String>[];
     String? submittedFileIds;
+    String? submittedAssetKey;
+    String? submittedPackId;
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
@@ -35,6 +38,10 @@ void main() {
           }
           if (options.path == '/posts/8/replies') {
             final form = options.data as FormData;
+            submittedAssetKey =
+                Map<String, String>.fromEntries(form.fields)['asset_key'];
+            submittedPackId =
+                Map<String, String>.fromEntries(form.fields)['pack_id'];
             submittedFileIds =
                 Map<String, String>.fromEntries(form.fields)['file_ids'];
             handler.resolve(
@@ -61,12 +68,16 @@ void main() {
       8,
       PostReplyDraft(
         text: '带图评论',
+        emojiAsset:
+            const EmojiAssetRef(assetKey: 'official:test:a', packId: 'test'),
         localImage: XFile(imageFile.path, name: 'reply.jpg'),
       ),
     );
 
     expect(requestPaths, ['/upload', '/posts/8/replies']);
     expect(submittedFileIds, '73');
+    expect(submittedAssetKey, 'official:test:a');
+    expect(submittedPackId, 'test');
     expect(reply.id, 9);
   });
 

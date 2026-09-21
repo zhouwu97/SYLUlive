@@ -71,10 +71,12 @@ void main() {
 
     expect(themeProvider.bottomNavStyle, BottomNavStyle.liquidGlass);
     expect(themeProvider.bottomNavLiquidGlassConfirmed, isTrue);
+    expect(themeProvider.frostedGlass, isFalse);
     final prefs = await AppPreferencesStore.getInstance();
     expect(prefs.getString('bottom_nav_style'), 'liquid_glass');
     expect(prefs.getBool('floating_nav'), isTrue);
     expect(prefs.getBool('liquid_glass'), isTrue);
+    expect(prefs.getBool('frosted_glass_enabled'), isNull);
   });
 
   testWidgets('动画强度与性能模式会持久化', (tester) async {

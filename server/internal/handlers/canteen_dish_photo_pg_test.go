@@ -19,8 +19,6 @@ import (
 	"shenliyuan/internal/models"
 )
 
-
-
 // TestCanteenRateConcurrentOptimisticLock 验证 PostgreSQL 行锁下两个带同一
 // base_updated_at 的并发评价请求：严格恰好 1×200 + 1×409。
 // SQLite 无真实行锁，无法保证该语义，因此只在 TEST_DATABASE_DSN 配置时运行。
@@ -121,10 +119,11 @@ func TestCanteenRateConcurrentOptimisticLock(t *testing.T) {
 // 双重校验：1) 必须显式设置 ALLOW_DESTRUCTIVE_INTEGRATION_TESTS=1（防止误跑）；
 // 2) 当前数据库名必须以 _test 结尾（防止 test/prod 名称混淆）。
 // 任一不满足即放弃本次测试，绝不执行任何清表。
+// 注意：在 CI（REQUIRE_INTEGRATION_TESTS=1）下放弃会变成失败而不是跳过。
 func requireIntegrationTestDatabase(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if os.Getenv("ALLOW_DESTRUCTIVE_INTEGRATION_TESTS") != "1" {
-		t.Skip("ALLOW_DESTRUCTIVE_INTEGRATION_TESTS 未显式开启，跳过破坏性集成测试")
+		requireIntegrationEnv(t, "ALLOW_DESTRUCTIVE_INTEGRATION_TESTS 未显式开启，跳过破坏性集成测试")
 	}
 	var dbName string
 	if err := db.Raw("SELECT current_database()").Scan(&dbName).Error; err != nil {

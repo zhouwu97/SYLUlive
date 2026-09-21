@@ -9,6 +9,7 @@ import '../../providers/theme_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../utils/app_feedback.dart';
+import '../../services/request_id.dart';
 import '../image_viewer_screen.dart';
 
 class FeedbackDetailScreen extends StatefulWidget {
@@ -32,6 +33,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   final FocusNode _msgFocusNode = FocusNode();
 
   FeedbackTicket? _ticket;
+  FeedbackInitialSubmission? _initialSubmission;
   List<FeedbackMessage> _messages = [];
   List<FeedbackStatusHistory> _history = [];
   bool _loading = true;
@@ -41,6 +43,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
 
   // 管理员专属状态
   bool _adminInternalNote = false;
+  String? _pendingMessageIdempotencyKey;
 
   @override
   void initState() {
@@ -88,6 +91,20 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         final ticketData = response.data['ticket'] as Map<String, dynamic>;
         final msgList = (response.data['messages'] as List<dynamic>?) ?? [];
         final histList = (response.data['history'] as List<dynamic>?) ?? [];
+        final initialData = response.data['initial_submission'];
+        final incomingMessages = msgList
+            .map((e) => FeedbackMessage.fromJson(e as Map<String, dynamic>))
+            .toList();
+        final previousLastMessageId = _messages.fold<int>(
+          0,
+          (maxId, message) => message.id > maxId ? message.id : maxId,
+        );
+        final hasIncomingMessage = !showLoading &&
+            incomingMessages.any(
+              (message) =>
+                  message.id > previousLastMessageId &&
+                  (widget.isAdmin ? message.isUser : message.isAdmin),
+            );
 
         if (mounted &&
             requestGeneration == _detailRequestGeneration &&
@@ -95,15 +112,22 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
             auth.sessionGeneration == sessionGeneration) {
           setState(() {
             _ticket = FeedbackTicket.fromJson(ticketData);
-            _messages = msgList
-                .map((e) => FeedbackMessage.fromJson(e as Map<String, dynamic>))
-                .toList();
+            _initialSubmission = initialData is Map<String, dynamic>
+                ? FeedbackInitialSubmission.fromJson(initialData)
+                : null;
+            _messages = incomingMessages;
             _history = histList
                 .map((e) =>
                     FeedbackStatusHistory.fromJson(e as Map<String, dynamic>))
                 .toList();
             _loading = false;
           });
+          if (hasIncomingMessage) {
+            AppFeedback.showSnackBar(
+              context,
+              widget.isAdmin ? '收到用户新消息' : '收到官方新回复',
+            );
+          }
         }
       } else {
         if (mounted && requestGeneration == _detailRequestGeneration) {
@@ -123,6 +147,12 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     }
   }
 
+  String _formatDateTime(DateTime value) {
+    final dt = value.toLocal();
+    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
   Future<void> _sendMessage({
     List<int>? imageIds,
     String? content,
@@ -137,6 +167,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
 
     try {
       final auth = context.read<AuthProvider>();
+      final idempotencyKey =
+          _pendingMessageIdempotencyKey ??= RequestId.newId();
       Response response;
 
       if (widget.isAdmin) {
@@ -147,6 +179,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
             'visible_to_user': visibleToUser ?? !_adminInternalNote,
             'image_ids': imageIds,
           },
+          options: Options(headers: {'Idempotency-Key': idempotencyKey}),
         );
       } else {
         response = await auth.dio.post(
@@ -155,10 +188,12 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
             'content': text.isNotEmpty ? text : '[图片]',
             'image_ids': imageIds,
           },
+          options: Options(headers: {'Idempotency-Key': idempotencyKey}),
         );
       }
 
       if (response.statusCode == 200) {
+        _pendingMessageIdempotencyKey = null;
         _msgController.clear();
         await _loadDetail();
         // 滚到底部
@@ -270,6 +305,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         final res = await auth.dio.post(
           '/feedback/tickets/${widget.ticketId}/reopen',
           data: {'reason': reasonController.text.trim()},
+          options: Options(headers: {'Idempotency-Key': RequestId.newId()}),
         );
         if (res.statusCode == 200) {
           if (mounted) {
@@ -290,6 +326,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     try {
       final res = await auth.dio.post(
         '/feedback/tickets/${widget.ticketId}/confirm-resolved',
+        options: Options(headers: {'Idempotency-Key': RequestId.newId()}),
       );
       if (res.statusCode == 200) {
         if (mounted) {
@@ -332,7 +369,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
               ListTile(
                 leading: const Icon(Icons.sync_alt, color: Colors.teal),
                 title: const Text('更新处理进度与状态'),
-                subtitle: Text('当前状态：${_ticket!.statusDisplayName}'),
+                subtitle: Text('当前状态：${_ticket!.adminStatusDisplayName}'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -437,7 +474,10 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     data: {
                       'status': selectedStatus,
                       'status_note': noteController.text.trim(),
+                      'expected_status': _ticket!.status,
                     },
+                    options: Options(
+                        headers: {'Idempotency-Key': RequestId.newId()}),
                   );
                   if (res.statusCode == 200) {
                     if (context.mounted) {
@@ -543,7 +583,10 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     data: {
                       'requested_items': selectedItems.toList(),
                       'comment': commentController.text.trim(),
+                      'expected_status': _ticket!.status,
                     },
+                    options: Options(
+                        headers: {'Idempotency-Key': RequestId.newId()}),
                   );
                   if (res.statusCode == 200) {
                     if (context.mounted) {
@@ -570,29 +613,73 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     );
   }
 
-  void _showUpdatePriorityDialog() {
+  Future<void> _showUpdatePriorityDialog() async {
     final auth = context.read<AuthProvider>();
     String priority = _ticket!.priority;
+    int selectedAssignee = _ticket!.assigneeAdminId ?? 0;
+    List<Map<String, dynamic>> assignees = [];
+    try {
+      final response = await auth.dio.get('/admin/feedback/assignees');
+      final raw = (response.data['assignees'] as List<dynamic>?) ?? [];
+      assignees = raw
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+    } catch (e) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '读取管理员列表失败: $e', isError: true);
+      }
+      return;
+    }
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('设置工单优先级'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: ['P0', 'P1', 'P2', 'P3'].map((p) {
-              return RadioListTile<String>(
-                dense: true,
-                value: p,
-                groupValue: priority,
-                title: Text('$p 级别'),
-                onChanged: (val) {
-                  if (val != null) {
-                    setDialogState(() => priority = val);
-                  }
-                },
-              );
-            }).toList(),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ...['P0', 'P1', 'P2', 'P3'].map((p) {
+                  return RadioListTile<String>(
+                    dense: true,
+                    value: p,
+                    groupValue: priority,
+                    title: Text('$p 级别'),
+                    onChanged: (val) {
+                      if (val != null) setDialogState(() => priority = val);
+                    },
+                  );
+                }),
+                const Divider(),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('负责人',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                RadioListTile<int>(
+                  dense: true,
+                  value: 0,
+                  groupValue: selectedAssignee,
+                  title: const Text('未分配'),
+                  onChanged: (value) =>
+                      setDialogState(() => selectedAssignee = value ?? 0),
+                ),
+                ...assignees.map((assignee) {
+                  final id = (assignee['id'] as num?)?.toInt() ?? 0;
+                  final name = assignee['nickname']?.toString().trim();
+                  return RadioListTile<int>(
+                    dense: true,
+                    value: id,
+                    groupValue: selectedAssignee,
+                    title: Text(name?.isNotEmpty == true ? name! : '管理员 $id'),
+                    onChanged: (value) =>
+                        setDialogState(() => selectedAssignee = value ?? 0),
+                  );
+                }),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -603,12 +690,24 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
               onPressed: () async {
                 Navigator.pop(ctx);
                 try {
-                  await auth.dio.patch(
+                  final res = await auth.dio.patch(
                     '/admin/feedback/tickets/${widget.ticketId}/assignee',
-                    data: {'priority': priority},
+                    data: {
+                      'priority': priority,
+                      'assignee_admin_id': selectedAssignee,
+                    },
+                    options: Options(
+                        headers: {'Idempotency-Key': RequestId.newId()}),
                   );
-                  await _loadDetail();
-                } catch (_) {}
+                  if (res.statusCode == 200) {
+                    await _loadDetail();
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    AppFeedback.showSnackBar(context, '保存失败: $e',
+                        isError: true);
+                  }
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.brandPrimary,
@@ -659,7 +758,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                   borderRadius: BorderRadius.circular(AppRadius.sm),
                 ),
                 child: Text(
-                  _ticket!.statusDisplayName,
+                  _ticket!.statusLabel(isAdmin: widget.isAdmin),
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -693,7 +792,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                 ),
               ),
               Text(
-                '最后更新 ${_ticket!.updatedAt.month.toString().padLeft(2, '0')}-${_ticket!.updatedAt.day.toString().padLeft(2, '0')} ${_ticket!.updatedAt.hour.toString().padLeft(2, '0')}:${_ticket!.updatedAt.minute.toString().padLeft(2, '0')}',
+                '最后更新 ${_formatDateTime(_ticket!.updatedAt)}',
                 style: const TextStyle(fontSize: 11, color: Colors.grey),
               ),
             ],
@@ -723,7 +822,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                         const Icon(Icons.commit, size: 14, color: Colors.grey),
                         const SizedBox(width: 4),
                         Text(
-                          '${h.createdAt.month.toString().padLeft(2, '0')}-${h.createdAt.day.toString().padLeft(2, '0')} ${h.createdAt.hour.toString().padLeft(2, '0')}:${h.createdAt.minute.toString().padLeft(2, '0')}',
+                          _formatDateTime(h.createdAt),
                           style:
                               const TextStyle(fontSize: 11, color: Colors.grey),
                         ),
@@ -752,6 +851,14 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   // 原始提交内容卡片（首次描述、复现信息、附件）
   Widget _buildInitialSubmissionCard(bool isDark) {
     if (_ticket == null) return const SizedBox.shrink();
+    final initial = _initialSubmission;
+    final initialContent = initial?.content.isNotEmpty == true
+        ? initial!.content
+        : _ticket!.description;
+    final initialCreatedAt = initial?.createdAt ?? _ticket!.createdAt;
+    final initialAttachments = initial?.attachments.isNotEmpty == true
+        ? initial!.attachments
+        : _ticket!.attachments;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -772,7 +879,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
               CircleAvatar(
                 radius: 16,
                 backgroundColor: AppColors.brandPrimary.withValues(alpha: 0.15),
-                child: const Text('我',
+                child: Text(widget.isAdmin ? '用户' : '我',
                     style: TextStyle(
                         fontSize: 13,
                         color: AppColors.brandPrimary,
@@ -782,11 +889,11 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('初始反馈',
+                  Text(widget.isAdmin ? '用户初始反馈' : '初始反馈',
                       style:
                           TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                   Text(
-                    '${_ticket!.createdAt.month.toString().padLeft(2, '0')}-${_ticket!.createdAt.day.toString().padLeft(2, '0')} ${_ticket!.createdAt.hour.toString().padLeft(2, '0')}:${_ticket!.createdAt.minute.toString().padLeft(2, '0')}',
+                    _formatDateTime(initialCreatedAt),
                     style: const TextStyle(fontSize: 11, color: Colors.grey),
                   ),
                 ],
@@ -795,7 +902,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
           ),
           const SizedBox(height: 12),
           Text(
-            _ticket!.description,
+            initialContent,
             style: const TextStyle(fontSize: 14, height: 1.5),
           ),
           if (_ticket!.stepsToReproduce != null &&
@@ -836,9 +943,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
               ),
             ),
           ],
-          if (_ticket!.attachments.isNotEmpty) ...[
+          if (initialAttachments.isNotEmpty) ...[
             const SizedBox(height: 12),
-            _buildAttachmentImages(_ticket!.attachments),
+            _buildAttachmentImages(initialAttachments),
           ],
         ],
       ),
@@ -1050,23 +1157,26 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       );
     }
 
-    final isUserMsg = msg.isUser;
+    final isOutgoing = widget.isAdmin ? msg.isAdmin : msg.isUser;
+    final senderLabel = msg.isUser ? (widget.isAdmin ? '用户' : '我') : '官方运营与研发';
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Row(
         mainAxisAlignment:
-            isUserMsg ? MainAxisAlignment.end : MainAxisAlignment.start,
+            isOutgoing ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (!isUserMsg) ...[
-            const CircleAvatar(
+          if (!isOutgoing) ...[
+            CircleAvatar(
               radius: 16,
-              backgroundColor: AppColors.brandPrimary,
-              child: Text('官',
+              backgroundColor: msg.isUser
+                  ? AppColors.brandPrimary.withValues(alpha: 0.15)
+                  : AppColors.brandPrimary,
+              child: Text(msg.isUser ? '用户' : '官',
                   style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.white,
+                      fontSize: 11,
+                      color: msg.isUser ? AppColors.brandPrimary : Colors.white,
                       fontWeight: FontWeight.bold)),
             ),
             const SizedBox(width: 8),
@@ -1075,11 +1185,11 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: isUserMsg
+                color: isOutgoing
                     ? AppColors.brandPrimary
                     : (isDark ? const Color(0xFF1E2226) : Colors.white),
                 borderRadius: BorderRadius.circular(AppRadius.md),
-                border: !isUserMsg
+                border: !isOutgoing
                     ? Border.all(
                         color:
                             isDark ? Colors.white12 : const Color(0xFFE2EFEA),
@@ -1087,20 +1197,22 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     : null,
               ),
               child: Column(
-                crossAxisAlignment: isUserMsg
+                crossAxisAlignment: isOutgoing
                     ? CrossAxisAlignment.end
                     : CrossAxisAlignment.start,
                 children: [
-                  if (!isUserMsg) ...[
+                  if (!isOutgoing) ...[
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text(
-                          '官方运营与研发',
+                        Text(
+                          senderLabel,
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            color: AppColors.brandPrimary,
+                            color: msg.isUser
+                                ? (isDark ? Colors.white70 : Colors.black54)
+                                : AppColors.brandPrimary,
                           ),
                         ),
                         const SizedBox(width: 6),
@@ -1117,7 +1229,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     msg.content,
                     style: TextStyle(
                       fontSize: 14,
-                      color: isUserMsg
+                      color: isOutgoing
                           ? Colors.white
                           : (isDark ? Colors.white : const Color(0xFF1F2328)),
                       height: 1.4,
@@ -1127,7 +1239,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     const SizedBox(height: 8),
                     _buildAttachmentImages(msg.attachments),
                   ],
-                  if (isUserMsg) ...[
+                  if (isOutgoing) ...[
                     const SizedBox(height: 4),
                     Text(
                       '${msg.createdAt.hour.toString().padLeft(2, '0')}:${msg.createdAt.minute.toString().padLeft(2, '0')}',
@@ -1140,15 +1252,17 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
               ),
             ),
           ),
-          if (isUserMsg) ...[
+          if (isOutgoing) ...[
             const SizedBox(width: 8),
             CircleAvatar(
               radius: 16,
-              backgroundColor: AppColors.brandPrimary.withValues(alpha: 0.15),
-              child: const Text('我',
+              backgroundColor: msg.isUser
+                  ? AppColors.brandPrimary.withValues(alpha: 0.15)
+                  : AppColors.brandPrimary,
+              child: Text(msg.isUser ? '我' : '官',
                   style: TextStyle(
                       fontSize: 12,
-                      color: AppColors.brandPrimary,
+                      color: msg.isUser ? AppColors.brandPrimary : Colors.white,
                       fontWeight: FontWeight.bold)),
             ),
           ],
@@ -1246,6 +1360,28 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
             TextButton(
               onPressed: _reopenTicket,
               child: const Text('仍有问题？重新打开'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (isClosed && widget.isAdmin && !_adminInternalNote) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        color: isDark ? const Color(0xFF1E2226) : Colors.white,
+        child: Row(
+          children: [
+            const Icon(Icons.lock_outline, size: 16, color: Colors.grey),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                '工单已关闭，公开回复已禁用；仍可添加内部备注',
+                style: TextStyle(fontSize: 13, color: Colors.grey),
+              ),
+            ),
+            TextButton(
+              onPressed: () => setState(() => _adminInternalNote = true),
+              child: const Text('添加备注'),
             ),
           ],
         ),
@@ -1372,6 +1508,37 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     );
   }
 
+  Widget _buildDateSeparator(DateTime value) {
+    final dt = value.toLocal();
+    final label =
+        '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          const Expanded(child: Divider(indent: 40, endIndent: 10)),
+          Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          const Expanded(child: Divider(indent: 10, endIndent: 40)),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildMessageTimeline(bool isDark) {
+    final children = <Widget>[];
+    String? lastDay;
+    for (final message in _messages) {
+      final dt = message.createdAt.toLocal();
+      final day = '${dt.year}-${dt.month}-${dt.day}';
+      if (day != lastDay) {
+        children.add(_buildDateSeparator(message.createdAt));
+        lastDay = day;
+      }
+      children.add(_buildMessageItem(message, isDark));
+    }
+    return children;
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
@@ -1442,8 +1609,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                           children: [
                             _buildTopStatusCard(isDark),
                             _buildInitialSubmissionCard(isDark),
-                            ..._messages
-                                .map((m) => _buildMessageItem(m, isDark)),
+                            ..._buildMessageTimeline(isDark),
                             _buildResolvedConfirmationCard(isDark),
                           ],
                         ),

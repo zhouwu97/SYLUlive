@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:dio/dio.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/device_diagnostics_service.dart';
+import '../../services/request_id.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../utils/app_feedback.dart';
@@ -29,6 +31,7 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
   bool _includeDiagnostics = true;
   bool _expandRepro = false;
   bool _isSubmitting = false;
+  String? _submitIdempotencyKey;
 
   DeviceDiagnosticsInfo? _diagInfo;
 
@@ -102,10 +105,19 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
         data['diagnostics_json'] = _diagInfo!.toJsonString();
       }
 
-      final response = await auth.dio.post('/feedback/tickets', data: data);
+      final response = await auth.dio.post(
+        '/feedback/tickets',
+        data: data,
+        options: Options(
+          headers: {
+            'Idempotency-Key': _submitIdempotencyKey ??= RequestId.newId(),
+          },
+        ),
+      );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (mounted) {
+          _submitIdempotencyKey = null;
           AppFeedback.showSnackBar(context, '工单已提交，我们会持续跟进！');
           Navigator.pop(context, true);
         }

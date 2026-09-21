@@ -38,6 +38,9 @@ class _FakeAuthProvider extends Fake
   int get accountSessionEpoch => accountEpoch;
 
   @override
+  bool get hasRecoverableSession => false;
+
+  @override
   Future<void> refreshUser() async {
     refreshUserCalls++;
   }

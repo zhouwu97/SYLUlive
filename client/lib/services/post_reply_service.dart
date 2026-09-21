@@ -1,4 +1,8 @@
 import 'dart:io';
+import '../features/emoji/application/emoji_recent_manager.dart';
+import '../features/emoji/adapters/builtin_sticker_adapter.dart';
+import '../features/emoji/adapters/favorite_item_adapter.dart';
+import '../features/emoji/domain/emoji_asset_ref.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -13,7 +17,10 @@ import 'post_reply_cache.dart';
 import '../utils/public_image_compressor.dart';
 
 class PostReplyService {
-  PostReplyService(this._dio);
+  PostReplyService(this._dio, {EmojiRecentManager? recentManager})
+      : _recentManager = recentManager ?? EmojiRecentManager.instance;
+
+  final EmojiRecentManager _recentManager;
 
   final Dio _dio;
   final AsyncActionGuard _actionGuard = AsyncActionGuard();
@@ -27,6 +34,7 @@ class PostReplyService {
     String? idempotencyKey,
   }) {
     final actionKey = _replyActionKey(postId, draft);
+    final recentAccount = _recentManager.userId;
     return _actionGuard.run<Reply>(actionKey, () async {
       final suppliedKey = idempotencyKey?.trim();
       final requestKey = suppliedKey == null || suppliedKey.isEmpty
@@ -40,6 +48,20 @@ class PostReplyService {
       );
       _idempotencyKeys.remove(actionKey);
       _uploadedFileIds.remove(actionKey);
+      await _recentManager.recordConfirmed([
+        ...EmojiRecentManager.unicodeIn(draft.text),
+        if (draft.emojiAsset != null) draft.emojiAsset!,
+        if (draft.sticker != null)
+          EmojiAssetRef(
+              assetKey:
+                  BuiltinStickerAdapter().adapt(draft.sticker!).key.serialized),
+        if (draft.favoriteImage != null)
+          EmojiAssetRef(
+              assetKey: FavoriteItemAdapter()
+                  .adapt(draft.favoriteImage!)
+                  .key
+                  .serialized),
+      ], accountId: recentAccount);
       return reply;
     });
   }
@@ -50,6 +72,16 @@ class PostReplyService {
     required String actionKey,
     required String idempotencyKey,
   }) async {
+    final adapted = draft.sticker != null
+        ? BuiltinStickerAdapter().adapt(draft.sticker!)
+        : draft.favoriteImage != null
+            ? FavoriteItemAdapter().adapt(draft.favoriteImage!)
+            : null;
+    final emojiAsset = draft.emojiAsset ??
+        (adapted == null
+            ? null
+            : EmojiAssetRef(
+                assetKey: adapted.key.serialized, packId: adapted.key.packId));
     final cachedFileIds = _uploadedFileIds[actionKey];
     final fileIds =
         cachedFileIds == null ? <int>[] : List<int>.from(cachedFileIds);
@@ -71,6 +103,10 @@ class PostReplyService {
       data: FormData.fromMap({
         'content': draft.text.trim(),
         if (draft.sticker != null) 'sticker_id': draft.sticker!.id,
+        if (emojiAsset case final asset?) ...{
+          'asset_key': asset.assetKey,
+          if (asset.packId != null) 'pack_id': asset.packId,
+        },
         if (fileIds.isNotEmpty) 'file_ids': fileIds.join(','),
         if (draft.parentReplyId != null)
           'parent_reply_id': draft.parentReplyId.toString(),

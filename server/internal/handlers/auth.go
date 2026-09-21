@@ -115,6 +115,7 @@ type AuthHandler struct {
 
 	jwtSecret         string
 	emailVerification *services.EmailVerificationService
+	security          *services.SecurityEventService
 	schoolDataVisible bool
 }
 
@@ -145,6 +146,11 @@ func NewAuthHandlerWithEmailVerificationAndCleanup(
 		schoolDataVisible: true,
 	}
 
+}
+
+// SetSecurityEventService 接入攻击事件聚合，不改变旧构造函数签名。
+func (h *AuthHandler) SetSecurityEventService(security *services.SecurityEventService) {
+	h.security = security
 }
 
 // SetSchoolPersonalDataVisible 控制账号安全响应中的历史学校个人字段。
@@ -448,6 +454,28 @@ func loginLockDurationForFailures(failures int) time.Duration {
 
 }
 
+// loginSourceLockDurationForFailures 对共享出口提高阈值，避免校园网/运营商 CGNAT
+// 因为少数账号输错密码就连带锁住其他用户；账号维度仍使用较早的保护阈值。
+func loginSourceLockDurationForFailures(failures int) time.Duration {
+	switch {
+	case failures >= 40:
+		return 15 * time.Minute
+	case failures >= 20:
+		return 5 * time.Minute
+	case failures >= 10:
+		return time.Minute
+	default:
+		return 0
+	}
+}
+
+func loginLockDurationForScope(scope string, failures int) time.Duration {
+	if strings.HasPrefix(scope, "ip:") {
+		return loginSourceLockDurationForFailures(failures)
+	}
+	return loginLockDurationForFailures(failures)
+}
+
 func formatRetryAfterCN(d time.Duration) string {
 
 	if d <= 0 {
@@ -496,9 +524,15 @@ func currentLoginLock(account string, now time.Time) (time.Duration, bool) {
 
 	}
 
-	if record.LastFailureAt.IsZero() || now.Sub(record.LastFailureAt) >= loginFailureWindow ||
-		(!record.LockedUntil.IsZero() && !now.Before(record.LockedUntil)) {
+	if record.LastFailureAt.IsZero() || now.Sub(record.LastFailureAt) >= loginFailureWindow {
 		delete(loginThrottleStore.records, account)
+		return 0, false
+	}
+	if !record.LockedUntil.IsZero() && !now.Before(record.LockedUntil) {
+		// 锁定窗口结束后保留失败窗口内的累计次数，才能让 3→4→5 和
+		// 10→20→40 的渐进保护真正生效；超过 15 分钟才整体清零。
+		record.LockedUntil = time.Time{}
+		loginThrottleStore.records[account] = record
 		return 0, false
 	}
 	if record.LockedUntil.IsZero() {
@@ -516,15 +550,17 @@ func registerLoginFailure(account string, now time.Time) time.Duration {
 	defer loginThrottleStore.Unlock()
 
 	record := loginThrottleStore.records[account]
-	if record.LastFailureAt.IsZero() || now.Sub(record.LastFailureAt) >= loginFailureWindow ||
-		(!record.LockedUntil.IsZero() && !now.Before(record.LockedUntil)) {
+	if record.LastFailureAt.IsZero() || now.Sub(record.LastFailureAt) >= loginFailureWindow {
 		record = loginThrottleRecord{}
+	} else if !record.LockedUntil.IsZero() && !now.Before(record.LockedUntil) {
+		// 锁只控制当前一段时间的请求，失败计数仍在 15 分钟窗口内累计。
+		record.LockedUntil = time.Time{}
 	}
 
 	record.FailureCount++
 	record.LastFailureAt = now
 
-	lockFor := loginLockDurationForFailures(record.FailureCount)
+	lockFor := loginLockDurationForScope(account, record.FailureCount)
 
 	if lockFor > 0 {
 
@@ -566,9 +602,15 @@ func (h *AuthHandler) loginLock(scope string, now time.Time) (time.Duration, boo
 		}
 		return 0, false
 	}
-	if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow ||
-		(record.LockedUntil != nil && !now.Before(*record.LockedUntil)) {
+	if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow {
 		_ = h.db.Delete(&record).Error
+		return 0, false
+	}
+	if record.LockedUntil != nil && !now.Before(*record.LockedUntil) {
+		// 只清理已过期的锁，不删除 15 分钟失败窗口内的累计记录。
+		if err := h.db.Model(&record).Update("locked_until", nil).Error; err != nil {
+			return 0, false
+		}
 		return 0, false
 	}
 	if record.LockedUntil == nil {
@@ -590,14 +632,16 @@ func (h *AuthHandler) registerLoginFailure(scope string, now time.Time) time.Dur
 		} else if err != nil {
 			return err
 		}
-		if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow ||
-			(record.LockedUntil != nil && !now.Before(*record.LockedUntil)) {
+		if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow {
 			record.FailureCount = 0
+			record.LockedUntil = nil
+		} else if record.LockedUntil != nil && !now.Before(*record.LockedUntil) {
+			// 锁定结束但失败窗口未结束，保留 FailureCount 继续升级。
 			record.LockedUntil = nil
 		}
 		record.FailureCount++
 		record.LastFailureAt = &now
-		lockFor = loginLockDurationForFailures(record.FailureCount)
+		lockFor = loginLockDurationForScope(scope, record.FailureCount)
 		if lockFor > 0 {
 			until := now.Add(lockFor)
 			record.LockedUntil = &until
@@ -864,7 +908,7 @@ func (h *AuthHandler) VerifyCode(c *gin.Context) {
 	}
 	if h.emailVerification != nil {
 		// 兼容校验不消费验证码，随后 /register 会原子消费它。
-		if err := h.validateEmailCode(qq+"@qq.com", models.EmailVerificationPurposeRegister, input.Code, false); err != nil {
+		if err := h.validateEmailCode(c, qq+"@qq.com", models.EmailVerificationPurposeRegister, input.Code, false); err != nil {
 			writeEmailVerificationError(c, err)
 			return
 		}
@@ -1026,7 +1070,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return recordLegalConsents(tx, user.ID, input.LegalConsentInput, false)
 	}
 	if h.emailVerification != nil {
-		err = h.emailVerification.UseValidatedChallenge(email, models.EmailVerificationPurposeRegister, input.Code, func(tx *gorm.DB, _ models.EmailVerificationChallenge) error {
+		err = h.emailVerification.UseValidatedChallengeWithClientIP(email, models.EmailVerificationPurposeRegister, input.Code, c.ClientIP(), func(tx *gorm.DB, _ models.EmailVerificationChallenge) error {
 			return createUser(tx)
 		})
 	} else {
@@ -1258,7 +1302,7 @@ type LoginInput struct {
 	Account   string `json:"account"`
 	StudentID string `json:"student_id"`
 
-	Password string `json:"password" binding:"required"`
+	Password string `json:"password" binding:"required,max=128"`
 }
 
 // LoginEduInput 缁熶竴鐧诲綍杈撳叆锛堝﹀彿+鏁欏姟瀵嗙爜+APP瀵嗙爜锛
@@ -1484,6 +1528,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入学号或邮箱"})
 		return
 	}
+	if len([]rune(strings.TrimSpace(accountInput))) > 320 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "登录账号过长"})
+		return
+	}
 
 	now := time.Now()
 
@@ -1491,6 +1539,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	ipKey := loginThrottleScope("ip", c.ClientIP())
 	for _, scope := range []string{accountKey, ipKey} {
 		if remaining, locked := h.loginLock(scope, now); locked {
+			// 已进入锁定窗口的请求也要进入安全中心，否则管理员只能看到触发锁定的那一次。
+			h.recordLoginSecurityEvent(c, account, nil, loginLockedOutcome)
 
 			c.Header("Retry-After", strconv.Itoa(int(remaining.Round(time.Second).Seconds())))
 
@@ -1514,6 +1564,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			if ipLockFor := h.registerLoginFailure(ipKey, now); ipLockFor > lockFor {
 				lockFor = ipLockFor
 			}
+			h.recordLoginSecurityEvent(c, account, nil, loginFailureOutcome(lockFor))
 			if lockFor > 0 {
 				c.Header("Retry-After", strconv.Itoa(int(lockFor.Round(time.Second).Seconds())))
 				c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(lockFor))})
@@ -1537,6 +1588,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		if ipLockFor > lockFor {
 			lockFor = ipLockFor
 		}
+		userID := user.ID
+		h.recordLoginSecurityEvent(c, account, &userID, loginFailureOutcome(lockFor))
 
 		if lockFor > 0 {
 
@@ -1558,7 +1611,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	h.clearLoginFailures(accountKey)
-	h.clearLoginFailures(ipKey)
 
 	refreshToken, sessionID, refreshErr := h.issueRefreshSession(user.ID, c)
 	if refreshErr != nil {
@@ -1591,6 +1643,86 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.SetCookie("refresh_token", refreshToken, int(refreshTTL().Seconds()), "/api", "", secureRefresh, true)
 	c.JSON(http.StatusOK, payload)
 
+}
+
+// loginSecurityOutcome 描述一次登录失败在安全中心里应该以什么姿态出现。
+//
+// 「一次密码输错」和「针对同一账号的暴力尝试」必须是两条不同的信号：前者每天都会发生，
+// 属于正常用户行为；后者才是攻击。早期实现让所有登录失败都写 login_bruteforce + medium，
+// 于是安全中心被大量「请求 1 次 / 拦截 0 次 / 登录暴力尝试」淹没，管理员反而看不出
+// 哪个账号真的被锁了。现在的分级：
+//
+//	单次或少量输错（未触发限流） -> login_failed      low    observed
+//	达到账号或来源锁定阈值       -> login_bruteforce  medium throttled
+//	锁定窗口内继续请求           -> login_bruteforce  medium blocked
+//	同来源 10 分钟扫大量账号     -> login_password_spray high throttled
+type loginSecurityOutcome struct {
+	EventType string
+	Severity  string
+	Action    string
+	Blocked   bool
+}
+
+// loginFailureOutcome 把「本次失败是否导致锁定」翻译成事件等级。
+// lockFor 由 registerLoginFailure 返回，>0 表示本次失败已经把账号或来源推入锁定窗口。
+func loginFailureOutcome(lockFor time.Duration) loginSecurityOutcome {
+	if lockFor > 0 {
+		return loginSecurityOutcome{
+			EventType: "login_bruteforce", Severity: models.SecuritySeverityMedium,
+			Action: "throttled", Blocked: true,
+		}
+	}
+	return loginSecurityOutcome{
+		EventType: "login_failed", Severity: models.SecuritySeverityLow, Action: "observed",
+	}
+}
+
+// loginLockedOutcome 表示请求落在既有锁定窗口内、还没有比对密码就被拒绝。
+var loginLockedOutcome = loginSecurityOutcome{
+	EventType: "login_bruteforce", Severity: models.SecuritySeverityMedium,
+	Action: "blocked", Blocked: true,
+}
+
+func (h *AuthHandler) recordLoginSecurityEvent(c *gin.Context, account string, userID *uint, outcome loginSecurityOutcome) {
+	if h.security == nil {
+		return
+	}
+	_ = h.security.Record(services.SecurityEventInput{
+		EventType: outcome.EventType, Severity: outcome.Severity,
+		Route: "/api/login", Method: http.MethodPost, ClientIP: c.ClientIP(),
+		UserAgent: c.GetHeader("User-Agent"), InstallationID: c.GetHeader("X-Installation-ID"),
+		ActorUserID: userID, TargetType: "account", TargetValue: account,
+		TargetMasked: maskLoginSecurityTarget(account), Blocked: outcome.Blocked,
+		Action: outcome.Action,
+	})
+	// 同一来源在 10 分钟内触及 10 个以上不同账号即升级为密码喷洒。
+	// 必须同时统计 login_failed 与 login_bruteforce：只数后者会漏掉「还没触发锁定、
+	// 但已经在批量试账号」的扫描——这正是喷洒检测最容易失真的地方。
+	count, err := h.security.CountDistinctTargetsForEvents(
+		[]string{"login_failed", "login_bruteforce"}, c.ClientIP(), time.Now().Add(-10*time.Minute))
+	if err == nil && count >= 10 {
+		_ = h.security.Record(services.SecurityEventInput{
+			EventType: "login_password_spray", Severity: models.SecuritySeverityHigh,
+			Route: "/api/login", Method: http.MethodPost, ClientIP: c.ClientIP(),
+			UserAgent: c.GetHeader("User-Agent"), Blocked: outcome.Blocked, Action: "throttled",
+			TargetType: "route", TargetValue: "/api/login",
+			// 目标是「一批账号」而不是某一条路由，摘要直接写明覆盖面，
+			// 否则后台会显示成「目标：/api/login」，管理员看不出喷洒规模。
+			TargetMasked: fmt.Sprintf("涉及 %d 个账号（10 分钟）", count),
+			Metadata:     map[string]interface{}{"distinct_targets": count, "window": "10m"},
+		})
+	}
+}
+
+func maskLoginSecurityTarget(account string) string {
+	account = strings.TrimSpace(account)
+	if strings.Contains(account, "@") {
+		return maskEmail(account)
+	}
+	if len(account) <= 4 {
+		return "***"
+	}
+	return account[:2] + "***" + account[len(account)-2:]
 }
 
 // isCookieAuthTransport 由 Web 客户端显式声明 Cookie-only 认证，避免把 JWT 放进浏览器可读响应体。

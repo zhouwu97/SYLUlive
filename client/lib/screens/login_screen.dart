@@ -226,6 +226,19 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     } else {
+      if (result.statusCode == 429) {
+        _codeCooldownTimer?.cancel();
+        setState(() => _codeCooldown = result.retryAfterSeconds ?? 60);
+        _codeCooldownTimer =
+            Timer.periodic(const Duration(seconds: 1), (timer) {
+          if (!mounted || _codeCooldown <= 1) {
+            timer.cancel();
+            if (mounted) setState(() => _codeCooldown = 0);
+            return;
+          }
+          setState(() => _codeCooldown -= 1);
+        });
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(result.errorMessage ?? '发送失败'),
@@ -243,6 +256,9 @@ class _LoginScreenState extends State<LoginScreen> {
     final confirmPasswordController = TextEditingController();
     final formKey = GlobalKey<FormState>();
     var isSubmitting = false;
+    var isSendingCode = false;
+    var codeCooldown = 0;
+    Timer? resendTimer;
     var obscureNewPassword = true;
     var obscureConfirmPassword = true;
 
@@ -310,15 +326,54 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                           IconButton(
-                            tooltip: '发送验证码',
-                            onPressed: isSubmitting
+                            tooltip: codeCooldown > 0 ? '请稍后再试' : '发送验证码',
+                            onPressed: isSubmitting ||
+                                    isSendingCode ||
+                                    codeCooldown > 0
                                 ? null
                                 : () async {
+                                    if (!emailController.text
+                                        .trim()
+                                        .contains('@')) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                            content: Text('请先填写有效邮箱')),
+                                      );
+                                      return;
+                                    }
+                                    setLocalState(() => isSendingCode = true);
                                     final result = await context
                                         .read<AuthProvider>()
                                         .requestEmailPasswordResetCode(
                                           emailController.text.trim(),
                                         );
+                                    if (dialogContext.mounted) {
+                                      final retrySeconds = result.success
+                                          ? 60
+                                          : (result.statusCode == 429
+                                              ? (result.retryAfterSeconds ?? 60)
+                                              : 0);
+                                      setLocalState(() {
+                                        isSendingCode = false;
+                                        codeCooldown = retrySeconds;
+                                      });
+                                      if (retrySeconds > 0) {
+                                        resendTimer?.cancel();
+                                        resendTimer = Timer.periodic(
+                                            const Duration(seconds: 1), (_) {
+                                          if (!dialogContext.mounted) return;
+                                          setLocalState(() {
+                                            if (codeCooldown > 0) {
+                                              codeCooldown--;
+                                            }
+                                            if (codeCooldown == 0) {
+                                              resendTimer?.cancel();
+                                            }
+                                          });
+                                        });
+                                      }
+                                    }
                                     if (mounted) {
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
@@ -332,7 +387,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                       );
                                     }
                                   },
-                            icon: const Icon(Icons.send_outlined),
+                            icon: isSendingCode
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : Text(
+                                    codeCooldown > 0 ? '$codeCooldown' : '发送'),
                           ),
                         ],
                       ),
@@ -460,6 +523,7 @@ class _LoginScreenState extends State<LoginScreen> {
       },
     );
 
+    resendTimer?.cancel();
     emailController.dispose();
     codeController.dispose();
     newPasswordController.dispose();

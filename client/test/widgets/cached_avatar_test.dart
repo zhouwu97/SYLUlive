@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shenliyuan/config/api_constants.dart';
 import 'package:shenliyuan/widgets/cached_avatar.dart';
 
 void main() {
@@ -42,5 +43,16 @@ void main() {
     expect(large.maxHeight, 48);
     expect(dense.maxWidth, 102);
     expect(dense.maxHeight, 102);
+  });
+
+  test('头像缺少缩略图时按缩略图到原图顺序只回退一次', () {
+    const source = '/uploads/avatar-fallback-test.jpg';
+    final candidates = avatarImageCandidates(source);
+
+    expect(candidates, [
+      ApiConstants.fullUrl('/uploads/avatar-fallback-test_v1_thumb.jpg'),
+      ApiConstants.fullUrl(source),
+    ]);
+    expect(avatarImageCandidates(''), isEmpty);
   });
 }

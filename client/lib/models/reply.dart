@@ -11,6 +11,8 @@ class Reply {
   final int authorId;
   final String content;
   final String? stickerId;
+  final String? assetKey;
+  final String? packId;
   final String status;
   final int likeCount;
   final bool isLiked;
@@ -32,6 +34,8 @@ class Reply {
     required this.authorId,
     required this.content,
     this.stickerId,
+    this.assetKey,
+    this.packId,
     this.status = 'normal',
     this.likeCount = 0,
     this.isLiked = false,
@@ -55,6 +59,8 @@ class Reply {
       authorId: json['author_id'] ?? 0,
       content: json['content'] ?? '',
       stickerId: json['sticker_id']?.toString(),
+      assetKey: json['asset_key']?.toString(),
+      packId: json['pack_id']?.toString(),
       status: json['status'] ?? 'normal',
       likeCount: json['like_count'] ?? 0,
       isLiked: json['is_liked'] == true,
@@ -102,6 +108,8 @@ class Reply {
     int? authorId,
     String? content,
     String? stickerId,
+    String? assetKey,
+    String? packId,
     String? status,
     int? likeCount,
     bool? isLiked,
@@ -121,6 +129,8 @@ class Reply {
       authorId: authorId ?? this.authorId,
       content: content ?? this.content,
       stickerId: stickerId ?? this.stickerId,
+      assetKey: assetKey ?? this.assetKey,
+      packId: packId ?? this.packId,
       status: status ?? this.status,
       likeCount: likeCount ?? this.likeCount,
       isLiked: isLiked ?? this.isLiked,

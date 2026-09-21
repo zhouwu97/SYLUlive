@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shenliyuan/features/emoji/application/emoji_recent_manager.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/emoji_favorite_service.dart';
 import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
@@ -22,6 +23,8 @@ void main() {
           height: 280,
           child: AppEmojiPanel(
             favoriteService: service,
+            recentManager: EmojiRecentManager(
+                preferencesLoader: () async => MemoryPreferencesStore()),
             onEmojiSelected: (_) {},
             onBackspace: () {},
           ),
@@ -58,6 +61,8 @@ void main() {
           height: 280,
           child: AppEmojiPanel(
             favoriteService: service,
+            recentManager: EmojiRecentManager(
+                preferencesLoader: () async => MemoryPreferencesStore()),
             onEmojiSelected: (_) {},
             onBackspace: () {},
           ),
@@ -99,6 +104,8 @@ void main() {
           height: 280,
           child: AppEmojiPanel(
             favoriteService: service,
+            recentManager: EmojiRecentManager(
+                preferencesLoader: () async => MemoryPreferencesStore()),
             onEmojiSelected: (_) {},
             onBackspace: () {},
           ),
@@ -139,6 +146,8 @@ void main() {
           height: 280,
           child: AppEmojiPanel(
             favoriteService: service,
+            recentManager: EmojiRecentManager(
+                preferencesLoader: () async => MemoryPreferencesStore()),
             onEmojiSelected: (_) {},
             onBackspace: () {},
           ),
@@ -165,6 +174,8 @@ void main() {
           height: 280,
           child: AppEmojiPanel(
             favoriteService: service,
+            recentManager: EmojiRecentManager(
+                preferencesLoader: () async => MemoryPreferencesStore()),
             onEmojiSelected: (emoji) => selected = emoji,
             onBackspace: () => deleted = true,
           ),
@@ -205,6 +216,8 @@ void main() {
           height: 240,
           child: AppEmojiPanel(
             favoriteService: service,
+            recentManager: EmojiRecentManager(
+                preferencesLoader: () async => MemoryPreferencesStore()),
             onEmojiSelected: (_) {},
             onStickerSelected: (_) {},
             onBackspace: () {},
@@ -240,6 +253,8 @@ void main() {
           height: 280,
           child: AppEmojiPanel(
             favoriteService: service,
+            recentManager: EmojiRecentManager(
+                preferencesLoader: () async => MemoryPreferencesStore()),
             onEmojiSelected: (_) {},
             onFavoriteImageSelected: (favorite) => selected = favorite,
             onBackspace: () {},
@@ -277,6 +292,8 @@ void main() {
             height: 280,
             child: AppEmojiPanel(
               favoriteService: service,
+              recentManager: EmojiRecentManager(
+                  preferencesLoader: () async => MemoryPreferencesStore()),
               onEmojiSelected: (_) {},
               onBackspace: () {},
             ),
@@ -313,6 +330,8 @@ void main() {
           height: 320,
           child: AppEmojiPanel(
             favoriteService: service,
+            recentManager: EmojiRecentManager(
+                preferencesLoader: () async => MemoryPreferencesStore()),
             onEmojiSelected: (_) {},
             onStickerSelected: (_) {},
             onBackspace: () {},
@@ -350,6 +369,8 @@ void main() {
           height: 320,
           child: AppEmojiPanel(
             favoriteService: service,
+            recentManager: EmojiRecentManager(
+                preferencesLoader: () async => MemoryPreferencesStore()),
             onEmojiSelected: (_) {},
             onStickerSelected: (_) {},
             onBackspace: () {},
@@ -378,11 +399,12 @@ void main() {
       1200,
     );
     await tester.pumpAndSettle();
+    expect(find.text('发送表情后会显示在这里'), findsOneWidget);
+    await tester.flingFrom(
+        tester.getCenter(pageView), const Offset(-500, 0), 1200);
+    await tester.pumpAndSettle();
     expect(
-      find.byKey(
-        ValueKey('sticker-pack-title-${appStickerGroups.first.id}'),
-      ),
-      findsOneWidget,
-    );
+        find.byKey(ValueKey('sticker-pack-title-${appStickerGroups.first.id}')),
+        findsOneWidget);
   });
 }

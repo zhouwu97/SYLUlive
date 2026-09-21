@@ -9,6 +9,7 @@ import 'package:shenliyuan/providers/message_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
+import 'package:shenliyuan/config/private_chat_policy.dart';
 import 'package:shenliyuan/screens/chat_detail_screen.dart';
 import 'package:shenliyuan/screens/home_screen.dart';
 import 'package:shenliyuan/screens/market_screen.dart';
@@ -41,6 +42,9 @@ class _HomeAuthProvider extends ChangeNotifier implements AuthProvider {
 
   @override
   int get accountSessionEpoch => 0;
+
+  @override
+  bool get hasRecoverableSession => false;
 
   @override
   Dio get dio => client;
@@ -150,19 +154,27 @@ void main() {
     );
 
     // 第一帧（postFrameCallback 执行前）：StartupNavigationGate 遮罩存在，完全挡住底层内容
-    expect(find.byKey(const ValueKey('startup-navigation-gate')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('startup-navigation-gate')), findsOneWidget);
 
-    // 执行 postFrameCallback 后 0ms 压栈 ChatDetailScreen
+    // 执行 postFrameCallback 后，只有私聊开放时才压栈 ChatDetailScreen。
     await tester.pump();
-    expect(find.byType(ChatDetailScreen), findsOneWidget);
+    if (PrivateChatPolicy.enabled) {
+      expect(find.byType(ChatDetailScreen), findsOneWidget);
 
-    // 压栈下一帧：Route 已经覆盖，Gate 遮罩必须在此帧立即解除，无需等待深层页 pop
-    await tester.pump();
-    expect(find.byKey(const ValueKey('startup-navigation-gate')), findsNothing);
+      // 压栈下一帧：Route 已经覆盖，Gate 遮罩必须在此帧立即解除，无需等待深层页 pop
+      await tester.pump();
+      expect(
+          find.byKey(const ValueKey('startup-navigation-gate')), findsNothing);
 
-    // 退出私信页面（模拟用户返回）
-    Navigator.of(tester.element(find.byType(ChatDetailScreen))).pop();
-    await tester.pumpAndSettle();
+      // 退出私信页面（模拟用户返回）
+      Navigator.of(tester.element(find.byType(ChatDetailScreen))).pop();
+      await tester.pumpAndSettle();
+    } else {
+      // 私聊关闭时丢弃持久化深层页，但仍必须释放启动门禁，不能卡在遮罩上。
+      expect(find.byType(ChatDetailScreen), findsNothing);
+      await tester.pump();
+    }
 
     // 返回首页后：遮罩与转圈彻底不存在，干净展示 underlyingRootTab = 3 (校园)
     expect(find.byKey(const ValueKey('startup-navigation-gate')), findsNothing);
@@ -189,7 +201,8 @@ void main() {
       settleAfterPump: false,
     );
 
-    expect(find.byKey(const ValueKey('startup-navigation-gate')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('startup-navigation-gate')), findsOneWidget);
 
     await tester.pump();
     expect(find.byType(PostDetailScreen), findsOneWidget);
@@ -223,7 +236,8 @@ void main() {
       settleAfterPump: false,
     );
 
-    expect(find.byKey(const ValueKey('startup-navigation-gate')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('startup-navigation-gate')), findsOneWidget);
 
     await tester.pump();
     expect(find.byType(NotificationsScreen), findsOneWidget);

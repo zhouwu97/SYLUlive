@@ -1787,6 +1787,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     final edu = context.read<EduProvider>();
     final sc = context.read<CourseScheduleProvider>();
+    final messenger = ScaffoldMessenger.of(context);
 
     final term = await CourseTermSwitchSheet.show(
       context,
@@ -1795,15 +1796,20 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
 
     if (term == null || !mounted) return;
-
     setState(() {
       _didLoad = true;
       _initializing = false;
     });
 
-    await sc.switchTerm(term, loadCache: true);
+    final restored = await sc.switchTerm(term, loadCache: true);
 
     if (!mounted) return;
+
+    if (!restored && sc.errorMessage != null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(sc.errorMessage!)),
+      );
+    }
 
     setState(() {
       _resetWeekPager(sc, _pageAnchorDate(sc));

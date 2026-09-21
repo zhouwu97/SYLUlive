@@ -514,13 +514,67 @@ void main() {
       expect(fixture.provider.getCachedGrades('2025', 3)?.grades.length, 2);
 
       // 手动刷新确认（allowReducedCount: true）
-      final manualResult =
-          await fixture.provider.fetchGrades('2025', 3, allowReducedCount: true);
+      final manualResult = await fixture.provider
+          .fetchGrades('2025', 3, allowReducedCount: true);
       expect(manualResult.success, isTrue);
       // 显式允许后接受覆盖
       expect(fixture.provider.getCachedGrades('2025', 3)?.grades.length, 1);
 
       fixture.dispose();
+    });
+
+    test('减少确认签名不匹配时提交边界保护内存与密文快照', () async {
+      final fixture = await createFixture(
+        saveAcademicData: true,
+        grades: GradeFetchResult(
+          grades: [
+            RawGrade(raw: {'kcmc': '高等数学', 'cj': '90', 'xf': 4, 'jd': 4.0}),
+            RawGrade(raw: {'kcmc': '线性代数', 'cj': '85', 'xf': 3, 'jd': 3.5}),
+          ],
+          pages: 1,
+        ),
+      );
+      addTearDown(fixture.dispose);
+      await AcademicPersistenceRegistry.waitUntilReady('app-user-a');
+      AcademicPersistenceRegistry.set('app-user-a', enabled: true);
+
+      await fixture.provider.fetchGrades('2025', 3);
+      fixture.repository.grades = GradeFetchResult(
+        grades: [
+          RawGrade(raw: {'kcmc': '高等数学', 'cj': '90', 'xf': 4, 'jd': 4.0}),
+        ],
+        pages: 1,
+      );
+      final firstReduction = await fixture.provider.fetchGrades('2025', 3);
+      expect(firstReduction.success, isTrue);
+      expect(fixture.provider.getCachedGrades('2025', 3)?.grades, hasLength(2));
+      final firstSignature =
+          (firstReduction.data!.map(GradeStableKey.of).toList()..sort());
+      final approvedFirstCandidate =
+          '${firstSignature.length}#${firstSignature.join(',')}';
+
+      fixture.repository.grades = GradeFetchResult(grades: const [], pages: 1);
+      final rejected = await fixture.provider.fetchGrades(
+        '2025',
+        3,
+        allowReducedCount: true,
+        approvedReductionSignature: approvedFirstCandidate,
+      );
+
+      expect(rejected.success, isTrue);
+      expect(fixture.provider.getCachedGrades('2025', 3)?.grades, hasLength(2));
+      final snapshot = await createSnapshotStore('app-user-a').read(
+        type: PersonalDataType.academic,
+        sourceSystem: 'edu',
+        sourceAccountId: '2403130233',
+      );
+      expect(snapshot, isNotNull);
+      final restored = await AcademicCacheStore(
+        appUserId: 'app-user-a',
+        sourceAccountId: '2403130233',
+        snapshotStore: createSnapshotStore('app-user-a'),
+      ).readSnapshot();
+      expect(restored?.terms['2025_3']?.grades, hasLength(2));
     });
   });
 }

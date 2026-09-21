@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -84,16 +85,17 @@ func (h *FeedbackTicketHandler) AdminListTickets(c *gin.Context) {
 	}
 
 	var tickets []models.FeedbackTicket
-	if err := query.Order("updated_at DESC").Offset(offset).Limit(limit).Find(&tickets).Error; err != nil {
+	if err := query.Order("updated_at DESC, id DESC").Offset(offset).Limit(limit).Find(&tickets).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询工单失败"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"total":   total,
-		"page":    page,
-		"limit":   limit,
-		"tickets": tickets,
+		"total":    total,
+		"page":     page,
+		"limit":    limit,
+		"has_more": int64(offset+len(tickets)) < total,
+		"tickets":  tickets,
 	})
 }
 
@@ -143,45 +145,30 @@ func (h *FeedbackTicketHandler) AdminGetTicketDetail(c *gin.Context) {
 		return
 	}
 
-	now := time.Now()
-	// 若管理员未曾查看，标记为已查看
-	if !ticket.AdminViewed {
-		updates := map[string]interface{}{
-			"admin_viewed": true,
-		}
-		if ticket.AdminFirstViewedAt == nil {
-			updates["admin_first_viewed_at"] = now
-			ticket.AdminFirstViewedAt = &now
-		}
-		if err := h.db.Model(&ticket).Updates(updates).Error; err != nil {
-			// 写失败被吞会让管理端未读角标长期不消；这里直接失败，
-			// 且不把 AdminViewed 置真，避免响应与库内状态不一致。
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "标记工单已读失败"})
-			return
-		}
-		ticket.AdminViewed = true
-	}
-
-	// 读取全部消息（管理员端包含 internal_note）
-	var messages []models.FeedbackMessage
-	if err := h.db.Where("ticket_id = ?", ticket.ID).
-		Preload("Attachments.File").
-		Preload("Sender").
-		Order("created_at ASC").
-		Find(&messages).Error; err != nil {
+	// 先完整读取详情，确认响应内容可用后再标记管理队列已查看。
+	messages, initialSubmission, err := h.loadFeedbackConversation(ticket.ID, false)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取消息失败"})
 		return
 	}
 
-	// 初始附件（同用户端：读失败必须暴露，否则管理员看到的是残缺详情）
+	// 初始附件优先从初始消息读取，兼容历史 message_id 为空的记录。
 	var attachments []models.FeedbackAttachment
-	if err := h.db.Where("ticket_id = ? AND (message_id IS NULL OR message_id = 0)", ticket.ID).
-		Preload("File").
-		Find(&attachments).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单附件失败"})
-		return
+	if initialSubmission != nil {
+		attachments = initialSubmission.Attachments
+	}
+	if len(attachments) == 0 {
+		if err := h.db.Where("ticket_id = ? AND (message_id IS NULL OR message_id = 0)", ticket.ID).
+			Preload("File").
+			Find(&attachments).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取工单附件失败"})
+			return
+		}
 	}
 	ticket.Attachments = attachments
+	if initialSubmission != nil && len(initialSubmission.Attachments) == 0 {
+		initialSubmission.Attachments = attachments
+	}
 
 	// 状态变更记录
 	var history []models.FeedbackStatusHistory
@@ -190,10 +177,45 @@ func (h *FeedbackTicketHandler) AdminGetTicketDetail(c *gin.Context) {
 		return
 	}
 
+	// 只把本次完整读取到的用户消息标记为已查看。若读取过程中出现新用户消息，
+	// 条件更新不会命中，避免新消息被误判为已读；该操作不推进业务 updated_at。
+	if !ticket.AdminViewed {
+		now := time.Now()
+		lastUserMessageID := uint(0)
+		for _, message := range messages {
+			if message.SenderType == "user" && message.ID > lastUserMessageID {
+				lastUserMessageID = message.ID
+			}
+		}
+		if initialSubmission != nil && initialSubmission.SenderType == "user" && initialSubmission.MessageID > lastUserMessageID {
+			lastUserMessageID = initialSubmission.MessageID
+		}
+
+		updates := map[string]interface{}{"admin_viewed": true}
+		if ticket.AdminFirstViewedAt == nil {
+			updates["admin_first_viewed_at"] = now
+		}
+		result := h.db.Model(&models.FeedbackTicket{}).
+			Where("id = ? AND admin_viewed = ?", ticket.ID, false).
+			Where("NOT EXISTS (SELECT 1 FROM feedback_messages WHERE ticket_id = ? AND sender_type = ? AND id > ?)", ticket.ID, "user", lastUserMessageID).
+			UpdateColumns(updates)
+		if result.Error != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "标记工单已读失败"})
+			return
+		}
+		if result.RowsAffected > 0 {
+			ticket.AdminViewed = true
+			if ticket.AdminFirstViewedAt == nil {
+				ticket.AdminFirstViewedAt = &now
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"ticket":   ticket,
-		"messages": messages,
-		"history":  history,
+		"ticket":             ticket,
+		"initial_submission": initialSubmission,
+		"messages":           messages,
+		"history":            history,
 	})
 }
 
@@ -209,12 +231,6 @@ func (h *FeedbackTicketHandler) AdminAddMessage(c *gin.Context) {
 	rawUID, _ := c.Get("user_id")
 	adminID := rawUID.(uint)
 	ticketID := c.Param("id")
-
-	var ticket models.FeedbackTicket
-	if err := h.db.First(&ticket, ticketID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "工单不存在"})
-		return
-	}
 
 	var input AdminAddMessageInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -238,23 +254,34 @@ func (h *FeedbackTicketHandler) AdminAddMessage(c *gin.Context) {
 		attachedFiles = files
 	}
 
-	now := time.Now()
 	msgType := models.FeedbackMsgText
 	if !input.VisibleToUser {
 		msgType = models.FeedbackMsgInternalNote
 	}
 
-	msg := models.FeedbackMessage{
-		TicketID:      ticket.ID,
-		SenderType:    "admin",
-		SenderID:      adminID,
-		MessageType:   msgType,
-		Content:       input.Content,
-		VisibleToUser: input.VisibleToUser,
-		CreatedAt:     now,
-	}
+	var ticket models.FeedbackTicket
+	var msg models.FeedbackMessage
+	autoAccepted := false
 
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&ticket, ticketID).Error; err != nil {
+			return err
+		}
+		if input.VisibleToUser && ticket.Status == models.FeedbackStatusClosed {
+			return errFeedbackTicketClosed
+		}
+
+		now := time.Now()
+		msg = models.FeedbackMessage{
+			TicketID:      ticket.ID,
+			SenderType:    "admin",
+			SenderID:      adminID,
+			MessageType:   msgType,
+			Content:       input.Content,
+			VisibleToUser: input.VisibleToUser,
+			CreatedAt:     now,
+		}
 		if err := tx.Create(&msg).Error; err != nil {
 			return err
 		}
@@ -289,6 +316,25 @@ func (h *FeedbackTicketHandler) AdminAddMessage(c *gin.Context) {
 			}
 			ticketUpdates["latest_reply_snippet"] = "官方：" + snippet
 
+			// 首次公开回复代表管理员已经开始处理，但查看详情本身不应自动受理。
+			if ticket.Status == models.FeedbackStatusPending {
+				autoAccepted = true
+				ticketUpdates["status"] = models.FeedbackStatusAccepted
+				ticketUpdates["status_note"] = "管理员已回复，工单已受理"
+				history := models.FeedbackStatusHistory{
+					TicketID:     ticket.ID,
+					OperatorID:   adminID,
+					OperatorType: "admin",
+					OldStatus:    models.FeedbackStatusPending,
+					NewStatus:    models.FeedbackStatusAccepted,
+					Note:         "首次官方公开回复自动受理",
+					CreatedAt:    now,
+				}
+				if err := tx.Create(&history).Error; err != nil {
+					return err
+				}
+			}
+
 			// 创建站内通知
 			notif := models.Notification{
 				UserID:    ticket.UserID,
@@ -298,13 +344,23 @@ func (h *FeedbackTicketHandler) AdminAddMessage(c *gin.Context) {
 				FromUID:   adminID,
 				CreatedAt: now,
 			}
-			_ = tx.Create(&notif).Error
+			if err := tx.Create(&notif).Error; err != nil {
+				return err
+			}
 		}
 
 		return tx.Model(&ticket).Updates(ticketUpdates).Error
 	})
 
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "工单不存在"})
+			return
+		}
+		if errors.Is(err, errFeedbackTicketClosed) {
+			c.JSON(http.StatusConflict, gin.H{"code": "feedback_closed_public_reply", "error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "消息发送失败"})
 		return
 	}
@@ -324,16 +380,20 @@ func (h *FeedbackTicketHandler) AdminAddMessage(c *gin.Context) {
 	}
 
 	_ = h.db.Preload("Attachments.File").Preload("Sender").First(&msg, msg.ID).Error
+	_ = h.db.Preload("User").Preload("AssigneeAdmin").First(&ticket, ticket.ID).Error
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": msg,
+		"message":       msg,
+		"ticket":        ticket,
+		"auto_accepted": autoAccepted,
 	})
 }
 
 // AdminUpdateStatusInput 更新状态入参
 type AdminUpdateStatusInput struct {
-	Status     string `json:"status" binding:"required"`
-	StatusNote string `json:"status_note"`
+	Status         string `json:"status" binding:"required"`
+	StatusNote     string `json:"status_note"`
+	ExpectedStatus string `json:"expected_status"`
 }
 
 var statusDisplayNames = map[string]string{
@@ -347,17 +407,51 @@ var statusDisplayNames = map[string]string{
 	models.FeedbackStatusClosed:        "已关闭",
 }
 
+// feedbackStatusTransitionAllowed 只允许沿着工单处理链路向前流转，
+// waiting_user 由管理员请求补充信息进入，由用户补充后回到 accepted。
+func feedbackStatusTransitionAllowed(oldStatus, newStatus string) bool {
+	if oldStatus == newStatus {
+		return true
+	}
+	switch oldStatus {
+	case models.FeedbackStatusPending:
+		return newStatus == models.FeedbackStatusAccepted
+	case models.FeedbackStatusAccepted:
+		return newStatus == models.FeedbackStatusInvestigating ||
+			newStatus == models.FeedbackStatusFixing ||
+			newStatus == models.FeedbackStatusTesting ||
+			newStatus == models.FeedbackStatusResolved ||
+			newStatus == models.FeedbackStatusWaitingUser
+	case models.FeedbackStatusWaitingUser:
+		return newStatus == models.FeedbackStatusAccepted
+	case models.FeedbackStatusInvestigating:
+		return newStatus == models.FeedbackStatusFixing ||
+			newStatus == models.FeedbackStatusTesting ||
+			newStatus == models.FeedbackStatusResolved ||
+			newStatus == models.FeedbackStatusWaitingUser
+	case models.FeedbackStatusFixing:
+		return newStatus == models.FeedbackStatusTesting ||
+			newStatus == models.FeedbackStatusResolved ||
+			newStatus == models.FeedbackStatusWaitingUser
+	case models.FeedbackStatusTesting:
+		return newStatus == models.FeedbackStatusResolved ||
+			newStatus == models.FeedbackStatusWaitingUser
+	case models.FeedbackStatusResolved:
+		return newStatus == models.FeedbackStatusClosed
+	case models.FeedbackStatusClosed:
+		return false
+	default:
+		return false
+	}
+}
+
+var errFeedbackTicketTransitionInvalid = errors.New("非法的工单状态流转")
+
 // AdminUpdateStatus 管理员更新工单处理进度
 func (h *FeedbackTicketHandler) AdminUpdateStatus(c *gin.Context) {
 	rawUID, _ := c.Get("user_id")
 	adminID := rawUID.(uint)
 	ticketID := c.Param("id")
-
-	var ticket models.FeedbackTicket
-	if err := h.db.First(&ticket, ticketID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "工单不存在"})
-		return
-	}
 
 	var input AdminUpdateStatusInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -373,17 +467,27 @@ func (h *FeedbackTicketHandler) AdminUpdateStatus(c *gin.Context) {
 	}
 
 	now := time.Now()
-	oldStatus := ticket.Status
 	statusNote := strings.TrimSpace(input.StatusNote)
+	expectedStatus := strings.ToLower(strings.TrimSpace(input.ExpectedStatus))
+	var ticket models.FeedbackTicket
+	var changed bool
 
 	err := h.db.Transaction(func(tx *gorm.DB) error {
-		var lockedTicket models.FeedbackTicket
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&lockedTicket, ticketID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&ticket, ticketID).Error; err != nil {
 			return err
 		}
-		ticket = lockedTicket
-		oldStatus = lockedTicket.Status
+		if expectedStatus != "" && ticket.Status != expectedStatus {
+			return errFeedbackTicketStateConflict
+		}
+		if !feedbackStatusTransitionAllowed(ticket.Status, newStatus) {
+			return errFeedbackTicketTransitionInvalid
+		}
+		if ticket.Status == newStatus && ticket.StatusNote == statusNote {
+			changed = false
+			return nil
+		}
+		changed = true
+		oldStatus := ticket.Status
 		updates := map[string]interface{}{
 			"status":            newStatus,
 			"status_note":       statusNote,
@@ -399,11 +503,22 @@ func (h *FeedbackTicketHandler) AdminUpdateStatus(c *gin.Context) {
 			updates["latest_reply_snippet"] = fmt.Sprintf("状态变更：%s", name)
 		}
 
-		if newStatus == models.FeedbackStatusResolved && ticket.ResolvedAt == nil {
-			updates["resolved_at"] = now
-		}
-		if newStatus == models.FeedbackStatusClosed && ticket.ClosedAt == nil {
-			updates["closed_at"] = now
+		switch newStatus {
+		case models.FeedbackStatusResolved:
+			if ticket.ResolvedAt == nil {
+				updates["resolved_at"] = now
+			}
+			updates["closed_at"] = nil
+		case models.FeedbackStatusClosed:
+			if ticket.ResolvedAt == nil {
+				updates["resolved_at"] = now
+			}
+			if ticket.ClosedAt == nil {
+				updates["closed_at"] = now
+			}
+		default:
+			updates["resolved_at"] = nil
+			updates["closed_at"] = nil
 		}
 
 		if err := tx.Model(&ticket).Updates(updates).Error; err != nil {
@@ -456,7 +571,27 @@ func (h *FeedbackTicketHandler) AdminUpdateStatus(c *gin.Context) {
 	})
 
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "工单不存在"})
+			return
+		}
+		if errors.Is(err, errFeedbackTicketStateConflict) {
+			c.JSON(http.StatusConflict, gin.H{"code": "feedback_status_conflict", "error": err.Error()})
+			return
+		}
+		if errors.Is(err, errFeedbackTicketTransitionInvalid) {
+			c.JSON(http.StatusConflict, gin.H{"code": "feedback_invalid_transition", "error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新状态失败"})
+		return
+	}
+	if !changed {
+		c.JSON(http.StatusOK, gin.H{
+			"message":   "状态未变化",
+			"ticket":    ticket,
+			"no_change": true,
+		})
 		return
 	}
 
@@ -486,6 +621,7 @@ func (h *FeedbackTicketHandler) AdminUpdateStatus(c *gin.Context) {
 type AdminRequestInfoInput struct {
 	RequestedItems []string `json:"requested_items" binding:"required"`
 	Comment        string   `json:"comment"`
+	ExpectedStatus string   `json:"expected_status"`
 }
 
 // AdminRequestInfo 管理员结构化请求用户补充信息
@@ -494,12 +630,6 @@ func (h *FeedbackTicketHandler) AdminRequestInfo(c *gin.Context) {
 	adminID := rawUID.(uint)
 	ticketID := c.Param("id")
 
-	var ticket models.FeedbackTicket
-	if err := h.db.First(&ticket, ticketID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "工单不存在"})
-		return
-	}
-
 	var input AdminRequestInfoInput
 	if err := c.ShouldBindJSON(&input); err != nil || len(input.RequestedItems) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请至少选择一项需要用户补充的信息"})
@@ -507,9 +637,10 @@ func (h *FeedbackTicketHandler) AdminRequestInfo(c *gin.Context) {
 	}
 
 	now := time.Now()
-	oldStatus := ticket.Status
 	newStatus := models.FeedbackStatusWaitingUser
 	comment := strings.TrimSpace(input.Comment)
+	expectedStatus := strings.ToLower(strings.TrimSpace(input.ExpectedStatus))
+	var ticket models.FeedbackTicket
 
 	metaBytes, _ := json.Marshal(map[string]interface{}{
 		"requested_items": input.RequestedItems,
@@ -517,6 +648,16 @@ func (h *FeedbackTicketHandler) AdminRequestInfo(c *gin.Context) {
 	})
 
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&ticket, ticketID).Error; err != nil {
+			return err
+		}
+		if expectedStatus != "" && ticket.Status != expectedStatus {
+			return errFeedbackTicketStateConflict
+		}
+		if !feedbackStatusTransitionAllowed(ticket.Status, newStatus) {
+			return errFeedbackTicketTransitionInvalid
+		}
+		oldStatus := ticket.Status
 		updates := map[string]interface{}{
 			"status":               newStatus,
 			"status_note":          "需要用户补充更多排查信息",
@@ -574,6 +715,18 @@ func (h *FeedbackTicketHandler) AdminRequestInfo(c *gin.Context) {
 	})
 
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "工单不存在"})
+			return
+		}
+		if errors.Is(err, errFeedbackTicketStateConflict) {
+			c.JSON(http.StatusConflict, gin.H{"code": "feedback_status_conflict", "error": err.Error()})
+			return
+		}
+		if errors.Is(err, errFeedbackTicketTransitionInvalid) {
+			c.JSON(http.StatusConflict, gin.H{"code": "feedback_invalid_transition", "error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "操作失败，请稍后重试"})
 		return
 	}
@@ -606,15 +759,23 @@ type AdminUpdateAssigneeInput struct {
 	AssigneeAdminID *uint   `json:"assignee_admin_id"`
 }
 
-// AdminUpdateAssignee 管理员设置负责人与优先级
-func (h *FeedbackTicketHandler) AdminUpdateAssignee(c *gin.Context) {
-	ticketID := c.Param("id")
-
-	var ticket models.FeedbackTicket
-	if err := h.db.First(&ticket, ticketID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "工单不存在"})
+// AdminListAssignees 返回可分配工单的管理员，供管理端使用真实用户列表。
+func (h *FeedbackTicketHandler) AdminListAssignees(c *gin.Context) {
+	var assignees []models.User
+	if err := h.db.Select("id", "student_id", "nickname", "avatar", "role").
+		Where("role IN ?", []models.Role{models.RoleAdmin, models.RoleSuperAdmin}).
+		Order("nickname ASC, id ASC").Find(&assignees).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取管理员列表失败"})
 		return
 	}
+	c.JSON(http.StatusOK, gin.H{"assignees": assignees})
+}
+
+// AdminUpdateAssignee 管理员设置负责人与优先级
+func (h *FeedbackTicketHandler) AdminUpdateAssignee(c *gin.Context) {
+	rawUID, _ := c.Get("user_id")
+	adminID := rawUID.(uint)
+	ticketID := c.Param("id")
 
 	var input AdminUpdateAssigneeInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -622,32 +783,85 @@ func (h *FeedbackTicketHandler) AdminUpdateAssignee(c *gin.Context) {
 		return
 	}
 
-	updates := map[string]interface{}{
-		"updated_at": time.Now(),
-	}
-
-	if input.Priority != nil {
-		p := strings.ToUpper(strings.TrimSpace(*input.Priority))
-		if p == "P0" || p == "P1" || p == "P2" || p == "P3" {
-			updates["priority"] = p
+	var ticket models.FeedbackTicket
+	var changed bool
+	var auditDetail []string
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&ticket, ticketID).Error; err != nil {
+			return err
 		}
-	}
 
-	if input.AssigneeAdminID != nil {
-		if *input.AssigneeAdminID == 0 {
-			updates["assignee_admin_id"] = nil
-		} else {
-			// 校验 admin 是否存在
-			var admin models.User
-			if err := h.db.Where("id = ? AND role IN ?", *input.AssigneeAdminID, []models.Role{models.RoleAdmin, models.RoleSuperAdmin}).
-				First(&admin).Error; err == nil {
-				updates["assignee_admin_id"] = *input.AssigneeAdminID
+		updates := map[string]interface{}{}
+		if input.Priority != nil {
+			p := strings.ToUpper(strings.TrimSpace(*input.Priority))
+			if p != models.FeedbackPriorityP0 && p != models.FeedbackPriorityP1 &&
+				p != models.FeedbackPriorityP2 && p != models.FeedbackPriorityP3 {
+				return fmt.Errorf("非法的工单优先级")
+			}
+			if ticket.Priority != p {
+				updates["priority"] = p
+				auditDetail = append(auditDetail, fmt.Sprintf("priority: %s -> %s", ticket.Priority, p))
 			}
 		}
-	}
 
-	if err := h.db.Model(&ticket).Updates(updates).Error; err != nil {
+		if input.AssigneeAdminID != nil {
+			if *input.AssigneeAdminID == 0 {
+				if ticket.AssigneeAdminID != nil {
+					updates["assignee_admin_id"] = nil
+					auditDetail = append(auditDetail, fmt.Sprintf("assignee_admin_id: %d -> none", *ticket.AssigneeAdminID))
+				}
+			} else {
+				// 校验 admin 是否存在
+				var admin models.User
+				if err := tx.Where("id = ? AND role IN ?", *input.AssigneeAdminID, []models.Role{models.RoleAdmin, models.RoleSuperAdmin}).
+					First(&admin).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						return fmt.Errorf("指定的管理员不存在")
+					}
+					return err
+				}
+				if ticket.AssigneeAdminID == nil || *ticket.AssigneeAdminID != *input.AssigneeAdminID {
+					oldAssignee := "none"
+					if ticket.AssigneeAdminID != nil {
+						oldAssignee = strconv.FormatUint(uint64(*ticket.AssigneeAdminID), 10)
+					}
+					updates["assignee_admin_id"] = *input.AssigneeAdminID
+					auditDetail = append(auditDetail, fmt.Sprintf("assignee_admin_id: %s -> %d", oldAssignee, *input.AssigneeAdminID))
+				}
+			}
+		}
+
+		if len(updates) == 0 {
+			return nil
+		}
+		changed = true
+		updates["updated_at"] = time.Now()
+		if err := tx.Model(&ticket).Updates(updates).Error; err != nil {
+			return err
+		}
+		return tx.Create(&models.AdminActionLog{
+			AdminID:    adminID,
+			Action:     "update_feedback_assignment",
+			TargetType: "feedback_ticket",
+			TargetID:   ticket.ID,
+			Detail:     strings.Join(auditDetail, "; "),
+		}).Error
+	})
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "工单不存在"})
+			return
+		}
+		if strings.Contains(err.Error(), "非法的工单优先级") || strings.Contains(err.Error(), "指定的管理员不存在") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新工单设置失败"})
+		return
+	}
+	if !changed {
+		c.JSON(http.StatusOK, gin.H{"message": "设置未变化", "ticket": ticket, "no_change": true})
 		return
 	}
 

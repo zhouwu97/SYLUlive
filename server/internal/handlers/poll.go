@@ -73,7 +73,7 @@ func (h *PollHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": services.PollCodeInvalidInput, "error": "请求格式错误"})
 		return
 	}
-	post, err := h.service.Create(contextUserID(c), contextRole(c), input)
+	post, err := h.service.Create(c.Request.Context(), contextUserID(c), contextRole(c), input)
 	if err != nil {
 		h.writeError(c, err)
 		return
@@ -159,6 +159,8 @@ func (h *PollHandler) writeError(c *gin.Context, err error) {
 		status = http.StatusForbidden
 	case services.PollCodeCreationLimit:
 		status = http.StatusTooManyRequests
+	case services.PollCodeServiceUnavailable:
+		status = http.StatusServiceUnavailable
 	case services.PollCodeEnded, services.PollCodeRulesLocked, services.PollCodeChangeDisabled:
 		status = http.StatusConflict
 	}

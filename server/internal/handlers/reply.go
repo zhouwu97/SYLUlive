@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 	"shenliyuan/internal/utils"
@@ -26,14 +28,20 @@ type ReplyHandler struct {
 	db                *gorm.DB
 	jpushAppKey       string
 	jpushMasterSecret string
+	security          *services.SecurityEventService
 }
 
 // NewReplyHandler 创建回复处理器
-func NewReplyHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *ReplyHandler {
+func NewReplyHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string, security ...*services.SecurityEventService) *ReplyHandler {
+	var securityService *services.SecurityEventService
+	if len(security) > 0 {
+		securityService = security[0]
+	}
 	return &ReplyHandler{
 		db:                db,
 		jpushAppKey:       jpushAppKey,
 		jpushMasterSecret: jpushMasterSecret,
+		security:          securityService,
 	}
 }
 
@@ -214,7 +222,7 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 		}
 		args = append(args, maxChildrenPreviewPerRoot)
 		rawSQL := fmt.Sprintf(`
-			SELECT id, post_id, parent_reply_id, author_id, content, sticker_id, status,
+			SELECT id, post_id, parent_reply_id, author_id, content, sticker_id, asset_key, pack_id, status,
 			       like_count, created_at, updated_at, reply_to_user_id, reply_to_reply_id
 			FROM (
 				SELECT r.*, ROW_NUMBER() OVER (PARTITION BY r.parent_reply_id ORDER BY r.created_at ASC, r.id ASC) AS rn
@@ -517,11 +525,13 @@ func (h *ReplyHandler) GetChildren(c *gin.Context) {
 
 // CreateReplyInput 创建回复输入
 type CreateReplyInput struct {
-	Content        string `form:"content"`
-	StickerID      string `form:"sticker_id"`
-	ParentReplyID  *uint  `form:"parent_reply_id"`
-	ReplyToUserID  *uint  `form:"reply_to_user_id"`
-	ReplyToReplyID *uint  `form:"reply_to_reply_id"`
+	Content        string  `form:"content"`
+	StickerID      string  `form:"sticker_id"`
+	AssetKey       *string `form:"asset_key" binding:"omitempty,max=512"`
+	PackID         *string `form:"pack_id" binding:"omitempty,max=128"`
+	ParentReplyID  *uint   `form:"parent_reply_id"`
+	ReplyToUserID  *uint   `form:"reply_to_user_id"`
+	ReplyToReplyID *uint   `form:"reply_to_reply_id"`
 }
 
 // Create 创建回复
@@ -541,6 +551,10 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	}
 	input.Content = strings.TrimSpace(input.Content)
 	input.StickerID = strings.TrimSpace(input.StickerID)
+	if utf8.RuneCountInString(input.Content) > 5000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "回复内容过长"})
+		return
+	}
 	fileIDs := c.PostForm("file_ids")
 	parsedFileIDs, err := services.ParseImageFileIDs(fileIDs)
 	if err != nil {
@@ -572,7 +586,6 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "该帖子当前不允许回复"})
 		return
 	}
-
 	// 如果有父回复，检查是否是一层嵌套。
 	// tombstone 根（已删除但仍有正常子回复）允许继续讨论：
 	// 删除只隐藏根内容，不结束整个 thread。
@@ -645,11 +658,14 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	}
 
 	var stickerID *string
+	// storedContent 用于持久化与展示；input.Content（真实文本）用于重复内容判定。
+	// 纯表情回复的文本回退不能参与去重，否则两个不同表情会因回退文案相同被误判为重复。
+	storedContent := input.Content
 	if input.StickerID != "" {
 		stickerID = &input.StickerID
-		if input.Content == "" {
+		if storedContent == "" {
 			// 旧客户端按普通评论展示纯表情的文本回退。
-			input.Content = stickerFallbackText
+			storedContent = stickerFallbackText
 		}
 	}
 	reply := models.Reply{
@@ -658,14 +674,40 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		ReplyToUserID:  input.ReplyToUserID,
 		ReplyToReplyID: input.ReplyToReplyID,
 		AuthorID:       userID.(uint),
-		Content:        input.Content,
+		Content:        storedContent,
 		StickerID:      stickerID,
+		AssetKey:       input.AssetKey,
+		PackID:         input.PackID,
 		Status:         models.ReplyStatusNormal,
 		CreatedAt:      time.Now(),
 	}
 
 	// 回复、回复图片和帖子活跃统计必须原子提交，避免列表出现已显示回复却没有刷新活跃时间的状态。
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	// 额度检查与创建同样必须在同一事务内：先锁发布用户行，再计数，最后创建。
+	releaseSerial := services.AcquireContentWriteSerialLock(h.db)
+	defer releaseSerial()
+
+	// 使用请求 context 启动事务：客户端断开时事务随之取消，避免无界等待。
+	err = h.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if lockErr := services.LockUserForContentWrite(tx, userID.(uint)); lockErr != nil {
+			return lockErr
+		}
+		// 同一事务内复核帖子可写状态：治理可能已在本次检查之后隐藏了帖子，
+		// 不能在帖子已不可回复后仍然写入新回复。这里对帖子行加行锁，让复核结果权威：
+		// 治理对同一行的更新会阻塞到本事务提交，避免"复核通过 -> 治理隐藏 -> 仍提交回复"。
+		status, err := services.LockPostStatusForReply(tx, uint(postID))
+		if err != nil {
+			return err
+		}
+		if status != models.PostStatusNormal {
+			return errPostNotReplyable
+		}
+		txNow := time.Now()
+		if quotaErr := services.CheckReplyPublishQuota(tx, userID.(uint), uint(postID), input.Content, txNow); quotaErr != nil {
+			return quotaErr
+		}
+		// 等待锁之后再确定发表时刻，保证额度窗口与 CreatedAt 使用同一时钟基准。
+		reply.CreatedAt = txNow
 		if _, err := services.ValidateImageFileIDs(tx, parsedFileIDs, 9, userID.(uint)); err != nil {
 			return err
 		}
@@ -682,16 +724,73 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 				}
 			}
 		}
-		return tx.Model(&models.Post{}).Where("id = ?", postID).Updates(map[string]interface{}{
-			"reply_count":      gorm.Expr("reply_count + 1"),
-			"last_activity_at": reply.CreatedAt,
-		}).Error
-	}); err != nil {
+		// 统计更新再次带上 status = normal 并校验影响行数：行锁在 PostgreSQL 上已能挡住治理，
+		// 但在 SQLite（无行锁）等环境下，这里是"帖子在复核之后被隐藏"的最后一道闸门。
+		// 影响 0 行说明帖子已不可回复，回滚整个事务，不能留下挂在隐藏帖子上的回复。
+		result := tx.Model(&models.Post{}).
+			Where("id = ? AND status = ?", postID, models.PostStatusNormal).
+			Updates(map[string]interface{}{
+				"reply_count":      gorm.Expr("reply_count + 1"),
+				"last_activity_at": reply.CreatedAt,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return errPostNotReplyable
+		}
+		return nil
+	})
+	if err != nil {
 		if errors.Is(err, services.ErrInvalidImageFileReference) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建回复失败"})
+		if errors.Is(err, errPostNotReplyable) {
+			c.JSON(http.StatusConflict, gin.H{"error": "该帖子当前不允许回复"})
+			return
+		}
+		if errors.Is(err, services.ErrContentRateLimited) || errors.Is(err, services.ErrContentDuplicate) {
+			if h.security != nil {
+				uid := userID.(uint)
+				_ = h.security.Record(services.SecurityEventInput{
+					EventType: "content_reply_flood", Severity: models.SecuritySeverityMedium, Route: "/api/posts/:id/replies", Method: c.Request.Method,
+					ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &uid, TargetType: "post", TargetValue: strconv.FormatUint(uint64(post.ID), 10), Blocked: true, Action: "rate_limited",
+					Metadata: map[string]interface{}{"window": "10m/24h", "route_group": "content"},
+				})
+			}
+			reason := "publish_quota_exhausted"
+			message := "评论过于频繁，请稍后再试"
+			if errors.Is(err, services.ErrContentDuplicate) {
+				reason = "duplicate_content"
+				message = "请勿重复发送相同内容"
+			}
+			c.Header("Retry-After", "30")
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error":  message,
+				"code":   "content_rate_limited",
+				"reason": reason,
+			})
+			return
+		}
+		if errors.Is(err, services.ErrContentQuotaUnavailable) {
+			requestID := middleware.EnsureRequestID(c)
+			log.Printf("[REPLY_QUOTA_UNAVAILABLE] request_id=%s user_id=%v post_id=%v err=%v", requestID, userID, postID, err)
+			c.Header("Retry-After", "5")
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":      "服务暂时不可用，请稍后重试",
+				"code":       "content_quota_unavailable",
+				"request_id": requestID,
+			})
+			return
+		}
+		requestID := middleware.EnsureRequestID(c)
+		log.Printf("[REPLY_CREATE_FAILED] request_id=%s user_id=%v post_id=%v err=%v", requestID, userID, postID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":      "创建回复失败",
+			"code":       "reply_create_failed",
+			"request_id": requestID,
+		})
 		return
 	}
 

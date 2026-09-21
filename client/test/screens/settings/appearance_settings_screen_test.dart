@@ -15,6 +15,7 @@ Widget _buildTestApp({
   required ThemeProvider theme,
   Brightness brightness = Brightness.light,
   TextScaler systemTextScaler = TextScaler.noScaling,
+  TargetPlatform platform = TargetPlatform.android,
 }) {
   return MultiProvider(
     providers: [
@@ -22,7 +23,10 @@ Widget _buildTestApp({
       ChangeNotifierProvider<ThemeProvider>.value(value: theme),
     ],
     child: MaterialApp(
-      theme: ThemeData(brightness: brightness),
+      theme: ThemeData(
+        brightness: brightness,
+        platform: platform,
+      ),
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(context);
         final preset = context.watch<ThemeProvider>().fontSizePreset;
@@ -105,6 +109,15 @@ void main() {
     expect(find.text('标准 100%'), findsOneWidget);
 
     await tester.scrollUntilVisible(
+      find.text('交互与视觉效果'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('交互与视觉效果'), findsOneWidget);
+    expect(find.text('预测性返回手势'), findsOneWidget);
+    expect(find.text('毛玻璃卡片'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
       find.text('选择背景图片'),
       240,
       scrollable: find.byType(Scrollable).first,
@@ -121,6 +134,68 @@ void main() {
     // 底栏样式配置（含液态玻璃）已收敛到底部导航栏二级页，外观页只留入口。
     expect(find.text('液态玻璃 2.0 效果'), findsNothing);
     expect(find.text('悬浮式底栏导航'), findsNothing);
+  });
+
+  testWidgets('预测性返回手势与毛玻璃卡片开关默认关闭，点击后切换并持久化', (tester) async {
+    expect(themeProvider.predictiveBack, isFalse);
+    expect(themeProvider.frostedGlass, isFalse);
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        auth: authProvider,
+        theme: themeProvider,
+        platform: TargetPlatform.android,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('预测性返回手势'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(find.text('预测性返回手势'), findsOneWidget);
+    expect(find.text('毛玻璃卡片'), findsOneWidget);
+    expect(find.text('液态玻璃 2.0 效果'), findsNothing);
+    expect(find.text('悬浮式底栏导航'), findsNothing);
+
+    // 点击预测性返回开关
+    final predictiveBackTile = find.ancestor(
+      of: find.text('预测性返回手势'),
+      matching: find.byType(SettingsTile),
+    );
+    await tester.ensureVisible(predictiveBackTile);
+    await tester.pumpAndSettle();
+
+    final predictiveSwitch = find.descendant(
+      of: predictiveBackTile,
+      matching: find.byType(Switch),
+    );
+    await tester.tap(predictiveSwitch);
+    await tester.pumpAndSettle();
+
+    expect(themeProvider.predictiveBack, isTrue);
+    final prefs = await AppPreferencesStore.getInstance();
+    expect(prefs.getBool('predictive_back_enabled'), isTrue);
+
+    // 点击毛玻璃卡片开关
+    final frostedGlassTile = find.ancestor(
+      of: find.text('毛玻璃卡片'),
+      matching: find.byType(SettingsTile),
+    );
+    await tester.ensureVisible(frostedGlassTile);
+    await tester.pumpAndSettle();
+
+    final frostedSwitch = find.descendant(
+      of: frostedGlassTile,
+      matching: find.byType(Switch),
+    );
+    await tester.tap(frostedSwitch);
+    await tester.pumpAndSettle();
+
+    expect(themeProvider.frostedGlass, isTrue);
+    expect(prefs.getBool('frosted_glass_enabled'), isTrue);
   });
 
   testWidgets('字体大小滑块提供六档语义并立即持久化', (tester) async {
@@ -259,8 +334,11 @@ void main() {
     expect(themeProvider.bottomNavStyle, BottomNavStyle.floating);
 
     // 二级页入口仍然可达。
-    await tester.drag(find.byType(ListView), const Offset(0, -600));
-    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.widgetWithText(SettingsTile, '底部导航栏'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('底部导航栏'), findsWidgets);
     expect(tester.takeException(), isNull);
   });

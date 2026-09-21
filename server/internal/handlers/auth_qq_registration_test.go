@@ -94,7 +94,7 @@ func TestQQEmailRegistrationKeepsChallengeAfterDuplicateEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开数据库失败: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.EmailVerificationChallenge{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.EmailVerificationChallenge{}, &models.EmailVerificationRequest{}, &models.VerificationAttemptBucket{}, &models.VerificationAttempt{}); err != nil {
 		t.Fatalf("迁移测试表失败: %v", err)
 	}
 	if err := db.Exec("CREATE UNIQUE INDEX ux_test_users_email_nonempty ON users(email) WHERE email <> ''").Error; err != nil {

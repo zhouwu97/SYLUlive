@@ -1,0 +1,1 @@
+{"name":"@sylulive/extension","version":"0.1.0","private":true,"type":"module","scripts":{"build":"tsc --noEmit && node build.mjs","dev":"node build.mjs --dev","check":"tsc --noEmit"},"dependencies":{"@sylulive/academic-contracts":"workspace:*","linkedom":"^0.18.12","crypto-js":"^4.2.0"},"devDependencies":{"@types/crypto-js":"^4.2.2","esbuild":"^0.27.0"}}

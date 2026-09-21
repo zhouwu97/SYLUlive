@@ -1,0 +1,23 @@
+import {test,expect} from '@playwright/test';
+test('个人 AI 摘要只有本次明确确认后才能发送，取消不发送',async({page})=>{
+  const sent:Record<string,any>[]=[];
+  await page.route('**/api/user/profile',route=>route.fulfill({json:{id:991,nickname:'隐私测试',role:'user'}}));
+  await page.route('**/api/ai/conversations',route=>route.fulfill({json:{items:[]}}));
+  await page.route('**/api/ai/local-analysis/settings',route=>route.fulfill({json:{models:['test-model'],default_model:'test-model'}}));
+  await page.route('**/api/ai/local-analysis',async route=>{sent.push(route.request().postDataJSON());await route.fulfill({contentType:'text/event-stream',body:'event: answer.delta\ndata: {"payload":{"text":"测试分析结果"}}\n\nevent: run.completed\ndata: {"payload":{}}\n\n'})});
+  await page.goto('schedule');await expect(page.getByRole('button',{name:'我的账号'})).toBeVisible();
+  await page.getByRole('button',{name:'课表设置',exact:true}).click();
+  const archive={version:1,term:{year:'2026',semester:'3'},termStart:'2026-09-07',courses:[],overrides:{},exams:[],grades:[{id:'grade-private',name:'不应传输的课程名',credit:2,score:'85',gpa:3.5,nature:'必修',term:'2026-3'}]};
+  await page.getByLabel('导入本地资料（将替换当前数据）').setInputFiles({name:'data.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(archive))});
+  await page.getByRole('link',{name:'AI 校园助手',exact:true}).click();
+  await page.getByRole('button',{name:'分析我的成绩摘要'}).click();
+  await page.getByLabel('分析问题').fill('分析当前学分情况');
+  await page.getByRole('button',{name:'核对本次摘要'}).click();
+  expect(sent).toHaveLength(0);
+  await page.getByRole('button',{name:'取消',exact:true}).click();expect(sent).toHaveLength(0);
+  await page.getByRole('button',{name:'核对本次摘要'}).click();
+  await page.getByRole('button',{name:'确认本次发送以上摘要'}).click();
+  await expect(page.getByText('测试分析结果',{exact:true})).toBeVisible();expect(sent).toHaveLength(1);
+  expect(sent[0].summary).toEqual({kind:'grade_statistics',course_count:1,credits:2,average:85,gpa:3.5});
+  expect(JSON.stringify(sent[0])).not.toContain('不应传输的课程名');
+});

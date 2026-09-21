@@ -1,4 +1,15 @@
 .dart_tool/
+node_modules/
+/web/dist/
+/browser-extension/dist/
+/browser-extension/dist-dev/
+/web/test-results/
+/test-results/
+/playwright-report/
+/artifacts/web-release/
+/.codegraph/
+/.evidence/
+/_codex_evidence/
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages

@@ -1,0 +1,6 @@
+packages:
+  - web
+  - browser-extension
+  - packages/*
+allowBuilds:
+  esbuild: true

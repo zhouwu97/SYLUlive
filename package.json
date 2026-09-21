@@ -1,0 +1,21 @@
+{
+  "name": "sylulive-web-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.4.2",
+  "scripts": {
+    "dev": "pnpm --filter @sylulive/web dev",
+    "build": "pnpm -r build",
+    "check": "pnpm -r check",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "package": "pnpm build && pnpm --filter @sylulive/extension dev && node scripts/package-web.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0",
+    "@types/chrome": "^0.1.36",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

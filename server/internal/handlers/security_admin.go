@@ -132,6 +132,32 @@ func (h *SecurityAdminHandler) securityEventCollectionState() gin.H {
 	return protectionLayerState(true, runtime, reason, snapshot.Detail())
 }
 
+func (h *SecurityAdminHandler) securityBlockState() gin.H {
+	if !h.securityBlockEnabled {
+		return protectionLayerState(false, services.SecurityLayerNotConfigured,
+			"block_switch_off", h.security.BlockCheckHealth().Detail())
+	}
+	snapshot := h.security.BlockCheckHealth()
+	if !h.db.Migrator().HasTable(&models.SecurityBlock{}) {
+		return protectionLayerState(true, services.SecurityLayerUnavailable,
+			"security_block_table_missing", snapshot.Detail())
+	}
+	runtime := snapshot.Status()
+	// 同时读 degraded 标记：/health 就是按它判定 fail-open 的，两处必须给出同一结论，
+	// 否则会出现「/health 说降级、安全中心显示正常」。
+	if runtime == services.SecurityLayerReady && h.security.SecurityBlockDegraded() {
+		runtime = services.SecurityLayerDegraded
+	}
+	reason := ""
+	switch runtime {
+	case services.SecurityLayerDegraded, services.SecurityLayerUnavailable:
+		reason = "block_lookup_failed_fail_open"
+	case services.SecurityLayerUnknown:
+		reason = "not_queried_since_start"
+	}
+	return protectionLayerState(true, runtime, reason, snapshot.Detail())
+}
+
 func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 	rangeName := "24h"
 	since := time.Now().Add(-24 * time.Hour)
@@ -212,6 +238,7 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 		return
 	}
 	eventCollection := h.securityEventCollectionState()
+	blockState := h.securityBlockState()
 	c.JSON(http.StatusOK, gin.H{
 		"range": rangeName, "active_high_count": activeHigh, "total_events": total,
 		// 客户端首页口径：高危待处理 = 待处置 + 未处理 + 高危/严重。
@@ -222,11 +249,14 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 		"protection": gin.H{
 			"client_ip_identification": map[bool]string{true: "configured", false: "not_configured"}[len(h.trustedProxyCIDRs) > 0],
 			"trusted_proxy_cidrs":      h.trustedProxyCIDRs,
-			"security_block":           map[bool]string{true: "enabled", false: "disabled"}[h.securityBlockEnabled],
-			"security_block_schema":    map[bool]string{true: "ready", false: "missing"}[h.db.Migrator().HasTable(&models.SecurityBlock{})],
-			// *_collection 的取值现在来自真实写入结果，不再是「表是否存在」。
+			// security_block 是**配置态**（开关），运行态在 security_block_state：
+			// fail-open 期间查询失败会让这一层暂时给不出判断，只看开关会把「没拦住」读成「一切正常」。
+			"security_block":        map[bool]string{true: "enabled", false: "disabled"}[h.securityBlockEnabled],
+			"security_block_state":  blockState,
+			"security_block_schema": map[bool]string{true: "ready", false: "missing"}[h.db.Migrator().HasTable(&models.SecurityBlock{})],
+			// security_event_collection 的取值来自真实写入结果，不再是「表是否存在」。
 			// 未升级客户端只把 ready 认成绿色，其余状态一律落到告警色：
-			// 状态口径收窄时宁可让旧版本多报一次警，也不能继续假绿。
+			// 口径收窄时宁可让旧版本多报一次警，也不能继续假绿。
 			"security_event_collection":       eventCollection["runtime"],
 			"security_event_collection_state": eventCollection,
 			"verification_daily_limit":        "enabled",

@@ -180,16 +180,7 @@ func TestListEventsActionableFilter(t *testing.T) {
 // 旧实现 `HasTable(&SecurityEvent{}) ? ready : missing` 的致命之处：业务侧统一
 // `_ = Record(...)` 忽略错误，写入长期失败时事件整批丢失，后台却一直是绿的。
 func TestSecurityOverviewReportsEventCollectionHealth(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("打开数据库失败: %v", err)
-	}
-	if err := db.AutoMigrate(&models.SecurityEvent{}, &models.SecurityBlock{}); err != nil {
-		t.Fatalf("迁移安全表失败: %v", err)
-	}
-	security := services.NewSecurityEventService(db, "collect-test-secret", time.Now)
-	handler := NewSecurityAdminHandler(db, security)
-	handler.SetProtectionConfig(true, []string{"127.0.0.1/32"}, "")
+	handler, security, db := newSecurityAdminTestEnvWithService(t)
 
 	// 表存在但进程内还没发生过写入：报 unknown，不能沿用旧口径直接绿。
 	if got := securityProtectionField(t, handler, "security_event_collection"); got != services.SecurityLayerUnknown {
@@ -232,6 +223,21 @@ func blockSecurityEventInsert(t *testing.T, db *gorm.DB) {
 
 func securityProtectionField(t *testing.T, handler *SecurityAdminHandler, key string) string {
 	t.Helper()
+	value, _ := securityOverviewProtection(t, handler)[key].(string)
+	return value
+}
+
+func securityProtectionState(t *testing.T, handler *SecurityAdminHandler, key string) map[string]any {
+	t.Helper()
+	state, _ := securityOverviewProtection(t, handler)[key].(map[string]any)
+	if state == nil {
+		t.Fatalf("概览缺少 %s", key)
+	}
+	return state
+}
+
+func securityOverviewProtection(t *testing.T, handler *SecurityAdminHandler) map[string]any {
+	t.Helper()
 	recorder := performSecurityAdminGET(t, handler.Overview, "/probe?range=24h")
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("概览接口失败: %d %s", recorder.Code, recorder.Body.String())
@@ -242,11 +248,45 @@ func securityProtectionField(t *testing.T, handler *SecurityAdminHandler, key st
 	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("解析概览响应失败: %v", err)
 	}
-	value, _ := payload.Protection[key].(string)
-	return value
+	return payload.Protection
 }
 
-func newSecurityAdminTestEnv(t *testing.T) (*SecurityAdminHandler, *gorm.DB) {
+// 来源封禁的开关和运行态必须分开上报。
+//
+// fail-open 是刻意的设计：附加层故障不该把全站用户误伤。但它有一个副作用——
+// 开关 enabled + 表 ready 时封禁层可能正在放行攻击来源，而旧版概览只会显示绿色。
+func TestSecurityOverviewBlockStateTracksFailOpen(t *testing.T) {
+	handler, security, _ := newSecurityAdminTestEnvWithService(t)
+
+	if state := securityProtectionState(t, handler, "security_block_state"); state["runtime"] != services.SecurityLayerUnknown {
+		t.Fatalf("进程启动后还没查询过封禁表时应报 unknown，实际 %v", state["runtime"])
+	}
+
+	security.SetSecurityBlockDegraded(true)
+	state := securityProtectionState(t, handler, "security_block_state")
+	if state["runtime"] != services.SecurityLayerDegraded {
+		t.Fatalf("fail-open 期间必须报 degraded，实际 %v", state["runtime"])
+	}
+	if state["reason"] != "block_lookup_failed_fail_open" {
+		t.Fatalf("degraded 需要给出原因，实际 %v", state["reason"])
+	}
+	// 开关本身仍是配置态，不受运行态影响。
+	if flat := securityProtectionField(t, handler, "security_block"); flat != "enabled" {
+		t.Fatalf("security_block 应保持配置态语义 enabled，实际 %q", flat)
+	}
+
+	security.SetSecurityBlockDegraded(false)
+	if state := securityProtectionState(t, handler, "security_block_state"); state["runtime"] != services.SecurityLayerReady {
+		t.Fatalf("查询恢复后应回到 ready，实际 %v", state["runtime"])
+	}
+
+	handler.SetProtectionConfig(false, handler.trustedProxyCIDRs, "")
+	if state := securityProtectionState(t, handler, "security_block_state"); state["runtime"] != services.SecurityLayerNotConfigured || state["configured"] != false {
+		t.Fatalf("开关关闭时应报 not_configured 且 configured=false，实际 %v", state)
+	}
+}
+
+func newSecurityAdminTestEnvWithService(t *testing.T) (*SecurityAdminHandler, *services.SecurityEventService, *gorm.DB) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -255,8 +295,15 @@ func newSecurityAdminTestEnv(t *testing.T) (*SecurityAdminHandler, *gorm.DB) {
 	if err := db.AutoMigrate(&models.SecurityEvent{}, &models.SecurityBlock{}); err != nil {
 		t.Fatalf("迁移安全表失败: %v", err)
 	}
-	handler := NewSecurityAdminHandler(db, services.NewSecurityEventService(db, "security-test-secret", time.Now))
+	security := services.NewSecurityEventService(db, "security-test-secret", time.Now)
+	handler := NewSecurityAdminHandler(db, security)
 	handler.SetProtectionConfig(true, []string{"127.0.0.1/32"}, "")
+	return handler, security, db
+}
+
+func newSecurityAdminTestEnv(t *testing.T) (*SecurityAdminHandler, *gorm.DB) {
+	t.Helper()
+	handler, _, db := newSecurityAdminTestEnvWithService(t)
 	return handler, db
 }
 

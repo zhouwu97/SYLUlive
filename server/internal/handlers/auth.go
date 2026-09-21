@@ -1540,7 +1540,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	for _, scope := range []string{accountKey, ipKey} {
 		if remaining, locked := h.loginLock(scope, now); locked {
 			// 已进入锁定窗口的请求也要进入安全中心，否则管理员只能看到触发锁定的那一次。
-			h.recordLoginSecurityEvent(c, account, nil, true)
+			h.recordLoginSecurityEvent(c, account, nil, loginLockedOutcome)
 
 			c.Header("Retry-After", strconv.Itoa(int(remaining.Round(time.Second).Seconds())))
 
@@ -1564,7 +1564,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			if ipLockFor := h.registerLoginFailure(ipKey, now); ipLockFor > lockFor {
 				lockFor = ipLockFor
 			}
-			h.recordLoginSecurityEvent(c, account, nil, lockFor > 0)
+			h.recordLoginSecurityEvent(c, account, nil, loginFailureOutcome(lockFor))
 			if lockFor > 0 {
 				c.Header("Retry-After", strconv.Itoa(int(lockFor.Round(time.Second).Seconds())))
 				c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(lockFor))})
@@ -1589,7 +1589,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			lockFor = ipLockFor
 		}
 		userID := user.ID
-		h.recordLoginSecurityEvent(c, account, &userID, lockFor > 0)
+		h.recordLoginSecurityEvent(c, account, &userID, loginFailureOutcome(lockFor))
 
 		if lockFor > 0 {
 
@@ -1645,31 +1645,71 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 }
 
-func (h *AuthHandler) recordLoginSecurityEvent(c *gin.Context, account string, userID *uint, blocked bool) {
+// loginSecurityOutcome 描述一次登录失败在安全中心里应该以什么姿态出现。
+//
+// 「一次密码输错」和「针对同一账号的暴力尝试」必须是两条不同的信号：前者每天都会发生，
+// 属于正常用户行为；后者才是攻击。早期实现让所有登录失败都写 login_bruteforce + medium，
+// 于是安全中心被大量「请求 1 次 / 拦截 0 次 / 登录暴力尝试」淹没，管理员反而看不出
+// 哪个账号真的被锁了。现在的分级：
+//
+//	单次或少量输错（未触发限流） -> login_failed      low    observed
+//	达到账号或来源锁定阈值       -> login_bruteforce  medium throttled
+//	锁定窗口内继续请求           -> login_bruteforce  medium blocked
+//	同来源 10 分钟扫大量账号     -> login_password_spray high throttled
+type loginSecurityOutcome struct {
+	EventType string
+	Severity  string
+	Action    string
+	Blocked   bool
+}
+
+// loginFailureOutcome 把「本次失败是否导致锁定」翻译成事件等级。
+// lockFor 由 registerLoginFailure 返回，>0 表示本次失败已经把账号或来源推入锁定窗口。
+func loginFailureOutcome(lockFor time.Duration) loginSecurityOutcome {
+	if lockFor > 0 {
+		return loginSecurityOutcome{
+			EventType: "login_bruteforce", Severity: models.SecuritySeverityMedium,
+			Action: "throttled", Blocked: true,
+		}
+	}
+	return loginSecurityOutcome{
+		EventType: "login_failed", Severity: models.SecuritySeverityLow, Action: "observed",
+	}
+}
+
+// loginLockedOutcome 表示请求落在既有锁定窗口内、还没有比对密码就被拒绝。
+var loginLockedOutcome = loginSecurityOutcome{
+	EventType: "login_bruteforce", Severity: models.SecuritySeverityMedium,
+	Action: "blocked", Blocked: true,
+}
+
+func (h *AuthHandler) recordLoginSecurityEvent(c *gin.Context, account string, userID *uint, outcome loginSecurityOutcome) {
 	if h.security == nil {
 		return
 	}
 	_ = h.security.Record(services.SecurityEventInput{
-		EventType: "login_bruteforce", Severity: models.SecuritySeverityMedium,
+		EventType: outcome.EventType, Severity: outcome.Severity,
 		Route: "/api/login", Method: http.MethodPost, ClientIP: c.ClientIP(),
 		UserAgent: c.GetHeader("User-Agent"), InstallationID: c.GetHeader("X-Installation-ID"),
 		ActorUserID: userID, TargetType: "account", TargetValue: account,
-		TargetMasked: maskLoginSecurityTarget(account), Blocked: blocked,
-		Action: func() string {
-			if blocked {
-				return "blocked"
-			}
-			return "observed"
-		}(),
+		TargetMasked: maskLoginSecurityTarget(account), Blocked: outcome.Blocked,
+		Action: outcome.Action,
 	})
-	count, err := h.security.CountDistinctTargets("login_bruteforce", c.ClientIP(), time.Now().Add(-10*time.Minute))
+	// 同一来源在 10 分钟内触及 10 个以上不同账号即升级为密码喷洒。
+	// 必须同时统计 login_failed 与 login_bruteforce：只数后者会漏掉「还没触发锁定、
+	// 但已经在批量试账号」的扫描——这正是喷洒检测最容易失真的地方。
+	count, err := h.security.CountDistinctTargetsForEvents(
+		[]string{"login_failed", "login_bruteforce"}, c.ClientIP(), time.Now().Add(-10*time.Minute))
 	if err == nil && count >= 10 {
 		_ = h.security.Record(services.SecurityEventInput{
 			EventType: "login_password_spray", Severity: models.SecuritySeverityHigh,
 			Route: "/api/login", Method: http.MethodPost, ClientIP: c.ClientIP(),
-			UserAgent: c.GetHeader("User-Agent"), Blocked: blocked, Action: "throttled",
-			TargetType: "route", TargetValue: "/api/login", TargetMasked: "/api/login",
-			Metadata: map[string]interface{}{"distinct_targets": count, "window": "10m"},
+			UserAgent: c.GetHeader("User-Agent"), Blocked: outcome.Blocked, Action: "throttled",
+			TargetType: "route", TargetValue: "/api/login",
+			// 目标是「一批账号」而不是某一条路由，摘要直接写明覆盖面，
+			// 否则后台会显示成「目标：/api/login」，管理员看不出喷洒规模。
+			TargetMasked: fmt.Sprintf("涉及 %d 个账号（10 分钟）", count),
+			Metadata:     map[string]interface{}{"distinct_targets": count, "window": "10m"},
 		})
 	}
 }

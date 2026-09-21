@@ -10,9 +10,33 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 )
+
+// actionableScope 把查询限制在「需要管理员处置」的事件上。
+//
+// 判定规则集中在 models.SecurityEventActionable：审计流水（正常验证码、正常改密、
+// 单次密码输错、冷却拦截、已生效的来源封禁计数）不属于待处置，未知类型默认算待处置。
+// 这里用 NOT IN 白名单实现，避免每个查询各写一份类型清单。
+func actionableScope(query *gorm.DB) *gorm.DB {
+	auditTypes := models.SecurityAuditEventTypes()
+	if len(auditTypes) == 0 {
+		// 没有登记任何审计类型时，全部事件都算待处置：宁可多显示，不能漏。
+		return query
+	}
+	return query.Where("event_type NOT IN ?", auditTypes)
+}
+
+// auditScope 是 actionableScope 的反面，供「只看审计流水」的调查场景使用。
+func auditScope(query *gorm.DB) *gorm.DB {
+	auditTypes := models.SecurityAuditEventTypes()
+	if len(auditTypes) == 0 {
+		return query.Where("1 = 0")
+	}
+	return query.Where("event_type IN ?", auditTypes)
+}
 
 // SecurityAdminHandler 提供独立于 AdminLog 的攻击事件查询和临时处置接口。
 type SecurityAdminHandler struct {
@@ -65,6 +89,11 @@ type securityEventResponse struct {
 	ResolvedAt                *time.Time `json:"resolved_at,omitempty"`
 	ResolvedBy                *uint      `json:"resolved_by,omitempty"`
 	ResolutionNote            string     `json:"resolution_note,omitempty"`
+
+	// Actionable 由事件类型推导（models.SecurityEventActionable），表示这条记录是否
+	// 需要管理员处置。审计流水（正常验证码、正常改密、单次密码输错、冷却拦截、
+	// 已生效的来源封禁计数）为 false，默认列表不展示它们，避免待办被正常流量刷满。
+	Actionable bool `json:"actionable"`
 }
 
 func (h *SecurityAdminHandler) Overview(c *gin.Context) {
@@ -85,11 +114,30 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 	}
 	base := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ?", since)
 	var total, activeHigh, blocked, affectedUsers, uniqueSources, emailAbuse, loginAbuse, critical, mailSent, resetSuccess int64
+	var actionableHigh, actionablePending int64
 	if err := base.Count(&total).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
 	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND status = ? AND severity IN ?", since, models.SecurityEventStatusActive, []string{models.SecuritySeverityHigh, models.SecuritySeverityCritical}).Count(&activeHigh).Error; err != nil {
+		h.securityDatabaseError(c)
+		return
+	}
+	// 首页「高危待处理」的正确口径：待处置 + 未处理 + 高危/严重。
+	//
+	// active_high_count 是早期字段，按 status+severity 统计，会把已由封禁层处置掉的
+	// security_blocked_request 也算进去，于是卡片上的数字远大于列表里真正要处理的事。
+	// 新字段把 actionable 一并纳入，客户端首页应当使用它；旧字段保留以兼容未升级客户端。
+	highSeverities := []string{models.SecuritySeverityHigh, models.SecuritySeverityCritical}
+	if err := actionableScope(h.db.Model(&models.SecurityEvent{}).
+		Where("last_seen_at >= ? AND status = ? AND severity IN ?", since, models.SecurityEventStatusActive, highSeverities)).
+		Count(&actionableHigh).Error; err != nil {
+		h.securityDatabaseError(c)
+		return
+	}
+	if err := actionableScope(h.db.Model(&models.SecurityEvent{}).
+		Where("last_seen_at >= ? AND status = ?", since, models.SecurityEventStatusActive)).
+		Count(&actionablePending).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
@@ -109,7 +157,9 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 		h.securityDatabaseError(c)
 		return
 	}
-	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND event_type IN ?", since, []string{"login_bruteforce", "login_password_spray"}).Select("COALESCE(SUM(attempt_count), 0)").Scan(&loginAbuse).Error; err != nil {
+	// 登录侧失败总量：普通输错（login_failed）、已锁定的暴力尝试、多账号扫描都要计入，
+	// 否则把普通失败降级为 login_failed 之后这个数字会凭空变小。
+	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND event_type IN ?", since, []string{"login_failed", "login_bruteforce", "login_password_spray"}).Select("COALESCE(SUM(attempt_count), 0)").Scan(&loginAbuse).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
@@ -127,6 +177,8 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"range": rangeName, "active_high_count": activeHigh, "total_events": total,
+		// 客户端首页口径：高危待处理 = 待处置 + 未处理 + 高危/严重。
+		"actionable_high_count": actionableHigh, "actionable_pending_count": actionablePending,
 		"blocked_requests": blocked, "affected_targets": affectedUsers, "affected_users": affectedUsers, "unique_sources": uniqueSources,
 		"email_abuse_count": emailAbuse, "login_abuse_count": loginAbuse, "critical_count": critical,
 		"mail_sent_count": mailSent, "password_reset_success_count": resetSuccess,
@@ -160,6 +212,14 @@ func (h *SecurityAdminHandler) ListEvents(c *gin.Context) {
 	}
 	if status := strings.TrimSpace(c.Query("status")); status != "" && status != "all" {
 		query = query.Where("status = ?", status)
+	}
+	// actionable=true 只看待处置，actionable=false 只看审计流水，缺省 / all 返回全部。
+	// 客户端默认使用 true，避免正常验证码与正常改密把待办列表刷满。
+	switch strings.ToLower(strings.TrimSpace(c.DefaultQuery("actionable", "all"))) {
+	case "true", "1", "yes":
+		query = actionableScope(query)
+	case "false", "0", "no":
+		query = auditScope(query)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -236,10 +296,80 @@ func (h *SecurityAdminHandler) updateEventStatus(c *gin.Context, status string) 
 }
 
 type securityBlockInput struct {
-	SourceKey   string `json:"source_key" binding:"required"`
+	SourceKey string `json:"source_key" binding:"required"`
+	// Scope 是封禁作用域：route（仅该路由）/ account（账号安全链路）/ all（全部敏感路由）。
+	// 缺省时按 route 处理，但此时 route_prefix 必须显式给出。
+	Scope       string `json:"scope"`
 	RoutePrefix string `json:"route_prefix"`
 	DurationMin int    `json:"duration_minutes" binding:"required"`
-	Reason      string `json:"reason"`
+	// ConfirmGlobal 是 all 作用域的二次确认位。
+	// 留空或 false 时任何请求都不能创建全站封禁，避免一次误点波及整个共享出口。
+	ConfirmGlobal bool   `json:"confirm_global"`
+	Reason        string `json:"reason"`
+}
+
+const (
+	securityBlockScopeRoute   = "route"
+	securityBlockScopeAccount = "account"
+	securityBlockScopeAll     = "all"
+)
+
+var (
+	errSecurityBlockScopeRequired   = errors.New("封禁作用域不能为空")
+	errSecurityBlockScopeInvalid    = errors.New("不支持的封禁作用域")
+	errSecurityBlockScopeNotRouted  = errors.New("该路由不在来源封禁覆盖范围内")
+	errSecurityBlockGlobalUnconfirm = errors.New("全站封禁需要显式二次确认")
+)
+
+// resolveBlockScopes 把作用域解析成一组路由前缀，每个前缀写一条 SecurityBlock。
+//
+// 为什么必须显式：查询侧把 route_prefix='' 当作「对所有敏感路由生效」，而客户端曾经
+// 固定发送空 route_prefix。校园网、宿舍宽带和运营商 CGNAT 都是大量用户共用一个出口，
+// 一次「临时封禁来源」就可能连坐一批正常同学。因此这里不再接受「空前缀 = 全站」的隐式默认：
+//
+//	route   -> 仅当前路由（默认，最小作用域）
+//	account -> 登录 / 改密 / 注册验证码这一组账号与验证码接口
+//	all     -> 全站，必须超级管理员显式二次确认
+func resolveBlockScopes(input securityBlockInput) ([]string, error) {
+	scope := strings.ToLower(strings.TrimSpace(input.Scope))
+	prefix := strings.TrimSpace(input.RoutePrefix)
+	if scope == "" {
+		// 兼容未升级客户端：只给 route_prefix 时按「仅该路由」理解。
+		// 空 route_prefix 不再默认全站，直接拒绝。
+		if prefix == "" {
+			return nil, errSecurityBlockScopeRequired
+		}
+		scope = securityBlockScopeRoute
+	}
+	switch scope {
+	case securityBlockScopeRoute:
+		if prefix == "" {
+			return nil, errSecurityBlockScopeRequired
+		}
+		if len(prefix) > 160 || !strings.HasPrefix(prefix, "/api/") {
+			return nil, errSecurityBlockScopeInvalid
+		}
+		if !middleware.SensitiveSecurityRoute(prefix) {
+			// 非敏感路由本来就不查封禁表，接受它只会让管理员以为封禁生效了。
+			return nil, errSecurityBlockScopeNotRouted
+		}
+		return []string{prefix}, nil
+	case securityBlockScopeAccount:
+		// 账号与验证码链路：撞库、账号接管、批量注册验证码三类攻击都落在这几条前缀上。
+		// 刻意不含 /api/posts、/api/messages、/api/feedback、/api/search 等内容与检索接口，
+		// 那些入口被整体封禁会误伤大量正常读写。
+		return []string{
+			"/api/login", "/api/password", "/api/register",
+			"/api/forgot_password", "/api/send_code", "/api/verify_code",
+		}, nil
+	case securityBlockScopeAll:
+		if !input.ConfirmGlobal {
+			return nil, errSecurityBlockGlobalUnconfirm
+		}
+		return []string{""}, nil
+	default:
+		return nil, errSecurityBlockScopeInvalid
+	}
 }
 
 func (h *SecurityAdminHandler) ListBlocks(c *gin.Context) {
@@ -288,23 +418,51 @@ func (h *SecurityAdminHandler) CreateBlock(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"code": "security_source_attribution_invalid", "error": "历史来源归因不可信，不能创建封禁"})
 		return
 	}
-	prefix := strings.TrimSpace(input.RoutePrefix)
-	if prefix != "" && (!strings.HasPrefix(prefix, "/api/") || len(prefix) > 160) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "路由范围无效"})
+	scopes, err := resolveBlockScopes(input)
+	if err != nil {
+		code := "security_block_scope_invalid"
+		switch {
+		case errors.Is(err, errSecurityBlockScopeRequired):
+			code = "security_block_scope_required"
+		case errors.Is(err, errSecurityBlockGlobalUnconfirm):
+			code = "security_block_global_confirm_required"
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"code": code, "error": err.Error()})
 		return
 	}
 	now := time.Now()
-	block := models.SecurityBlock{
-		ScopeType: "ip_hash", ScopeValue: key, RoutePrefix: prefix,
-		Reason: truncateSecurityNote(input.Reason), ExpiresAt: now.Add(time.Duration(input.DurationMin) * time.Minute),
-		CreatedBy: c.GetUint("user_id"), CreatedAt: now,
-	}
-	if err := h.db.Create(&block).Error; err != nil {
+	expiresAt := now.Add(time.Duration(input.DurationMin) * time.Minute)
+	reason := truncateSecurityNote(input.Reason)
+	blocks := make([]models.SecurityBlock, 0, len(scopes))
+	// 一个作用域可能对应多条前缀（例如账号安全 = 登录 + 密码链路），
+	// 要么全部写入，要么整体不生效，避免留下半个封禁让管理员误判覆盖范围。
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		for _, prefix := range scopes {
+			block := models.SecurityBlock{
+				ScopeType: "ip_hash", ScopeValue: key, RoutePrefix: prefix,
+				Reason: reason, ExpiresAt: expiresAt, CreatedBy: c.GetUint("user_id"), CreatedAt: now,
+			}
+			if err := tx.Create(&block).Error; err != nil {
+				return err
+			}
+			blocks = append(blocks, block)
+		}
+		return nil
+	}); err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
-	h.writeSecurityAdminLog(c, "security_block_created", services.MaskSecurityFingerprint(key), block.Reason)
-	c.JSON(http.StatusCreated, gin.H{"id": block.ID, "expires_at": block.ExpiresAt})
+	ids := make([]uint, 0, len(blocks))
+	prefixes := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		ids = append(ids, block.ID)
+		prefixes = append(prefixes, block.RoutePrefix)
+	}
+	h.writeSecurityAdminLog(c, "security_block_created", services.MaskSecurityFingerprint(key), reason)
+	c.JSON(http.StatusCreated, gin.H{
+		"id": blocks[0].ID, "ids": ids, "route_prefixes": prefixes,
+		"expires_at": expiresAt,
+	})
 }
 
 func (h *SecurityAdminHandler) RevokeBlock(c *gin.Context) {
@@ -341,6 +499,7 @@ func (h *SecurityAdminHandler) securityEventDTO(event models.SecurityEvent, isSu
 		TargetType: event.TargetType, TargetMasked: event.TargetMasked, RequestIDSample: event.RequestIDSample,
 		AttemptCount: event.AttemptCount, BlockedCount: event.BlockedCount, MailSentCount: event.MailSentCount,
 		PasswordResetSuccessCount: event.PasswordResetSuccessCount, SourceAttributionValid: attributionValid, Action: event.Action,
+		Actionable:  models.SecurityEventActionable(event.EventType),
 		MetadataJSON: event.MetadataJSON, FirstSeenAt: event.FirstSeenAt, LastSeenAt: event.LastSeenAt,
 		ResolvedAt: event.ResolvedAt, ResolvedBy: event.ResolvedBy, ResolutionNote: event.ResolutionNote,
 	}

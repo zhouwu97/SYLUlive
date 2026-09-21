@@ -129,6 +129,47 @@ func securityEventIncrement(column string, delta int) clause.Expr {
 	return gorm.Expr(securityEventsTable+"."+column+" + ?", delta)
 }
 
+// securityEventMonotonicRank 生成“只在序数升高时才替换”的表达式。
+//
+// 用途是让同一个五分钟聚合桶里的 severity / action **单向升级**：
+//
+//	07:44 第一次失败  severity=medium action=observed
+//	07:45 第三次失败  severity=high   action=blocked
+//
+// 两条落在同一个 bucket_key 时，早期实现只累加计数、不同步 severity/action，
+// 数据库里留下 severity=medium + action=observed，首页按 severity 统计的
+// 「高危待处理」因此长期漏报已拦截的攻击。这里改成只升不降。
+//
+// 注意 PostgreSQL / SQLite 的 SET 表达式一律对**更新前**的行求值，
+// 所以下面 metadata_json 引用 security_events.severity 时读到的是旧等级，语义正确。
+// 不能写成 severity = excluded.severity：后面再来一条低等级事件会把 high 冲回 medium。
+// 表达式里的序数由 models 的单一顺序表生成（见 models.SecuritySeverityRankSQL）。
+func securityEventMonotonicRank(column string, columnRankSQL func(string) string) clause.Expr {
+	existing := columnRankSQL(securityEventsTable + "." + column)
+	incoming := columnRankSQL("excluded." + column)
+	return gorm.Expr("CASE WHEN " + existing + " < " + incoming +
+		" THEN excluded." + column + " ELSE " + securityEventsTable + "." + column + " END")
+}
+
+// securityEventMetadataUpdate 生成 metadata_json 的覆盖规则：
+// 只在「本次带了 metadata」且「本次严重等级不低于现有值」时才覆盖。
+//
+// 两个条件缺一不可——同等级但空 metadata 的观察（例如封禁计数）不能把之前
+// 记录下来的阈值/窗口上下文清掉；低等级观察也不能覆盖高危事件的上下文。
+func securityEventMetadataUpdate() clause.Expr {
+	incomingSeverity := models.SecuritySeverityRankSQL("excluded.severity")
+	existingSeverity := models.SecuritySeverityRankSQL(securityEventsTable + ".severity")
+	return gorm.Expr("CASE WHEN excluded.metadata_json <> '' AND " + incomingSeverity + " >= " + existingSeverity +
+		" THEN excluded.metadata_json ELSE " + securityEventsTable + ".metadata_json END")
+}
+
+// securityEventFillIfEmpty 生成“现有值为空时才用本次值填充”的表达式。
+// 用于 method 这类同一桶内不保证每次都有值的描述字段。
+func securityEventFillIfEmpty(column string) clause.Expr {
+	return gorm.Expr("CASE WHEN " + securityEventsTable + "." + column + " = '' THEN excluded." + column +
+		" ELSE " + securityEventsTable + "." + column + " END")
+}
+
 // Record 写入一条安全观察事件。
 //
 // 该方法不接收 context，供不掌握请求 context 的后台/异步调用方使用。
@@ -225,6 +266,13 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 			"last_seen_at":                 now,
 			"updated_at":                   now,
 			"status":                       status,
+			// severity / action 只能升不能降：同一桶里先 observed 后 blocked 必须落到 blocked，
+			// 反过来先 high 后 medium 必须保持 high，否则首页按 severity 统计的高危待处理会漏报。
+			"severity":      securityEventMonotonicRank("severity", models.SecuritySeverityRankSQL),
+			"action":        securityEventMonotonicRank("action", models.SecurityActionRankSQL),
+			"metadata_json": securityEventMetadataUpdate(),
+			// method 在同一桶内不保证每次都带值（例如聚合计数写入），只在现有值为空时填充。
+			"method": securityEventFillIfEmpty("method"),
 			// 同一五分钟聚合桶再次出现新攻击时重新激活事件，旧的处置结果必须清掉，
 			// 否则后台会同时显示 active 和历史 resolved_at，造成错误判断。
 			"resolved_at":     nil,
@@ -280,11 +328,30 @@ func (s *SecurityEventService) IsBlockedContext(ctx context.Context, clientIP, r
 }
 
 func (s *SecurityEventService) CountDistinctTargets(eventType, clientIP string, since time.Time) (int64, error) {
+	return s.CountDistinctTargetsForEvents([]string{eventType}, clientIP, since)
+}
+
+// CountDistinctTargetsForEvents 统计同一来源在窗口内针对多少个**不同目标**留下过指定类型的事件。
+//
+// 需要跨类型查询的原因：密码喷洒判据是「一个来源扫了很多不同账号」，而账号维度的
+// 单次密码输错现在是 login_failed、达到锁定阈值才是 login_bruteforce。只数其中一种
+// 会让喷洒检测漏判——这也是把普通失败降级为 login_failed 之后必须同步修的地方。
+func (s *SecurityEventService) CountDistinctTargetsForEvents(eventTypes []string, clientIP string, since time.Time) (int64, error) {
 	if s == nil || s.db == nil {
 		return 0, nil
 	}
+	types := make([]string, 0, len(eventTypes))
+	for _, eventType := range eventTypes {
+		if trimmed := strings.TrimSpace(eventType); trimmed != "" {
+			types = append(types, trimmed)
+		}
+	}
+	if len(types) == 0 {
+		return 0, nil
+	}
 	var count int64
-	query := s.db.Model(&models.SecurityEvent{}).Where("event_type = ? AND last_seen_at >= ?", eventType, since)
+	query := s.db.Model(&models.SecurityEvent{}).
+		Where("event_type IN ? AND last_seen_at >= ? AND target_hash <> ''", types, since)
 	if strings.TrimSpace(clientIP) != "" {
 		query = query.Where("source_ip_hash = ?", s.Hash(clientIP))
 	}

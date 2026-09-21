@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	CompetitionCandidateSignalRetention = 90 * 24 * time.Hour
-	CompetitionRankTraceRetention       = 30 * 24 * time.Hour
+	CompetitionCandidateSignalRetention    = 90 * 24 * time.Hour
+	CompetitionRankTraceRetention          = 30 * 24 * time.Hour
+	competitionObservabilityCleanupMaxRows = 10000
 )
 
 // 竞赛候选链路的信号类型。与客户端埋点一一对应，写入前必须过白名单校验。
@@ -124,9 +125,23 @@ func CleanupCompetitionObservabilityData(db *gorm.DB, now time.Time, signalTTL, 
 		batchSize = 1000
 	}
 	cleanup := func(model interface{}, cutoff time.Time) (int64, error) {
-		ids := db.Model(model).Select("id").Where("created_at < ?", cutoff).Order("id ASC").Limit(batchSize)
-		result := db.Where("id IN (?)", ids).Delete(model)
-		return result.RowsAffected, result.Error
+		var total int64
+		for total < competitionObservabilityCleanupMaxRows {
+			limit := batchSize
+			if remaining := competitionObservabilityCleanupMaxRows - int(total); limit > remaining {
+				limit = remaining
+			}
+			ids := db.Model(model).Select("id").Where("created_at < ?", cutoff).Order("id ASC").Limit(limit)
+			result := db.Where("id IN (?)", ids).Delete(model)
+			if result.Error != nil {
+				return total, result.Error
+			}
+			total += result.RowsAffected
+			if result.RowsAffected < int64(limit) {
+				break
+			}
+		}
+		return total, nil
 	}
 	signals, err := cleanup(&CompetitionCandidateSignals{}, now.Add(-signalTTL))
 	if err != nil {

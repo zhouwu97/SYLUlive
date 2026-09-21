@@ -105,15 +105,6 @@ func (h *CompetitionHandler) SubmitCompetitionCandidateSignals(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "未知的埋点类型"})
 			return
 		}
-		if signal.EventID == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "埋点缺少赛事"})
-			return
-		}
-		canonicalCompetitionID, exists := canonicalCompetitionIDs[signal.EventID]
-		if !exists {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "埋点赛事不存在"})
-			return
-		}
 		if signal.Position < 0 || signal.Position > competitionSignalMaxPosition {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "展示位次超出范围"})
 			return
@@ -123,12 +114,29 @@ func (h *CompetitionHandler) SubmitCompetitionCandidateSignals(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "赛事编号过长"})
 			return
 		}
-		if competitionID != "" && competitionID != canonicalCompetitionID {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "埋点赛事编号与事件不匹配"})
-			return
-		}
-		if competitionID == "" {
-			competitionID = canonicalCompetitionID
+		if kind == models.CompetitionSignalFitTabExposure {
+			// Tab 曝光表示用户进入「适合我」页，本身没有对应赛事，允许 event_id 为 0。
+			if signal.EventID != 0 || competitionID != "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "适合我页曝光不应携带赛事"})
+				return
+			}
+		} else {
+			if signal.EventID == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "埋点缺少赛事"})
+				return
+			}
+			canonicalCompetitionID, exists := canonicalCompetitionIDs[signal.EventID]
+			if !exists {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "埋点赛事不存在"})
+				return
+			}
+			if competitionID != "" && competitionID != canonicalCompetitionID {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "埋点赛事编号与事件不匹配"})
+				return
+			}
+			if competitionID == "" {
+				competitionID = canonicalCompetitionID
+			}
 		}
 		// 同一请求内的重复直接合并，避免一次上报里出现两条相同的曝光。
 		dedupeKey := kind + "|" + input.SessionKey + "|" + competitionID

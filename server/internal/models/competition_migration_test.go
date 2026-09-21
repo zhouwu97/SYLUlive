@@ -153,3 +153,56 @@ func TestCompetitionCalendarUniqueIndexPostgres(t *testing.T) {
 		t.Fatalf("error=%v rows=%d", result.Error, result.RowsAffected)
 	}
 }
+
+func TestCompetitionSignalImpressionUniqueIndexPostgres(t *testing.T) {
+	dsn := os.Getenv("TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("TEST_POSTGRES_DSN 未配置，跳过真实 PostgreSQL 集成测试")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	defer sqlDB.Close()
+	schema := fmt.Sprintf("competition_signal_test_%d", time.Now().UnixNano())
+	if err := db.Exec("CREATE SCHEMA " + schema).Error; err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = db.Exec("SET search_path TO public").Error
+		_ = db.Exec("DROP SCHEMA IF EXISTS " + schema + " CASCADE").Error
+	}()
+	if err := db.Exec("SET search_path TO " + schema).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&CompetitionCandidateSignals{}); err != nil {
+		t.Fatal(err)
+	}
+	first := CompetitionCandidateSignals{
+		UserID: 1, Kind: CompetitionSignalImpression, SessionKey: "session", EventID: 9,
+	}
+	if err := db.Create(&first).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureCompetitionSignalIndexes(db); err != nil {
+		t.Fatal(err)
+	}
+	duplicate := CompetitionCandidateSignals{
+		UserID: 1, Kind: CompetitionSignalImpression, SessionKey: "session", EventID: 9,
+	}
+	result := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&duplicate)
+	if result.Error != nil || result.RowsAffected != 0 {
+		t.Fatalf("重复曝光未被唯一索引拦截：error=%v rows=%d", result.Error, result.RowsAffected)
+	}
+	click := CompetitionCandidateSignals{
+		UserID: 1, Kind: CompetitionSignalClick, SessionKey: "session", EventID: 9,
+	}
+	if err := db.Create(&click).Error; err != nil {
+		t.Fatalf("部分唯一索引错误限制了非曝光信号：%v", err)
+	}
+}

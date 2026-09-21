@@ -33,6 +33,26 @@ func TestCleanupCompetitionObservabilityDataUsesSeparateTTLs(t *testing.T) {
 	require.EqualValues(t, 1, traceCount)
 }
 
+func TestCleanupCompetitionObservabilityDataDrainsMultipleBatches(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&CompetitionCandidateSignals{}, &CompetitionRankTrace{}))
+	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	for eventID := uint(1); eventID <= 3; eventID++ {
+		require.NoError(t, db.Create(&CompetitionCandidateSignals{
+			UserID: 1, Kind: CompetitionSignalClick, SessionKey: "batch", EventID: eventID,
+			CreatedAt: now.Add(-91 * 24 * time.Hour),
+		}).Error)
+	}
+	signals, traces, err := CleanupCompetitionObservabilityData(db, now, 90*24*time.Hour, 30*24*time.Hour, 2)
+	require.NoError(t, err)
+	require.EqualValues(t, 3, signals)
+	require.Zero(t, traces)
+	var remaining int64
+	require.NoError(t, db.Model(&CompetitionCandidateSignals{}).Count(&remaining).Error)
+	require.Zero(t, remaining)
+}
+
 func TestEnsureCompetitionSignalIndexesCleansHistoricalDuplicateImpressions(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)

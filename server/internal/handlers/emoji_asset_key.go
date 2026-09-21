@@ -9,7 +9,7 @@ import (
 // 资源键规则与客户端 EmojiAssetKey.parse 保持一致。服务端不能假设客户端
 // 已经校验过：一旦写入，同一条消息会被所有接收方按同一身份解析渲染。
 const (
-	emojiAssetKeyMaxLength = 512
+	emojiAssetKeyMaxLength  = 512
 	emojiAssetPartMaxLength = 128
 )
 

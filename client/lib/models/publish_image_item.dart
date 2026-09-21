@@ -9,6 +9,34 @@ enum PublishImageSource { existing, local }
 /// 上传状态（C-3：waiting → uploading → success / failed）。
 enum PublishImageUploadState { waiting, uploading, success, failed }
 
+/// 图片上传结果：成功携带 fileId；失败携带状态码、服务端错误码与可展示提示。
+///
+/// 状态码用于区分可重试（网络错误 / 5xx）与不应立即重试（429 额度、403 限制）的失败，
+/// 避免所有失败都被 UI 折叠成同一句"请点击图片重试"。
+class UploadImageResult {
+  const UploadImageResult._({
+    this.fileId,
+    this.statusCode,
+    this.errorCode,
+    this.message,
+  });
+
+  const UploadImageResult.success(int fileId) : this._(fileId: fileId);
+
+  const UploadImageResult.failure({
+    required String message,
+    int? statusCode,
+    String? errorCode,
+  }) : this._(message: message, statusCode: statusCode, errorCode: errorCode);
+
+  final int? fileId;
+  final int? statusCode;
+  final String? errorCode;
+  final String? message;
+
+  bool get isSuccess => fileId != null;
+}
+
 /// 发布表单统一图片项（C-2 模型，C-3 启用上传状态）。
 ///
 /// 用 factory 保证合法组合：

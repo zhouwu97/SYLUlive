@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/post.dart';
+import 'package:shenliyuan/models/publish_image_item.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/models/topic.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
@@ -95,9 +96,9 @@ class _FakePostProvider extends Fake
   }
 
   @override
-  Future<int?> uploadImage(XFile file,
+  Future<UploadImageResult> uploadImage(XFile file,
           {void Function(int sent, int total)? onProgress}) async =>
-      1;
+      const UploadImageResult.success(1);
 }
 
 Widget _buildMarketForm({

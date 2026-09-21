@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/post.dart';
+import 'package:shenliyuan/models/publish_image_item.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/models/topic.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -115,9 +116,9 @@ class FakePostProvider extends Fake
   }
 
   @override
-  Future<int?> uploadImage(XFile file,
+  Future<UploadImageResult> uploadImage(XFile file,
           {void Function(int sent, int total)? onProgress}) async =>
-      1;
+      const UploadImageResult.success(1);
 }
 
 Widget buildComposerTestApp(

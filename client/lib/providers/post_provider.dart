@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import '../config/api_constants.dart';
 import '../models/post.dart';
+import '../models/publish_image_item.dart';
 import '../models/topic.dart';
 import '../services/async_action_guard.dart';
 import '../services/post_cache_service.dart';
@@ -1283,15 +1284,21 @@ class PostProvider extends ChangeNotifier {
     return null;
   }
 
-  /// 上传图片，返回 file_id。
+  /// 上传图片，返回结构化结果（fileId / 状态码 / 错误码 / 用户提示）。
   ///
   /// [onProgress] 提供 (sent, total)。优先用 `MultipartFile.fromFile` 流式上传，
   /// 避免整文件 `readAsBytes` 占用内存；Web/无路径时回退 bytes。
-  Future<int?> uploadImage(
+  Future<UploadImageResult> uploadImage(
     XFile file, {
     void Function(int sent, int total)? onProgress,
   }) async {
-    final prepared = await _publicImageCompressor.prepare(file);
+    final PreparedPublicImage prepared;
+    try {
+      prepared = await _publicImageCompressor.prepare(file);
+    } catch (e) {
+      debugPrint('上传前图片处理失败: $e');
+      return const UploadImageResult.failure(message: '图片处理失败，请重试或更换图片');
+    }
     try {
       final uploadFile = prepared.file;
       final rawName = uploadFile.name.trim().isNotEmpty
@@ -1318,15 +1325,97 @@ class PostProvider extends ChangeNotifier {
         data: formData,
         onSendProgress: onProgress,
       );
-      if (response.statusCode == 200 && response.data != null) {
-        return response.data['file_id'] as int?;
+      final data = response.data;
+      final fileId = data is Map ? data['file_id'] : null;
+      if (response.statusCode == 200 && fileId is int) {
+        return UploadImageResult.success(fileId);
       }
+      return const UploadImageResult.failure(message: '上传失败，请稍后重试');
+    } on DioException catch (e) {
+      final result = _uploadFailureFromDio(e);
+      debugPrint(
+        '上传图片失败: status=${result.statusCode} code=${result.errorCode} message=${result.message}',
+      );
+      return result;
     } catch (e) {
       debugPrint('上传图片失败: $e');
+      return const UploadImageResult.failure(message: '图片上传失败，请检查网络后重试');
     } finally {
       await prepared.dispose();
     }
-    return null;
+  }
+
+  /// 把上传失败的 DioException 映射为结构化结果与准确提示。
+  /// 429 额度用尽、507 存储紧张、403 被限制等不能提示"重试"，避免用户连点造成重试风暴。
+  UploadImageResult _uploadFailureFromDio(DioException e) {
+    final status = e.response?.statusCode;
+    final data = e.response?.data;
+    String? code;
+    String? serverMessage;
+    if (data is Map) {
+      code = data['code']?.toString();
+      final raw = (data['error'] ?? data['message'])?.toString().trim();
+      serverMessage = (raw == null || raw.isEmpty) ? null : raw;
+    }
+    switch (status) {
+      case 400:
+        return UploadImageResult.failure(
+          message: serverMessage ?? '图片不符合上传要求，请更换图片后重试',
+          statusCode: status,
+          errorCode: code,
+        );
+      case 401:
+        return UploadImageResult.failure(
+          message: '登录已过期，请重新登录后再上传',
+          statusCode: status,
+          errorCode: code,
+        );
+      case 403:
+        return UploadImageResult.failure(
+          message: '当前网络被限制上传，请切换网络后重试',
+          statusCode: status,
+          errorCode: code,
+        );
+      case 413:
+        return UploadImageResult.failure(
+          message: '图片体积过大，请压缩后重试',
+          statusCode: status,
+          errorCode: code,
+        );
+      case 429:
+        return UploadImageResult.failure(
+          message: code == 'upload_quota_exceeded'
+              ? '上传过于频繁或临时空间已满，请稍后再试'
+              : '操作过于频繁，请稍后再试',
+          statusCode: status,
+          errorCode: code,
+        );
+      case 500:
+      case 502:
+      case 504:
+        return UploadImageResult.failure(
+          message: '服务器暂时不可用，请稍后再试',
+          statusCode: status,
+          errorCode: code,
+        );
+      case 503:
+        return UploadImageResult.failure(
+          message: serverMessage ?? '服务暂时不可用，请稍后再试',
+          statusCode: status,
+          errorCode: code,
+        );
+      case 507:
+        return UploadImageResult.failure(
+          message: serverMessage ?? '服务器存储空间不足，请稍后再试',
+          statusCode: status,
+          errorCode: code,
+        );
+    }
+    return UploadImageResult.failure(
+      message: AppFeedback.dioErrorMessage(e, fallback: '图片上传失败，请检查网络后重试'),
+      statusCode: status,
+      errorCode: code,
+    );
   }
 
   String _safeUploadFilename(String name) {

@@ -183,20 +183,30 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   /// 上传所有本地图（并发 ≤3），更新每个 item 的 uploadState / progress / fileId。
-  /// 全部成功返回 true；任一失败返回 false（失败项留在 failed 态，可重试）。
+  /// 全部成功返回 true；任一失败返回 false（失败项留在 failed 态，可重试），
+  /// 首个失败的结构化结果保存在 [_lastUploadError] 用于准确提示。
+  UploadImageResult? _lastUploadError;
+
   Future<bool> _uploadLocalImages(PostProvider postProvider) {
+    _lastUploadError = null;
     return uploadImagesConcurrently(
       _images,
       maxConcurrent: 3,
-      upload: (item) => postProvider.uploadImage(
-        item.localFile!,
-        onProgress: (sent, total) {
-          if (total > 0) {
-            item.progress = sent / total;
-            if (mounted) setState(() {});
-          }
-        },
-      ),
+      upload: (item) async {
+        final result = await postProvider.uploadImage(
+          item.localFile!,
+          onProgress: (sent, total) {
+            if (total > 0) {
+              item.progress = sent / total;
+              if (mounted) setState(() {});
+            }
+          },
+        );
+        if (!result.isSuccess) {
+          _lastUploadError ??= result;
+        }
+        return result.fileId;
+      },
       onStateChanged: () {
         if (mounted) setState(() {});
       },
@@ -517,7 +527,10 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       // C-3：并发上传本地图（失败项可重试，不提交）。
       if (!await _uploadLocalImages(postProvider)) {
         if (mounted) {
-          AppFeedback.error('图片上传失败，请点击图片重试', context: context);
+          AppFeedback.error(
+            _lastUploadError?.message ?? '图片上传失败，请点击图片重试',
+            context: context,
+          );
         }
         return;
       }

@@ -14,6 +14,8 @@ class EmojiPackInstallation {
     this.sortOrder = 0,
     this.status = EmojiPackInstallStatus.installed,
     this.error,
+    this.externalPackId,
+    this.importSourceSha256,
   });
 
   final EmojiPackManifest manifest;
@@ -24,6 +26,14 @@ class EmojiPackInstallation {
   final int sortOrder;
   final EmojiPackInstallStatus status;
   final String? error;
+
+  /// 第三方 Manifest 自己声明的 pack_id。只是外部标识与展示线索，
+  /// 绝不参与本地身份计算：两个包可以声明同一个外部 id。
+  final String? externalPackId;
+
+  /// 导入源文件的 SHA-256。重新导入同一个文件时用它找回已有本地包，
+  /// 这是唯一不依赖外部声明的「同一个包」判据。
+  final String? importSourceSha256;
   String get packId => manifest.packId;
   int get version => manifest.version;
   int get totalSize => manifest.totalSize;
@@ -43,6 +53,8 @@ class EmojiPackInstallation {
         sortOrder: sortOrder ?? this.sortOrder,
         status: status ?? this.status,
         error: error ?? this.error,
+        externalPackId: externalPackId,
+        importSourceSha256: importSourceSha256,
       );
 
   Map<String, dynamic> toJson() => {
@@ -54,6 +66,8 @@ class EmojiPackInstallation {
         'sort_order': sortOrder,
         'status': status.name,
         if (error != null) 'error': error,
+        if (externalPackId != null) 'external_pack_id': externalPackId,
+        if (importSourceSha256 != null) 'import_source_sha256': importSourceSha256,
       };
 
   factory EmojiPackInstallation.fromJson(Map<String, dynamic> json) =>
@@ -67,5 +81,7 @@ class EmojiPackInstallation {
         sortOrder: json['sort_order'] as int,
         status: EmojiPackInstallStatus.values.byName(json['status'] as String),
         error: json['error'] as String?,
+        externalPackId: json['external_pack_id'] as String?,
+        importSourceSha256: json['import_source_sha256'] as String?,
       );
 }

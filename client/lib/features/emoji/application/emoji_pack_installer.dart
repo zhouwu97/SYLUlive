@@ -99,6 +99,8 @@ class EmojiPackInstaller {
     required EmojiPackTrustLevel trustLevel,
     required Future<Uint8List> Function(EmojiManifestAsset asset) readAsset,
     String? expectedManifestSha256,
+    String? externalPackId,
+    String? importSourceSha256,
   }) =>
       store.exclusive(() async {
         await _recover();
@@ -157,7 +159,9 @@ class EmojiPackInstaller {
             name: name,
             trustLevel: trustLevel,
             enabled: old?.enabled ?? true,
-            sortOrder: old?.sortOrder ?? (index['packs'] as Map).length);
+            sortOrder: old?.sortOrder ?? (index['packs'] as Map).length,
+            externalPackId: externalPackId ?? old?.externalPackId,
+            importSourceSha256: importSourceSha256 ?? old?.importSourceSha256);
         await _staging.create(recursive: true);
         try {
           for (final asset in manifest.assets) {

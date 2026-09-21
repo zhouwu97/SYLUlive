@@ -16,6 +16,7 @@ void main() {
   final png = image.encodePng(image.Image(width: 2, height: 2));
   Future<File> archive(
       {String path = 'assets/a.png',
+      String fileName = 'input.sylupack',
       String? hash,
       String mime = 'image/png',
       int schema = 1,
@@ -49,7 +50,7 @@ void main() {
       ..add(ArchiveFile.string('manifest.json', jsonEncode(manifest)))
       ..add(asset);
     if (extra) archive.add(ArchiveFile.string('extra.txt', 'unexpected'));
-    final file = File('${root.path}/input.sylupack');
+    final file = File('${root.path}/$fileName');
     await file.writeAsBytes(ZipEncoder().encode(archive));
     return file;
   }
@@ -74,6 +75,34 @@ void main() {
     expect(installed.trustLevel, EmojiPackTrustLevel.localUntrusted);
     expect(installed.packId, startsWith('local-'));
     expect(await store.load(), hasLength(1));
+  });
+
+  test('本地包身份随机，相同外部 pack_id 的不同文件互不顶替', () async {
+    final first = await archive();
+    final second =
+        await archive(path: 'assets/b.png', fileName: 'second.sylupack');
+    final imported = await importer().importFile(first);
+    final legacyId =
+        'local-${sha256.convert(utf8.encode('official-pack')).toString()}';
+    expect(imported.packId, isNot(legacyId));
+    expect(imported.externalPackId, 'official-pack');
+    expect(
+        imported.importSourceSha256,
+        sha256.convert(await first.readAsBytes()).toString());
+    final replaced = await importer().importFile(second);
+    expect(replaced.packId, isNot(imported.packId));
+    expect(await store.load(), hasLength(2));
+  });
+
+  test('重新导入同一个文件沿用原有本地包', () async {
+    final file = await archive();
+    final first = await importer().importFile(file);
+    final again = await importer().importFile(file);
+    expect(again.packId, first.packId);
+    expect(again.importSourceSha256, first.importSourceSha256);
+    final persisted = await store.load();
+    expect(persisted, hasLength(1));
+    expect(persisted.single.externalPackId, 'official-pack');
   });
   for (final path in [
     '../outside.png',

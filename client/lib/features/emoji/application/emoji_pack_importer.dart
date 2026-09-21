@@ -7,6 +7,7 @@ import 'package:archive/archive.dart' hide ZLibDecoder;
 import 'package:crypto/crypto.dart';
 
 import '../domain/emoji_feature_flags.dart';
+import '../domain/emoji_local_id.dart';
 import '../domain/emoji_pack.dart';
 import '../domain/emoji_pack_installation.dart';
 import '../domain/emoji_pack_limits.dart';
@@ -69,9 +70,17 @@ class EmojiPackImporter {
         source.assets.any((e) => !entries.containsKey(e.path))) {
       throw const FormatException('ZIP 文件清单与 Manifest 不一致');
     }
-    // Manifest 中的 official、packId 不授予官方身份。本地包身份由内容导出。
-    final localId =
-        'local-${sha256.convert(utf8.encode(source.packId)).toString()}';
+    // Manifest 中的 official、packId 不授予官方身份。本地包身份由随机 UUID 生成，
+    // 只有「重新导入同一个文件」才沿用已有身份，判据是源文件内容的 SHA-256。
+    // 这样两个包可以声明同一个外部 pack_id，也不会互相顶掉或冒领身份。
+    final sourceSha256 = sha256.convert(bytes).toString();
+    final previous = (await installer.store.load())
+        .where((p) =>
+            p.trustLevel == EmojiPackTrustLevel.localUntrusted &&
+            p.importSourceSha256 == sourceSha256)
+        .map((p) => p.packId)
+        .firstOrNull;
+    final localId = previous ?? 'local-${newEmojiLocalId()}';
     final manifest = EmojiPackManifest(
         schemaVersion: source.schemaVersion,
         packId: localId,
@@ -82,7 +91,9 @@ class EmojiPackImporter {
         manifest: manifest,
         name: raw['name']?.toString() ?? source.packId,
         trustLevel: EmojiPackTrustLevel.localUntrusted,
-        readAsset: (asset) async => _extract(entries[asset.path]!));
+        readAsset: (asset) async => _extract(entries[asset.path]!),
+        externalPackId: source.packId,
+        importSourceSha256: sourceSha256);
   }
 
   static void _validatePath(String path) {

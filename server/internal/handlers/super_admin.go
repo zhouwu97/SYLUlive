@@ -45,23 +45,7 @@ func (h *SuperAdminHandler) GetUsers(c *gin.Context) {
 
 	query := h.db.Model(&models.User{})
 
-	if search != "" {
-		like := "%" + strings.ToLower(search) + "%"
-		if userID, err := strconv.ParseUint(search, 10, 64); err == nil {
-			query = query.Where(
-				"id = ? OR LOWER(student_id) LIKE ? OR LOWER(nickname) LIKE ?",
-				userID,
-				like,
-				like,
-			)
-		} else {
-			query = query.Where(
-				"LOWER(student_id) LIKE ? OR LOWER(nickname) LIKE ?",
-				like,
-				like,
-			)
-		}
-	}
+	query = withAdminUserSearch(query, h.db, search)
 
 	if role != "" {
 
@@ -71,16 +55,21 @@ func (h *SuperAdminHandler) GetUsers(c *gin.Context) {
 
 	var users []models.User
 	if err := query.
-		Select("id", "student_id", "nickname", "avatar", "role", "credit_score", "report_count", "edu_bound", "created_at").
+		Select("id", "student_id", "student_verified_at", "nickname", "avatar", "role", "credit_score", "report_count", "edu_authorized", "created_at").
 		Order("created_at DESC").
 		Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户列表失败"})
 		return
 	}
+	academicStudentIDs, err := loadAdminAcademicStudentIDs(h.db, users)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户教务身份失败"})
+		return
+	}
 
 	response := make([]AdminUserResponse, 0, len(users))
 	for _, user := range users {
-		response = append(response, adminUserResponse(user))
+		response = append(response, adminUserResponse(user, adminStudentID(user, academicStudentIDs), adminStudentVerified(user, academicStudentIDs)))
 	}
 	c.JSON(http.StatusOK, response)
 

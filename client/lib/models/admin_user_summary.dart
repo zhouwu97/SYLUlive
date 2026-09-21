@@ -10,6 +10,7 @@ class AdminUserSummary {
   final int creditScore;
   final int reportCount;
   final bool eduBound;
+  final bool studentVerified;
 
   const AdminUserSummary({
     required this.id,
@@ -20,6 +21,7 @@ class AdminUserSummary {
     required this.creditScore,
     required this.reportCount,
     required this.eduBound,
+    required this.studentVerified,
   });
 
   factory AdminUserSummary.fromJson(Map<String, dynamic> json) {
@@ -32,6 +34,7 @@ class AdminUserSummary {
       creditScore: (json['credit_score'] as num?)?.toInt() ?? 100,
       reportCount: (json['report_count'] as num?)?.toInt() ?? 0,
       eduBound: json['edu_bound'] == true,
+      studentVerified: json['student_verified'] == true,
     );
   }
 

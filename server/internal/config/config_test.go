@@ -75,6 +75,21 @@ func TestLoadImageVariantWorkerIsDisabledByDefaultAndCanBeEnabled(t *testing.T) 
 	require.True(t, Load().ImageVariantWorkerEnabled)
 }
 
+func TestLoadCompetitionCandidateFeaturesDefaultClosed(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("COMPETITION_CANDIDATE_ENGINE_V2_ENABLED", "")
+	t.Setenv("COMPETITION_RANK_TRACE_SAMPLE_PERCENT", "")
+	cfg := Load()
+	require.False(t, cfg.CompetitionCandidateEngineV2Enabled)
+	require.Zero(t, cfg.CompetitionRankTraceSamplePercent)
+
+	t.Setenv("COMPETITION_CANDIDATE_ENGINE_V2_ENABLED", "true")
+	t.Setenv("COMPETITION_RANK_TRACE_SAMPLE_PERCENT", "5")
+	cfg = Load()
+	require.True(t, cfg.CompetitionCandidateEngineV2Enabled)
+	require.Equal(t, 5, cfg.CompetitionRankTraceSamplePercent)
+}
+
 func TestLoadUploadProtectionDefaultsAndOverrides(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	cfg := Load()

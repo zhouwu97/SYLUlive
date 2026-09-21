@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/competition.dart';
+import 'competition_status_helper.dart';
 import 'competition_ui_tokens.dart';
 
 Future<void> showCompetitionMatchReasonSheet(
@@ -24,6 +25,11 @@ class CompetitionMatchReasonSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final dimensions = event.matchDimensions;
+    final matchTierLabel = competitionMatchTierLabel(event.matchTier);
+    final matchBasisSummary = competitionMatchBasisSummary(
+      basis: event.matchBasis,
+      clusters: event.matchedClusters,
+    );
     final rows = <(String, String)>[
       ('参赛资格', _dimensionLabel(dimensions.eligibility)),
       ('专业方向', _dimensionLabel(dimensions.major)),
@@ -91,6 +97,35 @@ class CompetitionMatchReasonSheet extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 18),
+              // 匹配结论只描述「为什么被算作匹配」，与下面的「赛事依据」严格分区：
+              // 人工评级是独立信息，不得与匹配度互相折算（治理与命名要求）。
+              if (matchTierLabel.isNotEmpty) ...[
+                _sectionTitle('匹配结论', isDark),
+                _ReasonRow(label: '匹配度', value: matchTierLabel, isDark: isDark),
+                if (matchBasisSummary.isNotEmpty)
+                  _ReasonRow(
+                    label: '命中依据',
+                    value: matchBasisSummary,
+                    isDark: isDark,
+                  ),
+                if (event.coreReason.trim().isNotEmpty)
+                  _ReasonRow(
+                    label: '核心依据',
+                    value: event.coreReason.trim(),
+                    isDark: isDark,
+                  ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    '匹配度由专业与偏好的确定性规则算出；下方「赛事依据」中的人工评级与认定等级是独立信息，两者不互相折算。',
+                    style: TextStyle(
+                      color: CompetitionUiTokens.subColor(isDark),
+                      fontSize: 12,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ],
               _sectionTitle('规则匹配', isDark),
               for (final row in rows)
                 _ReasonRow(label: row.$1, value: row.$2, isDark: isDark),
@@ -105,7 +140,7 @@ class CompetitionMatchReasonSheet extends StatelessWidget {
               ],
               _sectionTitle('赛事依据', isDark),
               _ReasonRow(
-                label: '赛事价值',
+                label: '人工评级',
                 value: event.competitionRating.trim().isEmpty
                     ? '待确认'
                     : event.competitionRating.trim(),

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"shenliyuan/internal/competitionmatching"
 	"shenliyuan/internal/models"
 )
 
@@ -142,6 +143,42 @@ func TestCompetitionPreferenceCleansBeforeApplyingLimits(t *testing.T) {
 	}
 }
 
+// 专业簇词表必须由服务端下发：客户端要渲染可纠正的专业方向，
+// 但没有理由再抄一份 53 项词表——抄了就会漂移，写进去的错值还会被接口拒绝。
+func TestCompetitionPreferenceExposesMajorClusterOptions(t *testing.T) {
+	db := newCompetitionTestDB(t)
+	handler := NewCompetitionHandler(db)
+
+	recorder := preferenceRequest(t, handler.GetCompetitionPreference, http.MethodGet, "", 91)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	response := decodePreferenceResponse(t, recorder)
+	if len(response.MajorClusterOptions) == 0 {
+		t.Fatal("未下发专业簇词表，客户端无法提供纠正入口")
+	}
+	for _, option := range response.MajorClusterOptions {
+		if !competitionmatching.IsStandardCluster(option) {
+			t.Fatalf("下发了词表外的簇：%q", option)
+		}
+	}
+
+	// 用下发的第一个选项做一次纠正，读回必须一致，证明词表与校验口径同源。
+	picked := response.MajorClusterOptions[0]
+	payload, _ := json.Marshal(map[string]interface{}{
+		"experience_level":       "beginner",
+		"major_cluster_override": []string{picked},
+	})
+	recorder = preferenceRequest(t, handler.PutCompetitionPreference, http.MethodPut, string(payload), 91)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	response = decodePreferenceResponse(t, recorder)
+	if len(response.MajorClusterOverride) != 1 || response.MajorClusterOverride[0] != picked {
+		t.Fatalf("纠正读回不一致：%#v want=%q", response.MajorClusterOverride, picked)
+	}
+}
+
 func TestCompetitionPreferenceRequiresAuthentication(t *testing.T) {
 	db := newCompetitionTestDB(t)
 	handler := NewCompetitionHandler(db)
@@ -166,5 +203,66 @@ func TestCompetitionPreferenceRejectsMultipleJSONObjects(t *testing.T) {
 	recorder := preferenceRequest(t, NewCompetitionHandler(db).PutCompetitionPreference, http.MethodPut, body, 51)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+// 专业簇纠正的读写语义：显式传值才覆盖，不传必须保留。
+// 该接口是整体覆盖语义，如果把「没传」当成「清空」，
+// 尚未升级的客户端每次保存偏好都会静默抹掉用户已填的专业纠正。
+func TestCompetitionPreferencePersistsMajorClusterOverride(t *testing.T) {
+	db := newCompetitionTestDB(t)
+	handler := NewCompetitionHandler(db)
+
+	created := `{"experience_level":"beginner","major_cluster_override":["计算机类"," 软件工程 ","计算机类"]}`
+	recorder := preferenceRequest(t, handler.PutCompetitionPreference, http.MethodPut, created, 61)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	response := decodePreferenceResponse(t, recorder)
+	if strings.Join(response.MajorClusterOverride, ",") != "计算机类,软件工程" {
+		t.Fatalf("纠正未去重归一：%#v", response.MajorClusterOverride)
+	}
+
+	// 未传该字段的保存：旧客户端行为，必须保留已有值。
+	withoutField := `{"goals":["ability"],"experience_level":"beginner"}`
+	recorder = preferenceRequest(t, handler.PutCompetitionPreference, http.MethodPut, withoutField, 61)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	response = decodePreferenceResponse(t, recorder)
+	if strings.Join(response.MajorClusterOverride, ",") != "计算机类,软件工程" {
+		t.Fatalf("未传该字段时不得清空：%#v", response.MajorClusterOverride)
+	}
+
+	// 显式传空数组才是清空。
+	cleared := `{"goals":["ability"],"experience_level":"beginner","major_cluster_override":[]}`
+	recorder = preferenceRequest(t, handler.PutCompetitionPreference, http.MethodPut, cleared, 61)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	response = decodePreferenceResponse(t, recorder)
+	if len(response.MajorClusterOverride) != 0 {
+		t.Fatalf("显式空数组应清空：%#v", response.MajorClusterOverride)
+	}
+}
+
+// 方向、技能与专业纠正都必须落在受控词表内：
+// 词表外的值不会报错也不会生效，只会变成用户看不见的死选项。
+func TestCompetitionPreferenceRejectsValuesOutsideControlledVocabulary(t *testing.T) {
+	db := newCompetitionTestDB(t)
+	handler := NewCompetitionHandler(db).PutCompetitionPreference
+	tests := map[string]string{
+		"unknown direction": `{"direction_tags":["量子计算"],"experience_level":"beginner"}`,
+		"unknown skill":     `{"skill_tags":["开飞船"],"experience_level":"beginner"}`,
+		"unknown cluster":   `{"major_cluster_override":["不存在的专业簇"],"experience_level":"beginner"}`,
+		"too many clusters": `{"major_cluster_override":["计算机类","软件工程","机械类","会计学"],"experience_level":"beginner"}`,
+	}
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			recorder := preferenceRequest(t, handler, http.MethodPut, body, 71)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+		})
 	}
 }

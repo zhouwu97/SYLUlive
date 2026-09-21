@@ -239,6 +239,13 @@ class CompetitionEvent {
   final int ruleOrder;
   final bool hasPendingInformation;
   final CompetitionMatchDimensions matchDimensions;
+  /// 匹配档位（strong / suitable / explore / none）。为空表示不是候选链路返回的数据。
+  /// 只用于展示离散标签，界面不得把内部分值渲染成「匹配度 87 分」这类伪精确结论。
+  final String matchTier;
+  /// 匹配依据（major_cluster / college / tag_bridge / general）。
+  final String matchBasis;
+  /// 命中的专业簇，如 ["计算机类"]。用于「计算机类 · 专业直接相关」这类短文案。
+  final List<String> matchedClusters;
   final String coreReason;
   final List<String> cautions;
   final List<String> questionsToConfirm;
@@ -313,6 +320,9 @@ class CompetitionEvent {
     this.ruleOrder = 0,
     this.hasPendingInformation = false,
     this.matchDimensions = const CompetitionMatchDimensions(),
+    this.matchTier = '',
+    this.matchBasis = '',
+    this.matchedClusters = const [],
     this.coreReason = '',
     this.cautions = const [],
     this.questionsToConfirm = const [],
@@ -407,6 +417,9 @@ class CompetitionEvent {
             : null,
       ),
       coreReason: json['core_reason'] ?? '',
+      matchTier: '${json['match_tier'] ?? ''}'.trim(),
+      matchBasis: '${json['match_basis'] ?? ''}'.trim(),
+      matchedClusters: _stringList(json['matched_clusters']),
       cautions: _stringList(json['cautions']),
       questionsToConfirm: _stringList(json['questions_to_confirm']),
       evidenceSubgrade: json['evidence_subgrade'] ?? '',
@@ -564,6 +577,9 @@ class CompetitionEvent {
         'training': matchDimensions.training,
       },
       if (coreReason.isNotEmpty) 'core_reason': coreReason,
+      if (matchTier.isNotEmpty) 'match_tier': matchTier,
+      if (matchBasis.isNotEmpty) 'match_basis': matchBasis,
+      if (matchedClusters.isNotEmpty) 'matched_clusters': matchedClusters,
       if (cautions.isNotEmpty) 'cautions': cautions,
       if (questionsToConfirm.isNotEmpty)
         'questions_to_confirm': questionsToConfirm,

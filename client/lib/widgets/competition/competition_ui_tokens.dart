@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../campus/campus_theme.dart';
+
 class CompetitionUiTokens {
   // --- Colors ---
   static Color pageBg(bool isDark) =>
@@ -30,6 +32,10 @@ class CompetitionUiTokens {
   static Color warningColor(bool isDark) =>
       isDark ? const Color(0xFFFFB74D) : const Color(0xFFF2994A);
 
+  /// 警告类提示的浅底，与 accentSoft 同构，避免各页面各自手调透明度。
+  static Color warningSoft(bool isDark) =>
+      warningColor(isDark).withValues(alpha: 0.12);
+
   static Color upcomingColor(bool isDark) =>
       isDark ? const Color(0xFFE57373) : const Color(0xFFE76F51);
 
@@ -38,6 +44,27 @@ class CompetitionUiTokens {
 
   static Color archivedColor(bool isDark) =>
       isDark ? const Color(0xFF78909C) : const Color(0xFFB8BFC6);
+
+  // --- 匹配度语义色 ---
+  //
+  // 只服务「匹配度」这一个维度：不得与人工评级（competition_rating）的展示混用，
+  // 也不得替代成功/错误这类全局状态语义（ACCESSIBILITY §Contrast）。
+  // 浅色沿用设计系统登记的业务功能色（CampusTheme.green / cyan），
+  // 深色用提亮变体以保证对比度；explore 复用中性的待确认色，避免暗示「好/坏」。
+  static Color matchTierColor(String tier, bool isDark) {
+    switch (tier.trim()) {
+      case 'strong':
+        return isDark ? const Color(0xFF6EE7B7) : CampusTheme.green;
+      case 'suitable':
+        return isDark ? const Color(0xFF5EEAD4) : CampusTheme.cyan;
+      default:
+        return pendingColor(isDark);
+    }
+  }
+
+  /// 匹配度徽标的浅底，与 accentSoft 同构。
+  static Color matchTierSoft(String tier, bool isDark) =>
+      matchTierColor(tier, isDark).withValues(alpha: 0.12);
 
   // --- Dimensions ---
   static const double pagePadding = 16.0;

@@ -82,4 +82,36 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('匹配结论与赛事依据分区展示', (tester) async {
+    final event = CompetitionEvent(
+      id: 22,
+      title: '候选赛事',
+      competitionRating: 'A',
+      coreReason: '你的专业属于计算机类，该赛事面向同一方向开放',
+      matchTier: 'suitable',
+      matchBasis: 'major_cluster',
+      matchedClusters: const ['计算机类'],
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: CompetitionMatchReasonSheet(event: event))),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('匹配结论'), findsOneWidget);
+    expect(find.text('较为匹配'), findsOneWidget);
+    expect(find.text('计算机类 · 专业直接相关'), findsOneWidget);
+    expect(find.text('核心依据'), findsOneWidget);
+    // 人工评级与匹配度必须分区且可辨识：混用会让用户把评级读成匹配度。
+    expect(find.text('人工评级'), findsOneWidget);
+    expect(find.text('赛事价值'), findsNothing);
+  });
+
+  testWidgets('没有匹配信息时不出现匹配结论分区', (tester) async {
+    await tester.pumpWidget(_app());
+    await tester.pumpAndSettle();
+
+    expect(find.text('匹配结论'), findsNothing);
+    expect(find.text('人工评级'), findsOneWidget);
+  });
 }

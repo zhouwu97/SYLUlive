@@ -135,11 +135,14 @@ type Config struct {
 	SchoolDeviceCapabilityCut   bool
 	SchoolAcademicRoutesRetired bool
 
-	CompetitionCatalogV2Enabled         bool   // 是否开放 Catalog 2.2 管理链路
-	CompetitionCandidateEngineV2Enabled bool   // 是否开放统一候选接口
-	CompetitionAIExplanationEnabled     bool   // 是否允许调用外部模型解释候选
-	SyluliveMCPGrant                    string // 纯 MCP 调用 Go 只读事实网关的固定 Grant
-	ReviewEnabled                       bool   // 是否开放前置审核与相关投稿链路（默认 false，暂时关闭）
+	CompetitionCatalogV2Enabled         bool // 是否开放 Catalog 2.2 管理链路
+	CompetitionCandidateEngineV2Enabled bool // 是否开放统一候选接口
+	CompetitionAIExplanationEnabled     bool // 是否允许调用外部模型解释候选
+	// CompetitionRankTraceSamplePercent 是竞赛候选排序追踪的采样比例（0 表示不写）。
+	// 只影响追踪表写入，不影响候选结果与顺序。
+	CompetitionRankTraceSamplePercent int
+	SyluliveMCPGrant                  string // 纯 MCP 调用 Go 只读事实网关的固定 Grant
+	ReviewEnabled                     bool   // 是否开放前置审核与相关投稿链路（默认 false，暂时关闭）
 	// PrivateChatDisabled 表示私聊能力整体下线：所有 /api/messages 接口在认证和
 	// 请求体解析之前短路返回 410。默认 false，需要临时关闭时置 true。
 	PrivateChatDisabled bool
@@ -573,7 +576,10 @@ func Load() *Config {
 	aiExternalMCPKnownHostsPath := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH"))
 	aiUnifiedMCPURL := strings.TrimSpace(os.Getenv("AI_UNIFIED_MCP_URL"))
 	competitionCatalogV2Enabled := envBool("COMPETITION_CATALOG_V2_ENABLED", false)
+	// 候选接口属于生产行为开关，默认关闭，必须由部署配置显式开启，避免漏配时意外改变流量和数据写入。
 	competitionCandidateEngineV2Enabled := envBool("COMPETITION_CANDIDATE_ENGINE_V2_ENABLED", false)
+	// 排序追踪默认不写入，待上线方确认留存与容量策略后再逐步提高采样比例。
+	competitionRankTraceSamplePercent := envIntInRange("COMPETITION_RANK_TRACE_SAMPLE_PERCENT", 0, 0, 100)
 	competitionAIExplanationEnabled := envBool("COMPETITION_AI_EXPLANATION_ENABLED", false)
 	syluliveMCPGrant := strings.TrimSpace(os.Getenv("SYLULIVE_MCP_GRANT"))
 	if err := validateAIConfig(
@@ -714,6 +720,7 @@ func Load() *Config {
 		CompetitionCatalogV2Enabled:         competitionCatalogV2Enabled,
 		CompetitionCandidateEngineV2Enabled: competitionCandidateEngineV2Enabled,
 		CompetitionAIExplanationEnabled:     competitionAIExplanationEnabled,
+		CompetitionRankTraceSamplePercent:   competitionRankTraceSamplePercent,
 		SyluliveMCPGrant:                    syluliveMCPGrant,
 		ReviewEnabled:                       envBool("REVIEW_ENABLED", false),
 		PrivateChatDisabled:                 privateChatDisabled,

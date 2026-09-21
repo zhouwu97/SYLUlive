@@ -38,6 +38,13 @@ class CompetitionStudentEventCard extends StatelessWidget {
       status: event.schoolRecognitionStatus,
       grade: event.schoolRecognitionGrade,
     );
+    // 匹配度只出现在候选链路（目录列表不带 match_tier），
+    // 徽标同时带图标与文字，不依赖颜色单独表达档位（ACCESSIBILITY §Dark）。
+    final matchTierLabel = competitionMatchTierLabel(event.matchTier);
+    final matchBasisSummary = competitionMatchBasisSummary(
+      basis: event.matchBasis,
+      clusters: event.matchedClusters,
+    );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -77,6 +84,31 @@ class CompetitionStudentEventCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
+              if (matchTierLabel.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _matchPill(matchTierLabel, event.matchTier, isDark),
+                      if (matchBasisSummary.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            matchBasisSummary,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.3,
+                              color: CompetitionUiTokens.subColor(isDark),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
@@ -255,6 +287,35 @@ Widget _solidPill(String label, Color color, bool isDark) {
         height: 1,
         fontWeight: FontWeight.w900,
       ),
+    ),
+  );
+}
+
+/// 匹配度徽标：浅底 + 语义色文字 + 图标。
+/// 图标是必需的——「高度匹配 / 可以探索」不能只靠颜色区分（ACCESSIBILITY §Dark）。
+Widget _matchPill(String label, String tier, bool isDark) {
+  final color = CompetitionUiTokens.matchTierColor(tier, isDark);
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: CompetitionUiTokens.matchTierSoft(tier, isDark),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.auto_awesome_rounded, size: 12, color: color),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            height: 1,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
     ),
   );
 }

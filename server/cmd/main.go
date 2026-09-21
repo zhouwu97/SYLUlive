@@ -385,6 +385,8 @@ func main() {
 		&models.CompetitionImportBatch{},
 		&models.UserCompetitionPreference{},
 		&models.CompetitionRecommendationSnapshot{},
+		&models.CompetitionCandidateSignals{},
+		&models.CompetitionRankTrace{},
 		&models.AIActionDraft{},
 		&models.AIActionAuditLog{},
 		&models.UserCalendar{},
@@ -414,6 +416,9 @@ func main() {
 
 		log.Fatal("数据库迁移失败:", err)
 
+	}
+	if err := models.EnsureCompetitionSignalIndexes(db); err != nil {
+		log.Fatal("竞赛埋点唯一索引迁移失败:", err)
 	}
 	// 定期启动清理已过期且已失效一段时间的刷新凭据，避免长期累积。
 	if err := db.Where("expires_at < ?", time.Now().Add(-7*24*time.Hour)).Delete(&models.RefreshToken{}).Error; err != nil {
@@ -785,6 +790,8 @@ func main() {
 	if competitionHandlerErr != nil {
 		log.Fatal("初始化竞赛证明材料私有存储失败:", competitionHandlerErr)
 	}
+	// 排序追踪采样比例：只影响是否写追踪表，不影响任何候选结果与顺序。
+	competitionHandler.SetRankTraceSample(cfg.CompetitionRankTraceSamplePercent)
 	userCalendarHandler := handlers.NewUserCalendarHandler(db)
 
 	waterSectionHandler := handlers.NewWaterSectionHandler(db)
@@ -1319,6 +1326,7 @@ func main() {
 		}
 	}
 	idempotencyCleanupCron := tasks.StartIdempotencyCleanupCron(appCtx, db)
+	competitionObservabilityCron := tasks.StartCompetitionObservabilityCron(appCtx, db)
 	uploadMaintenanceCron := tasks.StartUploadMaintenanceCron(
 		appCtx,
 		db,
@@ -1616,6 +1624,7 @@ func main() {
 		user.GET("/competitions/fit", competitionHandler.ListFitEvents)
 		if cfg.CompetitionCandidateEngineV2Enabled {
 			user.GET("/competitions/candidates", competitionHandler.ListCompetitionCandidates)
+			user.POST("/competitions/candidate-signals", competitionHandler.SubmitCompetitionCandidateSignals)
 			if cfg.CompetitionAIExplanationEnabled {
 				user.POST("/competitions/candidates/explain", competitionHandler.ExplainCompetitionCandidates)
 			}
@@ -2817,6 +2826,9 @@ func main() {
 	}
 	if idempotencyCleanupCron != nil {
 		idempotencyCleanupCron.Wait()
+	}
+	if competitionObservabilityCron != nil {
+		competitionObservabilityCron.Wait()
 	}
 	if uploadMaintenanceCron != nil {
 		uploadMaintenanceCron.Wait()

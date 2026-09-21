@@ -247,6 +247,11 @@ var legacyCompetitionReferences = []legacyCompetitionReference{
 	{Table: "ai_action_drafts", Column: "competition_event_id"},
 	{Table: "competition_catalog_legacy_mappings", Column: "legacy_event_id"},
 	{Table: "competition_events", Column: "parent_event_id"},
+	// 埋点与排序追踪同样指向赛事。不登记的话有两个后果：
+	// 归并会直接拒绝执行（未知引用结构），以及归并后埋点仍指向已被软删的重复行——
+	// 指标会算在一批不存在的赛事上，而且很难被发现。
+	{Table: "competition_candidate_signals", Column: "event_id"},
+	{Table: "competition_rank_traces", Column: "event_id"},
 }
 
 func migrateLegacyCompetitionReferences(tx *gorm.DB, duplicateIDs []uint, canonicalID uint) (int64, error) {

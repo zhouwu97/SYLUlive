@@ -10,14 +10,17 @@ import 'package:shenliyuan/screens/market_screen.dart';
 Map<String, dynamic> _marketPost({
   required int id,
   required String type,
+  String status = 'normal',
+  String? title,
 }) {
   return {
     'id': id,
-    'title': type == 'buy' ? '求购自行车' : '出售自行车',
+    'title': title ?? (type == 'buy' ? '求购自行车' : '出售自行车'),
     'content': '成色很好',
     'board_id': 2,
     'author_id': 1,
     'post_type': type,
+    'status': status,
     'price': 99,
     'created_at': '2026-08-20T08:00:00Z',
   };
@@ -29,7 +32,8 @@ Widget _buildMarket(Dio dio) {
       ChangeNotifierProvider<AuthProvider>(
         create: (_) => AuthProvider(dio, loadStoredAuth: false),
       ),
-      ChangeNotifierProvider(create: (_) => PostProvider(dio, enableCache: false)),
+      ChangeNotifierProvider(
+          create: (_) => PostProvider(dio, enableCache: false)),
       ChangeNotifierProvider(create: (_) => ThemeProvider(loadOnStart: false)),
     ],
     child: const MaterialApp(home: MarketScreen()),
@@ -37,6 +41,41 @@ Widget _buildMarket(Dio dio) {
 }
 
 void main() {
+  testWidgets('集市列表不展示已售商品', (tester) async {
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'posts': [
+                  _marketPost(id: 1, type: 'sell', title: '在售自行车'),
+                  _marketPost(
+                    id: 2,
+                    type: 'sell',
+                    status: 'sold',
+                    title: '已售自行车',
+                  ),
+                ],
+                'total': 2,
+                'session_id': null,
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    await tester.pumpWidget(_buildMarket(dio));
+    await tester.pumpAndSettle();
+
+    expect(find.text('在售自行车'), findsOneWidget);
+    expect(find.text('已售自行车'), findsNothing);
+  });
+
   testWidgets('搜索中切换类型后清除搜索会显示对应普通 feed', (tester) async {
     final dio = Dio();
     dio.interceptors.add(
@@ -50,7 +89,9 @@ void main() {
               requestOptions: options,
               statusCode: 200,
               data: {
-                'posts': [_marketPost(id: postType == 'buy' ? 2 : 1, type: postType)],
+                'posts': [
+                  _marketPost(id: postType == 'buy' ? 2 : 1, type: postType)
+                ],
                 'total': 1,
                 'session_id': null,
               },

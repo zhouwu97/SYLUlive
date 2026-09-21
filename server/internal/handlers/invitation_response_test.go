@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -19,7 +20,7 @@ func newInvitationResponseTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("打开测试数据库失败: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Invitation{}, &models.InvitationVote{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.AcademicIdentityBinding{}, &models.Invitation{}, &models.InvitationVote{}); err != nil {
 		t.Fatalf("迁移测试数据库失败: %v", err)
 	}
 	return db
@@ -150,6 +151,55 @@ func TestGetCandidatesSupportsInternalIDSearch(t *testing.T) {
 	}
 }
 
+func TestGetCandidatesUsesVerifiedAcademicStudentIDWhenLegacyFieldIsEmpty(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newInvitationResponseTestDB(t)
+	createInvitationResponseTestUser(t, db, models.User{
+		ID: 436, Nickname: "念辞", Role: models.RoleUser, CreditScore: 100,
+	})
+	if err := db.Create(&models.AcademicIdentityBinding{
+		UserID: 436, ProviderID: models.AcademicProviderUndergraduate, StudentID: "2408010115",
+		VerifiedAt: time.Now(), VerificationMethod: "local_academic_login", VerificationVersion: "v1",
+	}).Error; err != nil {
+		t.Fatalf("创建教务身份失败: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/admin/candidates?q=2408010115", nil)
+	NewInvitationHandler(db, "test-secret").GetCandidates(context)
+	response := decodePaginatedResponse(t, recorder)
+	items, ok := response["items"].([]interface{})
+	if !ok || len(items) != 1 {
+		t.Fatalf("按教务学号搜索候选人失败: %s", recorder.Body.String())
+	}
+	candidate, ok := items[0].(map[string]interface{})
+	if !ok || candidate["student_id"] != "2408010115" {
+		t.Fatalf("管理员候选人未显示已验证教务学号: %s", recorder.Body.String())
+	}
+}
+
+func TestGetCandidatesStatsCountsVerifiedAcademicIdentities(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newInvitationResponseTestDB(t)
+	createInvitationResponseTestUser(t, db, models.User{ID: 436, Nickname: "念辞", Role: models.RoleUser})
+	if err := db.Create(&models.AcademicIdentityBinding{
+		UserID: 436, ProviderID: models.AcademicProviderUndergraduate, StudentID: "2408010115",
+		VerifiedAt: time.Now(), VerificationMethod: "local_academic_login", VerificationVersion: "v1",
+	}).Error; err != nil {
+		t.Fatalf("创建教务身份失败: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/admin/candidates/stats", nil)
+	NewInvitationHandler(db, "test-secret").GetCandidatesStats(context)
+	response := decodePaginatedResponse(t, recorder)
+	if response["edu"] != float64(1) || response["other"] != float64(0) {
+		t.Fatalf("教务账号统计未使用身份表: %s", recorder.Body.String())
+	}
+}
+
 func TestGetApprovalListReturnsAdminDTOForNestedUsers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newInvitationResponseTestDB(t)
@@ -157,6 +207,12 @@ func TestGetApprovalListReturnsAdminDTOForNestedUsers(t *testing.T) {
 		ID: 1, StudentID: "candidate-001", Nickname: "候选人", Role: models.RoleUser,
 		CreditScore: 96, EduBound: true,
 	})
+	if err := db.Create(&models.AcademicIdentityBinding{
+		UserID: 1, ProviderID: models.AcademicProviderUndergraduate, StudentID: "2408010115",
+		VerifiedAt: time.Now(), VerificationMethod: "local_academic_login", VerificationVersion: "v1",
+	}).Error; err != nil {
+		t.Fatalf("创建教务身份失败: %v", err)
+	}
 	createInvitationResponseTestUser(t, db, models.User{
 		ID: 2, StudentID: "inviter-001", Nickname: "邀请人", Role: models.RoleAdmin,
 	})
@@ -185,6 +241,9 @@ func TestGetApprovalListReturnsAdminDTOForNestedUsers(t *testing.T) {
 		if _, exists := user[field]; !exists {
 			t.Fatalf("候选人资料缺少 %s: %s", field, recorder.Body.String())
 		}
+	}
+	if user["student_id"] != "2408010115" {
+		t.Fatalf("邀请审批未显示已验证教务学号: %s", recorder.Body.String())
 	}
 	inviter, ok := response[0]["inviter"].(map[string]interface{})
 	if !ok || inviter["student_id"] != "inviter-001" {

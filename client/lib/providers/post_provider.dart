@@ -1444,7 +1444,10 @@ class PostProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
-        final updated = Post.fromJson(response.data as Map<String, dynamic>);
+        final updated = _mergeMutationPost(
+          Post.fromJson(response.data as Map<String, dynamic>),
+          postId,
+        );
         _replacePostInBoards(updated);
         notifyListeners();
         return PinPostResult(success: true, post: updated);
@@ -1468,7 +1471,10 @@ class PostProvider extends ChangeNotifier {
       final response = await _dio.post('/admin/posts/$postId/unpin');
 
       if (response.statusCode == 200) {
-        final updated = Post.fromJson(response.data as Map<String, dynamic>);
+        final updated = _mergeMutationPost(
+          Post.fromJson(response.data as Map<String, dynamic>),
+          postId,
+        );
         _replacePostInBoards(updated);
         notifyListeners();
         return PinPostResult(success: true, post: updated);
@@ -1906,6 +1912,31 @@ class PostProvider extends ChangeNotifier {
         );
       }
     }
+  }
+
+  /// 兼容旧版置顶接口只返回帖子基础字段的情况，避免投票元数据被覆盖丢失。
+  Post _mergeMutationPost(Post updated, int postId) {
+    if (updated.pollMeta != null) return updated;
+    Post? previous = _canonicalPosts[postId];
+    if (previous == null) {
+      for (final board in _boards.values) {
+        for (final candidate in [...board.posts, ...board.pinnedPosts]) {
+          if (candidate.id == postId) {
+            previous = candidate;
+            break;
+          }
+        }
+        if (previous != null) break;
+      }
+    }
+    if (previous?.pollMeta == null ||
+        (updated.contentKind != 'poll' && previous!.contentKind != 'poll')) {
+      return updated;
+    }
+    return updated.copyWith(
+      contentKind: previous!.contentKind,
+      pollMeta: previous.pollMeta,
+    );
   }
 
   // ── FEED-3 乐观可见性 ─────────────────────────────────────────────

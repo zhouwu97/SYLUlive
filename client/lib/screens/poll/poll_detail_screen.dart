@@ -334,8 +334,17 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
           );
     if (!mounted) return;
     if (result.success && result.post != null) {
-      setState(() => _post = result.post);
-      context.read<PollProvider>().applyExternalPostUpdate(result.post!);
+      // 兼容旧版置顶接口未回传 poll_meta：置顶不会改变投票内容，
+      // 继续沿用当前详情的投票快照，避免成功后详情页进入空数据态。
+      final updated = result.post!.pollMeta == null && post.pollMeta != null
+          ? result.post!.copyWith(
+              contentKind: post.contentKind,
+              pollMeta: post.pollMeta,
+            )
+          : result.post!;
+      setState(() => _post = updated);
+      context.read<PollProvider>().applyExternalPostUpdate(updated);
+      context.read<PostProvider>().applyExternalPostUpdate(updated);
       AppFeedback.showSnackBar(
         context,
         post.isActivePinned ? '已取消置顶' : '已置顶到首页',

@@ -36,6 +36,37 @@ Map<String, dynamic> _marketPostJson(
   };
 }
 
+Map<String, dynamic> _pollPostJson(int id, {bool? isPinned}) {
+  return {
+    ..._postJson(id),
+    'content_kind': 'poll',
+    if (isPinned != null) 'is_pinned': isPinned,
+    'poll_meta': {
+      'id': 10,
+      'post_id': id,
+      'category': 'campus_life',
+      'selection_mode': 'single',
+      'max_choices': 1,
+      'results_visibility': 'always',
+      'allow_change': true,
+      'status': 'active',
+      'effective_status': 'active',
+      'ends_at': '2026-06-20T08:00:00Z',
+      'remaining_seconds': 3600,
+      'participant_count': 0,
+      'has_voted': false,
+      'results_visible': true,
+      'can_view_result': true,
+      'can_vote': true,
+      'can_change': false,
+      'is_owner': false,
+      'options': [
+        {'id': 11, 'text': '选项一', 'sort_order': 0, 'is_chosen': false},
+      ],
+    },
+  };
+}
+
 Response<dynamic> _response(RequestOptions options, int postId) {
   return Response(
     requestOptions: options,
@@ -928,6 +959,56 @@ void main() {
     final post = provider.postsFor(1, sort: 'time').single;
     expect(post.isPinned, isFalse);
     expect(post.pinnedUntil, isNull);
+  });
+
+  test('pin mutation keeps poll metadata when the response omits it', () async {
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.path == '/posts') {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: {
+                  'posts': [_pollPostJson(1)],
+                  'total': 1,
+                },
+              ),
+            );
+            return;
+          }
+          if (options.path == '/admin/posts/1/pin') {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: {
+                  ..._postJson(1),
+                  'content_kind': 'poll',
+                  'is_pinned': true,
+                },
+              ),
+            );
+            return;
+          }
+          handler.reject(DioException(requestOptions: options));
+        },
+      ),
+    );
+
+    final provider = PostProvider(dio, enableCache: false);
+    await provider.refresh(boardId: 1, sort: 'time');
+    final result = await provider.pinPost(
+      postId: 1,
+      pinnedUntil: DateTime.utc(2026, 6, 17, 8),
+    );
+
+    expect(result.success, isTrue);
+    expect(result.post?.isPoll, isTrue);
+    expect(result.post?.pollMeta?.options.single.text, '选项一');
+    expect(provider.postsFor(1, sort: 'time').single.isPoll, isTrue);
   });
 
   test('refreshHomePinnedFeeds refreshes all and time but not following',

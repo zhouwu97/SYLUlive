@@ -30,6 +30,10 @@ func newPostPinTestDB(t *testing.T) (*gorm.DB, models.User) {
 		&models.Post{},
 		&models.PostImage{},
 		&models.Like{},
+		&models.Poll{},
+		&models.PollOption{},
+		&models.PollBallot{},
+		&models.PollBallotChoice{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
@@ -149,6 +153,51 @@ func TestAdminPinPostPinsOnlyShuitieAndReturnsUpdatedPost(t *testing.T) {
 	}
 	if !updated.IsPinned || updated.PinnedWeight != 80 || updated.PinnedBy != 99 || updated.PinnedReason != "测试置顶" {
 		t.Fatalf("unexpected pinned post: %+v", updated)
+	}
+}
+
+func TestAdminPinPostReturnsPollMetadata(t *testing.T) {
+	db, user := newPostPinTestDB(t)
+	handler := NewPostHandler(db, "", "")
+	post := createPinTestPost(t, db, models.Post{
+		Title:       "poll",
+		BoardID:     models.BoardShuitie,
+		AuthorID:    user.ID,
+		ContentKind: models.PostContentKindPoll,
+	})
+	poll := models.Poll{
+		PostID:            post.ID,
+		Category:          models.PollCategoryCampusLife,
+		SelectionMode:     models.PollSelectionSingle,
+		MaxChoices:        1,
+		ResultsVisibility: models.PollResultsAlways,
+		AllowChange:       true,
+		Status:            models.PollStatusActive,
+		EndsAt:            time.Now().Add(24 * time.Hour),
+	}
+	if err := db.Create(&poll).Error; err != nil {
+		t.Fatalf("create poll: %v", err)
+	}
+	if err := db.Create(&models.PollOption{PollID: poll.ID, Text: "选项一", SortOrder: 0}).Error; err != nil {
+		t.Fatalf("create poll option: %v", err)
+	}
+
+	response := performPostPinRequest(
+		t,
+		handler.AdminPinPost,
+		http.MethodPost,
+		fmt.Sprintf("/api/admin/posts/%d/pin", post.ID),
+		[]byte(fmt.Sprintf(`{"pinned_until":%q}`, time.Now().Add(24*time.Hour).UTC().Format(time.RFC3339))),
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var updated models.Post
+	if err := json.Unmarshal(response.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode post: %v", err)
+	}
+	if updated.PollMeta == nil || len(updated.PollMeta.Options) != 1 {
+		t.Fatalf("置顶投票帖未返回完整 poll_meta: %s", response.Body.String())
 	}
 }
 

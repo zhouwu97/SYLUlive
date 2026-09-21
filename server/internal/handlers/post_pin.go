@@ -134,8 +134,7 @@ func (h *PostHandler) AdminPinPost(c *gin.Context) {
 	}
 
 	responsePosts := []models.Post{updatedPost}
-	h.fillLikes(c, responsePosts)
-	_ = services.LoadTopicsForPosts(h.db, responsePosts)
+	h.hydratePinnedPosts(c, responsePosts)
 	updatedPost = responsePosts[0]
 	c.JSON(http.StatusOK, updatedPost)
 }
@@ -183,10 +182,24 @@ func (h *PostHandler) AdminUnpinPost(c *gin.Context) {
 	}
 
 	responsePosts := []models.Post{updatedPost}
-	h.fillLikes(c, responsePosts)
-	_ = services.LoadTopicsForPosts(h.db, responsePosts)
+	h.hydratePinnedPosts(c, responsePosts)
 	updatedPost = responsePosts[0]
 	c.JSON(http.StatusOK, updatedPost)
+}
+
+// hydratePinnedPosts 保证置顶操作返回的数据与信息流/详情接口使用同一套帖子快照。
+// 投票帖需要 poll_meta，否则客户端会在置顶成功后丢失投票选项。
+func (h *PostHandler) hydratePinnedPosts(c *gin.Context, posts []models.Post) {
+	if len(posts) == 0 {
+		return
+	}
+	h.fillLikes(c, posts)
+	if posts[0].ContentKind == models.PostContentKindPoll {
+		if err := services.NewPollService(h.db).HydratePollPosts(posts, contextUserID(c)); err == nil {
+			return
+		}
+	}
+	_ = services.LoadTopicsForPosts(h.db, posts)
 }
 
 func (h *PostHandler) AdminGetPinnedPosts(c *gin.Context) {

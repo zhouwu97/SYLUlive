@@ -323,7 +323,7 @@ var (
 
 // resolveBlockScopes 把作用域解析成一组路由前缀，每个前缀写一条 SecurityBlock。
 //
-// 为什么必须显式：查询侧把 route_prefix='' 当作「对所有敏感路由生效」，而客户端曾经
+// 为什么必须显式：查询侧把**空 route_prefix** 当作「对所有敏感路由生效」，而客户端曾经
 // 固定发送空 route_prefix。校园网、宿舍宽带和运营商 CGNAT 都是大量用户共用一个出口，
 // 一次「临时封禁来源」就可能连坐一批正常同学。因此这里不再接受「空前缀 = 全站」的隐式默认：
 //
@@ -358,9 +358,11 @@ func resolveBlockScopes(input securityBlockInput) ([]string, error) {
 		// 账号与验证码链路：撞库、账号接管、批量注册验证码三类攻击都落在这几条前缀上。
 		// 刻意不含 /api/posts、/api/messages、/api/feedback、/api/search 等内容与检索接口，
 		// 那些入口被整体封禁会误伤大量正常读写。
+		// /api/login_edu 必须显式列出：封禁匹配是完整路由段，
+		// /api/login 不会（也不应该）连带命中 /api/login_edu。
 		return []string{
-			"/api/login", "/api/password", "/api/register",
-			"/api/forgot_password", "/api/send_code", "/api/verify_code",
+			"/api/login", "/api/login_edu", "/api/password",
+			"/api/register", "/api/forgot_password", "/api/send_code", "/api/verify_code",
 		}, nil
 	case securityBlockScopeAll:
 		if !input.ConfirmGlobal {
@@ -499,7 +501,7 @@ func (h *SecurityAdminHandler) securityEventDTO(event models.SecurityEvent, isSu
 		TargetType: event.TargetType, TargetMasked: event.TargetMasked, RequestIDSample: event.RequestIDSample,
 		AttemptCount: event.AttemptCount, BlockedCount: event.BlockedCount, MailSentCount: event.MailSentCount,
 		PasswordResetSuccessCount: event.PasswordResetSuccessCount, SourceAttributionValid: attributionValid, Action: event.Action,
-		Actionable:  models.SecurityEventActionable(event.EventType),
+		Actionable:   models.SecurityEventActionable(event.EventType),
 		MetadataJSON: event.MetadataJSON, FirstSeenAt: event.FirstSeenAt, LastSeenAt: event.LastSeenAt,
 		ResolvedAt: event.ResolvedAt, ResolvedBy: event.ResolvedBy, ResolutionNote: event.ResolutionNote,
 	}

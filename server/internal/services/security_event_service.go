@@ -308,7 +308,12 @@ func (s *SecurityEventService) IsBlockedContext(ctx context.Context, clientIP, r
 	var count int64
 	err := s.db.WithContext(ctx).Model(&models.SecurityBlock{}).
 		Where("scope_type = ? AND scope_value = ? AND expires_at > ? AND revoked_at IS NULL", "ip_hash", hash, s.now()).
-		Where("route_prefix = '' OR ? LIKE route_prefix || '%'", route).
+		// 路由前缀必须按**完整路由段**匹配，与管理员看到的封禁范围语义一致：
+		//   /api/login   命中 /api/login、/api/login/foo
+		//   /api/login   不得命中 /api/login_edu、/api/loginfoo
+		// 旧的 `? LIKE route_prefix || '%'` 是裸字符串前缀匹配，会让
+		// 「仅当前接口 /api/login」的封禁连带封掉教务登录 /api/login_edu。
+		Where("route_prefix = '' OR ? = route_prefix OR ? LIKE route_prefix || '/%'", route, route).
 		Count(&count).Error
 	if err != nil {
 		return false, err

@@ -78,7 +78,8 @@ func TestResolveBlockScopesDefaultsToMinimalScope(t *testing.T) {
 			}
 		}
 	}
-	for _, required := range []string{"/api/login", "/api/password"} {
+	// 教务登录必须显式列出：封禁匹配是完整路由段，/api/login 不会连带命中 /api/login_edu。
+	for _, required := range []string{"/api/login", "/api/login_edu", "/api/password"} {
 		if !securityScopesContain(accountScopes, required) {
 			t.Fatalf("账号链路作用域应包含 %s，实际 %v", required, accountScopes)
 		}

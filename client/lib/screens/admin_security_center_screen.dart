@@ -294,8 +294,8 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                   const Padding(
                     padding: EdgeInsets.only(top: AppSpacing.xs),
                     child: Text(
-                      '覆盖 /api/login · /api/password · /api/register · '
-                      '/api/send_code · /api/verify_code · /api/forgot_password',
+                      '覆盖 /api/login · /api/login_edu · /api/password · '
+                      '/api/register · /api/forgot_password · /api/send_code · /api/verify_code',
                       style: TextStyle(fontSize: 12),
                     ),
                   ),

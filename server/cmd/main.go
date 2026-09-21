@@ -209,8 +209,6 @@ func main() {
 	}
 
 	if err := db.AutoMigrate(
-		&models.PostBookmark{},
-
 		&models.User{},
 		&models.AcademicIdentityBinding{},
 		&models.AcademicAccountConfig{},
@@ -622,7 +620,6 @@ func main() {
 	})))
 	r := gin.New()
 	r.Use(middleware.RequestTraceMiddleware(), gin.Recovery())
-	r.Use(middleware.BrowserOriginGuard())
 	if err := r.SetTrustedProxies(cfg.TrustedProxyCIDRs); err != nil {
 		log.Fatal("配置可信代理网段失败:", err)
 	}
@@ -1525,7 +1522,6 @@ func main() {
 	{
 
 		user.GET("/profile", userHandler.GetProfile)
-		user.GET("/bookmarks", postHandler.ListBookmarks)
 		user.GET("/canteen-reviews", canteenHandler.GetMyCanteenReviews)
 		user.GET("/canteen-contributions", canteenHandler.GetMyCanteenContributions)
 
@@ -1864,8 +1860,6 @@ func main() {
 	{
 
 		postsAuth.POST("", postHandler.Create)
-		postsAuth.PUT("/:id/bookmark", postHandler.PutBookmark)
-		postsAuth.DELETE("/:id/bookmark", postHandler.DeleteBookmark)
 
 		postsAuth.PUT("/:id", postHandler.Update)
 

@@ -175,6 +175,20 @@ void main() {
       expect(overview.pendingHighCount, 1);
     });
 
+    test('新后端返回 0 时必须显示 0，不得回退到旧口径', () {
+      // 旧口径 active_high_count 会把已由封禁层处置掉的
+      // security_blocked_request 也算成待办；一旦 actionable=0 时回退，
+      // 审计流水就会重新混进顶部卡片。
+      final overview = SecurityOverview.fromJson({
+        'range': '24h',
+        'active_high_count': 12,
+        'actionable_high_count': 0,
+        'actionable_pending_count': 3,
+        'total_events': 100,
+      });
+      expect(overview.pendingHighCount, 0);
+    });
+
     test('旧后端回退到旧字段，不显示成 0', () {
       final overview = SecurityOverview.fromJson({
         'range': '24h',

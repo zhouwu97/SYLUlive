@@ -44,9 +44,7 @@ class SecurityOverview {
   /// security_blocked_request 也算成待办，数字因此远大于列表里真正要处理的事。
   /// 新接口返回 actionable_high_count；旧后端未升级时回退到旧字段，避免显示 0。
   int get pendingHighCount =>
-      actionableHighCount > 0 || totalEvents == 0
-          ? actionableHighCount
-          : activeHighCount;
+      supportsActionableCounts ? actionableHighCount : activeHighCount;
 
   factory SecurityOverview.fromJson(Map<String, dynamic> json) {
     int number(String key) => (json[key] as num?)?.toInt() ?? 0;

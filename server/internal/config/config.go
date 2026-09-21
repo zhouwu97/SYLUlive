@@ -135,14 +135,14 @@ type Config struct {
 	SchoolDeviceCapabilityCut   bool
 	SchoolAcademicRoutesRetired bool
 
-	CompetitionCatalogV2Enabled         bool   // 是否开放 Catalog 2.2 管理链路
-	CompetitionCandidateEngineV2Enabled bool   // 是否开放统一候选接口
-	CompetitionAIExplanationEnabled     bool   // 是否允许调用外部模型解释候选
+	CompetitionCatalogV2Enabled         bool // 是否开放 Catalog 2.2 管理链路
+	CompetitionCandidateEngineV2Enabled bool // 是否开放统一候选接口
+	CompetitionAIExplanationEnabled     bool // 是否允许调用外部模型解释候选
 	// CompetitionRankTraceSamplePercent 是竞赛候选排序追踪的采样比例（0 表示不写）。
 	// 只影响追踪表写入，不影响候选结果与顺序。
 	CompetitionRankTraceSamplePercent int
 	SyluliveMCPGrant                  string // 纯 MCP 调用 Go 只读事实网关的固定 Grant
-	ReviewEnabled                       bool   // 是否开放前置审核与相关投稿链路（默认 false，暂时关闭）
+	ReviewEnabled                     bool   // 是否开放前置审核与相关投稿链路（默认 false，暂时关闭）
 	// PrivateChatDisabled 表示私聊能力整体下线：所有 /api/messages 接口在认证和
 	// 请求体解析之前短路返回 410。默认 false，需要临时关闭时置 true。
 	PrivateChatDisabled bool
@@ -576,14 +576,10 @@ func Load() *Config {
 	aiExternalMCPKnownHostsPath := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH"))
 	aiUnifiedMCPURL := strings.TrimSpace(os.Getenv("AI_UNIFIED_MCP_URL"))
 	competitionCatalogV2Enabled := envBool("COMPETITION_CATALOG_V2_ENABLED", false)
-	// 默认开启：客户端「适合我」固定请求 /api/user/competitions/candidates，
-	// 该路由只在开关为真时注册。默认关闭意味着任何一处漏配环境变量，
-	// 用户看到的都是 404（表现为「点了没反应」），而这不是一个应当靠运维记性维持的功能。
-	// 该接口只读取已发布且允许进候选池的赛事，关停它并不改变目录治理边界；
-	// 需要临时停用排序能力时用个性化排序开关，而不是把整个路由摘掉。
-	competitionCandidateEngineV2Enabled := envBool("COMPETITION_CANDIDATE_ENGINE_V2_ENABLED", true)
-	// 排序追踪采样比例（0 表示不写）。只用于离线调参，不参与任何候选判定。
-	competitionRankTraceSamplePercent := envIntInRange("COMPETITION_RANK_TRACE_SAMPLE_PERCENT", 5, 0, 100)
+	// 候选接口属于生产行为开关，默认关闭，必须由部署配置显式开启，避免漏配时意外改变流量和数据写入。
+	competitionCandidateEngineV2Enabled := envBool("COMPETITION_CANDIDATE_ENGINE_V2_ENABLED", false)
+	// 排序追踪默认不写入，待上线方确认留存与容量策略后再逐步提高采样比例。
+	competitionRankTraceSamplePercent := envIntInRange("COMPETITION_RANK_TRACE_SAMPLE_PERCENT", 0, 0, 100)
 	competitionAIExplanationEnabled := envBool("COMPETITION_AI_EXPLANATION_ENABLED", false)
 	syluliveMCPGrant := strings.TrimSpace(os.Getenv("SYLULIVE_MCP_GRANT"))
 	if err := validateAIConfig(

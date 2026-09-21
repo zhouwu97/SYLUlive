@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
 )
@@ -34,8 +35,19 @@ func signalRequest(
 	return recorder
 }
 
+func seedSignalEvents(t *testing.T, db *gorm.DB, events ...models.CompetitionEvent) {
+	t.Helper()
+	if err := db.Create(&events).Error; err != nil {
+		t.Fatalf("create signal events: %v", err)
+	}
+}
+
 func TestCompetitionCandidateSignalsAreStoredPerUser(t *testing.T) {
 	db := newCompetitionTestDB(t)
+	seedSignalEvents(t, db,
+		models.CompetitionEvent{ID: 7, CompetitionID: "NAT-007"},
+		models.CompetitionEvent{ID: 8, CompetitionID: "NAT-008"},
+	)
 	handler := NewCompetitionHandler(db).SubmitCompetitionCandidateSignals
 	body := `{
 		"session_key":"sess-1",
@@ -85,8 +97,8 @@ func TestCompetitionCandidateSignalsRejectInvalidInput(t *testing.T) {
 	db := newCompetitionTestDB(t)
 	handler := NewCompetitionHandler(db).SubmitCompetitionCandidateSignals
 	tests := map[string]string{
-		"unknown kind": `{"session_key":"s","signals":[{"event_id":1,"kind":"teleport","position":0}]}`,
-		"missing event": `{"session_key":"s","signals":[{"event_id":0,"kind":"candidate_click","position":0}]}`,
+		"unknown kind":          `{"session_key":"s","signals":[{"event_id":1,"kind":"teleport","position":0}]}`,
+		"missing event":         `{"session_key":"s","signals":[{"event_id":0,"kind":"candidate_click","position":0}]}`,
 		"position out of range": `{"session_key":"s","signals":[{"event_id":1,"kind":"candidate_click","position":9999}]}`,
 		"empty signals":         `{"session_key":"s","signals":[]}`,
 		"unknown field":         `{"session_key":"s","forged":true,"signals":[{"event_id":1,"kind":"candidate_click","position":0}]}`,
@@ -110,6 +122,7 @@ func TestCompetitionCandidateSignalsRejectInvalidInput(t *testing.T) {
 
 func TestCompetitionCandidateSignalsDeduplicateImpressionsInOneBatch(t *testing.T) {
 	db := newCompetitionTestDB(t)
+	seedSignalEvents(t, db, models.CompetitionEvent{ID: 9, CompetitionID: "NAT-009"})
 	handler := NewCompetitionHandler(db).SubmitCompetitionCandidateSignals
 	// 同一会话里同一条赛事因滚动反复进入视口：只应记一次曝光。
 	body := `{
@@ -131,6 +144,49 @@ func TestCompetitionCandidateSignalsDeduplicateImpressionsInOneBatch(t *testing.
 	// 1 条曝光（去重后）+ 1 条点击。
 	if count != 2 {
 		t.Fatalf("rows=%d want=2", count)
+	}
+}
+
+func TestCompetitionCandidateSignalsDeduplicateImpressionsAcrossRequests(t *testing.T) {
+	db := newCompetitionTestDB(t)
+	seedSignalEvents(t, db, models.CompetitionEvent{ID: 10, CompetitionID: "NAT-010"})
+	handler := NewCompetitionHandler(db).SubmitCompetitionCandidateSignals
+	body := `{"session_key":"sess-cross-request","signals":[{"event_id":10,"competition_id":"NAT-010","kind":"candidate_impression","position":0}]}`
+	first := signalRequest(t, handler, body, 71)
+	second := signalRequest(t, handler, body, 71)
+	if first.Code != http.StatusOK || second.Code != http.StatusOK {
+		t.Fatalf("status first=%d second=%d", first.Code, second.Code)
+	}
+	var firstResponse, secondResponse struct {
+		Accepted int64 `json:"accepted"`
+	}
+	if err := json.Unmarshal(first.Body.Bytes(), &firstResponse); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(second.Body.Bytes(), &secondResponse); err != nil {
+		t.Fatal(err)
+	}
+	if firstResponse.Accepted != 1 || secondResponse.Accepted != 0 {
+		t.Fatalf("accepted first=%d second=%d", firstResponse.Accepted, secondResponse.Accepted)
+	}
+	var count int64
+	if err := db.Model(&models.CompetitionCandidateSignals{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("rows=%d want=1", count)
+	}
+}
+
+func TestCompetitionCandidateSignalsRejectMismatchedCompetitionID(t *testing.T) {
+	db := newCompetitionTestDB(t)
+	seedSignalEvents(t, db, models.CompetitionEvent{ID: 11, CompetitionID: "NAT-011"})
+	recorder := signalRequest(t, NewCompetitionHandler(db).SubmitCompetitionCandidateSignals,
+		`{"session_key":"s","signals":[{"event_id":11,"competition_id":"forged","kind":"candidate_click","position":0}]}`,
+		72,
+	)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 

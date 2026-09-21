@@ -417,6 +417,9 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 
 	}
+	if err := models.EnsureCompetitionSignalIndexes(db); err != nil {
+		log.Fatal("竞赛埋点唯一索引迁移失败:", err)
+	}
 	// 定期启动清理已过期且已失效一段时间的刷新凭据，避免长期累积。
 	if err := db.Where("expires_at < ?", time.Now().Add(-7*24*time.Hour)).Delete(&models.RefreshToken{}).Error; err != nil {
 		log.Printf("清理过期刷新凭据失败: %v", err)
@@ -1323,6 +1326,7 @@ func main() {
 		}
 	}
 	idempotencyCleanupCron := tasks.StartIdempotencyCleanupCron(appCtx, db)
+	competitionObservabilityCron := tasks.StartCompetitionObservabilityCron(appCtx, db)
 	uploadMaintenanceCron := tasks.StartUploadMaintenanceCron(
 		appCtx,
 		db,
@@ -2820,6 +2824,9 @@ func main() {
 	}
 	if idempotencyCleanupCron != nil {
 		idempotencyCleanupCron.Wait()
+	}
+	if competitionObservabilityCron != nil {
+		competitionObservabilityCron.Wait()
 	}
 	if uploadMaintenanceCron != nil {
 		uploadMaintenanceCron.Wait()

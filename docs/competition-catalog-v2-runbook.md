@@ -21,14 +21,12 @@
 COMPETITION_CANDIDATE_ENGINE_V2_ENABLED=true
 COMPETITION_CATALOG_V2_ENABLED=false
 COMPETITION_AI_EXPLANATION_ENABLED=false
+COMPETITION_RANK_TRACE_SAMPLE_PERCENT=0
 ```
 
-`COMPETITION_CANDIDATE_ENGINE_V2_ENABLED` 的**代码默认值已改为 true**：
-客户端「适合我」固定请求 `/api/user/competitions/candidates`，而该路由只在开关为真时注册；
-默认关闭等于任何一次漏配环境变量都会让用户看到 404，表现为「点了没反应」。
-该接口只读取已发布且允许进候选池的赛事，关停它并不改变目录治理边界。
-需要临时停用排序能力时应关个性化排序（目录侧 `personalized_ranking_allowed`），
-而不是把整个路由摘掉；把本变量显式设为 `false` 仅用于排障。
+`COMPETITION_CANDIDATE_ENGINE_V2_ENABLED` 和 `COMPETITION_RANK_TRACE_SAMPLE_PERCENT` 的代码默认值分别为
+`false` 和 `0`。生产必须显式设置候选接口开关；排序追踪需先确认留存和容量策略，再逐步提高采样比例。
+候选接口只读取已发布且允许进候选池的赛事，关停它不会改变目录治理边界。
 
 需要暂存 Catalog 时才开启 `COMPETITION_CATALOG_V2_ENABLED`。AI 解释必须在候选链路
 稳定后单独灰度，不能与目录激活同时放量。

@@ -43,6 +43,9 @@ func newCompetitionTestDB(t *testing.T) *gorm.DB {
 	); err != nil {
 		t.Fatal(err)
 	}
+	if err := models.EnsureCompetitionSignalIndexes(db); err != nil {
+		t.Fatal(err)
+	}
 	return db
 }
 

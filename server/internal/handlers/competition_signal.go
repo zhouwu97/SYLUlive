@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/models"
 )
@@ -74,6 +75,27 @@ func (h *CompetitionHandler) SubmitCompetitionCandidateSignals(c *gin.Context) {
 	if len(input.AlgorithmVersion) > 32 {
 		input.AlgorithmVersion = input.AlgorithmVersion[:32]
 	}
+	eventIDs := make([]uint, 0, len(input.Signals))
+	seenEventIDs := make(map[uint]struct{}, len(input.Signals))
+	for _, signal := range input.Signals {
+		if signal.EventID == 0 {
+			continue
+		}
+		if _, exists := seenEventIDs[signal.EventID]; exists {
+			continue
+		}
+		seenEventIDs[signal.EventID] = struct{}{}
+		eventIDs = append(eventIDs, signal.EventID)
+	}
+	var events []models.CompetitionEvent
+	if err := h.db.Select("id", "competition_id").Where("id IN ?", eventIDs).Find(&events).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "校验赛事埋点失败"})
+		return
+	}
+	canonicalCompetitionIDs := make(map[uint]string, len(events))
+	for _, event := range events {
+		canonicalCompetitionIDs[event.ID] = strings.TrimSpace(event.CompetitionID)
+	}
 
 	rows := make([]models.CompetitionCandidateSignals, 0, len(input.Signals))
 	seen := make(map[string]struct{}, len(input.Signals))
@@ -87,6 +109,11 @@ func (h *CompetitionHandler) SubmitCompetitionCandidateSignals(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "埋点缺少赛事"})
 			return
 		}
+		canonicalCompetitionID, exists := canonicalCompetitionIDs[signal.EventID]
+		if !exists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "埋点赛事不存在"})
+			return
+		}
 		if signal.Position < 0 || signal.Position > competitionSignalMaxPosition {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "展示位次超出范围"})
 			return
@@ -95,6 +122,13 @@ func (h *CompetitionHandler) SubmitCompetitionCandidateSignals(c *gin.Context) {
 		if len(competitionID) > competitionSignalMaxEventText {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "赛事编号过长"})
 			return
+		}
+		if competitionID != "" && competitionID != canonicalCompetitionID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "埋点赛事编号与事件不匹配"})
+			return
+		}
+		if competitionID == "" {
+			competitionID = canonicalCompetitionID
 		}
 		// 同一请求内的重复直接合并，避免一次上报里出现两条相同的曝光。
 		dedupeKey := kind + "|" + input.SessionKey + "|" + competitionID
@@ -115,11 +149,12 @@ func (h *CompetitionHandler) SubmitCompetitionCandidateSignals(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"accepted": 0})
 		return
 	}
-	if err := h.db.Create(&rows).Error; err != nil {
+	result := h.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows)
+	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "埋点写入失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"accepted": len(rows)})
+	c.JSON(http.StatusOK, gin.H{"accepted": result.RowsAffected})
 }
 
 func trimTo(value string, limit int) string {

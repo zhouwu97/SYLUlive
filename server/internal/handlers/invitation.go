@@ -84,7 +84,7 @@ func (h *InvitationHandler) GetCandidates(c *gin.Context) {
 
 	items := make([]AdminUserBriefResponse, 0, len(candidates))
 	for _, candidate := range candidates {
-		items = append(items, adminUserBriefResponse(candidate, adminStudentID(candidate, academicStudentIDs)))
+		items = append(items, adminUserBriefResponse(candidate, adminStudentID(candidate, academicStudentIDs), adminStudentVerified(candidate, academicStudentIDs)))
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -137,7 +137,7 @@ func (h *InvitationHandler) GetMembers(c *gin.Context) {
 
 	var members []models.User
 
-	if err := h.db.Where("role IN ?", []string{"admin", "super_admin"}).Select("id, nickname, student_id, role, avatar").Find(&members).Error; err != nil {
+	if err := h.db.Where("role IN ?", []string{"admin", "super_admin"}).Select("id, nickname, student_id, student_verified_at, role, avatar").Find(&members).Error; err != nil {
 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取管理员列表失败"})
 
@@ -152,7 +152,7 @@ func (h *InvitationHandler) GetMembers(c *gin.Context) {
 
 	response := make([]AdminUserBriefResponse, 0, len(members))
 	for _, member := range members {
-		response = append(response, adminUserBriefResponse(member, adminStudentID(member, academicStudentIDs)))
+		response = append(response, adminUserBriefResponse(member, adminStudentID(member, academicStudentIDs), adminStudentVerified(member, academicStudentIDs)))
 	}
 	c.JSON(http.StatusOK, response)
 
@@ -595,9 +595,9 @@ func (h *InvitationHandler) GetApprovalList(c *gin.Context) {
 
 			"accepted_at": invitation.AcceptedAt,
 
-			"user": adminUserResponse(invitation.User, adminStudentID(invitation.User, academicStudentIDs)),
+			"user": adminUserResponse(invitation.User, adminStudentID(invitation.User, academicStudentIDs), adminStudentVerified(invitation.User, academicStudentIDs)),
 
-			"inviter": adminUserBriefResponse(invitation.Inviter, adminStudentID(invitation.Inviter, academicStudentIDs)),
+			"inviter": adminUserBriefResponse(invitation.Inviter, adminStudentID(invitation.Inviter, academicStudentIDs), adminStudentVerified(invitation.Inviter, academicStudentIDs)),
 
 			"votes": votes,
 

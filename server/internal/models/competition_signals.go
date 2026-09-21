@@ -4,6 +4,12 @@ import (
 	"time"
 
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
+)
+
+const (
+	CompetitionCandidateSignalRetention = 90 * 24 * time.Hour
+	CompetitionRankTraceRetention       = 30 * 24 * time.Hour
 )
 
 // 竞赛候选链路的信号类型。与客户端埋点一一对应，写入前必须过白名单校验。
@@ -77,4 +83,58 @@ type CompetitionRankTrace struct {
 
 func (CompetitionRankTrace) TableName() string {
 	return "competition_rank_traces"
+}
+
+// EnsureCompetitionSignalIndexes 在清理历史重复曝光后建立数据库级会话去重约束。
+// 不放进 AutoMigrate 标签，避免旧库已有重复数据时启动直接失败。
+func EnsureCompetitionSignalIndexes(db *gorm.DB) error {
+	if db == nil || !db.Migrator().HasTable(&CompetitionCandidateSignals{}) {
+		return nil
+	}
+	if err := db.Exec(`
+		DELETE FROM competition_candidate_signals
+		WHERE kind = ?
+		  AND id NOT IN (
+			SELECT MIN(id)
+			FROM competition_candidate_signals
+			WHERE kind = ?
+			GROUP BY user_id, session_key, event_id, kind
+		)`, CompetitionSignalImpression, CompetitionSignalImpression).Error; err != nil {
+		return err
+	}
+	return db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS ux_competition_signal_impression
+		ON competition_candidate_signals (user_id, session_key, event_id, kind)
+		WHERE kind = 'candidate_impression'`).Error
+}
+
+// CleanupCompetitionObservabilityData 按有限批次清理竞赛推荐观测明细，避免埋点表无限增长。
+// 两张表都是调参与统计明细，不承担业务事实，删除过期数据不会影响候选结果。
+func CleanupCompetitionObservabilityData(db *gorm.DB, now time.Time, signalTTL, traceTTL time.Duration, batchSize int) (int64, int64, error) {
+	if db == nil {
+		return 0, 0, nil
+	}
+	if signalTTL <= 0 {
+		signalTTL = CompetitionCandidateSignalRetention
+	}
+	if traceTTL <= 0 {
+		traceTTL = CompetitionRankTraceRetention
+	}
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+	cleanup := func(model interface{}, cutoff time.Time) (int64, error) {
+		ids := db.Model(model).Select("id").Where("created_at < ?", cutoff).Order("id ASC").Limit(batchSize)
+		result := db.Where("id IN (?)", ids).Delete(model)
+		return result.RowsAffected, result.Error
+	}
+	signals, err := cleanup(&CompetitionCandidateSignals{}, now.Add(-signalTTL))
+	if err != nil {
+		return 0, 0, err
+	}
+	traces, err := cleanup(&CompetitionRankTrace{}, now.Add(-traceTTL))
+	if err != nil {
+		return signals, 0, err
+	}
+	return signals, traces, nil
 }

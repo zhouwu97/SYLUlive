@@ -25,7 +25,7 @@ func TestGetUsersReturnsAdminDTOAndSupportsInternalIDSearch(t *testing.T) {
 	}
 	user := models.User{
 		ID: 42, StudentID: "20260042", PasswordHash: "test", Nickname: "管理员目标",
-		Role: models.RoleUser, CreditScore: 86, ReportCount: 2, EduBound: true,
+		Role: models.RoleUser, CreditScore: 86, ReportCount: 2, EduAuthorized: true, EduBound: true,
 	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
@@ -89,5 +89,8 @@ func TestGetUsersUsesVerifiedAcademicStudentIDAndSearch(t *testing.T) {
 	}
 	if len(response) != 1 || response[0]["student_id"] != "2408010115" {
 		t.Fatalf("管理员用户列表未显示已验证教务学号: %s", recorder.Body.String())
+	}
+	if response[0]["student_verified"] != true || response[0]["edu_bound"] != false {
+		t.Fatalf("管理员身份状态语义错误: %s", recorder.Body.String())
 	}
 }

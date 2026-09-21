@@ -12,6 +12,7 @@ void main() {
       'credit_score': 95,
       'report_count': 1,
       'edu_bound': true,
+      'student_verified': true,
     });
 
     expect(user.id, 123);
@@ -20,6 +21,7 @@ void main() {
     expect(user.isSuperAdmin, isFalse);
     expect(user.publicIdLabel, '用户 ID：123');
     expect(user.accountLabel, '学号/账号：20260001');
+    expect(user.studentVerified, isTrue);
   });
 
   test('管理员用户摘要为缺失字段提供安全默认值', () {

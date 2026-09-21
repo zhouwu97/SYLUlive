@@ -204,8 +204,14 @@ func (h *UploadHandler) persistOrReuseProtected(ctx context.Context, record *mod
 	if err != nil || found {
 		return result, err
 	}
+	// record.Path 是公开 URL（/uploads/...），落盘前必须解析为 uploadDir 下的磁盘路径，
+	// 直接传给 atomicWriteFile 会写到文件系统根目录。
+	diskPath, err := services.ResolveUploadPath(h.uploadDir, record.Path)
+	if err != nil {
+		return services.UploadPersistResult{}, fmt.Errorf("文件路径记录非法: %w", err)
+	}
 	return h.uploadProtection.PersistTemporaryFile(ctx, record, func() error {
-		return write(record.Path)
+		return write(diskPath)
 	})
 }
 

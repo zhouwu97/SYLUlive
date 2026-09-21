@@ -575,6 +575,10 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "表情回复不能同时包含图片"})
 		return
 	}
+	if err := validateEmojiAssetReference(input.AssetKey, input.PackID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	// 检查帖子是否存在
 	var post models.Post

@@ -594,6 +594,10 @@ func (h *MessageHandler) Send(c *gin.Context) {
 			input.Content = stickerFallbackText
 		}
 	}
+	if err := validateEmojiAssetReference(input.AssetKey, input.PackID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if utf8.RuneCountInString(input.Content) > maxMessageLength {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "消息内容不能超过2000个字符"})
 		return

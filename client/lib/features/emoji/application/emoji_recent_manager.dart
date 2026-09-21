@@ -8,6 +8,7 @@ import '../../../platform/contracts/preferences_store.dart';
 import '../adapters/legacy_recent_adapter.dart';
 import '../domain/emoji_asset_ref.dart';
 import '../domain/emoji_asset_key.dart';
+import '../domain/emoji_local_id.dart';
 import '../domain/emoji_recent_record.dart';
 
 /// 写操作串行提交；账号在调用时捕获，避免网络返回后写入另一个账号。
@@ -20,11 +21,18 @@ class EmojiRecentManager extends ChangeNotifier {
   static final instance = EmojiRecentManager();
   static const storageKey = 'emoji_recent_v2';
   static const maxCount = 100;
+
+  /// 匿名使用按会话分桶的前缀。整桶键形如 `anonymous:<32 位十六进制>`。
+  static const anonymousPrefix = 'anonymous:';
   final Future<AppPreferencesStore> Function() _preferencesLoader;
   late final Future<AppPreferencesStore> _preferences = _preferencesLoader();
   Future<void> _queue = Future<void>.value();
   String? _userId;
   String? get userId => _userId;
+
+  /// 当前匿名会话的作用域。每次认领成功后换一个新的，
+  /// 于是「一个会话的数据最多被认领一次」在存储层就是真的。
+  String _anonymousScope = '$anonymousPrefix${newEmojiLocalId()}';
 
   void switchUser(String? value) {
     final next = value?.trim();
@@ -35,7 +43,7 @@ class EmojiRecentManager extends ChangeNotifier {
   }
 
   String _scope(String? userId) =>
-      userId == null ? 'anonymous' : 'user:$userId';
+      userId == null ? _anonymousScope : 'user:$userId';
 
   Future<T> _serialized<T>(Future<T> Function() action) {
     final result = _queue.then((_) => action());
@@ -71,16 +79,46 @@ class EmojiRecentManager extends ChangeNotifier {
     return _serialized(() async {
       final prefs = await _preferences;
       final root = await _read(prefs);
-      // 首次认领和匿名空间清空在同一个持久化值中提交，崩溃后不会重复认领。
-      if (scope != 'anonymous' && root['claimed_by'] == null) {
-        root[scope] = _merge(_records(root, scope), _records(root, 'anonymous'))
-            .map((e) => e.toJson())
-            .toList();
+      // 认领有两种口径，不能混成一个标记：
+      // - `anonymous`（v1 迁移与升级前的旧匿名数据）是一次性的，只归首个登录账号，
+      //   换账号、重启都不能再认领；
+      // - `anonymous:<sessionId>` 属于某一个匿名会话，每个会话各认领一次。
+      // 早期只有全局 claimed_by，结果第一次认领之后所有后续匿名使用永远认领不上。
+      // 认领和清空仍在同一个持久化值里提交，崩溃后不会重复认领。
+      if (_userId == null) {
+        if (!prefs.containsKey(storageKey)) await _save(prefs, root);
+        return List.unmodifiable(_records(root, scope));
+      }
+      final claimed = <EmojiRecentRecord>[];
+      var claimedLegacy = false;
+      if (root['claimed_by'] == null) {
+        claimedLegacy = true;
+        claimed.addAll(_records(root, 'anonymous'));
         root['anonymous'] = <dynamic>[];
         root['claimed_by'] = scope;
+      }
+      var claimedSession = false;
+      for (final key in root.keys
+          .where((key) => key.startsWith(anonymousPrefix))
+          .toList(growable: false)) {
+        final records = _records(root, key);
+        if (records.isNotEmpty) {
+          claimed.addAll(records);
+          claimedSession = true;
+        }
+        root.remove(key);
+      }
+      if (claimed.isNotEmpty) {
+        root[scope] = _merge(_records(root, scope), claimed)
+            .map((record) => record.toJson())
+            .toList();
+      }
+      if (claimedLegacy || claimedSession || !prefs.containsKey(storageKey)) {
         await _save(prefs, root);
-      } else if (!prefs.containsKey(storageKey)) {
-        await _save(prefs, root);
+      }
+      if (claimedSession) {
+        // 本会话的数据已经并入账号桶；之后的匿名使用属于新会话。
+        _anonymousScope = '$anonymousPrefix${newEmojiLocalId()}';
       }
       return List.unmodifiable(_records(root, scope));
     });

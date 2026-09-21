@@ -25,6 +25,28 @@ void main() {
     expect(await restarted.load(), isEmpty);
   });
 
+  test('登录之后产生的新匿名使用会被下一个账号认领', () async {
+    final prefs = MemoryPreferencesStore();
+    final manager = EmojiRecentManager(preferencesLoader: () async => prefs);
+    // 第一次匿名使用，随后登录 A：这一批归 A。
+    await manager.recordSent(const EmojiAssetRef(assetKey: 'unicode:😀'),
+        accountId: null);
+    manager.switchUser('1');
+    expect((await manager.load()).single.assetKey, 'unicode:😀');
+
+    // A 退出后继续匿名使用，再登录 B：新会话的数据必须能认领，
+    // 早期实现的全局 claimed_by 会让它永远留在本机。
+    manager.switchUser(null);
+    expect(await manager.load(), isEmpty);
+    await manager.recordSent(const EmojiAssetRef(assetKey: 'unicode:😃'),
+        accountId: null);
+    manager.switchUser('2');
+    final keys = (await manager.load()).map((e) => e.assetKey).toList();
+    expect(keys, contains('unicode:😃'));
+    // 已经归 A 的那批不能又被 B 认领一次。
+    expect(keys, isNot(contains('unicode:😀')));
+  });
+
   test('并发记录不丢计数，重复合并不膨胀，清空阻止旧数据复活', () async {
     final prefs = MemoryPreferencesStore();
     final manager = EmojiRecentManager(preferencesLoader: () async => prefs)

@@ -20,6 +20,7 @@ import 'admin_ai_metrics_screen.dart';
 import 'admin_appeal_review_screen.dart';
 import 'admin_teacher_governance_screen.dart';
 import 'admin_security_center_screen.dart';
+import '../models/security_event.dart';
 import '../widgets/global_background_wrapper.dart';
 
 class AdminPanelScreen extends StatefulWidget {
@@ -107,8 +108,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     int? getSecurityCount(Response<dynamic>? response) {
       if (response == null || response.data is! Map) return null;
-      final value = response.data['active_high_count'];
-      return value is num ? value.toInt() : null;
+      // 走 SecurityOverview 的口径：有 actionable_high_count 就用它，旧后端才回退。
+      // 手写读 active_high_count 会把已处置的审计流水（security_blocked_request 等）
+      // 也算成待办，于是首页显示「安全事件 12」而安全中心里待处置是 0。
+      return SecurityOverview.fromJson(
+              Map<String, dynamic>.from(response.data as Map))
+          .pendingHighCount;
     }
 
     setState(() {
@@ -542,7 +547,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   .then((_) => _loadCounts()),
             ),
             _AdminMetricPill(
-              title: '安全事件',
+              title: '高危待处理',
               count: _securityCount,
               isLoading: _isLoading,
               isDark: isDark,

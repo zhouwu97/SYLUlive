@@ -60,23 +60,7 @@ func (h *InvitationHandler) GetCandidates(c *gin.Context) {
 		Select("id, nickname, student_id, avatar, credit_score, role, report_count").
 		Where("report_count = 0 AND credit_score > 90 AND role = ?", models.RoleUser)
 
-	if keyword != "" {
-		like := "%" + strings.ToLower(keyword) + "%"
-		if userID, err := strconv.ParseUint(keyword, 10, 64); err == nil {
-			query = query.Where(
-				"id = ? OR LOWER(student_id) LIKE ? OR LOWER(nickname) LIKE ?",
-				userID,
-				like,
-				like,
-			)
-		} else {
-			query = query.Where(
-				"LOWER(student_id) LIKE ? OR LOWER(nickname) LIKE ?",
-				like,
-				like,
-			)
-		}
-	}
+	query = withAdminUserSearch(query, h.db, keyword)
 
 	var total int64
 	query.Count(&total)
@@ -92,10 +76,15 @@ func (h *InvitationHandler) GetCandidates(c *gin.Context) {
 	if hasMore {
 		candidates = candidates[:pageSize]
 	}
+	academicStudentIDs, err := loadAdminAcademicStudentIDs(h.db, candidates)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取候选人教务身份失败"})
+		return
+	}
 
 	items := make([]AdminUserBriefResponse, 0, len(candidates))
 	for _, candidate := range candidates {
-		items = append(items, adminUserBriefResponse(candidate))
+		items = append(items, adminUserBriefResponse(candidate, adminStudentID(candidate, academicStudentIDs)))
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -118,7 +107,13 @@ func (h *InvitationHandler) GetCandidatesStats(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Model(&models.User{}).Where("edu_bound = ?", true).Count(&eduCount).Error; err != nil {
+	eduQuery := h.db.Model(&models.User{}).Where("edu_bound = ?", true)
+	if h.db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
+		eduQuery = h.db.Model(&models.AcademicIdentityBinding{}).
+			Where("verified_at > ?", time.Time{}).
+			Distinct("user_id")
+	}
+	if err := eduQuery.Count(&eduCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取统计数据失败"})
 		return
 	}
@@ -149,10 +144,15 @@ func (h *InvitationHandler) GetMembers(c *gin.Context) {
 		return
 
 	}
+	academicStudentIDs, err := loadAdminAcademicStudentIDs(h.db, members)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取管理员教务身份失败"})
+		return
+	}
 
 	response := make([]AdminUserBriefResponse, 0, len(members))
 	for _, member := range members {
-		response = append(response, adminUserBriefResponse(member))
+		response = append(response, adminUserBriefResponse(member, adminStudentID(member, academicStudentIDs)))
 	}
 	c.JSON(http.StatusOK, response)
 
@@ -559,6 +559,15 @@ func (h *InvitationHandler) GetApprovalList(c *gin.Context) {
 	}
 
 	result := make([]gin.H, 0, len(invitations))
+	users := make([]models.User, 0, len(invitations)*2)
+	for _, invitation := range invitations {
+		users = append(users, invitation.User, invitation.Inviter)
+	}
+	academicStudentIDs, err := loadAdminAcademicStudentIDs(h.db, users)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取管理员邀请教务身份失败"})
+		return
+	}
 
 	for _, invitation := range invitations {
 
@@ -586,9 +595,9 @@ func (h *InvitationHandler) GetApprovalList(c *gin.Context) {
 
 			"accepted_at": invitation.AcceptedAt,
 
-			"user": adminUserResponse(invitation.User),
+			"user": adminUserResponse(invitation.User, adminStudentID(invitation.User, academicStudentIDs)),
 
-			"inviter": adminUserBriefResponse(invitation.Inviter),
+			"inviter": adminUserBriefResponse(invitation.Inviter, adminStudentID(invitation.Inviter, academicStudentIDs)),
 
 			"votes": votes,
 

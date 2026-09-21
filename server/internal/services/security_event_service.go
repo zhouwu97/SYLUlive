@@ -56,13 +56,40 @@ type SecurityEventService struct {
 	// 单条原子 UPSERT 本身已由数据库保证正确性，因此该 mutex 已移除。
 	attributionValidFrom time.Time
 	blockDegraded        atomic.Bool
+	// eventWriteHealth 记录事件 UPSERT 的真实成败。业务侧统一 `_ = Record(...)`
+	// 吞掉错误，因此这是安全中心唯一能知道「采集其实一直在失败」的地方。
+	eventWriteHealth *SecurityHealthLayer
+	blockCheckHealth *SecurityHealthLayer
+}
+
+// EventWriteHealth 返回安全事件采集的运行态快照。
+func (s *SecurityEventService) EventWriteHealth() SecurityHealthSnapshot {
+	if s == nil {
+		return SecurityHealthSnapshot{}
+	}
+	return s.eventWriteHealth.snapshot()
+}
+
+// BlockCheckHealth 返回来源封禁查询的运行态快照。
+func (s *SecurityEventService) BlockCheckHealth() SecurityHealthSnapshot {
+	if s == nil {
+		return SecurityHealthSnapshot{}
+	}
+	return s.blockCheckHealth.snapshot()
 }
 
 // SetSecurityBlockDegraded 由封禁中间件记录运行时数据库故障，健康检查据此返回 degraded。
+// 中间件每次查询都会回报结果，因此该状态是「当前是否仍在故障」，不会在一次抖动后永久锁死。
 func (s *SecurityEventService) SetSecurityBlockDegraded(value bool) {
-	if s != nil {
-		s.blockDegraded.Store(value)
+	if s == nil {
+		return
 	}
+	s.blockDegraded.Store(value)
+	if value {
+		s.blockCheckHealth.recordFailure()
+		return
+	}
+	s.blockCheckHealth.recordSuccess()
 }
 
 func (s *SecurityEventService) SecurityBlockDegraded() bool {
@@ -73,7 +100,13 @@ func NewSecurityEventService(db *gorm.DB, secret string, now func() time.Time) *
 	if now == nil {
 		now = time.Now
 	}
-	return &SecurityEventService{db: db, secret: []byte(strings.TrimSpace(secret)), now: now}
+	return &SecurityEventService{
+		db:               db,
+		secret:           []byte(strings.TrimSpace(secret)),
+		now:              now,
+		eventWriteHealth: newSecurityHealthLayer(now),
+		blockCheckHealth: newSecurityHealthLayer(now),
+	}
 }
 
 func (s *SecurityEventService) Hash(value string) string {
@@ -256,7 +289,7 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 		FirstSeenAt: now, LastSeenAt: now, CreatedAt: now, UpdatedAt: now,
 	}
 
-	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+	err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "bucket_key"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
 			"attempt_count":                securityEventIncrement("attempt_count", attemptCount),
@@ -280,6 +313,12 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 			"resolution_note": "",
 		}),
 	}).Create(&event).Error
+	if err != nil {
+		s.eventWriteHealth.recordFailure()
+		return err
+	}
+	s.eventWriteHealth.recordSuccess()
+	return nil
 }
 
 // IsBlocked 在默认超时预算内判断来源是否处于临时封禁。

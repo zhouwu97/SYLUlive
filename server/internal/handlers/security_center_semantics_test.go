@@ -175,6 +175,77 @@ func TestListEventsActionableFilter(t *testing.T) {
 	}
 }
 
+// 安全事件采集的运行态必须来自真实写入结果，而不是「表存在」。
+//
+// 旧实现 `HasTable(&SecurityEvent{}) ? ready : missing` 的致命之处：业务侧统一
+// `_ = Record(...)` 忽略错误，写入长期失败时事件整批丢失，后台却一直是绿的。
+func TestSecurityOverviewReportsEventCollectionHealth(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("打开数据库失败: %v", err)
+	}
+	if err := db.AutoMigrate(&models.SecurityEvent{}, &models.SecurityBlock{}); err != nil {
+		t.Fatalf("迁移安全表失败: %v", err)
+	}
+	security := services.NewSecurityEventService(db, "collect-test-secret", time.Now)
+	handler := NewSecurityAdminHandler(db, security)
+	handler.SetProtectionConfig(true, []string{"127.0.0.1/32"}, "")
+
+	// 表存在但进程内还没发生过写入：报 unknown，不能沿用旧口径直接绿。
+	if got := securityProtectionField(t, handler, "security_event_collection"); got != services.SecurityLayerUnknown {
+		t.Fatalf("未发生写入时应报 unknown，实际 %q", got)
+	}
+
+	input := services.SecurityEventInput{EventType: "login_bruteforce", Severity: models.SecuritySeverityHigh, ClientIP: "1.2.3.4"}
+	if err := security.Record(input); err != nil {
+		t.Fatalf("写入安全事件失败: %v", err)
+	}
+	if got := securityProtectionField(t, handler, "security_event_collection"); got != services.SecurityLayerReady {
+		t.Fatalf("写入成功后应报 ready，实际 %q", got)
+	}
+
+	// 表仍在、写入开始失败：这正是旧口径完全看不见的场景。
+	blockSecurityEventInsert(t, db)
+	for attempt := 1; attempt <= services.SecurityLayerUnavailableAfterFailures+1; attempt++ {
+		if err := security.Record(input); err == nil {
+			t.Fatal("触发器应让事件写入失败")
+		}
+		want := services.SecurityLayerDegraded
+		if attempt >= services.SecurityLayerUnavailableAfterFailures {
+			want = services.SecurityLayerUnavailable
+		}
+		if got := securityProtectionField(t, handler, "security_event_collection"); got != want {
+			t.Fatalf("第 %d 次连续写入失败后应报 %s，实际 %q", attempt, want, got)
+		}
+	}
+}
+
+// blockSecurityEventInsert 用触发器让 security_events 的写入稳定失败，
+// 同时保持表存在——这样才能单独验证「表在但采集坏了」这条路径。
+func blockSecurityEventInsert(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec(`CREATE TRIGGER security_events_test_failure BEFORE INSERT ON security_events
+		BEGIN SELECT RAISE(ABORT, 'test: event write blocked'); END`).Error; err != nil {
+		t.Fatalf("安装事件写入触发器失败: %v", err)
+	}
+}
+
+func securityProtectionField(t *testing.T, handler *SecurityAdminHandler, key string) string {
+	t.Helper()
+	recorder := performSecurityAdminGET(t, handler.Overview, "/probe?range=24h")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("概览接口失败: %d %s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Protection map[string]any `json:"protection"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析概览响应失败: %v", err)
+	}
+	value, _ := payload.Protection[key].(string)
+	return value
+}
+
 func newSecurityAdminTestEnv(t *testing.T) (*SecurityAdminHandler, *gorm.DB) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

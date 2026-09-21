@@ -530,11 +530,11 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     String value(String key, [String fallback = 'unknown']) =>
         protection[key]?.toString() ?? fallback;
     final rows = [
-      ('客户端 IP 识别', value('client_ip_identification')),
-      ('来源封禁', value('security_block')),
-      ('SecurityBlock 表', value('security_block_schema')),
-      ('安全事件采集', value('security_event_collection')),
-      ('验证码日限额', value('verification_daily_limit')),
+      ('客户端 IP 识别', _protectionLayer(protection, 'client_ip_identification')),
+      ('来源封禁', _protectionLayer(protection, 'security_block')),
+      ('SecurityBlock 表', _protectionLayer(protection, 'security_block_schema')),
+      ('安全事件采集', _protectionLayer(protection, 'security_event_collection')),
+      ('验证码日限额', _protectionLayer(protection, 'verification_daily_limit')),
     ];
     final blockDisabled = value('security_block') == 'disabled';
     return Container(
@@ -555,13 +555,24 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
           const SizedBox(height: AppSpacing.sm),
           ...rows.map((row) => Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: Text(row.$1)),
-                    Text(row.$2,
-                        style: TextStyle(
-                            color: _protectionColor(row.$2),
-                            fontWeight: FontWeight.w600)),
+                    Row(
+                      children: [
+                        Expanded(child: Text(row.$1)),
+                        Flexible(
+                          child: Text(_protectionLabel(row.$2.status),
+                              textAlign: TextAlign.end,
+                              style: TextStyle(
+                                  color: _protectionColor(row.$2.status),
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                      ],
+                    ),
+                    if (row.$2.note != null)
+                      Text(row.$2.note!,
+                          style: Theme.of(context).textTheme.bodySmall),
                   ],
                 ),
               )),
@@ -579,9 +590,57 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     );
   }
 
+  /// 读取一层防护的状态。
+  ///
+  /// 新后端会额外给出 `<key>_state`：其中分开「配置态 configured」和「运行态 runtime」，
+  /// 并带上最近一次成功/失败时间与连续失败次数。旧后端只有扁平字符串，此时按原文展示，
+  /// 不能因为拿不到明细就把状态猜成健康。
+  _ProtectionLayer _protectionLayer(
+      Map<String, dynamic> protection, String key) {
+    final state = protection['${key}_state'];
+    if (state is! Map) {
+      return _ProtectionLayer(
+          status: protection[key]?.toString() ?? 'unknown');
+    }
+    final decoded = Map<String, dynamic>.from(state);
+    final detail = decoded['detail'] is Map
+        ? Map<String, dynamic>.from(decoded['detail'] as Map)
+        : const <String, dynamic>{};
+    return _ProtectionLayer(
+      status: decoded['runtime']?.toString() ?? 'unknown',
+      note: _protectionNote(detail),
+    );
+  }
+
+  /// 把运行态明细压成一行证据。管理员要看到的是「上次真的写成功是什么时候」，
+  /// 而不是一个没有来源的绿色。
+  String? _protectionNote(Map<String, dynamic> detail) {
+    final failures = (detail['consecutive_failures'] as num?)?.toInt() ?? 0;
+    final lastFailure =
+        DateTime.tryParse(detail['last_failure_at']?.toString() ?? '');
+    final lastSuccess =
+        DateTime.tryParse(detail['last_success_at']?.toString() ?? '');
+    final parts = <String>[];
+    if (failures > 0) parts.add('连续失败 $failures 次');
+    if (lastFailure != null) parts.add('最近失败 ${_formatTime(lastFailure)}');
+    if (lastSuccess != null) parts.add('最近成功 ${_formatTime(lastSuccess)}');
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
+  String _protectionLabel(String status) => switch (status) {
+        'ready' || 'enabled' || 'configured' || 'ok' || 'healthy' => '正常',
+        'degraded' => '降级',
+        'unavailable' || 'missing' => '不可用',
+        'disabled' || 'not_configured' => '未启用',
+        'unknown' => '未验证',
+        _ => status,
+      };
+
   Color _protectionColor(String status) => switch (status) {
-        'ready' || 'enabled' || 'configured' || 'ok' => AppColors.success,
-        'disabled' => AppColors.warning,
+        'ready' || 'enabled' || 'configured' || 'ok' || 'healthy' =>
+          AppColors.success,
+        'degraded' || 'disabled' => AppColors.warning,
+        'unknown' || 'not_configured' => AppColors.info,
         _ => AppColors.danger,
       };
 
@@ -698,4 +757,16 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     return '${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
         '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
+}
+
+/// 一层防护在管理后台的展示结果。
+///
+/// [status] 是后端的运行态词汇（ready / degraded / unavailable / unknown /
+/// not_configured），[note] 是支撑该结论的最近证据。缺证据时页面显示「未验证」，
+/// 不在没有依据的情况下给出绿色。
+class _ProtectionLayer {
+  const _ProtectionLayer({required this.status, this.note});
+
+  final String status;
+  final String? note;
 }

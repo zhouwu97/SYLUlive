@@ -96,6 +96,42 @@ type securityEventResponse struct {
 	Actionable bool `json:"actionable"`
 }
 
+// protectionLayerState 把一层防护的「配置态」和「运行态」分开上报。
+//
+// configured 回答「代码与部署里有没有这层保护」，runtime 回答「它此刻是否真的在工作」。
+// 二者过去被压成一个 enabled/ready，管理员看到一排绿色时无法分辨自己拿到的是哪种保证。
+func protectionLayerState(configured bool, runtime, reason string, detail map[string]interface{}) gin.H {
+	state := gin.H{"configured": configured, "runtime": runtime}
+	if reason != "" {
+		state["reason"] = reason
+	}
+	if len(detail) > 0 {
+		state["detail"] = detail
+	}
+	return state
+}
+
+// securityEventCollectionState 判断安全事件采集的真实运行态。
+//
+// 早期实现只看 `HasTable(&SecurityEvent{})`：表存在即 ready。但业务侧写事件统一
+// `_ = Record(...)` 忽略错误，表在而写入一直失败时，攻击记录会整批丢失且无人察觉。
+// 现在以实际 UPSERT 的成败为准；表缺失单独判 unavailable，没有比“写不进去”更严重的降级。
+func (h *SecurityAdminHandler) securityEventCollectionState() gin.H {
+	snapshot := h.security.EventWriteHealth()
+	if !h.db.Migrator().HasTable(&models.SecurityEvent{}) {
+		return protectionLayerState(true, services.SecurityLayerUnavailable, "security_event_table_missing", snapshot.Detail())
+	}
+	runtime := snapshot.Status()
+	reason := ""
+	if runtime != services.SecurityLayerReady {
+		reason = "last_write_failed"
+		if runtime == services.SecurityLayerUnknown {
+			reason = "not_written_since_start"
+		}
+	}
+	return protectionLayerState(true, runtime, reason, snapshot.Detail())
+}
+
 func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 	rangeName := "24h"
 	since := time.Now().Add(-24 * time.Hour)
@@ -175,6 +211,7 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 		h.securityDatabaseError(c)
 		return
 	}
+	eventCollection := h.securityEventCollectionState()
 	c.JSON(http.StatusOK, gin.H{
 		"range": rangeName, "active_high_count": activeHigh, "total_events": total,
 		// 客户端首页口径：高危待处理 = 待处置 + 未处理 + 高危/严重。
@@ -183,13 +220,17 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 		"email_abuse_count": emailAbuse, "login_abuse_count": loginAbuse, "critical_count": critical,
 		"mail_sent_count": mailSent, "password_reset_success_count": resetSuccess,
 		"protection": gin.H{
-			"client_ip_identification":      map[bool]string{true: "configured", false: "not_configured"}[len(h.trustedProxyCIDRs) > 0],
-			"trusted_proxy_cidrs":           h.trustedProxyCIDRs,
-			"security_block":                map[bool]string{true: "enabled", false: "disabled"}[h.securityBlockEnabled],
-			"security_block_schema":         map[bool]string{true: "ready", false: "missing"}[h.db.Migrator().HasTable(&models.SecurityBlock{})],
-			"security_event_collection":     map[bool]string{true: "ready", false: "missing"}[h.db.Migrator().HasTable(&models.SecurityEvent{})],
-			"verification_daily_limit":      "enabled",
-			"source_attribution_valid_from": h.attributionValidFrom,
+			"client_ip_identification": map[bool]string{true: "configured", false: "not_configured"}[len(h.trustedProxyCIDRs) > 0],
+			"trusted_proxy_cidrs":      h.trustedProxyCIDRs,
+			"security_block":           map[bool]string{true: "enabled", false: "disabled"}[h.securityBlockEnabled],
+			"security_block_schema":    map[bool]string{true: "ready", false: "missing"}[h.db.Migrator().HasTable(&models.SecurityBlock{})],
+			// *_collection 的取值现在来自真实写入结果，不再是「表是否存在」。
+			// 未升级客户端只把 ready 认成绿色，其余状态一律落到告警色：
+			// 状态口径收窄时宁可让旧版本多报一次警，也不能继续假绿。
+			"security_event_collection":       eventCollection["runtime"],
+			"security_event_collection_state": eventCollection,
+			"verification_daily_limit":        "enabled",
+			"source_attribution_valid_from":   h.attributionValidFrom,
 		},
 	})
 }

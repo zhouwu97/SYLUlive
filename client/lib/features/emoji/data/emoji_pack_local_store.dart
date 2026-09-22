@@ -57,7 +57,9 @@ class EmojiPackLocalStore {
       });
 
   /// 调用方持有 exclusive，安装器可把文件提交和索引更新放在同一事务序列。
-  Future<void> commit(EmojiPackInstallation installation) async {
+  /// 返回真正落盘的那份记录：安装器要用它决定保留哪些版本目录。
+  Future<EmojiPackInstallation> commit(
+      EmojiPackInstallation installation) async {
     final root = await readIndex();
     final versions =
         root.putIfAbsent('versions', () => <String, dynamic>{}) as Map;
@@ -70,17 +72,32 @@ class EmojiPackLocalStore {
     versions[versionKey] = installation.manifestSha256;
     final packs = root['packs'] as Map;
     final oldJson = packs[installation.packId];
-    if (oldJson != null) {
-      final old = EmojiPackInstallation.fromJson(
-          Map<String, dynamic>.from(oldJson as Map));
-      if (old.version == installation.version &&
-          old.manifestSha256 != installation.manifestSha256) {
-        throw StateError('同版本表情包内容不可修改');
-      }
+    final old = oldJson == null
+        ? null
+        : EmojiPackInstallation.fromJson(
+            Map<String, dynamic>.from(oldJson as Map));
+    if (old != null &&
+        old.version == installation.version &&
+        old.manifestSha256 != installation.manifestSha256) {
+      throw StateError('同版本表情包内容不可修改');
     }
-    packs[installation.packId] = installation.toJson();
+    // 回滚指针只跟着「成功安装」向前移动：当前活动版本真的换了、且被换下的那份
+    // 当初是安装成功的，才有资格成为上一版。标记损坏这类原地更新保持原指针。
+    final currentChanged = old != null &&
+        (old.version != installation.version ||
+            old.manifestSha256 != installation.manifestSha256);
+    final promoted = currentChanged &&
+            installation.status == EmojiPackInstallStatus.installed &&
+            old.status == EmojiPackInstallStatus.installed
+        ? EmojiPackVersionRef(
+            version: old.version, manifestSha256: old.manifestSha256)
+        : null;
+    final persisted =
+        installation.copyWith(previous: promoted ?? old?.previous);
+    packs[installation.packId] = persisted.toJson();
     (root['tombstones'] as Map).remove(installation.packId);
     await writeIndex(root);
+    return persisted;
   }
 
   Future<int> storageBytes() => exclusive(() async {

@@ -100,9 +100,13 @@ void main() {
     final again = await importer().importFile(file);
     expect(again.packId, first.packId);
     expect(again.importSourceSha256, first.importSourceSha256);
+    // 重复导入同一文件是原地幂等安装，不该凭空造出一个「上一版」。
+    expect(again.previous, isNull);
     final persisted = await store.load();
     expect(persisted, hasLength(1));
     expect(persisted.single.externalPackId, 'official-pack');
+    await expectLater(
+        EmojiPackInstaller(store).rollback(first.packId), throwsStateError);
   });
   for (final path in [
     '../outside.png',

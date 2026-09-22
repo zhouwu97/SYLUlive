@@ -69,22 +69,39 @@ class EmojiPackInstaller {
     if (await _staging.exists()) await _staging.delete(recursive: true);
   }
 
+  /// 回滚跟着索引里的安装历史走。版本数值来自内容哈希或包作者自报，
+  /// 大小关系不代表发布先后，所以这里不扫描「数值更小」的目录。
+  ///
+  /// 切换前先完整校验上一版目录（Manifest 身份 + 每个资源哈希），任一不符就抛错，
+  /// 保持当前可用包不动；老索引没有历史指针时同样不猜测，让用户重新下载。
   Future<EmojiPackInstallation> rollback(String packId) async {
     final current = (await store.load()).where((p) => p.packId == packId).first;
-    final parent = store.versionDirectory(packId, current.version).parent;
-    final versions = <int>[];
-    await for (final entity in parent.list()) {
-      final version = int.tryParse(path.basename(entity.path));
-      if (entity is Directory && version != null && version < current.version) {
-        versions.add(version);
+    final previous = current.previous;
+    if (previous == null) {
+      throw StateError('没有记录上一版，请重新下载官方版本');
+    }
+    final directory = store.versionDirectory(packId, previous.version);
+    final savedManifest = File('${directory.path}/manifest.json');
+    if (!await savedManifest.exists()) {
+      throw StateError('上一版目录已缺失，请重新下载官方版本');
+    }
+    final manifestBytes = await savedManifest.readAsBytes();
+    final manifest = EmojiPackManifest.fromJson(Map<String, dynamic>.from(
+        jsonDecode(utf8.decode(manifestBytes)) as Map));
+    if (manifest.packId != packId ||
+        manifest.version != previous.version ||
+        sha256.convert(manifestBytes).toString() !=
+            previous.manifestSha256) {
+      throw StateError('上一版内容身份校验失败，请重新下载官方版本');
+    }
+    for (final asset in manifest.assets) {
+      final file = File('${directory.path}/${asset.path}');
+      if (!await file.exists() ||
+          (await sha256.bind(file.openRead()).first).toString() !=
+              asset.sha256.toLowerCase()) {
+        throw StateError('上一版资源已损坏，请重新下载官方版本');
       }
     }
-    versions.sort();
-    if (versions.isEmpty) throw StateError('没有可回滚的版本');
-    final directory = store.versionDirectory(packId, versions.last);
-    final manifest = EmojiPackManifest.fromJson(Map<String, dynamic>.from(
-        jsonDecode(await File('${directory.path}/manifest.json').readAsString())
-            as Map));
     return install(
         manifest: manifest,
         name: current.name,
@@ -192,21 +209,24 @@ class EmojiPackInstaller {
           }
           await _staging.rename(destination.path);
           await checkpoint?.call('beforeIndex');
-          await store.commit(installation);
+          final persisted = await store.commit(installation);
           await checkpoint?.call('afterIndex');
           if (await _backup.exists()) await _backup.delete(recursive: true);
           await _journal.delete();
           if (await _staging.exists()) await _staging.delete(recursive: true);
-          // 保留当前及上一个版本，便于更新失败或手动回滚。
+          // 清理只跟着历史指针：保留当前版和上一版这两份目录，
+          // 不按版本数值或哈希大小决定谁是「更早」。
+          final keep = <String>{
+            '${persisted.version}',
+            if (persisted.previous != null) '${persisted.previous!.version}',
+          };
           await for (final entity in destination.parent.list()) {
             if (entity is Directory &&
-                path.basename(entity.path) != '${manifest.version}' &&
-                (old == null ||
-                    path.basename(entity.path) != '${old.version}')) {
+                !keep.contains(path.basename(entity.path))) {
               await entity.delete(recursive: true);
             }
           }
-          return installation;
+          return persisted;
         } catch (_) {
           await _recover();
           final recovered = (await store.readIndex())['packs'] as Map;
@@ -214,7 +234,9 @@ class EmojiPackInstaller {
           if (active is Map &&
               active['manifest_sha256'] == installation.manifestSha256 &&
               active['status'] == EmojiPackInstallStatus.installed.name) {
-            return installation;
+            // 索引已经切换成功，只是收尾被打断；返回磁盘上那份记录（含历史指针）。
+            return EmojiPackInstallation.fromJson(
+                Map<String, dynamic>.from(active));
           }
           rethrow;
         }

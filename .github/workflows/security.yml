@@ -72,9 +72,47 @@ jobs:
           elif [ -n "$EVENT_BEFORE" ] && [ "$EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]; then
             log_opts="$EVENT_BEFORE..$COMMIT_SHA"
           else
+            # 新分支或 force push 前提交不可达：只能退化成最后一个提交。
+            # 这条限制写进日志，避免把「本次没报」读成「历史干净」。
             log_opts="--max-count=1 $COMMIT_SHA"
+            echo "注意：push 起始提交不可用，本次只扫描 HEAD 一个提交。"
           fi
-          "$(go env GOPATH)/bin/gitleaks" git --no-banner --redact --config=.gitleaks.toml --log-opts="$log_opts" .
+          echo "扫描范围参数：$log_opts"
+          "$(go env GOPATH)/bin/gitleaks" git --no-banner --redact --config=.gitleaks.toml \
+            --report-format json --report-path gitleaks-report.json --log-opts="$log_opts" .
+      - name: Keep an auditable redacted finding summary
+        if: always()
+        run: |
+          if [ ! -f gitleaks-report.json ]; then
+            echo "本次扫描没有命中，未生成报告文件。"
+            exit 0
+          fi
+          # 仓库是 public：原始报告里的 Line/Match 字段可能带出真实片段，
+          # 所以只投影规则、文件、行号、提交与指纹，随后删除原文件。
+          node -e '
+            const fs = require("node:fs");
+            const rows = JSON.parse(fs.readFileSync("gitleaks-report.json", "utf8"));
+            const safe = rows.map((r) => ({
+              rule: r.RuleID,
+              file: r.File,
+              start_line: r.StartLine,
+              commit: r.Commit,
+              fingerprint: r.Fingerprint,
+            }));
+            fs.writeFileSync("gitleaks-summary.json", JSON.stringify(safe, null, 2) + "\n");
+            console.log(`命中 ${safe.length} 处，已投影为脱敏字段。`);
+          '
+          rm -f gitleaks-report.json
+          echo "命中清单（已脱敏）："
+          cat gitleaks-summary.json
+      - name: Upload redacted finding summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-summary
+          path: gitleaks-summary.json
+          retention-days: 14
+          if-no-files-found: ignore
 
   codeql-go:
     name: CodeQL Go

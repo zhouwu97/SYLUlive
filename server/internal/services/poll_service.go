@@ -212,10 +212,10 @@ func (s *PollService) Update(pollID, userID uint, role string, input CreatePollI
 			return newPollError(PollCodeNotFound, "投票不存在")
 		}
 		var post models.Post
-		if err := tx.First(&post, poll.PostID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&post, poll.PostID).Error; err != nil {
 			return newPollError(PollCodeNotFound, "投票不存在")
 		}
-		if poll.Status == models.PollStatusDeleted || post.Status == models.PostStatusDeleted {
+		if !isPublicPollPostStatus(post.Status) || poll.Status == models.PollStatusDeleted {
 			return newPollError(PollCodeDeleted, "投票已删除")
 		}
 		if post.AuthorID != userID && !isAdminRole(role) {
@@ -299,12 +299,12 @@ func (s *PollService) PutBallot(pollID, userID uint, optionIDs []uint) (models.P
 			return newPollError(PollCodeNotFound, "投票不存在")
 		}
 		var post models.Post
-		if err := tx.Select("id", "status").First(&post, poll.PostID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status").First(&post, poll.PostID).Error; err != nil {
 			return newPollError(PollCodeNotFound, "投票不存在")
 		}
 		postID = post.ID
 		status := effectivePollStatus(poll, post.Status, s.now())
-		if status == models.PollStatusDeleted {
+		if status == models.PollStatusDeleted || !isPublicPollPostStatus(post.Status) {
 			return newPollError(PollCodeDeleted, "投票已删除")
 		}
 		if status != models.PollStatusActive {
@@ -398,11 +398,11 @@ func (s *PollService) Close(pollID, userID uint, role string) (models.Post, erro
 			return newPollError(PollCodeNotFound, "投票不存在")
 		}
 		var post models.Post
-		if err := tx.First(&post, poll.PostID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&post, poll.PostID).Error; err != nil {
 			return newPollError(PollCodeNotFound, "投票不存在")
 		}
 		postID = post.ID
-		if poll.Status == models.PollStatusDeleted || post.Status == models.PostStatusDeleted {
+		if poll.Status == models.PollStatusDeleted || !isPublicPollPostStatus(post.Status) {
 			return newPollError(PollCodeDeleted, "投票已删除")
 		}
 		if post.AuthorID != userID && !isAdminRole(role) {
@@ -429,7 +429,7 @@ func (s *PollService) Delete(pollID, userID uint, role string) error {
 			return newPollError(PollCodeNotFound, "投票不存在")
 		}
 		var post models.Post
-		if err := tx.First(&post, poll.PostID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&post, poll.PostID).Error; err != nil {
 			return newPollError(PollCodeNotFound, "投票不存在")
 		}
 		if post.AuthorID != userID && !isAdminRole(role) {
@@ -455,7 +455,7 @@ func (s *PollService) GetByPostID(postID, viewerID uint) (models.Post, error) {
 	if err := s.db.Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).First(&post, postID).Error; err != nil {
 		return models.Post{}, newPollError(PollCodeNotFound, "投票不存在")
 	}
-	if post.ContentKind != models.PostContentKindPoll || post.Status == models.PostStatusDeleted {
+	if post.ContentKind != models.PostContentKindPoll || !isPublicPollPostStatus(post.Status) {
 		return models.Post{}, newPollError(PollCodeNotFound, "投票不存在")
 	}
 	posts := []models.Post{post}
@@ -472,7 +472,7 @@ func (s *PollService) List(input PollListInput, viewerID uint) (PollListResult, 
 	input = normalizePollListInput(input)
 	query := s.db.Model(&models.Post{}).
 		Joins("JOIN polls ON polls.post_id = posts.id").
-		Where("posts.content_kind = ? AND posts.status = ? AND polls.status <> ?", models.PostContentKindPoll, models.PostStatusNormal, models.PollStatusDeleted)
+		Where("posts.content_kind = ? AND posts.status IN ? AND polls.status <> ?", models.PostContentKindPoll, models.PublicPostStatuses(), models.PollStatusDeleted)
 	if input.Category != "all" {
 		query = query.Where("polls.category = ?", input.Category)
 	}
@@ -481,6 +481,9 @@ func (s *PollService) List(input PollListInput, viewerID uint) (PollListResult, 
 	} else if input.Scope == "voted" {
 		query = query.Joins("JOIN poll_ballots ON poll_ballots.poll_id = polls.id AND poll_ballots.user_id = ?", input.UserID)
 	}
+	if input.Sort == "ending" {
+		query = query.Where("polls.status = ? AND polls.ends_at > ?", models.PollStatusActive, s.now())
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return PollListResult{}, err
@@ -488,7 +491,8 @@ func (s *PollService) List(input PollListInput, viewerID uint) (PollListResult, 
 
 	var posts []models.Post
 	if input.Sort == "recommend" {
-		if err := query.Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).Limit(500).Find(&posts).Error; err != nil {
+		// 截取推荐候选池前固定顺序，避免数据库返回顺序变化导致候选池和分页不稳定。
+		if err := query.Order("posts.created_at DESC, posts.id DESC").Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).Limit(500).Find(&posts).Error; err != nil {
 			return PollListResult{}, err
 		}
 		if err := s.HydratePollPosts(posts, viewerID); err != nil {
@@ -499,7 +503,7 @@ func (s *PollService) List(input PollListInput, viewerID uint) (PollListResult, 
 		posts = pagePosts(posts, input.Page, input.Limit)
 	} else {
 		if input.Sort == "ending" {
-			query = query.Where("polls.status = ? AND polls.ends_at > ?", models.PollStatusActive, s.now()).Order("polls.ends_at ASC")
+			query = query.Order("polls.ends_at ASC, polls.id ASC")
 		} else {
 			query = query.Order("posts.created_at DESC")
 		}
@@ -724,13 +728,18 @@ func buildPollSummary(poll models.Poll, post models.Post, viewerID uint, hasVote
 }
 
 func effectivePollStatus(poll models.Poll, postStatus models.PostStatus, now time.Time) string {
-	if poll.Status == models.PollStatusDeleted || postStatus == models.PostStatusDeleted {
+	if poll.Status == models.PollStatusDeleted || !isPublicPollPostStatus(postStatus) {
 		return models.PollStatusDeleted
 	}
 	if poll.Status == models.PollStatusClosed || !now.Before(poll.EndsAt) {
 		return models.PollStatusClosed
 	}
 	return models.PollStatusActive
+}
+
+// 投票只能公开挂在当前可公开读取的帖子上；未知状态默认拒绝，避免治理状态新增后被反向放行。
+func isPublicPollPostStatus(status models.PostStatus) bool {
+	return models.IsPublicPostStatus(status)
 }
 
 func validateChoiceIDs(poll models.Poll, options []models.PollOption, optionIDs []uint) ([]uint, error) {

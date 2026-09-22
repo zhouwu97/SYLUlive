@@ -19,7 +19,7 @@ type HomeFeedService struct {
 	personalizationShadow bool
 	rolloutPercent        int
 	// FEED-V5：v5 算法（reply_like 信号 + 去 raw view + dwell 衰减）。
-	v5Shadow       bool
+	v5Shadow         bool
 	v5RolloutPercent int
 }
 
@@ -46,7 +46,7 @@ func (s *HomeFeedService) SetPersonalizationV5(shadow bool, percent int) {
 
 func (s *HomeFeedService) PinnedPosts(now time.Time) ([]models.Post, error) {
 	var posts []models.Post
-	query := s.db.Where("board_id = ? AND status IN ? AND is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?)", models.BoardShuitie, []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed}, true, now)
+	query := s.db.Where("board_id = ? AND status IN ? AND is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?)", models.BoardShuitie, models.PublicPostStatuses(), true, now)
 	if !s.includePoll {
 		query = query.Where("content_kind <> ?", models.PostContentKindPoll)
 	}

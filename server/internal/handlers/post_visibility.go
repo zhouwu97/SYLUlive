@@ -18,12 +18,8 @@ import (
 
 // publicPostStatuses 是公共读取允许的正向状态白名单。
 // 显式使用白名单而不是排除法：将来新增的状态默认不公开，避免“先排除两个已知
-// 状态再把未来状态全部放行”。
-var publicPostStatuses = []models.PostStatus{
-	models.PostStatusNormal,
-	models.PostStatusSold,
-	models.PostStatusClosed,
-}
+// 状态再把未来状态全部放行”。定义与投票等跨包读取路径共用 models 一份来源。
+var publicPostStatuses = models.PublicPostStatuses()
 
 // marketListingPostStatuses 是公共集市列表允许展示的状态。
 // 已售商品仍需在详情、个人主页和“我的内容”中保留，但不再占用公共集市列表的位置。

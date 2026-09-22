@@ -298,3 +298,36 @@ func TestPollServiceCloseDeleteAndRecalculate(t *testing.T) {
 		t.Fatal("删除后的公开详情应返回不存在")
 	}
 }
+
+func TestPollServiceGovernanceHiddenBlocksReadAndVote(t *testing.T) {
+	db := newPollServiceTestDB(t)
+	now := time.Date(2026, 7, 18, 12, 0, 0, 0, time.Local)
+	owner := seedPollUser(t, db, "hidden-owner")
+	voter := seedPollUser(t, db, "hidden-voter")
+	service := NewPollService(db)
+	service.SetNowForTest(func() time.Time { return now })
+	created, err := service.Create(context.Background(), owner.ID, string(owner.Role), pollInput(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.Post{}).Where("id = ?", created.ID).Update("status", models.PostStatusModeratedHidden).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Get(created.PollMeta.ID, voter.ID); err == nil {
+		t.Fatal("治理隐藏投票不应继续公开读取")
+	} else {
+		requirePollCode(t, err, PollCodeNotFound)
+	}
+	if _, err := service.PutBallot(created.PollMeta.ID, voter.ID, []uint{created.PollMeta.Options[0].ID}); err == nil {
+		t.Fatal("治理隐藏投票不应继续写入")
+	} else {
+		requirePollCode(t, err, PollCodeDeleted)
+	}
+	var poll models.Poll
+	if err := db.First(&poll, created.PollMeta.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if poll.ParticipantCount != 0 || poll.ChoiceCount != 0 {
+		t.Fatalf("隐藏投票状态被意外改变: %#v", poll)
+	}
+}

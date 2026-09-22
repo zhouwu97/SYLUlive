@@ -287,7 +287,7 @@ func SearchTopics(db *gorm.DB, query, section string, limit int) ([]models.Topic
 		err := db.Table("post_topics AS pt").
 			Select("pt.topic_id, COUNT(*) AS count").
 			Joins("JOIN posts AS p ON p.id = pt.post_id").
-			Where("pt.topic_id IN ? AND p.post_type = ? AND p.status IN ?", ids, section, []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed}).
+			Where("pt.topic_id IN ? AND p.post_type = ? AND p.status IN ?", ids, section, models.PublicPostStatuses()).
 			Group("pt.topic_id").Scan(&rows).Error
 		if err != nil {
 			return nil, err

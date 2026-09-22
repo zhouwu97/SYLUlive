@@ -675,7 +675,7 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 		Preload("Images").
 		Preload("Images.File").
 		Scopes(withPostImageVariants).
-		Where("author_id = ? AND status IN ? AND board_id != ?", targetID, []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed}, models.BoardMarket)
+		Where("author_id = ? AND status IN ? AND board_id != ?", targetID, models.PublicPostStatuses(), models.BoardMarket)
 	viewerID, _ := c.Get("user_id")
 	role, _ := c.Get("role")
 	if viewerID == targetID || role == "admin" || role == "super_admin" {
@@ -713,7 +713,7 @@ func (h *UserHandler) GetUserMarketPosts(c *gin.Context) {
 			targetID,
 			models.BoardMarket,
 			postType,
-			[]models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed},
+			models.PublicPostStatuses(),
 		)
 		viewerID, _ := c.Get("user_id")
 		role, _ := c.Get("role")

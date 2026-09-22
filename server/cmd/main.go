@@ -1856,8 +1856,8 @@ func main() {
 	pollsAuth := r.Group("/api/polls")
 	pollsAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
-		pollsAuth.POST("", pollHandler.Create)
-		pollsAuth.PUT("/:id", pollHandler.Update)
+		pollsAuth.POST("", middleware.RequireCommunityRules(db), pollHandler.Create)
+		pollsAuth.PUT("/:id", middleware.RequireCommunityRules(db), pollHandler.Update)
 		pollsAuth.DELETE("/:id", pollHandler.Delete)
 		pollsAuth.PUT("/:id/ballot", pollHandler.PutBallot)
 		pollsAuth.POST("/:id/close", pollHandler.Close)

@@ -1865,7 +1865,7 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 	viewerUserID, _ := viewerID.(uint)
 	isOwner := viewerUserID == post.AuthorID
 	isAdmin := role == "admin" || role == "super_admin"
-	isPublic := post.Status == models.PostStatusNormal || post.Status == models.PostStatusSold || post.Status == models.PostStatusClosed
+	isPublic := models.IsPublicPostStatus(post.Status)
 
 	var pendingReview models.PostRectificationReview
 	hasPendingRectification := false

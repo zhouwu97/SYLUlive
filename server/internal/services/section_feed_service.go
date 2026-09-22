@@ -21,7 +21,7 @@ func NewSectionFeedService(db *gorm.DB, includePoll bool) *SectionFeedService {
 func (s *SectionFeedService) BuildSnapshot(sectionID uint, sectionSlug string, now time.Time) ([]uint, error) {
 	base := func() *gorm.DB {
 		query := s.db.Model(&models.Post{}).
-			Where("board_id = ? AND status IN ?", models.BoardShuitie, []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed}).
+			Where("board_id = ? AND status IN ?", models.BoardShuitie, models.PublicPostStatuses()).
 			Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)")
 		if !s.includePoll {
 			query = query.Where("content_kind <> ?", models.PostContentKindPoll)

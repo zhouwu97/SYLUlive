@@ -17,7 +17,7 @@ func (h *PostHandler) PutBookmark(c *gin.Context) {
 		return
 	}
 	var post models.Post
-	if err = h.db.Where("status IN ?", []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed}).First(&post, uint(id)).Error; err != nil {
+	if err = h.db.Where("status IN ?", models.PublicPostStatuses()).First(&post, uint(id)).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不可访问"})
 		return
 	}
@@ -48,9 +48,9 @@ func (h *PostHandler) ListBookmarks(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "分页参数无效"})
 		return
 	}
-	q := h.db.Model(&models.Post{}).Joins("JOIN post_bookmarks ON post_bookmarks.post_id = posts.id").Where("post_bookmarks.user_id = ? AND posts.status IN ?", c.GetUint("user_id"), []models.PostStatus{models.PostStatusNormal, models.PostStatusSold, models.PostStatusClosed})
+	q := h.db.Model(&models.Post{}).Joins("JOIN post_bookmarks ON post_bookmarks.post_id = posts.id").Where("post_bookmarks.user_id = ? AND posts.status IN ?", c.GetUint("user_id"), models.PublicPostStatuses())
 	var posts []models.Post
-	if err := q.Session(&gorm.Session{}).Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).Order("post_bookmarks.created_at DESC, posts.id DESC").Offset(offset).Limit(limit+1).Find(&posts).Error; err != nil {
+	if err := q.Session(&gorm.Session{}).Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).Order("post_bookmarks.created_at DESC, posts.id DESC").Offset(offset).Limit(limit + 1).Find(&posts).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取收藏失败"})
 		return
 	}

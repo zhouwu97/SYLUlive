@@ -66,11 +66,25 @@ type PollListInput struct {
 	UserID   uint
 }
 
+// pollRecommendPoolSize 是推荐排序一次装载的候选池上界：最近的这些投票参与重排。
+// 池是有界且可解释的（按发帖时间倒序截取），不是「全量推荐」，所以 total 只按池内条数返回。
+const pollRecommendPoolSize = 500
+
+// PollListResult 的字段语义：
+//   - total：这一次请求可分页的候选总数。latest/ending 等于全部匹配数；
+//     recommend 只等于候选池内条数（池外条目这一路翻不到）。旧客户端只读 total，
+//     得到的仍是「翻得到的条数」，不会像改动前那样拿到一个永远翻不完的大数。
+//   - matched_total：满足过滤条件的全站匹配数，不随分页变化，用于解释「还有多少没进候选池」。
+//   - pool_size：推荐候选池上界；非推荐排序为 0，表示没有池限制。
+//   - has_more：服务端按本页之后数据源里是否还有行判断，客户端不必再按「本页等于 limit」猜。
 type PollListResult struct {
-	Items []models.Post `json:"items"`
-	Page  int           `json:"page"`
-	Limit int           `json:"limit"`
-	Total int64         `json:"total"`
+	Items        []models.Post `json:"items"`
+	Page         int           `json:"page"`
+	Limit        int           `json:"limit"`
+	Total        int64         `json:"total"`
+	MatchedTotal int64         `json:"matched_total"`
+	PoolSize     int64         `json:"pool_size"`
+	HasMore      bool          `json:"has_more"`
 }
 
 // PollService 承担投票事务和 DTO 脱敏，Handler 只负责 HTTP 协议转换。
@@ -484,15 +498,16 @@ func (s *PollService) List(input PollListInput, viewerID uint) (PollListResult, 
 	if input.Sort == "ending" {
 		query = query.Where("polls.status = ? AND polls.ends_at > ?", models.PollStatusActive, s.now())
 	}
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	var matched int64
+	if err := query.Count(&matched).Error; err != nil {
 		return PollListResult{}, err
 	}
+	result := PollListResult{Page: input.Page, Limit: input.Limit, MatchedTotal: matched}
 
 	var posts []models.Post
 	if input.Sort == "recommend" {
 		// 截取推荐候选池前固定顺序，避免数据库返回顺序变化导致候选池和分页不稳定。
-		if err := query.Order("posts.created_at DESC, posts.id DESC").Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).Limit(500).Find(&posts).Error; err != nil {
+		if err := query.Order("posts.created_at DESC, posts.id DESC").Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).Limit(pollRecommendPoolSize).Find(&posts).Error; err != nil {
 			return PollListResult{}, err
 		}
 		if err := s.HydratePollPosts(posts, viewerID); err != nil {
@@ -500,24 +515,48 @@ func (s *PollService) List(input PollListInput, viewerID uint) (PollListResult, 
 		}
 		now := s.now()
 		sort.SliceStable(posts, func(i, j int) bool { return pollRecommendScore(posts[i], now) > pollRecommendScore(posts[j], now) })
-		posts = pagePosts(posts, input.Page, input.Limit)
+		result.PoolSize = pollRecommendPoolSize
+		// total 表示本次可分页的候选数：池外的投票在这一路永远翻不到，
+		// 计入总数会让 has_more 一直指向空白页；全站匹配数由 matched_total 承担。
+		result.Total = int64(len(posts))
+		start := (input.Page - 1) * input.Limit
+		if start > len(posts) {
+			start = len(posts)
+		}
+		end := start + input.Limit
+		if end > len(posts) {
+			end = len(posts)
+		}
+		result.HasMore = end < len(posts)
+		posts = posts[start:end]
 	} else {
 		if input.Sort == "ending" {
 			query = query.Order("polls.ends_at ASC, polls.id ASC")
 		} else {
-			query = query.Order("posts.created_at DESC")
+			// created_at 同值时用 id 兜底：没有二级键的话数据库可以任意排，
+			// OFFSET 分页就会跨页重复或漏掉同一秒发布的投票。
+			query = query.Order("posts.created_at DESC, posts.id DESC")
 		}
-		if err := query.Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).Offset((input.Page - 1) * input.Limit).Limit(input.Limit).Find(&posts).Error; err != nil {
+		if err := query.Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).Offset((input.Page - 1) * input.Limit).Limit(input.Limit + 1).Find(&posts).Error; err != nil {
 			return PollListResult{}, err
+		}
+		// 多取一条判断还有没有下一页：比用 total 反推更准，
+		// 并发写入让总数在翻页之间变化时，按 total 推出来的 has_more 会说谎。
+		result.HasMore = len(posts) > input.Limit
+		if result.HasMore {
+			posts = posts[:input.Limit]
 		}
 		if err := s.HydratePollPosts(posts, viewerID); err != nil {
 			return PollListResult{}, err
 		}
+		// 这一路没有候选池，全部匹配项都可分页，因此 total 与 matched_total 相同。
+		result.Total = matched
 	}
 	if posts == nil {
 		posts = []models.Post{}
 	}
-	return PollListResult{Items: posts, Page: input.Page, Limit: input.Limit, Total: total}, nil
+	result.Items = posts
+	return result, nil
 }
 
 // HydratePollPosts 用固定批次数查询为帖子填充投票摘要，避免首页 N+1。
@@ -839,18 +878,6 @@ func normalizePollListInput(input PollListInput) PollListInput {
 		input.Category = "all"
 	}
 	return input
-}
-
-func pagePosts(posts []models.Post, page, limit int) []models.Post {
-	start := (page - 1) * limit
-	if start >= len(posts) {
-		return []models.Post{}
-	}
-	end := start + limit
-	if end > len(posts) {
-		end = len(posts)
-	}
-	return posts[start:end]
 }
 
 func pollRecommendScore(post models.Post, now time.Time) float64 {

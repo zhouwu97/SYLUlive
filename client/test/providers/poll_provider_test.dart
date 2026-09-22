@@ -107,7 +107,62 @@ class RecordingPostProvider extends PostProvider {
   void removeExternalPost(int postId) => removed = postId;
 }
 
+class ScriptedPollListService extends PollService {
+  ScriptedPollListService(this.pages) : super(Dio());
+
+  final List<PollListResponse> pages;
+  final List<int> requestedPages = [];
+
+  @override
+  Future<PollListResponse> listPolls({
+    String sort = 'recommend',
+    String category = 'all',
+    int page = 1,
+    int limit = 20,
+  }) async {
+    requestedPages.add(page);
+    return pages[page - 1];
+  }
+}
+
+PollListResponse _page(int number, List<Post> items,
+        {required int total, required bool hasMore, int limit = 20}) =>
+    PollListResponse(
+      items: items,
+      page: number,
+      limit: limit,
+      total: total,
+      matchedTotal: total + 30,
+      hasMore: hasMore,
+    );
+
 void main() {
+  test('翻页只看服务端 has_more：短页仍可继续，未短页也可已到底', () async {
+    // 第一页只有 1 条、limit 为 20：按「本页长度等于 limit」猜的旧逻辑会误判为已到底。
+    final keepGoing = ScriptedPollListService([
+      _page(1, [pollPost(postId: 1)], total: 500, hasMore: true),
+      _page(2, [pollPost(postId: 2)], total: 500, hasMore: false),
+    ]);
+    final provider = PollProvider(keepGoing);
+    await provider.load(sort: 'recommend');
+    expect(provider.stateFor(sort: 'recommend').hasMore, isTrue);
+    await provider.load(sort: 'recommend');
+    expect(keepGoing.requestedPages, [1, 2]);
+    expect(provider.stateFor(sort: 'recommend').items.map((item) => item.id), [1, 2]);
+
+    // 反例：本页刚好满 limit、总数也还更大，但服务端说候选池到此为止，
+    // 就不该再按「本页等于 limit」继续猜下一页。
+    final stopEarly = ScriptedPollListService([
+      _page(1, [pollPost(postId: 1), pollPost(postId: 2)],
+          total: 5, hasMore: false, limit: 2),
+    ]);
+    final stopped = PollProvider(stopEarly);
+    await stopped.load(sort: 'recommend');
+    expect(stopped.stateFor(sort: 'recommend').hasMore, isFalse);
+    await stopped.load(sort: 'recommend');
+    expect(stopEarly.requestedPages, [1]);
+  });
+
   test('筛选状态隔离且加载更多不重置列表', () async {
     final provider = PollProvider(FakePollService());
     await provider.load(sort: 'recommend');

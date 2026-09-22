@@ -111,8 +111,11 @@ class PollProvider extends ChangeNotifier {
         state.items.addAll(response.items.where((item) => known.add(item.id)));
       }
       state.page = response.page;
-      state.hasMore = state.items.length < response.total &&
-          response.items.length >= response.limit;
+      // 优先用服务端结论：total 只表示可翻页候选数，本页变短（并发写入、筛选）
+      // 时按 total 反推会误判。旧服务端没有 has_more 才退回按长度猜。
+      state.hasMore = response.hasMore ??
+          (state.items.length < response.total &&
+              response.items.length >= response.limit);
       state.hasLoaded = true;
       state.lastRefreshAt = DateTime.now();
     } on PollApiException catch (error) {

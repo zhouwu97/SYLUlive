@@ -19,13 +19,23 @@ class PollListResponse {
   final List<Post> items;
   final int page;
   final int limit;
+
+  /// 本次请求可翻页的候选总数；推荐排序下等于候选池条数，可能小于 matchedTotal。
   final int total;
+
+  /// 满足筛选条件的全站匹配数，用于解释「有多少条没进推荐池」。
+  final int? matchedTotal;
+
+  /// 服务端给出的「本页之后还有数据」；旧服务端没有这个字段时为 null。
+  final bool? hasMore;
 
   const PollListResponse({
     required this.items,
     required this.page,
     required this.limit,
     required this.total,
+    this.matchedTotal,
+    this.hasMore,
   });
 }
 
@@ -182,6 +192,8 @@ class PollService {
         page: (data['page'] as num?)?.toInt() ?? 1,
         limit: (data['limit'] as num?)?.toInt() ?? 20,
         total: (data['total'] as num?)?.toInt() ?? 0,
+        matchedTotal: (data['matched_total'] as num?)?.toInt(),
+        hasMore: data['has_more'] is bool ? data['has_more'] as bool : null,
       );
     } on DioException catch (error) {
       throw _mapError(error);

@@ -15,7 +15,29 @@ export class ApiError extends Error {
     super(message);
   }
 }
-let refreshing: Promise<Response> | undefined;
+let refreshing: { epoch: number; promise: Promise<Response> } | undefined;
+let authEpoch = 0;
+let authUserId: number | null = null;
+const inFlight = new Set<AbortController>();
+
+// 登录、退出和跨标签切号共享同一世代；世代变化后旧请求最多被取消，不能再重放。
+export function beginAuthTransition() {
+  authEpoch += 1;
+  for (const controller of inFlight) controller.abort();
+  inFlight.clear();
+  refreshing = undefined;
+}
+
+export function setAuthSession(userId: number | null) {
+  if (authUserId === userId) return;
+  authUserId = userId;
+  beginAuthTransition();
+}
+
+function isReadMethod(method: string) {
+  return ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+}
+
 export async function request<T = Entity>(
   path: string,
   init: RequestInit = {},
@@ -31,33 +53,57 @@ export async function request<T = Entity>(
     headers,
     credentials: "same-origin" as RequestCredentials,
   };
-  let response = await fetch(path, options);
-  if (
-    response.status === 401 &&
-    !["/api/login", "/api/refresh", "/api/logout"].includes(path)
-  ) {
-    refreshing ||= fetch("/api/refresh", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "X-Requested-With": "SYLUlive-Web" },
-    }).finally(() => {
-      refreshing = undefined;
-    });
-    if ((await refreshing).ok) response = await fetch(path, options);
+  const requestEpoch = authEpoch;
+  const requestUserId = authUserId;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (init.signal?.aborted) controller.abort();
+  else init.signal?.addEventListener("abort", abort, { once: true });
+  inFlight.add(controller);
+  options.signal = controller.signal;
+  try {
+    let response = await fetch(path, options);
+    if (requestEpoch !== authEpoch || requestUserId !== authUserId)
+      throw new ApiError(409, "auth_session_changed", "账号已切换，请重新确认操作");
+    if (
+      response.status === 401 &&
+      isReadMethod(String(options.method || "GET")) &&
+      !["/api/login", "/api/refresh", "/api/logout"].includes(path)
+    ) {
+      const refreshEpoch = authEpoch;
+      if (!refreshing || refreshing.epoch !== refreshEpoch) {
+        const promise = fetch("/api/refresh", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "X-Requested-With": "SYLUlive-Web" },
+        });
+        refreshing = { epoch: refreshEpoch, promise };
+        promise.finally(() => {
+          if (refreshing?.promise === promise) refreshing = undefined;
+        });
+      }
+      const refreshed = await refreshing.promise;
+      if (requestEpoch !== authEpoch || requestUserId !== authUserId)
+        throw new ApiError(409, "auth_session_changed", "账号已切换，请重新确认操作");
+      if (refreshed.ok) response = await fetch(path, options);
+    }
+    const contentType = response.headers.get("content-type") || "";
+    const data = contentType.includes("application/json")
+      ? await response.json()
+      : null;
+    if (!response.ok)
+      throw new ApiError(
+        response.status,
+        data?.code || "request_failed",
+        data?.message || data?.error || `请求未完成（${response.status}）`,
+      );
+    if (data === null && response.status !== 204)
+      throw new ApiError(502, "invalid_response", "接口没有返回可读取的数据");
+    return data as T;
+  } finally {
+    inFlight.delete(controller);
+    init.signal?.removeEventListener("abort", abort);
   }
-  const contentType = response.headers.get("content-type") || "";
-  const data = contentType.includes("application/json")
-    ? await response.json()
-    : null;
-  if (!response.ok)
-    throw new ApiError(
-      response.status,
-      data?.code || "request_failed",
-      data?.message || data?.error || `请求未完成（${response.status}）`,
-    );
-  if (data === null && response.status !== 204)
-    throw new ApiError(502, "invalid_response", "接口没有返回可读取的数据");
-  return data as T;
 }
 export const write = <T = Entity>(
   path: string,

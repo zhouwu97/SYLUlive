@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { entity, useApi, write, type User } from "./api";
+import { beginAuthTransition, entity, setAuthSession, useApi, write, type User } from "./api";
 import { Form, useUI } from "./ui";
 import { bridge } from './bridge';
 import { providers } from '@sylulive/academic-contracts';
@@ -19,11 +19,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     qc = useQueryClient();
   const raw = entity(q.data, "user", "data");
   const user = raw.id ? (raw as User) : null;
-  useEffect(()=>{const channel=new BroadcastChannel('sylulive-auth');channel.onmessage=()=>{qc.clear();ui.close()};return()=>channel.close()},[qc]);
+  useEffect(() => {
+    setAuthSession(user?.id ?? null);
+  }, [user?.id]);
+  useEffect(()=>{const channel=new BroadcastChannel('sylulive-auth');channel.onmessage=()=>{beginAuthTransition();qc.clear();ui.close()};return()=>channel.close()},[qc,ui]);
   function login() {
     ui.open("登录沈理校园", <Login />);
   }
   async function logout() {
+    beginAuthTransition();
     await write("/api/logout");
     window.dispatchEvent(new Event("sylulive-logout"));
     qc.clear();
@@ -61,6 +65,7 @@ function Login() {
         ]}
         submit="登录"
         onSubmit={async (data) => {
+          beginAuthTransition();
           await write("/api/login", data);
           qc.clear();
           announceAuthChange();

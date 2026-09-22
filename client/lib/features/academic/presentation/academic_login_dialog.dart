@@ -58,21 +58,89 @@ final class AcademicLoginDialog extends StatefulWidget {
   State<AcademicLoginDialog> createState() => _AcademicLoginDialogState();
 }
 
+/// 会话前置被挡下的原因分类。
+///
+/// 历史实现只有一个 bool，于是「用户取消了登录」「需要人工输入」和「临时断网」
+/// 被混成同一个永久阻塞：失败退避到期后页面仍然不会再次尝试恢复，
+/// 用户只能先从别的入口手动恢复会话才能解锁。
+enum AcademicSessionReadBarrier {
+  /// 没有阻塞：已就绪，或上下文已切换（不应记到新上下文头上）。
+  none,
+
+  /// 需要用户人工处理：取消登录、凭据失效、认证入口未开放。
+  /// 保留缓存并给非阻塞提示，不反复弹框。
+  needsManual,
+
+  /// 临时故障：网络、学校服务暂不可用。退避结束后应允许再次无感恢复。
+  transient,
+}
+
+/// 一次会话前置的结论：除了能不能读，还要说清被挡下的原因。
+final class AcademicSessionReadResult {
+  const AcademicSessionReadResult.ready()
+      : ready = true,
+        barrier = AcademicSessionReadBarrier.none;
+
+  const AcademicSessionReadResult.blocked(this.barrier) : ready = false;
+
+  final bool ready;
+  final AcademicSessionReadBarrier barrier;
+}
+
+/// 由登录结果归类阻塞原因。
+///
+/// 复用 [AcademicFailureKind.isRetryable] 的既有分类，不再新造一套：
+/// 网络和学校暂不可用会自己变好，凭据失效和契约错误不会。
+AcademicSessionReadBarrier academicSessionReadBarrierFor(
+  AcademicLoginOutcomeKind kind, {
+  bool failureRetryable = true,
+}) {
+  return switch (kind) {
+    AcademicLoginOutcomeKind.success ||
+    AcademicLoginOutcomeKind.contextChanged =>
+      AcademicSessionReadBarrier.none,
+    // 临时故障：结果未知或上游暂不可用，退避后再试有意义。
+    AcademicLoginOutcomeKind.networkFailure ||
+    AcademicLoginOutcomeKind.challengeRejected ||
+    AcademicLoginOutcomeKind.authRejectedAmbiguous =>
+      AcademicSessionReadBarrier.transient,
+    // 需要人工输入或人工处理：验证码、密码、身份不一致、认证入口未开放。
+    AcademicLoginOutcomeKind.captchaRequired ||
+    AcademicLoginOutcomeKind.credentialsRequired ||
+    AcademicLoginOutcomeKind.invalidCredentials ||
+    AcademicLoginOutcomeKind.accountRejected ||
+    AcademicLoginOutcomeKind.accountRestricted ||
+    AcademicLoginOutcomeKind.identityMismatch ||
+    AcademicLoginOutcomeKind.identityUnverified ||
+    AcademicLoginOutcomeKind.profileFailure =>
+      AcademicSessionReadBarrier.needsManual,
+    AcademicLoginOutcomeKind.failure => failureRetryable
+        ? AcademicSessionReadBarrier.transient
+        : AcademicSessionReadBarrier.needsManual,
+  };
+}
+
 /// 课表、成绩等本机读取入口共用的会话前置。
 ///
 /// 先尝试 Artifact 或已保存凭据的无感恢复；只有确实需要用户输入时
-/// 才打开登录框，避免已绑定身份在读取数据时被误导成“重新绑定”。
+/// 才打开登录框，避免已绑定身份在读取数据时被误导成"重新绑定"。
 ///
 /// [allowInteractiveLogin] 是调用方持有的独立权限：自动刷新与前台恢复传
 /// false，只做无感恢复，需要人工输入时直接失败并让页面保留旧结果。
-Future<bool> ensureAcademicSessionForRead(
+/// 返回值带上 [AcademicSessionReadBarrier]，让调用方区分「需要人工」和
+/// 「临时故障」——后者在退避结束后必须能再次无感恢复。
+Future<AcademicSessionReadResult> resolveAcademicSessionForRead(
   BuildContext context, {
   required AcademicSessionController controller,
   AcademicLoginCoordinator? coordinator,
   bool allowInteractiveLogin = true,
 }) async {
-  if (!await controller.remoteAccessAllowed()) return false;
-  if (controller.isAuthenticated) return true;
+  if (!await controller.remoteAccessAllowed()) {
+    // 远程访问被用户关掉：只有用户自己能改，不是自动重试能解决的。
+    return const AcademicSessionReadResult.blocked(
+        AcademicSessionReadBarrier.needsManual);
+  }
+  if (controller.isAuthenticated) return const AcademicSessionReadResult.ready();
 
   final generation = controller.contextGeneration;
   final appUserId = controller.appUserId;
@@ -83,15 +151,22 @@ Future<bool> ensureAcademicSessionForRead(
     generation: generation,
     appUserId: appUserId,
   )) {
-    return false;
+    // 上下文已切换：旧会话的阻塞不能记到新上下文上。
+    return const AcademicSessionReadResult.blocked(
+        AcademicSessionReadBarrier.none);
   }
-  if (controller.isAuthenticated) return true;
+  if (controller.isAuthenticated) return const AcademicSessionReadResult.ready();
+
+  final barrier = academicSessionReadBarrierFor(
+    outcome.kind,
+    failureRetryable: controller.failure?.isRetryable ?? true,
+  );
   if (!context.mounted ||
       !allowInteractiveLogin ||
       outcome.kind == AcademicLoginOutcomeKind.contextChanged ||
       outcome.kind == AcademicLoginOutcomeKind.networkFailure ||
       outcome.kind == AcademicLoginOutcomeKind.failure) {
-    return false;
+    return AcademicSessionReadResult.blocked(barrier);
   }
 
   final success = await AcademicLoginDialog.show(
@@ -103,9 +178,31 @@ Future<bool> ensureAcademicSessionForRead(
     generation: generation,
     appUserId: appUserId,
   )) {
-    return false;
+    return const AcademicSessionReadResult.blocked(
+        AcademicSessionReadBarrier.none);
   }
-  return success == true && controller.isAuthenticated;
+  if (success == true && controller.isAuthenticated) {
+    return const AcademicSessionReadResult.ready();
+  }
+  // 用户关掉了登录框：这是明确的「需要人工」，不能被下一次自动刷新再次弹框。
+  return const AcademicSessionReadResult.blocked(
+      AcademicSessionReadBarrier.needsManual);
+}
+
+/// 兼容旧签名的薄封装：只关心能不能读。
+Future<bool> ensureAcademicSessionForRead(
+  BuildContext context, {
+  required AcademicSessionController controller,
+  AcademicLoginCoordinator? coordinator,
+  bool allowInteractiveLogin = true,
+}) async {
+  final result = await resolveAcademicSessionForRead(
+    context,
+    controller: controller,
+    coordinator: coordinator,
+    allowInteractiveLogin: allowInteractiveLogin,
+  );
+  return result.ready;
 }
 
 class _AcademicLoginDialogState extends State<AcademicLoginDialog> {

@@ -138,8 +138,11 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   String? _academicContext;
   String? _academicIdentityKey;
   bool _wasSessionReady = false;
-  bool _sessionReadBlocked = false;
-  Future<bool>? _sessionReadFuture;
+  /// 会话读取被挡下的原因。区分「需要人工」与「临时故障」，
+  /// 后者在失败退避结束后必须能再次无感恢复。
+  AcademicSessionReadBarrier _sessionBarrier =
+      AcademicSessionReadBarrier.none;
+  Future<AcademicSessionReadResult>? _sessionReadFuture;
 
   String get _sessionMessage =>
       _academicSession?.failure?.message ?? '请先完成教务登录后重试';
@@ -163,14 +166,20 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       return mounted && (_academicSession?.isAuthenticated ?? false);
     }
     if (session.isAuthenticated) {
-      _sessionReadBlocked = false;
+      _sessionBarrier = AcademicSessionReadBarrier.none;
       return true;
     }
     // 同一轮成绩、GPA 和学分读取共用一次恢复；取消后只由允许打断用户的来源再弹框。
-    if (_sessionReadBlocked && !allowInteractiveLogin) return false;
+    //
+    // 只有「需要人工处理」才挡后续无感读取：临时故障必须在退避结束后允许再试，
+    // 否则退避到期也不会真的恢复（旧实现一个 bool 把两类混死了）。
+    if (_sessionBarrier == AcademicSessionReadBarrier.needsManual &&
+        !allowInteractiveLogin) {
+      return false;
+    }
     final identity = session.identity;
     final appUserId = session.appUserId;
-    final operation = ensureAcademicSessionForRead(context,
+    final operation = resolveAcademicSessionForRead(context,
         controller: session,
         coordinator: context.read<AcademicLoginCoordinator?>(),
         allowInteractiveLogin: allowInteractiveLogin);
@@ -180,12 +189,24 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       final sameIdentity = mounted &&
           session.identity == identity &&
           session.appUserId == appUserId;
-      final ready = sameIdentity && (result || session.isAuthenticated);
-      if (sameIdentity) _sessionReadBlocked = !ready;
+      final ready = sameIdentity && (result.ready || session.isAuthenticated);
+      if (sameIdentity) {
+        _sessionBarrier = ready
+            ? AcademicSessionReadBarrier.none
+            : result.barrier;
+      }
       return ready;
     } finally {
       if (identical(_sessionReadFuture, operation)) _sessionReadFuture = null;
     }
+  }
+
+  /// 读取失败后按教务失败的既有可重试分类决定阻塞类别。
+  void _markSessionBarrierFromFailure() {
+    final failure = _academicSession?.failure;
+    _sessionBarrier = (failure?.isRetryable ?? true)
+        ? AcademicSessionReadBarrier.transient
+        : AcademicSessionReadBarrier.needsManual;
   }
 
   @override
@@ -264,7 +285,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _lastUserId != currentUserId ||
         _academicContext != sessionContext) {
       _academicContext = sessionContext;
-      if (_academicIdentityKey != identityKey) _sessionReadBlocked = false;
+      if (_academicIdentityKey != identityKey) {
+        _sessionBarrier = AcademicSessionReadBarrier.none;
+      }
       _academicIdentityKey = identityKey;
       _eduProvider = eduProvider;
       _lastUserId = currentUserId;
@@ -330,9 +353,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _showUnavailableState('请先登录后查看成绩');
       }
     } else if (becameReady &&
-        _sessionReadBlocked &&
+        _sessionBarrier != AcademicSessionReadBarrier.none &&
         _sessionReadFuture == null) {
-      _sessionReadBlocked = false;
+      _sessionBarrier = AcademicSessionReadBarrier.none;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _academicContext != sessionContext) return;
         // 登录/恢复成功是明确的会话边界，不能被新鲜缓存的 cache-only 决策吞掉；
@@ -481,7 +504,10 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     }
 
     if (!await _ensureReadReady(
-        allowInteractiveLogin: allowsInteractiveAcademicLogin(origin))) {
+        allowInteractiveLogin: allowsInteractiveAcademicLogin(
+          origin,
+          hasCredibleCache: cache != null || _academicSituation != null,
+        ))) {
       if (mounted && _academicRequestGeneration == gen) {
         setState(() {
           _isAcademicLoading = false;
@@ -509,7 +535,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _isAcademicLoading = false;
       _academicError = result.errorMessage ?? '官方 GPA 获取失败';
       if (_academicSession?.isAuthenticated == false) {
-        _sessionReadBlocked = true;
+        _markSessionBarrierFromFailure();
       }
     });
   }
@@ -562,7 +588,10 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     }
 
     if (!await _ensureReadReady(
-        allowInteractiveLogin: allowsInteractiveAcademicLogin(origin))) {
+        allowInteractiveLogin: allowsInteractiveAcademicLogin(
+          origin,
+          hasCredibleCache: _creditRequirements != null,
+        ))) {
       if (mounted && _requirementRequestGeneration == gen) {
         setState(() {
           _isRequirementLoading = false;
@@ -592,7 +621,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _isRequirementLoading = false;
       _requirementError = result.errorMessage ?? '学分要求获取失败';
       if (_academicSession?.isAuthenticated == false) {
-        _sessionReadBlocked = true;
+        _markSessionBarrierFromFailure();
       }
     });
   }
@@ -673,7 +702,10 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     }
 
     if (!await _ensureReadReady(
-        allowInteractiveLogin: allowsInteractiveAcademicLogin(origin))) {
+        allowInteractiveLogin: allowsInteractiveAcademicLogin(
+          origin,
+          hasCredibleCache: hasCredibleBaseline,
+        ))) {
       if (mounted && _requestGeneration == gen) {
         _lastFetchFailureTime = DateTime.now();
         setState(() {
@@ -775,7 +807,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _lastFetchFailureTime = DateTime.now();
       final errorMsg = result.errorMessage ?? '成绩加载失败';
       if (_academicSession?.isAuthenticated == false) {
-        _sessionReadBlocked = true;
+        _markSessionBarrierFromFailure();
       }
       if (cache != null) {
         // 有效空缓存也属于已知数据，刷新失败时保留。
@@ -812,7 +844,10 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
     final gen = ++_requestGeneration;
     if (!await _ensureReadReady(
-        allowInteractiveLogin: allowsInteractiveAcademicLogin(origin))) {
+        allowInteractiveLogin: allowsInteractiveAcademicLogin(
+          origin,
+          hasCredibleCache: hasCredibleBaseline,
+        ))) {
       if (mounted && _requestGeneration == gen) {
         _lastFetchFailureTime = DateTime.now();
         setState(() {
@@ -949,7 +984,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     setState(() {
       _isRefreshing = false;
       if (_academicSession?.isAuthenticated == false) {
-        _sessionReadBlocked = true;
+        _markSessionBarrierFromFailure();
       }
     });
     if (mounted && !silent) _showSnackBar('刷新失败，请稍后重试');

@@ -33,12 +33,20 @@ enum GradeRefreshOrigin {
 ///
 /// 它必须与「是否突破新鲜期」「是否允许减少覆盖」互相独立，也不能从
 /// `silent` / `forceRefresh` 反推——前台恢复过去就是这样顺带打开了登录框。
-/// 只有用户明确动作（[GradeRefreshOrigin.manual]）和首次进入
-/// （[GradeRefreshOrigin.initial]，此时没有可展示的旧结果）允许交互登录；
-/// 自动与前台恢复只做无感恢复，需要人工输入时保留缓存并给出非阻塞状态。
-bool allowsInteractiveAcademicLogin(GradeRefreshOrigin origin) {
-  return origin == GradeRefreshOrigin.manual ||
-      origin == GradeRefreshOrigin.initial;
+///
+/// 判断要同时看**触发来源**和**有没有可信缓存**：
+/// - 用户明确动作（[GradeRefreshOrigin.manual]）总是允许：他是来更新数据的；
+/// - 首次进入（[GradeRefreshOrigin.initial]）只在无缓存时允许——
+///   有旧成绩时应当先展示缓存，再给「重新连接以更新」的入口，而不是把人
+///   从已经能看到的成绩里拽进登录流程；
+/// - 自动与前台恢复只做无感恢复，需要人工输入时保留缓存并给出非阻塞状态。
+bool allowsInteractiveAcademicLogin(
+  GradeRefreshOrigin origin, {
+  bool hasCredibleCache = false,
+}) {
+  if (origin == GradeRefreshOrigin.manual) return true;
+  if (origin == GradeRefreshOrigin.initial) return !hasCredibleCache;
+  return false;
 }
 
 /// 该来源是否属于「不打断用户」的静默刷新（不弹提示、不消费减少确认）。

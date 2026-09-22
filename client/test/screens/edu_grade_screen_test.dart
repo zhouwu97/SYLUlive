@@ -326,8 +326,19 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
       expect(edu.fetchGradesCallCount, 0);
-      expect(find.byType(AcademicLoginDialog),
-          networkFailure ? findsNothing : findsOneWidget);
+      // 本机有可信缓存时，首次进入先展示旧结果，不把人拽进登录流程。
+      expect(find.byType(AcademicLoginDialog), findsNothing);
+      expect(find.byKey(const ValueKey('grade_session_notice')), findsOneWidget);
+      if (networkFailure) {
+        // 临时网络故障不弹框：退避结束后仍可再次无感恢复。
+        expect(find.byType(AcademicLoginDialog), findsNothing);
+      } else {
+        // 用户点「重新登录」是明确动作，这时才允许打断输入凭据。
+        // 不能 pumpAndSettle：等待登录期间页面处于刷新态，加载指示器是无限动画。
+        await tester.tap(find.text('重新登录'));
+        await _pumpFrames(tester);
+        expect(find.byType(AcademicLoginDialog), findsOneWidget);
+      }
       if (scenario == 'cancel') {
         await tester.tap(find.text('取消'));
         await tester.pumpAndSettle();

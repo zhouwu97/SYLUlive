@@ -136,7 +136,11 @@ void main() {
 
   group('allowsInteractiveAcademicLogin / gradeOriginIsSilent —— 谁能打断用户（计划 8.2）', () {
     test('A07 只有首次进入和用户明确刷新允许弹教务登录框', () {
-      expect(allowsInteractiveAcademicLogin(GradeRefreshOrigin.initial), isTrue);
+      // 首次进入且没有可信缓存：此时没有可展示的旧结果，只能进登录流程。
+      expect(
+          allowsInteractiveAcademicLogin(GradeRefreshOrigin.initial,
+              hasCredibleCache: false),
+          isTrue);
       expect(allowsInteractiveAcademicLogin(GradeRefreshOrigin.manual), isTrue);
       // 自动刷新与前台恢复是「顺带」发生的，没有表达过要重新输入的意愿。
       expect(
@@ -147,6 +151,20 @@ void main() {
           isFalse);
     });
 
+    test('有可信缓存时不把人从已展示的成绩里拽进登录流程', () {
+      // 本机有过期成绩 -> 首次进入成绩页 -> 学校会话过期需要人工凭据。
+      // 此时应当先展示缓存，再给「重新连接以更新」的入口。
+      expect(
+          allowsInteractiveAcademicLogin(GradeRefreshOrigin.initial,
+              hasCredibleCache: true),
+          isFalse);
+      // 用户明确点更新时仍然允许打断——他是来拿新数据的。
+      expect(
+          allowsInteractiveAcademicLogin(GradeRefreshOrigin.manual,
+              hasCredibleCache: true),
+          isTrue);
+    });
+
     test('A07 交互登录权限与「是否静默」不是同一维度', () {
       // sessionRecovered 不静默（成功提示、减少确认照旧），但不允许弹框；
       // 反过来 manual 既不静默也允许弹框。二者不能互相推导。
@@ -154,7 +172,8 @@ void main() {
       expect(allowsInteractiveAcademicLogin(GradeRefreshOrigin.sessionRecovered),
           isFalse);
       expect(gradeOriginIsSilent(GradeRefreshOrigin.manual), isFalse);
-      expect(allowsInteractiveAcademicLogin(GradeRefreshOrigin.manual), isTrue);
+      expect(allowsInteractiveAcademicLogin(GradeRefreshOrigin.manual,
+          hasCredibleCache: true), isTrue);
     });
 
     test('自动与前台恢复属于静默来源，手动与首屏属于非静默来源', () {

@@ -328,6 +328,12 @@ jobs:
       - name: Build development extension bundle
         run: pnpm --filter @sylulive/extension dev
       - name: Run browser specs against the dev server
+        # vite 的 /api 与 /uploads 代理默认指向 https://sylulive.online，CI 不覆盖
+        # 就会把每一次页面加载都打到生产。这里把它指向一个必定拒绝的本地端口：
+        # 用例要么自带 page.route mock，要么只断言前端外壳，因此全绿本身就证明
+        # 它们不依赖生产数据（本机以同一变量跑过 16/16）。
+        env:
+          SYLULIVE_API_ORIGIN: http://127.0.0.1:9
         run: pnpm test:e2e
       - name: Upload failure traces
         if: failure()

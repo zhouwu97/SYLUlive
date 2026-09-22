@@ -25,6 +25,10 @@ type stickerCatalogGroup struct {
 	ID    string               `json:"id"`
 	Name  string               `json:"name"`
 	Items []stickerCatalogItem `json:"items"`
+	// 官方表情包发布身份：version 由发布流程递增，content_sha256 绑定该版本
+	// 对应的资源内容，两者不一致时服务启动直接失败（见 loadOfficialEmojiPacks）。
+	Version       int    `json:"version"`
+	ContentSHA256 string `json:"content_sha256"`
 }
 
 var stickerAssets = mustLoadStickerAssets()

@@ -2,6 +2,8 @@
   {
     "id": "mingfeng-daily",
     "name": "明风·日常",
+    "version": 2026072901,
+    "content_sha256": "9f5f9c8777078916e9d1dd19c3c4b983b09d86124a6a0de5b99104354e73cf82",
     "items": [
       {
         "id": "aad70d8d064f9eb79286c1393490716c",
@@ -120,6 +122,8 @@
   {
     "id": "mingfeng-ovo",
     "name": "明风 OvO",
+    "version": 2026072901,
+    "content_sha256": "747dbfcdeafb22583b5b73611ac37942663e39da476ee83d096eb25129886a1b",
     "items": [
       {
         "id": "6370dbf8a240aa98d5b71582dc70a211",
@@ -238,6 +242,8 @@
   {
     "id": "mingfengfeng",
     "name": "明风风",
+    "version": 2026072901,
+    "content_sha256": "b701ddd5ce283fdd8fa7f52aa1065fa7824aef8f84330cf4a4f5a27b29e72374",
     "items": [
       {
         "id": "63cfb0a51097da75df49cb719922b8e7",
@@ -356,6 +362,8 @@
   {
     "id": "mingfeng",
     "name": "明风",
+    "version": 2026072901,
+    "content_sha256": "2055a3a6cac47e9ea3f6a630ccadbdb56b13b62a7a9a962911e3ebdaf8f69abc",
     "items": [
       {
         "id": "693d57aca10e49cb5baf53b8dbb96c36",

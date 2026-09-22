@@ -3,15 +3,16 @@ package handlers
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -41,8 +42,10 @@ func loadOfficialEmojiPacks() []officialEmojiPack {
 		panic(err)
 	}
 	packs := make([]officialEmojiPack, 0, len(groups))
+	// 一批资源通常会同时重新发布，收集全部问题一次报清，免得发布时逐包试。
+	var invalidPacks []string
 	for _, group := range groups {
-		pack := officialEmojiPack{ID: group.ID, Name: group.Name,
+		pack := officialEmojiPack{ID: group.ID, Name: group.Name, Version: group.Version,
 			AssetCount: len(group.Items), assets: make(map[string]stickerCatalogItem)}
 		assets := make([]map[string]any, 0, len(group.Items))
 		for _, item := range group.Items {
@@ -71,8 +74,11 @@ func loadOfficialEmojiPacks() []officialEmojiPack {
 			pack.TotalSize += len(content)
 			pack.assets[item.ID] = item
 		}
+		// version 是发布流程人工递增的序号，content_sha256 只做内容不可变校验。
+		if err := officialEmojiPackReleaseError(pack.ID, pack.Version, group.ContentSHA256, assets); err != nil {
+			invalidPacks = append(invalidPacks, err.Error())
+		}
 		// encoding/json 对 map 键排序，与客户端 canonicalManifestBytes 保持一致。
-		pack.Version = officialEmojiPackVersion(pack.ID, assets)
 		pack.manifest, err = json.Marshal(map[string]any{"schema_version": 1, "pack_id": pack.ID,
 			"version": pack.Version, "total_size": pack.TotalSize, "assets": assets})
 		if err != nil {
@@ -82,20 +88,35 @@ func loadOfficialEmojiPacks() []officialEmojiPack {
 		pack.ManifestSHA256 = hex.EncodeToString(hash[:])
 		packs = append(packs, pack)
 	}
+	if len(invalidPacks) > 0 {
+		panic(strings.Join(invalidPacks, "\n"))
+	}
 	return packs
 }
 
-// 官方包版本完全由发布内容推导：同一批资源在任何构建里得到同一个版本号，
-// 资源字节一变版本就变。固定的版本常量会让重新发布的包撞上客户端
-// 「同版本内容不可修改」的不可变规则，已安装的用户永远拿不到新内容。
-func officialEmojiPackVersion(packID string, assets []map[string]any) int {
+// officialEmojiPackContent 是内容指纹的输入：只含包身份与已发布资源清单，
+// 刻意不含 version，否则填摘要时要用摘要来算自己。
+func officialEmojiPackContent(packID string, assets []map[string]any) []byte {
 	content, err := json.Marshal(map[string]any{"pack_id": packID, "assets": assets})
 	if err != nil {
 		panic(err)
 	}
-	digest := sha256.Sum256(content)
-	// 取高 47 位并置低 1 位：保持在 JSON 安全整数内，且版本号恒为正。
-	return int(binary.BigEndian.Uint64(digest[:8])>>16) | 1
+	return content
+}
+
+// officialEmojiPackReleaseError 校验官方包的发布身份。version 是发布序号，
+// content_sha256 绑定该版本对应的资源内容；资源变了却没登记新摘要会在这里报错，
+// 避免出现「同版本不同内容」——客户端对同版本内容不可修改，会永远拿不到新资源。
+func officialEmojiPackReleaseError(packID string, version int, contentSHA256 string, assets []map[string]any) error {
+	if version < 1 {
+		return fmt.Errorf("官方表情包 %s 缺少发布版本号", packID)
+	}
+	sum := sha256.Sum256(officialEmojiPackContent(packID, assets))
+	digest := hex.EncodeToString(sum[:])
+	if !strings.EqualFold(contentSHA256, digest) {
+		return fmt.Errorf("官方表情包 %s 内容与 catalog.json 不一致：资源变化要先提升 version，再把 content_sha256 改成 %s", packID, digest)
+	}
+	return nil
 }
 
 func ListEmojiPacks(c *gin.Context) { c.JSON(http.StatusOK, officialEmojiPacks) }

@@ -74,31 +74,69 @@ func TestEmojiPackCatalogManifestAndRange(t *testing.T) {
 	}
 }
 
-func TestOfficialEmojiPackVersionFollowsPublishedContent(t *testing.T) {
-	assets := func(hash string) []map[string]any {
+func TestOfficialEmojiPackReleaseGuard(t *testing.T) {
+	publishedAssets := func(hash string) []map[string]any {
 		return []map[string]any{
 			{"id": "a", "path": "assets/a.png", "sha256": hash, "file_size": 12},
 			{"id": "b", "path": "assets/b.png", "sha256": strings.Repeat("0", 64), "file_size": 30},
 		}
 	}
-	first := officialEmojiPackVersion("official-pack", assets(strings.Repeat("1", 64)))
-	stable := officialEmojiPackVersion("official-pack", assets(strings.Repeat("1", 64)))
-	changed := officialEmojiPackVersion("official-pack", assets(strings.Repeat("2", 64)))
-	if first != stable {
-		t.Fatalf("相同资源的版本号不稳定: %d != %d", first, stable)
+	digestOf := func(hash string) string {
+		sum := sha256.Sum256(officialEmojiPackContent("official-pack", publishedAssets(hash)))
+		return hex.EncodeToString(sum[:])
 	}
-	if first == changed {
-		t.Fatal("资源内容变化后版本号未变化")
+	// 发布序号缺失就没有可比较的身份，必须拒绝。
+	if err := officialEmojiPackReleaseError("official-pack", 0, digestOf("1"), publishedAssets("1")); err == nil {
+		t.Fatal("缺少发布版本号时未被拒绝")
 	}
-	// 客户端把版本当整数比较并展示，必须留在 JSON 安全整数内且为正数。
-	for _, version := range []int{first, changed} {
-		if version < 1 || version > 1<<53 {
-			t.Fatalf("版本号越界: %d", version)
+	// 资源变了却没登记新摘要：客户端认「同版本内容不可修改」，放出去会让用户永远拿不到新资源。
+	if err := officialEmojiPackReleaseError("official-pack", 2, digestOf("1"), publishedAssets("2")); err == nil {
+		t.Fatal("内容与登记摘要不一致时未被拒绝")
+	}
+	// version 刻意不进内容指纹：提升发布序号只登记新序号，不需要重算资源内容。
+	if err := officialEmojiPackReleaseError("official-pack", 3, digestOf("1"), publishedAssets("1")); err != nil {
+		t.Fatalf("发布校验误报: %v", err)
+	}
+}
+
+// 首次发布官方包时使用的版本，此后只能前进；也是已安装客户端认知里的最低水位。
+const firstPublishedOfficialEmojiPackVersion = 2026072901
+
+func TestOfficialEmojiPacksDeclareReleaseIdentity(t *testing.T) {
+	data, err := stickerAssetFS.ReadFile("sticker_assets/catalog.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var groups []stickerCatalogGroup
+	if err := json.Unmarshal(data, &groups); err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != len(officialEmojiPacks) {
+		t.Fatalf("catalog 分组数 %d 与官方包数 %d 不一致", len(groups), len(officialEmojiPacks))
+	}
+	// 资源内容与 content_sha256 的比对发生在包加载时（不一致直接 panic），
+	// 这里只校验发布序号本身：必须是 JSON 安全整数、不回退、且登记了内容摘要。
+	for _, group := range groups {
+		if group.Version < firstPublishedOfficialEmojiPackVersion {
+			t.Fatalf("官方包 %s 的发布序号回退到已发布版本之前: %d", group.ID, group.Version)
+		}
+		if group.Version > 1<<53 {
+			t.Fatalf("官方包 %s 的发布序号超出 JSON 安全整数: %d", group.ID, group.Version)
+		}
+		digest, err := hex.DecodeString(group.ContentSHA256)
+		if err != nil || len(digest) != 32 {
+			t.Fatalf("官方包 %s 的 content_sha256 不是 64 位十六进制: %q", group.ID, group.ContentSHA256)
 		}
 	}
 	for _, pack := range officialEmojiPacks {
-		if pack.Version < 1 {
-			t.Fatalf("官方包 %s 版本无效: %d", pack.ID, pack.Version)
+		var manifest struct {
+			Version int `json:"version"`
+		}
+		if err := json.Unmarshal(pack.manifest, &manifest); err != nil {
+			t.Fatal(err)
+		}
+		if manifest.Version != pack.Version {
+			t.Fatalf("官方包 %s 的 Manifest 版本与发布序号不一致: %d != %d", pack.ID, manifest.Version, pack.Version)
 		}
 	}
 }

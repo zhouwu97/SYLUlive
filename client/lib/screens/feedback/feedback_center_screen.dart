@@ -102,8 +102,10 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
             );
             _tabTickets[tabIndex] = existing;
             _tabPages[tabIndex] = page;
-            _tabHasMore[tabIndex] =
-                total == null ? tickets.length >= 50 : existing.length < total;
+            _tabHasMore[tabIndex] = tickets.isNotEmpty &&
+                (total == null
+                    ? tickets.length >= 50
+                    : existing.length < total);
             _tabLoading[tabIndex] = false;
           });
         }

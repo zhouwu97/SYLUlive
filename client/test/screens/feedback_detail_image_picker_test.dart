@@ -73,6 +73,61 @@ void main() {
     ImagePickerPlatform.instance = originalPlatform;
   });
 
+  testWidgets('工单初次加载失败后后台恢复成功应退出错误页', (tester) async {
+    var attempts = 0;
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      if (options.path != '/feedback/tickets/1') {
+        handler.next(options);
+        return;
+      }
+      attempts++;
+      handler.resolve(Response(
+        requestOptions: options,
+        statusCode: attempts == 1 ? 503 : 200,
+        data: attempts == 1
+            ? null
+            : {
+                'ticket': {
+                  'id': 1,
+                  'ticket_no': 'SY2609140001',
+                  'user_id': 10,
+                  'type': 'bug',
+                  'title': '已恢复的工单',
+                  'description': '初始描述',
+                  'status': 'investigating',
+                  'status_note': '定位中',
+                  'admin_viewed': true,
+                  'user_unread_count': 0,
+                  'created_at': '2026-09-14T08:00:00Z',
+                  'updated_at': '2026-09-14T08:00:00Z',
+                },
+                'messages': <dynamic>[],
+                'history': <dynamic>[],
+              },
+      ));
+    }));
+    final authProvider = _MockDetailAuthProvider(client: dio);
+    final themeProvider = ThemeProvider(loadOnStart: false);
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+        ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
+      ],
+      child: const MaterialApp(
+        home: FeedbackDetailScreen(ticketId: 1, isAdmin: false),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('工单加载失败'), findsOneWidget);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(attempts, 2);
+    expect(find.text('初始描述'), findsOneWidget);
+    expect(find.text('工单加载失败'), findsNothing);
+  });
+
   testWidgets('图片选择器抛异常或取消选择时释放发送锁并保留输入草稿', (tester) async {
     final dio = Dio();
     dio.interceptors.add(

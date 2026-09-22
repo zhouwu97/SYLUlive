@@ -171,6 +171,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     FeedbackStatusHistory.fromJson(e as Map<String, dynamic>))
                 .toList();
             _loading = false;
+            _error = null;
           });
           if (hasIncomingMessage) {
             AppFeedback.showSnackBar(

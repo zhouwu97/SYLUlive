@@ -47,6 +47,55 @@ Map<String, dynamic> _makeTicketJson(int id) {
 }
 
 void main() {
+  testWidgets('服务端总数滞后但下一页为空时停止翻页', (tester) async {
+    final requestedPages = <int>[];
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      if (options.path != '/feedback/tickets') {
+        handler.next(options);
+        return;
+      }
+      final page = options.queryParameters['page'] as int? ?? 1;
+      requestedPages.add(page);
+      handler.resolve(Response(
+        requestOptions: options,
+        statusCode: 200,
+        data: {
+          'total': 999,
+          'page': page,
+          'limit': 50,
+          'tickets': page == 1
+              ? List.generate(50, (i) => _makeTicketJson(i + 1))
+              : <dynamic>[],
+        },
+      ));
+    }));
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthProvider>.value(
+          value: _MockFeedbackAuthProvider(client: dio),
+        ),
+        ChangeNotifierProvider<ThemeProvider>.value(
+          value: ThemeProvider(loadOnStart: false),
+        ),
+      ],
+      child: const MaterialApp(home: FeedbackCenterScreen()),
+    ));
+    await tester.pumpAndSettle();
+    final listView = find.byType(ListView);
+    for (var i = 0; i < 20 && !requestedPages.contains(2); i++) {
+      await tester.drag(listView, const Offset(0, -1000));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(requestedPages, contains(2));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 5; i++) {
+      await tester.drag(listView, const Offset(0, -500));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(requestedPages.where((page) => page == 3), isEmpty);
+  });
+
   testWidgets('工单列表支持多页加载、滚动翻页与下拉刷新重置', (tester) async {
     final requestedPages = <int>[];
     final dio = Dio();

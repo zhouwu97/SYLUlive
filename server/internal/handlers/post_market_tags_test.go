@@ -226,7 +226,7 @@ func createMarketTagsTestUser(t *testing.T, db *gorm.DB, studentID string) model
 		ProviderID:          models.AcademicProviderUndergraduate,
 		StudentID:           studentID,
 		VerifiedAt:          now,
-		VerificationMethod:  "test",
+		VerificationMethod:  models.AcademicVerificationMethodSchoolProfile,
 		VerificationVersion: "1",
 	}).Error; err != nil {
 		t.Fatalf("create binding: %v", err)

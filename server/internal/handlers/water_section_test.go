@@ -99,7 +99,7 @@ func newWaterTestUser(t *testing.T, db *gorm.DB, eduBound bool) models.User {
 			ProviderID:          models.AcademicProviderUndergraduate,
 			StudentID:           user.StudentID,
 			VerifiedAt:          *verifiedAt,
-			VerificationMethod:  "test",
+			VerificationMethod:  models.AcademicVerificationMethodSchoolProfile,
 			VerificationVersion: "1",
 		}).Error; err != nil {
 			t.Fatalf("create binding: %v", err)

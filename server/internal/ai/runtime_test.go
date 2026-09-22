@@ -328,7 +328,7 @@ func TestRuntimeUnlimitedQuotaUsesVerifiedServerIdentity(t *testing.T) {
 	require.NoError(t, db.Create(&unverifiedUser).Error)
 	require.NoError(t, db.Create(&models.AcademicIdentityBinding{UserID: unlimitedUser.ID,
 		ProviderID: models.AcademicProviderUndergraduate, StudentID: unlimitedUser.StudentID,
-		VerifiedAt: verifiedAt, VerificationMethod: "test", VerificationVersion: "v1"}).Error)
+		VerifiedAt: verifiedAt, VerificationMethod: models.AcademicVerificationMethodSchoolProfile, VerificationVersion: "v1"}).Error)
 
 	for _, userID := range []uint{unlimitedUser.ID, normalUser.ID, unverifiedUser.ID} {
 		for index := 0; index < 3; index++ {

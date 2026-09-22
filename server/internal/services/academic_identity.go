@@ -1,6 +1,8 @@
 package services
 
 import (
+	"log"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"shenliyuan/internal/models"
@@ -31,8 +33,37 @@ func AcademicLoginAvailable(db *gorm.DB, bindings []models.AcademicIdentityBindi
 	return false, nil
 }
 
+// reportUnknownAcademicVerificationMethods 盘点既不在可信白名单、也不在写入规范里的历史取值。
+//
+// 这些记录一律不授予可信身份（见 models.IsTrustedAcademicVerificationMethod），
+// 但不会自作主张改写成可信方式：迁移前先看得见，才知道该补登记还是该清理。
+func reportUnknownAcademicVerificationMethods(db *gorm.DB) {
+	if db == nil || !db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
+		return
+	}
+	var rows []struct {
+		VerificationMethod string
+		Count              int64
+	}
+	err := db.Model(&models.AcademicIdentityBinding{}).
+		Select("verification_method, COUNT(*) AS count").
+		Group("verification_method").Find(&rows).Error
+	if err != nil {
+		log.Printf("[ACADEMIC_IDENTITY_METHOD_INVENTORY_FAILED] err=%v", err)
+		return
+	}
+	for _, row := range rows {
+		if !models.IsUnregisteredAcademicVerificationMethod(row.VerificationMethod) {
+			continue // 可信方式，或已登记但不授予可信身份的本机声明，都不是脏数据。
+		}
+		log.Printf("[ACADEMIC_IDENTITY_METHOD_UNREGISTERED] method=%q count=%d（不授予可信身份，迁移前需人工确认）",
+			row.VerificationMethod, row.Count)
+	}
+}
+
 // MigrateAcademicIdentities 在启动时回填旧认证；唯一键保证已有 Provider 事实优先。
 func MigrateAcademicIdentities(db *gorm.DB) error {
+	reportUnknownAcademicVerificationMethods(db)
 	var users []models.User
 	if err := db.Select("id", "student_id", "student_verified_at", "academic_provider_id").Where("student_verified_at IS NOT NULL AND student_id <> ''").Find(&users).Error; err != nil {
 		return err

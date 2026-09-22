@@ -91,7 +91,7 @@ func readyCompetitionUser(t *testing.T, db *gorm.DB) models.User {
 		t.Fatal(err)
 	}
 	if err := db.Create(&models.AcademicIdentityBinding{UserID: user.ID, ProviderID: models.AcademicProviderUndergraduate,
-		StudentID: user.StudentID, VerifiedAt: now, VerificationMethod: "test", VerificationVersion: "v1"}).Error; err != nil {
+		StudentID: user.StudentID, VerifiedAt: now, VerificationMethod: models.AcademicVerificationMethodSchoolProfile, VerificationVersion: "v1"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	return user

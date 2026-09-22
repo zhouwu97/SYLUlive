@@ -22,7 +22,7 @@ func TestAcademicIdentityChangeAtomicAndVersioned(t *testing.T) {
 				"edu_student_id": "OLD", "edu_authorized": true, "edu_bound": true,
 				"edu_password": "fixture-secret", "edu_cookie": "fixture-session",
 			}).Error)
-			old := models.AcademicIdentityBinding{UserID: user.ID, ProviderID: models.AcademicProviderUndergraduate, StudentID: "OLD", BindingVersion: 3, VerifiedAt: time.Now(), VerificationMethod: "fixture", VerificationVersion: "v1"}
+			old := models.AcademicIdentityBinding{UserID: user.ID, ProviderID: models.AcademicProviderUndergraduate, StudentID: "OLD", BindingVersion: 3, VerifiedAt: time.Now(), VerificationMethod: models.AcademicVerificationMethodSchoolProfile, VerificationVersion: "v1"}
 			require.NoError(t, db.Create(&old).Error)
 			router := academicIdentityRouter(h, user.ID)
 			router.POST("/change/challenge", func(c *gin.Context) { c.Set("user_id", user.ID) }, h.CreateChangeChallenge)

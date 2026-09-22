@@ -165,7 +165,7 @@ func TestAcademicIdentityReverifyPreservesBindingVersionAndChangeTime(t *testing
 	changed := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
 	binding := models.AcademicIdentityBinding{UserID: user.ID, ProviderID: models.AcademicProviderGraduate,
 		StudentID: "G20260001", BindingVersion: 4, ChangedAt: &changed, VerifiedAt: changed,
-		VerificationMethod: "fixture", VerificationVersion: "v1"}
+		VerificationMethod: models.AcademicVerificationMethodSchoolProfile, VerificationVersion: "v1"}
 	require.NoError(t, db.Create(&binding).Error)
 	router := academicIdentityRouter(h, user.ID)
 	challenge := httptest.NewRecorder()

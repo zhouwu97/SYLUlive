@@ -106,28 +106,72 @@ const (
 	AcademicVerificationMethodLegacyMigration = "legacy_migration"
 )
 
-// untrustedAcademicVerificationMethods 是不构成可信学生认证的依据来源。
-// 空值一并列入：判权只认明确登记的核验方式，未知取值默认不授予可信身份。
-var untrustedAcademicVerificationMethods = []string{
-	"",
+// trustedAcademicVerificationMethods 是唯一被承认「服务器可独立核验」的依据来源。
+//
+// 这里是白名单而不是排除名单：空值、历史脏数据、以及未来新增但尚未登记的取值
+// 一律不授予可信身份。新增可信方式必须显式登记到这里，并同时满足
+// [ValidateAcademicVerificationMethod] 的写入规范。
+var trustedAcademicVerificationMethods = []string{
+	AcademicVerificationMethodSchoolProfile,
+	// 存量回填标记。它是历史事实而非本次服务器核验，只保留给
+	// [MigrateAcademicIdentities] 已经写下的记录，不接受新用户按此依据开权限。
+	AcademicVerificationMethodLegacyMigration,
+}
+
+// knownAcademicVerificationMethods 是写入规范允许出现的全部取值，
+// 含不授予可信身份的 [AcademicVerificationMethodLocalDeclaration]。
+var knownAcademicVerificationMethods = []string{
+	AcademicVerificationMethodSchoolProfile,
+	AcademicVerificationMethodLegacyMigration,
 	AcademicVerificationMethodLocalDeclaration,
 }
 
 // IsTrustedAcademicVerificationMethod 区分学校可核验事实与设备侧声明。
+//
+// Go 与 [TrustedAcademicBindingScope] 都用**精确匹配**，不做 TrimSpace。
+// 这里曾经两边尺子不一样：Go 判权前 Trim，SQL 直接比原值，而 SQLite 的 TRIM()
+// 只吃空格、不吃制表符和换行，于是带换行的 legacy_migration 在 Go 侧可信、
+// 在 SQL 侧不可信。判权必须只有一把尺子；带空白的历史记录一律不授予可信身份，
+// 由 [IsUnregisteredAcademicVerificationMethod] 暴露后人工迁移，而不是被静默当成可信。
 func IsTrustedAcademicVerificationMethod(method string) bool {
-	trimmed := strings.TrimSpace(method)
-	for _, untrusted := range untrustedAcademicVerificationMethods {
-		if trimmed == untrusted {
-			return false
+	for _, trusted := range trustedAcademicVerificationMethods {
+		if method == trusted {
+			return true
 		}
 	}
-	return true
+	return false
+}
+
+// ValidateAcademicVerificationMethod 是写入规范：只允许登记过的取值，且不允许带首尾空白。
+// 判权用精确匹配，写入侧就不该产生带空白的记录，否则历史数据清理永远做不完。
+func ValidateAcademicVerificationMethod(method string) error {
+	if method == "" || method != strings.TrimSpace(method) {
+		return errors.New("身份绑定的核验方式不合法")
+	}
+	for _, known := range knownAcademicVerificationMethods {
+		if method == known {
+			return nil
+		}
+	}
+	return fmt.Errorf("未登记的身份核验方式 %q", method)
+}
+
+// TrustedAcademicVerificationMethods 返回当前登记的可信依据，仅供盘点与测试。
+func TrustedAcademicVerificationMethods() []string {
+	return append([]string(nil), trustedAcademicVerificationMethods...)
+}
+
+// IsUnregisteredAcademicVerificationMethod 判断一条记录是不是既不在可信白名单、
+// 也不在写入规范里的历史脏数据。本机声明属于登记过但不授予可信身份的正常状态。
+func IsUnregisteredAcademicVerificationMethod(method string) bool {
+	return ValidateAcademicVerificationMethod(method) != nil
 }
 
 // TrustedAcademicBindingScope 给身份表查询加上与 Go 侧判权完全一致的"服务器可核验"约束，
 // 避免各处手写 `verification_method <> 'local_academic_login'` 后各自漂移。
+// 与 [IsTrustedAcademicVerificationMethod] 一样精确匹配（见那里的注释）。
 func TrustedAcademicBindingScope(db *gorm.DB) *gorm.DB {
-	return db.Where("verification_method NOT IN ?", untrustedAcademicVerificationMethods)
+	return db.Where("verification_method IN ?", trustedAcademicVerificationMethods)
 }
 
 // AcademicAssuranceLevel 提供给 API/UI 的依据强度，不把本机连接误称为 verified。
@@ -161,7 +205,10 @@ func (b AcademicIdentityBinding) Validate() error {
 	if b.VerifiedAt.IsZero() {
 		return fmt.Errorf("身份绑定缺少验证时间")
 	}
-	if strings.TrimSpace(b.VerificationMethod) == "" || strings.TrimSpace(b.VerificationVersion) == "" {
+	if err := ValidateAcademicVerificationMethod(b.VerificationMethod); err != nil {
+		return err
+	}
+	if strings.TrimSpace(b.VerificationVersion) == "" {
 		return errors.New("身份绑定缺少验证版本")
 	}
 	return nil

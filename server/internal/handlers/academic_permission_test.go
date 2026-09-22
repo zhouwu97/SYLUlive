@@ -21,7 +21,7 @@ func seedVerifiedStudent(t *testing.T, db *gorm.DB, user models.User) {
 	}
 	require.NoError(t, db.Create(&models.AcademicIdentityBinding{UserID: user.ID,
 		ProviderID: models.AcademicProviderUndergraduate, StudentID: student,
-		VerifiedAt: time.Now(), VerificationMethod: "test", VerificationVersion: "v1"}).Error)
+		VerifiedAt: time.Now(), VerificationMethod: models.AcademicVerificationMethodSchoolProfile, VerificationVersion: "v1"}).Error)
 }
 
 func TestStudentPermissionsUseBindingOnly(t *testing.T) {

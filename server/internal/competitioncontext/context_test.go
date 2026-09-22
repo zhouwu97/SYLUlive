@@ -50,7 +50,7 @@ func readyContextUser(t *testing.T, db *gorm.DB) models.User {
 	binding := models.AcademicIdentityBinding{
 		UserID: user.ID, ProviderID: models.AcademicProviderUndergraduate,
 		StudentID: user.StudentID, VerifiedAt: now,
-		VerificationMethod: "test", VerificationVersion: "v1",
+		VerificationMethod: models.AcademicVerificationMethodSchoolProfile, VerificationVersion: "v1",
 	}
 	if err := db.Create(&binding).Error; err != nil {
 		t.Fatal(err)

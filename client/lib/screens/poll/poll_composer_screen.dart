@@ -11,6 +11,7 @@ import '../../models/poll_visibility.dart';
 import '../../models/post.dart';
 import '../../providers/poll_provider.dart';
 import '../../services/poll_service.dart';
+import '../../services/publish_session_scope.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/campus/campus_theme.dart';
 import 'widgets/poll_option_editor.dart';
@@ -44,6 +45,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
   /// 失败重试不能把已上传的图再传一遍：附件 ID 变了请求体就变了，
   /// 幂等键也就不能复用，"原样重试"会退化成一次新的提交。
   final List<int?> _newImageFileIds = [];
+  PublishSessionScope? _uploadedImageScope;
   final List<PostImage> _existingImages = [];
 
   /// 冻结的绝对截止时间。
@@ -195,14 +197,16 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
   }
 
   /// 上传尚未上传的新图；已成功的复用附件 ID，保证原样重试拿到同一份请求体。
-  Future<List<int>> _uploadNewImages(PollProvider provider) async {
+  Future<List<int>> _uploadNewImages(
+      PollProvider provider, PublishSessionScope scope) async {
     final pending = <int>[
       for (var i = 0; i < _newImages.length; i++)
         if (_newImageFileIds[i] == null) i,
     ];
     if (pending.isNotEmpty) {
-      final uploaded = await provider.service
-          .uploadImages([for (final index in pending) _newImages[index]]);
+      final uploaded = await provider.service.uploadImages(
+          [for (final index in pending) _newImages[index]],
+          session: scope);
       if (uploaded.length != pending.length) {
         throw const PollApiException('upload_failed', '图片上传失败，请重试');
       }
@@ -210,7 +214,15 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
         _newImageFileIds[pending[i]] = uploaded[i];
       }
     }
+    _uploadedImageScope = scope;
     return [for (final id in _newImageFileIds) id!];
+  }
+
+  void _discardUploadedImages() {
+    for (var i = 0; i < _newImageFileIds.length; i++) {
+      _newImageFileIds[i] = null;
+    }
+    _uploadedImageScope = null;
   }
 
   Future<void> _submit() async {
@@ -228,10 +240,21 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
     }
     final endsAt = _frozenEndsAt ??= _resolveEndsAt();
 
-    setState(() => _submitting = true);
     final provider = context.read<PollProvider>();
+    final scope = provider.sessionScope;
+    if (scope == null) {
+      AppFeedback.error('登录状态已失效，请重新登录后再发布', context: context);
+      return;
+    }
+    if (_uploadedImageScope != null &&
+        !provider.ownsSession(_uploadedImageScope!)) {
+      _discardUploadedImages();
+    }
+
+    setState(() => _submitting = true);
     try {
-      final uploaded = await _uploadNewImages(provider);
+      final uploaded = await _uploadNewImages(provider, scope);
+      if (!provider.ownsSession(scope)) throw const PublishSessionChanged();
       final draft = PollDraft(
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
@@ -248,9 +271,10 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
       );
       final pollId = widget.editingPost?.pollMeta?.id;
       final result = pollId == null
-          ? await provider.createPoll(draft)
-          : await provider.updatePoll(pollId, draft);
+          ? await provider.createPoll(draft, session: scope)
+          : await provider.updatePoll(pollId, draft, session: scope);
       if (!mounted) return;
+      if (!provider.ownsSession(scope)) throw const PublishSessionChanged();
       if (result == null) {
         final message = pollId == null
             ? provider.lastActionError
@@ -264,9 +288,19 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
       _attemptContentKey = null;
       _frozenEndsAt = null;
       Navigator.pop(context, result);
+    } on PublishSessionChanged {
+      _discardUploadedImages();
+      if (mounted) {
+        AppFeedback.error('登录状态已变化，本次发布已取消，请重新确认', context: context);
+      }
     } on PollApiException catch (error) {
       if (mounted) {
-        AppFeedback.error(error.userMessage, context: context);
+        if (!provider.ownsSession(scope)) {
+          _discardUploadedImages();
+          AppFeedback.error('登录状态已变化，本次发布已取消，请重新确认', context: context);
+        } else {
+          AppFeedback.error(error.userMessage, context: context);
+        }
       }
     } finally {
       if (mounted) setState(() => _submitting = false);

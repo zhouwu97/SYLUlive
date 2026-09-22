@@ -7,6 +7,7 @@ import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/providers/poll_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/services/poll_service.dart';
+import 'package:shenliyuan/services/publish_session_scope.dart';
 
 Post pollPost({int postId = 1, int pollId = 10, int participants = 0}) {
   final now = DateTime.utc(2026, 7, 18);
@@ -72,7 +73,7 @@ class FakePollService extends PollService {
 
   @override
   Future<Post> putBallot(int pollId, List<int> optionIds,
-      {String? idempotencyKey}) async {
+      {String? idempotencyKey, PublishSessionScope? session}) async {
     ballotCalls++;
     if (failBallot) {
       throw const PollApiException('poll_ended', '投票已结束');
@@ -91,7 +92,8 @@ class FakePollService extends PollService {
   }
 
   @override
-  Future<void> deletePoll(int pollId, {String? idempotencyKey}) async {}
+  Future<void> deletePoll(int pollId,
+      {String? idempotencyKey, PublishSessionScope? session}) async {}
 }
 
 /// 记录 createPoll 的请求体与幂等键，用于验证「原样重试」的身份。
@@ -103,11 +105,42 @@ class CreateRecordingPollService extends PollService {
   Object? error;
 
   @override
-  Future<Post> createPoll(PollDraft draft, {String? idempotencyKey}) async {
+  Future<Post> createPoll(PollDraft draft,
+      {String? idempotencyKey, PublishSessionScope? session}) async {
     keys.add(idempotencyKey);
     drafts.add(draft);
     if (error != null) throw error!;
     return pollPost();
+  }
+}
+
+class UpdateRecordingPollService extends PollService {
+  UpdateRecordingPollService() : super(Dio());
+
+  final List<String?> keys = <String?>[];
+
+  @override
+  Future<Post> updatePoll(int pollId, PollDraft draft,
+      {String? idempotencyKey, PublishSessionScope? session}) async {
+    keys.add(idempotencyKey);
+    throw const PollApiException('poll_unavailable', '服务暂不可用');
+  }
+}
+
+class SessionRacePollService extends PollService {
+  SessionRacePollService() : super(Dio());
+
+  final List<String?> keys = <String?>[];
+  final firstRequest = Completer<Post>();
+  int calls = 0;
+
+  @override
+  Future<Post> createPoll(PollDraft draft,
+      {String? idempotencyKey, PublishSessionScope? session}) {
+    keys.add(idempotencyKey);
+    calls++;
+    if (calls == 1) return firstRequest.future;
+    throw const PollApiException('poll_unavailable', '服务暂不可用');
   }
 }
 
@@ -186,7 +219,8 @@ void main() {
     expect(provider.stateFor(sort: 'recommend').hasMore, isTrue);
     await provider.load(sort: 'recommend');
     expect(keepGoing.requestedPages, [1, 2]);
-    expect(provider.stateFor(sort: 'recommend').items.map((item) => item.id), [1, 2]);
+    expect(provider.stateFor(sort: 'recommend').items.map((item) => item.id),
+        [1, 2]);
 
     // 反例：本页刚好满 limit、总数也还更大，但服务端说候选池到此为止，
     // 就不该再按「本页等于 limit」继续猜下一页。
@@ -294,6 +328,18 @@ void main() {
     expect(provider.mineState('created').hasLoaded, isFalse);
   });
 
+  test('同一账号重新登录也会清空带身份的投票状态', () async {
+    final provider = PollProvider(FakePollService());
+    provider.syncSessionUser(101, 1);
+    await provider.loadMine('created');
+    expect(provider.mineState('created').items, isNotEmpty);
+
+    provider.syncSessionUser(101, 2);
+
+    expect(provider.mineState('created').items, isEmpty);
+    expect(provider.mineState('created').hasLoaded, isFalse);
+  });
+
   test('旧账号投票响应不会覆盖新账号状态', () async {
     final service = FakePollService()
       ..mineCompleter = Completer<PollListResponse>();
@@ -367,6 +413,39 @@ void main() {
       await provider.createPoll(pollDraft(title: '改过的第二版'));
 
       expect(service.keys[0], isNot(service.keys[1]));
+    });
+
+    test('更新投票的说明或附件变化也会换新键', () async {
+      final service = UpdateRecordingPollService();
+      final provider = PollProvider(service);
+
+      await provider.updatePoll(10, pollDraft(description: '第一版说明'));
+      await provider.updatePoll(
+        10,
+        pollDraft(description: '第二版说明', fileIds: const [11]),
+      );
+
+      expect(service.keys, hasLength(2));
+      expect(service.keys[0], isNot(service.keys[1]));
+    });
+
+    test('旧会话成功响应不能清掉新会话正在复用的幂等键', () async {
+      final service = SessionRacePollService();
+      final provider = PollProvider(service)..syncSessionUser(101, 1);
+      final draft = pollDraft();
+
+      final oldRequest = provider.createPoll(draft);
+      provider.syncSessionUser(101, 2);
+      expect(await provider.createPoll(draft), isNull);
+
+      service.firstRequest.complete(pollPost());
+      expect(await oldRequest, isNull);
+      expect(await provider.createPoll(draft), isNull);
+
+      expect(service.keys, hasLength(3));
+      expect(service.keys[1], isNot(service.keys[0]));
+      expect(service.keys[2], service.keys[1],
+          reason: '旧会话响应只能结束旧请求，不能删除新会话为同一草稿保存的重试键');
     });
 
     test('幂等键已不可用时丢弃旧键，下一次点击算新的一次操作', () async {

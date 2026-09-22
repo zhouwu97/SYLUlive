@@ -1535,7 +1535,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProxyProvider2<AuthProvider, PostProvider, PollProvider>(
           create: (_) => PollProvider(PollService(dio)),
           update: (_, auth, posts, polls) => polls!
-            ..syncSessionUser(auth.user?.id)
+            ..syncSessionUser(auth.user?.id, auth.accountSessionEpoch)
             ..bindPostProvider(posts),
         ),
         ChangeNotifierProxyProvider<AuthProvider, TeamRecruitmentProvider>(

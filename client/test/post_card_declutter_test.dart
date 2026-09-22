@@ -11,6 +11,7 @@ import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/services/poll_service.dart';
+import 'package:shenliyuan/services/publish_session_scope.dart';
 import 'package:shenliyuan/widgets/post_card.dart';
 import 'package:shenliyuan/widgets/poll/poll_post_card.dart';
 
@@ -145,7 +146,7 @@ class _PollService extends PollService {
 
   @override
   Future<Post> putBallot(int pollId, List<int> optionIds,
-          {String? idempotencyKey}) async =>
+          {String? idempotencyKey, PublishSessionScope? session}) async =>
       _pollPost();
 }
 

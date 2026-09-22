@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as image;
 import 'package:image_picker/image_picker.dart';
 import 'package:shenliyuan/services/poll_service.dart';
+import 'package:shenliyuan/services/publish_session_scope.dart';
 
 void main() {
   test('投票公开图片上传使用压缩后的 JPEG 请求体', () async {
@@ -19,11 +20,13 @@ void main() {
     await file.writeAsBytes(sourceBytes);
 
     MultipartFile? uploadedFile;
+    Map<String, dynamic>? requestExtra;
     final dio = Dio();
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
           uploadedFile = (options.data as FormData).files.single.value;
+          requestExtra = options.extra;
           handler.resolve(
             Response(
               requestOptions: options,
@@ -36,10 +39,18 @@ void main() {
     );
 
     expect(
-      await PollService(dio).uploadImages(<XFile>[XFile(file.path)]),
+      await PollService(dio).uploadImages(
+        <XFile>[XFile(file.path)],
+        session: const PublishSessionScope(
+          accountId: 42,
+          accountSessionEpoch: 7,
+        ),
+      ),
       <int>[88],
     );
     expect(uploadedFile, isNotNull);
     expect(uploadedFile!.length, lessThan(sourceBytes.length));
+    expect(requestExtra, containsPair('expectedAuthUserId', 42));
+    expect(requestExtra, containsPair('expectedAuthSessionEpoch', 7));
   });
 }

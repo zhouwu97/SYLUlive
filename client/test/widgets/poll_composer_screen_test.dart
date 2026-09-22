@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/providers/poll_provider.dart';
 import 'package:shenliyuan/services/poll_service.dart';
+import 'package:shenliyuan/services/publish_session_scope.dart';
 import 'package:shenliyuan/screens/poll/poll_composer_screen.dart';
 
 class _Service extends PollService {
@@ -20,21 +21,23 @@ class _RecordingService extends PollService {
   final List<String?> keys = <String?>[];
 
   @override
-  Future<Post> createPoll(PollDraft draft, {String? idempotencyKey}) async {
+  Future<Post> createPoll(PollDraft draft,
+      {String? idempotencyKey, PublishSessionScope? session}) async {
     drafts.add(draft);
     keys.add(idempotencyKey);
     throw const PollApiException('poll_unavailable', '服务暂不可用');
   }
 
   @override
-  Future<List<int>> uploadImages(List<XFile> images) async =>
+  Future<List<int>> uploadImages(List<XFile> images,
+          {PublishSessionScope? session}) async =>
       [for (var i = 0; i < images.length; i++) 100 + i];
 }
 
 void main() {
   testWidgets('编辑器默认保留两个选项并显示必要字段', (tester) async {
     await tester.pumpWidget(ChangeNotifierProvider(
-        create: (_) => PollProvider(_Service()),
+        create: (_) => PollProvider(_Service())..syncSessionUser(10, 1),
         child: const MaterialApp(home: PollComposerScreen())));
     expect(find.text('投票标题'), findsOneWidget);
     expect(find.text('投票选项'), findsOneWidget);
@@ -59,7 +62,7 @@ void main() {
   group('投票提交的重试身份（默认时长）', () {
     Future<void> open(WidgetTester tester, _RecordingService service) async {
       await tester.pumpWidget(ChangeNotifierProvider(
-          create: (_) => PollProvider(service),
+          create: (_) => PollProvider(service)..syncSessionUser(10, 1),
           child: const MaterialApp(home: PollComposerScreen())));
       await tester.pumpAndSettle();
     }
@@ -80,8 +83,8 @@ void main() {
     /// 让真实时钟前进：[DateTime.now] 在测试里仍是墙钟，
     /// 不拉开距离的话，"动态 getter 重算截止时间"这个缺陷就测不出来。
     Future<void> advanceWallClock(WidgetTester tester) async {
-      await tester
-          .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 30)));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 30)));
     }
 
     testWidgets('原样重试复用同一截止时间和同一幂等键', (tester) async {
@@ -97,8 +100,7 @@ void main() {
       expect(service.drafts[1].endsAt, service.drafts[0].endsAt,
           reason: '默认时长是"从提交时刻起 N 小时"，重试之间重算就换了截止时间，'
               '服务端认不出是同一次提交，成功响应丢失时会重复创建投票');
-      expect(service.keys[1], service.keys[0],
-          reason: '同一份请求体必须共用同一把幂等键');
+      expect(service.keys[1], service.keys[0], reason: '同一份请求体必须共用同一把幂等键');
     });
 
     testWidgets('用户改了内容算新的一次提交，截止时间重新计算', (tester) async {

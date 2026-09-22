@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'idempotency_key.dart';
+import 'publish_session_scope.dart';
 
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
@@ -124,53 +125,59 @@ class PollService {
 
   Future<Post> getPoll(int pollId) => _post(() => dio.get('/polls/$pollId'));
 
-  Future<Post> createPoll(PollDraft draft, {String? idempotencyKey}) => _post(
+  Future<Post> createPoll(PollDraft draft,
+          {String? idempotencyKey, PublishSessionScope? session}) =>
+      _post(
         () => dio.post(
           '/polls',
           data: draft.toJson(),
-          options: _writeOptions(idempotencyKey),
+          options: _writeOptions(idempotencyKey, session: session),
         ),
       );
 
   Future<Post> updatePoll(int pollId, PollDraft draft,
-          {String? idempotencyKey}) =>
+          {String? idempotencyKey, PublishSessionScope? session}) =>
       _post(
         () => dio.put(
           '/polls/$pollId',
           data: draft.toJson(),
-          options: _writeOptions(idempotencyKey),
+          options: _writeOptions(idempotencyKey, session: session),
         ),
       );
 
   Future<Post> putBallot(int pollId, List<int> optionIds,
-          {String? idempotencyKey}) =>
+          {String? idempotencyKey, PublishSessionScope? session}) =>
       _post(
         () => dio.put(
           '/polls/$pollId/ballot',
           data: {'option_ids': optionIds},
-          options: _writeOptions(idempotencyKey),
+          options: _writeOptions(idempotencyKey, session: session),
         ),
       );
 
-  Future<Post> closePoll(int pollId, {String? idempotencyKey}) => _post(
+  Future<Post> closePoll(int pollId,
+          {String? idempotencyKey, PublishSessionScope? session}) =>
+      _post(
         () => dio.post(
           '/polls/$pollId/close',
-          options: _writeOptions(idempotencyKey),
+          options: _writeOptions(idempotencyKey, session: session),
         ),
       );
 
-  Future<void> deletePoll(int pollId, {String? idempotencyKey}) async {
+  Future<void> deletePoll(int pollId,
+      {String? idempotencyKey, PublishSessionScope? session}) async {
     try {
       await dio.delete(
         '/polls/$pollId',
-        options: _writeOptions(idempotencyKey),
+        options: _writeOptions(idempotencyKey, session: session),
       );
     } on DioException catch (error) {
       throw _mapError(error);
     }
   }
 
-  Future<List<int>> uploadImages(List<XFile> images) async {
+  Future<List<int>> uploadImages(List<XFile> images,
+      {PublishSessionScope? session}) async {
     final ids = <int>[];
     for (final source in images) {
       final prepared = await _publicImageCompressor.prepare(source);
@@ -184,6 +191,7 @@ class PollService {
               filename: prepared.file.name,
             ),
           }),
+          options: _writeOptions(null, session: session),
         );
         final value = response.data is Map ? response.data['file_id'] : null;
         if (value is num) ids.add(value.toInt());
@@ -225,10 +233,18 @@ class PollService {
     }
   }
 
-  Options? _writeOptions(String? idempotencyKey) {
+  Options? _writeOptions(String? idempotencyKey,
+      {PublishSessionScope? session}) {
     final key = idempotencyKey?.trim();
-    if (key == null || key.isEmpty) return null;
-    return Options(headers: <String, dynamic>{'Idempotency-Key': key});
+    if ((key == null || key.isEmpty) && session == null) return null;
+    return Options(
+      headers: <String, dynamic>{
+        if (key != null && key.isNotEmpty) 'Idempotency-Key': key,
+      },
+      extra: <String, dynamic>{
+        if (session != null) ...session.requestExtra,
+      },
+    );
   }
 
   PollApiException _mapError(DioException error) {

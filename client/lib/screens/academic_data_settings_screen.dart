@@ -199,6 +199,23 @@ class _AcademicDataSettingsScreenState
       ? '****'
       : '${value.substring(0, 2)}****${value.substring(value.length - 2)}';
 
+  /// 展示用身份列表：本机连过谁 + 服务端认了谁。
+  ///
+  /// 两者是不同的事实，状态必须分开表达——见 [mergeAcademicIdentityStanding]。
+  List<AcademicIdentityBinding> get _displayIdentities {
+    final local = _session.providerRouter?.accountStore?.identities
+            .map((account) => AcademicIdentityBinding(
+                providerId: account.providerId,
+                studentId: account.studentId,
+                verified: false))
+            .toList() ??
+        const <AcademicIdentityBinding>[];
+    return mergeAcademicIdentityStanding(
+      localAccounts: local,
+      trustedBindings: _identities,
+    );
+  }
+
   Future<void> _selectIdentity(AcademicIdentityBinding binding) async {
     final user = _session.appUserId;
     if (user == null) return;
@@ -535,18 +552,13 @@ class _AcademicDataSettingsScreenState
         SettingsSection(
           title: '本机教务账号',
           children: [
-            for (final binding in (_session
-                    .providerRouter?.accountStore?.identities
-                    .map((i) => AcademicIdentityBinding(
-                        providerId: i.providerId,
-                        studentId: i.studentId,
-                        verified: false))
-                    .toList() ??
-                _identities))
+            for (final binding in _displayIdentities)
               SettingsTile(
                 icon: Icons.school_outlined,
                 title: binding.providerId.displayName,
-                subtitle: _maskIdentity(binding.studentId),
+                subtitle:
+                    '${_maskIdentity(binding.studentId)} · '
+                    '${academicIdentityStandingLabel(binding)}',
                 trailing:
                     _session.identity == binding.toIdentity(_session.appUserId!)
                         ? const SettingsStatusBadge(

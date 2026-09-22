@@ -3,6 +3,29 @@ import 'dart:convert';
 import '../../../platform/contracts/preferences_store.dart';
 import '../domain/academic_provider.dart';
 
+/// 本机声明（/student-identity/bind）的投递状态。
+///
+/// 「本机已连接」（connected）、「账号配置已同步」（配置 outbox）、「身份已核验」
+/// （服务端可信绑定）是三件不同的事，这里只描述**声明**投递到哪一步，
+/// 不能拿它当学生认证结论用。
+abstract final class AcademicBindingSyncState {
+  /// 尚未投递。
+  static const none = 'none';
+
+  /// 待投递：允许在联网恢复、应用重启后补发。
+  static const pending = 'pending';
+
+  /// 服务端已接收声明。它**不构成**服务器可信学生认证。
+  static const declared = 'declared';
+
+  /// 服务端拒绝或回执不符合契约。不再自动重试——契约错误重试不会变好，
+  /// 只会让用户每隔几十秒被提醒一次。重新连接教务会把状态归零并允许再试。
+  static const rejected = 'rejected';
+
+  /// 历史版本在「声明已接收」时写下的终态，语义等同 [declared]。
+  static const legacyBound = 'bound';
+}
+
 /// 连接许可和清理日志始终按完整身份保存；读取失败由调用方阻断联网。
 final class AcademicConnectionStore {
   AcademicConnectionStore(this.identity, this.preferences);
@@ -11,7 +34,14 @@ final class AcademicConnectionStore {
   final AppPreferencesStore preferences;
   String get _prefix => 'academic_lifecycle_${identity.storageId}';
   String get bindingSyncState =>
-      preferences.getString('${_prefix}_binding_sync') ?? 'none';
+      preferences.getString('${_prefix}_binding_sync') ?? AcademicBindingSyncState.none;
+
+  /// 声明是否已经投递过（含历史版本的 bound 终态）。
+  bool get bindingDeclared {
+    final state = bindingSyncState;
+    return state == AcademicBindingSyncState.declared ||
+        state == AcademicBindingSyncState.legacyBound;
+  }
 
   Future<void> setBindingSyncState(String state) async {
     if (!await preferences.setString('${_prefix}_binding_sync', state)) {

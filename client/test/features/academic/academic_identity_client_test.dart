@@ -300,4 +300,178 @@ void main() {
     });
   }
 
+  group('本机声明回执契约', () {
+    const identity = AcademicIdentityKey(
+      appUserId: 'u-1',
+      providerId: AcademicProviderId.syluUndergraduate,
+      studentId: 'U-001',
+    );
+
+    Map<String, dynamic> localDeclaration(
+            {String provider = 'sylu_undergraduate',
+            String student = 'U-001',
+            Object? verified = false,
+            Object? method = 'local_academic_login',
+            Object? assurance = 'local_declaration'}) =>
+        <String, dynamic>{
+          'provider_id': provider,
+          'student_id': student,
+          'verified': verified,
+          'verification_method': method,
+          'assurance_level': assurance,
+          'binding_version': 1,
+        };
+
+    test('verified=false 的正常回执被当作「声明已接收」，不再是身份不一致', () async {
+      final adapter = _IdentityHttpAdapter()
+        ..responses.add((status: 200, body: localDeclaration()));
+      final binding = await createClient(adapter).bindLocal(identity);
+      expect(binding.providerId, AcademicProviderId.syluUndergraduate);
+      expect(binding.studentId, 'U-001');
+      // 本机声明永远不构成可信学生认证。
+      expect(binding.isSchoolVerified, isFalse);
+      expect(binding.verified, isFalse);
+      expect(binding.assuranceLevel, academicAssuranceLocalDeclaration);
+    });
+
+    test('旧服务端自称 verified=true 也不会被当成学校核验', () async {
+      final adapter = _IdentityHttpAdapter()
+        ..responses.add((status: 200, body: localDeclaration(verified: true)));
+      final binding = await createClient(adapter).bindLocal(identity);
+      expect(binding.isSchoolVerified, isFalse);
+    });
+
+    test('回执身份不一致属于契约错误，不重试', () async {
+      final adapter = _IdentityHttpAdapter()
+        ..responses.add((status: 200, body: localDeclaration(student: 'OTHER')));
+      await expectLater(
+        createClient(adapter).bindLocal(identity),
+        throwsA(isA<AcademicIdentityApiException>()
+            .having((e) => e.code, 'code', 'IDENTITY_MISMATCH')
+            .having((e) => e.isRetryable, 'isRetryable', isFalse)),
+      );
+    });
+
+    test('回执核验方式不是本机声明属于契约错误，不重试', () async {
+      final adapter = _IdentityHttpAdapter()
+        ..responses.add(
+            (status: 200, body: localDeclaration(method: 'school_profile')));
+      await expectLater(
+        createClient(adapter).bindLocal(identity),
+        throwsA(isA<AcademicIdentityApiException>()
+            .having((e) => e.code, 'code', 'ACADEMIC_BINDING_CONTRACT_ERROR')
+            .having((e) => e.isRetryable, 'isRetryable', isFalse)),
+      );
+    });
+
+    test('回执自称学校核验属于契约错误，不重试', () async {
+      final adapter = _IdentityHttpAdapter()
+        ..responses.add((status: 200, body: localDeclaration(assurance: 'school_verified')));
+      await expectLater(
+        createClient(adapter).bindLocal(identity),
+        throwsA(isA<AcademicIdentityApiException>()
+            .having((e) => e.code, 'code', 'ACADEMIC_BINDING_CONTRACT_ERROR')
+            .having((e) => e.isRetryable, 'isRetryable', isFalse)),
+      );
+    });
+
+    test('网络故障属于临时问题，允许重试', () async {
+      final adapter = _IdentityHttpAdapter()
+        ..responses.add((status: 503, body: <String, dynamic>{'code': 'UNAVAILABLE'}));
+      await expectLater(
+        createClient(adapter).bindLocal(identity),
+        throwsA(isA<AcademicIdentityApiException>()
+            .having((e) => e.isRetryable, 'isRetryable', isTrue)),
+      );
+    });
+
+    test('依据强度只认白名单，未登记取值不授予可信身份', () {
+      expect(assuranceLevelFor('school_profile'), academicAssuranceSchoolVerified);
+      expect(assuranceLevelFor('legacy_migration'), academicAssuranceSchoolVerified);
+      expect(assuranceLevelFor('local_academic_login'), academicAssuranceLocalDeclaration);
+      expect(assuranceLevelFor(null), academicAssuranceLocalDeclaration);
+      expect(assuranceLevelFor(''), academicAssuranceLocalDeclaration);
+      // 与服务端一致：精确匹配，未登记与带空白都不算可信。
+      expect(assuranceLevelFor('test'), academicAssuranceLocalDeclaration);
+      expect(assuranceLevelFor(' school_profile'), academicAssuranceLocalDeclaration);
+      expect(assuranceLevelFor('school_profile_v2'), academicAssuranceLocalDeclaration);
+    });
+  });
+  group('身份状态的分开表达', () {
+    AcademicIdentityBinding binding({
+      required AcademicProviderId providerId,
+      required String studentId,
+      bool verified = false,
+      String? method,
+    }) =>
+        AcademicIdentityBinding(
+          providerId: providerId,
+          studentId: studentId,
+          verified: verified,
+          verificationMethod: method,
+        );
+
+    test('「本机已连接」不等于「身份已核验」', () {
+      final localOnly = binding(
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: 'U-001',
+        verified: true,
+        method: academicVerificationMethodLocalDeclaration,
+      );
+      expect(localOnly.isSchoolVerified, isFalse);
+      expect(academicIdentityStandingLabel(localOnly), '仅本机连接，未完成学生认证');
+
+      final schoolVerified = binding(
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: 'U-001',
+        verified: true,
+        method: academicVerificationMethodSchoolProfile,
+      );
+      expect(schoolVerified.isSchoolVerified, isTrue);
+      expect(academicIdentityStandingLabel(schoolVerified), '已完成学生认证');
+    });
+
+    test('本机账号与服务端可信绑定合并，不能一律显示成未认证', () {
+      final local = binding(
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: 'U-001',
+      );
+      final trusted = binding(
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: 'U-001',
+        verified: true,
+        method: academicVerificationMethodSchoolProfile,
+      );
+
+      final merged = mergeAcademicIdentityStanding(
+        localAccounts: [local],
+        trustedBindings: [trusted],
+      );
+      expect(merged, hasLength(1));
+      expect(merged.single.isSchoolVerified, isTrue,
+          reason: '已有学校核验的用户不能被显示成"没有认证"');
+
+      final unverified = mergeAcademicIdentityStanding(
+        localAccounts: [local],
+        trustedBindings: const [],
+      );
+      expect(unverified.single.isSchoolVerified, isFalse);
+    });
+
+    test('只有服务端绑定的设备直接使用可信列表', () {
+      final trusted = binding(
+        providerId: AcademicProviderId.syluGraduate,
+        studentId: 'G-001',
+        verified: true,
+        method: academicVerificationMethodLegacyMigration,
+      );
+      expect(
+        mergeAcademicIdentityStanding(
+          localAccounts: const [],
+          trustedBindings: [trusted],
+        ),
+        [trusted],
+      );
+    });
+  });
 }

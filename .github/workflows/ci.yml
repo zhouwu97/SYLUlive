@@ -79,18 +79,25 @@ jobs:
         run: >-
           bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 -tags=integration ./internal/middleware
           -run '^TestIdempotencyMiddlewarePostgres' -count=1
-      # 只跑内容发布额度 / 回复治理 / 安全事件的 PostgreSQL 集成用例：
+      # 只跑内容发布额度 / 回复治理 / 安全事件 / 工单 / 经验奖励的 PostgreSQL 用例：
       # 不加 -run 会把整包（含无需数据库的单测）重跑一遍，既重复又难以定位失败。
-      # 注意：TestCanteenRateConcurrentOptimisticLock 目前自身 fixture 不完整——
-      # 未迁移 canteen_* / files / academic_identity_bindings 等表就开始断言，
-      # 在 CI 上必然失败。那是既有缺陷，需要单独修复后再纳入覆盖，
-      # 不要用放宽 -run 或关掉断言的方式掩盖它。
       - name: Run PostgreSQL handlers/services integration tests
         working-directory: server
         run: >-
           bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 -tags=integration -p 1 ./internal/handlers ./internal/services
           -run '^(TestPostPublishQuota|TestReplyRejectedWhenPostHidden|TestSecurityEvent|TestFeedbackTicket.*Postgres|TestAwardDaily.*Postgres)'
           -count=1
+      # 食堂并发乐观锁单独一步跑：它的夹具会整表清 canteen_* / files，
+      # 与上面那批共用一次执行会互相抹数据（工单用例就依赖 files 表）。
+      # 这条用例曾因夹具缺表被长期排除：Rate 判可信学生身份读
+      # academic_identity_bindings，写推荐菜删 canteen_rating_dish_recommendations，
+      # 两者都不在它的 AutoMigrate 清单里。补齐后重新纳入；若再红，
+      # 按真实夹具缺陷修，不要退回「从选择器里删掉」这条路。
+      - name: Run PostgreSQL canteen concurrent rating test
+        working-directory: server
+        run: >-
+          bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 -tags=integration ./internal/handlers
+          -run '^TestCanteenRateConcurrentOptimisticLock$' -count=1
 
   migration-upgrade:
     runs-on: ubuntu-latest
@@ -316,6 +323,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: npx playwright install --with-deps chromium
+      # extension.spec.ts 用 --load-extension 真实加载开发扩展，
+      # 它读的是 browser-extension/dist-dev，必须先构建出来。
+      - name: Build development extension bundle
+        run: pnpm --filter @sylulive/extension dev
       - name: Run browser specs against the dev server
         run: pnpm test:e2e
       - name: Upload failure traces

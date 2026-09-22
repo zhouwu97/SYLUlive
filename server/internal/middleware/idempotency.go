@@ -144,6 +144,22 @@ func idempotencyMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		if status <= 0 {
 			status = http.StatusOK
 		}
+		// 只缓存成功响应。
+		//
+		// 幂等键要保证的是「成功效果只发生一次」，不是「把一次失败钉死 24 小时」。
+		// 业务限流（429）和临时故障（5xx）若按 completed 落库，同键重试就会原样重放
+		// 这条失败响应，调用方无论网络恢复多少次都提交不上去。明确失败意味着业务
+		// 事务没有生效，这里释放记录，让同一把键在故障恢复后能原样重试。
+		//
+		// 中途崩溃（failed）与超时未决（expired）仍然保留：那种情况下结果未知，
+		// 沿用同键重放可能造出第二条记录，所以要求调用方换新键另起一次操作。
+		if status < 200 || status >= 300 {
+			if err := db.Where("id = ? AND state = ?", record.ID, models.IdempotencyStateProcessing).
+				Delete(&models.IdempotencyRecord{}).Error; err != nil {
+				log.Printf("[IDEMPOTENCY_RELEASE_FAILED] record_id=%d status=%d err=%v", record.ID, status, err)
+			}
+			return
+		}
 		result := db.Model(&models.IdempotencyRecord{}).
 			Where("id = ? AND state = ?", record.ID, models.IdempotencyStateProcessing).
 			Updates(map[string]interface{}{

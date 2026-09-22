@@ -322,3 +322,90 @@ func TestIdempotencyMiddlewareDoesNotRecordReads(t *testing.T) {
 		t.Fatalf("read response: %v", err)
 	}
 }
+
+// TestIdempotencyMiddlewareReleasesFailedResponseForSameKeyRetry 锁住失败响应不缓存。
+//
+// 幂等键保证的是「成功效果只发生一次」。业务限流和临时故障若被记成 completed，
+// 同键重试就会在 24 小时内原样重放那条失败响应，调用方网络恢复多少次都提交不上去。
+func TestIdempotencyMiddlewareReleasesFailedResponseForSameKeyRetry(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		failStatus int
+	}{
+		{name: "业务限流", failStatus: http.StatusTooManyRequests},
+		{name: "临时故障", failStatus: http.StatusServiceUnavailable},
+		{name: "业务拒绝", failStatus: http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openIdempotencyTestDB(t)
+			var calls atomic.Int32
+			router := newIdempotencyTestRouter(t, db, func(c *gin.Context) {
+				n := calls.Add(1)
+				if n == 1 {
+					c.JSON(tc.failStatus, gin.H{"code": "try_again"})
+					return
+				}
+				c.JSON(http.StatusCreated, gin.H{"id": n})
+			})
+
+			body := `{"title":"同一份请求"}`
+			key := "retry-after-failure"
+			first := httptest.NewRecorder()
+			router.ServeHTTP(first, requestWithKey(http.MethodPost, "/write", key, body))
+			if first.Code != tc.failStatus {
+				t.Fatalf("首次状态 = %d, 期望 %d", first.Code, tc.failStatus)
+			}
+
+			// 故障恢复后必须能用同一把键原样重试，而不是被上一次的失败响应钉死。
+			retry := httptest.NewRecorder()
+			router.ServeHTTP(retry, requestWithKey(http.MethodPost, "/write", key, body))
+			if retry.Code != http.StatusCreated {
+				t.Fatalf("同键重试状态 = %d, 期望 201；body=%q", retry.Code, retry.Body.String())
+			}
+			if calls.Load() != 2 {
+				t.Fatalf("失败记录未释放，业务层被跳过: calls=%d", calls.Load())
+			}
+
+			// 成功之后仍然只算一次：重放的是成功响应，不再进业务层。
+			replay := httptest.NewRecorder()
+			router.ServeHTTP(replay, requestWithKey(http.MethodPost, "/write", key, body))
+			if replay.Code != http.StatusCreated || replay.Body.String() != retry.Body.String() {
+				t.Fatalf("成功后未重放: %d %q vs %d %q",
+					replay.Code, replay.Body.String(), retry.Code, retry.Body.String())
+			}
+			if calls.Load() != 2 {
+				t.Fatalf("成功响应未被缓存: calls=%d", calls.Load())
+			}
+		})
+	}
+}
+
+// TestIdempotencyMiddlewareFailedResponseDoesNotPoisonOtherPayload 再锁一层：
+// 失败记录释放后，同一把键换成另一份请求体不会被判成 payload 冲突。
+// 这正是"改了内容再提交"的用户路径——旧记录若还在，用户会卡在 idempotency_key_reused。
+func TestIdempotencyMiddlewareFailedResponseDoesNotPoisonOtherPayload(t *testing.T) {
+	db := openIdempotencyTestDB(t)
+	var calls atomic.Int32
+	router := newIdempotencyTestRouter(t, db, func(c *gin.Context) {
+		n := calls.Add(1)
+		if n == 1 {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"code": "unavailable"})
+			return
+		}
+		c.JSON(http.StatusCreated, gin.H{"id": n})
+	})
+	key := "edit-then-resubmit"
+	first := httptest.NewRecorder()
+	router.ServeHTTP(first, requestWithKey(http.MethodPost, "/write", key, `{"title":"旧内容"}`))
+	if first.Code != http.StatusServiceUnavailable {
+		t.Fatalf("首次状态 = %d", first.Code)
+	}
+	second := httptest.NewRecorder()
+	router.ServeHTTP(second, requestWithKey(http.MethodPost, "/write", key, `{"title":"新内容"}`))
+	if second.Code != http.StatusCreated {
+		t.Fatalf("修改内容后同键提交被拒: %d %q", second.Code, second.Body.String())
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("calls=%d", calls.Load())
+	}
+}

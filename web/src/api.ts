@@ -38,13 +38,10 @@ function isReadMethod(method: string) {
   return ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
 }
 
-export async function request<T = Entity>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
+async function send(path: string, init: RequestInit = {}): Promise<Response> {
   if (!path.startsWith("/api/")) throw new Error("业务请求必须使用同源 API");
   const headers = new Headers(init.headers);
-  headers.set("Accept", "application/json");
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
   headers.set("X-Requested-With", "SYLUlive-Web");
   if (init.body && !(init.body instanceof FormData))
     headers.set("Content-Type", "application/json");
@@ -87,24 +84,63 @@ export async function request<T = Entity>(
         throw new ApiError(409, "auth_session_changed", "账号已切换，请重新确认操作");
       if (refreshed.ok) response = await fetch(path, options);
     }
-    const contentType = response.headers.get("content-type") || "";
-    const data = contentType.includes("application/json")
-      ? await response.json()
-      : null;
-    if (!response.ok)
-      throw new ApiError(
-        response.status,
-        data?.code || "request_failed",
-        data?.message || data?.error || `请求未完成（${response.status}）`,
-      );
-    if (data === null && response.status !== 204)
-      throw new ApiError(502, "invalid_response", "接口没有返回可读取的数据");
-    return data as T;
+    return response;
   } finally {
     inFlight.delete(controller);
     init.signal?.removeEventListener("abort", abort);
   }
 }
+
+export async function request<T = Entity>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const response = await send(path, init);
+  const contentType = response.headers.get("content-type") || "";
+  const data = contentType.includes("application/json")
+    ? await response.json()
+    : null;
+  if (!response.ok)
+    throw new ApiError(
+      response.status,
+      data?.code || "request_failed",
+      data?.message || data?.error || `请求未完成（${response.status}）`,
+    );
+  if (data === null && response.status !== 204)
+    throw new ApiError(502, "invalid_response", "接口没有返回可读取的数据");
+  return data as T;
+}
+
+// 受保护的二进制读取：工单截图这类私有文件只能通过带鉴权的接口取，
+// 不能把 file_id 拼成无鉴权的 /uploads 地址。错误按状态码分成可恢复与不可恢复两类，
+// 让调用方能显示「登录已失效，请重新登录」而不是永久空白。
+export async function requestBlob(
+  path: string,
+  init: RequestInit = {},
+): Promise<Blob> {
+  const response = await send(path, {
+    ...init,
+    headers: { ...(init.headers || {}), Accept: "image/*,application/octet-stream" },
+  });
+  if (!response.ok) {
+    const status = response.status;
+    throw new ApiError(
+      status,
+      status === 401
+        ? "attachment_auth_expired"
+        : status === 403 || status === 404
+          ? "attachment_unavailable"
+          : "request_failed",
+      status === 401
+        ? "登录已失效，重新登录后可查看附件"
+        : status === 403 || status === 404
+          ? "无权查看该附件，或文件已被删除"
+          : `附件读取失败（${status}）`,
+    );
+  }
+  return await response.blob();
+}
+
 export const write = <T = Entity>(
   path: string,
   body: unknown = {},

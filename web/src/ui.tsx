@@ -156,6 +156,7 @@ export interface Field {
   max?: number;
   help?: string;
   multiple?: boolean;
+  accept?: string;
 }
 export function Form({
   fields,
@@ -221,6 +222,7 @@ export function Form({
               min={f.min}
               max={f.max}
               multiple={f.multiple}
+              accept={f.accept}
               autoComplete={
                 f.type === "password" ? "current-password" : undefined
               }

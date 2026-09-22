@@ -19,6 +19,10 @@ import {
 } from "./api";
 import { useAuth } from "./auth";
 import {
+  rejectAttachmentFiles,
+  type AttachmentLimits,
+} from "./attachments";
+import {
   Empty,
   Form,
   Head,
@@ -28,16 +32,34 @@ import {
   Tabs,
   useUI,
 } from "./ui";
-export async function uploadIDs(form: FormData) {
+// 同一个 File 对象在「提交失败后原样重点提交」时不应再传一遍：
+// 上传接口按字节去重，但重复请求仍会产生新记录与等待。
+const uploadedFileIDs = new WeakMap<File, number>();
+export async function uploadIDs(form: FormData, limits?: AttachmentLimits) {
+  const files = form
+    .getAll("images")
+    .filter((item): item is File => item instanceof File && item.size > 0);
+  if (limits) {
+    const rejections = rejectAttachmentFiles(files, limits);
+    if (rejections.length)
+      throw new Error(
+        `附件未通过检查：${rejections.map((x) => `${x.file}（${x.reason}）`).join("；")}`,
+      );
+  }
   const ids: number[] = [];
-  for (const file of form.getAll("images")) {
-    if (!(file instanceof File) || !file.size) continue;
-    const body = new FormData();
-    body.append("file", file);
-    const result = await write("/api/upload", body);
-    if (!Number.isInteger(result.file_id))
-      throw new Error("上传没有返回文件编号");
-    ids.push(result.file_id);
+  for (const file of files) {
+    let id = uploadedFileIDs.get(file);
+    if (id === undefined) {
+      const body = new FormData();
+      body.append("file", file);
+      const result = await write("/api/upload", body);
+      const uploaded = Number(result.file_id);
+      if (!Number.isInteger(uploaded) || uploaded <= 0)
+        throw new Error("上传没有返回文件编号");
+      uploadedFileIDs.set(file, uploaded);
+      id = uploaded;
+    }
+    if (!ids.includes(id)) ids.push(id);
   }
   return ids;
 }

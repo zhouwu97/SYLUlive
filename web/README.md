@@ -41,6 +41,14 @@ go test ./internal/handlers ./internal/middleware ./internal/ai
 
 `artifacts/web-build/` 包含静态网站、生产扩展、开发扩展及 Windows 下生成的 ZIP。包为联调候选包，不表示学校链路或商店审核通过。扩展发布前还需按实际商店补齐展示素材与隐私披露。
 
+`pnpm package` 会额外写出 `artifacts/web-build/BUILD_INFO.json`：产出提交号、分支、工作树是否干净，以及三棵子树的确定性摘要和 ZIP 的 SHA-256。部署前用它核对「发布物就是待部署提交」：
+
+```powershell
+node scripts/package-web.mjs --check <待部署 SHA>   # 或设置 RELEASE_SHA
+```
+
+校验会同时比对提交号与磁盘内容摘要，任一不符即失败退出。工作区有未提交改动时打包默认拒绝，确需打实验包用 `ALLOW_DIRTY_RELEASE=1`，此时 `BUILD_INFO.json` 记录 `dirty: true`，不得作为发布物。
+
 ## 部署
 
 将 `web/dist/` 内容放到现有站点 `/web/`。参考 `web/deploy/nginx.conf` 合并到原 HTTPS server；保留官网及分享路由，API 与附件使用同源代理，SSE 关闭缓冲。新增收藏和个人 AI 分析需要同时发布本仓库 Go 修改；仅更新静态页面不会让线上旧服务具备新接口。

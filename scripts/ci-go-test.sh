@@ -38,7 +38,10 @@ fi
 # （warning 与包摘要），所以按包名去重后计数。
 summary="$(awk '
   /"Action":"pass","Package":"[^"]*","Test":/ { pass++ }
-  /"Action":"fail","Package":"[^"]*","Test":/ { fail++ }
+  /"Action":"fail","Package":"[^"]*","Test":/ {
+    fail++
+    if (match($0, /"Test":"[^"]*"/)) failed_names = failed_names " " substr($0, RSTART + 8, RLENGTH - 9)
+  }
   /"Action":"skip","Package":"[^"]*","Test":/ {
     skip++
     if (match($0, /"Test":"[^"]*"/)) skipped_names = skipped_names " " substr($0, RSTART + 8, RLENGTH - 9)
@@ -49,10 +52,12 @@ summary="$(awk '
       if (!(pkg in seen)) { seen[pkg] = 1; empty++ }
     }
   }
-  END { printf "%d %d %d %d|%s", pass + 0, fail + 0, skip + 0, empty + 0, skipped_names }
+  END { printf "%d %d %d %d|%s|%s", pass + 0, fail + 0, skip + 0, empty + 0, skipped_names, failed_names }
 ' "$json")"
 counts="${summary%%|*}"
-skipped_names="${summary#*|}"
+rest="${summary#*|}"
+skipped_names="${rest%%|*}"
+failed_names="${rest#*|}"
 read -r passed failed skipped empty_packages <<<"$counts"
 ran=$((passed + failed + skipped))
 
@@ -61,10 +66,26 @@ if [ "$skipped" -gt 0 ]; then
   # 逐条列出被跳过的测试：审计要求「跳过不得计为通过」，那就得看得见跳过了什么。
   printf '跳过的测试：%s\n' "$skipped_names"
 fi
+if [ "$failed" -gt 0 ]; then
+  printf '失败的测试：%s\n' "$failed_names"
+fi
 
 if [ "$status" -ne 0 ]; then
-  # 失败时把 go test 的人读输出留在末尾，便于直接在日志里定位。
-  tail -40 "$raw" || true
+  # go test -json 把 t.Fatalf / panic 文本都放进各事件的 Output 字段，stderr 几乎是空的。
+  # 不还原 Output 的话，CI 日志里就只剩一个退出码，红成什么样都得猜。
+  echo "--- go test 输出（从 -json 的 Output 字段还原，末尾 60 行）---"
+  awk '
+    function unescape(s) {
+      gsub(/\\\\/, "\001", s)
+      gsub(/\\n/, "\n", s)
+      gsub(/\\t/, "\t", s)
+      gsub(/\\"/, "\"", s)
+      gsub(/\001/, "\\", s)
+      return s
+    }
+    match($0, /"Output":".*"}/) { print unescape(substr($0, RSTART + 10, RLENGTH - 12)) }
+  ' "$json" | tail -60 || true
+  tail -20 "$raw" || true
   exit "$status"
 fi
 

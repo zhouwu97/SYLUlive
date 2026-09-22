@@ -52,8 +52,18 @@ func TestCanteenRateConcurrentOptimisticLock(t *testing.T) {
 
 	if err := db.AutoMigrate(&models.Canteen{}, &models.CanteenRating{}, &models.CanteenRatingVote{},
 		&models.CanteenDish{}, &models.CanteenDishPhoto{}, &models.CanteenRatingDishRecommendation{},
-		&models.AcademicIdentityBinding{}, &models.File{}, &models.User{}, &models.AdminLog{}); err != nil {
+		&models.AcademicIdentityBinding{}, &models.TeacherRating{}, &models.MajorRating{},
+		&models.Report{}, &models.File{}, &models.User{}, &models.AdminLog{}); err != nil {
 		t.Fatalf("migrate: %v", err)
+	}
+	// /rate 的写入依赖 canteen_ratings (canteen_id,user_id) 上的唯一索引做
+	// ON CONFLICT DO UPDATE，而这条索引不在 GORM tag 里，是启动时
+	// EnsureRatingInteractionSchema 建的（cmd/main.go）。夹具只 AutoMigrate 不跑它，
+	// PG 会直接报「there is no unique or exclusion constraint matching the
+	// ON CONFLICT specification」，测到的就不是并发语义。这里调用同一个函数，
+	// 让用例走真实生产建索引路径；它也顺带保证 teacher/major/reports 的约束存在。
+	if err := models.EnsureRatingInteractionSchema(db); err != nil {
+		t.Fatalf("ensure rating interaction schema: %v", err)
 	}
 
 	// 已绑定教务的学生。Rate 的可信学生身份判权读 academic_identity_bindings，

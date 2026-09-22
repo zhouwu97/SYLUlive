@@ -259,6 +259,8 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 			"verification_daily_limit":       verificationLimit["runtime"],
 			"verification_daily_limit_state": verificationLimit,
 			"source_attribution_valid_from":  h.attributionValidFrom,
+			// 封禁范围的实际覆盖面：由中间件同一张路由登记表推导，界面不再自己抄清单。
+			"security_block_scopes": securityBlockScopeCatalog(),
 		},
 	})
 }
@@ -424,15 +426,16 @@ func resolveBlockScopes(input securityBlockInput) ([]string, error) {
 		}
 		return []string{prefix}, nil
 	case securityBlockScopeAccount:
-		// 账号与验证码链路：撞库、账号接管、批量注册验证码三类攻击都落在这几条前缀上。
+		// 账号与凭据链路：登录/注册、验证码、改密与邮箱换绑、会话刷新四组。
+		// 清单由 middleware 的路由登记表派生：界面说明、封禁写入、中间件命中是同一份事实，
+		// 不再各自抄一份数组（A12 的成因正是两份清单漂移，管理员以为封住了改密）。
 		// 刻意不含 /api/posts、/api/messages、/api/feedback、/api/search 等内容与检索接口，
-		// 那些入口被整体封禁会误伤大量正常读写。
-		// /api/login_edu 必须显式列出：封禁匹配是完整路由段，
-		// /api/login 不会（也不应该）连带命中 /api/login_edu。
-		return []string{
-			"/api/login", "/api/login_edu", "/api/password",
-			"/api/register", "/api/forgot_password", "/api/send_code", "/api/verify_code",
-		}, nil
+		// 那些入口被整体封禁会误伤大量正常读写，尤其是校园共享出口下的普通浏览。
+		prefixes, ok := middleware.SecurityRoutePrefixes(middleware.SecurityAccountRouteGroups)
+		if !ok {
+			return nil, errSecurityBlockScopeInvalid
+		}
+		return prefixes, nil
 	case securityBlockScopeAll:
 		if !input.ConfirmGlobal {
 			return nil, errSecurityBlockGlobalUnconfirm
@@ -440,6 +443,37 @@ func resolveBlockScopes(input securityBlockInput) ([]string, error) {
 		return []string{""}, nil
 	default:
 		return nil, errSecurityBlockScopeInvalid
+	}
+}
+
+// securityBlockScopeCatalog 把每个封禁范围实际覆盖的路由前缀摊给界面。
+//
+// A12 的另一半成因是「界面把 account 讲成账号相关入口，实际清单更窄」。
+// 说明文字因此不能由前端另抄一份：这里直接吐登记表推导出的前缀，
+// 并显式写出账号范围**不包含**什么，避免管理员把「账号安全」读成「全站封禁」。
+func securityBlockScopeCatalog() gin.H {
+	groups, ok := middleware.SecurityRouteGroups(middleware.SecurityAccountRouteGroups)
+	if !ok {
+		return nil
+	}
+	accountPrefixes, _ := middleware.SecurityRoutePrefixes(middleware.SecurityAccountRouteGroups)
+	groupViews := make([]gin.H, 0, len(groups))
+	for _, group := range groups {
+		groupViews = append(groupViews, gin.H{
+			"id": string(group.ID), "purpose": group.Purpose, "prefixes": group.Prefixes,
+		})
+	}
+	excluded, _ := middleware.SecurityRoutePrefixes([]middleware.SecurityRouteGroupID{middleware.SecurityGroupContentWrite})
+	return gin.H{
+		// 封禁匹配只看完整路由段前缀，不区分方法：同一前缀上的 GET/POST 一并受限。
+		"match_by": "route_prefix_segment",
+		"methods":  "any",
+		"scopes": gin.H{
+			securityBlockScopeRoute:   gin.H{"description": "仅当前这一条路由前缀", "prefixes": []string{"/api/<所选路由>"}},
+			securityBlockScopeAccount: gin.H{"description": "登录注册、验证码、改密与邮箱换绑、会话刷新四组", "groups": groupViews, "prefixes": accountPrefixes},
+			securityBlockScopeAll:     gin.H{"description": "登记表里的全部敏感路由，需要显式确认且仅超级管理员可执行", "prefixes": []string{"*"}},
+		},
+		"account_excludes": excluded,
 	}
 }
 

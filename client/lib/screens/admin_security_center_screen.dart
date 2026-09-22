@@ -279,7 +279,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                             setDialogState(() => scope = 'route'),
                       ),
                     ChoiceChip(
-                      label: const Text('账号与验证码链路'),
+                      label: const Text('账号与凭据链路'),
                       selected: scope == 'account',
                       onSelected: (_) => setDialogState(() => scope = 'account'),
                     ),
@@ -290,13 +290,15 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                     ),
                   ],
                 ),
-                if (scope == 'account')
-                  const Padding(
-                    padding: EdgeInsets.only(top: AppSpacing.xs),
+                if (scope == 'account' || scope == 'all')
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.xs),
                     child: Text(
-                      '覆盖 /api/login · /api/login_edu · /api/password · '
-                      '/api/register · /api/forgot_password · /api/send_code · /api/verify_code',
-                      style: TextStyle(fontSize: 12),
+                      securityBlockScopeDescription(
+                          _overview?.protection['security_block_scopes']
+                              as Map<String, dynamic>?,
+                          scope),
+                      style: const TextStyle(fontSize: 12),
                     ),
                   ),
                 if (scope == 'all')

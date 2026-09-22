@@ -239,4 +239,33 @@ void main() {
     expect(screen, contains("confirmGlobal: scope == 'all'"));
     expect(screen, contains("Text(scope == 'all' ? '确认全站封禁' : '确认封禁')"));
   });
+
+  test('封禁范围说明取服务端路由登记表，不在客户端另抄一份路径', () {
+    final catalog = <String, dynamic>{
+      'scopes': <String, dynamic>{
+        'account': <String, dynamic>{
+          'description': '登录注册、验证码、改密与邮箱换绑、会话刷新四组',
+          'prefixes': <dynamic>[
+            '/api/login',
+            '/api/change_password',
+            '/api/refresh',
+          ],
+        },
+      },
+      'account_excludes': <dynamic>['/api/posts', '/api/search'],
+    };
+    final text = securityBlockScopeDescription(catalog, 'account');
+    expect(text, contains('登录注册、验证码、改密与邮箱换绑、会话刷新四组'));
+    expect(text, contains('/api/change_password'));
+    expect(text, contains('不包含：/api/posts · /api/search'));
+
+    // 旧服务端没给这个字段时只解释语义，不能凭空报出一份路径清单。
+    expect(securityBlockScopeDescription(null, 'account'), isNot(contains('实际路径')));
+
+    final screen =
+        File('lib/screens/admin_security_center_screen.dart').readAsStringSync();
+    expect(screen, contains('securityBlockScopeDescription'));
+    // 页面上那份手抄的 7 条前缀就是 A12 的预期差来源，必须不再出现。
+    expect(screen, isNot(contains('/api/forgot_password')));
+  });
 }

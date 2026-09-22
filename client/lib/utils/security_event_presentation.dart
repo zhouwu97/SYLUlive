@@ -135,3 +135,36 @@ String securitySeverityLabel(String value) => switch (value) {
       'low' => '提示',
       _ => '信息',
     };
+
+/// 临时封禁范围的说明文字。
+///
+/// 路径清单取自服务端 security/overview 的 security_block_scopes：它和真正写进封禁表、
+/// 被中间件命中的是同一张路由登记表。客户端不再自己抄一份路径——「界面说封住了账号相关
+/// 入口、实际清单更窄」这个预期差，正是两份清单各写各的产物。
+/// 旧服务端没有该字段时只解释范围语义，不冒充具体路径。
+String securityBlockScopeDescription(
+    Map<String, dynamic>? catalog, String scope) {
+  final scopes = catalog?['scopes'];
+  final entry = scopes is Map ? scopes[scope] : null;
+  final parts = <String>[];
+  final description = entry is Map ? entry['description']?.toString() ?? '' : '';
+  parts.add(description.isNotEmpty
+      ? description
+      : switch (scope) {
+          'account' => '登录注册、验证码、改密与邮箱换绑、会话刷新等账号凭据入口',
+          'all' => '登记表内的全部高风险接口',
+          _ => '仅当前这一条接口前缀',
+        });
+  final prefixes = entry is Map ? entry['prefixes'] : null;
+  if (prefixes is List && prefixes.isNotEmpty) {
+    parts.add('实际路径：${prefixes.map((e) => e.toString()).join(' · ')}');
+  }
+  if (scope == 'account' && catalog?['account_excludes'] is List) {
+    final excluded =
+        (catalog!['account_excludes'] as List).map((e) => e.toString()).join(' · ');
+    if (excluded.isNotEmpty) {
+      parts.add('不包含：$excluded');
+    }
+  }
+  return parts.join('；');
+}

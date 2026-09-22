@@ -134,6 +134,37 @@ void main() {
     });
   });
 
+  group('allowsInteractiveAcademicLogin / gradeOriginIsSilent —— 谁能打断用户（计划 8.2）', () {
+    test('A07 只有首次进入和用户明确刷新允许弹教务登录框', () {
+      expect(allowsInteractiveAcademicLogin(GradeRefreshOrigin.initial), isTrue);
+      expect(allowsInteractiveAcademicLogin(GradeRefreshOrigin.manual), isTrue);
+      // 自动刷新与前台恢复是「顺带」发生的，没有表达过要重新输入的意愿。
+      expect(
+          allowsInteractiveAcademicLogin(GradeRefreshOrigin.automatic), isFalse);
+      expect(allowsInteractiveAcademicLogin(GradeRefreshOrigin.resume), isFalse);
+      // 会话刚恢复可信后的补读：用户已经在登录流程里，不该再弹一次。
+      expect(allowsInteractiveAcademicLogin(GradeRefreshOrigin.sessionRecovered),
+          isFalse);
+    });
+
+    test('A07 交互登录权限与「是否静默」不是同一维度', () {
+      // sessionRecovered 不静默（成功提示、减少确认照旧），但不允许弹框；
+      // 反过来 manual 既不静默也允许弹框。二者不能互相推导。
+      expect(gradeOriginIsSilent(GradeRefreshOrigin.sessionRecovered), isFalse);
+      expect(allowsInteractiveAcademicLogin(GradeRefreshOrigin.sessionRecovered),
+          isFalse);
+      expect(gradeOriginIsSilent(GradeRefreshOrigin.manual), isFalse);
+      expect(allowsInteractiveAcademicLogin(GradeRefreshOrigin.manual), isTrue);
+    });
+
+    test('自动与前台恢复属于静默来源，手动与首屏属于非静默来源', () {
+      expect(gradeOriginIsSilent(GradeRefreshOrigin.automatic), isTrue);
+      expect(gradeOriginIsSilent(GradeRefreshOrigin.resume), isTrue);
+      expect(gradeOriginIsSilent(GradeRefreshOrigin.initial), isFalse);
+      expect(gradeOriginIsSilent(GradeRefreshOrigin.manual), isFalse);
+    });
+  });
+
   group('allowReducedGradeOverwrite —— 权限不得顺带授予（计划 8.2）', () {
     test('自动/前台恢复（silent）永远不允许覆盖可信基线', () {
       // 即使别处传了 forceRefresh=true，静默刷新也不能确认减少。

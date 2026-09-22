@@ -16,6 +16,7 @@ import '../utils/grade_screen_registry.dart';
 import '../widgets/edu_grade/grade_summary_card.dart';
 import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
+import '../widgets/edu_grade/grade_session_notice.dart';
 import '../widgets/edu_grade/academic_privacy_notice.dart';
 import '../widgets/edu_grade/grade_center_section_tabs.dart';
 import '../widgets/edu_grade/academic_requirement_overview.dart';
@@ -30,10 +31,16 @@ class EduGradeScreen extends StatefulWidget {
   final String? initialYear;
   final int? initialSemester;
 
+  /// 仅用于测试：把前台恢复的时间窗注入进来，让 resume 分支能在 widget 测试里
+  /// 真实触发，而不是绕开时间条件去断言别的代码路径。
+  @visibleForTesting
+  final Duration? resumeRefreshCooldown;
+
   const EduGradeScreen({
     super.key,
     this.initialYear,
     this.initialSemester,
+    this.resumeRefreshCooldown,
   });
 
   @override
@@ -44,8 +51,11 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     with WidgetsBindingObserver
     implements GradeScreenLinkTarget {
   static const Duration _autoRefreshCooldown = Duration(minutes: 15);
-  static const Duration _resumeRefreshCooldown = Duration(minutes: 30);
   static const Duration _failureRetryCooldown = Duration(minutes: 2);
+
+  /// 生产默认 30 分钟；测试通过 [EduGradeScreen.resumeRefreshCooldown] 注入。
+  Duration get _resumeRefreshCooldown =>
+      widget.resumeRefreshCooldown ?? const Duration(minutes: 30);
   DateTime? _lastSuccessfulSyncTime;
   DateTime? _lastFetchFailureTime;
   DateTime? _academicUpdatedAt;
@@ -104,6 +114,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   int _requestGeneration = 0;
   int _academicRequestGeneration = 0;
   String? _errorMessage;
+
   String? _lastUserId;
   String _activeFilter = '全部'; // '全部' | '学位课' | '未通过'
   EduAcademicSituation? _academicSituation;
@@ -133,7 +144,17 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   String get _sessionMessage =>
       _academicSession?.failure?.message ?? '请先完成教务登录后重试';
 
-  Future<bool> _ensureReadReady({bool retry = false}) async {
+  /// 会话需要人工登录、而页面上仍有可信结果可看时的非阻塞提示。
+  /// 由会话状态推导，避免各处成功/失败分支漏掉清理。
+  bool get _showsSessionNotice {
+    final session = _academicSession;
+    return session != null &&
+        !session.isAuthenticated &&
+        _pageState != GradePageState.error &&
+        _grades.isNotEmpty;
+  }
+
+  Future<bool> _ensureReadReady({required bool allowInteractiveLogin}) async {
     final session = _academicSession;
     if (session == null) return true;
     final running = _sessionReadFuture;
@@ -145,13 +166,14 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _sessionReadBlocked = false;
       return true;
     }
-    // 同一轮成绩、GPA 和学分读取共用一次恢复；取消后只由显式重试再弹框。
-    if (_sessionReadBlocked && !retry) return false;
+    // 同一轮成绩、GPA 和学分读取共用一次恢复；取消后只由允许打断用户的来源再弹框。
+    if (_sessionReadBlocked && !allowInteractiveLogin) return false;
     final identity = session.identity;
     final appUserId = session.appUserId;
     final operation = ensureAcademicSessionForRead(context,
         controller: session,
-        coordinator: context.read<AcademicLoginCoordinator?>());
+        coordinator: context.read<AcademicLoginCoordinator?>(),
+        allowInteractiveLogin: allowInteractiveLogin);
     _sessionReadFuture = operation;
     try {
       final result = await operation;
@@ -201,7 +223,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           now.difference(lastSuccess) > _resumeRefreshCooldown;
 
       if (shouldRefresh && !_isRefreshing && !_isInitialLoading) {
-        unawaited(_refreshGrades(silent: true));
+        unawaited(_refreshGrades(origin: GradeRefreshOrigin.resume));
       }
     }
   }
@@ -214,7 +236,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   Future<bool> switchToGradeSemester(String year, int semester) async {
     _switchSection(GradeCenterSection.term, scrollToTop: true);
     if (year == _selectedYear && semester == _selectedSemester) {
-      final grades = await _refreshGrades();
+      final grades = await _refreshGrades(origin: GradeRefreshOrigin.manual);
       return grades != null;
     }
     return _switchSemester(year, semester);
@@ -315,10 +337,13 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         if (!mounted || _academicContext != sessionContext) return;
         // 登录/恢复成功是明确的会话边界，不能被新鲜缓存的 cache-only 决策吞掉；
         // 先展示缓存，再主动拉取一次，保证重新认证后页面拿到最新成绩。
-        unawaited(_loadGrades(forceRefresh: true));
-        unawaited(_loadAcademicSituation());
+        unawaited(_loadGrades(
+            origin: GradeRefreshOrigin.sessionRecovered, forceRefresh: true));
+        unawaited(
+            _loadAcademicSituation(origin: GradeRefreshOrigin.sessionRecovered));
         if (_section == GradeCenterSection.overview) {
-          unawaited(_loadCreditRequirements());
+          unawaited(_loadCreditRequirements(
+              origin: GradeRefreshOrigin.sessionRecovered));
         }
       });
     }
@@ -388,7 +413,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     }
 
     if (mounted) setState(() {});
-    await _loadGrades();
+    await _loadGrades(origin: GradeRefreshOrigin.initial);
     if (!mounted ||
         _lastUserId != userId ||
         _academicContext != academicContext) {
@@ -397,8 +422,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
     // 仅在当前数据源声明支持时预取 GPA；本机直连尚未迁移该能力，不能
     // 触发旧服务端接口，也不能拿旧来源缓存填充当前页面。
+    // 来源是 automatic：首屏已经拿到过一次交互机会，联动读取不得再弹框。
     if (_eduProvider?.academicCapabilities.supportsAcademicSituation ?? true) {
-      unawaited(_loadAcademicSituation());
+      unawaited(_loadAcademicSituation(origin: GradeRefreshOrigin.automatic));
     } else {
       _markUnsupportedAcademicFeatures();
     }
@@ -425,7 +451,10 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     return true;
   }
 
-  Future<void> _loadAcademicSituation({bool forceRefresh = false}) async {
+  Future<void> _loadAcademicSituation({
+    required GradeRefreshOrigin origin,
+    bool forceRefresh = false,
+  }) async {
     final provider = _eduProvider;
     if (provider == null) return;
     if (provider.isUsingLocalAcademicSession &&
@@ -451,7 +480,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       });
     }
 
-    if (!await _ensureReadReady(retry: forceRefresh)) {
+    if (!await _ensureReadReady(
+        allowInteractiveLogin: allowsInteractiveAcademicLogin(origin))) {
       if (mounted && _academicRequestGeneration == gen) {
         setState(() {
           _isAcademicLoading = false;
@@ -484,12 +514,16 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     });
   }
 
-  Future<void> _loadCreditRequirements({bool forceRefresh = false}) {
+  Future<void> _loadCreditRequirements({
+    required GradeRefreshOrigin origin,
+    bool forceRefresh = false,
+  }) {
     final activeRequest = _creditRequirementsLoadFuture;
     if (activeRequest != null) return activeRequest;
 
     late final Future<void> request;
-    request = _performLoadCreditRequirements(forceRefresh: forceRefresh);
+    request = _performLoadCreditRequirements(
+        origin: origin, forceRefresh: forceRefresh);
     _creditRequirementsLoadFuture = request;
     return request.whenComplete(() {
       if (identical(_creditRequirementsLoadFuture, request)) {
@@ -499,6 +533,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   Future<void> _performLoadCreditRequirements({
+    required GradeRefreshOrigin origin,
     bool forceRefresh = false,
   }) async {
     final provider = _eduProvider;
@@ -526,7 +561,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       });
     }
 
-    if (!await _ensureReadReady(retry: forceRefresh)) {
+    if (!await _ensureReadReady(
+        allowInteractiveLogin: allowsInteractiveAcademicLogin(origin))) {
       if (mounted && _requirementRequestGeneration == gen) {
         setState(() {
           _isRequirementLoading = false;
@@ -565,7 +601,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     bool showMessage = true,
   }) async {
     if (_isRequirementLoading) return false;
-    await _loadCreditRequirements(forceRefresh: true);
+    await _loadCreditRequirements(
+        origin: GradeRefreshOrigin.manual, forceRefresh: true);
     final success = _requirementError == null && _creditRequirements != null;
     if (mounted && showMessage) {
       _showSnackBar(success ? '学分要求已更新' : '学分要求获取失败');
@@ -574,7 +611,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   Future<void> _loadGrades({
-    bool retrySession = false,
+    required GradeRefreshOrigin origin,
     bool forceRefresh = false,
   }) async {
     if (_eduProvider == null) return;
@@ -635,7 +672,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       });
     }
 
-    if (!await _ensureReadReady(retry: retrySession)) {
+    if (!await _ensureReadReady(
+        allowInteractiveLogin: allowsInteractiveAcademicLogin(origin))) {
       if (mounted && _requestGeneration == gen) {
         _lastFetchFailureTime = DateTime.now();
         setState(() {
@@ -677,7 +715,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _prefetchGradeDetails(newGrades);
         if (_eduProvider?.academicCapabilities.supportsAcademicSituation ??
             true) {
-          unawaited(_loadAcademicSituation(forceRefresh: true));
+          unawaited(_loadAcademicSituation(
+              origin: GradeRefreshOrigin.automatic, forceRefresh: true));
         }
         return;
       }
@@ -729,7 +768,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       // 联动刷新官方 GPA（后台静默进行，不阻塞成绩列表）
       if (_eduProvider?.academicCapabilities.supportsAcademicSituation ??
           true) {
-        unawaited(_loadAcademicSituation(forceRefresh: true));
+        unawaited(_loadAcademicSituation(
+          origin: GradeRefreshOrigin.automatic, forceRefresh: true));
       }
     } else {
       _lastFetchFailureTime = DateTime.now();
@@ -756,9 +796,10 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   Future<List<EduGrade>?> _refreshGrades({
-    bool silent = false,
-    bool forceRefresh = true,
+    required GradeRefreshOrigin origin,
   }) async {
+    // 「是否静默」由来源唯一决定，不再由调用方各传一个 bool 互相漂移。
+    final silent = gradeOriginIsSilent(origin);
     if (_isInitialLoading || _isRefreshing) return null;
     if (_eduProvider == null) return null;
 
@@ -770,7 +811,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     setState(() => _isRefreshing = true);
 
     final gen = ++_requestGeneration;
-    if (!await _ensureReadReady(retry: true)) {
+    if (!await _ensureReadReady(
+        allowInteractiveLogin: allowsInteractiveAcademicLogin(origin))) {
       if (mounted && _requestGeneration == gen) {
         _lastFetchFailureTime = DateTime.now();
         setState(() {
@@ -832,7 +874,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         }
         if (_eduProvider?.academicCapabilities.supportsAcademicSituation ??
             true) {
-          unawaited(_loadAcademicSituation(forceRefresh: true));
+          unawaited(_loadAcademicSituation(
+              origin: GradeRefreshOrigin.automatic, forceRefresh: true));
         }
         return newGrades;
       }
@@ -895,7 +938,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       // 联动刷新官方 GPA（后台静默进行，不阻塞成绩列表）
       if (_eduProvider?.academicCapabilities.supportsAcademicSituation ??
           true) {
-        unawaited(_loadAcademicSituation(forceRefresh: true));
+        unawaited(_loadAcademicSituation(
+          origin: GradeRefreshOrigin.automatic, forceRefresh: true));
       }
 
       return newGrades;
@@ -912,13 +956,10 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     return null;
   }
 
-  Future<List<EduGrade>?> _refreshCurrentView({bool silent = false}) {
-    return _refreshGrades(silent: silent);
-  }
-
   Future<bool> _refreshAcademicSituation({bool showMessage = true}) async {
     if (_isAcademicLoading) return false;
-    await _loadAcademicSituation(forceRefresh: true);
+    await _loadAcademicSituation(
+        origin: GradeRefreshOrigin.manual, forceRefresh: true);
     final success = _academicError == null && _academicSituation != null;
     if (mounted && showMessage) {
       _showSnackBar(success ? '学业情况已更新' : '刷新失败，请稍后重试');
@@ -977,7 +1018,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     // 先让抽屉关闭，再允许恢复流程弹出教务登录框。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && generation == _requestGeneration) {
-        unawaited(_loadGrades(retrySession: true));
+        unawaited(_loadGrades(origin: GradeRefreshOrigin.manual));
       }
     });
     return true;
@@ -1045,7 +1086,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         isEduBound: _eduProvider?.isBound ?? false,
         enrollmentYear: _eduProvider?.enrollmentYear ?? 2000,
         onSemesterChanged: _switchSemester,
-        onRefreshGrades: _refreshCurrentView,
+        onRefreshGrades:
+            () => _refreshGrades(origin: GradeRefreshOrigin.manual),
         academicSituation: _academicSituation,
         academicUnavailableMessage: _eduProvider?.isUsingLocalAcademicSession ==
                     true &&
@@ -1082,13 +1124,18 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           selected: _section,
           onChanged: _switchSection,
         ),
+        if (_showsSessionNotice)
+          GradeSessionNotice(
+            message: _sessionMessage,
+            onAction: () => _refreshGrades(origin: GradeRefreshOrigin.manual),
+          ),
         Expanded(
           child: IndexedStack(
             index: _section.index,
             children: [
               RefreshIndicator(
                 onRefresh: () =>
-                    _refreshGrades(silent: false, forceRefresh: true),
+                    _refreshGrades(origin: GradeRefreshOrigin.manual),
                 child: CustomScrollView(
                   key: const ValueKey('grade_term_scroll_view'),
                   controller: _termScrollController,
@@ -1140,12 +1187,14 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     if (_academicSituation == null &&
         _academicError == null &&
         !_isAcademicLoading) {
-      unawaited(_loadAcademicSituation());
+      // 切到总览只是浏览动作：会话失效时保留空态提示，不得为此弹登录框。
+      unawaited(_loadAcademicSituation(origin: GradeRefreshOrigin.automatic));
     }
     if (_creditRequirements == null &&
         _requirementError == null &&
         !_isRequirementLoading) {
-      unawaited(_loadCreditRequirements());
+      unawaited(
+          _loadCreditRequirements(origin: GradeRefreshOrigin.automatic));
     }
   }
 
@@ -1200,7 +1249,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
               ? '当前教务身份暂未开放官方 GPA'
               : (_academicError != null ? '暂未获取到官方学业概览' : null),
           updatedAt: _academicUpdatedAt,
-          onRetry: () => _loadAcademicSituation(forceRefresh: true),
+          onRetry: () => _loadAcademicSituation(
+              origin: GradeRefreshOrigin.manual, forceRefresh: true),
         ),
       ),
 
@@ -1213,7 +1263,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
               _isRequirementLoading && _creditRequirements != null,
           errorMessage: _requirementError,
           hasCache: _creditRequirements != null,
-          onRetry: () => _loadCreditRequirements(forceRefresh: true),
+          onRetry: () => _loadCreditRequirements(
+              origin: GradeRefreshOrigin.manual, forceRefresh: true),
         ),
       ),
 
@@ -1253,7 +1304,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           child: GradeEmptyState(
             state: GradePageState.error,
             errorMessage: _errorMessage,
-            onRetry: () => _loadGrades(retrySession: true),
+            onRetry: () => _loadGrades(origin: GradeRefreshOrigin.manual),
           ),
         ),
       if (_pageState == GradePageState.empty && _grades.isEmpty)

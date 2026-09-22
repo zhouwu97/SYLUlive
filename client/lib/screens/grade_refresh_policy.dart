@@ -6,7 +6,7 @@
 ///
 /// 三项权限分别是：
 /// 1. 是否突破缓存新鲜期 —— 由 [decideGradeLoad] 决定发不发网络请求；
-/// 2. 是否允许打断用户重新输入凭据 —— 仍由页面既有的会话恢复流程控制，不在这里；
+/// 2. 是否允许打断用户重新输入凭据 —— 由 [allowsInteractiveAcademicLogin] 决定；
 /// 3. 是否允许减少后的结果覆盖可信基线 —— 由 [allowReducedGradeOverwrite] 与
 ///    [GradeReductionConfirmation] 共同决定。
 library;
@@ -22,8 +22,29 @@ enum GradeRefreshOrigin {
   /// 前台恢复。
   resume,
 
-  /// 用户明确下拉刷新 / 点重试。
+  /// 用户明确下拉刷新 / 点重试 / 选学期。
   manual,
+
+  /// 会话刚恢复可信后的补一次读取：用户已经在登录流程里，不需要再打断。
+  sessionRecovered,
+}
+
+/// 计划 8.2 的第二项权限：**谁可以打断用户重新输入教务凭据**。
+///
+/// 它必须与「是否突破新鲜期」「是否允许减少覆盖」互相独立，也不能从
+/// `silent` / `forceRefresh` 反推——前台恢复过去就是这样顺带打开了登录框。
+/// 只有用户明确动作（[GradeRefreshOrigin.manual]）和首次进入
+/// （[GradeRefreshOrigin.initial]，此时没有可展示的旧结果）允许交互登录；
+/// 自动与前台恢复只做无感恢复，需要人工输入时保留缓存并给出非阻塞状态。
+bool allowsInteractiveAcademicLogin(GradeRefreshOrigin origin) {
+  return origin == GradeRefreshOrigin.manual ||
+      origin == GradeRefreshOrigin.initial;
+}
+
+/// 该来源是否属于「不打断用户」的静默刷新（不弹提示、不消费减少确认）。
+bool gradeOriginIsSilent(GradeRefreshOrigin origin) {
+  return origin == GradeRefreshOrigin.automatic ||
+      origin == GradeRefreshOrigin.resume;
 }
 
 /// 单轮成绩加载的决策。

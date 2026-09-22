@@ -62,10 +62,14 @@ final class AcademicLoginDialog extends StatefulWidget {
 ///
 /// 先尝试 Artifact 或已保存凭据的无感恢复；只有确实需要用户输入时
 /// 才打开登录框，避免已绑定身份在读取数据时被误导成“重新绑定”。
+///
+/// [allowInteractiveLogin] 是调用方持有的独立权限：自动刷新与前台恢复传
+/// false，只做无感恢复，需要人工输入时直接失败并让页面保留旧结果。
 Future<bool> ensureAcademicSessionForRead(
   BuildContext context, {
   required AcademicSessionController controller,
   AcademicLoginCoordinator? coordinator,
+  bool allowInteractiveLogin = true,
 }) async {
   if (!await controller.remoteAccessAllowed()) return false;
   if (controller.isAuthenticated) return true;
@@ -83,6 +87,7 @@ Future<bool> ensureAcademicSessionForRead(
   }
   if (controller.isAuthenticated) return true;
   if (!context.mounted ||
+      !allowInteractiveLogin ||
       outcome.kind == AcademicLoginOutcomeKind.contextChanged ||
       outcome.kind == AcademicLoginOutcomeKind.networkFailure ||
       outcome.kind == AcademicLoginOutcomeKind.failure) {

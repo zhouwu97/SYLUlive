@@ -974,6 +974,179 @@ void main() {
     expect(find.textContaining('计算公式：Σ(单科绩点 × 学分) ÷ Σ学分'), findsOneWidget);
     expect(find.textContaining('学校教务系统为准'), findsOneWidget);
   });
+  group('A07 静默刷新不得打断用户（计划 8.2 第二项权限）', () {
+    testWidgets('GRADE-01 缓存存在且教务会话失效：resume 不弹登录框、不清空旧成绩',
+        (tester) async {
+      final fixture = await _pumpAuthenticatedGradeScreen(
+        tester,
+        // 冷却期设为负值等价于「冷却早已结束」，让 resume 分支真正走到读取门控，
+        // 而不是因为时间窗未到而空跑通过。
+        screen: const EduGradeScreen(
+          resumeRefreshCooldown: Duration(microseconds: -1),
+        ),
+      );
+      await fixture.expireSession();
+      final fetchesBeforeResume = fixture.edu.fetchGradesCallCount;
+
+      await fixture.resumeToForeground();
+
+      // 会话已失效、需要人工输入凭据：静默来源不能弹框打断回来查看的用户。
+      expect(find.byType(AcademicLoginDialog), findsNothing);
+      // 一次失败的静默刷新不能把可信结果清空。
+      expect(find.text('离散数学'), findsOneWidget);
+      expect(find.text('大学物理'), findsOneWidget);
+      // 门控在发请求之前：没有登录态就不该打教务接口。
+      expect(fixture.edu.fetchGradesCallCount, fetchesBeforeResume);
+      // 替代弹框的是页面内的非阻塞提示。
+      expect(find.byKey(const ValueKey('grade_session_notice')), findsOneWidget);
+      expect(find.text('重新登录'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await fixture.dispose();
+    });
+
+    testWidgets('GRADE-02 手动刷新允许一次交互登录，取消后自动读取不再弹出',
+        (tester) async {
+      final fixture = await _pumpAuthenticatedGradeScreen(
+        tester,
+        screen: const EduGradeScreen(),
+      );
+      await fixture.expireSession();
+
+      // 用户点非阻塞提示里的「重新登录」是明确动作，这时才允许弹框。
+      await tester.tap(find.text('重新登录'));
+      await _pumpFrames(tester);
+      expect(find.byType(AcademicLoginDialog), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await _pumpFrames(tester);
+      expect(find.byType(AcademicLoginDialog), findsNothing);
+
+      // 取消之后切到学业总览属于自动读取：不能立刻把用户没同意的登录框再弹一次。
+      final fetchesBeforeOverview = fixture.edu.fetchGradesCallCount;
+      await tester.tap(find.text('学业总览'));
+      await _pumpFrames(tester);
+      expect(find.byType(AcademicLoginDialog), findsNothing);
+      expect(fixture.edu.fetchGradesCallCount, fetchesBeforeOverview);
+      // 取消之后页面仍停在「有旧结果 + 非阻塞提示」的状态。
+      expect(find.byKey(const ValueKey('grade_session_notice')), findsOneWidget);
+      await fixture.dispose();
+    });
+
+    testWidgets('切到学业总览触发的自动加载同样不弹登录框', (tester) async {
+      final fixture = await _pumpAuthenticatedGradeScreen(
+        tester,
+        screen: const EduGradeScreen(),
+      );
+      await fixture.expireSession();
+      final fetchesBefore = fixture.edu.fetchGradesCallCount;
+
+      await tester.tap(find.text('学业总览'));
+      await _pumpFrames(tester);
+
+      expect(find.byType(AcademicLoginDialog), findsNothing);
+      expect(fixture.edu.fetchGradesCallCount, fetchesBefore);
+      expect(find.byKey(const ValueKey('grade_session_notice')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await fixture.dispose();
+    });
+
+    testWidgets('冷却期内的前台恢复不刷新也不弹框', (tester) async {
+      final fixture = await _pumpAuthenticatedGradeScreen(
+        tester,
+        screen: const EduGradeScreen(),
+      );
+      await fixture.expireSession();
+      final fetchesBefore = fixture.edu.fetchGradesCallCount;
+
+      await fixture.resumeToForeground();
+
+      // 默认 30 分钟冷却未过：连请求都不发，更不会弹框。
+      expect(fixture.edu.fetchGradesCallCount, fetchesBefore);
+      expect(find.byType(AcademicLoginDialog), findsNothing);
+      expect(find.text('离散数学'), findsOneWidget);
+      await fixture.dispose();
+    });
+  });
+}
+
+Future<void> _pumpFrames(WidgetTester tester, {int frames = 12}) async {
+  for (var i = 0; i < frames; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
+/// 「已登录、成绩已展示」的成绩页夹具：用于测试教务会话失效后各来源的读取门控。
+class _ReadGateFixture {
+  _ReadGateFixture({
+    required this.tester,
+    required this.edu,
+    required this.session,
+    required this.repository,
+    required this.auth,
+  });
+
+  final WidgetTester tester;
+  final _FakeEduProvider edu;
+  final AcademicSessionController session;
+  final _SchoolRepository repository;
+  final _FakeAuthProvider auth;
+
+  /// 只让学校 Session 失效，App 账号与本机连接偏好保持不变——这正是页面上
+  /// 仍有可信成绩可看、却又需要人工重登的情形。随后用「同一账号」触发一次
+  /// 普通重建，让页面重新读取会话状态，而不是从测试里直接操作页面私有状态。
+  Future<void> expireSession() async {
+    repository.state = school.SessionState.unauthenticated;
+    auth.switchUser(_user(1));
+    await _pumpFrames(tester, frames: 3);
+    expect(find.byKey(const ValueKey('grade_session_notice')), findsOneWidget);
+  }
+
+  Future<void> resumeToForeground() async {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _pumpFrames(tester);
+  }
+
+  Future<void> dispose() async {
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+  }
+}
+
+Future<_ReadGateFixture> _pumpAuthenticatedGradeScreen(
+  WidgetTester tester, {
+  required EduGradeScreen screen,
+}) async {
+  AppPreferencesStore.setMockInitialValues({});
+  final repository = _SchoolRepository();
+  final session = AcademicSessionController(repository: repository);
+  await session.syncAppUser('1');
+  // syncAppUser 会重置学校会话，登录态必须在它之后建立。
+  repository.state = school.SessionState.authenticated;
+  final coordinator = AcademicLoginCoordinator(
+      controller: session,
+      credentialStore: _EmptySchoolCredentials(),
+      preferencesLoader: () async => MemoryPreferencesStore());
+  final edu = _FakeEduProvider();
+  final providers = await _pumpGradeScreen(
+    tester,
+    edu: edu,
+    session: session,
+    coordinator: coordinator,
+    settle: false,
+    screen: screen,
+  );
+  await _pumpFrames(tester);
+  expect(edu.fetchGradesCallCount, greaterThanOrEqualTo(1));
+  expect(find.text('离散数学'), findsOneWidget);
+  expect(find.byType(AcademicLoginDialog), findsNothing);
+  return _ReadGateFixture(
+    tester: tester,
+    edu: edu,
+    session: session,
+    repository: repository,
+    auth: providers.auth,
+  );
 }
 
 class _TestProviders {

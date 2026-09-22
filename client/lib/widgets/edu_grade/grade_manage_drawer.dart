@@ -13,7 +13,7 @@ class GradeManageDrawer extends StatefulWidget {
   final bool isEduBound;
   final int enrollmentYear;
   final Future<bool> Function(String year, int semester) onSemesterChanged;
-  final Future<List<EduGrade>?> Function({bool silent})? onRefreshGrades;
+  final Future<List<EduGrade>?> Function()? onRefreshGrades;
   final Future<bool> Function()? onRefreshAcademic;
   final EduAcademicSituation? academicSituation;
   final String? academicUnavailableMessage;

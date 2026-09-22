@@ -757,7 +757,7 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		if errors.Is(err, services.ErrContentRateLimited) || errors.Is(err, services.ErrContentDuplicate) {
 			if h.security != nil {
 				uid := userID.(uint)
-				_ = h.security.Record(services.SecurityEventInput{
+				_ = h.security.RecordContext(securityAuditContext(c), services.SecurityEventInput{
 					EventType: "content_reply_flood", Severity: models.SecuritySeverityMedium, Route: "/api/posts/:id/replies", Method: c.Request.Method,
 					ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &uid, TargetType: "post", TargetValue: strconv.FormatUint(uint64(post.ID), 10), Blocked: true, Action: "rate_limited",
 					Metadata: map[string]interface{}{"window": "10m/24h", "route_group": "content"},

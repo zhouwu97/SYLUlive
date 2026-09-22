@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -56,6 +58,10 @@ type SecurityEventService struct {
 	// 单条原子 UPSERT 本身已由数据库保证正确性，因此该 mutex 已移除。
 	attributionValidFrom time.Time
 	blockDegraded        atomic.Bool
+	// writeFailureMu 保护降级日志的限频窗口。日志只在内存里判间隔，不查库——
+	// 数据库正是失败原因，任何「先问一句数据库」的告警设计都会在故障时自我放大。
+	writeFailureMu      sync.Mutex
+	lastWriteFailureLog time.Time
 	// eventWriteHealth 记录事件 UPSERT 的真实成败。业务侧统一 `_ = Record(...)`
 	// 吞掉错误，因此这是安全中心唯一能知道「采集其实一直在失败」的地方。
 	eventWriteHealth *SecurityHealthLayer
@@ -145,6 +151,13 @@ func MaskSecurityFingerprint(value string) string {
 // 这些是附加安全层，不能无界地拖住被封禁请求或安全中心的后台操作。
 const securityAuditTimeout = 2 * time.Second
 
+// SecurityOverviewBudget 是安全中心总览一次请求的总等待上限。
+//
+// 总览要串行跑十几条聚合统计，套用写入那条 2s 预算会把「一次慢查询」误伤成
+// 「整页必然失败」；但也不能像之前那样完全不设限——不携带 context 时，
+// 管理员刷新一页慢查询就会一直占着连接。这里给的是整次请求共享的一份预算。
+const SecurityOverviewBudget = 5 * time.Second
+
 // securityEventsTable 是 SecurityEvent 的默认表名（模型未自定义 TableName，
 // 连接也未配置 NamingStrategy/TablePrefix）。
 //
@@ -203,10 +216,11 @@ func securityEventFillIfEmpty(column string) clause.Expr {
 		" ELSE " + securityEventsTable + "." + column + " END")
 }
 
-// Record 写入一条安全观察事件。
+// Record 写入一条安全观察事件，使用服务内部的默认预算。
 //
-// 该方法不接收 context，供不掌握请求 context 的后台/异步调用方使用。
-// HTTP 请求链路请使用 RecordContext，以便客户端中断时随之取消。
+// 该方法不接收 context，供确实不掌握调用方 context 的后台/异步路径使用。
+// HTTP 链路必须使用 RecordContext：等待上限由本服务统一派生，是否随请求取消则由
+// 调用方决定（安全审计侧刻意选择「不随客户端中断取消」，见 handlers.securityAuditContext）。
 func (s *SecurityEventService) Record(input SecurityEventInput) error {
 	return s.RecordContext(context.Background(), input)
 }
@@ -222,15 +236,16 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 	if s == nil || s.db == nil {
 		return nil
 	}
-	// 不丢失 HTTP 请求取消，同时给出有限等待预算。
+	// 内部预算是**上限**而不是**默认值**：无论父 context 有没有 deadline、给了多长的
+	// deadline，都在这里派生一个不晚于预算的截止。只在「父没有 deadline」时补超时的写法
+	// 会让带 30s deadline 的调用链原样保留 30s，采集反而成为最慢的一环。
+	// WithTimeout 取父子更早者，因此父 deadline 更短时依然按父结束，不会被延长。
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, securityAuditTimeout)
-		defer cancel()
-	}
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, securityAuditTimeout)
+	defer cancel()
 	if strings.TrimSpace(input.EventType) == "" {
 		return errors.New("安全事件类型不能为空")
 	}
@@ -315,10 +330,37 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 	}).Create(&event).Error
 	if err != nil {
 		s.eventWriteHealth.recordFailure()
+		s.noteEventWriteFailure(err)
 		return err
 	}
 	s.eventWriteHealth.recordSuccess()
 	return nil
+}
+
+// securityEventWriteFailureLogInterval 是同一条采集链路降级日志的最小间隔。
+// 事件写入挂在每个被封禁/失败的请求上，没有间隔限制时一次数据库故障会把日志刷爆，
+// 真正的告警反而淹没在里面。
+const securityEventWriteFailureLogInterval = time.Minute
+
+// noteEventWriteFailure 把「采集正在失败」这条事实推到标准日志，限频且去重。
+//
+// 这里刻意只走内存判断 + log.Printf：失败已经证明数据库这一侧不可靠，
+// 再用同一个写入器记录一次「写入失败」事件（更糟的是它也可能失败并再触发记录）
+// 会把一次故障放大成写入风暴。运行态计数由 eventWriteHealth 承担，安全中心与
+// /health 读的是同一份。
+func (s *SecurityEventService) noteEventWriteFailure(err error) {
+	if s == nil {
+		return
+	}
+	now := s.now().UTC()
+	s.writeFailureMu.Lock()
+	if !s.lastWriteFailureLog.IsZero() && now.Sub(s.lastWriteFailureLog) < securityEventWriteFailureLogInterval {
+		s.writeFailureMu.Unlock()
+		return
+	}
+	s.lastWriteFailureLog = now
+	s.writeFailureMu.Unlock()
+	log.Printf("ERROR security event write failed, 采集已降级（每 %s 最多一条）: %v", securityEventWriteFailureLogInterval, err)
 }
 
 // IsBlocked 在默认超时预算内判断来源是否处于临时封禁。
@@ -375,12 +417,11 @@ func (s *SecurityEventService) CountDistinctTargets(eventType, clientIP string, 
 	return s.CountDistinctTargetsForEvents([]string{eventType}, clientIP, since)
 }
 
-// CountDistinctTargetsForEvents 统计同一来源在窗口内针对多少个**不同目标**留下过指定类型的事件。
+// CountDistinctTargetsForEventsContext 在给定 context 下做聚合计数。
 //
-// 需要跨类型查询的原因：密码喷洒判据是「一个来源扫了很多不同账号」，而账号维度的
-// 单次密码输错现在是 login_failed、达到锁定阈值才是 login_bruteforce。只数其中一种
-// 会让喷洒检测漏判——这也是把普通失败降级为 login_failed 之后必须同步修的地方。
-func (s *SecurityEventService) CountDistinctTargetsForEvents(eventTypes []string, clientIP string, since time.Time) (int64, error) {
+// 喷洒检测挂在每次登录失败之后，属于「辅助安全判断」：它必须带着请求的取消信号，
+// 并且和事件写入共用同一份内部预算，否则数据库变慢时登录接口会陪着一起等满大超时。
+func (s *SecurityEventService) CountDistinctTargetsForEventsContext(ctx context.Context, eventTypes []string, clientIP string, since time.Time) (int64, error) {
 	if s == nil || s.db == nil {
 		return 0, nil
 	}
@@ -393,13 +434,29 @@ func (s *SecurityEventService) CountDistinctTargetsForEvents(eventTypes []string
 	if len(types) == 0 {
 		return 0, nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, securityAuditTimeout)
+	defer cancel()
 	var count int64
-	query := s.db.Model(&models.SecurityEvent{}).
+	query := s.db.WithContext(ctx).Model(&models.SecurityEvent{}).
 		Where("event_type IN ? AND last_seen_at >= ? AND target_hash <> ''", types, since)
 	if strings.TrimSpace(clientIP) != "" {
 		query = query.Where("source_ip_hash = ?", s.Hash(clientIP))
 	}
 	return count, query.Distinct("target_hash").Count(&count).Error
+}
+
+// CountDistinctTargetsForEvents 统计同一来源在窗口内针对多少个**不同目标**留下过指定类型的事件。
+//
+// 不掌握调用方 context 时使用；HTTP 链路请走 CountDistinctTargetsForEventsContext。
+//
+// 需要跨类型查询的原因：密码喷洒判据是「一个来源扫了很多不同账号」，而账号维度的
+// 单次密码输错现在是 login_failed、达到锁定阈值才是 login_bruteforce。只数其中一种
+// 会让喷洒检测漏判——这也是把普通失败降级为 login_failed 之后必须同步修的地方。
+func (s *SecurityEventService) CountDistinctTargetsForEvents(eventTypes []string, clientIP string, since time.Time) (int64, error) {
+	return s.CountDistinctTargetsForEventsContext(context.Background(), eventTypes, clientIP, since)
 }
 
 func normalizeSecuritySeverity(value string) string {

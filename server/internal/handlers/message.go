@@ -706,7 +706,7 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	if !h.rateLimiter.allow(currentUserID, targetID, time.Now()) {
 		if h.security != nil {
 			uid := currentUserID
-			_ = h.security.Record(services.SecurityEventInput{
+			_ = h.security.RecordContext(securityAuditContext(c), services.SecurityEventInput{
 				EventType: "private_message_flood", Severity: models.SecuritySeverityMedium, Route: "/api/messages", Method: c.Request.Method,
 				ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &uid,
 				TargetType: "user", TargetValue: fmt.Sprintf("%d", targetID), Blocked: true, Action: "rate_limited",

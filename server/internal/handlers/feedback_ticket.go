@@ -47,7 +47,7 @@ func (h *FeedbackTicketHandler) recordFeedbackRateLimit(c *gin.Context, userID u
 	if h.security == nil {
 		return
 	}
-	_ = h.security.Record(services.SecurityEventInput{
+	_ = h.security.RecordContext(securityAuditContext(c), services.SecurityEventInput{
 		EventType: "feedback_ticket_flood", Severity: models.SecuritySeverityLow, Route: route, Method: c.Request.Method,
 		ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &userID, Blocked: true, Action: "rate_limited",
 		Metadata: map[string]interface{}{"window": "1h", "route_group": "feedback"},

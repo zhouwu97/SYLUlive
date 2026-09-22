@@ -1687,7 +1687,7 @@ func (h *AuthHandler) recordLoginSecurityEvent(c *gin.Context, account string, u
 	if h.security == nil {
 		return
 	}
-	_ = h.security.Record(services.SecurityEventInput{
+	_ = h.security.RecordContext(securityAuditContext(c), services.SecurityEventInput{
 		EventType: outcome.EventType, Severity: outcome.Severity,
 		Route: "/api/login", Method: http.MethodPost, ClientIP: c.ClientIP(),
 		UserAgent: c.GetHeader("User-Agent"), InstallationID: c.GetHeader("X-Installation-ID"),
@@ -1698,10 +1698,10 @@ func (h *AuthHandler) recordLoginSecurityEvent(c *gin.Context, account string, u
 	// 同一来源在 10 分钟内触及 10 个以上不同账号即升级为密码喷洒。
 	// 必须同时统计 login_failed 与 login_bruteforce：只数后者会漏掉「还没触发锁定、
 	// 但已经在批量试账号」的扫描——这正是喷洒检测最容易失真的地方。
-	count, err := h.security.CountDistinctTargetsForEvents(
+	count, err := h.security.CountDistinctTargetsForEventsContext(c.Request.Context(),
 		[]string{"login_failed", "login_bruteforce"}, c.ClientIP(), time.Now().Add(-10*time.Minute))
 	if err == nil && count >= 10 {
-		_ = h.security.Record(services.SecurityEventInput{
+		_ = h.security.RecordContext(securityAuditContext(c), services.SecurityEventInput{
 			EventType: "login_password_spray", Severity: models.SecuritySeverityHigh,
 			Route: "/api/login", Method: http.MethodPost, ClientIP: c.ClientIP(),
 			UserAgent: c.GetHeader("User-Agent"), Blocked: outcome.Blocked, Action: "throttled",

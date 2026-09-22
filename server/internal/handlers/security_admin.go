@@ -195,14 +195,18 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 			return
 		}
 	}
-	base := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ?", since)
+	// 整次总览共享一份预算：读查询必须随请求取消，且慢库下不能一路排下去。
+	ctx, cancel := context.WithTimeout(c.Request.Context(), services.SecurityOverviewBudget)
+	defer cancel()
+	scoped := h.db.WithContext(ctx)
 	var total, activeHigh, blocked, affectedUsers, uniqueSources, emailAbuse, loginAbuse, critical, mailSent, resetSuccess int64
+	base := scoped.Model(&models.SecurityEvent{}).Where("last_seen_at >= ?", since)
 	var actionableHigh, actionablePending int64
 	if err := base.Count(&total).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
-	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND status = ? AND severity IN ?", since, models.SecurityEventStatusActive, []string{models.SecuritySeverityHigh, models.SecuritySeverityCritical}).Count(&activeHigh).Error; err != nil {
+	if err := scoped.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND status = ? AND severity IN ?", since, models.SecurityEventStatusActive, []string{models.SecuritySeverityHigh, models.SecuritySeverityCritical}).Count(&activeHigh).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
@@ -212,49 +216,49 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 	// security_blocked_request 也算进去，于是卡片上的数字远大于列表里真正要处理的事。
 	// 新字段把 actionable 一并纳入，客户端首页应当使用它；旧字段保留以兼容未升级客户端。
 	highSeverities := []string{models.SecuritySeverityHigh, models.SecuritySeverityCritical}
-	if err := actionableScope(h.db.Model(&models.SecurityEvent{}).
+	if err := actionableScope(scoped.Model(&models.SecurityEvent{}).
 		Where("last_seen_at >= ? AND status = ? AND severity IN ?", since, models.SecurityEventStatusActive, highSeverities)).
 		Count(&actionableHigh).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
-	if err := actionableScope(h.db.Model(&models.SecurityEvent{}).
+	if err := actionableScope(scoped.Model(&models.SecurityEvent{}).
 		Where("last_seen_at >= ? AND status = ?", since, models.SecurityEventStatusActive)).
 		Count(&actionablePending).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
-	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ?", since).Select("COALESCE(SUM(blocked_count), 0)").Scan(&blocked).Error; err != nil {
+	if err := scoped.Model(&models.SecurityEvent{}).Where("last_seen_at >= ?", since).Select("COALESCE(SUM(blocked_count), 0)").Scan(&blocked).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
-	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND target_hash <> ''", since).Distinct("target_hash").Count(&affectedUsers).Error; err != nil {
+	if err := scoped.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND target_hash <> ''", since).Distinct("target_hash").Count(&affectedUsers).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
-	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND source_ip_hash <> ''", since).Distinct("source_ip_hash").Count(&uniqueSources).Error; err != nil {
+	if err := scoped.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND source_ip_hash <> ''", since).Distinct("source_ip_hash").Count(&uniqueSources).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
-	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND event_type IN ?", since, []string{"email_target_flood", "password_reset_spray", "verification_spray", "verification_source_rate", "verification_code_bruteforce", "verification_mail_delivery_failed", "password_reset_activity", "verification_activity"}).Select("COALESCE(SUM(attempt_count), 0)").Scan(&emailAbuse).Error; err != nil {
+	if err := scoped.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND event_type IN ?", since, []string{"email_target_flood", "password_reset_spray", "verification_spray", "verification_source_rate", "verification_code_bruteforce", "verification_mail_delivery_failed", "password_reset_activity", "verification_activity"}).Select("COALESCE(SUM(attempt_count), 0)").Scan(&emailAbuse).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
 	// 登录侧失败总量：普通输错（login_failed）、已锁定的暴力尝试、多账号扫描都要计入，
 	// 否则把普通失败降级为 login_failed 之后这个数字会凭空变小。
-	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND event_type IN ?", since, []string{"login_failed", "login_bruteforce", "login_password_spray"}).Select("COALESCE(SUM(attempt_count), 0)").Scan(&loginAbuse).Error; err != nil {
+	if err := scoped.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND event_type IN ?", since, []string{"login_failed", "login_bruteforce", "login_password_spray"}).Select("COALESCE(SUM(attempt_count), 0)").Scan(&loginAbuse).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
-	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND severity = ?", since, models.SecuritySeverityCritical).Count(&critical).Error; err != nil {
+	if err := scoped.Model(&models.SecurityEvent{}).Where("last_seen_at >= ? AND severity = ?", since, models.SecuritySeverityCritical).Count(&critical).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
-	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ?", since).Select("COALESCE(SUM(mail_sent_count), 0)").Scan(&mailSent).Error; err != nil {
+	if err := scoped.Model(&models.SecurityEvent{}).Where("last_seen_at >= ?", since).Select("COALESCE(SUM(mail_sent_count), 0)").Scan(&mailSent).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
-	if err := h.db.Model(&models.SecurityEvent{}).Where("last_seen_at >= ?", since).Select("COALESCE(SUM(password_reset_success_count), 0)").Scan(&resetSuccess).Error; err != nil {
+	if err := scoped.Model(&models.SecurityEvent{}).Where("last_seen_at >= ?", since).Select("COALESCE(SUM(password_reset_success_count), 0)").Scan(&resetSuccess).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}

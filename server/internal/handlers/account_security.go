@@ -454,7 +454,7 @@ func (h *AuthHandler) ResetPasswordByEmail(c *gin.Context) {
 			eventType = "suspicious_password_reset_succeeded"
 			severity = models.SecuritySeverityCritical
 		}
-		_ = h.security.Record(services.SecurityEventInput{
+		_ = h.security.RecordContext(securityAuditContext(c), services.SecurityEventInput{
 			EventType: eventType, Severity: severity, Route: "/api/password/email/reset", Method: c.Request.Method,
 			SourceHash: challengeSourceHash, RequestID: middleware.RequestID(c), ActorUserID: &user.ID,
 			TargetType: "email", TargetValue: email, TargetMasked: maskEmail(email), PasswordResetSucceeded: true,

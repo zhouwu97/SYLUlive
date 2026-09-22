@@ -423,7 +423,7 @@ func (h *AuthHandler) recordRefreshTokenReuse(c *gin.Context, token models.Refre
 		return
 	}
 	userID := token.UserID
-	_ = h.security.Record(services.SecurityEventInput{
+	_ = h.security.RecordContext(securityAuditContext(c), services.SecurityEventInput{
 		EventType: "refresh_token_reused", Severity: models.SecuritySeverityCritical,
 		Route: "/api/refresh", Method: http.MethodPost, ClientIP: c.ClientIP(),
 		UserAgent: c.GetHeader("User-Agent"), InstallationID: c.GetHeader("X-Installation-ID"),

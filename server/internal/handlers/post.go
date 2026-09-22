@@ -1749,7 +1749,7 @@ func (h *PostHandler) Create(c *gin.Context) {
 		if errors.Is(err, services.ErrContentRateLimited) {
 			// 额度已满：保留兼容的 content_rate_limited，不触发登出/封号/积分处罚。
 			if h.security != nil {
-				_ = h.security.Record(services.SecurityEventInput{
+				_ = h.security.RecordContext(securityAuditContext(c), services.SecurityEventInput{
 					EventType: "content_post_flood", Severity: models.SecuritySeverityMedium, Route: "/api/posts", Method: c.Request.Method,
 					ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &user.ID, Blocked: true, Action: "rate_limited",
 					Metadata: map[string]interface{}{"window": "5m/24h", "route_group": "content"},

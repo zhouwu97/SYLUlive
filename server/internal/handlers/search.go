@@ -40,7 +40,7 @@ func (h *SearchHandler) Search(c *gin.Context) {
 	}
 	if _, authenticated := c.Get("user_id"); !authenticated && !h.allowAnonymousSearch(c.ClientIP(), time.Now()) {
 		if h.security != nil {
-			_ = h.security.Record(services.SecurityEventInput{
+			_ = h.security.RecordContext(securityAuditContext(c), services.SecurityEventInput{
 				EventType: "search_abuse", Severity: models.SecuritySeverityMedium,
 				Route: "/api/search", Method: http.MethodGet, ClientIP: c.ClientIP(),
 				TargetType: "route", TargetValue: "/api/search", TargetMasked: "/api/search",

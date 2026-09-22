@@ -213,6 +213,34 @@ var allowedMarketTags = map[string]struct{}{
 
 var errMarketImageRequired = errors.New("market_image_required")
 
+// 集市准入拒绝的哨兵错误。历史实现只有 market_graduated 一个出口，
+// 把"没有服务器可核验的学生身份"说成"毕业用户"，用户会据此去改学历或反复重绑。
+var (
+	errMarketStudentUnverified = errors.New("market_student_unverified")
+	errMarketAccountRestricted = errors.New("market_account_restricted")
+)
+
+// marketPublishDenialBody 把准入拒绝表达成用户当下能执行的事实。
+// 认证入口以「账号安全 - 教务身份与本机连接」为准；本机声明、教务账号配置
+// 都不构成学生认证，不能在这里暗示重绑就能解决。
+func marketPublishDenialBody(action string) (string, string) {
+	return "market_student_unverified",
+		action + "集市帖子需要完成学生认证；本机连接教务不构成学生认证。" +
+			"请到「账号安全 - 教务身份与本机连接」查看可用的认证方式。"
+}
+
+// mapMarketPublishDenial 把策略结论翻译成哨兵错误。
+func mapMarketPublishDenial(denial services.MarketPublishDenial) error {
+	switch denial {
+	case services.MarketPublishAllowed:
+		return nil
+	case services.MarketPublishAccountRestricted:
+		return errMarketAccountRestricted
+	default:
+		return errMarketStudentUnverified
+	}
+}
+
 // marketPostRequiresImage 判断集市帖子最终是否必须保留至少一张图片。
 // exposure 是独立的曝光流程，允许在没有证据图片时提交文字说明。
 func marketPostRequiresImage(boardID models.BoardID, postType string) bool {
@@ -1566,13 +1594,20 @@ func (h *PostHandler) Create(c *gin.Context) {
 		return
 	}
 	if models.BoardID(input.BoardID) == models.BoardMarket {
-		allowed, err := (services.MarketPublishPolicy{DB: h.db}).CanPublish(user.ID)
+		denial, err := (services.MarketPublishPolicy{DB: h.db}).Evaluate(user.ID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "集市资格查询失败"})
 			return
 		}
-		if !allowed {
-			c.JSON(http.StatusForbidden, gin.H{"error": "当前账号暂无集市发布资格"})
+		if denial == services.MarketPublishAccountRestricted {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code": "market_account_restricted", "error": "当前账号受限，暂时不能发布集市帖子",
+			})
+			return
+		}
+		if denial != services.MarketPublishAllowed {
+			code, message := marketPublishDenialBody("发布")
+			c.JSON(http.StatusForbidden, gin.H{"code": code, "error": message})
 			return
 		}
 	}
@@ -1988,12 +2023,12 @@ func (h *PostHandler) Update(c *gin.Context) {
 			return fmt.Errorf("user_not_found")
 		}
 		if post.BoardID == models.BoardMarket {
-			allowed, err := (services.MarketPublishPolicy{DB: tx}).CanPublish(user.ID)
+			denial, err := (services.MarketPublishPolicy{DB: tx}).Evaluate(user.ID)
 			if err != nil {
 				return err
 			}
-			if !allowed {
-				return fmt.Errorf("market_graduated")
+			if err := mapMarketPublishDenial(denial); err != nil {
+				return err
 			}
 		}
 
@@ -2223,8 +2258,13 @@ func (h *PostHandler) Update(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权限"})
 		case "user_not_found":
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在", "code": "authentication_required"})
-		case "market_graduated":
-			c.JSON(http.StatusForbidden, gin.H{"error": "毕业用户不能编辑集市帖子"})
+		case errMarketStudentUnverified.Error():
+			code, message := marketPublishDenialBody("编辑")
+			c.JSON(http.StatusForbidden, gin.H{"code": code, "error": message})
+		case errMarketAccountRestricted.Error():
+			c.JSON(http.StatusForbidden, gin.H{
+				"code": "market_account_restricted", "error": "当前账号受限，暂时不能编辑集市帖子",
+			})
 		case "invalid_post_type":
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的水帖分类"})
 		case "user_muted":

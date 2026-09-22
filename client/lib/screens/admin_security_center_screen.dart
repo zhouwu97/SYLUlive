@@ -42,6 +42,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
   String? _error;
   bool _loading = true;
   bool _actionBusy = false;
+  int _loadGeneration = 0;
 
   AdminSecurityService get _service =>
       AdminSecurityService(context.read<AuthProvider>().dio);
@@ -62,6 +63,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
 
   Future<void> _load() async {
     if (!mounted) return;
+    final requestGeneration = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
@@ -76,14 +78,14 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
           actionable: filters.$1,
         ),
       ]);
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _loadGeneration) return;
       setState(() {
         _overview = result[0] as SecurityOverview;
         _events = result[1] as List<SecurityEvent>;
         _loading = false;
       });
     } on DioException catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _loadGeneration) return;
       setState(() {
         _loading = false;
         _error = error.response?.data is Map
@@ -91,7 +93,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
             : '安全数据加载失败，请稍后重试';
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _loadGeneration) return;
       setState(() {
         _loading = false;
         _error = '安全数据加载失败，请稍后重试';

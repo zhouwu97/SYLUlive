@@ -64,6 +64,7 @@ class _AdminTeacherGovernanceScreenState
   bool _isLoadingCoursePreview = false;
   String? _coursePreviewError;
   bool _isExecutingCourseMerge = false;
+  int _coursePreviewGeneration = 0;
 
   // ==========================================
   // Tab 1: 教师合并 (全部教师与跨搜索多选合并)
@@ -733,9 +734,11 @@ class _AdminTeacherGovernanceScreenState
       return;
     }
 
+    final requestGeneration = ++_coursePreviewGeneration;
     setState(() {
       _isLoadingCoursePreview = true;
       _coursePreviewError = null;
+      _coursePreview = null;
     });
 
     try {
@@ -769,7 +772,7 @@ class _AdminTeacherGovernanceScreenState
         data: payload,
       );
 
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _coursePreviewGeneration) return;
       final data = res.data;
       if (data is Map) {
         setState(() {
@@ -786,7 +789,7 @@ class _AdminTeacherGovernanceScreenState
         });
       }
     } on DioException catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _coursePreviewGeneration) return;
       final err = e.response?.data is Map ? e.response?.data['error'] : null;
       setState(() {
         _isLoadingCoursePreview = false;
@@ -799,7 +802,7 @@ class _AdminTeacherGovernanceScreenState
         ),
       );
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _coursePreviewGeneration) return;
       setState(() {
         _isLoadingCoursePreview = false;
         _coursePreviewError = '预览异常: $e';
@@ -3583,6 +3586,8 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
   String? _previewError;
   GovernanceMergePreviewResult? _preview;
   bool _isSubmitting = false;
+  int _previewGeneration = 0;
+  Timer? _previewDebounce;
 
   @override
   void initState() {
@@ -3605,6 +3610,8 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
 
   @override
   void dispose() {
+    _previewDebounce?.cancel();
+    _previewGeneration++;
     _finalTeacherNameCtrl.dispose();
     _reasonCtrl.dispose();
     super.dispose();
@@ -3619,9 +3626,13 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
 
   Future<void> _fetchPreview() async {
     if (!mounted) return;
+    _previewDebounce?.cancel();
+    final previousPreview = _preview;
+    final requestGeneration = ++_previewGeneration;
     setState(() {
       _isLoadingPreview = true;
       _previewError = null;
+      _preview = null;
     });
 
     try {
@@ -3630,8 +3641,8 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
       if (_crossSubjectDecision != CrossSubjectDecision.unselected) {
         final mergeEntity =
             _crossSubjectDecision == CrossSubjectDecision.mergeSubject;
-        if (_preview != null && _preview!.courseMerges.isNotEmpty) {
-          courseMergesPayload = _preview!.courseMerges
+        if (previousPreview != null && previousPreview.courseMerges.isNotEmpty) {
+          courseMergesPayload = previousPreview.courseMerges
               .map((cm) => {
                     'loser_subject_id': cm.loserSubjectId,
                     'keeper_subject_id': cm.keeperSubjectId,
@@ -3672,7 +3683,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
         '/admin/teacher-governance/merge-preview',
         data: payload,
       );
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _previewGeneration) return;
       final data = res.data;
       if (data is Map) {
         setState(() {
@@ -3688,19 +3699,33 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
         });
       }
     } on DioException catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _previewGeneration) return;
       final err = e.response?.data is Map ? e.response?.data['error'] : null;
       setState(() {
         _isLoadingPreview = false;
         _previewError = err?.toString() ?? '预览失败: $e';
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _previewGeneration) return;
       setState(() {
         _isLoadingPreview = false;
         _previewError = '预览异常: $e';
       });
     }
+  }
+
+  /// 用户修改会影响快照签名的字段时，旧预览必须立刻失效。
+  /// 输入姓名采用短防抖，既避免每个按键都发请求，也不会让旧凭证继续保持可提交状态。
+  void _schedulePreviewRefresh() {
+    _previewDebounce?.cancel();
+    _previewGeneration++;
+    setState(() {
+      _preview = null;
+      _previewError = null;
+      _isLoadingPreview = false;
+    });
+    if (_finalTeacherNameCtrl.text.trim().isEmpty) return;
+    _previewDebounce = Timer(const Duration(milliseconds: 350), _fetchPreview);
   }
 
   Future<void> _submitMerge() async {
@@ -3931,7 +3956,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
                       prefixIcon: const Icon(Icons.person, size: 20),
                     ),
                     onChanged: (_) {
-                      setState(() {});
+                      _schedulePreviewRefresh();
                     },
                   ),
                   const SizedBox(height: 6),
@@ -3944,6 +3969,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
                           setState(() {
                             _finalTeacherNameCtrl.text = t.name;
                           });
+                          _fetchPreview();
                         },
                       );
                     }).toList(),

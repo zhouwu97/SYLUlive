@@ -12,6 +12,7 @@ import '../../models/publish_image_item.dart';
 import '../../models/water_section.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
+import '../../services/publish_session_scope.dart';
 import '../../providers/water_section_provider.dart';
 import '../../services/post_draft_service.dart';
 import '../../theme/app_colors.dart';
@@ -23,9 +24,7 @@ import 'widgets/publish_media_section.dart';
 import 'widgets/publish_section_selector.dart';
 import 'widgets/water_post_bottom_bar.dart';
 
-class _PublishSessionChanged implements Exception {
-  const _PublishSessionChanged();
-}
+
 
 /// 水帖发布/编辑页（boardId == 1）。
 ///
@@ -123,56 +122,48 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   Future<bool> _uploadLocalImages(
     PostProvider postProvider, {
     required AuthProvider auth,
-    required int accountId,
-    required int accountSessionEpoch,
+    required PublishSessionScope scope,
   }) {
     _lastUploadError = null;
     return uploadImagesConcurrently(
       _images,
       maxConcurrent: 3,
       upload: (item) async {
-        _ensurePublishSession(auth, accountId, accountSessionEpoch);
+        _ensurePublishSession(auth, scope);
         final result = await postProvider.uploadImage(
           item.localFile!,
+          session: scope,
           onProgress: (sent, total) {
-            if (total > 0 &&
-                _ownsPublishSession(auth, accountId, accountSessionEpoch)) {
+            if (total > 0 && _ownsPublishSession(auth, scope)) {
               item.progress = sent / total;
               if (mounted) setState(() {});
             }
           },
         );
-        _ensurePublishSession(auth, accountId, accountSessionEpoch);
+        _ensurePublishSession(auth, scope);
         if (!result.isSuccess) {
           _lastUploadError ??= result;
         }
         return result.fileId;
       },
       onStateChanged: () {
-        if (mounted &&
-            _ownsPublishSession(auth, accountId, accountSessionEpoch)) {
+        if (mounted && _ownsPublishSession(auth, scope)) {
           setState(() {});
         }
       },
     );
   }
 
-  bool _ownsPublishSession(
-    AuthProvider auth,
-    int accountId,
-    int accountSessionEpoch,
-  ) {
-    return auth.user?.id == accountId &&
-        auth.accountSessionEpoch == accountSessionEpoch;
+  bool _ownsPublishSession(AuthProvider auth, PublishSessionScope scope) {
+    return scope.owns(
+      userId: auth.user?.id,
+      sessionEpoch: auth.accountSessionEpoch,
+    );
   }
 
-  void _ensurePublishSession(
-    AuthProvider auth,
-    int accountId,
-    int accountSessionEpoch,
-  ) {
-    if (!_ownsPublishSession(auth, accountId, accountSessionEpoch)) {
-      throw const _PublishSessionChanged();
+  void _ensurePublishSession(AuthProvider auth, PublishSessionScope scope) {
+    if (!_ownsPublishSession(auth, scope)) {
+      throw const PublishSessionChanged();
     }
   }
 
@@ -407,7 +398,10 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       AppFeedback.error('请先登录后再发布', context: context);
       return;
     }
-    final accountSessionEpoch = auth.accountSessionEpoch;
+    final scope = PublishSessionScope(
+      accountId: accountId,
+      accountSessionEpoch: auth.accountSessionEpoch,
+    );
     final title = _titleController.text.trim();
     final content = _contentController.text.trim();
 
@@ -417,12 +411,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       final postProvider = context.read<PostProvider>();
 
       // C-3：并发上传本地图（失败项可重试，不提交）。
-      if (!await _uploadLocalImages(
-        postProvider,
-        auth: auth,
-        accountId: accountId,
-        accountSessionEpoch: accountSessionEpoch,
-      )) {
+      if (!await _uploadLocalImages(postProvider, auth: auth, scope: scope)) {
         if (mounted) {
           AppFeedback.error(
             _lastUploadError?.message ?? '图片上传失败，请点击图片重试',
@@ -431,7 +420,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         }
         return;
       }
-      _ensurePublishSession(auth, accountId, accountSessionEpoch);
+      _ensurePublishSession(auth, scope);
 
       // C-2：file_ids 严格等于 UI 图片顺序（existing + local 混合）。
       final fileIds = _orderedFileIds();
@@ -445,7 +434,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         return;
       }
 
-      _ensurePublishSession(auth, accountId, accountSessionEpoch);
+      _ensurePublishSession(auth, scope);
       final result = _isEditing
           ? await postProvider.updatePost(
               postId: widget.editingPost!.id,
@@ -458,6 +447,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               contact: '',
               fileIds: fileIds,
               sendWaterTagField: true,
+              session: scope,
             )
           : await postProvider.createPost(
               boardId: 1,
@@ -468,9 +458,10 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               price: null,
               contact: null,
               fileIds: fileIds.isNotEmpty ? fileIds : null,
+              session: scope,
             );
 
-      _ensurePublishSession(auth, accountId, accountSessionEpoch);
+      _ensurePublishSession(auth, scope);
       if (!mounted) return;
       if (result.success) {
         _draftDebounce?.cancel();
@@ -483,11 +474,11 @@ class _WaterPostComposerState extends State<WaterPostComposer>
             // 草稿写入失败不应阻断已成功的帖子发布；下面仍执行清理。
           }
         }
-        _ensurePublishSession(auth, accountId, accountSessionEpoch);
+        _ensurePublishSession(auth, scope);
         _draftPersistenceDisabled = true;
         await _draftService.clear();
 
-        _ensurePublishSession(auth, accountId, accountSessionEpoch);
+        _ensurePublishSession(auth, scope);
         final successMessage = _submitSuccessMessage(result.post);
         if (!mounted) return;
         Navigator.of(context).pop(true);
@@ -500,7 +491,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
           context: context,
         );
       }
-    } on _PublishSessionChanged {
+    } on PublishSessionChanged {
       if (mounted) {
         AppFeedback.error(
           '登录状态已变化，本次发布已取消，请重新确认',

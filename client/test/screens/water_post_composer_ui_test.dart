@@ -11,6 +11,7 @@ import 'package:shenliyuan/models/topic.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
+import 'package:shenliyuan/services/publish_session_scope.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/publish/water_post_composer.dart';
 import 'package:shenliyuan/services/post_draft_service.dart';
@@ -58,6 +59,7 @@ class FakePostProvider extends Fake
   String? lastTitle;
   List<TopicSelection>? lastTopics;
   Completer<CreatePostResult>? createPostCompleter;
+  PublishSessionScope? lastSession;
 
   @override
   Post? postFor(int postId) => null;
@@ -78,6 +80,7 @@ class FakePostProvider extends Fake
     List<String>? teamRoles,
     DateTime? teamDeadline,
     List<TopicSelection>? topics,
+    PublishSessionScope? session,
   }) async {
     createPostCalls++;
     lastContent = content;
@@ -107,6 +110,7 @@ class FakePostProvider extends Fake
     bool sendTeamFields = false,
     bool sendWaterTagField = false,
     List<TopicSelection>? topics,
+    PublishSessionScope? session,
   }) async {
     updatePostCalls++;
     lastContent = content;
@@ -117,8 +121,11 @@ class FakePostProvider extends Fake
 
   @override
   Future<UploadImageResult> uploadImage(XFile file,
-          {void Function(int sent, int total)? onProgress}) async =>
-      const UploadImageResult.success(1);
+      {void Function(int sent, int total)? onProgress,
+      PublishSessionScope? session}) async {
+    lastSession = session;
+    return const UploadImageResult.success(1);
+  }
 }
 
 Widget buildComposerTestApp(

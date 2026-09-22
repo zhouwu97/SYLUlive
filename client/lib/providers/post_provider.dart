@@ -12,6 +12,7 @@ import '../services/async_action_guard.dart';
 import '../services/post_cache_service.dart';
 import '../services/post_reply_cache.dart';
 import '../services/idempotency_key.dart';
+import '../services/publish_session_scope.dart';
 import '../utils/app_feedback.dart';
 import '../utils/public_image_compressor.dart';
 
@@ -1116,6 +1117,7 @@ class PostProvider extends ChangeNotifier {
     List<String>? teamRoles,
     DateTime? teamDeadline,
     List<TopicSelection>? topics,
+    PublishSessionScope? session,
   }) async {
     final actionKey =
         'post-create:$boardId:$content:$title:$postType:$waterTagId:$price:'
@@ -1152,7 +1154,7 @@ class PostProvider extends ChangeNotifier {
         () => _dio.post(
           '/posts',
           data: formData,
-          options: _writeOptions(idempotencyKey),
+          options: _writeOptions(idempotencyKey, session: session),
         ),
       );
       if (response.statusCode == 201) {
@@ -1195,6 +1197,7 @@ class PostProvider extends ChangeNotifier {
     bool sendTeamFields = false,
     bool sendWaterTagField = false,
     List<TopicSelection>? topics,
+    PublishSessionScope? session,
   }) async {
     final actionKey =
         'post-update:$postId:$boardId:$content:$title:$postType:$waterTagId:'
@@ -1231,7 +1234,7 @@ class PostProvider extends ChangeNotifier {
         () => _dio.put(
           '/posts/$postId',
           data: formData,
-          options: _writeOptions(idempotencyKey),
+          options: _writeOptions(idempotencyKey, session: session),
         ),
       );
       if (response.statusCode == 200) {
@@ -1291,6 +1294,7 @@ class PostProvider extends ChangeNotifier {
   Future<UploadImageResult> uploadImage(
     XFile file, {
     void Function(int sent, int total)? onProgress,
+    PublishSessionScope? session,
   }) async {
     final PreparedPublicImage prepared;
     try {
@@ -1324,6 +1328,11 @@ class PostProvider extends ChangeNotifier {
         '/upload',
         data: formData,
         onSendProgress: onProgress,
+        options: Options(
+          extra: <String, dynamic>{
+            if (session != null) ...session.requestExtra,
+          },
+        ),
       );
       final data = response.data;
       final fileId = data is Map ? data['file_id'] : null;
@@ -1429,10 +1438,19 @@ class PostProvider extends ChangeNotifier {
     return 'upload_${DateTime.now().millisecondsSinceEpoch}.jpg';
   }
 
-  Options _writeOptions(String idempotencyKey) {
-    return Options(headers: <String, dynamic>{
-      'Idempotency-Key': idempotencyKey,
-    });
+  /// 写请求选项。
+  ///
+  /// [session] 是点击提交时捕获的账号会话边界：带上它，认证拦截器会在发送前
+  /// 确认「当前仍是发起操作的那个账号」，避免异步等待期间切号后以新身份写入。
+  Options _writeOptions(String idempotencyKey, {PublishSessionScope? session}) {
+    return Options(
+      headers: <String, dynamic>{
+        'Idempotency-Key': idempotencyKey,
+      },
+      extra: <String, dynamic>{
+        if (session != null) ...session.requestExtra,
+      },
+    );
   }
 
   Future<DeletePostResult> deletePostDetailed(int postId) async {

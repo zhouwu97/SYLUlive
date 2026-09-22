@@ -7,8 +7,11 @@ import '../../config/market_contact_type.dart';
 import '../../models/post.dart';
 import '../../models/publish_image_item.dart';
 import '../../providers/auth_provider.dart';
+import '../../features/academic/application/academic_session_controller.dart';
 import '../../providers/post_provider.dart';
+import '../../services/publish_session_scope.dart';
 import '../../utils/app_feedback.dart';
+import 'market_publish_eligibility.dart';
 import 'exposure_publish_form.dart';
 import 'widgets/publish_bottom_bar.dart';
 import 'widgets/publish_image_grid.dart';
@@ -33,6 +36,11 @@ class MarketPublishForm extends StatefulWidget {
 }
 
 enum _PublishField { type, title, price, content, contact, image }
+
+/// 用户已确认取消本次发布：进行中的提交在下一个异步边界停下，不再发写请求。
+final class _PublishAbandoned implements Exception {
+  const _PublishAbandoned();
+}
 
 class _MarketPublishFormState extends State<MarketPublishForm>
     with SingleTickerProviderStateMixin, PublishImagePickerMixin {
@@ -69,7 +77,9 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   bool _skipDraftGuard = false;
 
   bool get _hasDraft {
-    if (_isLoading || _skipDraftGuard) return false;
+    // 发布进行中**不能**按"没有草稿"处理：旧实现在这里返回 false，
+    // 返回按钮于是无声离开页面，后台的旧流程还会继续提交。
+    if (_skipDraftGuard) return false;
 
     final hasText = _titleController.text.trim().isNotEmpty ||
         _contentController.text.trim().isNotEmpty ||
@@ -96,7 +106,37 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         _selectedMarketTags.join('|') != p.marketTags.join('|');
   }
 
+  /// 发布流程被打断的标志：用户确认取消后，进行中的提交在下一个异步边界停下。
+  bool _publishAbandoned = false;
+
   Future<void> _maybePop() async {
+    if (_isLoading) {
+      // 发布进行中，返回等于取消这次发布。必须让用户明确选择，
+      // 不能因为 [_hasDraft] 被判成 false 就无声离开、让旧流程继续提交。
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('取消本次发布？'),
+          content: const Text('发布正在进行中，返回会取消这次提交。已经上传的图片不会发布。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('继续发布'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('取消发布'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true && mounted) {
+        _publishAbandoned = true;
+        _skipDraftGuard = true;
+        Navigator.of(context).pop();
+      }
+      return;
+    }
     if (!_hasDraft) {
       Navigator.of(context).pop();
       return;
@@ -187,30 +227,74 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   /// 首个失败的结构化结果保存在 [_lastUploadError] 用于准确提示。
   UploadImageResult? _lastUploadError;
 
-  Future<bool> _uploadLocalImages(PostProvider postProvider) {
+  Future<bool> _uploadLocalImages(
+    PostProvider postProvider, {
+    required AuthProvider auth,
+    required PublishSessionScope scope,
+  }) {
     _lastUploadError = null;
     return uploadImagesConcurrently(
       _images,
       maxConcurrent: 3,
       upload: (item) async {
+        // 每个异步边界都要重新确认：图片压缩耗时，最容易发生"等待期间切号"。
+        _ensurePublishSession(auth, scope);
         final result = await postProvider.uploadImage(
           item.localFile!,
+          session: scope,
           onProgress: (sent, total) {
-            if (total > 0) {
+            if (total > 0 && _ownsPublishSession(auth, scope)) {
               item.progress = sent / total;
               if (mounted) setState(() {});
             }
           },
         );
+        _ensurePublishSession(auth, scope);
         if (!result.isSuccess) {
           _lastUploadError ??= result;
         }
         return result.fileId;
       },
       onStateChanged: () {
-        if (mounted) setState(() {});
+        if (mounted && _ownsPublishSession(auth, scope)) {
+          setState(() {});
+        }
       },
     );
+  }
+
+  /// 本机是否已连接教务——注意这**不等于**学生认证。
+  ///
+  /// 发布表单也可能在没有教务模块的宿主里打开，所以这里必须容错，
+  /// 不能因为取不到控制器就把发布拦死。
+  bool _hasLocalAcademicConnection() {
+    try {
+      return context.read<AcademicSessionController>().hasBoundIdentity;
+    } on ProviderNotFoundException {
+      return false;
+    }
+  }
+
+  /// 本次发布是否仍属于发起它的那个账号会话。
+  bool _ownsPublishSession(AuthProvider auth, PublishSessionScope scope) {
+    return !_publishAbandoned &&
+        mounted &&
+        scope.owns(
+          userId: auth.user?.id,
+          sessionEpoch: auth.accountSessionEpoch,
+        );
+  }
+
+  /// 确认可以继续发出写请求；否则中断本次发布。
+  ///
+  /// 离开页面（取消）和切换账号都会让旧流程停下：前者还没有提交任何帖子，
+  /// 后者不能以新账号的身份上传图片或写入帖子。
+  void _ensurePublishSession(AuthProvider auth, PublishSessionScope scope) {
+    if (!_ownsPublishSession(auth, scope)) {
+      throw _publishAbandoned || !mounted
+          ? const _PublishAbandoned()
+          : const PublishSessionChanged();
+    }
   }
 
   /// 重试单个失败图片：清空 fileId，置为 waiting，下次提交时重新上传。
@@ -505,14 +589,35 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     if (_isLoading) return;
 
     final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    if (accountId == null || accountId <= 0) {
+      AppFeedback.error('请先登录后再发布', context: context);
+      return;
+    }
+
+    // 缺的是服务器学生认证，不是"毕业"。本机连接教务不构成认证，
+    // 所以这里说清楚缺什么、去哪里看，而不是把用户往学历上引导。
     if (auth.user?.studentVerified != true) {
+      final hasLocalAcademicConnection = _hasLocalAcademicConnection();
       if (mounted) {
-        AppFeedback.error('毕业用户仅可发布普通帖子，不能在集市发帖', context: context);
+        AppFeedback.error(
+          marketPublishBlockedMessage(
+            hasLocalAcademicConnection: hasLocalAcademicConnection,
+          ),
+          context: context,
+        );
       }
       return;
     }
 
     if (!_validate()) return;
+
+    // 点击提交的这一刻锁定账号与会话代次。图片压缩、上传、最终写入都属于它：
+    // 期间离开页面或切换账号，本次发布整体取消，不能以新身份继续。
+    final scope = PublishSessionScope(
+      accountId: accountId,
+      accountSessionEpoch: auth.accountSessionEpoch,
+    );
 
     final title = _titleController.text.trim();
     final content = _contentController.text.trim();
@@ -525,7 +630,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       final postProvider = context.read<PostProvider>();
 
       // C-3：并发上传本地图（失败项可重试，不提交）。
-      if (!await _uploadLocalImages(postProvider)) {
+      if (!await _uploadLocalImages(postProvider, auth: auth, scope: scope)) {
         if (mounted) {
           AppFeedback.error(
             _lastUploadError?.message ?? '图片上传失败，请点击图片重试',
@@ -547,6 +652,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         return;
       }
 
+      _ensurePublishSession(auth, scope);
       final result = _isEditing
           ? await postProvider.updatePost(
               postId: widget.editingPost!.id,
@@ -559,6 +665,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
               contact: contact,
               fileIds: fileIds,
               marketTags: _selectedMarketTags.toList(growable: false),
+              session: scope,
             )
           : await postProvider.createPost(
               boardId: 2,
@@ -570,14 +677,30 @@ class _MarketPublishFormState extends State<MarketPublishForm>
               contact: contact.isNotEmpty ? contact : null,
               fileIds: fileIds.isNotEmpty ? fileIds : null,
               marketTags: _selectedMarketTags.toList(growable: false),
+              session: scope,
             );
 
-      if (!mounted) return;
+      // 写请求已由认证拦截器绑定到 scope 的会话。这里只决定还要不要更新 UI：
+      // 用户已离开或已切号时不再弹提示，也不在新账号下弹掉这个页面。
+      if (!mounted || !_ownsPublishSession(auth, scope)) return;
+
       if (result.success) {
         _skipDraftGuard = true;
         Navigator.of(context).pop(true);
       } else {
-        AppFeedback.error(result.errorMessage ?? '发布失败', context: context);
+        AppFeedback.error(
+          marketPublishServerDeniedMessage(result.errorMessage),
+          context: context,
+        );
+      }
+    } on _PublishAbandoned {
+      // 用户确认取消：没有发出写请求，页面也已经离开，不再提示。
+    } on PublishSessionChanged {
+      if (mounted) {
+        AppFeedback.error(
+          '登录状态已变化，本次发布已取消，请重新确认',
+          context: context,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -598,7 +721,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     final colorScheme = Theme.of(context).colorScheme;
 
     return PopScope(
-      canPop: !_hasDraft,
+      canPop: !_hasDraft && !_isLoading,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) _maybePop();
       },

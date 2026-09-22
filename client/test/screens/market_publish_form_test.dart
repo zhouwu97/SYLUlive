@@ -7,6 +7,7 @@ import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/models/topic.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
+import 'package:shenliyuan/services/publish_session_scope.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/publish/market_publish_form.dart';
 import 'package:image_picker/image_picker.dart';
@@ -14,9 +15,11 @@ import 'package:image_picker/image_picker.dart';
 class _FakeAuthProvider extends Fake
     with ChangeNotifier
     implements AuthProvider {
-  @override
-  User? get user => User(
-        id: 1,
+  _FakeAuthProvider({User? user, this.accountSessionEpoch = 3})
+      : currentUser = user ?? _verifiedUser(1);
+
+  static User _verifiedUser(int id) => User(
+        id: id,
         studentId: '123456',
         nickname: '测试用户',
         avatar: '',
@@ -24,6 +27,21 @@ class _FakeAuthProvider extends Fake
         studentVerified: true,
         eduBound: true,
       );
+
+  User? currentUser;
+
+  /// 模拟切换账号：新用户 + 新的会话代次。
+  void switchAccount({int id = 2}) {
+    currentUser = _verifiedUser(id);
+    accountSessionEpoch++;
+    notifyListeners();
+  }
+
+  @override
+  User? get user => currentUser;
+
+  @override
+  int accountSessionEpoch;
 }
 
 class _FakePostProvider extends Fake
@@ -36,6 +54,9 @@ class _FakePostProvider extends Fake
   String? lastContact;
   List<int>? lastFileIds;
   List<String>? lastMarketTags;
+  PublishSessionScope? lastSession;
+  void Function()? onUpload;
+  Duration uploadDelay = Duration.zero;
 
   @override
   Post? postFor(int postId) => null;
@@ -56,8 +77,10 @@ class _FakePostProvider extends Fake
     List<String>? teamRoles,
     DateTime? teamDeadline,
     List<TopicSelection>? topics,
+    PublishSessionScope? session,
   }) async {
     createPostCalls++;
+    lastSession = session;
     lastContent = content;
     lastContactType = contactType;
     lastContact = contact;
@@ -85,8 +108,10 @@ class _FakePostProvider extends Fake
     bool sendTeamFields = false,
     bool sendWaterTagField = false,
     List<TopicSelection>? topics,
+    PublishSessionScope? session,
   }) async {
     updatePostCalls++;
+    lastSession = session;
     lastContent = content;
     lastContactType = contactType;
     lastContact = contact;
@@ -97,18 +122,24 @@ class _FakePostProvider extends Fake
 
   @override
   Future<UploadImageResult> uploadImage(XFile file,
-          {void Function(int sent, int total)? onProgress}) async =>
-      const UploadImageResult.success(1);
+      {void Function(int sent, int total)? onProgress,
+      PublishSessionScope? session}) async {
+    lastSession = session;
+    if (uploadDelay > Duration.zero) await Future<void>.delayed(uploadDelay);
+    onUpload?.call();
+    return const UploadImageResult.success(1);
+  }
 }
 
 Widget _buildMarketForm({
   _FakePostProvider? postProvider,
   MarketPublishForm? form,
+  AuthProvider? auth,
 }) {
   return MultiProvider(
     providers: [
-      ChangeNotifierProvider<AuthProvider>(
-        create: (_) => _FakeAuthProvider(),
+      ChangeNotifierProvider<AuthProvider>.value(
+        value: auth ?? _FakeAuthProvider(),
       ),
       ChangeNotifierProvider<PostProvider>.value(
         value: postProvider ?? _FakePostProvider(),
@@ -412,5 +443,125 @@ void main() {
       find.byKey(const ValueKey('market-image-required-error')),
       findsOneWidget,
     );
+  });
+  testWidgets('提交时把发起账号的会话边界带给图片上传和写入', (tester) async {
+    final auth = _FakeAuthProvider(accountSessionEpoch: 7);
+    final postProvider = _FakePostProvider();
+    await tester.pumpWidget(
+        _buildMarketForm(postProvider: postProvider, auth: auth));
+    await tester.pumpAndSettle();
+
+    await fillRequiredMarketFields(tester);
+    await addLocalImage(tester);
+    await tester.tap(find.text('发布出售').last);
+    await tester.pumpAndSettle();
+
+    expect(postProvider.createPostCalls, 1);
+    expect(postProvider.lastSession, isNotNull);
+    expect(postProvider.lastSession!.accountId, 1);
+    expect(postProvider.lastSession!.accountSessionEpoch, 7);
+    // 拦截器靠这两个字段在发送前确认仍是发起操作的那个会话。
+    expect(postProvider.lastSession!.requestExtra, <String, dynamic>{
+      'expectedAuthUserId': 1,
+      'expectedAuthSessionEpoch': 7,
+    });
+  });
+
+  testWidgets('图片上传期间切换账号后，旧发布流程不再写入帖子', (tester) async {
+    final auth = _FakeAuthProvider();
+    final postProvider = _FakePostProvider()
+      ..uploadDelay = const Duration(milliseconds: 40)
+      ..onUpload = () => auth.switchAccount();
+    await tester.pumpWidget(
+        _buildMarketForm(postProvider: postProvider, auth: auth));
+    await tester.pumpAndSettle();
+
+    await fillRequiredMarketFields(tester);
+    await addLocalImage(tester);
+    await tester.tap(find.text('发布出售').last);
+    await tester.pump(const Duration(milliseconds: 120));
+    // 不能 pumpAndSettle：被中断的上传会把图片留在 uploading 态，
+    // 网格里的进度指示器是无限动画，settle 永远等不到。
+    await tester.pump();
+
+    expect(auth.accountSessionEpoch, 4, reason: '夹具确实完成了切号');
+    expect(postProvider.createPostCalls, 0);
+    expect(postProvider.updatePostCalls, 0);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('发布进行中返回不会无声离开，需要明确取消', (tester) async {
+    final postProvider = _FakePostProvider()
+      ..uploadDelay = const Duration(seconds: 5);
+    await tester.pumpWidget(_buildMarketForm(postProvider: postProvider));
+    await tester.pumpAndSettle();
+
+    await fillRequiredMarketFields(tester);
+    await addLocalImage(tester);
+    await tester.tap(find.text('发布出售').last);
+    await tester.pump();
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('取消本次发布？'), findsOneWidget);
+
+    await tester.tap(find.text('继续发布'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(MarketPublishForm), findsOneWidget);
+
+    // 选择继续后原流程应当跑完，而不是被那次返回打断。
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpAndSettle();
+    expect(postProvider.createPostCalls, 1);
+  });
+
+  testWidgets('发布进行中确认取消后不再继续提交', (tester) async {
+    final postProvider = _FakePostProvider()
+      ..uploadDelay = const Duration(seconds: 5);
+    await tester.pumpWidget(_buildMarketForm(postProvider: postProvider));
+    await tester.pumpAndSettle();
+
+    await fillRequiredMarketFields(tester);
+    await addLocalImage(tester);
+    await tester.tap(find.text('发布出售').last);
+    await tester.pump();
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.text('取消发布'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpAndSettle();
+
+    expect(postProvider.createPostCalls, 0);
+  });
+
+  testWidgets('未完成学生认证时阻止发布，且不把缺认证说成毕业', (tester) async {
+    final auth = _FakeAuthProvider(
+      user: User(
+        id: 1,
+        studentId: '123456',
+        nickname: '仅本机连接',
+        avatar: '',
+        createdAt: DateTime(2026, 1, 1),
+        studentVerified: false,
+      ),
+    );
+    final postProvider = _FakePostProvider();
+    await tester.pumpWidget(
+        _buildMarketForm(postProvider: postProvider, auth: auth));
+    await tester.pumpAndSettle();
+
+    await fillRequiredMarketFields(tester);
+    await addLocalImage(tester);
+    await tester.tap(find.text('发布出售').last);
+    await tester.pumpAndSettle();
+
+    expect(postProvider.createPostCalls, 0);
+    expect(postProvider.updatePostCalls, 0);
   });
 }

@@ -22,6 +22,7 @@ const controllers = new Map<
   string,
   { controller: AbortController; key: string }
 >();
+const keyLocks = new Map<string, Promise<unknown>>();
 const siteOrigins = new Set(
   chrome.runtime
     .getManifest()
@@ -57,7 +58,19 @@ async function account(origin: string) {
 async function get(key: string) {
   return (await chrome.storage.session.get(key))[key] as Connection | undefined;
 }
-async function revoke(key: string, clearData = true) {
+async function withKeyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = keyLocks.get(key) || Promise.resolve();
+  let run!: Promise<T>;
+  run = previous.then(fn);
+  const queued = run.catch(() => undefined);
+  keyLocks.set(key, queued);
+  try {
+    return await run;
+  } finally {
+    if (keyLocks.get(key) === queued) keyLocks.delete(key);
+  }
+}
+async function revokeUnlocked(key: string, clearData = true) {
   for (const entry of controllers.values())
     if (entry.key === key) entry.controller.abort();
   const connection = await get(key);
@@ -66,6 +79,9 @@ async function revoke(key: string, clearData = true) {
     await removeSchedule(connection.origin, connection.appUserId);
   }
   await chrome.storage.session.remove([key, `latest:${key}`]);
+}
+async function revoke(key: string, clearData = true) {
+  return withKeyLock(key, () => revokeUnlocked(key, clearData));
 }
 function cachePrefix(connection: Connection) {
   return `${connection.origin}:${connection.appUserId}:${connection.provider}:${connection.studentId}:`;
@@ -129,6 +145,7 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
   )
     throw new Error("请在助手页面授予学校域名权限");
   if (request.operation === "session") {
+    const startedEpoch = old?.appUserId === appUserId ? old.epoch : "";
     const current = await identity(provider);
     if (old && old.studentId !== current.studentId) await revoke(key);
     const connection: Connection = {
@@ -141,8 +158,15 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
       origin,
       confirmed: false,
     };
-    await chrome.storage.session.set({ [key]: connection });
-    return connection;
+    return withKeyLock(key, async () => {
+      const latest = await get(key);
+      if ((startedEpoch && latest?.epoch !== startedEpoch) || (!startedEpoch && latest))
+        throw new Error("连接已改变，请重新连接");
+      if (latest && latest.appUserId !== appUserId)
+        throw new Error("连接已被其他账号接管，请重新连接");
+      await chrome.storage.session.set({ [key]: connection });
+      return connection;
+    });
   }
   if (request.operation === "confirm") {
     const pending = await get(key);
@@ -157,10 +181,21 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
       await revoke(key);
       throw new Error("学校账号发生变化，请重新确认");
     }
-    await chrome.storage.session.set({
-      [key]: { ...pending, confirmed: true },
+    return withKeyLock(key, async () => {
+      // 身份读取在锁外进行，提交前必须重新确认连接仍是同一世代；
+      // disconnect 或新账号接管后，旧 confirm 只能失败，不能恢复连接。
+      const latest = await get(key);
+      if (
+        !latest ||
+        latest.epoch !== pending.epoch ||
+        latest.appUserId !== appUserId
+      )
+        throw new Error("连接已改变，请重新核对身份");
+      await chrome.storage.session.set({
+        [key]: { ...latest, confirmed: true },
+      });
+      return { ...latest, confirmed: true };
     });
-    return pending;
   }
   if (request.operation === 'persistence' || request.operation === 'cache') {
     const connection = await get(key);
@@ -170,12 +205,24 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
     const preference = `save:${cachePrefix(connection)}`;
     if (request.operation === 'persistence') {
       const enabled = p.enabled === true;
-      await chrome.storage.local.set({[preference]: enabled});
-      if (!enabled) await clearPrefix(cachePrefix(connection));
-      return {enabled};
+      return withKeyLock(key, async () => {
+        const latest = await get(key);
+        if (!latest?.confirmed || latest.appUserId !== appUserId || latest.epoch !== connection.epoch)
+          throw new Error('连接已改变，请重新确认教务身份');
+        await chrome.storage.local.set({[preference]: enabled});
+        if (!enabled) await clearPrefix(cachePrefix(connection));
+        return {enabled};
+      });
     }
     if (typeof p.dataset !== 'string' || !p.term || typeof p.term !== 'object') throw new Error('缓存参数无效');
-    return await store(snapshotKey(connection, p.dataset, p.term as AcademicTerm)) || null;
+    const cacheDataset = p.dataset;
+    const cacheTerm = p.term as AcademicTerm;
+    return withKeyLock(key, async () => {
+      const latest = await get(key);
+      if (!latest?.confirmed || latest.appUserId !== appUserId || latest.epoch !== connection.epoch)
+        throw new Error('连接已改变，请重新确认教务身份');
+      return await store(snapshotKey(connection, cacheDataset, cacheTerm)) || null;
+    });
   }
   if (request.operation === "query") {
     const connected = await get(key);
@@ -216,11 +263,12 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
       );
       const after = await identity(provider, controller.signal),
         latest = await get(key);
+      const accountStillMatches = (await account(origin)) === appUserId;
       if (
         controller.signal.aborted ||
         latest?.epoch !== connected.epoch ||
         after.studentId !== connected.studentId ||
-        (await account(origin)) !== appUserId
+        !accountStillMatches
       ) {
         if (latest?.epoch === connected.epoch) await revoke(key);
         throw new Error("连接已失效，本次结果未保存");
@@ -236,10 +284,18 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
         data,
       } satisfies AcademicSnapshot;
       const preference = `save:${cachePrefix(connected)}`;
-      if ((await chrome.storage.local.get(preference))[preference] === true) {
-        await store(snapshotKey(connected, dataset, term), snapshot);
-        if ((await get(key))?.epoch !== connected.epoch) {await clearPrefix(cachePrefix(connected));throw new Error('连接已断开，本次缓存已清除');}
-      }
+      await withKeyLock(key, async () => {
+        const current = await get(key);
+        if (current?.epoch !== connected.epoch || current.appUserId !== appUserId)
+          throw new Error('连接已断开，本次结果未保存');
+        if ((await chrome.storage.local.get(preference))[preference] === true) {
+          await store(snapshotKey(connected, dataset, term), snapshot);
+          if ((await get(key))?.epoch !== connected.epoch) {
+            await clearPrefix(cachePrefix(connected));
+            throw new Error('连接已断开，本次缓存已清除');
+          }
+        }
+      });
       return snapshot;
     } finally {
       controllers.delete(id);

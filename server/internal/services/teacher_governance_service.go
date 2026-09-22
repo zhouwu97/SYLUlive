@@ -3,6 +3,7 @@ package services
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -85,6 +86,7 @@ type TeacherGovernanceService struct {
 }
 
 func NewTeacherGovernanceService(db *gorm.DB) *TeacherGovernanceService {
+	registerGovSnapshotFaultCallback(db)
 	return &TeacherGovernanceService{db: db}
 }
 
@@ -781,15 +783,299 @@ type GovernanceCourseItem struct {
 	AverageStar  float64 `json:"average_star"`
 }
 
-// computeSnapshotToken 计算涉及实体的状态快照 Token。
-func computeSnapshotToken(db *gorm.DB, keeperID uint, loserIDs []uint, finalTeacherName string) string {
-	allIDs := append([]uint{keeperID}, loserIDs...)
-	sort.Slice(allIDs, func(i, j int) bool { return allIDs[i] < allIDs[j] })
+// ---------------- 治理预览凭证：数据快照摘要 + 操作意图摘要 ----------------
+//
+// 预览凭证 snapshot_token 由两段摘要拼成：`<data_snapshot_digest>.<operation_digest>`。
+// 数据快照覆盖涉及实体的当前状态；操作意图覆盖管理员在预览界面上确认的全部会影响
+// 执行结果的输入（谁是保留目标、谁是 losers、最终名称、课程归并决策、别名登记策略、
+// 教师配对）。执行时在事务内重算并逐段比对，因此「预览 A 方案、执行 B 方案」和
+// 「数据已变化」都会被拦下，客户端也无法自行声称已经预览过。
+
+const (
+	// govSnapshotProtocolV2 参与操作意图摘要；协议标识变更后旧凭证自然失效。
+	govSnapshotProtocolV2 = "gov-snapshot-v2"
+	// govSnapshotTokenSeparator 分隔 snapshot_token 中的两段摘要。
+	govSnapshotTokenSeparator = "."
+)
+
+// 快照读取阶段名。回归测试按阶段逐个注入查询失败（GOV-06），
+// 快照里新增一类读取必须同时登记到阶段表，否则该类失败不会被覆盖。
+const (
+	govSnapStageTeachers       = "teachers"
+	govSnapStageRatings        = "ratings"
+	govSnapStageVotes          = "votes"
+	govSnapStageSubmissions    = "submissions"
+	govSnapStageTeacherAliases = "teacher_aliases"
+	govSnapStageCourseAliases  = "course_aliases"
+	govSnapStageSubjects       = "subjects"
+)
+
+var (
+	govTeacherMergeSnapshotStages = []string{
+		govSnapStageTeachers, govSnapStageRatings, govSnapStageVotes,
+		govSnapStageSubmissions, govSnapStageTeacherAliases, govSnapStageSubjects,
+	}
+	govCourseMergeSnapshotStages = []string{
+		govSnapStageSubjects, govSnapStageTeachers, govSnapStageCourseAliases,
+		govSnapStageRatings, govSnapStageVotes, govSnapStageTeacherAliases,
+		govSnapStageSubmissions,
+	}
+)
+
+// govSnapshotFaultKey 把单条语句标记为「注入失败的读取」，只对打了标的语句生效。
+const govSnapshotFaultKey = "gov:snapshot-read-fault"
+
+// govSnapshotReadFault 是测试注入点：非 nil 时按阶段让真实查询失败。
+// 生产路径永不设置它，快照读取因此始终只看到 gorm 自己的错误。
+var govSnapshotReadFault func(stage string) error
+
+// registerGovSnapshotFaultCallback 注册注入钩子。它只在语句带 govSnapshotFaultKey
+// 时把错误写进 gorm 的错误通道，因此对生产查询是空操作。
+// Find 走 query 回调链、Scan 走 row 回调链，两条都要挂。
+func registerGovSnapshotFaultCallback(db *gorm.DB) {
+	fault := func(d *gorm.DB) {
+		if value, ok := d.Get(govSnapshotFaultKey); ok {
+			if injected, isErr := value.(error); isErr {
+				d.AddError(injected)
+			}
+		}
+	}
+	_ = db.Callback().Query().Before("gorm:query").Register("gov:snapshot_read_fault", fault)
+	_ = db.Callback().Row().Before("gorm:row").Register("gov:snapshot_read_fault", fault)
+}
+
+// govSnapshotReader 统一快照读取的错误传播：结果只有「读成功」和「带阶段名的错误」
+// 两种，查询失败不会被当成空结果，避免预览建立在不完整数据上。
+type govSnapshotReader struct{ db *gorm.DB }
+
+func (r govSnapshotReader) prepare(stage, table string, query interface{}, args ...interface{}) *gorm.DB {
+	tx := r.db
+	if table != "" {
+		tx = tx.Table(table)
+	}
+	tx = tx.Where(query, args...)
+	if govSnapshotReadFault != nil {
+		if injected := govSnapshotReadFault(stage); injected != nil {
+			tx = tx.Set(govSnapshotFaultKey, injected)
+		}
+	}
+	return tx
+}
+
+// find 读取模型集合，保留模型自身的软删除作用域。
+func (r govSnapshotReader) find(stage string, dest interface{}, query interface{}, args ...interface{}) error {
+	if err := r.prepare(stage, "", query, args...).Order("id ASC").Find(dest).Error; err != nil {
+		return govSnapshotReadError(stage, err)
+	}
+	return nil
+}
+
+// scan 按表名读取，用于只需要部分列的快照。
+func (r govSnapshotReader) scan(stage, table string, dest interface{}, query interface{}, args ...interface{}) error {
+	if err := r.prepare(stage, table, query, args...).Order("id ASC").Scan(dest).Error; err != nil {
+		return govSnapshotReadError(stage, err)
+	}
+	return nil
+}
+
+// govSnapshotReadError 只带阶段名与底层错误，不拼接评价正文或用户身份等敏感内容。
+func govSnapshotReadError(stage string, err error) error {
+	return governanceErr(CodeTeacherGovernanceInternalError,
+		"读取治理快照数据失败，请稍后重试", fmt.Errorf("stage=%s: %w", stage, err))
+}
+
+// governanceSubjectMergeIntent 课程归并决策的规范化形式。
+type governanceSubjectMergeIntent struct {
+	LoserSubjectID     uint `json:"loser_subject_id"`
+	KeeperSubjectID    uint `json:"keeper_subject_id"`
+	MergeSubjectEntity bool `json:"merge_subject_entity"`
+}
+
+// governanceTeacherPairIntent 课程合并里教师配对的规范化形式。
+type governanceTeacherPairIntent struct {
+	LoserTeacherID   uint   `json:"loser_teacher_id"`
+	KeeperTeacherID  uint   `json:"keeper_teacher_id"`
+	FinalTeacherName string `json:"final_teacher_name"`
+}
+
+// governanceTeacherMergeIntent 教师合并的完整操作意图。
+// Reason 只进审计文本、不改变执行结果，因此不参与摘要。
+type governanceTeacherMergeIntent struct {
+	Protocol         string                         `json:"protocol"`
+	KeeperID         uint                           `json:"keeper_id"`
+	LoserIDs         []uint                         `json:"loser_ids"`
+	FinalTeacherName string                         `json:"final_teacher_name"`
+	RegisterAliases  bool                           `json:"register_aliases"`
+	SubjectMerges    []governanceSubjectMergeIntent `json:"subject_merges"`
+}
+
+// governanceCourseMergeIntent 课程合并的完整操作意图。
+type governanceCourseMergeIntent struct {
+	Protocol        string                        `json:"protocol"`
+	KeeperSubjectID uint                          `json:"keeper_subject_id"`
+	LoserSubjectIDs []uint                        `json:"loser_subject_ids"`
+	FinalCourseName string                        `json:"final_course_name"`
+	TeacherPairs    []governanceTeacherPairIntent `json:"teacher_pairs"`
+}
+
+// govSortedUniqueIDs 丢掉 0、重复项与保留目标本身后升序排列。
+// loser 之间的顺序对合并语义没有影响，所以归一化后才进入摘要。
+func govSortedUniqueIDs(ids []uint, exclude uint) []uint {
+	seen := map[uint]bool{}
+	out := make([]uint, 0, len(ids))
+	for _, id := range ids {
+		if id == 0 || id == exclude || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+func govSortUintPairs[T any](items []T, key func(T) uint) {
+	sort.Slice(items, func(i, j int) bool { return key(items[i]) < key(items[j]) })
+}
+
+// normalizeTeacherMergeIntent 与 buildMergePlan 的输入解析保持一致：
+// Decisions.SubjectMerges 是 CourseMerges 的兼容别名，同一 loser 的后一条决策覆盖前一条。
+func normalizeTeacherMergeIntent(input MergeInput) governanceTeacherMergeIntent {
+	decisions := input.CourseMerges
+	if len(decisions) == 0 && input.Decisions != nil {
+		decisions = input.Decisions.SubjectMerges
+	}
+	byLoser := map[uint]CourseMergeDecision{}
+	losers := make([]uint, 0, len(decisions))
+	for _, decision := range decisions {
+		if _, seen := byLoser[decision.LoserSubjectID]; !seen {
+			losers = append(losers, decision.LoserSubjectID)
+		}
+		byLoser[decision.LoserSubjectID] = decision
+	}
+	govSortUintPairs(losers, func(id uint) uint { return id })
+	subjectMerges := make([]governanceSubjectMergeIntent, 0, len(losers))
+	for _, loser := range losers {
+		decision := byLoser[loser]
+		subjectMerges = append(subjectMerges, governanceSubjectMergeIntent{
+			LoserSubjectID:     decision.LoserSubjectID,
+			KeeperSubjectID:    decision.KeeperSubjectID,
+			MergeSubjectEntity: decision.MergeSubjectEntity,
+		})
+	}
+
+	registerAliases := true
+	if input.RegisterTeacherAliases != nil {
+		registerAliases = *input.RegisterTeacherAliases
+	} else if input.RegisterAliasesCompat != nil {
+		registerAliases = *input.RegisterAliasesCompat
+	}
+
+	return governanceTeacherMergeIntent{
+		Protocol:         govSnapshotProtocolV2,
+		KeeperID:         input.KeeperID,
+		LoserIDs:         govSortedUniqueIDs(input.LoserIDs, input.KeeperID),
+		FinalTeacherName: strings.TrimSpace(input.FinalTeacherName),
+		RegisterAliases:  registerAliases,
+		SubjectMerges:    subjectMerges,
+	}
+}
+
+// normalizeCourseMergeInput 把执行输入收敛到与摘要相同的规范化形式；
+// 只去重/重排 losers 与教师配对，名称与原因保持原样交给业务层处理。
+func normalizeCourseMergeInput(input CourseMergeInput) CourseMergeInput {
+	intent := normalizeCourseMergeIntent(input)
+	input.LoserSubjectIDs = intent.LoserSubjectIDs
+	input.TeacherPairs = make([]CourseMergeTeacherPair, 0, len(intent.TeacherPairs))
+	for _, pair := range intent.TeacherPairs {
+		input.TeacherPairs = append(input.TeacherPairs, CourseMergeTeacherPair{
+			LoserTeacherID:   pair.LoserTeacherID,
+			KeeperTeacherID:  pair.KeeperTeacherID,
+			FinalTeacherName: pair.FinalTeacherName,
+		})
+	}
+	return input
+}
+
+func normalizeCourseMergeIntent(input CourseMergeInput) governanceCourseMergeIntent {
+	pairs := make([]governanceTeacherPairIntent, 0, len(input.TeacherPairs))
+	for _, pair := range input.TeacherPairs {
+		pairs = append(pairs, governanceTeacherPairIntent{
+			LoserTeacherID:   pair.LoserTeacherID,
+			KeeperTeacherID:  pair.KeeperTeacherID,
+			FinalTeacherName: strings.TrimSpace(pair.FinalTeacherName),
+		})
+	}
+	govSortUintPairs(pairs, func(p governanceTeacherPairIntent) uint { return p.LoserTeacherID })
+
+	return governanceCourseMergeIntent{
+		Protocol:        govSnapshotProtocolV2,
+		KeeperSubjectID: input.KeeperSubjectID,
+		LoserSubjectIDs: govSortedUniqueIDs(input.LoserSubjectIDs, input.KeeperSubjectID),
+		FinalCourseName: strings.TrimSpace(input.FinalCourseName),
+		TeacherPairs:    pairs,
+	}
+}
+
+// hashGovernanceIntent 对规范化后的意图做 SHA-256。意图结构体字段顺序固定、
+// 数组已归一化，因此同样的方案在任何输入顺序下得到同一个摘要。
+func hashGovernanceIntent(intent interface{}) (string, error) {
+	payload, err := json.Marshal(intent)
+	if err != nil {
+		return "", governanceErr(CodeTeacherGovernanceInternalError, "无法规范化治理操作意图", err)
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// governanceSnapshotToken 把两段摘要拼成对外凭证。
+func governanceSnapshotToken(dataDigest, operationDigest string) string {
+	return dataDigest + govSnapshotTokenSeparator + operationDigest
+}
+
+// verifyGovernanceSnapshotToken 复核凭证是否仍指向当前数据状态与当前操作方案。
+// 业务码保持 GOVERNANCE_SNAPSHOT_STALE，但提示区分「数据变了」和「方案变了」。
+func verifyGovernanceSnapshotToken(token, dataDigest, operationDigest string) error {
+	if token == governanceSnapshotToken(dataDigest, operationDigest) {
+		return nil
+	}
+	dataPart, operationPart, split := strings.Cut(token, govSnapshotTokenSeparator)
+	message := "预览凭证已失效，请重新预览合并影响"
+	switch {
+	case split && operationPart == operationDigest:
+		message = "数据状态已发生变更，请刷新预览后重试"
+	case split && dataPart == dataDigest:
+		message = "操作方案与预览时不一致，请重新预览确认"
+	}
+	return governanceErr(CodeGovernanceSnapshotStale, message, nil)
+}
+
+// computeTeacherMergeDigests 计算教师合并的数据快照摘要与操作意图摘要。
+// 任一快照读取失败都会返回错误，调用方不得把部分快照当作有效凭证。
+func computeTeacherMergeDigests(db *gorm.DB, input MergeInput) (string, string, error) {
+	intent := normalizeTeacherMergeIntent(input)
+	operationDigest, err := hashGovernanceIntent(intent)
+	if err != nil {
+		return "", "", err
+	}
+	dataDigest, err := computeTeacherMergeDataDigest(govSnapshotReader{db: db}, intent)
+	if err != nil {
+		return "", "", err
+	}
+	return dataDigest, operationDigest, nil
+}
+
+// computeTeacherMergeDataDigest 只哈希实体状态；keeper/loser 角色本身也写进摘要，
+// 因此交换保留目标一定得到不同的数据快照。
+func computeTeacherMergeDataDigest(snap govSnapshotReader, intent governanceTeacherMergeIntent) (string, error) {
+	allIDs := append([]uint{intent.KeeperID}, intent.LoserIDs...)
 
 	h := sha256.New()
-	if strings.TrimSpace(finalTeacherName) != "" {
-		fmt.Fprintf(h, "FN:%s;", strings.TrimSpace(finalTeacherName))
+	fmt.Fprintf(h, "ROLE|K:%d|L:%d|", intent.KeeperID, len(intent.LoserIDs))
+	for _, id := range intent.LoserIDs {
+		fmt.Fprintf(h, "%d,", id)
 	}
+	fmt.Fprintf(h, ";")
 
 	type teacherSnap struct {
 		ID              uint
@@ -799,61 +1085,63 @@ func computeSnapshotToken(db *gorm.DB, keeperID uint, loserIDs []uint, finalTeac
 		CourseSubjectID *uint
 	}
 	var teachers []teacherSnap
-	db.Table("teachers").Where("id IN ?", allIDs).Order("id ASC").Scan(&teachers)
-
+	if err := snap.scan(govSnapStageTeachers, "teachers", &teachers, "id IN ?", allIDs); err != nil {
+		return "", err
+	}
+	role := map[uint]string{intent.KeeperID: "K"}
+	for _, id := range intent.LoserIDs {
+		if _, taken := role[id]; !taken {
+			role[id] = "L"
+		}
+	}
 	for _, t := range teachers {
-		merged := uint(0)
-		if t.MergedIntoID != nil {
-			merged = *t.MergedIntoID
-		}
-		subj := uint(0)
-		if t.CourseSubjectID != nil {
-			subj = *t.CourseSubjectID
-		}
-		fmt.Fprintf(h, "T:%d:%d:%d:%v:%d;", t.ID, t.UpdatedAt.UnixNano(), merged, t.Verified, subj)
+		fmt.Fprintf(h, "T:%s:%d:%d:%d:%v:%d;", role[t.ID], t.ID, t.UpdatedAt.UnixNano(),
+			derefUint(t.MergedIntoID), t.Verified, derefUint(t.CourseSubjectID))
 	}
 
 	// 活动评价明细：id/user_id/teacher_id/created_at/updated_at/status。
 	// 管理员的 Preview 展示与执行结果都依赖这些字段，必须进入快照。
 	var ratings []models.TeacherRating
-	db.Where("teacher_id IN ? AND deleted_at IS NULL", allIDs).
-		Order("id ASC").Find(&ratings)
+	if err := snap.find(govSnapStageRatings, &ratings, "teacher_id IN ? AND deleted_at IS NULL", allIDs); err != nil {
+		return "", err
+	}
+	ratingIDs := make([]uint, 0, len(ratings))
 	for _, r := range ratings {
 		fmt.Fprintf(h, "R:%d:%d:%d:%d:%d:%s;", r.ID, r.UserID, r.TeacherID, r.CreatedAt.UnixNano(), r.UpdatedAt.UnixNano(), r.Status)
+		ratingIDs = append(ratingIDs, r.ID)
 	}
 
 	// 投票明细：id/rating_id/user_id/vote_type/updated_at。
-	ratingIDs := make([]uint, 0, len(ratings))
-	for _, r := range ratings {
-		ratingIDs = append(ratingIDs, r.ID)
+	var votes []models.TeacherRatingVote
+	if err := snap.find(govSnapStageVotes, &votes, "rating_id IN ?", ratingIDs); err != nil {
+		return "", err
 	}
-	if len(ratingIDs) > 0 {
-		var votes []models.TeacherRatingVote
-		db.Where("rating_id IN ?", ratingIDs).Order("id ASC").Find(&votes)
-		for _, v := range votes {
-			fmt.Fprintf(h, "V:%d:%d:%d:%s:%d;", v.ID, v.RatingID, v.UserID, v.VoteType, v.UpdatedAt.UnixNano())
-		}
+	for _, v := range votes {
+		fmt.Fprintf(h, "V:%d:%d:%d:%s:%d;", v.ID, v.RatingID, v.UserID, v.VoteType, v.UpdatedAt.UnixNano())
 	}
 
 	// 提交明细：id/teacher_id/teacher_rating_id/status/revision/updated_at。
 	var subs []models.CourseEvaluationSubmission
-	db.Where("teacher_id IN ?", allIDs).Order("id ASC").Find(&subs)
+	if err := snap.find(govSnapStageSubmissions, &subs, "teacher_id IN ?", allIDs); err != nil {
+		return "", err
+	}
 	for _, s := range subs {
-		ratingRef := uint(0)
-		if s.TeacherRatingID != nil {
-			ratingRef = *s.TeacherRatingID
-		}
-		fmt.Fprintf(h, "S:%d:%d:%d:%s:%d:%d;", s.ID, derefUint(s.TeacherID), ratingRef, s.Status, s.Revision, s.UpdatedAt.UnixNano())
+		fmt.Fprintf(h, "S:%d:%d:%d:%s:%d:%d;", s.ID, derefUint(s.TeacherID), derefUint(s.TeacherRatingID),
+			s.Status, s.Revision, s.UpdatedAt.UnixNano())
 	}
 
+	// 别名明细：实际指向的教师也必须进快照，只哈希别名文本挡不住改指向。
 	var aliases []models.TeacherAlias
-	db.Where("teacher_id IN ?", allIDs).Order("id ASC").Find(&aliases)
+	if err := snap.find(govSnapStageTeacherAliases, &aliases, "teacher_id IN ?", allIDs); err != nil {
+		return "", err
+	}
 	for _, a := range aliases {
-		fmt.Fprintf(h, "A:%d:%d:%s;", a.ID, a.CourseSubjectID, a.NormalizedAlias)
+		fmt.Fprintf(h, "A:%d:%d:%d:%d:%s:%s;", a.ID, a.TeacherID, a.CourseSubjectID,
+			a.CreatedAt.UnixNano(), a.NormalizedAlias, a.Source)
 	}
 
 	// 学科实体状态：id/verified/updated_at。
-	subjectIDs := make([]uint, 0)
+	subjectIDs := make([]uint, 0, len(teachers))
 	seenSubj := map[uint]bool{}
 	for _, t := range teachers {
 		if t.CourseSubjectID != nil && !seenSubj[*t.CourseSubjectID] {
@@ -861,93 +1149,113 @@ func computeSnapshotToken(db *gorm.DB, keeperID uint, loserIDs []uint, finalTeac
 			subjectIDs = append(subjectIDs, *t.CourseSubjectID)
 		}
 	}
-	if len(subjectIDs) > 0 {
-		var subjects []models.CourseSubject
-		db.Where("id IN ?", subjectIDs).Order("id ASC").Find(&subjects)
-		for _, cs := range subjects {
-			fmt.Fprintf(h, "CS:%d:%v:%d;", cs.ID, cs.Verified, cs.UpdatedAt.UnixNano())
-		}
+	var subjects []models.CourseSubject
+	if err := snap.find(govSnapStageSubjects, &subjects, "id IN ?", subjectIDs); err != nil {
+		return "", err
+	}
+	for _, cs := range subjects {
+		fmt.Fprintf(h, "CS:%d:%v:%d;", cs.ID, cs.Verified, cs.UpdatedAt.UnixNano())
 	}
 
-	return hex.EncodeToString(h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// computeCourseMergeSnapshotToken 计算课程合并涉及实体的状态快照 Token。
-// 完整覆盖课程实体、教师实体、课程别名、教师评价、评价投票、教师别名与评价提交。
-func computeCourseMergeSnapshotToken(db *gorm.DB, keeperID uint, loserIDs []uint, finalCourseName string, pairs []CourseMergeTeacherPair) string {
-	allSubjectIDs := append([]uint{keeperID}, loserIDs...)
-	sort.Slice(allSubjectIDs, func(i, j int) bool { return allSubjectIDs[i] < allSubjectIDs[j] })
+// computeCourseMergeDigests 计算课程合并的数据快照摘要与操作意图摘要。
+func computeCourseMergeDigests(db *gorm.DB, input CourseMergeInput) (string, string, error) {
+	intent := normalizeCourseMergeIntent(input)
+	operationDigest, err := hashGovernanceIntent(intent)
+	if err != nil {
+		return "", "", err
+	}
+	dataDigest, err := computeCourseMergeDataDigest(govSnapshotReader{db: db}, intent)
+	if err != nil {
+		return "", "", err
+	}
+	return dataDigest, operationDigest, nil
+}
+
+// computeCourseMergeDataDigest 覆盖课程实体、教师实体、课程别名、教师评价、
+// 评价投票、教师别名与评价提交；keeper/loser 角色单独表达。
+func computeCourseMergeDataDigest(snap govSnapshotReader, intent governanceCourseMergeIntent) (string, error) {
+	allSubjectIDs := append([]uint{intent.KeeperSubjectID}, intent.LoserSubjectIDs...)
 
 	h := sha256.New()
-	fmt.Fprintf(h, "FCN:%s;", strings.TrimSpace(finalCourseName))
-
-	for _, p := range pairs {
-		fmt.Fprintf(h, "P:%d:%d:%s;", p.LoserTeacherID, p.KeeperTeacherID, strings.TrimSpace(p.FinalTeacherName))
+	fmt.Fprintf(h, "ROLE|K:%d|L:%d|", intent.KeeperSubjectID, len(intent.LoserSubjectIDs))
+	for _, id := range intent.LoserSubjectIDs {
+		fmt.Fprintf(h, "%d,", id)
 	}
+	fmt.Fprintf(h, ";")
 
 	var subjects []models.CourseSubject
-	db.Where("id IN ?", allSubjectIDs).Order("id ASC").Find(&subjects)
-	for _, s := range subjects {
-		mID := uint(0)
-		if s.MergedIntoID != nil {
-			mID = *s.MergedIntoID
+	if err := snap.find(govSnapStageSubjects, &subjects, "id IN ?", allSubjectIDs); err != nil {
+		return "", err
+	}
+	subjectRole := map[uint]string{intent.KeeperSubjectID: "K"}
+	for _, id := range intent.LoserSubjectIDs {
+		if _, taken := subjectRole[id]; !taken {
+			subjectRole[id] = "L"
 		}
-		fmt.Fprintf(h, "S:%d:%s:%s:%d:%d;", s.ID, s.Name, s.NormalizedName, mID, s.UpdatedAt.UnixNano())
+	}
+	for _, s := range subjects {
+		fmt.Fprintf(h, "S:%s:%d:%s:%s:%d:%d;", subjectRole[s.ID], s.ID, s.Name, s.NormalizedName,
+			derefUint(s.MergedIntoID), s.UpdatedAt.UnixNano())
 	}
 
 	var teachers []models.Teacher
-	db.Where("course_subject_id IN ?", allSubjectIDs).Order("id ASC").Find(&teachers)
+	if err := snap.find(govSnapStageTeachers, &teachers, "course_subject_id IN ?", allSubjectIDs); err != nil {
+		return "", err
+	}
 	allTeacherIDs := make([]uint, 0, len(teachers))
 	for _, t := range teachers {
 		allTeacherIDs = append(allTeacherIDs, t.ID)
-		mID := uint(0)
-		if t.MergedIntoID != nil {
-			mID = *t.MergedIntoID
-		}
-		fmt.Fprintf(h, "T:%d:%s:%s:%d:%d;", t.ID, t.Name, t.Course, mID, t.UpdatedAt.UnixNano())
+		fmt.Fprintf(h, "T:%d:%s:%s:%d:%d;", t.ID, t.Name, t.Course, derefUint(t.MergedIntoID), t.UpdatedAt.UnixNano())
 	}
 
 	var aliases []models.CourseSubjectAlias
-	db.Where("course_subject_id IN ?", allSubjectIDs).Order("id ASC").Find(&aliases)
+	if err := snap.find(govSnapStageCourseAliases, &aliases, "course_subject_id IN ?", allSubjectIDs); err != nil {
+		return "", err
+	}
 	for _, a := range aliases {
-		fmt.Fprintf(h, "A:%d:%d:%s;", a.ID, a.CourseSubjectID, a.NormalizedAlias)
+		fmt.Fprintf(h, "A:%d:%d:%d:%s;", a.ID, a.CourseSubjectID, a.CreatedAt.UnixNano(), a.NormalizedAlias)
 	}
 
-	if len(allTeacherIDs) > 0 {
-		var ratings []models.TeacherRating
-		db.Where("teacher_id IN ? AND deleted_at IS NULL", allTeacherIDs).Order("id ASC").Find(&ratings)
-		ratingIDs := make([]uint, 0, len(ratings))
-		for _, r := range ratings {
-			fmt.Fprintf(h, "R:%d:%d:%d:%d:%d;", r.ID, r.TeacherID, r.UserID, r.Star, r.UpdatedAt.UnixNano())
-			ratingIDs = append(ratingIDs, r.ID)
-		}
+	var ratings []models.TeacherRating
+	if err := snap.find(govSnapStageRatings, &ratings, "teacher_id IN ? AND deleted_at IS NULL", allTeacherIDs); err != nil {
+		return "", err
+	}
+	ratingIDs := make([]uint, 0, len(ratings))
+	for _, r := range ratings {
+		fmt.Fprintf(h, "R:%d:%d:%d:%d:%d;", r.ID, r.TeacherID, r.UserID, r.Star, r.UpdatedAt.UnixNano())
+		ratingIDs = append(ratingIDs, r.ID)
+	}
 
-		if len(ratingIDs) > 0 {
-			var votes []models.TeacherRatingVote
-			db.Where("rating_id IN ?", ratingIDs).Order("id ASC").Find(&votes)
-			for _, v := range votes {
-				fmt.Fprintf(h, "V:%d:%d:%d:%s:%d;", v.ID, v.RatingID, v.UserID, v.VoteType, v.UpdatedAt.UnixNano())
-			}
-		}
+	var votes []models.TeacherRatingVote
+	if err := snap.find(govSnapStageVotes, &votes, "rating_id IN ?", ratingIDs); err != nil {
+		return "", err
+	}
+	for _, v := range votes {
+		fmt.Fprintf(h, "V:%d:%d:%d:%s:%d;", v.ID, v.RatingID, v.UserID, v.VoteType, v.UpdatedAt.UnixNano())
+	}
 
-		var teacherAliases []models.TeacherAlias
-		db.Where("teacher_id IN ?", allTeacherIDs).Order("id ASC").Find(&teacherAliases)
-		for _, ta := range teacherAliases {
-			fmt.Fprintf(h, "TA:%d:%d:%d:%s;", ta.ID, ta.TeacherID, ta.CourseSubjectID, ta.NormalizedAlias)
-		}
+	var teacherAliases []models.TeacherAlias
+	if err := snap.find(govSnapStageTeacherAliases, &teacherAliases, "teacher_id IN ?", allTeacherIDs); err != nil {
+		return "", err
+	}
+	for _, ta := range teacherAliases {
+		fmt.Fprintf(h, "TA:%d:%d:%d:%d:%s;", ta.ID, ta.TeacherID, ta.CourseSubjectID, ta.CreatedAt.UnixNano(), ta.NormalizedAlias)
 	}
 
 	var subs []models.CourseEvaluationSubmission
-	db.Where("course_subject_id IN ? OR teacher_id IN ?", allSubjectIDs, allTeacherIDs).Order("id ASC").Find(&subs)
+	if err := snap.find(govSnapStageSubmissions, &subs,
+		"course_subject_id IN ? OR teacher_id IN ?", allSubjectIDs, allTeacherIDs); err != nil {
+		return "", err
+	}
 	for _, s := range subs {
-		ratingRef := uint(0)
-		if s.TeacherRatingID != nil {
-			ratingRef = *s.TeacherRatingID
-		}
-		fmt.Fprintf(h, "Sub:%d:%d:%d:%d:%s:%d:%d;", s.ID, derefUint(s.TeacherID), derefUint(s.CourseSubjectID), ratingRef, s.Status, s.Revision, s.UpdatedAt.UnixNano())
+		fmt.Fprintf(h, "Sub:%d:%d:%d:%d:%s:%d:%d;", s.ID, derefUint(s.TeacherID), derefUint(s.CourseSubjectID),
+			derefUint(s.TeacherRatingID), s.Status, s.Revision, s.UpdatedAt.UnixNano())
 	}
 
-	return hex.EncodeToString(h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // buildMergePlan 构建合并计划。
@@ -1330,7 +1638,11 @@ func (s *TeacherGovernanceService) buildMergePlan(db *gorm.DB, input MergeInput)
 	}
 
 	plan.HasConflicts = len(plan.Conflicts) > 0
-	plan.SnapshotToken = computeSnapshotToken(db, keeper.ID, uniqueLosers, input.FinalTeacherName)
+	dataDigest, operationDigest, snapshotErr := computeTeacherMergeDigests(db, input)
+	if snapshotErr != nil {
+		return nil, snapshotErr
+	}
+	plan.SnapshotToken = governanceSnapshotToken(dataDigest, operationDigest)
 
 	plan.TotalTeachersBefore = 1 + len(uniqueLosers)
 	plan.TotalTeachersAfter = 1
@@ -1537,7 +1849,10 @@ func (s *TeacherGovernanceService) Merge(adminID uint, input MergeInput) (*Merge
 
 	batchID := fmt.Sprintf("merge-%d", time.Now().UnixNano())
 
-	allIDs := append([]uint{input.KeeperID}, input.LoserIDs...)
+	// 执行使用与预览同一套归一化输入：keeper/loser 角色、去重排序后的 loser、
+	// 最终名称与课程决策都从同一个意图里取，避免「校验的是 A 列表、执行的是 B 列表」。
+	intent := normalizeTeacherMergeIntent(input)
+	allIDs := append([]uint{intent.KeeperID}, intent.LoserIDs...)
 	sort.Slice(allIDs, func(i, j int) bool { return allIDs[i] < allIDs[j] })
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
@@ -1554,11 +1869,11 @@ func (s *TeacherGovernanceService) Merge(adminID uint, input MergeInput) (*Merge
 		// 1b. 幂等重试：若所有请求的 loser 已经并入当前 keeper，说明上一次操作
 		// 已成功（典型为响应在途中断后客户端重试），直接返回成功而不因 snapshot
 		// 漂移误报 GOVERNANCE_SNAPSHOT_STALE。
-		if len(input.LoserIDs) > 0 {
+		if len(intent.LoserIDs) > 0 {
 			allIdempotent := true
-			for _, id := range input.LoserIDs {
+			for _, id := range intent.LoserIDs {
 				lt, ok := lockedTeachers[id]
-				if !ok || lt.MergedIntoID == nil || *lt.MergedIntoID != input.KeeperID {
+				if !ok || lt.MergedIntoID == nil || *lt.MergedIntoID != intent.KeeperID {
 					allIdempotent = false
 					break
 				}
@@ -1568,13 +1883,16 @@ func (s *TeacherGovernanceService) Merge(adminID uint, input MergeInput) (*Merge
 			}
 		}
 
-		// 2. 校验 snapshot_token，防止陈旧合并
+		// 2. 校验 snapshot_token：数据快照与操作意图都要与管理员确认的那次预览一致
 		if strings.TrimSpace(input.SnapshotToken) == "" {
 			return governanceErr(CodeGovernanceSnapshotRequired, "请先重新预览合并影响", nil)
 		}
-		currentToken := computeSnapshotToken(tx, input.KeeperID, input.LoserIDs, input.FinalTeacherName)
-		if input.SnapshotToken != currentToken {
-			return governanceErr(CodeGovernanceSnapshotStale, "数据状态已发生变更，请刷新预览后重试", nil)
+		currentDataDigest, currentOperationDigest, snapshotErr := computeTeacherMergeDigests(tx, input)
+		if snapshotErr != nil {
+			return snapshotErr
+		}
+		if err := verifyGovernanceSnapshotToken(input.SnapshotToken, currentDataDigest, currentOperationDigest); err != nil {
+			return err
 		}
 
 		// 2b. 自定义最终教师名称更新
@@ -2519,7 +2837,11 @@ func (s *TeacherGovernanceService) buildCourseMergePlan(db *gorm.DB, input Cours
 	db.Model(&models.CourseEvaluationSubmission{}).Where("course_subject_id IN ?", uniqueLoserIDs).Count(&submissionsRelinked)
 	result.TotalSubmissionsRelinked = int(submissionsRelinked)
 
-	result.SnapshotToken = computeCourseMergeSnapshotToken(db, keeperSubject.ID, uniqueLoserIDs, finalCourseName, input.TeacherPairs)
+	dataDigest, operationDigest, snapshotErr := computeCourseMergeDigests(db, input)
+	if snapshotErr != nil {
+		return nil, snapshotErr
+	}
+	result.SnapshotToken = governanceSnapshotToken(dataDigest, operationDigest)
 	return result, nil
 }
 
@@ -2531,6 +2853,10 @@ func (s *TeacherGovernanceService) CourseMerge(adminID uint, input CourseMergeIn
 	if adminID == 0 {
 		return nil, governanceErr(CodeTeacherGovernanceForbidden, "无权执行课程合并", nil)
 	}
+
+	// 执行与预览共用同一套归一化输入：去掉 0 与重复项、按 ID 升序，教师配对顺序
+	// 本身无语义也统一排序，避免「校验 A 列表、执行 B 列表」。
+	input = normalizeCourseMergeInput(input)
 
 	// 幂等重试检查：若请求的所有 loser 课程已全部并入当前 keeper，直接返回成功
 	if len(input.LoserSubjectIDs) > 0 {
@@ -2622,10 +2948,13 @@ func (s *TeacherGovernanceService) CourseMerge(adminID uint, input CourseMergeIn
 			lockedTeachersMap[tid] = lt
 		}
 
-		// 3. SnapshotToken 校验（持锁后核验，确保执行的是管理员确认的数据状态）
-		currentToken := computeCourseMergeSnapshotToken(tx, input.KeeperSubjectID, input.LoserSubjectIDs, plan.FinalCourseName, input.TeacherPairs)
-		if input.SnapshotToken != currentToken {
-			return governanceErr(CodeGovernanceSnapshotStale, "数据状态已发生变更，请刷新预览后重试", nil)
+		// 3. SnapshotToken 校验（持锁后核验，确保执行的是管理员确认的数据状态与操作方案）
+		currentDataDigest, currentOperationDigest, snapshotErr := computeCourseMergeDigests(tx, input)
+		if snapshotErr != nil {
+			return snapshotErr
+		}
+		if err := verifyGovernanceSnapshotToken(input.SnapshotToken, currentDataDigest, currentOperationDigest); err != nil {
+			return err
 		}
 
 		keeperSubject := lockedSubjects[input.KeeperSubjectID]

@@ -1384,14 +1384,11 @@ func main() {
 		}
 		securityEventSchemaReady := db.Migrator().HasTable(&models.SecurityEvent{})
 		securityBlockSchemaReady := db.Migrator().HasTable(&models.SecurityBlock{})
-		securityBlockRuntimeDegraded := cfg.SecurityBlockEnabled && securityEvents.SecurityBlockDegraded()
-		securityBlockReady := !cfg.SecurityBlockEnabled || (securityBlockSchemaReady && !securityBlockRuntimeDegraded)
-		healthStatus := "ok"
-		healthHTTPStatus := http.StatusOK
-		if !securityBlockReady {
-			healthStatus = "degraded"
-			healthHTTPStatus = http.StatusServiceUnavailable
-		}
+		// 安全摘要只走 handlers.SecurityPublicHealthPayload：与安全中心总览共用同一份层状态判定，
+		// 不再在这里就地拼「表在不在」——那正是 A11 里看板降级、探针仍然绿色的原因。
+		// 部署配置（反代网段、归因生效时间）属于受保护的管理接口，不在公共探针上输出。
+		healthStatus, healthHTTPStatus, securityHealth := handlers.
+			SecurityPublicHealthPayload(securityEvents, cfg.SecurityBlockEnabled, securityEventSchemaReady, securityBlockSchemaReady)
 		c.JSON(healthHTTPStatus, gin.H{
 			"status":      healthStatus,
 			"git_sha":     GitSHA,
@@ -1401,15 +1398,7 @@ func main() {
 				"teacher_governance_v1": true,
 				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
 			},
-			"security": gin.H{
-				"trusted_proxy_cidrs":             cfg.TrustedProxyCIDRs,
-				"trusted_proxy_configured":        len(cfg.TrustedProxyCIDRs) > 0,
-				"security_event_schema_ready":     securityEventSchemaReady,
-				"security_block_enabled":          cfg.SecurityBlockEnabled,
-				"security_block_schema_ready":     securityBlockSchemaReady,
-				"security_block_runtime_degraded": securityBlockRuntimeDegraded,
-				"source_attribution_valid_from":   cfg.SecurityAttributionValidFrom,
-			},
+			"security": gin.H(securityHealth),
 			"ai": gin.H{
 				"enabled":         cfg.AIEnabled,
 				"runtime_enabled": aiRuntime != nil,

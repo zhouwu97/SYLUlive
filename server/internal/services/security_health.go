@@ -127,3 +127,62 @@ func (s SecurityHealthSnapshot) Detail() map[string]interface{} {
 	}
 	return out
 }
+
+// SecurityLayerState 是一层防护「配置态」与「运行态」的合并结论。
+//
+// 这一层判断必须只有一个实现：安全中心总览和 /health 各自推算一遍，就会出现
+// A11 描述的那种事实分裂——看板已经降级，探针仍然长期绿色。
+type SecurityLayerState struct {
+	Configured bool                   `json:"configured"`
+	Runtime    string                 `json:"runtime"`
+	Reason     string                 `json:"reason,omitempty"`
+	Detail     map[string]interface{} `json:"detail,omitempty"`
+}
+
+// EventCollectionState 判断安全事件采集的真实运行态。
+//
+// 早期实现只看 `HasTable(&SecurityEvent{})`：表存在即 ready。但业务侧写事件统一
+// `_ = Record(...)` 忽略错误，表在而写入一直失败时，攻击记录会整批丢失且无人察觉。
+// 现在以实际 UPSERT 的成败为准；表缺失单独判 unavailable，没有比“写不进去”更严重的降级。
+// 启动后一次都没写过是 unknown，不是 ready：「没出过错」和「没被用过」对管理员是两个事实。
+func (s *SecurityEventService) EventCollectionState(eventTableReady bool) SecurityLayerState {
+	snapshot := s.EventWriteHealth()
+	if !eventTableReady {
+		return SecurityLayerState{Configured: true, Runtime: SecurityLayerUnavailable, Reason: "security_event_table_missing", Detail: snapshot.Detail()}
+	}
+	runtime := snapshot.Status()
+	reason := ""
+	if runtime != SecurityLayerReady {
+		reason = "last_write_failed"
+		if runtime == SecurityLayerUnknown {
+			reason = "not_written_since_start"
+		}
+	}
+	return SecurityLayerState{Configured: true, Runtime: runtime, Reason: reason, Detail: snapshot.Detail()}
+}
+
+// BlockLookupState 判断来源封禁查询的真实运行态。
+//
+// 除累计成败外还读 degraded 标记：/health 过去就是按它判定 fail-open 的，
+// 两处必须给出同一结论，否则会出现「/health 说降级、安全中心显示正常」。
+func (s *SecurityEventService) BlockLookupState(blockEnabled, blockTableReady bool) SecurityLayerState {
+	snapshot := s.BlockCheckHealth()
+	if !blockEnabled {
+		return SecurityLayerState{Configured: false, Runtime: SecurityLayerNotConfigured, Reason: "block_switch_off", Detail: snapshot.Detail()}
+	}
+	if !blockTableReady {
+		return SecurityLayerState{Configured: true, Runtime: SecurityLayerUnavailable, Reason: "security_block_table_missing", Detail: snapshot.Detail()}
+	}
+	runtime := snapshot.Status()
+	if runtime == SecurityLayerReady && s.SecurityBlockDegraded() {
+		runtime = SecurityLayerDegraded
+	}
+	reason := ""
+	switch runtime {
+	case SecurityLayerDegraded, SecurityLayerUnavailable:
+		reason = "block_lookup_failed_fail_open"
+	case SecurityLayerUnknown:
+		reason = "not_queried_since_start"
+	}
+	return SecurityLayerState{Configured: true, Runtime: runtime, Reason: reason, Detail: snapshot.Detail()}
+}

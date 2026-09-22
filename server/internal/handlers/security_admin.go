@@ -113,25 +113,13 @@ func protectionLayerState(configured bool, runtime, reason string, detail map[st
 	return state
 }
 
-// securityEventCollectionState 判断安全事件采集的真实运行态。
+// securityEventCollectionState 报告安全事件采集的运行态。
 //
-// 早期实现只看 `HasTable(&SecurityEvent{})`：表存在即 ready。但业务侧写事件统一
-// `_ = Record(...)` 忽略错误，表在而写入一直失败时，攻击记录会整批丢失且无人察觉。
-// 现在以实际 UPSERT 的成败为准；表缺失单独判 unavailable，没有比“写不进去”更严重的降级。
+// 判定规则住在 services.SecurityEventService 里：/health 与总览必须给同一结论，
+// 这里只按 overview 既有的字段形状渲染。
 func (h *SecurityAdminHandler) securityEventCollectionState() gin.H {
-	snapshot := h.security.EventWriteHealth()
-	if !h.db.Migrator().HasTable(&models.SecurityEvent{}) {
-		return protectionLayerState(true, services.SecurityLayerUnavailable, "security_event_table_missing", snapshot.Detail())
-	}
-	runtime := snapshot.Status()
-	reason := ""
-	if runtime != services.SecurityLayerReady {
-		reason = "last_write_failed"
-		if runtime == services.SecurityLayerUnknown {
-			reason = "not_written_since_start"
-		}
-	}
-	return protectionLayerState(true, runtime, reason, snapshot.Detail())
+	state := h.security.EventCollectionState(h.db.Migrator().HasTable(&models.SecurityEvent{}))
+	return protectionLayerState(state.Configured, state.Runtime, state.Reason, state.Detail)
 }
 
 // verificationLimitProber 由验证码服务实现，让安全中心问到的是真实阈值而不是写死的字符串。
@@ -153,30 +141,11 @@ func (h *SecurityAdminHandler) verificationLimitState(ctx context.Context) gin.H
 	return protectionLayerState(status.Configured, status.Runtime, status.Reason, status.Detail)
 }
 
+// securityBlockState 报告来源封禁查询的运行态，判定同样住在服务层，
+// 与 /health 共用一份结论。
 func (h *SecurityAdminHandler) securityBlockState() gin.H {
-	if !h.securityBlockEnabled {
-		return protectionLayerState(false, services.SecurityLayerNotConfigured,
-			"block_switch_off", h.security.BlockCheckHealth().Detail())
-	}
-	snapshot := h.security.BlockCheckHealth()
-	if !h.db.Migrator().HasTable(&models.SecurityBlock{}) {
-		return protectionLayerState(true, services.SecurityLayerUnavailable,
-			"security_block_table_missing", snapshot.Detail())
-	}
-	runtime := snapshot.Status()
-	// 同时读 degraded 标记：/health 就是按它判定 fail-open 的，两处必须给出同一结论，
-	// 否则会出现「/health 说降级、安全中心显示正常」。
-	if runtime == services.SecurityLayerReady && h.security.SecurityBlockDegraded() {
-		runtime = services.SecurityLayerDegraded
-	}
-	reason := ""
-	switch runtime {
-	case services.SecurityLayerDegraded, services.SecurityLayerUnavailable:
-		reason = "block_lookup_failed_fail_open"
-	case services.SecurityLayerUnknown:
-		reason = "not_queried_since_start"
-	}
-	return protectionLayerState(true, runtime, reason, snapshot.Detail())
+	state := h.security.BlockLookupState(h.securityBlockEnabled, h.db.Migrator().HasTable(&models.SecurityBlock{}))
+	return protectionLayerState(state.Configured, state.Runtime, state.Reason, state.Detail)
 }
 
 func (h *SecurityAdminHandler) Overview(c *gin.Context) {

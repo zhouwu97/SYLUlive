@@ -1,0 +1,7 @@
+# 体测 Provider 的签名 key 是公开客户端协议常量，不是业务服务器密钥。
+# 仅允许精确字符串出现在精确文件中，避免把真正的密钥命中泛化忽略。
+[allowlist]
+description = "公开体测客户端签名常量"
+regexTarget = "match"
+regexes = ['8d6c5b73a50d4707bd71c93882ddbc8b']
+paths = ['^browser-extension/src/school\.ts$']

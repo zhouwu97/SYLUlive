@@ -74,7 +74,7 @@ jobs:
           else
             log_opts="--max-count=1 $COMMIT_SHA"
           fi
-          "$(go env GOPATH)/bin/gitleaks" git --no-banner --redact --log-opts="$log_opts" .
+          "$(go env GOPATH)/bin/gitleaks" git --no-banner --redact --config=.gitleaks.toml --log-opts="$log_opts" .
 
   codeql-go:
     name: CodeQL Go

@@ -159,6 +159,13 @@ class _DelayedSourceEduProvider extends EduProvider {
 }
 
 /// 写入一份有效课表快照，fetchedAt 可指定（用于“上次同步”文案测试）。
+/// 给定时刻所在周的**本地零点周一**。必须在日历域里回退天数：用
+/// `subtract(Duration(days:))` 跨夏令时切换点会得到前一天 23:00 的瞬时，weekday
+/// 就不是周一了。
+DateTime _mondayOf(DateTime d) {
+  return DateTime(d.year, d.month, d.day - (d.weekday - 1));
+}
+
 Future<void> _seedVault(
   AccountScopedSnapshotStore store, {
   required DateTime fetchedAt,
@@ -190,7 +197,14 @@ Future<void> _seedVault(
             },
           ],
           'hidden_course_ids': <int>[],
-          'semester_start': configuredSemesterStart.toUtc().toIso8601String(),
+          // 与 ScheduleCacheStore.writeSemesterStart 一致：学期起始日是去掉时分的
+          // 日历日期，以 UTC 承载。写成带本地时刻的瞬时会在 UTC 负偏移的机器上
+          // 整体前移一天，页眉那一周和教学周号就对不上了。
+          'semester_start': DateTime.utc(
+            configuredSemesterStart.year,
+            configuredSemesterStart.month,
+            configuredSemesterStart.day,
+          ).toIso8601String(),
           'archives': <dynamic>[],
           'active_archive_id': null,
         },
@@ -477,7 +491,7 @@ void main() {
   testWidgets('初始化优先恢复缓存课表，不显示整页 loading', (tester) async {
     final store = _MemorySnapshotStore();
     final now = DateTime.now();
-    final monday = now.subtract(Duration(days: now.weekday - 1));
+    final monday = _mondayOf(now);
     await _seedVault(store, fetchedAt: now, semesterStart: monday);
     final provider = _newProvider(store);
     expect(await provider.loadCachedCoursesIfAvailable(), isTrue);
@@ -499,7 +513,7 @@ void main() {
   testWidgets('来源学号延迟恢复时不显示误导的课表拉取空状态', (tester) async {
     final store = _MemorySnapshotStore();
     final now = DateTime.now();
-    final monday = now.subtract(Duration(days: now.weekday - 1));
+    final monday = _mondayOf(now);
     await _seedVault(
       store,
       fetchedAt: now,

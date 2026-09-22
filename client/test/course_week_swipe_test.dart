@@ -137,9 +137,15 @@ String? _weekHeaderText(WidgetTester tester) {
   return null;
 }
 
+/// 周一必须落在本地零点：用 `subtract(Duration(days:))` 这类**绝对时长**回退，
+/// 跨夏令时切换日会得到前一天 23:00 的瞬时，weekday 就不再是周一。
+/// 同理，偏移整周也要在日历域里加天数（见 [_addWeeks]）。
 DateTime _mondayOf(DateTime d) {
-  return DateTime(d.year, d.month, d.day)
-      .subtract(Duration(days: d.weekday - 1));
+  return DateTime(d.year, d.month, d.day - (d.weekday - 1));
+}
+
+DateTime _addWeeks(DateTime monday, int weeks) {
+  return DateTime(monday.year, monday.month, monday.day + weeks * 7);
 }
 
 void main() {
@@ -241,13 +247,14 @@ void main() {
 
   // ====== 有限分页边界 ======
 
-  String weekRange(DateTime monday) =>
-      '${monday.month}/${monday.day} - ${monday.add(const Duration(days: 6)).month}/${monday.add(const Duration(days: 6)).day}';
+  String weekRange(DateTime monday) {
+    final sunday = DateTime(monday.year, monday.month, monday.day + 6);
+    return '${monday.month}/${monday.day} - ${sunday.month}/${sunday.day}';
+  }
 
   // 当前日期早于开学 → 锚定到第 1 周
   testWidgets('开学日在未来时 page0 就是第1周', (tester) async {
-    final futureMonday =
-        _mondayOf(DateTime.now()).add(const Duration(days: 21));
+    final futureMonday = _addWeeks(_mondayOf(DateTime.now()), 3);
     final page = await _pumpCourse(tester, semesterStart: futureMonday);
 
     final controller =
@@ -260,8 +267,7 @@ void main() {
   });
 
   testWidgets('第1周向前(右滑)不能进入第0周', (tester) async {
-    final futureMonday =
-        _mondayOf(DateTime.now()).add(const Duration(days: 21));
+    final futureMonday = _addWeeks(_mondayOf(DateTime.now()), 3);
     final page = await _pumpCourse(tester, semesterStart: futureMonday);
     expect(find.text('第 1 周'), findsOneWidget);
     final before = _weekHeaderText(tester);
@@ -279,8 +285,7 @@ void main() {
   });
 
   testWidgets('第1周向后(左滑)进入第2周', (tester) async {
-    final futureMonday =
-        _mondayOf(DateTime.now()).add(const Duration(days: 21));
+    final futureMonday = _addWeeks(_mondayOf(DateTime.now()), 3);
     final page = await _pumpCourse(tester, semesterStart: futureMonday);
 
     final controller =
@@ -292,15 +297,14 @@ void main() {
 
     expect(controller.page, closeTo(1, 0.001));
     expect(find.text('第 2 周'), findsOneWidget);
-    final week2 = futureMonday.add(const Duration(days: 7));
+    final week2 = _addWeeks(futureMonday, 1);
     expect(_weekHeaderText(tester), contains(weekRange(week2)));
 
     await _disposeCourse(tester, page);
   });
 
   testWidgets('第2周向前(右滑)返回第1周', (tester) async {
-    final futureMonday =
-        _mondayOf(DateTime.now()).add(const Duration(days: 21));
+    final futureMonday = _addWeeks(_mondayOf(DateTime.now()), 3);
     final page = await _pumpCourse(tester, semesterStart: futureMonday);
 
     await tester.dragFrom(const Offset(220, 400), const Offset(-250, 0));
@@ -321,8 +325,7 @@ void main() {
   testWidgets('最后一周不能再向后(左滑)', (tester) async {
     const maxWeek = 20; // CourseTerm 默认值
     final lastWeekMonday = _mondayOf(DateTime.now());
-    final semesterStart =
-        lastWeekMonday.subtract(Duration(days: (maxWeek - 1) * 7));
+    final semesterStart = _addWeeks(lastWeekMonday, -(maxWeek - 1));
     final page = await _pumpCourse(tester, semesterStart: semesterStart);
 
     final controller =
@@ -342,7 +345,7 @@ void main() {
   });
 
   testWidgets('重设开学周后分页器日期与页码同步重置', (tester) async {
-    final original = _mondayOf(DateTime.now()).add(const Duration(days: 21));
+    final original = _addWeeks(_mondayOf(DateTime.now()), 3);
     final page = await _pumpCourse(tester, semesterStart: original);
     expect(find.text('第 1 周'), findsOneWidget);
 
@@ -351,7 +354,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('第 2 周'), findsOneWidget);
 
-    final newStart = _mondayOf(DateTime.now()).add(const Duration(days: 42));
+    final newStart = _addWeeks(_mondayOf(DateTime.now()), 6);
     await page.scheduleProvider.setSemesterStart(newStart);
     await tester.pumpAndSettle();
 

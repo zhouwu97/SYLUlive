@@ -71,7 +71,7 @@ func TestGetUsersUsesVerifiedAcademicStudentIDAndSearch(t *testing.T) {
 	}
 	if err := db.Create(&models.AcademicIdentityBinding{
 		UserID: 436, ProviderID: models.AcademicProviderUndergraduate, StudentID: "2408010115",
-		VerifiedAt: time.Now(), VerificationMethod: "local_academic_login", VerificationVersion: "v1",
+		VerifiedAt: time.Now(), VerificationMethod: models.AcademicVerificationMethodSchoolProfile, VerificationVersion: "v1",
 	}).Error; err != nil {
 		t.Fatalf("create academic identity: %v", err)
 	}

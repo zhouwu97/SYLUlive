@@ -54,9 +54,9 @@ func loadAdminAcademicStudentIDs(db *gorm.DB, users []models.User) (map[uint]adm
 	}
 
 	var bindings []models.AcademicIdentityBinding
-	if err := db.
-		Select("user_id", "provider_id", "student_id", "verified_at").
-		Where("user_id IN ? AND verified_at > ?", userIDs, time.Time{}).
+	if err := models.TrustedAcademicBindingScope(db.
+		Select("user_id", "provider_id", "student_id", "verified_at", "verification_method").
+		Where("user_id IN ? AND verified_at > ?", userIDs, time.Time{})).
 		Order("user_id ASC, provider_id DESC, student_id ASC").
 		Find(&bindings).Error; err != nil {
 		return nil, err
@@ -103,9 +103,9 @@ func withAdminUserSearch(query, db *gorm.DB, keyword string) *gorm.DB {
 		args = append([]interface{}{userID}, args...)
 	}
 	if db != nil && db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
-		identityOwners := db.Model(&models.AcademicIdentityBinding{}).
+		identityOwners := models.TrustedAcademicBindingScope(db.Model(&models.AcademicIdentityBinding{}).
 			Select("user_id").
-			Where("verified_at > ? AND LOWER(student_id) LIKE ?", time.Time{}, like)
+			Where("verified_at > ? AND LOWER(student_id) LIKE ?", time.Time{}, like))
 		conditions += " OR id IN (?)"
 		args = append(args, identityOwners)
 	}

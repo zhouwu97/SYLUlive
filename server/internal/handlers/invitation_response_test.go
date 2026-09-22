@@ -159,7 +159,7 @@ func TestGetCandidatesUsesVerifiedAcademicStudentIDWhenLegacyFieldIsEmpty(t *tes
 	})
 	if err := db.Create(&models.AcademicIdentityBinding{
 		UserID: 436, ProviderID: models.AcademicProviderUndergraduate, StudentID: "2408010115",
-		VerifiedAt: time.Now(), VerificationMethod: "local_academic_login", VerificationVersion: "v1",
+		VerifiedAt: time.Now(), VerificationMethod: models.AcademicVerificationMethodSchoolProfile, VerificationVersion: "v1",
 	}).Error; err != nil {
 		t.Fatalf("创建教务身份失败: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestGetCandidatesStatsCountsVerifiedAcademicIdentities(t *testing.T) {
 	createInvitationResponseTestUser(t, db, models.User{ID: 436, Nickname: "念辞", Role: models.RoleUser})
 	if err := db.Create(&models.AcademicIdentityBinding{
 		UserID: 436, ProviderID: models.AcademicProviderUndergraduate, StudentID: "2408010115",
-		VerifiedAt: time.Now(), VerificationMethod: "local_academic_login", VerificationVersion: "v1",
+		VerifiedAt: time.Now(), VerificationMethod: models.AcademicVerificationMethodSchoolProfile, VerificationVersion: "v1",
 	}).Error; err != nil {
 		t.Fatalf("创建教务身份失败: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestGetApprovalListReturnsAdminDTOForNestedUsers(t *testing.T) {
 	})
 	if err := db.Create(&models.AcademicIdentityBinding{
 		UserID: 1, ProviderID: models.AcademicProviderUndergraduate, StudentID: "2408010115",
-		VerifiedAt: time.Now(), VerificationMethod: "local_academic_login", VerificationVersion: "v1",
+		VerifiedAt: time.Now(), VerificationMethod: models.AcademicVerificationMethodSchoolProfile, VerificationVersion: "v1",
 	}).Error; err != nil {
 		t.Fatalf("创建教务身份失败: %v", err)
 	}

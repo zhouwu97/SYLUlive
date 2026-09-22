@@ -109,8 +109,8 @@ func (h *InvitationHandler) GetCandidatesStats(c *gin.Context) {
 
 	eduQuery := h.db.Model(&models.User{}).Where("edu_bound = ?", true)
 	if h.db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
-		eduQuery = h.db.Model(&models.AcademicIdentityBinding{}).
-			Where("verified_at > ?", time.Time{}).
+		eduQuery = models.TrustedAcademicBindingScope(h.db.Model(&models.AcademicIdentityBinding{}).
+			Where("verified_at > ?", time.Time{})).
 			Distinct("user_id")
 	}
 	if err := eduQuery.Count(&eduCount).Error; err != nil {

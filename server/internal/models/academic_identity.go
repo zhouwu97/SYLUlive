@@ -96,6 +96,53 @@ type AcademicIdentityBinding struct {
 	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
+const (
+	// AcademicVerificationMethodSchoolProfile 表示学校响应可被服务器独立核验。
+	AcademicVerificationMethodSchoolProfile = "school_profile"
+	// AcademicVerificationMethodLocalDeclaration 只是客户端本机登录成功后的设备侧声明。
+	AcademicVerificationMethodLocalDeclaration = "local_academic_login"
+	// AcademicVerificationMethodLegacyMigration 回填自旧版本已持久化的学号认证标记：
+	// 它是历史事实而非本次服务器核验，仅作为兼容保留，不能据此向新用户开放同类依据。
+	AcademicVerificationMethodLegacyMigration = "legacy_migration"
+)
+
+// untrustedAcademicVerificationMethods 是不构成可信学生认证的依据来源。
+// 空值一并列入：判权只认明确登记的核验方式，未知取值默认不授予可信身份。
+var untrustedAcademicVerificationMethods = []string{
+	"",
+	AcademicVerificationMethodLocalDeclaration,
+}
+
+// IsTrustedAcademicVerificationMethod 区分学校可核验事实与设备侧声明。
+func IsTrustedAcademicVerificationMethod(method string) bool {
+	trimmed := strings.TrimSpace(method)
+	for _, untrusted := range untrustedAcademicVerificationMethods {
+		if trimmed == untrusted {
+			return false
+		}
+	}
+	return true
+}
+
+// TrustedAcademicBindingScope 给身份表查询加上与 Go 侧判权完全一致的"服务器可核验"约束，
+// 避免各处手写 `verification_method <> 'local_academic_login'` 后各自漂移。
+func TrustedAcademicBindingScope(db *gorm.DB) *gorm.DB {
+	return db.Where("verification_method NOT IN ?", untrustedAcademicVerificationMethods)
+}
+
+// AcademicAssuranceLevel 提供给 API/UI 的依据强度，不把本机连接误称为 verified。
+func AcademicAssuranceLevel(method string) string {
+	if IsTrustedAcademicVerificationMethod(method) {
+		return AcademicAssuranceSchoolVerified
+	}
+	return AcademicAssuranceLocalDeclaration
+}
+
+const (
+	AcademicAssuranceSchoolVerified   = "school_verified"
+	AcademicAssuranceLocalDeclaration = "local_declaration"
+)
+
 func (b AcademicIdentityBinding) IdentityKey() AcademicIdentityKey {
 	return AcademicIdentityKey{AppUserID: b.UserID, ProviderID: AcademicProviderID(b.ProviderID), StudentID: b.StudentID}
 }
@@ -138,6 +185,7 @@ type AcademicIdentityChallenge struct {
 // HasVerifiedAcademicIdentity 只读取服务器认证事实，账号配置和旧授权不能授予学生权限。
 func HasVerifiedAcademicIdentity(db *gorm.DB, userID uint) (bool, error) {
 	var count int64
-	err := db.Model(&AcademicIdentityBinding{}).Where("user_id = ? AND verified_at > ?", userID, time.Time{}).Count(&count).Error
+	err := TrustedAcademicBindingScope(db.Model(&AcademicIdentityBinding{}).
+		Where("user_id = ? AND verified_at > ?", userID, time.Time{})).Count(&count).Error
 	return count > 0, err
 }

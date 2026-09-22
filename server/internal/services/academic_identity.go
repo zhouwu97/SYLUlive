@@ -10,7 +10,8 @@ import (
 // VerifiedAcademicIdentities 是身份列表和本人资料共用的事实来源，不拼接旧授权字段。
 func VerifiedAcademicIdentities(db *gorm.DB, userID uint) ([]models.AcademicIdentityBinding, error) {
 	bindings := make([]models.AcademicIdentityBinding, 0)
-	err := db.Where("user_id = ? AND verified_at > ?", userID, time.Time{}).Order("provider_id DESC, student_id ASC").Find(&bindings).Error
+	err := models.TrustedAcademicBindingScope(db.Where("user_id = ? AND verified_at > ?", userID, time.Time{})).
+		Order("provider_id DESC, student_id ASC").Find(&bindings).Error
 	return bindings, err
 }
 
@@ -18,7 +19,9 @@ func VerifiedAcademicIdentities(db *gorm.DB, userID uint) ([]models.AcademicIden
 func AcademicLoginAvailable(db *gorm.DB, bindings []models.AcademicIdentityBinding) (bool, error) {
 	for _, binding := range bindings {
 		var owners int64
-		if err := db.Model(&models.AcademicIdentityBinding{}).Where("student_id = ?", binding.StudentID).Distinct("user_id").Count(&owners).Error; err != nil {
+		if err := models.TrustedAcademicBindingScope(db.Model(&models.AcademicIdentityBinding{}).
+			Where("student_id = ?", binding.StudentID)).
+			Distinct("user_id").Count(&owners).Error; err != nil {
 			return false, err
 		}
 		if owners == 1 {
@@ -43,7 +46,7 @@ func MigrateAcademicIdentities(db *gorm.DB) error {
 			if _, err := models.ParseAcademicProviderID(provider); err != nil {
 				return err
 			}
-			binding := models.AcademicIdentityBinding{UserID: user.ID, ProviderID: provider, StudentID: user.StudentID, VerifiedAt: *user.StudentVerifiedAt, VerificationMethod: "legacy_migration", VerificationVersion: "v1"}
+			binding := models.AcademicIdentityBinding{UserID: user.ID, ProviderID: provider, StudentID: user.StudentID, VerifiedAt: *user.StudentVerifiedAt, VerificationMethod: models.AcademicVerificationMethodLegacyMigration, VerificationVersion: "v1"}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&binding).Error; err != nil {
 				return err
 			}
@@ -60,7 +63,7 @@ func MigrateAcademicIdentities(db *gorm.DB) error {
 // SeedAcademicAccountConfigs 仅为历史身份补首次云端配置；已有配置和删除墓碑始终优先。
 func SeedAcademicAccountConfigs(db *gorm.DB) error {
 	var bindings []models.AcademicIdentityBinding
-	if err := db.Where("user_id IN (?)", db.Model(&models.User{}).Select("id").Where("account_status = ? OR account_status = ?", "active", "")).Find(&bindings).Error; err != nil {
+	if err := models.TrustedAcademicBindingScope(db.Where("user_id IN (?)", db.Model(&models.User{}).Select("id").Where("account_status = ? OR account_status = ?", "active", ""))).Find(&bindings).Error; err != nil {
 		return err
 	}
 	return db.Transaction(func(tx *gorm.DB) error {

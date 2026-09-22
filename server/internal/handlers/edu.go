@@ -294,7 +294,7 @@ func updateUserEduBinding(db *gorm.DB, userID uint, studentID string, result *ed
 			"student_id":                     studentID,
 			"student_verified_at":            now,
 			"academic_provider_id":           models.AcademicProviderUndergraduate,
-			"student_verification_method":    "school_profile",
+			"student_verification_method":    models.AcademicVerificationMethodSchoolProfile,
 			"student_verification_version":   "legacy-v1",
 			"edu_student_id":                 studentID,
 			"edu_authorized":                 true,

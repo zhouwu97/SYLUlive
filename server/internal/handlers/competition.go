@@ -698,7 +698,7 @@ func (h *CompetitionHandler) ListFitEvents(c *gin.Context) {
 func (h *CompetitionHandler) AdminCompetitionAudienceOptions(c *gin.Context) {
 	var users []models.User
 	if err := h.db.Select("edu_grade", "edu_college", "edu_major").
-		Where("id IN (?)", h.db.Model(&models.AcademicIdentityBinding{}).Select("user_id").Where("verified_at > ?", time.Time{})).
+		Where("id IN (?)", models.TrustedAcademicBindingScope(h.db.Model(&models.AcademicIdentityBinding{}).Select("user_id").Where("verified_at > ?", time.Time{}))).
 		Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取画像选项失败"})
 		return

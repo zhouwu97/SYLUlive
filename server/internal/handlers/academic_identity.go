@@ -33,7 +33,7 @@ const (
 	academicChallengeRateWindow   = 10 * time.Minute
 	academicChallengeUserLimit    = 5
 	academicChallengeIPLimit      = 20
-	academicChallengeMethod       = "school_profile"
+	academicChallengeMethod       = models.AcademicVerificationMethodSchoolProfile
 	academicChallengeVersion      = "v1"
 )
 
@@ -678,16 +678,20 @@ func (h *AcademicIdentityHandler) List(c *gin.Context) {
 }
 
 func academicBindingPayload(binding models.AcademicIdentityBinding) gin.H {
-	return gin.H{
+	payload := gin.H{
 		"provider_id":          binding.ProviderID,
 		"student_id":           binding.StudentID,
-		"verified":             true,
-		"verified_at":          binding.VerifiedAt.UTC().Format(time.RFC3339),
+		"verified":             models.IsTrustedAcademicVerificationMethod(binding.VerificationMethod),
+		"assurance_level":      models.AcademicAssuranceLevel(binding.VerificationMethod),
 		"verification_method":  binding.VerificationMethod,
 		"verification_version": binding.VerificationVersion,
 		"binding_version":      binding.BindingVersion,
 		"changed_at":           binding.ChangedAt,
 	}
+	if payload["verified"] == true {
+		payload["verified_at"] = binding.VerifiedAt.UTC().Format(time.RFC3339)
+	}
+	return payload
 }
 
 func userAcademicProvider(id string) string {
@@ -779,7 +783,15 @@ func persistAcademicIdentityBinding(db *gorm.DB, userID uint, providerID, studen
 		var conflict models.AcademicIdentityBinding
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider_id = ? AND student_id = ?", providerID, studentID).First(&conflict).Error
 		if err == nil && conflict.UserID != userID {
-			return errAcademicIdentityAlreadyBound
+			if conflict.VerificationMethod == models.AcademicVerificationMethodLocalDeclaration {
+				// 旧版本曾把设备声明落入全局唯一表；可信绑定到来时先清掉该低保证记录，
+				// 不能让未验证声明永久阻断真实用户。
+				if err := tx.Delete(&conflict).Error; err != nil {
+					return err
+				}
+			} else {
+				return errAcademicIdentityAlreadyBound
+			}
 		}
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err

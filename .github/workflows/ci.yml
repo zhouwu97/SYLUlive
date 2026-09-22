@@ -6,6 +6,29 @@ on:
   workflow_dispatch:
 
 jobs:
+  # 格式检查独立成 job：以前它和 go vet / go test 串在同一步骤里，
+  # 一个对齐问题会让后面两项整段跳过（审计 R01 第 2 条）。
+  # 范围推导、删除文件、带空格路径、新分支等边界都落在脚本里，便于本机复跑验证。
+  server-format:
+    name: Go format check (changed files)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+      - name: Check changed Go files are formatted
+        env:
+          # 必须显式注入：`GITHUB_EVENT_BEFORE` 并不是 Actions 提供的环境变量，
+          # 旧步骤读它永远得到空值，多提交 push 会退化成只查最后一个提交。
+          EVENT_NAME: ${{ github.event_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash scripts/check-go-format.sh
+
   server:
     runs-on: ubuntu-latest
     defaults:
@@ -18,24 +41,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
-      - name: Check changed Go files are formatted
-        working-directory: .
-        shell: bash
-        run: |
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            files=$(git diff --name-only "${{ github.event.pull_request.base.sha }}"..."$GITHUB_SHA" -- '*.go')
-          elif [[ -n "$GITHUB_EVENT_BEFORE" && "$GITHUB_EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]]; then
-            files=$(git diff --name-only "$GITHUB_EVENT_BEFORE" "$GITHUB_SHA" -- '*.go')
-          else
-            files=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" -- '*.go')
-          fi
-          if [[ -z "$files" ]]; then
-            echo "No changed Go files to format-check."
-            exit 0
-          fi
-          printf '%s\n' "$files" | xargs gofmt -d | (! grep .)
       - run: go vet ./...
-      - run: go test ./...
+      # 计数断言：零条匹配或整体跳过不得算通过（审计 R01 第 8 条）。
+      - name: Run Go tests
+        run: bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 ./...
 
   postgres-integration:
     runs-on: ubuntu-latest
@@ -68,7 +77,7 @@ jobs:
       - name: Run PostgreSQL idempotency integration tests
         working-directory: server
         run: >-
-          go test -tags=integration ./internal/middleware
+          bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 -tags=integration ./internal/middleware
           -run '^TestIdempotencyMiddlewarePostgres' -count=1
       # 只跑内容发布额度 / 回复治理 / 安全事件的 PostgreSQL 集成用例：
       # 不加 -run 会把整包（含无需数据库的单测）重跑一遍，既重复又难以定位失败。
@@ -79,7 +88,7 @@ jobs:
       - name: Run PostgreSQL handlers/services integration tests
         working-directory: server
         run: >-
-          go test -tags=integration -p 1 ./internal/handlers ./internal/services
+          bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 -tags=integration -p 1 ./internal/handlers ./internal/services
           -run '^(TestPostPublishQuota|TestReplyRejectedWhenPostHidden|TestSecurityEvent|TestFeedbackTicket.*Postgres|TestAwardDaily.*Postgres)'
           -count=1
 
@@ -111,7 +120,7 @@ jobs:
       - name: Upgrade legacy and current-minus-one fixtures twice
         working-directory: server
         run: >-
-          go test -tags=integration ./internal/models
+          bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 -tags=integration ./internal/models
           -run TestIdempotencySchemaUpgradeFromLegacyFixtures -count=1
 
   edu-service:
@@ -240,7 +249,10 @@ jobs:
           go-version-file: server/go.mod
       - name: Run independent pgvector migration test
         working-directory: server
-        run: go test ./internal/models -run TestPGVectorMigrationIntegration -count=1
+        # 包一层计数断言：DSN 缺失时该用例会 t.Skip，裸 `go test` 会把它当成通过。
+        run: >-
+          bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 ./internal/models
+          -run TestPGVectorMigrationIntegration -count=1
 
   client-platform-boundary:
     runs-on: ubuntu-latest
@@ -265,5 +277,57 @@ jobs:
             echo "Found direct usage of Android plugins without platform abstraction."
             exit 1
           fi
+
+  # 审计 R01 第 6 条：web 与浏览器扩展此前没有任何门禁 job——
+  # 类型检查、构建、单测和浏览器用例都只在开发者本机跑过。
+  # 本机已验证：pnpm -r check、vitest 41 条、vite build、Playwright 16 条全绿；
+  # CI 上的首次执行结果以本 workflow 的实际日志为准。
+  web-verification:
+    name: Web / extension typecheck, unit and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck every workspace package
+        run: pnpm -r check
+      - name: Run workspace unit tests
+        run: pnpm test
+      - name: Build web bundle and extension
+        run: pnpm -r build
+
+  web-e2e:
+    name: Web browser E2E (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: npx playwright install --with-deps chromium
+      - name: Run browser specs against the dev server
+        run: pnpm test:e2e
+      - name: Upload failure traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            test-results
+            playwright-report
+          retention-days: 7
+          if-no-files-found: ignore
+
 
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,8 +10,10 @@ import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dart';
+import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
 import 'package:shenliyuan/providers/course_schedule_provider.dart';
 import 'package:shenliyuan/models/course_term.dart';
+import 'package:shenliyuan/models/schedule/schedule_override.dart';
 import 'package:shenliyuan/repositories/schedule_override_repository.dart';
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 
@@ -30,6 +33,45 @@ class _TemporarilyUnavailableSecureStore
       throw StateError('测试：首次密钥读取尚未就绪');
     }
     return super.read(key);
+  }
+}
+
+class _PausedSnapshotFiles extends MemoryPersonalSnapshotFileBackend {
+  Completer<void>? writeStarted;
+  Completer<void>? releaseWrite;
+
+  @override
+  Future<void> write({
+    required String accountHash,
+    required PersonalDataType type,
+    required Uint8List bytes,
+  }) async {
+    final gate = releaseWrite;
+    if (gate != null) {
+      releaseWrite = null;
+      writeStarted?.complete();
+      await gate.future;
+    }
+    await super.write(accountHash: accountHash, type: type, bytes: bytes);
+  }
+}
+
+class _PausedOverrideRepository extends ScheduleOverrideRepository {
+  Completer<void>? writeStarted;
+  Completer<void>? releaseWrite;
+
+  @override
+  Future<bool> upsertOverride({
+    required ScheduleOverride override,
+    String? accountId,
+  }) async {
+    final gate = releaseWrite;
+    if (gate != null) {
+      releaseWrite = null;
+      writeStarted?.complete();
+      await gate.future;
+    }
+    return super.upsertOverride(override: override, accountId: accountId);
   }
 }
 
@@ -619,6 +661,163 @@ void main() {
       throwsA(isA<StateError>()),
     );
     expect(provider.courses, isEmpty);
+  });
+
+  test('旧账号课程写入完成后不得回滚或覆盖新账号课表', () async {
+    final pausedFiles = _PausedSnapshotFiles();
+    files = pausedFiles;
+    final seedB = createProvider()..syncSessionContext('2002', '2403130234');
+    await seedB.applyFetchedCourses([
+      {
+        'name': '新账号课程',
+        'time': 1,
+        'end_time': 2,
+        'week_day': 1,
+        'weeks': [1]
+      }
+    ]);
+    seedB.dispose();
+
+    for (final mutation in ['add', 'edit', 'remove', 'hide']) {
+      final seedA = createProvider()..syncSessionContext('1001', '2403130233');
+      await seedA.applyFetchedCourses([
+        {
+          'name': '旧账号课程',
+          'time': 3,
+          'end_time': 4,
+          'week_day': 2,
+          'weeks': [1]
+        }
+      ]);
+      if (mutation == 'edit' || mutation == 'remove') {
+        await seedA.addCustomCourse(
+          name: '旧账号自定义课',
+          weekday: 3,
+          startSection: 1,
+          endSection: 2,
+          startWeek: 1,
+          endWeek: 2,
+        );
+      }
+      final manualId = seedA.courses.where((c) => c.id < 0).firstOrNull?.id;
+      final serverId = seedA.courses.singleWhere((c) => c.id > 0).id;
+      seedA.dispose();
+
+      final provider = createProvider()
+        ..syncSessionContext('1001', '2403130233');
+      addTearDown(provider.dispose);
+      expect(await provider.loadCachedCoursesIfAvailable(), isTrue);
+      pausedFiles.writeStarted = Completer<void>();
+      final releaseWrite = Completer<void>();
+      pausedFiles.releaseWrite = releaseWrite;
+      final pending = switch (mutation) {
+        'add' => provider.addCustomCourse(
+            name: '未完成新增',
+            weekday: 4,
+            startSection: 1,
+            endSection: 2,
+            startWeek: 1,
+            endWeek: 2,
+          ),
+        'edit' => provider.editCustomCourse(
+            id: manualId!,
+            name: '未完成编辑',
+            weekday: 4,
+            startSection: 1,
+            endSection: 2,
+            startWeek: 1,
+            endWeek: 2,
+          ),
+        'remove' => provider.removeCustomCourse(manualId!),
+        _ => provider.removeCustomCourse(serverId),
+      };
+      await pausedFiles.writeStarted!.future
+          .timeout(const Duration(seconds: 2));
+      provider.syncSessionContext('2002', '2403130234');
+      expect(await provider.loadCachedCoursesIfAvailable(), isTrue);
+      releaseWrite.complete();
+      await expectLater(pending, throwsA(isA<StateError>()));
+      expect(provider.courses.map((c) => c.name), ['新账号课程']);
+      expect(provider.manualCourses, isEmpty);
+      expect(provider.getCoursesAt(1, 1).single.name, '新账号课程');
+      final bStore = ScheduleCacheStore(
+        appUserId: '2002',
+        sourceAccountId: '2403130234',
+        snapshotStore: createSnapshotStore('2002'),
+      );
+      final bSnapshot = await bStore.readTerm(
+        year: provider.currentTerm.year,
+        semester: provider.currentTerm.semester,
+      );
+      expect(bSnapshot?.courses.single['name'], '新账号课程');
+      final preferences = await AppPreferencesStore.getInstance();
+      for (var i = 0; i < 20; i++) {
+        if (preferences.getString('widget_course_data')?.contains('新账号课程') ==
+            true) break;
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      final widgetPayload = preferences.getString('widget_course_data');
+      expect(widgetPayload, contains('新账号课程'));
+      expect(widgetPayload, isNot(contains('旧账号课程')));
+    }
+  });
+
+  test('旧账号调课规则保存完成后不得加载到新账号课表', () async {
+    final repository = _PausedOverrideRepository();
+    final seedB = createProvider()..syncSessionContext('2002', '2403130234');
+    await seedB.applyFetchedCourses([
+      {
+        'name': '新账号课程',
+        'time': 1,
+        'end_time': 2,
+        'week_day': 1,
+        'weeks': [1]
+      }
+    ]);
+    seedB.dispose();
+
+    final provider = CourseScheduleProvider(
+      null,
+      createSnapshotStore,
+      null,
+      null,
+      repository,
+    )..syncSessionContext('1001', '2403130233');
+    addTearDown(provider.dispose);
+    await provider.applyFetchedCourses([
+      {
+        'name': '旧账号课程',
+        'time': 3,
+        'end_time': 4,
+        'week_day': 2,
+        'weeks': [1]
+      }
+    ]);
+    final oldCourse = provider.courses.single;
+    repository.writeStarted = Completer<void>();
+    final releaseWrite = Completer<void>();
+    repository.releaseWrite = releaseWrite;
+    final pending = provider.createChangeRoomOverride(
+      courseKey: oldCourse.courseKey!,
+      meetingKey: oldCourse.meetingKey!,
+      affectedWeeks: {1},
+      toRoom: '旧账号新教室',
+      sourceSnapshotHash:
+          provider.baseSchedule.single.meetings.single.computeSnapshotHash(),
+    );
+    await repository.writeStarted!.future.timeout(const Duration(seconds: 2));
+    provider.syncSessionContext('2002', '2403130234');
+    expect(await provider.loadCachedCoursesIfAvailable(), isTrue);
+    releaseWrite.complete();
+    await expectLater(pending, throwsA(isA<StateError>()));
+    expect(provider.courses.map((c) => c.name), ['新账号课程']);
+    expect(provider.overrides, isEmpty);
+    expect(
+        await repository.loadOverrides(
+          semesterId: provider.currentTerm.id,
+          accountId: '2403130234',
+        ),
+        isEmpty);
   });
 
   test('来源学号变化后不读取旧课表缓存', () async {

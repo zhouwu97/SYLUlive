@@ -101,9 +101,9 @@ func TestAccountScopeBlocksMatchByWholeRouteSegment(t *testing.T) {
 	}
 
 	cases := []struct {
-		route  string
+		route   string
 		blocked bool
-		why    string
+		why     string
 	}{
 		{"/api/change_password", true, "改密必须落在账号范围内"},
 		{"/api/user/email", true, "邮箱换绑必须落在账号范围内"},

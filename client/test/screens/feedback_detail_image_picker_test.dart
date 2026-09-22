@@ -29,11 +29,13 @@ class _MockDetailAuthProvider extends ChangeNotifier implements AuthProvider {
   _MockDetailAuthProvider({required this.client});
 
   final Dio client;
+  int currentUserId = 10;
+  int currentSessionGeneration = 1;
 
   @override
   User? get user => User(
-        id: 10,
-        studentId: '2026001',
+        id: currentUserId,
+        studentId: '2026$currentUserId',
         nickname: '学生小明',
         createdAt: DateTime(2026, 9, 14),
       );
@@ -42,10 +44,16 @@ class _MockDetailAuthProvider extends ChangeNotifier implements AuthProvider {
   bool get isLoggedIn => true;
 
   @override
-  int get sessionGeneration => 1;
+  int get sessionGeneration => currentSessionGeneration;
 
   @override
   Dio get dio => client;
+
+  void switchAccount(int userId) {
+    currentUserId = userId;
+    currentSessionGeneration++;
+    notifyListeners();
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -162,5 +170,106 @@ void main() {
     final textFieldWidgetAfterCancel = tester.widget<TextField>(textField);
     expect(textFieldWidgetAfterCancel.readOnly, isFalse);
     expect(find.text('未发送的草稿内容'), findsOneWidget);
+  });
+
+  testWidgets('切号后同内容消息使用新幂等键，旧响应不再接管新会话', (tester) async {
+    final dio = Dio();
+    late final _MockDetailAuthProvider authProvider;
+    RequestInterceptorHandler? firstSendHandler;
+    RequestOptions? firstSendOptions;
+    final idempotencyKeys = <String>[];
+    final detailAccountIds = <int>[];
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.path == '/feedback/tickets/1' &&
+              options.method == 'GET') {
+            final accountId = authProvider.currentUserId;
+            detailAccountIds.add(accountId);
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: {
+                  'ticket': {
+                    'id': 1,
+                    'ticket_no': 'SY2609140001',
+                    'user_id': accountId,
+                    'type': 'bug',
+                    'title': '账号 $accountId 的工单',
+                    'description': '初始描述',
+                    'status': 'investigating',
+                    'status_note': '定位中',
+                    'admin_viewed': true,
+                    'user_unread_count': 0,
+                    'created_at': '2026-09-14T08:00:00Z',
+                    'updated_at': '2026-09-14T08:00:00Z',
+                  },
+                  'messages': <dynamic>[],
+                  'history': <dynamic>[],
+                },
+              ),
+            );
+            return;
+          }
+          if (options.path == '/feedback/tickets/1/messages') {
+            idempotencyKeys.add(options.headers['Idempotency-Key'].toString());
+            if (firstSendHandler == null) {
+              firstSendHandler = handler;
+              firstSendOptions = options;
+              return;
+            }
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: {'ok': true},
+              ),
+            );
+            return;
+          }
+          handler.next(options);
+        },
+      ),
+    );
+
+    authProvider = _MockDetailAuthProvider(client: dio);
+    final themeProvider = ThemeProvider(loadOnStart: false);
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+          ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
+        ],
+        child: const MaterialApp(
+          home: FeedbackDetailScreen(ticketId: 1),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), '同一条消息');
+    await tester.tap(find.byIcon(Icons.send_rounded));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(idempotencyKeys, hasLength(1));
+
+    authProvider.switchAccount(20);
+    await tester.pumpAndSettle();
+    expect(detailAccountIds.last, 20);
+
+    await tester.tap(find.byIcon(Icons.send_rounded));
+    await tester.pumpAndSettle();
+    expect(idempotencyKeys, hasLength(2));
+    expect(idempotencyKeys[1], isNot(idempotencyKeys[0]));
+
+    firstSendHandler!.resolve(
+      Response(
+        requestOptions: firstSendOptions!,
+        statusCode: 200,
+        data: {'ok': true},
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(detailAccountIds.last, 20);
   });
 }

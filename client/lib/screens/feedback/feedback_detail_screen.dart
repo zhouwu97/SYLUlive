@@ -40,7 +40,10 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   bool _loading = true;
   String? _error;
   bool _sending = false;
+  int _sendGeneration = 0;
   int _detailRequestGeneration = 0;
+  AuthProvider? _authProvider;
+  int? _observedSessionGeneration;
 
   // 管理员专属状态
   bool _adminInternalNote = false;
@@ -51,12 +54,50 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   /// 切成内部备注，都属于新的一条消息，继续用旧键只会换来
   /// idempotency_key_reused，用户会卡在"改了也提交不了"。
   /// 上一次未确认送达的消息（幂等键 + 请求指纹）。
-  ({String idempotencyKey, String fingerprint})? _pendingMessage;
+  ({
+    String idempotencyKey,
+    String fingerprint,
+    int? accountId,
+    int sessionGeneration,
+  })? _pendingMessage;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _loadDetail();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.read<AuthProvider>();
+    if (!identical(_authProvider, auth)) {
+      _authProvider?.removeListener(_handleAuthSessionChanged);
+      _authProvider = auth;
+      _observedSessionGeneration = auth.sessionGeneration;
+      auth.addListener(_handleAuthSessionChanged);
+    }
+  }
+
+  void _handleAuthSessionChanged() {
+    final auth = _authProvider;
+    if (!mounted || auth == null) return;
+    final generation = auth.sessionGeneration;
+    if (generation == _observedSessionGeneration) return;
+    _observedSessionGeneration = generation;
+    _detailRequestGeneration++;
+    _sendGeneration++;
+    _pendingMessage = null;
+    setState(() {
+      _sending = false;
+      _loading = true;
+      _error = null;
+      _ticket = null;
+      _initialSubmission = null;
+      _messages = [];
+      _history = [];
+    });
     _loadDetail();
   }
 
@@ -70,6 +111,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _authProvider?.removeListener(_handleAuthSessionChanged);
     _msgController.dispose();
     _scrollController.dispose();
     _msgFocusNode.dispose();
@@ -171,10 +213,13 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       return;
     }
 
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    final sessionGeneration = auth.sessionGeneration;
+    final sendGeneration = ++_sendGeneration;
     setState(() => _sending = true);
 
     try {
-      final auth = context.read<AuthProvider>();
       final visible = visibleToUser ?? !_adminInternalNote;
       // 内容、附件、可见范围任一变化都算新的一条消息，换新键；
       // 完全没改才是"原样重试"，必须复用同一把键让服务端重放上次结果。
@@ -184,14 +229,18 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         visibleToUser: visible,
       );
       final pending = _pendingMessage;
+      final samePendingSession = pending?.accountId == accountId &&
+          pending?.sessionGeneration == sessionGeneration;
       final idempotencyKey = resolveIdempotencyKey(
         fingerprint: fingerprint,
-        pendingFingerprint: pending?.fingerprint,
-        pendingKey: pending?.idempotencyKey,
+        pendingFingerprint: samePendingSession ? pending?.fingerprint : null,
+        pendingKey: samePendingSession ? pending?.idempotencyKey : null,
       );
       _pendingMessage = (
         idempotencyKey: idempotencyKey,
         fingerprint: fingerprint,
+        accountId: accountId,
+        sessionGeneration: sessionGeneration,
       );
       Response response;
 
@@ -216,6 +265,12 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         );
       }
 
+      final isCurrentSession = mounted &&
+          sendGeneration == _sendGeneration &&
+          auth.user?.id == accountId &&
+          auth.sessionGeneration == sessionGeneration;
+      if (!isCurrentSession) return;
+
       if (response.statusCode == 200) {
         _pendingMessage = null;
         _msgController.clear();
@@ -236,6 +291,11 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         }
       }
     } on DioException catch (e) {
+      final isCurrentSession = mounted &&
+          sendGeneration == _sendGeneration &&
+          auth.user?.id == accountId &&
+          auth.sessionGeneration == sessionGeneration;
+      if (!isCurrentSession) return;
       final code = _idempotencyCode(e);
       // 键已不能代表同一条消息时丢弃它：下一次发送算新的一条，
       // 否则用户改了内容也永远提交不上去。其余失败保留键，网络恢复后可原样重试。
@@ -250,11 +310,14 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted &&
+          sendGeneration == _sendGeneration &&
+          auth.user?.id == accountId &&
+          auth.sessionGeneration == sessionGeneration) {
         AppFeedback.showSnackBar(context, '发送失败: $e', isError: true);
       }
     } finally {
-      if (mounted) {
+      if (mounted && sendGeneration == _sendGeneration) {
         setState(() => _sending = false);
       }
     }

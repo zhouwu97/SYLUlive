@@ -120,7 +120,7 @@ class PollProvider extends ChangeNotifier {
       state.lastRefreshAt = DateTime.now();
     } on PollApiException catch (error) {
       if (!_isCurrentSession(requestGeneration, requestUserId)) return;
-      state.error = error.message;
+      state.error = error.userMessage;
     } catch (_) {
       if (!_isCurrentSession(requestGeneration, requestUserId)) return;
       state.error = '加载投票失败，请稍后重试';
@@ -174,12 +174,17 @@ class PollProvider extends ChangeNotifier {
     );
   }
 
+  /// 创建投票的稳定操作标识：同一份草稿重试归并到同一次操作。
+  String actionKeyForCreate(PollDraft draft) =>
+      'poll-create:${draft.fingerprint}';
+
   Future<Post?> createPoll(PollDraft draft) async {
     final requestGeneration = _sessionGeneration;
     final requestUserId = _sessionUserId;
     lastActionError = null;
+    // 幂等键必须绑定完整请求体：说明、选项、分类、图片变化同样是另一次提交。
+    final actionKey = actionKeyForCreate(draft);
     try {
-      final actionKey = 'poll-create:${draft.title}:${draft.endsAt}';
       final post = await service.createPoll(
         draft,
         idempotencyKey: _idempotencyKeyFor(actionKey),
@@ -191,7 +196,8 @@ class PollProvider extends ChangeNotifier {
       notifyListeners();
       return post;
     } on PollApiException catch (error) {
-      lastActionError = error.message;
+      _releaseIdempotencyKey(actionKeyForCreate(draft), error);
+      lastActionError = error.userMessage;
       return null;
     }
   }
@@ -203,8 +209,8 @@ class PollProvider extends ChangeNotifier {
     _mutatingPollIds.add(pollId);
     _mutationErrors.remove(pollId);
     notifyListeners();
+    final actionKey = 'poll-delete:$pollId';
     try {
-      final actionKey = 'poll-delete:$pollId';
       await service.deletePoll(
         pollId,
         idempotencyKey: _idempotencyKeyFor(actionKey),
@@ -221,8 +227,9 @@ class PollProvider extends ChangeNotifier {
       if (postId != null) _postProvider?.removeExternalPost(postId);
       return true;
     } on PollApiException catch (error) {
+      _releaseIdempotencyKey(actionKey, error);
       if (!_isCurrentSession(requestGeneration, requestUserId)) return false;
-      _mutationErrors[pollId] = error.message;
+      _mutationErrors[pollId] = error.userMessage;
       return false;
     } finally {
       if (_isCurrentSession(requestGeneration, requestUserId)) {
@@ -250,8 +257,9 @@ class PollProvider extends ChangeNotifier {
       _postProvider?.applyExternalPostUpdate(post);
       return post;
     } on PollApiException catch (error) {
+      _releaseIdempotencyKey(actionKey, error);
       if (!_isCurrentSession(requestGeneration, requestUserId)) return null;
-      _mutationErrors[pollId] = error.message;
+      _mutationErrors[pollId] = error.userMessage;
       return null;
     } finally {
       if (_isCurrentSession(requestGeneration, requestUserId)) {
@@ -292,4 +300,16 @@ class PollProvider extends ChangeNotifier {
         actionKey,
         () => newIdempotencyKey('poll'),
       );
+
+  /// 按错误结果决定幂等键的去留。
+  ///
+  /// 成功后丢键：这次操作已经落地，同样的内容再来一次是新的用户意图。
+  /// 明确失败但结果已知（业务校验、限流）时**保留**键：服务端不缓存失败响应，
+  /// 同一键可以原样重试；结果未知或键已被占用时丢键，让下一次点击成为新的一次操作。
+  /// 盲目"每次重试都换新键"只是把幂等冲突换成重复创建。
+  void _releaseIdempotencyKey(String actionKey, PollApiException error) {
+    if (idempotencyOutcomeFor(error.code) == IdempotencyOutcome.exhausted) {
+      _idempotencyKeys.remove(actionKey);
+    }
+  }
 }

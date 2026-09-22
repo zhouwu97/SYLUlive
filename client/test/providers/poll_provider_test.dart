@@ -94,6 +94,44 @@ class FakePollService extends PollService {
   Future<void> deletePoll(int pollId, {String? idempotencyKey}) async {}
 }
 
+/// 记录 createPoll 的请求体与幂等键，用于验证「原样重试」的身份。
+class CreateRecordingPollService extends PollService {
+  CreateRecordingPollService() : super(Dio());
+
+  final List<String?> keys = <String?>[];
+  final List<PollDraft> drafts = <PollDraft>[];
+  Object? error;
+
+  @override
+  Future<Post> createPoll(PollDraft draft, {String? idempotencyKey}) async {
+    keys.add(idempotencyKey);
+    drafts.add(draft);
+    if (error != null) throw error!;
+    return pollPost();
+  }
+}
+
+PollDraft pollDraft({
+  String title = '投票标题',
+  String description = '说明',
+  String category = 'campus_life',
+  List<String> options = const ['甲', '乙'],
+  List<int> fileIds = const [11, 12],
+  DateTime? endsAt,
+}) =>
+    PollDraft(
+      title: title,
+      description: description,
+      category: category,
+      selectionMode: 'single',
+      maxChoices: 1,
+      resultsVisibility: 'always',
+      allowChange: true,
+      endsAt: endsAt ?? DateTime.utc(2026, 7, 20, 12),
+      options: options,
+      fileIds: fileIds,
+    );
+
 class RecordingPostProvider extends PostProvider {
   RecordingPostProvider() : super(Dio());
 
@@ -276,5 +314,86 @@ void main() {
 
     expect(provider.mineState('voted').items, isEmpty);
     expect(provider.mineState('voted').hasLoaded, isFalse);
+  });
+  group('投票提交的重试身份', () {
+    test('草稿指纹覆盖说明、选项、分类、附件和截止时间', () {
+      final base = pollDraft();
+      for (final changed in [
+        pollDraft(description: '改了说明'),
+        pollDraft(options: const ['甲', '乙', '丙']),
+        pollDraft(category: 'study'),
+        pollDraft(fileIds: const [11]),
+        pollDraft(endsAt: DateTime.utc(2026, 7, 21, 12)),
+        pollDraft(title: '改了标题'),
+      ]) {
+        expect(changed.fingerprint, isNot(base.fingerprint),
+            reason: '内容变化必须算成另一次提交，否则会拿旧键发新请求体');
+      }
+      expect(pollDraft().fingerprint, base.fingerprint);
+    });
+
+    test('同一份草稿原样重试复用同一把幂等键', () async {
+      final service = CreateRecordingPollService()
+        ..error = const PollApiException('poll_rate_limited', '操作过于频繁');
+      final provider = PollProvider(service);
+      final draft = pollDraft();
+
+      expect(await provider.createPoll(draft), isNull);
+      expect(await provider.createPoll(draft), isNull);
+
+      expect(service.keys, hasLength(2));
+      expect(service.keys[0], isNotNull);
+      expect(service.keys[1], service.keys[0],
+          reason: '原样重试必须是同一次提交，换键只会把冲突换成重复创建');
+    });
+
+    test('业务失败保留幂等键，故障恢复后可原样重试', () async {
+      final service = CreateRecordingPollService()
+        ..error = const PollApiException('poll_unavailable', '服务暂不可用');
+      final provider = PollProvider(service);
+      final draft = pollDraft();
+
+      await provider.createPoll(draft);
+      await provider.createPoll(draft);
+      expect(service.keys[1], service.keys[0]);
+    });
+
+    test('内容变化后换新键，不拿旧键发新请求体', () async {
+      final service = CreateRecordingPollService()
+        ..error = const PollApiException('poll_rate_limited', '操作过于频繁');
+      final provider = PollProvider(service);
+
+      await provider.createPoll(pollDraft(title: '第一版'));
+      await provider.createPoll(pollDraft(title: '改过的第二版'));
+
+      expect(service.keys[0], isNot(service.keys[1]));
+    });
+
+    test('幂等键已不可用时丢弃旧键，下一次点击算新的一次操作', () async {
+      final service = CreateRecordingPollService()
+        ..error = const PollApiException(
+            'idempotency_key_reused', 'Idempotency-Key 已用于不同请求');
+      final provider = PollProvider(service);
+      final draft = pollDraft();
+
+      await provider.createPoll(draft);
+      await provider.createPoll(draft);
+
+      expect(service.keys[0], isNot(service.keys[1]),
+          reason: '键已被占用时继续沿用只会让用户卡在同一个冲突里');
+      expect(provider.lastActionError, contains('再点一次提交'));
+    });
+
+    test('同一请求仍在处理时保留原键，不能另起一次造成重复', () async {
+      final service = CreateRecordingPollService()
+        ..error = const PollApiException(
+            'idempotency_request_in_progress', '相同请求仍在处理中');
+      final provider = PollProvider(service);
+      final draft = pollDraft();
+
+      await provider.createPoll(draft);
+      await provider.createPoll(draft);
+      expect(service.keys[1], service.keys[0]);
+    });
   });
 }

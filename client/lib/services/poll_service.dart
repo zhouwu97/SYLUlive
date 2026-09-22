@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'idempotency_key.dart';
+
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -10,6 +14,12 @@ class PollApiException implements Exception {
   final int? statusCode;
 
   const PollApiException(this.code, this.message, {this.statusCode});
+
+  /// 给用户看的文案。
+  ///
+  /// 幂等冲突的服务端文案只说明现象（"Idempotency-Key 已用于不同请求"），
+  /// 用户看不出下一步能做什么。这类统一换成可执行的提示，其余透传原样。
+  String get userMessage => idempotencyUserMessage(code, message);
 
   @override
   String toString() => message;
@@ -76,6 +86,12 @@ class PollDraft {
         'options': options,
         'file_ids': fileIds,
       };
+
+  /// 完整请求体的稳定指纹，幂等键按它归并。
+  ///
+  /// 只用标题和截止时间是不够的：说明、选项、分类、图片变化同样是另一次提交，
+  /// 拿旧键发新请求体只会换来 idempotency_key_reused，用户改了内容也提交不上去。
+  String get fingerprint => jsonEncode(toJson());
 }
 
 class PollService {
@@ -218,10 +234,19 @@ class PollService {
   PollApiException _mapError(DioException error) {
     final data = error.response?.data;
     final map = data is Map ? data : const <String, dynamic>{};
+    final code = map['code']?.toString() ?? 'poll_network_error';
     return PollApiException(
-      map['code']?.toString() ?? 'poll_network_error',
-      (map['message'] ?? map['error'])?.toString() ?? '网络连接失败，请稍后重试',
+      code,
+      (map['message'] ?? map['error'])?.toString() ?? _fallbackMessage(code),
       statusCode: error.response?.statusCode,
     );
+  }
+
+  /// 服务端没给文案时的本地兜底，必须说清楚用户下一步能做什么。
+  String _fallbackMessage(String code) {
+    return switch (code) {
+      'poll_network_error' => '网络连接失败，请稍后重试',
+      _ => idempotencyUserMessage(code, '投票操作失败，请稍后重试'),
+    };
   }
 }

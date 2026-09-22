@@ -9,6 +9,7 @@ import '../../providers/theme_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../utils/app_feedback.dart';
+import '../../services/idempotency_key.dart';
 import '../../services/request_id.dart';
 import '../image_viewer_screen.dart';
 
@@ -43,7 +44,14 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
 
   // 管理员专属状态
   bool _adminInternalNote = false;
-  String? _pendingMessageIdempotencyKey;
+
+  /// 上一次未确认送达的消息。
+  ///
+  /// 幂等键只对**同一份请求**有效。失败后用户改措辞、补图片、把"用户可见"
+  /// 切成内部备注，都属于新的一条消息，继续用旧键只会换来
+  /// idempotency_key_reused，用户会卡在"改了也提交不了"。
+  /// 上一次未确认送达的消息（幂等键 + 请求指纹）。
+  ({String idempotencyKey, String fingerprint})? _pendingMessage;
 
   @override
   void initState() {
@@ -167,8 +175,24 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
 
     try {
       final auth = context.read<AuthProvider>();
-      final idempotencyKey =
-          _pendingMessageIdempotencyKey ??= RequestId.newId();
+      final visible = visibleToUser ?? !_adminInternalNote;
+      // 内容、附件、可见范围任一变化都算新的一条消息，换新键；
+      // 完全没改才是"原样重试"，必须复用同一把键让服务端重放上次结果。
+      final fingerprint = feedbackMessageFingerprint(
+        content: text,
+        imageIds: imageIds,
+        visibleToUser: visible,
+      );
+      final pending = _pendingMessage;
+      final idempotencyKey = resolveIdempotencyKey(
+        fingerprint: fingerprint,
+        pendingFingerprint: pending?.fingerprint,
+        pendingKey: pending?.idempotencyKey,
+      );
+      _pendingMessage = (
+        idempotencyKey: idempotencyKey,
+        fingerprint: fingerprint,
+      );
       Response response;
 
       if (widget.isAdmin) {
@@ -176,7 +200,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
           '/admin/feedback/tickets/${widget.ticketId}/messages',
           data: {
             'content': text.isNotEmpty ? text : '[图片]',
-            'visible_to_user': visibleToUser ?? !_adminInternalNote,
+            'visible_to_user': visible,
             'image_ids': imageIds,
           },
           options: Options(headers: {'Idempotency-Key': idempotencyKey}),
@@ -193,7 +217,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       }
 
       if (response.statusCode == 200) {
-        _pendingMessageIdempotencyKey = null;
+        _pendingMessage = null;
         _msgController.clear();
         await _loadDetail();
         // 滚到底部
@@ -211,6 +235,20 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
           AppFeedback.showSnackBar(context, '发送失败，请重试', isError: true);
         }
       }
+    } on DioException catch (e) {
+      final code = _idempotencyCode(e);
+      // 键已不能代表同一条消息时丢弃它：下一次发送算新的一条，
+      // 否则用户改了内容也永远提交不上去。其余失败保留键，网络恢复后可原样重试。
+      if (idempotencyOutcomeFor(code) == IdempotencyOutcome.exhausted) {
+        _pendingMessage = null;
+      }
+      if (mounted) {
+        AppFeedback.showSnackBar(
+          context,
+          '发送失败: ${idempotencyUserMessage(code, AppFeedback.dioErrorMessage(e, fallback: '请稍后重试'))}',
+          isError: true,
+        );
+      }
     } catch (e) {
       if (mounted) {
         AppFeedback.showSnackBar(context, '发送失败: $e', isError: true);
@@ -220,6 +258,16 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         setState(() => _sending = false);
       }
     }
+  }
+
+  /// 从响应体读取稳定的业务错误码，用于判断幂等键的去留。
+  String? _idempotencyCode(DioException error) {
+    final data = error.response?.data;
+    if (data is Map) {
+      final code = data['code']?.toString().trim();
+      if (code != null && code.isNotEmpty) return code;
+    }
+    return null;
   }
 
   Future<void> _pickAndUploadImage() async {

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -36,7 +38,23 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
   final _titleFocus = FocusNode();
   final List<TextEditingController> _optionControllers = [];
   final List<XFile> _newImages = [];
+
+  /// 已上传成功的新图附件 ID，与 [_newImages] 一一对应（null = 还没上传）。
+  ///
+  /// 失败重试不能把已上传的图再传一遍：附件 ID 变了请求体就变了，
+  /// 幂等键也就不能复用，"原样重试"会退化成一次新的提交。
+  final List<int?> _newImageFileIds = [];
   final List<PostImage> _existingImages = [];
+
+  /// 冻结的绝对截止时间。
+  ///
+  /// 默认时长的语义是「从提交时刻起 N 小时」。历史实现把它写成动态 getter，
+  /// 每次提交都重新计算，于是原样重试实际换了一个截止时间、也换了一把幂等键，
+  /// 服务端无法识别成同一次提交——成功响应丢失时就会重复创建投票。
+  DateTime? _frozenEndsAt;
+
+  /// 与 [_frozenEndsAt] 配套的内容指纹：内容变了才算新的一次提交。
+  String? _attemptContentKey;
   bool _submitting = false;
   String _category = 'campus_life';
   String _selectionMode = 'single';
@@ -90,16 +108,44 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
     super.dispose();
   }
 
-  DateTime get _endsAt => _durationHours != null
+  /// 只在「新的一次提交」时解析一次；原样重试复用 [_frozenEndsAt]。
+  DateTime _resolveEndsAt() => _durationHours != null
       ? DateTime.now().add(Duration(hours: _durationHours!))
       : _customEndsAt!;
+
+  /// 除截止时间以外的草稿内容指纹。
+  ///
+  /// 截止时间单独处理：默认时长要到提交瞬间才解析成绝对时间，
+  /// 不能反过来用它判断"内容有没有变"。
+  String _draftContentKey() => jsonEncode(<String, dynamic>{
+        'title': _titleController.text.trim(),
+        'description': _descriptionController.text.trim(),
+        'category': _category,
+        'selection_mode': _selectionMode,
+        'max_choices': _selectionMode == 'single' ? 1 : _maxChoices,
+        'results_visibility': _resultsVisibility,
+        'allow_change': _allowChange,
+        'duration_hours': _durationHours,
+        'custom_ends_at': _customEndsAt?.toUtc().toIso8601String(),
+        'options': _optionControllers
+            .map((controller) => controller.text.trim())
+            .toList(),
+        'existing_file_ids':
+            _existingImages.map((image) => image.fileId).toList(),
+        'new_images': _newImages.map((image) => image.path).toList(),
+      });
 
   Future<void> _pickImages() async {
     final remaining = 3 - _existingImages.length - _newImages.length;
     if (remaining <= 0) return;
     final picked = await ImagePicker().pickMultiImage(imageQuality: 88);
     if (!mounted) return;
-    setState(() => _newImages.addAll(picked.take(remaining)));
+    setState(() {
+      for (final image in picked.take(remaining)) {
+        _newImages.add(image);
+        _newImageFileIds.add(null);
+      }
+    });
   }
 
   Future<void> _pickCustomEnd() async {
@@ -148,18 +194,44 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
     return null;
   }
 
+  /// 上传尚未上传的新图；已成功的复用附件 ID，保证原样重试拿到同一份请求体。
+  Future<List<int>> _uploadNewImages(PollProvider provider) async {
+    final pending = <int>[
+      for (var i = 0; i < _newImages.length; i++)
+        if (_newImageFileIds[i] == null) i,
+    ];
+    if (pending.isNotEmpty) {
+      final uploaded = await provider.service
+          .uploadImages([for (final index in pending) _newImages[index]]);
+      if (uploaded.length != pending.length) {
+        throw const PollApiException('upload_failed', '图片上传失败，请重试');
+      }
+      for (var i = 0; i < pending.length; i++) {
+        _newImageFileIds[pending[i]] = uploaded[i];
+      }
+    }
+    return [for (final id in _newImageFileIds) id!];
+  }
+
   Future<void> _submit() async {
     final error = _validate();
     if (error != null) {
       AppFeedback.error(error, context: context);
       return;
     }
+    // 内容没变才算"原样重试"：沿用上一次的绝对截止时间和幂等键。
+    // 用户改过任何字段就是新的一次提交，截止时间重新计算，幂等键也随之换新。
+    final contentKey = _draftContentKey();
+    if (contentKey != _attemptContentKey) {
+      _attemptContentKey = contentKey;
+      _frozenEndsAt = null;
+    }
+    final endsAt = _frozenEndsAt ??= _resolveEndsAt();
+
     setState(() => _submitting = true);
     final provider = context.read<PollProvider>();
     try {
-      final uploaded = _newImages.isEmpty
-          ? <int>[]
-          : await provider.service.uploadImages(_newImages);
+      final uploaded = await _uploadNewImages(provider);
       final draft = PollDraft(
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
@@ -168,7 +240,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
         maxChoices: _selectionMode == 'single' ? 1 : _maxChoices,
         resultsVisibility: _resultsVisibility,
         allowChange: _allowChange,
-        endsAt: _endsAt,
+        endsAt: endsAt,
         options: _optionControllers
             .map((controller) => controller.text.trim())
             .toList(),
@@ -189,10 +261,12 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
         );
         return;
       }
+      _attemptContentKey = null;
+      _frozenEndsAt = null;
       Navigator.pop(context, result);
     } on PollApiException catch (error) {
       if (mounted) {
-        AppFeedback.error(error.message, context: context);
+        AppFeedback.error(error.userMessage, context: context);
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -366,8 +440,10 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                       )),
                   ..._newImages.asMap().entries.map((entry) => _NewImage(
                         image: entry.value,
-                        onRemove: () =>
-                            setState(() => _newImages.removeAt(entry.key)),
+                        onRemove: () => setState(() {
+                          _newImages.removeAt(entry.key);
+                          _newImageFileIds.removeAt(entry.key);
+                        }),
                       )),
                   if (_existingImages.length + _newImages.length < 3)
                     InkWell(

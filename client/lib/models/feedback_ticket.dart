@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class FeedbackTicket {
   final int id;
   final String ticketNo;
@@ -311,4 +313,21 @@ class FeedbackStatusHistory {
           DateTime.now(),
     );
   }
+}
+
+/// 待发送工单消息的请求指纹。
+///
+/// 内容、附件、可见范围任一变化都算**新的一条消息**。失败后用户改措辞、
+/// 补图片、把"用户可见"切成内部备注，都不能继续用上一条的幂等键，
+/// 否则服务端按不同请求体回 idempotency_key_reused，用户卡在"改了也提交不了"。
+String feedbackMessageFingerprint({
+  required String content,
+  required List<int>? imageIds,
+  required bool visibleToUser,
+}) {
+  return jsonEncode(<String, dynamic>{
+    'content': content,
+    'image_ids': imageIds,
+    'visible_to_user': visibleToUser,
+  });
 }

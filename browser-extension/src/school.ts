@@ -28,6 +28,29 @@ export const entrances: Record<AcademicProvider, string> = {
   erke: origins.erke,
   physical: origins.physical,
 };
+const physicalProviderOptInKey = "physicalProviderEnabled";
+
+// 体测服务仍是 HTTP 明文协议，默认不启用；开关只保存在扩展本机，不上传业务服务器。
+export async function isPhysicalProviderEnabled() {
+  const value = await chrome.storage.local.get(physicalProviderOptInKey);
+  return value[physicalProviderOptInKey] === true;
+}
+
+export async function setPhysicalProviderEnabled(enabled: boolean) {
+  if (enabled) {
+    await chrome.storage.local.set({ [physicalProviderOptInKey]: true });
+    return;
+  }
+  await chrome.storage.local.remove(physicalProviderOptInKey);
+  await chrome.storage.session.remove("physicalLogin");
+  // 用户可能尚未授予 cookies 权限；清理失败不应阻止关闭本机开关。
+  await chrome.cookies.remove({ url: origins.physical, name: "userid" }).catch(() => undefined);
+}
+
+async function requirePhysicalProviderOptIn(provider: AcademicProvider) {
+  if (provider === "physical" && !(await isPhysicalProviderEnabled()))
+    throw new Error("体测连接默认关闭；请在助手页阅读风险并手动开启");
+}
 const knownPaths = [
   "/xsxxxggl/",
   "/kbcx/",
@@ -102,6 +125,7 @@ export async function identity(
   provider: AcademicProvider,
   signal?: AbortSignal,
 ): Promise<{ studentId: string; displayName: string }> {
+  await requirePhysicalProviderOptIn(provider);
   if (provider === "undergraduate")
     return profile(
       await schoolRequest(
@@ -150,6 +174,7 @@ export async function fetchDataset(
   term: AcademicTerm,
   signal: AbortSignal,
 ) {
+  await requirePhysicalProviderOptIn(provider);
   if (provider === "undergraduate") {
     if (
       !/^\d{4}$/.test(term.year) ||
@@ -356,6 +381,7 @@ function sign(params: Record<string, string>) {
     .toUpperCase();
 }
 export async function physicalLogin(account: string, password: string) {
+  await requirePhysicalProviderOptIn("physical");
   const form = {
     username: account,
     password: CryptoJS.MD5(password).toString(),

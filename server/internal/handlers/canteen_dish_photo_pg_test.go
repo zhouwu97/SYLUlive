@@ -40,8 +40,10 @@ func TestCanteenRateConcurrentOptimisticLock(t *testing.T) {
 	cleanup := func() {
 		db.Exec("DELETE FROM canteen_dish_photos")
 		db.Exec("DELETE FROM canteen_dishes")
+		db.Exec("DELETE FROM canteen_rating_dish_recommendations")
 		db.Exec("DELETE FROM canteen_ratings")
 		db.Exec("DELETE FROM canteens")
+		db.Exec("DELETE FROM academic_identity_bindings WHERE user_id > 1000")
 		db.Exec("DELETE FROM users WHERE id > 1000")
 		db.Exec("DELETE FROM files")
 	}
@@ -49,16 +51,29 @@ func TestCanteenRateConcurrentOptimisticLock(t *testing.T) {
 	t.Cleanup(cleanup)
 
 	if err := db.AutoMigrate(&models.Canteen{}, &models.CanteenRating{}, &models.CanteenRatingVote{},
-		&models.CanteenDish{}, &models.CanteenDishPhoto{}, &models.File{}, &models.User{}, &models.AdminLog{}); err != nil {
+		&models.CanteenDish{}, &models.CanteenDishPhoto{}, &models.CanteenRatingDishRecommendation{},
+		&models.AcademicIdentityBinding{}, &models.File{}, &models.User{}, &models.AdminLog{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	// 已绑定教务的学生
+	// 已绑定教务的学生。Rate 的可信学生身份判权读 academic_identity_bindings，
+	// users.edu_bound 只是历史列，PR-02 之后单独置位不再构成可信身份。
 	now := time.Now()
 	user := models.User{ID: 3001, StudentID: "stu-3001", PasswordHash: "x",
 		Nickname: "并发评价学生", StudentVerifiedAt: &now, EduBound: true}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
+	}
+	binding := models.AcademicIdentityBinding{
+		UserID:              user.ID,
+		ProviderID:          string(models.AcademicProviderSyluUndergraduate),
+		StudentID:           "stu-3001",
+		VerifiedAt:          now,
+		VerificationMethod:  models.AcademicVerificationMethodSchoolProfile,
+		VerificationVersion: "v1",
+	}
+	if err := db.Create(&binding).Error; err != nil {
+		t.Fatalf("create trusted academic binding: %v", err)
 	}
 	canteen := models.Canteen{Name: "并发评价食堂", Verified: true, CreatedBy: 1}
 	if err := db.Create(&canteen).Error; err != nil {

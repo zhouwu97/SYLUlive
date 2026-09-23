@@ -113,6 +113,66 @@ func TestValidateHy3CompetitionExplanationFactsRequiresRecognitionSourceField(t 
 	require.Error(t, ValidateHy3CompetitionExplanationFacts(input, output))
 }
 
+func TestValidateHy3CompetitionExplanationFactsHandlesRecognitionSynonymsAndNegation(t *testing.T) {
+	unknown := []dto.CompetitionCandidateDTO{{CompetitionPublicDTO: dto.CompetitionPublicDTO{
+		CompetitionID: "NAT-001", SchoolRecognitionStatus: "unknown",
+	}}}
+	assertion := Hy3CompetitionExplanation{Items: []Hy3CompetitionExplanationItem{{
+		CompetitionID: "NAT-001",
+		Reasons: []Hy3CompetitionReason{{
+			Text: "本赛事已获学校认可。", SourceFields: []string{"school_recognition_status"},
+		}},
+	}}}
+	require.Error(t, ValidateHy3CompetitionExplanationFacts(unknown, assertion))
+
+	notRecognized := []dto.CompetitionCandidateDTO{{CompetitionPublicDTO: dto.CompetitionPublicDTO{
+		CompetitionID: "NAT-001", SchoolRecognitionStatus: "not_recognized",
+	}}}
+	negative := Hy3CompetitionExplanation{Items: []Hy3CompetitionExplanationItem{{
+		CompetitionID: "NAT-001",
+		Reasons: []Hy3CompetitionReason{{
+			Text: "本赛事未通过认定。", SourceFields: []string{"school_recognition_status"},
+		}},
+	}}}
+	require.NoError(t, ValidateHy3CompetitionExplanationFacts(notRecognized, negative))
+}
+
+func TestValidateHy3CompetitionExplanationFactsChecksQuestions(t *testing.T) {
+	input := []dto.CompetitionCandidateDTO{{CompetitionPublicDTO: dto.CompetitionPublicDTO{
+		CompetitionID: "NAT-001", SchoolRecognitionStatus: "unknown",
+	}}}
+	output := Hy3CompetitionExplanation{Items: []Hy3CompetitionExplanationItem{{
+		CompetitionID:      "NAT-001",
+		QuestionsToConfirm: []string{"既然学校已认定，报名需要什么材料？"},
+	}}}
+	require.Error(t, ValidateHy3CompetitionExplanationFacts(input, output))
+}
+
+func TestValidateHy3CompetitionExplanationFactsChecksStructuredTeamAndLevel(t *testing.T) {
+	input := []dto.CompetitionCandidateDTO{{CompetitionPublicDTO: dto.CompetitionPublicDTO{
+		CompetitionID:     "NAT-001",
+		CompetitionLevel:  "国家级",
+		TeamSizeMin:       3,
+		TeamSizeMax:       5,
+		ParticipationType: "团队赛",
+	}}}
+	valid := Hy3CompetitionExplanation{Items: []Hy3CompetitionExplanationItem{{
+		CompetitionID: "NAT-001",
+		Reasons: []Hy3CompetitionReason{{
+			Text:         "国家级团队赛，建议组建 3 人队伍。",
+			SourceFields: []string{"competition_level", "participation_type", "team_size_min"},
+		}},
+	}}}
+	require.NoError(t, ValidateHy3CompetitionExplanationFacts(input, valid))
+	invalid := valid
+	invalid.Items = append([]Hy3CompetitionExplanationItem{}, valid.Items...)
+	invalid.Items[0].Reasons = []Hy3CompetitionReason{{
+		Text:         "国家级团队赛，建议组建 2 人队伍。",
+		SourceFields: []string{"competition_level", "participation_type", "team_size_min"},
+	}}
+	require.Error(t, ValidateHy3CompetitionExplanationFacts(input, invalid))
+}
+
 func TestValidateHy3SelectedCompetitionComparisonRejectsReorderAndUntrustedSource(t *testing.T) {
 	valid := Hy3SelectedCompetitionComparison{
 		Summary: "两项赛事的公开事实各有侧重。",

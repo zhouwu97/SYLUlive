@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"net/textproto"
 	"strings"
 	"sync"
 	"testing"
@@ -278,6 +279,18 @@ func TestSecurityAlertDeliveryFailureIsDegradedNotFatal(t *testing.T) {
 	}
 	if state := events.EventWriteHealth().Status(); state != SecurityLayerReady {
 		t.Fatalf("事件采集运行态 = %s，期望 ready", state)
+	}
+}
+
+func TestSecurityAlertRetryClassificationDoesNotRepeatPermanentSMTPReject(t *testing.T) {
+	if securityAlertRetryable(&textproto.Error{Code: 550, Msg: "mailbox unavailable"}) {
+		t.Fatal("SMTP 5xx 永久拒绝不得重试")
+	}
+	if !securityAlertRetryable(&textproto.Error{Code: 421, Msg: "temporary failure"}) {
+		t.Fatal("SMTP 4xx 临时失败应允许重试")
+	}
+	if !securityAlertRetryable(errors.New("connection reset by peer")) {
+		t.Fatal("未分类连接错误应允许重试")
 	}
 }
 

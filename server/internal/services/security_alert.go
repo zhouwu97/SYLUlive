@@ -10,6 +10,7 @@ import (
 	"mime"
 	"net"
 	"net/smtp"
+	"net/textproto"
 	"strings"
 	"sync"
 	"time"
@@ -223,8 +224,10 @@ func (a *SecurityAlertService) worker() {
 				a.delivery.recordFailure()
 				failureRecorded = true
 			}
-			if attempt < securityAlertMaxAttempts {
+			if attempt < securityAlertMaxAttempts && securityAlertRetryable(err) {
 				time.Sleep(securityAlertRetryDelay)
+			} else {
+				break
 			}
 		}
 		if err != nil {
@@ -365,7 +368,21 @@ func (m *SMTPSecurityAlertMailer) SendSecurityAlert(ctx context.Context, to []st
 	if err := writer.Close(); err != nil {
 		return err
 	}
-	return client.Quit()
+	// DATA 结束后的 250 已确认邮件进入 SMTP 队列；QUIT 只是会话收尾，
+	// 收尾断开不能撤销已接收的正文，否则上层重试会制造重复告警。
+	_ = client.Quit()
+	return nil
+}
+
+// securityAlertRetryable 区分明确的永久拒绝与网络/临时故障。
+// textproto.Error 是 net/smtp 对 4xx/5xx 响应的统一表示，未知错误保留重试，
+// 以覆盖连接被中途断开的场景。
+func securityAlertRetryable(err error) bool {
+	var smtpErr *textproto.Error
+	if errors.As(err, &smtpErr) {
+		return smtpErr.Code >= 400 && smtpErr.Code < 500
+	}
+	return true
 }
 
 func securityAlertSubject(event SecurityAlertEvent) string {

@@ -432,6 +432,7 @@ void main() {
     testWidgets('浏览记录界面正确渲染标签、记录与清空按钮', (tester) async {
       final repo = BrowsingHistoryRepository();
       await repo.recordVisit(
+        userId: '1',
         targetId: '99',
         type: BrowsingHistoryType.campusNews,
         title: '2026-2027学年开学通知',
@@ -439,8 +440,11 @@ void main() {
       );
 
       await tester.pumpWidget(
-        const MaterialApp(
-          home: BrowsingHistoryScreen(),
+        ChangeNotifierProvider<AuthProvider>(
+          create: (_) => _TestAuthProvider(),
+          child: const MaterialApp(
+            home: BrowsingHistoryScreen(),
+          ),
         ),
       );
       await tester.pumpAndSettle();

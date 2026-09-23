@@ -573,9 +573,9 @@ void main() {
         find.widgetWithText(ChoiceChip, '适合我'),
       );
       expect(chip.selected, isTrue);
-      expect(find.text('先完善教务身份'), findsOneWidget);
-      expect(find.text('还需要补全：专业。'), findsOneWidget);
-      expect(find.text('去完善'), findsOneWidget);
+      expect(find.text('先补齐竞赛匹配条件'), findsOneWidget);
+      expect(find.text('还需要：专业。'), findsOneWidget);
+      expect(find.text('填写匹配画像'), findsOneWidget);
     });
 
     testWidgets('候选零结果时指向偏好设置而不是导入计划', (tester) async {

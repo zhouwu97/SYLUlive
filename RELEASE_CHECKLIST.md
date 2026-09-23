@@ -31,9 +31,10 @@ systemctl status shenliyuan --no-pager
 - release APK/AAB 在目标 Android 设备上可安装并启动
 - 构建前 `server/` 工作区必须干净；确需带着未提交服务端改动出包时才用 `-AllowDirtyServer`，
   并接受清单里 `server_contract_verified=false` —— 这时 `source_commit` 不能代表真实后端。
-- 构建时设置 `RELEASE_CI_STATUS=passed`；否则清单里 `ci_status=unverified`，不得当作已通过 CI。
+- 若要记录 CI 证据，必须提供 `RELEASE_CI_STATUS=passed` 和真实的 `RELEASE_CI_RUN_ID`；脚本会通过 GitHub Actions API 核对仓库、`.github/workflows/ci.yml`、提交 SHA、workflow 完成状态及 App 必需 jobs。只填写 SHA、结论或不存在的运行号不会形成核验结果。
 - 核对 `release-manifest.json`：`sha256`、`signing_certificate_sha256`、`source_commit`、
-  `server_expected_commit`、`server_contract_verified`、`source_tree`、`ci_status` 七项齐全且自洽。
+  `server_expected_commit`、`server_contract_verified`、`server_contract_evidence_supplied`、`source_tree`、
+  `ci_status`、`workflow_conclusion`、`app_release_checks` 各项齐全且自洽。`workflow_conclusion` 保留整个 CI（包括 Web）的真实结论；`app_release_checks` 单独表示 App 发布所需 jobs 是否全绿。
 
 ### 发布口径
 

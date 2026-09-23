@@ -66,6 +66,13 @@ class ReleaseBuildTests(unittest.TestCase):
             str(self.client / "scripts/build_release.ps1")], env=env, capture_output=True,
             text=True, encoding="utf-8", errors="replace")
 
+    def build_with_env(self, values):
+        env = dict(os.environ, **values)
+        env["PATH"] = str(self.tools) + os.pathsep + env["PATH"]
+        return subprocess.run([shutil.which("pwsh") or "powershell", "-NoProfile", "-File",
+            str(self.client / "scripts/build_release.ps1")], env=env, capture_output=True,
+            text=True, encoding="utf-8", errors="replace")
+
     def test_clean_build_records_commit(self):
         result = self.build()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -89,6 +96,12 @@ class ReleaseBuildTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("build failed", result.stderr)
         self.assertFalse((self.output / "shenliyuan-release.apk").exists())
+
+    def test_passed_ci_status_requires_verifiable_run_id(self):
+        result = self.build_with_env({"RELEASE_CI_STATUS": "passed"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("GitHub Actions run id", result.stderr)
+        self.assertFalse((self.tools / "invoked").exists())
 
     def test_source_changed_during_build_is_rejected(self):
         result = self.build("mutate")

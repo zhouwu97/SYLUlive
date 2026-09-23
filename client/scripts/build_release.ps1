@@ -8,6 +8,9 @@ param(
     [string] $CiRunId = $env:RELEASE_CI_RUN_ID,
     [string] $CiHeadSha = $env:RELEASE_CI_HEAD_SHA,
     [string] $CiConclusion = $env:RELEASE_CI_CONCLUSION,
+    [string] $CiRepository = $env:RELEASE_CI_REPOSITORY,
+    [string] $CiWorkflow = $env:RELEASE_CI_WORKFLOW,
+    [string] $GitHubToken = $env:GITHUB_TOKEN,
     [string] $ServerContractStatus = $env:RELEASE_SERVER_CONTRACT_STATUS,
     [string] $ServerContractCommit = $env:RELEASE_SERVER_CONTRACT_COMMIT,
     # App 只编译客户端源码，但运行时依赖同一份 Server API 契约。
@@ -21,6 +24,93 @@ $clientRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $repoRoot = (Resolve-Path (Join-Path $clientRoot '..')).Path
 # 与既有正式发布证书一致；公钥指纹可入库，私钥仍只保存在签名环境。
 $expectedReleaseCertSha256 = 'A367486B8B5D5EEBF67D2849809CB9B09C5C3E4DC90D8015134AF416077EFB9E'
+
+function Resolve-GitHubRepository {
+    param([string] $Remote)
+    if ([string]::IsNullOrWhiteSpace($Remote)) { throw 'Cannot resolve origin remote for CI evidence.' }
+    if ($Remote -match 'github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$') {
+        return "$($Matches[1])/$($Matches[2])"
+    }
+    throw "Origin remote is not a GitHub repository: $Remote"
+}
+
+function Get-GitHubWorkflowEvidence {
+    param(
+        [string] $Repository,
+        [string] $Workflow,
+        [string] $RunId,
+        [string] $HeadSha,
+        [string] $Token
+    )
+    if ($RunId -notmatch '^[1-9][0-9]*$') { throw "RELEASE_CI_RUN_ID must be a numeric GitHub Actions run id; got '$RunId'." }
+    $headers = @{
+        Accept = 'application/vnd.github+json'
+        'User-Agent' = 'SYLUlive-release-verifier'
+        'X-GitHub-Api-Version' = '2022-11-28'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Token)) { $headers.Authorization = "Bearer $Token" }
+    $encodedRepo = $Repository
+    $runUri = "https://api.github.com/repos/$encodedRepo/actions/runs/$RunId"
+    try {
+        $run = Invoke-RestMethod -Uri $runUri -Method Get -Headers $headers
+    } catch {
+        throw "Unable to verify GitHub Actions run $RunId for ${Repository}: $($_.Exception.Message)"
+    }
+    if ("$($run.id)" -ne "$RunId") { throw 'GitHub returned a different workflow run id.' }
+    if ("$($run.repository.full_name)".ToLowerInvariant() -ne $Repository.ToLowerInvariant()) {
+        throw "Workflow run repository mismatch: $($run.repository.full_name)"
+    }
+    if ("$($run.head_sha)".ToLowerInvariant() -ne $HeadSha.ToLowerInvariant()) {
+        throw "Workflow run head SHA does not match release source commit: $($run.head_sha)"
+    }
+    $expectedWorkflow = $Workflow.TrimStart('/')
+    if ($expectedWorkflow -notmatch '/') { $expectedWorkflow = ".github/workflows/$expectedWorkflow" }
+    if ("$($run.path)".TrimStart('/') -ne $expectedWorkflow) {
+        throw "Workflow mismatch: expected $expectedWorkflow, got $($run.path)"
+    }
+    if ("$($run.status)" -ne 'completed') {
+        Write-Warning "GitHub Actions run $RunId is still $($run.status); App release checks are not verified."
+    }
+
+    $jobsUri = "https://api.github.com/repos/$encodedRepo/actions/runs/$RunId/jobs?filter=latest&per_page=100"
+    try {
+        $jobs = (Invoke-RestMethod -Uri $jobsUri -Method Get -Headers $headers).jobs
+    } catch {
+        throw "Unable to verify jobs for GitHub Actions run ${RunId}: $($_.Exception.Message)"
+    }
+    # App 发布不依赖 Web E2E；这些 job 覆盖服务端、Flutter、APK smoke 及其必要集成检查。
+    $requiredJobAliases = [ordered]@{
+        'server-format' = @('server-format', 'Go format check (changed files)')
+        'server' = @('server')
+        'postgres-integration' = @('postgres-integration')
+        'migration-upgrade' = @('migration-upgrade')
+        'edu-service' = @('edu-service')
+        'rag-service' = @('rag-service')
+        'client' = @('client')
+        'pgvector-integration' = @('pgvector-integration')
+        'client-platform-boundary' = @('client-platform-boundary')
+    }
+    $requiredJobs = @($requiredJobAliases.Keys)
+    $failedJobs = @()
+    foreach ($requiredJob in $requiredJobs) {
+        $aliases = $requiredJobAliases[$requiredJob]
+        $job = @($jobs | Where-Object { $aliases -contains $_.name }) | Select-Object -First 1
+        if (-not $job -or $job.status -ne 'completed' -or $job.conclusion -ne 'success') {
+            $failedJobs += $requiredJob
+        }
+    }
+    [ordered]@{
+        run_id = [int64]$run.id
+        repository = $Repository
+        workflow = $expectedWorkflow
+        head_sha = "$($run.head_sha)".ToLowerInvariant()
+        workflow_status = "$($run.status)"
+        workflow_conclusion = if ($run.conclusion) { "$($run.conclusion)" } else { $null }
+        app_release_checks = ($run.status -eq 'completed' -and $failedJobs.Count -eq 0)
+        required_jobs = $requiredJobs
+        failed_jobs = $failedJobs
+    }
+}
 
 function Get-CleanReleaseCommit {
     $commit = & git -C $repoRoot rev-parse --verify HEAD
@@ -74,23 +164,36 @@ if ($ServerContractStatus -notin @('passed', 'failed', 'unverified')) {
     throw "RELEASE_SERVER_CONTRACT_STATUS must be passed, failed, or unverified; got '$ServerContractStatus'."
 }
 $script:ciVerified = $false
-if ($script:ciStatus -eq 'passed') {
-    if ([string]::IsNullOrWhiteSpace($CiRunId) -or [string]::IsNullOrWhiteSpace($CiHeadSha) -or [string]::IsNullOrWhiteSpace($CiConclusion)) {
-        throw 'RELEASE_CI_STATUS=passed requires RELEASE_CI_RUN_ID, RELEASE_CI_HEAD_SHA and RELEASE_CI_CONCLUSION.'
+$script:ciEvidence = $null
+if ($script:ciStatus -eq 'passed' -and [string]::IsNullOrWhiteSpace($CiRunId)) {
+    throw 'RELEASE_CI_STATUS=passed requires a GitHub Actions run id so the result can be verified automatically.'
+}
+if (-not [string]::IsNullOrWhiteSpace($CiRunId)) {
+    if ([string]::IsNullOrWhiteSpace($CiRepository)) {
+        $origin = (& git -C $repoRoot config --get remote.origin.url).Trim()
+        $CiRepository = Resolve-GitHubRepository -Remote $origin
     }
-    if ($CiHeadSha.Trim().ToLowerInvariant() -ne $script:sourceCommit.Trim().ToLowerInvariant() -or $CiConclusion.Trim().ToLowerInvariant() -ne 'success') {
-        throw 'CI evidence must reference the release source commit and have conclusion=success.'
+    if ([string]::IsNullOrWhiteSpace($CiWorkflow)) { $CiWorkflow = '.github/workflows/ci.yml' }
+    $script:ciEvidence = Get-GitHubWorkflowEvidence -Repository $CiRepository -Workflow $CiWorkflow -RunId $CiRunId -HeadSha $script:sourceCommit -Token $GitHubToken
+    if (-not [string]::IsNullOrWhiteSpace($CiHeadSha) -and $CiHeadSha.Trim().ToLowerInvariant() -ne $script:ciEvidence.head_sha) {
+        throw 'RELEASE_CI_HEAD_SHA disagrees with the GitHub workflow run.'
     }
-    $script:ciVerified = $true
+    if (-not [string]::IsNullOrWhiteSpace($CiConclusion) -and "$CiConclusion".Trim().ToLowerInvariant() -ne "$($script:ciEvidence.workflow_conclusion)".ToLowerInvariant()) {
+        throw 'RELEASE_CI_CONCLUSION disagrees with the GitHub workflow run.'
+    }
+    $script:ciVerified = [bool]$script:ciEvidence.app_release_checks
+    $script:ciStatus = if ($script:ciVerified) { 'passed' } else { 'failed' }
 }
 $script:serverContractVerified = $false
+$script:serverContractEvidenceSupplied = $false
 if ($ServerContractStatus -eq 'passed') {
     if (-not $script:sourceTree['server'].clean -or [string]::IsNullOrWhiteSpace($ServerContractCommit) -or
         $ServerContractCommit.Trim().ToLowerInvariant() -ne $script:sourceCommit.Trim().ToLowerInvariant()) {
         throw 'Server contract evidence must be passed, clean, and pinned to the release source commit.'
     }
-    $script:serverContractVerified = $true
+    $script:serverContractEvidenceSupplied = $true
 }
+$script:serverContractVerified = [bool]($script:ciVerified -and $script:sourceTree['server'].clean)
 if ($script:ciStatus -ne 'passed') {
     Write-Warning "RELEASE_CI_STATUS=$script:ciStatus —— 清单会如实记录，正式发布前请补上全绿的 CI 结果。"
 }
@@ -222,12 +325,20 @@ try {
         server_source_clean = $script:sourceTree['server'].clean
         server_contract_status = $ServerContractStatus
         server_contract_verified = $script:serverContractVerified
+        server_contract_evidence_supplied = $script:serverContractEvidenceSupplied
         source_tree = $script:sourceTree
         ci_status = $script:ciStatus
         ci_verified = $script:ciVerified
-        ci_run_id = if ($script:ciVerified) { $CiRunId.Trim() } else { $null }
-        ci_head_sha = if ($script:ciVerified) { $CiHeadSha.Trim().ToLowerInvariant() } else { $null }
-        ci_conclusion = if ($script:ciVerified) { $CiConclusion.Trim().ToLowerInvariant() } else { $null }
+        ci_run_id = if ($script:ciEvidence) { $script:ciEvidence.run_id } else { $null }
+        ci_repository = if ($script:ciEvidence) { $script:ciEvidence.repository } else { $null }
+        ci_workflow = if ($script:ciEvidence) { $script:ciEvidence.workflow } else { $null }
+        ci_head_sha = if ($script:ciEvidence) { $script:ciEvidence.head_sha } else { $null }
+        ci_conclusion = if ($script:ciEvidence) { $script:ciEvidence.workflow_conclusion } else { $null }
+        workflow_status = if ($script:ciEvidence) { $script:ciEvidence.workflow_status } else { $null }
+        workflow_conclusion = if ($script:ciEvidence) { $script:ciEvidence.workflow_conclusion } else { $null }
+        app_release_checks = if ($script:ciEvidence) { $script:ciEvidence.app_release_checks } else { $false }
+        app_release_required_jobs = if ($script:ciEvidence) { $script:ciEvidence.required_jobs } else { @() }
+        app_release_failed_jobs = if ($script:ciEvidence) { $script:ciEvidence.failed_jobs } else { @() }
         built_at_utc = [DateTime]::UtcNow.ToString('o')
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'release-manifest.json') -Encoding utf8
     Write-Host "Signed release artifact: $target"

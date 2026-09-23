@@ -1537,11 +1537,7 @@ func sanitizeHy3CandidateExplanationResult(
 	for _, candidate := range candidates {
 		competitionID, _ := candidate["competition_id"].(string)
 		facts, _ := candidate["facts"].(map[string]interface{})
-		expected = append(expected, dto.CompetitionCandidateDTO{CompetitionPublicDTO: dto.CompetitionPublicDTO{
-			CompetitionID:           competitionID,
-			SchoolRecognitionStatus: stringFact(facts, "school_recognition_status"),
-			SchoolRecognitionGrade:  stringFact(facts, "school_recognition_grade"),
-		}})
+		expected = append(expected, hy3CandidateFactsDTO(competitionID, facts))
 	}
 	encoded, err := json.Marshal(input)
 	if err != nil {
@@ -1593,6 +1589,12 @@ func decodeHy3RemoteEnvelope(payload json.RawMessage) (hy3RemoteEnvelope, error)
 			if len([]rune(warning)) > 500 {
 				return hy3RemoteEnvelope{}, errors.New("envelope_warning_too_long")
 			}
+			if err := validateHy3CompetitionText(warning); err != nil {
+				return hy3RemoteEnvelope{}, errors.New("envelope_warning_fact_invalid")
+			}
+			if err := validateHy3CompetitionFactClaims(warning, "", nil); err != nil {
+				return hy3RemoteEnvelope{}, errors.New("envelope_warning_fact_invalid")
+			}
 		}
 	}
 	return hy3RemoteEnvelope{Result: result, DeterministicFindings: findings, Warnings: warnings}, nil
@@ -1615,10 +1617,7 @@ func sanitizeHy3SelectedComparisonResult(
 		}
 		expectedIDs = append(expectedIDs, competitionID)
 		facts, _ := competition["facts"].(map[string]interface{})
-		expected = append(expected, dto.CompetitionCandidateDTO{CompetitionPublicDTO: dto.CompetitionPublicDTO{
-			CompetitionID:           competitionID,
-			SchoolRecognitionStatus: stringFact(facts, "school_recognition_status"),
-		}})
+		expected = append(expected, hy3CandidateFactsDTO(competitionID, facts))
 	}
 	encoded, err := json.Marshal(input)
 	if err != nil {
@@ -1648,6 +1647,36 @@ func sanitizeHy3SelectedComparisonResult(
 func stringFact(facts map[string]interface{}, key string) string {
 	value, _ := facts[key].(string)
 	return value
+}
+
+func hy3CandidateFactsDTO(competitionID string, facts map[string]interface{}) dto.CompetitionCandidateDTO {
+	return dto.CompetitionCandidateDTO{CompetitionPublicDTO: dto.CompetitionPublicDTO{
+		CompetitionID:           competitionID,
+		CompetitionLevel:        stringFact(facts, "competition_level"),
+		SchoolRecognitionStatus: stringFact(facts, "school_recognition_status"),
+		SchoolRecognitionGrade:  stringFact(facts, "school_recognition_grade"),
+		ParticipationType:       stringFact(facts, "participation_type"),
+		TeamSizeMin:             intFact(facts, "team_size_min"),
+		TeamSizeMax:             intFact(facts, "team_size_max"),
+	}}
+}
+
+func intFact(facts map[string]interface{}, key string) int {
+	switch value := facts[key].(type) {
+	case int:
+		return value
+	case int32:
+		return int(value)
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	case json.Number:
+		parsed, _ := strconv.Atoi(string(value))
+		return parsed
+	default:
+		return 0
+	}
 }
 
 type hy3NarrativeContract struct {

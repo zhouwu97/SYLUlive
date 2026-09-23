@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gorm.io/gorm"
@@ -80,6 +81,10 @@ var forbiddenHy3CompetitionLanguage = []string{
 
 var newHy3DatePattern = regexp.MustCompile(`20\d{2}(?:[-/.年]\d{1,2})`)
 var probabilityPattern = regexp.MustCompile(`\d+(?:\.\d+)?%`)
+var hy3PositiveRecognitionPattern = regexp.MustCompile(`(已|已经|确已|正式)(被)?(学校)?(认定|认可)|(已|已经)(获|获得)学校认可|通过认定|认定赛事`)
+var hy3NegativeRecognitionPattern = regexp.MustCompile(`(未|没有|尚未)(被)?(学校)?(认定|认可)|(未|尚未)通过认定|(未|尚未)(获|获得)学校认可|不(被)?(学校)?(认定|认可)`)
+var hy3TeamSizePattern = regexp.MustCompile(`([0-9]{1,3})\s*(人|名)(一组|组成)?`)
+var hy3RecognitionGradePattern = regexp.MustCompile(`([a-cA-C])级(?:认定|赛事)?`)
 
 // ValidateHy3CompetitionExplanation 保证模型只能逐项解释既有候选，不能新增或重排。
 func ValidateHy3CompetitionExplanation(
@@ -140,12 +145,17 @@ func ValidateHy3CompetitionExplanationFacts(
 	for index, item := range output.Items {
 		candidate := input[index]
 		for _, reason := range append(append([]Hy3CompetitionReason{}, item.Reasons...), item.Cautions...) {
-			if err := validateHy3CompetitionFactClaims(reason.Text, candidate.SchoolRecognitionStatus, reason.SourceFields); err != nil {
+			if err := validateHy3CompetitionCandidateFacts(reason.Text, candidate, reason.SourceFields); err != nil {
 				return err
 			}
 		}
-		if err := validateHy3CompetitionFactClaims(item.CoreReason, candidate.SchoolRecognitionStatus, nil); err != nil {
+		if err := validateHy3CompetitionCandidateFacts(item.CoreReason, candidate, nil); err != nil {
 			return err
+		}
+		for _, question := range item.QuestionsToConfirm {
+			if err := validateHy3CompetitionCandidateFacts(question, candidate, nil); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -205,7 +215,12 @@ func ValidateHy3SelectedCompetitionComparisonFacts(
 	for index, item := range output.Items {
 		candidate := input[index]
 		for _, reason := range append(append([]Hy3CompetitionReason{}, item.Observations...), item.Cautions...) {
-			if err := validateHy3CompetitionFactClaims(reason.Text, candidate.SchoolRecognitionStatus, reason.SourceFields); err != nil {
+			if err := validateHy3CompetitionCandidateFacts(reason.Text, candidate, reason.SourceFields); err != nil {
+				return err
+			}
+		}
+		for _, question := range item.QuestionsToConfirm {
+			if err := validateHy3CompetitionCandidateFacts(question, candidate, nil); err != nil {
 				return err
 			}
 		}
@@ -215,10 +230,16 @@ func ValidateHy3SelectedCompetitionComparisonFacts(
 
 func validateHy3CompetitionFactClaims(text, recognitionStatus string, sourceFields []string) error {
 	normalized := strings.ToLower(strings.TrimSpace(text))
-	positive := strings.Contains(normalized, "学校已认定") || strings.Contains(normalized, "已认定") ||
-		strings.Contains(normalized, "通过认定") || strings.Contains(normalized, "认定赛事")
-	negative := strings.Contains(normalized, "未认定") || strings.Contains(normalized, "不认定") ||
-		strings.Contains(normalized, "未通过认定")
+	// 先识别否定再从文本中移除否定片段，避免“未通过认定”同时命中“通过认定”。
+	negative := hy3NegativeRecognitionPattern.MatchString(normalized)
+	positiveText := hy3NegativeRecognitionPattern.ReplaceAllString(normalized, "")
+	positive := hy3PositiveRecognitionPattern.MatchString(positiveText)
+	// 单纯询问状态不是事实断言；带“既然/因为/确认”等前提的提问仍按断言校验。
+	interrogative := strings.ContainsAny(normalized, "?？") &&
+		!strings.ContainsAny(normalized, "既然因为确认已知根据")
+	if interrogative {
+		positive, negative = false, false
+	}
 	confirmed := schoolRecognitionConfirmed(recognitionStatus)
 	knownNegative := schoolRecognitionExplicitlyNegative(recognitionStatus)
 	// 没有携带认定字段时仍禁止确定性认定结论，避免模型把 CoreReason
@@ -234,6 +255,52 @@ func validateHy3CompetitionFactClaims(text, recognitionStatus string, sourceFiel
 	}
 	if negative && !knownNegative {
 		return fmt.Errorf("ai_explanation_fact_conflict")
+	}
+	return nil
+}
+
+func validateHy3CompetitionCandidateFacts(text string, candidate dto.CompetitionCandidateDTO, sourceFields []string) error {
+	if err := validateHy3CompetitionFactClaims(text, candidate.SchoolRecognitionStatus, sourceFields); err != nil {
+		return err
+	}
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	if matches := hy3TeamSizePattern.FindStringSubmatch(normalized); len(matches) > 0 {
+		if !containsHy3SourceField(sourceFields, "team_size_min") && !containsHy3SourceField(sourceFields, "team_size_max") {
+			return fmt.Errorf("ai_explanation_fact_conflict")
+		}
+		teamSize, _ := strconv.Atoi(matches[1])
+		if candidate.TeamSizeMin <= 0 && candidate.TeamSizeMax <= 0 {
+			return fmt.Errorf("ai_explanation_fact_conflict")
+		}
+		if candidate.TeamSizeMin > 0 && teamSize < candidate.TeamSizeMin {
+			return fmt.Errorf("ai_explanation_fact_conflict")
+		}
+		if candidate.TeamSizeMax > 0 && teamSize > candidate.TeamSizeMax {
+			return fmt.Errorf("ai_explanation_fact_conflict")
+		}
+	}
+	for _, level := range []string{"国际级", "国家级", "省级", "市级", "校级", "院级"} {
+		if strings.Contains(normalized, level) {
+			if !containsHy3SourceField(sourceFields, "competition_level") ||
+				strings.TrimSpace(candidate.CompetitionLevel) == "" ||
+				!strings.Contains(strings.ToLower(candidate.CompetitionLevel), strings.ToLower(level)) {
+				return fmt.Errorf("ai_explanation_fact_conflict")
+			}
+		}
+	}
+	for _, participation := range []string{"团队赛", "个人赛"} {
+		if strings.Contains(normalized, participation) &&
+			(!containsHy3SourceField(sourceFields, "participation_type") ||
+				!strings.Contains(strings.ToLower(candidate.ParticipationType), strings.ToLower(participation))) {
+			return fmt.Errorf("ai_explanation_fact_conflict")
+		}
+	}
+	if matches := hy3RecognitionGradePattern.FindStringSubmatch(normalized); len(matches) > 0 {
+		grade := strings.ToLower(matches[1])
+		if !containsHy3SourceField(sourceFields, "school_recognition_grade") ||
+			!strings.Contains(strings.ToLower(candidate.SchoolRecognitionGrade), grade) {
+			return fmt.Errorf("ai_explanation_fact_conflict")
+		}
 	}
 	return nil
 }

@@ -133,3 +133,16 @@ scratch/
 client/scratch/
 *.patch
 client/ohos/entry/oh-package-lock.json5
+
+# 本地 AI 工具产物，不属于项目源码（Codex 截图、superpowers 头脑风暴草稿）
+.codex-captures/
+.superpowers/
+
+# 根目录一次性 AI 脚本与数据快照，不属于项目源码
+/find_unchecked.py
+/fix_snackbar.py
+/refactor_drawer_directory.py
+/refactor_header.py
+/set_ip.py
+/update_privacy.py
+/canteen_names_before.tsv

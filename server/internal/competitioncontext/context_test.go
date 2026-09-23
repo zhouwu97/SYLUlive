@@ -24,7 +24,7 @@ func newContextTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(
 		&models.User{}, &models.AcademicIdentityBinding{},
-		&models.UserCompetitionPreference{}, &models.UserCompetitionAward{},
+		&models.UserCompetitionPreference{}, &models.UserCompetitionProfile{}, &models.UserCompetitionAward{},
 	); err != nil {
 		t.Fatal(err)
 	}

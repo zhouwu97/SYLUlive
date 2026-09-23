@@ -262,7 +262,8 @@ function PersonalAnalysis() {
   return (
     <div className="dialog-form">
       <p className="muted">
-        仅发送以下汇总，不发送姓名、学号、课程名称、单科成绩或学校凭据。摘要将交给本服务配置的模型提供方处理，第三方留存以其政策为准。
+        原始成绩仅在本机汇总。确认后，本次问题和以下统计摘要会发送给本服务配置的模型提供方；
+        不会发送姓名、学号、课程名称、单科成绩或学校凭据。第三方留存以其政策为准。
       </p>
       <QueryState query={settings}>
         <p>模型：{settings.data?.default_model}</p>
@@ -297,7 +298,7 @@ function PersonalAnalysis() {
         ) : review ? (
           <div className="inline-actions">
             <button className="btn primary" onClick={send}>
-              确认本次发送以上摘要
+              确认发送问题和以上摘要
             </button>
             <button className="btn" onClick={() => setReview(false)}>
               取消

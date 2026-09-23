@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
@@ -31,18 +33,33 @@ var competitionExperienceLevels = map[string]struct{}{
 }
 
 type competitionPreferenceInput struct {
-	Goals                  []string `json:"goals"`
-	DirectionTags          []string `json:"direction_tags"`
-	SkillTags              []string `json:"skill_tags"`
-	PreferredRoles         []string `json:"preferred_roles"`
-	WeeklyHours            int      `json:"weekly_hours"`
-	AcceptLongTermTraining bool     `json:"accept_long_term_training"`
-	CareerDirection        string   `json:"career_direction"`
-	ExperienceLevel        string   `json:"experience_level"`
+	Goals                  []string                 `json:"goals"`
+	DirectionTags          []string                 `json:"direction_tags"`
+	SkillTags              []string                 `json:"skill_tags"`
+	PreferredRoles         []string                 `json:"preferred_roles"`
+	WeeklyHours            int                      `json:"weekly_hours"`
+	AcceptLongTermTraining bool                     `json:"accept_long_term_training"`
+	CareerDirection        string                   `json:"career_direction"`
+	ExperienceLevel        string                   `json:"experience_level"`
+	CompetitionProfile     *competitionProfileInput `json:"competition_profile"`
 	// MajorClusterOverride 用指针区分「没传」与「传了空数组」：
 	// 本接口是整体覆盖语义，若把「没传」当成「清空」，
 	// 尚未升级的客户端每次保存偏好都会静默抹掉用户已填的专业纠正。
 	MajorClusterOverride *[]string `json:"major_cluster_override"`
+}
+
+type competitionProfileInput struct {
+	EntryYear string `json:"entry_year"`
+	College   string `json:"college"`
+	Major     string `json:"major"`
+}
+
+type competitionProfileResponse struct {
+	EntryYear  string     `json:"entry_year"`
+	College    string     `json:"college"`
+	Major      string     `json:"major"`
+	Provenance string     `json:"provenance"`
+	UpdatedAt  *time.Time `json:"updated_at"`
 }
 
 type competitionPreferenceResponse struct {
@@ -57,7 +74,8 @@ type competitionPreferenceResponse struct {
 	ExperienceLevel        string   `json:"experience_level"`
 	MajorClusterOverride   []string `json:"major_cluster_override"`
 	// MajorClusterOptions 是服务端下发的专业簇词表，供客户端渲染可纠正的专业方向。
-	MajorClusterOptions []string `json:"major_cluster_options"`
+	MajorClusterOptions []string                   `json:"major_cluster_options"`
+	CompetitionProfile  competitionProfileResponse `json:"competition_profile"`
 }
 
 func defaultCompetitionPreferenceResponse() competitionPreferenceResponse {
@@ -66,6 +84,17 @@ func defaultCompetitionPreferenceResponse() competitionPreferenceResponse {
 		MajorClusterOverride: []string{},
 		MajorClusterOptions:  competitionmatching.ClusterOptions(),
 		ExperienceLevel:      "beginner",
+		CompetitionProfile:   competitionProfileResponse{},
+	}
+}
+
+func competitionProfileResponseFromModel(profile *models.UserCompetitionProfile) competitionProfileResponse {
+	if profile == nil {
+		return competitionProfileResponse{}
+	}
+	return competitionProfileResponse{
+		EntryYear: profile.EntryYear, College: profile.College, Major: profile.Major,
+		Provenance: profile.Provenance, UpdatedAt: &profile.UpdatedAt,
 	}
 }
 
@@ -94,13 +123,29 @@ func (h *CompetitionHandler) GetCompetitionPreference(c *gin.Context) {
 	var preference models.UserCompetitionPreference
 	if err := h.db.Where("user_id = ?", userID).First(&preference).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusOK, defaultCompetitionPreferenceResponse())
+			response := defaultCompetitionPreferenceResponse()
+			var profile models.UserCompetitionProfile
+			if profileErr := h.db.Where("user_id = ?", userID).First(&profile).Error; profileErr == nil {
+				response.CompetitionProfile = competitionProfileResponseFromModel(&profile)
+			} else if !errors.Is(profileErr, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛画像失败"})
+				return
+			}
+			c.JSON(http.StatusOK, response)
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛目标失败"})
 		return
 	}
-	c.JSON(http.StatusOK, competitionPreferenceResponseFromModel(preference))
+	response := competitionPreferenceResponseFromModel(preference)
+	var profile models.UserCompetitionProfile
+	if err := h.db.Where("user_id = ?", userID).First(&profile).Error; err == nil {
+		response.CompetitionProfile = competitionProfileResponseFromModel(&profile)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛画像失败"})
+		return
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // PutCompetitionPreference 整体覆盖当前用户偏好，避免数组局部更新产生歧义。
@@ -144,17 +189,48 @@ func (h *CompetitionHandler) PutCompetitionPreference(c *gin.Context) {
 		preference.MajorClusterOverride = jsonArray(*normalized.MajorClusterOverride)
 		updates["major_cluster_override"] = preference.MajorClusterOverride
 	}
-	if err := h.db.Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "user_id"}}, DoUpdates: clause.Assignments(updates),
-	}).Create(&preference).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存竞赛目标失败"})
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "user_id"}}, DoUpdates: clause.Assignments(updates),
+		}).Create(&preference).Error; err != nil {
+			return err
+		}
+		if normalized.CompetitionProfile == nil {
+			return nil
+		}
+		profile := normalized.CompetitionProfile
+		if profile.EntryYear == "" && profile.College == "" && profile.Major == "" {
+			return tx.Where("user_id = ?", userID).Delete(&models.UserCompetitionProfile{}).Error
+		}
+		profileModel := models.UserCompetitionProfile{
+			UserID: userID, EntryYear: profile.EntryYear, College: profile.College, Major: profile.Major,
+			Provenance: models.UserCompetitionProfileProvenanceSelfReported, UpdatedAt: time.Now().UTC(),
+		}
+		return tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "user_id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"entry_year": profileModel.EntryYear, "college": profileModel.College,
+				"major": profileModel.Major, "provenance": profileModel.Provenance,
+				"updated_at": profileModel.UpdatedAt,
+			}),
+		}).Create(&profileModel).Error
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存竞赛目标或画像失败"})
 		return
 	}
 	if err := h.db.Where("user_id = ?", userID).First(&preference).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取竞赛目标失败"})
 		return
 	}
-	c.JSON(http.StatusOK, competitionPreferenceResponseFromModel(preference))
+	response := competitionPreferenceResponseFromModel(preference)
+	var profile models.UserCompetitionProfile
+	if err := h.db.Where("user_id = ?", userID).First(&profile).Error; err == nil {
+		response.CompetitionProfile = competitionProfileResponseFromModel(&profile)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取竞赛画像失败"})
+		return
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func ensureJSONBodyEnded(decoder *json.Decoder) error {
@@ -179,6 +255,26 @@ func normalizeCompetitionPreferenceInput(input competitionPreferenceInput) (comp
 	}
 	input.CareerDirection = strings.TrimSpace(input.CareerDirection)
 	input.ExperienceLevel = strings.TrimSpace(input.ExperienceLevel)
+	if input.CompetitionProfile != nil {
+		profile := *input.CompetitionProfile
+		profile.EntryYear = strings.TrimSpace(profile.EntryYear)
+		profile.College = strings.TrimSpace(profile.College)
+		profile.Major = strings.TrimSpace(profile.Major)
+		if profile.EntryYear != "" {
+			validYear := len(profile.EntryYear) == 4
+			for _, digit := range profile.EntryYear {
+				validYear = validYear && digit >= '0' && digit <= '9'
+			}
+			year, _ := strconv.Atoi(profile.EntryYear)
+			if !validYear || year < 1900 || year > time.Now().Year()+1 {
+				return input, errors.New("入学年份需为有效的四位年份")
+			}
+		}
+		if utf8.RuneCountInString(profile.College) > 120 || utf8.RuneCountInString(profile.Major) > 120 {
+			return input, errors.New("学院和专业名称最多 120 个字")
+		}
+		input.CompetitionProfile = &profile
+	}
 	if input.ExperienceLevel == "" {
 		input.ExperienceLevel = "beginner"
 	}

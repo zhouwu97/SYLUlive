@@ -150,6 +150,21 @@ type UserCompetitionPreference struct {
 
 func (UserCompetitionPreference) TableName() string { return "user_competition_preferences" }
 
+// UserCompetitionProfile 只保存用户为竞赛资格匹配确认的最小画像，不接收教务原始资料。
+type UserCompetitionProfile struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	UserID     uint      `gorm:"not null;uniqueIndex" json:"user_id"`
+	EntryYear  string    `gorm:"size:4" json:"entry_year"`
+	College    string    `gorm:"size:120" json:"college"`
+	Major      string    `gorm:"size:120" json:"major"`
+	Provenance string    `gorm:"size:32;not null" json:"provenance"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+const UserCompetitionProfileProvenanceSelfReported = "self_reported"
+
+func (UserCompetitionProfile) TableName() string { return "user_competition_profiles" }
+
 // CompetitionRecommendationSnapshot 记录 AI 提议操作时所依据的确定性推荐结果。
 // 快照只保存解释与重新校验所需字段，不保存证明材料、审核信息或完整能力画像。
 type CompetitionRecommendationSnapshot struct {

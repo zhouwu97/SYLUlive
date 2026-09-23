@@ -26,7 +26,7 @@ func newCompetitionServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
-		&models.User{}, &models.AcademicIdentityBinding{}, &models.UserCompetitionPreference{}, &models.UserCompetitionAward{},
+		&models.User{}, &models.AcademicIdentityBinding{}, &models.UserCompetitionPreference{}, &models.UserCompetitionProfile{}, &models.UserCompetitionAward{},
 		&models.CompetitionCategory{}, &models.CompetitionCatalogPackage{},
 		&models.CompetitionEvent{}, &models.CompetitionCatalogAuditLog{},
 		&models.CompetitionCatalogLegacyMapping{}, &models.CompetitionCatalogActivationSnapshot{},

@@ -24,6 +24,9 @@ class CompetitionPreferenceScreen extends StatefulWidget {
 class _CompetitionPreferenceScreenState
     extends State<CompetitionPreferenceScreen> {
   final _careerController = TextEditingController();
+  final _entryYearController = TextEditingController();
+  final _collegeController = TextEditingController();
+  final _majorController = TextEditingController();
   final Set<String> _goals = {};
   final Set<String> _directions = {};
   final Set<String> _skills = {};
@@ -46,6 +49,9 @@ class _CompetitionPreferenceScreenState
   void initState() {
     super.initState();
     _careerController.addListener(_onCareerChanged);
+    _entryYearController.addListener(_onProfileChanged);
+    _collegeController.addListener(_onProfileChanged);
+    _majorController.addListener(_onProfileChanged);
     _load();
   }
 
@@ -63,10 +69,20 @@ class _CompetitionPreferenceScreenState
   void dispose() {
     _careerController.removeListener(_onCareerChanged);
     _careerController.dispose();
+    _entryYearController.removeListener(_onProfileChanged);
+    _entryYearController.dispose();
+    _collegeController.removeListener(_onProfileChanged);
+    _collegeController.dispose();
+    _majorController.removeListener(_onProfileChanged);
+    _majorController.dispose();
     super.dispose();
   }
 
   void _onCareerChanged() {
+    if (mounted && !_loading && !_applyingPreference) setState(() {});
+  }
+
+  void _onProfileChanged() {
     if (mounted && !_loading && !_applyingPreference) setState(() {});
   }
 
@@ -82,6 +98,9 @@ class _CompetitionPreferenceScreenState
       values(_skills),
       values(_roles),
       values(_clusters),
+      _entryYearController.text.trim(),
+      _collegeController.text.trim(),
+      _majorController.text.trim(),
       '$_weeklyHours',
       '$_acceptLongTermTraining',
       _experienceLevel,
@@ -98,6 +117,9 @@ class _CompetitionPreferenceScreenState
     _clusters.clear();
     _clusterOptions = const [];
     _careerController.clear();
+    _entryYearController.clear();
+    _collegeController.clear();
+    _majorController.clear();
     _weeklyHours = 0;
     _acceptLongTermTraining = false;
     _experienceLevel = 'beginner';
@@ -167,6 +189,9 @@ class _CompetitionPreferenceScreenState
             ? preference.experienceLevel
             : 'beginner';
     _careerController.text = preference.careerDirection;
+    _entryYearController.text = preference.competitionProfile.entryYear;
+    _collegeController.text = preference.competitionProfile.college;
+    _majorController.text = preference.competitionProfile.major;
     _applyingPreference = false;
   }
 
@@ -199,6 +224,11 @@ class _CompetitionPreferenceScreenState
       careerDirection: _careerController.text,
       experienceLevel: _experienceLevel,
       majorClusterOverride: _clusters.toList(),
+      competitionProfile: CompetitionProfile(
+        entryYear: _entryYearController.text,
+        college: _collegeController.text,
+        major: _majorController.text,
+      ),
     );
     try {
       final response = await widget.dio.put(
@@ -289,6 +319,60 @@ class _CompetitionPreferenceScreenState
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              _groupCard(
+                                title: '竞赛匹配画像',
+                                isDark: isDark,
+                                children: [
+                                  _section(
+                                    title: '入学年份',
+                                    subtitle: '用于判断赛事年级资格，例如 2023',
+                                    child: TextField(
+                                      controller: _entryYearController,
+                                      keyboardType: TextInputType.number,
+                                      maxLength: 4,
+                                      decoration: const InputDecoration(
+                                        hintText: '例如：2023',
+                                        border: OutlineInputBorder(),
+                                        counterText: '',
+                                      ),
+                                    ),
+                                    isDark: isDark,
+                                  ),
+                                  _section(
+                                    title: '学院',
+                                    child: TextField(
+                                      controller: _collegeController,
+                                      maxLength: 120,
+                                      decoration: const InputDecoration(
+                                        hintText: '填写你的学院名称',
+                                        border: OutlineInputBorder(),
+                                        counterText: '',
+                                      ),
+                                    ),
+                                    isDark: isDark,
+                                  ),
+                                  _section(
+                                    title: '专业',
+                                    child: TextField(
+                                      controller: _majorController,
+                                      maxLength: 120,
+                                      decoration: const InputDecoration(
+                                        hintText: '填写你的专业名称',
+                                        border: OutlineInputBorder(),
+                                        counterText: '',
+                                      ),
+                                    ),
+                                    isDark: isDark,
+                                  ),
+                                  const Padding(
+                                    padding: EdgeInsets.only(bottom: 14),
+                                    child: Text(
+                                      '只保存你填写确认的年级、学院和专业用于竞赛匹配；教务账号、密码、成绩和课程不会写入此画像。',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                ],
+                              ),
                               _groupCard(
                                 title: '参赛方向',
                                 isDark: isDark,

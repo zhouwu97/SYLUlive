@@ -384,6 +384,7 @@ func main() {
 		&models.CalendarShareSnapshotItem{},
 		&models.CompetitionImportBatch{},
 		&models.UserCompetitionPreference{},
+		&models.UserCompetitionProfile{},
 		&models.CompetitionRecommendationSnapshot{},
 		&models.CompetitionCandidateSignals{},
 		&models.CompetitionRankTrace{},
@@ -828,14 +829,15 @@ func main() {
 
 	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
 	uploadProtectionConfig := services.UploadProtectionConfig{
-		PerMinuteCountLimit:  cfg.UploadPerMinuteCountLimit,
-		HourlyBytesLimit:     cfg.UploadHourlyBytesLimit,
-		TemporaryUserCount:   cfg.UploadTemporaryUserCount,
-		TemporaryUserBytes:   cfg.UploadTemporaryUserBytes,
-		TemporaryGlobalBytes: cfg.UploadTemporaryGlobalBytes,
-		DiskWarnPercent:      cfg.UploadDiskWarnPercent,
-		DiskSeverePercent:    cfg.UploadDiskSeverePercent,
-		DiskCriticalPercent:  cfg.UploadDiskCriticalPercent,
+		PerMinuteCountLimit:   cfg.UploadPerMinuteCountLimit,
+		HourlyBytesLimit:      cfg.UploadHourlyBytesLimit,
+		TemporaryUserCount:    cfg.UploadTemporaryUserCount,
+		TemporaryUserBytes:    cfg.UploadTemporaryUserBytes,
+		TemporaryGlobalBytes:  cfg.UploadTemporaryGlobalBytes,
+		DiskWarnPercent:       cfg.UploadDiskWarnPercent,
+		DiskSeverePercent:     cfg.UploadDiskSeverePercent,
+		DiskCriticalPercent:   cfg.UploadDiskCriticalPercent,
+		FailClosedOnDiskCheck: cfg.ReleaseMode,
 	}
 	if err := uploadProtectionConfig.Validate(); err != nil {
 		log.Fatalf("上传保护配置无效: %v", err)

@@ -17,6 +17,7 @@ import '../../services/competition_signal_service.dart';
 import '../../services/domain_change_bus.dart';
 import '../../utils/app_feedback.dart';
 import '../../utils/competition_batch_action_payload.dart';
+import '../academic_data_settings_screen.dart';
 import '../../widgets/competition/competition_empty_state.dart';
 import '../../widgets/competition/competition_match_reason_sheet.dart';
 import '../../widgets/competition/competition_module_theme.dart';
@@ -829,6 +830,38 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     }
   }
 
+  Future<void> _openMissingCompetitionPrerequisite() async {
+    final needsProfile = _candidateMissingFields.any(
+      (field) =>
+          field == 'entry_year' || field == 'college' || field == 'major',
+    );
+    if (needsProfile) {
+      await _openPreference();
+      return;
+    }
+    var auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      await Navigator.pushNamed(context, '/login');
+      if (!mounted) return;
+      auth = context.read<AuthProvider>();
+      if (!auth.isLoggedIn) return;
+    }
+    final accountID = auth.user?.id;
+    final epoch = auth.accountSessionEpoch;
+    if (accountID == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AcademicDataSettingsScreen()),
+    );
+    if (!mounted) return;
+    final currentAuth = context.read<AuthProvider>();
+    if (currentAuth.user?.id != accountID ||
+        currentAuth.accountSessionEpoch != epoch) {
+      return;
+    }
+    await Future.wait([_loadCompetitionDashboard(), _loadUserState()]);
+    if (_studentFocusFilter == 'fit') await _loadEvents(reset: true);
+  }
+
   Widget _buildStatBand(
     bool isDark,
     List<(String, String, VoidCallback?)> items,
@@ -986,16 +1019,21 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       onActionTap = _switchToAllEvents;
     } else if (!_profileReady) {
       warning = false;
-      title = '完善教务身份后可生成匹配候选';
+      title = '完善竞赛画像与身份核验后生成候选';
       final missing = _candidateMissingFields
           .map(_profileFieldLabel)
           .where((label) => label.isNotEmpty)
           .toList();
       message = missing.isEmpty
-          ? '需要先完成教务身份核验，匹配依据来自你的专业、学院与年级'
-          : '还需要补全：${missing.join('、')}';
-      actionText = '去完善';
-      onActionTap = () => _openCompetitionHub();
+          ? '竞赛匹配需要你确认的年级、学院和专业，以及单独完成的学生身份核验。'
+          : '还需要：${missing.join('、')}。竞赛画像只用于资格和方向匹配。';
+      actionText = _candidateMissingFields.any(
+        (field) =>
+            field == 'entry_year' || field == 'college' || field == 'major',
+      )
+          ? '填写匹配画像'
+          : '去身份设置';
+      onActionTap = _openMissingCompetitionPrerequisite;
     } else if (_eventTotal > 0) {
       warning = false;
       title = '根据专业、资格和目标筛出 $_eventTotal 项候选';
@@ -1076,13 +1114,13 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   String _profileFieldLabel(String field) {
     switch (field) {
       case 'entry_year':
-        return '年级';
+        return '入学年份';
       case 'college':
         return '学院';
       case 'major':
         return '专业';
       case 'academic_identity':
-        return '教务身份核验';
+        return '学生身份核验';
       default:
         return '';
     }
@@ -1197,12 +1235,19 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       if (_studentFocusFilter == 'fit') {
         if (!_profileReady) {
           return CompetitionEmptyState(
-            title: '先完善教务身份',
+            title: '先补齐竞赛匹配条件',
             message: _candidateMissingFields.isEmpty
-                ? '匹配依据来自你的专业、学院与年级，补全后即可生成候选。'
-                : '还需要补全：${_candidateMissingFields.map(_profileFieldLabel).where((label) => label.isNotEmpty).join('、')}。',
-            primaryText: '去完善',
-            onPrimaryTap: () => _openCompetitionHub(),
+                ? '确认年级、学院和专业，并完成学生身份核验后即可生成候选。'
+                : '还需要：${_candidateMissingFields.map(_profileFieldLabel).where((label) => label.isNotEmpty).join('、')}。',
+            primaryText: _candidateMissingFields.any(
+              (field) =>
+                  field == 'entry_year' ||
+                  field == 'college' ||
+                  field == 'major',
+            )
+                ? '填写匹配画像'
+                : '去身份设置',
+            onPrimaryTap: _openMissingCompetitionPrerequisite,
             secondaryText: '浏览全部比赛',
             onSecondaryTap: _switchToAllEvents,
           );

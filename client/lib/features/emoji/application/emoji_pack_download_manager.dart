@@ -10,7 +10,7 @@ import '../domain/emoji_pack.dart';
 import '../domain/emoji_pack_limits.dart';
 import 'emoji_pack_installer.dart';
 
-enum EmojiDownloadStatus { downloading, paused, failed, installed }
+enum EmojiDownloadStatus { downloading, installing, paused, failed, installed }
 
 class EmojiDownloadTask {
   EmojiDownloadTask(this.entry, this.status,
@@ -40,19 +40,51 @@ class EmojiPackDownloadManager extends ChangeNotifier {
   final tasks = <String, EmojiDownloadTask>{};
   final _tokens = <String, CancelToken>{};
   Future<void> restore() async {
-    final index = await store.exclusive(store.readIndex);
+    final downloads = await store.exclusive(() async {
+      final index = await store.readIndex();
+      final records = index['downloads'] as Map;
+      final restored = <EmojiDownloadTask>[];
+      var changed = false;
+      for (final raw in records.entries.toList()) {
+        try {
+          final json = Map<String, dynamic>.from(raw.value as Map);
+          final entry = EmojiCatalogEntry.fromJson(
+              Map<String, dynamic>.from(json['entry'] as Map));
+          if (entry.id != raw.key || _tokens.containsKey(entry.id)) {
+            continue;
+          }
+          final savedStatus = json['status'] as String? ?? '';
+          final status = switch (savedStatus) {
+            'downloading' || 'installing' => EmojiDownloadStatus.paused,
+            'paused' => EmojiDownloadStatus.paused,
+            'failed' => EmojiDownloadStatus.failed,
+            'installed' => EmojiDownloadStatus.installed,
+            _ => null,
+          };
+          if (status == null) {
+            records.remove(raw.key);
+            changed = true;
+            continue;
+          }
+          restored.add(EmojiDownloadTask(entry, status,
+              receivedBytes: json['received_bytes'] as int? ?? 0,
+              error: json['error'] as String?));
+          if (savedStatus == 'downloading' || savedStatus == 'installing') {
+            records[raw.key] = restored.last.toJson();
+            changed = true;
+          }
+        } catch (_) {
+          records.remove(raw.key);
+          changed = true;
+        }
+      }
+      if (changed) await store.writeIndex(index);
+      return restored;
+    });
     tasks.removeWhere((id, _) => !_tokens.containsKey(id));
-    for (final json in ((index['downloads'] as Map?) ?? {}).values) {
-      final entry = EmojiCatalogEntry.fromJson(
-          Map<String, dynamic>.from(json['entry'] as Map));
-      if (_tokens.containsKey(entry.id)) continue;
-      tasks[entry.id] = EmojiDownloadTask(
-          entry,
-          json['status'] == 'downloading'
-              ? EmojiDownloadStatus.paused
-              : EmojiDownloadStatus.values.byName(json['status']),
-          receivedBytes: json['received_bytes'] as int? ?? 0,
-          error: json['error'] as String?);
+    for (final task in downloads) {
+      if (_tokens.containsKey(task.entry.id)) continue;
+      tasks[task.entry.id] = task;
     }
     notifyListeners();
   }
@@ -65,6 +97,7 @@ class EmojiPackDownloadManager extends ChangeNotifier {
         await store.writeIndex(index);
       });
   void pause(String packId) {
+    if (tasks[packId]?.status != EmojiDownloadStatus.downloading) return;
     _tokens[packId]?.cancel('已暂停');
   }
 
@@ -155,6 +188,10 @@ class EmojiPackDownloadManager extends ChangeNotifier {
         files[asset.path] = file;
       }
       if (token.isCancelled) throw token.cancelError!;
+      task.status = EmojiDownloadStatus.installing;
+      task.error = null;
+      notifyListeners();
+      await _persist(task);
       await EmojiPackInstaller(store).install(
           manifest: manifest,
           name: entry.name,

@@ -328,6 +328,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   Future<void> _loadPost({bool forceReplies = true}) async {
+    String? visitUserId;
+    int? visitAccountEpoch;
+    try {
+      final auth = context.read<AuthProvider>();
+      visitUserId = auth.user?.id.toString();
+      visitAccountEpoch = auth.accountSessionEpoch;
+    } catch (_) {}
     final replyCache = PostReplyCache.forClient(_dio)..useScope(_replyScope);
     final cachedReplyCount =
         replyCache.peek(widget.postId, _replySort)?.data['total'];
@@ -370,22 +377,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           _post = mergedPost;
           _isLoading = false;
         });
-        String? currentUserId;
+        var sameAccountSession = visitAccountEpoch == null;
         try {
-          currentUserId = context.read<AuthProvider>().user?.id.toString();
+          final auth = context.read<AuthProvider>();
+          sameAccountSession = auth.user?.id.toString() == visitUserId &&
+              auth.accountSessionEpoch == visitAccountEpoch;
         } catch (_) {}
-        BrowsingHistoryRepository().recordVisit(
-          userId: currentUserId,
-          targetId: widget.postId.toString(),
-          type: BrowsingHistoryType.post,
-          title: mergedPost.title.isNotEmpty
-              ? mergedPost.title
-              : (mergedPost.content.length > 50
-                  ? '${mergedPost.content.substring(0, 50)}...'
-                  : mergedPost.content),
-          author: mergedPost.author?.nickname,
-          cover: mergedPost.images.isNotEmpty ? mergedPost.images.first.url : null,
-        );
+        if (sameAccountSession) {
+          BrowsingHistoryRepository().recordVisit(
+            userId: visitUserId,
+            targetId: widget.postId.toString(),
+            type: BrowsingHistoryType.post,
+            title: mergedPost.title.isNotEmpty
+                ? mergedPost.title
+                : (mergedPost.content.length > 50
+                    ? '${mergedPost.content.substring(0, 50)}...'
+                    : mergedPost.content),
+            author: mergedPost.author?.nickname,
+            cover: mergedPost.images.isNotEmpty ? mergedPost.images.first.url : null,
+          );
+        }
       }
       if (widget.scrollToReplies && !_hasScrolledToReplies) {
         // 帖子主体已经完成布局即可定位，不必等待权限等后台请求。

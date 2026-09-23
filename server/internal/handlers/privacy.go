@@ -165,6 +165,14 @@ func (h *PrivacyHandler) personalDataPayload(userID uint, includeRequests bool) 
 		},
 		"legal_consents": consents,
 	}
+	if h.db.Migrator().HasTable(&models.UserCompetitionProfile{}) {
+		var competitionProfile models.UserCompetitionProfile
+		if err := h.db.Where("user_id = ?", userID).First(&competitionProfile).Error; err == nil {
+			payload["competition_profile"] = competitionProfile
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
 	if includeRequests {
 		requests := make([]models.PersonalDataRequest, 0)
 		if err := h.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&requests).Error; err != nil {
@@ -458,6 +466,11 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 		}
 		if tx.Migrator().HasTable(&models.AccountLoginAlias{}) {
 			if err := tx.Where("user_id = ?", userID).Delete(&models.AccountLoginAlias{}).Error; err != nil {
+				return err
+			}
+		}
+		if tx.Migrator().HasTable(&models.UserCompetitionProfile{}) {
+			if err := tx.Where("user_id = ?", userID).Delete(&models.UserCompetitionProfile{}).Error; err != nil {
 				return err
 			}
 		}

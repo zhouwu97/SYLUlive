@@ -101,6 +101,7 @@ class _EmojiDownloadScreenState extends State<EmojiDownloadScreen> {
   Widget _tile(EmojiCatalogEntry entry) {
     final task = _manager.tasks[entry.id];
     final downloading = task?.status == EmojiDownloadStatus.downloading;
+    final installing = task?.status == EmojiDownloadStatus.installing;
     final installed = _installed[entry.id] == entry.version ||
         (task?.status == EmojiDownloadStatus.installed &&
             task?.entry.version == entry.version);
@@ -114,26 +115,33 @@ class _EmojiDownloadScreenState extends State<EmojiDownloadScreen> {
             value: entry.totalSize == 0
                 ? null
                 : (task!.receivedBytes / entry.totalSize).clamp(0, 1)),
+      if (installing) const LinearProgressIndicator(),
       if (task?.error != null)
         Text(task!.error!,
             style: TextStyle(color: Theme.of(context).colorScheme.error)),
       Align(
           alignment: Alignment.centerRight,
           child: TextButton(
-              onPressed: downloading
-                  ? () => _manager.pause(entry.id)
-                  : () => unawaited(_start(entry)),
-              child: Text(downloading
-                  ? '暂停'
-                  : installed
-                      ? '已安装 · 重新校验'
-                      : task?.status == EmojiDownloadStatus.paused
-                          ? '继续下载'
-                          : task?.status == EmojiDownloadStatus.failed
-                              ? '重试'
-                              : _installed.containsKey(entry.id)
-                                  ? '更新'
-                                  : '下载'))),
+              onPressed: installing
+                  ? null
+                  : downloading
+                      ? () => _manager.pause(entry.id)
+                      : () => unawaited(_start(entry)),
+              child: Text(
+                installing
+                    ? '安装中，请稍候'
+                    : downloading
+                        ? '暂停'
+                        : installed
+                            ? '已安装 · 重新校验'
+                            : task?.status == EmojiDownloadStatus.paused
+                                ? '继续下载'
+                                : task?.status == EmojiDownloadStatus.failed
+                                    ? '重试'
+                                    : _installed.containsKey(entry.id)
+                                        ? '更新'
+                                        : '下载',
+              ))),
       const Divider(),
     ]);
   }

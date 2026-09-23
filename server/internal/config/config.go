@@ -14,6 +14,7 @@ import (
 
 // Config 应用配置
 type Config struct {
+	ReleaseMode                      bool   // 是否启用生产发布约束
 	JWTSecret                        string // JWT密钥
 	DSN                              string // 数据库连接字符串
 	UploadDir                        string // 文件上传目录
@@ -600,6 +601,7 @@ func Load() *Config {
 	}
 
 	return &Config{
+		ReleaseMode:                      releaseMode,
 		JWTSecret:                        jwtSecret,
 		DSN:                              dsn,
 		UploadDir:                        uploadDir,

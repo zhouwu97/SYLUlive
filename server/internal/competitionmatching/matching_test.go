@@ -1,6 +1,7 @@
 package competitionmatching
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -464,6 +465,27 @@ func TestRankInjectsExplorationSlotsFromGeneralPool(t *testing.T) {
 	}
 }
 
+func TestRankKeepsAllConfiguredExplorationSlotsOnFirstPage(t *testing.T) {
+	items := make([]Ranked, 0, 23)
+	for index := 0; index < 20; index++ {
+		items = append(items, rankedFixture(uint(index+1), index+1, 90-index, BasisMajorCluster, true))
+	}
+	for index := 0; index < 3; index++ {
+		item := rankedFixture(uint(100+index), 21+index, 20-index, BasisGeneral, true)
+		item.Rating = "S"
+		items = append(items, item)
+	}
+	ordered := Rank(items, RankOptions{PageSize: 20})
+	for _, position := range DefaultExplorePositions {
+		if ordered[position].Result.Basis != BasisGeneral {
+			t.Fatalf("探索槽 %d 未保留通用候选: %+v", position, ordered[position])
+		}
+	}
+	if len(ordered) != len(items) {
+		t.Fatalf("探索槽不得改变总条数: %d vs %d", len(ordered), len(items))
+	}
+}
+
 func TestRankExplorationPreservesPageSize(t *testing.T) {
 	items := make([]Ranked, 0, 25)
 	for index := 0; index < 25; index++ {
@@ -561,6 +583,20 @@ func TestDirectionAndSkillTagsProducePreferencePoints(t *testing.T) {
 	}
 	if result.Breakdown.Preference < 12 {
 		t.Fatalf("方向 8 分与技能 4 分应有 12 分，实际=%d", result.Breakdown.Preference)
+	}
+}
+
+func TestDirectionReasonUsesActuallyMatchedTag(t *testing.T) {
+	candidate := candidateWithMajors("计算机类")
+	result := Score(ScoreInput{
+		Candidate:  candidate,
+		User:       userWithMajor("计算机科学与技术"),
+		Preference: Preference{Configured: true, DirectionTags: []string{"数学建模", "程序设计"}},
+		Now:        testNow(),
+	})
+	joined := strings.Join(result.Reasons, "|")
+	if !strings.Contains(joined, "程序设计") || strings.Contains(joined, "数学建模方向一致") {
+		t.Fatalf("推荐理由必须引用实际命中的方向：%v", result.Reasons)
 	}
 }
 

@@ -320,60 +320,6 @@ class _CompetitionPreferenceScreenState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _groupCard(
-                                title: '竞赛匹配画像',
-                                isDark: isDark,
-                                children: [
-                                  _section(
-                                    title: '入学年份',
-                                    subtitle: '用于判断赛事年级资格，例如 2023',
-                                    child: TextField(
-                                      controller: _entryYearController,
-                                      keyboardType: TextInputType.number,
-                                      maxLength: 4,
-                                      decoration: const InputDecoration(
-                                        hintText: '例如：2023',
-                                        border: OutlineInputBorder(),
-                                        counterText: '',
-                                      ),
-                                    ),
-                                    isDark: isDark,
-                                  ),
-                                  _section(
-                                    title: '学院',
-                                    child: TextField(
-                                      controller: _collegeController,
-                                      maxLength: 120,
-                                      decoration: const InputDecoration(
-                                        hintText: '填写你的学院名称',
-                                        border: OutlineInputBorder(),
-                                        counterText: '',
-                                      ),
-                                    ),
-                                    isDark: isDark,
-                                  ),
-                                  _section(
-                                    title: '专业',
-                                    child: TextField(
-                                      controller: _majorController,
-                                      maxLength: 120,
-                                      decoration: const InputDecoration(
-                                        hintText: '填写你的专业名称',
-                                        border: OutlineInputBorder(),
-                                        counterText: '',
-                                      ),
-                                    ),
-                                    isDark: isDark,
-                                  ),
-                                  const Padding(
-                                    padding: EdgeInsets.only(bottom: 14),
-                                    child: Text(
-                                      '只保存你填写确认的年级、学院和专业用于竞赛匹配；教务账号、密码、成绩和课程不会写入此画像。',
-                                      style: TextStyle(fontSize: 12),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              _groupCard(
                                 title: '参赛方向',
                                 isDark: isDark,
                                 children: [
@@ -449,6 +395,60 @@ class _CompetitionPreferenceScreenState
                                       isDark,
                                     ),
                                     isDark: isDark,
+                                  ),
+                                ],
+                              ),
+                              _groupCard(
+                                title: '竞赛匹配画像',
+                                isDark: isDark,
+                                children: [
+                                  _section(
+                                    title: '入学年份',
+                                    subtitle: '用于判断赛事年级资格，例如 2023',
+                                    child: TextField(
+                                      controller: _entryYearController,
+                                      keyboardType: TextInputType.number,
+                                      maxLength: 4,
+                                      decoration: const InputDecoration(
+                                        hintText: '例如：2023',
+                                        border: OutlineInputBorder(),
+                                        counterText: '',
+                                      ),
+                                    ),
+                                    isDark: isDark,
+                                  ),
+                                  _section(
+                                    title: '学院',
+                                    child: TextField(
+                                      controller: _collegeController,
+                                      maxLength: 120,
+                                      decoration: const InputDecoration(
+                                        hintText: '填写你的学院名称',
+                                        border: OutlineInputBorder(),
+                                        counterText: '',
+                                      ),
+                                    ),
+                                    isDark: isDark,
+                                  ),
+                                  _section(
+                                    title: '专业',
+                                    child: TextField(
+                                      controller: _majorController,
+                                      maxLength: 120,
+                                      decoration: const InputDecoration(
+                                        hintText: '填写你的专业名称',
+                                        border: OutlineInputBorder(),
+                                        counterText: '',
+                                      ),
+                                    ),
+                                    isDark: isDark,
+                                  ),
+                                  const Padding(
+                                    padding: EdgeInsets.only(bottom: 14),
+                                    child: Text(
+                                      '只保存你填写确认的年级、学院和专业用于竞赛匹配；教务账号、密码、成绩和课程不会写入此画像。',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
                                   ),
                                 ],
                               ),

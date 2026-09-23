@@ -149,33 +149,50 @@ func applyExploration(ordered []Ranked, pageSize int, positions []int) []Ranked 
 		return pool[i].CatalogOrder < pool[j].CatalogOrder
 	})
 
-	used := make(map[uint]struct{}, len(positions))
-	for index := len(positions) - 1; index >= 0; index-- {
-		position := positions[index]
-		if position < 0 || position >= pageSize {
+	// 先一次性确定探索候选，再组装首页。逐个 insert 会把先插入的候选
+	// 推到后续位置并在最后一次插入时挤出首页，导致 3 个槽位只剩 2 个。
+	validPositions := make([]int, 0, len(positions))
+	seenPositions := make(map[int]struct{}, len(positions))
+	for _, position := range positions {
+		if position >= 0 && position < pageSize {
+			if _, exists := seenPositions[position]; !exists {
+				seenPositions[position] = struct{}{}
+				validPositions = append(validPositions, position)
+			}
+		}
+	}
+	if len(validPositions) > len(pool) {
+		validPositions = validPositions[:len(pool)]
+	}
+	selected := pool[:len(validPositions)]
+	selectedIDs := make(map[uint]struct{}, len(selected))
+	for _, item := range selected {
+		selectedIDs[item.ID] = struct{}{}
+	}
+	originalPage := page
+	page = make([]Ranked, 0, pageSize)
+	selectedByPosition := make(map[int]Ranked, len(selected))
+	for index, position := range validPositions {
+		selectedByPosition[position] = selected[index]
+	}
+	pageCursor := 0
+	for index := 0; index < pageSize; index++ {
+		if item, ok := selectedByPosition[index]; ok {
+			page = append(page, item)
 			continue
 		}
-		// 从池中取出一条尚未使用的探索赛事。
-		var item Ranked
-		taken := false
-		for len(pool) > 0 {
-			head := pool[0]
-			pool = pool[1:]
-			if _, exists := used[head.ID]; exists {
-				continue
-			}
-			item, taken = head, true
-			break
-		}
-		if !taken {
-			break
-		}
-		used[item.ID] = struct{}{}
-		// 必须先把它从后续序列中摘除，否则会同时存在于首页与后续序列，
-		// 造成条数膨胀（曾被单元测试捕获）。
-		rest = removeByID(rest, item.ID)
-		page, rest = insertAt(page, rest, position, item)
+		page = append(page, originalPage[pageCursor])
+		pageCursor++
 	}
+	displaced := append([]Ranked(nil), originalPage[pageCursor:]...)
+	nextRest := make([]Ranked, 0, len(rest)+len(displaced))
+	nextRest = append(nextRest, displaced...)
+	for _, item := range rest {
+		if _, selected := selectedIDs[item.ID]; !selected {
+			nextRest = append(nextRest, item)
+		}
+	}
+	rest = nextRest
 
 	result := make([]Ranked, 0, len(ordered))
 	result = append(result, page...)

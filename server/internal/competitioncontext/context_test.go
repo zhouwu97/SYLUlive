@@ -58,6 +58,34 @@ func readyContextUser(t *testing.T, db *gorm.DB) models.User {
 	return user
 }
 
+func TestBuildCompetitionUserContextUsesProfileEntryYearForGradeAndVersion(t *testing.T) {
+	db := newContextTestDB(t)
+	user := readyContextUser(t, db)
+	first, err := NewBuilder(db).BuildCompetitionUserContext(context.Background(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Grade != "本科2023级" {
+		t.Fatalf("初始年级 = %q", first.Grade)
+	}
+	if err := db.Create(&models.UserCompetitionProfile{
+		UserID: user.ID, EntryYear: "2024", College: user.EduCollege, Major: user.EduMajor,
+		Provenance: models.UserCompetitionProfileProvenanceSelfReported,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	second, err := NewBuilder(db).BuildCompetitionUserContext(context.Background(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.EntryYear != "2024" || second.Grade != "本科2024级" {
+		t.Fatalf("画像年份未同步到年级：entry=%q grade=%q", second.EntryYear, second.Grade)
+	}
+	if first.ProfileVersion == second.ProfileVersion {
+		t.Fatal("修改入学年份后画像版本不得保持不变")
+	}
+}
+
 // 回归用例：SkillTags 必须从 user_competition_preferences.skill_tags 读出。
 // 此前 UserContext 没有这个字段，下游取到的技能偏好恒为空，
 // 造成「技能」维度永远显示「尚未确认」、技能分恒为 0 的死分量。

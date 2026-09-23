@@ -130,13 +130,9 @@ func (b *Builder) BuildCompetitionUserContext(
 		}
 		result.ProfileProvenance = competitionProfile.Provenance
 	}
-	if result.Grade == "" {
-		level := "本科"
-		if binding.ProviderID == models.AcademicProviderGraduate {
-			level = "研究生"
-		}
-		result.Grade = level + result.EntryYear + "级"
-	}
+	// 竞赛画像中的入学年份是用户明确修正后的权威值，展示年级必须从同一
+	// 年份重建，避免画像编辑页与推荐上下文各自保留一套年份。
+	result.Grade = normalizeCompetitionGrade(result.Grade, result.EntryYear, binding.ProviderID)
 	if result.ProfileProvenance == "" && result.EntryYear != "" && result.College != "" && result.Major != "" && verified {
 		result.ProfileProvenance = "school_verified"
 	}
@@ -220,12 +216,49 @@ func summarizeCompetitionCapabilities(
 }
 
 func competitionContextVersion(value UserContext) string {
-	value.ProfileVersion = ""
-	value.ProfileReady = false
-	value.PreferenceConfigured = false
-	encoded, _ := json.Marshal(value)
+	// EntryYear、ProfileProvenance 对外脱敏，不代表它们不参与推荐语义。
+	// 使用内部版本结构，避免 json:"-" 字段变化后版本哈希不变。
+	version := struct {
+		EntryYear              string              `json:"entry_year"`
+		Grade                  string              `json:"grade"`
+		College                string              `json:"college"`
+		Major                  string              `json:"major"`
+		ProfileProvenance      string              `json:"profile_provenance"`
+		Goals                  []string            `json:"goals"`
+		DirectionTags          []string            `json:"direction_tags"`
+		SkillTags              []string            `json:"skill_tags"`
+		Skills                 []CapabilitySummary `json:"skills"`
+		Roles                  []CapabilitySummary `json:"roles"`
+		PreferredRoles         []string            `json:"preferred_roles"`
+		WeeklyHours            int                 `json:"weekly_hours"`
+		AcceptLongTermTraining bool                `json:"accept_long_term_training"`
+		CareerDirection        string              `json:"career_direction"`
+		ExperienceLevel        string              `json:"experience_level"`
+		MajorClusterOverride   []string            `json:"major_cluster_override"`
+	}{
+		EntryYear: value.EntryYear, Grade: value.Grade, College: value.College,
+		Major: value.Major, ProfileProvenance: value.ProfileProvenance,
+		Goals: value.Goals, DirectionTags: value.DirectionTags, SkillTags: value.SkillTags,
+		Skills: value.Skills, Roles: value.Roles, PreferredRoles: value.PreferredRoles,
+		WeeklyHours: value.WeeklyHours, AcceptLongTermTraining: value.AcceptLongTermTraining,
+		CareerDirection: value.CareerDirection, ExperienceLevel: value.ExperienceLevel,
+		MajorClusterOverride: value.MajorClusterOverride,
+	}
+	encoded, _ := json.Marshal(version)
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
+}
+
+func normalizeCompetitionGrade(existing, entryYear, provider string) string {
+	entryYear = strings.TrimSpace(entryYear)
+	if entryYear == "" {
+		return strings.TrimSpace(existing)
+	}
+	level := "本科"
+	if strings.Contains(existing, "研究生") || provider == models.AcademicProviderGraduate {
+		level = "研究生"
+	}
+	return level + entryYear + "级"
 }
 
 var competitionYearPattern = regexp.MustCompile(`(20\d{2})`)

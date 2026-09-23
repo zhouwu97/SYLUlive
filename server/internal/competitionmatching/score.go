@@ -305,10 +305,12 @@ func scorePreference(
 	// 方向：用户选的方向标签经桥接表落到簇，再看是否被赛事覆盖。
 	if len(preference.DirectionTags) > 0 {
 		hit := 0
+		matchedTags := make([]string, 0, len(preference.DirectionTags))
 		for _, tag := range preference.DirectionTags {
 			for _, cluster := range ClusterBridgeForDirection(tag) {
 				if _, ok := offer[cluster]; ok {
 					hit++
+					matchedTags = append(matchedTags, strings.TrimSpace(tag))
 					break
 				}
 			}
@@ -316,7 +318,7 @@ func scorePreference(
 		if hit > 0 {
 			points += minInt(hit*8, 12)
 			direction = DimMatched
-			*reasons = appendUnique(*reasons, "与你关注的"+strings.TrimSpace(preference.DirectionTags[0])+"方向一致")
+			*reasons = appendUnique(*reasons, "与你关注的"+strings.Join(matchedTags, "、")+"方向一致")
 		} else {
 			direction = DimUnmatched
 		}

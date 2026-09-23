@@ -27,6 +27,8 @@ const (
 	SecurityAlertHourlyBudget = 12
 	securityAlertSendTimeout  = 15 * time.Second
 	securityAlertQueueSize    = 64
+	securityAlertMaxAttempts  = 3
+	securityAlertRetryDelay   = 100 * time.Millisecond
 )
 
 // ErrSecurityAlertNotConfigured 表示缺少收件人或 SMTP 配置，告警外发未启用。
@@ -176,7 +178,8 @@ func (a *SecurityAlertService) Record(event SecurityAlertEvent) {
 	}
 	a.mu.Lock()
 	now := a.now().UTC()
-	if last, ok := a.lastByType[event.EventType]; ok && now.Sub(last) < a.cooldown {
+	cooldownKey := securityAlertCooldownKey(event)
+	if last, ok := a.lastByType[cooldownKey]; ok && now.Sub(last) < a.cooldown {
 		a.suppressed++
 		a.mu.Unlock()
 		return
@@ -189,7 +192,7 @@ func (a *SecurityAlertService) Record(event SecurityAlertEvent) {
 		a.mu.Unlock()
 		return
 	}
-	a.lastByType[event.EventType] = now
+	a.lastByType[cooldownKey] = now
 	a.windowSent++
 	a.enqueued++
 	a.mu.Unlock()
@@ -207,16 +210,34 @@ func (a *SecurityAlertService) Record(event SecurityAlertEvent) {
 
 func (a *SecurityAlertService) worker() {
 	for event := range a.pending {
-		ctx, cancel := context.WithTimeout(context.Background(), a.sendTimeout)
-		err := a.mailer.SendSecurityAlert(ctx, a.recipients, securityAlertSubject(event), securityAlertBody(event))
-		cancel()
+		var err error
+		failureRecorded := false
+		for attempt := 1; attempt <= securityAlertMaxAttempts; attempt++ {
+			ctx, cancel := context.WithTimeout(context.Background(), a.sendTimeout)
+			err = a.mailer.SendSecurityAlert(ctx, a.recipients, securityAlertSubject(event), securityAlertBody(event))
+			cancel()
+			if err == nil {
+				break
+			}
+			if !failureRecorded {
+				a.delivery.recordFailure()
+				failureRecorded = true
+			}
+			if attempt < securityAlertMaxAttempts {
+				time.Sleep(securityAlertRetryDelay)
+			}
+		}
 		if err != nil {
-			a.delivery.recordFailure()
 			a.noteDeliveryFailure(err)
 			continue
 		}
 		a.delivery.recordSuccess()
 	}
+}
+
+func securityAlertCooldownKey(event SecurityAlertEvent) string {
+	// 严重程度升级必须绕过普通高危事件的冷却窗口，避免升级通知被吞掉。
+	return strings.TrimSpace(event.EventType) + "|" + strings.TrimSpace(event.Severity)
 }
 
 // noteDeliveryFailure 只打限频日志。

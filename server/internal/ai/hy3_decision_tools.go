@@ -1536,9 +1536,12 @@ func sanitizeHy3CandidateExplanationResult(
 	expected := make([]dto.CompetitionCandidateDTO, 0, len(candidates))
 	for _, candidate := range candidates {
 		competitionID, _ := candidate["competition_id"].(string)
-		expected = append(expected, dto.CompetitionCandidateDTO{
-			CompetitionPublicDTO: dto.CompetitionPublicDTO{CompetitionID: competitionID},
-		})
+		facts, _ := candidate["facts"].(map[string]interface{})
+		expected = append(expected, dto.CompetitionCandidateDTO{CompetitionPublicDTO: dto.CompetitionPublicDTO{
+			CompetitionID:           competitionID,
+			SchoolRecognitionStatus: stringFact(facts, "school_recognition_status"),
+			SchoolRecognitionGrade:  stringFact(facts, "school_recognition_grade"),
+		}})
 	}
 	encoded, err := json.Marshal(input)
 	if err != nil {
@@ -1551,6 +1554,9 @@ func sanitizeHy3CandidateExplanationResult(
 		return nil, err
 	}
 	if err := ValidateHy3CompetitionExplanation(expected, output); err != nil {
+		return nil, err
+	}
+	if err := ValidateHy3CompetitionExplanationFacts(expected, output); err != nil {
 		return nil, err
 	}
 	sanitized, err := json.Marshal(output)
@@ -1601,12 +1607,18 @@ func sanitizeHy3SelectedComparisonResult(
 		return nil, errors.New("selected_competitions_invalid")
 	}
 	expectedIDs := make([]string, 0, len(competitions))
+	expected := make([]dto.CompetitionCandidateDTO, 0, len(competitions))
 	for _, competition := range competitions {
 		competitionID, ok := competition["competition_id"].(string)
 		if !ok || strings.TrimSpace(competitionID) == "" {
 			return nil, errors.New("selected_competition_id_invalid")
 		}
 		expectedIDs = append(expectedIDs, competitionID)
+		facts, _ := competition["facts"].(map[string]interface{})
+		expected = append(expected, dto.CompetitionCandidateDTO{CompetitionPublicDTO: dto.CompetitionPublicDTO{
+			CompetitionID:           competitionID,
+			SchoolRecognitionStatus: stringFact(facts, "school_recognition_status"),
+		}})
 	}
 	encoded, err := json.Marshal(input)
 	if err != nil {
@@ -1619,6 +1631,9 @@ func sanitizeHy3SelectedComparisonResult(
 	if err := ValidateHy3SelectedCompetitionComparison(expectedIDs, output); err != nil {
 		return nil, err
 	}
+	if err := ValidateHy3SelectedCompetitionComparisonFacts(expected, output); err != nil {
+		return nil, err
+	}
 	clean, err := json.Marshal(output)
 	if err != nil {
 		return nil, err
@@ -1628,6 +1643,11 @@ func sanitizeHy3SelectedComparisonResult(
 		return nil, err
 	}
 	return result, nil
+}
+
+func stringFact(facts map[string]interface{}, key string) string {
+	value, _ := facts[key].(string)
+	return value
 }
 
 type hy3NarrativeContract struct {

@@ -82,6 +82,7 @@ func newHy3DecisionTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, db.AutoMigrate(
 		&models.AIToolCall{},
 		&models.AIRunConsent{},
+		&models.UserCompetitionProfile{},
 		&models.CampusCalendar{},
 		&models.ClassPeriodProfile{},
 	))

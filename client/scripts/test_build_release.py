@@ -49,7 +49,11 @@ class ReleaseBuildTests(unittest.TestCase):
             "    subprocess.run(['git','add','.'],cwd=root,check=True)\n"
             "    subprocess.run(['git','commit','-qm','changed'],cwd=root,check=True)\n")
         (self.tools / "aapt.cmd").write_text("@echo off\necho package: versionCode='1706' versionName='1.7.3'\n")
-        (self.tools / "apksigner.cmd").write_text("@echo off\nexit /b 0\n")
+        (self.tools / "apksigner.cmd").write_text(
+            "@echo off\n"
+            "if \"%1\"==\"verify\" if \"%2\"==\"--print-certs\" "
+            "echo Signer #1 certificate SHA-256 digest: A3:67:48:6B:8B:5D:5E:EB:F6:7D:28:49:80:9C:B9:B0:9C:5C:3E:4D:C9:0D:80:15:13:4A:F4:16:07:7E:FB:9E:^^& exit /b 0\n"
+            "exit /b 0\n")
         self.output = self.client / "release-artifacts"
 
     def git(self, *args):
@@ -71,10 +75,10 @@ class ReleaseBuildTests(unittest.TestCase):
         self.assertEqual((self.output / "shenliyuan-release.apk").read_bytes(), b"new fixture apk")
 
     def test_dirty_source_blocks_before_flutter(self):
-        (self.root / "untracked.txt").write_text("uncommitted source")
+        (self.client / "untracked.txt").write_text("uncommitted source")
         result = self.build()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("clean working tree", result.stderr)
+        self.assertIn("clean App sources", result.stderr)
         self.assertFalse((self.tools / "invoked").exists())
 
     def test_failed_build_does_not_deliver_old_apk(self):
@@ -89,7 +93,7 @@ class ReleaseBuildTests(unittest.TestCase):
     def test_source_changed_during_build_is_rejected(self):
         result = self.build("mutate")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("clean working tree", result.stderr)
+        self.assertIn("clean App sources", result.stderr)
         self.assertFalse((self.output / "release-manifest.json").exists())
 
     def test_commit_changed_during_build_is_rejected(self):

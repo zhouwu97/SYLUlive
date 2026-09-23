@@ -3,8 +3,13 @@ param(
     [string] $OutputDirectory,
     [string] $ApiUrl = $env:APP_API_URL,
     [string] $JPushAppKey = $env:JPUSH_APP_KEY,
-    # 正式发布请同时设置 RELEASE_CI_STATUS=passed；否则清单里如实记成 unverified。
+    # 正式发布必须同时提供真实 CI 运行号、提交 SHA 和结论；单独传 passed 不再被当作验证证据。
     [string] $CiStatus = $env:RELEASE_CI_STATUS,
+    [string] $CiRunId = $env:RELEASE_CI_RUN_ID,
+    [string] $CiHeadSha = $env:RELEASE_CI_HEAD_SHA,
+    [string] $CiConclusion = $env:RELEASE_CI_CONCLUSION,
+    [string] $ServerContractStatus = $env:RELEASE_SERVER_CONTRACT_STATUS,
+    [string] $ServerContractCommit = $env:RELEASE_SERVER_CONTRACT_COMMIT,
     # App 只编译客户端源码，但运行时依赖同一份 Server API 契约。
     # Server 侧有未提交改动时，manifest 里的 source_commit 就无法代表真实生产系统，
     # 因此必须显式承认，不能像 Web 那样默默放行。
@@ -63,6 +68,28 @@ Assert-ServerContractPinned -Areas $script:sourceTree
 $script:ciStatus = if ([string]::IsNullOrWhiteSpace($CiStatus)) { 'unverified' } else { $CiStatus.Trim().ToLowerInvariant() }
 if ($script:ciStatus -notin @('passed', 'failed', 'unverified')) {
     throw "RELEASE_CI_STATUS must be passed, failed, or unverified; got '$script:ciStatus'."
+}
+if ([string]::IsNullOrWhiteSpace($ServerContractStatus)) { $ServerContractStatus = 'unverified' }
+if ($ServerContractStatus -notin @('passed', 'failed', 'unverified')) {
+    throw "RELEASE_SERVER_CONTRACT_STATUS must be passed, failed, or unverified; got '$ServerContractStatus'."
+}
+$script:ciVerified = $false
+if ($script:ciStatus -eq 'passed') {
+    if ([string]::IsNullOrWhiteSpace($CiRunId) -or [string]::IsNullOrWhiteSpace($CiHeadSha) -or [string]::IsNullOrWhiteSpace($CiConclusion)) {
+        throw 'RELEASE_CI_STATUS=passed requires RELEASE_CI_RUN_ID, RELEASE_CI_HEAD_SHA and RELEASE_CI_CONCLUSION.'
+    }
+    if ($CiHeadSha.Trim().ToLowerInvariant() -ne $script:sourceCommit.Trim().ToLowerInvariant() -or $CiConclusion.Trim().ToLowerInvariant() -ne 'success') {
+        throw 'CI evidence must reference the release source commit and have conclusion=success.'
+    }
+    $script:ciVerified = $true
+}
+$script:serverContractVerified = $false
+if ($ServerContractStatus -eq 'passed') {
+    if (-not $script:sourceTree['server'].clean -or [string]::IsNullOrWhiteSpace($ServerContractCommit) -or
+        $ServerContractCommit.Trim().ToLowerInvariant() -ne $script:sourceCommit.Trim().ToLowerInvariant()) {
+        throw 'Server contract evidence must be passed, clean, and pinned to the release source commit.'
+    }
+    $script:serverContractVerified = $true
 }
 if ($script:ciStatus -ne 'passed') {
     Write-Warning "RELEASE_CI_STATUS=$script:ciStatus —— 清单会如实记录，正式发布前请补上全绿的 CI 结果。"
@@ -192,9 +219,15 @@ try {
         # source_commit 只能代表「客户端源码」；App 运行时依赖同一仓库的 Server API 契约，
         # 因此把服务端边界和 CI 结果一并写进清单，避免用一个 commit 号冒充整套系统状态。
         server_expected_commit = if ($script:sourceTree['server'].clean) { $script:sourceCommit } else { $null }
-        server_contract_verified = $script:sourceTree['server'].clean
+        server_source_clean = $script:sourceTree['server'].clean
+        server_contract_status = $ServerContractStatus
+        server_contract_verified = $script:serverContractVerified
         source_tree = $script:sourceTree
         ci_status = $script:ciStatus
+        ci_verified = $script:ciVerified
+        ci_run_id = if ($script:ciVerified) { $CiRunId.Trim() } else { $null }
+        ci_head_sha = if ($script:ciVerified) { $CiHeadSha.Trim().ToLowerInvariant() } else { $null }
+        ci_conclusion = if ($script:ciVerified) { $CiConclusion.Trim().ToLowerInvariant() } else { $null }
         built_at_utc = [DateTime]::UtcNow.ToString('o')
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'release-manifest.json') -Encoding utf8
     Write-Host "Signed release artifact: $target"

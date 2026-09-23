@@ -124,6 +124,33 @@ func ValidateHy3CompetitionExplanation(
 	return validateHy3CompetitionText(output.Summary)
 }
 
+// ValidateHy3CompetitionExplanationFacts 在结构校验之外核对高风险事实。
+// 来源字段白名单只能说明模型引用了哪个字段，不能证明文字与字段值一致；
+// 认定状态等门槛事实必须在离开服务端前再按候选原值校验。
+func ValidateHy3CompetitionExplanationFacts(
+	input []dto.CompetitionCandidateDTO,
+	output Hy3CompetitionExplanation,
+) error {
+	if len(input) != len(output.Items) {
+		return fmt.Errorf("ai_explanation_item_count_invalid")
+	}
+	if err := validateHy3CompetitionFactClaims(output.Summary, "", nil); err != nil {
+		return err
+	}
+	for index, item := range output.Items {
+		candidate := input[index]
+		for _, reason := range append(append([]Hy3CompetitionReason{}, item.Reasons...), item.Cautions...) {
+			if err := validateHy3CompetitionFactClaims(reason.Text, candidate.SchoolRecognitionStatus, reason.SourceFields); err != nil {
+				return err
+			}
+		}
+		if err := validateHy3CompetitionFactClaims(item.CoreReason, candidate.SchoolRecognitionStatus, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ValidateHy3SelectedCompetitionComparison 保证主动对比只覆盖用户所选赛事并保持选择顺序。
 func ValidateHy3SelectedCompetitionComparison(
 	expectedIDs []string,
@@ -162,6 +189,71 @@ func ValidateHy3SelectedCompetitionComparison(
 		}
 	}
 	return validateHy3CompetitionText(output.Summary)
+}
+
+// ValidateHy3SelectedCompetitionComparisonFacts 与候选解释使用同一套事实门槛。
+func ValidateHy3SelectedCompetitionComparisonFacts(
+	input []dto.CompetitionCandidateDTO,
+	output Hy3SelectedCompetitionComparison,
+) error {
+	if len(input) != len(output.Items) {
+		return fmt.Errorf("ai_comparison_item_count_invalid")
+	}
+	if err := validateHy3CompetitionFactClaims(output.Summary, "", nil); err != nil {
+		return err
+	}
+	for index, item := range output.Items {
+		candidate := input[index]
+		for _, reason := range append(append([]Hy3CompetitionReason{}, item.Observations...), item.Cautions...) {
+			if err := validateHy3CompetitionFactClaims(reason.Text, candidate.SchoolRecognitionStatus, reason.SourceFields); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateHy3CompetitionFactClaims(text, recognitionStatus string, sourceFields []string) error {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	positive := strings.Contains(normalized, "学校已认定") || strings.Contains(normalized, "已认定") ||
+		strings.Contains(normalized, "通过认定") || strings.Contains(normalized, "认定赛事")
+	negative := strings.Contains(normalized, "未认定") || strings.Contains(normalized, "不认定") ||
+		strings.Contains(normalized, "未通过认定")
+	confirmed := schoolRecognitionConfirmed(recognitionStatus)
+	knownNegative := schoolRecognitionExplicitlyNegative(recognitionStatus)
+	// 没有携带认定字段时仍禁止确定性认定结论，避免模型把 CoreReason
+	// 当成不受来源校验的自由文本出口。
+	if len(sourceFields) == 0 && (positive || negative) {
+		return fmt.Errorf("ai_explanation_fact_conflict")
+	}
+	if (positive || negative) && !containsHy3SourceField(sourceFields, "school_recognition_status") {
+		return fmt.Errorf("ai_explanation_fact_conflict")
+	}
+	if positive && !confirmed {
+		return fmt.Errorf("ai_explanation_fact_conflict")
+	}
+	if negative && !knownNegative {
+		return fmt.Errorf("ai_explanation_fact_conflict")
+	}
+	return nil
+}
+
+func containsHy3SourceField(fields []string, expected string) bool {
+	for _, field := range fields {
+		if strings.TrimSpace(field) == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func schoolRecognitionExplicitlyNegative(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "not_recognized", "unrecognized", "rejected", "未认定", "不认定", "未通过认定":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateHy3CompetitionText(value string) error {

@@ -29,7 +29,7 @@ func TestBuildHy3CompetitionUserContextUsesUnifiedStructuredProfile(t *testing.T
 	db, err := gorm.Open(sqlite.Open("file:hy3-context-on?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
-		&models.User{}, &models.AcademicIdentityBinding{}, &models.UserCompetitionPreference{}, &models.UserCompetitionAward{},
+		&models.User{}, &models.AcademicIdentityBinding{}, &models.UserCompetitionPreference{}, &models.UserCompetitionProfile{}, &models.UserCompetitionAward{},
 	))
 	now := time.Now()
 	user := models.User{
@@ -81,6 +81,36 @@ func TestValidateHy3CompetitionExplanationRejectsAddedReorderedAndUntrustedOutpu
 		Text: "强烈推荐，获奖概率 82%", SourceFields: []string{"internal_score"},
 	}}
 	require.Error(t, ValidateHy3CompetitionExplanation(input, untrusted))
+}
+
+func TestValidateHy3CompetitionExplanationFactsRejectsUnsupportedRecognitionClaim(t *testing.T) {
+	input := []dto.CompetitionCandidateDTO{{CompetitionPublicDTO: dto.CompetitionPublicDTO{
+		CompetitionID: "NAT-001", SchoolRecognitionStatus: "unknown",
+	}}}
+	output := Hy3CompetitionExplanation{Items: []Hy3CompetitionExplanationItem{{
+		CompetitionID: "NAT-001", CoreReason: "学校已认定此赛事",
+		Reasons: []Hy3CompetitionReason{{Text: "学校已认定此赛事", SourceFields: []string{"school_recognition_status"}}},
+	}}}
+	require.Error(t, ValidateHy3CompetitionExplanationFacts(input, output))
+}
+
+func TestValidateHy3CompetitionExplanationFactsRequiresRecognitionSourceField(t *testing.T) {
+	input := []dto.CompetitionCandidateDTO{{
+		CompetitionPublicDTO: dto.CompetitionPublicDTO{
+			CompetitionID:           "NAT-001",
+			SchoolRecognitionStatus: "recognized",
+		},
+	}}
+	output := Hy3CompetitionExplanation{
+		Items: []Hy3CompetitionExplanationItem{{
+			CompetitionID: "NAT-001",
+			Reasons: []Hy3CompetitionReason{{
+				Text:         "学校已认定此赛事",
+				SourceFields: []string{"competition_level"},
+			}},
+		}},
+	}
+	require.Error(t, ValidateHy3CompetitionExplanationFacts(input, output))
 }
 
 func TestValidateHy3SelectedCompetitionComparisonRejectsReorderAndUntrustedSource(t *testing.T) {

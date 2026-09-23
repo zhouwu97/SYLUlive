@@ -179,6 +179,9 @@ func TestAcademicAssuranceLevelNaming(t *testing.T) {
 	if got := AcademicAssuranceLevel(AcademicVerificationMethodSchoolProfile); got != AcademicAssuranceSchoolVerified {
 		t.Fatalf("学校核验的依据强度 = %q", got)
 	}
+	if got := AcademicAssuranceLevel(AcademicVerificationMethodLegacyMigration); got != AcademicAssuranceLegacyInherited {
+		t.Fatalf("历史回填身份的依据强度 = %q", got)
+	}
 	if got := AcademicAssuranceLevel("test"); got != AcademicAssuranceLocalDeclaration {
 		t.Fatalf("未登记方式的依据强度 = %q，未登记不能称作学校核验", got)
 	}

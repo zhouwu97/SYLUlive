@@ -39,14 +39,15 @@ func lockUploadHash(tx *gorm.DB, hash string) error {
 
 // UploadProtectionConfig 集中描述上传接口的资源上限。所有字节字段均为字节数。
 type UploadProtectionConfig struct {
-	PerMinuteCountLimit  int
-	HourlyBytesLimit     int64
-	TemporaryUserCount   int
-	TemporaryUserBytes   int64
-	TemporaryGlobalBytes int64
-	DiskWarnPercent      int
-	DiskSeverePercent    int
-	DiskCriticalPercent  int
+	PerMinuteCountLimit   int
+	HourlyBytesLimit      int64
+	TemporaryUserCount    int
+	TemporaryUserBytes    int64
+	TemporaryGlobalBytes  int64
+	DiskWarnPercent       int
+	DiskSeverePercent     int
+	DiskCriticalPercent   int
+	FailClosedOnDiskCheck bool
 }
 
 // DefaultUploadProtectionConfig 是生产环境的保守默认值，可用环境变量按实际业务调整。
@@ -152,8 +153,8 @@ func (p *UploadProtection) SetNow(now func() time.Time) {
 	}
 }
 
-// CheckDisk 在真正写盘前执行容量熔断。无法取得容量时记录并放行，避免在不支持
-// statfs 的开发平台误伤；生产 Linux 会使用真实文件系统统计。
+// CheckDisk 在真正写盘前执行容量熔断。发布模式下容量读取失败也拒绝写盘，
+// 避免文件系统状态未知时失去磁盘熔断；开发模式仍兼容不支持 statfs 的平台。
 func (p *UploadProtection) CheckDisk(ctx context.Context) error {
 	if p == nil {
 		return nil
@@ -164,6 +165,9 @@ func (p *UploadProtection) CheckDisk(ctx context.Context) error {
 	snapshot, err := p.diskUsage(p.uploadDir)
 	if err != nil {
 		p.logPressure("unknown", snapshot, err)
+		if p.config.FailClosedOnDiskCheck {
+			return fmt.Errorf("%w: 无法确认上传目录磁盘容量: %v", ErrUploadProtectionUnavailable, err)
+		}
 		return nil
 	}
 	if snapshot.UsedPercent >= float64(p.config.DiskCriticalPercent) {

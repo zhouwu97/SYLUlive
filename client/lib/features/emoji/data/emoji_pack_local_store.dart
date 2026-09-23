@@ -25,14 +25,56 @@ class EmojiPackLocalStore {
       Directory('${root.path}/packs/${directoryKey(packId)}/$version');
 
   Future<Map<String, dynamic>> readIndex() async {
-    if (!await _index.exists() && await _backup.exists()) {
-      await _backup.rename(_index.path);
+    if (await _index.exists()) {
+      try {
+        return _normalizeIndex(jsonDecode(await _index.readAsString()));
+      } catch (_) {
+        if (await _backup.exists()) {
+          try {
+            final recovered =
+                _normalizeIndex(jsonDecode(await _backup.readAsString()));
+            final corrupt = File(
+                '${root.path}/index.corrupt.${DateTime.now().microsecondsSinceEpoch}');
+            await _index.rename(corrupt.path);
+            await _backup.rename(_index.path);
+            return recovered;
+          } catch (_) {
+            // 两份索引都损坏时保留文件并从空索引恢复。
+          }
+        }
+        return _emptyIndex();
+      }
     }
-    if (!await _index.exists()) {
-      return {'packs': <String, dynamic>{}, 'tombstones': <String, dynamic>{}};
+    if (await _backup.exists()) {
+      try {
+        final recovered =
+            _normalizeIndex(jsonDecode(await _backup.readAsString()));
+        await _backup.rename(_index.path);
+        return recovered;
+      } catch (_) {
+        return _emptyIndex();
+      }
     }
-    return Map<String, dynamic>.from(
-        jsonDecode(await _index.readAsString()) as Map);
+    return _emptyIndex();
+  }
+
+  Map<String, dynamic> _emptyIndex() => {
+        'packs': <String, dynamic>{},
+        'tombstones': <String, dynamic>{},
+        'downloads': <String, dynamic>{},
+        'versions': <String, dynamic>{},
+      };
+
+  Map<String, dynamic> _normalizeIndex(dynamic value) {
+    if (value is! Map) throw const FormatException('表情索引格式无效');
+    final index = Map<String, dynamic>.from(value);
+    for (final key in const ['packs', 'tombstones', 'downloads', 'versions']) {
+      final bucket = index[key];
+      index[key] = bucket is Map
+          ? Map<String, dynamic>.from(bucket)
+          : <String, dynamic>{};
+    }
+    return index;
   }
 
   Future<void> writeIndex(Map<String, dynamic> value) async {
@@ -47,11 +89,25 @@ class EmojiPackLocalStore {
 
   Future<List<EmojiPackInstallation>> load() => exclusive(() async {
         final root = await readIndex();
-        final packs = (root['packs'] as Map)
-            .values
-            .map((e) => EmojiPackInstallation.fromJson(
-                Map<String, dynamic>.from(e as Map)))
-            .toList();
+        final packMap = root['packs'] as Map;
+        final packs = <EmojiPackInstallation>[];
+        var changed = false;
+        for (final entry in packMap.entries.toList()) {
+          try {
+            final installation = EmojiPackInstallation.fromJson(
+                Map<String, dynamic>.from(entry.value as Map));
+            if (installation.packId != entry.key) {
+              packMap.remove(entry.key);
+              changed = true;
+              continue;
+            }
+            packs.add(installation);
+          } catch (_) {
+            packMap.remove(entry.key);
+            changed = true;
+          }
+        }
+        if (changed) await writeIndex(root);
         packs.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
         return packs;
       });

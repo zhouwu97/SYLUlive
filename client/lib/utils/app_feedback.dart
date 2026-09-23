@@ -147,11 +147,19 @@ class AppFeedback {
     }
   }
 
-  static void showGlobalToast(String message, {bool isError = false}) {
+  /// 全局提示：优先走应用级 ScaffoldMessenger，因此调用方的 context 可能已经失效。
+  ///
+  /// [context] 只作兜底：应用没有接线 [scaffoldMessengerKey] 时（典型是独立页面测试）
+  /// 完全不传 context 会让提示被静默丢掉，用户看不到任何错误。
+  static void showGlobalToast(
+    String message, {
+    bool isError = false,
+    BuildContext? context,
+  }) {
     if (isError) {
-      error(message);
+      error(message, context: context);
     } else {
-      info(message);
+      info(message, context: context);
     }
   }
 

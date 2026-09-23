@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   courseConflicts,
@@ -65,20 +65,44 @@ export function ConnectionForm({
         ? "erke"
         : "undergraduate",
   );
-  const [candidate, setCandidate] = useState<AcademicConnection | null>(null),
-    [connection, setConnection] = useState<AcademicConnection | null>(null),
+  const [connection, setConnection] = useState<AcademicConnection | null>(null),
     [busy, setBusy] = useState(false),
-    [status, setStatus] = useState("");
-  async function act(fn: () => Promise<void>) {
+    [status, setStatus] = useState(""),
+    [assistantState, setAssistantState] = useState<"checking" | "ready" | "missing">("checking");
+  const pending = useRef<AbortController | null>(null);
+  useEffect(() => () => pending.current?.abort(), []);
+  useEffect(() => {
+    let active = true;
+    bridge("hello", {}, AbortSignal.timeout(2200))
+      .then(() => {
+        if (active) {
+          setAssistantState("ready");
+          setStatus("教务助手已连接，可以打开学校登录页面。");
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAssistantState("missing");
+          setStatus("未检测到教务助手，请先安装或启用扩展，再刷新本页面。");
+        }
+      });
+    return () => { active = false; };
+  }, []);
+  async function act(fn: (signal: AbortSignal) => Promise<void>) {
     if (!requireUser()) return;
+    const controller = new AbortController();
+    pending.current = controller;
     setBusy(true);
-    setStatus("");
+    setStatus("正在连接本机助手…");
     try {
-      await fn();
+      await bridge("hello", {}, controller.signal);
+      setAssistantState("ready");
+      await fn(controller.signal);
     } catch (e) {
-      setStatus(errorText(e));
+      if (!controller.signal.aborted) setStatus(errorText(e));
     } finally {
-      setBusy(false);
+      if (!controller.signal.aborted) setBusy(false);
+      if (pending.current === controller) pending.current = null;
     }
   }
   return (
@@ -86,11 +110,11 @@ export function ConnectionForm({
       <label className="field">
         学校系统
         <select
+          disabled={busy}
           value={provider}
           onChange={(e) => {
             setProvider(e.target.value as AcademicProvider);
             setConnection(null);
-            setCandidate(null);
           }}
         >
           {(dataset === "courses"
@@ -113,60 +137,51 @@ export function ConnectionForm({
         </select>
       </label>
       <p className="muted">
-        先在助手页面授权并完成学校登录，再核对身份。资料默认仅保留在当前页面。
+        课表、成绩等资料只在本机助手中读取。本科或研究生首次连接时，会向 SYLUlive 同步教务类型和学号，用于记录本机身份声明；学校密码和会话不会上传。
       </p>
+      <ol className="academic-steps" aria-label="教务连接步骤">
+        <li className={assistantState === "ready" ? "done" : "active"}><b>1</b><span>检测助手</span></li>
+        <li className={connection ? "done" : assistantState === "ready" ? "active" : ""}><b>2</b><span>获取身份</span></li>
+        <li className={connection ? "done" : ""}><b>3</b><span>读取资料</span></li>
+      </ol>
       <div className="inline-actions">
         <button
-          className="btn"
+          className="btn primary"
           disabled={busy}
           onClick={() =>
-            act(async () => {
-              await bridge("connect", { provider });
-              setStatus("已打开助手，完成官网登录后再核对身份。");
+            act(async (signal) => {
+              setStatus("正在获取学校身份…");
+              const value = await bridge<AcademicConnection>("session", { provider }, signal);
+              if (provider === 'undergraduate' || provider === 'graduate') {
+                await write('/api/student-identity/bind', {provider_id:`sylu_${provider}`,student_id:value.studentId,verification_method:'local_academic_login'});
+              }
+              if (signal.aborted) return;
+              setConnection(value);
+              setStatus(`已连接 ${value.displayName || value.studentId}，正在读取资料…`);
+              const snapshot = await bridge<AcademicSnapshot>("query", {provider, dataset, term: store.data.term, epoch: value.epoch}, signal);
+              if (signal.aborted) return;
+              onData(snapshot.data, snapshot);
+              store.setUpdated(snapshot.fetchedAt);
+              ui.notify("学校资料已更新");
+              ui.close();
             })
           }
         >
-          打开教务助手
+          {busy ? "正在连接并读取…" : "连接并读取资料"}
         </button>
         <button
-          className="btn"
+          className="btn ghost"
           disabled={busy}
           onClick={() =>
-            act(async () => {
-              const value = await bridge<AcademicConnection>("session", {
-                provider,
-              });
-              setCandidate(value);
-              setConnection(null);
+            act(async (signal) => {
+              await bridge("connect", { provider }, signal);
+              setStatus("已打开学校登录页；登录完成后回到此页点击“连接并获取身份”。");
             })
           }
         >
-          核对已登录身份
+          学校未登录？打开登录页
         </button>
       </div>
-      {candidate && !connection && (
-        <div className="info-box">
-          <p>
-            学校身份：{candidate.displayName} · {candidate.studentId}
-          </p>
-          <p>确认将此身份用于当前沈理校园账号？本科或研究生连接会向沈理校园保存学校类型与学号的本机身份声明，学校密码和会话不会发送。</p>
-          <button
-            className="btn primary"
-            disabled={busy}
-            onClick={() =>
-              act(async () => {
-                await bridge("confirm", { provider, epoch: candidate.epoch });
-                if (provider === 'undergraduate' || provider === 'graduate') {
-                  await write('/api/student-identity/bind', {provider_id:`sylu_${provider}`,student_id:candidate.studentId,verification_method:'local_academic_login'});
-                }
-                setConnection(candidate);
-              })
-            }
-          >
-            确认身份
-          </button>
-        </div>
-      )}
       {connection && (
         <>
           <p className="source-line">
@@ -178,13 +193,14 @@ export function ConnectionForm({
             className="btn primary"
             disabled={busy}
             onClick={() =>
-              act(async () => {
+              act(async (signal) => {
                 const snapshot = await bridge<AcademicSnapshot>("query", {
                   provider,
                   dataset,
                   term: store.data.term,
                   epoch: connection.epoch,
-                });
+                }, signal);
+                if (signal.aborted) return;
                 onData(snapshot.data, snapshot);
                 store.setUpdated(snapshot.fetchedAt);
                 ui.notify("学校资料已更新");
@@ -202,7 +218,6 @@ export function ConnectionForm({
                 await bridge("disconnect", { provider });
                 store.setData(initial());
                 setConnection(null);
-                setCandidate(null);
               })
             }
           >

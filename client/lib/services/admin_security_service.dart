@@ -2,10 +2,64 @@ import 'package:dio/dio.dart';
 
 import '../models/security_event.dart';
 
+class SecurityBlockGroup {
+  const SecurityBlockGroup({
+    required this.id,
+    required this.sourceFingerprint,
+    required this.routePrefixes,
+    required this.reason,
+    required this.expiresAt,
+    required this.createdBy,
+  });
+
+  final int id;
+  final String sourceFingerprint;
+  final List<String> routePrefixes;
+  final String reason;
+  final DateTime expiresAt;
+  final int createdBy;
+}
+
 class AdminSecurityService {
   final Dio dio;
 
   const AdminSecurityService(this.dio);
+
+  Future<List<SecurityBlockGroup>> loadBlocks() async {
+    final rows = <Map>[];
+    for (var page = 1;; page++) {
+      final response = await dio
+          .get('/super/security/blocks', queryParameters: {'page': page});
+      final batch = (response.data as List).whereType<Map>().toList();
+      rows.addAll(batch);
+      if (batch.length < 200) break;
+    }
+    final groups = <String, List<Map>>{};
+    for (final row in rows) {
+      final groupId = row['group_id']?.toString() ?? '';
+      final key = groupId.isNotEmpty
+          ? groupId
+          : '${row['source_key']}|${row['created_at']}|${row['expires_at']}|${row['reason']}|${row['created_by']}';
+      groups.putIfAbsent(key, () => []).add(row);
+    }
+    return groups.values.map((items) {
+      final first = items.first;
+      return SecurityBlockGroup(
+        id: (first['id'] as num).toInt(),
+        sourceFingerprint: first['source_fingerprint']?.toString() ?? '',
+        routePrefixes: items
+            .map((item) => item['route_prefix']?.toString() ?? '')
+            .toList(growable: false),
+        reason: first['reason']?.toString() ?? '',
+        expiresAt: DateTime.parse(first['expires_at'].toString()),
+        createdBy: (first['created_by'] as num?)?.toInt() ?? 0,
+      );
+    }).toList(growable: false);
+  }
+
+  Future<void> revokeBlock(int id) async {
+    await dio.delete('/super/security/blocks/$id');
+  }
 
   Future<SecurityOverview> loadOverview({String range = '24h'}) async {
     final response = await dio

@@ -84,7 +84,8 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     try {
       final exams = await _examRepository.load();
       if (!mounted) return;
-      setState(() => _exams = exams);
+      // 空存档会由仓储返回 const []；页面后续要增删考试，因此在状态层持有可变副本。
+      setState(() => _exams = List<ExamModel>.of(exams));
       _syncWidget();
     } catch (e) {
       debugPrint('加载考试数据失败: $e');

@@ -7,14 +7,13 @@ import '../platform/contracts/external_navigator.dart';
 import '../app_bootstrap.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../widgets/glass_container.dart';
 import '../services/physical_credential_store.dart';
 import 'erke_score_screen.dart';
 import 'physical_test_screen.dart';
 import 'lottery_screen.dart';
-import 'dart:ui';
-
 import 'exam_schedule_screen.dart';
 import 'exam_papers/exam_paper_library_screen.dart';
 
@@ -109,7 +108,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
     final useCustomBackground = themeProvider.shouldShowCustomBackground;
-    final frostedGlass = themeProvider.frostedGlass;
     final cleanLightMode = !useCustomBackground && !isDark;
     final foregroundColor =
         cleanLightMode ? const Color(0xFF1F2937) : Colors.white;
@@ -233,7 +231,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                   ),
                                 ),
                                 useCustomBackground: useCustomBackground,
-                                frostedGlass: frostedGlass,
                               ),
                               _buildToolCard(
                                 context,
@@ -243,7 +240,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 subtitle: '扫码核验 / 查询',
                                 onTap: () => _openPhysicalTest(context),
                                 useCustomBackground: useCustomBackground,
-                                frostedGlass: frostedGlass,
                               ),
                               _buildToolCard(
                                 context,
@@ -258,15 +254,13 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                   ),
                                 ),
                                 useCustomBackground: useCustomBackground,
-                                frostedGlass: frostedGlass,
                               ),
                               _buildToolCard(
                                 context,
                                 icon: Icons.library_books_outlined,
                                 color: const Color(0xFFEC6F5B),
                                 title: '试卷库',
-                                subtitle:
-                                    '历年试卷 / 投稿审核',
+                                subtitle: '历年试卷 / 投稿审核',
                                 onTap: () => Navigator.push(
                                   context,
                                   MaterialPageRoute(
@@ -275,7 +269,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                   ),
                                 ),
                                 useCustomBackground: useCustomBackground,
-                                frostedGlass: frostedGlass,
                               ),
                               _buildToolCard(
                                 context,
@@ -285,7 +278,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 subtitle: '用得到的网站',
                                 onTap: () => _showWebsiteDirectory(context),
                                 useCustomBackground: useCustomBackground,
-                                frostedGlass: frostedGlass,
                               ),
                             ],
                           ),
@@ -316,7 +308,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 subtitle: '点击即玩',
                                 onTap: () => _launchCloudGenshin(context),
                                 useCustomBackground: useCustomBackground,
-                                frostedGlass: frostedGlass,
                               ),
                               _buildToolCard(
                                 context,
@@ -330,7 +321,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                       builder: (_) => const LotteryScreen()),
                                 ),
                                 useCustomBackground: useCustomBackground,
-                                frostedGlass: frostedGlass,
                               ),
                             ],
                           ),
@@ -338,7 +328,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                           _buildMoreToolsCard(
                             isDark,
                             useCustomBackground,
-                            frostedGlass: frostedGlass,
                           ),
                         ],
                       );
@@ -377,14 +366,13 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     );
   }
 
-  Widget _buildMoreToolsCard(
-    bool isDark,
-    bool useCustomBackground, {
-    bool frostedGlass = false,
-  }) {
+  Widget _buildMoreToolsCard(bool isDark, bool useCustomBackground) {
+    final frostedGlass = context.watch<ThemeProvider>().frostedGlass;
     final backgroundColor = isDark
-        ? Colors.black.withValues(alpha: 0.65)
-        : useCustomBackground
+        ? (frostedGlass
+            ? Colors.black.withValues(alpha: 0.65)
+            : AppColors.surfaceSecondaryDark)
+        : useCustomBackground && frostedGlass
             ? Colors.white.withValues(alpha: 0.78)
             : Colors.white;
     final borderColor = isDark
@@ -421,8 +409,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 15,
-                    color:
-                        isDark ? Colors.white : const Color(0xFF20232A),
+                    color: isDark ? Colors.white : const Color(0xFF20232A),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -431,8 +418,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w400,
-                    color:
-                        isDark ? Colors.white60 : const Color(0xFF7D8492),
+                    color: isDark ? Colors.white60 : const Color(0xFF7D8492),
                   ),
                 ),
               ],
@@ -463,12 +449,11 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        child: frostedGlass
-            ? BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                child: cardContent,
-              )
-            : cardContent,
+        child: FrostedGlass(
+          sigmaX: 8,
+          sigmaY: 8,
+          child: cardContent,
+        ),
       ),
     );
   }
@@ -537,12 +522,14 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     required String subtitle,
     required VoidCallback onTap,
     required bool useCustomBackground,
-    bool frostedGlass = false,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final frostedGlass = context.watch<ThemeProvider>().frostedGlass;
     final backgroundColor = isDark
-        ? Colors.black.withValues(alpha: 0.65)
-        : useCustomBackground
+        ? (frostedGlass
+            ? Colors.black.withValues(alpha: 0.65)
+            : AppColors.surfaceSecondaryDark)
+        : useCustomBackground && frostedGlass
             ? Colors.white.withValues(alpha: 0.78)
             : Colors.white;
     final borderColor = isDark
@@ -581,8 +568,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 15,
-                    color:
-                        isDark ? Colors.white : const Color(0xFF20232A),
+                    color: isDark ? Colors.white : const Color(0xFF20232A),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -593,9 +579,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w400,
-                    color: isDark
-                        ? Colors.white60
-                        : const Color(0xFF7D8492),
+                    color: isDark ? Colors.white60 : const Color(0xFF7D8492),
                   ),
                 ),
               ],
@@ -620,12 +604,11 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(AppRadius.lg),
-          child: frostedGlass
-              ? BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                  child: cardContent,
-                )
-              : cardContent,
+          child: FrostedGlass(
+            sigmaX: 8,
+            sigmaY: 8,
+            child: cardContent,
+          ),
         ),
       ),
     );

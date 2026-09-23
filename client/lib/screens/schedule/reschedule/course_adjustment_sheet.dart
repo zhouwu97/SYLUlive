@@ -53,6 +53,7 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
   ({int weekday, int startSection, int endSection, String? newRoom})? _target;
   ScheduleConflictCheckResult? _conflict;
   bool _saving = false;
+  String? _saveError;
   late final Meeting? _baseMeeting = _findBaseMeeting();
 
   Meeting? _findBaseMeeting() {
@@ -89,6 +90,7 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
     setState(() {
       _target = target;
       _conflict = conflict;
+      _saveError = null;
       _step = 3;
     });
   }
@@ -97,24 +99,41 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
     final target = _target;
     final weeks = _affectedWeeks;
     if (target == null || weeks == null || weeks.isEmpty) return;
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
     final course = widget.course;
     final base = _baseMeeting!;
     final snapshot = widget.existingOverride?.sourceSnapshotHash ??
         base.computeSnapshotHash();
     final normalizedRoom = target.newRoom?.trim() ?? '';
-    final timeChanged = target.weekday != base.weekday ||
-        target.startSection != base.startSection ||
-        target.endSection != base.endSection;
-    final roomChanged = normalizedRoom != (base.room?.trim() ?? '');
-    if (!timeChanged && !roomChanged) {
+    final existingOverride = widget.existingOverride;
+    final existingWeeks = existingOverride?.affectedWeeks;
+    final weeksChanged = existingWeeks != null &&
+        (weeks.length != existingWeeks.length ||
+            !weeks.containsAll(existingWeeks));
+    final currentWeekday = existingOverride?.toWeekday ?? course.weekday;
+    final currentStartSection =
+        existingOverride?.toStartSection ?? course.startSection;
+    final currentEndSection =
+        existingOverride?.toEndSection ?? course.endSection;
+    final currentRoom =
+        existingOverride?.toRoom ?? course.location ?? base.room;
+    final timeChanged = target.weekday != currentWeekday ||
+        target.startSection != currentStartSection ||
+        target.endSection != currentEndSection;
+    final roomChanged = normalizedRoom != (currentRoom?.trim() ?? '');
+    if (!timeChanged && !roomChanged && !weeksChanged) {
       setState(() => _saving = false);
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('未检测到任何修改')));
       return;
     }
     try {
-      if (timeChanged) {
+      final isReschedule = timeChanged ||
+          existingOverride?.type == ScheduleOverrideType.reschedule;
+      if (isReschedule) {
         await widget.provider.createRescheduleOverride(
           overrideId: widget.existingOverride?.id ?? course.overrideId,
           courseKey: course.courseKey ?? 'edu:course:${course.name}',
@@ -124,7 +143,9 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
           toWeekday: target.weekday,
           toStartSection: target.startSection,
           toEndSection: target.endSection,
-          toRoom: roomChanged ? normalizedRoom : null,
+          toRoom: normalizedRoom == (base.room?.trim() ?? '')
+              ? null
+              : normalizedRoom,
           sourceSnapshotHash: snapshot,
           fromWeekday: base.weekday,
           fromStartSection: base.startSection,
@@ -147,8 +168,13 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('保存调整失败，请重试：$error')));
+        if (error is ScheduleMutationAborted) {
+          final messenger = ScaffoldMessenger.maybeOf(context);
+          Navigator.of(context).pop(false);
+          messenger?.showSnackBar(SnackBar(content: Text(error.toString())));
+          return;
+        }
+        setState(() => _saveError = '保存调整失败，请重试：$error');
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -223,10 +249,18 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
             toEndSection: _target!.endSection,
             toRoom: _target!.newRoom,
             conflictResult: _conflict!,
-            onBackToEdit: () => setState(() => _step = 2),
-            onBack: () => setState(() => _step = 2),
+            onBackToEdit: () => setState(() {
+              _saveError = null;
+              _step = 2;
+            }),
+            onBack: () => setState(() {
+              _saveError = null;
+              _step = 2;
+            }),
             onClose: () => Navigator.pop(context),
-            onConfirm: _saving ? () {} : _save,
+            onConfirm: _save,
+            isSaving: _saving,
+            saveError: _saveError,
           ),
       },
     );

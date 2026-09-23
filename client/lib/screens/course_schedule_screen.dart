@@ -1509,35 +1509,31 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
 
     try {
-      final result = await edu
-          .getCourses(sc.selectedYear, sc.selectedSemester)
+      await sc
+          .loadCourses(forceRefresh: true, isManualRefresh: true)
           .timeout(_courseFetchTimeout);
       if (!mounted) return;
 
-      if (result == null || !result.success) {
+      if (sc.errorMessage != null) {
         Navigator.pop(context); // 关闭加载弹窗
-        final errorMsg = result?.errorMessage ?? '未知错误';
         AppFeedback.showErrorDialog(
           context,
           title: '获取课表失败',
           message:
-              '这次没有拿到课表，页面会继续保留当前数据。\n\n可能原因：\n1. 教务系统临时不可用或网络波动。\n2. 教务登录状态过期，需要重新绑定。\n3. 当前学期暂时没有课表数据。\n\n详细原因：$errorMsg',
+              '这次没有拿到课表，页面会继续保留当前数据。\n\n可能原因：\n1. 教务系统临时不可用或网络波动。\n2. 教务登录状态过期，需要重新绑定。\n3. 当前学期暂时没有课表数据。\n\n详细原因：${sc.errorMessage}',
         );
         return;
       }
 
-      final courses = result.data ?? const <Map<String, dynamic>>[];
-      if (courses.isEmpty) {
+      if (sc.courses.isEmpty) {
         Navigator.pop(context); // 关闭加载弹窗
         AppFeedback.showErrorDialog(
           context,
-          title: '没有可导入的课程',
-          message: '教务系统返回了空课表。请确认选择的是当前学期；如果学期正确，可能是学校暂未开放该学期课表。',
+          title: '课表为空',
+          message: '教务系统没有返回当前学期课程。请确认学期是否正确，或稍后再试。',
         );
         return;
       }
-
-      await sc.applyFetchedCourses(courses);
 
       Object? reminderError;
       try {
@@ -1561,7 +1557,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(reminderError == null
-              ? '课表已拉取。首次导入请点击顶部“设置周数”，选择开学第一天。'
+              ? '课表已从教务刷新'
               : '课表已拉取，但课程提醒同步失败；课表数据已保存。'),
           duration: Duration(seconds: 4),
         ),
@@ -1613,7 +1609,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       ),
                       const SizedBox(height: 16),
                       const Text(
-                        '导入成功！',
+                        '刷新成功',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -1623,7 +1619,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '已为您更新 ${sc.courses.length} 门课程',
+                        '已更新 ${sc.courses.length} 个课程时段',
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey.shade600,
@@ -1649,7 +1645,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         Navigator.pop(context);
         AppFeedback.showErrorDialog(
           context,
-          title: '获取课表超时',
+          title: '刷新课表超时',
           message:
               '已经等待 ${_courseFetchTimeout.inSeconds} 秒，教务系统仍未返回结果。\n\n你可以稍后重试，或先检查教务账号是否仍然有效；当前页面不会继续卡在加载中。',
         );
@@ -1659,8 +1655,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         Navigator.pop(context);
         AppFeedback.showErrorDialog(
           context,
-          title: '导入过程异常',
-          message: '课表导入被中断，当前页面数据未被覆盖。\n\n详细原因：$e',
+          title: '刷新课表失败',
+          message: '本次刷新未完成，当前页面数据已保留。\n\n详细原因：$e',
         );
       }
     } finally {

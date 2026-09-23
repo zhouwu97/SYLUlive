@@ -101,20 +101,19 @@ const (
 	AcademicVerificationMethodSchoolProfile = "school_profile"
 	// AcademicVerificationMethodLocalDeclaration 只是客户端本机登录成功后的设备侧声明。
 	AcademicVerificationMethodLocalDeclaration = "local_academic_login"
-	// AcademicVerificationMethodLegacyMigration 回填自旧版本已持久化的学号认证标记：
-	// 它是历史事实而非本次服务器核验，仅作为兼容保留，不能据此向新用户开放同类依据。
+	// AcademicVerificationMethodLegacyMigration 回填自旧版本已持久化的学号认证标记。
+	// 它按兼容策略继承历史准入状态，但不能表述为本次学校核验。
 	AcademicVerificationMethodLegacyMigration = "legacy_migration"
 )
 
-// trustedAcademicVerificationMethods 是唯一被承认「服务器可独立核验」的依据来源。
+// trustedAcademicVerificationMethods 是服务端当前承认学生准入资格的来源白名单。
 //
 // 这里是白名单而不是排除名单：空值、历史脏数据、以及未来新增但尚未登记的取值
-// 一律不授予可信身份。新增可信方式必须显式登记到这里，并同时满足
+// 一律不授予可信身份。legacy_migration 仅为兼容历史服务器认证而保留，依据强度仍单独标记为
+// [AcademicAssuranceLegacyInherited]。新增可信方式必须显式登记到这里，并同时满足
 // [ValidateAcademicVerificationMethod] 的写入规范。
 var trustedAcademicVerificationMethods = []string{
 	AcademicVerificationMethodSchoolProfile,
-	// 存量回填标记。它是历史事实而非本次服务器核验，只保留给
-	// [MigrateAcademicIdentities] 已经写下的记录，不接受新用户按此依据开权限。
 	AcademicVerificationMethodLegacyMigration,
 }
 
@@ -126,7 +125,8 @@ var knownAcademicVerificationMethods = []string{
 	AcademicVerificationMethodLocalDeclaration,
 }
 
-// IsTrustedAcademicVerificationMethod 区分学校可核验事实与设备侧声明。
+// IsTrustedAcademicVerificationMethod 检查身份是否仍在服务端准入白名单中。
+// legacy_migration 由于兼容策略会返回 true，但不等于本次学校核验。
 //
 // Go 与 [TrustedAcademicBindingScope] 都用**精确匹配**，不做 TrimSpace。
 // 这里曾经两边尺子不一样：Go 判权前 Trim，SQL 直接比原值，而 SQLite 的 TRIM()
@@ -156,7 +156,7 @@ func ValidateAcademicVerificationMethod(method string) error {
 	return fmt.Errorf("未登记的身份核验方式 %q", method)
 }
 
-// TrustedAcademicVerificationMethods 返回当前登记的可信依据，仅供盘点与测试。
+// TrustedAcademicVerificationMethods 返回当前准入白名单，仅供盘点与测试。
 func TrustedAcademicVerificationMethods() []string {
 	return append([]string(nil), trustedAcademicVerificationMethods...)
 }
@@ -167,15 +167,18 @@ func IsUnregisteredAcademicVerificationMethod(method string) bool {
 	return ValidateAcademicVerificationMethod(method) != nil
 }
 
-// TrustedAcademicBindingScope 给身份表查询加上与 Go 侧判权完全一致的"服务器可核验"约束，
+// TrustedAcademicBindingScope 给身份表查询加上与 Go 侧判权完全一致的准入白名单约束，
 // 避免各处手写 `verification_method <> 'local_academic_login'` 后各自漂移。
 // 与 [IsTrustedAcademicVerificationMethod] 一样精确匹配（见那里的注释）。
 func TrustedAcademicBindingScope(db *gorm.DB) *gorm.DB {
 	return db.Where("verification_method IN ?", trustedAcademicVerificationMethods)
 }
 
-// AcademicAssuranceLevel 提供给 API/UI 的依据强度，不把本机连接误称为 verified。
+// AcademicAssuranceLevel 提供给 API/UI 的依据强度，区分历史回填、本机声明和学校核验。
 func AcademicAssuranceLevel(method string) string {
+	if method == AcademicVerificationMethodLegacyMigration {
+		return AcademicAssuranceLegacyInherited
+	}
 	if IsTrustedAcademicVerificationMethod(method) {
 		return AcademicAssuranceSchoolVerified
 	}
@@ -185,6 +188,7 @@ func AcademicAssuranceLevel(method string) string {
 const (
 	AcademicAssuranceSchoolVerified   = "school_verified"
 	AcademicAssuranceLocalDeclaration = "local_declaration"
+	AcademicAssuranceLegacyInherited  = "legacy_inherited"
 )
 
 func (b AcademicIdentityBinding) IdentityKey() AcademicIdentityKey {
@@ -229,7 +233,8 @@ type AcademicIdentityChallenge struct {
 	CreatedAt     time.Time  `gorm:"index:idx_academic_challenge_user_created,priority:2;index:idx_academic_challenge_provider_created,priority:2;index:idx_academic_challenge_ip_created,priority:2" json:"-"`
 }
 
-// HasVerifiedAcademicIdentity 只读取服务器认证事实，账号配置和旧授权不能授予学生权限。
+// HasVerifiedAcademicIdentity 只读取当前身份准入白名单；历史回填按兼容策略保留准入，
+// 但不代表该用户在当前版本重新通过了学校核验。
 func HasVerifiedAcademicIdentity(db *gorm.DB, userID uint) (bool, error) {
 	var count int64
 	err := TrustedAcademicBindingScope(db.Model(&AcademicIdentityBinding{}).

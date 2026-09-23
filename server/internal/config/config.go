@@ -14,6 +14,7 @@ import (
 
 // Config 应用配置
 type Config struct {
+	ReleaseMode                      bool   // 是否启用生产发布约束
 	JWTSecret                        string // JWT密钥
 	DSN                              string // 数据库连接字符串
 	UploadDir                        string // 文件上传目录
@@ -50,11 +51,13 @@ type Config struct {
 	SMTPUser                         string // SMTP 用户名
 	SMTPPass                         string // SMTP 密码/授权码
 	SMTPFrom                         string // 发件人邮箱
-	SecurityEventHMACSecret          string // 安全中心来源/目标 HMAC 密钥，生产环境不得复用 JWT_SECRET
-	JPushAppKey                      string // 极光推送 AppKey
-	JPushMasterSecret                string // 极光推送 MasterSecret
-	SuperAdminID                     string // 超级管理员账号
-	SuperAdminPass                   string // 超级管理员密码
+	// SecurityAlertEmails 是高危安全事件的主动告警收件人；为空表示不外发告警。
+	SecurityAlertEmails     []string
+	SecurityEventHMACSecret string // 安全中心来源/目标 HMAC 密钥，生产环境不得复用 JWT_SECRET
+	JPushAppKey             string // 极光推送 AppKey
+	JPushMasterSecret       string // 极光推送 MasterSecret
+	SuperAdminID            string // 超级管理员账号
+	SuperAdminPass          string // 超级管理员密码
 
 	AIEnabled                              bool     // AI 总开关
 	AIProvider                             string   // AI Provider 名称
@@ -304,6 +307,12 @@ func Load() *Config {
 	smtpFrom := os.Getenv("SMTP_FROM")
 	if smtpFrom == "" {
 		smtpFrom = smtpUser
+	}
+	// 高危安全事件的主动告警收件人（逗号分隔）。为空表示不外发告警，
+	// 安全中心会如实显示 not_configured，而不是把「没人被叫醒」报成正常。
+	securityAlertEmails := splitNonEmpty(os.Getenv("SECURITY_ALERT_EMAILS"))
+	if len(securityAlertEmails) == 0 {
+		securityAlertEmails = splitNonEmpty(os.Getenv("SECURITY_ALERT_EMAIL"))
 	}
 
 	jpushAppKey := os.Getenv("JPUSH_APP_KEY")
@@ -600,6 +609,7 @@ func Load() *Config {
 	}
 
 	return &Config{
+		ReleaseMode:                      releaseMode,
 		JWTSecret:                        jwtSecret,
 		DSN:                              dsn,
 		UploadDir:                        uploadDir,
@@ -636,6 +646,7 @@ func Load() *Config {
 		SMTPUser:                         smtpUser,
 		SMTPPass:                         smtpPass,
 		SMTPFrom:                         smtpFrom,
+		SecurityAlertEmails:              securityAlertEmails,
 		SecurityEventHMACSecret:          securityEventHMACSecret,
 		JPushAppKey:                      jpushAppKey,
 		JPushMasterSecret:                jpushMasterSecret,

@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/device_diagnostics_service.dart';
 import '../../services/request_id.dart';
+import '../../services/publish_session_scope.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../utils/app_feedback.dart';
@@ -32,6 +33,7 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
   bool _expandRepro = false;
   bool _isSubmitting = false;
   String? _submitIdempotencyKey;
+  PublishSessionScope? _submitScope;
 
   DeviceDiagnosticsInfo? _diagInfo;
 
@@ -73,11 +75,22 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
       return;
     }
 
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    if (accountId == null) return;
+    final scope = PublishSessionScope(
+      accountId: accountId,
+      accountSessionEpoch: auth.accountSessionEpoch,
+    );
+    if (_submitScope?.owns(
+            userId: accountId, sessionEpoch: auth.accountSessionEpoch) !=
+        true) {
+      _submitIdempotencyKey = null;
+    }
+    _submitScope = scope;
     setState(() => _isSubmitting = true);
 
     try {
-      final auth = context.read<AuthProvider>();
-
       final data = <String, dynamic>{
         'type': _type,
         'title': title,
@@ -109,11 +122,17 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
         '/feedback/tickets',
         data: data,
         options: Options(
+          extra: scope.requestExtra,
           headers: {
             'Idempotency-Key': _submitIdempotencyKey ??= RequestId.newId(),
           },
         ),
       );
+      if (!mounted ||
+          !scope.owns(
+              userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
+        return;
+      }
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (mounted) {
@@ -127,7 +146,9 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
         }
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted &&
+          scope.owns(
+              userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
         AppFeedback.showSnackBar(context, '提交失败：$e', isError: true);
       }
     } finally {

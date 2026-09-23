@@ -70,7 +70,7 @@ void main() {
     };
   }
 
-  test('GET 身份只接受服务端确认项，challenge 解码验证码且保留 school_login', () async {
+  test('GET 身份保留学校核验和历史继承项，challenge 正确解析验证码', () async {
     final adapter = _IdentityHttpAdapter()
       ..responses.add((
         status: 200,
@@ -80,11 +80,21 @@ void main() {
               'provider_id': 'sylu_graduate',
               'student_id': 'G-001',
               'verified': true,
+              'verification_method': 'school_profile',
             },
             <String, dynamic>{
               'provider_id': 'sylu_undergraduate',
               'student_id': 'U-001',
               'verified': false,
+              'verification_method': 'local_academic_login',
+            },
+            <String, dynamic>{
+              'provider_id': 'sylu_undergraduate',
+              'student_id': 'U-002',
+              // 旧服务端可能仍把历史回填项报告为 verified=true。
+              'verified': true,
+              'verification_method': 'legacy_migration',
+              'assurance_level': 'school_verified',
             },
           ],
         },
@@ -98,8 +108,17 @@ void main() {
       studentId: 'G-001',
     );
 
-    expect(identities, hasLength(1));
-    expect(identities.single.providerId, AcademicProviderId.syluGraduate);
+    expect(identities, hasLength(2));
+    expect(identities.first.providerId, AcademicProviderId.syluGraduate);
+    expect(identities.first.isSchoolVerified, isTrue);
+    expect(identities.last.studentId, 'U-002');
+    expect(identities.last.verified, isTrue);
+    expect(identities.last.isSchoolVerified, isFalse);
+    expect(identities.last.assuranceLevel, academicAssuranceLegacyInherited);
+    expect(
+      academicIdentityStandingLabel(identities.last),
+      '继承历史服务器认证状态',
+    );
     expect(challenge, isNotNull);
     expect(challenge!.challengeType, 'school_login');
     expect(challenge.captchaBytes, orderedEquals(<int>[1, 2, 3, 4]));
@@ -285,7 +304,14 @@ void main() {
       final student = graduate ? 'G-001' : 'U-001';
       final adapter = _IdentityHttpAdapter()
         ..responses.add((status: 200, body: data))
-        ..responses.add((status: 200, body: {'verified': true, 'provider_id': provider.value, 'student_id': student, 'binding_version': 4, 'changed_at': '2026-09-08T00:00:00Z'}));
+        ..responses.add((status: 200, body: {
+          'verified': true,
+          'provider_id': provider.value,
+          'student_id': student,
+          'verification_method': 'school_profile',
+          'binding_version': 4,
+          'changed_at': '2026-09-08T00:00:00Z',
+        }));
       final client = createClient(adapter);
       final challenge = await client.requestChallenge(providerId: provider, studentId: student,
         currentIdentity: const AcademicIdentityKey(appUserId: 'u', providerId: AcademicProviderId.syluUndergraduate, studentId: 'OLD'));
@@ -385,9 +411,9 @@ void main() {
       );
     });
 
-    test('依据强度只认白名单，未登记取值不授予可信身份', () {
+    test('依据等级区分学校核验、历史回填和本机声明', () {
       expect(assuranceLevelFor('school_profile'), academicAssuranceSchoolVerified);
-      expect(assuranceLevelFor('legacy_migration'), academicAssuranceSchoolVerified);
+      expect(assuranceLevelFor('legacy_migration'), academicAssuranceLegacyInherited);
       expect(assuranceLevelFor('local_academic_login'), academicAssuranceLocalDeclaration);
       expect(assuranceLevelFor(null), academicAssuranceLocalDeclaration);
       expect(assuranceLevelFor(''), academicAssuranceLocalDeclaration);
@@ -395,6 +421,33 @@ void main() {
       expect(assuranceLevelFor('test'), academicAssuranceLocalDeclaration);
       expect(assuranceLevelFor(' school_profile'), academicAssuranceLocalDeclaration);
       expect(assuranceLevelFor('school_profile_v2'), academicAssuranceLocalDeclaration);
+    });
+
+    test('旧版迁移身份不能凭服务端旧 verified 回执获得本次核验状态', () {
+      final legacy = AcademicIdentityBinding(
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: 'U-002',
+        verified: true,
+        verificationMethod: academicVerificationMethodLegacyMigration,
+        assuranceLevel: academicAssuranceSchoolVerified,
+      );
+      expect(legacy.isSchoolVerified, isFalse);
+      expect(
+        academicIdentityStandingLabel(legacy),
+        '继承历史服务器认证状态',
+      );
+    });
+
+    test('服务端撤销历史回填资格后显示待重新认证', () {
+      final legacy = AcademicIdentityBinding(
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: 'U-002',
+        verified: false,
+        verificationMethod: academicVerificationMethodLegacyMigration,
+        assuranceLevel: academicAssuranceLegacyInherited,
+      );
+      expect(legacy.isSchoolVerified, isFalse);
+      expect(academicIdentityStandingLabel(legacy), '历史身份待重新认证');
     });
   });
   group('身份状态的分开表达', () {
@@ -445,7 +498,7 @@ void main() {
 
       final merged = mergeAcademicIdentityStanding(
         localAccounts: [local],
-        trustedBindings: [trusted],
+        serverBindings: [trusted],
       );
       expect(merged, hasLength(1));
       expect(merged.single.isSchoolVerified, isTrue,
@@ -453,22 +506,22 @@ void main() {
 
       final unverified = mergeAcademicIdentityStanding(
         localAccounts: [local],
-        trustedBindings: const [],
+        serverBindings: const [],
       );
       expect(unverified.single.isSchoolVerified, isFalse);
     });
 
-    test('只有服务端绑定的设备直接使用可信列表', () {
+    test('只有服务端绑定的设备直接显示其核验状态', () {
       final trusted = binding(
         providerId: AcademicProviderId.syluGraduate,
         studentId: 'G-001',
         verified: true,
-        method: academicVerificationMethodLegacyMigration,
+        method: academicVerificationMethodSchoolProfile,
       );
       expect(
         mergeAcademicIdentityStanding(
           localAccounts: const [],
-          trustedBindings: [trusted],
+          serverBindings: [trusted],
         ),
         [trusted],
       );

@@ -4,6 +4,36 @@ import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
 
+/// 组件级毛玻璃统一门控。
+///
+/// 壁纸模糊和液态玻璃底栏有各自的设置，不应通过本开关间接控制。
+class FrostedGlass extends StatelessWidget {
+  final Widget child;
+  final double sigmaX;
+  final double sigmaY;
+  final bool? enabled;
+
+  const FrostedGlass({
+    super.key,
+    required this.child,
+    this.sigmaX = 10,
+    this.sigmaY = 10,
+    this.enabled,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final useFrostedGlass =
+        enabled ?? context.watch<ThemeProvider>().frostedGlass;
+    if (!useFrostedGlass || sigmaX <= 0 || sigmaY <= 0) return child;
+
+    return BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: sigmaX, sigmaY: sigmaY),
+      child: child,
+    );
+  }
+}
+
 class GlassContainer extends StatelessWidget {
   final Widget child;
   final double? width;
@@ -70,6 +100,17 @@ class GlassContainer extends StatelessWidget {
                 : AppColors.surfaceSecondaryLight.withValues(
                     alpha: (compOpacity * 0.15 + 0.80).clamp(0.88, 0.96),
                   )));
+    final solidSurface = isDark
+        ? AppColors.surfaceSecondaryDark
+        : AppColors.surfaceSecondaryLight;
+    final effectiveBackgroundColor = useFrostedGlass
+        ? (backgroundColor ?? defaultBgColor)
+        : Color.alphaBlend(backgroundColor ?? defaultBgColor, solidSurface);
+    final effectiveGradientColors = !useFrostedGlass && gradientColors != null
+        ? gradientColors!
+            .map((color) => Color.alphaBlend(color, solidSurface))
+            .toList(growable: false)
+        : gradientColors;
 
     Widget content = Container(
       width: width,
@@ -79,59 +120,48 @@ class GlassContainer extends StatelessWidget {
         borderRadius: BorderRadius.circular(borderRadius),
         child: Stack(
           children: [
-            if (gradientColors != null)
+            if (effectiveGradientColors != null)
               Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(borderRadius),
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: gradientColors!,
+                    colors: effectiveGradientColors,
                   ),
                 ),
               ),
-            if (useFrostedGlass)
-              BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: gradientColors == null
-                        ? (backgroundColor ?? defaultBgColor)
-                        : (gradientColors!.first).withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(borderRadius),
-                    border: Border.all(
-                      color: borderColor ?? defaultBorderColor,
-                      width: borderWidth,
-                    ),
-                  ),
-                  padding: padding,
-                  child: child,
-                ),
-              )
-            else
-              Container(
+            FrostedGlass(
+              enabled: useFrostedGlass,
+              sigmaX: blur,
+              sigmaY: blur,
+              child: Container(
                 decoration: BoxDecoration(
-                  color: gradientColors != null
-                      ? gradientColors!.first.withValues(alpha: 0.5)
-                      : (backgroundColor ?? defaultBgColor),
+                  color: effectiveGradientColors == null
+                      ? effectiveBackgroundColor
+                      : (effectiveGradientColors.first).withValues(
+                          alpha: useFrostedGlass ? 0.35 : 1,
+                        ),
                   borderRadius: BorderRadius.circular(borderRadius),
                   border: Border.all(
                     color: borderColor ?? defaultBorderColor,
                     width: borderWidth,
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: (isDark ? Colors.black : Colors.grey).withValues(
-                        alpha: 0.15,
-                      ),
-                      blurRadius: blur * 2,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+                  boxShadow: useFrostedGlass
+                      ? null
+                      : [
+                          BoxShadow(
+                            color: (isDark ? Colors.black : Colors.grey)
+                                .withValues(alpha: 0.15),
+                            blurRadius: blur * 2,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                 ),
                 padding: padding,
                 child: child,
               ),
+            ),
             if (useFrostedGlass && showHighlight)
               Positioned(
                 top: 0,

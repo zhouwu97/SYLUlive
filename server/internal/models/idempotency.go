@@ -24,6 +24,9 @@ type IdempotencyRecord struct {
 	ResponseCode int    `gorm:"not null;default:200" json:"-"`
 	ContentType  string `gorm:"size:160;not null;default:''" json:"-"`
 	ResponseBody []byte `gorm:"type:bytea" json:"-"`
+	// ResponseBodyOmitted 表示成功响应体超出缓存上限，重放时只给状态码不给正文。
+	// 写入已经发生，宁可让调用方按状态码处理后重新读取，也不能让它误以为没成功再执行一次。
+	ResponseBodyOmitted bool `gorm:"not null;default:false" json:"-"`
 	// 给旧表补列时使用数据库当前时间，避免已有 processing 记录导致 NOT NULL 迁移失败。
 	ExpiresAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP;index" json:"-"`
 	CreatedAt time.Time `json:"-"`

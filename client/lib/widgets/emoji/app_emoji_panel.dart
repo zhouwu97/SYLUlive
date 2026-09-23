@@ -89,11 +89,22 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
 
   int get _tabCount => _installedTabStart + _installedPacks.length;
 
+  (EmojiPackInstallation, EmojiManifestAsset)? _installedSticker(String? id) {
+    if (id == null || id.isEmpty) return null;
+    for (final pack in _installedPacks) {
+      for (final asset in pack.manifest.assets) {
+        if (asset.id == id) return (pack, asset);
+      }
+    }
+    return null;
+  }
+
   List<EmojiFavoriteItem> get _visibleFavorites => _favorites.where((item) {
         if (item.type == EmojiFavoriteType.image) {
           return item.imageUrl?.isNotEmpty == true || item.fileId != null;
         }
-        return appStickerById(item.stickerId) != null;
+        return appStickerById(item.stickerId) != null ||
+            _installedSticker(item.stickerId) != null;
       }).toList(growable: false);
 
   @override
@@ -153,6 +164,7 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
         _installedPacks = packs
             .where((p) =>
                 p.enabled && p.status == EmojiPackInstallStatus.installed)
+            .where((p) => p.packId != appStickerGroups.first.id)
             .toList();
       });
       if (_tabIndex >= _tabCount && _pageController.hasClients) {
@@ -175,30 +187,38 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
           _buildPackCell(pack, pack.manifest.assets[index]));
 
   Widget _buildPackCell(EmojiPackInstallation pack, EmojiManifestAsset asset) {
-    final path =
-        '${_packStore!.versionDirectory(pack.packId, pack.version).path}/${asset.path}';
-    final namespace = pack.trustLevel == EmojiPackTrustLevel.serverOfficial
-        ? 'official'
-        : 'local';
     return Semantics(
         button: true,
         label: asset.name,
         child: InkWell(
             onTap: widget.enabled
-                ? () => widget.onPackAssetSelected?.call(
-                    path,
-                    EmojiAssetRef(
-                        assetKey: '$namespace:${pack.packId}:${asset.id}',
-                        packId: pack.packId,
-                        contentHash: asset.sha256,
-                        width: asset.width,
-                        height: asset.height,
-                        mimeType: asset.mimeType))
+                ? () => _selectInstalledSticker(pack, asset)
                 : null,
-            child: Image.file(File(path),
+            child: Image.file(_installedStickerFile(pack, asset),
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) =>
                     const Icon(Icons.broken_image_outlined))));
+  }
+
+  File _installedStickerFile(
+          EmojiPackInstallation pack, EmojiManifestAsset asset) =>
+      File(
+          '${_packStore!.versionDirectory(pack.packId, pack.version).path}/${asset.path}');
+
+  void _selectInstalledSticker(
+      EmojiPackInstallation pack, EmojiManifestAsset asset) {
+    final namespace = pack.trustLevel == EmojiPackTrustLevel.serverOfficial
+        ? 'official'
+        : 'local';
+    widget.onPackAssetSelected?.call(
+        _installedStickerFile(pack, asset).path,
+        EmojiAssetRef(
+            assetKey: '$namespace:${pack.packId}:${asset.id}',
+            packId: pack.packId,
+            contentHash: asset.sha256,
+            width: asset.width,
+            height: asset.height,
+            mimeType: asset.mimeType));
   }
 
   Future<void> _loadRecent() async {
@@ -248,7 +268,8 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
         .where((e) =>
             e.key.namespace == 'unicode' ||
             (e.key.namespace == 'builtin' &&
-                appStickerById(e.key.assetId) != null) ||
+                (appStickerById(e.key.assetId) != null ||
+                    _installedSticker(e.key.assetId) != null)) ||
             favorites.containsKey(e.assetKey) ||
             installed.containsKey(e.assetKey))
         .toList();
@@ -282,7 +303,10 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
         itemCount: records.length,
         itemBuilder: (context, index) {
           final record = records[index];
-          final installedAsset = installed[record.assetKey];
+          final installedAsset = installed[record.assetKey] ??
+              (record.key.namespace == 'builtin'
+                  ? _installedSticker(record.key.assetId)
+                  : null);
           if (installedAsset != null) {
             return _buildPackCell(installedAsset.$1, installedAsset.$2);
           }
@@ -638,7 +662,12 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
     final sticker = item.type == EmojiFavoriteType.sticker
         ? appStickerById(item.stickerId)
         : null;
-    final label = sticker?.label ?? (item.isAnimated ? '收藏图片（GIF 动图）' : '收藏图片');
+    final installedSticker = item.type == EmojiFavoriteType.sticker
+        ? _installedSticker(item.stickerId)
+        : null;
+    final label = sticker?.label ??
+        installedSticker?.$2.name ??
+        (item.isAnimated ? '收藏图片（GIF 动图）' : '收藏图片');
     return Semantics(
       button: true,
       label: '发送$label',
@@ -648,6 +677,9 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
             ? () {
                 if (sticker != null) {
                   widget.onStickerSelected?.call(sticker);
+                } else if (installedSticker != null) {
+                  _selectInstalledSticker(
+                      installedSticker.$1, installedSticker.$2);
                 } else {
                   widget.onFavoriteImageSelected?.call(item);
                 }
@@ -671,19 +703,30 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
                       fit: BoxFit.contain,
                     ),
                   )
-                : () {
-                    final imageUrl =
-                        ApiConstants.fullUrl(_favoriteImagePath(item));
-                    return CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      cacheKey: PrivateMessageMediaCache.cacheKeyFor(imageUrl),
-                      cacheManager: PrivateMessageMediaCache.instance.manager,
-                      httpHeaders: widget.favoriteImageHeaders,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) =>
-                          Icon(Icons.broken_image_outlined, color: muted),
-                    );
-                  }(),
+                : installedSticker != null
+                    ? Padding(
+                        padding: const EdgeInsets.all(5),
+                        child: Image.file(
+                          _installedStickerFile(
+                              installedSticker.$1, installedSticker.$2),
+                          fit: BoxFit.contain,
+                        ),
+                      )
+                    : () {
+                        final imageUrl =
+                            ApiConstants.fullUrl(_favoriteImagePath(item));
+                        return CachedNetworkImage(
+                          imageUrl: imageUrl,
+                          cacheKey:
+                              PrivateMessageMediaCache.cacheKeyFor(imageUrl),
+                          cacheManager:
+                              PrivateMessageMediaCache.instance.manager,
+                          httpHeaders: widget.favoriteImageHeaders,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) =>
+                              Icon(Icons.broken_image_outlined, color: muted),
+                        );
+                      }(),
           ),
         ),
       ),
@@ -855,16 +898,30 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
       child: Row(
         children: [
           Expanded(
-            child: ListView.builder(
-              controller: _tabScrollController,
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              itemCount: _tabCount,
-              itemBuilder: (context, index) => _buildTab(
-                theme: theme,
-                muted: muted,
-                index: index,
-              ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final canScroll = _tabCount * 46 + 12 > constraints.maxWidth;
+                return Scrollbar(
+                  controller: _tabScrollController,
+                  thumbVisibility: canScroll,
+                  thickness: 2,
+                  child: ListView.builder(
+                    controller: _tabScrollController,
+                    primary: false,
+                    physics: const BouncingScrollPhysics(),
+                    scrollDirection: Axis.horizontal,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    itemExtent: 46,
+                    itemCount: _tabCount,
+                    itemBuilder: (context, index) => _buildTab(
+                      theme: theme,
+                      muted: muted,
+                      index: index,
+                    ),
+                  ),
+                );
+              },
             ),
           ),
           SizedBox(

@@ -32,7 +32,8 @@ void main() {
     AppPreferencesStore.setMockInitialValues({});
   });
 
-  testWidgets('frostedGlass=false 时 GlassContainer 内不渲染 BackdropFilter', (tester) async {
+  testWidgets('frostedGlass=false 时 GlassContainer 内不渲染 BackdropFilter',
+      (tester) async {
     final theme = await _createProvider();
     expect(theme.frostedGlass, isFalse);
 
@@ -43,7 +44,8 @@ void main() {
     expect(find.text('Card Content'), findsOneWidget);
   });
 
-  testWidgets('frostedGlass=true 时 GlassContainer 内渲染 BackdropFilter', (tester) async {
+  testWidgets('frostedGlass=true 时 GlassContainer 内渲染 BackdropFilter',
+      (tester) async {
     final theme = await _createProvider();
     await theme.setFrostedGlass(true);
     expect(theme.frostedGlass, isTrue);
@@ -55,7 +57,25 @@ void main() {
     expect(find.text('Card Content'), findsOneWidget);
   });
 
-  testWidgets('底栏设为液态玻璃但 frostedGlass=false 时，GlassContainer 仍然无 BackdropFilter', (tester) async {
+  testWidgets('运行时切换毛玻璃开关会同步更新已挂载组件', (tester) async {
+    final theme = await _createProvider();
+
+    await tester.pumpWidget(_buildWrapper(theme));
+    await tester.pump();
+    expect(find.byType(BackdropFilter), findsNothing);
+
+    await theme.setFrostedGlass(true);
+    await tester.pump();
+    expect(find.byType(BackdropFilter), findsOneWidget);
+
+    await theme.setFrostedGlass(false);
+    await tester.pump();
+    expect(find.byType(BackdropFilter), findsNothing);
+  });
+
+  testWidgets(
+      '底栏设为液态玻璃但 frostedGlass=false 时，GlassContainer 仍然无 BackdropFilter',
+      (tester) async {
     final theme = await _createProvider();
     await theme.setBottomNavStyle(BottomNavStyle.liquidGlass);
     expect(theme.liquidGlass, isTrue);
@@ -69,7 +89,8 @@ void main() {
     expect(find.text('Card Content'), findsOneWidget);
   });
 
-  testWidgets('自定义背景且 frostedGlass=false 时，GlassContainer 具备保底不透明度 (>= 0.85)', (tester) async {
+  testWidgets('自定义背景且 frostedGlass=false 时，GlassContainer 具备保底不透明度 (>= 0.85)',
+      (tester) async {
     final theme = await _createProvider();
     await theme.setBackgroundImage('test_bg.jpg');
     expect(theme.isCustomBackgroundMode, isTrue);
@@ -88,4 +109,3 @@ void main() {
     expect(containerFinder, findsWidgets);
   });
 }
-

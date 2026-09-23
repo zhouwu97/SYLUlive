@@ -115,10 +115,10 @@ func TestSecurityBlockFailOpenThenRecovery(t *testing.T) {
 	router := gin.New()
 	checker := &stubSecurityBlockChecker{err: errors.New("db down")}
 	router.Use(SecurityBlockMiddleware(checker))
-	router.GET("/api/search", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
+	router.POST("/api/search", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/search?q=x", nil))
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/search?q=x", nil))
 	require.Equal(t, http.StatusOK, recorder.Code, "查询失败时附加层 fail-open")
 	require.True(t, checker.degraded)
 
@@ -126,7 +126,7 @@ func TestSecurityBlockFailOpenThenRecovery(t *testing.T) {
 	checker.err = nil
 	checker.blocked = map[string]bool{"/api/search": true}
 	recorder = httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/search?q=x", nil))
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/search?q=x", nil))
 	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
 	require.Equal(t, "security_source_blocked", decodeSecurityCode(t, recorder))
 	require.False(t, checker.degraded, "恢复后健康状态必须回到正常")
@@ -138,11 +138,11 @@ func TestSecurityBlockPassesRequestContext(t *testing.T) {
 	router := gin.New()
 	checker := &stubSecurityBlockChecker{seenCtx: []context.Context{}}
 	router.Use(SecurityBlockMiddleware(checker))
-	router.GET("/api/search", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
+	router.POST("/api/search", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 
 	type ctxKey struct{}
 	ctx := context.WithValue(context.Background(), ctxKey{}, "request-scoped")
-	request := httptest.NewRequest(http.MethodGet, "/api/search?q=x", nil).WithContext(ctx)
+	request := httptest.NewRequest(http.MethodPost, "/api/search?q=x", nil).WithContext(ctx)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
 
@@ -171,10 +171,10 @@ func TestSecurityBlockAcceptsLegacyChecker(t *testing.T) {
 	router := gin.New()
 	legacy := &legacySecurityBlockChecker{blocked: true}
 	router.Use(SecurityBlockMiddleware(legacy))
-	router.GET("/api/search", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
+	router.POST("/api/search", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/search?q=x", nil))
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/search?q=x", nil))
 	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
 }
 

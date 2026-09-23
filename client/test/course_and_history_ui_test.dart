@@ -16,7 +16,9 @@ import 'package:shenliyuan/services/schedule/schedule_conflict_service.dart';
 import 'package:shenliyuan/models/schedule/course.dart';
 import 'package:shenliyuan/models/schedule/meeting.dart';
 import 'package:shenliyuan/models/schedule/course_source.dart';
+import 'package:shenliyuan/models/schedule/schedule_override.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/screens/schedule/reschedule/course_adjustment_sheet.dart';
 
 class _TestAuthProvider extends AuthProvider {
   _TestAuthProvider() : super(Dio(), loadStoredAuth: false);
@@ -32,6 +34,56 @@ class _TestAuthProvider extends AuthProvider {
 
 class _TestCourseEvaluationProvider extends CourseEvaluationProvider {
   _TestCourseEvaluationProvider() : super(null);
+}
+
+class _RecordingCourseScheduleProvider extends CourseScheduleProvider {
+  int rescheduleSaveCount = 0;
+  String? lastSavedOverrideId;
+  int? lastSavedStartSection;
+  String? lastSavedRoom;
+
+  @override
+  Future<ScheduleOverride> createRescheduleOverride({
+    required String courseKey,
+    required String meetingKey,
+    required Set<int> affectedWeeks,
+    required int toWeekday,
+    required int toStartSection,
+    required int toEndSection,
+    String? toRoom,
+    required String sourceSnapshotHash,
+    int? fromWeekday,
+    int? fromStartSection,
+    int? fromEndSection,
+    String? fromRoom,
+    bool allowConflict = false,
+    String? overrideId,
+  }) async {
+    rescheduleSaveCount++;
+    lastSavedOverrideId = overrideId;
+    lastSavedStartSection = toStartSection;
+    lastSavedRoom = toRoom;
+    final now = DateTime(2026);
+    return ScheduleOverride(
+      id: overrideId ?? 'test_override',
+      semesterId: currentTerm.id,
+      courseKey: courseKey,
+      meetingKey: meetingKey,
+      type: ScheduleOverrideType.reschedule,
+      affectedWeeks: affectedWeeks,
+      toWeekday: toWeekday,
+      toStartSection: toStartSection,
+      toEndSection: toEndSection,
+      toRoom: toRoom,
+      sourceSnapshotHash: sourceSnapshotHash,
+      fromWeekday: fromWeekday,
+      fromStartSection: fromStartSection,
+      fromEndSection: fromEndSection,
+      fromRoom: fromRoom,
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
 }
 
 void main() {
@@ -278,6 +330,102 @@ void main() {
       expect(find.text('返回修改'), findsOneWidget);
       expect(find.text('保留冲突并保存'), findsOneWidget);
     });
+  });
+
+  testWidgets('已有调课换回原时间时仍保存并保留已调整教室', (tester) async {
+    final provider = _RecordingCourseScheduleProvider()
+      ..setBaseScheduleForTesting([
+        const Course(
+          courseKey: 'edu:2026_1:XX-228',
+          semesterId: '2026_1',
+          source: CourseSource.edu,
+          name: '数字信号处理',
+          meetings: [
+            Meeting(
+              meetingKey: 'meeting-xx-228',
+              weekday: 5,
+              startSection: 5,
+              endSection: 6,
+              weeks: {1, 2, 3, 4, 7, 8, 9, 10, 11, 12},
+              room: 'XX-228',
+            ),
+          ],
+        ),
+      ]);
+    addTearDown(provider.dispose);
+    final existingOverride = ScheduleOverride(
+      id: 'override-dsp',
+      semesterId: '2026_1',
+      courseKey: 'edu:2026_1:XX-228',
+      meetingKey: 'meeting-xx-228',
+      type: ScheduleOverrideType.reschedule,
+      affectedWeeks: {1, 2, 3, 4, 7, 8, 9, 10, 11, 12},
+      toWeekday: 5,
+      toStartSection: 7,
+      toEndSection: 8,
+      toRoom: 'XX-999',
+      sourceSnapshotHash: 'snapshot',
+      fromWeekday: 5,
+      fromStartSection: 5,
+      fromEndSection: 6,
+      fromRoom: 'XX-228',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    const displayedCourse = CourseBlock(
+      id: 228,
+      courseCode: 'XX-228',
+      name: '数字信号处理',
+      location: 'XX-999',
+      color: '#3B82F6',
+      weekday: 5,
+      startSection: 7,
+      endSection: 8,
+      weeks: [1, 2, 3, 4, 7, 8, 9, 10, 11, 12],
+      courseKey: 'edu:2026_1:XX-228',
+      meetingKey: 'meeting-xx-228',
+      source: 'edu',
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => FilledButton(
+            key: const Key('open-adjustment'),
+            onPressed: () => CourseAdjustmentSheet.show(
+              context,
+              course: displayedCourse,
+              provider: provider,
+              currentAcademicWeek: 5,
+              existingOverride: existingOverride,
+            ),
+            child: const Text('打开调课'),
+          ),
+        ),
+      ),
+    ));
+
+    await tester.tap(find.byKey(const Key('open-adjustment')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步：选择目标时间'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('5-6节'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步：冲突检查与确认'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('未发现课程冲突'), findsOneWidget);
+    expect(find.textContaining('7-8节'), findsOneWidget);
+    expect(find.textContaining('5-6节'), findsOneWidget);
+    await tester.ensureVisible(find.text('确认修改'));
+    await tester.tap(find.text('确认修改'));
+    await tester.pumpAndSettle();
+
+    expect(provider.rescheduleSaveCount, 1);
+    expect(provider.lastSavedOverrideId, existingOverride.id);
+    expect(provider.lastSavedStartSection, 5);
+    expect(provider.lastSavedRoom, 'XX-999');
+    expect(find.text('未检测到任何修改'), findsNothing);
   });
 
   group('BrowsingHistoryScreen 浏览记录测试 (Section 30 & 43)', () {

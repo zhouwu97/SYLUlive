@@ -24,8 +24,69 @@ const (
 	idempotencyMaxKeyLength = 200
 	idempotencyMaxBodySize  = 1 << 20
 	idempotencyWaitTimeout  = 30 * time.Second
-	idempotencyPollInterval = 25 * time.Millisecond
+	idempotencyInitialPoll  = 100 * time.Millisecond
+	idempotencyMaxPoll      = time.Second
+	// idempotencyMaxResponseSize 是成功响应体的缓存上限。中间件自己也要有界：
+	// 没有上限时，一个返回大 JSON 的写接口能把内存和 bytea 一起撑起来。
+	idempotencyMaxResponseSize = 256 << 10
 )
+
+// 幂等结论的三态由 handler 显式声明，中间件只在缺省时兜底：
+//
+//   - 已提交（[MarkIdempotentCommitted]）：无论状态码是多少都缓存响应，原键重放同一结果；
+//   - 明确未提交（[MarkIdempotentSafeToRetry]）：释放记录，原键可以重新执行业务；
+//   - 结果未知（两者都没标）：4xx 视为未提交可重试，5xx 保留 failed 占位拒绝原键重放。
+//
+// 缺省值刻意保守：5xx 可能是「库已经写完、随后的推送失败」，这时允许原键重放
+// 就会在同一次用户操作里造出第二条业务记录。
+const (
+	idempotencyCtxSafeToRetry = "idempotency_safe_to_retry"
+	idempotencyCtxCommitted   = "idempotency_committed"
+)
+
+// MarkIdempotentCommitted 声明本次写入已经提交，即使最终不是 2xx 也应当被原键重放。
+// 只适用于「业务已落库、但收尾失败并返回错误码」的路径。
+func MarkIdempotentCommitted(c *gin.Context) {
+	if c != nil {
+		c.Set(idempotencyCtxCommitted, true)
+	}
+}
+
+// MarkIdempotentSafeToRetry 声明本次失败确定没有产生副作用，原键可以直接重试。
+// 只有能证明「什么都没写」的失败路径才可以调用；拿不准就不要标。
+func MarkIdempotentSafeToRetry(c *gin.Context) {
+	if c != nil {
+		c.Set(idempotencyCtxSafeToRetry, true)
+	}
+}
+
+// idempotencyOutcome 是一次写请求的幂等结论。
+type idempotencyOutcome int
+
+const (
+	// idempotencyOutcomeCompleted：结果已知，缓存响应供原键重放。
+	idempotencyOutcomeCompleted idempotencyOutcome = iota
+	// idempotencyOutcomeRetryable：确定没有副作用，释放记录让原键重试。
+	idempotencyOutcomeRetryable
+	// idempotencyOutcomeUnknown：无法证明是否已提交，保留占位拒绝原键重放。
+	idempotencyOutcomeUnknown
+)
+
+// classifyIdempotentOutcome 把状态码与 handler 声明合成三态结论。
+// handler 的显式声明优先于状态码：状态码只能表达「这次响应长什么样」，
+// 说不出「业务事务到底生效没有」。
+func classifyIdempotentOutcome(status int, committed, safeToRetry bool) idempotencyOutcome {
+	if committed {
+		return idempotencyOutcomeCompleted
+	}
+	if status >= 200 && status < 300 {
+		return idempotencyOutcomeCompleted
+	}
+	if safeToRetry || status < 500 {
+		return idempotencyOutcomeRetryable
+	}
+	return idempotencyOutcomeUnknown
+}
 
 // IdempotencyMiddleware 为显式携带 Idempotency-Key 的写请求提供服务端去重。
 //
@@ -144,30 +205,34 @@ func idempotencyMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		if status <= 0 {
 			status = http.StatusOK
 		}
-		// 只缓存成功响应。
-		//
-		// 幂等键要保证的是「成功效果只发生一次」，不是「把一次失败钉死 24 小时」。
-		// 业务限流（429）和临时故障（5xx）若按 completed 落库，同键重试就会原样重放
-		// 这条失败响应，调用方无论网络恢复多少次都提交不上去。明确失败意味着业务
-		// 事务没有生效，这里释放记录，让同一把键在故障恢复后能原样重试。
-		//
-		// 中途崩溃（failed）与超时未决（expired）仍然保留：那种情况下结果未知，
-		// 沿用同键重放可能造出第二条记录，所以要求调用方换新键另起一次操作。
-		if status < 200 || status >= 300 {
+		switch classifyIdempotentOutcome(status,
+			c.GetBool(idempotencyCtxCommitted), c.GetBool(idempotencyCtxSafeToRetry)) {
+		case idempotencyOutcomeRetryable:
 			if err := db.Where("id = ? AND state = ?", record.ID, models.IdempotencyStateProcessing).
 				Delete(&models.IdempotencyRecord{}).Error; err != nil {
 				log.Printf("[IDEMPOTENCY_RELEASE_FAILED] record_id=%d status=%d err=%v", record.ID, status, err)
 			}
 			return
+		case idempotencyOutcomeUnknown:
+			markIdempotencyFailed(db, record.ID)
+			return
+		}
+		updates := map[string]interface{}{
+			"state":         models.IdempotencyStateCompleted,
+			"response_code": status,
+			"content_type":  capture.Header().Get("Content-Type"),
+			"response_body": capture.storedBody(),
+		}
+		if capture.truncated {
+			// 正文装不下就只重放状态码：写入已经发生，宁可让调用方重新读一次，
+			// 也不能存半截正文让它以为接口就是这个形状。
+			updates["response_body"] = []byte(nil)
+			updates["content_type"] = ""
+			updates["response_body_omitted"] = true
 		}
 		result := db.Model(&models.IdempotencyRecord{}).
 			Where("id = ? AND state = ?", record.ID, models.IdempotencyStateProcessing).
-			Updates(map[string]interface{}{
-				"state":         models.IdempotencyStateCompleted,
-				"response_code": status,
-				"content_type":  capture.Header().Get("Content-Type"),
-				"response_body": append([]byte(nil), capture.body.Bytes()...),
-			})
+			Updates(updates)
 		if result.Error != nil {
 			// 首个请求仍然返回业务响应，但日志会提示运维：后续重试无法重放。
 			log.Printf("[IDEMPOTENCY_RESPONSE_STORE_FAILED] record_id=%d err=%v", record.ID, result.Error)
@@ -258,12 +323,23 @@ func replayIdempotentResponse(
 	}
 
 	deadline := time.Now().Add(idempotencyWaitTimeout)
+	pollInterval := idempotencyInitialPoll
 	for {
+		if c.Request.Context().Err() != nil {
+			return true
+		}
 		switch record.State {
 		case models.IdempotencyStateCompleted:
+			if record.ResponseBodyOmitted {
+				// 原响应超出缓存上限：写入已提交，只重放状态码。
+				c.Header("Idempotency-Replay", "body-omitted")
+				c.AbortWithStatus(record.ResponseCode)
+				return true
+			}
 			if record.ContentType != "" {
 				c.Header("Content-Type", record.ContentType)
 			}
+			c.Header("Idempotency-Replay", "true")
 			c.AbortWithStatus(record.ResponseCode)
 			if len(record.ResponseBody) > 0 {
 				_, _ = c.Writer.Write(record.ResponseBody)
@@ -294,8 +370,20 @@ func replayIdempotentResponse(
 			})
 			return true
 		}
-		time.Sleep(idempotencyPollInterval)
-		if err := db.First(&record, record.ID).Error; err != nil {
+		timer := time.NewTimer(pollInterval)
+		select {
+		case <-c.Request.Context().Done():
+			timer.Stop()
+			return true
+		case <-timer.C:
+		}
+		if pollInterval < idempotencyMaxPoll {
+			pollInterval *= 2
+			if pollInterval > idempotencyMaxPoll {
+				pollInterval = idempotencyMaxPoll
+			}
+		}
+		if err := db.WithContext(c.Request.Context()).First(&record, record.ID).Error; err != nil {
 			return false
 		}
 	}
@@ -371,6 +459,17 @@ type idempotencyResponseWriter struct {
 	gin.ResponseWriter
 	body   bytes.Buffer
 	status int
+	// truncated 表示响应体超过 idempotencyMaxResponseSize，缓存里放不下完整正文。
+	// 后续写入仍然透传给客户端，只是不再进缓存。
+	truncated bool
+}
+
+// storedBody 返回已缓存的响应体副本。
+func (w *idempotencyResponseWriter) storedBody() []byte {
+	if w.truncated {
+		return nil
+	}
+	return append([]byte(nil), w.body.Bytes()...)
 }
 
 func (w *idempotencyResponseWriter) WriteHeader(code int) {
@@ -382,7 +481,18 @@ func (w *idempotencyResponseWriter) Write(data []byte) (int, error) {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
-	_, _ = w.body.Write(data)
+	if !w.truncated {
+		room := idempotencyMaxResponseSize - w.body.Len()
+		switch {
+		case room <= 0:
+			w.truncated = true
+		case len(data) > room:
+			_, _ = w.body.Write(data[:room])
+			w.truncated = true
+		default:
+			_, _ = w.body.Write(data)
+		}
+	}
 	return w.ResponseWriter.Write(data)
 }
 

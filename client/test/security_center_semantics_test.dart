@@ -253,11 +253,19 @@ void main() {
         },
       },
       'account_excludes': <dynamic>['/api/posts', '/api/search'],
+      'method_policy': <String, dynamic>{
+        'account_groups': 'any',
+        'content_write': <dynamic>['POST', 'PUT', 'PATCH', 'DELETE'],
+        'note': '内容写入组只对 POST/PUT/PATCH/DELETE 生效；普通 GET 读取与检索不进入来源封禁。',
+      },
     };
     final text = securityBlockScopeDescription(catalog, 'account');
     expect(text, contains('登录注册、验证码、改密与邮箱换绑、会话刷新四组'));
     expect(text, contains('/api/change_password'));
     expect(text, contains('不包含：/api/posts · /api/search'));
+    // 方法策略同样只能来自服务端：说清楚「没封什么」和说清楚「封了什么」一样重要，
+    // 否则管理员会以为 GET 读取也已被来源封禁拦住。
+    expect(text, contains('普通 GET 读取与检索不进入来源封禁'));
 
     // 旧服务端没给这个字段时只解释语义，不能凭空报出一份路径清单。
     expect(securityBlockScopeDescription(null, 'account'), isNot(contains('实际路径')));
@@ -267,5 +275,9 @@ void main() {
     expect(screen, contains('securityBlockScopeDescription'));
     // 页面上那份手抄的 7 条前缀就是 A12 的预期差来源，必须不再出现。
     expect(screen, isNot(contains('/api/forgot_password')));
+
+    // 内容组只认写方法之后，界面不得继续宣称「发帖、私信、检索」的读取也被封禁。
+    expect(screen, isNot(contains('会同时封禁登录、注册、改密、发帖、私信、检索等入口')));
+    expect(screen, contains('普通浏览与检索读取不在来源封禁内'));
   });
 }

@@ -156,7 +156,8 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
       epoch: crypto.randomUUID(),
       connectedAt: new Date().toISOString(),
       origin,
-      confirmed: false,
+      // 身份由助手直接从当前学校会话读取，网页不再重复要求用户确认学号。
+      confirmed: true,
     };
     return withKeyLock(key, async () => {
       const latest = await get(key);

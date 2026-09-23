@@ -25,6 +25,7 @@ func (h *PollHandler) List(c *gin.Context) {
 	result, err := h.service.List(services.PollListInput{
 		Sort: c.DefaultQuery("sort", "recommend"), Category: c.DefaultQuery("category", "all"),
 		Page: queryInt(c, "page", 1), Limit: queryInt(c, "limit", 20),
+		Cursor: c.Query("cursor"),
 	}, contextUserID(c))
 	if err != nil {
 		h.writeError(c, err)
@@ -43,6 +44,7 @@ func (h *PollHandler) ListMine(c *gin.Context) {
 	result, err := h.service.List(services.PollListInput{
 		Sort: c.DefaultQuery("sort", "latest"), Category: c.DefaultQuery("category", "all"),
 		Page: queryInt(c, "page", 1), Limit: queryInt(c, "limit", 20), Scope: scope, UserID: userID,
+		Cursor: c.Query("cursor"),
 	}, userID)
 	if err != nil {
 		h.writeError(c, err)

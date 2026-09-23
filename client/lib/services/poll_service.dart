@@ -40,6 +40,14 @@ class PollListResponse {
   /// 服务端给出的「本页之后还有数据」；旧服务端没有这个字段时为 null。
   final bool? hasMore;
 
+  /// 续页位置。带上它翻页走 keyset，不再依赖 offset：
+  /// 并发新增会让 offset 整体位移，同一条投票因此被跳过或重复。
+  /// 旧服务端没有该字段时为 null，此时退回按 page 翻页。
+  final String? nextCursor;
+
+  /// 传入的游标已经不能续页，本响应其实是第一页，必须整体替换而不是接着拼。
+  final bool? cursorStale;
+
   const PollListResponse({
     required this.items,
     required this.page,
@@ -47,6 +55,8 @@ class PollListResponse {
     required this.total,
     this.matchedTotal,
     this.hasMore,
+    this.nextCursor,
+    this.cursorStale,
   });
 }
 
@@ -106,12 +116,14 @@ class PollService {
     String category = 'all',
     int page = 1,
     int limit = 20,
+    String? cursor,
   }) async {
     return _list('/polls', {
       'sort': sort,
       'category': category,
       'page': page,
       'limit': limit,
+      if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
     });
   }
 
@@ -119,8 +131,14 @@ class PollService {
     required String scope,
     int page = 1,
     int limit = 20,
+    String? cursor,
   }) async {
-    return _list('/me/polls', {'scope': scope, 'page': page, 'limit': limit});
+    return _list('/me/polls', {
+      'scope': scope,
+      'page': page,
+      'limit': limit,
+      if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+    });
   }
 
   Future<Post> getPoll(int pollId) => _post(() => dio.get('/polls/$pollId'));
@@ -218,6 +236,8 @@ class PollService {
         total: (data['total'] as num?)?.toInt() ?? 0,
         matchedTotal: (data['matched_total'] as num?)?.toInt(),
         hasMore: data['has_more'] is bool ? data['has_more'] as bool : null,
+        nextCursor: (data['next_cursor'] as String?)?.trim(),
+        cursorStale: data['cursor_stale'] is bool ? data['cursor_stale'] as bool : null,
       );
     } on DioException catch (error) {
       throw _mapError(error);

@@ -26,13 +26,13 @@ type CapabilitySummary struct {
 
 // CompetitionUserContext 是候选筛选与外部解释共用的脱敏结构化画像。
 type UserContext struct {
-	ProfileVersion         string              `json:"profile_version"`
-	EntryYear              string              `json:"-"`
-	Grade                  string              `json:"grade"`
-	College                string              `json:"college"`
-	Major                  string              `json:"major"`
-	Goals                  []string            `json:"goals"`
-	DirectionTags          []string            `json:"direction_tags"`
+	ProfileVersion string   `json:"profile_version"`
+	EntryYear      string   `json:"-"`
+	Grade          string   `json:"grade"`
+	College        string   `json:"college"`
+	Major          string   `json:"major"`
+	Goals          []string `json:"goals"`
+	DirectionTags  []string `json:"direction_tags"`
 	// SkillTags 是用户在偏好页选择的技能标签（受控词表）。
 	// 与 Skills 不是一回事：Skills 是从获奖经历汇总的能力画像，
 	// SkillTags 是用户自述的技能偏好，用于「技能与赛事方向是否相符」的打分。
@@ -46,6 +46,7 @@ type UserContext struct {
 	ExperienceLevel        string              `json:"experience_level"`
 	// MajorClusterOverride 是用户手动纠正的专业簇，优先于按专业名推断的结果。
 	MajorClusterOverride []string `json:"major_cluster_override"`
+	ProfileProvenance    string   `json:"-"`
 	ProfileReady         bool     `json:"-"`
 	PreferenceConfigured bool     `json:"-"`
 }
@@ -99,13 +100,45 @@ func (b *Builder) BuildCompetitionUserContext(
 	if err := b.db.WithContext(ctx).First(&user, userID).Error; err != nil {
 		return result, err
 	}
+	var binding models.AcademicIdentityBinding
+	identityErr := models.TrustedAcademicBindingScope(
+		b.db.WithContext(ctx).Where("user_id = ?", userID),
+	).Order("verified_at DESC, id DESC").First(&binding).Error
+	verified := identityErr == nil
+	if identityErr != nil && !errors.Is(identityErr, gorm.ErrRecordNotFound) {
+		return result, identityErr
+	}
+	var competitionProfile models.UserCompetitionProfile
+	profileErr := b.db.WithContext(ctx).Where("user_id = ?", userID).First(&competitionProfile).Error
+	if profileErr != nil && !errors.Is(profileErr, gorm.ErrRecordNotFound) {
+		return result, profileErr
+	}
 	result.Grade = strings.TrimSpace(user.EduGrade)
-	result.EntryYear = competitionEntryYear(result.Grade, time.Now())
+	legacyEntryYear := competitionEntryYear(result.Grade, time.Now())
+	result.EntryYear = legacyEntryYear
 	result.College = strings.TrimSpace(user.EduCollege)
 	result.Major = strings.TrimSpace(user.EduMajor)
-	verified, identityErr := models.HasVerifiedAcademicIdentity(b.db.WithContext(ctx), userID)
-	if identityErr != nil {
-		return result, identityErr
+	if profileErr == nil {
+		if value := strings.TrimSpace(competitionProfile.EntryYear); value != "" {
+			result.EntryYear = value
+		}
+		if value := strings.TrimSpace(competitionProfile.College); value != "" {
+			result.College = value
+		}
+		if value := strings.TrimSpace(competitionProfile.Major); value != "" {
+			result.Major = value
+		}
+		result.ProfileProvenance = competitionProfile.Provenance
+	}
+	if result.Grade == "" {
+		level := "本科"
+		if binding.ProviderID == models.AcademicProviderGraduate {
+			level = "研究生"
+		}
+		result.Grade = level + result.EntryYear + "级"
+	}
+	if result.ProfileProvenance == "" && result.EntryYear != "" && result.College != "" && result.Major != "" && verified {
+		result.ProfileProvenance = "school_verified"
 	}
 	result.ProfileReady = verified &&
 		result.EntryYear != "" && result.College != "" && result.Major != ""

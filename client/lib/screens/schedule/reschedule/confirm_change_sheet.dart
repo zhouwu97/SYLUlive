@@ -13,6 +13,8 @@ class ConfirmChangeSheet extends StatelessWidget {
   final String? toRoom;
   final ScheduleConflictCheckResult conflictResult;
   final VoidCallback onConfirm;
+  final bool isSaving;
+  final String? saveError;
   final VoidCallback onBackToEdit;
   final VoidCallback? onBack;
   final VoidCallback? onClose;
@@ -27,6 +29,8 @@ class ConfirmChangeSheet extends StatelessWidget {
     this.toRoom,
     required this.conflictResult,
     required this.onConfirm,
+    this.isSaving = false,
+    this.saveError,
     required this.onBackToEdit,
     this.onBack,
     this.onClose,
@@ -172,6 +176,25 @@ class ConfirmChangeSheet extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
+              if (saveError != null) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: tokens.isDark
+                        ? const Color(0xFF321D1D)
+                        : const Color(0xFFFFEEEE),
+                    borderRadius: BorderRadius.circular(10),
+                    border:
+                        Border.all(color: tokens.error.withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    saveError!,
+                    style: TextStyle(color: tokens.error, fontSize: 13),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               // 冲突检测状态
               if (!hasConflict) ...[
                 Container(
@@ -212,10 +235,25 @@ class ConfirmChangeSheet extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    onPressed: onConfirm,
-                    child: const Text('确认修改',
-                        style: TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.bold)),
+                    onPressed: isSaving ? null : onConfirm,
+                    child: isSaving
+                        ? const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Text('正在保存'),
+                            ],
+                          )
+                        : const Text('确认修改',
+                            style: TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.bold)),
                   ),
                 ),
               ] else ...[
@@ -302,9 +340,24 @@ class ConfirmChangeSheet extends StatelessWidget {
                           ),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        onPressed: onConfirm,
-                        child: const Text('保留冲突并保存',
-                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        onPressed: isSaving ? null : onConfirm,
+                        child: isSaving
+                            ? const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text('正在保存'),
+                                ],
+                              )
+                            : const Text('保留冲突并保存',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ],

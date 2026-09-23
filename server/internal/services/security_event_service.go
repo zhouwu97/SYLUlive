@@ -66,6 +66,49 @@ type SecurityEventService struct {
 	// 吞掉错误，因此这是安全中心唯一能知道「采集其实一直在失败」的地方。
 	eventWriteHealth *SecurityHealthLayer
 	blockCheckHealth *SecurityHealthLayer
+	// alerts 是可选的外部主动告警通道。未接入时安全事件照常采集与入库，
+	// 只是没有人被叫醒——安全中心必须如实显示这一点，不能继续报绿。
+	alerts *SecurityAlertService
+}
+
+// SetAlertService 接入高危事件的外部主动告警；传 nil 表示只采集不外发。
+//
+// 挂在 RecordContext 成功写入之后：事件进了账本才谈得上叫人，反过来
+// 「先发邮件再写库」会让一次数据库故障变成没人能查证的空告警。
+func (s *SecurityEventService) SetAlertService(alerts *SecurityAlertService) {
+	if s == nil {
+		return
+	}
+	s.alerts = alerts
+}
+
+// AlertDeliveryState 报告告警外发的配置态与运行态，供安全中心与运维排查使用。
+func (s *SecurityEventService) AlertDeliveryState() (bool, string, string, map[string]interface{}) {
+	if s == nil || s.alerts == nil {
+		return false, SecurityLayerNotConfigured, "alert_service_not_wired", nil
+	}
+	return s.alerts.DeliveryState()
+}
+
+// notifyAlerts 把刚落账的高危事件交给告警通道。
+//
+// 只做转发与脱敏映射，不改变事件采集的成功/失败语义：邮件发不出去不能让
+// 一次真实攻击的采集结果看起来失败了。
+func (s *SecurityEventService) notifyAlerts(event models.SecurityEvent) {
+	if s == nil || s.alerts == nil {
+		return
+	}
+	s.alerts.Record(SecurityAlertEvent{
+		EventType:    event.EventType,
+		Severity:     event.Severity,
+		Status:       event.Status,
+		Route:        event.Route,
+		Method:       event.Method,
+		TargetMasked: event.TargetMasked,
+		Action:       event.Action,
+		RequestID:    event.RequestIDSample,
+		OccurredAt:   event.LastSeenAt,
+	})
 }
 
 // EventWriteHealth 返回安全事件采集的运行态快照。
@@ -334,6 +377,7 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 		return err
 	}
 	s.eventWriteHealth.recordSuccess()
+	s.notifyAlerts(event)
 	return nil
 }
 
@@ -512,6 +556,10 @@ func boolInt(value bool) int {
 // services 已经依赖 middleware（见 user_role.go），因此这里是安全的复用方向，
 // 不会再产生包循环。保留本函数只为兼容既有调用方；新增代码请直接使用
 // middleware.SensitiveSecurityRoute，避免再次出现两份分叉的策略清单。
+//
+// 注意它只回答「这条路径归哪个分组管」。判断一次请求要不要查封禁表请用
+// middleware.SensitiveSecurityRouteFor(method, path)——同一路径的 GET 与 POST
+// 在内容组里不是一个结论。
 func IsSensitiveSecurityRoute(path string) bool {
 	return middleware.SensitiveSecurityRoute(path)
 }

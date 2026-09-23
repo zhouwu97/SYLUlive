@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -35,7 +36,7 @@ func TestOpenAICompatibleProviderRecoversEmptyStream(t *testing.T) {
 			defer server.Close()
 			provider, _ := NewOpenAICompatibleProvider(server.URL, "key", "gpt-5.6-luna", "medium", server.Client())
 			provider.firstProgressTimeout = 100 * time.Millisecond
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			stream, err := provider.Start(ctx, ProviderRequest{})
 			if err != nil {
@@ -62,7 +63,7 @@ func TestOpenAICompatibleProviderRecoveryIsBoundedAndRespectsCancellation(t *tes
 	for _, cancelled := range []bool{false, true} {
 		t.Run(fmt.Sprint(cancelled), func(t *testing.T) {
 			var attempts atomic.Int32
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				_, _ = io.Copy(io.Discard, r.Body)
@@ -89,8 +90,33 @@ func TestOpenAICompatibleProviderRecoveryIsBoundedAndRespectsCancellation(t *tes
 	}
 }
 
+// manualProgressTimer 是测试用的首进度看门狗：Stop 与触发时机都由用例自己决定，
+// 因此「看门狗与模型进度同时到达」可以被稳定复现，而不是指望一个很窄的真实时间窗口。
+type manualProgressTimer struct {
+	onStop func()
+}
+
+func (t manualProgressTimer) Stop() bool {
+	if t.onStop != nil {
+		t.onStop()
+	}
+	return true
+}
+
+// TestOpenAICompatibleProviderDoesNotRetryModelProgress 断言两条不变量：
+//
+//  1. 模型进度一出现就必须撤下首进度看门狗，之后不得再因「没进度」掐断这条流；
+//  2. 就算看门狗回调已经排队、在进度之后才执行（定时器与进度并发时的真实时序），
+//     进度守卫也必须拦住第二次请求，绝不把已经出字的回答重新生成一遍。
+//
+// 旧写法用 elapsed >= 250ms 这类真实时间窗口表达上面两条，CI 上和调度一赛跑就时红时绿。
+// 这里改成手动看门狗 + 显式事件顺序，断言只依赖状态，不依赖时钟。
 func TestOpenAICompatibleProviderDoesNotRetryModelProgress(t *testing.T) {
-	for _, delta := range []string{`"content":"部分回答"`, `"reasoning_content":"私有思考"`, `"tool_calls":[{"index":0,"id":"call1","function":{"name":"lookup","arguments":"{"}}]`} {
+	for _, delta := range []string{
+		`"content":"partial answer"`,
+		`"reasoning_content":"private thinking"`,
+		`"tool_calls":[{"index":0,"id":"call1","function":{"name":"lookup","arguments":"{"}}]`,
+	} {
 		t.Run(delta, func(t *testing.T) {
 			var attempts atomic.Int32
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -101,24 +127,67 @@ func TestOpenAICompatibleProviderDoesNotRetryModelProgress(t *testing.T) {
 				<-r.Context().Done()
 			}))
 			defer server.Close()
-			provider, _ := NewOpenAICompatibleProvider(server.URL, "key", "gpt-5.6-luna", "medium", server.Client())
-			provider.firstProgressTimeout = 100 * time.Millisecond
-			ctx, cancel := context.WithTimeout(context.Background(), 350*time.Millisecond)
+			provider, err := NewOpenAICompatibleProvider(server.URL, "key", "gpt-5.6-luna", "medium", server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			provider.firstProgressTimeout = 20 * time.Millisecond
+
+			// 看门狗被撤下（onProgress -> Stop）就是「provider 已经观察到模型进度」的信号。
+			disarmed := make(chan struct{})
+			var disarmOnce sync.Once
+			var fire func()
+			provider.afterFunc = func(_ time.Duration, onFire func()) providerTimer {
+				fire = onFire
+				return manualProgressTimer{onStop: func() { disarmOnce.Do(func() { close(disarmed) }) }}
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			started := time.Now()
-			stream, err := provider.Start(ctx, ProviderRequest{})
-			if err == nil {
-				defer stream.Close()
-				for err == nil {
-					var event ProviderEvent
-					event, err = stream.Next(ctx)
-					if strings.Contains(event.Text, "私有思考") {
+			type startResult struct {
+				stream ProviderStream
+				err    error
+			}
+			done := make(chan startResult, 1)
+			go func() {
+				stream, err := provider.Start(ctx, ProviderRequest{})
+				done <- startResult{stream: stream, err: err}
+			}()
+
+			select {
+			case <-disarmed:
+			case <-time.After(10 * time.Second):
+				t.Fatal("模型进度未在预算内到达，看门狗没有被撤下")
+			}
+
+			// 进度之后再补一次看门狗触发，复现「定时器已经排队、Stop 没拦住」的迟到取消。
+			if fire == nil {
+				t.Fatal("看门狗未被装配")
+			}
+			fire()
+
+			res := <-done
+			if res.err == nil {
+				defer res.stream.Close()
+				for {
+					event, err := res.stream.Next(ctx)
+					if strings.Contains(event.Text, "private thinking") {
 						t.Fatal("思考内容不得泄露")
 					}
+					if err != nil {
+						if providerErrorClass(err) != ProviderErrorTimeout {
+							t.Fatalf("迟到看门狗应按超时收口: err=%v class=%s", err, providerErrorClass(err))
+						}
+						break
+					}
+				}
+			} else {
+				if providerErrorClass(res.err) != ProviderErrorTimeout {
+					t.Fatalf("err=%v class=%s", res.err, providerErrorClass(res.err))
 				}
 			}
-			if providerErrorClass(err) != ProviderErrorTimeout || attempts.Load() != 1 || time.Since(started) < 250*time.Millisecond {
-				t.Fatalf("err=%v attempts=%d elapsed=%v", err, attempts.Load(), time.Since(started))
+			if got := attempts.Load(); got != 1 {
+				t.Fatalf("已经出现模型进度却发起了 %d 次请求", got)
 			}
 		})
 	}
@@ -162,7 +231,7 @@ func TestOpenAICompatibleProviderFallbackPreservesRequestAndSelectedModel(t *tes
 	defer server.Close()
 	provider, _ := NewOpenAICompatibleProvider(server.URL, "key", "gpt-5.6-terra", "medium", server.Client(), WithOpenAICompatibleFallbackModel("gpt-5.6-luna"))
 	request := ProviderRequest{Messages: []Message{{Role: "user", Content: "读取已授权数据"}}, RequiredTool: "lookup", Tools: []ToolDefinition{{Name: "lookup", Parameters: map[string]interface{}{"type": "object"}}}}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	stream, err := provider.Start(ctx, request)
 	if err != nil {

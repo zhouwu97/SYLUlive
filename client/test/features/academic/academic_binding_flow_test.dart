@@ -201,7 +201,10 @@ void main() {
       await tester.ensureVisible(link);
       await tester.tap(link);
       await tester.pumpAndSettle();
-      expect(find.textContaining('你授权本服务'), findsOneWidget);
+      expect(
+          find.textContaining('教务登录和身份核验会按你选择的功能使用不同凭据路径'),
+          findsOneWidget,
+        );
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       await tester.tap(find.text('取消'));

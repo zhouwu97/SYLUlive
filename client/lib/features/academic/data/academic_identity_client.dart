@@ -48,33 +48,37 @@ const academicVerificationMethodLocalDeclaration = 'local_academic_login';
 const academicVerificationMethodSchoolProfile = 'school_profile';
 const academicVerificationMethodLegacyMigration = 'legacy_migration';
 
-/// 依据强度：学校可核验 vs 本机声明。
+/// 依据强度：学校核验、历史回填、本机声明。
 const academicAssuranceSchoolVerified = 'school_verified';
 const academicAssuranceLocalDeclaration = 'local_declaration';
+const academicAssuranceLegacyInherited = 'legacy_inherited';
 
 /// 身份状态文案：「本机已连接」不等于「身份已核验」。
 ///
-/// 受限功能认的是后者。这里必须把两者分开说，否则用户会以为连上教务就已经认证，
-/// 然后在集市这类入口反复重新绑定。
+/// 历史回填仍可能按兼容策略拥有准入，文案单独说明其来源，避免误称为本次学校核验。
 String academicIdentityStandingLabel(AcademicIdentityBinding binding) {
-  return binding.isSchoolVerified ? '已完成学生认证' : '仅本机连接，未完成学生认证';
+  if (binding.isSchoolVerified) return '已完成学生认证';
+  if (binding.verificationMethod == academicVerificationMethodLegacyMigration) {
+    return binding.verified ? '继承历史服务器认证状态' : '历史身份待重新认证';
+  }
+  return '仅本机连接，未完成学生认证';
 }
 
-/// 合并「本机连过谁」与「服务端认了谁」。
+/// 合并「本机连过谁」与「服务端记录的身份状态」。
 ///
 /// 这是两件不同的事：本机账号只说明这台设备上登录过哪些教务账号，
-/// 服务端可信绑定才决定受限功能能不能用。历史实现直接把本机账号渲染成
+/// 服务端准入绑定决定受限功能能不能用，历史回填状态会单独标出。历史实现直接把本机账号渲染成
 /// `verified: false`，于是已经有学校核验的用户也会被显示成"没有认证"。
 ///
-/// [localAccounts] 为空时返回 [trustedBindings]（例如只有服务端绑定的设备）。
+/// [localAccounts] 为空时返回 [serverBindings]（例如只有服务端绑定的设备）。
 List<AcademicIdentityBinding> mergeAcademicIdentityStanding({
   required List<AcademicIdentityBinding> localAccounts,
-  required List<AcademicIdentityBinding> trustedBindings,
+  required List<AcademicIdentityBinding> serverBindings,
 }) {
-  if (localAccounts.isEmpty) return trustedBindings;
+  if (localAccounts.isEmpty) return serverBindings;
   return <AcademicIdentityBinding>[
     for (final account in localAccounts)
-      trustedBindings.firstWhere(
+      serverBindings.firstWhere(
         (binding) =>
             binding.providerId == account.providerId &&
             binding.studentId == account.studentId,
@@ -85,14 +89,16 @@ List<AcademicIdentityBinding> mergeAcademicIdentityStanding({
 
 /// 由核验方式推导依据强度。
 ///
-/// 与服务端 models.IsTrustedAcademicVerificationMethod 同一把尺子：白名单之外
-/// （含空值、未登记取值、带空白的历史脏数据）一律按本机声明处理，不因为「不认识」
-/// 就当成可信。服务端同样用精确匹配，不做 Trim。
+/// 历史回填保留独立等级，不伪装成本次学校核验；白名单之外（含空值、未知取值、
+/// 带空白的历史脏数据）一律按本机声明处理。服务端同样用精确匹配，不做 Trim。
 String assuranceLevelFor(String? verificationMethod) {
-  return verificationMethod == academicVerificationMethodSchoolProfile ||
-          verificationMethod == academicVerificationMethodLegacyMigration
-      ? academicAssuranceSchoolVerified
-      : academicAssuranceLocalDeclaration;
+  if (verificationMethod == academicVerificationMethodSchoolProfile) {
+    return academicAssuranceSchoolVerified;
+  }
+  if (verificationMethod == academicVerificationMethodLegacyMigration) {
+    return academicAssuranceLegacyInherited;
+  }
+  return academicAssuranceLocalDeclaration;
 }
 
 final class AcademicIdentityBinding {
@@ -127,6 +133,7 @@ final class AcademicIdentityBinding {
   /// 那只是「声明已接收」，不能据此开放受限功能。
   bool get isSchoolVerified =>
       verified &&
+      verificationMethod == academicVerificationMethodSchoolProfile &&
       (assuranceLevel ?? assuranceLevelFor(verificationMethod)) ==
           academicAssuranceSchoolVerified;
 
@@ -240,7 +247,13 @@ final class AcademicIdentityClient {
       }
       final bindings = <AcademicIdentityBinding>[];
       for (final item in raw) {
-        if (item is! Map || item['verified'] != true) continue;
+        if (item is! Map) continue;
+        final method = item['verification_method']?.toString();
+        final isSchoolVerified = item['verified'] == true &&
+            method == academicVerificationMethodSchoolProfile;
+        final isLegacyInherited =
+            method == academicVerificationMethodLegacyMigration;
+        if (!isSchoolVerified && !isLegacyInherited) continue;
         final providerId = AcademicProviderId.tryParse(
           item['provider_id']?.toString() ?? '',
         );
@@ -250,16 +263,15 @@ final class AcademicIdentityClient {
           AcademicIdentityBinding(
             providerId: providerId,
             studentId: studentId,
-            verified: true,
+            verified: item['verified'] == true,
             verifiedAt: DateTime.tryParse(
               item['verified_at']?.toString() ?? '',
             )?.toUtc(),
-            verificationMethod: item['verification_method']?.toString(),
+            verificationMethod: method,
             verificationVersion: item['verification_version']?.toString(),
             bindingVersion: (item['binding_version'] as num?)?.toInt() ?? 1,
             changedAt: DateTime.tryParse(item['changed_at']?.toString() ?? ''),
-            assuranceLevel: item['assurance_level']?.toString() ??
-                assuranceLevelFor(item['verification_method']?.toString()),
+            assuranceLevel: assuranceLevelFor(method),
           ),
         );
       }
@@ -442,6 +454,13 @@ final class AcademicIdentityClient {
           '学校返回的学生身份与当前绑定不一致',
         );
       }
+      if (data['verification_method'] !=
+          academicVerificationMethodSchoolProfile) {
+        throw const AcademicIdentityApiException(
+          'ACADEMIC_BINDING_CONTRACT_ERROR',
+          '学生身份验证回执缺少学校核验依据，请更新服务器后重试',
+        );
+      }
       return AcademicIdentityBinding(
         providerId: providerId!,
         studentId: studentId,
@@ -449,7 +468,7 @@ final class AcademicIdentityClient {
         verifiedAt: DateTime.tryParse(
           data['verified_at']?.toString() ?? '',
         )?.toUtc(),
-        verificationMethod: data['verification_method']?.toString(),
+        verificationMethod: academicVerificationMethodSchoolProfile,
         verificationVersion: data['verification_version']?.toString(),
         bindingVersion: (data['binding_version'] as num?)?.toInt() ?? 1,
         changedAt: DateTime.tryParse(data['changed_at']?.toString() ?? ''),
@@ -598,6 +617,19 @@ final class AcademicIdentityClient {
       );
     }
     final method = data['verification_method']?.toString();
+    if (method != academicVerificationMethodSchoolProfile) {
+      throw const AcademicIdentityApiException(
+        'ACADEMIC_BINDING_CONTRACT_ERROR',
+        '学生身份验证回执缺少学校核验依据，请更新服务器后重试',
+      );
+    }
+    final assurance = data['assurance_level']?.toString();
+    if (assurance != null && assurance != academicAssuranceSchoolVerified) {
+      throw const AcademicIdentityApiException(
+        'ACADEMIC_BINDING_CONTRACT_ERROR',
+        '学生身份验证回执的依据强度不符合学校核验契约，请更新服务器后重试',
+      );
+    }
     return AcademicIdentityBinding(
       providerId: providerId!,
       studentId: studentId,
@@ -608,8 +640,7 @@ final class AcademicIdentityClient {
       verificationVersion: data['verification_version']?.toString(),
       bindingVersion: (data['binding_version'] as num?)?.toInt() ?? 1,
       changedAt: DateTime.tryParse(data['changed_at']?.toString() ?? ''),
-      assuranceLevel: data['assurance_level']?.toString() ??
-          assuranceLevelFor(method),
+      assuranceLevel: assuranceLevelFor(method),
     );
   }
 

@@ -8,12 +8,15 @@ class CompetitionPreference {
   final bool acceptLongTermTraining;
   final String careerDirection;
   final String experienceLevel;
+
   /// 用户手动纠正的专业簇。留空表示按专业名自动推断。
   /// 这是长尾专业唯一的自救路径：推断不出来时由用户指定即可参与匹配。
   final List<String> majorClusterOverride;
+
   /// 服务端下发的专业簇词表（只读）。刻意不写死在客户端：
   /// 目录侧新增簇时，两边各抄一份必然漂移，写进去的错值还会被接口拒绝。
   final List<String> majorClusterOptions;
+  final CompetitionProfile competitionProfile;
 
   const CompetitionPreference({
     this.configured = false,
@@ -27,6 +30,7 @@ class CompetitionPreference {
     this.experienceLevel = 'beginner',
     this.majorClusterOverride = const [],
     this.majorClusterOptions = const [],
+    this.competitionProfile = const CompetitionProfile(),
   });
 
   factory CompetitionPreference.fromJson(Map<String, dynamic> json) {
@@ -42,6 +46,11 @@ class CompetitionPreference {
       experienceLevel: '${json['experience_level'] ?? 'beginner'}',
       majorClusterOverride: _stringList(json['major_cluster_override']),
       majorClusterOptions: _stringList(json['major_cluster_options']),
+      competitionProfile: CompetitionProfile.fromJson(
+        json['competition_profile'] is Map
+            ? Map<String, dynamic>.from(json['competition_profile'] as Map)
+            : const <String, dynamic>{},
+      ),
     );
   }
 
@@ -56,10 +65,42 @@ class CompetitionPreference {
         'experience_level': experienceLevel,
         // 显式传空数组表示清空纠正；不传则服务端保留原值。
         'major_cluster_override': majorClusterOverride,
+        'competition_profile': competitionProfile.toJson(),
       };
 
   static List<String> _stringList(dynamic value) =>
       (value as List? ?? const []).map((item) => '$item').toList();
+}
+
+class CompetitionProfile {
+  final String entryYear;
+  final String college;
+  final String major;
+  final String provenance;
+  final DateTime? updatedAt;
+
+  const CompetitionProfile({
+    this.entryYear = '',
+    this.college = '',
+    this.major = '',
+    this.provenance = '',
+    this.updatedAt,
+  });
+
+  factory CompetitionProfile.fromJson(Map<String, dynamic> json) =>
+      CompetitionProfile(
+        entryYear: '${json['entry_year'] ?? ''}',
+        college: '${json['college'] ?? ''}',
+        major: '${json['major'] ?? ''}',
+        provenance: '${json['provenance'] ?? ''}',
+        updatedAt: DateTime.tryParse('${json['updated_at'] ?? ''}'),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'entry_year': entryYear.trim(),
+        'college': college.trim(),
+        'major': major.trim(),
+      };
 }
 
 const competitionGoalLabels = <String, String>{

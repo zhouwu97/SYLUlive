@@ -328,6 +328,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   Future<void> _loadPost({bool forceReplies = true}) async {
+    String? visitUserId;
+    int? visitAccountEpoch;
+    try {
+      final auth = context.read<AuthProvider>();
+      visitUserId = auth.user?.id.toString();
+      visitAccountEpoch = auth.accountSessionEpoch;
+    } catch (_) {}
     final replyCache = PostReplyCache.forClient(_dio)..useScope(_replyScope);
     final cachedReplyCount =
         replyCache.peek(widget.postId, _replySort)?.data['total'];
@@ -370,22 +377,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           _post = mergedPost;
           _isLoading = false;
         });
-        String? currentUserId;
+        var sameAccountSession = visitAccountEpoch == null;
         try {
-          currentUserId = context.read<AuthProvider>().user?.id.toString();
+          final auth = context.read<AuthProvider>();
+          sameAccountSession = auth.user?.id.toString() == visitUserId &&
+              auth.accountSessionEpoch == visitAccountEpoch;
         } catch (_) {}
-        BrowsingHistoryRepository().recordVisit(
-          userId: currentUserId,
-          targetId: widget.postId.toString(),
-          type: BrowsingHistoryType.post,
-          title: mergedPost.title.isNotEmpty
-              ? mergedPost.title
-              : (mergedPost.content.length > 50
-                  ? '${mergedPost.content.substring(0, 50)}...'
-                  : mergedPost.content),
-          author: mergedPost.author?.nickname,
-          cover: mergedPost.images.isNotEmpty ? mergedPost.images.first.url : null,
-        );
+        if (sameAccountSession) {
+          BrowsingHistoryRepository().recordVisit(
+            userId: visitUserId,
+            targetId: widget.postId.toString(),
+            type: BrowsingHistoryType.post,
+            title: mergedPost.title.isNotEmpty
+                ? mergedPost.title
+                : (mergedPost.content.length > 50
+                    ? '${mergedPost.content.substring(0, 50)}...'
+                    : mergedPost.content),
+            author: mergedPost.author?.nickname,
+            cover: mergedPost.images.isNotEmpty
+                ? mergedPost.images.first.url
+                : null,
+          );
+        }
       }
       if (widget.scrollToReplies && !_hasScrolledToReplies) {
         // 帖子主体已经完成布局即可定位，不必等待权限等后台请求。
@@ -575,7 +588,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     }
     final current = _post;
     if (current == null) return;
-    if (current.status == 'moderated_hidden' || current.viewerPermissions?.canLike == false) {
+    if (current.status == 'moderated_hidden' ||
+        current.viewerPermissions?.canLike == false) {
       AppFeedback.showSnackBar(context, '该帖子已被限制展示，暂不可点赞', isError: true);
       return;
     }
@@ -1016,9 +1030,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final permissions = post.viewerPermissions;
     final isOwner = _isCurrentUserPostOwner();
     final currentUser = context.watch<AuthProvider>().user;
-    final isAdmin = currentUser?.isAdmin == true || (permissions?.canRestore == true);
+    final isAdmin =
+        currentUser?.isAdmin == true || (permissions?.canRestore == true);
 
-    final hasPendingRectification = permissions?.hasPendingRectification == true;
+    final hasPendingRectification =
+        permissions?.hasPendingRectification == true;
     final hasPendingAppeal = permissions?.hasPendingAppeal == true;
     final hasEdited = post.revision > 1;
 
@@ -1040,7 +1056,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               Expanded(
                 child: Text(
                   '该帖子已被限制展示',
-                  style: TextStyle(color: primary, fontWeight: FontWeight.w700, fontSize: 15),
+                  style: TextStyle(
+                      color: primary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15),
                 ),
               ),
               Container(
@@ -1051,7 +1070,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                 ),
                 child: Text(
                   '仅自己与管理员可见',
-                  style: TextStyle(color: primary, fontSize: 11, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                      color: primary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -1059,30 +1081,40 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           const SizedBox(height: 8),
           Text(
             '该内容因社区治理原因已停止公开展示，不会出现在首页、搜索及公开主页。',
-            style: TextStyle(color: isDark ? Colors.white70 : Colors.black87, height: 1.45, fontSize: 13),
+            style: TextStyle(
+                color: isDark ? Colors.white70 : Colors.black87,
+                height: 1.45,
+                fontSize: 13),
           ),
           if (post.moderationReason.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(
               '处理原因：${post.moderationReason}',
-              style: TextStyle(color: isDark ? Colors.white : Colors.black, height: 1.4, fontSize: 13, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black,
+                  height: 1.4,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500),
             ),
           ],
           if (post.moderationRuleCode.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
               '违规规则：${post.moderationRuleCode}',
-              style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 12),
+              style: TextStyle(
+                  color: isDark ? Colors.white54 : Colors.black54,
+                  fontSize: 12),
             ),
           ],
           if (post.moderatedAt != null) ...[
             const SizedBox(height: 4),
             Text(
               '处理时间：${_formatModerationTime(post.moderatedAt!)}',
-              style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 12),
+              style: TextStyle(
+                  color: isDark ? Colors.white54 : Colors.black54,
+                  fontSize: 12),
             ),
           ],
-
           if (hasPendingRectification) ...[
             const SizedBox(height: 10),
             Container(
@@ -1095,12 +1127,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.pending_actions, color: Colors.blue, size: 18),
+                  const Icon(Icons.pending_actions,
+                      color: Colors.blue, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       '整改复审审核中 (提交版本 v${permissions?.submittedRevision ?? post.revision})，请等待管理员审核。',
-                      style: TextStyle(color: isDark ? Colors.blue[200] : Colors.blue[900], fontSize: 12, height: 1.35),
+                      style: TextStyle(
+                          color: isDark ? Colors.blue[200] : Colors.blue[900],
+                          fontSize: 12,
+                          height: 1.35),
                     ),
                   ),
                 ],
@@ -1118,18 +1154,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.gavel_outlined, color: Colors.purple, size: 18),
+                  const Icon(Icons.gavel_outlined,
+                      color: Colors.purple, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       '申诉复核处理中，结果将通过系统通知告知。',
-                      style: TextStyle(color: isDark ? Colors.purple[200] : Colors.purple[900], fontSize: 12, height: 1.35),
+                      style: TextStyle(
+                          color:
+                              isDark ? Colors.purple[200] : Colors.purple[900],
+                          fontSize: 12,
+                          height: 1.35),
                     ),
                   ),
                 ],
               ),
             ),
-          ] else if (hasEdited && (permissions?.canSubmitRectification ?? isOwner)) ...[
+          ] else if (hasEdited &&
+              (permissions?.canSubmitRectification ?? isOwner)) ...[
             const SizedBox(height: 10),
             Container(
               width: double.infinity,
@@ -1141,19 +1183,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.check_circle_outline, color: Colors.teal, size: 18),
+                  const Icon(Icons.check_circle_outline,
+                      color: Colors.teal, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       '修改已保存 (版本 v${post.revision})。帖子不会自动恢复公开，如整改完成请提交复审。',
-                      style: TextStyle(color: isDark ? Colors.teal[200] : Colors.teal[900], fontSize: 12, height: 1.35),
+                      style: TextStyle(
+                          color: isDark ? Colors.teal[200] : Colors.teal[900],
+                          fontSize: 12,
+                          height: 1.35),
                     ),
                   ),
                 ],
               ),
             ),
           ],
-
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
@@ -1165,13 +1210,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                   icon: const Icon(Icons.edit_outlined, size: 18),
                   label: Text(hasEdited ? '继续编辑' : '编辑整改'),
                 ),
-              if ((permissions?.canSubmitRectification ?? isOwner) && !hasPendingRectification)
+              if ((permissions?.canSubmitRectification ?? isOwner) &&
+                  !hasPendingRectification)
                 FilledButton.tonalIcon(
                   onPressed: _submitRectificationReview,
                   icon: const Icon(Icons.fact_check_outlined, size: 18),
                   label: const Text('提交整改复审'),
                 ),
-              if ((permissions?.canAppeal ?? isOwner) && !hasPendingAppeal && !hasPendingRectification)
+              if ((permissions?.canAppeal ?? isOwner) &&
+                  !hasPendingAppeal &&
+                  !hasPendingRectification)
                 TextButton.icon(
                   onPressed: _submitModerationAppeal,
                   icon: const Icon(Icons.gavel_outlined, size: 18),
@@ -1189,7 +1237,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               if (isAdmin)
                 FilledButton.icon(
                   onPressed: _adminRestorePost,
-                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2E7D32)),
+                  style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF2E7D32)),
                   icon: const Icon(Icons.restore_page_outlined, size: 18),
                   label: const Text('恢复公开展示'),
                 ),
@@ -2067,9 +2116,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         final composerInset = _replyComposerController.keyboardInset;
         final rawInset =
             mediaInset > composerInset ? mediaInset : composerInset;
-        final bottomInset = _replyComposerController.showEmojiPanel
-            ? 0.0
-            : rawInset;
+        final bottomInset =
+            _replyComposerController.showEmojiPanel ? 0.0 : rawInset;
         return Padding(
           padding: EdgeInsets.only(bottom: bottomInset),
           child: child,
@@ -2110,7 +2158,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                     enabled: active,
                     label: '收起评论输入',
                     onTap: active
-                        ? () => _replyComposerController.close(reason: 'content')
+                        ? () =>
+                            _replyComposerController.close(reason: 'content')
                         : null,
                     child: GestureDetector(
                       key: const ValueKey('post-detail-input-dismiss-layer'),
@@ -2140,7 +2189,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         notification is OverscrollNotification) {
       final dy = (notification is ScrollUpdateNotification
               ? notification.dragDetails?.primaryDelta
-              : (notification as OverscrollNotification).dragDetails?.primaryDelta) ??
+              : (notification as OverscrollNotification)
+                  .dragDetails
+                  ?.primaryDelta) ??
           0.0;
       if (_dragStartedWithInputPanel && panelVisible) {
         if (dy > 0) {
@@ -2696,7 +2747,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                                     style: TextStyle(
                                       fontSize: 24,
                                       fontWeight: FontWeight.bold,
-                                      color: isDark ? Colors.white : Colors.black87,
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black87,
                                     ),
                                   ),
                                   const SizedBox(height: 12),
@@ -2740,7 +2793,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                                   style: TextStyle(
                                     fontSize: 16,
                                     height: 1.6,
-                                    color: isDark ? Colors.white70 : Colors.black87,
+                                    color: isDark
+                                        ? Colors.white70
+                                        : Colors.black87,
                                   ),
                                 ),
                                 const SizedBox(height: 24),
@@ -2862,7 +2917,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                                     style: TextStyle(
                                       fontSize: 24,
                                       fontWeight: FontWeight.bold,
-                                      color: isDark ? Colors.white : Colors.black87,
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black87,
                                     ),
                                   ),
                                   const SizedBox(height: 12),
@@ -2906,7 +2963,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                                   style: TextStyle(
                                     fontSize: 16,
                                     height: 1.6,
-                                    color: isDark ? Colors.white70 : Colors.black87,
+                                    color: isDark
+                                        ? Colors.white70
+                                        : Colors.black87,
                                   ),
                                 ),
                                 const SizedBox(height: 24),
@@ -3610,7 +3669,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.info_outline, size: 16, color: isDark ? Colors.white54 : Colors.black54),
+              Icon(Icons.info_outline,
+                  size: 16, color: isDark ? Colors.white54 : Colors.black54),
               const SizedBox(width: 6),
               Text(
                 '帖子处于限制展示状态，互动功能暂不可用',
@@ -5579,7 +5639,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     int? replyToUserId,
     int? replyToReplyId,
   }) {
-    if (_post?.status == 'moderated_hidden' || _post?.viewerPermissions?.canComment == false) {
+    if (_post?.status == 'moderated_hidden' ||
+        _post?.viewerPermissions?.canComment == false) {
       AppFeedback.showSnackBar(context, '该帖子已被限制展示，暂不可发表评论', isError: true);
       return;
     }

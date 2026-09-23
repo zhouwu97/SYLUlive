@@ -51,6 +51,13 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
   }
 
   Future<void> _loadDetail() async {
+    String? visitUserId;
+    int? visitAccountEpoch;
+    try {
+      final auth = context.read<AuthProvider>();
+      visitUserId = auth.user?.id.toString();
+      visitAccountEpoch = auth.accountSessionEpoch;
+    } catch (_) {}
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -62,19 +69,24 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
           _detail = detail;
           _isLoading = false;
         });
-        String? currentUserId;
+        var sameAccountSession = visitAccountEpoch == null;
         try {
-          currentUserId = context.read<AuthProvider>().user?.id.toString();
+          final auth = context.read<AuthProvider>();
+          sameAccountSession = auth.user?.id.toString() == visitUserId &&
+              auth.accountSessionEpoch == visitAccountEpoch;
         } catch (_) {}
-        BrowsingHistoryRepository().recordVisit(
-          userId: currentUserId,
-          targetId: widget.summary.id.toString(),
-          type: BrowsingHistoryType.campusNews,
-          title: detail.title.isNotEmpty ? detail.title : widget.summary.title,
-          author: detail.authorDepartment.isNotEmpty
-              ? detail.authorDepartment
-              : widget.summary.authorDepartment,
-        );
+        if (sameAccountSession) {
+          BrowsingHistoryRepository().recordVisit(
+            userId: visitUserId,
+            targetId: widget.summary.id.toString(),
+            type: BrowsingHistoryType.campusNews,
+            title:
+                detail.title.isNotEmpty ? detail.title : widget.summary.title,
+            author: detail.authorDepartment.isNotEmpty
+                ? detail.authorDepartment
+                : widget.summary.authorDepartment,
+          );
+        }
       }
     } on CampusArticleServiceException catch (e) {
       if (mounted) {

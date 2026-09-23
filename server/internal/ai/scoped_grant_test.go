@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -66,7 +67,7 @@ func TestScopedGrantIsRejectedAfterPermissionVersionChanges(t *testing.T) {
 }
 
 func TestScopedGrantDatabaseStoreIsSharedAcrossInstances(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:scoped-grant-shared?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.AIScopedGrant{}))
 	managerA := NewScopedGrantManager(time.Now, WithScopedGrantDB(db))

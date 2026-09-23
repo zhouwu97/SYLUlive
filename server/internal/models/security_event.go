@@ -51,6 +51,7 @@ const (
 // SecurityBlock 是管理员创建的临时来源阻断。ScopeValue 只允许保存 HMAC 摘要。
 type SecurityBlock struct {
 	ID          uint       `gorm:"primaryKey" json:"id"`
+	GroupID     string     `gorm:"size:36;index" json:"group_id"`
 	ScopeType   string     `gorm:"size:24;not null;index" json:"scope_type"`
 	ScopeValue  string     `gorm:"size:64;not null;index" json:"scope_value"`
 	RoutePrefix string     `gorm:"size:160;not null;default:''" json:"route_prefix"`

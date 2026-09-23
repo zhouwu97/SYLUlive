@@ -13,6 +13,8 @@ class PollListState {
   String? error;
   int page = 0;
   bool hasMore = true;
+  /// 续页位置；服务端不返回游标（旧服务端）时为 null，退回按 page 翻。
+  String? nextCursor;
   DateTime? lastRefreshAt;
   bool hasLoaded = false;
 }
@@ -82,10 +84,11 @@ class PollProvider extends ChangeNotifier {
     await _loadState(
       state,
       refresh: refresh,
-      request: (page) => service.listPolls(
+      request: (page, cursor) => service.listPolls(
         sort: sort,
         category: category,
         page: page,
+        cursor: cursor,
       ),
     );
   }
@@ -95,20 +98,25 @@ class PollProvider extends ChangeNotifier {
     await _loadState(
       state,
       refresh: refresh,
-      request: (page) => service.listMyPolls(scope: scope, page: page),
+      request: (page, cursor) =>
+          service.listMyPolls(scope: scope, page: page, cursor: cursor),
     );
   }
 
   Future<void> _loadState(
     PollListState state, {
     required bool refresh,
-    required Future<PollListResponse> Function(int page) request,
+    required Future<PollListResponse> Function(int page, String? cursor) request,
   }) async {
     if (state.isLoading || state.isLoadingMore) return;
     if (!refresh && state.hasLoaded && !state.hasMore) return;
     final requestGeneration = _sessionGeneration;
     final requestUserId = _sessionUserId;
-    final nextPage = refresh || !state.hasLoaded ? 1 : state.page + 1;
+    final restart = refresh || !state.hasLoaded;
+    final nextPage = restart ? 1 : state.page + 1;
+    // 有游标就走 keyset 续页：位置跟着上一页末条走，与「已经翻过多少条」无关，
+    // 并发新增因此既不会挤掉下一页，也不会让同一条被翻到两次。
+    final cursor = restart ? null : state.nextCursor;
     if (nextPage == 1) {
       state.isLoading = true;
     } else {
@@ -117,20 +125,25 @@ class PollProvider extends ChangeNotifier {
     state.error = null;
     notifyListeners();
     try {
-      final response = await request(nextPage);
+      final response = await request(nextPage, cursor);
       if (!_isCurrentSession(requestGeneration, requestUserId)) return;
-      if (nextPage == 1) {
+      // 游标失效时服务端返回的其实是第一页：必须整体替换，不能接着往下拼。
+      final stale = response.cursorStale == true;
+      if (nextPage == 1 || stale) {
         state.items = response.items;
       } else {
         final known = state.items.map((item) => item.id).toSet();
         state.items.addAll(response.items.where((item) => known.add(item.id)));
       }
-      state.page = response.page;
+      state.page = stale ? 1 : response.page;
+      state.nextCursor = response.nextCursor;
       // 优先用服务端结论：total 只表示可翻页候选数，本页变短（并发写入、筛选）
       // 时按 total 反推会误判。旧服务端没有 has_more 才退回按长度猜。
+      // 优先用服务端结论；旧服务端既没有 has_more 也没有游标才退回按长度猜。
       state.hasMore = response.hasMore ??
-          (state.items.length < response.total &&
-              response.items.length >= response.limit);
+          (response.nextCursor != null ||
+              (state.items.length < response.total &&
+                  response.items.length >= response.limit));
       state.hasLoaded = true;
       state.lastRefreshAt = DateTime.now();
     } on PollApiException catch (error) {

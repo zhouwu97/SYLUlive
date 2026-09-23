@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -13,7 +14,7 @@ import (
 )
 
 func TestPermissionDecisionReusesOneGrantedRunPlan(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:run-permission-plan?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.AIRunConsent{}))
 	call := toolCallContext{RunID: "run-plan", CallID: "call-plan", UserID: 7, ToolName: "hy3_decision.analyze_academic"}

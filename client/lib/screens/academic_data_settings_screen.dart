@@ -212,7 +212,7 @@ class _AcademicDataSettingsScreenState
         const <AcademicIdentityBinding>[];
     return mergeAcademicIdentityStanding(
       localAccounts: local,
-      trustedBindings: _identities,
+      serverBindings: _identities,
     );
   }
 

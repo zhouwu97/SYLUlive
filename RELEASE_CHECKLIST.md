@@ -10,6 +10,10 @@
 - 确认服务端最新 commit 正确
 - 确认已重新编译并重启服务
 
+- 确认 `SECURITY_ALERT_EMAILS` 已配置（逗号分隔的管理员邮箱）。
+  没有它，高危事件只入库、不会有人被叫醒，安全中心也会如实显示「未配置」。
+- 确认 SMTP 可用：告警邮件走同一套 `SMTP_*` 配置。
+
 ```bash
 cd /opt/shenliyuan
 git log -1 --oneline
@@ -25,6 +29,17 @@ systemctl status shenliyuan --no-pager
 - 至少安装一遍最新 debug/release 包
 - CI 已通过 Flutter analyze、全量测试与 release APK smoke build
 - release APK/AAB 在目标 Android 设备上可安装并启动
+- 构建前 `server/` 工作区必须干净；确需带着未提交服务端改动出包时才用 `-AllowDirtyServer`，
+  并接受清单里 `server_contract_verified=false` —— 这时 `source_commit` 不能代表真实后端。
+- 构建时设置 `RELEASE_CI_STATUS=passed`；否则清单里 `ci_status=unverified`，不得当作已通过 CI。
+- 核对 `release-manifest.json`：`sha256`、`signing_certificate_sha256`、`source_commit`、
+  `server_expected_commit`、`server_contract_verified`、`source_tree`、`ci_status` 七项齐全且自洽。
+
+### 发布口径
+
+签名校验通过不等于可以写「已通过完整测试」。补证据之前能用的说法见
+[docs/plans/2026-09-22-release-readiness-round2.md](docs/plans/2026-09-22-release-readiness-round2.md)
+的「口径：现在可以怎么说」。
 
 ## 1. 登录与身份
 

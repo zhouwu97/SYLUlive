@@ -372,35 +372,59 @@ func scorePreference(
 	return minInt(points, maxPreferenceScore), direction, skill, role
 }
 
-// scoreGoal 计算目标分量。分支沿用 legacy 实现已验证的语义。
+// scoreGoal 只在赛事目录提供可核验依据时匹配目标；无数据的目标保持未知。
 func scoreGoal(candidate Candidate, preference Preference, reasons *[]string) (int, string) {
 	if !preference.Configured || len(preference.Goals) == 0 {
 		return 0, DimUnknown
 	}
 	points := 0
+	evaluated := false
+	matched := false
 	for _, goal := range preference.Goals {
 		switch strings.TrimSpace(goal) {
 		case "resume":
+			if strings.TrimSpace(candidate.Rating) == "" && candidate.ImportanceScore <= 0 {
+				continue
+			}
+			evaluated = true
 			if ratingRank(candidate.Rating) >= ratingRank("B+") || candidate.ImportanceScore >= 70 {
 				points += 8
+				matched = true
 				*reasons = appendUnique(*reasons, "赛事价值符合简历提升目标")
 			}
 		case "ability":
-			points += 8
-			*reasons = appendUnique(*reasons, "与你的能力成长目标一致")
+			// 目前赛事目录没有技能培养目标字段，不能把用户的愿望当成赛事证据。
 		case "exploration":
-			points += 5
-			*reasons = appendUnique(*reasons, "适合探索新的竞赛方向")
+			// 探索只放宽用户可接受的方向，不证明某条赛事更适合该用户。
 		case "postgraduate":
-			if candidate.SchoolRecognitionStatus == "recognized" || ratingRank(candidate.Rating) >= ratingRank("A") {
+			recognitionStatus := strings.ToLower(strings.TrimSpace(candidate.SchoolRecognitionStatus))
+			recognitionKnown := false
+			recognized := false
+			switch recognitionStatus {
+			case "recognized", "approved", "已认定", "认定", "已通过认定", "通过认定":
+				recognitionKnown = true
+				recognized = true
+			case "not_recognized", "unrecognized", "rejected", "未认定", "不认定", "未通过认定":
+				recognitionKnown = true
+			}
+			ratingKnown := strings.TrimSpace(candidate.Rating) != ""
+			if !recognitionKnown && !ratingKnown {
+				continue
+			}
+			evaluated = true
+			if recognized || ratingRank(candidate.Rating) >= ratingRank("A") {
 				points += 10
+				matched = true
 				*reasons = appendUnique(*reasons, "学校认定或赛事价值符合保研准备目标")
 			}
 		case "graduation_gap":
 			// 毕业预警数据源尚未接入，该目标只保存，不参与加分（既有约定）。
 		}
 	}
-	if points == 0 {
+	if !evaluated {
+		return 0, DimUnknown
+	}
+	if !matched {
 		return 0, DimUnmatched
 	}
 	return minInt(points, maxGoalScore), DimMatched
@@ -520,23 +544,14 @@ func EstimatedWeeklyHours(candidate Candidate) int {
 	return 7
 }
 
-// IsLongTerm 判断赛事是否为长期训练型。known=false 表示时间信息不足以判定。
+// IsLongTerm 只接受目录里的明确标签；报名截止早于比赛开始，不能代表训练周期。
 func IsLongTerm(candidate Candidate) (bool, bool) {
-	var start, end *time.Time
-	if candidate.RegistrationEnd != nil {
-		end = candidate.RegistrationEnd
-	} else if candidate.EventStart != nil {
-		end = candidate.EventStart
+	for _, tag := range candidate.RiskTags {
+		if strings.EqualFold(strings.TrimSpace(tag), "long_term_training") {
+			return true, true
+		}
 	}
-	if candidate.EventStart != nil {
-		start = candidate.EventStart
-	} else if candidate.RegistrationEnd != nil {
-		start = candidate.RegistrationEnd
-	}
-	if start == nil || end == nil || !end.After(*start) {
-		return false, false
-	}
-	return end.Sub(*start) >= 60*24*time.Hour, true
+	return false, false
 }
 
 func searchableText(candidate Candidate) string {

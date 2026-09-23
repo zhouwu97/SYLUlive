@@ -384,6 +384,7 @@ func main() {
 		&models.CalendarShareSnapshotItem{},
 		&models.CompetitionImportBatch{},
 		&models.UserCompetitionPreference{},
+		&models.UserCompetitionProfile{},
 		&models.CompetitionRecommendationSnapshot{},
 		&models.CompetitionCandidateSignals{},
 		&models.CompetitionRankTrace{},
@@ -607,6 +608,22 @@ func main() {
 	if err := securityEvents.SetSourceAttributionValidFrom(cfg.SecurityAttributionValidFrom); err != nil {
 		log.Printf("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM 无效，将不标记历史归因起点: %v", err)
 	}
+	// 高危安全事件的外部主动告警：没有它，管理员不打开安全中心就不会知道出了事。
+	// 只做「高危/严重 -> 去重冷却 -> 一封邮件」，规模不需要 SIEM，但必须真的会把人叫醒。
+	if emails := cfg.SecurityAlertEmails; len(emails) > 0 {
+		alerts := services.NewSecurityAlertService(
+			services.NewSMTPSecurityAlertMailer(services.SMTPConfig{
+				Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass, From: cfg.SMTPFrom,
+			}), emails, time.Now)
+		securityEvents.SetAlertService(alerts)
+		if alerts.Configured() {
+			log.Printf("SECURITY_ALERTS_ENABLED recipients=%d", len(emails))
+		} else {
+			log.Println("SECURITY_ALERTS_NOT_CONFIGURED 请同时配置有效收件人和 SMTP 发件参数")
+		}
+	} else {
+		log.Println("SECURITY_ALERTS_DISABLED 未配置 SECURITY_ALERT_EMAILS，高危事件只入库、不会主动通知")
+	}
 	if err := services.PurgeSecurityData(db, time.Now()); err != nil {
 		log.Printf("清理安全账本失败: %v", err)
 	}
@@ -828,14 +845,15 @@ func main() {
 
 	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
 	uploadProtectionConfig := services.UploadProtectionConfig{
-		PerMinuteCountLimit:  cfg.UploadPerMinuteCountLimit,
-		HourlyBytesLimit:     cfg.UploadHourlyBytesLimit,
-		TemporaryUserCount:   cfg.UploadTemporaryUserCount,
-		TemporaryUserBytes:   cfg.UploadTemporaryUserBytes,
-		TemporaryGlobalBytes: cfg.UploadTemporaryGlobalBytes,
-		DiskWarnPercent:      cfg.UploadDiskWarnPercent,
-		DiskSeverePercent:    cfg.UploadDiskSeverePercent,
-		DiskCriticalPercent:  cfg.UploadDiskCriticalPercent,
+		PerMinuteCountLimit:   cfg.UploadPerMinuteCountLimit,
+		HourlyBytesLimit:      cfg.UploadHourlyBytesLimit,
+		TemporaryUserCount:    cfg.UploadTemporaryUserCount,
+		TemporaryUserBytes:    cfg.UploadTemporaryUserBytes,
+		TemporaryGlobalBytes:  cfg.UploadTemporaryGlobalBytes,
+		DiskWarnPercent:       cfg.UploadDiskWarnPercent,
+		DiskSeverePercent:     cfg.UploadDiskSeverePercent,
+		DiskCriticalPercent:   cfg.UploadDiskCriticalPercent,
+		FailClosedOnDiskCheck: cfg.ReleaseMode,
 	}
 	if err := uploadProtectionConfig.Validate(); err != nil {
 		log.Fatalf("上传保护配置无效: %v", err)
@@ -2233,6 +2251,8 @@ func main() {
 
 	{
 
+		// 学生身份依据盘点：只读，用来把 legacy_migration 的真实规模搞清楚再决定要不要收紧。
+		superAdmin.GET("/academic-identity/verification-inventory", academicIdentityHandler.VerificationInventory)
 		superAdmin.GET("/security/blocks", securityAdminHandler.ListBlocks)
 		superAdmin.POST("/security/blocks", securityAdminHandler.CreateBlock)
 		superAdmin.DELETE("/security/blocks/:id", securityAdminHandler.RevokeBlock)

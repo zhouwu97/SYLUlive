@@ -24,20 +24,14 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
 
   bool _isLoading = true;
   List<BrowsingHistoryItem> _allItems = [];
+  int _observedAccountEpoch = -1;
+  int _historyLoadSerial = 0;
 
   final List<({String label, BrowsingHistoryType? type})> _tabs = [
     (label: '全部', type: null),
     (label: '校园资讯', type: BrowsingHistoryType.campusNews),
     (label: '帖子', type: BrowsingHistoryType.post),
   ];
-
-  String? get _currentUserId {
-    try {
-      return context.read<AuthProvider>().user?.id.toString();
-    } catch (_) {
-      return null;
-    }
-  }
 
   @override
   void initState() {
@@ -46,8 +40,21 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) setState(() {});
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.watch<AuthProvider>();
+    if (_observedAccountEpoch == auth.accountSessionEpoch) return;
+    _observedAccountEpoch = auth.accountSessionEpoch;
+    _allItems = [];
+    _isLoading = true;
+    final serial = ++_historyLoadSerial;
+    final userId = auth.user?.id.toString();
+    final epoch = auth.accountSessionEpoch;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadHistory();
+      _loadHistory(userId: userId, expectedEpoch: epoch, serial: serial);
     });
   }
 
@@ -57,15 +64,29 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
     super.dispose();
   }
 
-  Future<void> _loadHistory() async {
+  Future<void> _loadHistory({
+    String? userId,
+    int? expectedEpoch,
+    int? serial,
+  }) async {
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    final capturedUserId = userId ?? auth.user?.id.toString();
+    final capturedEpoch = expectedEpoch ?? auth.accountSessionEpoch;
+    final requestSerial = serial ?? ++_historyLoadSerial;
+    if (requestSerial != _historyLoadSerial) return;
     setState(() => _isLoading = true);
-    final items = await _repository.getHistory(userId: _currentUserId);
-    if (mounted) {
-      setState(() {
-        _allItems = items;
-        _isLoading = false;
-      });
+    final items = await _repository.getHistory(userId: capturedUserId);
+    if (!mounted || requestSerial != _historyLoadSerial) return;
+    final currentAuth = context.read<AuthProvider>();
+    if (currentAuth.accountSessionEpoch != capturedEpoch ||
+        currentAuth.user?.id.toString() != capturedUserId) {
+      return;
     }
+    setState(() {
+      _allItems = items;
+      _isLoading = false;
+    });
   }
 
   List<BrowsingHistoryItem> get _filteredItems {
@@ -75,11 +96,23 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
   }
 
   Future<void> _deleteItem(BrowsingHistoryItem item) async {
-    await _repository.removeItem(item.id, userId: _currentUserId);
-    await _loadHistory();
+    final auth = context.read<AuthProvider>();
+    final userId = auth.user?.id.toString();
+    final epoch = auth.accountSessionEpoch;
+    await _repository.removeItem(item.id, userId: userId);
+    if (!mounted) return;
+    final currentAuth = context.read<AuthProvider>();
+    if (currentAuth.accountSessionEpoch != epoch ||
+        currentAuth.user?.id.toString() != userId) {
+      return;
+    }
+    await _loadHistory(userId: userId, expectedEpoch: epoch);
   }
 
   Future<void> _confirmClearAll() async {
+    final auth = context.read<AuthProvider>();
+    final userId = auth.user?.id.toString();
+    final epoch = auth.accountSessionEpoch;
     final tokens = AppThemeTokens.of(context);
     final confirm = await showDialog<bool>(
       context: context,
@@ -104,9 +137,14 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
       ),
     );
 
-    if (confirm == true) {
-      await _repository.clearAll(userId: _currentUserId);
-      await _loadHistory();
+    if (confirm == true && mounted) {
+      final currentAuth = context.read<AuthProvider>();
+      if (currentAuth.accountSessionEpoch != epoch ||
+          currentAuth.user?.id.toString() != userId) {
+        return;
+      }
+      await _repository.clearAll(userId: userId);
+      await _loadHistory(userId: userId, expectedEpoch: epoch);
     }
   }
 
@@ -168,7 +206,8 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
         actions: [
           if (_allItems.isNotEmpty)
             IconButton(
-              icon: Icon(Icons.delete_sweep_outlined, color: tokens.textSecondary),
+              icon: Icon(Icons.delete_sweep_outlined,
+                  color: tokens.textSecondary),
               tooltip: '清空记录',
               onPressed: _confirmClearAll,
             ),
@@ -188,7 +227,8 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
               indicatorColor: tokens.primary,
               labelColor: tokens.primary,
               unselectedLabelColor: tokens.textSecondary,
-              labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              labelStyle:
+                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
               unselectedLabelStyle: const TextStyle(fontSize: 14),
               tabs: _tabs.map((t) => Tab(text: t.label)).toList(),
             ),
@@ -275,7 +315,8 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: tokens.divider, width: 0.5)),
+            border:
+                Border(bottom: BorderSide(color: tokens.divider, width: 0.5)),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -354,7 +395,8 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
                 ),
               ),
               IconButton(
-                icon: Icon(Icons.close_rounded, size: 18, color: tokens.textDisabled),
+                icon: Icon(Icons.close_rounded,
+                    size: 18, color: tokens.textDisabled),
                 tooltip: '删除此条记录',
                 onPressed: () => _deleteItem(item),
               ),

@@ -393,7 +393,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
             SettingsTile(
               icon: Icons.blur_on_rounded,
               title: '毛玻璃卡片',
-              subtitle: '为部分卡片和弹层启用背景模糊；不影响壁纸模糊和液态玻璃底栏',
+              subtitle: '控制卡片和弹层的毛玻璃材质；壁纸模糊和液态玻璃底栏单独设置',
               trailing: SettingsSwitch(
                 value: themeProvider.frostedGlass,
                 onChanged: themeProvider.setFrostedGlass,

@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
@@ -143,6 +145,15 @@ func (h *SecurityAdminHandler) verificationLimitState(ctx context.Context) gin.H
 
 // securityBlockState 报告来源封禁查询的运行态，判定同样住在服务层，
 // 与 /health 共用一份结论。
+// securityAlertState 报告高危事件主动告警的配置态与运行态。
+//
+// 这一层过去完全不存在，于是「安全中心一切正常」和「其实没人会被通知」同时成立。
+// 现在必须把「没配收件人」如实报成 not_configured，而不是继续报绿。
+func (h *SecurityAdminHandler) securityAlertState() gin.H {
+	configured, runtime, reason, detail := h.security.AlertDeliveryState()
+	return protectionLayerState(configured, runtime, reason, detail)
+}
+
 func (h *SecurityAdminHandler) securityBlockState() gin.H {
 	state := h.security.BlockLookupState(h.securityBlockEnabled, h.db.Migrator().HasTable(&models.SecurityBlock{}))
 	return protectionLayerState(state.Configured, state.Runtime, state.Reason, state.Detail)
@@ -234,6 +245,7 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 	eventCollection := h.securityEventCollectionState()
 	blockState := h.securityBlockState()
 	verificationLimit := h.verificationLimitState(c.Request.Context())
+	alertState := h.securityAlertState()
 	c.JSON(http.StatusOK, gin.H{
 		"range": rangeName, "active_high_count": activeHigh, "total_events": total,
 		// 客户端首页口径：高危待处理 = 待处置 + 未处理 + 高危/严重。
@@ -258,7 +270,11 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 			// 带超时的只读探测，不再由 handler 凭空写死 "enabled"。
 			"verification_daily_limit":       verificationLimit["runtime"],
 			"verification_daily_limit_state": verificationLimit,
-			"source_attribution_valid_from":  h.attributionValidFrom,
+			// 主动告警外发：配置态是「有没有配收件人」，运行态是「最近的投递是否成功」。
+			// 采集再完整，没人被叫醒也不算具备预警能力。
+			"security_alerts":               alertState["runtime"],
+			"security_alerts_state":         alertState,
+			"source_attribution_valid_from": h.attributionValidFrom,
 			// 封禁范围的实际覆盖面：由中间件同一张路由登记表推导，界面不再自己抄清单。
 			"security_block_scopes": securityBlockScopeCatalog(),
 		},
@@ -390,6 +406,7 @@ var (
 	errSecurityBlockScopeInvalid    = errors.New("不支持的封禁作用域")
 	errSecurityBlockScopeNotRouted  = errors.New("该路由不在来源封禁覆盖范围内")
 	errSecurityBlockGlobalUnconfirm = errors.New("全站封禁需要显式二次确认")
+	errSecurityBlockAlreadyActive   = errors.New("该来源和作用域已有生效封禁")
 )
 
 // resolveBlockScopes 把作用域解析成一组路由前缀，每个前缀写一条 SecurityBlock。
@@ -465,31 +482,47 @@ func securityBlockScopeCatalog() gin.H {
 	}
 	excluded, _ := middleware.SecurityRoutePrefixes([]middleware.SecurityRouteGroupID{middleware.SecurityGroupContentWrite})
 	return gin.H{
-		// 封禁匹配只看完整路由段前缀，不区分方法：同一前缀上的 GET/POST 一并受限。
+		// 匹配由完整路由段前缀 + 分组登记的方法共同决定：账号四组不限方法，
+		// 内容组只认写方法。方法策略必须由服务端下发，界面不能自己猜。
 		"match_by": "route_prefix_segment",
-		"methods":  "any",
+		"method_policy": gin.H{
+			"account_groups": "any",
+			"content_write":  middleware.SecurityGroupWriteMethods,
+			// 说清楚「封了什么」的另一半是说清楚「没封什么」，否则管理员会把
+			// 读取也当成已被来源封禁拦住。
+			"note": "内容写入组只对 POST/PUT/PATCH/DELETE 生效；普通 GET 读取与检索不进入来源封禁，读滥用需要独立频率限制。",
+		},
 		"scopes": gin.H{
 			securityBlockScopeRoute:   gin.H{"description": "仅当前这一条路由前缀", "prefixes": []string{"/api/<所选路由>"}},
-			securityBlockScopeAccount: gin.H{"description": "登录注册、验证码、改密与邮箱换绑、会话刷新四组", "groups": groupViews, "prefixes": accountPrefixes},
-			securityBlockScopeAll:     gin.H{"description": "登记表里的全部敏感路由，需要显式确认且仅超级管理员可执行", "prefixes": []string{"*"}},
+			securityBlockScopeAccount: gin.H{"description": "登录注册、验证码、改密与邮箱换绑、会话刷新四组（不限方法）", "groups": groupViews, "prefixes": accountPrefixes},
+			securityBlockScopeAll:     gin.H{"description": "登记表里的全部敏感路由（内容组仅写方法），需要显式确认且仅超级管理员可执行", "prefixes": []string{"*"}},
 		},
 		"account_excludes": excluded,
 	}
 }
 
 func (h *SecurityAdminHandler) ListBlocks(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	if page > 10000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "页码无效"})
+		return
+	}
 	var blocks []models.SecurityBlock
-	if err := h.db.Where("revoked_at IS NULL AND expires_at > ?", time.Now()).Order("expires_at ASC").Limit(200).Find(&blocks).Error; err != nil {
+	if err := h.db.WithContext(c.Request.Context()).Where("revoked_at IS NULL AND expires_at > ?", time.Now()).Order("expires_at ASC, id ASC").Offset((page - 1) * 200).Limit(200).Find(&blocks).Error; err != nil {
 		h.securityDatabaseError(c)
 		return
 	}
 	items := make([]gin.H, 0, len(blocks))
 	for _, block := range blocks {
 		items = append(items, gin.H{
-			"id": block.ID, "scope_type": block.ScopeType,
+			"id": block.ID, "group_id": block.GroupID, "scope_type": block.ScopeType,
 			"source_fingerprint": services.MaskSecurityFingerprint(block.ScopeValue),
 			"source_key":         block.ScopeValue, "route_prefix": block.RoutePrefix,
 			"reason": block.Reason, "expires_at": block.ExpiresAt, "created_at": block.CreatedAt,
+			"created_by": block.CreatedBy,
 		})
 	}
 	c.JSON(http.StatusOK, items)
@@ -538,13 +571,28 @@ func (h *SecurityAdminHandler) CreateBlock(c *gin.Context) {
 	now := time.Now()
 	expiresAt := now.Add(time.Duration(input.DurationMin) * time.Minute)
 	reason := truncateSecurityNote(input.Reason)
+	groupID := uuid.NewString()
 	blocks := make([]models.SecurityBlock, 0, len(scopes))
 	// 一个作用域可能对应多条前缀（例如账号安全 = 登录 + 密码链路），
 	// 要么全部写入，要么整体不生效，避免留下半个封禁让管理员误判覆盖范围。
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		// 锁定归因事件，使同一来源的并发创建串行检查已有封禁。
+		var lockedEvent models.SecurityEvent
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedEvent, sourceEvent.ID).Error; err != nil {
+			return err
+		}
+		var existing int64
+		if err := tx.Model(&models.SecurityBlock{}).
+			Where("scope_type = ? AND scope_value = ? AND route_prefix IN ? AND revoked_at IS NULL AND expires_at > ?", "ip_hash", key, scopes, now).
+			Count(&existing).Error; err != nil {
+			return err
+		}
+		if existing > 0 {
+			return errSecurityBlockAlreadyActive
+		}
 		for _, prefix := range scopes {
 			block := models.SecurityBlock{
-				ScopeType: "ip_hash", ScopeValue: key, RoutePrefix: prefix,
+				GroupID: groupID, ScopeType: "ip_hash", ScopeValue: key, RoutePrefix: prefix,
 				Reason: reason, ExpiresAt: expiresAt, CreatedBy: c.GetUint("user_id"), CreatedAt: now,
 			}
 			if err := tx.Create(&block).Error; err != nil {
@@ -554,6 +602,10 @@ func (h *SecurityAdminHandler) CreateBlock(c *gin.Context) {
 		}
 		return nil
 	}); err != nil {
+		if errors.Is(err, errSecurityBlockAlreadyActive) {
+			c.JSON(http.StatusConflict, gin.H{"code": "security_block_already_active", "error": "该来源和作用域已有生效封禁，请先查看当前封禁"})
+			return
+		}
 		h.securityDatabaseError(c)
 		return
 	}
@@ -565,7 +617,7 @@ func (h *SecurityAdminHandler) CreateBlock(c *gin.Context) {
 	}
 	h.writeSecurityAdminLog(c, "security_block_created", services.MaskSecurityFingerprint(key), reason)
 	c.JSON(http.StatusCreated, gin.H{
-		"id": blocks[0].ID, "ids": ids, "route_prefixes": prefixes,
+		"id": blocks[0].ID, "group_id": groupID, "ids": ids, "route_prefixes": prefixes,
 		"expires_at": expiresAt,
 	})
 }
@@ -578,7 +630,23 @@ func (h *SecurityAdminHandler) RevokeBlock(c *gin.Context) {
 	}
 	now := time.Now()
 	operatorID := c.GetUint("user_id")
-	result := h.db.Model(&models.SecurityBlock{}).Where("id = ? AND revoked_at IS NULL", id).Updates(map[string]interface{}{"revoked_at": now, "revoked_by": operatorID})
+	var block models.SecurityBlock
+	if err := h.db.First(&block, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "封禁不存在或已解除"})
+			return
+		}
+		h.securityDatabaseError(c)
+		return
+	}
+	query := h.db.Model(&models.SecurityBlock{}).Where("revoked_at IS NULL")
+	if block.GroupID != "" {
+		query = query.Where("group_id = ?", block.GroupID)
+	} else {
+		// 迁移前的一次操作也使用相同创建时间、过期时间和原因。
+		query = query.Where("group_id = '' AND scope_type = ? AND scope_value = ? AND created_at = ? AND expires_at = ? AND reason = ? AND created_by = ?", block.ScopeType, block.ScopeValue, block.CreatedAt, block.ExpiresAt, block.Reason, block.CreatedBy)
+	}
+	result := query.Updates(map[string]interface{}{"revoked_at": now, "revoked_by": operatorID})
 	if result.Error != nil {
 		h.securityDatabaseError(c)
 		return

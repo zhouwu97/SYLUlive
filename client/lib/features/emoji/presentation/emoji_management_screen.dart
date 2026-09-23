@@ -2,6 +2,7 @@ import 'package:crypto/crypto.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../widgets/settings/settings_page_scaffold.dart';
+import '../../../widgets/emoji/sticker_catalog.dart';
 import '../application/emoji_recent_manager.dart';
 import '../application/emoji_pack_installer.dart';
 import '../data/emoji_pack_local_store.dart';
@@ -134,7 +135,17 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
     final packs = _packs;
     return SettingsPageScaffold(title: '表情管理', onRefresh: _load, children: [
       ListTile(
-          title: const Text('官方表情包'),
+          title: const Text('系统内置表情包'),
+          subtitle: Text(
+              '${appStickerGroups.first.name} · ${appStickerGroups.first.items.length} 个表情 · 无需下载'),
+          leading: const Icon(Icons.phone_android_outlined),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => EmojiBuiltinPackPreviewScreen(
+                  group: appStickerGroups.first)))),
+      ListTile(
+          title: const Text('服务器表情包'),
+          subtitle: const Text('预览后下载，安装后在输入面板使用'),
           leading: const Icon(Icons.download_outlined),
           trailing: const Icon(Icons.chevron_right),
           onTap: _store == null
@@ -235,4 +246,48 @@ class EmojiPackDetailScreen extends StatelessWidget {
                         errorBuilder: (_, __, ___) =>
                             const Icon(Icons.broken_image_outlined))),
             ]));
+}
+
+class EmojiBuiltinPackPreviewScreen extends StatelessWidget {
+  const EmojiBuiltinPackPreviewScreen({super.key, required this.group});
+
+  final AppStickerGroup group;
+
+  @override
+  Widget build(BuildContext context) => SettingsPageScaffold(
+        title: group.name,
+        children: [
+          ListTile(
+            title: const Text('系统内置'),
+            subtitle: Text('${group.items.length} 个表情 · 无需下载'),
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 12,
+            children: [
+              for (final sticker in group.items)
+                SizedBox(
+                  width: 88,
+                  height: 100,
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: Image.asset(
+                          sticker.thumbnailAsset,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        sticker.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ],
+      );
 }

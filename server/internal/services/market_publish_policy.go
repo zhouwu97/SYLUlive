@@ -7,7 +7,7 @@ import (
 
 // MarketPublishDenial 是集市发布被拒的稳定原因码。
 //
-// 「没有服务器可核验的学生身份」和「毕业」不是一回事，历史实现把两者混成
+// 「没有服务端准入身份」和「毕业」不是一回事，历史实现把两者混成
 // market_graduated，用户因此会拿着"毕业用户"的提示去反复重绑教务。
 // 这里只回答准入事实，不替产品猜测用户学历。
 type MarketPublishDenial string
@@ -17,8 +17,8 @@ const (
 	MarketPublishAllowed MarketPublishDenial = ""
 	// MarketPublishAccountRestricted 账号本身受限（封禁、注销等）。
 	MarketPublishAccountRestricted MarketPublishDenial = "account_restricted"
-	// MarketPublishStudentUnverified 缺少服务器可独立核验的学生身份。
-	// 本机声明、教务账号配置都不构成这个身份，见 models.IsTrustedAcademicVerificationMethod。
+	// MarketPublishStudentUnverified 缺少当前服务端准入白名单中的学生身份。
+	// 历史回填身份仍按兼容策略准入，但 API 会标明其继承状态。
 	MarketPublishStudentUnverified MarketPublishDenial = "student_unverified"
 )
 

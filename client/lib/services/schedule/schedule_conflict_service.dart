@@ -54,38 +54,29 @@ class ScheduleConflictService {
     final conflicts = <ScheduleConflictInfo>[];
 
     for (final resolved in currentResolved) {
-      // 排除当前正在调整的源时间块本身在旧时间上的出现（或者自身就是正在编辑的 override）
-      if (editingOverrideId != null && resolved.overrideId == editingOverrideId) {
+      // 当前调整的同一 meeting 即使仍显示原时间，也不能把自己当作冲突。
+      if (resolved.courseKey == targetCourseKey &&
+          resolved.meetingKey == targetMeetingKey) {
         continue;
       }
-      if (resolved.courseKey == targetCourseKey &&
-          resolved.meetingKey == targetMeetingKey &&
-          resolved.isOverridden) {
-        // 属于同一个 meeting 的已有本地调整
-        if (editingOverrideId != null && resolved.overrideId == editingOverrideId) {
-          continue;
-        }
+
+      // 排除当前正在调整的源时间块本身在旧时间上的出现（或者自身就是正在编辑的 override）
+      if (editingOverrideId != null &&
+          resolved.overrideId == editingOverrideId) {
+        continue;
       }
 
       // 检查星期
       if (resolved.weekday != targetWeekday) continue;
 
       // 检查节次重叠
-      final sectionOverlap =
-          resolved.startSection <= targetEndSection &&
+      final sectionOverlap = resolved.startSection <= targetEndSection &&
           targetStartSection <= resolved.endSection;
       if (!sectionOverlap) continue;
 
       // 检查周次交集
       final weekOverlap = resolved.weeks.intersection(targetWeeks);
       if (weekOverlap.isEmpty) continue;
-
-      // 避免如果原课在原时间，但我们移到了同一时间其他节次自我冲突计入
-      if (resolved.courseKey == targetCourseKey &&
-          resolved.meetingKey == targetMeetingKey &&
-          !resolved.isOverridden) {
-        // 这是原课在原时间的剩余周次，如果目标时间恰好与原时间重叠但周次相同才会有交集
-      }
 
       conflicts.add(ScheduleConflictInfo(
         existingCourseName: resolved.courseName,

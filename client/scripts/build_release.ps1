@@ -2,12 +2,20 @@
 param(
     [string] $OutputDirectory,
     [string] $ApiUrl = $env:APP_API_URL,
-    [string] $JPushAppKey = $env:JPUSH_APP_KEY
+    [string] $JPushAppKey = $env:JPUSH_APP_KEY,
+    # 正式发布请同时设置 RELEASE_CI_STATUS=passed；否则清单里如实记成 unverified。
+    [string] $CiStatus = $env:RELEASE_CI_STATUS,
+    # App 只编译客户端源码，但运行时依赖同一份 Server API 契约。
+    # Server 侧有未提交改动时，manifest 里的 source_commit 就无法代表真实生产系统，
+    # 因此必须显式承认，不能像 Web 那样默默放行。
+    [switch] $AllowDirtyServer
 )
 
 $ErrorActionPreference = 'Stop'
 $clientRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $repoRoot = (Resolve-Path (Join-Path $clientRoot '..')).Path
+# 与既有正式发布证书一致；公钥指纹可入库，私钥仍只保存在签名环境。
+$expectedReleaseCertSha256 = 'A367486B8B5D5EEBF67D2849809CB9B09C5C3E4DC90D8015134AF416077EFB9E'
 
 function Get-CleanReleaseCommit {
     $commit = & git -C $repoRoot rev-parse --verify HEAD
@@ -19,12 +27,54 @@ function Get-CleanReleaseCommit {
     return $commit.Trim()
 }
 
+
+# 记录 App 之外各端的工作区状态。App 与 Server 共用一份 API 契约，
+# 因此 Server 不干净时 source_commit 就不足以证明「这个包对应哪一套后端」。
+function Get-RepositoryBoundaryState {
+    $areas = [ordered]@{}
+    foreach ($area in @('server', 'web', 'browser-extension')) {
+        $paths = & git -C $repoRoot status --porcelain=v1 --untracked-files=all -- $area
+        if ($LASTEXITCODE -ne 0) { throw "Cannot inspect $area working tree." }
+        # git 无变更时输出为空，@($null).Count 会得到 1，必须先按行过滤再计数。
+        $changed = @($paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        $areas[$area] = [ordered]@{
+            clean = ($changed.Count -eq 0)
+            changed_entries = $changed.Count
+        }
+    }
+    return $areas
+}
+
+function Assert-ServerContractPinned {
+    param([System.Collections.IDictionary] $Areas)
+    $server = $Areas['server']
+    if ($server.clean) { return }
+    if ($AllowDirtyServer) {
+        Write-Warning "Server working tree has $($server.changed_entries) uncommitted entries; manifest will record server_contract_verified=false."
+        return
+    }
+    throw "Server sources are dirty ($($server.changed_entries) entries). App depends on the Server API contract, so an uncommitted server change makes source_commit unable to identify the backend this APK was built against. Commit them, or pass -AllowDirtyServer to release anyway (manifest records server_contract_verified=false)."
+}
+
 # 源码提交先固定；产物元数据在全部校验通过后才写回工作区。
 $script:sourceCommit = Get-CleanReleaseCommit
+$script:sourceTree = Get-RepositoryBoundaryState
+Assert-ServerContractPinned -Areas $script:sourceTree
+$script:ciStatus = if ([string]::IsNullOrWhiteSpace($CiStatus)) { 'unverified' } else { $CiStatus.Trim().ToLowerInvariant() }
+if ($script:ciStatus -notin @('passed', 'failed', 'unverified')) {
+    throw "RELEASE_CI_STATUS must be passed, failed, or unverified; got '$script:ciStatus'."
+}
+if ($script:ciStatus -ne 'passed') {
+    Write-Warning "RELEASE_CI_STATUS=$script:ciStatus —— 清单会如实记录，正式发布前请补上全绿的 CI 结果。"
+}
 $androidRoot = Join-Path $clientRoot 'android'
 $androidAppRoot = Join-Path $androidRoot 'app'
 $propertiesPath = Join-Path $androidRoot 'key.properties'
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $clientRoot 'release-artifacts' }
+if (-not [System.IO.Path]::IsPathRooted($OutputDirectory)) {
+    $OutputDirectory = Join-Path (Get-Location).Path $OutputDirectory
+}
+$OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 if ([string]::IsNullOrWhiteSpace($ApiUrl)) { $ApiUrl = 'https://sylulive.online/api' }
 if ([string]::IsNullOrWhiteSpace($JPushAppKey)) { $JPushAppKey = 'fbbd87f741e919f39519afe6' }
 
@@ -106,22 +156,45 @@ try {
     $apksignerPath = if ($apksigner.PSObject.Properties['Source']) { $apksigner.Source } else { $apksigner.FullName }
     & $apksignerPath verify --verbose $apk
     if ($LASTEXITCODE -ne 0) { throw 'apksigner verification failed.' }
+    $certOutput = (& $apksignerPath verify --print-certs $apk 2>&1) -join "`n"
+    if ($LASTEXITCODE -ne 0) { throw 'apksigner certificate inspection failed.' }
+    $certDigests = @([regex]::Matches($certOutput, '(?im)(?:Signer #\d+|V\d+ Signer):? certificate SHA-256 digest:\s*([0-9a-f:]+)') |
+        ForEach-Object { $_.Groups[1].Value.Replace(':', '').ToUpperInvariant() } | Select-Object -Unique)
+    if ($certDigests.Count -ne 1) { throw 'Release APK must have exactly one signing certificate.' }
+    $actualCertSha256 = $certDigests[0]
+    if ($actualCertSha256 -ne $expectedReleaseCertSha256) {
+        throw "Release signing certificate mismatch: $actualCertSha256"
+    }
 
     $currentCommit = (Get-CleanReleaseCommit)
     if ("$currentCommit".Trim() -ne "$script:sourceCommit".Trim()) {
         throw "Source commit changed during build (expected '$script:sourceCommit', got '$currentCommit'); rebuild from the intended commit."
     }
+    $currentSourceTree = Get-RepositoryBoundaryState
+    if ($script:sourceTree['server'].clean -and -not $currentSourceTree['server'].clean) {
+        throw 'Server sources became dirty during the App build; rebuild after pinning the Server API contract.'
+    }
+    # 清单记录产物完成时实际观察到的仓库边界，避免构建期间的目录变化仍沿用旧快照。
+    $script:sourceTree = $currentSourceTree
 
     $target = Join-Path $OutputDirectory 'shenliyuan-release.apk'
     Copy-Item -LiteralPath $apk -Destination $target -Force
     $hash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
     Set-Content -LiteralPath "$target.sha256" -Value "$hash  shenliyuan-release.apk" -Encoding ascii
     [ordered]@{
-        artifact = (Resolve-Path $target).Path
+        artifact = 'shenliyuan-release.apk'
         sha256 = $hash
         version = $version
         signed = $true
+        signed_by_expected_release_certificate = $true
+        signing_certificate_sha256 = $actualCertSha256
         source_commit = $script:sourceCommit
+        # source_commit 只能代表「客户端源码」；App 运行时依赖同一仓库的 Server API 契约，
+        # 因此把服务端边界和 CI 结果一并写进清单，避免用一个 commit 号冒充整套系统状态。
+        server_expected_commit = if ($script:sourceTree['server'].clean) { $script:sourceCommit } else { $null }
+        server_contract_verified = $script:sourceTree['server'].clean
+        source_tree = $script:sourceTree
+        ci_status = $script:ciStatus
         built_at_utc = [DateTime]::UtcNow.ToString('o')
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'release-manifest.json') -Encoding utf8
     Write-Host "Signed release artifact: $target"

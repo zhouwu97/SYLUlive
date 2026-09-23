@@ -736,7 +736,16 @@ void main() {
       provider.syncSessionContext('2002', '2403130234');
       expect(await provider.loadCachedCoursesIfAvailable(), isTrue);
       releaseWrite.complete();
-      await expectLater(pending, throwsA(isA<StateError>()));
+      // 中止原因必须和「保存失败」区分开：这里的本地写入其实已经落进原账号，
+      // 旧文案一律说「请重新操作」会让用户重做一遍，切回去才发现多出一份重复记录。
+      await expectLater(
+        pending,
+        throwsA(isA<ScheduleMutationAborted>().having(
+          (error) => error.persistedLocally,
+          'persistedLocally',
+          isTrue,
+        )),
+      );
       expect(provider.courses.map((c) => c.name), ['新账号课程']);
       expect(provider.manualCourses, isEmpty);
       expect(provider.getCoursesAt(1, 1).single.name, '新账号课程');
@@ -809,7 +818,16 @@ void main() {
     provider.syncSessionContext('2002', '2403130234');
     expect(await provider.loadCachedCoursesIfAvailable(), isTrue);
     releaseWrite.complete();
-    await expectLater(pending, throwsA(isA<StateError>()));
+    // 中止原因必须和「保存失败」区分开：这里的本地写入其实已经落进原账号，
+    // 旧文案一律说「请重新操作」会让用户重做一遍，切回去才发现多出一份重复记录。
+    await expectLater(
+      pending,
+      throwsA(isA<ScheduleMutationAborted>().having(
+        (error) => error.persistedLocally,
+        'persistedLocally',
+        isTrue,
+      )),
+    );
     expect(provider.courses.map((c) => c.name), ['新账号课程']);
     expect(provider.overrides, isEmpty);
     expect(

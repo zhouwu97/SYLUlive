@@ -17,6 +17,9 @@ import (
 
 const maxProviderResponseBytes = 2 << 20
 
+// providerTimer 是「首进度看门狗」的句柄；*time.Timer 天然满足。
+type providerTimer interface{ Stop() bool }
+
 type OpenAICompatibleProvider struct {
 	endpoint             string
 	apiKey               string
@@ -25,6 +28,18 @@ type OpenAICompatibleProvider struct {
 	httpClient           *http.Client
 	firstProgressTimeout time.Duration
 	fallbackModel        string
+	// afterFunc 是首进度看门狗的构造入口。生产路径固定为 time.AfterFunc；测试注入
+	// 手动定时器，把「模型进度已经出现后看门狗仍然触发」变成可控场景，而不是让断言
+	// 去和真实调度赛跑——那正是这条用例在 CI 上时红时绿的成因。
+	afterFunc func(time.Duration, func()) providerTimer
+}
+
+// newProgressTimer 构造首进度看门狗。测试通过 afterFunc 接管触发时机与 Stop 时机。
+func (p *OpenAICompatibleProvider) newProgressTimer(onFire func()) providerTimer {
+	if p.afterFunc != nil {
+		return p.afterFunc(p.firstProgressTimeout, onFire)
+	}
+	return time.AfterFunc(p.firstProgressTimeout, onFire)
 }
 
 type OpenAICompatibleProviderOption func(*OpenAICompatibleProvider)
@@ -184,7 +199,7 @@ func (p *OpenAICompatibleProvider) Start(ctx context.Context, request ProviderRe
 func (p *OpenAICompatibleProvider) startWithRecovery(ctx context.Context, body []byte, model string) (ProviderStream, error) {
 	for attempt := 0; ; attempt++ {
 		attemptCtx, cancel := context.WithCancelCause(ctx)
-		timer := time.AfterFunc(p.firstProgressTimeout, func() { cancel(context.DeadlineExceeded) })
+		timer := p.newProgressTimer(func() { cancel(context.DeadlineExceeded) })
 		stream, err := p.startStream(attemptCtx, body, func() { timer.Stop() })
 		var first ProviderEvent
 		if err == nil {
@@ -246,7 +261,7 @@ func (p *OpenAICompatibleProvider) startStream(ctx context.Context, body []byte,
 		_ = response.Body.Close()
 		return nil, providerHTTPError(response.StatusCode, responseBody)
 	}
-	return &openAICompatibleStream{body: response.Body, scanner: newProviderScanner(response.Body), toolCalls: make(map[int]streamToolCall), onProgress: onProgress}, nil
+	return &openAICompatibleStream{body: response.Body, scanner: newProviderScanner(response.Body), toolCalls: make(map[int]streamToolCall), onProgress: onProgress, attemptCtx: ctx}, nil
 }
 
 type openAICompatibleStream struct {
@@ -260,6 +275,19 @@ type openAICompatibleStream struct {
 	onProgress   func()
 	cancel       context.CancelFunc
 	model        string
+	// attemptCtx 是这一轮尝试自己的 context。首进度看门狗用
+	// cancel(context.DeadlineExceeded) 结束它，而业务 ctx 往往还活着，
+	// 错误分类必须看得到这个原因，否则「确实超时了」会被误报成 provider_unavailable。
+	attemptCtx context.Context
+}
+
+// classifyTransportError 把读流失败映射成错误类别，优先识别本次尝试的截止原因。
+func (s *openAICompatibleStream) classifyTransportError(ctx context.Context, err error) error {
+	if s != nil && s.attemptCtx != nil &&
+		errors.Is(context.Cause(s.attemptCtx), context.DeadlineExceeded) {
+		return &ProviderError{Class: ProviderErrorTimeout, Err: err}
+	}
+	return classifyProviderTransportError(ctx, err)
 }
 
 func (s *openAICompatibleStream) markProgress() {
@@ -286,7 +314,7 @@ func newProviderScanner(reader io.Reader) *bufio.Scanner {
 func (s *openAICompatibleStream) Next(ctx context.Context) (event ProviderEvent, err error) {
 	defer func() { event.Model = s.model }()
 	if err := ctx.Err(); err != nil {
-		return ProviderEvent{}, classifyProviderTransportError(ctx, err)
+		return ProviderEvent{}, s.classifyTransportError(ctx, err)
 	}
 	if len(s.pending) > 0 {
 		event := s.pending[0]
@@ -385,7 +413,15 @@ func (s *openAICompatibleStream) Next(ctx context.Context) (event ProviderEvent,
 		}
 	}
 	if err := s.scanner.Err(); err != nil {
-		return ProviderEvent{}, classifyProviderTransportError(ctx, err)
+		return ProviderEvent{}, s.classifyTransportError(ctx, err)
+	}
+	// HTTP body 在 context 截止时可能以无 scanner 错误的 EOF 结束；
+	// 先检查请求时限，避免把真实超时误报成流格式错误。
+	if err := ctx.Err(); err != nil {
+		return ProviderEvent{}, s.classifyTransportError(ctx, err)
+	}
+	if s.attemptCtx != nil && s.attemptCtx.Err() != nil {
+		return ProviderEvent{}, s.classifyTransportError(ctx, s.attemptCtx.Err())
 	}
 	return ProviderEvent{}, &ProviderError{Class: ProviderErrorInvalid, Err: io.ErrUnexpectedEOF}
 }

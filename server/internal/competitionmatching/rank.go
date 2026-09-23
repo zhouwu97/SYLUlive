@@ -33,7 +33,8 @@ var DefaultExplorePositions = []int{7, 12, 18}
 //     保证既有测试所断言的「重要度与截止不得改变目录序」继续成立。
 //   - 未授权赛事即使出现在有授权的结果集中，也不参与打分排序，
 //     按其目录序位置排在已授权赛事之后。
-//   - 探索槽只从「非专业直接命中」的赛事中选取。原因：专业匹配强的用户
+//   - 探索槽只从已授权且「非专业直接命中」的赛事中选取。未授权条目保持目录序。
+//     原因：专业匹配强的用户
 //     其 major_match 池已足够大，跨专业的高价值赛事（如 eligible_majors
 //     为空的挑战杯）会被压到很后面，形成过滤气泡。
 func Rank(items []Ranked, options RankOptions) []Ranked {
@@ -127,8 +128,9 @@ func applyExploration(ordered []Ranked, pageSize int, positions []int) []Ranked 
 	pool := make([]Ranked, 0, len(rest))
 	for _, item := range rest {
 		// 只从 general_match 取探索源：这些是没有专业指向的通用池赛事，
-		// 也正是被专业匹配压下去的那批跨专业高价值赛事。
-		if item.Result.Basis != BasisGeneral {
+		// 也正是被专业匹配压下去的那批跨专业高价值赛事。治理要求未授权条目
+		// 的目录位置不受画像或探索策略影响。
+		if !item.Result.Rankable || item.Result.Basis != BasisGeneral {
 			continue
 		}
 		pool = append(pool, item)

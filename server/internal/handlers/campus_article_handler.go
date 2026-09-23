@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -29,12 +31,17 @@ var allowedCampusCategories = map[string]bool{
 type CampusArticleHandler struct {
 	db           *gorm.DB
 	syncServices []*services.CampusSyncService
+	searchMu     sync.Mutex
+	searchHits   map[string][]time.Time
+	searchSweep  time.Time
 }
+
+const maxAnonymousArticleSearchSources = 4096
 
 // NewCampusArticleHandler creates a new campus article handler.
 // Accepts variadic sync services for LastSyncAt aggregation.
 func NewCampusArticleHandler(db *gorm.DB, syncServices ...*services.CampusSyncService) *CampusArticleHandler {
-	return &CampusArticleHandler{db: db, syncServices: syncServices}
+	return &CampusArticleHandler{db: db, syncServices: syncServices, searchHits: make(map[string][]time.Time)}
 }
 
 // ── List ──────────────────────────────────────────────────────────
@@ -80,8 +87,17 @@ func (h *CampusArticleHandler) List(c *gin.Context) {
 	query := h.db.Model(&models.CampusArticle{}).
 		Where("source IN ?", allowedCampusSources)
 	if keyword := strings.TrimSpace(c.Query("q")); keyword != "" {
-		pattern := "%" + strings.ToLower(keyword) + "%"
-		query = query.Where("LOWER(title) LIKE ? OR LOWER(content_text) LIKE ?", pattern, pattern)
+		if size := utf8.RuneCountInString(keyword); size < 2 || size > 64 || onlySearchWildcards(keyword) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "搜索内容需为 2 至 64 个字符，不能只包含通配符"})
+			return
+		}
+		if !h.allowAnonymousArticleSearch(c.ClientIP(), time.Now()) {
+			c.Header("Retry-After", "60")
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "搜索过于频繁，请稍后再试", "code": "campus_article_search_rate_limited"})
+			return
+		}
+		pattern := "%" + escapeSearchLikePattern(strings.ToLower(keyword)) + "%"
+		query = query.Where("(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(content_text) LIKE ? ESCAPE '\\')", pattern, pattern)
 	}
 
 	if category != "" {
@@ -139,6 +155,47 @@ func (h *CampusArticleHandler) List(c *gin.Context) {
 		HasMore:    hasMore,
 		LastSyncAt: lastSyncAt,
 	})
+}
+
+func (h *CampusArticleHandler) allowAnonymousArticleSearch(source string, now time.Time) bool {
+	h.searchMu.Lock()
+	defer h.searchMu.Unlock()
+	if h.searchHits == nil {
+		h.searchHits = make(map[string][]time.Time)
+	}
+	cutoff := now.Add(-time.Minute)
+	if !now.Before(h.searchSweep) {
+		for key, hits := range h.searchHits {
+			recent := hits[:0]
+			for _, hit := range hits {
+				if hit.After(cutoff) {
+					recent = append(recent, hit)
+				}
+			}
+			if len(recent) == 0 {
+				delete(h.searchHits, key)
+			} else {
+				h.searchHits[key] = recent
+			}
+		}
+		h.searchSweep = now.Add(time.Minute)
+	}
+	recent := h.searchHits[source][:0]
+	for _, hit := range h.searchHits[source] {
+		if hit.After(cutoff) {
+			recent = append(recent, hit)
+		}
+	}
+	if len(recent) >= 30 {
+		h.searchHits[source] = recent
+		return false
+	}
+	_, sourceExists := h.searchHits[source]
+	if !sourceExists && len(h.searchHits) >= maxAnonymousArticleSearchSources {
+		return false
+	}
+	h.searchHits[source] = append(recent, now)
+	return true
 }
 
 // ── GetLatest ─────────────────────────────────────────────────────

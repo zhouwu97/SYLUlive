@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// VerifiedAcademicIdentities 是身份列表和本人资料共用的事实来源，不拼接旧授权字段。
+// VerifiedAcademicIdentities 返回服务端准入白名单中的身份记录；API 用依据强度区分历史回填。
 func VerifiedAcademicIdentities(db *gorm.DB, userID uint) ([]models.AcademicIdentityBinding, error) {
 	bindings := make([]models.AcademicIdentityBinding, 0)
 	err := models.TrustedAcademicBindingScope(db.Where("user_id = ? AND verified_at > ?", userID, time.Time{})).

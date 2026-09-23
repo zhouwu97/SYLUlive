@@ -159,6 +159,13 @@ String securityBlockScopeDescription(
   if (prefixes is List && prefixes.isNotEmpty) {
     parts.add('实际路径：${prefixes.map((e) => e.toString()).join(' · ')}');
   }
+  // 方法策略也由服务端下发：内容组只认写方法，界面不能自己猜「封了什么」。
+  final methodPolicy = catalog?['method_policy'];
+  final methodNote =
+      methodPolicy is Map ? methodPolicy['note']?.toString() ?? '' : '';
+  if (methodNote.isNotEmpty) {
+    parts.add(methodNote);
+  }
   if (scope == 'account' && catalog?['account_excludes'] is List) {
     final excluded =
         (catalog!['account_excludes'] as List).map((e) => e.toString()).join(' · ');

@@ -11,6 +11,7 @@ import '../../theme/app_radius.dart';
 import '../../utils/app_feedback.dart';
 import '../../services/idempotency_key.dart';
 import '../../services/request_id.dart';
+import '../../services/publish_session_scope.dart';
 import '../image_viewer_screen.dart';
 
 class FeedbackDetailScreen extends StatefulWidget {
@@ -43,7 +44,41 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   int _sendGeneration = 0;
   int _detailRequestGeneration = 0;
   AuthProvider? _authProvider;
-  int? _observedSessionGeneration;
+  int? _observedAccountId;
+  int _observedAccountEpoch = -1;
+
+  PublishSessionScope? _captureWriteScope(AuthProvider auth) {
+    final accountId = auth.user?.id;
+    if (accountId == null) return null;
+    return PublishSessionScope(
+      accountId: accountId,
+      accountSessionEpoch: auth.accountSessionEpoch,
+    );
+  }
+
+  bool _ownsWriteScope(AuthProvider auth, PublishSessionScope scope) =>
+      mounted &&
+      scope.owns(
+        userId: auth.user?.id,
+        sessionEpoch: auth.accountSessionEpoch,
+      );
+
+  Options _writeOptions(PublishSessionScope scope, {String? idempotencyKey}) =>
+      Options(
+        headers:
+            idempotencyKey == null ? null : {'Idempotency-Key': idempotencyKey},
+        extra: scope.requestExtra,
+      );
+
+  /// 账号身份只由「账号 ID + accountSessionEpoch」定义。
+  ///
+  /// `sessionGeneration` 在同账号的资料刷新、头像更新、consent 变化时也会计数，
+  /// 拿它判断「是不是同一个账号」会让一次资料刷新丢掉未确认送达的幂等键，
+  /// 用户再发一次就可能发出重复消息。它只用于把旧响应挡在 UI 之外。
+  bool _sameAccountSession(AuthProvider auth, int? accountId, int accountEpoch) =>
+      accountId != null &&
+      auth.user?.id == accountId &&
+      auth.accountSessionEpoch == accountEpoch;
 
   // 管理员专属状态
   bool _adminInternalNote = false;
@@ -57,8 +92,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   ({
     String idempotencyKey,
     String fingerprint,
-    int? accountId,
-    int sessionGeneration,
+    int accountId,
+    int accountSessionEpoch,
   })? _pendingMessage;
 
   @override
@@ -75,7 +110,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     if (!identical(_authProvider, auth)) {
       _authProvider?.removeListener(_handleAuthSessionChanged);
       _authProvider = auth;
-      _observedSessionGeneration = auth.sessionGeneration;
+      _observedAccountId = auth.user?.id;
+      _observedAccountEpoch = auth.accountSessionEpoch;
       auth.addListener(_handleAuthSessionChanged);
     }
   }
@@ -83,9 +119,15 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   void _handleAuthSessionChanged() {
     final auth = _authProvider;
     if (!mounted || auth == null) return;
-    final generation = auth.sessionGeneration;
-    if (generation == _observedSessionGeneration) return;
-    _observedSessionGeneration = generation;
+    final accountId = auth.user?.id;
+    final accountEpoch = auth.accountSessionEpoch;
+    // 只有真正换了账号会话才整页重来：同账号的资料刷新不该清掉待确认的消息。
+    if (accountId == _observedAccountId &&
+        accountEpoch == _observedAccountEpoch) {
+      return;
+    }
+    _observedAccountId = accountId;
+    _observedAccountEpoch = accountEpoch;
     _detailRequestGeneration++;
     _sendGeneration++;
     _pendingMessage = null;
@@ -122,7 +164,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     final requestGeneration = ++_detailRequestGeneration;
     final auth = context.read<AuthProvider>();
     final accountId = auth.user?.id;
-    final sessionGeneration = auth.sessionGeneration;
+    final accountEpoch = auth.accountSessionEpoch;
     if (showLoading) {
       setState(() {
         _loading = true;
@@ -158,8 +200,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
 
         if (mounted &&
             requestGeneration == _detailRequestGeneration &&
-            auth.user?.id == accountId &&
-            auth.sessionGeneration == sessionGeneration) {
+            _sameAccountSession(auth, accountId, accountEpoch)) {
           setState(() {
             _ticket = FeedbackTicket.fromJson(ticketData);
             _initialSubmission = initialData is Map<String, dynamic>
@@ -208,6 +249,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     List<int>? imageIds,
     String? content,
     bool? visibleToUser,
+    PublishSessionScope? session,
   }) async {
     final text = (content ?? _msgController.text).trim();
     if (text.isEmpty && (imageIds == null || imageIds.isEmpty)) {
@@ -215,8 +257,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     }
 
     final auth = context.read<AuthProvider>();
-    final accountId = auth.user?.id;
-    final sessionGeneration = auth.sessionGeneration;
+    final scope = session ?? _captureWriteScope(auth);
+    if (scope == null || !_ownsWriteScope(auth, scope)) return;
     final sendGeneration = ++_sendGeneration;
     setState(() => _sending = true);
 
@@ -230,8 +272,11 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         visibleToUser: visible,
       );
       final pending = _pendingMessage;
-      final samePendingSession = pending?.accountId == accountId &&
-          pending?.sessionGeneration == sessionGeneration;
+      // 只有同一次账号会话里的「同一份请求」才允许复用幂等键。
+      // scope 已经确认过仍属于当前账号会话，因此和 scope 同身份就是「同一次账号会话」。
+      final samePendingSession = pending != null &&
+          pending.accountId == scope.accountId &&
+          pending.accountSessionEpoch == scope.accountSessionEpoch;
       final idempotencyKey = resolveIdempotencyKey(
         fingerprint: fingerprint,
         pendingFingerprint: samePendingSession ? pending?.fingerprint : null,
@@ -240,8 +285,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       _pendingMessage = (
         idempotencyKey: idempotencyKey,
         fingerprint: fingerprint,
-        accountId: accountId,
-        sessionGeneration: sessionGeneration,
+        accountId: scope.accountId,
+        accountSessionEpoch: scope.accountSessionEpoch,
       );
       Response response;
 
@@ -253,7 +298,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
             'visible_to_user': visible,
             'image_ids': imageIds,
           },
-          options: Options(headers: {'Idempotency-Key': idempotencyKey}),
+          options: _writeOptions(scope, idempotencyKey: idempotencyKey),
         );
       } else {
         response = await auth.dio.post(
@@ -262,15 +307,13 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
             'content': text.isNotEmpty ? text : '[图片]',
             'image_ids': imageIds,
           },
-          options: Options(headers: {'Idempotency-Key': idempotencyKey}),
+          options: _writeOptions(scope, idempotencyKey: idempotencyKey),
         );
       }
 
-      final isCurrentSession = mounted &&
-          sendGeneration == _sendGeneration &&
-          auth.user?.id == accountId &&
-          auth.sessionGeneration == sessionGeneration;
-      if (!isCurrentSession) return;
+      if (!_ownsWriteScope(auth, scope)) return;
+      // sessionGeneration 只用来挡旧响应，不用来定义账号身份。
+      if (!mounted || sendGeneration != _sendGeneration) return;
 
       if (response.statusCode == 200) {
         _pendingMessage = null;
@@ -292,11 +335,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         }
       }
     } on DioException catch (e) {
-      final isCurrentSession = mounted &&
-          sendGeneration == _sendGeneration &&
-          auth.user?.id == accountId &&
-          auth.sessionGeneration == sessionGeneration;
-      if (!isCurrentSession) return;
+      if (!_ownsWriteScope(auth, scope)) return;
+      if (!mounted || sendGeneration != _sendGeneration) return;
       final code = _idempotencyCode(e);
       // 键已不能代表同一条消息时丢弃它：下一次发送算新的一条，
       // 否则用户改了内容也永远提交不上去。其余失败保留键，网络恢复后可原样重试。
@@ -312,9 +352,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       }
     } catch (e) {
       if (mounted &&
-          sendGeneration == _sendGeneration &&
-          auth.user?.id == accountId &&
-          auth.sessionGeneration == sessionGeneration) {
+          _ownsWriteScope(auth, scope) &&
+          sendGeneration == _sendGeneration) {
         AppFeedback.showSnackBar(context, '发送失败: $e', isError: true);
       }
     } finally {
@@ -336,21 +375,28 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
 
   Future<void> _pickAndUploadImage() async {
     if (_sending) return;
+    final auth = context.read<AuthProvider>();
+    final scope = _captureWriteScope(auth);
+    if (scope == null) return;
+    final sendGeneration = ++_sendGeneration;
     final capturedVisibleToUser = !_adminInternalNote;
     final capturedContent = _msgController.text.trim();
     setState(() => _sending = true);
     try {
-      final auth = context.read<AuthProvider>();
       final picker = ImagePicker();
       final picked = await picker.pickImage(source: ImageSource.gallery);
       if (picked == null || !mounted) return;
+      if (!_ownsWriteScope(auth, scope)) return;
 
       final bytes = await picked.readAsBytes();
+      if (!_ownsWriteScope(auth, scope)) return;
       final formData = FormData.fromMap({
         'file': MultipartFile.fromBytes(bytes, filename: picked.name),
       });
 
-      final uploadResp = await auth.dio.post('/upload', data: formData);
+      final uploadResp = await auth.dio
+          .post('/upload', data: formData, options: _writeOptions(scope));
+      if (!_ownsWriteScope(auth, scope)) return;
       if (uploadResp.statusCode == 200 && uploadResp.data != null) {
         final fileId = uploadResp.data['file_id'] as int? ?? 0;
         if (fileId > 0) {
@@ -358,19 +404,26 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
             imageIds: [fileId],
             content: capturedContent,
             visibleToUser: capturedVisibleToUser,
+            session: scope,
           );
         }
       }
     } catch (e) {
-      if (mounted) {
-        AppFeedback.showSnackBar(context, '图片上传失败: $e', isError: true);
+      if (_ownsWriteScope(auth, scope)) {
+        AppFeedback.showGlobalToast('图片上传失败: $e',
+            isError: true, context: context);
       }
     } finally {
-      if (mounted) setState(() => _sending = false);
+      if (mounted && sendGeneration == _sendGeneration) {
+        setState(() => _sending = false);
+      }
     }
   }
 
   Future<void> _reopenTicket() async {
+    final auth = context.read<AuthProvider>();
+    final scope = _captureWriteScope(auth);
+    if (scope == null) return;
     final reasonController = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
@@ -411,14 +464,14 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     );
 
     if (confirmed == true && reasonController.text.trim().isNotEmpty) {
-      if (!mounted) return;
-      final auth = context.read<AuthProvider>();
+      if (!_ownsWriteScope(auth, scope)) return;
       try {
         final res = await auth.dio.post(
           '/feedback/tickets/${widget.ticketId}/reopen',
           data: {'reason': reasonController.text.trim()},
-          options: Options(headers: {'Idempotency-Key': RequestId.newId()}),
+          options: _writeOptions(scope, idempotencyKey: RequestId.newId()),
         );
+        if (!_ownsWriteScope(auth, scope)) return;
         if (res.statusCode == 200) {
           if (mounted) {
             AppFeedback.showSnackBar(context, '工单已重新打开，我们会尽快进一步排查！');
@@ -426,8 +479,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
           await _loadDetail();
         }
       } catch (e) {
-        if (mounted) {
-          AppFeedback.showSnackBar(context, '操作失败: $e', isError: true);
+        if (_ownsWriteScope(auth, scope)) {
+          AppFeedback.showGlobalToast('操作失败: $e', isError: true);
         }
       }
     }
@@ -435,11 +488,14 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
 
   Future<void> _confirmResolved() async {
     final auth = context.read<AuthProvider>();
+    final scope = _captureWriteScope(auth);
+    if (scope == null) return;
     try {
       final res = await auth.dio.post(
         '/feedback/tickets/${widget.ticketId}/confirm-resolved',
-        options: Options(headers: {'Idempotency-Key': RequestId.newId()}),
+        options: _writeOptions(scope, idempotencyKey: RequestId.newId()),
       );
+      if (!_ownsWriteScope(auth, scope)) return;
       if (res.statusCode == 200) {
         if (mounted) {
           AppFeedback.showSnackBar(context, '已确认问题解决，感谢你的反馈！');
@@ -447,8 +503,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         await _loadDetail();
       }
     } catch (e) {
-      if (mounted) {
-        AppFeedback.showSnackBar(context, '操作失败: $e', isError: true);
+      if (_ownsWriteScope(auth, scope)) {
+        AppFeedback.showGlobalToast('操作失败: $e', isError: true);
       }
     }
   }
@@ -521,6 +577,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
 
   void _showUpdateStatusDialog() {
     final auth = context.read<AuthProvider>();
+    final scope = _captureWriteScope(auth);
+    if (scope == null) return;
     String selectedStatus = _ticket!.status;
     final noteController = TextEditingController(text: _ticket!.statusNote);
 
@@ -580,6 +638,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
             ElevatedButton(
               onPressed: () async {
                 Navigator.pop(ctx);
+                if (!_ownsWriteScope(auth, scope)) return;
                 try {
                   final res = await auth.dio.patch(
                     '/admin/feedback/tickets/${widget.ticketId}/status',
@@ -588,9 +647,10 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                       'status_note': noteController.text.trim(),
                       'expected_status': _ticket!.status,
                     },
-                    options: Options(
-                        headers: {'Idempotency-Key': RequestId.newId()}),
+                    options:
+                        _writeOptions(scope, idempotencyKey: RequestId.newId()),
                   );
+                  if (!_ownsWriteScope(auth, scope)) return;
                   if (res.statusCode == 200) {
                     if (context.mounted) {
                       AppFeedback.showSnackBar(context, '状态已更新');
@@ -598,7 +658,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     await _loadDetail();
                   }
                 } catch (e) {
-                  if (context.mounted) {
+                  if (_ownsWriteScope(auth, scope)) {
                     AppFeedback.showSnackBar(context, '更新失败: $e',
                         isError: true);
                   }
@@ -618,6 +678,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
 
   void _showRequestInfoDialog() {
     final auth = context.read<AuthProvider>();
+    final scope = _captureWriteScope(auth);
+    if (scope == null) return;
     final selectedItems = <String>{'screenshot', 'steps'};
     final commentController = TextEditingController();
 
@@ -689,6 +751,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                   return;
                 }
                 Navigator.pop(ctx);
+                if (!_ownsWriteScope(auth, scope)) return;
                 try {
                   final res = await auth.dio.post(
                     '/admin/feedback/tickets/${widget.ticketId}/request-info',
@@ -697,9 +760,10 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                       'comment': commentController.text.trim(),
                       'expected_status': _ticket!.status,
                     },
-                    options: Options(
-                        headers: {'Idempotency-Key': RequestId.newId()}),
+                    options:
+                        _writeOptions(scope, idempotencyKey: RequestId.newId()),
                   );
+                  if (!_ownsWriteScope(auth, scope)) return;
                   if (res.statusCode == 200) {
                     if (context.mounted) {
                       AppFeedback.showSnackBar(context, '已向用户发送补充信息请求');
@@ -707,7 +771,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     await _loadDetail();
                   }
                 } catch (e) {
-                  if (context.mounted) {
+                  if (_ownsWriteScope(auth, scope)) {
                     AppFeedback.showSnackBar(context, '操作失败: $e',
                         isError: true);
                   }
@@ -727,6 +791,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
 
   Future<void> _showUpdatePriorityDialog() async {
     final auth = context.read<AuthProvider>();
+    final scope = _captureWriteScope(auth);
+    if (scope == null) return;
     String priority = _ticket!.priority;
     int selectedAssignee = _ticket!.assigneeAdminId ?? 0;
     List<Map<String, dynamic>> assignees = [];
@@ -743,7 +809,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       }
       return;
     }
-    if (!mounted) return;
+    if (!_ownsWriteScope(auth, scope)) return;
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -801,6 +867,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
             ElevatedButton(
               onPressed: () async {
                 Navigator.pop(ctx);
+                if (!_ownsWriteScope(auth, scope)) return;
                 try {
                   final res = await auth.dio.patch(
                     '/admin/feedback/tickets/${widget.ticketId}/assignee',
@@ -808,14 +875,15 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                       'priority': priority,
                       'assignee_admin_id': selectedAssignee,
                     },
-                    options: Options(
-                        headers: {'Idempotency-Key': RequestId.newId()}),
+                    options:
+                        _writeOptions(scope, idempotencyKey: RequestId.newId()),
                   );
+                  if (!_ownsWriteScope(auth, scope)) return;
                   if (res.statusCode == 200) {
                     await _loadDetail();
                   }
                 } catch (e) {
-                  if (context.mounted) {
+                  if (_ownsWriteScope(auth, scope)) {
                     AppFeedback.showSnackBar(context, '保存失败: $e',
                         isError: true);
                   }

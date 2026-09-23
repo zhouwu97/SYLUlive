@@ -290,8 +290,9 @@ $dart = [System.Text.StringBuilder]::new()
 [void]$dart.AppendLine("  const AppStickerGroup({required this.id, required this.name, required this.items});")
 [void]$dart.AppendLine("}")
 [void]$dart.AppendLine("")
+[void]$dart.AppendLine("// 客户端仅内置首组贴图，其余官方表情包由服务器目录提供。")
 [void]$dart.AppendLine("const List<AppStickerGroup> appStickerGroups = [")
-foreach ($group in $catalog) {
+foreach ($group in ($catalog | Select-Object -First 1)) {
     [void]$dart.AppendLine("  AppStickerGroup(id: '$($group.id)', name: '$($group.name)', items: [")
     foreach ($item in $group.items) {
         $safeLabel = ([string]$item.label).Replace("'", "\'")

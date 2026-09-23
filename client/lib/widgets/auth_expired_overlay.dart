@@ -1,10 +1,10 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
+import 'glass_container.dart';
 
 class AuthExpiredOverlay extends StatefulWidget {
   final VoidCallback onDismiss;
@@ -98,7 +98,6 @@ class _AuthExpiredOverlayState extends State<AuthExpiredOverlay>
             return false;
           }
         })();
-
     final overlayBody = Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -212,12 +211,16 @@ class _AuthExpiredOverlayState extends State<AuthExpiredOverlay>
                     end: Alignment.bottomRight,
                     colors: isDark
                         ? [
-                            AppColors.surfaceSecondaryDark.withValues(alpha: 0.95),
-                            AppColors.surfaceFocusedDark.withValues(alpha: 0.95),
+                            AppColors.surfaceSecondaryDark
+                                .withValues(alpha: 0.95),
+                            AppColors.surfaceFocusedDark
+                                .withValues(alpha: 0.95),
                           ]
                         : [
-                            AppColors.surfaceSecondaryLight.withValues(alpha: 0.95),
-                            AppColors.surfaceFocusedLight.withValues(alpha: 0.90),
+                            AppColors.surfaceSecondaryLight
+                                .withValues(alpha: 0.95),
+                            AppColors.surfaceFocusedLight
+                                .withValues(alpha: 0.90),
                           ],
                   ),
                   borderRadius: BorderRadius.circular(20),
@@ -239,12 +242,12 @@ class _AuthExpiredOverlayState extends State<AuthExpiredOverlay>
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(20),
-                  child: frostedGlass
-                      ? BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                          child: overlayBody,
-                        )
-                      : overlayBody,
+                  child: FrostedGlass(
+                    enabled: frostedGlass,
+                    sigmaX: 20,
+                    sigmaY: 20,
+                    child: overlayBody,
+                  ),
                 ),
               ),
             ),

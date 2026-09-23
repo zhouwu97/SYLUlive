@@ -53,6 +53,7 @@ class FakePollService extends PollService {
   Completer<Post>? ballotCompleter;
   bool failBallot = false;
   String? lastMineScope;
+  String? lastListCursor;
   Completer<PollListResponse>? mineCompleter;
 
   @override
@@ -61,7 +62,9 @@ class FakePollService extends PollService {
     String category = 'all',
     int page = 1,
     int limit = 20,
+    String? cursor,
   }) async {
+    lastListCursor = cursor;
     final id = sort == 'latest' ? 2 : 1;
     return PollListResponse(
       items: page == 1 ? [pollPost(postId: id)] : [pollPost(postId: id + 10)],
@@ -84,7 +87,10 @@ class FakePollService extends PollService {
 
   @override
   Future<PollListResponse> listMyPolls(
-      {required String scope, int page = 1, int limit = 20}) async {
+      {required String scope,
+      int page = 1,
+      int limit = 20,
+      String? cursor}) async {
     lastMineScope = scope;
     if (mineCompleter != null) return mineCompleter!.future;
     return PollListResponse(
@@ -183,6 +189,7 @@ class ScriptedPollListService extends PollService {
 
   final List<PollListResponse> pages;
   final List<int> requestedPages = [];
+  final List<String?> requestedCursors = [];
 
   @override
   Future<PollListResponse> listPolls({
@@ -190,8 +197,10 @@ class ScriptedPollListService extends PollService {
     String category = 'all',
     int page = 1,
     int limit = 20,
+    String? cursor,
   }) async {
     requestedPages.add(page);
+    requestedCursors.add(cursor);
     return pages[page - 1];
   }
 }
@@ -235,6 +244,54 @@ void main() {
     expect(stopEarly.requestedPages, [1]);
   });
 
+  test('续页优先使用服务端游标，游标失效时整体替换而不是接着拼', () async {
+    final service = ScriptedPollListService([
+      PollListResponse(
+        items: [pollPost(postId: 1), pollPost(postId: 2)],
+        page: 1,
+        limit: 2,
+        total: 6,
+        hasMore: true,
+        nextCursor: 'cursor-1',
+      ),
+      PollListResponse(
+        items: [pollPost(postId: 3), pollPost(postId: 4)],
+        page: 2,
+        limit: 2,
+        total: 6,
+        hasMore: true,
+        nextCursor: 'cursor-2',
+      ),
+      // 服务端判定游标失效时返回的其实是第一页。
+      PollListResponse(
+        items: [pollPost(postId: 9)],
+        page: 1,
+        limit: 2,
+        total: 6,
+        hasMore: true,
+        nextCursor: 'cursor-9',
+        cursorStale: true,
+      ),
+    ]);
+    final provider = PollProvider(service);
+    await provider.load(sort: 'latest');
+    expect(service.requestedCursors, [null]);
+    expect(provider.stateFor(sort: 'latest').nextCursor, 'cursor-1');
+
+    // 续页必须把上一页末条的游标带回去，而不是让服务端按 page 猜位置。
+    await provider.load(sort: 'latest');
+    expect(service.requestedCursors, [null, 'cursor-1']);
+    expect(provider.stateFor(sort: 'latest').items.map((item) => item.id),
+        [1, 2, 3, 4]);
+
+    await provider.load(sort: 'latest');
+    expect(service.requestedCursors.last, 'cursor-2');
+    final state = provider.stateFor(sort: 'latest');
+    expect(state.items.map((item) => item.id), [9]);
+    // 失效后回到第一页：再翻应当从 1 开始，而不是接着 3。
+    expect(state.page, 1);
+    expect(state.nextCursor, 'cursor-9');
+  });
   test('筛选状态隔离且加载更多不重置列表', () async {
     final provider = PollProvider(FakePollService());
     await provider.load(sort: 'recommend');

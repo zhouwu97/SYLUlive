@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../models/security_event.dart';
 import '../providers/auth_provider.dart';
 import '../services/admin_security_service.dart';
+import 'admin_security_blocks_screen.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
@@ -314,7 +315,8 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                           color: AppColors.danger.withValues(alpha: 0.45)),
                     ),
                     child: const Text(
-                      '全部高风险接口会同时封禁登录、注册、改密、发帖、私信、检索等入口。'
+                      '全部高风险接口会同时封禁登录、注册、改密，以及发帖、私信、检索的写入请求。'
+                      '普通浏览与检索读取不在来源封禁内，读滥用需要另外限制。'
                       '如果该来源是校园网、宿舍宽带或运营商共享出口，会连带封禁大量正常用户。',
                       style: TextStyle(color: AppColors.danger),
                     ),
@@ -423,6 +425,17 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
           systemNavigationBarColor: Colors.transparent,
         ),
         actions: [
+          if (context.read<AuthProvider>().user?.isSuperAdmin == true)
+            IconButton(
+              tooltip: '当前生效封禁',
+              icon: const Icon(Icons.gpp_maybe_outlined),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const AdminSecurityBlocksScreen(),
+                ),
+              ),
+            ),
           IconButton(
             onPressed: _load,
             icon: const Icon(Icons.refresh),
@@ -539,6 +552,8 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
       ('SecurityBlock 表', _protectionLayer(protection, 'security_block_schema')),
       ('安全事件采集', _protectionLayer(protection, 'security_event_collection')),
       ('验证码日限额', _protectionLayer(protection, 'verification_daily_limit')),
+      // 主动告警：没配收件人时这里必须显式报「未配置」，不能继续和其它层一样报绿。
+      ('高危告警邮件', _protectionLayer(protection, 'security_alerts')),
     ];
     final blockDisabled = value('security_block') == 'disabled';
     return Container(

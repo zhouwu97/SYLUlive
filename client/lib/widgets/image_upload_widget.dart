@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../config/api_constants.dart';
 import '../screens/image_viewer_screen.dart';
+import '../services/publish_session_scope.dart';
 
 /// 一次成功上传的图片：以服务端 file_id 为可信标识，url 供回显，previewBytes 供本地预览。
 class UploadedImage {
@@ -45,9 +46,42 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
   final ImagePicker _imagePicker = ImagePicker();
   final List<UploadedImage> _uploadedImages = [];
   bool _isUploading = false;
+  AuthProvider? _auth;
+  int? _observedEpoch;
 
-  bool get _canAddMoreImages =>
-      _uploadedImages.length < widget.maxImages;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.read<AuthProvider>();
+    if (identical(_auth, auth)) return;
+    _auth?.removeListener(_handleSessionChanged);
+    _auth = auth;
+    _observedEpoch = auth.accountSessionEpoch;
+    auth.addListener(_handleSessionChanged);
+  }
+
+  void _handleSessionChanged() {
+    final auth = _auth;
+    if (!mounted ||
+        auth == null ||
+        _observedEpoch == auth.accountSessionEpoch) {
+      return;
+    }
+    _observedEpoch = auth.accountSessionEpoch;
+    setState(() {
+      _uploadedImages.clear();
+      _isUploading = false;
+    });
+    widget.onImagesUploaded(const []);
+  }
+
+  @override
+  void dispose() {
+    _auth?.removeListener(_handleSessionChanged);
+    super.dispose();
+  }
+
+  bool get _canAddMoreImages => _uploadedImages.length < widget.maxImages;
 
   bool get _canPickImage =>
       _canAddMoreImages ||
@@ -61,7 +95,20 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
       return;
     }
 
-    final dio = context.read<AuthProvider>().dio;
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    if (accountId == null) return;
+    final scope = PublishSessionScope(
+      accountId: accountId,
+      accountSessionEpoch: auth.accountSessionEpoch,
+    );
+    bool ownsScope() =>
+        mounted &&
+        scope.owns(
+          userId: auth.user?.id,
+          sessionEpoch: auth.accountSessionEpoch,
+        );
+    final dio = auth.dio;
 
     try {
       final XFile? image = await _imagePicker.pickImage(
@@ -73,7 +120,9 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
       );
 
       if (image != null) {
+        if (!ownsScope()) return;
         final length = await image.length();
+        if (!ownsScope()) return;
         if (length > 10 * 1024 * 1024) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -93,6 +142,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
         }
 
         final bytes = await image.readAsBytes();
+        if (!ownsScope()) return;
         final fileName = image.name.isNotEmpty ? image.name : 'upload.jpg';
 
         final formData = FormData.fromMap({
@@ -103,11 +153,13 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
           '/upload',
           data: formData,
           options: Options(
+            extra: scope.requestExtra,
             // Increase timeout for file upload if needed, or keep default
             sendTimeout: const Duration(seconds: 60),
             receiveTimeout: const Duration(seconds: 60),
           ),
         );
+        if (!ownsScope()) return;
 
         if (response.statusCode == 200 &&
             response.data != null &&
@@ -141,7 +193,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
               );
             });
           }
-          widget.onImagesUploaded(_uploadedImages);
+          if (ownsScope()) widget.onImagesUploaded(_uploadedImages);
         } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -155,7 +207,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
       }
     } on DioException catch (e) {
       debugPrint('Dio上传图片出错: ${e.type} status=${e.response?.statusCode}');
-      if (mounted) {
+      if (ownsScope()) {
         String errMsg = '网络异常或超时';
         final data = e.response?.data;
         if (data is Map) {
@@ -171,13 +223,13 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
       }
     } catch (e) {
       debugPrint('上传图片异常: ${e.runtimeType}');
-      if (mounted) {
+      if (ownsScope()) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('处理图片出错: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
-      if (mounted) {
+      if (ownsScope()) {
         setState(() {
           _isUploading = false;
         });
@@ -214,9 +266,8 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
   }
 
   void _openViewer(int initialIndex) {
-    final imageUrls = _uploadedImages
-        .map((e) => ApiConstants.fullUrl(e.url))
-        .toList();
+    final imageUrls =
+        _uploadedImages.map((e) => ApiConstants.fullUrl(e.url)).toList();
     final imageBytes =
         _uploadedImages.map((e) => e.previewBytes).toList(growable: false);
     Navigator.push(

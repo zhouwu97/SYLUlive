@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -164,6 +165,7 @@ func (p unavailableAcademicProvider) Verify(context.Context, AcademicProviderVer
 type AcademicIdentityHandler struct {
 	db        *gorm.DB
 	aead      cipher.AEAD
+	ipHashKey []byte
 	providers map[string]AcademicIdentityProvider
 	mu        sync.RWMutex
 	now       func() time.Time
@@ -187,6 +189,12 @@ func NewAcademicIdentityHandler(db *gorm.DB, rawKey string) (*AcademicIdentityHa
 	return &AcademicIdentityHandler{
 		db:   db,
 		aead: aead,
+		// 从独立的教务 challenge 密钥派生用途隔离的 IP 摘要密钥。
+		ipHashKey: func() []byte {
+			mac := hmac.New(sha256.New, key)
+			mac.Write([]byte("academic-challenge-ip-key:v1"))
+			return mac.Sum(nil)
+		}(),
 		providers: map[string]AcademicIdentityProvider{
 			// 新本科客户端复用非持久化 pre_verify；旧客户端仍可继续使用 /api/edu/bind。
 			models.AcademicProviderUndergraduate: undergraduateAcademicIdentityProvider{},
@@ -659,6 +667,20 @@ func writeAcademicVerificationError(c *gin.Context, err error) {
 }
 
 // List 只返回身份表事实；旧认证由启动迁移回填，不在读取时重新生成。
+// VerificationInventory 只读盘点身份依据分布：school_profile / legacy_migration /
+// local_academic_login / 未登记取值各有多少，以及共享学号、缺验证时间这类异常规模。
+//
+// 为什么需要它：legacy_migration 按兼容策略继续授予准入，但它是否都该继续可信
+// 取决于历史数据的真实形态。盘点若必须靠人上生产机器敲 psql，就一定会被拖成
+// 「以后再说」，而信任债务不会自己消失。只读，不修改任何身份状态，也不返回学号原文。
+func (h *AcademicIdentityHandler) VerificationInventory(c *gin.Context) {
+	inventory, err := models.ReadAcademicIdentityVerificationInventory(h.db)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "身份盘点暂不可用，请稍后重试"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"inventory": inventory, "trusted_methods": models.TrustedAcademicVerificationMethods()})
+}
 func (h *AcademicIdentityHandler) List(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	if userID == 0 {
@@ -726,7 +748,9 @@ func hashString(value string) string {
 }
 
 func (h *AcademicIdentityHandler) hashRequestIP(ip string) string {
-	return hashString(strings.TrimSpace(ip))
+	mac := hmac.New(sha256.New, h.ipHashKey)
+	mac.Write([]byte("academic-challenge-ip:" + strings.TrimSpace(ip)))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func (h *AcademicIdentityHandler) challengeRateLimited(userID uint, ipHash string, now time.Time) (bool, error) {

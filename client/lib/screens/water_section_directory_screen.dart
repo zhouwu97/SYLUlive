@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -22,6 +24,18 @@ class _WaterSectionDirectoryScreenState
   String _searchQuery = '';
 
   @override
+  void initState() {
+    super.initState();
+    // loadSections 会同步通知监听者，而 initState 仍处在 build 期间，
+    // 直接调用会触发「setState() or markNeedsBuild() called during build」。
+    // 推迟到这一帧之后：既保住自动加载，也不越过框架的构建阶段规则。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(context.read<WaterSectionProvider>().loadSections());
+    });
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
@@ -35,6 +49,7 @@ class _WaterSectionDirectoryScreenState
 
     final sectionProvider = context.watch<WaterSectionProvider>();
     final allSections = sectionProvider.activeSections;
+    final isLoadingSections = sectionProvider.isLoading && allSections.isEmpty;
 
     // Local filter
     final displaySections = allSections.where((s) {
@@ -56,8 +71,23 @@ class _WaterSectionDirectoryScreenState
             _buildSearchBar(isDark),
             if (_searchQuery.isEmpty) _buildMyFollows(isDark, allSections),
             if (showPollEntry) _buildPollEntry(isDark),
-            _buildAllSectionsHeader(isDark, displaySections.length),
-            if (displaySections.isEmpty && _searchQuery.isNotEmpty && !showPollEntry)
+            _buildAllSectionsHeader(
+              isDark,
+              displaySections.length,
+              isLoading: isLoadingSections,
+            ),
+            if (isLoadingSections)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: CircularProgressIndicator(
+                    color: isDark ? Colors.white70 : AppColors.brandPrimary,
+                  ),
+                ),
+              )
+            else if (displaySections.isEmpty &&
+                _searchQuery.isNotEmpty &&
+                !showPollEntry)
               SliverFillRemaining(
                 hasScrollBody: false,
                 child: Center(
@@ -304,7 +334,11 @@ class _WaterSectionDirectoryScreenState
     );
   }
 
-  Widget _buildAllSectionsHeader(bool isDark, int count) {
+  Widget _buildAllSectionsHeader(
+    bool isDark,
+    int count, {
+    required bool isLoading,
+  }) {
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
@@ -320,7 +354,7 @@ class _WaterSectionDirectoryScreenState
             ),
             const SizedBox(width: 8),
             Text(
-              '$count',
+              isLoading ? '加载中' : '$count',
               style: TextStyle(
                 fontSize: 13,
                 color: isDark ? Colors.white54 : Colors.black54,

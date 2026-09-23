@@ -20,7 +20,9 @@ func decodePollListResponse(t *testing.T, body []byte) map[string]interface{} {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("投票列表响应不是 JSON 对象：%s", body)
 	}
-	for _, key := range []string{"items", "page", "limit", "total", "matched_total", "pool_size", "has_more"} {
+	// next_cursor / cursor_stale 与 has_more 同属一套契约：
+	// 缺了游标，客户端就只能回到 offset 翻页，也就回到并发新增下的漂移。
+	for _, key := range []string{"items", "page", "limit", "total", "matched_total", "pool_size", "has_more", "next_cursor", "cursor_stale"} {
 		if _, ok := payload[key]; !ok {
 			t.Fatalf("投票列表响应缺少 %q 字段：%s", key, body)
 		}

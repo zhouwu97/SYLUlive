@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,15 +15,19 @@ import 'package:shenliyuan/screens/feedback/feedback_detail_screen.dart';
 class _FakeImagePickerPlatform extends ImagePickerPlatform {
   bool throwOnPick = false;
   XFile? pickedFile;
+  Completer<XFile?>? pendingPick;
+  int pickCount = 0;
 
   @override
   Future<XFile?> getImageFromSource({
     required ImageSource source,
     ImagePickerOptions options = const ImagePickerOptions(),
   }) async {
+    pickCount++;
     if (throwOnPick) {
       throw PlatformException(code: 'camera_access_denied', message: '相册权限异常');
     }
+    if (pendingPick != null) return pendingPick!.future;
     return pickedFile;
   }
 }
@@ -45,6 +52,9 @@ class _MockDetailAuthProvider extends ChangeNotifier implements AuthProvider {
 
   @override
   int get sessionGeneration => currentSessionGeneration;
+
+  @override
+  int get accountSessionEpoch => currentSessionGeneration;
 
   @override
   Dio get dio => client;
@@ -130,6 +140,7 @@ void main() {
 
   testWidgets('图片选择器抛异常或取消选择时释放发送锁并保留输入草稿', (tester) async {
     final dio = Dio();
+    var uploadCalls = 0;
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
@@ -158,6 +169,14 @@ void main() {
                 },
               ),
             );
+            return;
+          }
+          if (options.path == '/upload') {
+            uploadCalls++;
+            handler.resolve(Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: {'file_id': 1}));
             return;
           }
           handler.next(options);
@@ -209,6 +228,22 @@ void main() {
     // 验证草稿内容未丢失
     expect(find.text('未发送的草稿内容'), findsOneWidget);
 
+    // 图片选择器等待期间切号，旧图片不得以新账号上传。
+    fakePickerPlatform.throwOnPick = false;
+    fakePickerPlatform.pendingPick = Completer<XFile?>();
+    final picksBeforeSwitch = fakePickerPlatform.pickCount;
+    await tester.tap(imageBtn);
+    await tester.pump();
+    expect(fakePickerPlatform.pickCount, picksBeforeSwitch + 1);
+    authProvider.switchAccount(20);
+    await tester.pump();
+    fakePickerPlatform.pendingPick!.complete(
+      XFile.fromData(Uint8List.fromList([1, 2, 3]), name: 'image.png'),
+    );
+    await tester.pumpAndSettle();
+    expect(uploadCalls, 0);
+    fakePickerPlatform.pendingPick = null;
+
     // 验证发送状态已在 finally 中释放，输入框保持可编辑，图片按钮未被禁用
     final textFieldWidget = tester.widget<TextField>(textField);
     expect(textFieldWidget.readOnly, isFalse);
@@ -217,6 +252,8 @@ void main() {
     fakePickerPlatform.throwOnPick = false;
     fakePickerPlatform.pickedFile = null;
 
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
     await tester.tap(imageBtn);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
@@ -268,6 +305,10 @@ void main() {
             return;
           }
           if (options.path == '/feedback/tickets/1/messages') {
+            expect(options.extra['expectedAuthUserId'],
+                authProvider.currentUserId);
+            expect(options.extra['expectedAuthSessionEpoch'],
+                authProvider.accountSessionEpoch);
             idempotencyKeys.add(options.headers['Idempotency-Key'].toString());
             if (firstSendHandler == null) {
               firstSendHandler = handler;

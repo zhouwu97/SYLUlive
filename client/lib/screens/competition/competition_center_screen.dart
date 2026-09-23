@@ -17,6 +17,7 @@ import '../../services/competition_signal_service.dart';
 import '../../services/domain_change_bus.dart';
 import '../../utils/app_feedback.dart';
 import '../../utils/competition_batch_action_payload.dart';
+import '../academic_data_settings_screen.dart';
 import '../../widgets/competition/competition_empty_state.dart';
 import '../../widgets/competition/competition_match_reason_sheet.dart';
 import '../../widgets/competition/competition_module_theme.dart';
@@ -76,11 +77,14 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   int _stateRequestSerial = 0;
   bool _hasMore = false;
   bool _profileReady = false;
+
   /// 候选接口返回的空结果原因（profile_incomplete / cluster_unmapped / no_candidate）。
   /// 没有它时「没匹配到」与「画像没准备好」在前端长得一模一样，都只是一片空白。
   String? _candidateReasonCode;
+
   /// 画像就绪还缺哪些字段，用于给出可操作的引导。
   List<String> _candidateMissingFields = const [];
+
   /// 候选接口不可用（404/5xx）时为 true：必须显式提示并允许切回全部，
   /// 而不是把失败伪装成「没有符合条件的比赛」。
   bool _candidateUnavailable = false;
@@ -262,8 +266,10 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       setState(() {
         _deadlineSoonCount =
             (data['deadline_soon_count'] as num?)?.toInt() ?? 0;
-        _registrationPendingCount =
-            ((data['registration_pending_count'] ?? data['time_pending_count']) as num?)?.toInt() ?? 0;
+        _registrationPendingCount = ((data['registration_pending_count'] ??
+                    data['time_pending_count']) as num?)
+                ?.toInt() ??
+            0;
         _overviewLoading = false;
       });
     } catch (error) {
@@ -369,9 +375,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
               .toList();
       final total = (data['total'] as num?)?.toInt() ?? items.length;
       final serverHasMore = data['has_more'] == true;
-      final algorithmVersion = isFit
-          ? data['algorithm_version']?.toString() ?? ''
-          : '';
+      final algorithmVersion =
+          isFit ? data['algorithm_version']?.toString() ?? '' : '';
       final reasonCode = isFit ? data['reason_code']?.toString() : null;
       final missingFields = isFit
           ? ((data['missing_fields'] as List?) ?? const [])
@@ -436,14 +441,12 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         _eventsLoading = false;
         _loadingMore = false;
         final isFit = _studentFocusFilter == 'fit';
-        final statusCode = error is DioException
-            ? error.response?.statusCode
-            : null;
+        final statusCode =
+            error is DioException ? error.response?.statusCode : null;
         // 候选接口在开关关闭的环境里根本没有注册（404），
         // 服务端异常时则是 5xx。这两种情况必须说「服务不可用」，
         // 不能让用户看到「暂时没有符合条件的比赛」而去反复调整筛选条件。
-        final unavailable =
-            isFit &&
+        final unavailable = isFit &&
             (statusCode == 404 ||
                 statusCode == 500 ||
                 statusCode == 502 ||
@@ -454,8 +457,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
           _eventsError = unavailable
               ? '匹配服务暂不可用，可以先浏览全部比赛'
               : (error is DioException
-                    ? AppFeedback.dioErrorMessage(error, fallback: '匹配服务加载失败')
-                    : '比赛数据解析失败');
+                  ? AppFeedback.dioErrorMessage(error, fallback: '匹配服务加载失败')
+                  : '比赛数据解析失败');
           return;
         }
         _eventsError = error is DioException
@@ -620,13 +623,16 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     return [
       _buildSearchAndFilters(isDark),
       _buildStudentOverview(isDark),
-      if (!_overviewLoading && _overviewError == null && _registrationPendingCount > 0)
+      if (!_overviewLoading &&
+          _overviewError == null &&
+          _registrationPendingCount > 0)
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Text(
             '$_registrationPendingCount 项报名时间待核实，截止提醒尚未覆盖。',
             key: const Key('competition-registration-coverage'),
-            style: TextStyle(color: CompetitionUiTokens.subColor(isDark), fontSize: 12),
+            style: TextStyle(
+                color: CompetitionUiTokens.subColor(isDark), fontSize: 12),
           ),
         ),
       CompetitionProfileCompactCard(
@@ -986,16 +992,21 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       onActionTap = _switchToAllEvents;
     } else if (!_profileReady) {
       warning = false;
-      title = '完善教务身份后可生成匹配候选';
+      title = '完善竞赛画像与身份核验后生成候选';
       final missing = _candidateMissingFields
           .map(_profileFieldLabel)
           .where((label) => label.isNotEmpty)
           .toList();
       message = missing.isEmpty
-          ? '需要先完成教务身份核验，匹配依据来自你的专业、学院与年级'
-          : '还需要补全：${missing.join('、')}';
-      actionText = '去完善';
-      onActionTap = () => _openCompetitionHub();
+          ? '竞赛匹配需要你确认的年级、学院和专业，以及单独完成的学生身份核验。'
+          : '还需要：${missing.join('、')}。竞赛画像只用于资格和方向匹配。';
+      actionText = _candidateMissingFields.any(
+        (field) =>
+            field == 'entry_year' || field == 'college' || field == 'major',
+      )
+          ? '填写匹配画像'
+          : '去身份设置';
+      onActionTap = _openMissingCompetitionPrerequisite;
     } else if (_eventTotal > 0) {
       warning = false;
       title = '根据专业、资格和目标筛出 $_eventTotal 项候选';
@@ -1036,8 +1047,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
               warning
                   ? Icons.cloud_off_outlined
                   : (_profileReady
-                        ? Icons.auto_awesome_outlined
-                        : Icons.badge_outlined),
+                      ? Icons.auto_awesome_outlined
+                      : Icons.badge_outlined),
               size: 18,
               color: accent,
             ),
@@ -1076,13 +1087,13 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   String _profileFieldLabel(String field) {
     switch (field) {
       case 'entry_year':
-        return '年级';
+        return '入学年份';
       case 'college':
         return '学院';
       case 'major':
         return '专业';
       case 'academic_identity':
-        return '教务身份核验';
+        return '学生身份核验';
       default:
         return '';
     }
@@ -1120,6 +1131,38 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     if (_studentFocusFilter == 'fit') {
       await _loadEvents(reset: true);
     }
+  }
+
+  Future<void> _openMissingCompetitionPrerequisite() async {
+    final needsProfile = _candidateMissingFields.any(
+      (field) =>
+          field == 'entry_year' || field == 'college' || field == 'major',
+    );
+    if (needsProfile) {
+      await _openPreference();
+      return;
+    }
+    var auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      await Navigator.pushNamed(context, '/login');
+      if (!mounted) return;
+      auth = context.read<AuthProvider>();
+      if (!auth.isLoggedIn) return;
+    }
+    final accountID = auth.user?.id;
+    final epoch = auth.accountSessionEpoch;
+    if (accountID == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AcademicDataSettingsScreen()),
+    );
+    if (!mounted) return;
+    final currentAuth = context.read<AuthProvider>();
+    if (currentAuth.user?.id != accountID ||
+        currentAuth.accountSessionEpoch != epoch) {
+      return;
+    }
+    await Future.wait([_loadCompetitionDashboard(), _loadUserState()]);
+    if (_studentFocusFilter == 'fit') await _loadEvents(reset: true);
   }
 
   Widget _buildSectionTitle({
@@ -1197,12 +1240,19 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       if (_studentFocusFilter == 'fit') {
         if (!_profileReady) {
           return CompetitionEmptyState(
-            title: '先完善教务身份',
+            title: '先补齐竞赛匹配条件',
             message: _candidateMissingFields.isEmpty
-                ? '匹配依据来自你的专业、学院与年级，补全后即可生成候选。'
-                : '还需要补全：${_candidateMissingFields.map(_profileFieldLabel).where((label) => label.isNotEmpty).join('、')}。',
-            primaryText: '去完善',
-            onPrimaryTap: () => _openCompetitionHub(),
+                ? '确认年级、学院和专业，并完成学生身份核验后即可生成候选。'
+                : '还需要：${_candidateMissingFields.map(_profileFieldLabel).where((label) => label.isNotEmpty).join('、')}。',
+            primaryText: _candidateMissingFields.any(
+              (field) =>
+                  field == 'entry_year' ||
+                  field == 'college' ||
+                  field == 'major',
+            )
+                ? '填写匹配画像'
+                : '去身份设置',
+            onPrimaryTap: _openMissingCompetitionPrerequisite,
             secondaryText: '浏览全部比赛',
             onSecondaryTap: _switchToAllEvents,
           );
@@ -1754,7 +1804,8 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                               competitionRegistrationText(event),
                               isDark,
                             ),
-                            _detailInfo('比赛时间', competitionEventTimeText(event), isDark),
+                            _detailInfo('比赛时间', competitionEventTimeText(event),
+                                isDark),
                             _detailInfo(
                               '时间状态',
                               _competitionTimeStateLabel(event),
@@ -1803,8 +1854,8 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                                 event.eligibleEntryYears.join('、'), isDark),
                             _detailInfo('学院参考',
                                 event.eligibleColleges.join('、'), isDark),
-                            _detailInfo('专业参考',
-                                event.eligibleMajors.join('、'), isDark),
+                            _detailInfo(
+                                '专业参考', event.eligibleMajors.join('、'), isDark),
                             _detailInfo(
                               '资格说明',
                               '以上为目录适配参考，具体报名资格以当届通知为准；未录入不代表不限。',
@@ -1834,8 +1885,10 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                             _detailInfo('主办单位', event.hostUnit, isDark),
                             _detailInfo(
                                 '承办单位', _rawValue('undertake_unit'), isDark),
-                            _detailInfo('比赛级别',
-                                competitionLevelLabel(event.competitionLevel), isDark),
+                            _detailInfo(
+                                '比赛级别',
+                                competitionLevelLabel(event.competitionLevel),
+                                isDark),
                             _detailInfo(
                               '地点',
                               event.isOnline
@@ -1865,8 +1918,10 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                           title: '信息来源',
                           isDark: isDark,
                           children: [
-                            _detailInfo('来源类型',
-                                competitionSourceLabel(event.sourceChannel), isDark),
+                            _detailInfo(
+                                '来源类型',
+                                competitionSourceLabel(event.sourceChannel),
+                                isDark),
                             _detailInfo('来源说明', event.sourceNote, isDark),
                             _detailInfo('核验说明',
                                 _rawValue('evidence_summary_public'), isDark),
@@ -1877,8 +1932,8 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                                   : competitionDateText(event.updatedAt!),
                               isDark,
                             ),
-                            _detailInfo('更新说明',
-                                '更新时间仅表示目录更新，不代表当届信息已核验。', isDark),
+                            _detailInfo(
+                                '更新说明', '更新时间仅表示目录更新，不代表当届信息已核验。', isDark),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -2887,7 +2942,8 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
     final planStatus = _calendarPlanStatus(item);
     final deadline = _parseCalendarDate(item['registration_end']);
     final eventEnd = _parseCalendarDate(item['event_end']);
-    final isReference = const {'historical', 'estimated'}.contains(_calendarTimeStatus(item));
+    final isReference =
+        const {'historical', 'estimated'}.contains(_calendarTimeStatus(item));
     // 报名截止后仍可能正在备赛，只有比赛结束或用户主动完成才移入已结束。
     if (planStatus == 'finished' ||
         planStatus == 'archived' ||

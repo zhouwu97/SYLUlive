@@ -323,17 +323,14 @@ func TestIdempotencyMiddlewareDoesNotRecordReads(t *testing.T) {
 	}
 }
 
-// TestIdempotencyMiddlewareReleasesFailedResponseForSameKeyRetry 锁住失败响应不缓存。
-//
-// 幂等键保证的是「成功效果只发生一次」。业务限流和临时故障若被记成 completed，
-// 同键重试就会在 24 小时内原样重放那条失败响应，调用方网络恢复多少次都提交不上去。
+// TestIdempotencyMiddlewareReleasesFailedResponseForSameKeyRetry 锁住可安全重试的失败响应。
 func TestIdempotencyMiddlewareReleasesFailedResponseForSameKeyRetry(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		failStatus int
 	}{
 		{name: "业务限流", failStatus: http.StatusTooManyRequests},
-		{name: "临时故障", failStatus: http.StatusServiceUnavailable},
+		{name: "明确无副作用的临时故障", failStatus: http.StatusServiceUnavailable},
 		{name: "业务拒绝", failStatus: http.StatusForbidden},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -342,6 +339,9 @@ func TestIdempotencyMiddlewareReleasesFailedResponseForSameKeyRetry(t *testing.T
 			router := newIdempotencyTestRouter(t, db, func(c *gin.Context) {
 				n := calls.Add(1)
 				if n == 1 {
+					if tc.failStatus >= 500 {
+						MarkIdempotentSafeToRetry(c)
+					}
 					c.JSON(tc.failStatus, gin.H{"code": "try_again"})
 					return
 				}
@@ -389,6 +389,7 @@ func TestIdempotencyMiddlewareFailedResponseDoesNotPoisonOtherPayload(t *testing
 	router := newIdempotencyTestRouter(t, db, func(c *gin.Context) {
 		n := calls.Add(1)
 		if n == 1 {
+			MarkIdempotentSafeToRetry(c)
 			c.JSON(http.StatusServiceUnavailable, gin.H{"code": "unavailable"})
 			return
 		}
@@ -407,5 +408,29 @@ func TestIdempotencyMiddlewareFailedResponseDoesNotPoisonOtherPayload(t *testing
 	}
 	if calls.Load() != 2 {
 		t.Fatalf("calls=%d", calls.Load())
+	}
+}
+
+// 写入已发生但响应失败时，同键重试不得再次进入业务层。
+func TestIdempotencyMiddlewareKeepsUncertainServerFailure(t *testing.T) {
+	db := openIdempotencyTestDB(t)
+	var writes atomic.Int32
+	router := newIdempotencyTestRouter(t, db, func(c *gin.Context) {
+		writes.Add(1)
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "notification_failed"})
+	})
+	request := func() *httptest.ResponseRecorder {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, requestWithKey(http.MethodPost, "/write", "uncertain-write", `{"title":"内容"}`))
+		return response
+	}
+	if first := request(); first.Code != http.StatusInternalServerError {
+		t.Fatalf("首次状态 = %d", first.Code)
+	}
+	if retry := request(); retry.Code != http.StatusConflict || !strings.Contains(retry.Body.String(), "idempotency_request_failed") {
+		t.Fatalf("未决写入被重新执行: %d %q", retry.Code, retry.Body.String())
+	}
+	if writes.Load() != 1 {
+		t.Fatalf("业务写入次数 = %d", writes.Load())
 	}
 }

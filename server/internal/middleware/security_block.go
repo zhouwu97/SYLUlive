@@ -27,15 +27,16 @@ type contextAwareSecurityBlockChecker interface {
 	IsBlockedContext(ctx context.Context, clientIP, route string) (bool, error)
 }
 
-// SecurityBlockMiddleware 只在高风险 API 路径查询临时来源封禁。
+// SecurityBlockMiddleware 只在高风险 API 路径上查询临时来源封禁。
 //
-// 注意：这是**路径前缀**策略，不是方法策略。`/api/posts`、`/api/search` 等前缀
-// 同样覆盖其上的普通 GET 读请求，因此“普通静态/读请求不增加数据库查询”只对
-// 未命中前缀的请求成立，不能据此认为读请求一定不查库。
-// 本轮只做策略收敛（消除两份不一致的清单），不静默扩大或缩小覆盖面。
+// 策略由**路径前缀 + HTTP 方法**共同决定（见 [SensitiveSecurityRouteFor]）。
+// 这一层挂在鉴权之前，被查中的每一次都会打一次 security_blocks 表；如果普通
+// GET /api/posts、GET /api/search 也走这一步，那么「防攻击层」自己就成了数据库
+// 放大面——越是有人刷读接口，越是在认证前多打一次库。内容组因此只登记写方法，
+// 读滥用要另做独立频率限制，不和来源封禁混在一起。
 func SecurityBlockMiddleware(checker SecurityBlockChecker) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !SensitiveSecurityRoute(c.Request.URL.Path) {
+		if !SensitiveSecurityRouteFor(c.Request.Method, c.Request.URL.Path) {
 			c.Next()
 			return
 		}
@@ -87,18 +88,32 @@ const (
 	SecurityGroupCredentialChange SecurityRouteGroupID = "credential_change"
 	// SecurityGroupSessionRefresh 覆盖会话令牌刷新。
 	SecurityGroupSessionRefresh SecurityRouteGroupID = "session_refresh"
-	// SecurityGroupContentWrite 覆盖用户可批量提交的写入与检索入口。
+	// SecurityGroupContentWrite 覆盖用户可批量提交的写入入口，只认写方法。
 	SecurityGroupContentWrite SecurityRouteGroupID = "content_write"
 )
+
+// SecurityGroupWriteMethods 是内容写入组实际生效的 HTTP 方法。
+//
+// 只取真正会落库的写方法：GET/HEAD/OPTIONS 属于正常浏览与检索，过去它们也命中
+// 这张表，让读流量在鉴权前平白多出一次封禁查询。读取滥用应当走独立的频率限制
+// （content_read_abuse 一类），不要塞进来源封禁里。
+var SecurityGroupWriteMethods = []string{
+	http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete,
+}
 
 // SecurityRouteGroup 登记一段路由前缀的用途与归属。
 //
 // Prefixes 只允许完整路由段前缀（如 /api/user/email 同时覆盖 /api/user/email/code），
 // 匹配规则见 securityRoutePrefix。
+//
+// Methods 限定本组只在这些 HTTP 方法上进入封禁查询；留空表示不限方法——
+// 登录、验证码、改密换绑、会话刷新本来就是写入口，再按方法切一次没有意义，
+// 反而会漏掉 GET 形态的探测。
 type SecurityRouteGroup struct {
 	ID       SecurityRouteGroupID `json:"id"`
 	Purpose  string               `json:"purpose"`
 	Prefixes []string             `json:"prefixes"`
+	Methods  []string             `json:"methods,omitempty"`
 }
 
 // securityRouteGroups 是来源封禁的唯一路由清单。
@@ -110,7 +125,7 @@ type SecurityRouteGroup struct {
 //   - /api/send_code、/api/verify_code：验证码轰炸（成本与骚扰）
 //   - /api/change_password、/api/user/email*：改密与邮箱换绑，账号接管的落地一步
 //   - /api/refresh、/api/auth/refresh：会话令牌刷新，被盗令牌续命与复用检测的位置
-//   - /api/search、/api/posts、/api/messages、/api/feedback：爬取与批量写入入口
+//   - /api/search、/api/posts、/api/messages、/api/feedback 的**写方法**：批量提交入口
 //   - /api/logout 未纳入：需要有效令牌，不具备撞库/批量注册价值，纳入会扩大封禁面。
 //
 // 决策依据来自路由注册与审计证据，不凭字符串猜测新增兼容别名。
@@ -137,8 +152,9 @@ var securityRouteGroups = []SecurityRouteGroup{
 	},
 	{
 		ID:       SecurityGroupContentWrite,
-		Purpose:  "内容写入与检索（批量提交、爬取与放大攻击）",
+		Purpose:  "内容批量写入（仅 POST/PUT/PATCH/DELETE；GET 读取与检索不在来源封禁内）",
 		Prefixes: []string{"/api/search", "/api/posts", "/api/messages", "/api/feedback"},
+		Methods:  SecurityGroupWriteMethods,
 	},
 }
 
@@ -197,7 +213,11 @@ func SecurityRoutePrefixes(ids []SecurityRouteGroupID) ([]string, bool) {
 	return out, true
 }
 
-// SensitiveSecurityRoute 是临时来源封禁的**唯一**路由策略，直接由上表推导。
+// SensitiveSecurityRoute 判断一条路径是否登记在任何分组里，直接由上表推导。
+//
+// 它只回答「这条路由归谁管」，供管理员录入校验与界面展示前缀使用。
+// 一次具体请求要不要查封禁表，必须用 [SensitiveSecurityRouteFor]——
+// 同一条路径上的 GET 与 POST 可能一个该查、一个不该查。
 func SensitiveSecurityRoute(path string) bool {
 	for _, group := range securityRouteGroups {
 		for _, prefix := range group.Prefixes {
@@ -207,6 +227,46 @@ func SensitiveSecurityRoute(path string) bool {
 		}
 	}
 	return false
+}
+
+// SensitiveSecurityRouteFor 是临时来源封禁的**唯一**请求级策略，直接由上表推导。
+//
+// 方法是策略的一部分：content_write 只覆盖写方法，因此普通 GET 读请求不会再在
+// 鉴权之前为 security_blocks 多打一次数据库查询。
+func SensitiveSecurityRouteFor(method, path string) bool {
+	method = strings.ToUpper(strings.TrimSpace(method))
+	if method == "" {
+		method = http.MethodGet
+	}
+	for _, group := range securityRouteGroups {
+		if !group.allowsMethod(method) {
+			continue
+		}
+		for _, prefix := range group.Prefixes {
+			if securityRoutePrefix(path, prefix) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// allowsMethod 判断分组是否覆盖该方法；Methods 为空表示不限方法。
+func (g SecurityRouteGroup) allowsMethod(method string) bool {
+	if len(g.Methods) == 0 {
+		return true
+	}
+	for _, allowed := range g.Methods {
+		if strings.EqualFold(allowed, method) {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowsMethod 暴露分组的方法策略，供界面与测试复用同一份事实。
+func (g SecurityRouteGroup) AllowsMethod(method string) bool {
+	return g.allowsMethod(strings.ToUpper(strings.TrimSpace(method)))
 }
 
 // securityRoutePrefix 只匹配完整路由段，避免把 /api/postsomething 误当成 /api/posts。

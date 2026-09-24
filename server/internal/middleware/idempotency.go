@@ -29,6 +29,9 @@ const (
 	// idempotencyMaxResponseSize 是成功响应体的缓存上限。中间件自己也要有界：
 	// 没有上限时，一个返回大 JSON 的写接口能把内存和 bytea 一起撑起来。
 	idempotencyMaxResponseSize = 256 << 10
+	// 单个账号或匿名来源的未过期幂等记录必须有上限，避免持续生成唯一键把
+	// 响应缓存表撑大。重复提交已有键仍允许走重放，不会误伤正常重试。
+	idempotencyMaxActiveRecordsPerScope = 1000
 )
 
 // 幂等结论的三态由 handler 显式声明，中间件只在缺省时兜底：
@@ -164,6 +167,27 @@ func idempotencyMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		path := c.Request.URL.RequestURI()
 		requestHash := sha256Hex([]byte(method + "\n" + path + "\n" +
 			string(canonicalIdempotencyBody(c.GetHeader("Content-Type"), body))))
+		var activeRecords int64
+		if err := db.WithContext(c.Request.Context()).Model(&models.IdempotencyRecord{}).
+			Where("scope = ? AND expires_at > ?", scope, time.Now().UTC()).Count(&activeRecords).Error; err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"code":    "idempotency_store_unavailable",
+				"message": "请求幂等状态暂不可用",
+			})
+			return
+		}
+		if activeRecords >= idempotencyMaxActiveRecordsPerScope {
+			// 先尝试重放已有键，避免用户在达到额度后重复点击同一提交反而收不到结果。
+			if replayIdempotentResponse(c, db, scope, key, method, path, requestHash) {
+				return
+			}
+			c.Header("Retry-After", "3600")
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+				"code":    "idempotency_scope_limit",
+				"message": "幂等请求过于频繁，请稍后再试",
+			})
+			return
+		}
 		expiresAt := time.Now().UTC().Add(24 * time.Hour)
 		record := models.IdempotencyRecord{
 			Scope: scope, Key: key, Method: method, Path: path,

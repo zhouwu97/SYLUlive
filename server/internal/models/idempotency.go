@@ -15,7 +15,7 @@ import (
 type IdempotencyRecord struct {
 	ID uint `gorm:"primaryKey" json:"-"`
 
-	Scope        string `gorm:"size:160;not null;uniqueIndex:idx_idempotency_scope_key_route,priority:1" json:"-"`
+	Scope        string `gorm:"size:160;not null;index:idx_idempotency_scope_expires,priority:1;uniqueIndex:idx_idempotency_scope_key_route,priority:1" json:"-"`
 	Key          string `gorm:"column:idempotency_key;size:200;not null;uniqueIndex:idx_idempotency_scope_key_route,priority:2" json:"-"`
 	Method       string `gorm:"size:12;not null;uniqueIndex:idx_idempotency_scope_key_route,priority:3" json:"-"`
 	Path         string `gorm:"size:512;not null;uniqueIndex:idx_idempotency_scope_key_route,priority:4" json:"-"`
@@ -28,7 +28,7 @@ type IdempotencyRecord struct {
 	// 写入已经发生，宁可让调用方按状态码处理后重新读取，也不能让它误以为没成功再执行一次。
 	ResponseBodyOmitted bool `gorm:"not null;default:false" json:"-"`
 	// 给旧表补列时使用数据库当前时间，避免已有 processing 记录导致 NOT NULL 迁移失败。
-	ExpiresAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP;index" json:"-"`
+	ExpiresAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP;index:idx_idempotency_scope_expires,priority:2;index" json:"-"`
 	CreatedAt time.Time `json:"-"`
 	UpdatedAt time.Time `json:"-"`
 }

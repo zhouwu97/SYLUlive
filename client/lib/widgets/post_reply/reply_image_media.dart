@@ -39,8 +39,10 @@ class ReplyImageMedia extends StatelessWidget {
       spacing: 6,
       runSpacing: 6,
       children: List.generate(validImages.length, (index) {
-        final size = validImages.length == 1 ? singleImageSize : multiImageSize;
         final image = validImages[index];
+        final maxSize =
+            validImages.length == 1 ? singleImageSize : multiImageSize;
+        final displaySize = _displaySize(image, maxSize);
         return GestureDetector(
           key: ValueKey('reply-image-${image.replyId}-${image.id}'),
           onTap: () => Navigator.push(
@@ -60,13 +62,13 @@ class ReplyImageMedia extends StatelessWidget {
             child: _networkImage(
               image: image,
               target: calculateImageDecodeTarget(
-                logicalSize: Size(size, size),
+                logicalSize: displaySize,
                 devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
                 maxLongEdge: maxDecodeLongEdge,
-                fallbackLogicalSize: Size(size, size),
+                fallbackLogicalSize: displaySize,
               ),
-              width: size,
-              height: size,
+              width: displaySize.width,
+              height: displaySize.height,
             ),
           ),
         );
@@ -125,6 +127,7 @@ class ReplyImageMedia extends StatelessWidget {
 
   static ImageViewerItem viewerItemFor(ReplyImage image) {
     final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
+    final originalSizeBytes = image.file?.size ?? 0;
     return ImageViewerItem(
       thumbUrl: _readyVariantUrl(
         image,
@@ -145,11 +148,16 @@ class ReplyImageMedia extends StatelessWidget {
         'viewer',
       ),
       originalUrl: originUrl,
-      originalSizeBytes: image.file?.size ?? 0,
+      originalSizeBytes: originalSizeBytes,
       width: image.file?.width ?? 0,
       height: image.file?.height ?? 0,
       mimeType: image.file?.mimeType ?? '',
       useProgressiveLoading: true,
+      // 旧回复可能没有变体状态，或图片本身小于自动加载阈值；此时列表
+      // 已经可以安全使用原图，查看器也不能因过滤 origin 而进入空白页。
+      allowOriginalPreviewFallback: image.variantStatus.isEmpty ||
+          (originalSizeBytes > 0 &&
+              originalSizeBytes < imageOriginalAutoLoadThresholdBytes),
     );
   }
 
@@ -172,7 +180,8 @@ class ReplyImageMedia extends StatelessWidget {
       imageUrl: selection.url,
       width: width,
       height: height,
-      fit: BoxFit.cover,
+      // 回复图片按原始比例显示，避免固定瓦片把竖图裁掉后看起来像被挤压。
+      fit: BoxFit.contain,
       memCacheWidth: selection.shouldResize ? target.width : null,
       memCacheHeight: selection.shouldResize ? target.height : null,
       placeholder: (_, __) => SizedBox(
@@ -199,5 +208,13 @@ class ReplyImageMedia extends StatelessWidget {
       return null;
     }
     return url;
+  }
+
+  static Size _displaySize(ReplyImage image, double maxSize) {
+    final width = image.file?.width ?? 0;
+    final height = image.file?.height ?? 0;
+    if (width <= 0 || height <= 0) return Size.square(maxSize);
+    final scale = maxSize / (width > height ? width : height);
+    return Size(width * scale, height * scale);
   }
 }

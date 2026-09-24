@@ -694,6 +694,16 @@ func main() {
 		c.Next()
 
 	})
+	// 公开高成本读取接口单独限流，避免把读滥用塞进来源封禁查询，
+	// 也避免攻击者用大量 GET 请求直接放大帖子和搜索查询。
+	r.Use(middleware.ReadAbuseRateLimitMiddleware(
+		120,
+		time.Minute,
+		"/api/posts",
+		"/api/search",
+		"/api/topics/search",
+		"/api/topics/recommend",
+	))
 
 	// 学校个人能力退役闸门必须先于版本检查、请求体限制和幂等性读取，
 	// 确保旧教务请求连 body 都不会进入 Go 处理链路。

@@ -93,6 +93,31 @@ func TestGetMembersReturnsAdminFieldsWithoutUsingUserMarshalJSON(t *testing.T) {
 	}
 }
 
+func TestGetMembersUsesVerifiedAcademicStudentIDWhenLegacyFieldIsEmpty(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newInvitationResponseTestDB(t)
+	createInvitationResponseTestUser(t, db, models.User{
+		ID: 436, Nickname: "念辞", Role: models.RoleAdmin, Avatar: "admin.png",
+	})
+	if err := db.Create(&models.AcademicIdentityBinding{
+		UserID: 436, ProviderID: models.AcademicProviderUndergraduate, StudentID: "2408010115",
+		VerifiedAt: time.Now(), VerificationMethod: models.AcademicVerificationMethodSchoolProfile, VerificationVersion: "v1",
+	}).Error; err != nil {
+		t.Fatalf("创建教务身份失败: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	NewInvitationHandler(db, "test-secret").GetMembers(context)
+	response := decodeInvitationResponse(t, recorder)
+	if len(response) != 1 || response[0]["student_id"] != "2408010115" {
+		t.Fatalf("管理员列表未显示已验证教务学号: %s", recorder.Body.String())
+	}
+	if response[0]["student_verified"] != true {
+		t.Fatalf("管理员列表身份状态错误: %s", recorder.Body.String())
+	}
+}
+
 func TestGetCandidatesReturnsStudentIDAndAvatar(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newInvitationResponseTestDB(t)

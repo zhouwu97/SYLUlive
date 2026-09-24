@@ -309,6 +309,38 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     Add2Calendar.addEvent2Cal(event);
   }
 
+  Future<void> _deleteExam(ExamModel exam) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('确认删除'),
+        content: Text('确定要删除“${exam.name}”吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _exams.remove(exam));
+    await _saveToLocal();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已删除 ${exam.name}')),
+    );
+  }
+
   void _showEditDialog([ExamModel? exam, int? index]) {
     final nameCtrl = TextEditingController(text: exam?.name ?? '');
     final locCtrl = TextEditingController(text: exam?.location ?? '');
@@ -1018,6 +1050,16 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                 ),
                                 tooltip: '添加到系统日历',
                                 onPressed: () => _addToCalendar(exam),
+                              ),
+                              IconButton(
+                                icon: Icon(
+                                  Icons.delete_outline,
+                                  color: isDark
+                                      ? Colors.red[300]
+                                      : Colors.red[400],
+                                ),
+                                tooltip: '删除考试',
+                                onPressed: () => _deleteExam(exam),
                               ),
                             ],
                           ),

@@ -83,6 +83,33 @@ void main() {
     expect(rendered.memCacheHeight, lessThanOrEqualTo(480));
   });
 
+  testWidgets('回复图片缩略图保留原始宽高比', (tester) async {
+    final image = ReplyImage(
+      id: 1,
+      replyId: 2,
+      fileId: 3,
+      file: FileItem(
+        id: 3,
+        hash: 'hash',
+        path: '/uploads/origin.jpg',
+        size: 1024,
+        mimeType: 'image/jpeg',
+        width: 400,
+        height: 200,
+      ),
+      thumbUrl: '/uploads/thumb.jpg',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: ReplyImageMedia(images: [image])),
+      ),
+    );
+
+    expect(
+        tester.getSize(find.byType(CachedNetworkImage)), const Size(190, 95));
+  });
+
   testWidgets('详情回复图片在高 DPR 下使用 medium 变体', (tester) async {
     final image = ReplyImage(
       id: 1,
@@ -153,5 +180,25 @@ void main() {
       const ImageDecodeTarget(width: 190, height: 190),
     );
     expect(selection.url, isEmpty);
+  });
+
+  test('旧回复或小图进入查看器保留原图回退', () {
+    final image = ReplyImage(
+      id: 1,
+      replyId: 2,
+      fileId: 3,
+      file: FileItem(
+        id: 3,
+        hash: 'hash',
+        path: '/uploads/origin.jpg',
+        size: 0,
+        mimeType: 'image/jpeg',
+      ),
+      originUrl: '/uploads/origin.jpg',
+    );
+
+    final item = ReplyImageMedia.viewerItemFor(image);
+    expect(item.originalUrl, endsWith('/uploads/origin.jpg'));
+    expect(item.allowOriginalPreviewFallback, isTrue);
   });
 }

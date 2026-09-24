@@ -345,6 +345,8 @@ func (m *SMTPSecurityAlertMailer) SendSecurityAlert(ctx context.Context, to []st
 		if err := client.StartTLS(&tls.Config{ServerName: m.config.Host, MinVersion: tls.VersionTLS12}); err != nil {
 			return err
 		}
+	} else if !m.config.AllowInsecure {
+		return errors.New("smtp server does not support STARTTLS")
 	}
 	if err := client.Auth(auth); err != nil {
 		return err

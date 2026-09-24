@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"shenliyuan/internal/models"
 )
 
 // 游标必须能原样往返；排序方式对不上或格式变了都必须判失效，
@@ -17,9 +19,13 @@ func TestPollListCursorRoundTripAndInvalid(t *testing.T) {
 		if sort == "recommend" {
 			poolOrderHash = strings.Repeat("a", 64)
 		}
+		poolIDs := ""
+		if sort == "recommend" {
+			poolIDs = "1,2,3"
+		}
 		encoded := EncodePollListCursor(pollListCursor{
 			Sort: sort, KeyTime: keyTime, KeyID: 42,
-			PoolAnchorTime: anchor, PoolAnchorID: 7, PoolOrderHash: poolOrderHash, Index: 20,
+			PoolAnchorTime: anchor, PoolAnchorID: 7, PoolOrderHash: poolOrderHash, PoolIDs: poolIDs, Index: 20,
 		})
 		decoded, ok := DecodePollListCursor(encoded, sort)
 		if !ok {
@@ -44,6 +50,41 @@ func TestPollListCursorRoundTripAndInvalid(t *testing.T) {
 	// 负下标在编码端写得出来，解码必须拒绝：它会把客户端带回一个不存在的位置。
 	if _, ok := DecodePollListCursor(EncodePollListCursor(pollListCursor{Sort: "latest", Index: -1}), "latest"); ok {
 		t.Fatal("负下标游标被接受")
+	}
+}
+
+func TestPollListRecommendCursorSkipsDeletedSnapshotItemsWithoutReset(t *testing.T) {
+	db := newPollListTestDB(t)
+	base := time.Date(2026, 9, 22, 8, 0, 0, 0, time.UTC)
+	seedPollRows(t, db, 1, activePollRows(6, base, time.Minute))
+	service := NewPollService(db)
+
+	first, err := service.List(PollListInput{Sort: "recommend", Page: 1, Limit: 2}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.NextCursor == "" {
+		t.Fatal("推荐首页应生成快照游标")
+	}
+	// 删除首页后的第一条，旧实现会让第二页的下标左移，导致漏掉一条。
+	firstIDs := postIDsOf(first)
+	if len(firstIDs) == 0 {
+		t.Fatal("推荐首页不应为空")
+	}
+	if err := db.Delete(&models.Post{}, firstIDs[0]).Error; err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.List(PollListInput{Sort: "recommend", Page: 2, Limit: 2, Cursor: first.NextCursor}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.CursorStale {
+		t.Fatal("删除快照条目不应强制回到第一页")
+	}
+	for _, id := range postIDsOf(second) {
+		if id == firstIDs[0] {
+			t.Fatalf("已删除的快照条目仍出现在第二页: %v", postIDsOf(second))
+		}
 	}
 }
 

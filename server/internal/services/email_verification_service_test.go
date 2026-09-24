@@ -285,6 +285,7 @@ func TestSMTPVerificationMailerTreatsDataAcceptedAsSuccessWhenQuitFails(t *testi
 	mailer := NewSMTPVerificationMailer(SMTPConfig{
 		Host: "127.0.0.1", Port: strconv.Itoa(listener.Addr().(*net.TCPAddr).Port),
 		User: "user", Pass: "pass", From: "from@example.com",
+		AllowInsecure: true,
 	})
 	err = mailer.SendVerificationCode(context.Background(), "to@example.com", models.EmailVerificationPurposeRegister, "123456")
 	if err != nil {
@@ -317,6 +318,7 @@ func TestSMTPVerificationMailerHonorsConnectionDeadline(t *testing.T) {
 	mailer := NewSMTPVerificationMailer(SMTPConfig{
 		Host: "127.0.0.1", Port: strconv.Itoa(listener.Addr().(*net.TCPAddr).Port),
 		User: "user", Pass: "pass", From: "from@example.com",
+		AllowInsecure: true,
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()

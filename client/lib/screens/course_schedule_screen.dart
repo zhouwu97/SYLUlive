@@ -3849,6 +3849,7 @@ $classFilterRule
     return LayoutBuilder(
       builder: (context, constraints) {
         final slotCount = _scheduleSlotCount(sc);
+        // 时间格高度保持用户保存的布局；大字号只压缩低优先级详情，避免课表整体变高。
         final slotHeight = _effectiveSlotHeight();
         final totalH = slotCount * slotHeight;
         // 在平板模式下，主课表区域不是全屏宽度，必须使用 LayoutBuilder 获取实际可用宽度
@@ -4355,30 +4356,34 @@ $classFilterRule
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (c.location != null && c.location!.isNotEmpty) ...[
+              if ((c.location != null && c.location!.isNotEmpty) ||
+                  (!isCompact &&
+                      !isGraduatePhone &&
+                      c.teacher != null &&
+                      c.teacher!.isNotEmpty)) ...[
                 SizedBox(height: 1 * scale),
-                Text(
-                  '@${c.location}',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: (isCompact ? 9 : 11) * scale,
-                    fontWeight: FontWeight.w600,
-                    height: 1.15,
+                Flexible(
+                  child: Text(
+                    [
+                      if (c.location != null && c.location!.isNotEmpty)
+                        '@${c.location}',
+                      if (!isCompact &&
+                          !isGraduatePhone &&
+                          c.teacher != null &&
+                          c.teacher!.isNotEmpty)
+                        c.teacher!,
+                    ].join('\n'),
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: (isCompact ? 9 : 10) * scale,
+                      fontWeight: FontWeight.w600,
+                      height: 1.15,
+                    ),
+                    textAlign: TextAlign.left,
+                    // 地点排在教师前面，空间不足时省略教师，确保用户先看到上课地点。
+                    maxLines: isCompact ? 1 : 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  textAlign: TextAlign.left,
-                ),
-              ],
-              if (!isCompact &&
-                  !isGraduatePhone &&
-                  c.teacher != null &&
-                  c.teacher!.isNotEmpty) ...[
-                SizedBox(height: 1 * scale),
-                Text(
-                  c.teacher!,
-                  style: TextStyle(color: Colors.white60, fontSize: 10 * scale),
-                  textAlign: TextAlign.left,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ],

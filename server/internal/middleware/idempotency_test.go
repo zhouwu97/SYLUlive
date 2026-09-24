@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 	"shenliyuan/internal/models"
 )
@@ -321,6 +323,44 @@ func TestIdempotencyMiddlewareDoesNotRecordReads(t *testing.T) {
 	if _, err := io.Copy(io.Discard, response.Body); err != nil {
 		t.Fatalf("read response: %v", err)
 	}
+}
+
+func TestIdempotencyMiddlewareCapsActiveKeysPerScope(t *testing.T) {
+	db := openIdempotencyTestDB(t)
+	router := newIdempotencyTestRouter(t, db, func(c *gin.Context) {
+		// 用业务处理器一次性造满额度，验证后续新的唯一键会被挡住。
+		if c.GetHeader("Idempotency-Key") == "seed" {
+			scope := idempotencyScope(c)
+			rows := make([]models.IdempotencyRecord, 0, idempotencyMaxActiveRecordsPerScope)
+			for i := 0; i < idempotencyMaxActiveRecordsPerScope; i++ {
+				rows = append(rows, models.IdempotencyRecord{
+					Scope: scope, Key: fmt.Sprintf("seed-%d", i), Method: http.MethodPost,
+					Path: "/write", RequestHash: fmt.Sprintf("hash-%d", i),
+					State:     models.IdempotencyStateCompleted,
+					ExpiresAt: time.Now().UTC().Add(time.Hour),
+				})
+			}
+			if err := db.Create(&rows).Error; err != nil {
+				c.Error(err)
+				return
+			}
+		}
+		c.Status(http.StatusCreated)
+	})
+
+	seed := httptest.NewRecorder()
+	seedRequest := requestWithKey(http.MethodPost, "/write", "seed", "{}")
+	seedRequest.RemoteAddr = "192.0.2.10:1234"
+	router.ServeHTTP(seed, seedRequest)
+	require.Equal(t, http.StatusCreated, seed.Code)
+
+	blocked := httptest.NewRecorder()
+	blockedRequest := requestWithKey(http.MethodPost, "/write", "new-key", "{}")
+	blockedRequest.RemoteAddr = "192.0.2.10:1234"
+	router.ServeHTTP(blocked, blockedRequest)
+	require.Equal(t, http.StatusTooManyRequests, blocked.Code)
+	require.Equal(t, "3600", blocked.Header().Get("Retry-After"))
+	require.Contains(t, blocked.Body.String(), "idempotency_scope_limit")
 }
 
 // TestIdempotencyMiddlewareReleasesFailedResponseForSameKeyRetry 锁住可安全重试的失败响应。

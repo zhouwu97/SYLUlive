@@ -1,9 +1,12 @@
 package services
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"net"
 	"net/textproto"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +22,60 @@ type recordedAlert struct {
 	to      []string
 	subject string
 	body    string
+}
+
+func TestSMTPSecurityAlertMailerRejectsPlaintextAuthentication(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	serverDone := make(chan error, 1)
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			serverDone <- acceptErr
+			return
+		}
+		defer conn.Close()
+		reader := bufio.NewReader(conn)
+		writer := bufio.NewWriter(conn)
+		if _, err := writer.WriteString("220 test.smtp ESMTP\r\n"); err != nil {
+			serverDone <- err
+			return
+		}
+		if err := writer.Flush(); err != nil {
+			serverDone <- err
+			return
+		}
+		if _, err := reader.ReadString('\n'); err != nil {
+			serverDone <- err
+			return
+		}
+		// 明确不提供 STARTTLS，客户端必须在认证前拒绝连接。
+		if _, err := writer.WriteString("250-test.smtp\r\n250 AUTH PLAIN\r\n"); err != nil {
+			serverDone <- err
+			return
+		}
+		serverDone <- writer.Flush()
+	}()
+
+	mailer := NewSMTPSecurityAlertMailer(SMTPConfig{
+		Host: "127.0.0.1", Port: strconv.Itoa(listener.Addr().(*net.TCPAddr).Port),
+		User: "user", Pass: "pass", From: "from@example.com",
+	})
+	err = mailer.SendSecurityAlert(context.Background(), []string{"ops@example.com"}, "subject", "body")
+	if err == nil || !strings.Contains(err.Error(), "STARTTLS") {
+		t.Fatalf("无 STARTTLS 的 SMTP 应拒绝认证，实际错误=%v", err)
+	}
+	select {
+	case serverErr := <-serverDone:
+		if serverErr != nil {
+			t.Fatalf("SMTP 测试服务端失败: %v", serverErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("SMTP 测试服务端未完成交互")
+	}
 }
 
 type recordingAlertMailer struct {

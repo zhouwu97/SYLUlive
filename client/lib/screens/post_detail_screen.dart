@@ -4500,23 +4500,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               color: isDark ? const Color(0xFF1F222A) : const Color(0xFFF7F8FA),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Text.rich(
-              TextSpan(
-                children: [
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text.rich(
                   TextSpan(
-                    text: '${r.author?.nickname ?? '匿名'}：',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w400,
-                      color: isDark ? Colors.white54 : const Color(0xFF6B7280),
-                    ),
+                    children: [
+                      TextSpan(
+                        text: '${r.author?.nickname ?? '匿名'}：',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w400,
+                          color:
+                              isDark ? Colors.white54 : const Color(0xFF6B7280),
+                        ),
+                      ),
+                      _buildCompactContentSpan(r, isDark),
+                      if (r.images.any(ReplyImageMedia.hasAnyImageUrl))
+                        const TextSpan(text: ' [图片]'),
+                    ],
                   ),
-                  _buildCompactContentSpan(r, isDark),
-                ],
-              ),
-              style: const TextStyle(height: 1.35),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(height: 1.35),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ),
         ),
@@ -5371,7 +5379,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }) {
     // 含贴纸的子回复继续复用完整内容布局，避免把“文字 + 贴纸”回复裁掉；
     // 其中的文字已由 _buildReplyContent 使用统一可选组件渲染。
-    if (r.hasSticker) {
+    if (r.hasSticker || r.images.any(ReplyImageMedia.hasAnyImageUrl)) {
       return _buildReplyContent(
         r,
         isDark,

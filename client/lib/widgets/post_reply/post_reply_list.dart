@@ -462,30 +462,39 @@ class _ChildReplySummary extends StatelessWidget {
               onTap: () => onReply(reply),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Text.rich(
-                  TextSpan(
-                    children: [
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text.rich(
                       TextSpan(
-                        text: '${reply.author?.nickname ?? '匿名'}：',
-                        style: TextStyle(
-                          color:
-                              isDark ? Colors.white54 : const Color(0xFF6B7280),
-                        ),
+                        children: [
+                          TextSpan(
+                            text: '${reply.author?.nickname ?? '匿名'}：',
+                            style: TextStyle(
+                              color: isDark
+                                  ? Colors.white54
+                                  : const Color(0xFF6B7280),
+                            ),
+                          ),
+                          TextSpan(
+                            text: reply.hasSticker && !reply.hasTextContent
+                                ? '[表情]'
+                                : reply.content,
+                          ),
+                          if (reply.images.any(ReplyImageMedia.hasAnyImageUrl))
+                            const TextSpan(text: ' [图片]'),
+                        ],
                       ),
-                      TextSpan(
-                        text: reply.hasSticker && !reply.hasTextContent
-                            ? '[表情]'
-                            : reply.content,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.35,
+                        color:
+                            isDark ? Colors.white60 : const Color(0xFF4B5563),
                       ),
-                    ],
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.35,
-                    color: isDark ? Colors.white60 : const Color(0xFF4B5563),
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),

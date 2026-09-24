@@ -541,17 +541,20 @@ func (s *PollService) List(input PollListInput, viewerID uint) (PollListResult, 
 		// 推荐顺序由内存评分决定，本身随时间变化，做不到真正的快照续页。
 		// 这里退一步但把最要命的漂移堵死：用锚点钉住候选池上边界，新发布的投票
 		// 不会挤进已经翻过的页（offset 分页在并发新增下漏条/重条的直接成因）。
-		// 池内顺序对同一锚点是稳定的，池里被删掉的条目仍可能让下标偏移，
-		// 那种情况由客户端回到第一页恢复，不在这里假装成快照一致。
+		// 池内有序 ID 会写入游标，池里删除的条目只会在续页时被跳过，
+		// 不再把后续条目错误地挪到旧下标上。
 		poolQuery := query
 		anchorTime, anchorID := time.Time{}, uint(0)
 		if hasCursor {
 			anchorTime, anchorID = cursor.PoolAnchorTime, cursor.PoolAnchorID
-			poolQuery = poolQuery.Where(
-				pollKeysetAtOrBefore("posts.created_at", "posts.id"),
-				anchorTime, anchorTime, anchorID)
+			// pc3 游标携带首页生成的候选池快照。只按快照 ID 取回仍存在的
+			// 投票，删除中间项不会再让后续条目的 offset 左移。
+			poolIDs := decodePollPoolIDs(cursor.PoolIDs)
+			poolQuery = poolQuery.Where("posts.id IN ?", poolIDs)
+		} else {
+			poolQuery = poolQuery.Order("posts.created_at DESC, posts.id DESC")
 		}
-		if err := poolQuery.Order("posts.created_at DESC, posts.id DESC").Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).Limit(pollRecommendPoolSize).Find(&posts).Error; err != nil {
+		if err := poolQuery.Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).Limit(pollRecommendPoolSize).Find(&posts).Error; err != nil {
 			return PollListResult{}, err
 		}
 		result.PoolSize = pollRecommendPoolSize
@@ -559,18 +562,6 @@ func (s *PollService) List(input PollListInput, viewerID uint) (PollListResult, 
 		// 计入总数会让 has_more 一直指向空白页；全站匹配数由 matched_total 承担。
 		result.Total = int64(len(posts))
 		if len(posts) == 0 {
-			if hasCursor {
-				// 锚点内的候选全部消失时，旧池已无法续页；回到当前第一页，
-				// 让锚点之后新发布的投票也能重新进入列表。
-				input.Cursor = ""
-				input.Page = 1
-				fresh, err := s.List(input, viewerID)
-				if err != nil {
-					return PollListResult{}, err
-				}
-				fresh.CursorStale = true
-				return fresh, nil
-			}
 			posts = []models.Post{}
 			result.Items = posts
 			return result, nil
@@ -582,42 +573,50 @@ func (s *PollService) List(input PollListInput, viewerID uint) (PollListResult, 
 		if err := s.HydratePollPosts(posts, viewerID); err != nil {
 			return PollListResult{}, err
 		}
-		now := s.now()
-		sort.SliceStable(posts, func(i, j int) bool { return pollRecommendScore(posts[i], now) > pollRecommendScore(posts[j], now) })
-		poolOrderHash := pollRecommendOrderFingerprint(posts)
-		if hasCursor && cursor.PoolOrderHash != poolOrderHash {
-			// 投票数、回复数、点赞数或候选成员变化会改变推荐顺序。旧下标此时
-			// 不再指向同一位置，返回新第一页并要求客户端整体替换。
-			input.Cursor = ""
-			input.Page = 1
-			result, err := s.List(input, viewerID)
-			if err != nil {
-				return PollListResult{}, err
-			}
-			result.CursorStale = true
-			return result, nil
-		}
-		start := (input.Page - 1) * input.Limit
+		poolOrderHash := ""
+		poolIDs := ""
 		if hasCursor {
-			start = cursor.Index
-		}
-		if start > len(posts) {
-			start = len(posts)
-		}
-		end := start + input.Limit
-		if end > len(posts) {
-			end = len(posts)
-		}
-		result.HasMore = end < len(posts)
-		posts = posts[start:end]
-		if result.HasMore {
-			result.NextCursor = EncodePollListCursor(pollListCursor{
-				Sort:           input.Sort,
-				PoolAnchorTime: anchorTime,
-				PoolAnchorID:   anchorID,
-				PoolOrderHash:  poolOrderHash,
-				Index:          end,
-			})
+			poolOrderHash = cursor.PoolOrderHash
+			poolIDs = cursor.PoolIDs
+			var nextIndex int
+			var hasMore bool
+			posts, nextIndex, hasMore = pagePollSnapshot(posts, decodePollPoolIDs(poolIDs), cursor.Index, input.Limit)
+			result.HasMore = hasMore
+			if result.HasMore {
+				result.NextCursor = EncodePollListCursor(pollListCursor{
+					Sort:           input.Sort,
+					PoolAnchorTime: anchorTime,
+					PoolAnchorID:   anchorID,
+					PoolOrderHash:  poolOrderHash,
+					PoolIDs:        poolIDs,
+					Index:          nextIndex,
+				})
+			}
+		} else {
+			now := s.now()
+			sort.SliceStable(posts, func(i, j int) bool { return pollRecommendScore(posts[i], now) > pollRecommendScore(posts[j], now) })
+			poolOrderHash = pollRecommendOrderFingerprint(posts)
+			poolIDs = pollRecommendIDs(posts)
+			start := (input.Page - 1) * input.Limit
+			if start > len(posts) {
+				start = len(posts)
+			}
+			end := start + input.Limit
+			if end > len(posts) {
+				end = len(posts)
+			}
+			result.HasMore = end < len(posts)
+			posts = posts[start:end]
+			if result.HasMore {
+				result.NextCursor = EncodePollListCursor(pollListCursor{
+					Sort:           input.Sort,
+					PoolAnchorTime: anchorTime,
+					PoolAnchorID:   anchorID,
+					PoolOrderHash:  poolOrderHash,
+					PoolIDs:        poolIDs,
+					Index:          end,
+				})
+			}
 		}
 	} else {
 		// created_at/ends_at 同值时用 posts.id 兜底：没有二级键的话数据库可以任意排，
@@ -689,6 +688,45 @@ func pollRecommendOrderFingerprint(posts []models.Post) string {
 	}
 	sum := sha256.Sum256(ids)
 	return hex.EncodeToString(sum[:])
+}
+
+func pollRecommendIDs(posts []models.Post) string {
+	ids := make([]string, 0, len(posts))
+	for _, post := range posts {
+		ids = append(ids, strconv.FormatUint(uint64(post.ID), 10))
+	}
+	return strings.Join(ids, ",")
+}
+
+// pagePollSnapshot 依据首页快照的原始位置切页。快照中的投票如果已经删除，
+// 只跳过该 ID，不把后续投票左移到错误的页，避免删除操作造成重复或漏项。
+func pagePollSnapshot(posts []models.Post, snapshotIDs []uint, start, limit int) ([]models.Post, int, bool) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if start < 0 {
+		start = 0
+	}
+	byID := make(map[uint]models.Post, len(posts))
+	for _, post := range posts {
+		byID[post.ID] = post
+	}
+	if start > len(snapshotIDs) {
+		start = len(snapshotIDs)
+	}
+	page := make([]models.Post, 0, limit)
+	index := start
+	for ; index < len(snapshotIDs) && len(page) < limit; index++ {
+		if post, ok := byID[snapshotIDs[index]]; ok {
+			page = append(page, post)
+		}
+	}
+	for next := index; next < len(snapshotIDs); next++ {
+		if _, ok := byID[snapshotIDs[next]]; ok {
+			return page, index, true
+		}
+	}
+	return page, index, false
 }
 
 // HydratePollPosts 用固定批次数查询为帖子填充投票摘要，避免首页 N+1。

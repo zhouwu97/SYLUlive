@@ -84,6 +84,9 @@ type SMTPConfig struct {
 	User string
 	Pass string
 	From string
+	// AllowInsecure 仅用于本地测试或明确隔离的 SMTP 环境。生产默认要求 STARTTLS，
+	// 避免认证信息和验证码正文在明文连接上传输。
+	AllowInsecure bool
 }
 
 // VerificationMailer 允许测试替换邮件发送实现。
@@ -133,6 +136,8 @@ func (m *SMTPVerificationMailer) SendVerificationCode(ctx context.Context, email
 		if err := client.StartTLS(&tls.Config{ServerName: m.config.Host, MinVersion: tls.VersionTLS12}); err != nil {
 			return err
 		}
+	} else if !m.config.AllowInsecure {
+		return errors.New("smtp server does not support STARTTLS")
 	}
 	if err := client.Auth(smtp.PlainAuth("", m.config.User, m.config.Pass, m.config.Host)); err != nil {
 		return err

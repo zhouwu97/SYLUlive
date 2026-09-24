@@ -12,14 +12,14 @@ import (
 //
 // 改字段含义必须递增：旧客户端带来的上一版游标会被判为失效并回到第一页，
 // 而不是被错误解析成一个跳过/重复条目的位置。
-const pollCursorVersion = "pc2"
+const pollCursorVersion = "pc3"
 
 // pollListCursor 是列表续页位置。
 //
 // 为什么不用 offset：并发新增会让「第 N 页」整体后移，同一条投票因此被跳过或重复，
 // 用户看到的是列表自己在脚下动。latest/ending 直接用排序键做 keyset 续页；
-// recommend 的顺序由互动数和时间评分决定，所以改成「池锚点 + 顺序摘要 + 池内下标」：
-// 锚点排除新发布的投票，顺序摘要发现候选池或排名变化后让客户端回到第一页。
+// recommend 的顺序由互动数和时间评分决定，所以把首页候选池的有序 ID 快照放进游标：
+// 锚点排除新发布的投票，池内删除只跳过对应 ID，不会让后续条目被下标挤动。
 type pollListCursor struct {
 	Sort string
 	// KeyTime/KeyID 是 latest（created_at）或 ending（ends_at）的排序键位置。
@@ -28,8 +28,12 @@ type pollListCursor struct {
 	// PoolAnchorTime/PoolAnchorID 钉住推荐候选池的上边界（最新一条）。
 	PoolAnchorTime time.Time
 	PoolAnchorID   uint
-	// PoolOrderHash 是推荐候选池排序后投票 ID 的摘要；排名变化时拒绝沿旧下标续页。
+	// PoolOrderHash 保留推荐候选池生成时的排序摘要，便于诊断和兼容旧数据。
+	// pc3 续页以 PoolIDs 快照为准，不再因排名变化把用户踢回第一页。
 	PoolOrderHash string
+	// PoolIDs 是首页生成的候选池快照顺序。把 ID 带进游标后，池内删除只会让
+	// 已删除项自然消失，不会让后续条目的下标整体左移。
+	PoolIDs string
 	// Index 是推荐池内的下标偏移。
 	Index int
 }
@@ -46,6 +50,7 @@ func EncodePollListCursor(cursor pollListCursor) string {
 		strconv.FormatInt(cursor.PoolAnchorTime.UnixNano(), 10),
 		strconv.FormatUint(uint64(cursor.PoolAnchorID), 10),
 		cursor.PoolOrderHash,
+		cursor.PoolIDs,
 		strconv.Itoa(cursor.Index),
 	}
 	return base64.RawURLEncoding.EncodeToString([]byte(strings.Join(parts, "|")))
@@ -60,7 +65,7 @@ func DecodePollListCursor(encoded, sort string) (pollListCursor, bool) {
 		return cursor, false
 	}
 	parts := strings.Split(string(raw), "|")
-	if len(parts) != 8 || parts[0] != pollCursorVersion {
+	if len(parts) != 9 || parts[0] != pollCursorVersion {
 		return cursor, false
 	}
 	if parts[1] != sort {
@@ -83,10 +88,6 @@ func DecodePollListCursor(encoded, sort string) (pollListCursor, bool) {
 	if err != nil {
 		return cursor, false
 	}
-	index, err := strconv.Atoi(parts[7])
-	if err != nil || index < 0 {
-		return cursor, false
-	}
 	if sort == "recommend" {
 		if len(parts[6]) != 64 {
 			return cursor, false
@@ -94,7 +95,10 @@ func DecodePollListCursor(encoded, sort string) (pollListCursor, bool) {
 		if _, err := hex.DecodeString(parts[6]); err != nil {
 			return cursor, false
 		}
-	} else if parts[6] != "" {
+		if !validPollPoolIDs(parts[7]) {
+			return cursor, false
+		}
+	} else if parts[6] != "" || parts[7] != "" {
 		return cursor, false
 	}
 	cursor = pollListCursor{
@@ -104,9 +108,50 @@ func DecodePollListCursor(encoded, sort string) (pollListCursor, bool) {
 		PoolAnchorTime: time.Unix(0, anchorNanos).UTC(),
 		PoolAnchorID:   uint(anchorID),
 		PoolOrderHash:  parts[6],
-		Index:          index,
+		PoolIDs:        parts[7],
+		Index:          parsePollCursorIndex(parts[8]),
+	}
+	if cursor.Index < 0 {
+		return pollListCursor{}, false
 	}
 	return cursor, true
+}
+
+func parsePollCursorIndex(raw string) int {
+	index, err := strconv.Atoi(raw)
+	if err != nil || index < 0 {
+		return -1
+	}
+	return index
+}
+
+func validPollPoolIDs(raw string) bool {
+	return len(decodePollPoolIDs(raw)) > 0
+}
+
+func decodePollPoolIDs(raw string) []uint {
+	parts := strings.Split(raw, ",")
+	if len(parts) == 0 || len(parts) > pollRecommendPoolSize {
+		return nil
+	}
+	seen := make(map[uint]struct{}, len(parts))
+	ids := make([]uint, 0, len(parts))
+	for _, part := range parts {
+		id, err := strconv.ParseUint(part, 10, 64)
+		if err != nil || id == 0 {
+			return nil
+		}
+		parsed := uint(id)
+		if uint64(parsed) != id {
+			return nil
+		}
+		if _, ok := seen[parsed]; ok {
+			return nil
+		}
+		seen[parsed] = struct{}{}
+		ids = append(ids, parsed)
+	}
+	return ids
 }
 
 // pollKeysetBefore 是 (time, id) 的「严格排在它前面」条件（倒序续页用）。

@@ -15,6 +15,10 @@ func TestSecurityEventActionableClassification(t *testing.T) {
 		"login_failed",
 		"verification_cooldown",
 		"security_blocked_request",
+		"content_post_flood",
+		"content_reply_flood",
+		"private_message_flood",
+		"feedback_ticket_flood",
 	}
 	for _, eventType := range auditTypes {
 		if SecurityEventActionable(eventType) {
@@ -31,7 +35,6 @@ func TestSecurityEventActionableClassification(t *testing.T) {
 		"verification_code_bruteforce",
 		"suspicious_password_reset_succeeded",
 		"refresh_token_reused",
-		"content_post_flood",
 		// 未登记的新类型必须默认可见：宁可多显示，不能把新增攻击类型静默隐藏。
 		"some_future_event_type",
 	}

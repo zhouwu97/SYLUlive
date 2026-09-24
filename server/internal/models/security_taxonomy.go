@@ -32,6 +32,12 @@ var securityAuditEventTypes = map[string]struct{}{
 	// 来源封禁已经在中间件层完成处置，这条只是「封禁生效了多少次」的计数流水。
 	// 把它计入待处置会让每个被封禁的请求都生成一条待办，封禁越有效后台越吵。
 	"security_blocked_request": {},
+	// 内容、私信和反馈额度由业务接口当场限流；单次 429 只证明规则生效，
+	// 不足以证明是攻击。保留在全部记录里供追查，不进入管理员待处置列表。
+	"content_post_flood":    {},
+	"content_reply_flood":   {},
+	"private_message_flood": {},
+	"feedback_ticket_flood": {},
 }
 
 // SecurityEventActionable 判断事件类型是否需要管理员处置。

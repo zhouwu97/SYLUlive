@@ -168,15 +168,15 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                     style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: AppSpacing.sm),
                 _detailLine('级别',
-                    '${securitySeverityLabel(event.severity)}（${event.severity}）'),
+                    '${securityEventSeverityLabel(event)}（${securityEventDisplaySeverity(event)}）'),
                 _detailLine('状态', securityEventStatusLabel(event)),
                 _detailLine('处置', securityEventActionLabel(event)),
-                _detailLine(
-                    '目标',
-                    event.targetMasked.isEmpty
-                        ? '未标记目标'
-                        : event.targetMasked),
+                _detailLine('目标', securityEventTargetLabel(event)),
                 ...securityEventMetrics(event).map((line) => Text(line)),
+                ...securityEventContext(event).map((line) => Text(
+                      line,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    )),
                 _detailLine('路由', '${event.method} ${event.route}'),
                 _detailLine('来源指纹',
                     event.sourceFingerprint.isEmpty ? '未知' : event.sourceFingerprint),
@@ -707,7 +707,8 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
   }
 
   Widget _buildEventCard(SecurityEvent event) {
-    final color = _severityColor(event.severity);
+    final displaySeverity = securityEventDisplaySeverity(event);
+    final color = _severityColor(displaySeverity);
     return InkWell(
       onTap: () => _showEvent(event),
       borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -728,7 +729,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                 decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(AppRadius.sm)),
-                child: Text(securitySeverityLabel(event.severity),
+                child: Text(securityEventSeverityLabel(event),
                     style:
                         TextStyle(color: color, fontWeight: FontWeight.w700)),
               ),
@@ -740,9 +741,12 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                   style: Theme.of(context).textTheme.bodySmall),
             ]),
             const SizedBox(height: AppSpacing.sm),
-            Text(
-                '目标：${event.targetMasked.isEmpty ? '未标记目标' : event.targetMasked}'),
+            Text('目标：${securityEventTargetLabel(event)}'),
             ...securityEventMetrics(event).map((line) => Text(line)),
+            ...securityEventContext(event).map((line) => Text(
+                  line,
+                  style: Theme.of(context).textTheme.bodySmall,
+                )),
             Text(
                 '来源：${event.sourceFingerprint.isEmpty ? '未知' : event.sourceFingerprint}'),
             if (!event.sourceAttributionValid)

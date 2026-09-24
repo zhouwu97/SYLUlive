@@ -519,6 +519,9 @@ func marshalSecurityMetadata(input map[string]interface{}) string {
 	allowed := map[string]struct{}{
 		"purpose": {}, "window": {}, "threshold": {}, "reason": {}, "count": {},
 		"distinct_targets": {}, "target_count": {}, "failure_count": {}, "route_group": {},
+		// 内容限流事件只记录定位所需的非正文上下文：目标帖子、内容形态和长度。
+		// 正文、联系方式和令牌不属于安全事件白名单，避免审计表变成请求体旁路。
+		"post_id": {}, "content_kind": {}, "content_length": {}, "rule": {},
 	}
 	filtered := make(map[string]interface{})
 	for key, value := range input {

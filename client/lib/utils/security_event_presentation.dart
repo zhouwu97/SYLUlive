@@ -33,10 +33,12 @@ String securityEventTitle(SecurityEvent event) => switch (event.eventType) {
       'login_bruteforce' => '登录暴力尝试',
       'refresh_token_reused' => 'Refresh Token Reuse',
       'suspicious_password_reset_succeeded' => '可疑密码重置成功',
-      'content_post_flood' => '发帖刷屏',
-      'content_reply_flood' => '评论刷屏',
-      'private_message_flood' => '私信刷屏',
-      'feedback_ticket_flood' => '反馈工单刷量',
+      'content_post_flood' => '发帖被限流',
+      'content_reply_flood' => contentQuotaReason(event) == 'duplicate_content'
+          ? '重复评论被拦截'
+          : '评论发送被限流',
+      'private_message_flood' => '私信发送被限流',
+      'feedback_ticket_flood' => '反馈提交被限流',
       'security_blocked_request' => '来源封禁拦截',
       'search_abuse' => '搜索扫描',
       _ => event.eventType,
@@ -87,6 +89,56 @@ List<String> securityEventMetrics(SecurityEvent event) {
     parts.add('已拦截 ${event.blockedCount} 次');
   }
   return [parts.join(' · ')];
+}
+
+/// 内容限流事件的补充上下文。事件只保留定位所需的元数据，不保存正文。
+List<String> securityEventContext(SecurityEvent event) {
+  if (!isContentQuotaEvent(event.eventType)) return const [];
+  final metadata = event.metadata;
+  final lines = <String>[];
+  final reason = contentQuotaReason(event);
+  final rule = metadata['rule']?.toString() ?? '';
+  final kind = metadata['content_kind']?.toString() ?? '';
+  final length = (metadata['content_length'] as num?)?.toInt() ?? 0;
+  if (reason == 'duplicate_content') {
+    lines.add('原因：同一帖子内重复发送相同文字');
+  } else if (reason == 'publish_quota_exhausted') {
+    lines.add('原因：已达到内容发布额度');
+  } else if (reason == 'send_rate_limited') {
+    lines.add('原因：发送频率超过限制');
+  }
+  if (kind.isNotEmpty) {
+    final lengthLabel = length > 0 ? '（$length 字）' : '';
+    lines.add('提交内容：$kind$lengthLabel；正文未写入安全日志');
+  }
+  if (rule.isNotEmpty) lines.add('触发规则：$rule');
+  return lines;
+}
+
+bool isContentQuotaEvent(String eventType) => switch (eventType) {
+      'content_post_flood' ||
+      'content_reply_flood' ||
+      'private_message_flood' ||
+      'feedback_ticket_flood' => true,
+      _ => false,
+    };
+
+String contentQuotaReason(SecurityEvent event) =>
+    event.metadata['reason']?.toString() ?? '';
+
+/// 旧事件可能仍保存 medium，但内容额度事件已经是自动拦截的审计提示。
+/// 展示层按新的语义降为「提示」，避免历史记录继续被看成待处置风险。
+String securityEventDisplaySeverity(SecurityEvent event) =>
+    isContentQuotaEvent(event.eventType) ? 'low' : event.severity;
+
+String securityEventSeverityLabel(SecurityEvent event) =>
+    securitySeverityLabel(securityEventDisplaySeverity(event));
+
+String securityEventTargetLabel(SecurityEvent event) {
+  if (event.targetMasked.isNotEmpty) return event.targetMasked;
+  final postID = event.metadata['post_id']?.toString() ?? '';
+  if (event.targetType == 'post' && postID.isNotEmpty) return '帖子 #$postID';
+  return '未标记目标';
 }
 
 /// 处置阶段说明。同一个 action 在不同事件类型下含义不同，必须按类型解释。

@@ -757,10 +757,22 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		if errors.Is(err, services.ErrContentRateLimited) || errors.Is(err, services.ErrContentDuplicate) {
 			if h.security != nil {
 				uid := userID.(uint)
+				reason := "publish_quota_exhausted"
+				rule := "10分钟30条或24小时200条"
+				if errors.Is(err, services.ErrContentDuplicate) {
+					reason = "duplicate_content"
+					rule = "同一帖子1分钟内不能重复发送相同文字"
+				}
 				_ = h.security.RecordContext(securityAuditContext(c), services.SecurityEventInput{
-					EventType: "content_reply_flood", Severity: models.SecuritySeverityMedium, Route: "/api/posts/:id/replies", Method: c.Request.Method,
-					ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &uid, TargetType: "post", TargetValue: strconv.FormatUint(uint64(post.ID), 10), Blocked: true, Action: "rate_limited",
-					Metadata: map[string]interface{}{"window": "10m/24h", "route_group": "content"},
+					EventType: "content_reply_flood", Severity: models.SecuritySeverityInfo, Route: "/api/posts/:id/replies", Method: c.Request.Method,
+					ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &uid,
+					TargetType: "post", TargetValue: strconv.FormatUint(uint64(post.ID), 10), TargetMasked: fmt.Sprintf("帖子 #%d", post.ID),
+					Blocked: true, Action: "rate_limited",
+					Metadata: map[string]interface{}{
+						"window": "10m/24h", "route_group": "content", "reason": reason,
+						"post_id": post.ID, "content_kind": replyContentSecurityKind(input.Content, input.StickerID, len(parsedFileIDs) > 0),
+						"content_length": utf8.RuneCountInString(input.Content), "rule": rule,
+					},
 				})
 			}
 			reason := "publish_quota_exhausted"
@@ -865,6 +877,23 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		log.Printf("[DB_WARN] Failed to re-fetch reply with preloads after create: %v", err)
 	}
 	c.JSON(http.StatusCreated, reply)
+}
+
+// replyContentSecurityKind 只返回内容形态，不保存评论正文；管理员仍能知道本次被拦截的是文字、图片还是表情。
+func replyContentSecurityKind(content, stickerID string, hasImage bool) string {
+	hasText := strings.TrimSpace(content) != ""
+	switch {
+	case hasText && hasImage:
+		return "文字+图片"
+	case hasText:
+		return "文字"
+	case hasImage:
+		return "图片"
+	case strings.TrimSpace(stickerID) != "":
+		return "表情"
+	default:
+		return "其他"
+	}
 }
 
 // DeleteReplyInput 删除回复输入（软删除）

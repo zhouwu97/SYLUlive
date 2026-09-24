@@ -1785,9 +1785,16 @@ func (h *PostHandler) Create(c *gin.Context) {
 			// 额度已满：保留兼容的 content_rate_limited，不触发登出/封号/积分处罚。
 			if h.security != nil {
 				_ = h.security.RecordContext(securityAuditContext(c), services.SecurityEventInput{
-					EventType: "content_post_flood", Severity: models.SecuritySeverityMedium, Route: "/api/posts", Method: c.Request.Method,
-					ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &user.ID, Blocked: true, Action: "rate_limited",
-					Metadata: map[string]interface{}{"window": "5m/24h", "route_group": "content"},
+					EventType: "content_post_flood", Severity: models.SecuritySeverityInfo, Route: "/api/posts", Method: c.Request.Method,
+					ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &user.ID,
+					TargetType: "user", TargetValue: fmt.Sprintf("user:%d", user.ID), TargetMasked: fmt.Sprintf("用户 #%d", user.ID),
+					Blocked: true, Action: "rate_limited",
+					Metadata: map[string]interface{}{
+						"window": "5m/24h", "route_group": "content", "reason": "publish_quota_exhausted",
+						"content_kind":   postContentSecurityKind(input.Content, len(fileIDs) > 0),
+						"content_length": utf8.RuneCountInString(input.Content),
+						"rule":           "5分钟6条或24小时30条",
+					},
 				})
 			}
 			c.Header("Retry-After", "60")
@@ -1862,6 +1869,21 @@ func (h *PostHandler) Create(c *gin.Context) {
 	h.hydratePosts(c, responsePosts, time.Now())
 
 	c.JSON(http.StatusCreated, responsePosts[0])
+}
+
+// postContentSecurityKind 只记录提交内容的形态，不把帖子正文写进安全事件。
+func postContentSecurityKind(content string, hasImage bool) string {
+	hasText := strings.TrimSpace(content) != ""
+	switch {
+	case hasText && hasImage:
+		return "文字+图片"
+	case hasText:
+		return "文字"
+	case hasImage:
+		return "图片"
+	default:
+		return "其他"
+	}
 }
 
 // GetOne 获取帖子详情

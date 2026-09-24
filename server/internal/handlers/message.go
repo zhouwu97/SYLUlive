@@ -548,6 +548,24 @@ type SendMessageInput struct {
 	ClientMessageID *string `json:"client_message_id"`
 }
 
+// messageContentSecurityKind 只记录私信的内容形态，不把消息正文写进安全事件。
+func messageContentSecurityKind(content string, stickerID *string, hasImage bool) string {
+	hasText := strings.TrimSpace(content) != ""
+	hasSticker := stickerID != nil && strings.TrimSpace(*stickerID) != ""
+	switch {
+	case hasText && hasImage:
+		return "文字+图片"
+	case hasText:
+		return "文字"
+	case hasImage:
+		return "图片"
+	case hasSticker:
+		return "表情"
+	default:
+		return "其他"
+	}
+}
+
 // Send 发送消息
 func (h *MessageHandler) Send(c *gin.Context) {
 	userID, _ := c.Get("user_id")
@@ -707,10 +725,14 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		if h.security != nil {
 			uid := currentUserID
 			_ = h.security.RecordContext(securityAuditContext(c), services.SecurityEventInput{
-				EventType: "private_message_flood", Severity: models.SecuritySeverityMedium, Route: "/api/messages", Method: c.Request.Method,
+				EventType: "private_message_flood", Severity: models.SecuritySeverityInfo, Route: "/api/messages", Method: c.Request.Method,
 				ClientIP: c.ClientIP(), UserAgent: c.GetHeader("User-Agent"), ActorUserID: &uid,
-				TargetType: "user", TargetValue: fmt.Sprintf("%d", targetID), Blocked: true, Action: "rate_limited",
-				Metadata: map[string]interface{}{"window": "1m", "route_group": "messaging"},
+				TargetType: "user", TargetValue: fmt.Sprintf("%d", targetID), TargetMasked: fmt.Sprintf("用户 #%d", targetID), Blocked: true, Action: "rate_limited",
+				Metadata: map[string]interface{}{
+					"window": "1m", "route_group": "messaging", "reason": "send_rate_limited",
+					"content_kind":   messageContentSecurityKind(input.Content, input.StickerID, input.FileID != nil),
+					"content_length": utf8.RuneCountInString(input.Content), "rule": "同一会话1分钟内最多发送30条",
+				},
 			})
 		}
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "发送太频繁，请稍后再试"})

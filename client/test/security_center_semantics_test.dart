@@ -11,6 +11,7 @@ SecurityEvent makeEvent({
   String status = 'active',
   String action = 'observed',
   bool actionable = true,
+  String targetType = 'account',
   String targetMasked = '26***27',
   int attemptCount = 1,
   int blockedCount = 0,
@@ -29,7 +30,7 @@ SecurityEvent makeEvent({
     sourceKey: '',
     installationSeen: false,
     actorUserId: null,
-    targetType: 'account',
+    targetType: targetType,
     targetMasked: targetMasked,
     requestIdSample: '',
     attemptCount: attemptCount,
@@ -155,6 +156,33 @@ void main() {
         securityEventStatusLabel(makeEvent(status: 'false_positive')),
         '误报',
       );
+    });
+
+    test('评论限流显示为自动拦截提示并说明目标与规则', () {
+      final event = makeEvent(
+        eventType: 'content_reply_flood',
+        severity: 'medium',
+        actionable: false,
+        action: 'rate_limited',
+        targetType: 'post',
+        targetMasked: '帖子 #123',
+        blockedCount: 1,
+        metadata: const {
+          'reason': 'duplicate_content',
+          'content_kind': '文字',
+          'content_length': 8,
+          'rule': '同一帖子1分钟内不能重复发送相同文字',
+        },
+      );
+      expect(securityEventTitle(event), '重复评论被拦截');
+      expect(securityEventSeverityLabel(event), '提示');
+      expect(securityEventDisplaySeverity(event), 'low');
+      expect(securityEventTargetLabel(event), '帖子 #123');
+      expect(securityEventContext(event), [
+        '原因：同一帖子内重复发送相同文字',
+        '提交内容：文字（8 字）；正文未写入安全日志',
+        '触发规则：同一帖子1分钟内不能重复发送相同文字',
+      ]);
     });
   });
 

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -506,7 +507,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 				// 固定候选窗口后应用当前可见性过滤，允许短页；
 				// 不跨全量快照循环补满一页，避免一次请求变成不受控扫描。
-				visiblePosts, loadErr := h.loadPostsInOrder(targetIDs, visiblePostStatuses)
+				visiblePosts, loadErr := h.loadPostsInOrderWithContext(c.Request.Context(), targetIDs, visiblePostStatuses)
 				if loadErr != nil {
 					log.Printf("[DB_ERROR] GetList hot-feed Find failed: %v", loadErr)
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
@@ -545,7 +546,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	}
 
 	// 走正常的查询（或 refresh 阶段）
-	query := h.db.Model(&models.Post{}).
+	query := h.db.WithContext(c.Request.Context()).Model(&models.Post{}).
 		Where("posts.status IN ?", visiblePostStatuses).
 		Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
 		Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants)
@@ -863,7 +864,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 		// 取出第一页：固定候选窗口后按当前可见状态过滤，允许短页。
 		window := sliceFeedWindow(len(allIDs), 0, limit)
-		firstPage, firstPageErr := h.loadPostsInOrder(allIDs[window.Start:window.End], visiblePostStatuses)
+		firstPage, firstPageErr := h.loadPostsInOrderWithContext(c.Request.Context(), allIDs[window.Start:window.End], visiblePostStatuses)
 		if firstPageErr != nil {
 			log.Printf("[DB_ERROR] GetList common feed Find failed: %v", firstPageErr)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
@@ -1290,7 +1291,7 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 	// 不能把历史快照当成访问许可。过滤后允许短页，由 next_offset 负责推进。
 	window := sliceFeedWindow(len(ids), offset, limit)
 	pageIDs := ids[window.Start:window.End]
-	posts, err := h.loadPostsInOrder(pageIDs, homeFeedPostStatuses)
+	posts, err := h.loadPostsInOrderWithContext(c.Request.Context(), pageIDs, homeFeedPostStatuses)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
 		return
@@ -1371,7 +1372,7 @@ func (h *PostHandler) getHomeLatestFeedV2(c *gin.Context, pinned []models.Post, 
 		ids = append(ids, post.ID)
 	}
 	// 同一请求内的两次查询之间帖子可能已被删除/隐藏，二次回读仍按状态过滤。
-	posts, err := h.loadPostsInOrder(ids, homeFeedPostStatuses)
+	posts, err := h.loadPostsInOrderWithContext(c.Request.Context(), ids, homeFeedPostStatuses)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取最新帖子失败"})
 		return
@@ -1419,10 +1420,18 @@ func (h *PostHandler) getHomeLatestFeedV2(c *gin.Context, pinned []models.Post, 
 //
 // statuses 为空时回退到 publicPostStatuses（正向白名单），未知状态默认不公开。
 func (h *PostHandler) loadPostsInOrder(ids []uint, statuses []models.PostStatus) ([]models.Post, error) {
+	return h.loadPostsInOrderWithContext(context.Background(), ids, statuses)
+}
+
+func (h *PostHandler) loadPostsInOrderWithContext(ctx context.Context, ids []uint, statuses []models.PostStatus) ([]models.Post, error) {
 	if len(ids) == 0 {
 		return []models.Post{}, nil
 	}
-	query := h.db.Model(&models.Post{}).Where("posts.id IN ?", ids)
+	db := h.db
+	if ctx != nil {
+		db = db.WithContext(ctx)
+	}
+	query := db.Model(&models.Post{}).Where("posts.id IN ?", ids)
 	query = applyPublicPostStatus(query, statuses)
 	var raw []models.Post
 	if err := query.Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants).Find(&raw).Error; err != nil {
@@ -1498,7 +1507,7 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 	pageIDs := ids[window.Start:window.End]
 	// 旧版首页快照里可能混入置顶帖（normal/sold/closed），因此这里使用公共
 	// 可见状态白名单而不是首页水帖的 normal-only 约束，避免误伤合法置顶。
-	posts, err := h.loadPostsInOrder(pageIDs, publicPostStatuses)
+	posts, err := h.loadPostsInOrderWithContext(c.Request.Context(), pageIDs, publicPostStatuses)
 	if err != nil {
 		log.Printf("[DB_ERROR] legacy home feed load posts: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{

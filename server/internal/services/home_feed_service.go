@@ -58,8 +58,12 @@ func (s *HomeFeedService) PinnedPosts(now time.Time) ([]models.Post, error) {
 // userID > 0 时应用 Feed 负反馈过滤（不看TA 对所有 Tab 生效，不感兴趣仅 all 生效）。
 // FEED-5：shadow 个性化在此串联（UserFeatures → PersonalDelta → 探索 → trace）。
 func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, userID uint) ([]uint, error) {
+	db := s.db
+	if ctx != nil {
+		db = db.WithContext(ctx)
+	}
 	base := func() *gorm.DB {
-		query := s.db.Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now)
+		query := db.Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now)
 		if !s.includePoll {
 			query = query.Where("content_kind <> ?", models.PostContentKindPoll)
 		}

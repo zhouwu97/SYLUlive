@@ -1,6 +1,7 @@
 import 'dart:io' show File;
 import 'dart:ui';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -74,11 +75,22 @@ class CustomBackgroundLayer extends StatelessWidget {
     final fillScreen =
         themeProvider.getCustomBackgroundFillScreenFor(context) ||
             _isUsingFallbackDirection(context, themeProvider);
-    final imageProvider = isAsset
+    final baseProvider = isAsset
         ? AssetImage(resolvedPath) as ImageProvider
         : isLocalFile
             ? FileImage(File(bgPath)) as ImageProvider
-            : NetworkImage(bgPath) as ImageProvider;
+            : CachedNetworkImageProvider(bgPath) as ImageProvider;
+
+    final targetSize =
+        MediaQuery.sizeOf(context) * MediaQuery.devicePixelRatioOf(context);
+    final targetWidth = targetSize.width.round().clamp(100, 3840);
+    final targetHeight = targetSize.height.round().clamp(100, 3840);
+
+    final imageProvider = ResizeImage.resizeIfNeeded(
+      targetWidth,
+      targetHeight,
+      baseProvider,
+    );
 
     return Stack(
       fit: StackFit.expand,

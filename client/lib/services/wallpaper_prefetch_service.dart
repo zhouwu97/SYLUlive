@@ -10,6 +10,7 @@ class WallpaperPrefetchService {
   static const String baseUrl =
       'https://sylulive.online/uploads/wallpapers/originals';
   static Future<void>? _prefetchTask;
+  static final Map<String, Future<void>> _activeDownloads = {};
 
   static const List<String> bundledWallpaperNames = [
     'tablet_landscape_01.png',
@@ -18,8 +19,7 @@ class WallpaperPrefetchService {
   ];
 
   static void start() {
-    if (kIsWeb) return;
-    _prefetchTask ??= prefetchAll();
+    // 按需下载，启动时不常态化拉取平板横屏壁纸
   }
 
   static Future<String> localPathFor(String fileName) async {
@@ -27,13 +27,47 @@ class WallpaperPrefetchService {
     return path.join(appDir.path, 'remote_$fileName');
   }
 
-  static Future<bool> isValidImageFile(File file) async {
+  static Future<bool> isValidImageFile(File file, {bool fullDecode = false}) async {
     try {
       if (!await file.exists()) return false;
       final length = await file.length();
-      if (length <= 0) return false;
+      if (length < 12) return false;
+
+      // 快速头部魔数校验，避免主线程频繁完整解码图片
+      final raf = await file.open(mode: FileMode.read);
+      final header = List<int>.filled(12, 0);
+      final readBytes = await raf.readInto(header, 0, 12);
+      await raf.close();
+
+      if (readBytes < 12) return false;
+
+      final isPng = header[0] == 0x89 &&
+          header[1] == 0x50 &&
+          header[2] == 0x4E &&
+          header[3] == 0x47;
+      final isJpg = header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF;
+      final isGif = header[0] == 0x47 &&
+          header[1] == 0x49 &&
+          header[2] == 0x46 &&
+          header[3] == 0x38;
+      final isWebp = header[0] == 0x52 &&
+          header[1] == 0x49 &&
+          header[2] == 0x46 &&
+          header[3] == 0x46 &&
+          header[8] == 0x57 &&
+          header[9] == 0x45 &&
+          header[10] == 0x42 &&
+          header[11] == 0x50;
+
+      if (!isPng && !isJpg && !isGif && !isWebp) {
+        return false;
+      }
+
+      if (!fullDecode) {
+        return true;
+      }
+
       final bytes = await file.readAsBytes();
-      if (bytes.isEmpty) return false;
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
       final valid = frame.image.width > 0 && frame.image.height > 0;
@@ -47,6 +81,21 @@ class WallpaperPrefetchService {
   }
 
   static Future<void> downloadAndVerifyImage(
+    Dio dio,
+    String url,
+    String targetPath,
+  ) {
+    if (_activeDownloads.containsKey(targetPath)) {
+      return _activeDownloads[targetPath]!;
+    }
+    final future = _downloadAndVerifyImageInternal(dio, url, targetPath);
+    _activeDownloads[targetPath] = future;
+    return future.whenComplete(() {
+      _activeDownloads.remove(targetPath);
+    });
+  }
+
+  static Future<void> _downloadAndVerifyImageInternal(
     Dio dio,
     String url,
     String targetPath,

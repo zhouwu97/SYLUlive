@@ -17,7 +17,6 @@ import '../platform/contracts/system_notification_client.dart';
 import '../platform/contracts/push_client.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
-import '../services/wallpaper_prefetch_service.dart';
 import '../services/keep_alive_service.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/diagnostic_dio_interceptor.dart';
@@ -594,7 +593,7 @@ class AuthProvider extends ChangeNotifier {
     Future<bool> Function()? onCommunityRulesRequired,
   })  : _credentialStore = credentialStore ?? _PlatformAuthCredentialStore(),
         _usesPlatformCredentialStore = credentialStore == null,
-        _onAuthenticated = onAuthenticated ?? WallpaperPrefetchService.start,
+        _onAuthenticated = onAuthenticated ?? (() {}),
         _sessionCleanupCoordinator = sessionCleanupCoordinator ??
             AccountSessionCleanupCoordinator.instance,
         _onForbiddenRecovery = onForbiddenRecovery,
@@ -1118,6 +1117,8 @@ class AuthProvider extends ChangeNotifier {
         baseUrl: _dio.options.baseUrl,
         headers: {'Authorization': 'Bearer $token'},
         connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+        sendTimeout: const Duration(seconds: 10),
       ));
       final response = await dio.get('/user/profile');
       if (response.statusCode == 200 && response.data != null) {

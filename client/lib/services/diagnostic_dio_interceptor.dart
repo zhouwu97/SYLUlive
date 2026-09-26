@@ -41,13 +41,19 @@ class DiagnosticDioInterceptor extends Interceptor {
   }) : _writer = writer ?? _writeNetworkDiagnostic;
 
   static const startedAtKey = 'diagnostic_started_at_ms';
+  static const logicalStartedAtKey = 'diagnostic_logical_started_at_ms';
   static const retryCountKey = 'diagnostic_retry_count';
+  static const willRetryKey = 'diagnostic_will_retry';
 
   final DiagnosticNetworkWriter _writer;
   final Duration slowRequestThreshold;
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    options.extra.putIfAbsent(
+      logicalStartedAtKey,
+      () => DateTime.now().millisecondsSinceEpoch,
+    );
     options.extra[startedAtKey] = DateTime.now().millisecondsSinceEpoch;
     super.onRequest(options, handler);
   }
@@ -74,6 +80,10 @@ class DiagnosticDioInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
+    if (err.requestOptions.extra[willRetryKey] == true) {
+      super.onError(err, handler);
+      return;
+    }
     _record(
       DiagnosticNetworkEvent(
         result: 'failure',
@@ -94,13 +104,18 @@ class DiagnosticDioInterceptor extends Interceptor {
   }
 
   int _durationMs(RequestOptions options) {
-    final startedAt = options.extra[startedAtKey];
+    final startedAt =
+        options.extra[logicalStartedAtKey] ?? options.extra[startedAtKey];
     if (startedAt is! int) return 0;
     return (DateTime.now().millisecondsSinceEpoch - startedAt)
         .clamp(0, 1 << 31);
   }
 
   int _retryCount(RequestOptions options) {
+    final safeAttempt = options.extra['_safe_retry_attempt'];
+    if (safeAttempt is num) {
+      return safeAttempt.toInt().clamp(0, 100);
+    }
     final value = options.extra[retryCountKey];
     return value is num ? value.toInt().clamp(0, 100) : 0;
   }

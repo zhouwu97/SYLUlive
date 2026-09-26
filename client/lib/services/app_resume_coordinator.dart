@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/course_schedule_provider.dart';
+import '../features/academic/application/academic_session_controller.dart';
 import 'home_widget_service.dart';
 import 'reply_notification_state.dart';
 
@@ -106,9 +107,22 @@ class AppResumeCoordinator {
     final accountSessionEpoch = auth.accountSessionEpoch;
     if (auth.hasRecoverableSession) {
       await auth.refreshSession();
+      if (!context.mounted || !auth.isLoggedIn) return;
+      final academicRouter =
+          context.read<AcademicSessionController?>()?.providerRouter;
+      if (academicRouter != null) {
+        unawaited(academicRouter.reconcileAccountConfiguration());
+      }
       return;
     }
     if (!auth.isLoggedIn || accountId == null || accountId <= 0) return;
+
+    final academicRouter =
+        context.read<AcademicSessionController?>()?.providerRouter;
+    if (academicRouter != null) {
+      // 配置补登记属于后台一致性任务，不能延迟首页和可见页面刷新。
+      unawaited(academicRouter.reconcileAccountConfiguration());
+    }
 
     final messageProvider = context.read<MessageProvider>();
     await _safeRun(

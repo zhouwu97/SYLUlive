@@ -20,7 +20,7 @@ func newInvitationResponseTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("打开测试数据库失败: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.AcademicIdentityBinding{}, &models.Invitation{}, &models.InvitationVote{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.AcademicIdentityBinding{}, &models.AcademicAccountConfig{}, &models.Invitation{}, &models.InvitationVote{}); err != nil {
 		t.Fatalf("迁移测试数据库失败: %v", err)
 	}
 	return db
@@ -72,6 +72,11 @@ func TestGetMembersReturnsAdminFieldsWithoutUsingUserMarshalJSON(t *testing.T) {
 	createInvitationResponseTestUser(t, db, models.User{
 		ID: 3, StudentID: "user-001", Nickname: "普通用户", Role: models.RoleUser,
 	})
+	if err := db.Create(&models.AcademicAccountConfig{
+		UserID: 1, ProviderID: models.AcademicProviderUndergraduate, StudentID: "2408010001", State: "active", Revision: 1,
+	}).Error; err != nil {
+		t.Fatalf("创建教务配置失败: %v", err)
+	}
 
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
@@ -82,13 +87,16 @@ func TestGetMembersReturnsAdminFieldsWithoutUsingUserMarshalJSON(t *testing.T) {
 		t.Fatalf("管理员数量 = %d，期望 2，响应 = %s", len(response), recorder.Body.String())
 	}
 	for _, member := range response {
-		for _, field := range []string{"id", "nickname", "student_id", "role", "avatar"} {
+		for _, field := range []string{"id", "nickname", "student_id", "student_verified", "academic_configured", "role", "avatar"} {
 			if _, exists := member[field]; !exists {
 				t.Fatalf("管理员响应缺少 %s: %s", field, recorder.Body.String())
 			}
 		}
 		if member["role"] != string(models.RoleAdmin) && member["role"] != string(models.RoleSuperAdmin) {
 			t.Fatalf("管理员角色不正确: %s", recorder.Body.String())
+		}
+		if member["academic_configured"] != (member["id"] == float64(1)) || member["student_verified"] != false {
+			t.Fatalf("管理员配置状态与身份认证混淆: %s", recorder.Body.String())
 		}
 	}
 }
@@ -176,6 +184,53 @@ func TestGetCandidatesSupportsInternalIDSearch(t *testing.T) {
 	}
 }
 
+func TestGetCandidatesReportsConfigurationWithoutVerifyingIdentity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newInvitationResponseTestDB(t)
+	for _, config := range []models.AcademicAccountConfig{
+		{UserID: 446, ProviderID: models.AcademicProviderUndergraduate, StudentID: "2408010446", State: "active", Revision: 1},
+		{UserID: 447, ProviderID: models.AcademicProviderUndergraduate, StudentID: "2408010447", State: "deleted", Revision: 2},
+	} {
+		createInvitationResponseTestUser(t, db, models.User{
+			ID: config.UserID, Nickname: "本机教务用户", Role: models.RoleUser, CreditScore: 100,
+		})
+		if err := db.Create(&config).Error; err != nil {
+			t.Fatalf("创建教务配置失败: %v", err)
+		}
+	}
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/admin/candidates", nil)
+	NewInvitationHandler(db, "test-secret").GetCandidates(context)
+	response := decodePaginatedResponse(t, recorder)
+	items, ok := response["items"].([]interface{})
+	if !ok || len(items) != 2 {
+		t.Fatalf("候选人数量错误: %s", recorder.Body.String())
+	}
+	for _, item := range items {
+		candidate, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("候选人资料格式不正确: %s", recorder.Body.String())
+		}
+		if candidate["academic_configured"] != (candidate["id"] == float64(446)) {
+			t.Fatalf("候选人配置状态错误: %s", recorder.Body.String())
+		}
+		if candidate["student_verified"] != false || candidate["student_id"] != "" {
+			t.Fatalf("自报配置不能授予学生身份认证: %s", recorder.Body.String())
+		}
+	}
+
+	recorder = httptest.NewRecorder()
+	context, _ = gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/admin/candidates/stats", nil)
+	NewInvitationHandler(db, "test-secret").GetCandidatesStats(context)
+	stats := decodePaginatedResponse(t, recorder)
+	if stats["edu"] != float64(0) || stats["other"] != float64(2) {
+		t.Fatalf("配置登记不应增加已验证教务账号统计: %s", recorder.Body.String())
+	}
+}
+
 func TestGetCandidatesUsesVerifiedAcademicStudentIDWhenLegacyFieldIsEmpty(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newInvitationResponseTestDB(t)
@@ -241,6 +296,11 @@ func TestGetApprovalListReturnsAdminDTOForNestedUsers(t *testing.T) {
 	createInvitationResponseTestUser(t, db, models.User{
 		ID: 2, StudentID: "inviter-001", Nickname: "邀请人", Role: models.RoleAdmin,
 	})
+	if err := db.Create(&models.AcademicAccountConfig{
+		UserID: 1, ProviderID: models.AcademicProviderUndergraduate, StudentID: "2408010115", State: "active", Revision: 1,
+	}).Error; err != nil {
+		t.Fatalf("创建教务配置失败: %v", err)
+	}
 	invitation := models.Invitation{
 		UserID: 1, InviterID: 2, Reason: "社区贡献", Status: models.InvitationStatusAccepted,
 	}
@@ -262,7 +322,7 @@ func TestGetApprovalListReturnsAdminDTOForNestedUsers(t *testing.T) {
 	if !ok {
 		t.Fatalf("候选人资料格式不正确: %s", recorder.Body.String())
 	}
-	for _, field := range []string{"id", "student_id", "credit_score", "edu_bound"} {
+	for _, field := range []string{"id", "student_id", "credit_score", "edu_bound", "student_verified", "academic_configured"} {
 		if _, exists := user[field]; !exists {
 			t.Fatalf("候选人资料缺少 %s: %s", field, recorder.Body.String())
 		}
@@ -270,8 +330,14 @@ func TestGetApprovalListReturnsAdminDTOForNestedUsers(t *testing.T) {
 	if user["student_id"] != "2408010115" {
 		t.Fatalf("邀请审批未显示已验证教务学号: %s", recorder.Body.String())
 	}
+	if user["academic_configured"] != true || user["student_verified"] != true {
+		t.Fatalf("邀请审批未分别返回配置和身份认证状态: %s", recorder.Body.String())
+	}
 	inviter, ok := response[0]["inviter"].(map[string]interface{})
 	if !ok || inviter["student_id"] != "inviter-001" {
 		t.Fatalf("邀请人资料不正确: %s", recorder.Body.String())
+	}
+	if inviter["academic_configured"] != false {
+		t.Fatalf("邀请人配置状态错误: %s", recorder.Body.String())
 	}
 }

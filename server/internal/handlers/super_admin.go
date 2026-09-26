@@ -66,10 +66,15 @@ func (h *SuperAdminHandler) GetUsers(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户教务身份失败"})
 		return
 	}
+	academicConfigured, err := loadAdminAcademicConfigured(h.db, users)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户教务配置失败"})
+		return
+	}
 
 	response := make([]AdminUserResponse, 0, len(users))
 	for _, user := range users {
-		response = append(response, adminUserResponse(user, adminStudentID(user, academicStudentIDs), adminStudentVerified(user, academicStudentIDs)))
+		response = append(response, adminUserResponse(user, adminStudentID(user, academicStudentIDs), adminStudentVerified(user, academicStudentIDs), academicConfigured[user.ID]))
 	}
 	c.JSON(http.StatusOK, response)
 

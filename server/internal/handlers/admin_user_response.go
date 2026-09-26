@@ -12,27 +12,29 @@ import (
 
 // AdminUserBriefResponse 是管理员列表使用的最小用户资料，包含管理所需的账号标识。
 type AdminUserBriefResponse struct {
-	ID              uint        `json:"id"`
-	StudentID       string      `json:"student_id"`
-	StudentVerified bool        `json:"student_verified"`
-	Nickname        string      `json:"nickname"`
-	Avatar          string      `json:"avatar"`
-	Role            models.Role `json:"role"`
+	ID                 uint        `json:"id"`
+	StudentID          string      `json:"student_id"`
+	StudentVerified    bool        `json:"student_verified"`
+	AcademicConfigured bool        `json:"academic_configured"`
+	Nickname           string      `json:"nickname"`
+	Avatar             string      `json:"avatar"`
+	Role               models.Role `json:"role"`
 }
 
 // AdminUserResponse 是超级管理员管理用户时使用的完整资料。
 // 它必须显式构造，不能依赖 User.MarshalJSON 的公开资料规则。
 type AdminUserResponse struct {
-	ID              uint        `json:"id"`
-	StudentID       string      `json:"student_id"`
-	Nickname        string      `json:"nickname"`
-	Avatar          string      `json:"avatar"`
-	Role            models.Role `json:"role"`
-	CreditScore     int         `json:"credit_score"`
-	ReportCount     int         `json:"report_count"`
-	EduBound        bool        `json:"edu_bound"`
-	StudentVerified bool        `json:"student_verified"`
-	CreatedAt       time.Time   `json:"created_at"`
+	ID                 uint        `json:"id"`
+	StudentID          string      `json:"student_id"`
+	Nickname           string      `json:"nickname"`
+	Avatar             string      `json:"avatar"`
+	Role               models.Role `json:"role"`
+	CreditScore        int         `json:"credit_score"`
+	ReportCount        int         `json:"report_count"`
+	EduBound           bool        `json:"edu_bound"`
+	StudentVerified    bool        `json:"student_verified"`
+	AcademicConfigured bool        `json:"academic_configured"`
+	CreatedAt          time.Time   `json:"created_at"`
 }
 
 type adminAcademicIdentity struct {
@@ -70,6 +72,34 @@ func loadAdminAcademicStudentIDs(db *gorm.DB, users []models.User) (map[uint]adm
 		}
 	}
 	return studentIDs, nil
+}
+
+// loadAdminAcademicConfigured 只反映配置表中存在可用的 active 记录，
+// 不把它与旧授权或可信学生身份混成一个状态。
+func loadAdminAcademicConfigured(db *gorm.DB, users []models.User) (map[uint]bool, error) {
+	configured := make(map[uint]bool, len(users))
+	if db == nil || len(users) == 0 || !db.Migrator().HasTable(&models.AcademicAccountConfig{}) {
+		return configured, nil
+	}
+
+	userIDs := make([]uint, 0, len(users))
+	for _, user := range users {
+		userIDs = append(userIDs, user.ID)
+	}
+	var rows []struct {
+		UserID uint `gorm:"column:user_id"`
+	}
+	if err := db.Model(&models.AcademicAccountConfig{}).
+		Select("user_id").
+		Where("user_id IN ? AND state = ? AND TRIM(student_id) <> ''", userIDs, "active").
+		Group("user_id").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		configured[row.UserID] = true
+	}
+	return configured, nil
 }
 
 func adminStudentID(user models.User, academicStudentIDs map[uint]adminAcademicIdentity) string {
@@ -112,28 +142,30 @@ func withAdminUserSearch(query, db *gorm.DB, keyword string) *gorm.DB {
 	return query.Where(conditions, args...)
 }
 
-func adminUserBriefResponse(user models.User, studentID string, studentVerified bool) AdminUserBriefResponse {
+func adminUserBriefResponse(user models.User, studentID string, studentVerified bool, academicConfigured bool) AdminUserBriefResponse {
 	return AdminUserBriefResponse{
-		ID:              user.ID,
-		StudentID:       studentID,
-		StudentVerified: studentVerified,
-		Nickname:        user.Nickname,
-		Avatar:          user.Avatar,
-		Role:            user.Role,
+		ID:                 user.ID,
+		StudentID:          studentID,
+		StudentVerified:    studentVerified,
+		AcademicConfigured: academicConfigured,
+		Nickname:           user.Nickname,
+		Avatar:             user.Avatar,
+		Role:               user.Role,
 	}
 }
 
-func adminUserResponse(user models.User, studentID string, studentVerified bool) AdminUserResponse {
+func adminUserResponse(user models.User, studentID string, studentVerified bool, academicConfigured bool) AdminUserResponse {
 	return AdminUserResponse{
-		ID:              user.ID,
-		StudentID:       studentID,
-		Nickname:        user.Nickname,
-		Avatar:          user.Avatar,
-		Role:            user.Role,
-		CreditScore:     user.CreditScore,
-		ReportCount:     user.ReportCount,
-		EduBound:        user.IsEduAuthorized(),
-		StudentVerified: studentVerified,
-		CreatedAt:       user.CreatedAt,
+		ID:                 user.ID,
+		StudentID:          studentID,
+		Nickname:           user.Nickname,
+		Avatar:             user.Avatar,
+		Role:               user.Role,
+		CreditScore:        user.CreditScore,
+		ReportCount:        user.ReportCount,
+		EduBound:           user.IsEduAuthorized(),
+		StudentVerified:    studentVerified,
+		AcademicConfigured: academicConfigured,
+		CreatedAt:          user.CreatedAt,
 	}
 }

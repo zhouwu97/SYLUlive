@@ -40,6 +40,8 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
   int _contextGeneration = 0;
   ProviderAcademicRepository? _selected;
   List<AcademicIdentityBinding> _identityBindings = const [];
+  Future<void>? _reconcileRunning;
+  DateTime? _lastReconcileAttempt;
 
   bool _closed = false;
 
@@ -70,6 +72,7 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
   /// 兼容现有列表类型；内容来自本机账号，不具有服务端学生认证含义。
   Future<List<AcademicIdentityBinding>> loadIdentityBindings({
     bool force = false,
+    bool scheduleReconcile = true,
   }) async {
     final user = _appUserId;
     if (user == null) return const [];
@@ -110,21 +113,47 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
             studentId: identity.studentId,
             verified: false))
         .toList();
-    unawaited(syncConfiguration());
+    if (scheduleReconcile && _reconcileRunning == null) {
+      unawaited(reconcileAccountConfiguration());
+    }
     return _identityBindings;
   }
 
+  /// 读取服务端可信身份，和本机账号配置保持独立的展示来源。
+  Future<List<AcademicIdentityBinding>> loadServerIdentityBindings({
+    bool requireSuccess = false,
+  }) async {
+    final client = identityClient;
+    if (client == null) return const [];
+    try {
+      return await client.listIdentities();
+    } catch (_) {
+      if (requireSuccess) rethrow;
+      return const [];
+    }
+  }
+
   Future<void> syncConfiguration({bool requireSuccess = false}) async {
+    await _syncConfigurationWithPresence(requireSuccess: requireSuccess);
+  }
+
+  Future<Set<AcademicProviderId>?> _syncConfigurationWithPresence(
+      {bool requireSuccess = false}) async {
     final user = _appUserId;
     final generation = _contextGeneration;
     final store = accountStore;
     if (user == null || store == null || configClient == null || _closed) {
-      return;
+      return null;
     }
     bool current() =>
-        !_closed && _appUserId == user && identical(accountStore, store);
+        !_closed &&
+        _appUserId == user &&
+        identical(accountStore, store) &&
+        generation == _contextGeneration;
     try {
-      await configClient!.sync(store, current);
+      final presentProviders =
+          await configClient!.syncWithPresence(store, current);
+      if (presentProviders == null) return null;
       if (current()) {
         for (final identity in store.identities) {
           await AcademicStoragePreferences(
@@ -153,10 +182,104 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
           if (current()) onConfigChanged?.call();
         }
       }
+      return current() ? presentProviders : null;
     } catch (_) {
       // Outbox 已落盘；云端故障只影响同步状态，不中断学校请求。
       if (requireSuccess) rethrow;
     }
+    return null;
+  }
+
+  /// 在完整读取服务端配置后，把已有本机账号补登记到配置表。
+  ///
+  /// 先 GET 再决定是否入队：请求失败时保持未知，不会误把网络故障当成
+  /// “服务端没有配置”；服务端已有删除墓碑、其他学号或冲突时也不复活。
+  Future<void> reconcileAccountConfiguration({
+    bool requireSuccess = false,
+    bool force = false,
+  }) async {
+    final user = _appUserId;
+    if (user == null || configClient == null || _closed) return;
+    var rerunAfterShared = force;
+    while (true) {
+      if (_closed || _appUserId != user) return;
+      final shared = _reconcileRunning;
+      if (shared != null) {
+        var completed = true;
+        try {
+          await shared;
+        } catch (_) {
+          completed = false;
+          // 每个调用方单独决定是否上抛，手动同步不能继承后台任务的吞错策略。
+          if (requireSuccess) rethrow;
+        }
+        if (rerunAfterShared && completed) {
+          rerunAfterShared = false;
+          continue;
+        }
+        return;
+      }
+
+      final lastAttempt = _lastReconcileAttempt;
+      if (!rerunAfterShared &&
+          !requireSuccess &&
+          lastAttempt != null &&
+          DateTime.now().difference(lastAttempt) <
+              const Duration(seconds: 30)) {
+        return;
+      }
+      _lastReconcileAttempt = DateTime.now();
+      final operation =
+          _reconcileAccountConfiguration(user, _contextGeneration);
+      _reconcileRunning = operation;
+      try {
+        await operation;
+      } catch (_) {
+        if (requireSuccess) rethrow;
+      } finally {
+        if (identical(_reconcileRunning, operation)) _reconcileRunning = null;
+      }
+      return;
+    }
+  }
+
+  Future<void> _reconcileAccountConfiguration(
+      String user, int generation) async {
+    bool current() =>
+        !_closed && _appUserId == user && _contextGeneration == generation;
+    await loadIdentityBindings(scheduleReconcile: false);
+    if (!current()) return;
+    final store = accountStore!;
+    final accounts = [
+      for (final identity in store.identities)
+        (identity: identity, epoch: store.epoch(identity.providerId)),
+    ];
+    final presentProviders =
+        await _syncConfigurationWithPresence(requireSuccess: true);
+    if (!current() || presentProviders == null) return;
+
+    var queued = false;
+    for (final account in accounts) {
+      if (!current()) return;
+      final added = await store.ensureRegistrationQueued(
+        account.identity,
+        expectedEpoch: account.epoch,
+        serverConfirmedAbsent:
+            !presentProviders.contains(account.identity.providerId),
+        current: current,
+      );
+      queued = queued || added;
+    }
+    // 读取期间人工登录也可能写入 Outbox，收尾一起发送已持久化的操作。
+    final hasPending = store.identities.any((identity) {
+      final entry = store.entry(identity.providerId);
+      return entry['conflict'] != true &&
+          (entry['outbox'] as List? ?? []).isNotEmpty;
+    });
+    if ((queued || hasPending) && current()) {
+      await _syncConfigurationWithPresence(requireSuccess: true);
+    }
+    if (current()) onConfigChanged?.call();
   }
 
   void markSessionAuthenticated() => _selected?.markSessionAuthenticated();
@@ -266,11 +389,13 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     _rollback = null;
     _provisional = false;
     _syncTimer?.cancel();
+    _reconcileRunning = null;
+    _lastReconcileAttempt = null;
     accountStore = null;
     _appUserId = next;
     if (next != null && configClient != null) {
       _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-        unawaited(syncConfiguration());
+        unawaited(reconcileAccountConfiguration());
       });
     }
     _identityBindings = const [];
@@ -280,6 +405,8 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
   /// App 用户 ID 无法区分断开前后的两次登录代际。
   void invalidateContext() {
     _contextGeneration++;
+    _reconcileRunning = null;
+    _lastReconcileAttempt = null;
     final old = _selected;
     _selected = null;
     old?.close();

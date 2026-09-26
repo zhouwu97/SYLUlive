@@ -619,6 +619,15 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                           : AppColors.textSecondaryLight,
                     ),
                   ),
+                  const SizedBox(height: 2),
+                  Text(
+                    candidate.academicConfigLabel,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.62)
+                          : AppColors.textSecondaryLight,
+                    ),
+                  ),
                 ],
               ),
             ),

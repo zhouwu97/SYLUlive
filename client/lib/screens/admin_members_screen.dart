@@ -282,6 +282,14 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                                     isDark ? Colors.white60 : Colors.black54,
                                   ),
                                 ),
+                                Text(
+                                  member.academicConfigLabel,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                color:
+                                    isDark ? Colors.white60 : Colors.black54,
+                                  ),
+                                ),
                               ],
                             ),
                           ),

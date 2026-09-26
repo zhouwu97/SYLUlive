@@ -59,6 +59,46 @@ final class LocalAcademicAccountStore {
         e['enabled'] = enabled;
       });
 
+  /// 核对完整云端列表后补入遗漏任务，不改变连接开关或凭据代次。
+  Future<bool> ensureRegistrationQueued(
+    AcademicIdentityKey identity, {
+    required int expectedEpoch,
+    required bool serverConfirmedAbsent,
+    required bool Function() current,
+  }) async {
+    var queued = false;
+    await update((state) {
+      if (!current() || identity.appUserId != userId) return;
+      final e = _entry(state, identity.providerId);
+      final student = (e['student_id']?.toString() ?? '').trim();
+      if (student.isEmpty ||
+          student != identity.studentId ||
+          (e['credential_epoch'] as int? ?? 0) != expectedEpoch ||
+          e['enabled'] != true ||
+          e['suppress_restore'] == true ||
+          e['conflict'] == true ||
+          e['remote_changed'] == true) {
+        return;
+      }
+
+      final queue = e['outbox'] as List? ?? const <dynamic>[];
+      if (queue.isNotEmpty) return;
+
+      final snapshot = e['snapshot'] as Map?;
+      // 曾经确认过的记录消失属于数据不一致，不能当作首次登记。
+      if (serverConfirmedAbsent && snapshot != null) {
+        e['remote_changed'] = true;
+        e['server_missing'] = true;
+        return;
+      }
+      if (!serverConfirmedAbsent || snapshot != null) return;
+
+      _enqueue(e, student, false);
+      queued = true;
+    });
+    return queued;
+  }
+
   Future<void> commitIdentity(AcademicIdentityKey identity) => update((state) {
         state['_active_provider'] = identity.providerId.value;
         final e = _entry(state, identity.providerId);
@@ -159,7 +199,10 @@ final class LocalAcademicAccountStore {
     });
   }
 
-  Future<void> mergeSnapshot(Map<String, dynamic> config) => update((state) {
+  Future<void> mergeSnapshot(Map<String, dynamic> config,
+          {bool Function()? current}) =>
+      update((state) {
+        if (current != null && !current()) return;
         final provider =
             AcademicProviderId.tryParse(config['provider_id'] as String? ?? '');
         if (provider == null) return;
@@ -170,6 +213,7 @@ final class LocalAcademicAccountStore {
           return;
         }
         e['snapshot'] = config;
+        e['server_missing'] = false;
         final pending = (e['outbox'] as List? ?? []).isNotEmpty;
         if (e['student_id'] == null &&
             !pending &&
@@ -185,8 +229,10 @@ final class LocalAcademicAccountStore {
       });
 
   Future<void> acknowledge(AcademicProviderId provider, String operation,
-          Map<String, dynamic> config) =>
+          Map<String, dynamic> config,
+          {bool Function()? current}) =>
       update((state) {
+        if (current != null && !current()) return;
         final e = _entry(state, provider);
         final queue = e['outbox'] as List? ?? [];
         if (queue.isEmpty || queue.first['operation_id'] != operation) return;
@@ -200,12 +246,44 @@ final class LocalAcademicAccountStore {
         // 保留删除抑制标记，迟到的 GET 即使越过当前请求也不能复活本机配置。
       });
 
-  Future<void> markConflict(AcademicProviderId provider) => update((state) {
+  Future<void> markConflict(AcademicProviderId provider,
+          {bool Function()? current}) =>
+      update((state) {
+        if (current != null && !current()) return;
         _entry(state, provider)['conflict'] = true;
+      });
+
+  /// 另一设备已写入相同目标时可收敛；有后继操作的队列仍需显式处理版本。
+  Future<void> resolveSatisfiedConflict(AcademicProviderId provider,
+          {required bool Function() current}) =>
+      update((state) {
+        if (!current()) return;
+        final e = _entry(state, provider);
+        final queue = e['outbox'] as List? ?? [];
+        final snapshot = e['snapshot'] as Map?;
+        if (e['conflict'] != true || queue.length != 1 || snapshot == null) {
+          return;
+        }
+        final op = queue.single as Map;
+        final deleted = op['deleted'] == true;
+        if ((snapshot['revision'] as int) <= (op['base_revision'] as int) ||
+            snapshot['state'] != (deleted ? 'deleted' : 'active') ||
+            (!deleted && snapshot['student_id'] != op['student_id'])) {
+          return;
+        }
+        queue.clear();
+        e['conflict'] = false;
+        e['remote_changed'] = e['student_id'] != null &&
+            (deleted || e['student_id'] != snapshot['student_id']);
       });
 
   Future<void> keepLocal(AcademicProviderId provider) => update((state) {
         final e = _entry(state, provider);
+        if (e['server_missing'] == true) {
+          // 这是用户明确选择重建云端登记；缺失记录没有可复用的 revision。
+          e['snapshot'] = null;
+          e['server_missing'] = false;
+        }
         e['outbox'] = <dynamic>[];
         e['conflict'] = false;
         e['remote_changed'] = false;
@@ -214,6 +292,19 @@ final class LocalAcademicAccountStore {
 
   Future<void> adoptCloud(AcademicProviderId provider) => update((state) {
         final e = _entry(state, provider);
+        if (e['server_missing'] == true) {
+          // 云端没有可采用的目标，显式采用云端即解除本机对应身份。
+          e['student_id'] = null;
+          e['enabled'] = false;
+          e['snapshot'] = null;
+          e['server_missing'] = false;
+          e['outbox'] = <dynamic>[];
+          e['remote_changed'] = false;
+          e['suppress_restore'] = true;
+          e['credential_epoch'] = (e['credential_epoch'] as int? ?? 0) + 1;
+          e['rejected_epoch'] = null;
+          return;
+        }
         final cloud = e['snapshot'] as Map?;
         if (cloud == null) return;
         e['student_id'] =

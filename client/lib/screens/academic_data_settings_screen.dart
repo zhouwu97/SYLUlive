@@ -70,15 +70,17 @@ class _AcademicDataSettingsScreenState
       return;
     }
     try {
-      final identities =
-          await _session.providerRouter?.loadIdentityBindings(force: true) ??
-              const <AcademicIdentityBinding>[];
+      final router = _session.providerRouter;
+      final identities = await router?.loadIdentityBindings(force: true) ??
+          const <AcademicIdentityBinding>[];
+      final serverBindings = await router?.loadServerIdentityBindings() ??
+          const <AcademicIdentityBinding>[];
       if (!mounted ||
           loadGeneration != _loadGeneration ||
           _session.appUserId != userId) {
         return;
       }
-      _identities = identities;
+      _identities = serverBindings;
       if (!_session.hasBoundIdentity && identities.isNotEmpty) {
         await _session
             .selectProviderIdentity(identities.first.toIdentity(userId));
@@ -168,7 +170,10 @@ class _AcademicDataSettingsScreenState
     if (router?.accountStore == null) return;
     setState(() => _saving = true);
     try {
-      await router!.syncConfiguration();
+      await router!.reconcileAccountConfiguration(
+        requireSuccess: true,
+        force: true,
+      );
       if (adopt) {
         final old = _session.identity;
         await router.accountStore!.adoptCloud(provider);
@@ -177,7 +182,7 @@ class _AcademicDataSettingsScreenState
         }
       } else {
         await router.accountStore!.keepLocal(provider);
-        unawaited(router.syncConfiguration());
+        unawaited(router.reconcileAccountConfiguration(force: true));
       }
       if (mounted) await _load();
     } catch (_) {
@@ -190,6 +195,7 @@ class _AcademicDataSettingsScreenState
   String _syncStatus(AcademicProviderId provider) {
     final e = _session.providerRouter?.accountStore?.entry(provider) ?? {};
     if (e['conflict'] == true) return '同步冲突';
+    if (e['server_missing'] == true) return '云端配置缺失，需处理';
     if (e['remote_changed'] == true) return '其他设备已修改';
     if ((e['outbox'] as List? ?? []).isNotEmpty) return '账号配置待同步';
     return e['snapshot'] == null ? '尚未同步' : '账号配置已同步';
@@ -602,7 +608,8 @@ class _AcademicDataSettingsScreenState
                   onTap: _saving
                       ? null
                       : () async {
-                          await _session.providerRouter?.syncConfiguration();
+                          await _session.providerRouter
+                              ?.reconcileAccountConfiguration(force: true);
                           if (mounted) await _load();
                         }),
             for (final provider in AcademicProviderId.values)

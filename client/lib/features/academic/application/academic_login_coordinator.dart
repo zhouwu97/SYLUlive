@@ -522,8 +522,7 @@ final class AcademicLoginCoordinator {
   }
 
   /// 只为**临时故障**安排重试：断网、限流、服务暂不可用会自己变好。
-  void _scheduleBindingRetry(
-      AcademicIdentityKey identity, int generation) {
+  void _scheduleBindingRetry(AcademicIdentityKey identity, int generation) {
     _bindingRetry?.cancel();
     _bindingRetry = Timer(bindingRetryDelay, () {
       if (!_disposed &&
@@ -583,12 +582,21 @@ final class AcademicLoginCoordinator {
   int? _warmUpGeneration;
   final Map<int, Future<void>> _warmUps = {};
 
+  void _scheduleConfigurationReconciliation() {
+    final router = controller.providerRouter;
+    if (router != null) {
+      unawaited(router.reconcileAccountConfiguration());
+    }
+  }
+
   Future<void> warmUp() async {
     await controller.waitForAccountContextReady();
     final generation = controller.contextGeneration;
     if (controller.appUserId == null || _warmUpGeneration == generation) return;
     final running = _warmUps[generation];
     if (running != null) return running;
+    // App 账号就绪即可补配置，不等待学校网络或自动登录结果。
+    _scheduleConfigurationReconciliation();
     final operation = () async {
       final outcome = await ensureAuthenticated();
       if (controller.isCurrentContext(generation: generation) &&
@@ -919,7 +927,7 @@ final class AcademicLoginCoordinator {
       }
       if (!current()) return changed;
       router.commitProvisional();
-      unawaited(router.syncConfiguration());
+      unawaited(router.reconcileAccountConfiguration(force: true));
     }
     // 服务端模式不读取或修改本机密码，资料缓存仍按独立策略处理。
     if (controller.sourceKind == AcademicSourceKind.local) {

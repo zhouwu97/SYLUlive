@@ -11,6 +11,7 @@ class AdminUserSummary {
   final int reportCount;
   final bool eduBound;
   final bool studentVerified;
+  final bool academicConfigured;
 
   const AdminUserSummary({
     required this.id,
@@ -22,6 +23,7 @@ class AdminUserSummary {
     required this.reportCount,
     required this.eduBound,
     required this.studentVerified,
+    required this.academicConfigured,
   });
 
   factory AdminUserSummary.fromJson(Map<String, dynamic> json) {
@@ -35,6 +37,7 @@ class AdminUserSummary {
       reportCount: (json['report_count'] as num?)?.toInt() ?? 0,
       eduBound: json['edu_bound'] == true,
       studentVerified: json['student_verified'] == true,
+      academicConfigured: json['academic_configured'] == true,
     );
   }
 
@@ -43,4 +46,6 @@ class AdminUserSummary {
   String get publicIdLabel => '用户 ID：$id';
   String get accountLabel =>
       studentId.isEmpty ? '学号/账号：未填写' : '学号/账号：$studentId';
+  String get academicConfigLabel =>
+      academicConfigured ? '教务配置：已登记' : '教务配置：未登记';
 }

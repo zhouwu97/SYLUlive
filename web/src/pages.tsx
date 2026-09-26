@@ -274,9 +274,11 @@ export function Exams() {
       <Tabs tabs={[["schedule","考试安排"],["papers","试卷库"],["mine","我的提交"]]} value={tab} onChange={value=>setParams(value==='mine'?{tab:value,papers:'mine'}:{tab:value})}/>
       {tab!=='schedule'?<PaperLibrary/>:<>
       <div className="filter-row">
-        <label>
-          导入考试 JSON{" "}
+        <label className="file-upload-control">
+          <span>导入考试 JSON</span>
+          <b>选择存档</b>
           <input
+            className="file-upload-input"
             type="file"
             accept="application/json,.json"
             onChange={async (e) => {
@@ -299,6 +301,7 @@ export function Exams() {
               }
             }}
           />
+          <small>仅支持 JSON 格式</small>
         </label>
       </div>
       <div className="panel">
@@ -328,9 +331,6 @@ export function Exams() {
             </div>
           ))}
         {!data.exams.length && <Empty text="还没有考试安排" />}
-      </div>
-      <div className="section">
-        <PaperLibrary />
       </div>
       </>}
     </>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Link,
   useNavigate,
@@ -32,6 +32,8 @@ import {
   Tabs,
   useUI,
 } from "./ui";
+import { MediaGallery, MediaUploadPicker, mediaURL, uploadImageFiles } from "./media";
+import { StickerPicker, StickerRenderer, favoritePublicImage, type StickerPayload } from "./emoji";
 // 同一个 File 对象在「提交失败后原样重点提交」时不应再传一遍：
 // 上传接口按字节去重，但重复请求仍会产生新记录与等待。
 const uploadedFileIDs = new WeakMap<File, number>();
@@ -46,21 +48,11 @@ export async function uploadIDs(form: FormData, limits?: AttachmentLimits) {
         `附件未通过检查：${rejections.map((x) => `${x.file}（${x.reason}）`).join("；")}`,
       );
   }
+  const uncached = files.filter((file) => uploadedFileIDs.get(file) === undefined);
+  const fresh = uncached.length ? await uploadImageFiles(uncached) : [];
+  uncached.forEach((file, index) => { const id = fresh[index]; if (id !== undefined) uploadedFileIDs.set(file, id); });
   const ids: number[] = [];
-  for (const file of files) {
-    let id = uploadedFileIDs.get(file);
-    if (id === undefined) {
-      const body = new FormData();
-      body.append("file", file);
-      const result = await write("/api/upload", body);
-      const uploaded = Number(result.file_id);
-      if (!Number.isInteger(uploaded) || uploaded <= 0)
-        throw new Error("上传没有返回文件编号");
-      uploadedFileIDs.set(file, uploaded);
-      id = uploaded;
-    }
-    if (!ids.includes(id)) ids.push(id);
-  }
+  files.forEach((file) => { const id = uploadedFileIDs.get(file); if (typeof id === "number" && Number.isInteger(id) && id > 0 && !ids.includes(id)) ids.push(id); });
   return ids;
 }
 export function PostForm({
@@ -132,12 +124,6 @@ export function PostForm({
               },
             ]
           : []),
-        {
-          name: "images",
-          label: "图片（jpg/png/gif，最多 9 张）",
-          type: "file",
-          multiple: true,
-        },
       ]}
       submit={post ? "保存修改" : "发布"}
       onSubmit={async (_, form) => {
@@ -154,7 +140,7 @@ export function PostForm({
         ui.notify("内容已保存");
         nav(`/post/${post?.id || result.post?.id || result.id}`);
       }}
-    />
+    ><MediaUploadPicker /></Form>
   );
 }
 export function PostCard({
@@ -165,6 +151,8 @@ export function PostCard({
   market?: boolean;
 }) {
   const ui = useUI();
+  const auth = useAuth();
+  const [followed, setFollowed] = useState(Boolean(post.author?.is_following || post.is_following));
   const location=useLocation();
   const back={from:location.pathname+location.search};
   if (market)
@@ -174,7 +162,9 @@ export function PostCard({
           {post.images?.[0] ? (
             <img
               alt={post.title || "物品图片"}
-              src={asset(post.images[0].file?.path || post.images[0].url)}
+              src={mediaURL(post.images[0], "thumb") || asset(post.images[0].file?.path || post.images[0].url)}
+              loading="lazy"
+              decoding="async"
             />
           ) : (
             <Icon name="market" size={40} />
@@ -204,9 +194,24 @@ export function PostCard({
           {post.author?.nickname?.slice(0, 1) || "同"}
         </div>
         <div className="author-meta">
-          <b>{post.author?.nickname || "校园同学"}</b>
-          <span>{time(post.created_at)}</span>
+          <div className="author-name-line">
+            <b>{post.author?.nickname || "校园同学"}</b>
+            <span className="author-level">Lv.{post.author?.level || post.author_level || 1}</span>
+          </div>
+          <span>{time(post.created_at)}{post.author?.followers_count != null ? ` · ${post.author.followers_count} 位关注者` : ""}</span>
         </div>
+        {auth.user && post.author_id && post.author_id !== auth.user.id && (
+          <button
+            className={`author-follow ${followed ? "active" : ""}`}
+            type="button"
+            onClick={() => ui.act(async () => {
+              await write(`/api/user/${post.author_id}/follow`, {}, followed ? "DELETE" : "POST");
+              setFollowed((value) => !value);
+            })}
+          >
+            {followed ? "已关注" : "关注"}
+          </button>
+        )}
       </div>
       <Link to={`/post/${post.id}`} state={back}>
         <h3 className="post-title">
@@ -214,17 +219,7 @@ export function PostCard({
         </h3>
         <p className="post-body">{post.content?.slice(0, 220)}</p>
       </Link>
-      {post.images?.length > 0 && (
-        <div className="post-media">
-          {post.images.slice(0, 3).map((img: Entity, i: number) => (
-            <img
-              key={img.id || i}
-              alt="帖子图片"
-              src={asset(img.file?.path || img.url)}
-            />
-          ))}
-        </div>
-      )}
+      <MediaGallery items={post.images} title={post.title || "帖子图片"} />
       <div className="post-actions">
         <button
           className={`post-action ${post.is_liked ? "liked" : ""}`}
@@ -413,6 +408,8 @@ export function PostDetail() {
     bookmarks = useApi(auth.user ? "/api/user/bookmarks" : null);
   const p = entity(q.data, "post");
   const [saved, setSaved] = useState<boolean | undefined>();
+  const [detailFollowed, setDetailFollowed] = useState(Boolean(p.author?.is_following || p.is_following));
+  useEffect(() => setDetailFollowed(Boolean(p.author?.is_following || p.is_following)), [p.id, p.author?.is_following, p.is_following]);
   const bookmarked = saved ?? rows(bookmarks.data).some((x) => x.id === p.id);
   return (
     <>
@@ -421,24 +418,14 @@ export function PostDetail() {
       </Head>
       <QueryState query={q}>
         <article className="panel post-full">
-          <div className="author-meta">
-            <b>{p.author?.nickname}</b>
-            <span>{time(p.created_at)}</span>
+          <div className="author-meta post-detail-author">
+            <div className="author-name-line"><b>{p.author?.nickname || "校园同学"}</b><span className="author-level">Lv.{p.author?.level || p.author_level || 1}</span></div>
+            <span>{time(p.created_at)}{p.author?.followers_count != null ? ` · ${p.author.followers_count} 位关注者` : ""}</span>
+            {auth.user && p.author_id && p.author_id !== auth.user.id && <button className={`author-follow ${detailFollowed ? "active" : ""}`} type="button" onClick={() => ui.act(async () => { await write(`/api/user/${p.author_id}/follow`, {}, detailFollowed ? "DELETE" : "POST"); setDetailFollowed((value) => !value); })}>{detailFollowed ? "已关注" : "关注"}</button>}
           </div>
           <h1>{p.title}</h1>
           <div className="post-body details-text">{p.content}</div>
-          <div className="post-media">
-            {(p.images || []).map((img: Entity) => (
-              <a
-                key={img.id}
-                href={asset(img.file?.path || img.url)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <img alt="帖子图片" src={asset(img.file?.path || img.url)} />
-              </a>
-            ))}
-          </div>
+          <MediaGallery items={p.images} title={p.title || "帖子图片"} className="post-detail-gallery" maxVisible={9} />
           {p.board_id === 2 && (
             <div className="info-box">
               <b>
@@ -481,6 +468,11 @@ export function PostDetail() {
             >
               {bookmarked ? "取消收藏" : "收藏"}
             </button>
+            {p.images?.[0] && (
+              <button className="btn" onClick={async () => { const path = mediaURL(p.images[0], "origin"); if (!path) return; await ui.act(() => favoritePublicImage(path), "图片已收藏为表情"); }}>
+                收藏首图为表情
+              </button>
+            )}
             <button
               className="btn"
               onClick={() =>
@@ -574,30 +566,16 @@ export function PostDetail() {
           <QueryState query={comments}>
             {[...previousReplies,...rows(comments.data, "replies")].map((r) => (
               <div className="comment-row" key={r.id}>
-                <b>{r.author?.nickname || r.user?.nickname}</b>
-                <p className="details-text">{r.content}</p>
-                <small>{time(r.created_at)}</small>
+                <div className="comment-head"><span className="comment-avatar"><span aria-hidden="true">{(r.author?.nickname || r.user?.nickname || "同").slice(0, 1)}</span>{r.author?.avatar && <img src={asset(r.author.avatar)} alt="" onError={(event) => { event.currentTarget.style.display = "none"; }} />}</span><div><b>{r.author?.nickname || r.user?.nickname || "校园同学"}</b><small>{time(r.created_at)}</small></div></div>
+                {r.content && r.content !== "[表情]" && <p className="details-text">{r.content}</p>}
+                {r.sticker_id && <StickerRenderer stickerId={r.sticker_id} assetKey={r.asset_key} packId={r.pack_id} />}
+                {(r.images || r.attachments)?.length > 0 && <MediaGallery items={r.images || r.attachments} title="评论图片" maxVisible={4} />}
                 <button
                   className="link-btn"
                   onClick={() =>
                     ui.open(
                       "回复评论",
-                      <Form
-                        fields={[
-                          {
-                            name: "content",
-                            label: "回复内容",
-                            type: "textarea",
-                            required: true,
-                          },
-                        ]}
-                        onSubmit={async (_, fd) => {
-                          fd.set("parent_reply_id", String(r.id));
-                          await write(`/api/posts/${id}/replies`, fd);
-                          comments.refetch();
-                          ui.close();
-                        }}
-                      />,
+                      <ReplyComposer postId={Number(id)} parentReplyId={Number(r.id)} onSent={() => { comments.refetch(); ui.close(); }} />,
                     )
                   }
                 >
@@ -607,24 +585,25 @@ export function PostDetail() {
             ))}
             {comments.data?.next_cursor&&<button className="btn" onClick={()=>{setPreviousReplies(current=>[...current,...rows(comments.data,'replies')]);setCursor(comments.data!.next_cursor)}}>加载更多评论</button>}
           </QueryState>
-          <Form
-            fields={[
-              {
-                name: "content",
-                label: "写下你的回复",
-                type: "textarea",
-                required: true,
-              },
-            ]}
-            submit="发布评论"
-            onSubmit={async (_, fd) => {
-              await write(`/api/posts/${id}/replies`, fd);
-              await comments.refetch();
-              ui.notify("回复已发布");
-            }}
-          />
+          <ReplyComposer postId={Number(id)} onSent={() => comments.refetch()} />
         </div>
       </QueryState>
     </>
   );
+}
+
+function ReplyComposer({ postId, parentReplyId, onSent }: { postId: number; parentReplyId?: number; onSent: () => unknown }) {
+  const ui = useUI();
+  const [sticker, setSticker] = useState<StickerPayload | null>(null);
+  const [showStickers, setShowStickers] = useState(false);
+  return <Form fields={[{ name: "content", label: "写下你的回复", type: "textarea" }]} submit="发布评论" onSubmit={async (_, fd) => {
+    const content = String(fd.get("content") || "").trim();
+    if (!content && !sticker && !fd.getAll("images").some((item) => item instanceof File && item.size > 0)) throw new Error("请输入内容、选择图片或表情");
+    const hasImages = fd.getAll("images").some((item) => item instanceof File && item.size > 0);
+    if (sticker && hasImages) throw new Error("图片和表情不能同时发送");
+    const ids = await uploadIDs(fd); fd.delete("images"); if (ids.length) fd.set("file_ids", JSON.stringify(ids));
+    if (sticker) { fd.set("sticker_id", sticker.sticker_id); fd.set("asset_key", sticker.asset_key); fd.set("pack_id", sticker.pack_id); if (!content) fd.set("content", "[表情]"); }
+    if (parentReplyId) fd.set("parent_reply_id", String(parentReplyId));
+    await write(`/api/posts/${postId}/replies`, fd); setSticker(null); setShowStickers(false); await onSent(); ui.notify("回复已发布");
+  }}><MediaUploadPicker maxCount={4} /><div className="reply-emoji-row"><button type="button" className="btn" onClick={() => setShowStickers((value) => !value)}>☺ {showStickers ? "收起表情" : "添加表情"}</button>{sticker && <span className="sticker-inline"><StickerRenderer stickerId={sticker.sticker_id} assetKey={sticker.asset_key} packId={sticker.pack_id} label={sticker.label} /><button type="button" className="link-btn" onClick={() => setSticker(null)}>移除</button></span>}</div>{showStickers && <StickerPicker compact onSelect={(value) => { setSticker(value); setShowStickers(false); }} />}</Form>;
 }

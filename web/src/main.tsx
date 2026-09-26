@@ -11,7 +11,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./auth";
 import { Icon, UIProvider, useUI, DialogOutlet } from "./ui";
-import { asset, useApi, rows } from "./api";
+import { asset, entity, useApi, rows } from "./api";
 import {
   Dashboard,
   Exams,
@@ -29,6 +29,7 @@ import { AiPage } from "./ai";
 import { Feedback, TicketDetail, Notifications } from "./feedback";
 import { Community, PostDetail } from "./community";
 import { AcademicProvider, Schedule, Grades } from "./academic";
+import { Messages } from "./messages";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { staleTime: 15000, refetchOnWindowFocus: false },
@@ -38,6 +39,7 @@ const scrollPositions = new Map<string,number>();
 export const navigation = [
   ["dashboard", "校园工作台"],
   ["community", "校园社区"],
+  ["messages", "私信"],
   ["market", "二手集市"],
   ["schedule", "课表"],
   ["grades", "成绩与学业"],
@@ -89,18 +91,22 @@ function Search() {
 }
 function Rail() {
   const boards = useApi("/api/water/sections");
+  const auth = useAuth();
+  const profile = useApi(auth.user ? "/api/user/profile" : null);
+  const person = entity(profile.data, "user", "data");
+  const level = Number(person.level || 0);
+  const likes = Number(person.total_likes_received || person.like_count || 0);
+  const followers = Number(person.followers_count || person.follower_count || 0);
+  const following = Number(person.following_count || person.following || 0);
   return (
     <aside className="right-rail">
-      <div className="rail-card">
-        <div className="rail-title">
-          <b>考试安排</b>
+      <div className="rail-card profile-rail-card">
+        <div className="profile-rail-head">
+          <div className="profile-rail-avatar">{person.avatar || auth.user?.avatar ? <img src={asset(person.avatar || auth.user?.avatar)} alt="" /> : <span>{(person.nickname || auth.user?.nickname || "同").slice(0, 1)}</span>}</div>
+          <div><b>{person.nickname || auth.user?.nickname || "校园同学"}</b><p>{auth.user ? `Lv.${level || 1} · 校园贡献者` : "登录后完善个人主页"}</p></div>
         </div>
-        <div className="rail-body">
-          <p className="tiny muted">查看本机录入和导入的考试</p>
-          <NavLink className="btn full-width" to="/exams">
-            查看考试安排
-          </NavLink>
-        </div>
+        <div className="profile-rail-stats"><span><b>{likes}</b><small>获赞</small></span><span><b>{followers}</b><small>关注者</small></span><span><b>{following}</b><small>关注</small></span></div>
+        <NavLink className="btn full-width" to={auth.user ? "/profile" : "/profile"}>{auth.user ? "查看个人主页" : "登录并完善资料"}</NavLink>
       </div>
       <div className="rail-card">
         <div className="rail-title">
@@ -152,6 +158,7 @@ function Shell() {
     navigate = useNavigate();
   const active = location.pathname.split("/")[1] || "dashboard";
   const unread = useApi(auth.user ? '/api/user/notifications/unread-count' : null);
+  const messageUnread = useApi(auth.user ? '/api/messages/unread_count' : null);
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     localStorage.setItem("sylulive-theme", dark ? "dark" : "light");
@@ -192,6 +199,7 @@ function Shell() {
         <Icon name={id} />
       </span>
       <span className="nav-text">{label}</span>
+      {id === "messages" && Number(messageUnread.data?.unread_count || messageUnread.data?.count) > 0 && <span className="nav-unread">{messageUnread.data?.unread_count || messageUnread.data?.count}</span>}
     </NavLink>
   );
   return (
@@ -293,11 +301,12 @@ function Shell() {
         <main className="workspace" id="mainContent">
           <div className={`workspace-grid ${["dashboard","community"].includes(active)?"":"no-rail"}`}>
             <div className="main-pane">
-              <section className="page active">
+              <section key={`${location.pathname}${location.search}`} className="page active">
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/community" element={<Community />} />
                   <Route path="/market" element={<Community market />} />
+                  <Route path="/messages" element={<Messages />} />
                   <Route path="/post/:id" element={<PostDetail />} />
                   <Route path="/schedule" element={<Schedule />} />
                   <Route path="/grades" element={<Grades />} />

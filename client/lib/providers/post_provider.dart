@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -108,6 +109,7 @@ class _BoardState {
   int revision = 0;
   DateTime? lastSuccessfulRefreshAt;
   bool isRecoveringExpiredSession = false;
+  CancelToken? cancelToken;
 }
 
 /// 一次可见性变更中被移除的帖子快照（FEED-3 撤销用）。
@@ -489,6 +491,50 @@ class PostProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Completer<void>? _initialFeedCompleter;
+  Future<void> get initialFeedFuture =>
+      _initialFeedCompleter?.future ?? Future<void>.value();
+
+  void markInitialFeedDone() {
+    if (_initialFeedCompleter != null && !_initialFeedCompleter!.isCompleted) {
+      _initialFeedCompleter!.complete();
+    }
+  }
+
+  void resetInitialFeedSignal() {
+    if (_initialFeedCompleter == null || _initialFeedCompleter!.isCompleted) {
+      _initialFeedCompleter = Completer<void>();
+    }
+  }
+
+  Future<void> ensureInitialFeed({
+    int boardId = 1,
+    String? type,
+    int? tagId,
+    int? topicId,
+    String sort = 'time',
+  }) {
+    resetInitialFeedSignal();
+    final board = _ensureBoard(
+      boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+      topicId: topicId,
+    );
+    if (board.hasLoaded || board.hasCacheLoaded) {
+      markInitialFeedDone();
+      return Future<void>.value();
+    }
+    return refresh(
+      boardId: boardId,
+      type: type,
+      tagId: tagId,
+      topicId: topicId,
+      sort: sort,
+    ).whenComplete(markInitialFeedDone);
+  }
+
   Future<void> _savePostsToCache(
     int boardId,
     String sort,
@@ -496,20 +542,25 @@ class PostProvider extends ChangeNotifier {
     String? type,
     int? tagId,
     int? topicId,
+    List<Post>? pinnedPosts,
+    String? algorithmVersion,
+    int? sessionEpoch,
   }) async {
     if (!_enableCache || sort == 'following' || topicId != null) return;
     try {
       final board = _boards[
           _stateKey(boardId, sort, type, tagId: tagId, topicId: topicId)];
-      final algorithmVersion =
-          board != null && board.algorithmVersion.isNotEmpty
+      final algoVersion = algorithmVersion ??
+          (board != null && board.algorithmVersion.isNotEmpty
               ? board.algorithmVersion
               : PostCacheService.expectedAlgorithmVersion(
-                  boardId: boardId, sort: sort, type: type, tagId: tagId);
+                  boardId: boardId, sort: sort, type: type, tagId: tagId));
       final feed = CachedPostFeed(
-        posts: posts,
-        pinnedPosts: board?.pinnedPosts ?? [],
-        algorithmVersion: algorithmVersion,
+        posts: List<Post>.from(posts),
+        pinnedPosts: pinnedPosts != null
+            ? List<Post>.from(pinnedPosts)
+            : List<Post>.from(board?.pinnedPosts ?? const []),
+        algorithmVersion: algoVersion,
       );
       await PostCacheService.savePosts(
         boardId,
@@ -517,6 +568,7 @@ class PostProvider extends ChangeNotifier {
         sort: sort,
         type: type,
         tagId: tagId,
+        sessionEpoch: sessionEpoch,
       );
     } catch (e) {
       debugPrint('保存帖子缓存失败(board=$boardId, sort=$sort): $e');
@@ -573,6 +625,8 @@ class PostProvider extends ChangeNotifier {
     board.hasCacheLoaded = true;
     board.currentSort = sort;
     final requestVersion = ++board.requestVersion;
+    board.cancelToken?.cancel();
+    board.cancelToken = CancelToken();
 
     if (board.posts.isEmpty) {
       board.isLoading = true;
@@ -645,6 +699,10 @@ class PostProvider extends ChangeNotifier {
       final response = await _dio.get(
         _postsEndpoint(sort, type: type),
         queryParameters: params,
+        cancelToken: board.cancelToken,
+        options: Options(
+          extra: const <String, dynamic>{'request_budget_ms': 10000},
+        ),
       );
       if (requestVersion != board.requestVersion) return;
       if (response.statusCode == 200) {
@@ -671,31 +729,20 @@ class PostProvider extends ChangeNotifier {
           board.algorithmVersion = data['algorithm_version']?.toString() ?? '';
         }
 
+        board.posts = newPosts;
         if (isHomeV2) {
-          board.posts = newPosts;
           board.pinnedPosts = pinned;
-          await _savePostsToCache(
-            boardId,
-            sort,
-            board.posts,
-            type: type,
-            tagId: tagId,
-            topicId: topicId,
-          );
-        } else {
-          // 非 HomeV2：服务器第一页是权威快照，直接替换。
-          // 之前 sort=time 的增量 merge 会保留服务器已删除/已下沉的缓存帖子
-          // （"分类页出现服务器已没有的旧帖子"），且服务器返回空页时旧缓存永久残留。
-          board.posts = newPosts;
-          await _savePostsToCache(
-            boardId,
-            sort,
-            board.posts,
-            type: type,
-            tagId: tagId,
-            topicId: topicId,
-          );
         }
+        unawaited(_savePostsToCache(
+          boardId,
+          sort,
+          List<Post>.from(board.posts),
+          type: type,
+          tagId: tagId,
+          topicId: topicId,
+          pinnedPosts: isHomeV2 ? List<Post>.from(pinned) : null,
+          algorithmVersion: isHomeV2 ? board.algorithmVersion : null,
+        ));
 
         final total = (data['total'] as num?)?.toInt();
         board.hasMore =
@@ -755,18 +802,24 @@ class PostProvider extends ChangeNotifier {
       topicId: topicId,
     );
     final page = board.currentPage;
-    final key = 'load_${boardId}_${sort}_${type}_${tagId}_${topicId}_$page';
+    final isInitialPage1 = page == 1;
+    final key = isInitialPage1
+        ? 'feed_initial_${boardId}_${sort}_${type}_${tagId}_$topicId'
+        : 'load_${boardId}_${sort}_${type}_${tagId}_${topicId}_$page';
 
     if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
 
-    final future = _loadPostsInternal(
+    late final Future<void> future;
+    future = _loadPostsInternal(
             boardId: boardId,
             type: type,
             tagId: tagId,
             topicId: topicId,
             sort: sort)
         .whenComplete(() {
-      _inflightRequests.remove(key);
+      if (_inflightRequests[key] == future) {
+        _inflightRequests.remove(key);
+      }
     });
     _inflightRequests[key] = future;
     return future;
@@ -835,6 +888,10 @@ class PostProvider extends ChangeNotifier {
       final response = await _dio.get(
         _postsEndpoint(sort, type: type),
         queryParameters: params,
+        cancelToken: board.cancelToken,
+        options: Options(
+          extra: const <String, dynamic>{'request_budget_ms': 10000},
+        ),
       );
       if (requestVersion != board.requestVersion) return;
       if (response.statusCode == 200) {
@@ -924,18 +981,26 @@ class PostProvider extends ChangeNotifier {
     int? topicId,
     String sort = 'time',
   }) {
+    final initialKey = 'feed_initial_${boardId}_${sort}_${type}_${tagId}_$topicId';
+    if (_inflightRequests.containsKey(initialKey)) {
+      return _inflightRequests[initialKey]!;
+    }
+
     final key = 'refresh_${boardId}_${sort}_${type}_${tagId}_$topicId';
 
     if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
 
-    final future = _refreshInternal(
+    late final Future<void> future;
+    future = _refreshInternal(
       boardId: boardId,
       type: type,
       tagId: tagId,
       topicId: topicId,
       sort: sort,
     ).whenComplete(() {
-      _inflightRequests.remove(key);
+      if (_inflightRequests[key] == future) {
+        _inflightRequests.remove(key);
+      }
     });
     _inflightRequests[key] = future;
     return future;
@@ -956,6 +1021,8 @@ class PostProvider extends ChangeNotifier {
       topicId: topicId,
     );
     final requestVersion = ++board.requestVersion;
+    board.cancelToken?.cancel();
+    board.cancelToken = CancelToken();
     board.currentSort = sort;
     board.currentPage = 1;
     board.hasMore = true;
@@ -1022,14 +1089,16 @@ class PostProvider extends ChangeNotifier {
         // 我们必须完全覆写当前列表，绝不能执行在原地更新旧帖的合并逻辑，
         // 否则将导致已存在的帖子依然呆在旧的索引位置，造成视觉上排序无效。
         board.posts = newPosts;
-        await _savePostsToCache(
+        unawaited(_savePostsToCache(
           boardId,
           sort,
-          board.posts,
+          List<Post>.from(board.posts),
           type: type,
           tagId: tagId,
           topicId: topicId,
-        );
+          pinnedPosts: useHomeFeedV2 ? List<Post>.from(board.pinnedPosts) : null,
+          algorithmVersion: useHomeFeedV2 ? board.algorithmVersion : null,
+        ));
 
         final total = (response.data['total'] as num?)?.toInt();
         board.hasMore =

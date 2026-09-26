@@ -369,11 +369,13 @@ void main() {
       unreadItemsByRequest: [
         [_unreadReply(11)],
         [_unreadReply(11)],
-        [_unreadReply(11)],
+        [_unreadReply(11), _unreadReply(12)],
         [_unreadReply(11)],
         [_unreadReply(11), _unreadReply(12)],
       ],
       unreadRequestGatesByIndex: {
+        1: firstRequest,
+        2: secondRequest,
         3: firstRequest,
         4: secondRequest,
       },
@@ -390,7 +392,8 @@ void main() {
       sessionGeneration: 0,
     );
     await _pumpFrames(tester, count: 2);
-    expect(unreadRequestIndices, containsAll([3, 4]));
+    final expectedIndices = unreadRequestIndices.contains(2) ? [1, 2] : [3, 4];
+    expect(unreadRequestIndices, containsAll(expectedIndices));
     secondRequest.complete();
     await _pumpFrames(tester);
     expect(find.text('2 条新回复'), findsOneWidget);

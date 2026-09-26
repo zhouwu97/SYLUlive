@@ -30,6 +30,14 @@ class PostCacheService {
   static const String fallbackAlgorithmVersion = 'feed_v1';
   static const _boxName = 'post_cache';
   static const _boardPrefix = 'board_';
+  static const _lastCleanedSchemaKey = '_last_cleaned_schema_version';
+
+  static final Set<Future<void>> _pendingWrites = {};
+
+  static Future<void> waitForPendingWrites() async {
+    if (_pendingWrites.isEmpty) return;
+    await Future.wait(_pendingWrites.toList());
+  }
 
   static Future<Box<String>> _openBox() async {
     return await Hive.openBox<String>(_boxName);
@@ -69,6 +77,31 @@ class PostCacheService {
     String sort = 'time',
     String? type,
     int? tagId,
+    int? sessionEpoch,
+  }) async {
+    final writeFuture = _doSavePosts(
+      boardId,
+      feed,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+      sessionEpoch: sessionEpoch,
+    );
+    _pendingWrites.add(writeFuture);
+    try {
+      await writeFuture;
+    } finally {
+      _pendingWrites.remove(writeFuture);
+    }
+  }
+
+  static Future<void> _doSavePosts(
+    int boardId,
+    CachedPostFeed feed, {
+    String sort = 'time',
+    String? type,
+    int? tagId,
+    int? sessionEpoch,
   }) async {
     final box = await _openBox();
     final key = _cacheKey(boardId, sort, type: type, tagId: tagId);
@@ -87,6 +120,7 @@ class PostCacheService {
       'schema_version': cacheSchemaVersion,
       'algorithm_version': storedVersion,
       'saved_at': DateTime.now().toUtc().toIso8601String(),
+      'session_epoch': sessionEpoch ?? 0,
       'pinned_posts': feed.pinnedPosts.map((p) => _postToJson(p)).toList(),
       'posts': feed.posts.map((p) => _postToJson(p)).toList()
     });
@@ -220,12 +254,19 @@ class PostCacheService {
   }
 
   /// 清理旧版或损坏的缓存数据
-  static Future<int> clearLegacyCache() async {
+  static Future<int> clearLegacyCache({bool force = false}) async {
     final box = await _openBox();
+    if (!force) {
+      final lastCleaned = box.get(_lastCleanedSchemaKey);
+      if (lastCleaned == cacheSchemaVersion.toString()) {
+        return 0;
+      }
+    }
     final keys = box.keys.toList(growable: false);
     int deletedCount = 0;
 
     for (final key in keys) {
+      if (key == _lastCleanedSchemaKey) continue;
       final raw = box.get(key);
 
       if (raw == null || raw.isEmpty) {
@@ -247,6 +288,7 @@ class PostCacheService {
         deletedCount++;
       }
     }
+    await box.put(_lastCleanedSchemaKey, cacheSchemaVersion.toString());
     return deletedCount;
   }
 
@@ -254,12 +296,14 @@ class PostCacheService {
   ///
   /// 仅由启动恢复等明确的非敏感缓存恢复路径调用。
   static Future<void> clearAllCache() async {
+    await waitForPendingWrites();
     final box = await _openBox();
     await box.clear();
   }
 
   /// 清除指定板块缓存
   static Future<void> clearBoard(int boardId) async {
+    await waitForPendingWrites();
     final box = await _openBox();
     final prefix = '$_boardPrefix${boardId}_';
     final keys = box.keys.where((key) => key.toString().startsWith(prefix));

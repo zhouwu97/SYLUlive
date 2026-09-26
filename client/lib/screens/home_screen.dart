@@ -371,7 +371,7 @@ class _HomeScreenState extends State<HomeScreen>
       }
     });
     unawaited(loadInitialFeedBeforeUpdateCheck(
-      loadInitialFeed: () => postProvider.loadPosts(boardId: 1, sort: 'all'),
+      loadInitialFeed: () => postProvider.initialFeedFuture,
       initializeUpdateCheck: () {
         _initialUpdateFallbackTimer?.cancel();
         return updateCoordinator.startDeferredInitialCheck();

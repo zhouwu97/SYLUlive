@@ -157,6 +157,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   // 后台新鲜度探测：列表未在顶部时不直接覆写，显示“内容有更新”浮条。
   bool _freshnessBannerVisible = false;
   String _freshnessBannerLabel = '内容有更新';
+  bool _authInitialized = false;
+  int? _lastAccountId;
+  int _lastAccountSessionEpoch = 0;
+  VoidCallback? _onCheckinStatusUpdated;
   // 桌面分屏模式：评论入口请求打开详情时滚到评论区。
   bool _selectedScrollToReplies = false;
   static const double _freshnessNearTopThreshold = 160;
@@ -212,6 +216,18 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     return context.read<AuthProvider>().isLoggedIn;
   }
 
+  int _safeAccountSessionEpoch(AuthProvider auth) {
+    try {
+      return auth.accountSessionEpoch;
+    } catch (_) {
+      try {
+        return auth.sessionGeneration;
+      } catch (_) {
+        return 0;
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -243,13 +259,23 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       vsync: this,
       duration: AppMotion.tab,
     )..addListener(_handleFeedSettleTick);
+    final authProvider = context.read<AuthProvider>();
+    _wasLoggedIn = authProvider.isLoggedIn;
+    _lastAccountId = authProvider.user?.id;
+    _lastAccountSessionEpoch = _safeAccountSessionEpoch(authProvider);
+    _authInitialized = true;
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _restoreCommunityState();
       if (!mounted) return;
       final postProvider = context.read<PostProvider>();
       final initialSort = _currentRemoteSort;
       if (initialSort != null && _canLoadFeedMode(_feedMode)) {
-        postProvider.loadPosts(boardId: 1, sort: initialSort);
+        unawaited(postProvider
+            .ensureInitialFeed(sort: initialSort)
+            .whenComplete(postProvider.markInitialFeedDone));
+      } else {
+        postProvider.markInitialFeedDone();
       }
       _ensureCheckinStatusLoaded();
       unawaited(_loadUnreadReplyNotifications());
@@ -918,15 +944,22 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Future<bool> _loadCheckinStatus() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) return false;
+    final accountEpoch = _safeAccountSessionEpoch(auth);
+    final accountId = auth.user?.id;
     try {
       final resp = await auth.dio.get('/user/checkin/status');
       if (resp.statusCode != 200 || !mounted) {
+        return false;
+      }
+      if (_safeAccountSessionEpoch(auth) != accountEpoch ||
+          auth.user?.id != accountId) {
         return false;
       }
       setState(() {
         _checkedIn = resp.data['checked_in'] ?? false;
         _streakDays = resp.data['streak_days'] ?? 0;
       });
+      _onCheckinStatusUpdated?.call();
       return true;
     } catch (_) {
       return false;
@@ -1097,8 +1130,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Future<void> _openHomeServicePanel() async {
-    await _ensureCheckinStatusLoaded(force: true);
-    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    final needsCheckinLoad = auth.isLoggedIn && !_checkinStatusLoaded;
+    if (needsCheckinLoad) {
+      unawaited(_ensureCheckinStatusLoaded());
+    }
 
     final themeProvider = context.read<ThemeProvider>();
     final isCustomMode = !themeProvider.isCleanBackgroundMode;
@@ -1120,46 +1156,55 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             child: SizedBox(
               width: (width * 0.86).clamp(0.0, 390.0),
               height: double.infinity,
-              child: HomeServiceDrawer(
-                checkedIn: _checkedIn,
-                streakDays: _streakDays,
-                checkInLoading: false,
-                showCheckInDot: _showCheckInDot,
-                announcements: _announcements,
-                unreadAnnouncements: _unreadAnnouncements,
-                waterSections:
-                    context.read<WaterSectionProvider>().activeSections,
-                onCheckIn: () {
-                  _closePanelThenOpen(dialogContext, _openCheckInCalendar);
-                },
-                onOpenToolbox: () {
-                  _openPageKeepingPanel(const ToolboxScreen());
-                },
-                onOpenAnnouncements: _openAnnouncements,
-                onOpenCompetitions: () {
-                  _openPageKeepingPanel(const CompetitionCenterScreen());
-                },
-                onOpenGrades: () {
-                  _openGradeKeepingPanel();
-                },
-                onOpenExamSchedule: () {
-                  _openPageKeepingPanel(const ExamScheduleScreen());
-                },
-                onOpenFeedback: () {
-                  _openPageKeepingPanel(const FeedbackCenterScreen());
-                },
-                onOpenCourt: () {
-                  if (!context.read<AuthProvider>().isLoggedIn) {
-                    _openPageKeepingPanel(const LoginScreen());
-                  } else {
-                    _openPageKeepingPanel(const CourtHubScreen());
-                  }
-                },
-                onOpenWaterSectionDirectory: () {
-                  _openWaterSectionDirectoryKeepingPanel();
-                },
-                onOpenWaterSection: (WaterSection section) {
-                  _openWaterSectionKeepingPanel(section);
+              child: StatefulBuilder(
+                builder: (dialogCtx, setDialogState) {
+                  _onCheckinStatusUpdated = () {
+                    if (dialogCtx.mounted) {
+                      setDialogState(() {});
+                    }
+                  };
+                  return HomeServiceDrawer(
+                    checkedIn: _checkedIn,
+                    streakDays: _streakDays,
+                    checkInLoading: !_checkinStatusLoaded && auth.isLoggedIn,
+                    showCheckInDot: _showCheckInDot,
+                    announcements: _announcements,
+                    unreadAnnouncements: _unreadAnnouncements,
+                    waterSections:
+                        context.read<WaterSectionProvider>().activeSections,
+                    onCheckIn: () {
+                      _closePanelThenOpen(dialogContext, _openCheckInCalendar);
+                    },
+                    onOpenToolbox: () {
+                      _openPageKeepingPanel(const ToolboxScreen());
+                    },
+                    onOpenAnnouncements: _openAnnouncements,
+                    onOpenCompetitions: () {
+                      _openPageKeepingPanel(const CompetitionCenterScreen());
+                    },
+                    onOpenGrades: () {
+                      _openGradeKeepingPanel();
+                    },
+                    onOpenExamSchedule: () {
+                      _openPageKeepingPanel(const ExamScheduleScreen());
+                    },
+                    onOpenFeedback: () {
+                      _openPageKeepingPanel(const FeedbackCenterScreen());
+                    },
+                    onOpenCourt: () {
+                      if (!context.read<AuthProvider>().isLoggedIn) {
+                        _openPageKeepingPanel(const LoginScreen());
+                      } else {
+                        _openPageKeepingPanel(const CourtHubScreen());
+                      }
+                    },
+                    onOpenWaterSectionDirectory: () {
+                      _openWaterSectionDirectoryKeepingPanel();
+                    },
+                    onOpenWaterSection: (WaterSection section) {
+                      _openWaterSectionKeepingPanel(section);
+                    },
+                  );
                 },
               ),
             ),
@@ -1182,6 +1227,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         );
       },
     );
+    _onCheckinStatusUpdated = null;
   }
 
   Future<void> _openAnnouncements() async {
@@ -1226,15 +1272,22 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       ),
     );
 
-    if (authProvider.isLoggedIn != _wasLoggedIn) {
-      if (!_wasLoggedIn && authProvider.isLoggedIn) {
-        _checkinStatusLoaded = false;
-      } else if (_wasLoggedIn && !authProvider.isLoggedIn) {
-        _checkinStatusLoaded = false;
+    final accountId = authProvider.user?.id;
+    final accountSessionEpoch = _safeAccountSessionEpoch(authProvider);
+    final accountChanged = _authInitialized &&
+        (authProvider.isLoggedIn != _wasLoggedIn ||
+            accountId != _lastAccountId ||
+            accountSessionEpoch != _lastAccountSessionEpoch);
+
+    if (accountChanged) {
+      _wasLoggedIn = authProvider.isLoggedIn;
+      _lastAccountId = accountId;
+      _lastAccountSessionEpoch = accountSessionEpoch;
+      _checkinStatusLoaded = false;
+      if (!authProvider.isLoggedIn) {
         _checkedIn = false;
         _streakDays = 0;
       }
-      _wasLoggedIn = authProvider.isLoggedIn;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         // 登录/退出时清除关注信息流，避免跨账号数据残留

@@ -65,68 +65,143 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   }
 
   int _loadGeneration = 0;
+  bool _postsLoading = false;
+  String? _postsError;
+  bool _marketLoading = false;
+  String? _marketError;
 
   Future<void> _loadData() async {
     final generation = ++_loadGeneration;
     final auth = context.read<AuthProvider>();
-    final requestEpoch = auth.accountSessionEpoch;
-    final requestViewerId = auth.user?.id;
+    final targetId = widget.userId ?? auth.user?.id;
+    if (targetId == null) return;
 
     if (mounted) {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
+        _postsLoading = true;
+        _postsError = null;
+        _marketLoading = true;
+        _marketError = null;
       });
     }
 
+    await Future.wait([
+      _loadProfilePartition(generation, targetId),
+      _loadPostsPartition(generation, targetId),
+      _loadMarketPartition(generation, targetId),
+    ]);
+
+    if (mounted && generation == _loadGeneration) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadProfilePartition(int generation, int targetId) async {
+    final auth = context.read<AuthProvider>();
+    final requestEpoch = auth.accountSessionEpoch;
+    final requestViewerId = auth.user?.id;
+    final isSelf = targetId == auth.user?.id;
+
     try {
-      final targetId = widget.userId ?? auth.user?.id;
-      if (targetId == null) return;
-
-      final provider = context.read<SocialProvider>();
-      final isSelf = targetId == auth.user?.id;
-
-      final postsFuture = provider.getUserPosts(targetId);
-      final marketFuture = provider.getUserMarketPosts(targetId);
-
       User? loadedUser;
       if (isSelf) {
         await auth.refreshUser();
+        loadedUser = auth.user;
       } else {
-        loadedUser = await provider.getUserProfile(targetId);
+        loadedUser =
+            await context.read<SocialProvider>().getUserProfile(targetId);
       }
-
-      final posts = await postsFuture;
-      final marketResult = await marketFuture;
-
       if (!mounted ||
           generation != _loadGeneration ||
           auth.accountSessionEpoch != requestEpoch ||
           auth.user?.id != requestViewerId) {
         return;
       }
-
       setState(() {
-        _user = isSelf ? context.read<AuthProvider>().user : loadedUser;
+        _user = loadedUser;
+      });
+    } catch (e) {
+      if (mounted && generation == _loadGeneration && _user == null) {
+        setState(() => _errorMessage = '加载用户信息失败');
+      }
+    }
+  }
+
+  Future<void> _loadPostsPartition(int generation, int targetId) async {
+    final auth = context.read<AuthProvider>();
+    final requestEpoch = auth.accountSessionEpoch;
+    final requestViewerId = auth.user?.id;
+
+    try {
+      final posts =
+          await context.read<SocialProvider>().getUserPosts(targetId);
+      if (!mounted ||
+          generation != _loadGeneration ||
+          auth.accountSessionEpoch != requestEpoch ||
+          auth.user?.id != requestViewerId) {
+        return;
+      }
+      setState(() {
         _posts = posts.where((post) => !_isMarketPost(post)).toList();
+        _postsLoading = false;
+        _postsError = null;
+      });
+    } catch (e) {
+      if (mounted && generation == _loadGeneration) {
+        setState(() {
+          _postsLoading = false;
+          _postsError = '动态加载失败';
+        });
+      }
+    }
+  }
+
+  Future<void> _loadMarketPartition(int generation, int targetId) async {
+    final auth = context.read<AuthProvider>();
+    final requestEpoch = auth.accountSessionEpoch;
+    final requestViewerId = auth.user?.id;
+
+    try {
+      final marketResult =
+          await context.read<SocialProvider>().getUserMarketPosts(targetId);
+      if (!mounted ||
+          generation != _loadGeneration ||
+          auth.accountSessionEpoch != requestEpoch ||
+          auth.user?.id != requestViewerId) {
+        return;
+      }
+      setState(() {
         _marketPosts = marketResult.items;
         _marketTotal = marketResult.total;
         _marketSoldCount = marketResult.sold;
+        _marketLoading = false;
+        _marketError = null;
       });
-    } on SocialRequestException catch (error) {
-      if (!mounted || error.sessionChanged) return;
-      if (generation == _loadGeneration) {
-        setState(() => _errorMessage = error.message);
-      }
-    } catch (_) {
+    } catch (e) {
       if (mounted && generation == _loadGeneration) {
-        setState(() => _errorMessage = '加载用户内容失败，请稍后重试');
-      }
-    } finally {
-      if (mounted && generation == _loadGeneration) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _marketLoading = false;
+          _marketError = '商品加载失败';
+        });
       }
     }
+  }
+
+  Future<void> _refreshPostsSilently() async {
+    final auth = context.read<AuthProvider>();
+    final targetId = widget.userId ?? auth.user?.id;
+    if (targetId == null) return;
+    try {
+      final posts =
+          await context.read<SocialProvider>().getUserPosts(targetId);
+      if (mounted) {
+        setState(() {
+          _posts = posts.where((post) => !_isMarketPost(post)).toList();
+        });
+      }
+    } catch (_) {}
   }
 
   void _onProfileSaved() {
@@ -167,7 +242,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     );
 
     if (mounted) {
-      await _loadData();
+      await _refreshPostsSilently();
     }
   }
 
@@ -211,39 +286,6 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       return Scaffold(
         appBar: AppBar(title: const Text('错误')),
         body: Center(child: Text(_errorMessage ?? '用户不存在或加载失败')),
-      );
-    }
-
-    if (_errorMessage != null && !_isLoading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('加载失败')),
-        body: RefreshIndicator(
-          onRefresh: _loadData,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            children: [
-              SizedBox(
-                height: 320,
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.cloud_off, color: Colors.grey, size: 42),
-                      const SizedBox(height: 12),
-                      Text(_errorMessage!,
-                          style: const TextStyle(color: Colors.grey)),
-                      const SizedBox(height: 12),
-                      OutlinedButton(
-                        onPressed: _loadData,
-                        child: const Text('重试'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       );
     }
 
@@ -599,8 +641,30 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   }
 
   Widget _buildMarketPostsList({required EdgeInsets padding}) {
-    if (_isLoading) {
+    if (_marketLoading && _marketPosts.isEmpty) {
       return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_marketError != null && _marketPosts.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_marketError!, style: const TextStyle(color: Colors.grey)),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () {
+                final auth = context.read<AuthProvider>();
+                final targetId = widget.userId ?? auth.user?.id;
+                if (targetId != null) {
+                  _loadMarketPartition(_loadGeneration, targetId);
+                }
+              },
+              child: const Text('重试'),
+            ),
+          ],
+        ),
+      );
     }
 
     if (_marketPosts.isEmpty) {
@@ -674,6 +738,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           width: double.infinity,
           height: double.infinity,
           fit: BoxFit.cover,
+          memCacheWidth: (MediaQuery.sizeOf(context).width *
+                  MediaQuery.devicePixelRatioOf(context))
+              .round()
+              .clamp(200, 1920),
           alignment: Alignment.center,
           placeholder: (_, __) => Container(
             color: const Color(0xFFEDEEF1),

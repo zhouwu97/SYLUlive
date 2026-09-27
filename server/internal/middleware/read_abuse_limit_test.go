@@ -57,3 +57,40 @@ func TestReadAbuseRateLimitMiddlewareDoesNotLimitWritesOrOtherRoutes(t *testing.
 		require.Equal(t, methodPath.status, resp.Code)
 	}
 }
+
+func TestRetryAfterSecondsRoundsUpAndKeepsMinimum(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		remaining time.Duration
+		want      int
+	}{
+		{name: "fractional minute", remaining: 59*time.Second + 100*time.Millisecond, want: 60},
+		{name: "fractional second", remaining: time.Second + 100*time.Millisecond, want: 2},
+		{name: "less than one second", remaining: 100 * time.Millisecond, want: 1},
+		{name: "expired", remaining: -time.Second, want: 1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			require.Equal(t, testCase.want, retryAfterSeconds(testCase.remaining))
+		})
+	}
+}
+
+func TestReadAbuseRateLimitMiddlewareResetsAfterWindow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(ReadAbuseRateLimitMiddleware(1, 20*time.Millisecond, "/api/posts"))
+	router.GET("/api/posts", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	request := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/posts", nil)
+		req.RemoteAddr = "192.0.2.12:1234"
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, req)
+		return resp
+	}
+
+	require.Equal(t, http.StatusOK, request().Code)
+	require.Equal(t, http.StatusTooManyRequests, request().Code)
+	time.Sleep(30 * time.Millisecond)
+	require.Equal(t, http.StatusOK, request().Code)
+}

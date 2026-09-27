@@ -59,11 +59,14 @@ class ReleaseBuildTests(unittest.TestCase):
     def git(self, *args):
         return subprocess.check_output(["git", "-C", str(self.root), *args], text=True, stderr=subprocess.PIPE)
 
-    def build(self, case=""):
+    def build(self, case="", allow_candidate=True):
         env = dict(os.environ, RELEASE_TEST_CASE=case)
         env["PATH"] = str(self.tools) + os.pathsep + env["PATH"]
-        return subprocess.run([shutil.which("pwsh") or "powershell", "-NoProfile", "-File",
-            str(self.client / "scripts/build_release.ps1")], env=env, capture_output=True,
+        command = [shutil.which("pwsh") or "powershell", "-NoProfile", "-File",
+            str(self.client / "scripts/build_release.ps1")]
+        if allow_candidate:
+            command.append("-AllowCandidateBuild")
+        return subprocess.run(command, env=env, capture_output=True,
             text=True, encoding="utf-8", errors="replace")
 
     def build_with_env(self, values):
@@ -73,6 +76,86 @@ class ReleaseBuildTests(unittest.TestCase):
             str(self.client / "scripts/build_release.ps1")], env=env, capture_output=True,
             text=True, encoding="utf-8", errors="replace")
 
+    def build_with_workflow_fixture(self, *, ci_conclusion="success",
+                                    missing_pip_audit=False,
+                                    failed_pip_audit=False,
+                                    release_decision="partial"):
+        ci_jobs = [
+            {"name": name, "status": "completed", "conclusion": "success"}
+            for name in (
+                "server-format", "server", "postgres-integration",
+                "migration-upgrade", "edu-service", "rag-service", "client",
+                "pgvector-integration", "client-platform-boundary", "release-script",
+            )
+        ]
+        security_jobs = [
+            {"name": "Secret scan", "status": "completed", "conclusion": "success"},
+            {"name": "Go vulnerability scan", "status": "completed", "conclusion": "success"},
+            {"name": "Python dependency audit (python-rag-service, requirements.txt)",
+             "status": "completed", "conclusion": "success"},
+            {"name": "Python dependency audit (python-edu-service, requirements.txt)",
+             "status": "completed", "conclusion": "success"},
+        ]
+        if missing_pip_audit:
+            security_jobs.pop()
+        elif failed_pip_audit:
+            security_jobs[-1]["conclusion"] = "failure"
+        fixture = {
+            "ci": {
+                "id": 101,
+                "repository": {"full_name": "owner/repo"},
+                "head_sha": self.commit,
+                "path": ".github/workflows/ci.yml",
+                "status": "completed",
+                "conclusion": ci_conclusion,
+            },
+            "ci_jobs": ci_jobs,
+            "security": {
+                "id": 202,
+                "repository": {"full_name": "owner/repo"},
+                "head_sha": self.commit,
+                "path": ".github/workflows/security.yml",
+                "status": "completed",
+                "conclusion": "success",
+            },
+            "security_jobs": security_jobs,
+        }
+        fixture_path = self.tools / "workflow-fixture.json"
+        fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
+        wrapper_path = self.tools / "build_with_workflow_fixture.ps1"
+        fixture_literal = str(fixture_path).replace("'", "''")
+        script_literal = str(self.client / "scripts/build_release.ps1").replace("'", "''")
+        wrapper_path.write_text(
+            f"$data = Get-Content -Raw -LiteralPath '{fixture_literal}' | ConvertFrom-Json\n"
+            "function Invoke-RestMethod {\n"
+            "    param([string] $Uri, [string] $Method, [hashtable] $Headers)\n"
+            "    if ($Uri -match '/actions/runs/101/jobs') { return [pscustomobject]@{ jobs = $data.ci_jobs } }\n"
+            "    if ($Uri -match '/actions/runs/202/jobs') { return [pscustomobject]@{ jobs = $data.security_jobs } }\n"
+            "    if ($Uri -match '/actions/runs/101$') { return $data.ci }\n"
+            "    if ($Uri -match '/actions/runs/202$') { return $data.security }\n"
+            "    throw \"Unexpected fixture URL: $Uri\"\n"
+            "}\n"
+            f"& '{script_literal}' -AllowCandidateBuild\n"
+            "exit $LASTEXITCODE\n",
+            encoding="utf-8",
+        )
+        env = dict(
+            os.environ,
+            RELEASE_CI_RUN_ID="101",
+            RELEASE_SECURITY_RUN_ID="202",
+            RELEASE_CI_REPOSITORY="owner/repo",
+            RELEASE_DECISION=release_decision,
+        )
+        env["PATH"] = str(self.tools) + os.pathsep + env["PATH"]
+        return subprocess.run(
+            [shutil.which("pwsh") or "powershell", "-NoProfile", "-File", str(wrapper_path)],
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
     def test_clean_build_records_commit(self):
         result = self.build()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -81,9 +164,11 @@ class ReleaseBuildTests(unittest.TestCase):
         self.assertEqual(manifest["version"], "1.7.3+1706")
         self.assertEqual(manifest["release_decision"], "partial")
         self.assertEqual(manifest["evidence_status"], "unverified")
-        self.assertEqual(manifest["security_workflow_status"], "unverified")
+        self.assertIsNone(manifest["security_workflow_status"])
+        self.assertEqual(manifest["security_evidence_status"], "unverified")
         self.assertEqual(manifest["gitleaks_status"], "unknown")
-        self.assertEqual((self.output / "shenliyuan-release.apk").read_bytes(), b"new fixture apk")
+        self.assertEqual((self.output / "shenliyuan-candidate.apk").read_bytes(), b"new fixture apk")
+        self.assertTrue(manifest["candidate"])
 
     def test_dirty_source_blocks_before_flutter(self):
         (self.client / "untracked.txt").write_text("uncommitted source")
@@ -107,12 +192,62 @@ class ReleaseBuildTests(unittest.TestCase):
         self.assertIn("GitHub Actions run id", result.stderr)
         self.assertFalse((self.tools / "invoked").exists())
 
+    def test_default_build_requires_explicit_candidate_switch(self):
+        result = self.build(allow_candidate=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("AllowCandidateBuild", result.stderr)
+        self.assertFalse((self.tools / "invoked").exists())
+
     def test_passed_release_requires_security_and_ci_evidence(self):
         result = self.build_with_env({"RELEASE_DECISION": "passed"})
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires verified release evidence", result.stderr)
         self.assertIn("security required jobs", result.stderr)
         self.assertFalse((self.tools / "invoked").exists())
+
+    def test_workflow_fixture_requires_both_python_audits(self):
+        result = self.build_with_workflow_fixture(release_decision="passed")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((self.output / "release-manifest.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(manifest["dependency_audit_status"], "success")
+        self.assertEqual(manifest["gitleaks_status"], "success")
+        self.assertTrue(manifest["security_required_jobs_passed"])
+        self.assertEqual(manifest["security_workflow_status"], "completed")
+        self.assertEqual(manifest["security_evidence_status"], "verified")
+        self.assertEqual(manifest["artifact"], "shenliyuan-release.apk")
+
+    def test_missing_python_audit_blocks_formal_release(self):
+        result = self.build_with_workflow_fixture(
+            missing_pip_audit=True,
+            release_decision="passed",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("security required jobs", result.stderr)
+        self.assertIn("dependency audit", result.stderr)
+        self.assertFalse((self.tools / "invoked").exists())
+
+    def test_failed_python_audit_blocks_formal_release(self):
+        result = self.build_with_workflow_fixture(
+            failed_pip_audit=True,
+            release_decision="passed",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("security required jobs", result.stderr)
+        self.assertIn("dependency audit", result.stderr)
+        self.assertFalse((self.tools / "invoked").exists())
+
+    def test_failed_workflow_with_verified_app_jobs_keeps_statuses_separate(self):
+        result = self.build_with_workflow_fixture(
+            ci_conclusion="failure",
+            release_decision="partial",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((self.output / "release-manifest.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(manifest["workflow_conclusion"], "failure")
+        self.assertEqual(manifest["evidence_status"], "verified")
+        self.assertTrue(manifest["ci_verified"])
+        self.assertTrue(manifest["app_release_checks"])
+        self.assertEqual(manifest["release_decision"], "partial")
 
     def test_source_changed_during_build_is_rejected(self):
         result = self.build("mutate")

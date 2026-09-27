@@ -199,7 +199,7 @@ git diff --stat
 
 共享服务端、客户端必要 job、权限、迁移、签名或发布脚本失败时默认形成 blocked 发布决定。与本次范围无关的独立端失败可以单独评估，但必须登记负责人、影响范围和复查时间，不能修改整体 workflow_conclusion。
 
-正式发布的安全证据单独记录：每次发布必须核验 Gitleaks；涉及 Go、Python、依赖锁文件或依赖配置的改动，必须核验对应漏洞或依赖审计。CodeQL 等其他扫描按 security.yml 的实际结果记录，不用把未受影响的扫描强行改成通过。
+正式发布的安全证据单独记录：每次发布必须核验 Gitleaks、govulncheck 和 security.yml 中的两个 Python pip-audit matrix jobs。CodeQL 等其他扫描按 security.yml 的实际结果记录，不用把未受影响的扫描强行改成通过；矩阵数量变化时必须更新发布证据契约。
 
 ### 6.2 提交和外部动作
 

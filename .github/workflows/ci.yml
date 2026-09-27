@@ -285,6 +285,17 @@ jobs:
             exit 1
           fi
 
+  release-script:
+    name: Release script regression (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run release script regression
+        run: python -m unittest client/scripts/test_build_release.py
+
   # 审计 R01 第 6 条：web 与浏览器扩展此前没有任何门禁 job——
   # 类型检查、构建、单测和浏览器用例都只在开发者本机跑过。
   # 本机已验证：pnpm -r check、vitest 41 条、vite build、Playwright 16 条全绿；

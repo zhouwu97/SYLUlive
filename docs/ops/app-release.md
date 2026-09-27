@@ -9,7 +9,7 @@
 - 确认 CI 相关 jobs、客户端测试和必要的服务端验证均有可追溯结果。
 - 确认正式 API、推送和签名配置来自受控环境；私钥不进入仓库、聊天或构建 artifact。
 - 使用 client/scripts/build_release.ps1 或当前仓库批准的正式构建入口，不把临时测试包当正式发布物。
-- 正式发布构建设置 RELEASE_DECISION=passed，并提供对应的 CI 运行号和 security.yml 运行号；涉及 Go、Python 或依赖文件时同时要求依赖审计证据。脚本会把 workflow_conclusion、evidence_status、Gitleaks 和依赖审计结果写入 release-manifest.json。
+- 正式发布构建设置 RELEASE_DECISION=passed，并提供对应的 CI 运行号和 security.yml 运行号；正式发布固定核验 Gitleaks、govulncheck 和两个 Python pip-audit matrix jobs。脚本会把 workflow_conclusion、evidence_status、Gitleaks 和依赖审计结果写入 release-manifest.json。
 
 ## 2. 构建物检查
 

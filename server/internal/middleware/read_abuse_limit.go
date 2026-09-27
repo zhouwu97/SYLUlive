@@ -83,7 +83,7 @@ func ReadAbuseRateLimitMiddleware(limit int, window time.Duration, prefixes ...s
 		if entry.count >= limit {
 			entries[key] = entry
 			mu.Unlock()
-			c.Header("Retry-After", strconv.Itoa(int(maxDuration(window-now.Sub(entry.windowStart), time.Second).Seconds())))
+			c.Header("Retry-After", strconv.Itoa(retryAfterSeconds(window-now.Sub(entry.windowStart))))
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"code":    "read_rate_limited",
 				"message": "读取请求过于频繁，请稍后再试",
@@ -112,4 +112,17 @@ func maxDuration(value, minimum time.Duration) time.Duration {
 		return minimum
 	}
 	return value
+}
+
+// retryAfterSeconds 必须向上取整，避免客户端在限流窗口尚未结束时提前重试。
+func retryAfterSeconds(remaining time.Duration) int {
+	remaining = maxDuration(remaining, time.Second)
+	seconds := remaining / time.Second
+	if remaining%time.Second != 0 {
+		seconds++
+	}
+	if seconds < 1 {
+		return 1
+	}
+	return int(seconds)
 }

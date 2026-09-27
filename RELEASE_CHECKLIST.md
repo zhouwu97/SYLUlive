@@ -79,6 +79,8 @@ dependency_audit_status：
 - [ ] 候选发布执行 pnpm install --frozen-lockfile、pnpm -r check、pnpm test、pnpm -r build
 - [ ] 需要时完成隔离环境的浏览器 E2E
 
+- [ ] Windows release-script job 通过，且发布脚本回归覆盖正式／候选包边界和 CI／安全 matrix 证据解析。
+
 每项结果记录命令、环境、状态、跳过原因和证据链接。skipped、cancelled、unknown 不得记录为通过。
 
 ## 4. 业务验收矩阵
@@ -99,7 +101,7 @@ dependency_audit_status：
 | 隐私、个人数据、权限或第三方 SDK | 对应隐私专项清单、数据最小化、日志检查 |
 | 真实 UI 样式、布局或动效 | 真实渲染、加载／空／失败状态、触控和无障碍 |
 
-根据发布范围选择场景，至少覆盖受影响链路和一条跨模块链路。R0 文案或说明性文档改动只需完成差异和链接检查。
+根据发布范围选择场景，至少覆盖受影响链路；R2/R3 或实际跨模块改动，再至少覆盖一条对应的跨模块链路。R0 文案或说明性文档改动只需完成差异和链接检查。
 
 | 场景 | 验证要点 |
 | --- | --- |
@@ -128,7 +130,7 @@ dependency_audit_status：
 
 - [ ] security.yml 对应提交有可核验的 workflow_conclusion 和 evidence_status。
 - [ ] 每次正式发布的 Gitleaks job 成功；失败或证据缺失时阻断发布。
-- [ ] 涉及 Go、Python、依赖锁文件或依赖配置时，govulncheck、pip-audit 或对应依赖审计结果已记录。
+- [ ] 每次正式发布的 govulncheck 和两个 Python pip-audit matrix jobs 都成功；矩阵数量变化时先更新发布证据契约。
 - [ ] 涉及隐私、权限、个人数据、SDK 或法律文本时，已执行对应的隐私发布清单、权限清单和第三方服务清单。
 - [ ] 公开接口的隐私不变量由自动测试或专项检查长期保护，不依赖每次发布手工抽查同一批接口。
 - [ ] 日志、构建物和 artifact 没有真实凭据、个人教务详情或未脱敏的敏感片段。

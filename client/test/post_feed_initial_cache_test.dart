@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -17,6 +18,38 @@ Map<String, dynamic> _postJson(int id, {String title = 'cached-title'}) {
     'author_id': 1,
     'created_at': '2026-06-14T08:00:00Z',
   };
+}
+
+Response<dynamic> _feedResponse(
+  RequestOptions options, {
+  required int firstPostId,
+  required String sessionId,
+  required bool hasMore,
+}) {
+  return Response(
+    requestOptions: options,
+    statusCode: 200,
+    data: {
+      'posts': List.generate(20, (index) => _postJson(firstPostId + index)),
+      'total': 60,
+      'has_more': hasMore,
+      'session_id': sessionId,
+    },
+  );
+}
+
+Future<void> _markCacheStale(String sort) async {
+  final box = Hive.box<String>('post_cache');
+  final key = box.keys.firstWhere(
+    (value) => value.toString().startsWith('board_1_${sort}_'),
+  );
+  final raw = box.get(key);
+  final decoded = jsonDecode(raw!) as Map<String, dynamic>;
+  decoded['saved_at'] = DateTime.now()
+      .subtract(const Duration(minutes: 11))
+      .toUtc()
+      .toIso8601String();
+  await box.put(key, jsonEncode(decoded));
 }
 
 void main() {
@@ -117,6 +150,210 @@ void main() {
 
     // 父页面可能在初始化完成后才读取门禁信号，此时不能再拿到一个永远未完成的 Future。
     await provider.initialFeedFuture.timeout(const Duration(milliseconds: 50));
+  });
+
+  test('all 首页首屏后分页使用稳定 session 和连续 offset，并追加结果', () async {
+    final requests = <RequestOptions>[];
+    var requestIndex = 0;
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requests.add(options);
+          final response = _feedResponse(
+            options,
+            firstPostId: requestIndex * 20 + 1,
+            sessionId: 'all-session',
+            hasMore: true,
+          );
+          requestIndex++;
+          handler.resolve(response);
+        },
+      ),
+    );
+
+    final provider = PostProvider(dio, enableCache: false);
+    await provider.ensureInitialFeed(boardId: 1, sort: 'all');
+    await provider.loadPosts(boardId: 1, sort: 'all');
+    await provider.loadPosts(boardId: 1, sort: 'all');
+
+    expect(requests, hasLength(3));
+    expect(requests[1].queryParameters['scene'], 'loadmore');
+    expect(requests[1].queryParameters['session_id'], 'all-session');
+    expect(requests[1].queryParameters['offset'], 20);
+    expect(requests[2].queryParameters['offset'], 40);
+    final posts = provider.postsFor(1, sort: 'all');
+    expect(posts, hasLength(60));
+    expect(posts.first.id, 1);
+    expect(posts[39].id, 40);
+  });
+
+  test('time 首页首屏后第一次分页直接请求 page=2', () async {
+    final requests = <RequestOptions>[];
+    var requestIndex = 0;
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requests.add(options);
+          final response = _feedResponse(
+            options,
+            firstPostId: requestIndex * 20 + 1,
+            sessionId: 'time-session',
+            hasMore: true,
+          );
+          requestIndex++;
+          handler.resolve(response);
+        },
+      ),
+    );
+
+    final provider = PostProvider(dio, enableCache: false);
+    await provider.ensureInitialFeed(boardId: 1, sort: 'time');
+    await provider.loadPosts(boardId: 1, sort: 'time');
+    await provider.loadPosts(boardId: 1, sort: 'time');
+
+    expect(requests, hasLength(3));
+    expect(requests[1].queryParameters['scene'], isNull);
+    expect(requests[1].queryParameters['page'], 2);
+    expect(requests[2].queryParameters['page'], 3);
+    expect(provider.postsFor(1, sort: 'time'), hasLength(60));
+    expect(provider.postsFor(1, sort: 'time').first.id, 1);
+  });
+
+  test('stale 缓存不会在正常网络响应前作为首页正文展示', () async {
+    final stalePost = Post.fromJson(_postJson(701, title: 'stale'));
+    await PostCacheService.savePosts(
+      1,
+      CachedPostFeed(posts: [stalePost]),
+      sort: 'all',
+      sessionEpoch: PostCacheService.activeSessionEpoch,
+    );
+    await PostCacheService.waitForPendingWrites();
+    await _markCacheStale('all');
+
+    final responseCompleter = Completer<Response<dynamic>>();
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          handler.resolve(await responseCompleter.future);
+        },
+      ),
+    );
+    final provider = PostProvider(dio, enableCache: true);
+    final loading = provider.ensureInitialFeed(boardId: 1, sort: 'all');
+
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(provider.postsFor(1, sort: 'all'), isEmpty);
+
+    responseCompleter.complete(_feedResponse(
+      RequestOptions(path: '/posts'),
+      firstPostId: 801,
+      sessionId: 'fresh-session',
+      hasMore: false,
+    ));
+    await loading;
+
+    expect(provider.postsFor(1, sort: 'all').first.id, 801);
+    expect(
+      provider.postsFor(1, sort: 'all').any((post) => post.id == stalePost.id),
+      isFalse,
+    );
+  });
+
+  test('fresh 缓存正常刷新后仍可从下一页继续追加', () async {
+    await PostCacheService.savePosts(
+      1,
+      CachedPostFeed(posts: [Post.fromJson(_postJson(900, title: 'cached'))]),
+      sort: 'all',
+      sessionEpoch: PostCacheService.activeSessionEpoch,
+    );
+    await PostCacheService.waitForPendingWrites();
+
+    final requests = <RequestOptions>[];
+    var requestIndex = 0;
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requests.add(options);
+          final response = _feedResponse(
+            options,
+            firstPostId: requestIndex == 0 ? 901 : 921,
+            sessionId: 'fresh-session',
+            hasMore: true,
+          );
+          requestIndex++;
+          handler.resolve(response);
+        },
+      ),
+    );
+
+    final provider = PostProvider(dio, enableCache: true);
+    await provider.ensureInitialFeed(boardId: 1, sort: 'all');
+    await provider.loadPosts(boardId: 1, sort: 'all');
+
+    expect(requests, hasLength(2));
+    expect(requests[1].queryParameters['offset'], 20);
+    expect(provider.postsFor(1, sort: 'all'), hasLength(40));
+    expect(provider.postsFor(1, sort: 'all').first.id, 901);
+  });
+
+  test('服务端 has_more=false 后不再触发无意义分页', () async {
+    final requests = <RequestOptions>[];
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requests.add(options);
+          handler.resolve(_feedResponse(
+            options,
+            firstPostId: 1001,
+            sessionId: 'finished-session',
+            hasMore: false,
+          ));
+        },
+      ),
+    );
+
+    final provider = PostProvider(dio, enableCache: false);
+    await provider.ensureInitialFeed(boardId: 1, sort: 'all');
+    await provider.loadPosts(boardId: 1, sort: 'all');
+
+    expect(requests, hasLength(1));
+    expect(provider.postsFor(1, sort: 'all'), hasLength(20));
+  });
+
+  test('stale 缓存只在网络失败时作为降级内容恢复', () async {
+    final stalePost = Post.fromJson(_postJson(702, title: 'stale'));
+    await PostCacheService.savePosts(
+      1,
+      CachedPostFeed(posts: [stalePost]),
+      sort: 'all',
+      sessionEpoch: PostCacheService.activeSessionEpoch,
+    );
+    await PostCacheService.waitForPendingWrites();
+    await _markCacheStale('all');
+
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              type: DioExceptionType.connectionError,
+            ),
+          );
+        },
+      ),
+    );
+    final provider = PostProvider(dio, enableCache: true);
+    await provider.ensureInitialFeed(boardId: 1, sort: 'all');
+
+    expect(provider.postsFor(1, sort: 'all').single.id, 702);
+    expect(provider.isLoadingFor(1, sort: 'all'), isFalse);
   });
 
   test('首个 Feed 请求超过累计预算会取消请求并释放 loading', () async {

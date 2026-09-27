@@ -259,6 +259,30 @@ func TestGetCandidatesUsesVerifiedAcademicStudentIDWhenLegacyFieldIsEmpty(t *tes
 	}
 }
 
+func TestGetCandidatesKeepsLegacyStudentVerificationWithoutNewBinding(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newInvitationResponseTestDB(t)
+	verifiedAt := time.Now().Add(-time.Hour)
+	createInvitationResponseTestUser(t, db, models.User{
+		ID: 437, Nickname: "历史认证用户", Role: models.RoleUser, CreditScore: 100,
+		StudentID: "legacy-437", StudentVerifiedAt: &verifiedAt,
+	})
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/admin/candidates?q=437", nil)
+	NewInvitationHandler(db, "test-secret").GetCandidates(context)
+	response := decodePaginatedResponse(t, recorder)
+	items, ok := response["items"].([]interface{})
+	if !ok || len(items) != 1 {
+		t.Fatalf("历史认证候选人查询失败: %s", recorder.Body.String())
+	}
+	candidate, ok := items[0].(map[string]interface{})
+	if !ok || candidate["student_verified"] != true {
+		t.Fatalf("历史认证状态不应因候选查询字段缺失而丢失: %s", recorder.Body.String())
+	}
+}
+
 func TestGetCandidatesStatsCountsVerifiedAcademicIdentities(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newInvitationResponseTestDB(t)

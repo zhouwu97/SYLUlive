@@ -106,6 +106,7 @@ class _BoardState {
   String currentSort = 'time';
   String? sessionId;
   int requestVersion = 0;
+  int? loadingOwnerVersion;
   int revision = 0;
   DateTime? lastSuccessfulRefreshAt;
   bool isRecoveringExpiredSession = false;
@@ -346,6 +347,32 @@ class PostProvider extends ChangeNotifier {
     Duration feedRequestBudget = const Duration(seconds: 10),
   })  : _enableCache = enableCache,
         _feedRequestBudget = feedRequestBudget;
+
+  void _claimLoading(_BoardState board, int requestVersion,
+      {required bool showLoading}) {
+    if (showLoading) {
+      board.isLoading = true;
+    }
+    // 刷新通常保留已有列表并不显示全屏 loading；如果它接管了仍在
+    // 进行中的翻页，也要成为唯一能在 finally 中复位 loading 的请求。
+    if (board.isLoading) {
+      board.loadingOwnerVersion = requestVersion;
+    }
+  }
+
+  bool _releaseLoading(_BoardState board, int requestVersion) {
+    if (board.loadingOwnerVersion != requestVersion) return false;
+    board.loadingOwnerVersion = null;
+    if (!board.isLoading) return false;
+    board.isLoading = false;
+    return true;
+  }
+
+  void _releaseCancelToken(_BoardState board, CancelToken cancelToken) {
+    if (identical(board.cancelToken, cancelToken)) {
+      board.cancelToken = null;
+    }
+  }
 
   FeedKey _stateKey(
     int boardId,
@@ -614,48 +641,55 @@ class PostProvider extends ChangeNotifier {
     final budgetTimer = Timer(_feedRequestBudget, () {
       cancelToken.cancel('Initial feed cumulative budget exceeded (10s)');
     });
-    // 步骤 1：读取本地合规缓存并先上屏（SWR）
-    if (_enableCache && sort != 'following' && topicId == null) {
-      try {
-        final cachedFeed = await PostCacheService.loadPosts(
-          boardId,
-          sort: sort,
-          type: type,
-          tagId: tagId,
-          expectedSessionEpoch: PostCacheService.activeSessionEpoch,
-        ).timeout(_feedRequestBudget, onTimeout: () => null);
-        if (requestVersion == board.requestVersion &&
-            cachedFeed != null &&
-            cachedFeed.posts.isNotEmpty) {
-          board.posts = cachedFeed.posts;
-          if (usesHomeFeedV2(
-            boardId: boardId,
+
+    CachedPostFeed? cachedFeed;
+
+    // 缓存读取和网络请求共用同一逻辑请求作用域，任何 stale return 都必须
+    // 经过 finally，避免旧 timer 或 loading 状态留在 board 上。
+    try {
+      // 步骤 1：读取本地合规缓存并先上屏（SWR）
+      if (_enableCache && sort != 'following' && topicId == null) {
+        try {
+          cachedFeed = await PostCacheService.loadPosts(
+            boardId,
             sort: sort,
             type: type,
             tagId: tagId,
-            topicId: topicId,
-          )) {
-            board.pinnedPosts = cachedFeed.pinnedPosts;
-            board.algorithmVersion = cachedFeed.algorithmVersion;
+            expectedSessionEpoch: PostCacheService.activeSessionEpoch,
+          ).timeout(_feedRequestBudget, onTimeout: () => null);
+          if (requestVersion == board.requestVersion &&
+              cachedFeed != null &&
+              cachedFeed.freshness == PostFeedCacheFreshness.fresh &&
+              cachedFeed.posts.isNotEmpty) {
+            board.posts = cachedFeed.posts;
+            if (usesHomeFeedV2(
+              boardId: boardId,
+              sort: sort,
+              type: type,
+              tagId: tagId,
+              topicId: topicId,
+            )) {
+              board.pinnedPosts = cachedFeed.pinnedPosts;
+              board.algorithmVersion = cachedFeed.algorithmVersion;
+            }
+            board.hasCacheLoaded = true;
+            board.revision++;
+            notifyListeners();
           }
-          board.hasCacheLoaded = true;
-          board.revision++;
-          notifyListeners();
+        } catch (e) {
+          debugPrint('读取首屏帖子缓存失败: $e');
         }
-      } catch (e) {
-        debugPrint('读取首屏帖子缓存失败: $e');
       }
-    }
 
-    if (board.posts.isEmpty) {
-      board.isLoading = true;
-      board.error = null;
-      board.revision++;
-      notifyListeners();
-    }
+      if (requestVersion != board.requestVersion) return;
+      _claimLoading(board, requestVersion, showLoading: board.posts.isEmpty);
+      if (board.posts.isEmpty) {
+        board.error = null;
+        board.revision++;
+        notifyListeners();
+      }
 
-    // 步骤 2：发起网络请求获取第一页，继续使用同一累计预算。
-    try {
+      // 步骤 2：发起网络请求获取第一页，继续使用同一累计预算。
       board.sessionId = null;
       final useHomeFeedV2 = usesHomeFeedV2(
         boardId: boardId,
@@ -710,10 +744,17 @@ class PostProvider extends ChangeNotifier {
         }
 
         board.posts = newPosts;
-        board.currentPage = 1;
+        // 首屏响应已经消费第一页，下一次 loadPosts 必须从第二页开始。
+        board.currentPage = 2;
         board.hasLoaded = true;
         board.hasCacheLoaded = true;
-        board.hasMore = newPosts.length >= 20;
+        final total = (response.data['total'] as num?)?.toInt();
+        final serverHasMore = response.data['has_more'];
+        board.hasMore = serverHasMore is bool
+            ? serverHasMore
+            : total != null
+                ? newPosts.length < total
+                : newPosts.length >= 20;
         board.error = null;
 
         unawaited(_savePostsToCache(
@@ -731,18 +772,59 @@ class PostProvider extends ChangeNotifier {
       }
     } on DioException catch (e) {
       if (requestVersion == board.requestVersion) {
+        if (board.posts.isEmpty &&
+            cachedFeed != null &&
+            cachedFeed.freshness == PostFeedCacheFreshness.stale &&
+            cachedFeed.posts.isNotEmpty) {
+          board.posts = cachedFeed.posts;
+          if (usesHomeFeedV2(
+            boardId: boardId,
+            sort: sort,
+            type: type,
+            tagId: tagId,
+            topicId: topicId,
+          )) {
+            board.pinnedPosts = cachedFeed.pinnedPosts;
+            board.algorithmVersion = cachedFeed.algorithmVersion;
+          }
+          board.currentPage = 2;
+          board.hasLoaded = true;
+          board.hasCacheLoaded = true;
+          board.hasMore = cachedFeed.posts.length >= 20;
+        }
         if (board.posts.isEmpty) {
           board.error = AppFeedback.dioErrorMessage(e);
         }
       }
     } catch (e) {
       if (requestVersion == board.requestVersion && board.posts.isEmpty) {
-        board.error = e.toString();
+        if (cachedFeed != null &&
+            cachedFeed.freshness == PostFeedCacheFreshness.stale &&
+            cachedFeed.posts.isNotEmpty) {
+          board.posts = cachedFeed.posts;
+          if (usesHomeFeedV2(
+            boardId: boardId,
+            sort: sort,
+            type: type,
+            tagId: tagId,
+            topicId: topicId,
+          )) {
+            board.pinnedPosts = cachedFeed.pinnedPosts;
+            board.algorithmVersion = cachedFeed.algorithmVersion;
+          }
+          board.currentPage = 2;
+          board.hasLoaded = true;
+          board.hasCacheLoaded = true;
+          board.hasMore = cachedFeed.posts.length >= 20;
+        } else {
+          board.error = e.toString();
+        }
       }
     } finally {
       budgetTimer.cancel();
+      _releaseCancelToken(board, cancelToken);
       if (requestVersion == board.requestVersion) {
-        board.isLoading = false;
+        _releaseLoading(board, requestVersion);
         board.revision++;
         notifyListeners();
       }
@@ -851,50 +933,52 @@ class PostProvider extends ChangeNotifier {
           .cancel('Cached feed refresh cumulative budget exceeded (10s)');
     });
 
+    _claimLoading(board, requestVersion, showLoading: board.posts.isEmpty);
     if (board.posts.isEmpty) {
-      board.isLoading = true;
       board.error = null;
       board.revision++;
       notifyListeners();
     }
 
     CachedPostFeed? cachedFeed;
-    // 第一步：极速上屏 — 读本地缓存（关注信息流不使用缓存）
-    if (_enableCache && sort != 'following' && topicId == null) {
-      try {
-        cachedFeed = await PostCacheService.loadPosts(
-          boardId,
-          sort: sort,
-          type: type,
-          tagId: tagId,
-          expectedSessionEpoch: board.sessionEpoch,
-        ).timeout(_feedRequestBudget, onTimeout: () => null);
-        if (requestVersion != board.requestVersion) return;
-        if (cachedFeed != null &&
-            cachedFeed.posts.isNotEmpty &&
-            cachedFeed.freshness == PostFeedCacheFreshness.fresh) {
-          board.posts = cachedFeed.posts;
-          if (usesHomeFeedV2(
-              boardId: boardId,
-              sort: sort,
-              type: type,
-              tagId: tagId,
-              topicId: topicId)) {
-            board.pinnedPosts = cachedFeed.pinnedPosts;
-            board.algorithmVersion = cachedFeed.algorithmVersion;
-          }
-          board.revision++;
-          notifyListeners();
-        }
-      } catch (_) {}
-    }
-
     bool succeeded = false;
 
-    // 第二步：重新拉取最新第一页，刷新作者头像、图片、统计等完整数据。
-    // 只按 since 增量拉取会让旧缓存里的作者资料长期停留在过期状态，
-    // 杀后台重启后就容易看到文字头像或旧头像。
     try {
+      // 第一步：极速上屏 — 仅允许 fresh 缓存直接展示；stale 只作为
+      // 网络失败且没有其他正文可用时的降级内容。
+      if (_enableCache && sort != 'following' && topicId == null) {
+        try {
+          cachedFeed = await PostCacheService.loadPosts(
+            boardId,
+            sort: sort,
+            type: type,
+            tagId: tagId,
+            expectedSessionEpoch: board.sessionEpoch,
+          ).timeout(_feedRequestBudget, onTimeout: () => null);
+          if (requestVersion != board.requestVersion) return;
+          if (cachedFeed != null &&
+              cachedFeed.posts.isNotEmpty &&
+              cachedFeed.freshness == PostFeedCacheFreshness.fresh) {
+            board.posts = cachedFeed.posts;
+            if (usesHomeFeedV2(
+                boardId: boardId,
+                sort: sort,
+                type: type,
+                tagId: tagId,
+                topicId: topicId)) {
+              board.pinnedPosts = cachedFeed.pinnedPosts;
+              board.algorithmVersion = cachedFeed.algorithmVersion;
+            }
+            board.revision++;
+            notifyListeners();
+          }
+        } catch (_) {}
+      }
+
+      // 第二步：重新拉取最新第一页，刷新作者头像、图片、统计等完整数据。
+      // 只按 since 增量拉取会让旧缓存里的作者资料长期停留在过期状态，
+      // 杀后台重启后就容易看到文字头像或旧头像。
+      if (requestVersion != board.requestVersion) return;
       board.sessionId = null; // 清除老的会话快照
       final params = <String, dynamic>{
         'board': boardId,
@@ -971,46 +1055,63 @@ class PostProvider extends ChangeNotifier {
         ));
 
         final total = (data['total'] as num?)?.toInt();
-        board.hasMore =
-            total != null ? board.posts.length < total : newPosts.length >= 20;
+        final serverHasMore = data['has_more'];
+        board.hasMore = serverHasMore is bool
+            ? serverHasMore
+            : total != null
+                ? board.posts.length < total
+                : newPosts.length >= 20;
         board.currentPage = 2;
       }
     } on DioException catch (e) {
-      if (cachedFeed != null &&
-          cachedFeed.posts.isNotEmpty &&
-          cachedFeed.freshness == PostFeedCacheFreshness.stale) {
-        board.posts = cachedFeed.posts;
-        if (usesHomeFeedV2(
-            boardId: boardId, sort: sort, type: type, tagId: tagId)) {
-          board.pinnedPosts = cachedFeed.pinnedPosts;
-          board.algorithmVersion = cachedFeed.algorithmVersion;
+      if (requestVersion == board.requestVersion) {
+        if (board.posts.isEmpty &&
+            cachedFeed != null &&
+            cachedFeed.posts.isNotEmpty &&
+            cachedFeed.freshness == PostFeedCacheFreshness.stale) {
+          board.posts = cachedFeed.posts;
+          if (usesHomeFeedV2(
+              boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+            board.pinnedPosts = cachedFeed.pinnedPosts;
+            board.algorithmVersion = cachedFeed.algorithmVersion;
+          }
+          board.currentPage = 2;
+          board.hasMore = cachedFeed.posts.length >= 20;
         }
+        board.error = AppFeedback.dioErrorMessage(e);
+        debugPrint('增量拉取失败(board=$boardId): ${e.type}');
       }
-      board.error = AppFeedback.dioErrorMessage(e);
-      debugPrint('增量拉取失败(board=$boardId): ${e.type}');
     } catch (e) {
-      if (cachedFeed != null &&
-          cachedFeed.posts.isNotEmpty &&
-          cachedFeed.freshness == PostFeedCacheFreshness.stale) {
-        board.posts = cachedFeed.posts;
-        if (usesHomeFeedV2(
-            boardId: boardId, sort: sort, type: type, tagId: tagId)) {
-          board.pinnedPosts = cachedFeed.pinnedPosts;
-          board.algorithmVersion = cachedFeed.algorithmVersion;
+      if (requestVersion == board.requestVersion) {
+        if (board.posts.isEmpty &&
+            cachedFeed != null &&
+            cachedFeed.posts.isNotEmpty &&
+            cachedFeed.freshness == PostFeedCacheFreshness.stale) {
+          board.posts = cachedFeed.posts;
+          if (usesHomeFeedV2(
+              boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+            board.pinnedPosts = cachedFeed.pinnedPosts;
+            board.algorithmVersion = cachedFeed.algorithmVersion;
+          }
+          board.currentPage = 2;
+          board.hasMore = cachedFeed.posts.length >= 20;
         }
+        board.error = e.toString();
+        debugPrint('增量拉取异常(board=$boardId)');
       }
-      board.error = e.toString();
-      debugPrint('增量拉取异常(board=$boardId)');
+    } finally {
+      budgetTimer.cancel();
+      _releaseCancelToken(board, cancelToken);
+      if (requestVersion == board.requestVersion) {
+        board.hasLoaded = true;
+        _releaseLoading(board, requestVersion);
+        if (succeeded) {
+          board.lastSuccessfulRefreshAt = DateTime.now();
+        }
+        board.revision++;
+        notifyListeners();
+      }
     }
-
-    budgetTimer.cancel();
-    board.hasLoaded = true;
-    board.isLoading = false;
-    if (succeeded) {
-      board.lastSuccessfulRefreshAt = DateTime.now();
-    }
-    board.revision++;
-    notifyListeners();
   }
 
   /// 加载更多（翻页）
@@ -1086,8 +1187,6 @@ class PostProvider extends ChangeNotifier {
     }
 
     if (board.isLoading || !board.hasMore) return;
-    board.isLoading = true;
-    board.error = null;
     // 必须自增版本号：列表非空时的刷新不会置 isLoading（见 _refreshInternal），
     // 只读版本号会让在途刷新的版本号与本次翻页相同，翻页响应不被丢弃，
     // 与刷新结果互相踩踏后整页被跳过。
@@ -1095,13 +1194,13 @@ class PostProvider extends ChangeNotifier {
     // 覆盖还是合并必须按"发起请求时"的页码判定，不能事后读 board.currentPage：
     // 刷新会把 currentPage 重排为 1，事后读会把翻页响应错当成第一页整列覆盖。
     final requestedPage = board.currentPage;
+    board.cancelToken?.cancel();
+    final cancelToken = CancelToken();
+    board.cancelToken = cancelToken;
+    _claimLoading(board, requestVersion, showLoading: true);
+    board.error = null;
     board.revision++;
     notifyListeners();
-    final cancelToken =
-        board.cancelToken == null || board.cancelToken!.isCancelled
-            ? CancelToken()
-            : board.cancelToken!;
-    board.cancelToken = cancelToken;
     final budgetTimer = Timer(_feedRequestBudget, () {
       cancelToken.cancel('Feed page cumulative budget exceeded (10s)');
     });
@@ -1142,7 +1241,7 @@ class PostProvider extends ChangeNotifier {
 
         if (requestedPage == 1) {
           board.posts = newPosts;
-          board.currentPage = 1;
+          board.currentPage = 2;
         } else {
           final existingIndexMap = {
             for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i,
@@ -1158,8 +1257,12 @@ class PostProvider extends ChangeNotifier {
         }
 
         final total = (data['total'] as num?)?.toInt();
-        board.hasMore =
-            total != null ? board.posts.length < total : newPosts.length >= 20;
+        final serverHasMore = data['has_more'];
+        board.hasMore = serverHasMore is bool
+            ? serverHasMore
+            : total != null
+                ? board.posts.length < total
+                : newPosts.length >= 20;
         // 期间若发生过刷新（currentPage 已被重排），不要再把页码往前推，
         // 否则下一页会被跳过。
         if (!usesSnapshot && board.currentPage == requestedPage) {
@@ -1167,6 +1270,7 @@ class PostProvider extends ChangeNotifier {
         }
       }
     } on DioException catch (e) {
+      if (requestVersion != board.requestVersion) return;
       final data = e.response?.data;
       final isFeedSessionExpired = e.response?.statusCode == 409 &&
           data is Map &&
@@ -1184,6 +1288,7 @@ class PostProvider extends ChangeNotifier {
           board.sessionId = null;
           board.error = null;
           board.isLoading = false;
+          board.loadingOwnerVersion = null;
           try {
             await _refreshInternal(
               boardId: boardId,
@@ -1200,15 +1305,18 @@ class PostProvider extends ChangeNotifier {
       }
       board.error = AppFeedback.dioErrorMessage(e);
     } catch (e) {
-      board.error = e.toString();
-    }
-
-    budgetTimer.cancel();
-    if (requestVersion == board.requestVersion) {
-      board.isLoading = false;
-      board.hasLoaded = true;
-      board.revision++;
-      notifyListeners();
+      if (requestVersion == board.requestVersion) {
+        board.error = e.toString();
+      }
+    } finally {
+      budgetTimer.cancel();
+      _releaseCancelToken(board, cancelToken);
+      if (requestVersion == board.requestVersion) {
+        _releaseLoading(board, requestVersion);
+        board.hasLoaded = true;
+        board.revision++;
+        notifyListeners();
+      }
     }
   }
 
@@ -1268,8 +1376,8 @@ class PostProvider extends ChangeNotifier {
     board.hasMore = true;
     board.error = null;
 
+    _claimLoading(board, requestVersion, showLoading: board.posts.isEmpty);
     if (board.posts.isEmpty) {
-      board.isLoading = true;
       board.revision++;
       notifyListeners();
     }
@@ -1353,35 +1461,37 @@ class PostProvider extends ChangeNotifier {
         ));
 
         final total = (response.data['total'] as num?)?.toInt();
-        board.hasMore =
-            total != null ? newPosts.length < total : newPosts.length >= 20;
+        final serverHasMore = response.data['has_more'];
+        board.hasMore = serverHasMore is bool
+            ? serverHasMore
+            : total != null
+                ? newPosts.length < total
+                : newPosts.length >= 20;
         board.currentPage = 2;
         succeeded = true;
       }
     } on DioException catch (e) {
-      board.error = AppFeedback.dioErrorMessage(e);
-      debugPrint('刷新失败(board=$boardId): ${e.message}');
+      if (requestVersion == board.requestVersion) {
+        board.error = AppFeedback.dioErrorMessage(e);
+        debugPrint('刷新失败(board=$boardId): ${e.message}');
+      }
     } catch (e) {
-      board.error = e.toString();
-      debugPrint('刷新异常(board=$boardId): $e');
+      if (requestVersion == board.requestVersion) {
+        board.error = e.toString();
+        debugPrint('刷新异常(board=$boardId): $e');
+      }
     } finally {
       budgetTimer.cancel();
-    }
-
-    // isLoading 必须无条件复位：若期间翻页自增过版本号，下面的版本守卫不成立，
-    // 复位被跳过会让列表卡在 loading 态，后续刷新与翻页都被守卫挡住。
-    final wasLoading = board.isLoading;
-    board.isLoading = false;
-    if (requestVersion == board.requestVersion) {
-      board.hasLoaded = true;
-      if (succeeded) {
-        board.lastSuccessfulRefreshAt = DateTime.now();
+      _releaseCancelToken(board, cancelToken);
+      if (requestVersion == board.requestVersion) {
+        _releaseLoading(board, requestVersion);
+        board.hasLoaded = true;
+        if (succeeded) {
+          board.lastSuccessfulRefreshAt = DateTime.now();
+        }
+        board.revision++;
+        notifyListeners();
       }
-      board.revision++;
-      notifyListeners();
-    } else if (wasLoading) {
-      board.revision++;
-      notifyListeners();
     }
   }
 

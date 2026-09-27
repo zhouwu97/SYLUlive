@@ -57,7 +57,7 @@ func (h *InvitationHandler) GetCandidates(c *gin.Context) {
 	}
 
 	query := h.db.Model(&models.User{}).
-		Select("id, nickname, student_id, avatar, credit_score, role, report_count").
+		Select("id, nickname, student_id, student_verified_at, avatar, credit_score, role, report_count").
 		Where("report_count = 0 AND credit_score > 90 AND role = ?", models.RoleUser)
 
 	query = withAdminUserSearch(query, h.db, keyword)

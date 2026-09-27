@@ -18,6 +18,8 @@
   ·
   <a href="./docs/README.md">文档中心</a>
   ·
+  <a href="./DEVELOPMENT_STANDARD.md">开发与交付规范</a>
+  ·
   <a href="./DEPLOY.md">部署文档</a>
 </p>
 

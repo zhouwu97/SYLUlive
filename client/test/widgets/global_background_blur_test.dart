@@ -147,4 +147,19 @@ void main() {
     expect(contain.width!, lessThanOrEqualTo(2400));
     expect(contain.height!, lessThanOrEqualTo(1080));
   });
+
+  test('极端宽高比的 cover 仍服从解码像素预算', () {
+    final target = AspectPreservingResizeImage.calculateTargetSize(
+      intrinsicWidth: 20000,
+      intrinsicHeight: 2000,
+      targetWidth: 1080,
+      targetHeight: 2400,
+      fit: BoxFit.cover,
+      maxDimension: 2560,
+      maxDecodedPixels: 1000000,
+    );
+
+    expect(target.width! * target.height!, lessThanOrEqualTo(1000000));
+    expect(target.width! / target.height!, closeTo(10, 0.01));
+  });
 }

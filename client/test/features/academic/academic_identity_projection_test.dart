@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 
 import 'package:shenliyuan/features/academic/application/academic_login_coordinator.dart';
 import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
+import 'package:shenliyuan/features/academic/data/academic_account_config_client.dart';
 import 'package:shenliyuan/features/academic/data/academic_identity_client.dart';
 import 'package:shenliyuan/features/academic/data/academic_provider_router_repository.dart';
 import 'package:shenliyuan/features/academic/data/academic_repository_impl.dart';
@@ -110,6 +111,155 @@ void main() {
     expect(restarted.providerId, AcademicProviderId.syluGraduate);
     expect(restarted.isBusy, isFalse);
     expect(paths.every((path) => path == '/student-identity'), isTrue);
+  });
+
+  test('可信身份读取失败保留上次成功快照并标记 error，不降级为空集合', () async {
+    var fail = false;
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
+        if (fail) {
+          h.reject(DioException(
+            requestOptions: o,
+            type: DioExceptionType.connectionError,
+          ));
+          return;
+        }
+        h.resolve(Response(
+          requestOptions: o,
+          statusCode: 200,
+          data: {
+            'identities': [
+              {
+                'provider_id': 'sylu_graduate',
+                'student_id': 'G-STATUS-001',
+                'verified': true,
+                'verification_method': 'school_profile',
+              },
+            ],
+          },
+        ));
+      }));
+    final router = AcademicProviderRouterRepository(
+      legacy: AcademicRepositoryImpl(
+        local: JiaowuLocalDataSource(),
+        legacy: LegacyServerDataSource(dio),
+        source: AcademicSourceKind.legacy,
+      ),
+      registry: AcademicProviderRegistry(),
+      identityClient: AcademicIdentityClient(dio),
+    );
+    addTearDown(() {
+      router.close();
+      dio.close();
+    });
+    router.syncAppUser('status-user');
+
+    final first = await router.loadServerIdentityBindings();
+    expect(first, hasLength(1));
+    expect(router.serverIdentityStatus, AcademicIdentityReadStatus.loaded);
+
+    fail = true;
+    final retained = await router.loadServerIdentityBindings();
+    expect(retained, hasLength(1));
+    expect(retained.single.studentId, 'G-STATUS-001');
+    expect(router.serverIdentityStatus, AcademicIdentityReadStatus.error);
+    expect(router.serverIdentityError, isNotNull);
+  });
+
+  test('force 同步等待普通共享任务后确实补跑一轮', () async {
+    final prefs = await AppPreferencesStore.getInstance();
+    final local = LocalAcademicAccountStore('force-user', prefs);
+    await local.commitIdentity(const AcademicIdentityKey(
+      appUserId: 'force-user',
+      providerId: AcademicProviderId.syluUndergraduate,
+      studentId: 'U-FORCE-001',
+    ));
+
+    final firstGetStarted = Completer<void>();
+    final releaseFirstGet = Completer<void>();
+    var getCount = 0;
+    var putCount = 0;
+    var blockFirstGet = true;
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (o, h) async {
+        if (o.path == '/academic-account-configs' && o.method == 'GET') {
+          getCount++;
+          if (blockFirstGet) {
+            blockFirstGet = false;
+            firstGetStarted.complete();
+            await releaseFirstGet.future;
+          }
+          h.resolve(Response(
+            requestOptions: o,
+            statusCode: 200,
+            data: {
+              'configs': getCount == 1
+                  ? <Map<String, dynamic>>[]
+                  : <Map<String, dynamic>>[
+                      {
+                        'provider_id': 'sylu_undergraduate',
+                        'student_id': 'U-FORCE-001',
+                        'revision': 1,
+                        'state': 'active',
+                      },
+                    ],
+            },
+          ));
+          return;
+        }
+        if (o.path == '/academic-account-configs/sylu_undergraduate' &&
+            o.method == 'PUT') {
+          putCount++;
+          h.resolve(Response(
+            requestOptions: o,
+            statusCode: 200,
+            data: {
+              'config': {
+                'provider_id': 'sylu_undergraduate',
+                'student_id': 'U-FORCE-001',
+                'revision': 1,
+                'state': 'active',
+              },
+            },
+          ));
+          return;
+        }
+        h.reject(DioException(
+          requestOptions: o,
+          type: DioExceptionType.unknown,
+          error: StateError('unexpected config request'),
+        ));
+      }));
+    final router = AcademicProviderRouterRepository(
+      legacy: AcademicRepositoryImpl(
+        local: JiaowuLocalDataSource(),
+        legacy: LegacyServerDataSource(dio, networkEnabled: false),
+        source: AcademicSourceKind.legacy,
+      ),
+      registry: AcademicProviderRegistry([
+        _ProjectionProviderFactory(AcademicProviderId.syluUndergraduate),
+      ]),
+      configClient: AcademicAccountConfigClient(dio),
+    );
+    addTearDown(() {
+      router.close();
+      dio.close();
+    });
+    router.syncAppUser('force-user');
+    await router.loadIdentityBindings(scheduleReconcile: false);
+
+    final normal = router.reconcileAccountConfiguration(requireSuccess: true);
+    await firstGetStarted.future;
+    final forced = router.reconcileAccountConfiguration(
+      force: true,
+      requireSuccess: true,
+    );
+    releaseFirstGet.complete();
+    await Future.wait([normal, forced]);
+
+    expect(putCount, 1);
+    // 首轮先确认空列表，force 调用必须在共享任务之后额外发起一次 GET。
+    expect(getCount, 2);
   });
   testWidgets('首次绑定过程中切到本机 Provider 时弹窗不变成直连登录', (tester) async {
     final legacyDio = Dio();

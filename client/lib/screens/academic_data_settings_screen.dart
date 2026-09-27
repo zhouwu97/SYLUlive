@@ -16,6 +16,7 @@ import '../features/academic/storage/academic_credential_store.dart';
 import '../features/academic/storage/academic_persistence_policy.dart';
 import '../features/academic/storage/academic_persistence_gate.dart';
 import '../features/academic/storage/academic_storage_preferences.dart';
+import '../features/academic/storage/local_academic_account_store.dart';
 import '../features/campus_data/storage/academic_cache_store.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
 import '../features/campus_data/storage/schedule_cache_store.dart';
@@ -44,6 +45,8 @@ class _AcademicDataSettingsScreenState
   bool _credentialStorageUnavailable = false;
   AcademicPersistencePolicy? _policy;
   List<AcademicIdentityBinding> _identities = const [];
+  AcademicIdentityReadStatus _serverIdentityStatus =
+      AcademicIdentityReadStatus.unknown;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -81,6 +84,8 @@ class _AcademicDataSettingsScreenState
         return;
       }
       _identities = serverBindings;
+      _serverIdentityStatus =
+          router?.serverIdentityStatus ?? AcademicIdentityReadStatus.unknown;
       if (!_session.hasBoundIdentity && identities.isNotEmpty) {
         await _session
             .selectProviderIdentity(identities.first.toIdentity(userId));
@@ -89,22 +94,39 @@ class _AcademicDataSettingsScreenState
       if (mounted) setState(() => _error = '读取本机教务账号失败，请重试');
     }
     final prefs = await AppPreferencesStore.getInstance();
+    // 冷启动时遍历该 App 用户的全部 pending cleanup，不能只重试当前投影；
+    // 旧学号可能已经不在 identities 列表中。
+    final loginCoordinator = _coordinatorOrNull();
+    if (loginCoordinator != null) {
+      await loginCoordinator.resumePendingCleanup();
+    } else {
+      final store = _session.providerRouter?.accountStore;
+      if (store != null) {
+        for (final pending in store.pendingCleanup) {
+          try {
+            await AcademicIdentityLifecycleCoordinator(
+                    controller: _session, preferences: prefs)
+                .clearLocalIdentity(pending);
+            await store.acknowledgeCleanup(pending);
+          } catch (_) {
+            if (mounted) {
+              setState(() => _error = '上次教务资料清理尚未完成，请重试清除');
+            }
+          }
+        }
+      }
+    }
+    if (!mounted ||
+        loadGeneration != _loadGeneration ||
+        _session.appUserId != userId) {
+      return;
+    }
     final preferences = AcademicStoragePreferences(
       appUserId: userId,
       identity: _session.identity,
       store: prefs,
     );
     await preferences.migrateLegacyPreferences();
-    final identity = _session.identity;
-    if (identity != null) {
-      try {
-        await AcademicIdentityLifecycleCoordinator(
-                controller: _session, preferences: prefs)
-            .retryPending(identity);
-      } catch (_) {
-        if (mounted) setState(() => _error = '上次教务资料清理尚未完成，请重试清除');
-      }
-    }
     AcademicCredential? credential;
     var credentialStorageUnavailable = false;
     try {
@@ -167,22 +189,85 @@ class _AcademicDataSettingsScreenState
   Future<void> _resolveConfig(AcademicProviderId provider,
       {required bool adopt}) async {
     final router = _session.providerRouter;
-    if (router?.accountStore == null) return;
+    final initialStore = router?.accountStore;
+    final appUserId = _session.appUserId;
+    if (router == null || initialStore == null || appUserId == null) return;
+    final routerGeneration = router.contextGeneration;
+    final sessionGeneration = _session.contextGeneration;
+    final initialStudentId =
+        initialStore.entry(provider)['student_id']?.toString().trim();
+    final initialIdentity = initialStudentId == null || initialStudentId.isEmpty
+        ? null
+        : AcademicIdentityKey(
+            appUserId: appUserId,
+            providerId: provider,
+            studentId: initialStudentId,
+          );
+    bool scopeCurrent() {
+      return mounted &&
+          _session.appUserId == appUserId &&
+          _session.contextGeneration == sessionGeneration &&
+          router.contextGeneration == routerGeneration &&
+          identical(router.accountStore, initialStore);
+    }
+
+    bool targetCurrent() {
+      final entryStudent =
+          initialStore.entry(provider)['student_id']?.toString().trim();
+      return scopeCurrent() && entryStudent == initialStudentId;
+    }
+
     setState(() => _saving = true);
     try {
-      await router!.reconcileAccountConfiguration(
+      await router.reconcileAccountConfiguration(
         requireSuccess: true,
         force: true,
       );
+      if (!targetCurrent()) return;
       if (adopt) {
-        final old = _session.identity;
-        await router.accountStore!.adoptCloud(provider);
-        if (old?.providerId == provider) {
-          await _session.acceptIdentityUnbound(old!);
+        final committed = await initialStore.adoptCloud(
+          provider,
+          current: targetCurrent,
+          expectedStudentId: initialStudentId,
+          requireExpectedStudent: true,
+        );
+        if (!committed || !scopeCurrent()) return;
+        // 先阻断当前运行时，再按已捕获的旧完整身份清理；清理期间不再
+        // 通过当前 controller 推断目标，避免切号后误删新账号资料。
+        final adoptedStudent =
+            initialStore.entry(provider)['student_id']?.toString().trim();
+        if (initialIdentity != null && adoptedStudent != initialStudentId) {
+          final wasCurrent = _session.identity == initialIdentity &&
+              _session.providerId == provider;
+          if (wasCurrent) {
+            await _session.acceptIdentityUnbound(initialIdentity);
+          }
+          final lifecycle = AcademicIdentityLifecycleCoordinator(
+            controller: _session,
+            preferences: await AppPreferencesStore.getInstance(),
+          );
+          try {
+            await lifecycle.clearLocalIdentity(
+              initialIdentity,
+              wasCurrent: wasCurrent,
+            );
+            await initialStore.acknowledgeCleanup(initialIdentity);
+          } catch (_) {
+            if (mounted) {
+              setState(() => _error = '配置已更新，旧教务资料清理待完成，请重试');
+            }
+          }
         }
       } else {
-        await router.accountStore!.keepLocal(provider);
-        unawaited(router.reconcileAccountConfiguration(force: true));
+        final committed = await initialStore.keepLocal(
+          provider,
+          current: targetCurrent,
+          expectedStudentId: initialStudentId,
+          requireExpectedStudent: true,
+        );
+        if (!committed || !scopeCurrent()) return;
+        await router.reconcileAccountConfiguration(force: true);
+        if (!scopeCurrent()) return;
       }
       if (mounted) await _load();
     } catch (_) {
@@ -192,13 +277,21 @@ class _AcademicDataSettingsScreenState
     }
   }
 
-  String _syncStatus(AcademicProviderId provider) {
-    final e = _session.providerRouter?.accountStore?.entry(provider) ?? {};
-    if (e['conflict'] == true) return '同步冲突';
-    if (e['server_missing'] == true) return '云端配置缺失，需处理';
-    if (e['remote_changed'] == true) return '其他设备已修改';
-    if ((e['outbox'] as List? ?? []).isNotEmpty) return '账号配置待同步';
-    return e['snapshot'] == null ? '尚未同步' : '账号配置已同步';
+  AcademicConfigSyncStatus _configStatus(AcademicProviderId provider) =>
+      _session.providerRouter?.configStatus(provider) ??
+      AcademicConfigSyncStatus.unknown;
+
+  String _syncStatusLabel(AcademicProviderId provider) {
+    return switch (_configStatus(provider)) {
+      AcademicConfigSyncStatus.loading => '正在同步账号配置',
+      AcademicConfigSyncStatus.synced => '账号配置已同步',
+      AcademicConfigSyncStatus.pending => '账号配置待同步',
+      AcademicConfigSyncStatus.conflict => '同步冲突',
+      AcademicConfigSyncStatus.remoteChanged => '其他设备已修改',
+      AcademicConfigSyncStatus.serverMissing => '云端配置缺失，需处理',
+      AcademicConfigSyncStatus.error => '同步失败，尚未确认云端状态',
+      AcademicConfigSyncStatus.unknown => '尚未同步',
+    };
   }
 
   String _maskIdentity(String value) => value.length < 5
@@ -496,6 +589,19 @@ class _AcademicDataSettingsScreenState
               ),
             ],
           ),
+        if (_serverIdentityStatus == AcademicIdentityReadStatus.error)
+          SettingsSection(
+            children: [
+              SettingsTile(
+                icon: Icons.sync_problem_outlined,
+                title: '学生认证状态暂未刷新',
+                subtitle: _identities.isEmpty
+                    ? '当前无法确认服务器身份，请检查网络后重试'
+                    : '显示上次成功确认的状态；当前读取失败，请稍后重试',
+                showChevron: false,
+              ),
+            ],
+          ),
         SettingsSection(
           title: '教务账号与本机连接',
           children: [
@@ -604,7 +710,7 @@ class _AcademicDataSettingsScreenState
               SettingsTile(
                   icon: Icons.cloud_outlined,
                   title: provider.displayName,
-                  subtitle: _syncStatus(provider),
+                  subtitle: _syncStatusLabel(provider),
                   onTap: _saving
                       ? null
                       : () async {
@@ -613,18 +719,31 @@ class _AcademicDataSettingsScreenState
                           if (mounted) await _load();
                         }),
             for (final provider in AcademicProviderId.values)
-              if (['同步冲突', '其他设备已修改'].contains(_syncStatus(provider))) ...[
+              if ({
+                AcademicConfigSyncStatus.conflict,
+                AcademicConfigSyncStatus.remoteChanged,
+                AcademicConfigSyncStatus.serverMissing,
+              }.contains(_configStatus(provider))) ...[
                 SettingsTile(
                     icon: Icons.phone_android,
-                    title: '${provider.displayName}：保留本机配置',
-                    subtitle: '将本机选择同步到账号',
+                    title: '${provider.displayName}：重新登记本机配置',
+                    subtitle: _configStatus(provider) ==
+                            AcademicConfigSyncStatus.serverMissing
+                        ? '云端没有可采用的配置，重新登记当前本机选择'
+                        : '将本机选择同步到账号',
                     onTap: _saving
                         ? null
                         : () => _resolveConfig(provider, adopt: false)),
                 SettingsTile(
                     icon: Icons.cloud_download_outlined,
-                    title: '${provider.displayName}：采用云端配置',
-                    subtitle: '切换到云端学号，必要时输入该账号密码',
+                    title: _configStatus(provider) ==
+                            AcademicConfigSyncStatus.serverMissing
+                        ? '${provider.displayName}：移除本机配置'
+                        : '${provider.displayName}：采用云端配置',
+                    subtitle: _configStatus(provider) ==
+                            AcademicConfigSyncStatus.serverMissing
+                        ? '云端没有可采用的学号，将清理该本机身份资料'
+                        : '切换到云端学号，必要时输入该账号密码',
                     onTap: _saving
                         ? null
                         : () => _resolveConfig(provider, adopt: true)),

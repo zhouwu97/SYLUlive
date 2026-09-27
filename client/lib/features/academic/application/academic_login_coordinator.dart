@@ -159,6 +159,10 @@ final class AcademicLoginCoordinator {
     final operation = () async {
       if (user == null) return;
       final preferences = await _preferencesLoader();
+      // 先初始化当前用户的 Store，才能发现 student_id 投影已被替换但仍
+      // 保留在 cleanup_students 中的旧身份。
+      await controller.providerRouter
+          ?.loadIdentityBindings(scheduleReconcile: false);
       final accountStore = controller.providerRouter?.accountStore;
       if (controller.appUserId != user) return;
       for (final identity in {

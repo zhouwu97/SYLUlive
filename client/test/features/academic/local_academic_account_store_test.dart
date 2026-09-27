@@ -87,6 +87,58 @@ void main() {
     expect(store.entry(u)['outbox'], isEmpty);
   });
 
+  test('采用不同云端身份时原子登记旧身份清理，采用相同身份不制造清理任务', () async {
+    final store = LocalAcademicAccountStore('1', MemoryPreferencesStore());
+    await store.commitIdentity(identity('A'));
+    await store.mergeSnapshot(cloud('A', 1));
+    await store.mergeSnapshot(cloud('B', 2));
+
+    expect(await store.adoptCloud(u), isTrue);
+    expect(store.identities.single.studentId, 'B');
+    expect(store.pendingCleanup, [identity('A')]);
+    expect(store.entry(u)['outbox'], isEmpty);
+
+    final same = LocalAcademicAccountStore('2', MemoryPreferencesStore());
+    await same.commitIdentity(identity('A', user: '2'));
+    await same.mergeSnapshot(cloud('A', 1));
+    await same.update((state) {
+      final entry = state[u.value] as Map<String, dynamic>;
+      entry['remote_changed'] = true;
+    });
+    expect(await same.adoptCloud(u), isTrue);
+    expect(same.pendingCleanup, isEmpty);
+
+    await same.update((state) {
+      final entry = state[u.value] as Map<String, dynamic>;
+      entry['server_missing'] = true;
+    });
+    expect(same.syncStatus(u), AcademicConfigSyncStatus.serverMissing);
+    expect(await same.adoptCloud(u), isTrue);
+    expect(same.identities, isEmpty);
+    expect(same.pendingCleanup, [identity('A', user: '2')]);
+  });
+
+  test('写队列执行前作用域失效时 updateIfCurrent 不改持久化记录', () async {
+    final prefs = _BlockingPreferences();
+    final store = LocalAcademicAccountStore('1', prefs);
+    await store.commitIdentity(identity('A'));
+    prefs.blockNextWrite();
+    final first = store.update((state) => state['marker'] = 'first');
+    await prefs.started.future;
+
+    var current = true;
+    final second = store.updateIfCurrent(
+      current: () => current,
+      mutate: (state) => state['marker'] = 'second',
+    );
+    current = false;
+    prefs.release();
+
+    await first;
+    expect(await second, isFalse);
+    expect(store.read()['marker'], 'first');
+  });
+
   test('旧密码拒绝不能影响新密码代次', () async {
     final store = LocalAcademicAccountStore('1', MemoryPreferencesStore());
     await store.commitIdentity(identity('A'));
@@ -188,4 +240,32 @@ void main() {
 class _FailingPreferences extends MemoryPreferencesStore {
   @override
   Future<bool> setString(String key, String value) async => false;
+}
+
+class _BlockingPreferences extends MemoryPreferencesStore {
+  bool _blockNext = false;
+  Completer<void>? _started;
+  Completer<void>? _release;
+
+  void blockNextWrite() {
+    _blockNext = true;
+    _started = Completer<void>();
+    _release = Completer<void>();
+  }
+
+  Completer<void> get started => _started!;
+
+  void release() {
+    if (!(_release?.isCompleted ?? true)) _release!.complete();
+  }
+
+  @override
+  Future<bool> setString(String key, String value) async {
+    if (_blockNext) {
+      _blockNext = false;
+      _started!.complete();
+      await _release!.future;
+    }
+    return super.setString(key, value);
+  }
 }

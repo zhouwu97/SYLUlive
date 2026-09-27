@@ -18,6 +18,8 @@ param(
     [string] $GitHubToken = $env:GITHUB_TOKEN,
     [string] $ServerContractStatus = $env:RELEASE_SERVER_CONTRACT_STATUS,
     [string] $ServerContractCommit = $env:RELEASE_SERVER_CONTRACT_COMMIT,
+    [string] $DeployedServerCompatibilityStatus = $env:RELEASE_DEPLOYED_SERVER_COMPATIBILITY_STATUS,
+    [string] $DeployedServerCompatibilityVersion = $env:RELEASE_DEPLOYED_SERVER_COMPATIBILITY_VERSION,
     # App 只编译客户端源码，但运行时依赖同一份 Server API 契约。
     # Server 侧有未提交改动时，manifest 里的 source_commit 就无法代表真实生产系统，
     # 因此必须显式承认，不能像 Web 那样默默放行。
@@ -290,9 +292,19 @@ $script:dependencyAuditStatus = if ($dependencyResults.Count -eq 2 -and
 
 $script:serverContractVerified = $false
 $script:serverContractEvidenceSupplied = $false
+$script:deployedServerCompatibilityVerified = $false
 if ([string]::IsNullOrWhiteSpace($ServerContractStatus)) { $ServerContractStatus = 'unverified' }
 if ($ServerContractStatus -notin @('passed', 'failed', 'unverified')) {
     throw "RELEASE_SERVER_CONTRACT_STATUS must be passed, failed, or unverified; got '$ServerContractStatus'."
+}
+if ([string]::IsNullOrWhiteSpace($DeployedServerCompatibilityStatus)) {
+    $DeployedServerCompatibilityStatus = 'unverified'
+}
+if ($DeployedServerCompatibilityStatus -notin @('passed', 'failed', 'unverified')) {
+    throw "RELEASE_DEPLOYED_SERVER_COMPATIBILITY_STATUS must be passed, failed, or unverified; got '$DeployedServerCompatibilityStatus'."
+}
+if ($script:releaseDecision -eq 'passed' -and $ServerContractStatus -eq 'failed') {
+    throw 'Explicit failed server contract status blocks formal release.'
 }
 if ($ServerContractStatus -eq 'passed') {
     if (-not $script:sourceTree['server'].clean -or [string]::IsNullOrWhiteSpace($ServerContractCommit) -or
@@ -301,7 +313,16 @@ if ($ServerContractStatus -eq 'passed') {
     }
     $script:serverContractEvidenceSupplied = $true
 }
-$script:serverContractVerified = [bool]($script:ciAppChecks -and $script:sourceTree['server'].clean)
+$script:serverContractVerified = [bool](
+    $ServerContractStatus -eq 'passed' -and
+    $script:serverContractEvidenceSupplied -and
+    $script:ciAppChecks -and
+    $script:sourceTree['server'].clean
+)
+$script:deployedServerCompatibilityVerified = [bool](
+    $DeployedServerCompatibilityStatus -eq 'passed' -and
+    -not [string]::IsNullOrWhiteSpace($DeployedServerCompatibilityVersion)
+)
 
 if ($script:releaseDecision -eq 'passed') {
     $missingEvidence = @()
@@ -310,6 +331,7 @@ if ($script:releaseDecision -eq 'passed') {
     if ($script:gitleaksStatus -ne 'success') { $missingEvidence += 'gitleaks' }
     if ($script:dependencyAuditStatus -ne 'success') { $missingEvidence += 'dependency audit' }
     if (-not $script:serverContractVerified) { $missingEvidence += 'server contract' }
+    if (-not $script:deployedServerCompatibilityVerified) { $missingEvidence += 'deployed server compatibility' }
     if ($missingEvidence.Count -gt 0) {
         throw "RELEASE_DECISION=passed requires verified release evidence: $($missingEvidence -join ', ')."
     }
@@ -452,6 +474,10 @@ try {
         server_contract_status = $ServerContractStatus
         server_contract_verified = $script:serverContractVerified
         server_contract_evidence_supplied = $script:serverContractEvidenceSupplied
+        server_source_contract_verified = $script:serverContractVerified
+        deployed_server_compatibility_status = $DeployedServerCompatibilityStatus
+        deployed_server_compatibility_version = if ($script:deployedServerCompatibilityVerified) { $DeployedServerCompatibilityVersion } else { $null }
+        deployed_server_compatibility_verified = $script:deployedServerCompatibilityVerified
         source_tree = $script:sourceTree
         ci_status = $script:ciStatus
         ci_evidence_status = $script:ciEvidenceStatus

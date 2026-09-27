@@ -40,6 +40,12 @@ final class AcademicIdentityApiException implements Exception {
   String toString() => 'AcademicIdentityApiException($code)';
 }
 
+/// 服务端可信身份读取的事实状态。
+///
+/// 空集合只能由一次成功且完整的响应产生；网络、权限和解析错误必须保留
+/// 为错误/未知，不能被页面当作“没有认证”。
+enum AcademicIdentityReadStatus { unknown, loading, loaded, empty, error }
+
 /// 本机登录成功声明的核验方式。
 ///
 /// 它只证明「这台设备上的教务登录成功了」，不是服务器可独立核验的学生身份。

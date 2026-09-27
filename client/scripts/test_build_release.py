@@ -79,7 +79,9 @@ class ReleaseBuildTests(unittest.TestCase):
     def build_with_workflow_fixture(self, *, ci_conclusion="success",
                                     missing_pip_audit=False,
                                     failed_pip_audit=False,
-                                    release_decision="partial"):
+                                    release_decision="partial",
+                                    server_contract_status="passed",
+                                    deployed_server_status="passed"):
         ci_jobs = [
             {"name": name, "status": "completed", "conclusion": "success"}
             for name in (
@@ -145,6 +147,10 @@ class ReleaseBuildTests(unittest.TestCase):
             RELEASE_SECURITY_RUN_ID="202",
             RELEASE_CI_REPOSITORY="owner/repo",
             RELEASE_DECISION=release_decision,
+            RELEASE_SERVER_CONTRACT_STATUS=server_contract_status,
+            RELEASE_SERVER_CONTRACT_COMMIT=self.commit,
+            RELEASE_DEPLOYED_SERVER_COMPATIBILITY_STATUS=deployed_server_status,
+            RELEASE_DEPLOYED_SERVER_COMPATIBILITY_VERSION="fixture-server-1",
         )
         env["PATH"] = str(self.tools) + os.pathsep + env["PATH"]
         return subprocess.run(
@@ -215,6 +221,46 @@ class ReleaseBuildTests(unittest.TestCase):
         self.assertEqual(manifest["security_workflow_status"], "completed")
         self.assertEqual(manifest["security_evidence_status"], "verified")
         self.assertEqual(manifest["artifact"], "shenliyuan-release.apk")
+
+    def test_explicit_failed_server_contract_blocks_formal_release(self):
+        result = self.build_with_workflow_fixture(
+            release_decision="passed",
+            server_contract_status="failed",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Explicit failed server contract status", result.stderr)
+        self.assertFalse((self.tools / "invoked").exists())
+
+    def test_candidate_switch_preserves_failed_server_evidence(self):
+        result = self.build_with_workflow_fixture(
+            release_decision="partial",
+            server_contract_status="failed",
+            deployed_server_status="failed",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((self.output / "release-manifest.json").read_text(encoding="utf-8-sig"))
+        self.assertTrue(manifest["candidate"])
+        self.assertEqual(manifest["server_contract_status"], "failed")
+        self.assertFalse(manifest["server_contract_verified"])
+        self.assertEqual(manifest["deployed_server_compatibility_status"], "failed")
+        self.assertFalse(manifest["deployed_server_compatibility_verified"])
+
+    def test_unverified_server_or_deployment_evidence_blocks_formal_release(self):
+        result = self.build_with_workflow_fixture(
+            release_decision="passed",
+            server_contract_status="unverified",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("server contract", result.stderr)
+        self.assertFalse((self.tools / "invoked").exists())
+
+        result = self.build_with_workflow_fixture(
+            release_decision="passed",
+            deployed_server_status="unverified",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("deployed server compatibility", result.stderr)
+        self.assertFalse((self.tools / "invoked").exists())
 
     def test_missing_python_audit_blocks_formal_release(self):
         result = self.build_with_workflow_fixture(

@@ -40,8 +40,16 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
   int _contextGeneration = 0;
   ProviderAcademicRepository? _selected;
   List<AcademicIdentityBinding> _identityBindings = const [];
+  AcademicIdentityReadStatus _serverIdentityStatus =
+      AcademicIdentityReadStatus.unknown;
+  List<AcademicIdentityBinding> _lastServerIdentityBindings = const [];
+  Object? _serverIdentityError;
+  DateTime? _serverIdentityLoadedAt;
   Future<void>? _reconcileRunning;
   DateTime? _lastReconcileAttempt;
+  int _reconcileForceVersion = 0;
+  int _reconcileForceCompletedVersion = 0;
+  final Map<AcademicProviderId, AcademicConfigSyncStatus> _configStatuses = {};
 
   bool _closed = false;
 
@@ -51,6 +59,48 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
   AcademicProvider? get selectedProvider => _selected?.provider;
   List<AcademicIdentityBinding> get identityBindings => _identityBindings;
   int get contextGeneration => _contextGeneration;
+  AcademicIdentityReadStatus get serverIdentityStatus => _serverIdentityStatus;
+  List<AcademicIdentityBinding> get lastServerIdentityBindings =>
+      _lastServerIdentityBindings;
+  Object? get serverIdentityError => _serverIdentityError;
+  DateTime? get serverIdentityLoadedAt => _serverIdentityLoadedAt;
+
+  AcademicConfigSyncStatus configStatus(AcademicProviderId provider) {
+    final transient = _configStatuses[provider];
+    if (transient == AcademicConfigSyncStatus.loading ||
+        transient == AcademicConfigSyncStatus.error) {
+      return transient!;
+    }
+    return accountStore?.syncStatus(provider) ??
+        transient ??
+        AcademicConfigSyncStatus.unknown;
+  }
+
+  void _resetServerIdentityState() {
+    _serverIdentityStatus = AcademicIdentityReadStatus.unknown;
+    _lastServerIdentityBindings = const [];
+    _serverIdentityError = null;
+    _serverIdentityLoadedAt = null;
+  }
+
+  void _setConfigStatus(AcademicConfigSyncStatus status) {
+    for (final provider in AcademicProviderId.values) {
+      _configStatuses[provider] = status;
+    }
+  }
+
+  void _refreshConfigStatuses({bool clearTransient = false}) {
+    final store = accountStore;
+    for (final provider in AcademicProviderId.values) {
+      if (!clearTransient &&
+          (_configStatuses[provider] == AcademicConfigSyncStatus.loading ||
+              _configStatuses[provider] == AcademicConfigSyncStatus.error)) {
+        continue;
+      }
+      _configStatuses[provider] =
+          store?.syncStatus(provider) ?? AcademicConfigSyncStatus.unknown;
+    }
+  }
 
   /// 读取当前已选本机 Provider 的学校学期列表。
   ///
@@ -124,12 +174,33 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     bool requireSuccess = false,
   }) async {
     final client = identityClient;
-    if (client == null) return const [];
+    if (client == null) {
+      _serverIdentityStatus = AcademicIdentityReadStatus.unknown;
+      return _lastServerIdentityBindings;
+    }
+    final user = _appUserId;
+    final generation = _contextGeneration;
+    _serverIdentityStatus = AcademicIdentityReadStatus.loading;
+    _serverIdentityError = null;
     try {
-      return await client.listIdentities();
-    } catch (_) {
+      final bindings = await client.listIdentities();
+      if (_closed || _appUserId != user || _contextGeneration != generation) {
+        return _lastServerIdentityBindings;
+      }
+      _lastServerIdentityBindings = bindings;
+      _serverIdentityLoadedAt = DateTime.now().toUtc();
+      _serverIdentityStatus = bindings.isEmpty
+          ? AcademicIdentityReadStatus.empty
+          : AcademicIdentityReadStatus.loaded;
+      return bindings;
+    } catch (error) {
+      if (!_closed && _appUserId == user && _contextGeneration == generation) {
+        _serverIdentityError = error;
+        _serverIdentityStatus = AcademicIdentityReadStatus.error;
+      }
       if (requireSuccess) rethrow;
-      return const [];
+      // 保留上一次成功读取的展示快照，但由 status 明确标记本次读取失败。
+      return _lastServerIdentityBindings;
     }
   }
 
@@ -145,6 +216,7 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     if (user == null || store == null || configClient == null || _closed) {
       return null;
     }
+    _setConfigStatus(AcademicConfigSyncStatus.loading);
     bool current() =>
         !_closed &&
         _appUserId == user &&
@@ -182,8 +254,10 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
           if (current()) onConfigChanged?.call();
         }
       }
+      if (current()) _refreshConfigStatuses(clearTransient: true);
       return current() ? presentProviders : null;
-    } catch (_) {
+    } catch (error) {
+      if (current()) _setConfigStatus(AcademicConfigSyncStatus.error);
       // Outbox 已落盘；云端故障只影响同步状态，不中断学校请求。
       if (requireSuccess) rethrow;
     }
@@ -200,28 +274,31 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
   }) async {
     final user = _appUserId;
     if (user == null || configClient == null || _closed) return;
-    var rerunAfterShared = force;
+    final requestedForceVersion =
+        force ? ++_reconcileForceVersion : _reconcileForceVersion;
     while (true) {
       if (_closed || _appUserId != user) return;
       final shared = _reconcileRunning;
       if (shared != null) {
-        var completed = true;
         try {
           await shared;
         } catch (_) {
-          completed = false;
           // 每个调用方单独决定是否上抛，手动同步不能继承后台任务的吞错策略。
           if (requireSuccess) rethrow;
+          return;
         }
-        if (rerunAfterShared && completed) {
-          rerunAfterShared = false;
-          continue;
+        // Future 完成和 owner 的 finally 可能处于同一个 microtask；清掉
+        // 已完成的指针，避免 force 调用把同一个 Future 当成补跑结果直接返回。
+        if (identical(_reconcileRunning, shared)) {
+          _reconcileRunning = null;
         }
-        return;
+        continue;
       }
 
+      final forceNeeded =
+          requestedForceVersion > _reconcileForceCompletedVersion;
       final lastAttempt = _lastReconcileAttempt;
-      if (!rerunAfterShared &&
+      if (!forceNeeded &&
           !requireSuccess &&
           lastAttempt != null &&
           DateTime.now().difference(lastAttempt) <
@@ -229,11 +306,18 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
         return;
       }
       _lastReconcileAttempt = DateTime.now();
+      final operationForceVersion = _reconcileForceVersion;
+      final operationWasForced =
+          operationForceVersion > _reconcileForceCompletedVersion;
       final operation =
           _reconcileAccountConfiguration(user, _contextGeneration);
       _reconcileRunning = operation;
       try {
         await operation;
+        // 同一共享任务期间到达的多个 force 请求由这一轮合并满足，
+        // 后续调用只需等待，不再制造请求风暴。
+        _reconcileForceCompletedVersion =
+            operationWasForced ? _reconcileForceVersion : operationForceVersion;
       } catch (_) {
         if (requireSuccess) rethrow;
       } finally {
@@ -391,6 +475,8 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     _syncTimer?.cancel();
     _reconcileRunning = null;
     _lastReconcileAttempt = null;
+    _reconcileForceVersion = 0;
+    _reconcileForceCompletedVersion = 0;
     accountStore = null;
     _appUserId = next;
     if (next != null && configClient != null) {
@@ -399,6 +485,8 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
       });
     }
     _identityBindings = const [];
+    _configStatuses.clear();
+    _resetServerIdentityState();
   }
 
   /// 断开本机会话时也要使同一 App 账号的在途恢复失效；仅比较学号或
@@ -407,10 +495,14 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     _contextGeneration++;
     _reconcileRunning = null;
     _lastReconcileAttempt = null;
+    _reconcileForceVersion = 0;
+    _reconcileForceCompletedVersion = 0;
     final old = _selected;
     _selected = null;
     old?.close();
     _identityBindings = const [];
+    _configStatuses.clear();
+    _resetServerIdentityState();
   }
 
   Future<void> clearSelectedProvider() async {

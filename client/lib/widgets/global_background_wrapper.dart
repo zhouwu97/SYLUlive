@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
+import '../services/wallpaper_prefetch_service.dart';
 
 final GlobalKey<BackgroundWrapperState> backgroundWrapperKey =
     GlobalKey<BackgroundWrapperState>();
@@ -95,7 +96,8 @@ class CustomBackgroundLayer extends StatelessWidget {
       targetWidth: targetWidth,
       targetHeight: targetHeight,
       fit: fillScreen ? BoxFit.cover : BoxFit.contain,
-      maxDimension: 2560,
+      maxDimension: WallpaperPrefetchService.maxDecodeDimension,
+      maxDecodedPixels: WallpaperPrefetchService.maxDecodedPixels,
     );
 
     return Stack(
@@ -237,6 +239,7 @@ class AspectPreservingResizeImageKey {
     this.targetHeight,
     this.fit,
     this.maxDimension,
+    this.maxDecodedPixels,
   );
 
   final Object providerCacheKey;
@@ -244,6 +247,7 @@ class AspectPreservingResizeImageKey {
   final int targetHeight;
   final BoxFit fit;
   final int maxDimension;
+  final int maxDecodedPixels;
 
   @override
   bool operator ==(Object other) {
@@ -253,7 +257,8 @@ class AspectPreservingResizeImageKey {
         other.targetWidth == targetWidth &&
         other.targetHeight == targetHeight &&
         other.fit == fit &&
-        other.maxDimension == maxDimension;
+        other.maxDimension == maxDimension &&
+        other.maxDecodedPixels == maxDecodedPixels;
   }
 
   @override
@@ -263,6 +268,7 @@ class AspectPreservingResizeImageKey {
         targetHeight,
         fit,
         maxDimension,
+        maxDecodedPixels,
       );
 }
 
@@ -278,7 +284,8 @@ class AspectPreservingResizeImage
     required this.targetWidth,
     required this.targetHeight,
     required this.fit,
-    this.maxDimension = 2560,
+    this.maxDimension = WallpaperPrefetchService.maxDecodeDimension,
+    this.maxDecodedPixels = WallpaperPrefetchService.maxDecodedPixels,
   });
 
   final ImageProvider imageProvider;
@@ -286,6 +293,7 @@ class AspectPreservingResizeImage
   final int targetHeight;
   final BoxFit fit;
   final int maxDimension;
+  final int maxDecodedPixels;
 
   static ui.TargetImageSize calculateTargetSize({
     required int intrinsicWidth,
@@ -293,7 +301,8 @@ class AspectPreservingResizeImage
     required int targetWidth,
     required int targetHeight,
     required BoxFit fit,
-    int maxDimension = 2560,
+    int maxDimension = WallpaperPrefetchService.maxDecodeDimension,
+    int maxDecodedPixels = WallpaperPrefetchService.maxDecodedPixels,
   }) {
     if (intrinsicWidth <= 0 || intrinsicHeight <= 0) {
       return ui.TargetImageSize(width: targetWidth, height: targetHeight);
@@ -328,9 +337,8 @@ class AspectPreservingResizeImage
       }
     }
 
-    // Cover 必须保留足够的解码尺寸来覆盖目标框；如果先套单边上限会把
-    // 横图缩到目标高度以下，随后 BoxFit.cover 只能放大低分辨率位图。
-    // Contain 或原图本身已经覆盖目标时才应用上限，避免无意义的超大解码。
+    // Cover 在常规图片上尽量保留覆盖目标的尺寸；极端宽高比仍必须服从
+    // 像素预算，不能为了避免低清而把整张原图无界解码。
     var cappedWidth = w;
     var cappedHeight = h;
     if (cappedWidth > maxDimension) {
@@ -346,6 +354,12 @@ class AspectPreservingResizeImage
     if (!coverWouldUndersize) {
       w = cappedWidth;
       h = cappedHeight;
+    }
+
+    if (w * h > maxDecodedPixels) {
+      final scale = math.sqrt(maxDecodedPixels / (w * h));
+      w = (w * scale).floor();
+      h = (h * scale).floor();
     }
 
     w = math.max(1, w);
@@ -366,6 +380,7 @@ class AspectPreservingResizeImage
         targetHeight,
         fit,
         maxDimension,
+        maxDecodedPixels,
       );
       if (completer == null) {
         result = SynchronousFuture<AspectPreservingResizeImageKey>(targetKey);
@@ -403,6 +418,7 @@ class AspectPreservingResizeImage
             targetHeight: key.targetHeight,
             fit: key.fit,
             maxDimension: key.maxDimension,
+            maxDecodedPixels: key.maxDecodedPixels,
           );
         },
       );
@@ -428,7 +444,8 @@ class AspectPreservingResizeImage
         other.targetWidth == targetWidth &&
         other.targetHeight == targetHeight &&
         other.fit == fit &&
-        other.maxDimension == maxDimension;
+        other.maxDimension == maxDimension &&
+        other.maxDecodedPixels == maxDecodedPixels;
   }
 
   @override
@@ -438,5 +455,6 @@ class AspectPreservingResizeImage
         targetHeight,
         fit,
         maxDimension,
+        maxDecodedPixels,
       );
 }

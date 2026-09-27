@@ -193,20 +193,22 @@ func (h *PostHandler) hydratePinnedPosts(c *gin.Context, posts []models.Post) {
 	if len(posts) == 0 {
 		return
 	}
+	db := h.db.WithContext(c.Request.Context())
 	h.fillLikes(c, posts)
 	if posts[0].ContentKind == models.PostContentKindPoll {
-		if err := services.NewPollService(h.db).HydratePollPosts(posts, contextUserID(c)); err == nil {
+		if err := services.NewPollService(db).HydratePollPosts(posts, contextUserID(c)); err == nil {
 			return
 		}
 	}
-	_ = services.LoadTopicsForPosts(h.db, posts)
+	_ = services.LoadTopicsForPosts(db, posts)
 }
 
 func (h *PostHandler) AdminGetPinnedPosts(c *gin.Context) {
 	boardID := c.DefaultQuery("board", strconv.Itoa(int(models.BoardShuitie)))
 	now := time.Now()
+	db := h.db.WithContext(c.Request.Context())
 
-	query := h.db.Model(&models.Post{}).
+	query := db.Model(&models.Post{}).
 		Where("status != ? AND is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?)",
 			models.PostStatusDeleted,
 			true,
@@ -232,7 +234,7 @@ func (h *PostHandler) AdminGetPinnedPosts(c *gin.Context) {
 		return
 	}
 	h.fillLikes(c, posts)
-	_ = services.LoadTopicsForPosts(h.db, posts)
+	_ = services.LoadTopicsForPosts(db, posts)
 	if posts == nil {
 		posts = []models.Post{}
 	}

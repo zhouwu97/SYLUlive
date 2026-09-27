@@ -121,10 +121,18 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       }
       setState(() {
         _user = loadedUser;
+        // 资料分区有结果后即可解除整页空壳门禁，帖子/商品继续独立加载。
+        _isLoading = false;
       });
     } catch (e) {
-      if (mounted && generation == _loadGeneration && _user == null) {
-        setState(() => _errorMessage = '加载用户信息失败');
+      if (mounted &&
+          generation == _loadGeneration &&
+          auth.accountSessionEpoch == requestEpoch &&
+          auth.user?.id == requestViewerId) {
+        setState(() {
+          _isLoading = false;
+          if (_user == null) _errorMessage = '加载用户信息失败';
+        });
       }
     }
   }
@@ -135,8 +143,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     final requestViewerId = auth.user?.id;
 
     try {
-      final posts =
-          await context.read<SocialProvider>().getUserPosts(targetId);
+      final posts = await context.read<SocialProvider>().getUserPosts(targetId);
       if (!mounted ||
           generation != _loadGeneration ||
           auth.accountSessionEpoch != requestEpoch ||
@@ -149,7 +156,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         _postsError = null;
       });
     } catch (e) {
-      if (mounted && generation == _loadGeneration) {
+      if (mounted &&
+          generation == _loadGeneration &&
+          auth.accountSessionEpoch == requestEpoch &&
+          auth.user?.id == requestViewerId) {
         setState(() {
           _postsLoading = false;
           _postsError = '动态加载失败';
@@ -180,7 +190,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         _marketError = null;
       });
     } catch (e) {
-      if (mounted && generation == _loadGeneration) {
+      if (mounted &&
+          generation == _loadGeneration &&
+          auth.accountSessionEpoch == requestEpoch &&
+          auth.user?.id == requestViewerId) {
         setState(() {
           _marketLoading = false;
           _marketError = '商品加载失败';
@@ -189,18 +202,48 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
   }
 
-  Future<void> _refreshPostsSilently() async {
+  Future<void> _refreshPostsSilently(int generation) async {
     final auth = context.read<AuthProvider>();
+    final requestEpoch = auth.accountSessionEpoch;
+    final requestViewerId = auth.user?.id;
     final targetId = widget.userId ?? auth.user?.id;
     if (targetId == null) return;
     try {
-      final posts =
-          await context.read<SocialProvider>().getUserPosts(targetId);
-      if (mounted) {
-        setState(() {
-          _posts = posts.where((post) => !_isMarketPost(post)).toList();
-        });
+      final posts = await context.read<SocialProvider>().getUserPosts(targetId);
+      if (!mounted ||
+          generation != _loadGeneration ||
+          auth.accountSessionEpoch != requestEpoch ||
+          auth.user?.id != requestViewerId) {
+        return;
       }
+      setState(() {
+        _posts = posts.where((post) => !_isMarketPost(post)).toList();
+        _postsError = null;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _refreshMarketSilently(int generation) async {
+    final auth = context.read<AuthProvider>();
+    final requestEpoch = auth.accountSessionEpoch;
+    final requestViewerId = auth.user?.id;
+    final targetId = widget.userId ?? auth.user?.id;
+    if (targetId == null) return;
+    try {
+      final marketResult =
+          await context.read<SocialProvider>().getUserMarketPosts(targetId);
+      if (!mounted ||
+          generation != _loadGeneration ||
+          auth.accountSessionEpoch != requestEpoch ||
+          auth.user?.id != requestViewerId) {
+        return;
+      }
+      setState(() {
+        _marketPosts = marketResult.items;
+        _marketTotal = marketResult.total;
+        _marketSoldCount = marketResult.sold;
+        _marketError = null;
+      });
     } catch (_) {}
   }
 
@@ -234,6 +277,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     Post post, {
     bool isMarket = false,
   }) async {
+    final currentGen = _loadGeneration;
     await AppNavigation.openPostDetail(
       context,
       post: post,
@@ -242,7 +286,11 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     );
 
     if (mounted) {
-      await _refreshPostsSilently();
+      if (isMarket) {
+        await _refreshMarketSilently(currentGen);
+      } else {
+        await _refreshPostsSilently(currentGen);
+      }
     }
   }
 
@@ -436,25 +484,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                     child: TabBarView(
                       controller: _tabController,
                       children: [
-                        _isLoading
-                            ? const Center(child: CircularProgressIndicator())
-                            : _posts.isEmpty
-                                ? const Center(child: Text('暂无帖子'))
-                                : ListView.builder(
-                                    padding: const EdgeInsets.all(16),
-                                    itemCount: _posts.length,
-                                    itemBuilder: (context, index) {
-                                      return CommunityPostCard(
-                                        post: _posts[index],
-                                        disableAuthorNavigation: true,
-                                        pollVariant:
-                                            PollCardVariant.profileCompact,
-                                        onTap: () => _openProfilePostDetail(
-                                          _posts[index],
-                                        ),
-                                      );
-                                    },
-                                  ),
+                        _buildPostsList(
+                          padding: const EdgeInsets.all(16),
+                        ),
                         _buildMarketPostsList(
                           padding: const EdgeInsets.all(16),
                         ),
@@ -612,24 +644,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           body: TabBarView(
             controller: _tabController,
             children: [
-              _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _posts.isEmpty
-                      ? const Center(child: Text('暂无帖子'))
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
-                          itemCount: _posts.length,
-                          itemBuilder: (context, index) {
-                            return CommunityPostCard(
-                              post: _posts[index],
-                              disableAuthorNavigation: true,
-                              pollVariant: PollCardVariant.profileCompact,
-                              onTap: () => _openProfilePostDetail(
-                                _posts[index],
-                              ),
-                            );
-                          },
-                        ),
+              _buildPostsList(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
+              ),
               _buildMarketPostsList(
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
               ),
@@ -637,6 +654,58 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildPostsList({required EdgeInsets padding}) {
+    if (_postsLoading && _posts.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_postsError != null && _posts.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_postsError!, style: const TextStyle(color: Colors.grey)),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () {
+                final auth = context.read<AuthProvider>();
+                final targetId = widget.userId ?? auth.user?.id;
+                if (targetId != null) {
+                  setState(() {
+                    _postsLoading = true;
+                    _postsError = null;
+                  });
+                  _loadPostsPartition(_loadGeneration, targetId);
+                }
+              },
+              child: const Text('重试'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_posts.isEmpty) {
+      return const Center(child: Text('暂无帖子'));
+    }
+
+    return ListView.builder(
+      padding: padding,
+      itemCount: _posts.length,
+      itemBuilder: (context, index) {
+        return CommunityPostCard(
+          post: _posts[index],
+          disableAuthorNavigation: true,
+          pollVariant: PollCardVariant.profileCompact,
+          onTap: () => _openProfilePostDetail(
+            _posts[index],
+            isMarket: false,
+          ),
+        );
+      },
     );
   }
 
@@ -657,6 +726,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                 final auth = context.read<AuthProvider>();
                 final targetId = widget.userId ?? auth.user?.id;
                 if (targetId != null) {
+                  setState(() {
+                    _marketLoading = true;
+                    _marketError = null;
+                  });
                   _loadMarketPartition(_loadGeneration, targetId);
                 }
               },
@@ -718,6 +791,39 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       );
     }
 
+    final originalUrl = ApiConstants.fullUrl(user.background);
+    final previewUrl = user.backgroundPreviewUrl.isNotEmpty
+        ? ApiConstants.fullUrl(user.backgroundPreviewUrl)
+        : originalUrl;
+    final imageWidth = (MediaQuery.sizeOf(context).width *
+            MediaQuery.devicePixelRatioOf(context))
+        .round()
+        .clamp(200, 1920);
+
+    Widget buildImage(String imageUrl, {bool allowOriginalFallback = false}) {
+      return CachedNetworkImage(
+        imageUrl: imageUrl,
+        cacheManager: widget.backgroundCacheManager ?? PostImageCache.manager,
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.cover,
+        memCacheWidth: imageWidth,
+        alignment: Alignment.center,
+        placeholder: (_, __) => Container(
+          color: const Color(0xFFEDEEF1),
+        ),
+        errorWidget: (_, __, ___) {
+          if (allowOriginalFallback) {
+            return buildImage(originalUrl);
+          }
+          return Image.asset(
+            'assets/images/morenbeijing.jpeg',
+            fit: BoxFit.cover,
+          );
+        },
+      );
+    }
+
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -732,25 +838,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         );
       },
       child: ClipRect(
-        child: CachedNetworkImage(
-          imageUrl: ApiConstants.fullUrl(user.background),
-          cacheManager: widget.backgroundCacheManager ?? PostImageCache.manager,
-          width: double.infinity,
-          height: double.infinity,
-          fit: BoxFit.cover,
-          memCacheWidth: (MediaQuery.sizeOf(context).width *
-                  MediaQuery.devicePixelRatioOf(context))
-              .round()
-              .clamp(200, 1920),
-          alignment: Alignment.center,
-          placeholder: (_, __) => Container(
-            color: const Color(0xFFEDEEF1),
-          ),
-          errorWidget: (_, __, ___) => Image.asset(
-            'assets/images/morenbeijing.jpeg',
-            fit: BoxFit.cover,
-          ),
-        ),
+        child: buildImage(previewUrl,
+            allowOriginalFallback: previewUrl != originalUrl),
       ),
     );
   }

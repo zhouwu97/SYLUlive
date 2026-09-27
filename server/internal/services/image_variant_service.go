@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -40,6 +41,48 @@ func ImageVariantPath(filePath, mimeType, variant string) (string, bool) {
 		return "", false
 	}
 	return fmt.Sprintf("%s_v%d_%s%s", base, ImageVariantRecipeVersion, variant, extension), true
+}
+
+// ReadyPublicImageVariantPath 只返回数据库已标记 ready 的公开图片变体。
+// 预览接口使用该结果，避免把 pending/failed 任务路径提前暴露给客户端。
+func ReadyPublicImageVariantPath(db *gorm.DB, publicPath, variant string) (string, bool, error) {
+	candidates := uploadReferenceCandidates(publicPath)
+	if db == nil || len(candidates) == 0 ||
+		(variant != ImageVariantThumb && variant != ImageVariantMedium && variant != ImageVariantViewer) {
+		return "", false, nil
+	}
+	// 旧部署可能尚未完成图片变体迁移；此时继续返回原图，不能把缺表当成接口故障。
+	if !db.Migrator().HasTable(&models.File{}) || !db.Migrator().HasTable(&models.ImageVariant{}) {
+		return "", false, nil
+	}
+	var file models.File
+	if err := db.Where(
+		"path IN ? AND access_scope = ?",
+		candidates,
+		models.FileAccessPublic,
+	).First(&file).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	var imageVariant models.ImageVariant
+	if err := db.Where(
+		"file_id = ? AND variant = ? AND recipe_version = ? AND status = ?",
+		file.ID,
+		variant,
+		ImageVariantRecipeVersion,
+		models.ImageVariantStatusReady,
+	).First(&imageVariant).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	if imageVariant.Path == "" {
+		return "", false, nil
+	}
+	return imageVariant.Path, true, nil
 }
 
 func imageVariantExtension(mimeType string) (string, bool) {

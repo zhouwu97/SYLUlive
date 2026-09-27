@@ -178,6 +178,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _wasLoggedIn = false;
   bool _checkinStatusLoaded = false;
   bool _checkinStatusLoading = false;
+  bool _checkinStatusError = false;
   String _feedMode = kFeedModes[kDefaultFeedModeIndex].key; // 'all'
   String _searchQuery = '';
   List<Post> _searchResults = [];
@@ -931,13 +932,22 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (!force && _checkinStatusLoaded) return;
 
     _checkinStatusLoading = true;
+    _checkinStatusError = false;
+    _onCheckinStatusUpdated?.call();
     try {
       final succeeded = await _loadCheckinStatus();
-      if (mounted && succeeded) {
-        _checkinStatusLoaded = true;
+      if (mounted) {
+        if (succeeded) {
+          _checkinStatusLoaded = true;
+          _checkinStatusError = false;
+        } else {
+          _checkinStatusLoaded = false;
+          _checkinStatusError = true;
+        }
       }
     } finally {
       _checkinStatusLoading = false;
+      _onCheckinStatusUpdated?.call();
     }
   }
 
@@ -1166,7 +1176,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   return HomeServiceDrawer(
                     checkedIn: _checkedIn,
                     streakDays: _streakDays,
-                    checkInLoading: !_checkinStatusLoaded && auth.isLoggedIn,
+                    checkInLoading: _checkinStatusLoading && auth.isLoggedIn,
+                    checkInError: _checkinStatusError && auth.isLoggedIn,
+                    onRetryCheckIn: () =>
+                        _ensureCheckinStatusLoaded(force: true),
                     showCheckInDot: _showCheckInDot,
                     announcements: _announcements,
                     unreadAnnouncements: _unreadAnnouncements,
@@ -1284,6 +1297,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       _lastAccountId = accountId;
       _lastAccountSessionEpoch = accountSessionEpoch;
       _checkinStatusLoaded = false;
+      _checkinStatusError = false;
       if (!authProvider.isLoggedIn) {
         _checkedIn = false;
         _streakDays = 0;

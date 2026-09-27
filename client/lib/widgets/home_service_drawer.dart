@@ -13,10 +13,12 @@ class HomeServiceDrawer extends StatelessWidget {
   final bool checkedIn;
   final int streakDays;
   final bool checkInLoading;
+  final bool checkInError;
   final bool showCheckInDot;
   final List<model.Announcement> announcements;
   final List<model.Announcement> unreadAnnouncements;
   final VoidCallback onCheckIn;
+  final VoidCallback? onRetryCheckIn;
   final VoidCallback onOpenToolbox;
   final VoidCallback onOpenAnnouncements;
   final VoidCallback onOpenCompetitions;
@@ -35,10 +37,12 @@ class HomeServiceDrawer extends StatelessWidget {
     required this.checkedIn,
     required this.streakDays,
     required this.checkInLoading,
+    this.checkInError = false,
     required this.showCheckInDot,
     required this.announcements,
     required this.unreadAnnouncements,
     required this.onCheckIn,
+    this.onRetryCheckIn,
     required this.onOpenToolbox,
     required this.onOpenAnnouncements,
     required this.onOpenCompetitions,
@@ -168,13 +172,16 @@ class HomeServiceDrawer extends StatelessWidget {
         children: [
           Expanded(
             child: _CompactQuickEntryItem(
-              icon: Icons.task_alt_rounded,
-              iconColor: checkedIn ? Colors.grey : const Color(0xFF16A34A),
-              title: checkedIn ? '签到记录' : '签到',
+              icon:
+                  checkInError ? Icons.refresh_rounded : Icons.task_alt_rounded,
+              iconColor: checkInError
+                  ? const Color(0xFFEF4444)
+                  : (checkedIn ? Colors.grey : const Color(0xFF16A34A)),
+              title: checkInError ? '签到重试' : (checkedIn ? '签到记录' : '签到'),
               isDark: isDark,
               isLoading: checkInLoading,
-              showDot: showCheckInDot,
-              onTap: onCheckIn,
+              showDot: showCheckInDot && !checkInError,
+              onTap: checkInError ? (onRetryCheckIn ?? onCheckIn) : onCheckIn,
             ),
           ),
           _buildQuickDivider(isDark),

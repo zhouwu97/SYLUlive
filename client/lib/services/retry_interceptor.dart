@@ -71,11 +71,51 @@ class SafeRetryInterceptor extends Interceptor {
 
   final Dio _dio;
   final Random _random = Random();
-  final Future<void> Function(Duration duration, CancelToken? cancelToken)? delayFn;
+  final Future<void> Function(Duration duration, CancelToken? cancelToken)?
+      delayFn;
 
   static const _attemptKey = '_safe_retry_attempt';
   static const _disableKey = 'disable_safe_retry';
   static const requestBudgetMsKey = 'request_budget_ms';
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    final budgetMs = (options.extra[requestBudgetMsKey] as num?)?.toInt();
+    if (budgetMs != null) {
+      final logicalStart =
+          (options.extra[DiagnosticDioInterceptor.logicalStartedAtKey] as num?)
+                  ?.toInt() ??
+              DateTime.now().millisecondsSinceEpoch;
+      final elapsedMs = DateTime.now().millisecondsSinceEpoch - logicalStart;
+      final remainingMs = budgetMs - elapsedMs;
+
+      if (remainingMs <= 0) {
+        handler.reject(
+          DioException(
+            requestOptions: options,
+            type: DioExceptionType.cancel,
+            error: 'Request cumulative budget exceeded (${budgetMs}ms)',
+          ),
+        );
+        return;
+      }
+
+      final remainingDuration = Duration(milliseconds: remainingMs);
+      if (options.connectTimeout == null ||
+          options.connectTimeout! > remainingDuration) {
+        options.connectTimeout = remainingDuration;
+      }
+      if (options.receiveTimeout == null ||
+          options.receiveTimeout! > remainingDuration) {
+        options.receiveTimeout = remainingDuration;
+      }
+      if (options.sendTimeout == null ||
+          options.sendTimeout! > remainingDuration) {
+        options.sendTimeout = remainingDuration;
+      }
+    }
+    handler.next(options);
+  }
 
   @override
   Future<void> onError(
@@ -93,6 +133,13 @@ class SafeRetryInterceptor extends Interceptor {
       return;
     }
 
+    final budgetMs = (options.extra[requestBudgetMsKey] as num?)?.toInt();
+    final logicalStart =
+        (options.extra[DiagnosticDioInterceptor.logicalStartedAtKey] as num?)
+                ?.toInt() ??
+            DateTime.now().millisecondsSinceEpoch;
+    final elapsedMs = DateTime.now().millisecondsSinceEpoch - logicalStart;
+
     final nextAttempt = attempt + 1;
     final baseDelayMs = nextAttempt == 1 ? 300 : 900;
     final jitterMs = _random.nextInt(120);
@@ -101,15 +148,18 @@ class SafeRetryInterceptor extends Interceptor {
     final retryAfterHeader = error.response?.headers.value('retry-after');
     final parsedRetryAfter = parseRetryAfterMs(retryAfterHeader);
     if (parsedRetryAfter != null) {
-      calculatedDelayMs = parsedRetryAfter.clamp(0, 15000);
+      final allowedBudget = budgetMs != null ? (budgetMs - elapsedMs) : 15000;
+      if (parsedRetryAfter > allowedBudget) {
+        if (kDebugMode) {
+          debugPrint(
+            '[HTTP] retry skipped: Retry-After (${parsedRetryAfter}ms) exceeds allowed budget (${allowedBudget}ms)',
+          );
+        }
+        handler.next(error);
+        return;
+      }
+      calculatedDelayMs = parsedRetryAfter;
     }
-
-    final budgetMs = (options.extra[requestBudgetMsKey] as num?)?.toInt();
-    final logicalStart =
-        (options.extra[DiagnosticDioInterceptor.logicalStartedAtKey] as num?)
-                ?.toInt() ??
-            DateTime.now().millisecondsSinceEpoch;
-    final elapsedMs = DateTime.now().millisecondsSinceEpoch - logicalStart;
 
     if (budgetMs != null && (elapsedMs + calculatedDelayMs >= budgetMs)) {
       if (kDebugMode) {

@@ -110,6 +110,8 @@ class _BoardState {
   DateTime? lastSuccessfulRefreshAt;
   bool isRecoveringExpiredSession = false;
   CancelToken? cancelToken;
+  // 状态创建时绑定当前账号世代，后台写缓存不能回退到后来切入的账号。
+  final int sessionEpoch = PostCacheService.activeSessionEpoch;
 }
 
 /// 一次可见性变更中被移除的帖子快照（FEED-3 撤销用）。
@@ -328,6 +330,7 @@ class FreshnessProbeResult {
 class PostProvider extends ChangeNotifier {
   final Dio _dio;
   final bool _enableCache;
+  final Duration _feedRequestBudget;
 
   final Map<FeedKey, _BoardState> _boards = {};
   final Map<String, Future<void>> _inflightRequests = {};
@@ -337,8 +340,12 @@ class PostProvider extends ChangeNotifier {
   final Map<String, String> _idempotencyKeys = <String, String>{};
   final PublicImageCompressor _publicImageCompressor = PublicImageCompressor();
 
-  PostProvider(this._dio, {bool enableCache = true})
-      : _enableCache = enableCache;
+  PostProvider(
+    this._dio, {
+    bool enableCache = true,
+    Duration feedRequestBudget = const Duration(seconds: 10),
+  })  : _enableCache = enableCache,
+        _feedRequestBudget = feedRequestBudget;
 
   FeedKey _stateKey(
     int boardId,
@@ -478,9 +485,17 @@ class PostProvider extends ChangeNotifier {
   Future<void> invalidateHomeFeedCaches() async {
     final keys = _boards.keys.where((key) => key.boardId == 1).toList();
     for (final key in keys) {
+      _boards[key]?.cancelToken?.cancel('Home feed invalidated');
       _boards[key]?.requestVersion++;
       _boards.remove(key);
     }
+    // 清掉首页的首屏、刷新和翻页在途索引；旧 board 已取消，不能被新会话复用。
+    _inflightRequests.removeWhere((k, _) =>
+        k.startsWith('feed_initial_1_') ||
+        k.startsWith('refresh_1_') ||
+        k.startsWith('load_1_'));
+    resetInitialFeedSignal(force: true);
+    PostCacheService.incrementSessionEpoch();
     if (_enableCache) {
       try {
         await PostCacheService.clearBoard(1);
@@ -492,18 +507,28 @@ class PostProvider extends ChangeNotifier {
   }
 
   Completer<void>? _initialFeedCompleter;
-  Future<void> get initialFeedFuture =>
-      _initialFeedCompleter?.future ?? Future<void>.value();
+  bool _initialFeedCompleted = false;
+  int _initialFeedSignalEpoch = 0;
+  Future<void> get initialFeedFuture {
+    if (_initialFeedCompleted) return Future<void>.value();
+    _initialFeedCompleter ??= Completer<void>();
+    return _initialFeedCompleter!.future;
+  }
 
   void markInitialFeedDone() {
+    _initialFeedCompleted = true;
     if (_initialFeedCompleter != null && !_initialFeedCompleter!.isCompleted) {
       _initialFeedCompleter!.complete();
     }
   }
 
-  void resetInitialFeedSignal() {
-    if (_initialFeedCompleter == null || _initialFeedCompleter!.isCompleted) {
+  void resetInitialFeedSignal({bool force = false}) {
+    if (force ||
+        _initialFeedCompleter == null ||
+        _initialFeedCompleter!.isCompleted) {
+      _initialFeedCompleted = false;
       _initialFeedCompleter = Completer<void>();
+      _initialFeedSignalEpoch++;
     }
   }
 
@@ -514,7 +539,6 @@ class PostProvider extends ChangeNotifier {
     int? topicId,
     String sort = 'time',
   }) {
-    resetInitialFeedSignal();
     final board = _ensureBoard(
       boardId,
       sort: sort,
@@ -522,17 +546,207 @@ class PostProvider extends ChangeNotifier {
       tagId: tagId,
       topicId: topicId,
     );
-    if (board.hasLoaded || board.hasCacheLoaded) {
+    if (board.hasLoaded) {
       markInitialFeedDone();
       return Future<void>.value();
     }
-    return refresh(
+
+    if (_initialFeedCompleter != null && _initialFeedCompleter!.isCompleted) {
+      resetInitialFeedSignal(force: true);
+    } else {
+      resetInitialFeedSignal();
+    }
+
+    final key = 'feed_initial_${boardId}_${sort}_${type}_${tagId}_$topicId';
+    if (_inflightRequests.containsKey(key)) {
+      return _inflightRequests[key]!;
+    }
+    final refreshKey = 'refresh_${boardId}_${sort}_${type}_${tagId}_$topicId';
+    if (_inflightRequests.containsKey(refreshKey)) {
+      final signalEpoch = _initialFeedSignalEpoch;
+      return _inflightRequests[refreshKey]!.whenComplete(() {
+        if (_initialFeedSignalEpoch == signalEpoch) {
+          markInitialFeedDone();
+        }
+      });
+    }
+
+    final signalEpoch = _initialFeedSignalEpoch;
+    late final Future<void> future;
+    future = _loadInitialFeedInternal(
       boardId: boardId,
       type: type,
       tagId: tagId,
       topicId: topicId,
       sort: sort,
-    ).whenComplete(markInitialFeedDone);
+    ).whenComplete(() {
+      if (_inflightRequests[key] == future) {
+        _inflightRequests.remove(key);
+        if (_initialFeedSignalEpoch == signalEpoch) {
+          markInitialFeedDone();
+        }
+      }
+    });
+    _inflightRequests[key] = future;
+    return future;
+  }
+
+  Future<void> _loadInitialFeedInternal({
+    int boardId = 1,
+    String? type,
+    int? tagId,
+    int? topicId,
+    String sort = 'time',
+  }) async {
+    final board = _ensureBoard(
+      boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+      topicId: topicId,
+    );
+    board.currentSort = sort;
+    final requestVersion = ++board.requestVersion;
+    board.cancelToken?.cancel();
+    final cancelToken = CancelToken();
+    board.cancelToken = cancelToken;
+    // 预算从初始化任务开始计时，包含本地缓存读取与后续网络请求。
+    final budgetTimer = Timer(_feedRequestBudget, () {
+      cancelToken.cancel('Initial feed cumulative budget exceeded (10s)');
+    });
+    // 步骤 1：读取本地合规缓存并先上屏（SWR）
+    if (_enableCache && sort != 'following' && topicId == null) {
+      try {
+        final cachedFeed = await PostCacheService.loadPosts(
+          boardId,
+          sort: sort,
+          type: type,
+          tagId: tagId,
+          expectedSessionEpoch: PostCacheService.activeSessionEpoch,
+        ).timeout(_feedRequestBudget, onTimeout: () => null);
+        if (requestVersion == board.requestVersion &&
+            cachedFeed != null &&
+            cachedFeed.posts.isNotEmpty) {
+          board.posts = cachedFeed.posts;
+          if (usesHomeFeedV2(
+            boardId: boardId,
+            sort: sort,
+            type: type,
+            tagId: tagId,
+            topicId: topicId,
+          )) {
+            board.pinnedPosts = cachedFeed.pinnedPosts;
+            board.algorithmVersion = cachedFeed.algorithmVersion;
+          }
+          board.hasCacheLoaded = true;
+          board.revision++;
+          notifyListeners();
+        }
+      } catch (e) {
+        debugPrint('读取首屏帖子缓存失败: $e');
+      }
+    }
+
+    if (board.posts.isEmpty) {
+      board.isLoading = true;
+      board.error = null;
+      board.revision++;
+      notifyListeners();
+    }
+
+    // 步骤 2：发起网络请求获取第一页，继续使用同一累计预算。
+    try {
+      board.sessionId = null;
+      final useHomeFeedV2 = usesHomeFeedV2(
+        boardId: boardId,
+        sort: sort,
+        type: type,
+        tagId: tagId,
+        topicId: topicId,
+      );
+      final params = <String, dynamic>{
+        'board': boardId,
+        'type': type,
+        'sort': sort,
+        'page': 1,
+        'limit': 20,
+        'scene': 'refresh',
+      };
+      if (useHomeFeedV2) {
+        params['feed_version'] = 3;
+      }
+      params['capabilities'] = 'poll_v1';
+      if (tagId != null) {
+        params['tag_id'] = tagId;
+      }
+      if (topicId != null) {
+        params['topic_id'] = topicId;
+      }
+
+      final response = await _dio.get(
+        _postsEndpoint(sort, type: type),
+        queryParameters: params,
+        cancelToken: cancelToken,
+        options: Options(
+          extra: <String, dynamic>{
+            'request_budget_ms': _feedRequestBudget.inMilliseconds,
+          },
+        ),
+      );
+      if (requestVersion != board.requestVersion) return;
+      if (response.statusCode == 200) {
+        board.sessionId = response.data['session_id']?.toString();
+        final newPosts = ((response.data['posts'] as List?) ?? [])
+            .map((e) => Post.fromJson(e))
+            .toList();
+
+        if (useHomeFeedV2) {
+          final pinned = ((response.data['pinned_posts'] as List?) ?? [])
+              .map((e) => Post.fromJson(e))
+              .toList();
+          board.pinnedPosts = pinned;
+          board.algorithmVersion =
+              response.data['algorithm_version']?.toString() ?? '';
+        }
+
+        board.posts = newPosts;
+        board.currentPage = 1;
+        board.hasLoaded = true;
+        board.hasCacheLoaded = true;
+        board.hasMore = newPosts.length >= 20;
+        board.error = null;
+
+        unawaited(_savePostsToCache(
+          boardId,
+          sort,
+          List<Post>.from(board.posts),
+          type: type,
+          tagId: tagId,
+          topicId: topicId,
+          pinnedPosts:
+              useHomeFeedV2 ? List<Post>.from(board.pinnedPosts) : null,
+          algorithmVersion: useHomeFeedV2 ? board.algorithmVersion : null,
+          sessionEpoch: board.sessionEpoch,
+        ));
+      }
+    } on DioException catch (e) {
+      if (requestVersion == board.requestVersion) {
+        if (board.posts.isEmpty) {
+          board.error = AppFeedback.dioErrorMessage(e);
+        }
+      }
+    } catch (e) {
+      if (requestVersion == board.requestVersion && board.posts.isEmpty) {
+        board.error = e.toString();
+      }
+    } finally {
+      budgetTimer.cancel();
+      if (requestVersion == board.requestVersion) {
+        board.isLoading = false;
+        board.revision++;
+        notifyListeners();
+      }
+    }
   }
 
   Future<void> _savePostsToCache(
@@ -550,6 +764,10 @@ class PostProvider extends ChangeNotifier {
     try {
       final board = _boards[
           _stateKey(boardId, sort, type, tagId: tagId, topicId: topicId)];
+      // 没有仍在当前状态表中的 board 时，说明账号世代已经被关闭；
+      // 禁止把旧请求的结果按当前世代重新写入缓存。
+      final ownerEpoch = sessionEpoch ?? board?.sessionEpoch;
+      if (ownerEpoch == null) return;
       final algoVersion = algorithmVersion ??
           (board != null && board.algorithmVersion.isNotEmpty
               ? board.algorithmVersion
@@ -568,7 +786,7 @@ class PostProvider extends ChangeNotifier {
         sort: sort,
         type: type,
         tagId: tagId,
-        sessionEpoch: sessionEpoch,
+        sessionEpoch: ownerEpoch,
       );
     } catch (e) {
       debugPrint('保存帖子缓存失败(board=$boardId, sort=$sort): $e');
@@ -626,7 +844,12 @@ class PostProvider extends ChangeNotifier {
     board.currentSort = sort;
     final requestVersion = ++board.requestVersion;
     board.cancelToken?.cancel();
-    board.cancelToken = CancelToken();
+    final cancelToken = CancelToken();
+    board.cancelToken = cancelToken;
+    final budgetTimer = Timer(_feedRequestBudget, () {
+      cancelToken
+          .cancel('Cached feed refresh cumulative budget exceeded (10s)');
+    });
 
     if (board.posts.isEmpty) {
       board.isLoading = true;
@@ -644,7 +867,8 @@ class PostProvider extends ChangeNotifier {
           sort: sort,
           type: type,
           tagId: tagId,
-        );
+          expectedSessionEpoch: board.sessionEpoch,
+        ).timeout(_feedRequestBudget, onTimeout: () => null);
         if (requestVersion != board.requestVersion) return;
         if (cachedFeed != null &&
             cachedFeed.posts.isNotEmpty &&
@@ -699,9 +923,11 @@ class PostProvider extends ChangeNotifier {
       final response = await _dio.get(
         _postsEndpoint(sort, type: type),
         queryParameters: params,
-        cancelToken: board.cancelToken,
+        cancelToken: cancelToken,
         options: Options(
-          extra: const <String, dynamic>{'request_budget_ms': 10000},
+          extra: <String, dynamic>{
+            'request_budget_ms': _feedRequestBudget.inMilliseconds,
+          },
         ),
       );
       if (requestVersion != board.requestVersion) return;
@@ -777,6 +1003,7 @@ class PostProvider extends ChangeNotifier {
       debugPrint('增量拉取异常(board=$boardId)');
     }
 
+    budgetTimer.cancel();
     board.hasLoaded = true;
     board.isLoading = false;
     if (succeeded) {
@@ -870,6 +1097,14 @@ class PostProvider extends ChangeNotifier {
     final requestedPage = board.currentPage;
     board.revision++;
     notifyListeners();
+    final cancelToken =
+        board.cancelToken == null || board.cancelToken!.isCancelled
+            ? CancelToken()
+            : board.cancelToken!;
+    board.cancelToken = cancelToken;
+    final budgetTimer = Timer(_feedRequestBudget, () {
+      cancelToken.cancel('Feed page cumulative budget exceeded (10s)');
+    });
 
     try {
       final usesSnapshot =
@@ -888,9 +1123,11 @@ class PostProvider extends ChangeNotifier {
       final response = await _dio.get(
         _postsEndpoint(sort, type: type),
         queryParameters: params,
-        cancelToken: board.cancelToken,
+        cancelToken: cancelToken,
         options: Options(
-          extra: const <String, dynamic>{'request_budget_ms': 10000},
+          extra: <String, dynamic>{
+            'request_budget_ms': _feedRequestBudget.inMilliseconds,
+          },
         ),
       );
       if (requestVersion != board.requestVersion) return;
@@ -966,6 +1203,7 @@ class PostProvider extends ChangeNotifier {
       board.error = e.toString();
     }
 
+    budgetTimer.cancel();
     if (requestVersion == board.requestVersion) {
       board.isLoading = false;
       board.hasLoaded = true;
@@ -981,7 +1219,8 @@ class PostProvider extends ChangeNotifier {
     int? topicId,
     String sort = 'time',
   }) {
-    final initialKey = 'feed_initial_${boardId}_${sort}_${type}_${tagId}_$topicId';
+    final initialKey =
+        'feed_initial_${boardId}_${sort}_${type}_${tagId}_$topicId';
     if (_inflightRequests.containsKey(initialKey)) {
       return _inflightRequests[initialKey]!;
     }
@@ -1022,11 +1261,11 @@ class PostProvider extends ChangeNotifier {
     );
     final requestVersion = ++board.requestVersion;
     board.cancelToken?.cancel();
-    board.cancelToken = CancelToken();
+    final cancelToken = CancelToken();
+    board.cancelToken = cancelToken;
     board.currentSort = sort;
     board.currentPage = 1;
     board.hasMore = true;
-    board.hasCacheLoaded = true;
     board.error = null;
 
     if (board.posts.isEmpty) {
@@ -1034,6 +1273,10 @@ class PostProvider extends ChangeNotifier {
       board.revision++;
       notifyListeners();
     }
+
+    final budgetTimer = Timer(_feedRequestBudget, () {
+      cancelToken.cancel('Refresh cumulative budget exceeded (10s)');
+    });
 
     bool succeeded = false;
 
@@ -1068,6 +1311,12 @@ class PostProvider extends ChangeNotifier {
       final response = await _dio.get(
         _postsEndpoint(sort, type: type),
         queryParameters: params,
+        cancelToken: cancelToken,
+        options: Options(
+          extra: <String, dynamic>{
+            'request_budget_ms': _feedRequestBudget.inMilliseconds,
+          },
+        ),
       );
       if (requestVersion != board.requestVersion) return;
       if (response.statusCode == 200) {
@@ -1089,6 +1338,7 @@ class PostProvider extends ChangeNotifier {
         // 我们必须完全覆写当前列表，绝不能执行在原地更新旧帖的合并逻辑，
         // 否则将导致已存在的帖子依然呆在旧的索引位置，造成视觉上排序无效。
         board.posts = newPosts;
+        board.hasCacheLoaded = true;
         unawaited(_savePostsToCache(
           boardId,
           sort,
@@ -1096,8 +1346,10 @@ class PostProvider extends ChangeNotifier {
           type: type,
           tagId: tagId,
           topicId: topicId,
-          pinnedPosts: useHomeFeedV2 ? List<Post>.from(board.pinnedPosts) : null,
+          pinnedPosts:
+              useHomeFeedV2 ? List<Post>.from(board.pinnedPosts) : null,
           algorithmVersion: useHomeFeedV2 ? board.algorithmVersion : null,
+          sessionEpoch: board.sessionEpoch,
         ));
 
         final total = (response.data['total'] as num?)?.toInt();
@@ -1112,6 +1364,8 @@ class PostProvider extends ChangeNotifier {
     } catch (e) {
       board.error = e.toString();
       debugPrint('刷新异常(board=$boardId): $e');
+    } finally {
+      budgetTimer.cancel();
     }
 
     // isLoading 必须无条件复位：若期间翻页自增过版本号，下面的版本守卫不成立，

@@ -11,14 +11,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/social_provider.dart';
+import 'package:shenliyuan/providers/theme_provider.dart';
+import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/user_home_screen.dart';
 
 class _ProfileRouteAdapter implements HttpClientAdapter {
   final requestedPaths = <String>[];
   final requests = <RequestOptions>[];
   final Map<String, dynamic>? profileResponse;
+  final Completer<void>? marketGate;
+  final List<Map<String, dynamic>> postsResponse;
 
-  _ProfileRouteAdapter({this.profileResponse});
+  _ProfileRouteAdapter({
+    this.profileResponse,
+    this.marketGate,
+    this.postsResponse = const [],
+  });
 
   @override
   void close({bool force = false}) {}
@@ -32,6 +40,9 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
     final route = options.uri.path;
     requestedPaths.add(route);
     requests.add(options);
+    if (route == '/user/2/market-posts' && marketGate != null) {
+      await marketGate!.future;
+    }
     final statusCode = route == '/user/2' ||
             route == '/user/2/posts' ||
             route == '/user/2/market-posts' ||
@@ -87,7 +98,7 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
           'created_at': '2026-07-15T00:00:00Z',
           'background': 'http://example.com/new_bg.jpg',
         },
-      '/user/2/posts' => <Object>[],
+      '/user/2/posts' => postsResponse,
       '/user/2/market-posts' => {
           'items': <Object>[],
           'total': 0,
@@ -189,6 +200,80 @@ void main() {
     expect(find.byIcon(Icons.male), findsNothing);
     expect(adapter.requestedPaths, contains('/user/profile'));
     expect(adapter.requestedPaths, isNot(contains('/user/2')));
+  }, timeout: const Timeout(Duration(seconds: 20)));
+
+  testWidgets('商品请求挂起时个人主页帖子分区仍可先显示', (tester) async {
+    const keepAliveChannel = MethodChannel('shenliyuan/keep_alive');
+    const gradeReminderChannel = MethodChannel('shenliyuan/grade_reminders');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(keepAliveChannel, (call) async => true);
+    messenger.setMockMethodCallHandler(
+      gradeReminderChannel,
+      (call) async => null,
+    );
+    addTearDown(() async {
+      messenger.setMockMethodCallHandler(keepAliveChannel, null);
+      messenger.setMockMethodCallHandler(gradeReminderChannel, null);
+    });
+
+    final marketGate = Completer<void>();
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test'));
+    dio.httpClientAdapter = _ProfileRouteAdapter(
+      marketGate: marketGate,
+      postsResponse: [
+        {
+          'id': 101,
+          'title': '帖子先显示',
+          'content': '帖子接口先返回',
+          'board_id': 1,
+          'author_id': 2,
+          'created_at': '2026-07-15T00:00:00Z',
+        },
+      ],
+    );
+    final auth = AuthProvider(
+      dio,
+      credentialStore: _MemoryAuthCredentialStore(),
+      loadStoredAuth: false,
+      onAuthenticated: () {},
+    );
+    await auth.applyAuthPayload('token', {
+      'id': 2,
+      'student_id': '20260002',
+      'nickname': '女生用户',
+      'gender': 'female',
+      'legal_consents_active': true,
+      'legal_consents_required': false,
+      'created_at': '2026-07-15T00:00:00Z',
+    });
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+          ChangeNotifierProvider<SocialProvider>(
+            create: (_) => SocialProvider(dio),
+          ),
+          ChangeNotifierProvider<WaterSectionProvider>(
+            create: (_) => WaterSectionProvider(dio),
+          ),
+          ChangeNotifierProvider<ThemeProvider>(
+            create: (_) => ThemeProvider(loadOnStart: false),
+          ),
+        ],
+        child: const MaterialApp(home: UserHomeScreen(userId: 2)),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('帖子先显示'), findsOneWidget);
+    expect(marketGate.isCompleted, isFalse);
+
+    marketGate.complete();
+    await tester.pump(const Duration(milliseconds: 100));
   }, timeout: const Timeout(Duration(seconds: 20)));
 
   testWidgets('UserHomeScreen() 不传 userId 时也请求 /user/profile', (tester) async {
@@ -430,15 +515,20 @@ void main() {
       'legal_consents_required': false,
       'created_at': '2026-07-15T00:00:00Z',
       'background': 'http://example.com/new_bg.jpg',
+      'background_preview_url': 'http://example.com/new_bg_v1_medium.jpg',
     });
     await tester.pump();
 
     expect(auth.user?.background, 'http://example.com/new_bg.jpg');
     expect(
+      auth.user?.backgroundPreviewUrl,
+      'http://example.com/new_bg_v1_medium.jpg',
+    );
+    expect(
       find.byWidgetPredicate(
         (widget) =>
             widget is CachedNetworkImage &&
-            widget.imageUrl == 'http://example.com/new_bg.jpg',
+            widget.imageUrl == 'http://example.com/new_bg_v1_medium.jpg',
       ),
       findsOneWidget,
     );

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:shenliyuan/app_bootstrap.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
+import 'package:shenliyuan/widgets/global_background_wrapper.dart';
 
 Widget _buildWrapper(ThemeProvider theme) {
   return ChangeNotifierProvider<ThemeProvider>.value(
@@ -121,5 +121,30 @@ void main() {
     await tester.pump();
 
     expect(find.byType(ImageFiltered), findsNothing);
+  });
+
+  test('背景解码尺寸在横竖屏与 cover/contain 下保持原图比例', () {
+    final cover = AspectPreservingResizeImage.calculateTargetSize(
+      intrinsicWidth: 4000,
+      intrinsicHeight: 3000,
+      targetWidth: 1080,
+      targetHeight: 2400,
+      fit: BoxFit.cover,
+      maxDimension: 2560,
+    );
+    final contain = AspectPreservingResizeImage.calculateTargetSize(
+      intrinsicWidth: 3000,
+      intrinsicHeight: 4000,
+      targetWidth: 2400,
+      targetHeight: 1080,
+      fit: BoxFit.contain,
+      maxDimension: 2560,
+    );
+
+    expect(cover.width! / cover.height!, closeTo(4 / 3, 0.01));
+    expect(cover.height!, greaterThanOrEqualTo(2400));
+    expect(contain.width! / contain.height!, closeTo(3 / 4, 0.01));
+    expect(contain.width!, lessThanOrEqualTo(2400));
+    expect(contain.height!, lessThanOrEqualTo(1080));
   });
 }

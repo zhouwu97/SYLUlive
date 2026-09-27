@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/post.dart';
 
@@ -33,10 +34,36 @@ class PostCacheService {
   static const _lastCleanedSchemaKey = '_last_cleaned_schema_version';
 
   static final Set<Future<void>> _pendingWrites = {};
+  static int _activeSessionEpoch = 0;
+  static final Map<String, int> _keyWriteVersions = {};
+  // 同一缓存键严格串行，清理可以等待已经排队的旧写入完成后再删除。
+  static final Map<String, Future<void>> _keyWriteTails = {};
+
+  @visibleForTesting
+  static Future<void> Function()? beforeCachePut;
+
+  static void setActiveSessionEpoch(int epoch) {
+    _activeSessionEpoch = epoch;
+  }
+
+  static set activeSessionEpoch(int epoch) {
+    _activeSessionEpoch = epoch;
+  }
+
+  static void incrementSessionEpoch() {
+    _activeSessionEpoch++;
+  }
+
+  static int get activeSessionEpoch => _activeSessionEpoch;
 
   static Future<void> waitForPendingWrites() async {
     if (_pendingWrites.isEmpty) return;
-    await Future.wait(_pendingWrites.toList());
+    try {
+      await Future.wait(_pendingWrites.toList(growable: false),
+          eagerError: false);
+    } catch (e) {
+      debugPrint('waitForPendingWrites caught error: $e');
+    }
   }
 
   static Future<Box<String>> _openBox() async {
@@ -79,19 +106,38 @@ class PostCacheService {
     int? tagId,
     int? sessionEpoch,
   }) async {
-    final writeFuture = _doSavePosts(
-      boardId,
-      feed,
-      sort: sort,
-      type: type,
-      tagId: tagId,
-      sessionEpoch: sessionEpoch,
-    );
-    _pendingWrites.add(writeFuture);
+    final epoch = sessionEpoch ?? _activeSessionEpoch;
+    if (epoch != _activeSessionEpoch) {
+      // 旧会话产生的落后写入直接丢弃，不污染新会话
+      return;
+    }
+    final key = _cacheKey(boardId, sort, type: type, tagId: tagId);
+    final writeVersion = (_keyWriteVersions[key] ?? 0) + 1;
+    _keyWriteVersions[key] = writeVersion;
+
+    final previous = _keyWriteTails[key] ?? Future<void>.value();
+    final writeFuture =
+        previous.catchError((_) {}).then<void>((_) => _doSavePosts(
+              boardId,
+              feed,
+              sort: sort,
+              type: type,
+              tagId: tagId,
+              sessionEpoch: epoch,
+              writeVersion: writeVersion,
+            ));
+    late final Future<void> tail;
+    tail = writeFuture.whenComplete(() {
+      if (identical(_keyWriteTails[key], tail)) {
+        _keyWriteTails.remove(key);
+      }
+    });
+    _keyWriteTails[key] = tail;
+    _pendingWrites.add(tail);
     try {
-      await writeFuture;
+      await tail;
     } finally {
-      _pendingWrites.remove(writeFuture);
+      _pendingWrites.remove(tail);
     }
   }
 
@@ -102,9 +148,16 @@ class PostCacheService {
     String? type,
     int? tagId,
     int? sessionEpoch,
+    int? writeVersion,
   }) async {
-    final box = await _openBox();
+    final epoch = sessionEpoch ?? _activeSessionEpoch;
     final key = _cacheKey(boardId, sort, type: type, tagId: tagId);
+    if (epoch != _activeSessionEpoch ||
+        (writeVersion != null &&
+            writeVersion < (_keyWriteVersions[key] ?? 0))) {
+      return;
+    }
+    final box = await _openBox();
 
     final expectedVersion = expectedAlgorithmVersion(
       boardId: boardId,
@@ -120,10 +173,20 @@ class PostCacheService {
       'schema_version': cacheSchemaVersion,
       'algorithm_version': storedVersion,
       'saved_at': DateTime.now().toUtc().toIso8601String(),
-      'session_epoch': sessionEpoch ?? 0,
+      'session_epoch': epoch,
       'pinned_posts': feed.pinnedPosts.map((p) => _postToJson(p)).toList(),
       'posts': feed.posts.map((p) => _postToJson(p)).toList()
     });
+    // 写入前再次校验会话世代与写入版本，确保没有在打开 box 期间发生切号或被新写入抢占
+    if (epoch != _activeSessionEpoch ||
+        (writeVersion != null &&
+            writeVersion < (_keyWriteVersions[key] ?? 0))) {
+      return;
+    }
+    final beforePut = beforeCachePut;
+    if (beforePut != null) {
+      await beforePut();
+    }
     await box.put(key, json);
   }
 
@@ -133,6 +196,7 @@ class PostCacheService {
     String sort = 'time',
     String? type,
     int? tagId,
+    int? expectedSessionEpoch,
   }) async {
     final box = await _openBox();
     final key = _cacheKey(boardId, sort, type: type, tagId: tagId);
@@ -142,6 +206,14 @@ class PostCacheService {
       final decoded = jsonDecode(json);
       if (decoded is! Map<String, dynamic> ||
           decoded['schema_version'] != cacheSchemaVersion) {
+        await box.delete(key);
+        return null;
+      }
+
+      final cachedEpoch = (decoded['session_epoch'] as num?)?.toInt() ?? 0;
+      final requiredEpoch = expectedSessionEpoch ?? _activeSessionEpoch;
+      if (boardId == 1 && cachedEpoch != requiredEpoch) {
+        // 会话世代不匹配，清除旧账号/旧会话缓存
         await box.delete(key);
         return null;
       }
@@ -184,6 +256,10 @@ class PostCacheService {
             : PostFeedCacheFreshness.fresh,
       );
     } catch (_) {
+      // 解析失败的条目不能继续占位，否则后续启动会反复读到同一坏缓存。
+      try {
+        await box.delete(key);
+      } catch (_) {}
       return null;
     }
   }
@@ -296,18 +372,40 @@ class PostCacheService {
   ///
   /// 仅由启动恢复等明确的非敏感缓存恢复路径调用。
   static Future<void> clearAllCache() async {
-    await waitForPendingWrites();
     final box = await _openBox();
+    _invalidateWriteVersions(<String>{
+      ...box.keys.map((key) => key.toString()),
+      ..._keyWriteVersions.keys,
+    });
+    try {
+      await waitForPendingWrites();
+    } catch (_) {}
     await box.clear();
   }
 
   /// 清除指定板块缓存
   static Future<void> clearBoard(int boardId) async {
-    await waitForPendingWrites();
     final box = await _openBox();
+    try {
+      final prefix = '$_boardPrefix${boardId}_';
+      final keys = <String>{
+        ...box.keys
+            .map((key) => key.toString())
+            .where((key) => key.startsWith(prefix)),
+        ..._keyWriteVersions.keys.where((key) => key.startsWith(prefix)),
+      };
+      _invalidateWriteVersions(keys);
+      await waitForPendingWrites();
+    } catch (_) {}
     final prefix = '$_boardPrefix${boardId}_';
     final keys = box.keys.where((key) => key.toString().startsWith(prefix));
     await box.deleteAll(keys);
+  }
+
+  static void _invalidateWriteVersions(Iterable<String> keys) {
+    for (final key in keys) {
+      _keyWriteVersions[key] = (_keyWriteVersions[key] ?? 0) + 1;
+    }
   }
 
   static Map<String, dynamic> _postToJson(Post post) {

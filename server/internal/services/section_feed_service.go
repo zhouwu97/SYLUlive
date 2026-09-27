@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"time"
 
 	"gorm.io/gorm"
@@ -18,9 +19,13 @@ func NewSectionFeedService(db *gorm.DB, includePoll bool) *SectionFeedService {
 }
 
 // BuildSnapshot 返回指定版块的稳定帖子 ID 顺序，供 refresh/loadmore 共用。
-func (s *SectionFeedService) BuildSnapshot(sectionID uint, sectionSlug string, now time.Time) ([]uint, error) {
+func (s *SectionFeedService) BuildSnapshot(ctx context.Context, sectionID uint, sectionSlug string, now time.Time) ([]uint, error) {
+	db := s.db
+	if ctx != nil {
+		db = db.WithContext(ctx)
+	}
 	base := func() *gorm.DB {
-		query := s.db.Model(&models.Post{}).
+		query := db.Model(&models.Post{}).
 			Where("board_id = ? AND status IN ?", models.BoardShuitie, models.PublicPostStatuses()).
 			Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)")
 		if !s.includePoll {
@@ -33,7 +38,7 @@ func (s *SectionFeedService) BuildSnapshot(sectionID uint, sectionSlug string, n
 	}
 
 	var featuredRows []models.WaterSectionFeaturedPost
-	if err := s.db.Where("section_id = ? AND status = ?", sectionID, models.SectionFeaturedStatusActive).Find(&featuredRows).Error; err != nil {
+	if err := db.Where("section_id = ? AND status = ?", sectionID, models.SectionFeaturedStatusActive).Find(&featuredRows).Error; err != nil {
 		return nil, err
 	}
 	featuredAt := make(map[uint]time.Time, len(featuredRows))
@@ -46,7 +51,7 @@ func (s *SectionFeedService) BuildSnapshot(sectionID uint, sectionSlug string, n
 	}
 
 	var pinRows []models.WaterSectionPin
-	if err := s.db.Where("section_id = ? AND status = ? AND (pinned_until IS NULL OR pinned_until > ?)", sectionID, models.PinStatusActive, now).Find(&pinRows).Error; err != nil {
+	if err := db.Where("section_id = ? AND status = ? AND (pinned_until IS NULL OR pinned_until > ?)", sectionID, models.PinStatusActive, now).Find(&pinRows).Error; err != nil {
 		return nil, err
 	}
 	pinnedWeights := make(map[uint]int, len(pinRows))
@@ -115,7 +120,7 @@ func (s *SectionFeedService) BuildSnapshot(sectionID uint, sectionSlug string, n
 		PostID uint
 		Count  int64
 	}
-	if err := s.db.Model(&models.Reply{}).
+	if err := db.Model(&models.Reply{}).
 		Select("post_id, COUNT(DISTINCT author_id) AS count").
 		Where("status = ? AND post_id IN ?", models.ReplyStatusNormal, ids).
 		Group("post_id").Scan(&replyRows).Error; err != nil {
@@ -129,7 +134,7 @@ func (s *SectionFeedService) BuildSnapshot(sectionID uint, sectionSlug string, n
 	pollByPost := make(map[uint]models.Poll)
 	if s.includePoll {
 		var polls []models.Poll
-		if err := s.db.Where("post_id IN ?", ids).Find(&polls).Error; err != nil {
+		if err := db.Where("post_id IN ?", ids).Find(&polls).Error; err != nil {
 			return nil, err
 		}
 		for _, poll := range polls {

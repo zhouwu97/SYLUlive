@@ -7,6 +7,7 @@ class User {
   String gender;
   String avatar;
   String background;
+  final String backgroundPreviewUrl;
   final int creditScore;
   final String role;
   final int adminExp;
@@ -51,6 +52,7 @@ class User {
     this.gender = '',
     this.avatar = '',
     this.background = '',
+    this.backgroundPreviewUrl = '',
     this.creditScore = 100,
     this.role = 'user',
     this.adminExp = 0,
@@ -90,6 +92,7 @@ class User {
       gender: json['gender'] ?? '',
       avatar: json['avatar'] ?? '',
       background: json['background'] ?? '',
+      backgroundPreviewUrl: json['background_preview_url']?.toString() ?? '',
       creditScore: json['credit_score'] ?? 100,
       role: json['role'] ?? 'user',
       adminExp: json['admin_exp'] ?? 0,
@@ -137,6 +140,7 @@ class User {
       'gender': gender,
       'avatar': avatar,
       'background': background,
+      'background_preview_url': backgroundPreviewUrl,
       'credit_score': creditScore,
       'role': role,
       'admin_exp': adminExp,

@@ -58,6 +58,7 @@ type SelfUserResponse struct {
 	Gender                string                           `json:"gender"`
 	Avatar                string                           `json:"avatar"`
 	Background            string                           `json:"background"`
+	BackgroundPreviewURL  string                           `json:"background_preview_url,omitempty"`
 	NightMode             bool                             `json:"night_mode"`
 	CreditScore           int                              `json:"credit_score"`
 	Role                  models.Role                      `json:"role"`
@@ -138,6 +139,11 @@ func selfUserResponseForDB(db *gorm.DB, user models.User) (SelfUserResponse, err
 		return SelfUserResponse{}, err
 	}
 	response := selfUserResponse(user, consentState)
+	if previewPath, ready, err := services.ReadyPublicImageVariantPath(db, user.Background, services.ImageVariantMedium); err != nil {
+		return SelfUserResponse{}, err
+	} else if ready {
+		response.BackgroundPreviewURL = previewPath
+	}
 	if db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
 		bindings, err := services.VerifiedAcademicIdentities(db, user.ID)
 		if err != nil {
@@ -397,7 +403,14 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 	}
 	user.IsFollowing = isFollowing
 
-	c.JSON(http.StatusOK, publicUserResponse(user))
+	response := publicUserResponse(user)
+	if previewPath, ready, err := services.ReadyPublicImageVariantPath(h.db, user.Background, services.ImageVariantMedium); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取背景预览失败"})
+		return
+	} else if ready {
+		response.BackgroundPreviewURL = previewPath
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // GetFollowing 获取关注列表

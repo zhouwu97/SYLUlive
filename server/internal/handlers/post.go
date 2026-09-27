@@ -409,6 +409,7 @@ func supportsPollRequest(c *gin.Context) bool {
 
 // GetList 获取帖子列表
 func (h *PostHandler) GetList(c *gin.Context) {
+	requestDB := h.db.WithContext(c.Request.Context())
 	boardIDStr := c.Query("board")
 	var requestedBoardID *models.BoardID
 	if boardIDStr != "" {
@@ -546,7 +547,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	}
 
 	// 走正常的查询（或 refresh 阶段）
-	query := h.db.WithContext(c.Request.Context()).Model(&models.Post{}).
+	query := requestDB.Model(&models.Post{}).
 		Where("posts.status IN ?", visiblePostStatuses).
 		Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
 		Preload("Author").Preload("Images").Preload("Images.File").Scopes(withPostImageVariants)
@@ -560,7 +561,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 	query = applyPostTypeFilter(query, requestedBoardID, postType)
 	if requestedBoardID != nil && *requestedBoardID == models.BoardShuitie && postType != "" {
-		if sectionID, err := validateWaterSectionActive(h.db, postType); err == nil {
+		if sectionID, err := validateWaterSectionActive(requestDB, postType); err == nil {
 			waterSectionFeedID = sectionID
 		}
 	}
@@ -584,19 +585,19 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		}
 		// 校验标签存在且属于 type 对应 section
 		if postType != "" {
-			sectionID, secErr := validateWaterSectionActive(h.db, postType)
+			sectionID, secErr := validateWaterSectionActive(requestDB, postType)
 			if secErr != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "标签不属于该版块"})
 				return
 			}
-			if tagErr := validateWaterTagBelongsToSection(h.db, tagID, sectionID); tagErr != nil {
+			if tagErr := validateWaterTagBelongsToSection(requestDB, tagID, sectionID); tagErr != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": tagErr.Error()})
 				return
 			}
 		} else {
 			// 未指定 type：只要标签存在且属于任意 active section
 			var exists int64
-			h.db.Model(&models.WaterSectionTag{}).
+			requestDB.Model(&models.WaterSectionTag{}).
 				Joins("JOIN water_sections ON water_sections.id = water_section_tags.section_id").
 				Where("water_section_tags.id = ? AND water_section_tags.is_enabled = ? AND water_sections.status = ?",
 					tagID, true, "active").
@@ -649,7 +650,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		!tagIDProvided &&
 		searchQuery == "" &&
 		sinceStr == "" {
-		query = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(query, optionalFeedUserID(c), sort, now)
+		query = services.NewFeedVisibilityService(requestDB).ApplyFeedVisibility(query, optionalFeedUserID(c), sort, now)
 	}
 
 	// 关注信息：关注的作者 + 关注的版块（FEED-6）
@@ -663,11 +664,11 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			})
 			return
 		}
-		followedAuthorsSub := h.db.
+		followedAuthorsSub := requestDB.
 			Model(&models.UserFollow{}).
 			Select("following_id").
 			Where("follower_id = ?", userID)
-		followedSectionsSub := h.db.
+		followedSectionsSub := requestDB.
 			Model(&models.WaterSectionFollow{}).
 			Joins("JOIN water_sections ON water_sections.id = water_section_follows.section_id").
 			Select("water_sections.slug").
@@ -729,7 +730,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			var isTeamTag bool
 			if tagIDProvided {
 				var tag models.WaterSectionTag
-				if h.db.First(&tag, tagID).Error == nil && tag.ContentMode == models.WaterTagModeTeamRecruitment {
+				if requestDB.First(&tag, tagID).Error == nil && tag.ContentMode == models.WaterTagModeTeamRecruitment {
 					isTeamTag = true
 				}
 			}
@@ -768,7 +769,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 				var isTeamTag bool
 				if tagIDProvided {
 					var tag models.WaterSectionTag
-					if h.db.First(&tag, tagID).Error == nil && tag.ContentMode == models.WaterTagModeTeamRecruitment {
+					if requestDB.First(&tag, tagID).Error == nil && tag.ContentMode == models.WaterTagModeTeamRecruitment {
 						isTeamTag = true
 					}
 				}
@@ -786,7 +787,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	if isSnapshotting {
 		var allIDs []uint
 		if isSectionRecommend {
-			sectionIDs, sectionErr := services.NewSectionFeedService(h.db, supportsPoll).BuildSnapshot(waterSectionFeedID, postType, now)
+			sectionIDs, sectionErr := services.NewSectionFeedService(requestDB, supportsPoll).BuildSnapshot(c.Request.Context(), waterSectionFeedID, postType, now)
 			if sectionErr != nil {
 				log.Printf("[DB_ERROR] GetList section feed snapshot failed: %v", sectionErr)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "构建版块推荐失败"})
@@ -795,7 +796,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			allIDs = sectionIDs
 		} else {
 			// 这里必须清除Preload等，单纯Pluck
-			snapshotQuery := h.db.Model(&models.Post{}).
+			snapshotQuery := requestDB.Model(&models.Post{}).
 				Where("posts.status IN ?", visiblePostStatuses).
 				Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)")
 			if !supportsPoll {
@@ -821,7 +822,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 				var isTeamTag bool
 				if tagIDProvided {
 					var tag models.WaterSectionTag
-					if h.db.First(&tag, tagID).Error == nil && tag.ContentMode == models.WaterTagModeTeamRecruitment {
+					if requestDB.First(&tag, tagID).Error == nil && tag.ContentMode == models.WaterTagModeTeamRecruitment {
 						isTeamTag = true
 					}
 				}
@@ -914,7 +915,7 @@ func (h *PostHandler) fillLikes(c *gin.Context, posts []models.Post) {
 		}
 		if len(postIDs) > 0 {
 			var likedPostIDs []uint
-			h.db.Model(&models.Like{}).Where("user_id = ? AND target_type = ? AND target_id IN ?", uid, "post", postIDs).Pluck("target_id", &likedPostIDs)
+			h.db.WithContext(c.Request.Context()).Model(&models.Like{}).Where("user_id = ? AND target_type = ? AND target_id IN ?", uid, "post", postIDs).Pluck("target_id", &likedPostIDs)
 			likedMap := make(map[uint]bool)
 			for _, id := range likedPostIDs {
 				likedMap[id] = true
@@ -947,10 +948,11 @@ func applyWaterSectionPinOrder(query *gorm.DB, sectionID uint, now time.Time) *g
 		Order("wsp_active.created_at DESC NULLS LAST")
 }
 
-func (h *PostHandler) fillWaterSectionPinState(posts []models.Post, now time.Time) {
+func (h *PostHandler) fillWaterSectionPinState(c *gin.Context, posts []models.Post, now time.Time) {
 	if len(posts) == 0 {
 		return
 	}
+	db := h.db.WithContext(c.Request.Context())
 
 	postIDs := make([]uint, 0, len(posts))
 	slugs := map[string]struct{}{}
@@ -970,7 +972,7 @@ func (h *PostHandler) fillWaterSectionPinState(posts []models.Post, now time.Tim
 		slugList = append(slugList, slug)
 	}
 	var sections []models.WaterSection
-	if err := h.db.Where("slug IN ?", slugList).Find(&sections).Error; err != nil {
+	if err := db.Where("slug IN ?", slugList).Find(&sections).Error; err != nil {
 		return
 	}
 	sectionIDBySlug := map[string]uint{}
@@ -984,7 +986,7 @@ func (h *PostHandler) fillWaterSectionPinState(posts []models.Post, now time.Tim
 	}
 
 	var pins []models.WaterSectionPin
-	if err := h.db.
+	if err := db.
 		Where("post_id IN ? AND section_id IN ? AND status = ? AND (pinned_until IS NULL OR pinned_until > ?)",
 			postIDs, sectionIDs, models.PinStatusActive, now).
 		Find(&pins).Error; err != nil {
@@ -1008,10 +1010,11 @@ func (h *PostHandler) fillWaterSectionPinState(posts []models.Post, now time.Tim
 	}
 }
 
-func (h *PostHandler) fillWaterSectionFeaturedState(posts []models.Post) {
+func (h *PostHandler) fillWaterSectionFeaturedState(c *gin.Context, posts []models.Post) {
 	if len(posts) == 0 {
 		return
 	}
+	db := h.db.WithContext(c.Request.Context())
 
 	postIDs := make([]uint, 0, len(posts))
 	slugs := map[string]struct{}{}
@@ -1031,7 +1034,7 @@ func (h *PostHandler) fillWaterSectionFeaturedState(posts []models.Post) {
 		slugList = append(slugList, slug)
 	}
 	var sections []models.WaterSection
-	if err := h.db.Where("slug IN ?", slugList).Find(&sections).Error; err != nil {
+	if err := db.Where("slug IN ?", slugList).Find(&sections).Error; err != nil {
 		return
 	}
 	sectionIDBySlug := map[string]uint{}
@@ -1045,7 +1048,7 @@ func (h *PostHandler) fillWaterSectionFeaturedState(posts []models.Post) {
 	}
 
 	var featureds []models.WaterSectionFeaturedPost
-	if err := h.db.
+	if err := db.
 		Where("post_id IN ? AND section_id IN ? AND status = ?",
 			postIDs, sectionIDs, models.SectionFeaturedStatusActive).
 		Find(&featureds).Error; err != nil {
@@ -1057,7 +1060,7 @@ func (h *PostHandler) fillWaterSectionFeaturedState(posts []models.Post) {
 		featuredIDByPostAndSection[key] = f.ID
 	}
 	var pendingApps []models.FeaturedApplication
-	if err := h.db.
+	if err := db.
 		Where("post_id IN ? AND status = ?", postIDs, "pending").
 		Find(&pendingApps).Error; err != nil {
 		return
@@ -1084,10 +1087,11 @@ func (h *PostHandler) fillWaterSectionFeaturedState(posts []models.Post) {
 
 // fillWaterSectionAuthorMeta 为水帖帖子的作者填充当前帖子所属版块内的等级与称号。
 // 仅当 board_id=BoardShuitie 且 post_type 有效时填充；其余帖子保持 WaterSectionAuthorMeta 为 nil。
-func (h *PostHandler) fillWaterSectionAuthorMeta(posts []models.Post) {
+func (h *PostHandler) fillWaterSectionAuthorMeta(c *gin.Context, posts []models.Post) {
 	if len(posts) == 0 {
 		return
 	}
+	db := h.db.WithContext(c.Request.Context())
 
 	type userSectionKey struct {
 		UserID    uint
@@ -1115,7 +1119,7 @@ func (h *PostHandler) fillWaterSectionAuthorMeta(posts []models.Post) {
 		slugList = append(slugList, slug)
 	}
 	var sections []models.WaterSection
-	if err := h.db.Where("slug IN ?", slugList).Find(&sections).Error; err != nil {
+	if err := db.Where("slug IN ?", slugList).Find(&sections).Error; err != nil {
 		return
 	}
 	sectionBySlug := map[string]models.WaterSection{}
@@ -1159,7 +1163,7 @@ func (h *PostHandler) fillWaterSectionAuthorMeta(posts []models.Post) {
 	}
 
 	var stats []models.WaterSectionUserStat
-	if err := h.db.
+	if err := db.
 		Where("user_id IN ? AND section_id IN ?", userIDs, sectionIDs).
 		Find(&stats).Error; err != nil {
 		return
@@ -1174,7 +1178,7 @@ func (h *PostHandler) fillWaterSectionAuthorMeta(posts []models.Post) {
 	customTitles := map[userSectionKey]string{} // (section, level) → title
 	{
 		var titles []models.WaterSectionLevelTitle
-		if err := h.db.Where("section_id IN ?", sectionIDs).Find(&titles).Error; err == nil {
+		if err := db.Where("section_id IN ?", sectionIDs).Find(&titles).Error; err == nil {
 			for _, t := range titles {
 				customTitles[userSectionKey{UserID: t.SectionID, SectionID: uint(t.Level)}] = t.Title
 			}
@@ -1226,7 +1230,7 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 		feedKind = "home_v3_poll"
 	}
 	userID := optionalFeedUserID(c)
-	pinned, err := feed.PinnedPosts(now)
+	pinned, err := feed.PinnedPosts(c.Request.Context(), now)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取置顶帖子失败"})
 		return
@@ -1271,13 +1275,13 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 		time.AfterFunc(10*time.Minute, func() { deleteSnapshot(sessionID) })
 	} else {
 		var normal []models.Post
-		timeQuery := h.db.Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).
+		timeQuery := h.db.WithContext(c.Request.Context()).Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).
 			Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
 			Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now)
 		if !supportsPoll {
 			timeQuery = timeQuery.Where("content_kind <> ?", models.PostContentKindPoll)
 		}
-		timeQuery = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(timeQuery, userID, "time", now)
+		timeQuery = services.NewFeedVisibilityService(h.db.WithContext(c.Request.Context())).ApplyFeedVisibility(timeQuery, userID, "time", now)
 		err = timeQuery.Order("created_at DESC, id DESC").Find(&normal).Error
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
@@ -1330,14 +1334,14 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 // 客户端应优先传 cursor_created_at + cursor_id，或传 next_cursor_token。
 func (h *PostHandler) getHomeLatestFeedV2(c *gin.Context, pinned []models.Post, page, limit, offset int, now time.Time, supportsPoll bool, algorithm string) {
 	userID := optionalFeedUserID(c)
-	query := h.db.Model(&models.Post{}).
+	query := h.db.WithContext(c.Request.Context()).Model(&models.Post{}).
 		Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).
 		Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
 		Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now)
 	if !supportsPoll {
 		query = query.Where("content_kind <> ?", models.PostContentKindPoll)
 	}
-	query = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(query, userID, "time", now)
+	query = services.NewFeedVisibilityService(h.db.WithContext(c.Request.Context())).ApplyFeedVisibility(query, userID, "time", now)
 
 	var total int64
 	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
@@ -1455,7 +1459,7 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 	feed := services.NewHomeFeedService(h.db)
 	feed.SetPersonalization(h.feedShadow, h.feedRollout)
 	feed.SetPersonalizationV5(h.feedV5Shadow, h.feedV5Rollout)
-	pinned, err := feed.PinnedPosts(now)
+	pinned, err := feed.PinnedPosts(c.Request.Context(), now)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取置顶帖子失败"})
 		return
@@ -2489,8 +2493,9 @@ func (h *PostHandler) hydratePosts(c *gin.Context, posts []models.Post, now time
 	if len(posts) == 0 {
 		return
 	}
+	db := h.db.WithContext(c.Request.Context())
 
-	if err := services.LoadTopicsForPosts(h.db, posts); err != nil {
+	if err := services.LoadTopicsForPosts(db, posts); err != nil {
 		// Topic 表由独立 SQL/AutoMigrate 建立；兼容尚未执行迁移的旧环境，
 		// 不让新增的旁路 hydration 阻断原有帖子读取。
 		if !services.TopicSchemaUnavailable(err) {
@@ -2498,12 +2503,12 @@ func (h *PostHandler) hydratePosts(c *gin.Context, posts []models.Post, now time
 		}
 	}
 	h.fillLikes(c, posts)
-	h.fillWaterSectionPinState(posts, now)
-	h.fillWaterSectionFeaturedState(posts)
-	h.fillWaterSectionAuthorMeta(posts)
+	h.fillWaterSectionPinState(c, posts, now)
+	h.fillWaterSectionFeaturedState(c, posts)
+	h.fillWaterSectionAuthorMeta(c, posts)
 	h.fillTeamRecruitmentMeta(c, posts, now)
 	if supportsPollRequest(c) {
-		_ = services.NewPollService(h.db).HydratePollPosts(posts, contextUserID(c))
+		_ = services.NewPollService(db).HydratePollPosts(posts, contextUserID(c))
 	}
 }
 
@@ -2517,9 +2522,10 @@ func (h *PostHandler) fillTeamRecruitmentMeta(c *gin.Context, posts []models.Pos
 	if len(teamPostIDs) == 0 {
 		return
 	}
+	db := h.db.WithContext(c.Request.Context())
 
 	var recruitments []models.WaterTeamRecruitment
-	if err := h.db.Where("post_id IN ?", teamPostIDs).Find(&recruitments).Error; err != nil {
+	if err := db.Where("post_id IN ?", teamPostIDs).Find(&recruitments).Error; err != nil {
 		log.Printf("fillTeamRecruitmentMeta 获取招募信息失败: %v", err)
 		return
 	}
@@ -2540,7 +2546,7 @@ func (h *PostHandler) fillTeamRecruitmentMeta(c *gin.Context, posts []models.Pos
 		Count         int64
 	}
 	var appCounts []AppCount
-	if err := h.db.Model(&models.WaterTeamApplication{}).
+	if err := db.Model(&models.WaterTeamApplication{}).
 		Select("recruitment_id, count(*) as count").
 		Where("recruitment_id IN ?", recIDs).
 		Group("recruitment_id").
@@ -2559,7 +2565,7 @@ func (h *PostHandler) fillTeamRecruitmentMeta(c *gin.Context, posts []models.Pos
 
 	var myApps []models.WaterTeamApplication
 	if userID != 0 {
-		h.db.Where("recruitment_id IN ? AND applicant_id = ?", recIDs, userID).Find(&myApps)
+		db.Where("recruitment_id IN ? AND applicant_id = ?", recIDs, userID).Find(&myApps)
 	}
 	myAppMap := make(map[uint]string)
 	for _, app := range myApps {

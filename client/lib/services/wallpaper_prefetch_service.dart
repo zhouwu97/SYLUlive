@@ -9,8 +9,8 @@ import 'package:path_provider/path_provider.dart';
 class WallpaperPrefetchService {
   static const String baseUrl =
       'https://sylulive.online/uploads/wallpapers/originals';
-  static Future<void>? _prefetchTask;
   static final Map<String, Future<void>> _activeDownloads = {};
+  static const int _maxImageBytes = 20 * 1024 * 1024;
 
   static const List<String> bundledWallpaperNames = [
     'tablet_landscape_01.png',
@@ -27,11 +27,12 @@ class WallpaperPrefetchService {
     return path.join(appDir.path, 'remote_$fileName');
   }
 
-  static Future<bool> isValidImageFile(File file, {bool fullDecode = false}) async {
+  static Future<bool> isValidImageFile(File file,
+      {bool fullDecode = false}) async {
     try {
       if (!await file.exists()) return false;
       final length = await file.length();
-      if (length < 12) return false;
+      if (length < 12 || length > _maxImageBytes) return false;
 
       // 快速头部魔数校验，避免主线程频繁完整解码图片
       final raf = await file.open(mode: FileMode.read);
@@ -80,6 +81,43 @@ class WallpaperPrefetchService {
     }
   }
 
+  static File _verificationMarker(File image) => File('${image.path}.verified');
+
+  static Future<bool> _isVerifiedCachedFile(File file) async {
+    if (!await file.exists() || await file.length() <= 0) return false;
+    final marker = _verificationMarker(file);
+    if (!await marker.exists()) return false;
+    try {
+      final parts = (await marker.readAsString()).trim().split('|');
+      if (parts.length != 2) return false;
+      final recordedLength = int.tryParse(parts[0]);
+      final recordedModified = int.tryParse(parts[1]);
+      final stat = await file.stat();
+      return recordedLength == await file.length() &&
+          recordedModified == stat.modified.microsecondsSinceEpoch;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> _writeVerificationMarker(File file) async {
+    final stat = await file.stat();
+    await _verificationMarker(file).writeAsString(
+      '${await file.length()}|${stat.modified.microsecondsSinceEpoch}',
+      flush: true,
+    );
+  }
+
+  static Future<void> _deleteImageAndMarker(File file) async {
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+    try {
+      final marker = _verificationMarker(file);
+      if (await marker.exists()) await marker.delete();
+    } catch (_) {}
+  }
+
   static Future<void> downloadAndVerifyImage(
     Dio dio,
     String url,
@@ -104,14 +142,20 @@ class WallpaperPrefetchService {
 
     // 如果已经存在且有效，则跳过
     if (await targetFile.exists() && await targetFile.length() > 0) {
-      if (await isValidImageFile(targetFile)) {
+      // 只有已完成过完整解码并留下校验标记的资源才走轻量魔数检查。
+      // 旧版本或被外部替换过的文件会在这里补做一次完整校验。
+      final verified = await _isVerifiedCachedFile(targetFile);
+      if (verified && await isValidImageFile(targetFile)) {
         return;
-      } else {
-        debugPrint('Existing file $targetPath is invalid, deleting...');
-        try {
-          await targetFile.delete();
-        } catch (_) {}
       }
+      final validExisting =
+          await isValidImageFile(targetFile, fullDecode: true);
+      if (validExisting) {
+        await _writeVerificationMarker(targetFile);
+        return;
+      }
+      debugPrint('Existing file $targetPath is invalid, deleting...');
+      await _deleteImageAndMarker(targetFile);
     }
 
     final tempFile = File('$targetPath.download');
@@ -133,28 +177,29 @@ class WallpaperPrefetchService {
       throw Exception('Failed to download image: HTTP ${response.statusCode}');
     }
 
+    if (response.data!.length > _maxImageBytes) {
+      await _deleteImageAndMarker(tempFile);
+      throw Exception('Downloaded image exceeds the size limit');
+    }
     await tempFile.writeAsBytes(response.data!, flush: true);
 
     debugPrint('image path: ${tempFile.path}');
     debugPrint('exists: ${await tempFile.exists()}');
     debugPrint('size: ${await tempFile.length()}');
 
-    final valid = await isValidImageFile(tempFile);
+    final valid = await isValidImageFile(tempFile, fullDecode: true);
     debugPrint('valid image: $valid');
 
     if (!valid) {
-      try {
-        await tempFile.delete();
-      } catch (_) {}
+      await _deleteImageAndMarker(tempFile);
       throw Exception('Downloaded file is not a valid image');
     }
 
     if (await targetFile.exists()) {
-      try {
-        await targetFile.delete();
-      } catch (_) {}
+      await _deleteImageAndMarker(targetFile);
     }
     await tempFile.rename(targetFile.path);
+    await _writeVerificationMarker(targetFile);
   }
 
   static Future<void> prefetchAll() async {

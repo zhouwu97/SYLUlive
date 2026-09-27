@@ -96,16 +96,17 @@ type User struct {
 // PublicUserResponse 是所有面向其他用户的用户资料响应。
 // 数据库 User 同时承载认证、信誉和教务字段，绝不能直接作为公开 API 的嵌套对象返回。
 type PublicUserResponse struct {
-	ID                 uint   `json:"id"`
-	Nickname           string `json:"nickname"`
-	Avatar             string `json:"avatar"`
-	Background         string `json:"background"`
-	Exp                int    `json:"exp"`
-	CreditScore        int    `json:"credit_score"`
-	FollowersCount     int    `json:"followers_count"`
-	FollowingCount     int    `json:"following_count"`
-	TotalLikesReceived int    `json:"total_likes_received"`
-	IsFollowing        bool   `json:"is_following"`
+	ID                   uint   `json:"id"`
+	Nickname             string `json:"nickname"`
+	Avatar               string `json:"avatar"`
+	Background           string `json:"background"`
+	BackgroundPreviewURL string `json:"background_preview_url,omitempty"`
+	Exp                  int    `json:"exp"`
+	CreditScore          int    `json:"credit_score"`
+	FollowersCount       int    `json:"followers_count"`
+	FollowingCount       int    `json:"following_count"`
+	TotalLikesReceived   int    `json:"total_likes_received"`
+	IsFollowing          bool   `json:"is_following"`
 }
 
 // PublicUser 将数据库用户转换为安全的公开资料。

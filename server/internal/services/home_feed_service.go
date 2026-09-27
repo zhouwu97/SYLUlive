@@ -44,9 +44,13 @@ func (s *HomeFeedService) SetPersonalizationV5(shadow bool, percent int) {
 	s.v5RolloutPercent = percent
 }
 
-func (s *HomeFeedService) PinnedPosts(now time.Time) ([]models.Post, error) {
+func (s *HomeFeedService) PinnedPosts(ctx context.Context, now time.Time) ([]models.Post, error) {
+	db := s.db
+	if ctx != nil {
+		db = db.WithContext(ctx)
+	}
 	var posts []models.Post
-	query := s.db.Where("board_id = ? AND status IN ? AND is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?)", models.BoardShuitie, models.PublicPostStatuses(), true, now)
+	query := db.Where("board_id = ? AND status IN ? AND is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?)", models.BoardShuitie, models.PublicPostStatuses(), true, now)
 	if !s.includePoll {
 		query = query.Where("content_kind <> ?", models.PostContentKindPoll)
 	}
@@ -119,7 +123,7 @@ func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, user
 		PostID uint
 		Count  int64
 	}
-	if err := s.db.Model(&models.Reply{}).Select("post_id, COUNT(DISTINCT author_id) as count").Where("status = ? AND post_id IN ?", models.ReplyStatusNormal, ids).Group("post_id").Scan(&rows).Error; err != nil {
+	if err := db.Model(&models.Reply{}).Select("post_id, COUNT(DISTINCT author_id) as count").Where("status = ? AND post_id IN ?", models.ReplyStatusNormal, ids).Group("post_id").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	counts := map[uint]int64{}
@@ -130,7 +134,7 @@ func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, user
 	pollByPost := map[uint]models.Poll{}
 	if s.includePoll {
 		var polls []models.Poll
-		if err := s.db.Where("post_id IN ?", ids).Find(&polls).Error; err != nil {
+		if err := db.Where("post_id IN ?", ids).Find(&polls).Error; err != nil {
 			return nil, err
 		}
 		for _, poll := range polls {

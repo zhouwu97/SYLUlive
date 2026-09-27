@@ -470,6 +470,11 @@ class AuthProvider extends ChangeNotifier {
     _refreshTerminalFailure = false;
     _refreshFailureEpoch = null;
     final future = () async {
+      final cancelToken = CancelToken();
+      final budgetTimer = Timer(const Duration(seconds: 10), () {
+        // 共享刷新任务只取消自身的请求，不绑定任何单个页面的取消令牌。
+        cancelToken.cancel('Auth refresh cumulative budget exceeded (10s)');
+      });
       try {
         final installationId = await PushSettingsService.installationId();
         final response = await _dio.post(
@@ -482,7 +487,15 @@ class AuthProvider extends ChangeNotifier {
               if (installationId.isNotEmpty)
                 'X-Installation-ID': installationId,
             },
+            connectTimeout: const Duration(seconds: 10),
+            sendTimeout: const Duration(seconds: 10),
+            receiveTimeout: const Duration(seconds: 10),
+            extra: const <String, dynamic>{
+              'request_budget_ms': 10000,
+              'disable_safe_retry': true,
+            },
           ),
+          cancelToken: cancelToken,
         );
         if (epoch != _accountSessionEpoch || response.data is! Map) {
           return false;
@@ -569,6 +582,8 @@ class AuthProvider extends ChangeNotifier {
           },
         );
         return false;
+      } finally {
+        budgetTimer.cancel();
       }
     }();
     _refreshFuture = future;
@@ -1112,6 +1127,10 @@ class AuthProvider extends ChangeNotifier {
 
   Future<AuthState> _recoverUserWithToken(String token) async {
     final accountEpoch = _accountSessionEpoch;
+    final cancelToken = CancelToken();
+    final budgetTimer = Timer(const Duration(seconds: 10), () {
+      cancelToken.cancel('Auth recovery cumulative budget exceeded (10s)');
+    });
     try {
       final dio = Dio(BaseOptions(
         baseUrl: _dio.options.baseUrl,
@@ -1120,7 +1139,7 @@ class AuthProvider extends ChangeNotifier {
         receiveTimeout: const Duration(seconds: 10),
         sendTimeout: const Duration(seconds: 10),
       ));
-      final response = await dio.get('/user/profile');
+      final response = await dio.get('/user/profile', cancelToken: cancelToken);
       if (response.statusCode == 200 && response.data != null) {
         final userJson = Map<String, dynamic>.from(response.data);
         final candidate = _authSessionCandidate(token, userJson);
@@ -1140,6 +1159,8 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('恢复用户状态失败（网络错误等）: $e');
     } catch (e) {
       debugPrint('恢复用户状态失败: $e');
+    } finally {
+      budgetTimer.cancel();
     }
     return AuthState.recoveryFailed;
   }

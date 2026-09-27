@@ -160,6 +160,8 @@ func TestPollListCursorContinuesEndingOrder(t *testing.T) {
 	base := time.Date(2026, 9, 22, 8, 0, 0, 0, time.UTC)
 	seedPollRows(t, db, 1, activePollRows(4, base, time.Minute))
 	service := NewPollService(db)
+	// 固定测试时钟，避免硬编码的历史日期在现实时间推进后被判定为已结束。
+	service.SetNowForTest(func() time.Time { return base.Add(-time.Hour) })
 
 	first, err := service.List(PollListInput{Sort: "ending", Page: 1, Limit: 2}, 0)
 	if err != nil {

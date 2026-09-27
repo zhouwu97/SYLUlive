@@ -5,23 +5,32 @@ param(
     [string] $JPushAppKey = $env:JPUSH_APP_KEY,
     # 正式发布必须同时提供真实 CI 运行号、提交 SHA 和结论；单独传 passed 不再被当作验证证据。
     [string] $CiStatus = $env:RELEASE_CI_STATUS,
+    [string] $CiEvidenceStatus = $env:RELEASE_CI_EVIDENCE_STATUS,
     [string] $CiRunId = $env:RELEASE_CI_RUN_ID,
     [string] $CiHeadSha = $env:RELEASE_CI_HEAD_SHA,
     [string] $CiConclusion = $env:RELEASE_CI_CONCLUSION,
     [string] $CiRepository = $env:RELEASE_CI_REPOSITORY,
     [string] $CiWorkflow = $env:RELEASE_CI_WORKFLOW,
+    [string] $ReleaseDecision = $env:RELEASE_DECISION,
+    [string] $SecurityEvidenceStatus = $env:RELEASE_SECURITY_EVIDENCE_STATUS,
+    [string] $SecurityRunId = $env:RELEASE_SECURITY_RUN_ID,
+    [string] $SecurityWorkflow = $env:RELEASE_SECURITY_WORKFLOW,
     [string] $GitHubToken = $env:GITHUB_TOKEN,
     [string] $ServerContractStatus = $env:RELEASE_SERVER_CONTRACT_STATUS,
     [string] $ServerContractCommit = $env:RELEASE_SERVER_CONTRACT_COMMIT,
     # App 只编译客户端源码，但运行时依赖同一份 Server API 契约。
     # Server 侧有未提交改动时，manifest 里的 source_commit 就无法代表真实生产系统，
     # 因此必须显式承认，不能像 Web 那样默默放行。
-    [switch] $AllowDirtyServer
+    [switch] $AllowDirtyServer,
+    [switch] $RequireDependencyAudit
 )
 
 $ErrorActionPreference = 'Stop'
 $clientRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $repoRoot = (Resolve-Path (Join-Path $clientRoot '..')).Path
+if ($env:RELEASE_REQUIRE_DEPENDENCY_AUDIT -match '^(1|true|yes)$') {
+    $RequireDependencyAudit = $true
+}
 # 与既有正式发布证书一致；公钥指纹可入库，私钥仍只保存在签名环境。
 $expectedReleaseCertSha256 = 'A367486B8B5D5EEBF67D2849809CB9B09C5C3E4DC90D8015134AF416077EFB9E'
 
@@ -40,7 +49,8 @@ function Get-GitHubWorkflowEvidence {
         [string] $Workflow,
         [string] $RunId,
         [string] $HeadSha,
-        [string] $Token
+        [string] $Token,
+        [System.Collections.IDictionary] $RequiredJobAliases
     )
     if ($RunId -notmatch '^[1-9][0-9]*$') { throw "RELEASE_CI_RUN_ID must be a numeric GitHub Actions run id; got '$RunId'." }
     $headers = @{
@@ -69,7 +79,7 @@ function Get-GitHubWorkflowEvidence {
         throw "Workflow mismatch: expected $expectedWorkflow, got $($run.path)"
     }
     if ("$($run.status)" -ne 'completed') {
-        Write-Warning "GitHub Actions run $RunId is still $($run.status); App release checks are not verified."
+        Write-Warning "GitHub Actions run $RunId is still $($run.status); required job evidence is not verified."
     }
 
     $jobsUri = "https://api.github.com/repos/$encodedRepo/actions/runs/$RunId/jobs?filter=latest&per_page=100"
@@ -78,23 +88,13 @@ function Get-GitHubWorkflowEvidence {
     } catch {
         throw "Unable to verify jobs for GitHub Actions run ${RunId}: $($_.Exception.Message)"
     }
-    # App 发布不依赖 Web E2E；这些 job 覆盖服务端、Flutter、APK smoke 及其必要集成检查。
-    $requiredJobAliases = [ordered]@{
-        'server-format' = @('server-format', 'Go format check (changed files)')
-        'server' = @('server')
-        'postgres-integration' = @('postgres-integration')
-        'migration-upgrade' = @('migration-upgrade')
-        'edu-service' = @('edu-service')
-        'rag-service' = @('rag-service')
-        'client' = @('client')
-        'pgvector-integration' = @('pgvector-integration')
-        'client-platform-boundary' = @('client-platform-boundary')
-    }
-    $requiredJobs = @($requiredJobAliases.Keys)
+    $requiredJobs = @($RequiredJobAliases.Keys)
     $failedJobs = @()
+    $jobConclusions = [ordered]@{}
     foreach ($requiredJob in $requiredJobs) {
-        $aliases = $requiredJobAliases[$requiredJob]
+        $aliases = $RequiredJobAliases[$requiredJob]
         $job = @($jobs | Where-Object { $aliases -contains $_.name }) | Select-Object -First 1
+        $jobConclusions[$requiredJob] = if ($job) { "$($job.conclusion)" } else { $null }
         if (-not $job -or $job.status -ne 'completed' -or $job.conclusion -ne 'success') {
             $failedJobs += $requiredJob
         }
@@ -106,9 +106,10 @@ function Get-GitHubWorkflowEvidence {
         head_sha = "$($run.head_sha)".ToLowerInvariant()
         workflow_status = "$($run.status)"
         workflow_conclusion = if ($run.conclusion) { "$($run.conclusion)" } else { $null }
-        app_release_checks = ($run.status -eq 'completed' -and $failedJobs.Count -eq 0)
+        required_jobs_passed = ($run.status -eq 'completed' -and $failedJobs.Count -eq 0)
         required_jobs = $requiredJobs
         failed_jobs = $failedJobs
+        job_conclusions = $jobConclusions
     }
 }
 
@@ -155,18 +156,56 @@ function Assert-ServerContractPinned {
 $script:sourceCommit = Get-CleanReleaseCommit
 $script:sourceTree = Get-RepositoryBoundaryState
 Assert-ServerContractPinned -Areas $script:sourceTree
-$script:ciStatus = if ([string]::IsNullOrWhiteSpace($CiStatus)) { 'unverified' } else { $CiStatus.Trim().ToLowerInvariant() }
-if ($script:ciStatus -notin @('passed', 'failed', 'unverified')) {
-    throw "RELEASE_CI_STATUS must be passed, failed, or unverified; got '$script:ciStatus'."
+
+$ciRequiredJobAliases = [ordered]@{
+    'server-format' = @('server-format', 'Go format check (changed files)')
+    'server' = @('server')
+    'postgres-integration' = @('postgres-integration')
+    'migration-upgrade' = @('migration-upgrade')
+    'edu-service' = @('edu-service')
+    'rag-service' = @('rag-service')
+    'client' = @('client')
+    'pgvector-integration' = @('pgvector-integration')
+    'client-platform-boundary' = @('client-platform-boundary')
 }
-if ([string]::IsNullOrWhiteSpace($ServerContractStatus)) { $ServerContractStatus = 'unverified' }
-if ($ServerContractStatus -notin @('passed', 'failed', 'unverified')) {
-    throw "RELEASE_SERVER_CONTRACT_STATUS must be passed, failed, or unverified; got '$ServerContractStatus'."
+$securityRequiredJobAliases = [ordered]@{
+    'gitleaks' = @('gitleaks', 'Secret scan')
 }
-$script:ciVerified = $false
+if ($RequireDependencyAudit) {
+    $securityRequiredJobAliases['govulncheck'] = @('govulncheck', 'Go vulnerability scan')
+    $securityRequiredJobAliases['pip-audit'] = @('pip-audit', 'Python dependency audit')
+}
+
+$script:releaseDecision = if ([string]::IsNullOrWhiteSpace($ReleaseDecision)) {
+    'partial'
+} else {
+    $ReleaseDecision.Trim().ToLowerInvariant()
+}
+if ($script:releaseDecision -notin @('passed', 'blocked', 'partial', 'rolled_back')) {
+    throw "RELEASE_DECISION must be passed, blocked, partial, or rolled_back; got '$script:releaseDecision'."
+}
+
+$legacyCiStatus = if ([string]::IsNullOrWhiteSpace($CiStatus)) {
+    'unverified'
+} else {
+    $CiStatus.Trim().ToLowerInvariant()
+}
+if ($legacyCiStatus -notin @('passed', 'failed', 'unverified')) {
+    throw "RELEASE_CI_STATUS must be passed, failed, or unverified; got '$legacyCiStatus'."
+}
+$requestedCiEvidenceStatus = if ([string]::IsNullOrWhiteSpace($CiEvidenceStatus)) {
+    if ($legacyCiStatus -eq 'passed') { 'verified' } else { 'unverified' }
+} else {
+    $CiEvidenceStatus.Trim().ToLowerInvariant()
+}
+if ($requestedCiEvidenceStatus -notin @('verified', 'unverified', 'invalid')) {
+    throw "RELEASE_CI_EVIDENCE_STATUS must be verified, unverified, or invalid; got '$requestedCiEvidenceStatus'."
+}
+$script:ciEvidenceStatus = $requestedCiEvidenceStatus
 $script:ciEvidence = $null
-if ($script:ciStatus -eq 'passed' -and [string]::IsNullOrWhiteSpace($CiRunId)) {
-    throw 'RELEASE_CI_STATUS=passed requires a GitHub Actions run id so the result can be verified automatically.'
+$script:ciAppChecks = $false
+if ($script:ciEvidenceStatus -eq 'verified' -and [string]::IsNullOrWhiteSpace($CiRunId)) {
+    throw 'RELEASE_CI_EVIDENCE_STATUS=verified requires RELEASE_CI_RUN_ID (GitHub Actions run id) so the result can be verified automatically.'
 }
 if (-not [string]::IsNullOrWhiteSpace($CiRunId)) {
     if ([string]::IsNullOrWhiteSpace($CiRepository)) {
@@ -174,18 +213,67 @@ if (-not [string]::IsNullOrWhiteSpace($CiRunId)) {
         $CiRepository = Resolve-GitHubRepository -Remote $origin
     }
     if ([string]::IsNullOrWhiteSpace($CiWorkflow)) { $CiWorkflow = '.github/workflows/ci.yml' }
-    $script:ciEvidence = Get-GitHubWorkflowEvidence -Repository $CiRepository -Workflow $CiWorkflow -RunId $CiRunId -HeadSha $script:sourceCommit -Token $GitHubToken
+    $script:ciEvidence = Get-GitHubWorkflowEvidence -Repository $CiRepository -Workflow $CiWorkflow -RunId $CiRunId -HeadSha $script:sourceCommit -Token $GitHubToken -RequiredJobAliases $ciRequiredJobAliases
     if (-not [string]::IsNullOrWhiteSpace($CiHeadSha) -and $CiHeadSha.Trim().ToLowerInvariant() -ne $script:ciEvidence.head_sha) {
         throw 'RELEASE_CI_HEAD_SHA disagrees with the GitHub workflow run.'
     }
     if (-not [string]::IsNullOrWhiteSpace($CiConclusion) -and "$CiConclusion".Trim().ToLowerInvariant() -ne "$($script:ciEvidence.workflow_conclusion)".ToLowerInvariant()) {
         throw 'RELEASE_CI_CONCLUSION disagrees with the GitHub workflow run.'
     }
-    $script:ciVerified = [bool]$script:ciEvidence.app_release_checks
-    $script:ciStatus = if ($script:ciVerified) { 'passed' } else { 'failed' }
+    $script:ciEvidenceStatus = 'verified'
+    $script:ciAppChecks = [bool]$script:ciEvidence.required_jobs_passed
 }
+$script:ciWorkflowConclusion = if ($script:ciEvidence) { $script:ciEvidence.workflow_conclusion } else { $null }
+$script:ciStatus = if ($script:ciAppChecks) { 'passed' } elseif ($script:ciEvidenceStatus -eq 'verified') { 'failed' } else { 'unverified' }
+
+$requestedSecurityEvidenceStatus = if ([string]::IsNullOrWhiteSpace($SecurityEvidenceStatus)) {
+    'unverified'
+} else {
+    $SecurityEvidenceStatus.Trim().ToLowerInvariant()
+}
+if ($requestedSecurityEvidenceStatus -notin @('verified', 'unverified', 'invalid')) {
+    throw "RELEASE_SECURITY_EVIDENCE_STATUS must be verified, unverified, or invalid; got '$requestedSecurityEvidenceStatus'."
+}
+$script:securityEvidenceStatus = $requestedSecurityEvidenceStatus
+$script:securityEvidence = $null
+if ($script:securityEvidenceStatus -eq 'verified' -and [string]::IsNullOrWhiteSpace($SecurityRunId)) {
+    throw 'RELEASE_SECURITY_EVIDENCE_STATUS=verified requires RELEASE_SECURITY_RUN_ID.'
+}
+if (-not [string]::IsNullOrWhiteSpace($SecurityRunId)) {
+    if ([string]::IsNullOrWhiteSpace($CiRepository)) {
+        $origin = (& git -C $repoRoot config --get remote.origin.url).Trim()
+        $CiRepository = Resolve-GitHubRepository -Remote $origin
+    }
+    if ([string]::IsNullOrWhiteSpace($SecurityWorkflow)) { $SecurityWorkflow = '.github/workflows/security.yml' }
+    $script:securityEvidence = Get-GitHubWorkflowEvidence -Repository $CiRepository -Workflow $SecurityWorkflow -RunId $SecurityRunId -HeadSha $script:sourceCommit -Token $GitHubToken -RequiredJobAliases $securityRequiredJobAliases
+    $script:securityEvidenceStatus = 'verified'
+}
+$script:securityWorkflowConclusion = if ($script:securityEvidence) { $script:securityEvidence.workflow_conclusion } else { $null }
+$script:securityRequiredJobsPassed = if ($script:securityEvidence) { [bool]$script:securityEvidence.required_jobs_passed } else { $false }
+$gitleaksConclusion = if ($script:securityEvidence) { $script:securityEvidence.job_conclusions['gitleaks'] } else { $null }
+$script:gitleaksStatus = if ([string]::IsNullOrWhiteSpace($gitleaksConclusion)) {
+    'unknown'
+} elseif ($gitleaksConclusion -eq 'success') {
+    'success'
+} else {
+    'failure'
+}
+$script:dependencyAuditStatus = if (-not $RequireDependencyAudit) {
+    'not_required'
+} elseif ($script:securityEvidence -and
+    $script:securityEvidence.job_conclusions['govulncheck'] -eq 'success' -and
+    $script:securityEvidence.job_conclusions['pip-audit'] -eq 'success') {
+    'success'
+} else {
+    'failure'
+}
+
 $script:serverContractVerified = $false
 $script:serverContractEvidenceSupplied = $false
+if ([string]::IsNullOrWhiteSpace($ServerContractStatus)) { $ServerContractStatus = 'unverified' }
+if ($ServerContractStatus -notin @('passed', 'failed', 'unverified')) {
+    throw "RELEASE_SERVER_CONTRACT_STATUS must be passed, failed, or unverified; got '$ServerContractStatus'."
+}
 if ($ServerContractStatus -eq 'passed') {
     if (-not $script:sourceTree['server'].clean -or [string]::IsNullOrWhiteSpace($ServerContractCommit) -or
         $ServerContractCommit.Trim().ToLowerInvariant() -ne $script:sourceCommit.Trim().ToLowerInvariant()) {
@@ -193,9 +281,21 @@ if ($ServerContractStatus -eq 'passed') {
     }
     $script:serverContractEvidenceSupplied = $true
 }
-$script:serverContractVerified = [bool]($script:ciVerified -and $script:sourceTree['server'].clean)
-if ($script:ciStatus -ne 'passed') {
-    Write-Warning "RELEASE_CI_STATUS=$script:ciStatus —— 清单会如实记录，正式发布前请补上全绿的 CI 结果。"
+$script:serverContractVerified = [bool]($script:ciAppChecks -and $script:sourceTree['server'].clean)
+
+if ($script:releaseDecision -eq 'passed') {
+    $missingEvidence = @()
+    if ($script:ciEvidenceStatus -ne 'verified' -or -not $script:ciAppChecks) { $missingEvidence += 'CI' }
+    if ($script:securityEvidenceStatus -ne 'verified' -or -not $script:securityRequiredJobsPassed) { $missingEvidence += 'security required jobs' }
+    if ($script:gitleaksStatus -ne 'success') { $missingEvidence += 'gitleaks' }
+    if ($RequireDependencyAudit -and $script:dependencyAuditStatus -ne 'success') { $missingEvidence += 'dependency audit' }
+    if (-not $script:serverContractVerified) { $missingEvidence += 'server contract' }
+    if ($missingEvidence.Count -gt 0) {
+        throw "RELEASE_DECISION=passed requires verified release evidence: $($missingEvidence -join ', ')."
+    }
+}
+if ($script:releaseDecision -ne 'passed' -or $script:ciEvidenceStatus -ne 'verified' -or $script:securityEvidenceStatus -ne 'verified') {
+    Write-Warning "发布证据尚未形成 passed 决定：release_decision=$script:releaseDecision, ci_evidence_status=$script:ciEvidenceStatus, security_evidence_status=$script:securityEvidenceStatus。"
 }
 $androidRoot = Join-Path $clientRoot 'android'
 $androidAppRoot = Join-Path $androidRoot 'app'
@@ -328,17 +428,31 @@ try {
         server_contract_evidence_supplied = $script:serverContractEvidenceSupplied
         source_tree = $script:sourceTree
         ci_status = $script:ciStatus
-        ci_verified = $script:ciVerified
+        ci_evidence_status = $script:ciEvidenceStatus
+        ci_verified = ($script:ciEvidenceStatus -eq 'verified')
         ci_run_id = if ($script:ciEvidence) { $script:ciEvidence.run_id } else { $null }
         ci_repository = if ($script:ciEvidence) { $script:ciEvidence.repository } else { $null }
         ci_workflow = if ($script:ciEvidence) { $script:ciEvidence.workflow } else { $null }
         ci_head_sha = if ($script:ciEvidence) { $script:ciEvidence.head_sha } else { $null }
-        ci_conclusion = if ($script:ciEvidence) { $script:ciEvidence.workflow_conclusion } else { $null }
+        ci_conclusion = $script:ciWorkflowConclusion
         workflow_status = if ($script:ciEvidence) { $script:ciEvidence.workflow_status } else { $null }
-        workflow_conclusion = if ($script:ciEvidence) { $script:ciEvidence.workflow_conclusion } else { $null }
-        app_release_checks = if ($script:ciEvidence) { $script:ciEvidence.app_release_checks } else { $false }
+        workflow_conclusion = $script:ciWorkflowConclusion
+        evidence_status = $script:ciEvidenceStatus
+        release_decision = $script:releaseDecision
+        app_release_checks = $script:ciAppChecks
         app_release_required_jobs = if ($script:ciEvidence) { $script:ciEvidence.required_jobs } else { @() }
         app_release_failed_jobs = if ($script:ciEvidence) { $script:ciEvidence.failed_jobs } else { @() }
+        security_workflow_status = $script:securityEvidenceStatus
+        security_evidence_status = $script:securityEvidenceStatus
+        security_workflow_run_id = if ($script:securityEvidence) { $script:securityEvidence.run_id } else { $null }
+        security_workflow = if ($script:securityEvidence) { $script:securityEvidence.workflow } else { $SecurityWorkflow }
+        security_workflow_head_sha = if ($script:securityEvidence) { $script:securityEvidence.head_sha } else { $null }
+        security_workflow_conclusion = $script:securityWorkflowConclusion
+        security_required_jobs_passed = $script:securityRequiredJobsPassed
+        gitleaks_status = $script:gitleaksStatus
+        dependency_audit_status = $script:dependencyAuditStatus
+        security_required_jobs = if ($script:securityEvidence) { $script:securityEvidence.required_jobs } else { @($securityRequiredJobAliases.Keys) }
+        security_failed_jobs = if ($script:securityEvidence) { $script:securityEvidence.failed_jobs } else { @() }
         built_at_utc = [DateTime]::UtcNow.ToString('o')
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'release-manifest.json') -Encoding utf8
     Write-Host "Signed release artifact: $target"

@@ -18,6 +18,14 @@
 风险等级：
 构建物与校验值：
 CI 工作流和必要 jobs：
+workflow_conclusion：
+evidence_status：
+release_decision：
+security_workflow_status：
+security_evidence_status：
+security_workflow_run_id：
+gitleaks_status：
+dependency_audit_status：
 回滚入口：
 ~~~
 
@@ -75,7 +83,23 @@ CI 工作流和必要 jobs：
 
 ## 4. 业务验收矩阵
 
-根据发布范围选择场景，至少覆盖受影响链路和一条跨模块链路。
+### 4.1 验收触发规则
+
+先按改动类型选择适用场景，再执行下方矩阵。无关场景不要求形式化打勾，但跳过理由要写入发布记录。
+
+| 改动类型 | 必须覆盖 |
+| --- | --- |
+| 登录、Token、认证恢复 | 登录与会话、账号隔离、网络异常 |
+| Provider、缓存、异步请求 | 账号隔离、返回／取消、旧请求不能覆盖新状态 |
+| 上传、图片、文件 | 图片与文件、权限、网络失败 |
+| 管理员、封禁、治理 | 权限与管理、越权反例、撤销权限 |
+| 数据库迁移 | 兼容与升级、重复执行、回滚或向前恢复 |
+| 通知、后台任务 | 通知与后台、权限关闭、重启恢复 |
+| API 契约、错误码、分页或鉴权 | 旧客户端兼容、错误语义、客户端关键链路 |
+| 隐私、个人数据、权限或第三方 SDK | 对应隐私专项清单、数据最小化、日志检查 |
+| 真实 UI 样式、布局或动效 | 真实渲染、加载／空／失败状态、触控和无障碍 |
+
+根据发布范围选择场景，至少覆盖受影响链路和一条跨模块链路。R0 文案或说明性文档改动只需完成差异和链接检查。
 
 | 场景 | 验证要点 |
 | --- | --- |
@@ -100,7 +124,16 @@ CI 工作流和必要 jobs：
 证据：
 ~~~
 
-## 5. 服务端发布前检查
+## 5. 安全、隐私与权限门禁
+
+- [ ] security.yml 对应提交有可核验的 workflow_conclusion 和 evidence_status。
+- [ ] 每次正式发布的 Gitleaks job 成功；失败或证据缺失时阻断发布。
+- [ ] 涉及 Go、Python、依赖锁文件或依赖配置时，govulncheck、pip-audit 或对应依赖审计结果已记录。
+- [ ] 涉及隐私、权限、个人数据、SDK 或法律文本时，已执行对应的隐私发布清单、权限清单和第三方服务清单。
+- [ ] 公开接口的隐私不变量由自动测试或专项检查长期保护，不依赖每次发布手工抽查同一批接口。
+- [ ] 日志、构建物和 artifact 没有真实凭据、个人教务详情或未脱敏的敏感片段。
+
+## 6. 服务端发布前检查
 
 服务端发布按 DEPLOY.md 和 docs/ops/ 执行：
 
@@ -114,7 +147,7 @@ CI 工作流和必要 jobs：
 
 不得在生产运行目录执行 git pull、手工编译或绕过正式部署入口。
 
-## 6. Android 发布物检查
+## 7. Android 发布物检查
 
 按 docs/ops/app-release.md 和 client/scripts/build_release.ps1 构建正式包：
 
@@ -128,12 +161,13 @@ CI 工作流和必要 jobs：
 
 签名通过只证明签名校验通过，不能替代测试、业务验收或发布审批。
 
-## 7. CI 与发布判定
+## 8. CI 与发布判定
 
 ### 默认阻断
 
 - 相关服务端、客户端必要 job、权限、迁移、签名或发布脚本失败；
 - 必要测试跳过、取消或无法确认；
+- Gitleaks 失败或安全工作流证据无法核验；
 - 构建物来源、提交、配置或签名无法对应；
 - 关键业务链路无法完成或失败后无法恢复；
 - 没有备份、回滚入口或必要授权。
@@ -142,7 +176,19 @@ CI 工作流和必要 jobs：
 
 与本次发布范围无关的独立端失败可以单独登记，但必须保留整体 CI 的真实结论，并记录负责人、影响范围、复查时间和放行依据。不能因为某端暂不公开就改写整体状态。
 
-## 8. 发布后验证
+### 状态记录
+
+发布记录分开填写：
+
+~~~text
+workflow_conclusion: success / failure / cancelled / skipped / timed_out / unknown
+evidence_status: verified / unverified / invalid
+release_decision: passed / blocked / partial / rolled_back
+~~~
+
+工作流失败但日志和 job 结果可核验时，workflow_conclusion 为 failure，evidence_status 仍可为 verified；这不等于 release_decision 可以填写 passed。
+
+## 9. 发布后验证
 
 - [ ] health、version、数据库连接和网关检查通过。
 - [ ] 至少完成登录、核心读取、一个写入链路和错误恢复。
@@ -150,7 +196,7 @@ CI 工作流和必要 jobs：
 - [ ] 安全事件、邮件、通知和外部服务状态符合本次范围。
 - [ ] 已开始观察窗口，并记录开始时间、责任人和异常升级入口。
 
-## 9. 回滚和关闭
+## 10. 回滚和关闭
 
 - [ ] 已确认代码、配置和数据库的回滚边界。
 - [ ] 发生阻断问题时先止损，保留日志、构建物和配置证据。
@@ -158,12 +204,19 @@ CI 工作流和必要 jobs：
 - [ ] 发布记录填写实际结果、未验证范围、已知问题和后续任务。
 - [ ] 只有完成发布后检查并由责任人签收，才能标记为已部署。
 
-## 10. 结果记录模板
+## 11. 结果记录模板
 
 ~~~text
 发布状态：passed / blocked / rolled_back / partial
+workflow_conclusion：
+evidence_status：
+release_decision：
 实际提交：
 实际构建物：
+security_workflow_run_id：
+security_evidence_status：
+gitleaks_status：
+dependency_audit_status：
 自动检查：
 业务验收：
 部署后检查：

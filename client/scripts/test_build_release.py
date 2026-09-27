@@ -79,6 +79,10 @@ class ReleaseBuildTests(unittest.TestCase):
         manifest = json.loads((self.output / "release-manifest.json").read_text(encoding="utf-8-sig"))
         self.assertEqual(manifest["source_commit"], self.commit)
         self.assertEqual(manifest["version"], "1.7.3+1706")
+        self.assertEqual(manifest["release_decision"], "partial")
+        self.assertEqual(manifest["evidence_status"], "unverified")
+        self.assertEqual(manifest["security_workflow_status"], "unverified")
+        self.assertEqual(manifest["gitleaks_status"], "unknown")
         self.assertEqual((self.output / "shenliyuan-release.apk").read_bytes(), b"new fixture apk")
 
     def test_dirty_source_blocks_before_flutter(self):
@@ -101,6 +105,13 @@ class ReleaseBuildTests(unittest.TestCase):
         result = self.build_with_env({"RELEASE_CI_STATUS": "passed"})
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("GitHub Actions run id", result.stderr)
+        self.assertFalse((self.tools / "invoked").exists())
+
+    def test_passed_release_requires_security_and_ci_evidence(self):
+        result = self.build_with_env({"RELEASE_DECISION": "passed"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires verified release evidence", result.stderr)
+        self.assertIn("security required jobs", result.stderr)
         self.assertFalse((self.tools / "invoked").exists())
 
     def test_source_changed_during_build_is_rejected(self):

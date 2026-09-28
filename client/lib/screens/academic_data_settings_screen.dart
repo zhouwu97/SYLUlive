@@ -104,8 +104,11 @@ class _AcademicDataSettingsScreenState
       if (store != null) {
         for (final pending in store.pendingCleanup) {
           try {
+            final includeLegacy = store.cleanupIncludesLegacy(pending);
             await AcademicIdentityLifecycleCoordinator(
-                    controller: _session, preferences: prefs)
+                    controller: _session,
+                    preferences: prefs,
+                    includeLegacyAuxiliary: includeLegacy)
                 .clearLocalIdentity(pending);
             await store.acknowledgeCleanup(pending);
           } catch (_) {
@@ -203,6 +206,9 @@ class _AcademicDataSettingsScreenState
             providerId: provider,
             studentId: initialStudentId,
           );
+    final legacyCleanupIntent = initialIdentity != null &&
+        _session.identity == initialIdentity &&
+        _session.providerId == provider;
     bool scopeCurrent() {
       return mounted &&
           _session.appUserId == appUserId &&
@@ -230,6 +236,7 @@ class _AcademicDataSettingsScreenState
           current: targetCurrent,
           expectedStudentId: initialStudentId,
           requireExpectedStudent: true,
+          allowLegacyCleanup: legacyCleanupIntent,
         );
         if (!committed || !scopeCurrent()) return;
         // 先阻断当前运行时，再按已捕获的旧完整身份清理；清理期间不再
@@ -237,9 +244,7 @@ class _AcademicDataSettingsScreenState
         final adoptedStudent =
             initialStore.entry(provider)['student_id']?.toString().trim();
         if (initialIdentity != null && adoptedStudent != initialStudentId) {
-          final wasCurrent = _session.identity == initialIdentity &&
-              _session.providerId == provider;
-          if (wasCurrent) {
+          if (legacyCleanupIntent) {
             await _session.acceptIdentityUnbound(initialIdentity);
           }
           final lifecycle = AcademicIdentityLifecycleCoordinator(
@@ -249,7 +254,7 @@ class _AcademicDataSettingsScreenState
           try {
             await lifecycle.clearLocalIdentity(
               initialIdentity,
-              wasCurrent: wasCurrent,
+              wasCurrent: legacyCleanupIntent,
             );
             await initialStore.acknowledgeCleanup(initialIdentity);
           } catch (_) {
@@ -312,6 +317,17 @@ class _AcademicDataSettingsScreenState
     return mergeAcademicIdentityStanding(
       localAccounts: local,
       serverBindings: _identities,
+    );
+  }
+
+  String _identityStandingLabel(AcademicIdentityBinding binding) {
+    final hasServerBinding = _identities.any((server) =>
+        server.providerId == binding.providerId &&
+        server.studentId == binding.studentId);
+    return academicIdentityStandingLabel(
+      binding,
+      readStatus: _serverIdentityStatus,
+      hasServerBinding: hasServerBinding,
     );
   }
 
@@ -516,9 +532,12 @@ class _AcademicDataSettingsScreenState
         controller: _session,
         preferences: await AppPreferencesStore.getInstance(),
       );
-      await _session.providerRouter?.accountStore
-          ?.remove(identity.providerId, fromCloud: false);
-      await lifecycle.clearLocalIdentity(identity);
+      await _session.providerRouter?.accountStore?.remove(
+        identity.providerId,
+        fromCloud: false,
+        allowLegacyCleanup: true,
+      );
+      await lifecycle.clearLocalIdentity(identity, wasCurrent: true);
       await _session.providerRouter?.accountStore?.acknowledgeCleanup(identity);
       await _session.acceptIdentityUnbound(identity);
       if (!mounted) return;
@@ -668,9 +687,8 @@ class _AcademicDataSettingsScreenState
               SettingsTile(
                 icon: Icons.school_outlined,
                 title: binding.providerId.displayName,
-                subtitle:
-                    '${_maskIdentity(binding.studentId)} · '
-                    '${academicIdentityStandingLabel(binding)}',
+                subtitle: '${_maskIdentity(binding.studentId)} · '
+                    '${_identityStandingLabel(binding)}',
                 trailing:
                     _session.identity == binding.toIdentity(_session.appUserId!)
                         ? const SettingsStatusBadge(

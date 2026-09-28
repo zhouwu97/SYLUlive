@@ -765,7 +765,11 @@ class EduProvider extends ChangeNotifier {
         controller.providerRouter != null) {
       final router = controller.providerRouter!;
       try {
-        await router.accountStore!.remove(identity.providerId, fromCloud: true);
+        await router.accountStore!.remove(
+          identity.providerId,
+          fromCloud: true,
+          allowLegacyCleanup: true,
+        );
         await controller.acceptIdentityUnbound(identity);
       } catch (_) {
         return OperationResult.fail('本机移除未完成，请重试');
@@ -774,7 +778,7 @@ class EduProvider extends ChangeNotifier {
         await AcademicIdentityLifecycleCoordinator(
                 controller: controller,
                 preferences: await AppPreferencesStore.getInstance())
-            .clearLocalIdentity(identity);
+            .clearLocalIdentity(identity, wasCurrent: true);
         await router.accountStore!.acknowledgeCleanup(identity);
       } catch (_) {
         _errorMessage = '账号已移除，本机残留资料待清理';

@@ -292,6 +292,11 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
         if (identical(_reconcileRunning, shared)) {
           _reconcileRunning = null;
         }
+        // 严格等待者也只等待自己声明的 force 版本；共享任务已经满足
+        // 该版本时直接结束，不能因为 requireSuccess=true 绕过合并再跑一轮。
+        if (requestedForceVersion <= _reconcileForceCompletedVersion) {
+          return;
+        }
         continue;
       }
 

@@ -62,12 +62,26 @@ const academicAssuranceLegacyInherited = 'legacy_inherited';
 /// 身份状态文案：「本机已连接」不等于「身份已核验」。
 ///
 /// 历史回填仍可能按兼容策略拥有准入，文案单独说明其来源，避免误称为本次学校核验。
-String academicIdentityStandingLabel(AcademicIdentityBinding binding) {
-  if (binding.isSchoolVerified) return '已完成学生认证';
-  if (binding.verificationMethod == academicVerificationMethodLegacyMigration) {
-    return binding.verified ? '继承历史服务器认证状态' : '历史身份待重新认证';
+/// 首次读取失败时没有服务端快照，不能把本机账号渲染成确定的“未认证”。
+String academicIdentityStandingLabel(
+  AcademicIdentityBinding binding, {
+  AcademicIdentityReadStatus? readStatus,
+  bool hasServerBinding = true,
+}) {
+  if (!hasServerBinding &&
+      (readStatus == AcademicIdentityReadStatus.unknown ||
+          readStatus == AcademicIdentityReadStatus.loading ||
+          readStatus == AcademicIdentityReadStatus.error)) {
+    return '本机已配置，学生认证状态暂未确认';
   }
-  return '仅本机连接，未完成学生认证';
+  final label = binding.isSchoolVerified
+      ? '已完成学生认证'
+      : binding.verificationMethod == academicVerificationMethodLegacyMigration
+          ? (binding.verified ? '继承历史服务器认证状态' : '历史身份待重新认证')
+          : '仅本机连接，未完成学生认证';
+  return readStatus == AcademicIdentityReadStatus.error && hasServerBinding
+      ? '上次成功确认：$label'
+      : label;
 }
 
 /// 合并「本机连过谁」与「服务端记录的身份状态」。

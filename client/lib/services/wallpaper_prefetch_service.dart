@@ -181,66 +181,72 @@ class WallpaperPrefetchService {
     }
 
     final tempFile = File('$targetPath.download');
-
-    final response = await dio.get<ResponseBody>(
-      url,
-      options: Options(
-        responseType: ResponseType.stream,
-        receiveTimeout: const Duration(seconds: 30),
-      ),
-      cancelToken: cancelToken,
-    );
-
-    debugPrint('status: ${response.statusCode}');
-    debugPrint('content-type: ${response.headers['content-type']}');
-    final declaredLength = int.tryParse(
-      response.headers.value(Headers.contentLengthHeader) ?? '',
-    );
-    debugPrint('content-length: $declaredLength');
-
-    if (response.statusCode != 200 || response.data == null) {
-      throw Exception('Failed to download image: HTTP ${response.statusCode}');
-    }
-
-    if (declaredLength != null && declaredLength > _maxImageBytes) {
-      throw Exception('Downloaded image exceeds the size limit');
-    }
-    var received = 0;
-    final sink = tempFile.openWrite();
+    var completedSuccessfully = false;
     try {
-      await for (final chunk in response.data!.stream) {
-        if (cancelToken?.isCancelled == true) {
-          throw StateError('壁纸下载已取消');
-        }
-        received += chunk.length;
-        if (received > _maxImageBytes) {
-          cancelToken?.cancel('wallpaper_size_limit');
-          throw Exception('Downloaded image exceeds the size limit');
-        }
-        sink.add(chunk);
+      final response = await dio.get<ResponseBody>(
+        url,
+        options: Options(
+          responseType: ResponseType.stream,
+          receiveTimeout: const Duration(seconds: 30),
+        ),
+        cancelToken: cancelToken,
+      );
+
+      debugPrint('status: ${response.statusCode}');
+      debugPrint('content-type: ${response.headers['content-type']}');
+      final declaredLength = int.tryParse(
+        response.headers.value(Headers.contentLengthHeader) ?? '',
+      );
+      debugPrint('content-length: $declaredLength');
+
+      if (response.statusCode != 200 || response.data == null) {
+        throw Exception('Failed to download image: HTTP ${response.statusCode}');
       }
-      await sink.flush();
+
+      if (declaredLength != null && declaredLength > _maxImageBytes) {
+        throw Exception('Downloaded image exceeds the size limit');
+      }
+      var received = 0;
+      final sink = tempFile.openWrite();
+      try {
+        await for (final chunk in response.data!.stream) {
+          if (cancelToken?.isCancelled == true) {
+            throw StateError('壁纸下载已取消');
+          }
+          received += chunk.length;
+          if (received > _maxImageBytes) {
+            cancelToken?.cancel('wallpaper_size_limit');
+            throw Exception('Downloaded image exceeds the size limit');
+          }
+          sink.add(chunk);
+        }
+        await sink.flush();
+      } finally {
+        await sink.close();
+      }
+
+      debugPrint('image path: ${tempFile.path}');
+      debugPrint('exists: ${await tempFile.exists()}');
+      debugPrint('size: ${await tempFile.length()}');
+
+      final valid = await isValidImageFile(tempFile, fullDecode: true);
+      debugPrint('valid image: $valid');
+
+      if (!valid) {
+        throw Exception('Downloaded file is not a valid image');
+      }
+
+      if (await targetFile.exists()) {
+        await _deleteImageAndMarker(targetFile);
+      }
+      await tempFile.rename(targetFile.path);
+      await _writeVerificationMarker(targetFile);
+      completedSuccessfully = true;
     } finally {
-      await sink.close();
+      if (!completedSuccessfully) {
+        await _deleteImageAndMarker(tempFile);
+      }
     }
-
-    debugPrint('image path: ${tempFile.path}');
-    debugPrint('exists: ${await tempFile.exists()}');
-    debugPrint('size: ${await tempFile.length()}');
-
-    final valid = await isValidImageFile(tempFile, fullDecode: true);
-    debugPrint('valid image: $valid');
-
-    if (!valid) {
-      await _deleteImageAndMarker(tempFile);
-      throw Exception('Downloaded file is not a valid image');
-    }
-
-    if (await targetFile.exists()) {
-      await _deleteImageAndMarker(targetFile);
-    }
-    await tempFile.rename(targetFile.path);
-    await _writeVerificationMarker(targetFile);
   }
 
   static Future<void> prefetchAll() async {
@@ -316,12 +322,12 @@ class WallpaperPrefetchService {
           _readUint16Le(header, 8),
         );
       }
-      if (header.length >= 16 &&
+      if (header.length >= 12 &&
           header[0] == 0x52 &&
           header[1] == 0x49 &&
           header[2] == 0x46 &&
           header[3] == 0x46) {
-        return _readWebpMetadata(header);
+        return await _readWebpMetadata(raf, length);
       }
       if (header.length >= 3 &&
           header[0] == 0xFF &&
@@ -365,42 +371,81 @@ class WallpaperPrefetchService {
     return null;
   }
 
-  static _ImageMetadata? _readWebpMetadata(List<int> bytes) {
+  static Future<_ImageMetadata?> _readWebpMetadata(
+    RandomAccessFile raf,
+    int fileLength,
+  ) async {
+    if (fileLength < 20) return null;
+    await raf.setPosition(0);
+    final header = await raf.read(12);
+    if (!_supportedMagic(header)) return null;
+    final riffSize = _readUint32Le(header, 4);
+    if (riffSize < 4 || riffSize + 8 > fileLength) return null;
+
     var offset = 12;
-    while (offset + 8 <= bytes.length) {
-      final chunk = String.fromCharCodes(bytes.sublist(offset, offset + 4));
-      final size = _readUint32Le(bytes, offset + 4);
+    var inspectedHeaderBytes = 12;
+    while (offset + 8 <= fileLength &&
+        inspectedHeaderBytes + 8 <= _maxMetadataBytes) {
+      await raf.setPosition(offset);
+      final chunkHeader = await raf.read(8);
+      inspectedHeaderBytes += chunkHeader.length;
+      if (chunkHeader.length != 8) return null;
+
+      final chunk = String.fromCharCodes(chunkHeader.sublist(0, 4));
+      final size = _readUint32Le(chunkHeader, 4);
       final payload = offset + 8;
-      if (payload + size > bytes.length) break;
-      if (chunk == 'VP8X' && size >= 10) {
+      final end = payload + size + (size.isOdd ? 1 : 0);
+      if (end < payload || end > riffSize + 8 || end > fileLength) return null;
+
+      if (chunk == 'VP8X') {
+        if (size < 10) return null;
+        await raf.setPosition(payload);
+        final data = await raf.read(10);
+        if (data.length != 10) return null;
+        inspectedHeaderBytes += data.length;
         return _ImageMetadata(
-          1 +
-              bytes[payload + 4] +
-              (bytes[payload + 5] << 8) +
-              (bytes[payload + 6] << 16),
-          1 +
-              bytes[payload + 7] +
-              (bytes[payload + 8] << 8) +
-              (bytes[payload + 9] << 16),
+          1 + data[4] + (data[5] << 8) + (data[6] << 16),
+          1 + data[7] + (data[8] << 8) + (data[9] << 16),
         );
       }
-      if (chunk == 'VP8L' && size >= 5 && bytes[payload] == 0x2F) {
-        final width = 1 +
-            bytes[payload + 1] +
-            ((bytes[payload + 2] & 0x3F) << 8) +
-            ((bytes[payload + 3] & 0x03) << 14);
-        final height = 1 +
-            ((bytes[payload + 3] >> 2) & 0x3F) +
-            ((bytes[payload + 4] & 0xFF) << 6);
+
+      if (chunk == 'VP8L') {
+        if (size < 5) return null;
+        await raf.setPosition(payload);
+        final data = await raf.read(5);
+        if (data.length != 5 || data[0] != 0x2F) return null;
+        inspectedHeaderBytes += data.length;
+        // 宽高是签名后的连续两个 14 位字段，分别从同一个小端位流读取。
+        final bits =
+            data[1] | (data[2] << 8) | (data[3] << 16) | (data[4] << 24);
+        // bits 29..31 为 3 位规范版本号，当前版本必须为 0。
+        if (((bits >> 29) & 0x07) != 0) return null;
+        return _ImageMetadata(
+          (bits & 0x3FFF) + 1,
+          ((bits >> 14) & 0x3FFF) + 1,
+        );
+      }
+
+      if (chunk == 'VP8 ') {
+        if (size < 10) return null;
+        await raf.setPosition(payload);
+        final data = await raf.read(10);
+        if (data.length != 10 ||
+            data[3] != 0x9D ||
+            data[4] != 0x01 ||
+            data[5] != 0x2A) {
+          return null;
+        }
+        inspectedHeaderBytes += data.length;
+        final width = _readUint16Le(data, 6) & 0x3FFF;
+        final height = _readUint16Le(data, 8) & 0x3FFF;
+        if (width == 0 || height == 0) return null;
         return _ImageMetadata(width, height);
       }
-      if (chunk == 'VP8 ' && size >= 10 && bytes[payload + 3] == 0x9D) {
-        return _ImageMetadata(
-          _readUint16Le(bytes, payload + 6) & 0x3FFF,
-          _readUint16Le(bytes, payload + 8) & 0x3FFF,
-        );
-      }
-      offset = payload + size + (size.isOdd ? 1 : 0);
+
+      // 未知 chunk 只跳过声明的有界范围，不要求整个压缩 payload 进入
+      // 元数据缓冲，从而允许尺寸头位于大于 1 MiB 的后续 chunk 之后。
+      offset = end;
     }
     return null;
   }

@@ -171,9 +171,12 @@ final class AcademicLoginCoordinator {
       }) {
         if (controller.appUserId != user) return;
         try {
+          final includeLegacy =
+              accountStore?.cleanupIncludesLegacy(identity) ?? false;
           await AcademicIdentityLifecycleCoordinator(
                   controller: controller,
                   preferences: preferences,
+                  includeLegacyAuxiliary: includeLegacy,
                   credentials: credentialStore
                           is IdentityScopedAcademicCredentialStore
                       ? credentialStore as IdentityScopedAcademicCredentialStore
@@ -920,9 +923,17 @@ final class AcademicLoginCoordinator {
     final accountStore = router?.accountStore;
     final identity = controller.identity;
     if (router != null && identity != null) {
+      final replacedIdentity = _replacedIdentity;
+      final replacesCurrentIdentity = replacedIdentity != null &&
+          replacedIdentity.appUserId == identity.appUserId &&
+          replacedIdentity.providerId == identity.providerId &&
+          replacedIdentity != identity;
       // 先可靠记录本机目标和同步意图，云端请求永远不在成功判定路径。
       try {
-        await accountStore!.commitIdentity(identity);
+        await accountStore!.commitIdentity(
+          identity,
+          allowLegacyCleanup: replacesCurrentIdentity,
+        );
       } catch (_) {
         await controller.cancelLocalConnection();
         return const AcademicLoginOutcome(
@@ -1000,7 +1011,7 @@ final class AcademicLoginCoordinator {
                           is IdentityScopedAcademicCredentialStore
                       ? credentialStore as IdentityScopedAcademicCredentialStore
                       : null)
-              .clearLocalIdentity(old);
+              .clearLocalIdentity(old, wasCurrent: true);
           await accountStore?.acknowledgeCleanup(old);
         } catch (_) {
           saveWarning = true;

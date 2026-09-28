@@ -120,15 +120,20 @@ final class LocalAcademicAccountStore {
     return queued;
   }
 
-  Future<void> commitIdentity(AcademicIdentityKey identity) => update((state) {
+  Future<void> commitIdentity(
+    AcademicIdentityKey identity, {
+    bool allowLegacyCleanup = false,
+  }) =>
+      update((state) {
         state['_active_provider'] = identity.providerId.value;
         final e = _entry(state, identity.providerId);
-        final previousStudent = e['student_id'];
-        if (previousStudent != null && previousStudent != identity.studentId) {
-          final cleanup =
-              e.putIfAbsent('cleanup_students', () => <dynamic>[]) as List;
-          if (!cleanup.contains(previousStudent)) cleanup.add(previousStudent);
-        }
+        final previousStudent = e['student_id']?.toString().trim();
+        _queueCleanup(
+          e,
+          previousStudent,
+          identity.studentId,
+          allowLegacyCleanup: allowLegacyCleanup,
+        );
         e['student_id'] = identity.studentId;
         e['enabled'] = true;
         e['rejected_epoch'] = null;
@@ -144,15 +149,20 @@ final class LocalAcademicAccountStore {
         }
       });
 
-  Future<void> remove(AcademicProviderId provider, {required bool fromCloud}) =>
+  Future<void> remove(
+    AcademicProviderId provider, {
+    required bool fromCloud,
+    bool allowLegacyCleanup = false,
+  }) =>
       update((state) {
         final e = _entry(state, provider);
-        final student = e['student_id'];
-        if (student != null) {
-          final cleanup =
-              e.putIfAbsent('cleanup_students', () => <dynamic>[]) as List;
-          if (!cleanup.contains(student)) cleanup.add(student);
-        }
+        final student = e['student_id']?.toString().trim();
+        _queueCleanup(
+          e,
+          student,
+          null,
+          allowLegacyCleanup: allowLegacyCleanup,
+        );
         e['student_id'] = null;
         e['enabled'] = false;
         e['credential_epoch'] = (e['credential_epoch'] as int? ?? 0) + 1;
@@ -170,10 +180,25 @@ final class LocalAcademicAccountStore {
               studentId: student as String)))
       .toList();
 
+  /// 读取与 cleanup intent 一起持久化的旧版兼容数据认领许可。
+  ///
+  /// 只有采用配置时已经证明旧身份是当前身份，才会写入这个标记；恢复
+  /// 时不能根据当前 controller 的身份重新猜测，否则切号后会扩大清理范围。
+  bool cleanupIncludesLegacy(AcademicIdentityKey identity) {
+    if (identity.appUserId != userId) return false;
+    final legacy =
+        entry(identity.providerId)['cleanup_legacy_students'] as List?;
+    return legacy
+            ?.any((student) => student?.toString() == identity.studentId) ??
+        false;
+  }
+
   Future<void> acknowledgeCleanup(AcademicIdentityKey identity) =>
       update((state) {
         final e = _entry(state, identity.providerId);
         (e['cleanup_students'] as List? ?? []).remove(identity.studentId);
+        (e['cleanup_legacy_students'] as List? ?? [])
+            .remove(identity.studentId);
       });
 
   AcademicProviderId? get activeProvider =>
@@ -353,6 +378,7 @@ final class LocalAcademicAccountStore {
     bool Function()? current,
     String? expectedStudentId,
     bool requireExpectedStudent = false,
+    bool allowLegacyCleanup = false,
   }) {
     var mutated = false;
     void mutate(Map<String, dynamic> state) {
@@ -364,7 +390,12 @@ final class LocalAcademicAccountStore {
       final previousStudent = e['student_id']?.toString().trim();
       if (e['server_missing'] == true) {
         // 云端没有可采用的目标，显式采用云端即解除本机对应身份。
-        _queueCleanup(e, previousStudent, null);
+        _queueCleanup(
+          e,
+          previousStudent,
+          null,
+          allowLegacyCleanup: allowLegacyCleanup,
+        );
         e['student_id'] = null;
         e['enabled'] = false;
         e['snapshot'] = null;
@@ -382,7 +413,12 @@ final class LocalAcademicAccountStore {
       final nextStudent = cloud['state'] == 'active'
           ? cloud['student_id']?.toString().trim()
           : null;
-      _queueCleanup(e, previousStudent, nextStudent);
+      _queueCleanup(
+        e,
+        previousStudent,
+        nextStudent,
+        allowLegacyCleanup: allowLegacyCleanup,
+      );
       e['student_id'] = nextStudent;
       e['enabled'] = true;
       e['suppress_restore'] = cloud['state'] != 'active';
@@ -403,14 +439,20 @@ final class LocalAcademicAccountStore {
   static void _queueCleanup(
     Map<String, dynamic> entry,
     String? previousStudent,
-    String? nextStudent,
-  ) {
+    String? nextStudent, {
+    bool allowLegacyCleanup = false,
+  }) {
     final previous = previousStudent?.trim() ?? '';
     final next = nextStudent?.trim() ?? '';
     if (previous.isEmpty || previous == next) return;
     final cleanup =
         entry.putIfAbsent('cleanup_students', () => <dynamic>[]) as List;
     if (!cleanup.contains(previous)) cleanup.add(previous);
+    if (allowLegacyCleanup) {
+      final legacy = entry.putIfAbsent(
+          'cleanup_legacy_students', () => <dynamic>[]) as List;
+      if (!legacy.contains(previous)) legacy.add(previous);
+    }
   }
 }
 

@@ -424,7 +424,7 @@ void main() {
     });
 
     test('旧版迁移身份不能凭服务端旧 verified 回执获得本次核验状态', () {
-      final legacy = AcademicIdentityBinding(
+      const legacy = AcademicIdentityBinding(
         providerId: AcademicProviderId.syluUndergraduate,
         studentId: 'U-002',
         verified: true,
@@ -439,7 +439,7 @@ void main() {
     });
 
     test('服务端撤销历史回填资格后显示待重新认证', () {
-      final legacy = AcademicIdentityBinding(
+      const legacy = AcademicIdentityBinding(
         providerId: AcademicProviderId.syluUndergraduate,
         studentId: 'U-002',
         verified: false,
@@ -482,6 +482,29 @@ void main() {
       );
       expect(schoolVerified.isSchoolVerified, isTrue);
       expect(academicIdentityStandingLabel(schoolVerified), '已完成学生认证');
+    });
+
+    test('首次可信身份读取失败时不把本机账号断言为未认证', () {
+      final localOnly = binding(
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: 'U-001',
+      );
+      expect(
+        academicIdentityStandingLabel(
+          localOnly,
+          readStatus: AcademicIdentityReadStatus.error,
+          hasServerBinding: false,
+        ),
+        '本机已配置，学生认证状态暂未确认',
+      );
+      expect(
+        academicIdentityStandingLabel(
+          localOnly,
+          readStatus: AcademicIdentityReadStatus.empty,
+          hasServerBinding: false,
+        ),
+        '仅本机连接，未完成学生认证',
+      );
     });
 
     test('本机账号与服务端可信绑定合并，不能一律显示成未认证', () {

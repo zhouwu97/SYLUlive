@@ -248,18 +248,96 @@ void main() {
     router.syncAppUser('force-user');
     await router.loadIdentityBindings(scheduleReconcile: false);
 
-    final normal = router.reconcileAccountConfiguration(requireSuccess: true);
+    // 普通点击入口省略 requireSuccess，命中原先被节流吞掉的参数组合。
+    final normal = router.reconcileAccountConfiguration();
     await firstGetStarted.future;
-    final forced = router.reconcileAccountConfiguration(
-      force: true,
-      requireSuccess: true,
-    );
+    final forced = router.reconcileAccountConfiguration(force: true);
     releaseFirstGet.complete();
     await Future.wait([normal, forced]);
 
     expect(putCount, 1);
     // 首轮先确认空列表，force 调用必须在共享任务之后额外发起一次 GET。
     expect(getCount, 2);
+
+    final strictA = router.reconcileAccountConfiguration(
+      force: true,
+      requireSuccess: true,
+    );
+    final strictB = router.reconcileAccountConfiguration(
+      force: true,
+      requireSuccess: true,
+    );
+    final strictC = router.reconcileAccountConfiguration(
+      force: true,
+      requireSuccess: true,
+    );
+    await Future.wait([strictA, strictB, strictC]);
+    // 3 个并发严格等待者验证最多一轮必要补跑，不因 requireSuccess 再追加请求。
+    expect(getCount, 3);
+  });
+
+  test('共享同步失败时严格等待者抛出异常且补跑前切号不误消费新上下文强制意图', () async {
+    final dio = Dio();
+    var fail = true;
+    var getCount = 0;
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+      if (request.method == 'GET') {
+        getCount++;
+        if (fail) {
+          handler.reject(DioException(
+            requestOptions: request,
+            type: DioExceptionType.connectionError,
+            error: StateError('simulated network fault'),
+          ));
+          return;
+        }
+        handler.resolve(Response(
+          requestOptions: request,
+          statusCode: 200,
+          data: {'configs': <dynamic>[]},
+        ));
+        return;
+      }
+      handler.reject(DioException(
+        requestOptions: request,
+        type: DioExceptionType.badResponse,
+        error: StateError('unexpected config request'),
+      ));
+    }));
+    final router = AcademicProviderRouterRepository(
+      legacy: AcademicRepositoryImpl(
+        local: JiaowuLocalDataSource(),
+        legacy: LegacyServerDataSource(dio, networkEnabled: false),
+        source: AcademicSourceKind.legacy,
+      ),
+      registry: AcademicProviderRegistry([
+        _ProjectionProviderFactory(AcademicProviderId.syluUndergraduate),
+      ]),
+      configClient: AcademicAccountConfigClient(dio),
+    );
+    addTearDown(() {
+      router.close();
+      dio.close();
+    });
+    router.syncAppUser('user-a');
+    await router.loadIdentityBindings(scheduleReconcile: false);
+
+    // 共享任务失败，严格等待者抛错
+    await expectLater(
+      router.reconcileAccountConfiguration(requireSuccess: true),
+      throwsA(isA<DioException>()),
+    );
+    // 普通 force 调用吞错，且因 force: true 绕过 30 秒节流
+    await router.reconcileAccountConfiguration(force: true, requireSuccess: false);
+    expect(getCount, 2);
+
+    // 切号到 user-b，网络恢复
+    fail = false;
+    router.syncAppUser('user-b');
+    await router.loadIdentityBindings(scheduleReconcile: false);
+    // user-b 首次强制同步
+    await router.reconcileAccountConfiguration(force: true, requireSuccess: true);
+    expect(getCount, 3);
   });
   testWidgets('首次绑定过程中切到本机 Provider 时弹窗不变成直连登录', (tester) async {
     final legacyDio = Dio();

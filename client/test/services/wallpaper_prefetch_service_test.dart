@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -71,7 +72,7 @@ List<int> _losslessWebp() => base64Decode(
     );
 
 List<int> _largeLosslessWebp() {
-  final image = img.Image(width: 1024, height: 1024);
+  final image = img.Image(width: 1500, height: 1500);
   var seed = 0x13579BDF;
   for (var y = 0; y < image.height; y++) {
     for (var x = 0; x < image.width; x++) {
@@ -88,8 +89,12 @@ List<int> _largeLosslessWebp() {
   return img.encodeWebP(image);
 }
 
-List<int> _losslessWebpHeader({required int width, required int height}) {
-  final bits = (width - 1) | ((height - 1) << 14);
+List<int> _losslessWebpHeader({
+  required int width,
+  required int height,
+  int version = 0,
+}) {
+  final bits = (width - 1) | ((height - 1) << 14) | ((version & 0x07) << 29);
   final payload = <int>[0x2F, ..._le32(bits)];
   final body = <int>[
     ..._ascii('VP8L'),
@@ -253,13 +258,51 @@ void main() {
     }
   });
 
+  test('无损 WebP 合法版本头部通过元数据检查', () async {
+    final directory =
+        await Directory.systemTemp.createTemp('wallpaper-webp-ver0-');
+    final file =
+        File('${directory.path}${Platform.pathSeparator}valid-ver0.webp');
+    try {
+      await file.writeAsBytes(
+        _losslessWebpHeader(width: 800, height: 600, version: 0),
+        flush: true,
+      );
+      expect(await WallpaperPrefetchService.isValidImageFile(file), isTrue);
+    } finally {
+      await directory.delete(recursive: true);
+    }
+  });
+
+  test('VP8L 非零规范版本号在合法容器中被明确拒绝', () async {
+    final directory =
+        await Directory.systemTemp.createTemp('wallpaper-webp-version-');
+    final file =
+        File('${directory.path}${Platform.pathSeparator}invalid-ver.webp');
+    try {
+      await file.writeAsBytes(
+        _losslessWebpHeader(width: 800, height: 600, version: 1),
+        flush: true,
+      );
+      expect(
+        await WallpaperPrefetchService.isValidImageFile(
+          file,
+          fullDecode: true,
+        ),
+        isFalse,
+      );
+    } finally {
+      await directory.delete(recursive: true);
+    }
+  });
+
   test('无损 WebP 真实像素超过输入上限时不能被错误低估', () async {
     final directory =
         await Directory.systemTemp.createTemp('wallpaper-webp-pixels-');
     final file = File('${directory.path}${Platform.pathSeparator}huge.webp');
     try {
       await file.writeAsBytes(
-        _losslessWebpHeader(width: 8000, height: 4001),
+        _losslessWebpHeader(width: 8000, height: 4001, version: 0),
         flush: true,
       );
       expect(await WallpaperPrefetchService.isValidImageFile(file), isFalse);
@@ -302,21 +345,28 @@ void main() {
     }
   });
 
-  test('无 Content-Length 且流式累计超过上限时停止接收并清理临时文件', () async {
+  test('无 Content-Length 的实际超限流立即取消并删除临时文件', () async {
     final directory =
         await Directory.systemTemp.createTemp('wallpaper-stream-limit-');
     final targetPath =
         '${directory.path}${Platform.pathSeparator}stream-overflow.png';
-    Stream<Uint8List> generateInfiniteChunks() async* {
-      final chunk = Uint8List(1024 * 1024);
-      chunk.fillRange(0, chunk.length, 0xAA);
-      for (var i = 0; i < 25; i++) {
-        yield chunk;
-      }
-    }
+    var upstreamCancelled = false;
+    late final StreamController<Uint8List> streamController;
+    streamController = StreamController<Uint8List>(
+      onCancel: () {
+        upstreamCancelled = true;
+      },
+    );
+
+    // 依次发送 10 MiB + 10 MiB + 1 byte
+    final chunk10M = Uint8List(10 * 1024 * 1024);
+    final chunk1B = Uint8List(1);
+    streamController.add(chunk10M);
+    streamController.add(chunk10M);
+    streamController.add(chunk1B);
 
     final dio = Dio()
-      ..httpClientAdapter = _StreamAdapter(generateInfiniteChunks());
+      ..httpClientAdapter = _StreamAdapter(streamController.stream);
     try {
       await expectLater(
         WallpaperPrefetchService.downloadAndVerifyImage(
@@ -328,8 +378,10 @@ void main() {
       );
       expect(await File(targetPath).exists(), isFalse);
       expect(await File('$targetPath.download').exists(), isFalse);
+      expect(upstreamCancelled, isTrue);
     } finally {
       dio.close(force: true);
+      await streamController.close();
       await directory.delete(recursive: true);
     }
   });
@@ -361,37 +413,6 @@ void main() {
       expect(await File('$targetPath.download').exists(), isFalse);
     } finally {
       dio.close(force: true);
-      await directory.delete(recursive: true);
-    }
-  });
-
-  test('VP8L 非零规范版本号被拒绝', () async {
-    final directory =
-        await Directory.systemTemp.createTemp('wallpaper-webp-version-');
-    final file = File('${directory.path}${Platform.pathSeparator}invalid-ver.webp');
-    try {
-      const bits = (100 - 1) | ((100 - 1) << 14) | (1 << 29); // version = 1
-      final payload = <int>[0x2F, ..._le32(bits)];
-      final body = <int>[
-        ..._ascii('VP8L'),
-        ..._le32(payload.length),
-        ...payload,
-      ];
-      final bytes = <int>[
-        ..._ascii('RIFF'),
-        ..._le32(body.length + 4),
-        ..._ascii('WEBP'),
-        ...body,
-      ];
-      await file.writeAsBytes(bytes, flush: true);
-      expect(
-        await WallpaperPrefetchService.isValidImageFile(
-          file,
-          fullDecode: true,
-        ),
-        isFalse,
-      );
-    } finally {
       await directory.delete(recursive: true);
     }
   });

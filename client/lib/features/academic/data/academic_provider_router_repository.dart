@@ -273,18 +273,29 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     bool force = false,
   }) async {
     final user = _appUserId;
+    final generation = _contextGeneration;
     if (user == null || configClient == null || _closed) return;
     final requestedForceVersion =
         force ? ++_reconcileForceVersion : _reconcileForceVersion;
     while (true) {
-      if (_closed || _appUserId != user) return;
+      if (_closed || _appUserId != user || _contextGeneration != generation) {
+        return;
+      }
       final shared = _reconcileRunning;
       if (shared != null) {
         try {
           await shared;
         } catch (_) {
           // 每个调用方单独决定是否上抛，手动同步不能继承后台任务的吞错策略。
-          if (requireSuccess) rethrow;
+          if (requireSuccess &&
+              !_closed &&
+              _appUserId == user &&
+              _contextGeneration == generation) {
+            rethrow;
+          }
+          return;
+        }
+        if (_closed || _appUserId != user || _contextGeneration != generation) {
           return;
         }
         // Future 完成和 owner 的 finally 可能处于同一个 microtask；清掉
@@ -315,16 +326,26 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
       final operationWasForced =
           operationForceVersion > _reconcileForceCompletedVersion;
       final operation =
-          _reconcileAccountConfiguration(user, _contextGeneration);
+          _reconcileAccountConfiguration(user, generation);
       _reconcileRunning = operation;
       try {
         await operation;
         // 同一共享任务期间到达的多个 force 请求由这一轮合并满足，
         // 后续调用只需等待，不再制造请求风暴。
-        _reconcileForceCompletedVersion =
-            operationWasForced ? _reconcileForceVersion : operationForceVersion;
+        // 必须核对当前代次与账号仍属于本任务，避免旧任务结束将完成计数写入新账号。
+        if (!_closed &&
+            _appUserId == user &&
+            _contextGeneration == generation) {
+          _reconcileForceCompletedVersion = operationWasForced
+              ? _reconcileForceVersion
+              : operationForceVersion;
+        }
       } catch (_) {
-        if (requireSuccess) rethrow;
+        if (!_closed &&
+            _appUserId == user &&
+            _contextGeneration == generation) {
+          if (requireSuccess) rethrow;
+        }
       } finally {
         if (identical(_reconcileRunning, operation)) _reconcileRunning = null;
       }

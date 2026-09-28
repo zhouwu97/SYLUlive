@@ -339,6 +339,67 @@ void main() {
     await router.reconcileAccountConfiguration(force: true, requireSuccess: true);
     expect(getCount, 3);
   });
+
+  test('旧账号强制任务在切号后结束不污染新账号的完成版本与节流判断', () async {
+    final dio = Dio();
+    var getCount = 0;
+    Completer<void>? suspendGet;
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) async {
+      if (request.method == 'GET') {
+        getCount++;
+        if (suspendGet != null && !suspendGet.isCompleted) {
+          await suspendGet.future;
+        }
+        handler.resolve(Response(
+          requestOptions: request,
+          statusCode: 200,
+          data: {'configs': <dynamic>[]},
+        ));
+        return;
+      }
+      handler.reject(DioException(requestOptions: request));
+    }));
+    final router = AcademicProviderRouterRepository(
+      legacy: AcademicRepositoryImpl(
+        local: JiaowuLocalDataSource(),
+        legacy: LegacyServerDataSource(dio, networkEnabled: false),
+        source: AcademicSourceKind.legacy,
+      ),
+      registry: AcademicProviderRegistry([
+        _ProjectionProviderFactory(AcademicProviderId.syluUndergraduate),
+      ]),
+      configClient: AcademicAccountConfigClient(dio),
+    );
+    addTearDown(() {
+      router.close();
+      dio.close();
+    });
+
+    // 1. User A 完成一次强制同步 (version 1)
+    router.syncAppUser('user-a');
+    await router.loadIdentityBindings(scheduleReconcile: false);
+    await router.reconcileAccountConfiguration(force: true);
+    expect(getCount, 1);
+
+    // 2. User A 挂起一次普通同步
+    suspendGet = Completer<void>();
+    final userAOperation = router.reconcileAccountConfiguration();
+
+    // 3. 切到 User B；B 计数重置为 0
+    router.syncAppUser('user-b');
+    await router.loadIdentityBindings(scheduleReconcile: false);
+
+    // 4. 释放 User A 的旧任务并等待其结束
+    suspendGet.complete();
+    await userAOperation;
+
+    // 5. User B 第一次点击 force: true (requireSuccess: false 默认值)
+    // 如果 User A 的旧任务污染了 User B 的 completedVersion，User B 将落回 30 秒节流而不会发起 GET；
+    // 修复后，User B 的 requestedForceVersion (1) > completedVersion (0)，必须真正发起一次 GET。
+    final beforeCount = getCount;
+    await router.reconcileAccountConfiguration(force: true, requireSuccess: false);
+    expect(getCount, beforeCount + 1);
+  });
   testWidgets('首次绑定过程中切到本机 Provider 时弹窗不变成直连登录', (tester) async {
     final legacyDio = Dio();
     final router = AcademicProviderRouterRepository(

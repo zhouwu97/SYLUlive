@@ -160,6 +160,7 @@ class WallpaperPrefetchService {
     String targetPath,
     CancelToken? cancelToken,
   ) async {
+    final effectiveCancelToken = cancelToken ?? CancelToken();
     final targetFile = File(targetPath);
 
     // 如果已经存在且有效，则跳过
@@ -189,7 +190,7 @@ class WallpaperPrefetchService {
           responseType: ResponseType.stream,
           receiveTimeout: const Duration(seconds: 30),
         ),
-        cancelToken: cancelToken,
+        cancelToken: effectiveCancelToken,
       );
 
       debugPrint('status: ${response.statusCode}');
@@ -210,12 +211,12 @@ class WallpaperPrefetchService {
       final sink = tempFile.openWrite();
       try {
         await for (final chunk in response.data!.stream) {
-          if (cancelToken?.isCancelled == true) {
+          if (effectiveCancelToken.isCancelled) {
             throw StateError('壁纸下载已取消');
           }
           received += chunk.length;
           if (received > _maxImageBytes) {
-            cancelToken?.cancel('wallpaper_size_limit');
+            effectiveCancelToken.cancel('wallpaper_size_limit');
             throw Exception('Downloaded image exceeds the size limit');
           }
           sink.add(chunk);

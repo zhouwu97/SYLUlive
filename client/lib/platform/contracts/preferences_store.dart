@@ -58,6 +58,12 @@ abstract interface class AppPreferencesStore {
     _instance = null;
     _loading = null;
   }
+
+  /// 供测试使用：设置自定义实例（支持故障注入）
+  static void setCustomInstance(AppPreferencesStore? store) {
+    _instance = store;
+    _loading = null;
+  }
 }
 
 /// shared_preferences 在 Android、iOS、macOS 和 Windows 都提供同一套

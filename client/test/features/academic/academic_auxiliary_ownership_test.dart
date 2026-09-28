@@ -149,28 +149,37 @@ void main() {
     );
     await prefs.setString('legacy_widget_payload', 'old-data');
 
-    // 模拟首次认领持久化抛出异常
-    var attemptFailed = false;
-    try {
-      await AcademicAuxiliaryOwnership.clear(
+    // 真实注入：目标 academic_auxiliary_owner_widget 第一次 setString 返回 false
+    final failingPrefs = _FailingOwnerPreferencesStore(
+      prefs,
+      failKey: 'academic_auxiliary_owner_widget',
+      shouldFail: true,
+    );
+    AppPreferencesStore.setCustomInstance(failingPrefs);
+
+    var actionRan = false;
+    await expectLater(
+      AcademicAuxiliaryOwnership.clear(
         'widget',
         a,
-        () async {},
+        () async {
+          actionRan = true;
+          await prefs.remove('legacy_widget_payload');
+        },
         includeLegacy: store.cleanupIncludesLegacy(a),
-      );
-      // 制造一个前置写入失败
-      throw StateError('simulated storage failure');
-    } catch (_) {
-      attemptFailed = true;
-    }
-    expect(attemptFailed, isTrue);
-    // 失败时任务决不能被提前 acknowledge
+      ),
+      throwsStateError,
+    );
+    // 首次认领写失败时，实际删除动作绝不能执行！
+    expect(actionRan, isFalse);
     expect(store.pendingCleanup, contains(a));
     expect(prefs.getString('legacy_widget_payload'), 'old-data');
 
-    // 重启恢复：执行实际清理并确认
+    // 恢复正常存储，模拟重启恢复
+    AppPreferencesStore.setCustomInstance(prefs);
     final restarted = LocalAcademicAccountStore('u', prefs);
     expect(restarted.cleanupIncludesLegacy(a), isTrue);
+
     await AcademicAuxiliaryOwnership.clear(
       'widget',
       a,
@@ -295,4 +304,83 @@ void main() {
     expect(prefs.getString('widget_b_payload'), 'b_data');
     expect(prefs.getString('academic_auxiliary_owner_widget'), b.storageId);
   });
+
+  test('跨用户 identity 尝试确认清理任务时抛出 ArgumentError 且存储不变', () async {
+    final prefs = await AppPreferencesStore.getInstance();
+    final storeB = LocalAcademicAccountStore('user_b', prefs);
+    const idA = AcademicIdentityKey(
+      appUserId: 'user_a',
+      providerId: AcademicProviderId.syluUndergraduate,
+      studentId: 'same_student',
+    );
+    const idB = AcademicIdentityKey(
+      appUserId: 'user_b',
+      providerId: AcademicProviderId.syluUndergraduate,
+      studentId: 'same_student',
+    );
+    await storeB.commitIdentity(idB);
+    await storeB.mergeSnapshot({
+      'provider_id': idB.providerId.value,
+      'student_id': 'other',
+      'revision': 2,
+      'state': 'active',
+    });
+    await storeB.adoptCloud(idB.providerId, allowLegacyCleanup: true);
+    expect(storeB.pendingCleanup, contains(idB));
+    expect(storeB.cleanupIncludesLegacy(idB), isTrue);
+
+    // 调用 storeB 尝试确认 user_a 的 identity
+    expect(
+      () => storeB.acknowledgeCleanup(idA),
+      throwsA(isA<ArgumentError>()),
+    );
+    // storeB 中的清理任务完全不受影响
+    expect(storeB.pendingCleanup, contains(idB));
+    expect(storeB.cleanupIncludesLegacy(idB), isTrue);
+  });
+}
+
+final class _FailingOwnerPreferencesStore implements AppPreferencesStore {
+  final AppPreferencesStore delegate;
+  final String failKey;
+  bool shouldFail;
+  _FailingOwnerPreferencesStore(this.delegate,
+      {required this.failKey, this.shouldFail = true});
+
+  @override
+  Future<bool> setString(String key, String value) {
+    if (shouldFail && key == failKey) {
+      return Future.value(false);
+    }
+    return delegate.setString(key, value);
+  }
+
+  @override
+  bool containsKey(String key) => delegate.containsKey(key);
+  @override
+  bool? getBool(String key) => delegate.getBool(key);
+  @override
+  double? getDouble(String key) => delegate.getDouble(key);
+  @override
+  int? getInt(String key) => delegate.getInt(key);
+  @override
+  Set<String> getKeys() => delegate.getKeys();
+  @override
+  String? getString(String key) => delegate.getString(key);
+  @override
+  List<String>? getStringList(String key) => delegate.getStringList(key);
+  @override
+  Future<bool> remove(String key) => delegate.remove(key);
+  @override
+  Future<bool> clear() => delegate.clear();
+  @override
+  Future<bool> setBool(String key, bool value) => delegate.setBool(key, value);
+  @override
+  Future<bool> setDouble(String key, double value) =>
+      delegate.setDouble(key, value);
+  @override
+  Future<bool> setInt(String key, int value) => delegate.setInt(key, value);
+  @override
+  Future<bool> setStringList(String key, List<String> value) =>
+      delegate.setStringList(key, value);
 }

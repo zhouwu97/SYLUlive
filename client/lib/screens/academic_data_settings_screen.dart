@@ -521,26 +521,32 @@ class _AcademicDataSettingsScreenState
       ),
     );
     if (confirmed != true || !mounted) return;
+    final initialStore = _session.providerRouter?.accountStore;
+    final initialUser = _session.appUserId;
     final identity = _session.identity;
-    if (identity == null) {
+    if (identity == null || initialStore == null || initialUser == null) {
       setState(() => _error = '尚未确认教务身份，请恢复身份后重试');
       return;
     }
     setState(() => _saving = true);
     try {
-      final lifecycle = AcademicIdentityLifecycleCoordinator(
-        controller: _session,
-        preferences: await AppPreferencesStore.getInstance(),
-      );
-      await _session.providerRouter?.accountStore?.remove(
+      await initialStore.remove(
         identity.providerId,
         fromCloud: false,
         allowLegacyCleanup: true,
       );
+      final includeLegacy = initialStore.cleanupIncludesLegacy(identity);
+      final lifecycle = AcademicIdentityLifecycleCoordinator(
+        controller: _session,
+        preferences: await AppPreferencesStore.getInstance(),
+        includeLegacyAuxiliary: includeLegacy,
+      );
       await lifecycle.clearLocalIdentity(identity, wasCurrent: true);
-      await _session.providerRouter?.accountStore?.acknowledgeCleanup(identity);
-      await _session.acceptIdentityUnbound(identity);
-      if (!mounted) return;
+      await initialStore.acknowledgeCleanup(identity);
+      if (_session.appUserId == initialUser && _session.identity == identity) {
+        await _session.acceptIdentityUnbound(identity);
+      }
+      if (!mounted || _session.appUserId != initialUser) return;
       context.read<EduProvider>().clearMemoryForAccountTransition();
       context.read<CourseScheduleProvider>().clearAllUserState();
       if (mounted) Navigator.of(context).pop();

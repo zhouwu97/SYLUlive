@@ -195,6 +195,11 @@ final class LocalAcademicAccountStore {
 
   Future<void> acknowledgeCleanup(AcademicIdentityKey identity) =>
       update((state) {
+        if (identity.appUserId != userId) {
+          throw ArgumentError(
+            'Cannot acknowledge cleanup for identity ${identity.appUserId} in store of user $userId',
+          );
+        }
         final e = _entry(state, identity.providerId);
         (e['cleanup_students'] as List? ?? []).remove(identity.studentId);
         (e['cleanup_legacy_students'] as List? ?? [])

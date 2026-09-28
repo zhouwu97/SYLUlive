@@ -201,10 +201,18 @@ class WallpaperPrefetchService {
       debugPrint('content-length: $declaredLength');
 
       if (response.statusCode != 200 || response.data == null) {
+        effectiveCancelToken.cancel('wallpaper_http_error');
+        try {
+          await response.data?.stream.listen(null).cancel();
+        } catch (_) {}
         throw Exception('Failed to download image: HTTP ${response.statusCode}');
       }
 
       if (declaredLength != null && declaredLength > _maxImageBytes) {
+        effectiveCancelToken.cancel('wallpaper_size_limit');
+        try {
+          await response.data?.stream.listen(null).cancel();
+        } catch (_) {}
         throw Exception('Downloaded image exceeds the size limit');
       }
       var received = 0;

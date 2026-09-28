@@ -22,8 +22,10 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     this.onIdentityVerified,
     this.configClient,
     this.providerIdLoader,
-  });
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now;
 
+  final DateTime Function() _now;
   final AcademicRepository legacy;
   final AcademicProviderRegistry registry;
   final AcademicIdentityClient? identityClient;
@@ -188,7 +190,7 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
         return _lastServerIdentityBindings;
       }
       _lastServerIdentityBindings = bindings;
-      _serverIdentityLoadedAt = DateTime.now().toUtc();
+      _serverIdentityLoadedAt = _now().toUtc();
       _serverIdentityStatus = bindings.isEmpty
           ? AcademicIdentityReadStatus.empty
           : AcademicIdentityReadStatus.loaded;
@@ -317,11 +319,11 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
       if (!forceNeeded &&
           !requireSuccess &&
           lastAttempt != null &&
-          DateTime.now().difference(lastAttempt) <
+          _now().difference(lastAttempt) <
               const Duration(seconds: 30)) {
         return;
       }
-      _lastReconcileAttempt = DateTime.now();
+      _lastReconcileAttempt = _now();
       final operationForceVersion = _reconcileForceVersion;
       final operationWasForced =
           operationForceVersion > _reconcileForceCompletedVersion;

@@ -10,9 +10,8 @@ import 'package:shenliyuan/services/wallpaper_prefetch_service.dart';
 
 class _BytesAdapter implements HttpClientAdapter {
   final List<int> bytes;
-  final int? declaredLength;
 
-  _BytesAdapter(this.bytes, {this.declaredLength});
+  _BytesAdapter(this.bytes);
 
   @override
   void close({bool force = false}) {}
@@ -28,8 +27,6 @@ class _BytesAdapter implements HttpClientAdapter {
       200,
       headers: {
         Headers.contentTypeHeader: ['image/png'],
-        if (declaredLength != null)
-          Headers.contentLengthHeader: ['$declaredLength'],
       },
     );
   }
@@ -37,7 +34,8 @@ class _BytesAdapter implements HttpClientAdapter {
 
 class _StreamAdapter implements HttpClientAdapter {
   final Stream<Uint8List> stream;
-  _StreamAdapter(this.stream);
+  final int? declaredLength;
+  _StreamAdapter(this.stream, {this.declaredLength});
 
   @override
   void close({bool force = false}) {}
@@ -53,6 +51,8 @@ class _StreamAdapter implements HttpClientAdapter {
       200,
       headers: {
         Headers.contentTypeHeader: ['image/png'],
+        if (declaredLength != null)
+          Headers.contentLengthHeader: ['$declaredLength'],
       },
     );
   }
@@ -318,14 +318,24 @@ void main() {
     }
   });
 
-  test('Content-Length 超过下载上限时不创建正式缓存', () async {
+  test('Content-Length 超过下载上限时立即取消响应流且不创建正式缓存', () async {
     final directory =
         await Directory.systemTemp.createTemp('wallpaper-size-limit-');
     final targetPath =
         '${directory.path}${Platform.pathSeparator}too-large.png';
+    var upstreamCancelled = false;
+    late final StreamController<Uint8List> streamController;
+    streamController = StreamController<Uint8List>(
+      onCancel: () {
+        upstreamCancelled = true;
+      },
+    );
+    // 持续供应数据，模拟未结束的上游正文流
+    streamController.add(Uint8List.fromList([0x89, 0x50, 0x4E, 0x47]));
+
     final dio = Dio()
-      ..httpClientAdapter = _BytesAdapter(
-        const <int>[0x89, 0x50, 0x4E, 0x47],
+      ..httpClientAdapter = _StreamAdapter(
+        streamController.stream,
         declaredLength: 20 * 1024 * 1024 + 1,
       );
     try {
@@ -337,10 +347,13 @@ void main() {
         ),
         throwsException,
       );
+      // 必须在 dio.close(force: true) 前核对：上游流已被下载服务主动取消释放
+      expect(upstreamCancelled, isTrue);
       expect(await File(targetPath).exists(), isFalse);
       expect(await File('$targetPath.download').exists(), isFalse);
     } finally {
       dio.close(force: true);
+      await streamController.close();
       await directory.delete(recursive: true);
     }
   });

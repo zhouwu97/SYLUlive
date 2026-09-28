@@ -347,7 +347,10 @@ void main() {
     dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) async {
       if (request.method == 'GET') {
         getCount++;
-        if (suspendGet != null && !suspendGet.isCompleted) {
+        final targetUser = request.headers['X-Expected-App-User'];
+        if (targetUser == 'user-a' &&
+            suspendGet != null &&
+            !suspendGet.isCompleted) {
           await suspendGet.future;
         }
         handler.resolve(Response(
@@ -359,6 +362,7 @@ void main() {
       }
       handler.reject(DioException(requestOptions: request));
     }));
+    var now = DateTime(2026, 9, 28, 12, 0, 0);
     final router = AcademicProviderRouterRepository(
       legacy: AcademicRepositoryImpl(
         local: JiaowuLocalDataSource(),
@@ -369,6 +373,7 @@ void main() {
         _ProjectionProviderFactory(AcademicProviderId.syluUndergraduate),
       ]),
       configClient: AcademicAccountConfigClient(dio),
+      now: () => now,
     );
     addTearDown(() {
       router.close();
@@ -381,21 +386,29 @@ void main() {
     await router.reconcileAccountConfiguration(force: true);
     expect(getCount, 1);
 
-    // 2. User A 挂起一次普通同步
+    // 2. 可控时间推进越过 30 秒节流窗口，随后挂起 User A 的普通同步
+    now = now.add(const Duration(seconds: 31));
     suspendGet = Completer<void>();
     final userAOperation = router.reconcileAccountConfiguration();
+    // 等待 User A 的普通同步到达网络层并被 suspendGet 拦截
+    for (var i = 0; i < 50 && getCount < 2; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(getCount, 2);
 
-    // 3. 切到 User B；B 计数重置为 0
+    // 3. 切到 User B；完成 User B 的普通同步，建立 User B 自己的 30 秒节流窗口
     router.syncAppUser('user-b');
     await router.loadIdentityBindings(scheduleReconcile: false);
+    await router.reconcileAccountConfiguration();
+    expect(getCount, 3);
 
     // 4. 释放 User A 的旧任务并等待其结束
     suspendGet.complete();
     await userAOperation;
 
-    // 5. User B 第一次点击 force: true (requireSuccess: false 默认值)
-    // 如果 User A 的旧任务污染了 User B 的 completedVersion，User B 将落回 30 秒节流而不会发起 GET；
-    // 修复后，User B 的 requestedForceVersion (1) > completedVersion (0)，必须真正发起一次 GET。
+    // 5. 在 User B 的 30 秒节流窗口内，User B 第一次触发 force: true (requireSuccess: false 默认值)
+    // 若 User A 的旧任务污染了 User B 的 completedVersion，User B 将因 (1 <= 1) 且处于 30s 窗口而直接被节流阻断；
+    // 修复后，User B 的 requestedForceVersion (1) > completedVersion (0)，必须真正发起一次新的 GET 请求。
     final beforeCount = getCount;
     await router.reconcileAccountConfiguration(force: true, requireSuccess: false);
     expect(getCount, beforeCount + 1);

@@ -37,23 +37,17 @@ final class AcademicIdentityLifecycleCoordinator {
 
   static final Map<AcademicIdentityKey, Future<void>> _inFlight = {};
 
-  Future<void> clearLocalIdentity(
-    AcademicIdentityKey identity, {
-    bool? wasCurrent,
-  }) {
+  Future<void> clearLocalIdentity(AcademicIdentityKey identity) {
     final running = _inFlight[identity];
     if (running != null) return running;
-    final operation = _clearLocalIdentity(identity, wasCurrent: wasCurrent);
+    final operation = _clearLocalIdentity(identity);
     _inFlight[identity] = operation;
     return operation.whenComplete(() {
       if (identical(_inFlight[identity], operation)) _inFlight.remove(identity);
     });
   }
 
-  Future<void> _clearLocalIdentity(
-    AcademicIdentityKey identity, {
-    bool? wasCurrent,
-  }) async {
+  Future<void> _clearLocalIdentity(AcademicIdentityKey identity) async {
     if (!identity.isValid) throw ArgumentError('教务身份不完整');
     final connection = AcademicConnectionStore(identity, preferences);
     Object? failure;
@@ -67,13 +61,8 @@ final class AcademicIdentityLifecycleCoordinator {
     }
 
     final isCurrent = controller.identity == identity;
-    // 当前会话可能已先被 acceptIdentityUnbound 阻断；清理旧身份时仍需
-    // 使用调用方在阻断前确认的归属，决定是否处理旧版兼容附属数据。
-    final identityWasCurrent = wasCurrent ?? isCurrent;
-    if (identityWasCurrent) {
-      AcademicPersistenceRegistry.set(identity.appUserId, enabled: false);
-    }
     if (isCurrent) {
+      AcademicPersistenceRegistry.set(identity.appUserId, enabled: false);
       await attempt(controller.disconnect);
     }
     await connection.setConnected(false);
@@ -146,12 +135,12 @@ final class AcademicIdentityLifecycleCoordinator {
       await attempt(clearAuxiliary!);
     } else {
       await attempt(() => HomeWidgetService.clearCourseDataForIdentity(identity,
-          includeLegacy: identityWasCurrent || includeLegacyAuxiliary));
+          includeLegacy: isCurrent || includeLegacyAuxiliary));
       await attempt(() => HomeWidgetService.clearExamDataForIdentity(identity,
-          includeLegacy: identityWasCurrent || includeLegacyAuxiliary));
+          includeLegacy: isCurrent || includeLegacyAuxiliary));
       await attempt(() => CourseReminderService.instance.clearForIdentity(
           identity,
-          includeLegacy: identityWasCurrent || includeLegacyAuxiliary));
+          includeLegacy: isCurrent || includeLegacyAuxiliary));
     }
     await attempt(settings.clear);
     await attempt(() => settings.setSaveAcademicData(false));

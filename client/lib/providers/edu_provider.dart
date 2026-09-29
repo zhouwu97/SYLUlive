@@ -760,54 +760,27 @@ class EduProvider extends ChangeNotifier {
   Future<OperationResult<void>> unbind() async {
     final controller = _academicSessionController;
     final identity = controller?.identity;
-    final router = controller?.providerRouter;
-    final initialStore = router?.accountStore;
-    final appUserId = controller?.appUserId;
     if (controller != null &&
         identity != null &&
-        router != null &&
-        initialStore != null &&
-        appUserId != null) {
-      bool isCurrentScope() =>
-          controller.appUserId == appUserId &&
-          controller.providerRouter == router;
-
-      if (!isCurrentScope()) {
-        return OperationResult.fail('账号会话已变更，取消解绑');
-      }
-
+        controller.providerRouter != null) {
+      final router = controller.providerRouter!;
       try {
-        await initialStore.remove(
-          identity.providerId,
-          fromCloud: true,
-          allowLegacyCleanup: true,
-        );
+        await router.accountStore!.remove(identity.providerId, fromCloud: true);
+        await controller.acceptIdentityUnbound(identity);
       } catch (_) {
         return OperationResult.fail('本机移除未完成，请重试');
       }
-
-      // 提交解绑意图后，允许安全完成原身份的本地清理，
-      // 但只有仍在原上下文中才调用 controller 的会话卸载。
-      if (isCurrentScope() && controller.identity == identity) {
-        await controller.acceptIdentityUnbound(identity);
-      }
-
       try {
-        final includeLegacy = initialStore.cleanupIncludesLegacy(identity);
         await AcademicIdentityLifecycleCoordinator(
-          controller: controller,
-          preferences: await AppPreferencesStore.getInstance(),
-          includeLegacyAuxiliary: includeLegacy,
-        ).clearLocalIdentity(identity, wasCurrent: true);
-        await initialStore.acknowledgeCleanup(identity);
+                controller: controller,
+                preferences: await AppPreferencesStore.getInstance())
+            .clearLocalIdentity(identity);
+        await router.accountStore!.acknowledgeCleanup(identity);
       } catch (_) {
         _errorMessage = '账号已移除，本机残留资料待清理';
       }
-
-      if (isCurrentScope()) {
-        unawaited(router.syncConfiguration());
-        _applyAcademicSessionState();
-      }
+      unawaited(router.syncConfiguration());
+      _applyAcademicSessionState();
       return OperationResult.ok(null);
     }
     if (_academicSessionController?.sourceKind == AcademicSourceKind.legacy) {

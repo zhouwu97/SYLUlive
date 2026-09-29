@@ -281,22 +281,6 @@ class _ScheduleLocalReadFailure implements Exception {
   String toString() => '_ScheduleLocalReadFailure(${cause.runtimeType})';
 }
 
-/// 课表写入过程中账号或学期已经变化：本次操作必须整体中止。
-///
-/// 这与「课表账号或学期没变但保存失败」是两回事，也与「什么都还没写」是两回事。
-/// 旧实现统一抛 StateError(请重新操作)，于是已经落盘的改动被说成没发生：
-/// 用户按提示重新做一遍，切回原账号才发现多出一份重复规则。
-class ScheduleMutationAborted implements Exception {
-  const ScheduleMutationAborted({required this.persistedLocally});
-
-  /// 本次修改是否已经写进**原账号**的本地课表。
-  final bool persistedLocally;
-
-  @override
-  String toString() => persistedLocally
-      ? '课表账号或学期已变化，本次修改已保存在原账号的本地课表里，切回该账号后可见'
-      : '课表账号或学期已变化，请重新操作';
-}
 /// 课表数据提供者 —— 只负责课程网格数据，不管理教务绑定
 /// 绑定状态由 [EduProvider] 统一管理，本 Provider 只负责拉取和展示本地课程
 class CourseScheduleProvider extends ChangeNotifier {
@@ -343,7 +327,8 @@ class CourseScheduleProvider extends ChangeNotifier {
 
   final ScheduleResolver _scheduleResolver = const ScheduleResolver();
   final MeetingReconciler _meetingReconciler = const MeetingReconciler();
-  final ScheduleOverrideRepository _overrideRepository;
+  final ScheduleOverrideRepository _overrideRepository =
+      ScheduleOverrideRepository();
   final ScheduleConflictService _conflictService =
       const ScheduleConflictService();
 
@@ -419,12 +404,9 @@ class CourseScheduleProvider extends ChangeNotifier {
     AccountScopedSnapshotStore Function(String appUserId)? snapshotStoreBuilder,
     AcademicRepository? academicRepository,
     AcademicSessionController? academicSessionController,
-    ScheduleOverrideRepository? overrideRepository,
   ])  : _snapshotStoreBuilder = snapshotStoreBuilder,
         _academicRepository = academicRepository,
-        _academicSessionController = academicSessionController,
-        _overrideRepository =
-            overrideRepository ?? ScheduleOverrideRepository() {
+        _academicSessionController = academicSessionController {
     _initDefaults();
   }
 
@@ -667,24 +649,6 @@ class CourseScheduleProvider extends ChangeNotifier {
         context.semester == selectedSemester &&
         context.providerTermId == currentTerm.providerTermId;
   }
-
-  /// 复核本次写入所属的账号/学期边界；已经变化就整体中止。
-  ///
-  /// [persistedLocally] 必须如实填写：两种情况对用户是完全不同的事实——
-  /// 还没落盘时「请重新操作」是对的，已经落盘时再说「请重新操作」会让用户
-  /// 以为刚才的修改丢了，切回原账号才发现其实已经保存。
-  void _requireCurrentMutation(
-    _ScheduleOperationContext context, {
-    bool persistedLocally = false,
-  }) {
-    if (!_isCurrentOperation(context)) {
-      throw ScheduleMutationAborted(persistedLocally: persistedLocally);
-    }
-  }
-
-  /// 已经成功写入本地课表之后的边界复核：改动留在原账号下。
-  void _requirePersistedMutation(_ScheduleOperationContext context) =>
-      _requireCurrentMutation(context, persistedLocally: true);
 
   Future<ScheduleCacheStore?> _resolveOperationStore(
     _ScheduleOperationContext context,
@@ -1633,6 +1597,12 @@ class CourseScheduleProvider extends ChangeNotifier {
     return fallback;
   }
 
+  Future<void> _saveHiddenCourses() async {
+    final operation = _captureOperationContext();
+    if (operation == null) return;
+    await _saveOperationHiddenCourses(operation, _hiddenCourseIds);
+  }
+
   /// 拉取课程。默认优先缓存。
   /// [forceRefresh] 强制拉取（用于静默同步或手动刷新）
   /// [onlyCache] 为 true 时，如果没有缓存则不自动拉取，直接返回
@@ -1647,16 +1617,13 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (operation == null || operation.store == null) return;
     if (await _resolveOperationStore(operation) == null) return;
 
+    if (isManualRefresh) {
+      await _clearOperationActiveArchive(operation);
+      if (!_isCurrentOperation(operation)) return;
+    }
+
     // 保留刷新前的课程数据作为备份
     final backupCourses = List<CourseBlock>.from(_courses);
-    final backupBaseSchedule = List<Course>.from(_baseSchedule);
-    final backupManualCourses = List<Course>.from(_manualCourses);
-    final backupOverrides = List<ScheduleOverride>.from(_overrides);
-    final backupResolvedMeetings =
-        List<ResolvedMeeting>.from(_resolvedMeetings);
-    final backupHiddenCourseIds = Set<int>.from(_hiddenCourseIds);
-    final backupSourceTrustKnown = _sourceTrustKnown;
-    final backupLegacyCacheRequiresResync = _legacyCacheRequiresResync;
 
     // 非强制刷新时，先尝试手机缓存
     if (!forceRefresh) {
@@ -1759,11 +1726,12 @@ class CourseScheduleProvider extends ChangeNotifier {
             final rawCourses = fetched.courses
                 .map(_rawCourseToFetchedMap)
                 .toList(growable: false);
-            if (rawCourses.isEmpty && backupCourses.isNotEmpty) {
-              debugPrint('教务系统返回空课表，保留当前课程');
+            if (rawCourses.isEmpty &&
+                backupCourses.isNotEmpty &&
+                !isManualRefresh) {
+              debugPrint('教务系统返回空课表，保留当前本地课程');
               _courses = backupCourses;
               _buildGrid();
-              _errorMessage = '教务系统返回空课表，已保留当前课程';
             } else {
               final parsedCourses = <CourseBlock>[];
               for (final rawCourse in rawCourses) {
@@ -1802,31 +1770,6 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     // 本机教务读取成功后，保存或清理缓存
     if (networkSuccess) {
-      if (isManualRefresh) {
-        final archiveCleared = await _clearOperationActiveArchive(operation);
-        if (!_isCurrentOperation(operation)) return;
-        if (!archiveCleared) {
-          _courses = backupCourses;
-          _baseSchedule = backupBaseSchedule;
-          _manualCourses = backupManualCourses;
-          _overrides = backupOverrides;
-          _resolvedMeetings = backupResolvedMeetings;
-          _hiddenCourseIds = backupHiddenCourseIds;
-          _sourceTrustKnown = backupSourceTrustKnown;
-          _legacyCacheRequiresResync = backupLegacyCacheRequiresResync;
-          _buildGrid();
-          _errorMessage = '课表已获取，但无法退出存档模式；当前显示已保留';
-          networkSuccess = false;
-        }
-      }
-
-      if (!networkSuccess) {
-        _isLoading = false;
-        notifyListeners();
-        _syncWidget();
-        return;
-      }
-
       // 恢复所有本地的自定义课程 (包括 AI 导入的课程，其 id 均为负数)
       final customCourses = backupCourses.where((c) => c.id < 0).toList();
       if (customCourses.isNotEmpty) {
@@ -2093,8 +2036,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     bool allowConflict = false,
     String? overrideId,
   }) async {
-    final operation = _requireMutationContext();
-    await _ensureTrustedSourceForMutation(operation);
+    await _ensureTrustedSourceForMutation();
     final effectiveId =
         overrideId ?? 'ov_${DateTime.now().millisecondsSinceEpoch}';
     var status = ScheduleOverrideStatus.active;
@@ -2118,7 +2060,7 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     final override = ScheduleOverride(
       id: effectiveId,
-      semesterId: operation.term.id,
+      semesterId: currentTerm.id,
       courseKey: courseKey,
       meetingKey: meetingKey,
       type: ScheduleOverrideType.reschedule,
@@ -2139,26 +2081,21 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     final persisted = await _overrideRepository.upsertOverride(
       override: override,
-      accountId: operation.sourceAccountId,
+      accountId: _sourceAccountId,
     );
-    _requirePersistedMutation(operation);
     if (!persisted) {
       throw StateError('调课规则保存失败，请稍后重试');
     }
-    final loaded = await _overrideRepository.loadOverrides(
-      semesterId: operation.term.id,
-      accountId: operation.sourceAccountId,
+    _overrides = await _overrideRepository.loadOverrides(
+      semesterId: currentTerm.id,
+      accountId: _sourceAccountId,
     );
-    _requirePersistedMutation(operation);
-    _overrides = loaded;
     _syncResolvedSchedule();
     try {
-      await _persistResolvedScheduleOrThrow(operation);
+      await _persistResolvedScheduleOrThrow();
     } catch (e) {
-      _requirePersistedMutation(operation);
       debugPrint('课表展示快照保存失败（调课规则已落盘生效）: $e');
     }
-    _requirePersistedMutation(operation);
     notifyListeners();
     return override;
   }
@@ -2173,13 +2110,12 @@ class CourseScheduleProvider extends ChangeNotifier {
     String? fromRoom,
     String? overrideId,
   }) async {
-    final operation = _requireMutationContext();
-    await _ensureTrustedSourceForMutation(operation);
+    await _ensureTrustedSourceForMutation();
     final effectiveId =
         overrideId ?? 'ov_${DateTime.now().millisecondsSinceEpoch}';
     final override = ScheduleOverride(
       id: effectiveId,
-      semesterId: operation.term.id,
+      semesterId: currentTerm.id,
       courseKey: courseKey,
       meetingKey: meetingKey,
       type: ScheduleOverrideType.changeRoom,
@@ -2194,26 +2130,21 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     final persisted = await _overrideRepository.upsertOverride(
       override: override,
-      accountId: operation.sourceAccountId,
+      accountId: _sourceAccountId,
     );
-    _requirePersistedMutation(operation);
     if (!persisted) {
       throw StateError('教室调整保存失败，请稍后重试');
     }
-    final loaded = await _overrideRepository.loadOverrides(
-      semesterId: operation.term.id,
-      accountId: operation.sourceAccountId,
+    _overrides = await _overrideRepository.loadOverrides(
+      semesterId: currentTerm.id,
+      accountId: _sourceAccountId,
     );
-    _requirePersistedMutation(operation);
-    _overrides = loaded;
     _syncResolvedSchedule();
     try {
-      await _persistResolvedScheduleOrThrow(operation);
+      await _persistResolvedScheduleOrThrow();
     } catch (e) {
-      _requirePersistedMutation(operation);
       debugPrint('课表展示快照保存失败（教室调整规则已落盘生效）: $e');
     }
-    _requirePersistedMutation(operation);
     notifyListeners();
     return override;
   }
@@ -2223,41 +2154,31 @@ class CourseScheduleProvider extends ChangeNotifier {
     required ScheduleOverride updated,
     bool allowConflict = false,
   }) async {
-    final operation = _requireMutationContext();
-    await _ensureTrustedSourceForMutation(operation);
-    if (updated.semesterId != operation.term.id) {
-      throw StateError('调课规则所属学期已变化，请重新操作');
-    }
+    await _ensureTrustedSourceForMutation();
     final persisted = await _overrideRepository.upsertOverride(
       override: updated,
-      accountId: operation.sourceAccountId,
+      accountId: _sourceAccountId,
     );
-    _requirePersistedMutation(operation);
     if (!persisted) {
       throw StateError('调课规则保存失败，请稍后重试');
     }
-    final loaded = await _overrideRepository.loadOverrides(
-      semesterId: operation.term.id,
-      accountId: operation.sourceAccountId,
+    _overrides = await _overrideRepository.loadOverrides(
+      semesterId: currentTerm.id,
+      accountId: _sourceAccountId,
     );
-    _requirePersistedMutation(operation);
-    _overrides = loaded;
     _syncResolvedSchedule();
     try {
-      await _persistResolvedScheduleOrThrow(operation);
+      await _persistResolvedScheduleOrThrow();
     } catch (e) {
-      _requirePersistedMutation(operation);
       debugPrint('课表展示快照保存失败（调课规则已落盘生效）: $e');
     }
-    _requirePersistedMutation(operation);
     notifyListeners();
     return updated;
   }
 
   /// 恢复教务原课 (Section 25: 删除 Override，重跑 Resolver)
   Future<void> restoreBaseMeeting(String overrideId) async {
-    final operation = _requireMutationContext();
-    await _ensureTrustedSourceForMutation(operation);
+    await _ensureTrustedSourceForMutation();
     final overrideIdx = _overrides.indexWhere((o) => o.id == overrideId);
     if (overrideIdx < 0) {
       throw StateError('未找到对应的调课规则');
@@ -2271,27 +2192,22 @@ class CourseScheduleProvider extends ChangeNotifier {
     }
     final persisted = await _overrideRepository.deleteOverride(
       overrideId: overrideId,
-      semesterId: operation.term.id,
-      accountId: operation.sourceAccountId,
+      semesterId: currentTerm.id,
+      accountId: _sourceAccountId,
     );
-    _requirePersistedMutation(operation);
     if (!persisted) {
       throw StateError('恢复原安排失败，请稍后重试');
     }
-    final loaded = await _overrideRepository.loadOverrides(
-      semesterId: operation.term.id,
-      accountId: operation.sourceAccountId,
+    _overrides = await _overrideRepository.loadOverrides(
+      semesterId: currentTerm.id,
+      accountId: _sourceAccountId,
     );
-    _requirePersistedMutation(operation);
-    _overrides = loaded;
     _syncResolvedSchedule();
     try {
-      await _persistResolvedScheduleOrThrow(operation);
+      await _persistResolvedScheduleOrThrow();
     } catch (e) {
-      _requirePersistedMutation(operation);
       debugPrint('课表展示快照保存失败（恢复原安排已生效）: $e');
     }
-    _requirePersistedMutation(operation);
     notifyListeners();
   }
 
@@ -2326,16 +2242,8 @@ class CourseScheduleProvider extends ChangeNotifier {
     return _saveOperationCourses(operation, courses);
   }
 
-  Future<void> _persistResolvedScheduleOrThrow(
-    _ScheduleOperationContext operation,
-  ) async {
-    _requireCurrentMutation(operation);
-    final saved = await _saveOperationCourses(
-      operation,
-      List<CourseBlock>.from(_courses),
-    );
-    _requirePersistedMutation(operation);
-    if (!saved) {
+  Future<void> _persistResolvedScheduleOrThrow() async {
+    if (_userId != null && !await _saveToCache(_courses)) {
       throw StateError('课表保存失败，请稍后重试');
     }
   }
@@ -2458,8 +2366,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     String? teacher,
     String? location,
   }) async {
-    final operation = _requireMutationContext();
-    await _ensureTrustedSourceForMutation(operation);
+    await _ensureTrustedSourceForMutation();
     final weeks = List.generate(endWeek - startWeek + 1, (i) => startWeek + i);
     final colorIdx = deterministicCourseColorIndex(name, _colorPool.length);
     final newId = -(DateTime.now().millisecondsSinceEpoch * 100 +
@@ -2476,8 +2383,8 @@ class CourseScheduleProvider extends ChangeNotifier {
       endSection: endSection,
       weeks: weeks,
       color: _colorPool[colorIdx],
-      courseKey: 'manual:${operation.term.id}:$newId',
-      meetingKey: 'manual:${operation.term.id}:$newId:meeting',
+      courseKey: 'manual:${currentTerm.id}:$newId',
+      meetingKey: 'manual:${currentTerm.id}:$newId:meeting',
     );
 
     final previousCourses = List<CourseBlock>.from(_courses);
@@ -2489,17 +2396,15 @@ class CourseScheduleProvider extends ChangeNotifier {
       _populateManualCoursesFromBlocks(
           _courses.where((c) => c.id < 0).toList());
       _syncResolvedSchedule();
-      await _persistResolvedScheduleOrThrow(operation);
+      await _persistResolvedScheduleOrThrow();
       notifyListeners();
       return course;
     } catch (e) {
-      if (_isCurrentOperation(operation)) {
-        _courses = previousCourses;
-        _manualCourses = previousManual;
-        _resolvedMeetings = previousResolved;
-        _buildGrid();
-        _syncWidget();
-      }
+      _courses = previousCourses;
+      _manualCourses = previousManual;
+      _resolvedMeetings = previousResolved;
+      _buildGrid();
+      _syncWidget();
       rethrow;
     }
   }
@@ -2516,8 +2421,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     String? teacher,
     String? location,
   }) async {
-    final operation = _requireMutationContext();
-    await _ensureTrustedSourceForMutation(operation);
+    await _ensureTrustedSourceForMutation();
     final idx = _courses.indexWhere((c) => c.id == id);
     if (idx < 0) throw Exception('课程不存在');
 
@@ -2552,25 +2456,22 @@ class CourseScheduleProvider extends ChangeNotifier {
       _populateManualCoursesFromBlocks(
           _courses.where((c) => c.id < 0).toList());
       _syncResolvedSchedule();
-      await _persistResolvedScheduleOrThrow(operation);
+      await _persistResolvedScheduleOrThrow();
       notifyListeners();
       return course;
     } catch (e) {
-      if (_isCurrentOperation(operation)) {
-        _courses = previousCourses;
-        _manualCourses = previousManual;
-        _resolvedMeetings = previousResolved;
-        _buildGrid();
-        _syncWidget();
-      }
+      _courses = previousCourses;
+      _manualCourses = previousManual;
+      _resolvedMeetings = previousResolved;
+      _buildGrid();
+      _syncWidget();
       rethrow;
     }
   }
 
   /// 删除课程（支持自定义课程和服务器课程）
   Future<void> removeCustomCourse(int courseId) async {
-    final operation = _requireMutationContext();
-    await _ensureTrustedSourceForMutation(operation);
+    await _ensureTrustedSourceForMutation();
     final previousCourses = List<CourseBlock>.from(_courses);
     final previousManual = List<Course>.from(_manualCourses);
     final previousResolved = List<ResolvedMeeting>.from(_resolvedMeetings);
@@ -2580,42 +2481,26 @@ class CourseScheduleProvider extends ChangeNotifier {
       _courses.removeWhere((c) => c.id == courseId);
       if (courseId > 0) {
         _hiddenCourseIds.add(courseId);
-        final saved = await _saveOperationHiddenCourses(
-          operation,
-          Set<int>.from(_hiddenCourseIds),
-        );
-        _requirePersistedMutation(operation);
-        if (!saved) throw StateError('课表保存失败，请稍后重试');
+        await _saveHiddenCourses();
       }
       _populateManualCoursesFromBlocks(
           _courses.where((c) => c.id < 0).toList());
       _syncResolvedSchedule();
-      await _persistResolvedScheduleOrThrow(operation);
+      await _persistResolvedScheduleOrThrow();
       notifyListeners();
     } catch (e) {
-      if (_isCurrentOperation(operation)) {
-        _courses = previousCourses;
-        _manualCourses = previousManual;
-        _resolvedMeetings = previousResolved;
-        _hiddenCourseIds = previousHidden;
-        _buildGrid();
-        _syncWidget();
-      }
+      _courses = previousCourses;
+      _manualCourses = previousManual;
+      _resolvedMeetings = previousResolved;
+      _hiddenCourseIds = previousHidden;
+      _buildGrid();
+      _syncWidget();
       rethrow;
     }
   }
 
-  _ScheduleOperationContext _requireMutationContext() {
-    final operation = _captureOperationContext();
-    if (operation == null) throw StateError('课表账号尚未就绪，请稍后重试');
-    return operation;
-  }
-
-  Future<void> _ensureTrustedSourceForMutation(
-    _ScheduleOperationContext operation,
-  ) async {
+  Future<void> _ensureTrustedSourceForMutation() async {
     await _sessionRestoreFuture;
-    _requireCurrentMutation(operation);
     if (!_sourceTrustKnown || _legacyCacheRequiresResync) {
       throw StateError('旧版课表缺少原始快照，请先重新同步教务后再修改课表');
     }

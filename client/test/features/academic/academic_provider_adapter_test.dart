@@ -120,12 +120,12 @@ void main() {
       isFalse,
     );
     expect(
-      const AcademicCaptchaRecognition(text: '1234', confidence: double.nan)
+      AcademicCaptchaRecognition(text: '1234', confidence: double.nan)
           .isManualSuggestion,
       isFalse,
     );
     expect(
-      const AcademicCaptchaRecognition(text: '1234', confidence: double.infinity)
+      AcademicCaptchaRecognition(text: '1234', confidence: double.infinity)
           .isManualSuggestion,
       isFalse,
     );
@@ -397,7 +397,6 @@ final class _TermRecordingProvider implements AcademicProvider {
   final String periodLabel;
   final int periodOrder;
 
-  @override
   final AcademicIdentityKey identity = const AcademicIdentityKey(
     appUserId: 'app-user',
     providerId: AcademicProviderId.syluGraduate,

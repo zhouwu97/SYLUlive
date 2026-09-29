@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/features/academic/storage/academic_storage_preferences.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
 import 'package:shenliyuan/features/academic/data/academic_repository_impl.dart';
@@ -13,9 +11,6 @@ import 'package:shenliyuan/features/academic/data/datasource/jiaowu_local_data_s
 import 'package:shenliyuan/features/academic/data/datasource/legacy_server_data_source.dart';
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:shenliyuan/features/academic/presentation/academic_login_dialog.dart';
-import 'package:shenliyuan/features/academic/data/academic_provider_router_repository.dart';
-import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
-import 'package:shenliyuan/features/academic/storage/local_academic_account_store.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 
 import '../../helpers/golden_test_app.dart';
@@ -24,67 +19,6 @@ import '../../helpers/load_test_fonts.dart';
 
 void main() {
   setUpAll(loadTestFonts);
-  const secureStorageChannel =
-      MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
-  const reminderChannel = MethodChannel('shenliyuan/course_reminders');
-  const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
-  final secureStore = <String, String>{};
-  late Directory tempDir;
-
-  setUp(() async {
-    tempDir = await Directory.systemTemp.createTemp('academic_binding_test_');
-    AppPreferencesStore.setMockInitialValues({});
-    secureStore.clear();
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(pathProviderChannel, (call) async {
-      switch (call.method) {
-        case 'getTemporaryDirectory':
-        case 'getApplicationSupportDirectory':
-        case 'getApplicationDocumentsDirectory':
-          return tempDir.path;
-      }
-      return null;
-    });
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(secureStorageChannel, (call) async {
-      final args =
-          Map<String, dynamic>.from((call.arguments as Map?) ?? const {});
-      final key = args['key'] as String?;
-      switch (call.method) {
-        case 'read':
-          return secureStore[key];
-        case 'write':
-          if (key != null) secureStore[key] = args['value'] as String;
-          return null;
-        case 'delete':
-          secureStore.remove(key);
-          return null;
-        case 'deleteAll':
-          secureStore.clear();
-          return null;
-        case 'containsKey':
-          return secureStore.containsKey(key);
-        case 'readAll':
-          return secureStore;
-      }
-      return null;
-    });
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(reminderChannel, (call) async => null);
-  });
-
-  tearDown(() async {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(pathProviderChannel, null);
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(secureStorageChannel, null);
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(reminderChannel, null);
-    if (tempDir.existsSync()) {
-      await tempDir.delete(recursive: true);
-    }
-  });
-
   late Dio dio;
   late AcademicSessionController controller;
   late EduProvider provider;
@@ -267,10 +201,7 @@ void main() {
       await tester.ensureVisible(link);
       await tester.tap(link);
       await tester.pumpAndSettle();
-      expect(
-          find.textContaining('教务登录和身份核验会按你选择的功能使用不同凭据路径'),
-          findsOneWidget,
-        );
+      expect(find.textContaining('你授权本服务'), findsOneWidget);
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       await tester.tap(find.text('取消'));
@@ -344,123 +275,4 @@ void main() {
     expect((await provider.unbind()).success, isTrue);
     expect(provider.isBound, isFalse);
   });
-
-  test('A 解绑清理期间切到 B，B 相同 provider 与学号的 pending 任务不被误确认', () async {
-    final prefs = await AppPreferencesStore.getInstance();
-    const studentId = '2026000001';
-    const idA = AcademicIdentityKey(
-      appUserId: 'user-a',
-      providerId: AcademicProviderId.syluUndergraduate,
-      studentId: studentId,
-    );
-    const idB = AcademicIdentityKey(
-      appUserId: 'user-b',
-      providerId: AcademicProviderId.syluUndergraduate,
-      studentId: studentId,
-    );
-
-    // 初始化 User B 的 Store，并拥有相同 provider 和相同学号的待清理任务
-    final storeB = LocalAcademicAccountStore('user-b', prefs);
-    await storeB.commitIdentity(idB);
-    await storeB.mergeSnapshot({
-      'provider_id': idB.providerId.value,
-      'student_id': 'other-student',
-      'revision': 2,
-      'state': 'active',
-    });
-    await storeB.adoptCloud(idB.providerId, allowLegacyCleanup: true);
-    expect(storeB.pendingCleanup, contains(idB));
-    expect(storeB.cleanupIncludesLegacy(idB), isTrue);
-
-    // 初始化 User A 的 Router 和 Store
-    final localDio = Dio();
-    final router = AcademicProviderRouterRepository(
-      legacy: AcademicRepositoryImpl(
-        local: JiaowuLocalDataSource(),
-        legacy: LegacyServerDataSource(localDio, networkEnabled: false),
-        source: AcademicSourceKind.legacy,
-      ),
-      registry: AcademicProviderRegistry([
-        _TestProviderFactory(AcademicProviderId.syluUndergraduate),
-      ]),
-    );
-    final sessionController = AcademicSessionController(repository: router);
-    final eduProvider = EduProvider(localDio)
-      ..setAcademicSessionController(sessionController);
-
-    await sessionController.syncAppUser('user-a');
-    final storeA = LocalAcademicAccountStore('user-a', prefs);
-    await storeA.commitIdentity(idA);
-    await sessionController.selectProviderIdentity(idA);
-
-    // User A 发起 unbind()
-    // 在解绑执行期间切到 User B
-    final unbindFuture = eduProvider.unbind();
-    await sessionController.syncAppUser('user-b');
-    final result = await unbindFuture;
-    expect(result.success, isTrue);
-
-    // 断言：
-    // 1. User B 的待清理任务绝不能被 User A 的 unbind 误删或误确认！
-    final checkStoreB = LocalAcademicAccountStore('user-b', prefs);
-    expect(checkStoreB.pendingCleanup, contains(idB));
-    expect(checkStoreB.cleanupIncludesLegacy(idB), isTrue);
-
-    // 2. User A 的 Store A 中 idA 的清理任务已被正常确认
-    final checkStoreA = LocalAcademicAccountStore('user-a', prefs);
-    expect(checkStoreA.pendingCleanup, isEmpty);
-
-    sessionController.dispose();
-    eduProvider.dispose();
-    router.close();
-    localDio.close();
-  });
-}
-
-class _TestProviderFactory implements AcademicProviderFactory {
-  _TestProviderFactory([this.id = AcademicProviderId.syluUndergraduate]);
-  @override
-  final AcademicProviderId id;
-  @override
-  AcademicProvider create(AcademicIdentityKey identity) =>
-      _TestProvider(identity);
-}
-
-class _TestProvider implements AcademicProvider {
-  _TestProvider(this.identity);
-  @override
-  final AcademicIdentityKey identity;
-  @override
-  AcademicProviderId get id => identity.providerId;
-  @override
-  AcademicProviderCapabilities get capabilities =>
-      const AcademicProviderCapabilities(timetable: true);
-  @override
-  Future<AcademicLoginChallenge> prepareLogin() async =>
-      const NoLoginChallenge();
-  @override
-  Future<AcademicLoginResult> login(AcademicLoginRequest request) async =>
-      const AcademicLoginRejected(
-        error: AcademicAuthFailure(
-          AcademicAuthFailureType.authRejectedAmbiguous,
-          '测试 Provider',
-        ),
-      );
-  @override
-  Future<void> restoreSession(ProviderSessionArtifact artifact) async {}
-  @override
-  Future<AcademicSessionProbeResult> probeSession() async =>
-      AcademicSessionProbeResult(
-          authenticated: true, confirmedStudentId: identity.studentId);
-  @override
-  Future<List<AcademicTerm>> fetchTerms() async => const [];
-  @override
-  Future<AcademicSchedule> fetchSchedule(String providerTermId) async =>
-      AcademicSchedule(occurrences: const []);
-  @override
-  Future<ProviderSessionArtifact?> exportSession() async => null;
-  @override
-  Future<void> clearSession() async {}
-  @override
-  void close() {}
 }

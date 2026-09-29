@@ -6,7 +6,7 @@ void main() {
   test('Registry 未初始化时默认拒绝读写', () {
     const userId = 'unknown-academic-user';
     AcademicPersistenceRegistry.clear(userId);
-    const gate = RegistryAcademicPersistenceGate(userId);
+    final gate = RegistryAcademicPersistenceGate(userId);
 
     expect(gate.allowPersonalDataPersistence, isFalse);
     expect(gate.allowPersonalDataRead, isFalse);
@@ -16,7 +16,7 @@ void main() {
     const userId = 'enabled-academic-user';
     AcademicPersistenceRegistry.set(userId, enabled: true);
     addTearDown(() => AcademicPersistenceRegistry.clear(userId));
-    const gate = RegistryAcademicPersistenceGate(userId);
+    final gate = RegistryAcademicPersistenceGate(userId);
 
     expect(gate.allowPersonalDataPersistence, isTrue);
     expect(gate.allowPersonalDataRead, isTrue);

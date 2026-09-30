@@ -95,8 +95,7 @@ List<AcademicIdentityBinding> mergeAcademicIdentityStanding({
   required List<AcademicIdentityBinding> localAccounts,
   required List<AcademicIdentityBinding> serverBindings,
 }) {
-  if (localAccounts.isEmpty) return serverBindings;
-  return <AcademicIdentityBinding>[
+  final merged = <AcademicIdentityBinding>[
     for (final account in localAccounts)
       serverBindings.firstWhere(
         (binding) =>
@@ -105,6 +104,15 @@ List<AcademicIdentityBinding> mergeAcademicIdentityStanding({
         orElse: () => account,
       ),
   ];
+  // 本机换号后旧可信身份仍可能只存在服务端；保留它才能让用户查看并撤销。
+  for (final binding in serverBindings) {
+    if (!merged.any((item) =>
+        item.providerId == binding.providerId &&
+        item.studentId == binding.studentId)) {
+      merged.add(binding);
+    }
+  }
+  return merged;
 }
 
 /// 由核验方式推导依据强度。

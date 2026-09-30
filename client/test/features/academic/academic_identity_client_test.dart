@@ -567,5 +567,25 @@ void main() {
         [trusted],
       );
     });
+
+    test('本机换号后仍显示只存在服务端的旧可信身份', () {
+      final local = binding(
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: 'U-002',
+      );
+      final trustedOld = binding(
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: 'U-001',
+        verified: true,
+        method: academicVerificationMethodSchoolProfile,
+      );
+
+      final merged = mergeAcademicIdentityStanding(
+        localAccounts: [local],
+        serverBindings: [trustedOld],
+      );
+      expect(merged, contains(local));
+      expect(merged, contains(trustedOld));
+    });
   });
 }

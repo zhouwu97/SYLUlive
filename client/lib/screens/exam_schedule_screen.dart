@@ -21,9 +21,8 @@ import 'home_widget_settings_screen.dart';
 
 class ExamScheduleScreen extends StatefulWidget {
   /// [examRepository] 仅供测试注入失败/桩实现；生产入口使用默认仓储。
-  const ExamScheduleScreen({Key? key, ExamScheduleRepository? examRepository})
-      : _examRepositoryOverride = examRepository,
-        super(key: key);
+  const ExamScheduleScreen({super.key, ExamScheduleRepository? examRepository})
+      : _examRepositoryOverride = examRepository;
 
   final ExamScheduleRepository? _examRepositoryOverride;
 

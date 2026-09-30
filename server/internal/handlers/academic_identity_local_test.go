@@ -3,6 +3,8 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -35,6 +37,7 @@ func TestLocalIdentityBindingUsesAppUserAndNeverSchoolProvider(t *testing.T) {
 	require.NoError(t, json.Unmarshal(payload, &declaration))
 	require.Equal(t, false, declaration["verified"])
 	require.Equal(t, "local_declaration", declaration["assurance_level"])
+	require.Equal(t, "local_academic_login", declaration["verification_method"])
 	status, _ = call(1, body)
 	require.Equal(t, 200, status)
 	// 未验证声明不占用其他账号的全局身份名额。
@@ -46,6 +49,14 @@ func TestLocalIdentityBindingUsesAppUserAndNeverSchoolProvider(t *testing.T) {
 	require.Equal(t, 400, status)
 	status, _ = call(1, `{"provider_id":"sylu_undergraduate","student_id":"2403000001","verification_method":"local_academic_login","user_id":2}`)
 	require.Equal(t, 400, status)
+	// 超过 2KB 上限的请求体必须被整体拒绝，而不是解析到一半。
+	status, _ = call(1, `{"provider_id":"sylu_undergraduate","student_id":"2403000001","verification_method":"local_academic_login","padding":"`+strings.Repeat("x", 4096)+`"}`)
+	require.Equal(t, 400, status)
+	// 受限账号不能登记本机声明。
+	require.NoError(t, db.Model(&models.User{}).Where("id = ?", 2).Update("account_status", "suspended").Error)
+	status, payload = call(2, body)
+	require.Equal(t, 403, status)
+	require.Contains(t, string(payload), "ACCOUNT_RESTRICTED")
 	var count int64
 	require.NoError(t, db.Model(&models.AcademicIdentityBinding{}).Count(&count).Error)
 	require.EqualValues(t, 0, count)

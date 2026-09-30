@@ -407,6 +407,16 @@ func (s *SecurityEventService) noteEventWriteFailure(err error) {
 	log.Printf("ERROR security event write failed, 采集已降级（每 %s 最多一条）: %v", securityEventWriteFailureLogInterval, err)
 }
 
+// currentTime 统一安全侧时间入口：参与数据库比较与落库的时间一律使用 UTC。
+// 封禁过期判断跨时区部署时曾被本地时区（如 Asia/Shanghai）写出的比较值破坏，
+// 字符串化的本地时间与 UTC 存档比较会让未过期封禁被误判为已过期。
+func (s *SecurityEventService) currentTime() time.Time {
+	if s == nil || s.now == nil {
+		return time.Now().UTC()
+	}
+	return s.now().UTC()
+}
+
 // IsBlocked 在默认超时预算内判断来源是否处于临时封禁。
 // HTTP 链路请使用 IsBlockedContext。
 func (s *SecurityEventService) IsBlocked(clientIP, route string) (bool, error) {
@@ -432,7 +442,7 @@ func (s *SecurityEventService) IsBlockedContext(ctx context.Context, clientIP, r
 	hash := s.Hash(clientIP)
 	var count int64
 	err := s.db.WithContext(ctx).Model(&models.SecurityBlock{}).
-		Where("scope_type = ? AND scope_value = ? AND expires_at > ? AND revoked_at IS NULL", "ip_hash", hash, s.now()).
+		Where("scope_type = ? AND scope_value = ? AND expires_at > ? AND revoked_at IS NULL", "ip_hash", hash, s.currentTime()).
 		// 路由前缀必须按**完整路由段**匹配，与管理员看到的封禁范围语义一致：
 		//   /api/login   命中 /api/login、/api/login/foo
 		//   /api/login   不得命中 /api/login_edu、/api/loginfoo

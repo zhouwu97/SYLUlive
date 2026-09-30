@@ -134,6 +134,24 @@ void main() {
     );
   });
 
+  test('解绑携带预期 App 用户并设置请求超时', () async {
+    final adapter = _IdentityHttpAdapter()
+      ..responses.add((status: 200, body: <String, dynamic>{'unbound': true}));
+    final client = createClient(adapter);
+    const identity = AcademicIdentityKey(
+      appUserId: 'app-user-1',
+      providerId: AcademicProviderId.syluGraduate,
+      studentId: 'G-001',
+    );
+
+    await client.unbind(identity);
+
+    expect(adapter.requests.single.method, 'DELETE');
+    expect(adapter.requests.single.headers['X-Expected-App-User'], 'app-user-1');
+    expect(adapter.requests.single.sendTimeout, const Duration(seconds: 12));
+    expect(adapter.requests.single.receiveTimeout, const Duration(seconds: 12));
+  });
+
   test('challenge 响应身份不匹配时拒绝，不能由客户端声明身份', () async {
     final adapter = _IdentityHttpAdapter()
       ..responses.add((

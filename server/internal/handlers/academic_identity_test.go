@@ -136,6 +136,10 @@ func TestAcademicIdentityUnbindScopedIdempotentWithoutProvider(t *testing.T) {
 		UserID: 1, ProviderID: string(models.AcademicProviderUndergraduate), StudentID: "S1",
 		NonceHash: "nonce-unbind-1", Fingerprint: "fp", ExpiresAt: now.Add(time.Hour),
 	}).Error)
+	require.NoError(t, db.Create(&models.AcademicIdentityChallenge{
+		UserID: 1, ProviderID: string(models.AcademicProviderGraduate), StudentID: "G1",
+		NonceHash: "nonce-unbind-g1", Fingerprint: "fp", ExpiresAt: now.Add(time.Hour),
+	}).Error)
 
 	call := func(userID uint, body string) (int, string) {
 		w := httptest.NewRecorder()
@@ -161,11 +165,38 @@ func TestAcademicIdentityUnbindScopedIdempotentWithoutProvider(t *testing.T) {
 	var challenge models.AcademicIdentityChallenge
 	require.NoError(t, db.Where("user_id = ?", 1).First(&challenge).Error)
 	require.NotNil(t, challenge.ConsumedAt)
+	var graduateChallenge models.AcademicIdentityChallenge
+	require.NoError(t, db.Where("user_id = ? AND provider_id = ? AND student_id = ?", 1, models.AcademicProviderGraduate, "G1").First(&graduateChallenge).Error)
+	require.Nil(t, graduateChallenge.ConsumedAt, "解绑本科身份不能使研究生 challenge 失效")
 
 	// 本机声明场景没有服务端绑定：重复 DELETE 仍返回幂等成功。
 	status, body = call(1, `{"provider_id":"sylu_undergraduate","student_id":"S1"}`)
 	require.Equal(t, 200, status, body)
 	require.Contains(t, body, `"unbound":true`)
+}
+
+func TestAcademicIdentityUnbindRejectsChangedAppUserBeforeMutation(t *testing.T) {
+	h, db, _, user := newAcademicIdentityTestHandler(t)
+	now := time.Now()
+	require.NoError(t, h.persistBinding(user.ID, models.AcademicProviderGraduate, "G20260001", now, "school_profile", "v1"))
+	require.NoError(t, db.Create(&models.AcademicIdentityChallenge{
+		UserID: user.ID, ProviderID: string(models.AcademicProviderGraduate), StudentID: "G20260001",
+		NonceHash: "nonce-unchanged", Fingerprint: "fp", ExpiresAt: now.Add(time.Hour),
+	}).Error)
+	router := academicIdentityRouter(h, user.ID)
+	req := httptest.NewRequest(http.MethodDelete, "/identities", bytes.NewBufferString(`{"provider_id":"sylu_graduate","student_id":"G20260001"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Expected-App-User", "999")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusConflict, w.Code)
+	require.Contains(t, w.Body.String(), "APP_USER_CHANGED")
+	var count int64
+	require.NoError(t, db.Model(&models.AcademicIdentityBinding{}).Where("user_id = ?", user.ID).Count(&count).Error)
+	require.EqualValues(t, 1, count)
+	var challenge models.AcademicIdentityChallenge
+	require.NoError(t, db.Where("nonce_hash = ?", "nonce-unchanged").First(&challenge).Error)
+	require.Nil(t, challenge.ConsumedAt)
 }
 
 func TestAcademicIdentityChallengeIsBoundAndConsumedOnFirstVerify(t *testing.T) {

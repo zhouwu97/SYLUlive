@@ -25,9 +25,9 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 		t.Fatalf("读取安全部署脚本失败: %v", err)
 	}
 	deployScriptText := string(deployScript)
-	if !strings.Contains(deployScriptText, `REQUIRED_GO_VERSION="1.25.13"`) ||
+	if !strings.Contains(deployScriptText, `REQUIRED_GO_VERSION="1.26.6"`) ||
 		!strings.Contains(deployScriptText, "require_security_env") {
-		t.Fatal("安全部署脚本必须检查 Go 1.25.13+ 和生产安全环境变量")
+		t.Fatal("安全部署脚本必须检查 Go 1.26.6+ 和生产安全环境变量")
 	}
 
 	configSource, err := os.ReadFile(filepath.Join(repoRoot, "server", "internal", "config", "config.go"))
@@ -48,15 +48,15 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取部署文档失败: %v", err)
 	}
-	if !strings.Contains(string(deployDoc), "Go 1.25.13+") {
-		t.Fatal("部署文档必须声明 Go 1.25.13+ 要求")
+	if !strings.Contains(string(deployDoc), "Go 1.26.6+") {
+		t.Fatal("部署文档必须声明 Go 1.26.6+ 要求")
 	}
 
 	readme, err := os.ReadFile(filepath.Join(repoRoot, "README.md"))
 	if err != nil {
 		t.Fatalf("读取项目说明失败: %v", err)
 	}
-	if !strings.Contains(string(readme), "Go-1.25.13+") {
+	if !strings.Contains(string(readme), "Go-1.26.6+") {
 		t.Fatal("项目说明中的 Go 版本标识必须与 server/go.mod 保持一致")
 	}
 

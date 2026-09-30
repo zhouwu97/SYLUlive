@@ -149,26 +149,34 @@ final class LocalAcademicAccountStore {
         }
       });
 
-  Future<void> remove(
+  Future<bool> remove(
     AcademicProviderId provider, {
     required bool fromCloud,
     bool allowLegacyCleanup = false,
-  }) =>
-      update((state) {
-        final e = _entry(state, provider);
-        final student = e['student_id']?.toString().trim();
-        _queueCleanup(
-          e,
-          student,
-          null,
-          allowLegacyCleanup: allowLegacyCleanup,
-        );
-        e['student_id'] = null;
-        e['enabled'] = false;
-        e['credential_epoch'] = (e['credential_epoch'] as int? ?? 0) + 1;
-        e['suppress_restore'] = fromCloud;
-        if (fromCloud) _enqueue(e, '', true);
-      });
+    String? expectedStudentId,
+    bool requireExpectedStudent = false,
+  }) {
+    var removed = false;
+    return update((state) {
+      final e = _entry(state, provider);
+      final student = e['student_id']?.toString().trim();
+      if (requireExpectedStudent && student != expectedStudentId?.trim()) {
+        return;
+      }
+      removed = true;
+      _queueCleanup(
+        e,
+        student,
+        null,
+        allowLegacyCleanup: allowLegacyCleanup,
+      );
+      e['student_id'] = null;
+      e['enabled'] = false;
+      e['credential_epoch'] = (e['credential_epoch'] as int? ?? 0) + 1;
+      e['suppress_restore'] = fromCloud;
+      if (fromCloud) _enqueue(e, '', true);
+    }).then((_) => removed);
+  }
 
   List<AcademicIdentityKey> get pendingCleanup => read()
       .entries

@@ -84,6 +84,96 @@ void main() {
     expect(storedText, isNot(contains('20240001')));
   });
 
+  test('同一 Store 连续和并发读取只解密一次，写入后失效', () async {
+    final snapshotStore = YieldingPersonalSnapshotStore(
+      accountFingerprint: 'schedule-memo-account',
+    );
+    final store = ScheduleCacheStore(
+      appUserId: 'app-user-a',
+      sourceAccountId: '20240001',
+      snapshotStore: snapshotStore,
+    );
+    await store.writeCourses(
+      year: '2026',
+      semester: 3,
+      courses: <Map<String, dynamic>>[_coursePayload(name: '缓存课程')],
+    );
+    snapshotStore.readCount = 0;
+
+    await store.readSnapshot();
+    await store.readSnapshot();
+    await Future.wait(<Future<ScheduleVaultSnapshot?>>[
+      store.readSnapshot(),
+      store.readSnapshot(),
+      store.readSnapshot(),
+    ]);
+    expect(snapshotStore.readCount, 1);
+
+    final readsBeforeWrite = snapshotStore.readCount;
+    await store.writeCourses(
+      year: '2026',
+      semester: 3,
+      courses: <Map<String, dynamic>>[_coursePayload(name: '更新课程')],
+    );
+    final updated = await store.readSnapshot();
+    expect(updated?.terms['2026_3']?.courses.single['name'], '更新课程');
+    expect(snapshotStore.readCount, readsBeforeWrite + 3,
+        reason: '写入读改写和写后首次读取都不能复用旧 Memo');
+  });
+
+  test('clearAll 后不能返回旧 Memo，close 后禁止重新填充', () async {
+    final snapshotStore = YieldingPersonalSnapshotStore(
+      accountFingerprint: 'schedule-clear-account',
+    );
+    final store = ScheduleCacheStore(
+      appUserId: 'app-user-a',
+      sourceAccountId: '20240001',
+      snapshotStore: snapshotStore,
+    );
+    await store.writeCourses(
+      year: '2026',
+      semester: 3,
+      courses: <Map<String, dynamic>>[_coursePayload(name: '待清理课程')],
+    );
+    expect((await store.readSnapshot())?.terms, isNotEmpty);
+    await store.clearAll();
+    expect(await store.readSnapshot(), isNull);
+    await store.close();
+    expect(await store.readSnapshot(), isNull);
+  });
+
+  test('同一 Vault 的另一个 Store 写入后，旧实例 Memo 自动失效', () async {
+    final snapshotStore = YieldingPersonalSnapshotStore(
+      accountFingerprint: 'schedule-shared-memo-account',
+    );
+    final first = ScheduleCacheStore(
+      appUserId: 'app-user-a',
+      sourceAccountId: '20240001',
+      snapshotStore: snapshotStore,
+    );
+    final second = ScheduleCacheStore(
+      appUserId: 'app-user-a',
+      sourceAccountId: '20240001',
+      snapshotStore: snapshotStore,
+    );
+    await first.writeCourses(
+      year: '2026',
+      semester: 3,
+      courses: <Map<String, dynamic>>[_coursePayload(name: '旧课程')],
+    );
+    expect(
+        (await first.readSnapshot())?.terms['2026_3']?.courses.single['name'],
+        '旧课程');
+    await second.writeCourses(
+      year: '2026',
+      semester: 3,
+      courses: <Map<String, dynamic>>[_coursePayload(name: '新课程')],
+    );
+    expect(
+        (await first.readSnapshot())?.terms['2026_3']?.courses.single['name'],
+        '新课程');
+  });
+
   test('课表不同学期并发写入后全部保留', () async {
     final snapshotStore = YieldingPersonalSnapshotStore(
       accountFingerprint: 'schedule-concurrent-account',

@@ -239,7 +239,11 @@ final class AcademicIdentityClient {
     try {
       final response = await _dio.delete('/student-identity', data: {
         'provider_id': identity.providerId.value, 'student_id': identity.studentId,
-      });
+      }, options: Options(
+        headers: {'X-Expected-App-User': identity.appUserId},
+        sendTimeout: const Duration(seconds: 12),
+        receiveTimeout: const Duration(seconds: 12),
+      ));
       if (_requireMap(response, '解除教务绑定')['unbound'] != true) {
         throw const AcademicIdentityApiException('INVALID_RESPONSE', '服务器未确认解绑');
       }

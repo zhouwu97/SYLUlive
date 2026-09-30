@@ -400,7 +400,9 @@ void main() {
     final unbindFuture = eduProvider.unbind();
     await sessionController.syncAppUser('user-b');
     final result = await unbindFuture;
-    expect(result.success, isTrue);
+    // 新版可信身份解绑没有 identityClient 时必须失败关闭，不能在远端
+    // 撤销能力缺失的情况下删除本机绑定；B 的待清理任务仍需保持不变。
+    expect(result.success, isFalse);
 
     // 断言：
     // 1. User B 的待清理任务绝不能被 User A 的 unbind 误删或误确认！

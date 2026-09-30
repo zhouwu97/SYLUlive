@@ -32,6 +32,11 @@ func (h *AcademicIdentityHandler) Unbind(c *gin.Context) {
 		c.Status(http.StatusBadRequest)
 		return
 	}
+	// 解绑是异步客户端流程的最终写入点，必须确认请求仍属于发起时的 App 用户。
+	// 不匹配时在事务外直接返回，确保绑定、投影、challenge 和清理任务均不变化。
+	if !configUserMatches(c) {
+		return
+	}
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		var bindings []models.AcademicIdentityBinding
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? AND provider_id = ? AND student_id = ?", userID, input.ProviderID, input.StudentID).Find(&bindings).Error; err != nil {
@@ -71,7 +76,9 @@ func (h *AcademicIdentityHandler) Unbind(c *gin.Context) {
 			}
 		}
 		// 使尚未提交的挑战失效，解绑前的验证码不能再次绑定回来。
-		if err := tx.Model(&models.AcademicIdentityChallenge{}).Where("user_id = ?", userID).Update("consumed_at", time.Now()).Error; err != nil {
+		if err := tx.Model(&models.AcademicIdentityChallenge{}).
+			Where("user_id = ? AND provider_id = ? AND student_id = ? AND consumed_at IS NULL", userID, input.ProviderID, input.StudentID).
+			Update("consumed_at", time.Now()).Error; err != nil {
 			return err
 		}
 		return tx.Where("user_id = ? AND provider_id = ? AND student_id = ?", userID, input.ProviderID, input.StudentID).Delete(&models.AcademicIdentityBinding{}).Error

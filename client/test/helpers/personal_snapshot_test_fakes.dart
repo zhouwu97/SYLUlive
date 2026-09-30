@@ -72,6 +72,7 @@ class YieldingPersonalSnapshotStore implements AccountScopedSnapshotStore {
   final String accountFingerprint;
 
   PersonalSnapshot? _snapshot;
+  int readCount = 0;
 
   @override
   Future<void> clearUser() async {
@@ -94,6 +95,7 @@ class YieldingPersonalSnapshotStore implements AccountScopedSnapshotStore {
     required String sourceSystem,
     required String sourceAccountId,
   }) async {
+    readCount++;
     final snapshot = _snapshot;
     await Future<void>.delayed(Duration.zero);
     if (snapshot == null || snapshot.type != type) return null;

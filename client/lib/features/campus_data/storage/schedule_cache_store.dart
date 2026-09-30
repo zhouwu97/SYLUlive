@@ -265,6 +265,7 @@ class ScheduleCacheStore {
 
   static final Map<String, Future<void>> _mutationTails =
       <String, Future<void>>{};
+  static final Map<String, int> _snapshotMutationEpochs = <String, int>{};
 
   final String appUserId;
   final String sourceAccountId;
@@ -276,11 +277,55 @@ class ScheduleCacheStore {
   final Future<AppPreferencesStore> Function() _preferencesLoader;
   final AcademicPersistenceGate persistenceGate;
 
+  ScheduleVaultSnapshot? _snapshotMemo;
+  Future<ScheduleVaultSnapshot?>? _snapshotReadFuture;
+  int? _snapshotReadEpoch;
+  int _snapshotMutationEpoch = 0;
+  int _snapshotObservedEpoch = 0;
+  bool _snapshotMemoReady = false;
+  bool _closed = false;
+
   bool get _hasValidNamespace =>
       appUserId.trim().isNotEmpty && sourceAccountId.trim().isNotEmpty;
 
   Future<ScheduleVaultSnapshot?> readSnapshot() async {
-    if (!_hasValidNamespace) return null;
+    if (_closed || !_hasValidNamespace) return null;
+    await AcademicPersistenceRegistry.waitUntilReady(appUserId);
+    if (_closed || !persistenceGate.allowPersonalDataRead) return null;
+    await (_mutationTails[_snapshotQueueKey] ?? Future<void>.value());
+    if (_closed || !persistenceGate.allowPersonalDataRead) return null;
+    final sharedEpoch = _sharedSnapshotMutationEpoch;
+    if (_snapshotObservedEpoch != sharedEpoch) {
+      _snapshotMemo = null;
+      _snapshotMemoReady = false;
+      _snapshotObservedEpoch = sharedEpoch;
+      _snapshotMutationEpoch = sharedEpoch;
+    }
+    if (_snapshotMemoReady) return _snapshotMemo;
+    final running = _snapshotReadFuture;
+    if (running != null && _snapshotReadEpoch == sharedEpoch) return running;
+    final epoch = sharedEpoch;
+    late Future<ScheduleVaultSnapshot?> operation;
+    operation = _readSnapshotFromStore().then((snapshot) {
+      if (!_closed &&
+          epoch == _snapshotMutationEpoch &&
+          epoch == _sharedSnapshotMutationEpoch &&
+          identical(_snapshotReadFuture, operation)) {
+        _snapshotMemo = snapshot;
+        _snapshotMemoReady = true;
+      }
+      return snapshot;
+    }).whenComplete(() {
+      if (identical(_snapshotReadFuture, operation)) {
+        _snapshotReadFuture = null;
+      }
+    });
+    _snapshotReadFuture = operation;
+    _snapshotReadEpoch = epoch;
+    return operation;
+  }
+
+  Future<ScheduleVaultSnapshot?> _readSnapshotFromStore() async {
     await AcademicPersistenceRegistry.waitUntilReady(appUserId);
     final canRead = persistenceGate.allowPersonalDataRead;
     if (!canRead) {
@@ -598,7 +643,13 @@ class ScheduleCacheStore {
     if (discarded) await _markNeedsResync(preferences);
   }
 
-  Future<void> close() => _snapshotStore.close();
+  Future<void> close() async {
+    _closed = true;
+    _snapshotMemo = null;
+    _snapshotMemoReady = false;
+    _snapshotReadEpoch = null;
+    await _snapshotStore.close();
+  }
 
   Future<void> _mutateTerm({
     required String year,
@@ -616,6 +667,7 @@ class ScheduleCacheStore {
     }
     final termId = _termId(year, semester);
     await _serializeMutation(() async {
+      _invalidateSnapshotMemo();
       final terms = await _readTerms();
       final rawCurrent = terms[termId];
       if (rawCurrent != null && rawCurrent is! Map) {
@@ -702,6 +754,7 @@ class ScheduleCacheStore {
       throw StateError('课表缓存缺少有效的账号命名空间');
     }
     await _serializeMutation(() async {
+      _invalidateSnapshotMemo();
       final terms = await _readTerms();
       await update(terms);
     });
@@ -711,14 +764,36 @@ class ScheduleCacheStore {
   Future<void> clearAll() async {
     if (appUserId.trim().isEmpty) return;
     await _serializeMutation(
-      () => _snapshotStore.deleteType(PersonalDataType.schedule),
+      () async {
+        _invalidateSnapshotMemo();
+        await _snapshotStore.deleteType(PersonalDataType.schedule);
+      },
     );
   }
 
+  void _invalidateSnapshotMemo() {
+    final key = _snapshotQueueKey;
+    final nextEpoch = (_snapshotMutationEpochs[key] ?? 0) + 1;
+    _snapshotMutationEpochs[key] = nextEpoch;
+    _snapshotMutationEpoch = nextEpoch;
+    _snapshotObservedEpoch = nextEpoch;
+    _clearSnapshotMemo();
+  }
+
+  void _clearSnapshotMemo() {
+    _snapshotMemo = null;
+    _snapshotMemoReady = false;
+  }
+
+  int get _sharedSnapshotMutationEpoch =>
+      _snapshotMutationEpochs[_snapshotQueueKey] ?? 0;
+
+  String get _snapshotQueueKey =>
+      '${_snapshotStore.accountFingerprint}/${identityNamespace ?? sourceSystem}|'
+      '${sourceAccountId.trim().toLowerCase()}/${PersonalDataType.schedule.storageValue}';
+
   Future<T> _serializeMutation<T>(Future<T> Function() operation) {
-    final queueKey =
-        '${_snapshotStore.accountFingerprint}/${identityNamespace ?? sourceSystem}|'
-        '${sourceAccountId.trim().toLowerCase()}/${PersonalDataType.schedule.storageValue}';
+    final queueKey = _snapshotQueueKey;
     final previous = _mutationTails[queueKey] ?? Future<void>.value();
     final guarded = previous.then<T>((_) => operation());
     final tail = guarded.then<void>(

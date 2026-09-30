@@ -776,6 +776,21 @@ class EduProvider extends ChangeNotifier {
         return OperationResult.fail('账号会话已变更，取消解绑');
       }
 
+      // 关键步骤：先撤销服务端可信身份（DELETE /student-identity），再提交
+      // 云端配置删除。失败必须整体中断并保留本机绑定，让用户可以重试——
+      // 否则重登或恢复会话后服务端仍认为该学号可信。纯本机声明没有服务端
+      // 绑定，该接口幂等返回成功，不会阻塞解绑。
+      final identityClient = router.identityClient;
+      if (identityClient != null) {
+        try {
+          await identityClient.unbind(identity);
+        } catch (_) {
+          return OperationResult.fail('服务器解绑未完成，请重试');
+        }
+      }
+
+      // 远端身份已撤销。此后即使账号已切换，也继续用捕获的旧 store 与旧身份
+      // 完成本地清理；新账号的状态由下方 isCurrentScope 守卫隔离。
       try {
         await initialStore.remove(
           identity.providerId,

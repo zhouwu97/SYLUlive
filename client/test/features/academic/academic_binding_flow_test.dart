@@ -14,6 +14,8 @@ import 'package:shenliyuan/features/academic/data/datasource/legacy_server_data_
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:shenliyuan/features/academic/presentation/academic_login_dialog.dart';
 import 'package:shenliyuan/features/academic/data/academic_provider_router_repository.dart';
+import 'package:shenliyuan/features/academic/data/academic_identity_client.dart';
+import 'package:shenliyuan/features/academic/data/academic_account_config_client.dart';
 import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
 import 'package:shenliyuan/features/academic/storage/local_academic_account_store.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
@@ -414,6 +416,178 @@ void main() {
     eduProvider.dispose();
     router.close();
     localDio.close();
+  });
+
+  group('新版可信身份解绑走 /student-identity', () {
+    late Dio dio;
+    late List<RequestOptions> requests;
+    late AcademicSessionController session;
+    late EduProvider provider;
+    bool rejectIdentityUnbind = false;
+
+    Response<dynamic> _configResponse(RequestOptions options) => Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: options.path == '/academic-account-configs'
+              ? {
+                  'configs': [
+                    {
+                      'provider_id': 'sylu_undergraduate',
+                      'student_id': '2026000001',
+                      'revision': 2,
+                      'state': 'active',
+                    }
+                  ],
+                }
+              : {
+                  'config': {
+                    'provider_id': 'sylu_undergraduate',
+                    'student_id': '',
+                    'revision': 3,
+                    'state': 'deleted',
+                  }
+                },
+        );
+
+    void initializeRouter() {
+      AppPreferencesStore.setMockInitialValues({});
+      rejectIdentityUnbind = false;
+      requests = [];
+      dio = Dio();
+      dio.interceptors.add(InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          requests.add(options);
+          if (options.path == '/student-identity' &&
+              options.method == 'DELETE') {
+            if (rejectIdentityUnbind) {
+              handler.reject(DioException(
+                requestOptions: options,
+                type: DioExceptionType.connectionError,
+                message: '网络连接失败',
+              ));
+              return;
+            }
+            handler.resolve(Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {'unbound': true},
+            ));
+            return;
+          }
+          if (options.path == '/student-identity') {
+            handler.resolve(Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'identities': [
+                  {
+                    'provider_id': 'sylu_undergraduate',
+                    'student_id': '2026000001',
+                    'verified': true,
+                    'verification_method': 'school_profile',
+                  }
+                ],
+              },
+            ));
+            return;
+          }
+          if (options.path.startsWith('/academic-account-configs')) {
+            handler.resolve(_configResponse(options));
+            return;
+          }
+          handler.resolve(Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: {'success': true},
+          ));
+        },
+      ));
+      final router = AcademicProviderRouterRepository(
+        legacy: AcademicRepositoryImpl(
+          local: JiaowuLocalDataSource(),
+          legacy: LegacyServerDataSource(dio),
+          source: AcademicSourceKind.legacy,
+        ),
+        registry: AcademicProviderRegistry([_TestProviderFactory()]),
+        identityClient: AcademicIdentityClient(dio),
+        configClient: AcademicAccountConfigClient(dio),
+      );
+      session = AcademicSessionController(repository: router);
+      provider = EduProvider(dio)..setAcademicSessionController(session);
+      addTearDown(() {
+        provider.dispose();
+        session.dispose();
+        dio.close();
+      });
+    }
+
+    Future<void> bindIdentity() async {
+      await session.syncAppUser('test-app-user');
+      const identity = AcademicIdentityKey(
+        appUserId: 'test-app-user',
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: '2026000001',
+      );
+      // 真实登录在提交身份时写入本机投影；这里先补齐再加载，模拟已绑定状态。
+      await session.providerRouter!.accountStore!.commitIdentity(identity);
+      final bindings = await session.providerRouter!.loadIdentityBindings();
+      await session.selectProviderIdentity(bindings.first.toIdentity('test-app-user'));
+    }
+
+    test('解绑先撤销服务端可信身份，再提交云端配置删除，且不触发旧授权撤销',
+        () async {
+      initializeRouter();
+      await bindIdentity();
+
+      final result = await provider.unbind();
+      expect(result.success, isTrue);
+
+      final identityDeletes = requests
+          .where((r) => r.path == '/student-identity' && r.method == 'DELETE')
+          .toList();
+      expect(identityDeletes, hasLength(1));
+      expect(identityDeletes.single.data['provider_id'], 'sylu_undergraduate');
+      expect(identityDeletes.single.data['student_id'], '2026000001');
+
+      // 解绑内部异步触发配置同步；显式等待一轮后断言云端配置删除，
+      // 并且发生在可信身份撤销之后。
+      await session.providerRouter!.syncConfiguration();
+      final configDeletes = requests
+          .where((r) =>
+              r.path == '/academic-account-configs/sylu_undergraduate' &&
+              r.method == 'DELETE')
+          .toList();
+      expect(configDeletes, isNotEmpty);
+      expect(requests.indexOf(identityDeletes.single),
+          lessThan(requests.indexOf(configDeletes.first)));
+      expect(requests.where((r) => r.path == '/edu/authorization'), isEmpty);
+    });
+
+    test('远端解绑失败时返回失败并保留本机身份，重试可成功', () async {
+      initializeRouter();
+      await bindIdentity();
+
+      rejectIdentityUnbind = true;
+      final failed = await provider.unbind();
+      expect(failed.success, isFalse);
+      expect(
+        requests.where(
+            (r) => r.path == '/student-identity' && r.method == 'DELETE'),
+        hasLength(1),
+      );
+      // 本机身份与学号投影必须完整保留，用户可以直接重试。
+      final store = session.providerRouter!.accountStore!;
+      expect(store.entry(AcademicProviderId.syluUndergraduate)['student_id'],
+          '2026000001');
+
+      rejectIdentityUnbind = false;
+      expect((await provider.unbind()).success, isTrue);
+      expect(
+        requests.where(
+            (r) => r.path == '/student-identity' && r.method == 'DELETE'),
+        hasLength(2),
+      );
+    });
   });
 }
 

@@ -425,7 +425,7 @@ void main() {
     late EduProvider provider;
     bool rejectIdentityUnbind = false;
 
-    Response<dynamic> _configResponse(RequestOptions options) => Response(
+    Response<dynamic> configResponse(RequestOptions options) => Response(
           requestOptions: options,
           statusCode: 200,
           data: options.path == '/academic-account-configs'
@@ -492,7 +492,7 @@ void main() {
             return;
           }
           if (options.path.startsWith('/academic-account-configs')) {
-            handler.resolve(_configResponse(options));
+            handler.resolve(configResponse(options));
             return;
           }
           handler.resolve(Response(

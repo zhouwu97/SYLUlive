@@ -6,9 +6,16 @@ import '../storage/local_academic_account_store.dart';
 final class AcademicAccountConfigClient {
   AcademicAccountConfigClient(this.dio);
   final Dio dio;
-  final Map<LocalAcademicAccountStore, Future<void>> _running = {};
+  final Map<LocalAcademicAccountStore, Future<Set<AcademicProviderId>?>>
+      _running = {};
 
-  Future<void> sync(LocalAcademicAccountStore store, bool Function() current) {
+  Future<void> sync(
+      LocalAcademicAccountStore store, bool Function() current) async {
+    await syncWithPresence(store, current);
+  }
+
+  Future<Set<AcademicProviderId>?> syncWithPresence(
+      LocalAcademicAccountStore store, bool Function() current) {
     final running = _running[store];
     if (running != null) return running;
     final operation = _sync(store, current);
@@ -18,8 +25,9 @@ final class AcademicAccountConfigClient {
     });
   }
 
-  Future<void> _sync(
+  Future<Set<AcademicProviderId>?> _sync(
       LocalAcademicAccountStore store, bool Function() current) async {
+    final presentProviders = <AcademicProviderId>{};
     for (final provider in AcademicProviderId.values) {
       while (current()) {
         final entry = store.entry(provider);
@@ -42,17 +50,18 @@ final class AcademicAccountConfigClient {
                 sendTimeout: const Duration(seconds: 12),
                 receiveTimeout: const Duration(seconds: 12)),
           );
-          if (!current()) return;
+          if (!current()) return null;
           await store.acknowledge(provider, op['operation_id'] as String,
-              Map<String, dynamic>.from(response.data!['config'] as Map));
+              _parseConfig(response.data!['config']),
+              current: current);
         } on DioException catch (error) {
-          if (!current()) return;
+          if (!current()) return null;
           if (error.response?.data is Map &&
               error.response?.data['code'] == 'APP_USER_CHANGED') {
-            return;
+            return null;
           }
           if (error.response?.statusCode == 409) {
-            await store.markConflict(provider);
+            await store.markConflict(provider, current: current);
           } else {
             rethrow;
           }
@@ -60,16 +69,41 @@ final class AcademicAccountConfigClient {
         }
       }
     }
-    if (!current()) return;
+    if (!current()) return null;
     final response = await dio.get<Map<String, dynamic>>(
         '/academic-account-configs',
         options: Options(
             headers: {'X-Expected-App-User': store.userId},
             receiveTimeout: const Duration(seconds: 12)));
-    if (!current()) return;
-    for (final config in response.data!['configs'] as List) {
-      if (!current()) return;
-      await store.mergeSnapshot(Map<String, dynamic>.from(config as Map));
+    if (!current()) return null;
+    // 先完整解析再合并，畸形响应不能被解释成某个 Provider 从未登记。
+    final snapshots =
+        (response.data!['configs'] as List).map(_parseConfig).toList();
+    for (final snapshot in snapshots) {
+      if (!current()) return null;
+      final provider = AcademicProviderId.tryParse(snapshot['provider_id'])!;
+      if (!presentProviders.add(provider)) {
+        throw const FormatException('教务配置列表包含重复 Provider');
+      }
+      await store.mergeSnapshot(snapshot, current: current);
+      await store.resolveSatisfiedConflict(provider, current: current);
     }
+    return current() ? presentProviders : null;
+  }
+
+  Map<String, dynamic> _parseConfig(dynamic value) {
+    final config = Map<String, dynamic>.from(value as Map);
+    final revision = config['revision'];
+    final student = config['student_id'];
+    if (AcademicProviderId.tryParse(config['provider_id'] as String? ?? '') ==
+            null ||
+        revision is! int ||
+        revision <= 0 ||
+        student is! String ||
+        (config['state'] != 'active' && config['state'] != 'deleted') ||
+        (config['state'] == 'active' && student.trim().isEmpty)) {
+      throw const FormatException('教务配置响应无效');
+    }
+    return config;
   }
 }

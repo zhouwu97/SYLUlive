@@ -20,7 +20,12 @@ import '../services/home_widget_service.dart';
 import 'home_widget_settings_screen.dart';
 
 class ExamScheduleScreen extends StatefulWidget {
-  const ExamScheduleScreen({Key? key}) : super(key: key);
+  /// [examRepository] 仅供测试注入失败/桩实现；生产入口使用默认仓储。
+  const ExamScheduleScreen({Key? key, ExamScheduleRepository? examRepository})
+      : _examRepositoryOverride = examRepository,
+        super(key: key);
+
+  final ExamScheduleRepository? _examRepositoryOverride;
 
   @override
   State<ExamScheduleScreen> createState() => _ExamScheduleScreenState();
@@ -28,7 +33,8 @@ class ExamScheduleScreen extends StatefulWidget {
 
 class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   List<ExamModel> _exams = [];
-  final _examRepository = ExamScheduleRepository();
+  late final _examRepository =
+      widget._examRepositoryOverride ?? ExamScheduleRepository();
   Timer? _syncTimer;
 
   late String _currentSemester;
@@ -84,7 +90,8 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     try {
       final exams = await _examRepository.load();
       if (!mounted) return;
-      setState(() => _exams = exams);
+      // 空存档会由仓储返回 const []；页面后续要增删考试，因此在状态层持有可变副本。
+      setState(() => _exams = List<ExamModel>.of(exams));
       _syncWidget();
     } catch (e) {
       debugPrint('加载考试数据失败: $e');
@@ -306,6 +313,50 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
       ),
     );
     Add2Calendar.addEvent2Cal(event);
+  }
+
+  Future<void> _deleteExam(ExamModel exam) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('确认删除'),
+        content: Text('确定要删除“${exam.name}”吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    // 先持久化再更新 UI：保存失败时保留旧列表，避免界面已删除而存档仍在。
+    final remaining = List<ExamModel>.of(_exams)..remove(exam);
+    try {
+      await _examRepository.save(remaining);
+    } catch (e) {
+      debugPrint('删除考试保存失败: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('删除失败，已保留“${exam.name}”')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _exams = remaining);
+    _syncWidget();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已删除 ${exam.name}')),
+    );
   }
 
   void _showEditDialog([ExamModel? exam, int? index]) {
@@ -910,12 +961,22 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                       },
                     );
                   },
-                  onDismissed: (direction) {
-                    if (mounted)
-                      setState(() {
-                        _exams.removeAt(originalIndex);
-                      });
-                    _saveToLocal();
+                  onDismissed: (direction) async {
+                    // Dismissible 要求条目先离开树；存档写入失败时再把考试
+                    // 放回列表，避免界面与本地数据分叉。
+                    setState(() => _exams.remove(exam));
+                    try {
+                      await _examRepository.save(List<ExamModel>.of(_exams));
+                      _syncWidget();
+                    } catch (e) {
+                      debugPrint('侧滑删除保存失败: $e');
+                      if (!mounted) return;
+                      setState(() => _exams.add(exam));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text('删除保存失败，“${exam.name}”已恢复')));
+                      return;
+                    }
+                    if (!mounted) return;
                     ScaffoldMessenger.of(
                       context,
                     ).showSnackBar(SnackBar(content: Text('已删除 ${exam.name}')));
@@ -1017,6 +1078,20 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                 ),
                                 tooltip: '添加到系统日历',
                                 onPressed: () => _addToCalendar(exam),
+                              ),
+                              IconButton(
+                                icon: Semantics(
+                                  label: '删除考试',
+                                  button: true,
+                                  child: Icon(
+                                    Icons.delete_outline,
+                                    color: isDark
+                                        ? Colors.red[300]
+                                        : Colors.red[400],
+                                  ),
+                                ),
+                                tooltip: '删除考试',
+                                onPressed: () => _deleteExam(exam),
                               ),
                             ],
                           ),

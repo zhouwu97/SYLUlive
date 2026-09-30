@@ -19,14 +19,35 @@ final class LocalAcademicAccountStore {
     return Map<String, dynamic>.from(jsonDecode(raw) as Map);
   }
 
-  Future<void> update(void Function(Map<String, dynamic>) mutate) {
+  Future<void> update(void Function(Map<String, dynamic>) mutate) async {
+    await _enqueueUpdate(mutate);
+  }
+
+  /// 在串行写队列真正执行时再次核对作用域。
+  ///
+  /// 页面上的检查只能挡住 await 返回后的提示，不能挡住已经排队的旧
+  /// 操作；这里把检查放在读取和提交之间，失效操作不会写入新账号的记录。
+  Future<bool> updateIfCurrent({
+    required bool Function() current,
+    required void Function(Map<String, dynamic>) mutate,
+  }) =>
+      _enqueueUpdate(mutate, current: current);
+
+  Future<bool> _enqueueUpdate(
+    void Function(Map<String, dynamic>) mutate, {
+    bool Function()? current,
+  }) {
     final previous = _tails[key] ?? Future<void>.value();
     final next = previous.then((_) async {
+      if (current != null && !current()) return false;
       final state = read();
+      if (current != null && !current()) return false;
       mutate(state);
+      if (current != null && !current()) return false;
       if (!await preferences.setString(key, jsonEncode(state))) {
         throw StateError('保存本机教务账号失败');
       }
+      return true;
     });
     final tail = next.then<void>((_) {}, onError: (Object _, StackTrace __) {});
     _tails[key] = tail;
@@ -59,15 +80,60 @@ final class LocalAcademicAccountStore {
         e['enabled'] = enabled;
       });
 
-  Future<void> commitIdentity(AcademicIdentityKey identity) => update((state) {
+  /// 核对完整云端列表后补入遗漏任务，不改变连接开关或凭据代次。
+  Future<bool> ensureRegistrationQueued(
+    AcademicIdentityKey identity, {
+    required int expectedEpoch,
+    required bool serverConfirmedAbsent,
+    required bool Function() current,
+  }) async {
+    var queued = false;
+    await update((state) {
+      if (!current() || identity.appUserId != userId) return;
+      final e = _entry(state, identity.providerId);
+      final student = (e['student_id']?.toString() ?? '').trim();
+      if (student.isEmpty ||
+          student != identity.studentId ||
+          (e['credential_epoch'] as int? ?? 0) != expectedEpoch ||
+          e['enabled'] != true ||
+          e['suppress_restore'] == true ||
+          e['conflict'] == true ||
+          e['remote_changed'] == true) {
+        return;
+      }
+
+      final queue = e['outbox'] as List? ?? const <dynamic>[];
+      if (queue.isNotEmpty) return;
+
+      final snapshot = e['snapshot'] as Map?;
+      // 曾经确认过的记录消失属于数据不一致，不能当作首次登记。
+      if (serverConfirmedAbsent && snapshot != null) {
+        e['remote_changed'] = true;
+        e['server_missing'] = true;
+        return;
+      }
+      if (!serverConfirmedAbsent || snapshot != null) return;
+
+      _enqueue(e, student, false);
+      queued = true;
+    });
+    return queued;
+  }
+
+  Future<void> commitIdentity(
+    AcademicIdentityKey identity, {
+    bool allowLegacyCleanup = false,
+  }) =>
+      update((state) {
         state['_active_provider'] = identity.providerId.value;
         final e = _entry(state, identity.providerId);
-        final previousStudent = e['student_id'];
-        if (previousStudent != null && previousStudent != identity.studentId) {
-          final cleanup =
-              e.putIfAbsent('cleanup_students', () => <dynamic>[]) as List;
-          if (!cleanup.contains(previousStudent)) cleanup.add(previousStudent);
-        }
+        final previousStudent = e['student_id']?.toString().trim();
+        _queueCleanup(
+          e,
+          previousStudent,
+          identity.studentId,
+          allowLegacyCleanup: allowLegacyCleanup,
+        );
         e['student_id'] = identity.studentId;
         e['enabled'] = true;
         e['rejected_epoch'] = null;
@@ -83,15 +149,20 @@ final class LocalAcademicAccountStore {
         }
       });
 
-  Future<void> remove(AcademicProviderId provider, {required bool fromCloud}) =>
+  Future<void> remove(
+    AcademicProviderId provider, {
+    required bool fromCloud,
+    bool allowLegacyCleanup = false,
+  }) =>
       update((state) {
         final e = _entry(state, provider);
-        final student = e['student_id'];
-        if (student != null) {
-          final cleanup =
-              e.putIfAbsent('cleanup_students', () => <dynamic>[]) as List;
-          if (!cleanup.contains(student)) cleanup.add(student);
-        }
+        final student = e['student_id']?.toString().trim();
+        _queueCleanup(
+          e,
+          student,
+          null,
+          allowLegacyCleanup: allowLegacyCleanup,
+        );
         e['student_id'] = null;
         e['enabled'] = false;
         e['credential_epoch'] = (e['credential_epoch'] as int? ?? 0) + 1;
@@ -109,10 +180,30 @@ final class LocalAcademicAccountStore {
               studentId: student as String)))
       .toList();
 
+  /// 读取与 cleanup intent 一起持久化的旧版兼容数据认领许可。
+  ///
+  /// 只有采用配置时已经证明旧身份是当前身份，才会写入这个标记；恢复
+  /// 时不能根据当前 controller 的身份重新猜测，否则切号后会扩大清理范围。
+  bool cleanupIncludesLegacy(AcademicIdentityKey identity) {
+    if (identity.appUserId != userId) return false;
+    final legacy =
+        entry(identity.providerId)['cleanup_legacy_students'] as List?;
+    return legacy
+            ?.any((student) => student?.toString() == identity.studentId) ??
+        false;
+  }
+
   Future<void> acknowledgeCleanup(AcademicIdentityKey identity) =>
       update((state) {
+        if (identity.appUserId != userId) {
+          throw ArgumentError(
+            'Cannot acknowledge cleanup for identity ${identity.appUserId} in store of user $userId',
+          );
+        }
         final e = _entry(state, identity.providerId);
         (e['cleanup_students'] as List? ?? []).remove(identity.studentId);
+        (e['cleanup_legacy_students'] as List? ?? [])
+            .remove(identity.studentId);
       });
 
   AcademicProviderId? get activeProvider =>
@@ -159,7 +250,10 @@ final class LocalAcademicAccountStore {
     });
   }
 
-  Future<void> mergeSnapshot(Map<String, dynamic> config) => update((state) {
+  Future<void> mergeSnapshot(Map<String, dynamic> config,
+          {bool Function()? current}) =>
+      update((state) {
+        if (current != null && !current()) return;
         final provider =
             AcademicProviderId.tryParse(config['provider_id'] as String? ?? '');
         if (provider == null) return;
@@ -170,6 +264,7 @@ final class LocalAcademicAccountStore {
           return;
         }
         e['snapshot'] = config;
+        e['server_missing'] = false;
         final pending = (e['outbox'] as List? ?? []).isNotEmpty;
         if (e['student_id'] == null &&
             !pending &&
@@ -185,8 +280,10 @@ final class LocalAcademicAccountStore {
       });
 
   Future<void> acknowledge(AcademicProviderId provider, String operation,
-          Map<String, dynamic> config) =>
+          Map<String, dynamic> config,
+          {bool Function()? current}) =>
       update((state) {
+        if (current != null && !current()) return;
         final e = _entry(state, provider);
         final queue = e['outbox'] as List? ?? [];
         if (queue.isEmpty || queue.first['operation_id'] != operation) return;
@@ -200,30 +297,178 @@ final class LocalAcademicAccountStore {
         // 保留删除抑制标记，迟到的 GET 即使越过当前请求也不能复活本机配置。
       });
 
-  Future<void> markConflict(AcademicProviderId provider) => update((state) {
+  Future<void> markConflict(AcademicProviderId provider,
+          {bool Function()? current}) =>
+      update((state) {
+        if (current != null && !current()) return;
         _entry(state, provider)['conflict'] = true;
       });
 
-  Future<void> keepLocal(AcademicProviderId provider) => update((state) {
+  /// 另一设备已写入相同目标时可收敛；有后继操作的队列仍需显式处理版本。
+  Future<void> resolveSatisfiedConflict(AcademicProviderId provider,
+          {required bool Function() current}) =>
+      update((state) {
+        if (!current()) return;
         final e = _entry(state, provider);
-        e['outbox'] = <dynamic>[];
+        final queue = e['outbox'] as List? ?? [];
+        final snapshot = e['snapshot'] as Map?;
+        if (e['conflict'] != true || queue.length != 1 || snapshot == null) {
+          return;
+        }
+        final op = queue.single as Map;
+        final deleted = op['deleted'] == true;
+        if ((snapshot['revision'] as int) <= (op['base_revision'] as int) ||
+            snapshot['state'] != (deleted ? 'deleted' : 'active') ||
+            (!deleted && snapshot['student_id'] != op['student_id'])) {
+          return;
+        }
+        queue.clear();
         e['conflict'] = false;
-        e['remote_changed'] = false;
-        _enqueue(e, e['student_id'] as String? ?? '', e['student_id'] == null);
+        e['remote_changed'] = e['student_id'] != null &&
+            (deleted || e['student_id'] != snapshot['student_id']);
       });
 
-  Future<void> adoptCloud(AcademicProviderId provider) => update((state) {
-        final e = _entry(state, provider);
-        final cloud = e['snapshot'] as Map?;
-        if (cloud == null) return;
-        e['student_id'] =
-            cloud['state'] == 'active' ? cloud['student_id'] : null;
-        e['enabled'] = true;
-        e['suppress_restore'] = cloud['state'] != 'active';
+  AcademicConfigSyncStatus syncStatus(AcademicProviderId provider) {
+    final e = entry(provider);
+    if (e['conflict'] == true) return AcademicConfigSyncStatus.conflict;
+    if (e['server_missing'] == true) {
+      return AcademicConfigSyncStatus.serverMissing;
+    }
+    if (e['remote_changed'] == true) {
+      return AcademicConfigSyncStatus.remoteChanged;
+    }
+    if ((e['outbox'] as List? ?? []).isNotEmpty) {
+      return AcademicConfigSyncStatus.pending;
+    }
+    return e['snapshot'] == null
+        ? AcademicConfigSyncStatus.unknown
+        : AcademicConfigSyncStatus.synced;
+  }
+
+  Future<bool> keepLocal(
+    AcademicProviderId provider, {
+    bool Function()? current,
+    String? expectedStudentId,
+    bool requireExpectedStudent = false,
+  }) {
+    var mutated = false;
+    void mutate(Map<String, dynamic> state) {
+      final e = _entry(state, provider);
+      if (requireExpectedStudent &&
+          e['student_id']?.toString() != expectedStudentId) {
+        return;
+      }
+      if (e['server_missing'] == true) {
+        // 这是用户明确选择重建云端登记；缺失记录没有可复用的 revision。
+        e['snapshot'] = null;
+        e['server_missing'] = false;
+      }
+      e['outbox'] = <dynamic>[];
+      e['conflict'] = false;
+      e['remote_changed'] = false;
+      _enqueue(e, e['student_id'] as String? ?? '', e['student_id'] == null);
+      mutated = true;
+    }
+
+    final committed = current == null
+        ? _enqueueUpdate(mutate)
+        : updateIfCurrent(current: current, mutate: mutate);
+    return committed.then((value) => value && mutated);
+  }
+
+  /// 采用云端投影，并在同一次账号记录写入中登记旧身份清理意图。
+  /// 返回 false 表示作用域或操作前提已失效，调用方不能显示成功。
+  Future<bool> adoptCloud(
+    AcademicProviderId provider, {
+    bool Function()? current,
+    String? expectedStudentId,
+    bool requireExpectedStudent = false,
+    bool allowLegacyCleanup = false,
+  }) {
+    var mutated = false;
+    void mutate(Map<String, dynamic> state) {
+      final e = _entry(state, provider);
+      if (requireExpectedStudent &&
+          e['student_id']?.toString() != expectedStudentId) {
+        return;
+      }
+      final previousStudent = e['student_id']?.toString().trim();
+      if (e['server_missing'] == true) {
+        // 云端没有可采用的目标，显式采用云端即解除本机对应身份。
+        _queueCleanup(
+          e,
+          previousStudent,
+          null,
+          allowLegacyCleanup: allowLegacyCleanup,
+        );
+        e['student_id'] = null;
+        e['enabled'] = false;
+        e['snapshot'] = null;
+        e['server_missing'] = false;
         e['outbox'] = <dynamic>[];
-        e['conflict'] = false;
         e['remote_changed'] = false;
+        e['suppress_restore'] = true;
         e['credential_epoch'] = (e['credential_epoch'] as int? ?? 0) + 1;
         e['rejected_epoch'] = null;
-      });
+        mutated = true;
+        return;
+      }
+      final cloud = e['snapshot'] as Map?;
+      if (cloud == null) return;
+      final nextStudent = cloud['state'] == 'active'
+          ? cloud['student_id']?.toString().trim()
+          : null;
+      _queueCleanup(
+        e,
+        previousStudent,
+        nextStudent,
+        allowLegacyCleanup: allowLegacyCleanup,
+      );
+      e['student_id'] = nextStudent;
+      e['enabled'] = true;
+      e['suppress_restore'] = cloud['state'] != 'active';
+      e['outbox'] = <dynamic>[];
+      e['conflict'] = false;
+      e['remote_changed'] = false;
+      e['credential_epoch'] = (e['credential_epoch'] as int? ?? 0) + 1;
+      e['rejected_epoch'] = null;
+      mutated = true;
+    }
+
+    final committed = current == null
+        ? _enqueueUpdate(mutate)
+        : updateIfCurrent(current: current, mutate: mutate);
+    return committed.then((value) => value && mutated);
+  }
+
+  static void _queueCleanup(
+    Map<String, dynamic> entry,
+    String? previousStudent,
+    String? nextStudent, {
+    bool allowLegacyCleanup = false,
+  }) {
+    final previous = previousStudent?.trim() ?? '';
+    final next = nextStudent?.trim() ?? '';
+    if (previous.isEmpty || previous == next) return;
+    final cleanup =
+        entry.putIfAbsent('cleanup_students', () => <dynamic>[]) as List;
+    if (!cleanup.contains(previous)) cleanup.add(previous);
+    if (allowLegacyCleanup) {
+      final legacy = entry.putIfAbsent(
+          'cleanup_legacy_students', () => <dynamic>[]) as List;
+      if (!legacy.contains(previous)) legacy.add(previous);
+    }
+  }
+}
+
+/// 云端账号配置的事实状态，与服务端可信学生身份状态分开维护。
+enum AcademicConfigSyncStatus {
+  unknown,
+  loading,
+  synced,
+  pending,
+  conflict,
+  remoteChanged,
+  serverMissing,
+  error,
 }

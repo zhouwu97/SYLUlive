@@ -290,6 +290,12 @@ def parse_list_page(html: str, base_url: str) -> list[ListItem]:
     return items
 
 
+def _filter_category_items(items: list[ListItem], category_id: str) -> list[ListItem]:
+    """栏目页偶尔混入其他栏目链接，只抓取当前栏目 ID 下的文章。"""
+    prefix = f"/info/{category_id}/"
+    return [item for item in items if prefix in urlparse(item.source_url).path]
+
+
 def parse_total_pages(html: str) -> int:
     """从分页导航中解析总页数。
 
@@ -497,8 +503,9 @@ async def crawl_category(
             total_pages = 1
 
         # 解析第一页列表项
-        page_items = parse_list_page(html, first_page_url)
-        total_list_items_seen += len(page_items)
+        parsed_items = parse_list_page(html, first_page_url)
+        total_list_items_seen += len(parsed_items)
+        page_items = _filter_category_items(parsed_items, category_id)
         total_pages_fetched += 1
 
         # 确定要抓的文章
@@ -576,8 +583,9 @@ async def crawl_category(
                 # 一页失败不阻断后续
                 continue
 
-            page_items = parse_list_page(html, page_url)
-            total_list_items_seen += len(page_items)
+            parsed_items = parse_list_page(html, page_url)
+            total_list_items_seen += len(parsed_items)
+            page_items = _filter_category_items(parsed_items, category_id)
             total_pages_fetched += 1
 
             detail_items = [x for x in page_items if x.source_url not in known_urls]
@@ -721,6 +729,8 @@ class JWCPublicCrawler:
             timeout=httpx.Timeout(self.timeout),
             follow_redirects=True,
             verify=True,             # 生产必须验证 TLS 证书
+            # 仅公告爬虫走境内出口，避免影响个人教务服务的其他网络请求。
+            proxy=os.getenv("CAMPUS_CRAWLER_PROXY") or None,
             headers={"User-Agent": self.user_agent},
             event_hooks={"request": [_validate_redirect]},
         ) as client:

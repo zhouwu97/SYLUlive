@@ -794,6 +794,8 @@ class CompetitionPublicCrawler:
             timeout=httpx.Timeout(self.timeout),
             follow_redirects=True,
             verify=True,
+            # 仅公告爬虫走境内出口，避免影响个人教务服务的其他网络请求。
+            proxy=os.getenv("CAMPUS_CRAWLER_PROXY") or None,
             headers={"User-Agent": self.user_agent},
             event_hooks={"request": [_validate_redirect]},
         ) as client:

@@ -140,6 +140,25 @@ final class AcademicLoginCoordinator {
         .bindingSyncState;
   }
 
+  /// 在课表等实际读取成功后补投递本机教务身份声明。
+  ///
+  /// 登录成功时已经会尝试一次；这里保留一个显式入口，覆盖登录完成后
+  /// 网络短暂不可用、应用切后台或协调器尚未完成后台重试的情况。
+  Future<String?> synchronizeIdentityBinding({bool force = true}) async {
+    final warning = await _syncLocalBinding(force: force);
+    try {
+      // 课表已成功读取后，确保账号配置 outbox 也完成一次云端对账；登录收尾
+      // 里的后台同步仍保留，用于覆盖未进入课表页面的场景。
+      await controller.providerRouter?.reconcileAccountConfiguration(
+        requireSuccess: true,
+        force: force,
+      );
+    } catch (_) {
+      return warning ?? '教务绑定信息暂未同步；联网后会自动重试。';
+    }
+    return warning;
+  }
+
   final Future<AppPreferencesStore> Function() _preferencesLoader;
   final AcademicPersistencePolicy? persistencePolicy;
   final AcademicCaptchaSubmissionPolicy captchaSubmissionPolicy;

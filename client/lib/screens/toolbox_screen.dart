@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../platform/contracts/external_navigator.dart';
 import '../app_bootstrap.dart';
 import '../providers/auth_provider.dart';
+import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
@@ -460,7 +461,11 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
 
   void _openPhysicalTest(BuildContext context) {
     final auth = context.read<AuthProvider>();
-    final username = auth.user?.studentId ?? '';
+    final academicStudentId =
+        context.read<EduProvider?>()?.studentId.trim() ?? '';
+    final username = academicStudentId.isNotEmpty
+        ? academicStudentId
+        : (auth.user?.studentId ?? '');
     final appUserId = auth.user?.id.toString() ?? '';
     if (username.isEmpty || appUserId.isEmpty) {
       ScaffoldMessenger.of(

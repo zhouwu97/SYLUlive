@@ -10,6 +10,7 @@ import '../features/personal_data_sync/erke_snapshot_upload.dart';
 import '../features/personal_data_sync/personal_data_sync_models.dart';
 import '../features/personal_data_sync/personal_data_sync_result.dart';
 import '../providers/edu_provider.dart';
+import '../features/academic/application/academic_session_controller.dart';
 import '../theme/app_colors.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/erke_snapshot_upload_dialog.dart';
@@ -55,12 +56,21 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   void initState() {
     super.initState();
     final user = context.read<AuthProvider>().user;
+    final academic = context.read<AcademicSessionController?>();
+    final edu = context.read<EduProvider?>();
+    final boundStudentId = (academic?.identity?.studentId ??
+            academic?.studentId ??
+            edu?.studentId ??
+            '')
+        .trim();
+    final sourceAccountId =
+        boundStudentId.isNotEmpty ? boundStudentId : (user?.studentId ?? '');
     _bindRepository(
       appUserId: user?.id.toString() ?? '',
-      sourceAccountId: user?.studentId ?? '',
+      sourceAccountId: sourceAccountId,
     );
     if (user != null) {
-      _studentIdCtrl.text = user.studentId;
+      _studentIdCtrl.text = sourceAccountId;
     }
     _clearLegacySavedPasswords();
     _loadCache();
@@ -326,7 +336,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Color _border(bool isDark) =>
       isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
 
-  Color _progressColor(double percent, bool isDark, {bool isGraduation = true}) {
+  Color _progressColor(double percent, bool isDark,
+      {bool isGraduation = true}) {
     if (percent >= 100) return _success(isDark);
     if (!isGraduation && percent < 100) return _warning(isDark);
     return _accent(isDark);
@@ -1071,7 +1082,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: _progressColor(percentage, isDark, isGraduation: false),
+                  color:
+                      _progressColor(percentage, isDark, isGraduation: false),
                 ),
               ),
             ],

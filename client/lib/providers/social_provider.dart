@@ -175,7 +175,9 @@ class SocialProvider extends ChangeNotifier {
       final response = await _dio.get(
         '/user/$userId/market-posts',
         queryParameters: {
-          'post_type': 'sell',
+          // 个人主页保留出售、求购、失物、招领和办事记录；集市公共列表
+          // 仍由服务端单独限制为 normal。
+          'post_type': 'all',
           'page': page,
           'limit': limit,
         },

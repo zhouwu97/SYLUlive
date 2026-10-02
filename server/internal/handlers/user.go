@@ -689,9 +689,9 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 		Preload("Images.File").
 		Scopes(withPostImageVariants).
 		Where("author_id = ? AND status IN ? AND board_id != ?", targetID, models.PublicPostStatuses(), models.BoardMarket)
-	viewerID, _ := c.Get("user_id")
+	viewerID := uint64(c.GetUint("user_id"))
 	role, _ := c.Get("role")
-	if viewerID == targetID || role == "admin" || role == "super_admin" {
+	if (viewerID != 0 && viewerID == targetID) || role == "admin" || role == "super_admin" {
 		query = query.Or("author_id = ? AND status = ? AND board_id != ?", targetID, models.PostStatusModeratedHidden, models.BoardMarket)
 	}
 	var posts []models.Post
@@ -708,7 +708,7 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 	c.JSON(http.StatusOK, posts)
 }
 
-// GetUserMarketPosts 获取用户主页展示的集市出售记录，包含已售出历史。
+// GetUserMarketPosts 获取用户主页展示的集市记录，包含已完成历史。
 func (h *UserHandler) GetUserMarketPosts(c *gin.Context) {
 	targetIDStr := c.Param("id")
 	targetID, err := strconv.ParseUint(targetIDStr, 10, 64)
@@ -718,20 +718,24 @@ func (h *UserHandler) GetUserMarketPosts(c *gin.Context) {
 	}
 
 	page, limit, offset := ParsePagination(c, 20, 50)
-	postType := c.DefaultQuery("post_type", "sell")
+	// 兼容旧客户端默认只展示出售记录；新版个人主页显式传 all，保留其他集市类型。
+	postType := strings.TrimSpace(c.DefaultQuery("post_type", "sell"))
+	statuses := models.PublicPostStatuses()
+	viewerID := uint64(c.GetUint("user_id"))
+	role := c.GetString("role")
+	if (viewerID != 0 && viewerID == targetID) || role == "admin" || role == "super_admin" {
+		statuses = append(statuses, models.PostStatusModeratedHidden)
+	}
 
 	buildQuery := func() *gorm.DB {
 		query := h.db.Model(&models.Post{}).Where(
-			"author_id = ? AND board_id = ? AND post_type = ? AND status IN ?",
+			"author_id = ? AND board_id = ? AND status IN ?",
 			targetID,
 			models.BoardMarket,
-			postType,
-			models.PublicPostStatuses(),
+			statuses,
 		)
-		viewerID, _ := c.Get("user_id")
-		role, _ := c.Get("role")
-		if viewerID == targetID || role == "admin" || role == "super_admin" {
-			query = query.Or("author_id = ? AND board_id = ? AND post_type = ? AND status = ?", targetID, models.BoardMarket, postType, models.PostStatusModeratedHidden)
+		if postType != "" && postType != "all" {
+			query = query.Where("post_type = ?", postType)
 		}
 		return query
 	}

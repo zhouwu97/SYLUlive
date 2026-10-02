@@ -22,10 +22,10 @@ import (
 var publicPostStatuses = models.PublicPostStatuses()
 
 // marketListingPostStatuses 是公共集市列表允许展示的状态。
-// 已售商品仍需在详情、个人主页和“我的内容”中保留，但不再占用公共集市列表的位置。
+// 已完成的商品、求购和办事记录仍需在详情、个人主页和“我的内容”中保留，
+// 但不再占用公共集市列表的位置。
 var marketListingPostStatuses = []models.PostStatus{
 	models.PostStatusNormal,
-	models.PostStatusClosed,
 }
 
 // publicPostStatusesForBoard 返回指定板块的公共列表状态白名单。
@@ -38,7 +38,7 @@ func publicPostStatusesForBoard(boardID *models.BoardID) []models.PostStatus {
 }
 
 // homeFeedPostStatuses 是首页水帖综合/最新流的可见状态。
-// 首页水帖只展示正常状态；集市可公开展示的 sold/closed 不等于首页也要展示全部状态。
+// 首页水帖只展示正常状态；集市历史状态不等于首页也要展示全部状态。
 var homeFeedPostStatuses = []models.PostStatus{
 	models.PostStatusNormal,
 }

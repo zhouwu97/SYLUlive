@@ -13,7 +13,8 @@ import (
 // 封禁的路由前缀必须按**完整路由段**匹配，与管理员在封禁对话框里看到的范围一致。
 // 旧的裸字符串前缀匹配会让「仅当前接口 /api/login」连带封掉 /api/login_edu
 // （教务登录）甚至 /api/loginfoo，造成共享出口上的大批用户被误伤。
-func TestSecurityBlockMatchesWholeRouteSegmentsOnly(t *testing.T) {	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+func TestSecurityBlockMatchesWholeRouteSegmentsOnly(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("打开数据库失败: %v", err)
 	}

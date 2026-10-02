@@ -30,7 +30,9 @@ func SchoolAuthorityRetirementGate(retired bool) gin.HandlerFunc {
 		// 旧认证入口永久停写，不受历史部署开关影响。
 		retiredAuth := path == "/api/register_with_edu" || path == "/api/login_edu" || path == "/api/password/edu/reset" || path == "/api/forgot_password"
 		// 兼容开关关闭退役时，旧版仍可使用原教务链路；新版只调用独立配置接口。
-		identityMutation := c.Request.Method != http.MethodGet && (path == "/api/student-identity" || strings.HasPrefix(path, "/api/student-identity/"))
+		// 撤销已有身份不访问学校系统，必须继续经过 JWT 与资源归属校验。
+		identityRevocation := c.Request.Method == http.MethodDelete && path == "/api/student-identity"
+		identityMutation := !identityRevocation && c.Request.Method != http.MethodGet && (path == "/api/student-identity" || strings.HasPrefix(path, "/api/student-identity/"))
 		if retiredAuth || retired && (identityMutation || isSchoolAuthorityRetiredPath(c.Request.Method, c.Request.URL.Path)) {
 			SchoolAuthorityRetiredMiddleware(c)
 			return

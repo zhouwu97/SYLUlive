@@ -128,3 +128,38 @@ func TestSchoolCompatibilityGatePreservesLegacyRoutesUntilRetirement(t *testing.
 		}
 	}
 }
+
+func TestSchoolRetirementAllowsIdentityRevocationToReachAuthentication(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := openIdempotencyTestDB(t)
+	for _, retired := range []bool{false, true} {
+		for _, frozen := range []bool{false, true} {
+			router := gin.New()
+			router.Use(SchoolAuthorityRetirementGate(retired), SchoolLegacySecretsFreezeGate(frozen))
+			router.DELETE("/api/student-identity", AuthMiddleware(db, "revocation-test-secret"), func(c *gin.Context) {
+				t.Fatal("unauthenticated identity revocation must not reach the handler")
+			})
+			body := &countingRequestBody{reader: strings.NewReader(`{"provider_id":"sylu_undergraduate"}`)}
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodDelete, "/api/student-identity", body))
+			if response.Code != http.StatusUnauthorized || body.reads.Load() != 0 {
+				t.Fatalf("retired=%v frozen=%v status=%d body_reads=%d; expected JWT rejection before body read", retired, frozen, response.Code, body.reads.Load())
+			}
+		}
+	}
+
+	for _, path := range []string{"/api/student-identity", "/api/student-identity/bind", "/api/student-identity/challenge", "/api/student-identity/change"} {
+		router := gin.New()
+		router.Use(SchoolAuthorityRetirementGate(true))
+		router.POST(path, func(c *gin.Context) { t.Fatal("retired identity writes must stay blocked") })
+		router.DELETE(path+"/nested", func(c *gin.Context) { t.Fatal("revocation exception must match the exact route") })
+		for _, methodAndPath := range [][2]string{{http.MethodPost, path}, {http.MethodDelete, path + "/nested"}} {
+			body := &countingRequestBody{reader: strings.NewReader("invalid")}
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(methodAndPath[0], methodAndPath[1], body))
+			if response.Code != http.StatusGone || body.reads.Load() != 0 {
+				t.Fatalf("%s %s: status=%d body_reads=%d", methodAndPath[0], methodAndPath[1], response.Code, body.reads.Load())
+			}
+		}
+	}
+}

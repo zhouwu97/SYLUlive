@@ -16,9 +16,18 @@ class _FakeAuthProvider extends Fake
   int tokenGeneration = 1;
   int accountEpoch = 1;
   int refreshUserCalls = 0;
+  int retryRecoveryCalls = 0;
 
   @override
   bool get isLoggedIn => userId != null;
+
+  @override
+  bool get hasPendingStorageRecovery => false;
+
+  @override
+  Future<void> retryPendingStorageRecovery() async {
+    retryRecoveryCalls++;
+  }
 
   @override
   User? get user => userId == null

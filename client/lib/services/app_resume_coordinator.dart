@@ -102,6 +102,12 @@ class AppResumeCoordinator {
   }) async {
     if (!context.mounted) return;
     final auth = context.read<AuthProvider>();
+    // 上次冷启动安全存储临时故障导致登录恢复未决时，先在同一进程内重试；
+    // 恢复成功后按正常已登录会话继续本轮同步。
+    if (auth.hasPendingStorageRecovery) {
+      await auth.retryPendingStorageRecovery();
+      if (!context.mounted) return;
+    }
     final accountId = auth.user?.id;
     final sessionGeneration = auth.sessionGeneration;
     final accountSessionEpoch = auth.accountSessionEpoch;

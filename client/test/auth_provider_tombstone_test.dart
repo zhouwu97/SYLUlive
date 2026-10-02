@@ -62,6 +62,8 @@ void main() {
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   final secureStore = <String, String>{};
+  // 模拟 SecureStorage 删除失败（如 KeyStore 繁忙），用于验证退出墓碑闭环。
+  var failDeletes = false;
   late String tempRoot;
 
   setUpAll(() async {
@@ -70,6 +72,7 @@ void main() {
   });
 
   setUp(() {
+    failDeletes = false;
     AppPreferencesStore.setMockInitialValues({});
     secureStore.clear();
     messenger.setMockMethodCallHandler(pathProviderChannel, (call) async {
@@ -91,6 +94,13 @@ void main() {
           secureStore[key!] = args['value'] as String;
           return null;
         case 'delete':
+          if (failDeletes) {
+            throw PlatformException(
+              code: 'Exception encountered',
+              message: 'delete',
+              details: 'java.security.KeyStoreException: Keystore busy',
+            );
+          }
           secureStore.remove(key);
           return null;
         case 'deleteAll':
@@ -195,6 +205,66 @@ void main() {
     await restarted.initializeStoredAuth();
     expect(restarted.authState, AuthState.authenticated);
     expect(restarted.token, 'token-2');
+  });
+
+  test('退出时 Token 删除失败：墓碑优先写入，下次启动绝不复活旧账号', () async {
+    final adapter = _QueuedAuthAdapter();
+    final provider = _platformProvider(adapter, loadStoredAuth: false);
+
+    adapter.enqueue(200, {'token': 'token-1', 'user': _userJson(1)});
+    final first = await provider.login('account', 'password');
+    expect(first.success, isTrue, reason: first.errorMessage);
+
+    // 删除失败：退出抛出并保留内存会话，但墓碑已先行写入。
+    failDeletes = true;
+    await expectLater(provider.logout(), throwsA(isA<PlatformException>()));
+    expect(provider.authState, AuthState.authenticated);
+    expect(provider.token, 'token-1');
+    final afterFailedLogout = await AppPreferencesStore.getInstance();
+    expect(afterFailedLogout.getBool('auth_force_logged_out'), isTrue);
+    expect(secureStore['auth_token'], 'token-1');
+
+    // 删除持续失败时冷启动：清理失败、墓碑保留，旧会话不得恢复。
+    failDeletes = true;
+    final blockedRestart =
+        _platformProvider(_QueuedAuthAdapter(), loadStoredAuth: true);
+    await blockedRestart.initializeStoredAuth();
+    expect(blockedRestart.authState, AuthState.guest);
+    expect(blockedRestart.token, isNull);
+    final blockedPrefs = await AppPreferencesStore.getInstance();
+    expect(blockedPrefs.getBool('auth_force_logged_out'), isTrue);
+    expect(secureStore['auth_token'], 'token-1');
+
+    // 存储恢复后冷启动：清理成功且确认凭据不存在，才删除墓碑。
+    failDeletes = false;
+    final recoveredRestart =
+        _platformProvider(_QueuedAuthAdapter(), loadStoredAuth: true);
+    await recoveredRestart.initializeStoredAuth();
+    expect(recoveredRestart.authState, AuthState.guest);
+    expect(recoveredRestart.token, isNull);
+    expect(secureStore.containsKey('auth_token'), isFalse);
+    final recoveredPrefs = await AppPreferencesStore.getInstance();
+    expect(recoveredPrefs.getBool('auth_force_logged_out'), isNot(true));
+  });
+
+  test('退出成功后冷启动确认凭据已不存在才删除墓碑', () async {
+    final adapter = _QueuedAuthAdapter();
+    final provider = _platformProvider(adapter, loadStoredAuth: false);
+
+    adapter.enqueue(200, {'token': 'token-1', 'user': _userJson(1)});
+    expect((await provider.login('account', 'password')).success, isTrue);
+    adapter.enqueue(200, {'success': true});
+    await provider.logout();
+    expect(provider.authState, AuthState.guest);
+
+    // 正常退出：凭据已清空，冷启动确认后删除墓碑，不会重复清理。
+    final restarted =
+        _platformProvider(_QueuedAuthAdapter(), loadStoredAuth: true);
+    await restarted.initializeStoredAuth();
+    expect(restarted.authState, AuthState.guest);
+    final prefs = await AppPreferencesStore.getInstance();
+    expect(prefs.getBool('auth_force_logged_out'), isNot(true));
+    expect(secureStore.containsKey('auth_token'), isFalse);
   });
 }
 

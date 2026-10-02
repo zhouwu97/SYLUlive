@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../../../platform/contracts/secure_store.dart';
 import '../domain/academic_provider.dart';
@@ -57,7 +58,11 @@ final class PlatformAcademicCredentialStore
     String? raw;
     try {
       raw = await _secretStore.read(key);
-    } catch (_) {
+    } catch (error) {
+      if (classifySecretStoreFailure(error) ==
+          SecretStoreFailureKind.corruptedCiphertext) {
+        return _discardCorruptedCredential(key);
+      }
       throw StateError('本机安全存储暂不可用');
     }
     if (raw == null) return null;
@@ -137,7 +142,11 @@ final class PlatformAcademicCredentialStore
     String? raw;
     try {
       raw = await _secretStore.read(key);
-    } catch (_) {
+    } catch (error) {
+      if (classifySecretStoreFailure(error) ==
+          SecretStoreFailureKind.corruptedCiphertext) {
+        return _discardCorruptedCredential(key);
+      }
       throw StateError('本机安全存储暂不可用');
     }
     if (raw == null) return null;
@@ -159,6 +168,18 @@ final class PlatformAcademicCredentialStore
       // 保留原文供恢复；调用方展示存储异常，不能进入缺少密码的流程。
       throw StateError('本机教务凭据无法读取');
     }
+  }
+
+  /// 密文与 KeyStore 永久失配时密码已永远取不回：删除坏键后按“未保存密码”
+  /// 处理，引导用户重新输入一次密码恢复自动登录，而不是持续报存储不可用；
+  /// 只作用于密码学级损坏，JSON 格式异常仍保留原文等待人工处理。
+  Future<AcademicCredential?> _discardCorruptedCredential(String key) async {
+    try {
+      await _secretStore.delete(key);
+    } catch (deleteError) {
+      debugPrint('删除损坏的教务凭据失败: $deleteError');
+    }
+    return null;
   }
 
   Future<void> _writeByKey(String key, AcademicCredential credential) async {

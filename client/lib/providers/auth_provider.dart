@@ -306,9 +306,9 @@ class _PlatformAuthCredentialStore implements SessionAuthCredentialStore {
       DateTime? accessTokenExpiresAt,
       DateTime? refreshTokenExpiresAt}) async {
     final prefs = await _prefs;
-    final oldToken = await _store.read(_tokenKey);
+    final oldToken = await _readOldCredentialForRollback(_tokenKey);
     final oldUserJson = prefs.getString(_userKey);
-    final oldRefresh = await _store.read(_refreshKey);
+    final oldRefresh = await _readOldCredentialForRollback(_refreshKey);
     final oldAccessExpiry = prefs.getString(_accessExpiryKey);
     final oldRefreshExpiry = prefs.getString(_refreshExpiryKey);
     try {
@@ -364,20 +364,40 @@ class _PlatformAuthCredentialStore implements SessionAuthCredentialStore {
     }
   }
 
+  /// 读取旧凭据用于写失败回滚。
+  ///
+  /// 旧密文与 KeyStore 密钥永久失配时按“不存在”处理：删除坏条目并返回 null，
+  /// 回滚路径会把该键继续视为空，保证服务器已验证的新登录不被坏密文阻塞；
+  /// 临时存储故障继续向上抛出，保持失败关闭以避免误删。
+  Future<String?> _readOldCredentialForRollback(String key) async {
+    try {
+      return await _store.read(key);
+    } catch (error) {
+      if (classifySecretStoreFailure(error) !=
+          SecretStoreFailureKind.corruptedCiphertext) {
+        rethrow;
+      }
+      try {
+        await _store.delete(key);
+      } catch (deleteError) {
+        debugPrint('删除损坏的安全存储条目失败: $deleteError');
+      }
+      return null;
+    }
+  }
+
   @override
   Future<void> clear() async {
     final prefs = await _prefs;
-    try {
-      await Future.wait([
-        _store.delete(_tokenKey),
-        _store.delete(_refreshKey),
-        prefs.remove(_userKey),
-        prefs.remove(_accessExpiryKey),
-        prefs.remove(_refreshExpiryKey),
-      ]);
-    } catch (e) {
-      debugPrint('清除凭据遇到异常: $e');
-    }
+    // 不再吞掉清理失败：调用方依赖异常区分“已清除”与“仍残留”，
+    // 清理失败时由上层记录真实结果并写入退出墓碑，下次启动重试。
+    await Future.wait([
+      _store.delete(_tokenKey),
+      _store.delete(_refreshKey),
+      prefs.remove(_userKey),
+      prefs.remove(_accessExpiryKey),
+      prefs.remove(_refreshExpiryKey),
+    ]);
   }
 
   Future<void> _restore(String key, String? value) async {
@@ -422,6 +442,7 @@ class AuthProvider extends ChangeNotifier {
   int? _refreshFailureEpoch;
   bool _isLoading = false;
   bool _initialized = false;
+  bool _storageRecoveryPending = false;
   Future<void>? _initializationFuture;
   Future<void>? _sessionExpiryFuture;
   Future<void> _authMutationTail = Future<void>.value();
@@ -444,6 +465,11 @@ class AuthProvider extends ChangeNotifier {
           _authState == AuthState.recovering);
   bool get isInitialized => _initialized;
   ForbiddenRecoveryRoute? get lastForbiddenRecovery => _lastForbiddenRecovery;
+
+  /// 冷启动登录恢复因安全存储临时故障未决。此状态下会话既不是 guest 也不是
+  /// 已登录，UI 必须保持恢复等待，不能当作未登录渲染，否则下游教务/课表
+  /// 上下文会被当作账号切换清空。
+  bool get hasPendingStorageRecovery => _storageRecoveryPending;
 
   void _setAuthState(AuthState state) {
     if (_authState != state) {
@@ -880,23 +906,65 @@ class AuthProvider extends ChangeNotifier {
           _token != token) {
         return;
       }
-      await _clearLocalSession(
-        clearPushAlias: true,
-        closeAccountContext: true,
-        expectedGeneration: generation,
-        expectedToken: token,
-        expectedAccountEpoch: accountEpoch,
-        skipMutationQueue: true,
-        reason: 'token_expired_401',
-        httpStatus: httpStatus ?? 401,
-        errorCode: errorCode,
-      );
+      try {
+        await _clearLocalSession(
+          clearPushAlias: true,
+          closeAccountContext: true,
+          expectedGeneration: generation,
+          expectedToken: token,
+          expectedAccountEpoch: accountEpoch,
+          skipMutationQueue: true,
+          reason: 'token_expired_401',
+          httpStatus: httpStatus ?? 401,
+          errorCode: errorCode,
+        );
+      } catch (error) {
+        // 过期清理失败时保留内存会话（_clearLocalSession 语义），此处只防
+        // 该后台任务产生未处理异常，失败详情已记录 auth_session_clear_failed。
+        debugPrint('401 过期清理本地凭据失败: $error');
+      }
     }).whenComplete(() => _sessionExpiryFuture = null);
     return _sessionExpiryFuture!;
   }
 
   Future<void> initializeStoredAuth() {
     return _initializationFuture ??= _loadStoredAuth();
+  }
+
+  /// 同进程重试冷启动登录恢复。仅在上次恢复因安全存储临时故障未决时执行；
+  /// 恢复成功后进入 authenticated，再次临时失败会重新回到未决状态。
+  Future<void> retryPendingStorageRecovery() async {
+    if (!_storageRecoveryPending) return;
+    _storageRecoveryPending = false;
+    _initializationFuture = null;
+    await initializeStoredAuth();
+  }
+
+  /// 判定启动读取异常是否为不可恢复的密文损坏；是则只清理认证命名空间并进入
+  /// guest，让用户重新登录。清理失败时由 _clearCorruptedStoredAuth 写入墓碑，
+  /// 下次启动重试。返回 false 表示异常不是密文损坏，调用方继续原恢复流程。
+  Future<bool> _handleCorruptedAuthCiphertext(
+    Object error,
+    Stopwatch stopwatch,
+  ) async {
+    if (classifySecretStoreFailure(error) !=
+        SecretStoreFailureKind.corruptedCiphertext) {
+      return false;
+    }
+    DiagnosticLogService.instance.recordError(
+      source: '账号',
+      type: '安全存储凭据损坏',
+      summary: '本地加密凭据无法解密，清理认证凭据后需重新登录',
+      detail: error.toString(),
+      eventCode: 'auth_credentials_crypto_corrupted',
+      category: 'auth',
+      operation: 'restore',
+      result: 'failure',
+      durationMs: stopwatch.elapsedMilliseconds,
+    );
+    await _clearCorruptedStoredAuth();
+    _setAuthState(AuthState.guest);
+    return true;
   }
 
   void _applyAuthHeader() {
@@ -935,19 +1003,53 @@ class AuthProvider extends ChangeNotifier {
       }
 
       if (prefs?.getBool('auth_force_logged_out') == true) {
-        await _clearStoredAuth();
-        await prefs!.remove('auth_force_logged_out');
+        // 墓碑只在确认凭据真正不存在后才能删除：清理或确认失败时保留墓碑，
+        // 下次启动继续重试，防止“退出后旧会话复活”。
+        try {
+          await _clearStoredAuth();
+          final stored = await _credentialStore.read();
+          if (stored.token == null && stored.refreshToken == null) {
+            await prefs!.remove('auth_force_logged_out');
+          } else {
+            debugPrint('退出墓碑清理后仍读取到本地凭据，保留墓碑');
+          }
+        } catch (error) {
+          debugPrint('重试清理已退出会话的凭据失败: $error');
+          DiagnosticLogService.instance.recordError(
+            source: '账号',
+            type: '退出墓碑清理失败',
+            summary: '启动重试清理认证凭据失败，保留墓碑待下次启动重试',
+            detail: error.toString(),
+            eventCode: 'auth_tombstone_retry_clear_failed',
+            category: 'auth',
+            operation: 'restore',
+            result: 'failure',
+            durationMs: stopwatch.elapsedMilliseconds,
+          );
+        }
         _setAuthState(AuthState.guest);
       } else {
         StoredAuthCredentials stored;
         try {
           stored = await _credentialStore.read();
         } catch (storageError) {
+          // 密文与 KeyStore 密钥永久失配（如 Android 备份/换机后 BAD_DECRYPT）
+          // 时重试不可能成功，直接清理认证凭据让用户重新登录。
+          if (await _handleCorruptedAuthCiphertext(storageError, stopwatch)) {
+            _initialized = true;
+            notifyListeners();
+            return;
+          }
           debugPrint('安全存储首次读取异常: $storageError，将在 300ms 后重试');
           await Future.delayed(const Duration(milliseconds: 300));
           try {
             stored = await _credentialStore.read();
           } catch (retryError) {
+            if (await _handleCorruptedAuthCiphertext(retryError, stopwatch)) {
+              _initialized = true;
+              notifyListeners();
+              return;
+            }
             debugPrint('安全存储重试读取依然异常: $retryError');
             DiagnosticLogService.instance.recordError(
               source: '账号',
@@ -960,6 +1062,10 @@ class AuthProvider extends ChangeNotifier {
               result: 'failure',
               durationMs: stopwatch.elapsedMilliseconds,
             );
+            // 同步清除原生保活 Token，避免前台恢复未决而后台仍按旧会话运行；
+            // 同进程重试成功后会重新同步 Token。
+            await KeepAliveService.instance.syncAuthToken(null);
+            _storageRecoveryPending = true;
             _setAuthState(AuthState.recoveryFailed);
             _initialized = true;
             notifyListeners();
@@ -1785,14 +1891,31 @@ class AuthProvider extends ChangeNotifier {
       return;
     }
     final hadSession = _token != null || _user != null;
-    // 先清除持久化凭据，失败时保留内存会话，避免出现“界面已退出、下次又恢复”的状态。
-    await _clearStoredAuth();
-
-    // 写入墓碑，防止下一次启动恢复旧 token。
+    // 墓碑优先写入：即使凭据清理失败，下次启动也会再次清理并阻止旧会话复活；
+    // 清理失败时保留内存会话（下方 rethrow），由调用方感知退出未完成。
     try {
       final prefs = await AppPreferencesStore.getInstance();
       await prefs.setBool('auth_force_logged_out', true);
     } catch (_) {}
+    try {
+      await _clearStoredAuth();
+    } catch (error, stackTrace) {
+      DiagnosticLogService.instance.recordError(
+        source: '账号',
+        type: '会话清理失败',
+        summary: '本地凭据清理失败，已写入退出墓碑并保留当前会话等待重试',
+        detail: '$error\n\n$stackTrace',
+        eventCode: 'auth_session_clear_failed',
+        category: 'auth',
+        operation: 'clear',
+        result: 'failure',
+        metadata: <String, Object?>{
+          'reason': reason,
+          'sessionEpoch': expectedAccountEpoch ?? _accountSessionEpoch,
+        },
+      );
+      rethrow;
+    }
 
     // 记录清理审计日志
     DiagnosticLogService.instance.record(

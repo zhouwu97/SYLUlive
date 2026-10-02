@@ -277,6 +277,31 @@ class TestStopCondition:
                         assert result.stop_reason == "full_page_known"
                         assert len(result.items) == 0
 
+    @pytest.mark.asyncio
+    async def test_ignores_articles_from_other_categories(self):
+        from services import jwc_public_crawler as mod
+        items = [
+            ListItem("Target", "2026-06-23",
+                     "https://jwc.sylu.edu.cn/info/1116/5900.htm", "5900"),
+            ListItem("Other", "2026-06-22",
+                     "https://jwc.sylu.edu.cn/info/1114/5901.htm", "5901"),
+        ]
+        with patch.object(mod, "_fetch", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.side_effect = [
+                (200, "<html></html>"),
+                (200, read_fixture("article_text.html")),
+            ]
+            with patch.object(mod, "parse_list_page", return_value=items):
+                with patch.object(mod, "parse_total_pages", return_value=1):
+                    async with __import__("httpx").AsyncClient() as client:
+                        result = await mod.crawl_category(
+                            client, "jwtz", set(), max_pages=1, reconcile=False,
+                        )
+        assert result.list_items_seen == 2
+        assert len(result.items) == 1
+        assert result.items[0].source_url.endswith("/info/1116/5900.htm")
+        assert mock_fetch.await_count == 2
+
 
 # ── reconcile 模式 ────────────────────────────────────────────────
 

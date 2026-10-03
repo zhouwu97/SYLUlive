@@ -22,11 +22,14 @@ function favoriteUrl(item: Entity) {
 }
 
 export function StickerRenderer({ stickerId, assetKey, packId, label = "表情" }: { stickerId?: string; assetKey?: string; packId?: string; label?: string }) {
+  // 表情资源由服务端按 hash 提供，缺资源时是 404；用占位块兜底，避免评论区出现裂图。
+  const [failed, setFailed] = useState(false);
   const pack = packId || (assetKey?.startsWith("official:") ? assetKey.split(":")[1] : "mingfeng-daily");
   const id = stickerId || assetKey?.split(":").pop();
   if (!id) return null;
   const src = pack ? packAssetUrl(pack, id) : `/stickers/${encodeURIComponent(id)}`;
-  return <img className="sticker-render" src={src} alt={label} loading="lazy" decoding="async" />;
+  if (failed) return <span className="sticker-fallback" title={label}>{label}</span>;
+  return <img className="sticker-render" src={src} alt={label} loading="lazy" decoding="async" onError={() => setFailed(true)} />;
 }
 
 export function StickerPicker({ onSelect, compact = false }: { onSelect: (payload: StickerPayload) => void; compact?: boolean }) {

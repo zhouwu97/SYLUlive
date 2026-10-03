@@ -305,10 +305,16 @@ function CourseForm({ course }: { course?: Course }) {
         {
           name: "day",
           label: "星期",
-          type: "number",
-          min: 1,
-          max: 7,
-          value: course?.day || 1,
+          options: [
+            ["1", "周一"],
+            ["2", "周二"],
+            ["3", "周三"],
+            ["4", "周四"],
+            ["5", "周五"],
+            ["6", "周六"],
+            ["7", "周日"],
+          ],
+          value: String(course?.day || 1),
           required: true,
         },
         {

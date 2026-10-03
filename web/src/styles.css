@@ -702,6 +702,20 @@ body {
   transition: transform 180ms ease-out, border-color 180ms ease-out, box-shadow 180ms ease-out, background 180ms ease-out;
 }
 
+/* list-row 语义上是行容器，但食堂「今日热门」以 <button> 承载点击；
+   不重置按钮默认外观时，UA 的灰底、边框和 inline-block 宽度会让行
+   呈现错位阶梯块，深色主题下尤其突兀。 */
+button.list-row {
+  display: flex;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
 .market-card:hover,
 .comp-row:hover,
 .dish:hover {
@@ -1111,6 +1125,7 @@ body {
 .sticker-option:hover, .sticker-option:focus-visible { transform: translateY(-2px); border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); background: var(--brand-soft); outline: none; }
 .sticker-picker-foot { display: flex; justify-content: space-between; color: var(--text-3); font-size: 12px; }
 .sticker-render { display: inline-block; width: 92px; height: 92px; object-fit: contain; vertical-align: middle; }
+.sticker-fallback { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; height: 32px; padding: 0 10px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-3); font-size: 12px; vertical-align: middle; }
 .sticker-inline { display: inline-flex; align-items: center; gap: 8px; }
 .post-detail-gallery .media-tile { min-height: 180px; }
 .post-detail-gallery .media-tile img { max-height: min(420px, 52vh); object-fit: contain; background: var(--surface-2); }

@@ -147,7 +147,10 @@ func (s *SecurityEventService) SecurityBlockDegraded() bool {
 
 func NewSecurityEventService(db *gorm.DB, secret string, now func() time.Time) *SecurityEventService {
 	if now == nil {
-		now = time.Now
+		// 统一 UTC：sqlite 测试按文本序列化并直接字符串比较时间，
+		// 夹具（UTC）与本地时钟混用偏移会令 expires_at 比较失真；
+		// Postgres 的 timestamptz 对 Instant 语义无感，UTC 只是收敛约定。
+		now = func() time.Time { return time.Now().UTC() }
 	}
 	return &SecurityEventService{
 		db:               db,

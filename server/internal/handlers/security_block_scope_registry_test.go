@@ -84,10 +84,11 @@ func TestAccountScopeBlocksMatchByWholeRouteSegment(t *testing.T) {
 	if err := db.AutoMigrate(&models.SecurityEvent{}, &models.SecurityBlock{}); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
-	service := services.NewSecurityEventService(db, "test-secret", nil)
+	// 注入与夹具一致的固定时钟：sqlite 按文本比较时间，时钟偏移必须与写入侧一致。
+	now := time.Now().UTC()
+	service := services.NewSecurityEventService(db, "test-secret", func() time.Time { return now })
 	clientIP := "203.0.113.7"
 	hash := service.Hash(clientIP)
-	now := time.Now().UTC()
 	blocks := make([]models.SecurityBlock, 0)
 	for _, prefix := range accountScopePrefixes(t) {
 		blocks = append(blocks, models.SecurityBlock{

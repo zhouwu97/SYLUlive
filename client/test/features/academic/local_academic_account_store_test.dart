@@ -22,6 +22,69 @@ Map<String, dynamic> cloud(String student, int revision,
     };
 
 void main() {
+  for (final provider in [u, g]) {
+    test('手机已绑定但服务器记录缺失时自动补登记并持久确认：${provider.value}', () async {
+      final prefs = MemoryPreferencesStore();
+      final store = LocalAcademicAccountStore('1', prefs);
+      final target = identity('A', provider: provider);
+      await store.mergeSnapshot(cloud('A', 7, provider: provider));
+      // 覆盖旧版本已经把缺失记录标成冲突的设备。
+      await store.update((state) {
+        final entry = state[provider.value] as Map;
+        entry['remote_changed'] = true;
+        entry['server_missing'] = true;
+      });
+      expect(await store.ensureRegistrationQueued(target,
+          expectedEpoch: store.epoch(provider),
+          serverConfirmedAbsent: true, current: () => true), true);
+      expect(await store.ensureRegistrationQueued(target,
+          expectedEpoch: store.epoch(provider),
+          serverConfirmedAbsent: true, current: () => true), false);
+      final pending = (store.entry(provider)['outbox'] as List).single;
+      expect(pending['base_revision'], 0);
+      var registered = false;
+      final dio = Dio();
+      addTearDown(dio.close);
+      dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+        expect(request.headers['X-Expected-App-User'], '1');
+        if (request.method == 'PUT') {
+          expect(request.path, '/academic-account-configs/${provider.value}');
+          expect(request.data, {'student_id': 'A', 'expected_revision': 0});
+          registered = true;
+          handler.resolve(Response(requestOptions: request, statusCode: 200,
+              data: {'config': cloud('A', 1, provider: provider)}));
+        } else {
+          handler.resolve(Response(requestOptions: request, statusCode: 200,
+              data: {'configs': registered ? [cloud('A', 1, provider: provider)] : []}));
+        }
+      }));
+      await AcademicAccountConfigClient(dio).sync(store, () => true);
+      final restarted = LocalAcademicAccountStore('1', prefs);
+      expect(registered, true);
+      expect(restarted.identities.single, target);
+      expect(restarted.entry(provider)['outbox'], isEmpty);
+      expect(restarted.entry(provider)['snapshot']['revision'], 1);
+      expect(restarted.entry(provider)['remote_changed'], false);
+    });
+  }
+
+  test('服务器未确认缺失、云端解绑或换绑、切号与旧代次均不自动补登记', () async {
+    for (final scenario in ['unknown', 'deleted', 'changed', 'user', 'epoch']) {
+      final store = LocalAcademicAccountStore('1', MemoryPreferencesStore());
+      await store.mergeSnapshot(cloud('A', 2));
+      if (scenario == 'deleted') {
+        await store.mergeSnapshot(cloud('', 3, state: 'deleted'));
+      } else if (scenario == 'changed') {
+        await store.mergeSnapshot(cloud('B', 3));
+      }
+      expect(await store.ensureRegistrationQueued(identity('A'),
+          expectedEpoch: scenario == 'epoch' ? store.epoch(u) + 1 : store.epoch(u),
+          serverConfirmedAbsent: scenario != 'unknown',
+          current: () => scenario != 'user'), false, reason: scenario);
+      expect(store.entry(u)['outbox'] ?? [], isEmpty, reason: scenario);
+    }
+  });
+
   test('本机账号和 Outbox 一次落盘，重启保留本科研究生且 App 账号隔离', () async {
     final prefs = MemoryPreferencesStore();
     final store = LocalAcademicAccountStore('1', prefs);

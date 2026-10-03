@@ -364,7 +364,11 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     final store = accountStore!;
     final accounts = [
       for (final identity in store.identities)
-        (identity: identity, epoch: store.epoch(identity.providerId)),
+        (
+          identity: identity,
+          epoch: store.epoch(identity.providerId),
+          revision: (store.entry(identity.providerId)['snapshot'] as Map?)?['revision'],
+        ),
     ];
     final presentProviders =
         await _syncConfigurationWithPresence(requireSuccess: true);
@@ -373,6 +377,13 @@ final class AcademicProviderRouterRepository implements AcademicRepository {
     var queued = false;
     for (final account in accounts) {
       if (!current()) return;
+      // 本轮可能刚发完已有 Outbox；不能用早于该写入的空列表再次重建。
+      // 下一轮在没有新写入时仍确认缺失，才以本机绑定补登记。
+      if (!presentProviders.contains(account.identity.providerId) &&
+          (store.entry(account.identity.providerId)['snapshot'] as Map?)?['revision'] !=
+              account.revision) {
+        continue;
+      }
       final added = await store.ensureRegistrationQueued(
         account.identity,
         expectedEpoch: account.epoch,

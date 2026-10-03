@@ -33,6 +33,56 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
 
+  for (final provider in AcademicProviderId.values) {
+    test('已有手机绑定在服务器缺失时对账自动发 PUT，确认后不重复：${provider.value}', () async {
+      final local = LocalAcademicAccountStore(
+          '3', await AppPreferencesStore.getInstance());
+      Map<String, dynamic> config(int revision) => {
+        'provider_id': provider.value,
+        'student_id': 'LOCAL-001',
+        'revision': revision,
+        'state': 'active',
+      };
+      await local.mergeSnapshot(config(7));
+      var registered = false;
+      var puts = 0;
+      final dio = Dio()
+        ..interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+          expect(request.headers['X-Expected-App-User'], '3');
+          if (request.method == 'GET') {
+            expect(request.path, '/academic-account-configs');
+            handler.resolve(Response(requestOptions: request, statusCode: 200,
+                data: {'configs': registered ? [config(1)] : []}));
+          } else {
+            expect(request.method, 'PUT');
+            expect(request.path, '/academic-account-configs/${provider.value}');
+            expect(request.data,
+                {'student_id': 'LOCAL-001', 'expected_revision': 0});
+            puts++;
+            registered = true;
+            handler.resolve(Response(requestOptions: request, statusCode: 200,
+                data: {'config': config(1)}));
+          }
+        }));
+      final router = AcademicProviderRouterRepository(
+          legacy: AcademicRepositoryImpl(
+              local: JiaowuLocalDataSource(),
+              legacy: LegacyServerDataSource(dio, networkEnabled: false),
+              source: AcademicSourceKind.legacy),
+          registry: AcademicProviderRegistry([_ProjectionProviderFactory(provider)]),
+          configClient: AcademicAccountConfigClient(dio));
+      addTearDown(() { router.close(); dio.close(); });
+      router.syncAppUser('3');
+      await router.loadIdentityBindings(scheduleReconcile: false);
+      await router.reconcileAccountConfiguration(force: true, requireSuccess: true);
+      expect(puts, 1);
+      expect(local.entry(provider)['snapshot']['revision'], 1);
+      expect(local.entry(provider)['outbox'], isEmpty);
+      await router.reconcileAccountConfiguration(force: true, requireSuccess: true);
+      expect(puts, 1);
+    });
+  }
+
   test('已登录但服务端身份列表为空时为未绑定，且不请求旧教务接口', () async {
     final paths = <String>[];
     final dio = Dio()

@@ -98,7 +98,7 @@ final class LocalAcademicAccountStore {
           e['enabled'] != true ||
           e['suppress_restore'] == true ||
           e['conflict'] == true ||
-          e['remote_changed'] == true) {
+          (e['remote_changed'] == true && e['server_missing'] != true)) {
         return;
       }
 
@@ -106,13 +106,17 @@ final class LocalAcademicAccountStore {
       if (queue.isNotEmpty) return;
 
       final snapshot = e['snapshot'] as Map?;
-      // 曾经确认过的记录消失属于数据不一致，不能当作首次登记。
-      if (serverConfirmedAbsent && snapshot != null) {
-        e['remote_changed'] = true;
-        e['server_missing'] = true;
+      if (!serverConfirmedAbsent) return;
+      // 服务器完整列表明确缺少该 Provider 时，补登记本机仍连接的账号。
+      // 旧快照版本不能用于重建；解绑墓碑或不同学号仍需显式处理。
+      if (snapshot != null &&
+          (snapshot['state'] != 'active' ||
+              snapshot['student_id'] != student)) {
         return;
       }
-      if (!serverConfirmedAbsent || snapshot != null) return;
+      e['snapshot'] = null;
+      e['remote_changed'] = false;
+      e['server_missing'] = false;
 
       _enqueue(e, student, false);
       queued = true;

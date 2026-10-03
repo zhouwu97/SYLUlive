@@ -538,6 +538,11 @@ class CourseScheduleProvider extends ChangeNotifier {
       _errorMessage = null;
       notifyListeners();
 
+      // 恢复阶段先建立唯一的快照读取；后续字段从同一 Store 的 Memo 复用，
+      // 避免 selectedTerm、学期起始日期和课程各自重复解密同一份密文。
+      final snapshot = await store.readSnapshot();
+      if (!_isCurrentSession(generation, store)) return;
+      _lastFetchedAt = snapshot?.fetchedAt;
       await _restoreSelectedTerm(generation, store);
       if (!_isCurrentSession(generation, store)) return;
       await loadSemesterStart();
@@ -1064,6 +1069,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (operation == null) return null;
     final store = await _resolveOperationStore(operation);
     if (store == null || !_isCurrentOperation(operation)) return null;
+    if (_lastFetchedAt != null) return _lastFetchedAt;
     try {
       final snapshot = await store.readSnapshot();
       if (!_isCurrentOperation(operation) || snapshot == null) return null;

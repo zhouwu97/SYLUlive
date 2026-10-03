@@ -83,8 +83,9 @@ class _MarketScreenState extends State<MarketScreen> {
           : widget.onlyPostTypes!;
 
   bool _isMarketListingVisible(Post post) {
-    // 服务端已售商品不再进入公共集市；这里同步过滤缓存和状态更新瞬间的旧数据。
-    return post.status != 'sold';
+    // 已完成的出售、求购、寻物、招领和办事记录只保留在详情/个人记录中，
+    // 这里同步过滤缓存和状态更新瞬间的旧数据，避免完成后仍占用公共集市。
+    return post.status != 'sold' && post.status != 'closed';
   }
 
   String? get _selectedServerType => _typeFilter == 'all' ? null : _typeFilter;

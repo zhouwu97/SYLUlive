@@ -1,6 +1,58 @@
 from fastapi.testclient import TestClient
 
 
+def test_pdf_parse_preserves_text_and_rejects_invalid_documents(monkeypatch):
+    import base64
+    import io
+
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    from app import main
+
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=300, height=200)
+    page[NameObject("/Resources")] = DictionaryObject({
+        NameObject("/Font"): DictionaryObject({
+            NameObject("/F1"): DictionaryObject({
+                NameObject("/Type"): NameObject("/Font"),
+                NameObject("/Subtype"): NameObject("/Type1"),
+                NameObject("/BaseFont"): NameObject("/Helvetica"),
+            }),
+        }),
+    })
+    stream = DecodedStreamObject()
+    stream.set_data(b"BT /F1 12 Tf 20 100 Td (Release safety PDF) Tj ET")
+    page[NameObject("/Contents")] = stream
+    document = io.BytesIO()
+    writer.write(document)
+
+    monkeypatch.setattr(main, "SERVICE_TOKEN", "test-token")
+    monkeypatch.setattr(main, "TextEmbedding", lambda **_: _ReadyTextEmbedding())
+    with TestClient(main.app) as client:
+        payload = {
+            "source_type": "pdf",
+            "file_name": "release-fixture.pdf",
+            "content_base64": base64.b64encode(document.getvalue()).decode(),
+        }
+        assert client.post("/internal/rag/parse", json=payload).status_code == 401
+        response = client.post(
+            "/internal/rag/parse",
+            headers={"X-Internal-Service-Token": "test-token"},
+            json=payload,
+        )
+        assert response.status_code == 200
+        assert response.json()["text"] == "Release safety PDF"
+        payload["content_base64"] = base64.b64encode(b"invalid pdf fixture").decode()
+        response = client.post(
+            "/internal/rag/parse",
+            headers={"X-Internal-Service-Token": "test-token"},
+            json=payload,
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "document parsing failed"
+
+
 class _ReadyTextEmbedding:
     def embed(self, texts):
         for _ in texts:

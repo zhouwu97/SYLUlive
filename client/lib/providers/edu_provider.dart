@@ -760,27 +760,92 @@ class EduProvider extends ChangeNotifier {
   Future<OperationResult<void>> unbind() async {
     final controller = _academicSessionController;
     final identity = controller?.identity;
+    final router = controller?.providerRouter;
+    final initialStore = router?.accountStore;
+    final appUserId = controller?.appUserId;
+    final contextGeneration = controller?.contextGeneration;
+    final credentialEpoch = identity == null || router == null
+        ? null
+        : router.accountStore?.epoch(identity.providerId);
     if (controller != null &&
         identity != null &&
-        controller.providerRouter != null) {
-      final router = controller.providerRouter!;
+        router != null &&
+        initialStore != null &&
+        appUserId != null) {
+      bool isCurrentScope() =>
+          controller.appUserId == appUserId &&
+          controller.contextGeneration == contextGeneration &&
+          controller.providerRouter == router &&
+          identical(router.accountStore, initialStore) &&
+          controller.identity == identity &&
+          initialStore.epoch(identity.providerId) == credentialEpoch &&
+          initialStore
+                  .entry(identity.providerId)['student_id']
+                  ?.toString()
+                  .trim() ==
+              identity.studentId;
+      bool isCurrentControllerScope() =>
+          controller.appUserId == appUserId &&
+          controller.contextGeneration == contextGeneration &&
+          controller.providerRouter == router &&
+          controller.identity == identity;
+
+      if (!isCurrentScope()) {
+        return OperationResult.fail('账号会话已变更，取消解绑');
+      }
+
+      // 关键步骤：先撤销服务端可信身份（DELETE /student-identity），再提交
+      // 云端配置删除。失败必须整体中断并保留本机绑定，让用户可以重试——
+      // 否则重登或恢复会话后服务端仍认为该学号可信。没有远端撤销能力时
+      // 必须失败关闭，保留本机绑定和资料，等待用户重试。
+      final identityClient = router.identityClient;
+      if (identityClient == null) {
+        return OperationResult.fail('服务器解绑能力不可用，请稍后重试');
+      }
       try {
-        await router.accountStore!.remove(identity.providerId, fromCloud: true);
+        await identityClient.unbind(identity);
+      } catch (_) {
+        return OperationResult.fail('服务器解绑未完成，请重试');
+      }
+
+      // 远端返回后重新确认代次；切号或同号 ABA 时只结束远端撤销，
+      // 不触碰新身份的 outbox、持久化 gate 和共享数据。
+      final scopeBeforeLocalRemove = isCurrentScope();
+      if (scopeBeforeLocalRemove) {
+        try {
+          final removed = await initialStore.remove(
+            identity.providerId,
+            fromCloud: true,
+            allowLegacyCleanup: true,
+            expectedStudentId: identity.studentId,
+            requireExpectedStudent: true,
+          );
+          if (!removed) return OperationResult.fail('本机身份已变更，取消解绑');
+        } catch (_) {
+          return OperationResult.fail('本机移除未完成，请重试');
+        }
+      }
+
+      // 只有仍在原上下文中才提交当前身份卸载和本机清理；旧身份的
+      // 独立清理任务由切号流程继续处理。
+      if (isCurrentControllerScope()) {
+        try {
+          final includeLegacy = initialStore.cleanupIncludesLegacy(identity);
+          await AcademicIdentityLifecycleCoordinator(
+            controller: controller,
+            preferences: await AppPreferencesStore.getInstance(),
+            includeLegacyAuxiliary: includeLegacy,
+          ).clearLocalIdentity(identity);
+          await initialStore.acknowledgeCleanup(identity);
+        } catch (_) {
+          _errorMessage = '账号已移除，本机残留资料待清理';
+        }
+      }
+      if (controller.appUserId == appUserId &&
+          controller.identity == identity) {
         await controller.acceptIdentityUnbound(identity);
-      } catch (_) {
-        return OperationResult.fail('本机移除未完成，请重试');
+        _applyAcademicSessionState();
       }
-      try {
-        await AcademicIdentityLifecycleCoordinator(
-                controller: controller,
-                preferences: await AppPreferencesStore.getInstance())
-            .clearLocalIdentity(identity);
-        await router.accountStore!.acknowledgeCleanup(identity);
-      } catch (_) {
-        _errorMessage = '账号已移除，本机残留资料待清理';
-      }
-      unawaited(router.syncConfiguration());
-      _applyAcademicSessionState();
       return OperationResult.ok(null);
     }
     if (_academicSessionController?.sourceKind == AcademicSourceKind.legacy) {

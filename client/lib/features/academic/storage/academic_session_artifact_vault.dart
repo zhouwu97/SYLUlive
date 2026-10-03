@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:pointycastle/export.dart';
@@ -192,6 +193,15 @@ final class AcademicSessionArtifactVault {
             Map<String, Object?>.from(record['opaque_provider_state'] as Map),
       );
     } catch (error) {
+      if (error is PlatformException &&
+          classifySecretStoreFailure(error) ==
+              SecretStoreFailureKind.corruptedCiphertext) {
+        // DEK 与 KeyStore 密钥永久失配：Artifact 密文已不可恢复，只废弃该
+        // 身份的 Artifact 与 DEK，由保存的教务密码重新登录建立新会话；
+        // 临时存储故障继续向上抛出，等待重试。
+        await delete();
+        return null;
+      }
       if (error is! FormatException && error is! InvalidCipherTextException && error is! TypeError) rethrow;
       // 损坏或跨身份密文不能继续尝试恢复，清除后由密码重新建立会话。
       await delete();
@@ -209,7 +219,19 @@ final class AcademicSessionArtifactVault {
   });
 
   Future<Uint8List> _loadOrCreateKey() async {
-    final existing = await _readKeyOrNull();
+    Uint8List? existing;
+    try {
+      existing = await _readKeyOrNull();
+    } on PlatformException catch (error) {
+      if (classifySecretStoreFailure(error) !=
+          SecretStoreFailureKind.corruptedCiphertext) {
+        rethrow;
+      }
+      // 旧 DEK 密文已不可解密：删除后重建新 DEK，写入时新 Artifact 会覆盖
+      // 旧密文文件；临时存储故障继续向上抛出，等待重试。
+      await _secretStore.delete(_keyName);
+      existing = null;
+    }
     if (existing != null) return existing;
     final generated = _randomBytes(_keyLength);
     if (generated.length != _keyLength) throw const FormatException('会话密钥生成失败');

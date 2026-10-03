@@ -548,6 +548,7 @@ final class AcademicSessionController extends ChangeNotifier {
         );
         if (generation != _accountGeneration || _disposed) return null;
         _lastCourses = courses;
+        unawaited(providerRouter?.reconcileAccountConfiguration());
         _status = AcademicSessionStatus.authenticated;
         _failure = null;
         _notifyListeners();
@@ -604,6 +605,7 @@ final class AcademicSessionController extends ChangeNotifier {
         );
         if (generation != _accountGeneration || _disposed) return null;
         _lastGrades = grades;
+        unawaited(providerRouter?.reconcileAccountConfiguration());
         _status = AcademicSessionStatus.authenticated;
         _failure = null;
         _notifyListeners();
@@ -969,6 +971,13 @@ final class AcademicSessionController extends ChangeNotifier {
       final authenticated = isAuthenticated;
       if (authenticated) await _persistSessionArtifact(generation);
       if (!isCurrentContext(generation: generation)) return false;
+      if (authenticated) {
+        final router = providerRouter;
+        if (router != null) {
+          unawaited(router.reconcileAccountConfiguration());
+        }
+      }
+      if (!isCurrentContext(generation: generation)) return false;
       _status = authenticated
           ? AcademicSessionStatus.authenticated
           : AcademicSessionStatus.idle;
@@ -1042,6 +1051,12 @@ final class AcademicSessionController extends ChangeNotifier {
             : AcademicSessionStatus.idle;
         if (isAuthenticated && _profile == null) {
           await _loadProfileForGeneration(generation);
+        }
+        if (isCurrentContext(generation: generation) && isAuthenticated) {
+          final router = providerRouter;
+          if (router != null) {
+            unawaited(router.reconcileAccountConfiguration());
+          }
         }
       } catch (error) {
         if (_disposed || generation != _accountGeneration) return;

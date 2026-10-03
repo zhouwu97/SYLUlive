@@ -127,7 +127,7 @@ func TestSnapshotReplayExcludesHiddenAndDeletedPosts(t *testing.T) {
 	require.Equal(t, 10, secondBody.NextOffset)
 }
 
-// VIS-03：集市合法的历史公开状态（已售出/已关闭）必须保留，只剔除非公开状态。
+// VIS-03：详情等通用公共读取仍保留历史状态，只剔除非公开状态。
 func TestPublicReadKeepsSoldAndClosedButDropsUnknownStatus(t *testing.T) {
 	db := newPostFeedTestDB(t)
 	h := NewPostHandler(db, "", "")
@@ -164,16 +164,15 @@ func TestPublicReadKeepsSoldAndClosedButDropsUnknownStatus(t *testing.T) {
 	require.Empty(t, empty)
 }
 
-// 集市公共列表只展示仍在进行中的出售内容和其他未售完的集市状态；已售商品
-// 仍由详情与个人记录接口保留，不应继续占用公共列表的位置。
-func TestMarketListExcludesSoldPosts(t *testing.T) {
+// 集市公共列表只展示仍在进行中的发布；已完成记录仍由详情与个人记录接口保留。
+func TestMarketListExcludesCompletedPosts(t *testing.T) {
 	db := newPostFeedTestDB(t)
 	h := NewPostHandler(db, "", "")
 	author := seedFeedAuthor(t, db)
 
 	normal := seedFeedPost(t, db, author, models.BoardMarket, models.PostStatusNormal, "在售商品")
 	sold := seedFeedPost(t, db, author, models.BoardMarket, models.PostStatusSold, "已售商品")
-	closed := seedFeedPost(t, db, author, models.BoardMarket, models.PostStatusClosed, "已结束求购")
+	closed := seedFeedPost(t, db, author, models.BoardMarket, models.PostStatusClosed, "已完成求购")
 
 	for _, query := range []string{"board=2&sort=time&limit=20", "board=2&sort=all&limit=20"} {
 		response := getListRequest(t, h, 0, query)
@@ -184,7 +183,7 @@ func TestMarketListExcludesSoldPosts(t *testing.T) {
 			ids[post.ID] = true
 		}
 		require.True(t, ids[normal.ID], "query=%s should keep normal post", query)
-		require.True(t, ids[closed.ID], "query=%s should keep closed non-sale post", query)
+		require.False(t, ids[closed.ID], "query=%s must exclude closed completed post", query)
 		require.False(t, ids[sold.ID], "query=%s must exclude sold post", query)
 		require.NotContains(t, response.Body.String(), "已售商品")
 	}

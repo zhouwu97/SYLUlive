@@ -41,7 +41,7 @@ Widget _buildMarket(Dio dio) {
 }
 
 void main() {
-  testWidgets('集市列表不展示已售商品', (tester) async {
+  testWidgets('集市列表不展示已完成商品和求助', (tester) async {
     final dio = Dio();
     dio.interceptors.add(
       InterceptorsWrapper(
@@ -59,8 +59,14 @@ void main() {
                     status: 'sold',
                     title: '已售自行车',
                   ),
+                  _marketPost(
+                    id: 3,
+                    type: 'buy',
+                    status: 'closed',
+                    title: '已解决求购',
+                  ),
                 ],
-                'total': 2,
+                'total': 3,
                 'session_id': null,
               },
             ),
@@ -74,6 +80,7 @@ void main() {
 
     expect(find.text('在售自行车'), findsOneWidget);
     expect(find.text('已售自行车'), findsNothing);
+    expect(find.text('已解决求购'), findsNothing);
   });
 
   testWidgets('搜索中切换类型后清除搜索会显示对应普通 feed', (tester) async {

@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
@@ -1539,6 +1541,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
       await sc.applyFetchedCourses(courses);
 
+      // 课表成功读取是本机教务会话已实际可用的明确节点；若登录后的
+      // 身份声明因短暂网络故障未送达，这里补一次并把失败明确反馈给用户。
+      final bindingWarning =
+          await _coordinatorOrNull()?.synchronizeIdentityBinding(force: true);
+
       Object? reminderError;
       try {
         await _syncCourseReminders(sc);
@@ -1560,9 +1567,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       }
       messenger.showSnackBar(
         SnackBar(
-          content: Text(reminderError == null
-              ? '课表已拉取。首次导入请点击顶部“设置周数”，选择开学第一天。'
-              : '课表已拉取，但课程提醒同步失败；课表数据已保存。'),
+          content: Text(
+            reminderError != null
+                ? '课表已拉取，但课程提醒同步失败；课表数据已保存。'
+                : bindingWarning != null
+                    ? '课表已拉取，但教务身份暂未同步；联网后会自动重试。'
+                    : '课表已拉取。首次导入请点击顶部“设置周数”，选择开学第一天。',
+          ),
           duration: Duration(seconds: 4),
         ),
       );
@@ -2973,7 +2984,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           }),
                         const SizedBox(height: 10),
                         Text(
-                          '存档保存在本地，切换账号不会互相影响。',
+                          '存档数据保存在本地，导出按钮会写入下载目录并显示实际路径。',
                           style: TextStyle(
                             fontSize: 12,
                             color: isDark ? Colors.white30 : Colors.grey[400],
@@ -3047,7 +3058,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
   }
 
-  /// 导出特定存档到文件 (使用分享/发送功能绕过安卓存储限制)
+  /// 导出特定存档到下载目录，并保留分享入口。
   Future<void> _exportArchive(
     BuildContext context,
     String archiveId,
@@ -3058,19 +3069,25 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final jsonStr = await sc.exportArchiveJson(archiveId);
 
       final safeName = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-      final tempDir = Directory.systemTemp;
-      final file = File('${tempDir.path}/沈理校园课表_$safeName.json');
-      await file.writeAsString(jsonStr);
+      final fileName = '沈理校园课表_$safeName.json';
+      final file = await _writeArchiveExportFile(fileName, jsonStr);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('正在唤起系统菜单，请选择“发送给朋友”或“保存到手机”以导出文件。')),
+          SnackBar(
+            content: Text('存档已保存至：${file.path}'),
+            duration: const Duration(seconds: 6),
+            action: SnackBarAction(
+              label: '分享',
+              onPressed: () {
+                unawaited(Share.shareXFiles([
+                  XFile(file.path),
+                ], text: '这是我的沈理校园课表存档，可以在App的"从文件导入"功能中恢复。'));
+              },
+            ),
+          ),
         );
       }
-
-      await Share.shareXFiles([
-        XFile(file.path),
-      ], text: '这是我的沈理校园课表存档，可以在App的"从文件导入"功能中恢复。');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -3078,6 +3095,42 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ).showSnackBar(SnackBar(content: Text('导出失败: $e')));
       }
     }
+  }
+
+  /// 优先写入公共 Download/沈理校园/课表存档；受系统存储策略限制时，
+  /// 回退到 path_provider 提供的下载目录或应用文档目录，并始终返回实际路径。
+  Future<File> _writeArchiveExportFile(String fileName, String content) async {
+    final candidates = <Directory>[];
+    if (Platform.isAndroid) {
+      candidates.add(Directory('/storage/emulated/0/Download/沈理校园/课表存档'));
+    }
+    try {
+      final downloads = await getDownloadsDirectory();
+      if (downloads != null) {
+        candidates.add(Directory(path.join(downloads.path, '沈理校园', '课表存档')));
+      }
+    } catch (_) {
+      // path_provider 在部分平台/测试环境可能没有 Downloads 实现，继续走文档目录。
+    }
+    try {
+      final documents = await getApplicationDocumentsDirectory();
+      candidates.add(Directory(path.join(documents.path, '沈理校园', '课表存档')));
+    } catch (_) {
+      // 所有候选都不可用时由下方统一抛出最后一次写入错误。
+    }
+
+    Object? lastError;
+    for (final directory in candidates) {
+      try {
+        await directory.create(recursive: true);
+        final file = File(path.join(directory.path, fileName));
+        await file.writeAsString(content);
+        return file;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw StateError('无法创建课表存档文件：$lastError');
   }
 
   /// 弹出保存存档的命名对话框
@@ -4494,7 +4547,7 @@ class _SaveArchiveDialogState extends State<_SaveArchiveDialog> {
               Navigator.pop(context);
               widget.setSheetState(() {});
               scaffoldMessenger.showSnackBar(
-                SnackBar(content: Text('已保存存档「$name」\n如需提取文件，请点击该存档的分享按钮。')),
+                SnackBar(content: Text('已保存存档「$name」；点击存档右侧导出按钮可写入下载目录。')),
               );
             } catch (error) {
               if (!mounted) return;

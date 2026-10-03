@@ -13,7 +13,7 @@ Future<bool> confirmAcademicUnbind(BuildContext context) async {
     builder: (dialogContext) => AlertDialog(
       title: Text('解绑${identity.providerId.displayName}？'),
       content: Text(
-          '将移除学号 ${identity.studentId} 的教务配置及本机密码、会话和缓存。App 登录账号和其他教务账号不变，云端配置将在联网后同步。'),
+          '将解除学号 ${identity.studentId} 的服务端可信学生身份，并移除云端教务配置及本机密码、会话和缓存。App 登录账号和其他教务账号不变，云端配置将在联网后同步。'),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),

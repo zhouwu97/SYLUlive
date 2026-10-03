@@ -3,7 +3,7 @@ starlette==1.6.0
 uvicorn[standard]==0.52.4
 fastembed==0.8.0
 jieba==0.42.1
-pypdf==6.17.0
+pypdf==6.19.0
 python-docx==1.2.0
 beautifulsoup4==4.15.0
 pydantic==2.12.5

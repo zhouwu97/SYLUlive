@@ -741,7 +741,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
 
     if (_marketPosts.isEmpty) {
-      return const Center(child: Text('暂无上架商品'));
+      return const Center(child: Text('暂无集市记录'));
     }
 
     return ListView.builder(

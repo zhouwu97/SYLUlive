@@ -58,7 +58,7 @@ void main() {
           'verification_method': 'local_academic_login'
         });
         handler.resolve(Response(requestOptions: r, statusCode: 200, data: {
-          'verified': true,
+          'verified': false, 'assurance_level': 'local_declaration', 'verification_method': 'local_academic_login',
           'provider_id': provider.value,
           'student_id': 'A'
         }));
@@ -133,7 +133,7 @@ void main() {
               requestOptions: r, type: DioExceptionType.connectionError));
         } else {
           handler.resolve(Response(requestOptions: r, statusCode: 200, data: {
-            'verified': true,
+            'verified': false, 'assurance_level': 'local_declaration', 'verification_method': 'local_academic_login',
             'provider_id': provider.value,
             'student_id': 'A',
           }));
@@ -160,7 +160,7 @@ void main() {
       expect(await coordinator.bindingSyncState(), 'pending');
       await Future.doWhile(() async {
         await Future<void>.delayed(const Duration(milliseconds: 5));
-        return await coordinator.bindingSyncState() != 'bound';
+        return await coordinator.bindingSyncState() != 'declared';
       }).timeout(const Duration(seconds: 2));
       expect(calls, 2);
       expect(h.session.isAuthenticated, true);
@@ -193,7 +193,7 @@ void main() {
     online.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
       calls++;
       handler.resolve(Response(requestOptions: r, statusCode: 200, data: {
-        'verified': true,
+        'verified': false, 'assurance_level': 'local_declaration', 'verification_method': 'local_academic_login',
         'provider_id': 'sylu_undergraduate',
         'student_id': 'A',
       }));
@@ -201,9 +201,73 @@ void main() {
     final restored = withIdentity(restarted, online);
     await restored.warmUp();
     expect(calls, 1);
-    expect(await restored.bindingSyncState(), 'bound');
+    expect(await restored.bindingSyncState(), 'declared');
     expect(restarted.session.isAuthenticated, false);
     expect(restarted.sources.fold(0, (n, source) => n + source.logins), 0);
+  });
+
+  test('声明回执不符合契约时停止自动重试，不再每 30 秒打扰', () async {
+    final h = await setup();
+    final api = Dio();
+    var calls = 0;
+    api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+      calls++;
+      // 旧式回执：自称 verified=true。这是契约错误，重试不会变好。
+      handler.resolve(Response(requestOptions: r, statusCode: 200, data: {
+        'verified': true,
+        'provider_id': 'sylu_undergraduate',
+        'student_id': 'A',
+      }));
+    }));
+    final coordinator = AcademicLoginCoordinator(
+      controller: h.session,
+      identityClient: AcademicIdentityClient(api),
+      credentialStore: h.credentials,
+      silentCaptcha: false,
+      preferencesLoader: () async => h.preferences,
+      bindingRetryDelay: const Duration(milliseconds: 20),
+    );
+    final result = await coordinator.login(
+        studentId: 'A',
+        password: 'fixture',
+        providerId: AcademicProviderId.syluUndergraduate,
+        saveCredentials: true,
+        saveAcademicData: false);
+    // 本机登录本身仍然成功，只有身份声明被拒。
+    expect(result.isSuccess, true);
+    expect(result.message, contains('已停止自动重试'));
+    expect(await coordinator.bindingSyncState(), 'rejected');
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    // 定时器不再排：契约错误被当成临时故障重试，只会反复打扰用户。
+    expect(calls, 1);
+  });
+
+  test('账号受限时同样停止自动重试', () async {
+    final h = await setup();
+    final api = Dio();
+    var calls = 0;
+    api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+      calls++;
+      handler.resolve(
+          Response(requestOptions: r, statusCode: 403, data: {'code': 'ACCOUNT_RESTRICTED'}));
+    }));
+    final coordinator = AcademicLoginCoordinator(
+      controller: h.session,
+      identityClient: AcademicIdentityClient(api),
+      credentialStore: h.credentials,
+      silentCaptcha: false,
+      preferencesLoader: () async => h.preferences,
+      bindingRetryDelay: const Duration(milliseconds: 20),
+    );
+    await coordinator.login(
+        studentId: 'A',
+        password: 'fixture',
+        providerId: AcademicProviderId.syluUndergraduate,
+        saveCredentials: true,
+        saveAcademicData: false);
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    expect(calls, 1);
+    expect(await coordinator.bindingSyncState(), 'rejected');
   });
 
   for (final action in ['disconnect', 'switch-user', 'dispose']) {

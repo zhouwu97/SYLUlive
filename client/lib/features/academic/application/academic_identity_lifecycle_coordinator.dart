@@ -37,19 +37,30 @@ final class AcademicIdentityLifecycleCoordinator {
 
   static final Map<AcademicIdentityKey, Future<void>> _inFlight = {};
 
-  Future<void> clearLocalIdentity(AcademicIdentityKey identity) {
+  Future<void> clearLocalIdentity(
+    AcademicIdentityKey identity, {
+    bool? wasCurrent,
+  }) {
     final running = _inFlight[identity];
     if (running != null) return running;
-    final operation = _clearLocalIdentity(identity);
+    final operation = _clearLocalIdentity(identity, wasCurrent: wasCurrent);
     _inFlight[identity] = operation;
     return operation.whenComplete(() {
       if (identical(_inFlight[identity], operation)) _inFlight.remove(identity);
     });
   }
 
-  Future<void> _clearLocalIdentity(AcademicIdentityKey identity) async {
+  Future<void> _clearLocalIdentity(
+    AcademicIdentityKey identity, {
+    bool? wasCurrent,
+  }) async {
     if (!identity.isValid) throw ArgumentError('教务身份不完整');
     final connection = AcademicConnectionStore(identity, preferences);
+    final operationGeneration = controller.contextGeneration;
+    bool isCurrentScope() =>
+        controller.appUserId == identity.appUserId &&
+        controller.contextGeneration == operationGeneration &&
+        controller.identity == identity;
     Object? failure;
     // 一个删除失败不能阻止其他秘密被清理；最后统一保留 pending。
     Future<void> attempt(Future<void> Function() action) async {
@@ -60,9 +71,15 @@ final class AcademicIdentityLifecycleCoordinator {
       }
     }
 
-    final isCurrent = controller.identity == identity;
-    if (isCurrent) {
+    // 解绑会让控制器递增代次，后续清理不能再用动态作用域判断覆盖解绑前的归属。
+    final currentScopeAtStart = isCurrentScope();
+    // 当前会话可能已先被 acceptIdentityUnbound 阻断；清理旧身份时仍需
+    // 使用调用方在阻断前确认的归属，决定是否处理旧版兼容附属数据。
+    final identityWasCurrent = wasCurrent ?? currentScopeAtStart;
+    if (currentScopeAtStart) {
       AcademicPersistenceRegistry.set(identity.appUserId, enabled: false);
+    }
+    if (currentScopeAtStart) {
       await attempt(controller.disconnect);
     }
     await connection.setConnected(false);
@@ -131,16 +148,16 @@ final class AcademicIdentityLifecycleCoordinator {
         await legacy.close();
       }
     });
-    if (clearAuxiliary != null) {
+    if (clearAuxiliary != null && (identityWasCurrent || isCurrentScope())) {
       await attempt(clearAuxiliary!);
     } else {
+      final includeLegacy = identityWasCurrent || includeLegacyAuxiliary;
       await attempt(() => HomeWidgetService.clearCourseDataForIdentity(identity,
-          includeLegacy: isCurrent || includeLegacyAuxiliary));
+          includeLegacy: includeLegacy));
       await attempt(() => HomeWidgetService.clearExamDataForIdentity(identity,
-          includeLegacy: isCurrent || includeLegacyAuxiliary));
-      await attempt(() => CourseReminderService.instance.clearForIdentity(
-          identity,
-          includeLegacy: isCurrent || includeLegacyAuxiliary));
+          includeLegacy: includeLegacy));
+      await attempt(() => CourseReminderService.instance
+          .clearForIdentity(identity, includeLegacy: includeLegacy));
     }
     await attempt(settings.clear);
     await attempt(() => settings.setSaveAcademicData(false));

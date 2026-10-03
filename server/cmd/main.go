@@ -2217,7 +2217,10 @@ func main() {
 	configRoutes.PUT("/:provider", academicConfigs.Mutate)
 	configRoutes.DELETE("/:provider", academicConfigs.Mutate)
 
-	studentIdentity.DELETE("", identityMutationHandler(academicIdentityHandler.Unbind))
+	// 解绑是纯本机撤销操作，不访问学校系统；学校退役或旧密钥冻结期间仍必须
+	// 可用，否则用户无法撤销服务端可信身份。JWT、归属校验、事务与幂等由
+	// Unbind 自身保证。
+	studentIdentity.DELETE("", academicIdentityHandler.Unbind)
 
 	edu := r.Group("/api/edu")
 	if cfg.SchoolAuthorityRetired {

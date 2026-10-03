@@ -818,7 +818,8 @@ NotificationAccountDecision _notificationAccountDecision(
     return NotificationAccountDecision.waitForAuthentication;
   }
   final authProvider = context.read<AuthProvider>();
-  if (authProvider.hasRecoverableSession) {
+  if (authProvider.hasRecoverableSession ||
+      authProvider.hasPendingStorageRecovery) {
     return NotificationAccountDecision.waitForAuthentication;
   }
   if (authProvider.isLoggedIn &&
@@ -2134,6 +2135,14 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, child) {
         if (!authProvider.isInitialized) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        // 冷启动安全存储临时故障导致登录恢复未决：保持恢复等待界面，
+        // 不能当作未登录渲染，否则教务/课表上下文会被当作账号切换清空。
+        // AppResumeCoordinator 会在前台恢复时自动重试登录恢复。
+        if (authProvider.hasPendingStorageRecovery) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );

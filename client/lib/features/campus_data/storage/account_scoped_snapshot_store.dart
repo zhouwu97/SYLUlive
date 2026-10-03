@@ -3,6 +3,8 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:pointycastle/export.dart';
 import '../../../platform/contracts/secure_store.dart';
 import '../../../platform/contracts/preferences_store.dart';
@@ -262,12 +264,18 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
       final envelope = Map<String, dynamic>.from(envelopeValue);
       _validateEnvelope(envelope, type);
 
+      // DEK 缺失（或已随密文级损坏自愈清理）：该 namespace 不再有可读密文，
+      // 清掉该类型残留密文并返回无缓存，交给上层重新拉取重建，而不是让
+      // 用户无限重试 restoreFailed。这里不能再进 _mutate 队列：read 可能
+      // 已在某个 _mutate 任务内被调用（如 deleteMatchingSource），内层排队
+      // 会互相等待死锁；此清理只发生在 namespace 已整体作废时，竞争无害。
       final key = await _readExistingSecret(
         keyName: _storageKey,
         expectedLength: _keyLength,
       );
       if (key == null) {
-        throw const PersonalSnapshotStoreException('个人数据密钥不可用，已拒绝读取本地密文');
+        await _fileBackend.deleteType(accountHash: _storageHash, type: type);
+        return null;
       }
 
       final nonce = base64Decode(envelope['nonce'] as String);
@@ -387,9 +395,11 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
     String sourceAccountId,
   ) async {
     _validateSource(sourceSystem, sourceAccountId);
-    final salt = await _readExistingSecret(
-      keyName: _deviceSaltKey,
-      expectedLength: _keyLength,
+    // 设备盐密文级损坏时在此处自愈（清空全部 Vault 并删除盐）；本次读取
+    // 报告设备盐不可用，重试时文件已清空、走无缓存重新拉取。
+    final salt = await _readSecretOrDiscardCorrupted(
+      _deviceSaltKey,
+      _keyLength,
     );
     if (salt == null) {
       throw const PersonalSnapshotStoreException('个人数据设备盐不可用，已拒绝读取本地密文');
@@ -421,7 +431,8 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
     if (inFlight != null) return Uint8List.fromList(await inFlight);
 
     final future = () async {
-      final existing = await _decodeSecret(keyName, expectedLength);
+      final existing =
+          await _readSecretOrDiscardCorrupted(keyName, expectedLength);
       if (existing != null) return existing;
 
       final generated = _randomBytes(expectedLength);
@@ -449,7 +460,43 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
     required String keyName,
     required int expectedLength,
   }) {
-    return _decodeSecret(keyName, expectedLength);
+    return _readSecretOrDiscardCorrupted(keyName, expectedLength);
+  }
+
+  /// 读取密钥材料。密文与 KeyStore 永久失配时自愈：按 [_discardCorruptedSecret]
+  /// 清理后返回 null（视为不存在）；临时存储故障向上抛出，保持可重试语义。
+  Future<Uint8List?> _readSecretOrDiscardCorrupted(
+    String keyName,
+    int expectedLength,
+  ) async {
+    try {
+      return await _decodeSecret(keyName, expectedLength);
+    } catch (error) {
+      if (error is! PlatformException ||
+          classifySecretStoreFailure(error) !=
+              SecretStoreFailureKind.corruptedCiphertext) {
+        rethrow;
+      }
+      await _discardCorruptedSecret(keyName);
+      return null;
+    }
+  }
+
+  Future<void> _discardCorruptedSecret(String keyName) async {
+    try {
+      if (keyName == _deviceSaltKey) {
+        // 设备盐是全部快照来源指纹的根；换盐后旧密文的指纹全部失效，
+        // 必须一并清除，防止出现“文件在但指纹不匹配”的幽灵缓存。
+        await _secureStore.delete(_deviceSaltKey);
+        await _fileBackend.deleteAll();
+      } else {
+        // 单个身份的 DEK 损坏只废弃该 namespace 的密文，可重新拉取重建。
+        await _secureStore.delete(keyName);
+        await _fileBackend.deleteUser(_storageHash);
+      }
+    } catch (cleanupError) {
+      debugPrint('清理损坏的个人数据安全密钥失败: $cleanupError');
+    }
   }
 
   Future<Uint8List?> _decodeSecret(String keyName, int expectedLength) async {

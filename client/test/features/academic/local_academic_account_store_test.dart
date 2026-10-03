@@ -22,6 +22,69 @@ Map<String, dynamic> cloud(String student, int revision,
     };
 
 void main() {
+  for (final provider in [u, g]) {
+    test('手机已绑定但服务器记录缺失时自动补登记并持久确认：${provider.value}', () async {
+      final prefs = MemoryPreferencesStore();
+      final store = LocalAcademicAccountStore('1', prefs);
+      final target = identity('A', provider: provider);
+      await store.mergeSnapshot(cloud('A', 7, provider: provider));
+      // 覆盖旧版本已经把缺失记录标成冲突的设备。
+      await store.update((state) {
+        final entry = state[provider.value] as Map;
+        entry['remote_changed'] = true;
+        entry['server_missing'] = true;
+      });
+      expect(await store.ensureRegistrationQueued(target,
+          expectedEpoch: store.epoch(provider),
+          serverConfirmedAbsent: true, current: () => true), true);
+      expect(await store.ensureRegistrationQueued(target,
+          expectedEpoch: store.epoch(provider),
+          serverConfirmedAbsent: true, current: () => true), false);
+      final pending = (store.entry(provider)['outbox'] as List).single;
+      expect(pending['base_revision'], 0);
+      var registered = false;
+      final dio = Dio();
+      addTearDown(dio.close);
+      dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+        expect(request.headers['X-Expected-App-User'], '1');
+        if (request.method == 'PUT') {
+          expect(request.path, '/academic-account-configs/${provider.value}');
+          expect(request.data, {'student_id': 'A', 'expected_revision': 0});
+          registered = true;
+          handler.resolve(Response(requestOptions: request, statusCode: 200,
+              data: {'config': cloud('A', 1, provider: provider)}));
+        } else {
+          handler.resolve(Response(requestOptions: request, statusCode: 200,
+              data: {'configs': registered ? [cloud('A', 1, provider: provider)] : []}));
+        }
+      }));
+      await AcademicAccountConfigClient(dio).sync(store, () => true);
+      final restarted = LocalAcademicAccountStore('1', prefs);
+      expect(registered, true);
+      expect(restarted.identities.single, target);
+      expect(restarted.entry(provider)['outbox'], isEmpty);
+      expect(restarted.entry(provider)['snapshot']['revision'], 1);
+      expect(restarted.entry(provider)['remote_changed'], false);
+    });
+  }
+
+  test('服务器未确认缺失、云端解绑或换绑、切号与旧代次均不自动补登记', () async {
+    for (final scenario in ['unknown', 'deleted', 'changed', 'user', 'epoch']) {
+      final store = LocalAcademicAccountStore('1', MemoryPreferencesStore());
+      await store.mergeSnapshot(cloud('A', 2));
+      if (scenario == 'deleted') {
+        await store.mergeSnapshot(cloud('', 3, state: 'deleted'));
+      } else if (scenario == 'changed') {
+        await store.mergeSnapshot(cloud('B', 3));
+      }
+      expect(await store.ensureRegistrationQueued(identity('A'),
+          expectedEpoch: scenario == 'epoch' ? store.epoch(u) + 1 : store.epoch(u),
+          serverConfirmedAbsent: scenario != 'unknown',
+          current: () => scenario != 'user'), false, reason: scenario);
+      expect(store.entry(u)['outbox'] ?? [], isEmpty, reason: scenario);
+    }
+  });
+
   test('本机账号和 Outbox 一次落盘，重启保留本科研究生且 App 账号隔离', () async {
     final prefs = MemoryPreferencesStore();
     final store = LocalAcademicAccountStore('1', prefs);
@@ -85,6 +148,58 @@ void main() {
     await store.adoptCloud(u);
     expect(store.identities.single.studentId, 'B');
     expect(store.entry(u)['outbox'], isEmpty);
+  });
+
+  test('采用不同云端身份时原子登记旧身份清理，采用相同身份不制造清理任务', () async {
+    final store = LocalAcademicAccountStore('1', MemoryPreferencesStore());
+    await store.commitIdentity(identity('A'));
+    await store.mergeSnapshot(cloud('A', 1));
+    await store.mergeSnapshot(cloud('B', 2));
+
+    expect(await store.adoptCloud(u), isTrue);
+    expect(store.identities.single.studentId, 'B');
+    expect(store.pendingCleanup, [identity('A')]);
+    expect(store.entry(u)['outbox'], isEmpty);
+
+    final same = LocalAcademicAccountStore('2', MemoryPreferencesStore());
+    await same.commitIdentity(identity('A', user: '2'));
+    await same.mergeSnapshot(cloud('A', 1));
+    await same.update((state) {
+      final entry = state[u.value] as Map<String, dynamic>;
+      entry['remote_changed'] = true;
+    });
+    expect(await same.adoptCloud(u), isTrue);
+    expect(same.pendingCleanup, isEmpty);
+
+    await same.update((state) {
+      final entry = state[u.value] as Map<String, dynamic>;
+      entry['server_missing'] = true;
+    });
+    expect(same.syncStatus(u), AcademicConfigSyncStatus.serverMissing);
+    expect(await same.adoptCloud(u), isTrue);
+    expect(same.identities, isEmpty);
+    expect(same.pendingCleanup, [identity('A', user: '2')]);
+  });
+
+  test('写队列执行前作用域失效时 updateIfCurrent 不改持久化记录', () async {
+    final prefs = _BlockingPreferences();
+    final store = LocalAcademicAccountStore('1', prefs);
+    await store.commitIdentity(identity('A'));
+    prefs.blockNextWrite();
+    final first = store.update((state) => state['marker'] = 'first');
+    await prefs.started.future;
+
+    var current = true;
+    final second = store.updateIfCurrent(
+      current: () => current,
+      mutate: (state) => state['marker'] = 'second',
+    );
+    current = false;
+    prefs.release();
+
+    await first;
+    expect(await second, isFalse);
+    expect(store.read()['marker'], 'first');
   });
 
   test('旧密码拒绝不能影响新密码代次', () async {
@@ -188,4 +303,32 @@ void main() {
 class _FailingPreferences extends MemoryPreferencesStore {
   @override
   Future<bool> setString(String key, String value) async => false;
+}
+
+class _BlockingPreferences extends MemoryPreferencesStore {
+  bool _blockNext = false;
+  Completer<void>? _started;
+  Completer<void>? _release;
+
+  void blockNextWrite() {
+    _blockNext = true;
+    _started = Completer<void>();
+    _release = Completer<void>();
+  }
+
+  Completer<void> get started => _started!;
+
+  void release() {
+    if (!(_release?.isCompleted ?? true)) _release!.complete();
+  }
+
+  @override
+  Future<bool> setString(String key, String value) async {
+    if (_blockNext) {
+      _blockNext = false;
+      _started!.complete();
+      await _release!.future;
+    }
+    return super.setString(key, value);
+  }
 }

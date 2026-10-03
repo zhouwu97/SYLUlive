@@ -1589,6 +1589,8 @@ func main() {
 
 		user.GET("/replies/received", replyHandler.GetReceivedList)
 
+		registerPostBookmarkListRoute(user, postHandler)
+
 		// 旧路径兼容一段时间
 		user.GET("/notifications", notificationHandler.GetNotifications)
 		user.GET("/notifications/replies/unread", notificationHandler.GetUnreadReplyNotifications)
@@ -1901,6 +1903,8 @@ func main() {
 		postsAuth.POST("/:id/revision-proposals", postHandler.CreateRevisionProposal)
 
 		postsAuth.POST("/:id/replies", replyHandler.Create)
+
+		registerPostBookmarkWriteRoutes(postsAuth, postHandler)
 
 		postsAuth.POST("/:id/appeal", appealHandler.Create)
 		postsAuth.POST("/:id/rectification-review", postGovernanceHandler.SubmitRectification)

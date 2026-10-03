@@ -1,23 +1,34 @@
 import {
   BRIDGE_CHANNEL,
+  BridgeFailure,
   PROTOCOL_VERSION,
   capabilities,
   isBridgeRequest,
   isProvider,
   parseBackup,
+  providers,
   type AcademicConnection,
   type AcademicDataset,
   type AcademicProvider,
   type AcademicSnapshot,
   type AcademicTerm,
+  type BridgeErrorCode,
   type BridgeRequest,
   type BridgeResponse,
 } from "@sylulive/academic-contracts";
 import { identity, fetchDataset, origins } from "./school";
 import { store, clearPrefix } from "./storage";
 import { installReminders, removeSchedule, removeOriginSchedules, type ReminderConfig } from './reminders';
+import { installSelfHealingInjection } from './inject';
+import { pickHelloConnections } from "./hello";
 installReminders();
+installSelfHealingInjection();
 type Connection = AcademicConnection & { origin: string; confirmed: boolean };
+// 必须是带显式 never 返回类型的函数声明：箭头函数常量不会让 if (!x) fail(...)
+// 之后的代码被收窄，identity 与连接对象的类型保护会整片失效。
+function fail(code: BridgeErrorCode, message: string): never {
+  throw new BridgeFailure(code, message);
+}
 const controllers = new Map<
   string,
   { controller: AbortController; key: string }
@@ -33,15 +44,21 @@ const connectionKey = (origin: string, provider: AcademicProvider) =>
 const response = (
   request: BridgeRequest,
   result?: unknown,
-  error?: string,
+  error?: unknown,
 ): BridgeResponse => ({
   channel: BRIDGE_CHANNEL,
   direction: "response",
   version: PROTOCOL_VERSION,
   id: request.id,
-  ok: !error,
+  ok: error === undefined,
   result,
-  error: error ? { code: "academic_failed", message: error } : undefined,
+  error:
+    error === undefined
+      ? undefined
+      : {
+          code: error instanceof BridgeFailure ? error.code : "failed",
+          message: error instanceof Error ? error.message : "学校查询失败",
+        },
 });
 async function account(origin: string) {
   const res = await fetch(`${origin}/api/user/profile`, {
@@ -49,10 +66,10 @@ async function account(origin: string) {
     cache: "no-store",
     signal: AbortSignal.timeout(10000),
   });
-  if (!res.ok) throw new Error("请先登录沈理校园");
+  if (!res.ok) fail("site_login_required", "请先登录沈理校园");
   const value = await res.json();
   if (!Number.isInteger(value.id) || value.id < 1)
-    throw new Error("无法核对沈理校园账号");
+    fail("site_login_required", "无法核对沈理校园账号");
   return value.id as number;
 }
 async function get(key: string) {
@@ -91,12 +108,28 @@ function snapshotKey(connection: Connection, dataset: string, term: AcademicTerm
 }
 async function handle(request: BridgeRequest, origin: string, tabId: number) {
   const p = request.payload;
-  if (request.operation === "hello")
+  if (request.operation === "hello") {
+    // 连接快照读本机 session 存储、授权状态读 chrome.permissions，都是本地调用，
+    // 页面因此可以反复复检而不产生网络代价。epoch 只交给同 origin 的页面，
+    // 且 query 仍会重新核对 appUserId 与新鲜学校身份，不构成新的权限面。
+    const [stored, granted] = await Promise.all([
+      chrome.storage.session.get(null),
+      Promise.all(
+        providers.map((x) =>
+          chrome.permissions.contains({ origins: [`${origins[x]}/*`] }),
+        ),
+      ),
+    ]);
     return {
       version: PROTOCOL_VERSION,
       extensionVersion: chrome.runtime.getManifest().version,
       capabilities,
+      connections: pickHelloConnections(stored, origin),
+      authorized: Object.fromEntries(
+        providers.map((x, i) => [x, granted[i] === true]),
+      ) as Partial<Record<AcademicProvider, boolean>>,
     };
+  }
   if (request.operation === "cancel") {
     controllers.get(`${tabId}:${p.requestId}`)?.controller.abort();
     return { cancelled: true };
@@ -109,7 +142,7 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
     }
     const backup = parseBackup(JSON.stringify(p.data));
     const minutes = p.minutes === undefined ? 10 : Number(p.minutes);
-    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 120) throw new Error('提前提醒时间应为 0 至 120 分钟');
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 120) fail('invalid_argument', '提前提醒时间应为 0 至 120 分钟');
     const data = {termStart:backup.termStart,courses:backup.courses,overrides:backup.overrides,exams:backup.exams};
     const id = crypto.randomUUID();
     const config: ReminderConfig = {origin,appUserId,data,minutes};
@@ -119,7 +152,7 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
     else await chrome.tabs.create({url});
     return {state:request.operation === 'window' ? 'opened' : 'awaiting_permission'};
   }
-  if (!isProvider(p.provider)) throw new Error("请选择学校系统");
+  if (!isProvider(p.provider)) fail("invalid_argument", "请选择学校系统");
   const provider = p.provider,
     key = connectionKey(origin, provider);
   if (request.operation === "disconnect") {
@@ -143,7 +176,7 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
       origins: [`${origins[provider]}/*`],
     }))
   )
-    throw new Error("请在助手页面授予学校域名权限");
+    fail("authorization_required", "请在助手页面授予学校域名权限");
   if (request.operation === "session") {
     const startedEpoch = old?.appUserId === appUserId ? old.epoch : "";
     const current = await identity(provider);
@@ -162,9 +195,9 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
     return withKeyLock(key, async () => {
       const latest = await get(key);
       if ((startedEpoch && latest?.epoch !== startedEpoch) || (!startedEpoch && latest))
-        throw new Error("连接已改变，请重新连接");
+        fail("connection_stale", "连接已改变，请重新连接");
       if (latest && latest.appUserId !== appUserId)
-        throw new Error("连接已被其他账号接管，请重新连接");
+        fail("connection_stale", "连接已被其他账号接管，请重新连接");
       await chrome.storage.session.set({ [key]: connection });
       return connection;
     });
@@ -176,11 +209,11 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
       pending.epoch !== p.epoch ||
       pending.appUserId !== appUserId
     )
-      throw new Error("连接已改变，请重新核对身份");
+      fail("connection_stale", "连接已改变，请重新核对身份");
     const current = await identity(provider);
     if (current.studentId !== pending.studentId) {
       await revoke(key);
-      throw new Error("学校账号发生变化，请重新确认");
+      fail("identity_changed", "学校账号发生变化，请重新确认");
     }
     return withKeyLock(key, async () => {
       // 身份读取在锁外进行，提交前必须重新确认连接仍是同一世代；
@@ -191,7 +224,7 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
         latest.epoch !== pending.epoch ||
         latest.appUserId !== appUserId
       )
-        throw new Error("连接已改变，请重新核对身份");
+        fail("connection_stale", "连接已改变，请重新核对身份");
       await chrome.storage.session.set({
         [key]: { ...latest, confirmed: true },
       });
@@ -200,28 +233,28 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
   }
   if (request.operation === 'persistence' || request.operation === 'cache') {
     const connection = await get(key);
-    if (!connection?.confirmed || connection.appUserId !== appUserId || connection.epoch !== p.epoch) throw new Error('请先确认教务身份');
+    if (!connection?.confirmed || connection.appUserId !== appUserId || connection.epoch !== p.epoch) fail('connection_stale', '请先确认教务身份');
     const current = await identity(provider);
-    if (current.studentId !== connection.studentId) { await revoke(key); throw new Error('学校身份已变化'); }
+    if (current.studentId !== connection.studentId) { await revoke(key); fail('identity_changed', '学校身份已变化'); }
     const preference = `save:${cachePrefix(connection)}`;
     if (request.operation === 'persistence') {
       const enabled = p.enabled === true;
       return withKeyLock(key, async () => {
         const latest = await get(key);
         if (!latest?.confirmed || latest.appUserId !== appUserId || latest.epoch !== connection.epoch)
-          throw new Error('连接已改变，请重新确认教务身份');
+          fail('connection_stale', '连接已改变，请重新确认教务身份');
         await chrome.storage.local.set({[preference]: enabled});
         if (!enabled) await clearPrefix(cachePrefix(connection));
         return {enabled};
       });
     }
-    if (typeof p.dataset !== 'string' || !p.term || typeof p.term !== 'object') throw new Error('缓存参数无效');
+    if (typeof p.dataset !== 'string' || !p.term || typeof p.term !== 'object') fail('invalid_argument', '缓存参数无效');
     const cacheDataset = p.dataset;
     const cacheTerm = p.term as AcademicTerm;
     return withKeyLock(key, async () => {
       const latest = await get(key);
       if (!latest?.confirmed || latest.appUserId !== appUserId || latest.epoch !== connection.epoch)
-        throw new Error('连接已改变，请重新确认教务身份');
+        fail('connection_stale', '连接已改变，请重新确认教务身份');
       return await store(snapshotKey(connection, cacheDataset, cacheTerm)) || null;
     });
   }
@@ -232,21 +265,21 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
       connected.appUserId !== appUserId ||
       p.epoch !== connected.epoch
     )
-      throw new Error("请先确认当前教务身份");
+      fail("connection_stale", "请先确认当前教务身份");
     const dataset = p.dataset as AcademicDataset;
     if (
       !capabilities
         .find((x) => x.provider === provider)
         ?.datasets.includes(dataset)
     )
-      throw new Error("学校系统不支持此查询");
+      fail("unsupported_query", "学校系统不支持此查询");
     const term = p.term as AcademicTerm;
     if (
       !term ||
       typeof term.year !== "string" ||
       typeof term.semester !== "string"
     )
-      throw new Error("请选择有效学期");
+      fail("invalid_argument", "请选择有效学期");
     const id = `${tabId}:${request.id}`,
       controller = new AbortController();
     controllers.set(id, { controller, key });
@@ -254,7 +287,7 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
       const before = await identity(provider, controller.signal);
       if (before.studentId !== connected.studentId) {
         await revoke(key);
-        throw new Error("学校身份变化，请重新连接");
+        fail("identity_changed", "学校身份变化，请重新连接");
       }
       const data = await fetchDataset(
         provider,
@@ -272,7 +305,7 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
         !accountStillMatches
       ) {
         if (latest?.epoch === connected.epoch) await revoke(key);
-        throw new Error("连接已失效，本次结果未保存");
+        fail("connection_stale", "连接已失效，本次结果未保存");
       }
       const snapshot = {
         version: 1,
@@ -288,12 +321,12 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
       await withKeyLock(key, async () => {
         const current = await get(key);
         if (current?.epoch !== connected.epoch || current.appUserId !== appUserId)
-          throw new Error('连接已断开，本次结果未保存');
+          fail('connection_stale', '连接已断开，本次结果未保存');
         if ((await chrome.storage.local.get(preference))[preference] === true) {
           await store(snapshotKey(connected, dataset, term), snapshot);
           if ((await get(key))?.epoch !== connected.epoch) {
             await clearPrefix(cachePrefix(connected));
-            throw new Error('连接已断开，本次缓存已清除');
+            fail('connection_stale', '连接已断开，本次缓存已清除');
           }
         }
       });
@@ -302,7 +335,7 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
       controllers.delete(id);
     }
   }
-  throw new Error("此功能尚未启用");
+  fail("unsupported_query", "此功能尚未启用");
 }
 chrome.runtime.onMessage.addListener((message: unknown, sender, reply) => {
   if (
@@ -316,14 +349,6 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, reply) => {
   if (!siteOrigins.has(origin)) return false;
   handle(message, origin, sender.tab.id)
     .then((value) => reply(response(message, value)))
-    .catch((error) =>
-      reply(
-        response(
-          message,
-          undefined,
-          error instanceof Error ? error.message : "学校查询失败",
-        ),
-      ),
-    );
+    .catch((error) => reply(response(message, undefined, error)));
   return true;
 });

@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+  bridgeErrorCode,
   courseConflicts,
+  defaultAcademicTerm,
   gradeStats,
   mergeCourses,
   parseBackup,
@@ -11,22 +13,34 @@ import {
   type AcademicDataset,
   type AcademicProvider,
   type AcademicSnapshot,
+  type AssistantConnection,
+  type BridgeErrorCode,
   type Course,
   type Grade,
 } from "@sylulive/academic-contracts";
 import { bridge } from "./bridge";
+import { useAssistantProbe } from "./use-assistant-probe";
+import { AssistantInstallGuide } from "./assistant-guide";
 import { downloadJSON, errorText, write } from "./api";
 import { Form, Head, Empty, Stats, Tabs, useUI } from "./ui";
 import { useAuth } from "./auth";
 const initial = (): AcademicBackup => ({
   version: 1,
-  term: { year: String(new Date().getFullYear()), semester: "3" },
+  term: defaultAcademicTerm(),
   termStart: "",
   courses: [],
   overrides: {},
   grades: [],
   exams: [],
 });
+/**
+ * 学校对某个学期返回空列表是合法的（假期、尚未排课），但把用户已有资料清空不可逆。
+ * 只在「新结果为空且本地非空」时拒绝替换，其余情况仍按学校结果整体更新。
+ */
+function keepEmptyResult(next: unknown, previous: unknown[]): string | void {
+  if (Array.isArray(next) && !next.length && previous.length)
+    return "学校这次没有返回任何记录，已保留本机原有资料；请在设置里核对学年学期后重试。";
+}
 type Store = {
   data: AcademicBackup;
   setData: React.Dispatch<React.SetStateAction<AcademicBackup>>;
@@ -53,7 +67,7 @@ export function ConnectionForm({
   onData,
 }: {
   dataset: AcademicDataset;
-  onData: (value: unknown, snapshot: AcademicSnapshot) => void;
+  onData: (value: unknown, snapshot: AcademicSnapshot) => string | void;
 }) {
   const { requireUser } = useAuth(),
     ui = useUI(),
@@ -65,46 +79,79 @@ export function ConnectionForm({
         ? "erke"
         : "undergraduate",
   );
-  const [connection, setConnection] = useState<AcademicConnection | null>(null),
+  const [connection, setConnection] = useState<AssistantConnection | null>(
+      null,
+    ),
     [busy, setBusy] = useState(false),
     [status, setStatus] = useState(""),
-    [assistantState, setAssistantState] = useState<"checking" | "ready" | "missing">("checking");
-  const pending = useRef<AbortController | null>(null);
+    [failure, setFailure] = useState<BridgeErrorCode | undefined>();
+  // 关注当前学校系统的授权位：本机还未授权时握手会继续复检，
+  // 用户在助手页点完授权后本页能免刷新恢复。
+  const assistant = useAssistantProbe({ watchProvider: provider });
+  const pending = useRef<AbortController | null>(null),
+    busyRef = useRef(false),
+    announced = useRef(false);
+  busyRef.current = busy;
   useEffect(() => () => pending.current?.abort(), []);
   useEffect(() => {
-    let active = true;
-    bridge("hello", {}, AbortSignal.timeout(2200))
-      .then(() => {
-        if (active) {
-          setAssistantState("ready");
-          setStatus("教务助手已连接，可以打开学校登录页面。");
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setAssistantState("missing");
-          setStatus("未检测到教务助手，请先安装或启用扩展，再刷新本页面。");
-        }
-      });
-    return () => { active = false; };
-  }, []);
+    if (assistant.state !== "ready" || announced.current) return;
+    announced.current = true;
+    if (!busyRef.current) setStatus("教务助手已连接，可以继续。");
+  }, [assistant.state]);
+  // 助手已保有这台学校系统的连接时复用其代次：重新打开弹窗不再重跑 session
+  // （站点账号核对 + 学校身份页各一次）。真正读取前 query 仍会重新核对身份，
+  // 所以这里只是省去重复握手，没有放松写入边界。
+  useEffect(() => {
+    const known = assistant.connections.find(
+      (c) => c.provider === provider && c.state === "connected",
+    );
+    if (!known || busyRef.current) return;
+    setConnection((current) => current || known);
+  }, [assistant.connections, provider]);
   async function act(fn: (signal: AbortSignal) => Promise<void>) {
     if (!requireUser()) return;
     const controller = new AbortController();
     pending.current = controller;
     setBusy(true);
     setStatus("正在连接本机助手…");
+    setFailure(undefined);
+    assistant.setPaused(true);
     try {
       await bridge("hello", {}, controller.signal);
-      setAssistantState("ready");
+      assistant.markReady();
       await fn(controller.signal);
     } catch (e) {
-      if (!controller.signal.aborted) setStatus(errorText(e));
+      if (!controller.signal.aborted) {
+        const code = bridgeErrorCode(e);
+        // 连接或身份已失效时把界面退回「未连接」，否则用户会对着过期代次反复点击。
+        if (
+          code === "connection_stale" ||
+          code === "identity_changed" ||
+          code === "site_login_required"
+        )
+          setConnection(null);
+        setFailure(code);
+        setStatus(errorText(e));
+        assistant.recheck();
+      }
     } finally {
+      assistant.setPaused(false);
       if (!controller.signal.aborted) setBusy(false);
       if (pending.current === controller) pending.current = null;
     }
   }
+  const unauthorized = assistant.authorized
+    ? assistant.authorized[provider] === false
+    : failure === "authorization_required";
+  const guidance = unauthorized
+    ? "本机助手还未获准访问这所学校的教务系统。用下方按钮打开助手页并授予权限，回到本页会自动继续，不必刷新。"
+    : failure === "school_login_required"
+      ? "学校登录已过期：用下方按钮打开学校登录页，完成后重新点击。"
+      : failure === "site_login_required"
+        ? "沈理校园的登录状态已失效，请重新登录本站后再连接教务助手。"
+        : failure === "identity_changed" || failure === "connection_stale"
+          ? "本机教务连接已过期，重新点击「连接并读取资料」即可核对身份。"
+          : "";
   return (
     <div className="dialog-form">
       <label className="field">
@@ -140,8 +187,8 @@ export function ConnectionForm({
         课表、成绩等资料只在本机助手中读取。本科或研究生首次连接时，会向 SYLUlive 同步教务类型和学号，用于记录本机身份声明；学校密码和会话不会上传。
       </p>
       <ol className="academic-steps" aria-label="教务连接步骤">
-        <li className={assistantState === "ready" ? "done" : "active"}><b>1</b><span>检测助手</span></li>
-        <li className={connection ? "done" : assistantState === "ready" ? "active" : ""}><b>2</b><span>获取身份</span></li>
+        <li className={assistant.state === "ready" ? "done" : "active"}><b>1</b><span>检测助手</span></li>
+        <li className={connection ? "done" : assistant.state === "ready" ? "active" : ""}><b>2</b><span>获取身份</span></li>
         <li className={connection ? "done" : ""}><b>3</b><span>读取资料</span></li>
       </ol>
       <div className="inline-actions">
@@ -160,7 +207,11 @@ export function ConnectionForm({
               setStatus(`已连接 ${value.displayName || value.studentId}，正在读取资料…`);
               const snapshot = await bridge<AcademicSnapshot>("query", {provider, dataset, term: store.data.term, epoch: value.epoch}, signal);
               if (signal.aborted) return;
-              onData(snapshot.data, snapshot);
+              const note = onData(snapshot.data, snapshot);
+              if (note) {
+                setStatus(note);
+                return;
+              }
               store.setUpdated(snapshot.fetchedAt);
               ui.notify("学校资料已更新");
               ui.close();
@@ -175,20 +226,24 @@ export function ConnectionForm({
           onClick={() =>
             act(async (signal) => {
               await bridge("connect", { provider }, signal);
-              setStatus("已打开学校登录页；登录完成后回到此页点击“连接并获取身份”。");
+              setStatus(
+                "已打开本机助手页：按页面提示授予权限或登录学校，完成后回到本页。",
+              );
             })
           }
         >
-          学校未登录？打开登录页
+          {unauthorized ? "打开助手完成授权" : "学校未登录？打开登录页"}
         </button>
       </div>
+      {guidance && <p className="notice-line">{guidance}</p>}
+      <AssistantInstallGuide state={assistant.state} onRecheck={assistant.recheck} />
       {connection && (
         <>
           <p className="source-line">
             已连接：{connection.displayName} · {connection.studentId}
           </p>
           <label className="check-label"><input type="checkbox" disabled={busy} onChange={e=>{const enabled=e.target.checked;void act(async()=>{await bridge('persistence',{provider,epoch:connection.epoch,enabled});setStatus(enabled?'后续查询结果将保存在此电脑的扩展中':'已清除此身份的持久缓存')})}}/>在此电脑保存结构化资料</label>
-          <button className="btn" disabled={busy} onClick={()=>act(async()=>{const snapshot=await bridge<AcademicSnapshot|null>('cache',{provider,epoch:connection.epoch,dataset,term:store.data.term});if(!snapshot)throw new Error('此身份和学期没有保存的资料');onData(snapshot.data,snapshot);store.setUpdated(snapshot.fetchedAt);setStatus('已恢复本地资料，请留意获取时间')})}>恢复本机资料</button>
+          <button className="btn" disabled={busy} onClick={()=>act(async()=>{const snapshot=await bridge<AcademicSnapshot|null>('cache',{provider,epoch:connection.epoch,dataset,term:store.data.term});if(!snapshot)throw new Error('此身份和学期没有保存的资料');const note=onData(snapshot.data,snapshot);if(note){setStatus(note);return}store.setUpdated(snapshot.fetchedAt);setStatus('已恢复本地资料，请留意获取时间')})}>恢复本机资料</button>
           <button
             className="btn primary"
             disabled={busy}
@@ -201,7 +256,11 @@ export function ConnectionForm({
                   epoch: connection.epoch,
                 }, signal);
                 if (signal.aborted) return;
-                onData(snapshot.data, snapshot);
+                const note = onData(snapshot.data, snapshot);
+                if (note) {
+                  setStatus(note);
+                  return;
+                }
                 store.setUpdated(snapshot.fetchedAt);
                 ui.notify("学校资料已更新");
                 ui.close();
@@ -435,9 +494,11 @@ export function Schedule() {
               "更新学校课表",
               <ConnectionForm
                 dataset="courses"
-                onData={(value) =>
-                  store.setData((s) => ({ ...s, courses: value as Course[] }))
-                }
+                onData={(value) => {
+                  const note = keepEmptyResult(value, store.data.courses);
+                  if (note) return note;
+                  store.setData((s) => ({ ...s, courses: value as Course[] }));
+                }}
               />,
             )
           }
@@ -659,7 +720,11 @@ export function Grades() {
               <ConnectionForm
                 dataset={dataset as AcademicDataset}
                 onData={(value,snapshot) => {
-                  if(dataset === 'grades')store.setData((s) => ({ ...s, grades: value as Grade[] }));
+                  if (dataset === 'grades') {
+                    const note = keepEmptyResult(value, store.data.grades);
+                    if (note) return note;
+                    store.setData((s) => ({ ...s, grades: value as Grade[] }));
+                  }
                   setExtra(current=>({...current,[dataset]:snapshot}));
                 }}
               />,

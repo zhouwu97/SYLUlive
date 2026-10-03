@@ -9,6 +9,7 @@
     "check": "pnpm -r check",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "assistant:dev": "pnpm --filter @sylulive/extension package:web:dev",
     "package": "pnpm build && pnpm --filter @sylulive/extension dev && node scripts/package-web.mjs"
   },
   "devDependencies": {

@@ -90,7 +90,53 @@ export interface BridgeResponse {
   id: string;
   ok: boolean;
   result?: unknown;
+  // code 故意不收窄成 BridgeErrorCode：旧版扩展只会回 academic_failed，
+  // 收窄会让新旧两端在类型上打架，页面一律按「未知码」降级处理。
   error?: { code: string; message: string };
+}
+export const bridgeErrorCodes = [
+  "extension_unavailable",
+  "site_login_required",
+  "school_login_required",
+  "authorization_required",
+  "connection_stale",
+  "identity_changed",
+  "unsupported_query",
+  "invalid_argument",
+  "failed",
+] as const;
+export type BridgeErrorCode = (typeof bridgeErrorCodes)[number];
+export class BridgeFailure extends Error {
+  constructor(
+    readonly code: BridgeErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "BridgeFailure";
+  }
+}
+export function bridgeErrorCode(error: unknown): BridgeErrorCode | undefined {
+  return error instanceof BridgeFailure ? error.code : undefined;
+}
+// 旧版扩展会回 academic_failed 这类页面不认识的码，必须先判定再收窄，
+// 未知码一律按 failed 处理，不能让一个字符串把界面分支带进错误结论。
+export function isBridgeErrorCode(value: unknown): value is BridgeErrorCode {
+  return bridgeErrorCodes.includes(value as BridgeErrorCode);
+}
+// hello 只回传页面恢复界面所需的字段；appUserId、origin 和本机内部标记留在扩展侧。
+export interface AssistantConnection {
+  provider: AcademicProvider;
+  studentId: string;
+  displayName: string;
+  epoch: string;
+  state: "connected" | "expired";
+}
+export interface HelloResult {
+  version: 1;
+  extensionVersion?: string;
+  capabilities: AcademicCapabilities[];
+  connections?: AssistantConnection[];
+  authorized?: Partial<Record<AcademicProvider, boolean>>;
 }
 export const capabilities: AcademicCapabilities[] = [
   {
@@ -131,6 +177,15 @@ export function isBridgeRequest(value: unknown): value is BridgeRequest {
 }
 export function isProvider(value: unknown): value is AcademicProvider {
   return providers.includes(value as AcademicProvider);
+}
+// 正方教务以秋季学期起算学年，春季学期的学年参数仍归属上一年度，
+// 所以默认学期要按月份推导，不能直接取日历年份。
+export function defaultAcademicTerm(now = new Date()): AcademicTerm {
+  const year = now.getFullYear(),
+    month = now.getMonth() + 1;
+  if (month >= 9) return { year: String(year), semester: "3" };
+  if (month === 1) return { year: String(year - 1), semester: "3" };
+  return { year: String(year - 1), semester: "12" };
 }
 export function teachingWeek(start: string, now = new Date()): number {
   const d = new Date(`${start}T00:00:00+08:00`);

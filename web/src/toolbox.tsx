@@ -1,9 +1,10 @@
-import {useState} from 'react';
+import {useState,useEffect} from 'react';
 import {Link} from 'react-router-dom';
 import {mergeCourses,teachingWeek,gradeStats} from '@sylulive/academic-contracts';
 import {useAcademic} from './academic';
 import {useAuth} from './auth';
-import {bridge} from './bridge';
+import {useAssistantProbe} from './use-assistant-probe';
+import {AssistantInstallGuide} from './assistant-guide';
 import {useApi,write,entity} from './api';
 import {Empty,Form,Head,QueryState,useUI} from './ui';
 const initial=['gpa','free','physical','checkin','lottery','diagnostic'];
@@ -17,4 +18,17 @@ function Gpa(){const {data}=useAcademic();const stats=gradeStats(data.grades);co
 function Free(){const {data}=useAcademic();const week=teachingWeek(data.termStart);const courses=mergeCourses(data.courses,data.overrides).filter(c=>c.weeks.includes(week));return <><p>第 {week} 周 · 基于当前课表，本地计算</p>{Array.from({length:7},(_,i)=><p key={i}>周{'一二三四五六日'[i]}：{Array.from({length:12},(_,p)=>p+1).filter(p=>!courses.some(c=>c.day===i+1&&c.periods.includes(p))).join('、')||'没有空闲节次'}</p>)}<Link to="/schedule">前往课表核对</Link></>}
 function Checkin(){const q=useApi('/api/user/checkin/status'),ui=useUI();return <QueryState query={q}><p>{q.data?.check_in_date} · {q.data?.checked_in?'今天已签到':'今天未签到'}</p><p>连续 {q.data?.streak_days||0} 天 · 补签卡 {q.data?.makeup_cards||0} 张</p><button className="btn primary" disabled={q.data?.checked_in} onClick={()=>void ui.act(()=>write('/api/user/checkin'),'签到成功')}>今日签到</button><Form fields={[{name:'check_in_date',label:'补签日期',type:'date',required:true}]} submit="使用补签卡" onSubmit={async values=>{await write('/api/user/checkin/makeup',values);await q.refetch();ui.notify('补签成功')}}/></QueryState>}
 function Lottery(){const q=useApi('/api/lottery/current'),ui=useUI(),event=entity(q.data,'event');return <QueryState query={q}><h3>{event.title||event.prize_name||'校园抽奖'}</h3><p>{event.description}</p><p>参与人数 {q.data?.participant_count||0} · 开奖时间 {event.draw_time}</p><p>{event.winner?.nickname?`获奖者：${event.winner.nickname}`:''}</p><button className="btn primary" disabled={q.data?.joined||event.status!==0} onClick={()=>void ui.act(()=>write(`/api/lottery/${event.id}/join`),'参与状态已保存')}>{q.data?.joined?'已参与':'参加本期活动'}</button></QueryState>}
-function Diagnostic(){const [status,setStatus]=useState('点击检测，检查网页与教务助手的连接');return <><p role="status">{status}</p><button className="btn" onClick={async()=>{try{const data=await bridge<{extensionVersion:string,capabilities:unknown[]}>('hello');setStatus(`已连接助手 ${data.extensionVersion}，提供 ${data.capabilities.length} 个系统适配器。学校登录与查询状态请在对应资料页面核对。`)}catch(error){setStatus(error instanceof Error?error.message:'检测失败')}}}>检测助手</button></>}
+const providerNames:Record<string,string>={undergraduate:'本科教务',graduate:'研究生教务',erke:'二课 WebVPN',physical:'体测'};
+function Diagnostic(){
+  const assistant=useAssistantProbe({autoStart:false});
+  const [status,setStatus]=useState('点击检测，检查网页与教务助手的连接');
+  useEffect(()=>{
+    if(assistant.state==='ready'){
+      // 新版助手会在握手时报告本机授权位，这里据此区分「装了但没授权」和「还没装」。
+      const granted=assistant.authorized?Object.entries(assistant.authorized).filter(([,ok])=>ok).map(([p])=>providerNames[p]||p):[];
+      setStatus(`已连接助手 ${assistant.extensionVersion||'未知版本'}，提供 ${assistant.capabilityCount} 个系统适配器。${granted.length?`本机已授权：${granted.join('、')}。`:''}学校登录与查询状态请在对应资料页面核对。`);
+    }
+    else if(assistant.state==='missing')setStatus('未检测到教务助手，请按下方说明安装，装好后本页会自动复检，不必刷新。');
+  },[assistant.state,assistant.extensionVersion,assistant.capabilityCount,assistant.authorized]);
+  return <><p role="status">{status}</p><button className="btn" onClick={assistant.recheck}>检测助手</button><AssistantInstallGuide state={assistant.state} onRecheck={assistant.recheck}/></>;
+}

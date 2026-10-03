@@ -1,10 +1,30 @@
 import { parseHTML } from "linkedom";
 import CryptoJS from "crypto-js";
-import type { Course, Grade } from "@sylulive/academic-contracts";
+import {
+  BridgeFailure,
+  type Course,
+  type Grade,
+} from "@sylulive/academic-contracts";
 export function schoolDocument(html: string) {
   if (/<input[^>]+(?:name|id)=["'](?:mm|password)["']/i.test(html))
-    throw new Error("学校登录已过期，请在学校官网重新登录");
+    throw new BridgeFailure(
+      "school_login_required",
+      "学校登录已过期，请在学校官网重新登录",
+    );
   return parseHTML(html).document;
+}
+/**
+ * 正方在会话失效时会对课表、成绩这些本应返回 JSON 的接口回一份登录页 HTML，
+ * 直接 JSON.parse 抛出的语法错误会把「重新登录就能恢复」伪装成学校故障。
+ */
+export function parseSchoolJson(text: string): unknown {
+  if (/^\s*</.test(text))
+    throw new BridgeFailure("school_login_required", "学校返回了登录页，请重新登录");
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new BridgeFailure("failed", "学校响应格式无法解析，原资料已保留");
+  }
 }
 export function profile(html: string) {
   const d = schoolDocument(html);
@@ -16,7 +36,10 @@ export function profile(html: string) {
   )?.getAttribute("value");
   const current = d.getElementById("curXh_id")?.getAttribute("value");
   if (!id || id !== hidden || id !== current)
-    throw new Error("学校身份未能确认，请完成登录后重试");
+    throw new BridgeFailure(
+      "school_login_required",
+      "学校身份未能确认，请完成登录后重试",
+    );
   return { studentId: id, displayName: field("col_xm") };
 }
 export function ranges(expression: string, max: number): number[] {
@@ -125,7 +148,11 @@ export function graduateDecode(raw: string): any {
 export function graduateProfile(raw: string) {
   const body = graduateDecode(raw);
   const data = Array.isArray(body) ? body[0] : body?.data || body;
-  if (!data?.xh) throw new Error("研究生登录已过期或身份未确认");
+  if (!data?.xh)
+    throw new BridgeFailure(
+      "school_login_required",
+      "研究生登录已过期或身份未确认",
+    );
   return {
     studentId: String(data.xh).trim(),
     displayName: String(data.xm || ""),

@@ -1,6 +1,8 @@
 import {
   BRIDGE_CHANNEL,
+  BridgeFailure,
   PROTOCOL_VERSION,
+  isBridgeErrorCode,
   type BridgeOperation,
   type BridgeResponse,
 } from "@sylulive/academic-contracts";
@@ -14,11 +16,12 @@ export function bridge<T = unknown>(
     const timer = setTimeout(
       () =>
         finish(
-          new Error(
-            operation === "hello"
-              ? "未检测到教务助手，请先安装并刷新页面"
-              : "本地请求超时，请检查学校登录状态",
-          ),
+          operation === "hello"
+            ? new BridgeFailure(
+                "extension_unavailable",
+                "未检测到教务助手，请按页面说明安装助手",
+              )
+            : new BridgeFailure("failed", "本地请求超时，请检查学校登录状态"),
         ),
       operation === "hello" ? 1800 : 60000,
     );
@@ -39,8 +42,14 @@ export function bridge<T = unknown>(
         d.id !== id
       )
         return;
+      const code = d.error?.code;
       finish(
-        d.ok ? undefined : new Error(d.error?.message || "教务助手未完成请求"),
+        d.ok
+          ? undefined
+          : new BridgeFailure(
+              isBridgeErrorCode(code) ? code : "failed",
+              d.error?.message || "教务助手未完成请求",
+            ),
         d.result,
       );
     }

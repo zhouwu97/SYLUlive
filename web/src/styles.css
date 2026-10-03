@@ -16,6 +16,8 @@
 .academic-steps li.active b { background:var(--brand-soft); border-color:var(--brand); color:var(--brand-strong); }
 .academic-steps li.done { color:var(--brand-strong); }
 .academic-steps li.done b { background:var(--brand); border-color:var(--brand); color:#fff; }
+.assistant-guide { display:grid; gap:8px; }
+.assistant-guide .assistant-steps { margin:0; padding-left:20px; color:var(--text-2); font-size:12px; line-height:1.6; }
 .profile-cover { width: 100%; max-height: 220px; object-fit: cover; border-radius: var(--r-md); }
 .page {
   display: block;

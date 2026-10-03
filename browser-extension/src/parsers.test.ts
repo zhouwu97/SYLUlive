@@ -1,5 +1,15 @@
 import { it, expect } from "vitest";
-import { ranges, courses, profile, grades, creditRequirements } from "./parsers";
+import { bridgeErrorCode } from "@sylulive/academic-contracts";
+import { ranges, courses, profile, grades, creditRequirements, parseSchoolJson } from "./parsers";
+// 只关心失败分类是否可判定，消息文案由页面直接展示，不在断言里重复钉死。
+const thrownCode = (run: () => unknown) => {
+  try {
+    run();
+  } catch (error) {
+    return bridgeErrorCode(error);
+  }
+  return expect.unreachable("预期抛出带错误码的失败");
+};
 it("解析单双周和连续节次", () => {
   expect(ranges("1-6周(单),8周", 60)).toEqual([1, 3, 5, 8]);
   expect(ranges("2-8周(双)", 60)).toEqual([2, 4, 6, 8]);
@@ -28,4 +38,16 @@ it("身份的可见和隐藏字段必须一致", () => {
       '<div id="col_xh">123</div><input id="xh_id" value="456"><input id="curXh_id" value="123">',
     ),
   ).toThrow();
+});
+it("课表接口返回登录页时按重新登录处理", () => {
+  expect(thrownCode(() => parseSchoolJson('<html><body>登录</body></html>'))).toBe(
+    "school_login_required",
+  );
+  expect(thrownCode(() => parseSchoolJson("  \n  <html>登录"))).toBe("school_login_required");
+});
+it("课表接口返回坏数据时保留原资料", () => {
+  expect(thrownCode(() => parseSchoolJson("{xnmlist"))).toBe("failed");
+  expect(parseSchoolJson('{"kbList":[{"kch_id":"A"}]}')).toEqual({
+    kbList: [{ kch_id: "A" }],
+  });
 });

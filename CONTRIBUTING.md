@@ -50,7 +50,10 @@ pnpm install --frozen-lockfile
 pnpm -r check
 pnpm test
 pnpm -r build
+pnpm assistant:dev
 ~~~
+
+`pnpm assistant:dev` 为本地 5173 产出开发通道教务助手包到 `web/public/assistant/`，用于验证页面内的下载引导与免刷新复检；`pnpm -r build` 会为生产通道产出同一目录。该目录是构建产物，已列入 `.gitignore`，不得提交。
 
 只在相关端或共享契约受影响时执行 Playwright 和扩展专项检查。
 

@@ -1,15 +1,17 @@
 import CryptoJS from "crypto-js";
-import type {
-  AcademicProvider,
-  AcademicDataset,
-  AcademicTerm,
-  Course,
+import {
+  BridgeFailure,
+  type AcademicProvider,
+  type AcademicDataset,
+  type AcademicTerm,
+  type Course,
 } from "@sylulive/academic-contracts";
 import {
   courses,
   grades,
   graduateDecode,
   graduateProfile,
+  parseSchoolJson,
   profile,
   ranges,
   schoolDocument,
@@ -49,7 +51,10 @@ export async function setPhysicalProviderEnabled(enabled: boolean) {
 
 async function requirePhysicalProviderOptIn(provider: AcademicProvider) {
   if (provider === "physical" && !(await isPhysicalProviderEnabled()))
-    throw new Error("体测连接默认关闭；请在助手页阅读风险并手动开启");
+    throw new BridgeFailure(
+      "unsupported_query",
+      "体测连接默认关闭；请在助手页阅读风险并手动开启",
+    );
 }
 const knownPaths = [
   "/xsxxxggl/",
@@ -103,9 +108,15 @@ export async function schoolRequest(
   };
   const response = await fetch(url, init);
   if (!response.ok || response.status === 901)
-    throw new Error(`学校请求失败（${response.status}），请检查登录状态`);
+    throw new BridgeFailure(
+      "school_login_required",
+      `学校请求失败（${response.status}），请检查登录状态`,
+    );
   if (new URL(response.url).origin !== origins[provider])
-    throw new Error("学校跳转到其他登录系统，请在官网完成登录");
+    throw new BridgeFailure(
+      "school_login_required",
+      "学校跳转到其他登录系统，请在官网完成登录",
+    );
   const buffer = await response.arrayBuffer();
   const contentType = response.headers.get("content-type") || "";
   return new TextDecoder(
@@ -147,12 +158,15 @@ export async function identity(
   if (provider === "physical") {
     const v = (await chrome.storage.session.get("physicalLogin"))
       .physicalLogin as { userId?: string; account?: string; token?: string } | undefined;
-    if (!v?.userId || !v.token) throw new Error("请在助手中登录体测系统");
+    if (!v?.userId || !v.token)
+      throw new BridgeFailure("school_login_required", "请在助手中登录体测系统");
     const cookie = await chrome.cookies.get({url:origins.physical,name:'userid'});
-    if(cookie?.value !== v.userId) throw new Error('体测登录身份已变化，请重新连接');
+    if(cookie?.value !== v.userId)
+      throw new BridgeFailure("identity_changed", "体测登录身份已变化，请重新连接");
     const form:Record<string,string>={userId:v.userId};form.sign=sign(form);
     const value=JSON.parse(await schoolRequest(provider,'/service/sysUser/mobile/findStudent',form,signal,true,{Authorization:v.token,'X-Requested-With':'com.wisedu.cpdaily'}));
-    if(!value.data || typeof value.data !== 'object')throw new Error('体测会话已过期，请重新登录');
+    if(!value.data || typeof value.data !== 'object')
+      throw new BridgeFailure("school_login_required", "体测会话已过期，请重新登录");
     return { studentId: v.userId, displayName: v.account || "" };
   }
   const html = await schoolRequest(
@@ -165,7 +179,10 @@ export async function identity(
   const text = d.body?.textContent || "";
   const m = text.match(/学号\s*[：:]?\s*(\d{8,20})/);
   if (!m)
-    throw new Error("二课身份未确认，请在 WebVPN 中进入二课系统并完成登录");
+    throw new BridgeFailure(
+      "school_login_required",
+      "二课身份未确认，请在 WebVPN 中进入二课系统并完成登录",
+    );
   return { studentId: m[1], displayName: "" };
 }
 export async function fetchDataset(
@@ -180,7 +197,7 @@ export async function fetchDataset(
       !/^\d{4}$/.test(term.year) ||
       !["3", "12", "16"].includes(term.semester)
     )
-      throw new Error("学期参数无效");
+      throw new BridgeFailure("invalid_argument", "学期参数无效");
     const form = { xnm: term.year, xqm: term.semester };
     if (dataset === "courses") {
       const text = await schoolRequest(
@@ -189,7 +206,7 @@ export async function fetchDataset(
         { ...form, kblx: "1" },
         signal,
       );
-      return courses(JSON.parse(text));
+      return courses(parseSchoolJson(text));
     }
     if (dataset === "grades") {
       await schoolRequest(
@@ -210,7 +227,7 @@ export async function fetchDataset(
           },
           signal,
         );
-        const batch = grades(JSON.parse(text));
+        const batch = grades(parseSchoolJson(text));
         result.push(...batch);
         if (batch.length < 500) return result;
       }
@@ -240,7 +257,7 @@ export async function fetchDataset(
       if(Object.keys(params).length!==3)return tableData(html);
       const detail=await schoolRequest(provider,'/xjyj/xjyj_cxXjyjjdlb.html?gnmkdm=N105505',params,signal,false,{'X-Requested-With':'XMLHttpRequest'});
       if(detail.trim().startsWith('<'))return tableData(detail);
-      return creditRequirements(JSON.parse(detail));
+      return creditRequirements(parseSchoolJson(detail));
     }
   }
   if (provider === "graduate" && dataset === "courses") {
@@ -335,7 +352,8 @@ export async function fetchDataset(
     const login = (await chrome.storage.session.get("physicalLogin"))
       .physicalLogin as
       { userId: string; token: string; year?: string } | undefined;
-    if (!login) throw new Error("请先在助手中登录体测");
+    if (!login)
+      throw new BridgeFailure("school_login_required", "请先在助手中登录体测");
     const form: Record<string, string> = {
       user_id: login.userId,
       school_year: term.year || login.year || "",
@@ -355,7 +373,8 @@ export async function fetchDataset(
       ),
     );
     const data = body?.data?.data_arr;
-    if (!Array.isArray(data)) throw new Error("体测会话已过期或返回格式改变");
+    if (!Array.isArray(data))
+      throw new BridgeFailure("school_login_required", "体测会话已过期或返回格式改变");
     return {
       total_score: body.data.total_score,
       total_grade: body.data.total_grade,
@@ -367,7 +386,7 @@ export async function fetchDataset(
       })),
     };
   }
-  throw new Error("此系统不支持该项资料");
+  throw new BridgeFailure("unsupported_query", "此系统不支持该项资料");
 }
 function sign(params: Record<string, string>) {
   return CryptoJS.SHA1(

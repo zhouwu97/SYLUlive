@@ -5,6 +5,10 @@ import {
   courseConflicts,
   gradeStats,
   isBridgeRequest,
+  defaultAcademicTerm,
+  BridgeFailure,
+  bridgeErrorCode,
+  isBridgeErrorCode,
   type AcademicBackup,
   type Course,
 } from "./index";
@@ -106,5 +110,34 @@ describe("本地资料边界", () => {
         payload: { url: "https://example.com" },
       }),
     ).toBe(false);
+  });
+});
+describe("默认学年学期", () => {
+  const at = (year: number, month: number, day: number) =>
+    defaultAcademicTerm(new Date(year, month - 1, day));
+  it("秋季学期归属开学当年的学年", () => {
+    expect(at(2026, 9, 7)).toEqual({ year: "2026", semester: "3" });
+    expect(at(2026, 12, 31)).toEqual({ year: "2026", semester: "3" });
+  });
+  it("一月仍在上一年的秋季学期内", () => {
+    expect(at(2027, 1, 1)).toEqual({ year: "2026", semester: "3" });
+    expect(at(2027, 1, 31)).toEqual({ year: "2026", semester: "3" });
+  });
+  it("二月到八月是上一学年的春季学期", () => {
+    expect(at(2027, 2, 1)).toEqual({ year: "2026", semester: "12" });
+    expect(at(2027, 8, 31)).toEqual({ year: "2026", semester: "12" });
+  });
+});
+describe("桥接失败码", () => {
+  it("保留码位不丢消息", () => {
+    const failure = new BridgeFailure("authorization_required", "请在助手页面授予学校域名权限");
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure.message).toBe("请在助手页面授予学校域名权限");
+    expect(bridgeErrorCode(failure)).toBe("authorization_required");
+    expect(bridgeErrorCode(new Error("普通异常"))).toBeUndefined();
+  });
+  it("旧版扩展的未知码收窄为失败而不是猜一个分类", () => {
+    expect(isBridgeErrorCode("academic_failed")).toBe(false);
+    expect(isBridgeErrorCode("identity_changed")).toBe(true);
   });
 });

@@ -3,6 +3,8 @@ node_modules/
 /web/dist/
 /browser-extension/dist/
 /browser-extension/dist-dev/
+# 页面下载用的教务助手包由 package-web.mjs 现产，属于构建产物
+/web/public/assistant/
 /web/test-results/
 /test-results/
 /playwright-report/

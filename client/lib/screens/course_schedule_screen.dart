@@ -6,8 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
+import '../services/academic_archive_exporter.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
@@ -1510,10 +1509,19 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       ),
     );
 
+    final requestedTerm = sc.currentTerm;
+    final requestedGeneration = sc.contextGeneration;
     try {
       final result = await edu
-          .getCourses(sc.selectedYear, sc.selectedSemester)
+          .getCourses(requestedTerm.year, requestedTerm.semester,
+              providerTermId: requestedTerm.providerTermId)
           .timeout(_courseFetchTimeout);
+      if (mounted &&
+          (sc.contextGeneration != requestedGeneration ||
+              sc.currentTerm.id != requestedTerm.id)) {
+        Navigator.pop(context);
+        return;
+      }
       if (!mounted) return;
 
       if (result == null || !result.success) {
@@ -3075,13 +3083,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('存档已保存至：${file.path}'),
+            content: Text('存档已保存至：${file.savedPath}'),
             duration: const Duration(seconds: 6),
             action: SnackBarAction(
               label: '分享',
               onPressed: () {
                 unawaited(Share.shareXFiles([
-                  XFile(file.path),
+                  XFile(file.shareFile.path),
                 ], text: '这是我的沈理校园课表存档，可以在App的"从文件导入"功能中恢复。'));
               },
             ),
@@ -3097,41 +3105,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
   }
 
-  /// 优先写入公共 Download/沈理校园/课表存档；受系统存储策略限制时，
-  /// 回退到 path_provider 提供的下载目录或应用文档目录，并始终返回实际路径。
-  Future<File> _writeArchiveExportFile(String fileName, String content) async {
-    final candidates = <Directory>[];
-    if (Platform.isAndroid) {
-      candidates.add(Directory('/storage/emulated/0/Download/沈理校园/课表存档'));
-    }
-    try {
-      final downloads = await getDownloadsDirectory();
-      if (downloads != null) {
-        candidates.add(Directory(path.join(downloads.path, '沈理校园', '课表存档')));
-      }
-    } catch (_) {
-      // path_provider 在部分平台/测试环境可能没有 Downloads 实现，继续走文档目录。
-    }
-    try {
-      final documents = await getApplicationDocumentsDirectory();
-      candidates.add(Directory(path.join(documents.path, '沈理校园', '课表存档')));
-    } catch (_) {
-      // 所有候选都不可用时由下方统一抛出最后一次写入错误。
-    }
-
-    Object? lastError;
-    for (final directory in candidates) {
-      try {
-        await directory.create(recursive: true);
-        final file = File(path.join(directory.path, fileName));
-        await file.writeAsString(content);
-        return file;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw StateError('无法创建课表存档文件：$lastError');
-  }
+  Future<AcademicArchiveExport> _writeArchiveExportFile(
+          String fileName, String content) =>
+      AcademicArchiveExporter.save(
+          fileName: fileName, content: content, folder: '课表存档');
 
   /// 弹出保存存档的命名对话框
   void _showSaveArchiveDialog(
@@ -4503,6 +4480,7 @@ class _SaveArchiveDialog extends StatefulWidget {
 
 class _SaveArchiveDialogState extends State<_SaveArchiveDialog> {
   late final TextEditingController nameCtrl;
+  bool _saving = false;
 
   @override
   void initState() {
@@ -4524,6 +4502,7 @@ class _SaveArchiveDialogState extends State<_SaveArchiveDialog> {
       title: const Text('保存为存档'),
       content: TextField(
         controller: nameCtrl,
+        enabled: !_saving,
         maxLength: 20,
         autofocus: true,
         decoration: const InputDecoration(
@@ -4533,30 +4512,50 @@ class _SaveArchiveDialogState extends State<_SaveArchiveDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _saving ? null : () => Navigator.pop(context),
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed: () async {
-            final name = nameCtrl.text.trim();
-            if (name.isEmpty) return;
-            final scaffoldMessenger = ScaffoldMessenger.of(context);
-            try {
-              await widget.sc.saveCurrentAsArchive(name);
-              if (!mounted) return;
-              Navigator.pop(context);
-              widget.setSheetState(() {});
-              scaffoldMessenger.showSnackBar(
-                SnackBar(content: Text('已保存存档「$name」；点击存档右侧导出按钮可写入下载目录。')),
-              );
-            } catch (error) {
-              if (!mounted) return;
-              scaffoldMessenger.showSnackBar(
-                SnackBar(content: Text('保存失败：$error')),
-              );
-            }
-          },
-          child: const Text('保存'),
+          onPressed: _saving
+              ? null
+              : () async {
+                  final name = nameCtrl.text.trim();
+                  if (name.isEmpty) return;
+                  final scaffoldMessenger = ScaffoldMessenger.of(context);
+                  setState(() => _saving = true);
+                  try {
+                    final archive = await widget.sc.saveCurrentAsArchive(name);
+                    AcademicArchiveExport? exported;
+                    try {
+                      final content =
+                          await widget.sc.exportArchiveJson(archive.id);
+                      exported = await AcademicArchiveExporter.save(
+                          fileName:
+                              '沈理校园课表_${name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}.json',
+                          content: content,
+                          folder: '课表存档');
+                    } catch (_) {
+                      // App 内存档已成功保存，公开导出失败时保留它供用户重试。
+                    }
+                    if (!mounted) return;
+                    Navigator.pop(context);
+                    widget.setSheetState(() {});
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(
+                          content: Text(exported == null
+                              ? 'App 内存档已保存，但下载目录写入失败；请点击存档右侧导出重试。'
+                              : '存档已保存至：${exported.savedPath}')),
+                    );
+                  } catch (error) {
+                    if (!mounted) return;
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(content: Text('保存失败：$error')),
+                    );
+                  } finally {
+                    if (mounted) setState(() => _saving = false);
+                  }
+                },
+          child: Text(_saving ? '保存中…' : '保存'),
         ),
       ],
     );

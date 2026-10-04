@@ -164,9 +164,9 @@ final class ProviderAcademicRepository implements AcademicRepository {
       }
     }
     if (term == null && (requested == null || requested.isEmpty)) {
-      final legacyRequested = '$year|${_legacySemesterCode(semester)}';
       for (final candidate in terms) {
-        if (candidate.providerTermId == legacyRequested) {
+        if (candidate.localYear == year &&
+            candidate.localSemester == semester) {
           term = candidate;
           break;
         }
@@ -204,12 +204,6 @@ final class ProviderAcademicRepository implements AcademicRepository {
       ),
       source: CourseSource.mobile,
     );
-  }
-
-  int _legacySemesterCode(int semester) {
-    if (semester == 3) return 1;
-    if (semester == 12) return 2;
-    return semester;
   }
 
   @override

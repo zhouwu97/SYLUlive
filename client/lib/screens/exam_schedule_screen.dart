@@ -9,7 +9,7 @@ import '../theme/app_colors.dart';
 import '../models/exam_schedule.dart';
 import '../services/exam_schedule_repository.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
-import 'package:path_provider/path_provider.dart';
+import '../services/academic_archive_exporter.dart';
 import 'package:add_2_calendar/add_2_calendar.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -110,8 +110,11 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
       return;
     }
 
+    final exportSemester = _currentSemester;
+    final exportExams =
+        _exams.where((e) => e.semester == exportSemester).toList();
     final nameCtrl = TextEditingController(text: '考试存档_$_currentSemester');
-    final fileName = await showDialog<String>(
+    final route = DialogRoute<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('导出存档'),
@@ -136,49 +139,36 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
       ),
     );
 
-    if (fileName == null || fileName.isEmpty) return;
+    final fileName = await Navigator.of(context).push(route);
+    await route.completed;
+    nameCtrl.dispose();
+    if (!mounted || fileName == null || fileName.isEmpty) return;
 
     try {
-      Directory? backupDir;
-      if (Platform.isAndroid) {
-        backupDir = await getExternalStorageDirectory();
-        // 如果想要存到 Download/沈理考试/，这里应该拿到外部存储根目录
-        // 但 getExternalStorageDirectory() 给的是 Android/data/...
-        // 所以我们需要构造路径
-        backupDir = Directory('/storage/emulated/0/Download/沈理考试');
-      } else {
-        backupDir = await getApplicationDocumentsDirectory();
-        backupDir = Directory('${backupDir.path}/沈理考试');
-      }
-
-      if (!await backupDir.exists()) {
-        await backupDir.create(recursive: true);
-      }
-
       final now = DateTime.now();
-      final file = File('${backupDir.path}/$fileName.json');
 
       final exportData = {
         'version': 1,
-        'semester': _currentSemester,
+        'semester': exportSemester,
         'export_time': now.toIso8601String(),
-        'exams': _exams
-            .where((e) => e.semester == _currentSemester)
-            .map((e) => e.toJson())
-            .toList(),
+        'exams': exportExams.map((e) => e.toJson()).toList(),
       };
 
-      await file.writeAsString(jsonEncode(exportData));
+      final file = await AcademicArchiveExporter.save(
+          fileName: '$fileName.json',
+          content: jsonEncode(exportData),
+          folder: '考试存档');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('已成功存档至：${file.path}'),
+            content: Text('已成功存档至：${file.savedPath}'),
             duration: const Duration(seconds: 5),
             action: SnackBarAction(
               label: '分享/打开',
               onPressed: () {
-                Share.shareXFiles([XFile(file.path)], text: '沈理校园考试存档导出');
+                Share.shareXFiles([XFile(file.shareFile.path)],
+                    text: '沈理校园考试存档导出');
               },
             ),
           ),

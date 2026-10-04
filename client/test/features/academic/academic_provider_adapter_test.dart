@@ -354,6 +354,24 @@ void main() {
     provider.close();
   });
 
+  test('课表菜单兼容入口保留本科真实学期码，不转换成 1/2', () async {
+    final source = _RecordingAcademicDataSource();
+    final provider = UndergraduateAcademicProvider(
+      identity: const AcademicIdentityKey(
+          appUserId: 'app-user',
+          providerId: AcademicProviderId.syluUndergraduate,
+          studentId: '2403060128'),
+      source: source,
+    );
+    final repository = ProviderAcademicRepository(provider);
+    for (final semester in [3, 12]) {
+      await repository.getCourses(year: '2024', semester: semester);
+      expect(source.lastCourseYear, '2024');
+      expect(source.lastCourseSemester, semester);
+    }
+    repository.close();
+  });
+
   test('Router 学期读取转发到已选本机 Provider', () async {
     final legacySource = _RecordingAcademicDataSource();
     final legacy = AcademicRepositoryImpl(

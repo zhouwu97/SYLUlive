@@ -89,3 +89,33 @@ func TestUploadImageReadsOnlyInsideRoot(t *testing.T) {
 		t.Fatal("accepted outside path")
 	}
 }
+
+func TestPollSnapshotBoundsPageSizeAtAllocation(t *testing.T) {
+	posts := make([]models.Post, 70)
+	ids := make([]uint, 70)
+	for i := range posts {
+		posts[i].ID = uint(i + 1)
+		ids[i] = posts[i].ID
+	}
+	page, next, more := pagePollSnapshot(posts, ids, 0, 100)
+	if len(page) != 50 || cap(page) > 50 || next != 50 || !more {
+		t.Fatalf("unbounded page: len=%d cap=%d next=%d more=%v", len(page), cap(page), next, more)
+	}
+	page, next, more = pagePollSnapshot(posts, ids, next, 100)
+	if len(page) != 20 || next != 70 || more {
+		t.Fatalf("invalid final page: %d %d %v", len(page), next, more)
+	}
+}
+
+func TestPollSnapshotKeepsCursorAcrossDeletedIDs(t *testing.T) {
+	posts := []models.Post{{ID: 2}, {ID: 4}, {ID: 5}, {ID: 7}}
+	ids := []uint{1, 2, 3, 4, 5, 6, 7}
+	page, next, more := pagePollSnapshot(posts, ids, 0, 2)
+	if len(page) != 2 || page[0].ID != 2 || page[1].ID != 4 || next != 4 || !more {
+		t.Fatalf("invalid initial snapshot page: %+v %d %v", page, next, more)
+	}
+	page, next, more = pagePollSnapshot(posts, ids, next, 2)
+	if len(page) != 2 || page[0].ID != 5 || page[1].ID != 7 || next != 7 || more {
+		t.Fatalf("invalid final snapshot page: %+v %d %v", page, next, more)
+	}
+}

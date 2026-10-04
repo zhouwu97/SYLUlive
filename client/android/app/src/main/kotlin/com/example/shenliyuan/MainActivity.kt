@@ -354,6 +354,22 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger,
+            "shenliyuan/academic_archive").setMethodCallHandler { call, result ->
+            if (call.method != "save") {
+                result.notImplemented()
+            } else {
+                try {
+                    result.success(AcademicArchiveStore.save(this,
+                        call.argument<String>("fileName") ?: "",
+                        call.argument<String>("content") ?: "",
+                        call.argument<String>("folder") ?: ""))
+                } catch (error: Exception) {
+                    result.error("ARCHIVE_EXPORT_FAILED", "无法保存到下载目录，请重试", null)
+                }
+            }
+        }
+
         // 只为帖子/评论正文提供中文词边界；普通 TextField 不经过此通道，
         // 也不改动系统 PROCESS_TEXT 注册，避免影响输入法和编辑能力。
         MethodChannel(

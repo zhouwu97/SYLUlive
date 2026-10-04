@@ -62,32 +62,32 @@ type Post struct {
 	Contact     string            `gorm:"size:500" json:"contact"`                      // 联系账号
 	MarketTags  string            `gorm:"size:200" json:"market_tags"`                  // 商品交易选项，逗号分隔
 	// WaterTagID 水帖版块内标签 ID，仅在 board_id = BoardShuitie 时使用；旧帖子与旧客户端可不传。
-	WaterTagID             *uint      `gorm:"index" json:"water_tag_id"`
-	Status                 PostStatus `gorm:"default:normal;index" json:"status"` // 状态
-	Revision               int        `gorm:"not null;default:1" json:"revision"` // 内容版本，治理与整改复审按版本审核
-	ModerationRuleCode     string     `gorm:"size:80;index" json:"moderation_rule_code,omitempty"`
-	ModerationReason       string     `gorm:"size:1000" json:"moderation_reason,omitempty"`
-	ModeratedByID          *uint      `gorm:"index" json:"-"`
-	ModeratedAt            *time.Time `gorm:"index" json:"moderated_at,omitempty"`
-	ViewCount              int        `gorm:"default:0" json:"view_count"`        // 观看次数
-	ReplyCount             int        `gorm:"default:0" json:"reply_count"`       // 回复数量
-	LikeCount              int        `gorm:"default:0" json:"like_count"`        // 点赞数量
-	IsLiked                bool       `gorm:"-" json:"is_liked"`                  // 当前用户是否已赞
-	IsPinned               bool       `gorm:"default:false;index" json:"is_pinned"`
-	PinnedAt               *time.Time `gorm:"index" json:"pinned_at"`
-	PinnedUntil            *time.Time `gorm:"index" json:"pinned_until"`
-	PinnedBy               uint       `gorm:"index" json:"pinned_by"`
-	PinnedWeight           int        `gorm:"default:0;index" json:"pinned_weight"`
-	PinnedReason           string     `gorm:"size:500" json:"pinned_reason"`
-	IsFeatured             bool       `gorm:"default:false;index" json:"is_featured"`
-	FeaturedAt             *time.Time `json:"featured_at"`
-	FeaturedBy             uint       `gorm:"index" json:"featured_by"`
-	FeaturedReason         string     `gorm:"size:500" json:"featured_reason"`
-	WaterSectionPinned     bool       `gorm:"-" json:"water_section_pinned"`
-	WaterSectionPinID      *uint      `gorm:"-" json:"water_section_pin_id,omitempty"`
-	WaterSectionFeatured   bool       `gorm:"-" json:"water_section_featured"`
-	WaterSectionFeaturedID *uint      `gorm:"-" json:"water_section_featured_id,omitempty"`
-	HomeFeaturedPending    bool       `gorm:"-" json:"home_featured_pending,omitempty"`
+	WaterTagID             *uint                  `gorm:"index" json:"water_tag_id"`
+	Status                 PostStatus             `gorm:"default:normal;index" json:"status"` // 状态
+	Revision               int                    `gorm:"not null;default:1" json:"revision"` // 内容版本，治理与整改复审按版本审核
+	ModerationRuleCode     string                 `gorm:"size:80;index" json:"moderation_rule_code,omitempty"`
+	ModerationReason       string                 `gorm:"size:1000" json:"moderation_reason,omitempty"`
+	ModeratedByID          *uint                  `gorm:"index" json:"-"`
+	ModeratedAt            *time.Time             `gorm:"index" json:"moderated_at,omitempty"`
+	ViewCount              int                    `gorm:"default:0" json:"view_count"`  // 观看次数
+	ReplyCount             int                    `gorm:"default:0" json:"reply_count"` // 回复数量
+	LikeCount              int                    `gorm:"default:0" json:"like_count"`  // 点赞数量
+	IsLiked                bool                   `gorm:"-" json:"is_liked"`            // 当前用户是否已赞
+	IsPinned               bool                   `gorm:"default:false;index" json:"is_pinned"`
+	PinnedAt               *time.Time             `gorm:"index" json:"pinned_at"`
+	PinnedUntil            *time.Time             `gorm:"index" json:"pinned_until"`
+	PinnedBy               uint                   `gorm:"index" json:"pinned_by"`
+	PinnedWeight           int                    `gorm:"default:0;index" json:"pinned_weight"`
+	PinnedReason           string                 `gorm:"size:500" json:"pinned_reason"`
+	IsFeatured             bool                   `gorm:"default:false;index" json:"is_featured"`
+	FeaturedAt             *time.Time             `json:"featured_at"`
+	FeaturedBy             uint                   `gorm:"index" json:"featured_by"`
+	FeaturedReason         string                 `gorm:"size:500" json:"featured_reason"`
+	WaterSectionPinned     bool                   `gorm:"-" json:"water_section_pinned"`
+	WaterSectionPinID      *uint                  `gorm:"-" json:"water_section_pin_id,omitempty"`
+	WaterSectionFeatured   bool                   `gorm:"-" json:"water_section_featured"`
+	WaterSectionFeaturedID *uint                  `gorm:"-" json:"water_section_featured_id,omitempty"`
+	HomeFeaturedPending    bool                   `gorm:"-" json:"home_featured_pending,omitempty"`
 	ViewerPermissions      *PostViewerPermissions `gorm:"-" json:"viewer_permissions,omitempty"`
 
 	// 统一经验返回字段
@@ -126,7 +126,6 @@ type PostViewerPermissions struct {
 	// 0 表示该帖子没有申诉记录。
 	LatestAppealID uint `json:"latest_appeal_id,omitempty"`
 }
-
 
 // MarshalJSON 确保帖子作者始终使用公开 DTO，而非数据库 User 模型。
 func (p Post) MarshalJSON() ([]byte, error) {

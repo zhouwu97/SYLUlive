@@ -459,8 +459,8 @@ func (h *CourseEvaluationHandler) Approve(c *gin.Context) {
 		return
 	}
 	var body struct {
-		Revision           int    `json:"revision"`
-		KeeperTeacherID    uint   `json:"keeper_teacher_id"`
+		Revision            int   `json:"revision"`
+		KeeperTeacherID     uint  `json:"keeper_teacher_id"`
 		RegisterCourseAlias *bool `json:"register_course_alias"`
 	}
 	if err := decodeCourseEvaluationBody(c, &body); err != nil {

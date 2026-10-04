@@ -57,12 +57,12 @@ func TestPostGovernanceClosure_AccessAndEdit(t *testing.T) {
 	db.Create(&admin)
 
 	post := models.Post{
-		Title:    "治理测试帖",
-		Content:  "原始违规内容",
-		BoardID:  models.BoardShuitie,
-		AuthorID: author.ID,
-		Status:   models.PostStatusModeratedHidden,
-		Revision: 1,
+		Title:            "治理测试帖",
+		Content:          "原始违规内容",
+		BoardID:          models.BoardShuitie,
+		AuthorID:         author.ID,
+		Status:           models.PostStatusModeratedHidden,
+		Revision:         1,
 		ModerationReason: "包含不当言论",
 	}
 	db.Create(&post)

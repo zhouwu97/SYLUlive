@@ -277,7 +277,7 @@ func (h *ReportHandler) GetList(c *gin.Context) {
 // HandleReportInput 处理举报输入
 type HandleReportInput struct {
 	Status              string `json:"status" binding:"required"` // handled/ignored
-	Action              string `json:"action"`                     // warn/moderated_hidden/delete
+	Action              string `json:"action"`                    // warn/moderated_hidden/delete
 	Result              string `json:"result"`
 	DeleteReason        string `json:"delete_reason"`
 	ConfirmedReasonCode string `json:"confirmed_reason_code"`

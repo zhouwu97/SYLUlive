@@ -33,11 +33,11 @@ const (
 // CourseSubject 标准学科实体。课程评价只依附于标准学科，
 // 学科本身不承载评分，评分仍然保存在 teacher_ratings 上。
 type CourseSubject struct {
-	ID             uint      `gorm:"primaryKey" json:"id"`
-	Name           string    `gorm:"size:100;not null" json:"name"`
-	NormalizedName string    `gorm:"size:100;not null;index" json:"normalized_name"`
-	Verified       bool      `gorm:"not null;default:false;index" json:"verified"`
-	CreatedBy      *uint     `gorm:"index" json:"created_by,omitempty"`
+	ID             uint   `gorm:"primaryKey" json:"id"`
+	Name           string `gorm:"size:100;not null" json:"name"`
+	NormalizedName string `gorm:"size:100;not null;index" json:"normalized_name"`
+	Verified       bool   `gorm:"not null;default:false;index" json:"verified"`
+	CreatedBy      *uint  `gorm:"index" json:"created_by,omitempty"`
 	// 名称出处，语义与 Teacher.CanonicalSource 一致。
 	CanonicalSource string `gorm:"size:20;not null;default:legacy;index" json:"canonical_source"`
 

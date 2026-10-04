@@ -161,7 +161,7 @@ func (h *TeacherHandler) GetDetail(c *gin.Context) {
 				"created_at":        teacher.CreatedAt,
 				"verified":          teacher.Verified,
 				"canonical_source":  teacher.CanonicalSource,
-				"is_merged":          true,
+				"is_merged":         true,
 				"merged":            true,
 				"merged_into_id":    teacher.MergedIntoID,
 				"merged_into_name":  keeperName,
@@ -420,8 +420,8 @@ func (h *TeacherHandler) Verify(c *gin.Context) {
 func (h *TeacherHandler) MergeInto(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var body struct {
-		KeeperID       uint `json:"keeper_id"`
-		RegisterAlias  *bool `json:"register_alias"`
+		KeeperID      uint  `json:"keeper_id"`
+		RegisterAlias *bool `json:"register_alias"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || body.KeeperID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少合并目标"})

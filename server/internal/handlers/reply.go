@@ -94,7 +94,7 @@ type replyListResponse struct {
 // total 与帖子 reply_count 口径一致：正常回复数 + tombstone 根数。
 func (h *ReplyHandler) GetList(c *gin.Context) {
 	postIDStr := c.Param("id")
-	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	postID, err := strconv.ParseUint(postIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
 		return
@@ -121,7 +121,7 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 	}
 	var cursorID uint64
 	if cur := c.Query("cursor"); cur != "" {
-		parsed, perr := strconv.ParseUint(cur, 10, 64)
+		parsed, perr := strconv.ParseUint(cur, 10, strconv.IntSize)
 		if perr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的分页游标"})
 			return
@@ -328,13 +328,13 @@ type replyContextResponse struct {
 // 客户端在目标不在已加载分页时用它直接打开对应线程并定位，替代盲翻分页页。
 func (h *ReplyHandler) GetReplyContext(c *gin.Context) {
 	postIDStr := c.Param("id")
-	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	postID, err := strconv.ParseUint(postIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
 		return
 	}
 	replyIDStr := c.Param("replyId")
-	replyID, err := strconv.ParseUint(replyIDStr, 10, 64)
+	replyID, err := strconv.ParseUint(replyIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的评论ID"})
 		return
@@ -391,13 +391,13 @@ func (h *ReplyHandler) GetReplyContext(c *gin.Context) {
 // 子回复），next_cursor 从 X 继续向后加载。
 func (h *ReplyHandler) GetChildren(c *gin.Context) {
 	postIDStr := c.Param("id")
-	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	postID, err := strconv.ParseUint(postIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
 		return
 	}
 	replyIDStr := c.Param("replyId")
-	replyID, err := strconv.ParseUint(replyIDStr, 10, 64)
+	replyID, err := strconv.ParseUint(replyIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的评论ID"})
 		return
@@ -430,7 +430,7 @@ func (h *ReplyHandler) GetChildren(c *gin.Context) {
 
 	// 深链锚点窗口：以 before_reply_id 结尾的一页。
 	if before := c.Query("before_reply_id"); before != "" {
-		bid, perr := strconv.ParseUint(before, 10, 64)
+		bid, perr := strconv.ParseUint(before, 10, strconv.IntSize)
 		if perr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的定位参数"})
 			return
@@ -489,7 +489,7 @@ func (h *ReplyHandler) GetChildren(c *gin.Context) {
 		if len(parts) == 2 {
 			// RFC3339Nano：秒级精度会让游标条目在下一页重复出现。
 			createdAt, err1 := time.Parse(time.RFC3339Nano, parts[0])
-			id, err2 := strconv.ParseUint(parts[1], 10, 64)
+			id, err2 := strconv.ParseUint(parts[1], 10, strconv.IntSize)
 			if err1 == nil && err2 == nil {
 				query = query.Where("(created_at > ? OR (created_at = ? AND id > ?))", createdAt, createdAt, id)
 			}
@@ -538,7 +538,7 @@ type CreateReplyInput struct {
 func (h *ReplyHandler) Create(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	postIDStr := c.Param("id")
-	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	postID, err := strconv.ParseUint(postIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
 		return
@@ -906,7 +906,7 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	role, _ := c.Get("role")
 	replyIDStr := c.Param("id")
-	replyID, err := strconv.ParseUint(replyIDStr, 10, 64)
+	replyID, err := strconv.ParseUint(replyIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的回复ID"})
 		return
@@ -1019,7 +1019,7 @@ func (h *ReplyHandler) GetMeList(c *gin.Context) {
 		parts := strings.Split(cursor, "|")
 		if len(parts) == 2 {
 			createdAt, err1 := time.Parse(time.RFC3339Nano, parts[0])
-			id, err2 := strconv.ParseUint(parts[1], 10, 64)
+			id, err2 := strconv.ParseUint(parts[1], 10, strconv.IntSize)
 			if err1 == nil && err2 == nil {
 				whereClause += " AND (replies.created_at < ? OR (replies.created_at = ? AND replies.id < ?))"
 				args = append(args, createdAt, createdAt, id)

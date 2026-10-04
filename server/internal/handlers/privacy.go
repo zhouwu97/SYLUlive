@@ -348,7 +348,7 @@ func (h *PrivacyHandler) ListRequestsForAdmin(c *gin.Context) {
 
 // HandleRequest 写入处理状态及答复，答复会向用户展示。
 func (h *PrivacyHandler) HandleRequest(c *gin.Context) {
-	requestID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	requestID, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求 ID"})
 		return

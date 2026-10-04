@@ -66,7 +66,7 @@ func TestFeedbackSubmitRejectsOversizedAttachment(t *testing.T) {
 		SMTPUser string
 		SMTPPass string
 		SMTPFrom string
-	}{SMTPHost: "smtp.test.example", SMTPPort: "25", SMTPUser: "u", SMTPPass: "p"}
+	}{SMTPHost: "smtp.test.example", SMTPPort: "25", SMTPUser: "u", SMTPPass: "p", SMTPFrom: "from@example.com"}
 
 	handler := NewFeedbackHandler(db, uploadDir)
 	router := gin.New()

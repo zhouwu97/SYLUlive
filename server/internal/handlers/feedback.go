@@ -8,9 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"html"
-	"mime"
+	"io"
 	"mime/multipart"
-	"mime/quotedprintable"
 	"net/http"
 	"net/smtp"
 	"net/textproto"
@@ -19,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"shenliyuan/internal/emailmessage"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 
@@ -264,30 +264,33 @@ func (h *FeedbackHandler) feedbackDigest(value string) string {
 // （供 <img src="cid:..."> 引用）。截图从磁盘读取，直接作为 MIME 附件发送，不生成任何公网链接。
 // 任意一张预期截图构造失败都会让整封邮件构建失败，绝不静默缺图。
 func buildFeedbackEmail(uploadDir, to, from, subject, body string, files []models.File) ([]byte, error) {
+	toHeader, err := emailmessage.AddressHeader(to)
+	if err != nil {
+		return nil, err
+	}
+	fromHeader, err := emailmessage.AddressHeader(from)
+	if err != nil {
+		return nil, err
+	}
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 
-	fmt.Fprintf(&buf, "To: %s\r\n", to)
-	fmt.Fprintf(&buf, "From: %s\r\n", from)
-	fmt.Fprintf(&buf, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", subject))
+	fmt.Fprintf(&buf, "To: %s\r\n", toHeader)
+	fmt.Fprintf(&buf, "From: %s\r\n", fromHeader)
+	fmt.Fprintf(&buf, "Subject: %s\r\n", emailmessage.Subject(subject))
 	fmt.Fprintf(&buf, "MIME-Version: 1.0\r\n")
 	fmt.Fprintf(&buf, "Content-Type: multipart/related; boundary=%s; type=\"text/html\"\r\n", mw.Boundary())
 	fmt.Fprintf(&buf, "\r\n")
 
-	// HTML 正文含中文与 emoji，不能用 7bit；quoted-printable 对以 ASCII 为主的 HTML 膨胀最小。
+	// 编码正文使动态内容不能引入 MIME 分隔符，保留中文、emoji 和截图引用。
 	textHeader := textproto.MIMEHeader{}
 	textHeader.Set("Content-Type", "text/html; charset=UTF-8")
-	textHeader.Set("Content-Transfer-Encoding", "quoted-printable")
+	textHeader.Set("Content-Transfer-Encoding", "base64")
 	textPart, err := mw.CreatePart(textHeader)
 	if err != nil {
 		return nil, err
 	}
-	qp := quotedprintable.NewWriter(textPart)
-	if _, err := qp.Write([]byte(body)); err != nil {
-		qp.Close()
-		return nil, err
-	}
-	if err := qp.Close(); err != nil {
+	if _, err := io.WriteString(textPart, emailmessage.Body([]byte(body))); err != nil {
 		return nil, err
 	}
 

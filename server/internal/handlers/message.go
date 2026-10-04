@@ -346,7 +346,7 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 // 聊天壳可以先展示，再按返回的会话 ID 增量加载消息，无需扫描整个会话列表。
 func (h *MessageHandler) GetConversationWithUser(c *gin.Context) {
 	currentUserID := c.GetUint("user_id")
-	targetUserID, err := strconv.ParseUint(c.Param("target_user_id"), 10, 64)
+	targetUserID, err := strconv.ParseUint(c.Param("target_user_id"), 10, strconv.IntSize)
 	if err != nil || targetUserID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
 		return
@@ -414,7 +414,7 @@ func (h *MessageHandler) GetConversationWithUser(c *gin.Context) {
 func (h *MessageHandler) GetMessages(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	convIDStr := c.Param("id")
-	convID, err := strconv.ParseUint(convIDStr, 10, 64)
+	convID, err := strconv.ParseUint(convIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的会话ID"})
 		return
@@ -435,13 +435,13 @@ func (h *MessageHandler) GetMessages(c *gin.Context) {
 	query := h.db.Where("conversation_id = ?", convID)
 	order := "id DESC"
 	reverse := true
-	if aroundID, err := strconv.ParseUint(c.Query("around_id"), 10, 64); err == nil && aroundID > 0 {
+	if aroundID, err := strconv.ParseUint(c.Query("around_id"), 10, strconv.IntSize); err == nil && aroundID > 0 {
 		query = query.Where("id <= ?", aroundID)
-	} else if afterID, err := strconv.ParseUint(c.Query("after_id"), 10, 64); err == nil && afterID > 0 {
+	} else if afterID, err := strconv.ParseUint(c.Query("after_id"), 10, strconv.IntSize); err == nil && afterID > 0 {
 		query = query.Where("id > ?", afterID)
 		order = "id ASC"
 		reverse = false
-	} else if beforeID, err := strconv.ParseUint(c.Query("before_id"), 10, 64); err == nil && beforeID > 0 {
+	} else if beforeID, err := strconv.ParseUint(c.Query("before_id"), 10, strconv.IntSize); err == nil && beforeID > 0 {
 		query = query.Where("id < ?", beforeID)
 	}
 
@@ -479,7 +479,7 @@ func (h *MessageHandler) ServePrivateFile(c *gin.Context) {
 		c.Writer.WriteHeaderNow()
 	}
 
-	fileID, err := strconv.ParseUint(fileIDRaw, 10, 64)
+	fileID, err := strconv.ParseUint(fileIDRaw, 10, strconv.IntSize)
 	if err != nil || fileID == 0 {
 		notFound("parse_failed")
 		return
@@ -570,7 +570,7 @@ func messageContentSecurityKind(content string, stickerID *string, hasImage bool
 func (h *MessageHandler) Send(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	targetUserIDStr := c.Param("user_id")
-	targetUserID, err := strconv.ParseUint(targetUserIDStr, 10, 64)
+	targetUserID, err := strconv.ParseUint(targetUserIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
 		return
@@ -929,7 +929,7 @@ type messageSendState struct {
 func (h *MessageHandler) GetSendState(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	currentUserID := userID.(uint)
-	targetUserID, err := strconv.ParseUint(c.Param("user_id"), 10, 64)
+	targetUserID, err := strconv.ParseUint(c.Param("user_id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
 		return
@@ -1045,7 +1045,7 @@ func (h *MessageHandler) GetUnreadCount(c *gin.Context) {
 }
 
 func (h *MessageHandler) authorizedConversationID(c *gin.Context, userID uint) (uint, bool) {
-	convID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	convID, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的会话ID"})
 		return 0, false
@@ -1066,7 +1066,7 @@ func (h *MessageHandler) authorizedConversationID(c *gin.Context, userID uint) (
 func (h *MessageHandler) DeleteConversation(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	convIDStr := c.Param("id")
-	convID, err := strconv.ParseUint(convIDStr, 10, 64)
+	convID, err := strconv.ParseUint(convIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的会话ID"})
 		return

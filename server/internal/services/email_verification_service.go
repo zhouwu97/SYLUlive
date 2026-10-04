@@ -22,6 +22,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"shenliyuan/internal/emailmessage"
 	"shenliyuan/internal/models"
 )
 
@@ -107,6 +108,10 @@ func (m *SMTPVerificationMailer) SendVerificationCode(ctx context.Context, email
 	if strings.TrimSpace(m.config.Host) == "" || strings.TrimSpace(m.config.User) == "" || strings.TrimSpace(m.config.Pass) == "" || strings.TrimSpace(m.config.From) == "" {
 		return ErrMailNotConfigured
 	}
+	message := buildVerificationEmail(email, m.config.From, purpose, code)
+	if len(message) == 0 {
+		return errors.New("invalid email address")
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -152,7 +157,7 @@ func (m *SMTPVerificationMailer) SendVerificationCode(ctx context.Context, email
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(writer, strings.NewReader(string(buildVerificationEmail(email, m.config.From, purpose, code)))); err != nil {
+	if _, err := io.Copy(writer, strings.NewReader(string(message))); err != nil {
 		_ = writer.Close()
 		return err
 	}
@@ -165,6 +170,13 @@ func (m *SMTPVerificationMailer) SendVerificationCode(ctx context.Context, email
 }
 
 func buildVerificationEmail(to string, from string, purpose string, code string) []byte {
+	if _, err := emailmessage.AddressHeader(to); err != nil {
+		return nil
+	}
+	fromHeader, err := emailmessage.AddressHeader(from)
+	if err != nil {
+		return nil
+	}
 	title := map[string]string{
 		models.EmailVerificationPurposeRegister:      "沈理校园注册验证码",
 		models.EmailVerificationPurposeBind:          "沈理校园绑定邮箱验证码",
@@ -175,11 +187,13 @@ func buildVerificationEmail(to string, from string, purpose string, code string)
 		title = "沈理校园邮箱验证码"
 	}
 	body := fmt.Sprintf("%s\n\n验证码：%s\n有效期：10 分钟\n\n如果不是本人操作，请忽略此邮件。\n", title, code)
-	return []byte("To: " + to + "\r\n" +
-		"From: " + from + "\r\n" +
+	// 收件地址交给 SMTP 信封；验证码头使用空收件组，不拼接客户端输入。
+	return []byte("To: undisclosed-recipients:;\r\n" +
+		"From: " + fromHeader + "\r\n" +
 		"Subject: " + mime.QEncoding.Encode("UTF-8", title) + "\r\n" +
 		"MIME-Version: 1.0\r\n" +
-		"Content-Type: text/plain; charset=UTF-8\r\n\r\n" + body)
+		"Content-Type: text/plain; charset=UTF-8\r\n" +
+		"Content-Transfer-Encoding: base64\r\n\r\n" + emailmessage.Body([]byte(body)))
 }
 
 // EmailVerificationService 负责验证码创建、限流、校验和一次性消费。

@@ -287,7 +287,7 @@ type HandleReportInput struct {
 func (h *ReportHandler) Handle(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	reportIDStr := c.Param("id")
-	reportID, err := strconv.ParseUint(reportIDStr, 10, 64)
+	reportID, err := strconv.ParseUint(reportIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的举报ID"})
 		return

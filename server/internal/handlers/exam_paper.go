@@ -208,7 +208,7 @@ func writeExamPaperError(c *gin.Context, status int, code, message string) {
 }
 
 func parseExamPaperID(c *gin.Context) (uint, bool) {
-	value, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	value, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil || value == 0 {
 		writeExamPaperError(c, http.StatusNotFound, "exam_paper_not_found", "试卷不存在")
 		return 0, false

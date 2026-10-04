@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"fmt"
+	"html"
 	"log"
 
 	crand "crypto/rand"
@@ -37,6 +38,7 @@ import (
 
 	"shenliyuan/internal/middleware"
 
+	"shenliyuan/internal/emailmessage"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 	"shenliyuan/internal/utils"
@@ -728,6 +730,9 @@ func consumeQQVerified(qq string) {
 }
 
 func sendMailCode(qq, code string) error {
+	if !validateQQ(qq) {
+		return errors.New("请输入正确的QQ号")
+	}
 
 	if VerifyCodeConfig.SMTPHost == "" || VerifyCodeConfig.SMTPUser == "" || VerifyCodeConfig.SMTPPass == "" || VerifyCodeConfig.SMTPFrom == "" {
 
@@ -742,11 +747,22 @@ func sendMailCode(qq, code string) error {
 	auth := smtp.PlainAuth("", VerifyCodeConfig.SMTPUser, VerifyCodeConfig.SMTPPass, VerifyCodeConfig.SMTPHost)
 
 	message := buildVerifyCodeEmail(to, VerifyCodeConfig.SMTPFrom, code)
+	if len(message) == 0 {
+		return errors.New("验证码邮件地址无效")
+	}
 
 	return smtp.SendMail(addr, auth, VerifyCodeConfig.SMTPFrom, []string{to}, message)
 }
 
 func buildVerifyCodeEmail(to, from, code string) []byte {
+	toHeader, err := emailmessage.AddressHeader(to)
+	if err != nil {
+		return nil
+	}
+	fromHeader, err := emailmessage.AddressHeader(from)
+	if err != nil {
+		return nil
+	}
 	subject := mime.QEncoding.Encode("UTF-8", "沈理校园注册验证码")
 
 	body := fmt.Sprintf(`
@@ -775,11 +791,11 @@ func buildVerifyCodeEmail(to, from, code string) []byte {
 
   </body>
 
-</html>`, code)
+</html>`, html.EscapeString(code))
 
-	return []byte("To: " + to + "\r\n" +
+	return []byte("To: " + toHeader + "\r\n" +
 
-		"From: " + from + "\r\n" +
+		"From: " + fromHeader + "\r\n" +
 
 		"Subject: " + subject + "\r\n" +
 
@@ -787,9 +803,9 @@ func buildVerifyCodeEmail(to, from, code string) []byte {
 
 		"Content-Type: text/html; charset=UTF-8\r\n" +
 
-		"Content-Transfer-Encoding: 8bit\r\n\r\n" +
+		"Content-Transfer-Encoding: base64\r\n\r\n" +
 
-		body)
+		emailmessage.Body([]byte(body)))
 
 }
 

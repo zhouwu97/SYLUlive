@@ -145,7 +145,7 @@ func (h *WaterModerationHandler) PinPost(c *gin.Context) {
 	}
 
 	postIDStr := c.Param("post_id")
-	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	postID, err := strconv.ParseUint(postIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子 ID"})
 		return
@@ -304,7 +304,7 @@ func (h *WaterModerationHandler) UnpinPost(c *gin.Context) {
 	}
 
 	postIDStr := c.Param("post_id")
-	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	postID, err := strconv.ParseUint(postIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子 ID"})
 		return
@@ -362,7 +362,7 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 	}
 
 	postIDStr := c.Param("post_id")
-	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	postID, err := strconv.ParseUint(postIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子 ID"})
 		return
@@ -543,7 +543,7 @@ func (h *WaterModerationHandler) UnfeaturePost(c *gin.Context) {
 	}
 
 	postIDStr := c.Param("post_id")
-	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	postID, err := strconv.ParseUint(postIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子 ID"})
 		return
@@ -612,7 +612,7 @@ func (h *WaterModerationHandler) DeletePost(c *gin.Context) {
 	}
 
 	postIDStr := c.Param("post_id")
-	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	postID, err := strconv.ParseUint(postIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子 ID"})
 		return
@@ -693,7 +693,7 @@ func (h *WaterModerationHandler) RestorePost(c *gin.Context) {
 	}
 
 	postIDStr := c.Param("post_id")
-	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	postID, err := strconv.ParseUint(postIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子 ID"})
 		return
@@ -768,7 +768,7 @@ func (h *WaterModerationHandler) MuteUser(c *gin.Context) {
 	}
 
 	userIDStr := c.Param("user_id")
-	targetUserID, err := strconv.ParseUint(userIDStr, 10, 64)
+	targetUserID, err := strconv.ParseUint(userIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户 ID"})
 		return
@@ -907,7 +907,7 @@ func (h *WaterModerationHandler) UnmuteUser(c *gin.Context) {
 	}
 
 	userIDStr := c.Param("user_id")
-	targetUserID, err := strconv.ParseUint(userIDStr, 10, 64)
+	targetUserID, err := strconv.ParseUint(userIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户 ID"})
 		return

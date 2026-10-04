@@ -373,7 +373,7 @@ func (h *CanteenHandler) Search(c *gin.Context) {
 
 // GetDetail 食堂详情（含评价列表）
 func (h *CanteenHandler) GetDetail(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return
@@ -746,7 +746,7 @@ func (h *CanteenHandler) VoteRating(c *gin.Context) {
 	userIDAny, _ := c.Get("user_id")
 	userID := userIDAny.(uint)
 
-	ratingID64, err := strconv.ParseUint(c.Param("ratingId"), 10, 64)
+	ratingID64, err := strconv.ParseUint(c.Param("ratingId"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效评价ID"})
 		return
@@ -973,7 +973,7 @@ func isUniqueConstraintError(err error) bool {
 
 // Rate 评价食堂
 func (h *CanteenHandler) Rate(c *gin.Context) {
-	cid, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	cid, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return
@@ -1351,7 +1351,7 @@ func deleteCanteenDependencies(tx *gorm.DB, canteenID uint) error {
 
 // DeleteCanteen 管理员永久删除食堂及其全部关联数据。下架请使用 OfflineCanteen。
 func (h *CanteenHandler) DeleteCanteen(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return
@@ -1510,7 +1510,7 @@ func restoreCanteenSubmissionExp(tx *gorm.DB, canteenID, creatorID uint) (bool, 
 
 // ApproveCanteen 审核通过食堂，使其出现在公开列表并允许用户评价。
 func (h *CanteenHandler) ApproveCanteen(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return
@@ -1574,7 +1574,7 @@ func (h *CanteenHandler) ApproveCanteen(c *gin.Context) {
 
 // RejectCanteen 驳回待审核食堂；已公开食堂需使用常规删除接口处理。
 func (h *CanteenHandler) RejectCanteen(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return
@@ -1631,7 +1631,7 @@ func (h *CanteenHandler) RejectCanteen(c *gin.Context) {
 // OfflineCanteen 下架已公开食堂：只改变营业状态，不删除任何业务数据。
 // POST /api/canteens/:id/offline
 func (h *CanteenHandler) OfflineCanteen(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return
@@ -1707,7 +1707,7 @@ func (h *CanteenHandler) OfflineCanteen(c *gin.Context) {
 // OnlineCanteen 恢复已下架食堂：只恢复状态，不重置或重算历史评价。
 // POST /api/canteens/:id/online
 func (h *CanteenHandler) OnlineCanteen(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return
@@ -1772,7 +1772,7 @@ func (h *CanteenHandler) OnlineCanteen(c *gin.Context) {
 
 // UpdateImage 管理员修改食堂图片
 func (h *CanteenHandler) UpdateImage(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return

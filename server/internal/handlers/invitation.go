@@ -247,7 +247,7 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 
 	targetUserIDStr := c.Param("user_id")
 
-	targetUserID, err := strconv.ParseUint(targetUserIDStr, 10, 64)
+	targetUserID, err := strconv.ParseUint(targetUserIDStr, 10, strconv.IntSize)
 
 	if err != nil {
 
@@ -366,7 +366,7 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 
 	invitationIDStr := c.Param("id")
 
-	invitationID, err := strconv.ParseUint(invitationIDStr, 10, 64)
+	invitationID, err := strconv.ParseUint(invitationIDStr, 10, strconv.IntSize)
 
 	if err != nil {
 
@@ -506,7 +506,7 @@ func (h *InvitationHandler) Approve(c *gin.Context) {
 
 	invitationIDStr := c.Param("id")
 
-	invitationID, err := strconv.ParseUint(invitationIDStr, 10, 64)
+	invitationID, err := strconv.ParseUint(invitationIDStr, 10, strconv.IntSize)
 
 	if err != nil {
 
@@ -643,7 +643,7 @@ func (h *InvitationHandler) VoteApprove(c *gin.Context) {
 
 	}
 
-	invitationID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	invitationID, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 
 	if err != nil {
 
@@ -749,7 +749,7 @@ func (h *InvitationHandler) Reject(c *gin.Context) {
 
 	invitationIDStr := c.Param("id")
 
-	invitationID, err := strconv.ParseUint(invitationIDStr, 10, 64)
+	invitationID, err := strconv.ParseUint(invitationIDStr, 10, strconv.IntSize)
 
 	if err != nil {
 

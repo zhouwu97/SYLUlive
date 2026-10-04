@@ -383,7 +383,7 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 	currentUserID, exists := c.Get("user_id")
 
 	idStr := c.Param("id")
-	targetID, err := strconv.ParseUint(idStr, 10, 64)
+	targetID, err := strconv.ParseUint(idStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
 		return
@@ -416,7 +416,7 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 // GetFollowing 获取关注列表
 func (h *UserHandler) GetFollowing(c *gin.Context) {
 	targetIDStr := c.Param("id")
-	targetID, err := strconv.ParseUint(targetIDStr, 10, 64)
+	targetID, err := strconv.ParseUint(targetIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
 		return
@@ -486,7 +486,7 @@ func (h *UserHandler) GetFollowing(c *gin.Context) {
 // GetFollowers 获取粉丝列表
 func (h *UserHandler) GetFollowers(c *gin.Context) {
 	targetIDStr := c.Param("id")
-	targetID, err := strconv.ParseUint(targetIDStr, 10, 64)
+	targetID, err := strconv.ParseUint(targetIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
 		return
@@ -572,7 +572,7 @@ func (h *UserHandler) Follow(c *gin.Context) {
 	followerID := followerIDAny.(uint)
 
 	followingIDStr := c.Param("id")
-	followingID, err := strconv.ParseUint(followingIDStr, 10, 64)
+	followingID, err := strconv.ParseUint(followingIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的目标用户ID"})
 		return
@@ -624,7 +624,7 @@ func (h *UserHandler) Unfollow(c *gin.Context) {
 	followerID := followerIDAny.(uint)
 
 	followingIDStr := c.Param("id")
-	followingID, err := strconv.ParseUint(followingIDStr, 10, 64)
+	followingID, err := strconv.ParseUint(followingIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的目标用户ID"})
 		return
@@ -660,7 +660,7 @@ func (h *UserHandler) IsFollowing(c *gin.Context) {
 	followerID := followerIDAny.(uint)
 
 	followingIDStr := c.Param("id")
-	followingID, err := strconv.ParseUint(followingIDStr, 10, 64)
+	followingID, err := strconv.ParseUint(followingIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的目标用户ID"})
 		return
@@ -675,7 +675,7 @@ func (h *UserHandler) IsFollowing(c *gin.Context) {
 // GetUserPosts 获取用户发布的帖子
 func (h *UserHandler) GetUserPosts(c *gin.Context) {
 	targetIDStr := c.Param("id")
-	targetID, err := strconv.ParseUint(targetIDStr, 10, 64)
+	targetID, err := strconv.ParseUint(targetIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
 		return
@@ -711,7 +711,7 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 // GetUserMarketPosts 获取用户主页展示的集市记录，包含已完成历史。
 func (h *UserHandler) GetUserMarketPosts(c *gin.Context) {
 	targetIDStr := c.Param("id")
-	targetID, err := strconv.ParseUint(targetIDStr, 10, 64)
+	targetID, err := strconv.ParseUint(targetIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
 		return
@@ -783,7 +783,7 @@ func (h *UserHandler) GetUserMarketPosts(c *gin.Context) {
 
 // GetUserPostCount returns the number of visible posts created by a user.
 func (h *UserHandler) GetUserPostCount(c *gin.Context) {
-	targetID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	targetID, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
 		return

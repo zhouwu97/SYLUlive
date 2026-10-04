@@ -7,7 +7,6 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
-	"mime/quotedprintable"
 	"net/mail"
 	"os"
 	"path/filepath"
@@ -35,13 +34,13 @@ func parseFeedbackMessage(t *testing.T, msg []byte) (*mail.Message, *multipart.R
 	return m, multipart.NewReader(m.Body, params["boundary"])
 }
 
-func TestBuildFeedbackEmailQuotedPrintableBody(t *testing.T) {
+func TestBuildFeedbackEmailBase64Body(t *testing.T) {
 	body := "🐛 Bug 反馈\n中文内容：用户昵称 联系方式\n📎 附图"
 	msg, err := buildFeedbackEmail(t.TempDir(), "to@example.com", "from@example.com", "【沈理校园反馈】来自 测试用户", body, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// NextRawPart 不隐藏/不自动解码 Content-Transfer-Encoding，可同时断言编码头与手动 QP 解码。
+	// 同时检查传输编码与真实中文正文。
 	_, mr := parseFeedbackMessage(t, msg)
 	var htmlBody string
 	for {
@@ -53,20 +52,20 @@ func TestBuildFeedbackEmailQuotedPrintableBody(t *testing.T) {
 			t.Fatal(err)
 		}
 		if strings.HasPrefix(part.Header.Get("Content-Type"), "text/html") {
-			if enc := part.Header.Get("Content-Transfer-Encoding"); enc != "quoted-printable" {
-				t.Fatalf("HTML part should declare quoted-printable, got %q", enc)
+			if enc := part.Header.Get("Content-Transfer-Encoding"); enc != "base64" {
+				t.Fatalf("HTML part should declare base64, got %q", enc)
 			}
-			decoded, err := io.ReadAll(quotedprintable.NewReader(part))
+			decoded, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, part))
 			if err != nil {
 				t.Fatal(err)
 			}
 			htmlBody = string(decoded)
 		}
 	}
-	// QP 编码器按 RFC 2045 使用 CRLF 换行，比较前归一化。
+	// 正文换行归一化后比较渲染内容。
 	normalized := strings.ReplaceAll(htmlBody, "\r\n", "\n")
 	if normalized != body {
-		t.Fatalf("QP body mismatch:\n got %q\nwant %q", normalized, body)
+		t.Fatalf("base64 body mismatch:\n got %q\nwant %q", normalized, body)
 	}
 }
 
@@ -108,7 +107,7 @@ func TestBuildFeedbackEmailRelatedWithMatchingCids(t *testing.T) {
 			cidSet[key] = true
 		}
 		if strings.HasPrefix(part.Header.Get("Content-Type"), "text/html") {
-			decoded, err := io.ReadAll(quotedprintable.NewReader(part))
+			decoded, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, part))
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -452,7 +452,7 @@ var allowedCampusCalendarDayModes = map[string]bool{
 }
 
 func parseCalendarID(c *gin.Context) (uint, bool) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil || id == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的校历 ID"})
 		return 0, false

@@ -292,6 +292,10 @@ func (e *competitionCandidateEngine) saveRankTrace(
 	if limit <= 0 || limit > len(ordered) {
 		limit = len(ordered)
 	}
+	// 追踪只覆盖一页，不能依赖调用方已归一化分页参数。
+	if limit > 50 {
+		limit = 50
+	}
 	rows := make([]models.CompetitionRankTrace, 0, limit)
 	runKey := strconv.FormatInt(now.UnixNano(), 36)
 	for index := 0; index < limit; index++ {

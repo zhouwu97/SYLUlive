@@ -64,6 +64,17 @@ class _EduScreenState extends State<EduScreen> {
     await context.read<EduProvider>().refreshStatus();
   }
 
+  Future<void> _reloadProfile() async {
+    final session = context.read<AcademicSessionController>();
+    final ready = await ensureAcademicSessionForRead(
+      context,
+      controller: session,
+      coordinator: _coordinatorOrNull(),
+    );
+    if (!mounted || !ready) return;
+    await session.loadProfile();
+  }
+
   @override
   void dispose() {
     _studentIdController.dispose();
@@ -236,20 +247,22 @@ class _EduScreenState extends State<EduScreen> {
                       children: [
                         if (session.profileStatus !=
                             AcademicProfileStatus.loaded) ...[
-                          Text(session.hasProfileError
-                              ? '个人资料读取失败，请重试'
-                              : '个人资料尚未加载完成'),
+                          Text(!session.isAuthenticated
+                              ? '本机尚未连接，请先连接教务后读取个人资料'
+                              : session.hasProfileError
+                                  ? '个人资料读取失败，请重试'
+                                  : '个人资料尚未加载完成'),
                           TextButton(
                             onPressed: session.profileStatus ==
                                     AcademicProfileStatus.loading
                                 ? null
-                                : () => context
-                                    .read<AcademicSessionController>()
-                                    .loadProfile(),
+                                : _reloadProfile,
                             child: Text(session.profileStatus ==
                                     AcademicProfileStatus.loading
                                 ? '正在读取…'
-                                : '重新读取资料'),
+                                : session.isAuthenticated
+                                    ? '重新读取资料'
+                                    : '连接并读取资料'),
                           ),
                         ] else ...[
                           Text(

@@ -1,8 +1,50 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:shenliyuan/services/reply_notification_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  test('定位回复后只消费对应帖子和回复的通知', () async {
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      expect(options.path, '/notifications/read-selected');
+      expect(options.data, {'post_id': 100, 'reply_id': 11});
+      handler.resolve(Response(requestOptions: options, statusCode: 200));
+    }));
+    await ReplyNotificationService(dio).markReplyRead(postId: 100, replyId: 11);
+  });
+  test('已读回执成功后同步原生；失败请求不清系统提醒', () async {
+    const channel = MethodChannel('shenliyuan/notification_open');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+    var status = 200;
+    final dio = Dio(BaseOptions(validateStatus: (_) => true));
+    final receipt = {
+      'recipient_user_id': 7,
+      'ids': [11],
+      'reply_ids': [13]
+    };
+    dio.interceptors.add(InterceptorsWrapper(
+        onRequest: (o, h) => h.resolve(Response(
+            requestOptions: o,
+            statusCode: status,
+            data: {'read_receipt': receipt}))));
+    await ReplyNotificationService(dio).markRead(11);
+    expect(calls.single.method, 'syncNotificationRead');
+    expect(calls.single.arguments, receipt);
+    status = 500;
+    await expectLater(
+        ReplyNotificationService(dio).markRead(11), throwsStateError);
+    expect(calls, hasLength(1));
+  });
   test('查询未读回复摘要并映射帖子标题', () async {
     final dio = Dio();
     dio.interceptors.add(

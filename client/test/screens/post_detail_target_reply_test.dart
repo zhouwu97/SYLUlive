@@ -187,6 +187,16 @@ class FakeDio extends Fake implements Dio {
   /// children 懒加载接口被调用的次数（51-children 死锁回归测试用）。
   static int childrenRequestCount = 0;
   static final requestedPaths = <String>[];
+  static final readTargets = <Object?>[];
+
+  @override
+  Future<Response<T>> post<T>(String path, {Object? data, Map<String, dynamic>? queryParameters, Options? options, CancelToken? cancelToken, ProgressCallback? onSendProgress, ProgressCallback? onReceiveProgress}) async {
+    if (path == '/notifications/read-selected') {
+      readTargets.add(data);
+      return Response<T>(requestOptions: RequestOptions(path: path), statusCode: 200, data: {} as T);
+    }
+    throw DioException(requestOptions: RequestOptions(path: path));
+  }
 
   @override
   Future<Response<T>> get<T>(
@@ -596,6 +606,8 @@ class FakeAuthProvider extends Fake
 
   @override
   bool get isLoggedIn => true;
+  @override
+  int get sessionGeneration => 0;
 
   @override
   User? get user => User(
@@ -662,6 +674,7 @@ void main() {
   });
 
   testWidgets('PostDetailScreen 滚动到目标子回复并高亮测试', (WidgetTester tester) async {
+    FakeDio.readTargets.clear();
     final mockUser = User(
       id: 1,
       studentId: '123',
@@ -717,6 +730,7 @@ void main() {
       findRichText: true,
     );
     expect(textFinder.hitTestable(), findsOneWidget);
+    expect(FakeDio.readTargets, contains(equals({'post_id': 100, 'reply_id': 3})));
 
     // 断言滚动条确实发生了向下的滚动
     expect(scrollable.position.pixels, greaterThan(initialOffset));

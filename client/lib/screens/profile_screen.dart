@@ -38,6 +38,7 @@ import 'super_admin_screen.dart';
 import 'admin_members_screen.dart';
 
 import 'notifications_screen.dart';
+import 'likes_received_screen.dart';
 import 'settings_screen.dart';
 import 'feedback/feedback_center_screen.dart';
 import 'admin/admin_feedback_screen.dart';
@@ -1074,6 +1075,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _loadUnreadCount();
             });
           },
+        ),
+      ),
+      _buildSettingsRow(
+        child: _buildSettingsTile(
+          icon: Icons.favorite_outline,
+          iconColor: AppColors.brandPrimary,
+          title: '收到的赞',
+          subtitle: '查看谁赞了我的帖子和评论',
+          isDark: isDark,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const LikesReceivedScreen()),
+          ),
         ),
       ),
       _buildSettingsRow(

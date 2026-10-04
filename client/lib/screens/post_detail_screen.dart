@@ -29,6 +29,8 @@ import '../services/emoji_favorite_service.dart';
 import '../services/async_action_guard.dart';
 import '../services/idempotency_key.dart';
 import '../services/post_reply_cache.dart';
+import '../services/reply_notification_service.dart';
+import '../services/reply_notification_state.dart';
 import '../utils/app_feedback.dart';
 import '../utils/image_decode_size.dart';
 import '../utils/post_clipboard.dart';
@@ -467,10 +469,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   Future<void> _prepareTargetReplyAndScroll() async {
     final targetId = _activeTargetReplyId;
     if (targetId == null) return;
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    final sessionGeneration = auth.sessionGeneration;
 
     // 快速路径：目标已在已加载分页中 → 原有滚动/高亮逻辑。
     final loadedTarget = _replies.where((r) => r.id == targetId).firstOrNull;
     if (loadedTarget != null) {
+      unawaited(_consumeTargetReplyNotification(targetId));
       setState(() {}); // 触发重新渲染，确保子组件挂载
       _scheduleScrollToTarget(targetId, 3);
       return;
@@ -503,13 +509,47 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     } catch (_) {
       return;
     }
-    if (!mounted) return;
+    if (!mounted ||
+        auth.user?.id != accountId ||
+        auth.sessionGeneration != sessionGeneration) {
+      return;
+    }
     // 目标是根评论本身时打开线程 sheet；子回复目标则锚定到该条并高亮。
+    unawaited(_consumeTargetReplyNotification(targetId));
     final anchored = target.parentReplyId != null;
     await _showReplyThreadSheet(
       parentReply: root,
       anchorReply: anchored ? target : null,
     );
+  }
+
+  final Set<String> _consumedReplyNotificationTargets = {};
+
+  Future<void> _consumeTargetReplyNotification(int replyId) async {
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    final generation = auth.sessionGeneration;
+    if (accountId == null) return;
+    final key = '$accountId:$generation:$replyId';
+    if (!_consumedReplyNotificationTargets.add(key)) return;
+    try {
+      await ReplyNotificationService(auth.dio).markReplyRead(
+        postId: widget.postId,
+        replyId: replyId,
+      );
+      if (!mounted ||
+          auth.user?.id != accountId ||
+          auth.sessionGeneration != generation) {
+        return;
+      }
+      ReplyNotificationState.instance.requestRefresh(
+        accountId: accountId,
+        sessionGeneration: generation,
+      );
+    } catch (_) {
+      // 读取失败保留未读，下次定位允许重试；旧服务端仍可打开原帖。
+      _consumedReplyNotificationTargets.remove(key);
+    }
   }
 
   void _scheduleScrollToTarget(int targetId, int retries) {

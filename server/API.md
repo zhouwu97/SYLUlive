@@ -291,6 +291,10 @@ FEED-H1 加固：
 | `GET` | `/api/messages/unread_count` | 获取私信未读总数 |
 | `GET` | `/api/user/notifications/unread_count`| 获取未读系统通知和互动红点数 |
 | `POST`| `/api/user/notifications/read` | 标记所有通知为已读 |
+| `POST`| `/api/notifications/read-selected` | 以当前登录用户为接收者。支持 `{"ids":[通知ID]}`（最多100个），或成功打开目标回复后发送 `{"post_id":帖子ID,"reply_id":回复ID}`；只消费匹配的回复通知 |
+| `GET` | `/api/user/likes/received` | 当前用户的帖子、评论收到的历史点赞；`limit` 默认30、最大50，`cursor` 为上一页返回的点赞ID。响应 `{items,has_more,next_cursor}`，每项含 `id,user_id,nickname,avatar,target_type,target_id,post_id,post_title,created_at`；过滤自赞、取消的赞、已删除/受限内容和注销账号 |
+
+通知已读接口在原有响应上附加 `read_receipt`：`recipient_user_id` 表示接收账号，单条/目标回复读取返回实际归属该账号的 `ids` 和 `reply_ids`，全部已读返回 `all_before_id`。全部已读只处理该水位之前的通知，新产生的通知保持未读。旧客户端可忽略此附加字段。Android 用回执清理系统通知并阻止延迟重放；新回复推送附带 `notification_id`，使用 `reply_notifications_v1` 高优先级渠道，仍遵从用户的系统通知权限。
 
 ## 6.1 统一搜索 (Search)
 

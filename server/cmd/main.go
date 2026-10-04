@@ -1588,6 +1588,7 @@ func main() {
 		user.POST("/invitations/:id/reject", invitationHandler.Reject)
 
 		user.GET("/replies/received", replyHandler.GetReceivedList)
+		user.GET("/likes/received", likeHandler.GetReceivedLikes)
 
 		registerPostBookmarkListRoute(user, postHandler)
 

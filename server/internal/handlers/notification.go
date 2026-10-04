@@ -216,12 +216,17 @@ func (h *NotificationHandler) MarkAllRead(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	uid := userID.(uint)
 
-	if err := h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ?", uid, false).Update("is_read", true).Error; err != nil {
+	var maxID uint
+	if err := h.db.Model(&models.Notification{}).Where("user_id = ?", uid).Select("COALESCE(MAX(id), 0)").Scan(&maxID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取通知水位失败"})
+		return
+	}
+	if err := h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ? AND id <= ?", uid, false, maxID).Update("is_read", true).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "标记已读失败"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "已全部标记为已读"})
+	c.JSON(http.StatusOK, gin.H{"message": "已全部标记为已读", "read_receipt": gin.H{"recipient_user_id": uid, "all_before_id": maxID}})
 }
 
 // MarkSelectedRead 标记指定的通知为已读
@@ -230,14 +235,16 @@ func (h *NotificationHandler) MarkSelectedRead(c *gin.Context) {
 	uid := userID.(uint)
 
 	var req struct {
-		IDs []uint `json:"ids"`
+		IDs     []uint `json:"ids"`
+		PostID  uint   `json:"post_id"`
+		ReplyID uint   `json:"reply_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
 
-	if len(req.IDs) == 0 {
+	if len(req.IDs) == 0 && (req.PostID == 0 || req.ReplyID == 0) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ids不能为空"})
 		return
 	}
@@ -247,17 +254,39 @@ func (h *NotificationHandler) MarkSelectedRead(c *gin.Context) {
 		return
 	}
 
-	res := h.db.Model(&models.Notification{}).
-		Where("user_id = ? AND id IN ?", uid, req.IDs).
-		Update("is_read", true)
-
-	if res.Error != nil {
-		log.Printf("[DB_WARN] Failed to mark selected read: %v", res.Error)
+	var notifications []models.Notification
+	var updated int64
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		queryForUser := func() *gorm.DB {
+			query := tx.Model(&models.Notification{}).Where("user_id = ?", uid)
+			if len(req.IDs) > 0 {
+				return query.Where("id IN ?", req.IDs)
+			}
+			return query.Where("type = ? AND post_id = ? AND related_id = ?", "reply", req.PostID, req.ReplyID)
+		}
+		query := queryForUser()
+		if err := query.Find(&notifications).Error; err != nil {
+			return err
+		}
+		res := queryForUser().Update("is_read", true)
+		updated = res.RowsAffected
+		return res.Error
+	})
+	if err != nil {
+		log.Printf("[DB_WARN] Failed to mark selected read: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "操作失败"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"updated": res.RowsAffected})
+	ids := make([]uint, 0, len(notifications))
+	replyIDs := make([]uint, 0)
+	for _, notification := range notifications {
+		ids = append(ids, notification.ID)
+		if notification.Type == "reply" {
+			replyIDs = append(replyIDs, notification.RelatedID)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"updated": updated, "read_receipt": gin.H{"recipient_user_id": uid, "ids": ids, "reply_ids": replyIDs}})
 }
 
 // GetPostUnreadReplyNotifications 获取帖子内的未读回复通知
@@ -500,8 +529,14 @@ func SendJPushNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, t
 
 	legacyToken := user.DeviceToken
 	go func(devices []models.PushDevice, legacyToken string) {
+		// 队列执行前再次确认未读，避免读取后才到达的延迟推送。
+		var notification models.Notification
+		if err := db.Where("user_id = ? AND type = ? AND related_id = ? AND post_id = ? AND is_read = ?", toUserID, "reply", replyID, postID, false).Order("id DESC").First(&notification).Error; err != nil {
+			return
+		}
 		jpush := utils.NewJPushClient(jpushAppKey, jpushMasterSecret)
 		extras := replyPushExtras(toUserID, replyID, postID)
+		extras["notification_id"] = notification.ID
 		title := "您有新的回复"
 		alert := fmt.Sprintf("%s: %s", fromUser.Nickname, contentPreview)
 		if len(devices) == 0 {

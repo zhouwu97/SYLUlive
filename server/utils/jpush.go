@@ -75,6 +75,10 @@ func (c *JPushClient) SendRegistrationNotification(rid, platform, title, alert s
 	android := &AndroidNotification{
 		Alert: alert, Title: title, Extras: extras, LargeIcon: largeIcon,
 	}
+	// 旧默认渠道为静默；新渠道避免覆盖用户已经选择的系统通知设置。
+	if extras["type"] == "reply" {
+		android.ChannelID = "reply_notifications_v1"
+	}
 	ios := &IOSNotification{Alert: alert, Sound: "default", Badge: 1, Extras: extras}
 
 	switch platform {

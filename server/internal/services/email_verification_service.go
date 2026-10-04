@@ -170,8 +170,7 @@ func (m *SMTPVerificationMailer) SendVerificationCode(ctx context.Context, email
 }
 
 func buildVerificationEmail(to string, from string, purpose string, code string) []byte {
-	toHeader, err := emailmessage.AddressHeader(to)
-	if err != nil {
+	if _, err := emailmessage.AddressHeader(to); err != nil {
 		return nil
 	}
 	fromHeader, err := emailmessage.AddressHeader(from)
@@ -188,7 +187,8 @@ func buildVerificationEmail(to string, from string, purpose string, code string)
 		title = "沈理校园邮箱验证码"
 	}
 	body := fmt.Sprintf("%s\n\n验证码：%s\n有效期：10 分钟\n\n如果不是本人操作，请忽略此邮件。\n", title, code)
-	return []byte("To: " + toHeader + "\r\n" +
+	// 收件地址交给 SMTP 信封；验证码头使用空收件组，不拼接客户端输入。
+	return []byte("To: undisclosed-recipients:;\r\n" +
 		"From: " + fromHeader + "\r\n" +
 		"Subject: " + mime.QEncoding.Encode("UTF-8", title) + "\r\n" +
 		"MIME-Version: 1.0\r\n" +

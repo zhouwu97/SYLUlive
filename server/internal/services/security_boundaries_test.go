@@ -2,15 +2,39 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
+	"io"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"shenliyuan/internal/competitionmatching"
 	"shenliyuan/internal/models"
 )
+
+func TestVerificationEmailKeepsRecipientOutOfHeaders(t *testing.T) {
+	raw := buildVerificationEmail("user@example.com", "from@example.com", models.EmailVerificationPurposeRegister, "123456")
+	message, err := mail.ReadMessage(strings.NewReader(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.Header.Get("To") != "undisclosed-recipients:;" {
+		t.Fatal("dynamic recipient in mail header")
+	}
+	body, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, message.Body))
+	if err != nil || !strings.Contains(string(body), "验证码：123456") || !strings.Contains(string(body), "10 分钟") {
+		t.Fatalf("verification body corrupted: %q %v", body, err)
+	}
+	for _, address := range []string{"user@example.com\r\nBcc: attacker@example.com", "invalid"} {
+		if len(buildVerificationEmail(address, "from@example.com", "register", "123456")) != 0 {
+			t.Fatal("accepted invalid recipient")
+		}
+	}
+}
 
 func TestImageFileIDsRejectNativeOverflow(t *testing.T) {
 	raw := "4294967297"

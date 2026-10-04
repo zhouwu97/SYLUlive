@@ -755,8 +755,7 @@ func sendMailCode(qq, code string) error {
 }
 
 func buildVerifyCodeEmail(to, from, code string) []byte {
-	toHeader, err := emailmessage.AddressHeader(to)
-	if err != nil {
+	if _, err := emailmessage.AddressHeader(to); err != nil {
 		return nil
 	}
 	fromHeader, err := emailmessage.AddressHeader(from)
@@ -793,7 +792,8 @@ func buildVerifyCodeEmail(to, from, code string) []byte {
 
 </html>`, html.EscapeString(code))
 
-	return []byte("To: " + toHeader + "\r\n" +
+	// 邮箱仅作为 SMTP 信封收件人，验证码邮件不复制客户端地址到头部。
+	return []byte("To: undisclosed-recipients:;\r\n" +
 
 		"From: " + fromHeader + "\r\n" +
 

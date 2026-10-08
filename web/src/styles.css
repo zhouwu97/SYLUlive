@@ -958,10 +958,14 @@ body {
 
 @media (max-width: 760px) {
   :root { --sidebar: 0px; }
+  .sidebar:not(.open) { visibility: hidden; pointer-events: none; }
   .workspace::before { display: none; }
   .workspace { background: transparent; }
   .feed-card .media-gallery { max-width: 100%; }
   .media-gallery-1 .media-tile img { max-height: 260px; }
+}
+@media (max-width: 360px) {
+  .topbar .brand-copy { display: none; }
 }
 
 @keyframes pageIn {

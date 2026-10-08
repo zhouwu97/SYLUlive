@@ -11,17 +11,21 @@ import 'package:shenliyuan/screens/exam_papers/exam_paper_library_screen.dart';
 import 'package:shenliyuan/screens/exam_papers/exam_paper_upload_screen.dart';
 import 'package:shenliyuan/screens/exam_papers/my_exam_paper_submissions_screen.dart';
 import 'package:shenliyuan/services/exam_paper_service.dart';
+import '../helpers/golden_viewport.dart';
 
 class _ResponsiveAuthProvider extends AuthProvider {
-  _ResponsiveAuthProvider() : super(Dio());
+  _ResponsiveAuthProvider({bool verified = false})
+      : _user = User(
+          id: 1,
+          studentId: '20260001',
+          nickname: '测试用户',
+          eduBound: true,
+          studentVerified: verified,
+          createdAt: DateTime(2026),
+        ),
+        super(Dio());
 
-  final _user = User(
-    id: 1,
-    studentId: '20260001',
-    nickname: '测试用户',
-    eduBound: true,
-    createdAt: DateTime(2026),
-  );
+  final User _user;
 
   @override
   User? get user => _user;
@@ -82,6 +86,33 @@ class _ResponsiveExamPaperService extends ExamPaperService {
 }
 
 void main() {
+  testWidgets('Pad 试卷表单限宽、目录利用宽屏，连续 resize 可操作', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    await setGoldenViewport(tester, GoldenViewports.tabletLandscape1280x800);
+    final service = _ResponsiveExamPaperService();
+    for (final page in <Widget>[
+      ExamPaperLibraryScreen(service: service),
+      ExamPaperUploadScreen(service: service, isAdmin: false),
+      MyExamPaperSubmissionsScreen(service: service),
+      AdminExamPapersScreen(service: service),
+    ]) {
+      await tester
+          .pumpWidget(_app(child: page, withAuth: true, verified: true));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final scrollViews =
+          tester.widgetList<Scrollable>(find.byType(Scrollable));
+      expect(scrollViews, isNotEmpty);
+      final scrollable = find.byType(Scrollable).first;
+      expect(tester.getSize(scrollable).width,
+          lessThanOrEqualTo(page is ExamPaperUploadScreen ? 680 : 1000));
+      await setGoldenViewport(tester, GoldenViewports.tabletSplit600x800);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(scrollable).width, lessThanOrEqualTo(600));
+      expect(tester.takeException(), isNull);
+      await setGoldenViewport(tester, GoldenViewports.tabletLandscape1280x800);
+    }
+  });
   testWidgets('四个试卷页面在 320px 暗色视口无布局异常', (tester) async {
     tester.view.physicalSize = const Size(320, 720);
     tester.view.devicePixelRatio = 1;
@@ -116,14 +147,15 @@ void main() {
   });
 }
 
-Widget _app({required Widget child, bool withAuth = false}) {
+Widget _app(
+    {required Widget child, bool withAuth = false, bool verified = false}) {
   final providers = <ChangeNotifierProvider>[
     ChangeNotifierProvider<ThemeProvider>(
       create: (_) => ThemeProvider(loadOnStart: false),
     ),
     if (withAuth)
       ChangeNotifierProvider<AuthProvider>(
-        create: (_) => _ResponsiveAuthProvider(),
+        create: (_) => _ResponsiveAuthProvider(verified: verified),
       ),
   ];
   return MultiProvider(

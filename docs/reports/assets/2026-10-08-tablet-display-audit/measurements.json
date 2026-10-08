@@ -1,0 +1,193 @@
+[
+  {
+    "case": "course-839x1024-railfalse-text1.0",
+    "courseCardWidth": 111.85714285714286,
+    "errors": []
+  },
+  {
+    "case": "course-840x1024-railfalse-text1.0",
+    "courseCardWidth": 61.71428571428571,
+    "errors": []
+  },
+  {
+    "case": "course-840x1024-railtrue-text1.0",
+    "courseCardWidth": 46.857142857142854,
+    "errors": []
+  },
+  {
+    "case": "course-1024x768-railtrue-text1.0",
+    "courseCardWidth": 73.14285714285714,
+    "errors": []
+  },
+  {
+    "case": "course-1280x800-railtrue-text1.0",
+    "courseCardWidth": 109.71428571428571,
+    "errors": []
+  },
+  {
+    "case": "course-840x1024-railtrue-text1.3",
+    "courseCardWidth": 46.857142857142854,
+    "errors": []
+  },
+  {
+    "case": "course-1024x768-railtrue-text1.5",
+    "courseCardWidth": 73.14285714285714,
+    "errors": []
+  },
+  {
+    "case": "dishes-portrait",
+    "errors": [],
+    "gridWidth": 834.0,
+    "firstCell": "Rect.fromLTRB(16.0, 504.3, 84.4, 524.3)",
+    "cellWidth": 393.0,
+    "cellHeight": 479.26829268292687
+  },
+  {
+    "case": "ai-portrait",
+    "errors": [],
+    "inputWidth": 734.0
+  },
+  {
+    "case": "map-portrait",
+    "errors": []
+  },
+  {
+    "case": "settings-portrait",
+    "errors": []
+  },
+  {
+    "case": "market-portrait",
+    "errors": [],
+    "marketCardSize": "Size(395.0, 489.0)"
+  },
+  {
+    "case": "dishes-landscape",
+    "errors": [],
+    "gridWidth": 1280.0,
+    "firstCell": "Rect.fromLTRB(16.0, 776.2, 84.4, 796.2)",
+    "cellWidth": 616.0,
+    "cellHeight": 751.219512195122
+  },
+  {
+    "case": "ai-landscape",
+    "errors": [],
+    "inputWidth": 1180.0
+  },
+  {
+    "case": "map-landscape",
+    "errors": []
+  },
+  {
+    "case": "settings-landscape",
+    "errors": []
+  },
+  {
+    "case": "market-landscape",
+    "errors": [],
+    "marketCardSize": "Size(618.0, 712.0)"
+  },
+  {
+    "case": "dishes-split",
+    "errors": [],
+    "gridWidth": 600.0,
+    "firstCell": "Rect.fromLTRB(16.0, 350.6, 104.5, 376.6)",
+    "cellWidth": 276.0,
+    "cellHeight": 336.5853658536586
+  },
+  {
+    "case": "ai-split",
+    "errors": [],
+    "inputWidth": 500.0
+  },
+  {
+    "case": "map-split",
+    "errors": []
+  },
+  {
+    "case": "settings-split",
+    "errors": []
+  },
+  {
+    "case": "market-split",
+    "errors": [],
+    "marketCardSize": "Size(278.0, 385.0)"
+  },
+  {
+    "case": "dishes-narrow-split",
+    "errors": [],
+    "gridWidth": 480.0,
+    "firstCell": "Rect.fromLTRB(16.0, 269.4, 117.9, 299.4)",
+    "cellWidth": 216.0,
+    "cellHeight": 263.4146341463415
+  },
+  {
+    "case": "ai-narrow-split",
+    "errors": [],
+    "inputWidth": 380.0
+  },
+  {
+    "case": "map-narrow-split",
+    "errors": []
+  },
+  {
+    "case": "settings-narrow-split",
+    "errors": []
+  },
+  {
+    "case": "market-narrow-split",
+    "errors": [],
+    "marketCardSize": "Size(218.0, 336.0)"
+  },
+  {
+    "case": "map-orientation-restoration",
+    "calls": [
+      [
+        "DeviceOrientation.landscapeLeft",
+        "DeviceOrientation.landscapeRight"
+      ],
+      [
+        "DeviceOrientation.portraitUp"
+      ]
+    ]
+  },
+  {
+    "case": "market-detail-resize",
+    "from": 1280,
+    "to": 600,
+    "splitBefore": true,
+    "splitAfter": true,
+    "exception": null
+  },
+  {
+    "case": "market-detail-resize",
+    "from": 834,
+    "to": 1280,
+    "splitBefore": false,
+    "splitAfter": false,
+    "exception": null
+  },
+  {
+    "case": "water-split",
+    "rail": false,
+    "width": 840.0,
+    "inputRect": "Rect.fromLTRB(436.0, 898.0, 782.0, 942.0)",
+    "navRect": "Rect.fromLTRB(0.0, 948.0, 840.0, 1024.0)",
+    "exception": null
+  },
+  {
+    "case": "water-split",
+    "rail": false,
+    "width": 1280.0,
+    "inputRect": "Rect.fromLTRB(436.0, 674.0, 1222.0, 718.0)",
+    "navRect": "Rect.fromLTRB(0.0, 724.0, 1280.0, 800.0)",
+    "exception": null
+  },
+  {
+    "case": "water-split",
+    "rail": true,
+    "width": 840.0,
+    "inputRect": "Rect.fromLTRB(540.0, 974.0, 782.0, 1018.0)",
+    "navRect": null,
+    "exception": null
+  }
+]

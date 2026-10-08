@@ -133,6 +133,25 @@ FutureOr<ResponseBody> _catalogStub(RequestOptions options) {
 }
 
 void main() {
+  testWidgets('Pad 竞赛中心限宽且横竖屏切换保留目录', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    await setGoldenViewport(tester, GoldenViewports.tabletPortrait834x1194);
+    final adapter =
+        _CompetitionAdapter((options) => options.path == '/competitions/events'
+            ? _json({
+                'items': [_event(1)],
+                'total': 1
+              })
+            : _catalogStub(options));
+    await _pump(tester, _dio(adapter), const CompetitionCenterScreen(),
+        brightness: Brightness.dark);
+    await setGoldenViewport(tester, GoldenViewports.tabletLandscape1280x800);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(ListView).first).width,
+        lessThanOrEqualTo(1000));
+    expect(find.text('比赛 1'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('已报名计划不会因报名截止而进入已结束分组', (tester) async {
     final now = DateTime.now();
     final adapter = _CompetitionAdapter((options) {

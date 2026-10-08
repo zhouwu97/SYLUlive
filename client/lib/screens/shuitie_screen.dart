@@ -134,6 +134,7 @@ class ShuitieScreen extends StatefulWidget {
 
 class _ShuitieScreenState extends State<ShuitieScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
+  bool _useSplitLayout = false;
   late final Map<String, ScrollController> _feedScrollControllers;
   late final ImagePrefetchCoordinator _feedImagePrefetchCoordinator;
   String? _feedPrefetchMode;
@@ -1316,50 +1317,92 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       });
     }
 
-    final useDesktopShell = ResponsiveUtil.useDesktopShell(context);
-
     return Scaffold(
       backgroundColor: showCustomBackground
           ? Colors.transparent
           : (isDark ? const Color(0xFF101219) : kCleanWarmBackgroundLight),
       extendBodyBehindAppBar: true,
-      body: Stack(
-        children: [
-          useDesktopShell
-              ? _buildDesktopLayout(isDark)
-              : _buildMobileLayout(isDark),
-        ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // 380px 主栏 + 至少 460px 详情；首页 rail 占宽后按剩余空间判断。
+          _useSplitLayout = constraints.maxWidth >= 840;
+          final hasDetail = _selectedPost != null || _selectedUserId != null;
+          return PopScope(
+            canPop: _useSplitLayout || !hasDetail,
+            onPopInvokedWithResult: (didPop, result) {
+              if (!didPop) _closeNarrowDetail();
+            },
+            child:
+                _buildResponsiveLayout(isDark, constraints.maxWidth, hasDetail),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildDesktopLayout(bool isDark) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildResponsiveLayout(bool isDark, double width, bool hasDetail) {
+    // 两个区域保持相同的 Element 路径，缩放窗口时保留滚动、焦点和回复草稿。
+    return Stack(
       children: [
-        // 左侧 Master 列表
-        Container(
-          width: 380,
-          decoration: BoxDecoration(
-            border: Border(
-              right: BorderSide(
-                color: isDark
-                    ? Colors.white10
-                    : Colors.black.withValues(alpha: 0.05),
-                width: 1,
+        Positioned(
+          top: 0,
+          bottom: 0,
+          left: 0,
+          width: _useSplitLayout ? 380 : width,
+          child: Offstage(
+            offstage: !_useSplitLayout && hasDetail,
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border(
+                  right: BorderSide(
+                    color: isDark
+                        ? Colors.white10
+                        : Colors.black.withValues(alpha: 0.05),
+                    width: _useSplitLayout ? 1 : 0,
+                  ),
+                ),
               ),
+              child: Stack(children: [_buildMobileLayout(isDark)]),
             ),
           ),
-          child: Stack(children: [_buildMobileLayout(isDark)]),
         ),
-        // 右侧 Detail 详情
-        Expanded(
-          child: _selectedPost == null && _selectedUserId == null
-              ? _buildEmptyDetailState(isDark)
-              : _buildRightDetailContainer(isDark),
+        Positioned(
+          top: 0,
+          bottom: 0,
+          left: _useSplitLayout ? 380 : 0,
+          right: 0,
+          child: Offstage(
+            offstage: !_useSplitLayout && !hasDetail,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: hasDetail
+                      ? _buildRightDetailContainer(isDark)
+                      : _buildEmptyDetailState(isDark),
+                ),
+                if (!_useSplitLayout && hasDetail && _selectedUserId == null)
+                  Positioned(
+                    top: 0,
+                    left: 8,
+                    child: SafeArea(
+                      bottom: false,
+                      child: BackButton(onPressed: _closeNarrowDetail),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ],
     );
+  }
+
+  void _closeNarrowDetail() {
+    _finalizeSplitDwell();
+    setState(() {
+      _selectedPost = null;
+      _selectedUserId = null;
+    });
   }
 
   Widget _buildRightDetailContainer(bool isDark) {
@@ -1370,6 +1413,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         child: UserHomeScreen(
           key: ValueKey('user-$selectedUserId'),
           userId: selectedUserId,
+          onBack: _closeNarrowDetail,
         ),
       );
     }
@@ -1520,7 +1564,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void _openUserInSplit(int userId) {
     if (!mounted) return;
     _finalizeSplitDwell();
-    if (MediaQuery.of(context).size.width <= 600) {
+    if (!_useSplitLayout) {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => UserHomeScreen(userId: userId)),
@@ -1940,7 +1984,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   onPostAction: (action) => _handlePostAction(post, action),
                   allowNotInterested: false,
                   onTap: () {
-                    if (ResponsiveUtil.useDesktopShell(context)) {
+                    if (_useSplitLayout) {
                       _openPostInSplit(post,
                           feedKind: 'following', position: position);
                     } else {
@@ -2522,7 +2566,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                             isDark: isDark,
                             label: '置顶',
                             onOpenPost: (post) {
-                              if (ResponsiveUtil.useDesktopShell(context)) {
+                              if (_useSplitLayout) {
                                 _openPostInSplit(post);
                               } else {
                                 Navigator.push(
@@ -2538,7 +2582,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                           final post = normalPosts[index];
                           final isSelected = _selectedPost?.id == post.id &&
                               _selectedUserId == null &&
-                              ResponsiveUtil.useDesktopShell(context);
+                              _useSplitLayout;
                           return Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 10),
                             child: Container(
@@ -2575,8 +2619,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                       _handlePostAction(post, action),
                                   allowNotInterested: sort == 'all',
                                   onCommentTap: (commentPost) {
-                                    if (ResponsiveUtil.useDesktopShell(
-                                        context)) {
+                                    if (_useSplitLayout) {
                                       _openPostInSplit(commentPost,
                                           scrollToReplies: true);
                                     } else {
@@ -2597,8 +2640,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                     if (_exitSearchInputMode()) {
                                       return;
                                     }
-                                    if (ResponsiveUtil.useDesktopShell(
-                                        context)) {
+                                    if (_useSplitLayout) {
                                       _openPostInSplit(post,
                                           feedKind: sort, position: index);
                                     } else {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../widgets/responsive_content.dart';
 import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/application/academic_login_coordinator.dart';
 import '../features/academic/presentation/academic_login_dialog.dart';
@@ -1071,7 +1072,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           ),
         ],
       ),
-      body: _buildBody(),
+      body: ResponsiveContent(child: _buildBody()),
     );
   }
 

@@ -9,6 +9,7 @@ import 'package:shenliyuan/providers/canteen_discovery_provider.dart';
 import 'package:shenliyuan/providers/canteen_provider.dart';
 import 'package:shenliyuan/screens/canteen_screen.dart';
 import 'package:shenliyuan/widgets/canteen/canteen_ranking_entry.dart';
+import '../helpers/golden_viewport.dart';
 
 const _homeBody =
     '{"hero":{"type":"recommended_store","canteen_id":1,"canteen_name":"一食堂二楼",'
@@ -124,6 +125,24 @@ Widget _buildApp({
 }
 
 void main() {
+  testWidgets('Pad 热门菜品增列，图片加载失败仍可显示菜名', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    await setGoldenViewport(tester, GoldenViewports.tabletLandscape1280x800);
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter =
+        FakeAdapter((options) async => _json(_homePartialHotDishesBody));
+    await tester.pumpWidget(
+        _buildApp(dio: dio, theme: ThemeData.dark(), textScale: 1.3));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('热门菜品'));
+    await tester.pumpAndSettle();
+    final grid = tester.widget<GridView>(find.byType(GridView).first);
+    final delegate =
+        grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+    expect(delegate.crossAxisCount, 4);
+    expect(find.text('麻辣拌'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('进入页面请求 /canteens/home（发现聚合），不请求旧整榜', (tester) async {
     final requests = <String>[];
     final dio = Dio(BaseOptions(baseUrl: 'http://test'));

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/responsive_content.dart';
 import '../../app_bootstrap.dart';
 import '../../models/exam_paper.dart';
 import '../../providers/auth_provider.dart';
@@ -218,7 +219,8 @@ class _AdminExamPapersScreenState extends State<AdminExamPapersScreen>
             ],
           ),
         ),
-        body: Column(
+        body: ResponsiveContent.page(
+            child: Column(
           children: [
             _buildToolbar(),
             Expanded(
@@ -243,7 +245,7 @@ class _AdminExamPapersScreenState extends State<AdminExamPapersScreen>
               ),
             ),
           ],
-        ),
+        )),
       ),
     );
   }

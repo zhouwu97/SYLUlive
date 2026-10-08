@@ -26,6 +26,7 @@ import 'package:shenliyuan/utils/edu_semester_utils.dart';
 import 'package:shenliyuan/utils/grade_screen_registry.dart';
 import 'package:shenliyuan/widgets/edu_grade/grade_empty_state.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import '../helpers/golden_viewport.dart';
 
 enum _LoadMode { data, empty, error, loading }
 
@@ -259,6 +260,28 @@ class _FakeEduProvider extends EduProvider {
 }
 
 void main() {
+  testWidgets('成绩 Pad 限宽后缩放保留学期数据与视图选择', (tester) async {
+    final providers =
+        await _pumpGradeScreen(tester, theme: ThemeData.dark(), textScale: 1.3);
+    for (final size in [
+      GoldenViewports.tabletPortrait834x1194,
+      GoldenViewports.tabletLandscape1280x800
+    ]) {
+      await setGoldenViewport(tester, size);
+      await tester.pumpAndSettle();
+      expect(
+          tester
+              .getSize(find.byKey(const ValueKey('grade_term_scroll_view')))
+              .width,
+          lessThanOrEqualTo(840));
+      expect(find.text('离散数学'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+    await tester.tap(find.text('学业总览'));
+    await tester.pumpAndSettle();
+    expect(find.text('学分要求'), findsOneWidget);
+    providers.edu.finishPendingGrades();
+  });
   testWidgets('同一 App 账号切换教务身份后，旧成绩不能覆盖新身份', (tester) async {
     AppPreferencesStore.setMockInitialValues({});
     final router = AcademicProviderRouterRepository(

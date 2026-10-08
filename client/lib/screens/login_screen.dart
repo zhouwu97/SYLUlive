@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../widgets/responsive_content.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import 'legal_documents_screen.dart';
@@ -548,7 +549,8 @@ class _LoginScreenState extends State<LoginScreen> {
         behavior: HitTestBehavior.opaque,
         onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
         child: SafeArea(
-          child: Stack(
+          child: ResponsiveContent.form(
+              child: Stack(
             children: [
               SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(24, 18, 24, 28),
@@ -848,7 +850,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
             ],
-          ),
+          )),
         ),
       ),
     );

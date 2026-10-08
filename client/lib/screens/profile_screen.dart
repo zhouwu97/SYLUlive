@@ -8,6 +8,7 @@ import 'package:image_cropper/image_cropper.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/responsive_content.dart';
 import '../models/startup_destination.dart';
 import '../services/app_resume_coordinator.dart';
 import '../services/root_page_state_service.dart';
@@ -263,7 +264,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       value: overlayStyle,
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: Stack(
+        body: ResponsiveContent(
+            child: Stack(
           children: [
             // 内容
             CustomScrollView(
@@ -333,7 +335,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
           ],
-        ),
+        )),
       ),
     );
   }

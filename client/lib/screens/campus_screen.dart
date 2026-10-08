@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/responsive_content.dart';
 import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
 import '../models/ai_capabilities.dart';
@@ -408,7 +409,8 @@ class _CampusScreenState extends State<CampusScreen>
 
     return Scaffold(
       backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
-      body: SafeArea(
+      body: ResponsiveContent.page(
+          child: SafeArea(
         bottom: false,
         child: RefreshIndicator(
           onRefresh: () => _loadAll(force: true),
@@ -489,7 +491,7 @@ class _CampusScreenState extends State<CampusScreen>
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 

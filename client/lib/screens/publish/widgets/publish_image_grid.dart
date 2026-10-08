@@ -9,7 +9,7 @@ import 'dashed_outline.dart';
 
 /// 发布表单图片网格（C-2 统一模型）。
 ///
-/// 以三列方形网格展示统一 [PublishImageItem] 列表（服务器已有图 + 本地新选图可混合）。
+/// 按可用宽度展示至少三列方形网格（服务器已有图 + 本地新选图可混合）。
 /// 第一张标记「封面」。支持长按拖拽排序（Add 按钮不参与）。
 /// 空状态展示添加入口，水帖页渲染成单个虚线上传卡片。
 class PublishImageGrid extends StatelessWidget {
@@ -71,26 +71,30 @@ class PublishImageGrid extends StatelessWidget {
     final int cellCount =
         max(1, totalImages) + (canAddMore && totalImages > 0 ? 1 : 0);
 
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: _spacing,
-        mainAxisSpacing: _spacing,
-      ),
-      itemCount: cellCount,
-      itemBuilder: (context, index) {
-        // ---- 添加入口：空状态在首位，有图片时在末尾；不参与排序 ----
-        final isAddSlot = (totalImages == 0) || (index == totalImages);
-        if (isAddSlot) {
-          return _buildAddCell(isDark);
-        }
+    return LayoutBuilder(
+        builder: (context, constraints) => GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount:
+                    ((constraints.maxWidth + _spacing) / (180 + _spacing))
+                        .ceil()
+                        .clamp(3, 8),
+                crossAxisSpacing: _spacing,
+                mainAxisSpacing: _spacing,
+              ),
+              itemCount: cellCount,
+              itemBuilder: (context, index) {
+                // ---- 添加入口：空状态在首位，有图片时在末尾；不参与排序 ----
+                final isAddSlot = (totalImages == 0) || (index == totalImages);
+                if (isAddSlot) {
+                  return _buildAddCell(isDark);
+                }
 
-        final item = images[index];
-        return _buildDraggableItem(context, item, index, isDark);
-      },
-    );
+                final item = images[index];
+                return _buildDraggableItem(context, item, index, isDark);
+              },
+            ));
   }
 
   // ---- 可拖拽图片项（长按拖动，drop 到目标位交换） ----
@@ -218,8 +222,7 @@ class PublishImageGrid extends StatelessWidget {
               top: 6,
               left: 6,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: Theme.of(context)
                       .colorScheme

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../widgets/responsive_content.dart';
 import '../../config/api_constants.dart';
 import '../../app_bootstrap.dart';
 import '../../models/exam_paper.dart';
@@ -101,7 +102,8 @@ class _ExamPaperDetailScreenState extends State<ExamPaperDetailScreen> {
           backgroundColor: Colors.transparent,
           elevation: 0,
         ),
-        body: SafeArea(
+        body: ResponsiveContent(
+            child: SafeArea(
           top: false,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
@@ -219,7 +221,7 @@ class _ExamPaperDetailScreenState extends State<ExamPaperDetailScreen> {
               ),
             ],
           ),
-        ),
+        )),
       ),
     );
   }

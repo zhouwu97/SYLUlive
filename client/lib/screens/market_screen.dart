@@ -722,13 +722,19 @@ class _MarketScreenState extends State<MarketScreen> {
                                     AppLayout.floatingNavBottomMargin +
                                     AppLayout.fabNavGap +
                                     120),
-                        sliver: SliverMasonryGrid.count(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          childCount: marketPosts.length,
-                          itemBuilder: (context, index) =>
-                              _buildMarketCard(marketPosts[index], true),
+                        sliver: SliverLayoutBuilder(
+                          builder: (context, constraints) =>
+                              SliverMasonryGrid.count(
+                            crossAxisCount: ResponsiveUtil.gridColumnCount(
+                              constraints.crossAxisExtent,
+                              spacing: 12,
+                            ),
+                            mainAxisSpacing: 12,
+                            crossAxisSpacing: 12,
+                            childCount: marketPosts.length,
+                            itemBuilder: (context, index) =>
+                                _buildMarketCard(marketPosts[index], true),
+                          ),
                         ),
                       ),
                     if (_searchQuery.isEmpty &&
@@ -1191,7 +1197,6 @@ class _MarketScreenState extends State<MarketScreen> {
                 postId: post.id,
                 isMarket: true,
                 initialPost: post,
-                isDesktopSplitMode: ResponsiveUtil.isDesktop(context),
               ),
             ),
           );

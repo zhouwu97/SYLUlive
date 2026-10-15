@@ -661,8 +661,9 @@ func (h *AuthHandler) registerLoginFailure(scope string, now time.Time) time.Dur
 }
 
 func (h *AuthHandler) clearLoginFailures(scope string) {
+	// 数据库故障期间可能产生内存回退计数，恢复后也必须一起清除。
+	clearLoginFailures(scope)
 	if h.db == nil || !h.db.Migrator().HasTable(&models.LoginThrottleRecord{}) {
-		clearLoginFailures(scope)
 		return
 	}
 	if err := h.db.Where("scope = ?", scope).Delete(&models.LoginThrottleRecord{}).Error; err != nil {
@@ -1455,7 +1456,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	middleware.InvalidateTokenVersionCache(user.ID)
 	revokeRefreshTokensForUser(h.db, user.ID)
 
-	clearLoginFailures("user:" + strconvUserID(user.ID))
+	h.clearUserLoginFailures(user)
 	h.writeSecurityAudit(user.ID, "password_reset_edu", "")
 
 	c.JSON(http.StatusOK, gin.H{"message": "密码已重置，请使用新密码登录"})
@@ -1573,7 +1574,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	user, err := h.findLoginUser(account)
 	if err != nil {
 
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, services.ErrEmailInvalid) {
 			// 不存在的账号也执行 bcrypt，避免从响应时间区分账号是否存在。
 			_ = bcrypt.CompareHashAndPassword([]byte(dummyLoginPasswordHash), []byte(input.Password))
 			lockFor := h.registerLoginFailure(accountKey, now)
@@ -1657,6 +1658,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	secureRefresh := middleware.SecureCookieEnabled()
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("refresh_token", refreshToken, int(refreshTTL().Seconds()), "/api", "", secureRefresh, true)
+	h.recordSuccessfulLogin(c, user, account, sessionID)
 	c.JSON(http.StatusOK, payload)
 
 }

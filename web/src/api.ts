@@ -43,6 +43,7 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
   headers.set("X-Requested-With", "SYLUlive-Web");
+  headers.set("X-Auth-Transport", "cookie");
   if (init.body && !(init.body instanceof FormData))
     headers.set("Content-Type", "application/json");
   const options = {
@@ -72,7 +73,10 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
         const promise = fetch("/api/refresh", {
           method: "POST",
           credentials: "same-origin",
-          headers: { "X-Requested-With": "SYLUlive-Web" },
+          headers: {
+            "X-Requested-With": "SYLUlive-Web",
+            "X-Auth-Transport": "cookie",
+          },
         });
         refreshing = { epoch: refreshEpoch, promise };
         promise.finally(() => {

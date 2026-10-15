@@ -680,7 +680,7 @@ func main() {
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Expected-App-User, X-Request-ID, X-Auth-Transport, X-App-Platform, X-App-Channel, X-App-Version-Name, X-App-Version-Code")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Expected-App-User, X-Request-ID, X-Requested-With, X-Auth-Transport, X-App-Platform, X-App-Channel, X-App-Version-Name, X-App-Version-Code")
 		c.Header("Access-Control-Expose-Headers", "X-Request-ID")
 
 		if c.Request.Method == "OPTIONS" {
@@ -694,6 +694,8 @@ func main() {
 		c.Next()
 
 	})
+	// CORS 只控制浏览器读取响应；写入还必须校验 Origin，并兼容显式允许的独立 Web 入口。
+	r.Use(middleware.BrowserOriginGuard(strings.Split(os.Getenv("CORS_ALLOW_ORIGINS"), ",")...))
 	// 公开高成本读取接口单独限流，避免把读滥用塞进来源封禁查询，
 	// 也避免攻击者用大量 GET 请求直接放大帖子和搜索查询。
 	r.Use(middleware.ReadAbuseRateLimitMiddleware(

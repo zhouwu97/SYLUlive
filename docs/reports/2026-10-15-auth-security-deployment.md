@@ -2,6 +2,8 @@
 
 本文承接 [上线前审计记录](2026-10-15-auth-security-remediation.md)，记录本轮维护者授权的推送、测试和生产发布。范围为 Go 认证、安全审计、运维告警及 systemd Nginx 登录观察规则；不发布新的 Flutter 安装包或 React Web 站点。
 
+后续发现的限流查询故障回退、邮件实际送达确认及第二轮运行版本见 [复查修复记录](2026-10-15-auth-throttle-fallback.md)。本文保留第一轮上线时点的证据。
+
 ## 提交与授权
 
 - 安全修复提交：`dd5e098ac0bd863697b067ae40cfe0bcc7149f39`。

@@ -602,7 +602,8 @@ func (h *AuthHandler) loginLock(scope string, now time.Time) (time.Duration, boo
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return 0, false
 		}
-		return 0, false
+		// 与失败计数写入的故障回退一致，在密码校验前继续执行进程内锁定。
+		return currentLoginLock(scope, now)
 	}
 	if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow {
 		_ = h.db.Delete(&record).Error

@@ -51,5 +51,8 @@ func TestPostgresEmailResetRecovery(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = isolatedSQL.Close() })
 	h, fixtureDB, user, mailer := remediationAuthFixtureForDB(t, isolated)
+	t.Run("throttle_query_failure", func(t *testing.T) {
+		testLoginThrottleQueryFailurePreservesMemoryLock(t, h, fixtureDB, user)
+	})
 	testEmailResetRecovery(t, h, fixtureDB, user, mailer)
 }

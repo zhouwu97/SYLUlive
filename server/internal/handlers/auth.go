@@ -602,20 +602,12 @@ func (h *AuthHandler) loginLock(scope string, now time.Time) (time.Duration, boo
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return 0, false
 		}
-		return 0, false
+		// 数据库不可读时执行故障回退；可读时以共享状态为准，避免跨实例解锁后复活旧锁。
+		return currentLoginLock(scope, now)
 	}
-	if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow {
-		_ = h.db.Delete(&record).Error
-		return 0, false
-	}
-	if record.LockedUntil != nil && !now.Before(*record.LockedUntil) {
-		// 只清理已过期的锁，不删除 15 分钟失败窗口内的累计记录。
-		if err := h.db.Model(&record).Update("locked_until", nil).Error; err != nil {
-			return 0, false
-		}
-		return 0, false
-	}
-	if record.LockedUntil == nil {
+	// 检查只读快照，不清除锁：另一个请求可能已经写入新的失败或延长锁定。
+	if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow ||
+		record.LockedUntil == nil || !now.Before(*record.LockedUntil) {
 		return 0, false
 	}
 	return record.LockedUntil.Sub(now), true
@@ -627,11 +619,13 @@ func (h *AuthHandler) registerLoginFailure(scope string, now time.Time) time.Dur
 	}
 	var lockFor time.Duration
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		// 先确保唯一 scope 行存在，再锁定读取；并发首次失败不能因插入冲突丢失计数。
+		seed := models.LoginThrottleRecord{Scope: scope}
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "scope"}}, DoNothing: true}).Create(&seed).Error; err != nil {
+			return err
+		}
 		var record models.LoginThrottleRecord
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("scope = ?", scope).First(&record).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			record = models.LoginThrottleRecord{Scope: scope}
-		} else if err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("scope = ?", scope).First(&record).Error; err != nil {
 			return err
 		}
 		if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow {
@@ -648,9 +642,6 @@ func (h *AuthHandler) registerLoginFailure(scope string, now time.Time) time.Dur
 			until := now.Add(lockFor)
 			record.LockedUntil = &until
 		}
-		if record.ID == 0 {
-			return tx.Create(&record).Error
-		}
 		return tx.Save(&record).Error
 	})
 	if err != nil {
@@ -661,8 +652,9 @@ func (h *AuthHandler) registerLoginFailure(scope string, now time.Time) time.Dur
 }
 
 func (h *AuthHandler) clearLoginFailures(scope string) {
+	// 数据库故障期间可能产生内存回退计数，恢复后也必须一起清除。
+	clearLoginFailures(scope)
 	if h.db == nil || !h.db.Migrator().HasTable(&models.LoginThrottleRecord{}) {
-		clearLoginFailures(scope)
 		return
 	}
 	if err := h.db.Where("scope = ?", scope).Delete(&models.LoginThrottleRecord{}).Error; err != nil {
@@ -1455,7 +1447,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	middleware.InvalidateTokenVersionCache(user.ID)
 	revokeRefreshTokensForUser(h.db, user.ID)
 
-	clearLoginFailures("user:" + strconvUserID(user.ID))
+	h.clearUserLoginFailures(user)
 	h.writeSecurityAudit(user.ID, "password_reset_edu", "")
 
 	c.JSON(http.StatusOK, gin.H{"message": "密码已重置，请使用新密码登录"})
@@ -1573,7 +1565,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	user, err := h.findLoginUser(account)
 	if err != nil {
 
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, services.ErrEmailInvalid) {
 			// 不存在的账号也执行 bcrypt，避免从响应时间区分账号是否存在。
 			_ = bcrypt.CompareHashAndPassword([]byte(dummyLoginPasswordHash), []byte(input.Password))
 			lockFor := h.registerLoginFailure(accountKey, now)
@@ -1657,6 +1649,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	secureRefresh := middleware.SecureCookieEnabled()
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("refresh_token", refreshToken, int(refreshTTL().Seconds()), "/api", "", secureRefresh, true)
+	h.recordSuccessfulLogin(c, user, account, sessionID)
 	c.JSON(http.StatusOK, payload)
 
 }

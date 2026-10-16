@@ -19,6 +19,9 @@ import {
 import {Toolbox} from './toolbox';
 import {Profile} from './profile';
 import "./styles.css";
+import "./social-shell.css";
+import "./web-polish.css";
+import { useWorkspaceMotion } from "./shell-motion";
 import {Admin} from "./admin";
 import { Polls } from "./polls";
 import {Competition} from './competition';
@@ -149,6 +152,7 @@ function Rail() {
 }
 function Shell() {
   const [menu, setMenu] = useState(false);
+  const [navigationMotion, setNavigationMotion] = useState(true);
   const [dark, setDark] = useState(
     () => localStorage.getItem("sylulive-theme") === "dark",
   );
@@ -157,6 +161,7 @@ function Shell() {
     location = useLocation(),
     navigate = useNavigate();
   const active = location.pathname.split("/")[1] || "dashboard";
+  const workspace = useWorkspaceMotion(location.pathname, navigationMotion);
   const unread = useApi(auth.user ? '/api/user/notifications/unread-count' : null);
   const messageUnread = useApi(auth.user ? '/api/messages/unread_count' : null);
   useEffect(() => {
@@ -191,6 +196,8 @@ function Shell() {
     <NavLink
       key={id}
       title={label}
+      aria-label={label}
+      onClick={(event) => setNavigationMotion(event.detail !== 0)}
       to={id === "dashboard" ? "/" : `/${id}`}
       end
       className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
@@ -203,7 +210,7 @@ function Shell() {
     </NavLink>
   );
   return (
-    <div className="app-shell">
+    <div className={`app-shell social-shell ${active === "market" ? "market-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
       <a className="skip-link" href="#mainContent">
         跳到主要内容
       </a>
@@ -298,7 +305,7 @@ function Shell() {
           </div>
           <div className="sidebar-footer">沈理校园 · Web</div>
         </aside>
-        <main className="workspace" id="mainContent">
+        <main className="workspace" id="mainContent" ref={workspace}>
           <div className={`workspace-grid ${["dashboard","community"].includes(active)?"":"no-rail"}`}>
             <div className="main-pane">
               <section key={`${location.pathname}${location.search}`} className="page active">
@@ -380,4 +387,3 @@ createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </StrictMode>,
 );
-

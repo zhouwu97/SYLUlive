@@ -9,9 +9,11 @@ import {
 } from "react-router-dom";
 import {
   asset,
+  captureAuthSession,
   entity,
   query,
   request,
+  requestBlob,
   rows,
   time,
   useApi,
@@ -35,12 +37,19 @@ import {
   useUI,
 } from "./ui";
 import { MediaGallery, MediaUploadPicker, mediaURL, uploadImageFiles } from "./media";
-import { StickerPicker, StickerRenderer, favoritePublicImage, type StickerPayload } from "./emoji";
+import { EmojiSelectionPreview, StickerPicker, StickerRenderer, favoritePublicImage, type StickerPayload } from "./emoji";
+import { messageEmojiFields } from "./emoji-selection";
 import "./community.css";
+import "./market.css";
 // 同一个 File 对象在「提交失败后原样重点提交」时不应再传一遍：
 // 上传接口按字节去重，但重复请求仍会产生新记录与等待。
-const uploadedFileIDs = new WeakMap<File, number>();
+const uploadedFileIDs = new WeakMap<File, { id: number; isCurrent: () => boolean }>();
 export async function uploadIDs(form: FormData, limits?: AttachmentLimits) {
+  const isCurrent = captureAuthSession();
+  const cachedID = (file: File) => {
+    const cached = uploadedFileIDs.get(file);
+    return cached?.isCurrent() ? cached.id : undefined;
+  };
   const files = form
     .getAll("images")
     .filter((item): item is File => item instanceof File && item.size > 0);
@@ -51,11 +60,12 @@ export async function uploadIDs(form: FormData, limits?: AttachmentLimits) {
         `附件未通过检查：${rejections.map((x) => `${x.file}（${x.reason}）`).join("；")}`,
       );
   }
-  const uncached = files.filter((file) => uploadedFileIDs.get(file) === undefined);
+  const uncached = files.filter((file) => cachedID(file) === undefined);
   const fresh = uncached.length ? await uploadImageFiles(uncached) : [];
-  uncached.forEach((file, index) => { const id = fresh[index]; if (id !== undefined) uploadedFileIDs.set(file, id); });
+  if (!isCurrent()) throw new Error("账号已切换，请重新确认上传");
+  uncached.forEach((file, index) => { const id = fresh[index]; if (id !== undefined) uploadedFileIDs.set(file, { id, isCurrent }); });
   const ids: number[] = [];
-  files.forEach((file) => { const id = uploadedFileIDs.get(file); if (typeof id === "number" && Number.isInteger(id) && id > 0 && !ids.includes(id)) ids.push(id); });
+  files.forEach((file) => { const id = cachedID(file); if (typeof id === "number" && Number.isInteger(id) && id > 0 && !ids.includes(id)) ids.push(id); });
   return ids;
 }
 export function PostForm({
@@ -67,6 +77,8 @@ export function PostForm({
 }) {
   const ui = useUI(),
     nav = useNavigate();
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const sections = useApi(market ? null : "/api/water/sections");
   return (
     <Form
@@ -130,7 +142,9 @@ export function PostForm({
       ]}
       submit={post ? "保存修改" : "发布"}
       onSubmit={async (_, form) => {
+        const session = captureAuthSession(), isCurrent = () => alive.current && session();
         const ids = await uploadIDs(form);
+        if (!isCurrent()) return;
         form.delete("images");
         form.set("board_id", market ? "2" : "1");
         if (ids.length) form.set("file_ids", JSON.stringify(ids));
@@ -139,6 +153,7 @@ export function PostForm({
           form,
           post ? "PUT" : "POST",
         );
+        if (!isCurrent()) return;
         ui.close();
         ui.notify("内容已保存");
         nav(`/post/${post?.id || result.post?.id || result.id}`);
@@ -155,6 +170,14 @@ function PostAvatar({ author }: { author?: Entity }) {
 function PostTime({ value }: { value: unknown }) {
   const valid = typeof value === "string" && Number.isFinite(Date.parse(value));
   return <time dateTime={valid ? value : undefined} title={time(value)}>{valid ? new Date(value).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : ""}</time>;
+}
+
+function PostThumbnail({ post, className }: { post: Entity; className: string }) {
+  const [failed, setFailed] = useState<string>();
+  const src = mediaURL(post.images?.[0], "thumb") || mediaURL(post.images?.[0], "origin");
+  return <span className={className}>
+    {src && src !== failed ? <img src={src} alt="" loading="lazy" decoding="async" onError={() => setFailed(src)} /> : <span className="post-thumbnail-empty"><Icon name="market" size={28} />{className === "market-img" && <span>{src ? "图片暂不可用" : "暂无图片"}</span>}</span>}
+  </span>;
 }
 
 function PostAuthor({ post }: { post: Entity }) {
@@ -195,32 +218,23 @@ export function PostCard({
   const back={from:location.pathname+location.search};
   if (market)
     return (
-      <Link className="market-card" to={`/post/${post.id}`} state={back}>
-        <div className="market-img">
-          {post.images?.[0] ? (
-            <img
-              alt={post.title || "物品图片"}
-              src={mediaURL(post.images[0], "thumb") || asset(post.images[0].file?.path || post.images[0].url)}
-              loading="lazy"
-              decoding="async"
-            />
-          ) : (
-            <Icon name="market" size={40} />
-          )}
-        </div>
-        <div className="market-info">
-          <span className="tag">
+      <Link className={`market-card ${post.status === "sold" ? "market-sold" : ""}`} to={`/post/${post.id}`} state={back}>
+        <div className="market-cover">
+          <PostThumbnail key={post.id} post={post} className="market-img" />
+          <span className="tag market-status">
             {post.status === "sold"
               ? "已售出"
               : post.post_type === "marketplace_buy"
                 ? "求购"
                 : "出售"}
           </span>
+        </div>
+        <div className="market-info">
           <h3>{post.title || post.content}</h3>
-          <strong className="price">¥ {post.price}</strong>
+          <div className="market-price-row"><strong className="price"><small>¥</small> {post.price ?? "待议"}</strong>{Number(post.reply_count) > 0 && <span>{post.reply_count} 条讨论</span>}</div>
           <div className="market-meta">
-            <span>{post.author?.nickname}</span>
-            <span>{time(post.created_at)}</span>
+            <span className="market-seller"><PostAvatar author={post.author} /><span>{post.author?.nickname || "校园同学"}</span></span>
+            <PostTime value={post.created_at} />
           </div>
         </div>
       </Link>
@@ -242,7 +256,7 @@ export function Community({ market = false }: { market?: boolean }) {
     auth = useAuth();
   const [params, setParams] = useSearchParams();
   const page = Number(params.get("page")) || 1,
-    sort = params.get("sort") || "all";
+    sort = params.get("sort") || (market ? "time" : "all");
   const personal=sort==='mine'||sort==='bookmarks';
   const sections = useApi(market ? null : "/api/water/sections");
   const q = useApi(
@@ -264,14 +278,9 @@ export function Community({ market = false }: { market?: boolean }) {
     setParams(next);
   }
   return (
-    <div className={market ? undefined : "community-page"}>
+    <div className={market ? "market-page" : "community-page"}>
       <Head
         title={market ? "二手集市" : "校园社区"}
-        description={
-          market
-            ? "校内闲置、求购与交易状态"
-            : "关注、分区、精华、投票与校园日常都在这里"
-        }
       >
         <button
           className="btn primary"
@@ -283,7 +292,7 @@ export function Community({ market = false }: { market?: boolean }) {
             )
           }
         >
-          ＋ {market ? "发布闲置" : "发布"}
+          <Icon name="plus" size={18} />{market ? "发布闲置" : "发布"}
         </button>
       </Head>
       {!market && (
@@ -307,6 +316,7 @@ export function Community({ market = false }: { market?: boolean }) {
             filter("q", String(new FormData(e.currentTarget).get("q") || ""));
           }}
         >
+          <Icon name="search" size={18} />
           <input
             name="q"
             defaultValue={params.get("q") || ""}
@@ -325,9 +335,6 @@ export function Community({ market = false }: { market?: boolean }) {
               <option value="time">最新发布</option>
               <option value="price">价格从低到高</option>
               <option value="price_desc">价格从高到低</option>
-            </select>
-            <select aria-label="闲置分类" value={params.get('type')||''} onChange={(e)=>filter('type',e.target.value)}>
-              <option value="">全部类型</option><option value="marketplace_sell">出售</option><option value="marketplace_buy">求购</option>
             </select>
             <label>
               <input
@@ -355,13 +362,14 @@ export function Community({ market = false }: { market?: boolean }) {
           </select>
         )}
       </div>
+      {market && <div className="market-results-head"><div role="group" aria-label="闲置分类" className="market-types">{[["", "全部闲置"], ["marketplace_sell", "出售"], ["marketplace_buy", "求购"]].map(([value, label]) => <button type="button" key={value} aria-pressed={(params.get("type") || "") === value} onClick={() => filter("type", value)}>{label}</button>)}</div>{q.data && !q.error && <span>本页 {posts.length} 件</span>}</div>}
       <QueryState query={q}>
         <div className={market ? "market-grid" : "panel community-feed"}>
           {posts.map((post) => (
             <PostCard key={post.id} post={post} market={market} />
           ))}
         </div>
-        {!posts.length && <Empty />}
+        {!posts.length && <Empty title={market ? "没有找到闲置" : "暂时没有帖子"} description={params.get("q") || params.get("type") || params.get("available") === "1" ? "试试调整搜索词或筛选条件。" : market ? "发布一件闲置，或稍后再来逛逛。" : "分享一段校园日常，开启讨论。"} />}
         <Pagination
           page={page}
           hasMore={q.data?.has_more ?? posts.length === 20}
@@ -421,15 +429,13 @@ export function PostDetail() {
         <div className="post-detail-layout">
         <div className="post-detail-main">
         <article className="panel post-full">
-          <PostAuthor key={`author:${p.id}:${auth.user?.id}`} post={p} />
           {p.title && <h1>{p.title}</h1>}
+          <PostAuthor key={`author:${p.id}:${auth.user?.id}`} post={p} />
+          {p.board_id === 2 && <div className="post-market-summary"><strong className="post-market-price"><small>¥</small> {p.price ?? "待议"}</strong><span>{p.status === "sold" ? "已售出" : "交易中"}</span></div>}
           <div className="post-body details-text">{p.content}</div>
           <MediaGallery items={p.images} title={p.title || "帖子图片"} className="post-detail-gallery" maxVisible={9} />
           {p.board_id === 2 && (
             <div className="info-box">
-              <b>
-                ¥ {p.price} · {p.status === "sold" ? "已售出" : "交易中"}
-              </b>
               <p>
                 {p.contact_type}：{p.contact || "请通过评论联系"}
               </p>
@@ -568,9 +574,10 @@ function PostDetailRail({ post, replyCount, onComment }: { post: Entity; replyCo
     <section className="rail-card post-context-more" aria-labelledby="post-context-more-title">
       <div className="post-context-title"><h2 id="post-context-more-title">{market ? "最新闲置" : "最新校园讨论"}</h2><Link to={browse}>全部</Link></div>
       {more.isPending ? <p className="post-context-state" role="status">正在加载更多帖子…</p> : more.error ? <div className="post-context-state" role="alert"><p>暂时无法加载更多帖子</p><button type="button" className="btn" disabled={more.isFetching} onClick={() => more.refetch()}>{more.isFetching ? "正在重试…" : "重试"}</button></div> : posts.length ? <div className="post-context-list">{posts.map((item) => <Link key={item.id} className="post-context-item" to={`/post/${item.id}`} state={{ from: location.pathname + location.search }}>
-        <b>{item.title || item.content?.slice(0, 80) || (market ? "校园闲置" : "校园讨论")}</b>
+        <div className="post-context-copy"><b>{item.title || item.content?.slice(0, 80) || (market ? "校园闲置" : "校园讨论")}</b>
         {item.title && item.content && <p>{item.content.slice(0, 100)}</p>}
-        <span>{market && item.price != null ? <strong>¥ {item.price}</strong> : <span>{item.author?.nickname || "校园同学"}</span>}<span><Icon name="community" size={13} />{item.reply_count || 0}</span></span>
+        <span>{market && item.price != null ? <strong>¥ {item.price}</strong> : <span>{item.author?.nickname || "校园同学"}</span>}<span><Icon name="community" size={13} />{item.reply_count || 0}</span></span></div>
+        {!!item.images?.length && <PostThumbnail key={item.id} post={item} className="post-context-thumb" />}
       </Link>)}</div> : <p className="post-context-state">暂时没有其他帖子</p>}
       <Link className="post-context-browse" to={browse}>继续逛逛{market ? "二手集市" : "校园社区"}<Icon name="arrow" size={15} /></Link>
     </section>
@@ -647,17 +654,46 @@ function ReplyComposer({ postId, parentReplyId, replyToReplyId, replyToUserId, o
   const ui = useUI(), auth = useAuth(), qc = useQueryClient();
   const [sticker, setSticker] = useState<StickerPayload | null>(null);
   const [showStickers, setShowStickers] = useState(false);
-  return <Form fields={[{ name: "content", label: "写下你的回复", type: "textarea" }]} submit="发布评论" onSubmit={async (_, fd) => {
+  const [sending, setSending] = useState(false);
+  const alive = useRef(true), originalUser = useRef(auth.user?.id), invalidated = useRef(false);
+  const uploadedFavorite = useRef<{ favoriteId: number; fileId: number } | null>(null);
+  if (auth.user?.id !== originalUser.current) invalidated.current = true;
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  if (invalidated.current) return <div className="emoji-state"><b>账号已切换，请重新打开评论</b><button type="button" className="btn" onClick={ui.close}>关闭</button></div>;
+  return <fieldset className="reply-emoji-composer" disabled={sending}><Form fields={[{ name: "content", label: "写下你的回复", type: "textarea" }]} submit="发布评论" onSubmit={async (_, fd) => {
     if (!auth.requireUser()) return;
+    const session = captureAuthSession(), isCurrent = () => alive.current && !invalidated.current && session();
+    const assertCurrent = () => { if (!isCurrent()) throw new Error("账号已切换，请重新确认评论"); };
     const content = String(fd.get("content") || "").trim();
     if (!content && !sticker && !fd.getAll("images").some((item) => item instanceof File && item.size > 0)) throw new Error("请输入内容、选择图片或表情");
     const hasImages = fd.getAll("images").some((item) => item instanceof File && item.size > 0);
     if (sticker && hasImages) throw new Error("图片和表情不能同时发送");
-    const ids = await uploadIDs(fd); fd.delete("images"); if (ids.length) fd.set("file_ids", JSON.stringify(ids));
-    if (sticker) { fd.set("sticker_id", sticker.sticker_id); fd.set("asset_key", sticker.asset_key); fd.set("pack_id", sticker.pack_id); if (!content) fd.set("content", "[表情]"); }
-    if (parentReplyId) fd.set("parent_reply_id", String(parentReplyId));
-    if (replyToReplyId) fd.set("reply_to_reply_id", String(replyToReplyId));
-    if (replyToUserId) fd.set("reply_to_user_id", String(replyToUserId));
-    await write(`/api/posts/${postId}/replies`, fd); setSticker(null); setShowStickers(false); await qc.invalidateQueries({ queryKey: ["api"] }); await onSent(); ui.notify("回复已发布");
-  }}><MediaUploadPicker maxCount={4} /><div className="reply-emoji-row"><button type="button" className="btn" onClick={() => setShowStickers((value) => !value)}>☺ {showStickers ? "收起表情" : "添加表情"}</button>{sticker && <span className="sticker-inline"><StickerRenderer stickerId={sticker.sticker_id} assetKey={sticker.asset_key} packId={sticker.pack_id} label={sticker.label} /><button type="button" className="link-btn" onClick={() => setSticker(null)}>移除</button></span>}</div>{showStickers && <StickerPicker compact onSelect={(value) => { setSticker(value); setShowStickers(false); }} />}</Form>;
+    setSending(true);
+    try {
+      const ids = await uploadIDs(fd); assertCurrent(); fd.delete("images");
+      if (sticker?.kind === "image") {
+        // 私有收藏在提交时读取并重新上传；公开评论不能引用原私有 file_id。
+        if (uploadedFavorite.current?.favoriteId !== sticker.favorite_id) {
+          const blob = await requestBlob(sticker.url); assertCurrent();
+          const mime = blob.type || sticker.mime_type || "";
+          const extension = mime === "image/gif" ? "gif" : mime === "image/png" ? "png" : mime === "image/jpeg" ? "jpg" : null;
+          if (!extension) throw new Error("收藏图片格式不可用，请重新选择");
+          const [fileId] = await uploadImageFiles([new File([blob], `favorite.${extension}`, { type: mime })]); assertCurrent();
+          uploadedFavorite.current = { favoriteId: sticker.favorite_id, fileId };
+        }
+        ids.push(uploadedFavorite.current.fileId);
+      } else if (sticker) {
+        Object.entries(messageEmojiFields(sticker)).forEach(([key, value]) => fd.set(key, String(value)));
+        if (!content) fd.set("content", "[表情]");
+      }
+      if (ids.length) fd.set("file_ids", JSON.stringify(ids));
+      if (parentReplyId) fd.set("parent_reply_id", String(parentReplyId));
+      if (replyToReplyId) fd.set("reply_to_reply_id", String(replyToReplyId));
+      if (replyToUserId) fd.set("reply_to_user_id", String(replyToUserId));
+      assertCurrent(); await write(`/api/posts/${postId}/replies`, fd); assertCurrent();
+      setSticker(null); setShowStickers(false); uploadedFavorite.current = null;
+      await qc.invalidateQueries({ queryKey: ["api"] });
+      if (isCurrent()) { await onSent(); ui.notify("回复已发布"); }
+    } finally { if (isCurrent()) setSending(false); }
+  }}><MediaUploadPicker maxCount={4} /><div className="reply-emoji-row"><button type="button" className="btn" onClick={() => setShowStickers((value) => !value)}>☺ {showStickers ? "收起表情" : "添加表情"}</button>{sticker && <span className="sticker-inline"><EmojiSelectionPreview selection={sticker} /><button type="button" className="link-btn" onClick={() => setSticker(null)}>移除</button></span>}</div>{showStickers && <StickerPicker compact disabled={sending} onSelect={(value) => { setSticker(value); setShowStickers(false); }} />}</Form></fieldset>;
 }

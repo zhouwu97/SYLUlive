@@ -1,14 +1,140 @@
 package handlers
 
 import (
+	"errors"
+	"net/http"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
 )
+
+func TestLoginThrottleQueryFailurePreservesMemoryLock(t *testing.T) {
+	h, db, user, _ := remediationAuthFixture(t)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	testLoginThrottleQueryFailurePreservesMemoryLock(t, h, db, user)
+}
+
+func testLoginThrottleQueryFailurePreservesMemoryLock(t *testing.T, h *AuthHandler, db *gorm.DB, user models.User) {
+	t.Helper()
+	injected := errors.New("injected login throttle read failure")
+	userQueries := 0
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register("test:throttle_read_failure", func(tx *gorm.DB) {
+		switch tx.Statement.Table {
+		case "login_throttle_records":
+			tx.AddError(injected)
+		case "users":
+			userQueries++
+		}
+	}))
+	defer func() { require.NoError(t, db.Callback().Query().Remove("test:throttle_read_failure")) }()
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.POST("/api/login", h.Login)
+
+	for _, kind := range []string{"account", "ip"} {
+		t.Run(kind, func(t *testing.T) {
+			ip := "203.0.113.70"
+			value, failures := user.Email, 3
+			if kind == "ip" {
+				value, failures = ip, 10
+			}
+			scope := loginThrottleScope(kind, value)
+			clearLoginFailures(scope)
+			t.Cleanup(func() { clearLoginFailures(scope) })
+			now := time.Now()
+			for i := 0; i < failures; i++ {
+				h.registerLoginFailure(scope, now)
+			}
+			remaining, locked := currentLoginLock(scope, now)
+			require.True(t, locked, "failed database writes must establish the memory lock")
+			require.Equal(t, time.Minute, remaining)
+			for _, password := range []string{"old-password", "wrong-password"} {
+				userQueries = 0
+				response := remediationRequest(router, "/api/login", map[string]string{"account": user.Email, "password": password}, ip, "throttle-test")
+				require.Equal(t, http.StatusTooManyRequests, response.Code, response.Body.String())
+				require.NotEmpty(t, response.Header().Get("Retry-After"))
+				require.Zero(t, userQueries, "locked requests must stop before user lookup and bcrypt")
+			}
+			_, locked = h.loginLock(scope, now.Add(time.Minute))
+			require.False(t, locked, "the fallback must respect the lock expiry")
+			clearLoginFailures(scope)
+		})
+	}
+	var sessions int64
+	require.NoError(t, db.Model(&models.RefreshToken{}).Count(&sessions).Error)
+	require.Zero(t, sessions, "a correct password must not create a session during a fallback lock")
+}
+
+func TestLoginThrottleDatabaseReadRemainsAuthoritative(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	require.NoError(t, db.AutoMigrate(&models.LoginThrottleRecord{}))
+	h := &AuthHandler{db: db}
+	scope := loginThrottleScope("account", "authoritative@example.com")
+	clearLoginFailures(scope)
+	t.Cleanup(func() { clearLoginFailures(scope) })
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		registerLoginFailure(scope, now)
+	}
+	_, locked := h.loginLock(scope, now)
+	require.False(t, locked, "a successful database not-found result must not revive stale memory locks")
+	record := models.LoginThrottleRecord{Scope: scope, FailureCount: 1, LastFailureAt: &now}
+	require.NoError(t, db.Create(&record).Error)
+	_, locked = h.loginLock(scope, now)
+	require.False(t, locked, "a readable unlocked database row remains authoritative")
+	until := now.Add(20 * time.Second)
+	require.NoError(t, db.Model(&record).Update("locked_until", until).Error)
+	remaining, locked := h.loginLock(scope, now)
+	require.True(t, locked)
+	require.Equal(t, 20*time.Second, remaining, "the shared database deadline takes precedence")
+}
+
+func TestDatabaseLoginThrottleReadCannotEraseConcurrentFailure(t *testing.T) {
+	for _, expiredWindow := range []bool{false, true} {
+		t.Run(map[bool]string{false: "expired_lock", true: "expired_failure_window"}[expiredWindow], func(t *testing.T) {
+			db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+			require.NoError(t, err)
+			require.NoError(t, db.AutoMigrate(&models.LoginThrottleRecord{}))
+			now := time.Now()
+			lastFailure, oldLock := now.Add(-2*time.Minute), now.Add(-time.Minute)
+			if expiredWindow {
+				lastFailure = now.Add(-16 * time.Minute)
+			}
+			record := models.LoginThrottleRecord{Scope: loginThrottleScope("account", t.Name()), FailureCount: 3, LastFailureAt: &lastFailure, LockedUntil: &oldLock}
+			require.NoError(t, db.Create(&record).Error)
+			newLock := now.Add(3 * time.Minute)
+			// 读操作已取得过期快照时，另一个请求完成新的失败计数。
+			require.NoError(t, db.Callback().Query().After("gorm:query").Register("test:concurrent-failure", func(tx *gorm.DB) {
+				if tx.Statement.Table == "login_throttle_records" {
+					require.NoError(t, db.Model(&models.LoginThrottleRecord{}).Where("id = ?", record.ID).Updates(map[string]interface{}{
+						"failure_count": 4, "last_failure_at": now, "locked_until": newLock,
+					}).Error)
+				}
+			}))
+			h := &AuthHandler{db: db}
+			h.loginLock(record.Scope, now)
+			require.NoError(t, db.Callback().Query().Remove("test:concurrent-failure"))
+			var stored models.LoginThrottleRecord
+			require.NoError(t, db.First(&stored, record.ID).Error)
+			require.NotNil(t, stored.LockedUntil)
+			require.WithinDuration(t, newLock, *stored.LockedUntil, time.Millisecond)
+		})
+	}
+}
 
 func TestLoginLockDurationForFailures(t *testing.T) {
 	cases := []struct {

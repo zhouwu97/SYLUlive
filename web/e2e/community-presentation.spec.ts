@@ -88,6 +88,33 @@ async function setup(page: Page, options: { guest?: boolean; owner?: boolean; bo
   return state;
 }
 
+test("关闭发布弹窗后，迟到的上传不能继续发布帖子", async ({ page }) => {
+  const state = await setup(page);
+  let releaseUpload!: () => void;
+  await page.route("**/api/water/sections", (route) => route.fulfill({ json: { sections: [{ id: 1, slug: "chat", name: "日常" }] } }));
+  await page.route("**/api/upload_multiple", async (route) => {
+    await new Promise<void>((resolve) => { releaseUpload = resolve; });
+    await route.fulfill({ json: { results: [{ file_id: 73 }] } });
+  });
+  await page.goto("community");
+  await page.getByRole("button", { name: "发布", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("内容", { exact: true }).fill("取消后不应发布");
+  await dialog.getByRole("combobox", { name: "分区", exact: true }).selectOption("chat");
+  await dialog.getByLabel("选择图片", { exact: true }).setInputFiles({ name: "one.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64") });
+  await dialog.getByRole("button", { name: "发布", exact: true }).click();
+  await expect.poll(() => !!releaseUpload).toBe(true);
+  await dialog.getByRole("button", { name: "关闭", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const uploaded = page.waitForResponse("**/api/upload_multiple");
+  releaseUpload();
+  await uploaded;
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  expect(state.writes.filter((write) => write.path === "/api/posts")).toEqual([]);
+  await expect(page.locator(".toast")).not.toContainText("内容已保存");
+  expect(state.errors).toEqual([]);
+});
+
 test("列表互动有可读标签，点赞等待时阻止重复提交，失败后可恢复", async ({ page }) => {
   const state = await setup(page);
   await page.goto("community");

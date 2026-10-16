@@ -1,6 +1,6 @@
 # 沈理校园 Web 与教务助手
 
-React + TypeScript + Vite，复用 Go API；视觉基准为 `web/reference/prototype-v3.html`。当前产物用于开发联调，尚未满足完整方案的最终验收门槛。
+React + TypeScript + Vite，复用 Go API；Web 当前视觉入口为 [design.md](design.md) 与 [tokens.css](tokens.css)，历史结构参考保留在 `web/reference/prototype-v3.html`。Web 配色独立于 Flutter 的暖白／青绿设计系统。当前产物用于开发联调，尚未满足完整方案的最终验收门槛。
 
 ## 运行
 

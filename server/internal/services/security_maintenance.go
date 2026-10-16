@@ -13,6 +13,10 @@ func PurgeSecurityData(db *gorm.DB, now time.Time) error {
 		return nil
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
+		// 成功登录逐条流水与安全中心聚合采用相同 90 天期限，其他审计操作保留原策略。
+		if err := tx.Where("action = ? AND created_at < ?", "login_success", now.Add(-90*24*time.Hour)).Delete(&models.AccountSecurityAuditLog{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("last_seen_at < ?", now.Add(-90*24*time.Hour)).Delete(&models.SecurityEvent{}).Error; err != nil {
 			return err
 		}

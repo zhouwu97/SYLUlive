@@ -167,9 +167,8 @@ bool _asBool(Object? value) {
 /// （epoch 或 userId 变化），[stale] 变 true，操作应静默丢弃结果，
 /// 绝不触碰新账号的 `_cache`，也绝不把旧账号数据写入新账号缓存键。
 class _AccountSnapshot {
-  _AccountSnapshot.capture(EmojiFavoriteService service)
-      : service = service,
-        userId = service._userId,
+  _AccountSnapshot.capture(this.service)
+      : userId = service._userId,
         cacheKey = service.accountStorageKey,
         sessionEpoch = service._sessionEpoch,
         items = service._cache == null
@@ -201,9 +200,9 @@ class EmojiFavoriteService extends ChangeNotifier {
     Future<AppPreferencesStore> Function()? preferencesLoader,
     String? userId,
     this.repository,
-  }) : _preferencesLoader =
-          preferencesLoader ?? AppPreferencesStore.getInstance,
-       _userId = userId?.trim().isEmpty == true ? null : userId?.trim();
+  })  : _preferencesLoader =
+            preferencesLoader ?? AppPreferencesStore.getInstance,
+        _userId = userId?.trim().isEmpty == true ? null : userId?.trim();
 
   static EmojiFavoriteService? _sharedInstance;
   static EmojiFavoriteService get instance =>
@@ -236,7 +235,12 @@ class EmojiFavoriteService extends ChangeNotifier {
   List<EmojiFavoriteItem>? _cache;
   Future<void>? _syncing;
   int _sessionEpoch = 0;
+  int _cacheRevision = 0;
   bool _remoteSynced = false;
+  String? _syncErrorMessage;
+
+  /// 保留离线缓存的同时，让界面能区分空收藏和同步未完成。
+  String? get syncErrorMessage => _syncErrorMessage;
 
   /// 当前账号的缓存键；未登录时继续读写旧 v1 键。
   String get accountStorageKey =>
@@ -254,6 +258,7 @@ class EmojiFavoriteService extends ChangeNotifier {
     _cache = null;
     _syncing = null;
     _remoteSynced = false;
+    _syncErrorMessage = null;
     notifyListeners();
   }
 
@@ -267,6 +272,7 @@ class EmojiFavoriteService extends ChangeNotifier {
     _cache = null;
     _syncing = null;
     _remoteSynced = false;
+    _syncErrorMessage = null;
   }
 
   Future<AppPreferencesStore> get _preferences =>
@@ -411,7 +417,11 @@ class EmojiFavoriteService extends ChangeNotifier {
 
   Future<void> _syncRemote(int sessionEpoch, String expectedUserId) async {
     final expectedCacheKey = 'emoji_favorites_cache_v2_$expectedUserId';
-    bool stale() => _AccountSnapshot.isStaleFor(this, sessionEpoch, expectedUserId);
+    // 同账号同步期间也可能完成增删，旧快照不能覆盖这些操作。
+    final revision = _cacheRevision;
+    bool stale() =>
+        _AccountSnapshot.isStaleFor(this, sessionEpoch, expectedUserId) ||
+        revision != _cacheRevision;
 
     try {
       final page = await repository!.fetchFavorites();
@@ -420,6 +430,8 @@ class EmojiFavoriteService extends ChangeNotifier {
       final localCache = _cache == null
           ? <EmojiFavoriteItem>[]
           : List<EmojiFavoriteItem>.from(_cache!);
+      String? uploadError;
+      final syncedLocalKeys = <String>{};
 
       // 将本地尚未上云的旧收藏（serverId == null）上传至服务端
       for (final local in localCache) {
@@ -434,23 +446,26 @@ class EmojiFavoriteService extends ChangeNotifier {
             } else if (local.fileId != null && local.fileId! > 0) {
               uploaded = await repository!.createCustom(local.fileId!);
             } else if (local.imageUrl != null && local.imageUrl!.isNotEmpty) {
-              uploaded = await repository!.createFromPublicImage(local.imageUrl!);
+              uploaded =
+                  await repository!.createFromPublicImage(local.imageUrl!);
             }
             if (stale()) return;
             if (uploaded != null) {
-              final existIdx = serverItems.indexWhere((m) => m.key == uploaded!.key);
+              syncedLocalKeys.add(local.key);
+              final existIdx =
+                  serverItems.indexWhere((m) => m.key == uploaded!.key);
               if (existIdx >= 0) {
                 serverItems[existIdx] = uploaded;
               } else {
                 serverItems.add(uploaded);
               }
             }
-          } on EmojiFavoriteException {
-            // 单个失败不阻断其余上传
+          } on EmojiFavoriteException catch (error) {
+            uploadError ??= error.message;
           } on DioException {
-            // 兼容自定义仓储直接抛出的 Dio 异常
-          } catch (e) {
-            debugPrint('Error uploading local favorite to cloud: $e');
+            uploadError ??= '部分收藏尚未同步，请检查网络后重试';
+          } catch (_) {
+            uploadError ??= '部分收藏尚未同步，请重试';
           }
         }
       }
@@ -458,7 +473,9 @@ class EmojiFavoriteService extends ChangeNotifier {
       if (stale()) return;
       final merged = <EmojiFavoriteItem>[...serverItems];
       for (final local in localCache) {
-        if (local.serverId == null && !merged.any((m) => m.key == local.key)) {
+        if (local.serverId == null &&
+            !syncedLocalKeys.contains(local.key) &&
+            !merged.any((m) => m.key == local.key)) {
           merged.add(local);
         }
       }
@@ -466,13 +483,14 @@ class EmojiFavoriteService extends ChangeNotifier {
           _dedupe(merged).take(maxFavoriteCount).toList(growable: true);
       if (stale()) return;
       _cache = next;
-      _remoteSynced = true;
+      _remoteSynced = uploadError == null;
+      _syncErrorMessage = uploadError;
       await _persist(expectedCacheKey, next);
       notifyListeners();
-    } on EmojiFavoriteException {
-      // 离线时继续展示上一次缓存。
+    } on EmojiFavoriteException catch (error) {
+      if (!stale()) _syncErrorMessage = error.message;
     } on DioException {
-      // 兼容自定义仓储直接抛出的 Dio 异常。
+      if (!stale()) _syncErrorMessage = '收藏同步未完成，请检查网络后重试';
     }
   }
 
@@ -702,6 +720,7 @@ class EmojiFavoriteService extends ChangeNotifier {
     List<EmojiFavoriteItem> items,
   ) async {
     if (snap.stale) return;
+    _cacheRevision++;
     _cache = List<EmojiFavoriteItem>.from(items);
     await _persist(snap.cacheKey, _cache!);
     notifyListeners();

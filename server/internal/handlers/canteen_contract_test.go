@@ -199,6 +199,11 @@ func TestCanteenAPIContractJSON(t *testing.T) {
 // TestCanteenHomeRecentReviewsAndTodayCount 验证首页评价卡和今日去重样本的独立契约。
 func TestCanteenHomeRecentReviewsAndTodayCount(t *testing.T) {
 	db := newCanteenTestDB(t)
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open SQL pool: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := models.EnsureCanteenReviewSchema(db); err != nil {
 		t.Fatalf("migrate review event schema: %v", err)
 	}
@@ -220,6 +225,15 @@ func TestCanteenHomeRecentReviewsAndTodayCount(t *testing.T) {
 		t.Fatalf("load Shanghai timezone: %v", err)
 	}
 	now := time.Now().In(location)
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
+	// 午夜执行时不能把“今日样本”的前几分钟移到昨天；保留真实当前日期和原计数断言。
+	recentTime := func(minutes int) time.Time {
+		at := now.Add(-time.Duration(minutes) * time.Minute)
+		if at.Before(todayStart) {
+			return todayStart
+		}
+		return at
+	}
 	createEvent := func(event models.CanteenReviewEvent) {
 		t.Helper()
 		if err := db.Create(&event).Error; err != nil {
@@ -230,25 +244,25 @@ func TestCanteenHomeRecentReviewsAndTodayCount(t *testing.T) {
 		CanteenID: canteenA.ID, UserID: 1,
 		TasteScore: 5, ValueScore: 4, QueueScore: 4, HygieneScore: 4, ServiceScore: 5,
 		OverallScore: 4.5, Comment: "味道稳定，出餐也快。", Status: models.ReviewEventStatusActive,
-		ScoreVersion: 2, CreatedAt: now.Add(-time.Minute), UpdatedAt: now.Add(-time.Minute),
+		ScoreVersion: 2, CreatedAt: recentTime(1), UpdatedAt: recentTime(1),
 	})
 	// 同一用户-食堂的第二条事件不能把今日人数放大。
 	createEvent(models.CanteenReviewEvent{
 		CanteenID: canteenA.ID, UserID: 1,
 		TasteScore: 4, ValueScore: 4, QueueScore: 3, HygieneScore: 4, ServiceScore: 4,
 		OverallScore: 3.8, Comment: "晚餐时段排队较久。", Status: models.ReviewEventStatusActive,
-		ScoreVersion: 2, CreatedAt: now.Add(-2 * time.Minute), UpdatedAt: now.Add(-2 * time.Minute),
+		ScoreVersion: 2, CreatedAt: recentTime(2), UpdatedAt: recentTime(2),
 	})
 	createEvent(models.CanteenReviewEvent{
 		CanteenID: canteenB.ID, UserID: 2,
 		TasteScore: 4, ValueScore: 5, QueueScore: 4, HygieneScore: 4, ServiceScore: 4,
 		OverallScore: 4.2, Comment: "分量足。", Status: models.ReviewEventStatusActive,
-		ScoreVersion: 2, CreatedAt: now.Add(-3 * time.Minute), UpdatedAt: now.Add(-3 * time.Minute),
+		ScoreVersion: 2, CreatedAt: recentTime(3), UpdatedAt: recentTime(3),
 	})
 	// 该旧评价与 V2 样本不同用户-食堂对，应该作为 legacy 候选和今日样本保留。
 	if err := db.Create(&models.CanteenRating{
 		CanteenID: canteenA.ID, UserID: 3, Star: 4, Comment: "价格合适。", ScoreVersion: 1,
-		Status: models.ReviewEventStatusActive, CreatedAt: now.Add(-4 * time.Minute), UpdatedAt: now.Add(-4 * time.Minute),
+		Status: models.ReviewEventStatusActive, CreatedAt: recentTime(4), UpdatedAt: recentTime(4),
 	}).Error; err != nil {
 		t.Fatalf("create legacy rating: %v", err)
 	}

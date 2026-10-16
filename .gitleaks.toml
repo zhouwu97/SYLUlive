@@ -1,7 +1,48 @@
+[extend]
+useDefault = true
+
 # 体测 Provider 的签名 key 是公开客户端协议常量，不是业务服务器密钥。
-# 仅允许精确字符串出现在精确文件中，避免把真正的密钥命中泛化忽略。
-[allowlist]
+# 限定规则、完整值和文件三者，其他凭据仍必须接受检测。
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
 description = "公开体测客户端签名常量"
-regexTarget = "match"
-regexes = ['8d6c5b73a50d4707bd71c93882ddbc8b']
+condition = "AND"
+regexTarget = "secret"
+regexes = ['^8d6c5b73a50d4707bd71c93882ddbc8b$']
 paths = ['^browser-extension/src/school\.ts$']
+
+# 以下均为已核实的测试数据、公开文档标识或本地存储键；不豁免整个文件。
+[[rules.allowlists]]
+description = "独立文件服务的固定测试回执密钥"
+condition = "AND"
+regexes = ['^receipt-secret-012345678901234567890$']
+paths = ['^server/cmd/paper_storage/main_test\.go$']
+
+[[rules.allowlists]]
+description = "配置校验单测的固定输入"
+condition = "AND"
+regexes = ['^test-secret-0123456789-abcdefghij$', '^signing-secret-0123456789abcdef$', '^receipt-secret-fedcba9876543210$']
+paths = ['^server/internal/config/config_test\.go$']
+
+[[rules.allowlists]]
+description = "表情收藏 SharedPreferences 的公开键名"
+condition = "AND"
+regexes = ['^emoji_favorites_v1$']
+paths = ['^client/lib/services/emoji_favorite_service\.dart$']
+
+[[rules.allowlists]]
+description = "已发布知识库清单的公开文档 ID"
+condition = "AND"
+regexes = ['^retained-v04-[1-6]$', '^sylu-student-status-2024-23$', '^sylu-retake-2025-6$', '^sylu-major-transfer-2020-4$', '^sylu-exam-misconduct-2024-17$', '^sylu-competition-grade-reward-2024-54$', '^sylu-competition-grade-reward-forms-2024-54$']
+paths = ['^knowledge-base/sylu-academic-policy/v0\.6/release-manifest\.v0\.6\.json$']
+
+[[rules]]
+id = "curl-auth-header"
+
+[[rules.allowlists]]
+description = "历史手册中 curl 的字面占位符"
+condition = "AND"
+regexes = ['^YOUR_TOKEN$']
+paths = ['^docs/archive/2026-08-28/VERIFICATION_CHECKLIST\.md$']

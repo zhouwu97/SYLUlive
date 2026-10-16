@@ -13,6 +13,8 @@ func TestSecurityEventActionableClassification(t *testing.T) {
 		"verification_activity",
 		"password_reset_activity",
 		"login_failed",
+		"login_success",
+		"login_new_device",
 		"verification_cooldown",
 		"security_blocked_request",
 		"content_post_flood",
@@ -29,6 +31,7 @@ func TestSecurityEventActionableClassification(t *testing.T) {
 	actionableTypes := []string{
 		"login_password_spray",
 		"login_bruteforce",
+		"admin_login_new_device",
 		"password_reset_spray",
 		"verification_spray",
 		"email_target_flood",

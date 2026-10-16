@@ -34,6 +34,17 @@ export function setAuthSession(userId: number | null) {
   beginAuthTransition();
 }
 
+// 多步操作在每次写入前确认仍属于开始时的会话，包括 A → B → A。
+export function captureAuthSession() {
+  const epoch = authEpoch, userId = authUserId;
+  return () => epoch === authEpoch && userId === authUserId;
+}
+
+function assertAuthSession(isCurrent: () => boolean) {
+  if (!isCurrent())
+    throw new ApiError(409, "auth_session_changed", "账号已切换，请重新确认操作");
+}
+
 function isReadMethod(method: string) {
   return ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
 }
@@ -43,6 +54,7 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
   headers.set("X-Requested-With", "SYLUlive-Web");
+  headers.set("X-Auth-Transport", "cookie");
   if (init.body && !(init.body instanceof FormData))
     headers.set("Content-Type", "application/json");
   const options = {
@@ -50,8 +62,7 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
     headers,
     credentials: "same-origin" as RequestCredentials,
   };
-  const requestEpoch = authEpoch;
-  const requestUserId = authUserId;
+  const isCurrent = captureAuthSession();
   const controller = new AbortController();
   const abort = () => controller.abort();
   if (init.signal?.aborted) controller.abort();
@@ -60,8 +71,8 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   options.signal = controller.signal;
   try {
     let response = await fetch(path, options);
-    if (requestEpoch !== authEpoch || requestUserId !== authUserId)
-      throw new ApiError(409, "auth_session_changed", "账号已切换，请重新确认操作");
+    assertAuthSession(isCurrent);
+    controller.signal.throwIfAborted();
     if (
       response.status === 401 &&
       isReadMethod(String(options.method || "GET")) &&
@@ -69,21 +80,32 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
     ) {
       const refreshEpoch = authEpoch;
       if (!refreshing || refreshing.epoch !== refreshEpoch) {
+        const refreshController = new AbortController();
+        inFlight.add(refreshController);
         const promise = fetch("/api/refresh", {
           method: "POST",
           credentials: "same-origin",
-          headers: { "X-Requested-With": "SYLUlive-Web" },
+          signal: refreshController.signal,
+          headers: {
+            "X-Requested-With": "SYLUlive-Web",
+            "X-Auth-Transport": "cookie",
+          },
         });
         refreshing = { epoch: refreshEpoch, promise };
-        promise.finally(() => {
+        const cleanup = () => {
+          inFlight.delete(refreshController);
           if (refreshing?.promise === promise) refreshing = undefined;
-        });
+        };
+        // finally 会产生另一个 rejected Promise；网络失败也必须消费清理分支。
+        void promise.then(cleanup, cleanup);
       }
       const refreshed = await refreshing.promise;
-      if (requestEpoch !== authEpoch || requestUserId !== authUserId)
-        throw new ApiError(409, "auth_session_changed", "账号已切换，请重新确认操作");
+      assertAuthSession(isCurrent);
+      controller.signal.throwIfAborted();
       if (refreshed.ok) response = await fetch(path, options);
     }
+    assertAuthSession(isCurrent);
+    controller.signal.throwIfAborted();
     return response;
   } finally {
     inFlight.delete(controller);
@@ -95,11 +117,14 @@ export async function request<T = Entity>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
+  const isCurrent = captureAuthSession();
   const response = await send(path, init);
   const contentType = response.headers.get("content-type") || "";
   const data = contentType.includes("application/json")
     ? await response.json()
     : null;
+  assertAuthSession(isCurrent);
+  init.signal?.throwIfAborted();
   if (!response.ok)
     throw new ApiError(
       response.status,
@@ -118,10 +143,14 @@ export async function requestBlob(
   path: string,
   init: RequestInit = {},
 ): Promise<Blob> {
+  const isCurrent = captureAuthSession();
+  const headers = new Headers(init.headers);
+  headers.set("Accept", "image/*,application/octet-stream");
   const response = await send(path, {
     ...init,
-    headers: { ...(init.headers || {}), Accept: "image/*,application/octet-stream" },
+    headers,
   });
+  assertAuthSession(isCurrent);
   if (!response.ok) {
     const status = response.status;
     throw new ApiError(
@@ -138,7 +167,10 @@ export async function requestBlob(
           : `附件读取失败（${status}）`,
     );
   }
-  return await response.blob();
+  const blob = await response.blob();
+  assertAuthSession(isCurrent);
+  init.signal?.throwIfAborted();
+  return blob;
 }
 
 export const write = <T = Entity>(

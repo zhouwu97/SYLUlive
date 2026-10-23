@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -146,5 +149,72 @@ func TestSearchFindsPostsByTitleAndContent(t *testing.T) {
 	}
 	if body.Total != 1 || len(body.Items) != 1 || body.Items[0].ID != posts[1].ID {
 		t.Fatalf("unexpected body=%s", response.Body.String())
+	}
+}
+
+func TestSearchAcceptsSingleCharacterPostsAndUsers(t *testing.T) {
+	db := newSearchTestDB(t)
+	author := models.User{ID: 2, StudentID: "account-private", PasswordHash: "private-hash", Nickname: "好A😀"}
+	if err := db.Create(&author).Error; err != nil {
+		t.Fatal(err)
+	}
+	entry := models.Post{Title: "2 好 A 😀", Content: "单字符搜索", BoardID: models.BoardShuitie, AuthorID: author.ID, Status: models.PostStatusNormal}
+	if err := db.Create(&entry).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"posts", "users"} {
+		for _, q := range []string{"2", "好", "a", "😀", " 2 "} {
+			t.Run(kind+"/"+q, func(t *testing.T) {
+				handler := NewSearchHandler(db, NewPostHandler(db, "", ""))
+				response := performSearchRequest(t, handler.Search, "/api/search?type="+kind+"&q="+url.QueryEscape(q))
+				if response.Code != http.StatusOK {
+					t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+				}
+				var body struct {
+					Items []map[string]interface{} `json:"items"`
+					Total int64                    `json:"total"`
+				}
+				if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				if body.Total != 1 || len(body.Items) != 1 {
+					t.Fatalf("unexpected results: %s", response.Body.String())
+				}
+				if kind == "users" {
+					for _, field := range []string{"student_id", "password_hash", "email"} {
+						if _, ok := body.Items[0][field]; ok {
+							t.Fatalf("public search exposed %s", field)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestSearchSingleCharacterKeepsInputBoundsAndRateLimit(t *testing.T) {
+	for _, q := range []string{"", " ", "%", "_", "*", "?", `\`, strings.Repeat("好", 65)} {
+		t.Run(q, func(t *testing.T) {
+			handler := NewSearchHandler(nil, nil)
+			response := performSearchRequest(t, handler.Search, "/api/search?q="+url.QueryEscape(q))
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+	db := newSearchTestDB(t)
+	handler := NewSearchHandler(db, NewPostHandler(db, "", ""))
+	for i := 0; i < 30; i++ {
+		if !handler.allowAnonymousSearch("192.0.2.1", time.Now()) {
+			t.Fatalf("request %d unexpectedly rate limited", i)
+		}
+	}
+	response := performSearchRequest(t, handler.Search, "/api/search?q=2")
+	if response.Code != http.StatusTooManyRequests || response.Header().Get("Retry-After") != "60" {
+		t.Fatalf("status=%d headers=%v body=%s", response.Code, response.Header(), response.Body.String())
+	}
+	response = performSearchRequest(t, NewSearchHandler(db, NewPostHandler(db, "", "")).Search, "/api/search?q="+url.QueryEscape(strings.Repeat("😀", 64)))
+	if response.Code != http.StatusOK {
+		t.Fatalf("64 Unicode code points rejected: %d %s", response.Code, response.Body.String())
 	}
 }

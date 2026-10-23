@@ -303,6 +303,10 @@ FEED-H1 加固：
 | `GET` | `/api/search?type=posts&q=关键词&sort=relevance` | 按标题或正文搜索帖子，支持 relevance/latest/hot |
 | `GET` | `/api/search?type=users&q=用户ID或昵称&sort=relevance` | 公开搜索仅支持精确用户 ID 或昵称，支持 relevance/newest |
 
+`q` 去除首尾空白后须为 1 至 64 个 Unicode 字符，支持单字符关键词（例如 `2`、`好`）和单数字用户 ID。不能只包含 `%`、`_`、`*`、`?`、`\` 等通配符。无效输入返回 `400`，正常搜索但无匹配内容返回 `200` 和空 `items`。匿名搜索每个来源每分钟最多 30 次，超限返回 `429` 和 `Retry-After: 60`。
+
+校园资讯 `GET /api/campus/articles?q=关键词` 同样支持 1 至 64 个字符；省略 `q` 时仍返回未按关键词筛选的列表。
+
 ## 7. 管理员与超级管理员 (Admin)
 
 需要特殊角色权限 (Admin/SuperAdmin)。

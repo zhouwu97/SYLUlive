@@ -1,24 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../../providers/campus_calendar_provider.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
 import 'campus_theme.dart';
 
 class CampusHeader extends StatelessWidget {
   final String semester;
+  final DateTime? date;
 
-  const CampusHeader({super.key, required this.semester});
+  const CampusHeader({super.key, required this.semester, this.date});
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
-    // Calculate week number roughly or just hardcode as in example for visual
-    // Note: We'll put a placeholder "第18周" or dynamic if available.
-    // Here we can use date logic or just '第18周' for now.
-    final now = DateTime.now();
+    final now = date ?? DateTime.now();
     final dateStr = DateFormat('MM-dd').format(now);
+    final calendar = context.watch<CampusCalendarProvider?>()?.calendar;
+    final dayInfo = calendar?.dayInfo(now);
+    final currentSemester = dayInfo?.semester;
+    final week = dayInfo?.teachingWeek;
+    final semesterText = currentSemester == null
+        ? semester
+        : '${calendar!.academicYear.replaceAll('-', '—')}学年 · ${currentSemester.name}';
+    final progress = week == null || currentSemester == null
+        ? null
+        : (currentSemester.teachingWeeks.indexOf(week) + 1) /
+            currentSemester.teachingWeeks.length;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
@@ -67,7 +78,7 @@ class CampusHeader extends StatelessWidget {
                 ),
                 const SizedBox(height: 7),
                 Text(
-                  semester, // Like "2025-2026 第二学期"
+                  semesterText,
                   style: const TextStyle(
                     fontSize: 12.5,
                     color: CampusTheme.subText,
@@ -93,15 +104,17 @@ class CampusHeader extends StatelessWidget {
             ),
             child: Column(
               children: [
-                const Text(
-                  '第18周', // TODO: 接入校历后替换为真实周次
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: CampusTheme.primary,
+                if (week != null) ...[
+                  Text(
+                    '第${week.week}周',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: CampusTheme.primary,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
+                  const SizedBox(height: 2),
+                ],
                 Text(
                   dateStr,
                   style: const TextStyle(
@@ -110,27 +123,29 @@ class CampusHeader extends StatelessWidget {
                     color: CampusTheme.subText,
                   ),
                 ),
-                const SizedBox(height: 5),
-                TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0, end: 0.9),
-                  duration: reduceMotion ? Duration.zero : AppMotion.page,
-                  curve: AppMotion.standard,
-                  builder: (context, progress, child) {
-                    return ClipRRect(
-                      borderRadius: BorderRadius.circular(AppRadius.pill),
-                      child: LinearProgressIndicator(
-                        minHeight: 3,
-                        value: progress,
-                        backgroundColor: CampusTheme.primary.withValues(
-                          alpha: isDark ? 0.16 : 0.1,
+                if (progress != null) ...[
+                  const SizedBox(height: 5),
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: progress),
+                    duration: reduceMotion ? Duration.zero : AppMotion.page,
+                    curve: AppMotion.standard,
+                    builder: (context, progress, child) {
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                        child: LinearProgressIndicator(
+                          minHeight: 3,
+                          value: progress,
+                          backgroundColor: CampusTheme.primary.withValues(
+                            alpha: isDark ? 0.16 : 0.1,
+                          ),
+                          valueColor: const AlwaysStoppedAnimation(
+                            CampusTheme.primary,
+                          ),
                         ),
-                        valueColor: const AlwaysStoppedAnimation(
-                          CampusTheme.primary,
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                      );
+                    },
+                  ),
+                ],
               ],
             ),
           ),

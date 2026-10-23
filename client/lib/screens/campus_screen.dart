@@ -423,7 +423,10 @@ class _CampusScreenState extends State<CampusScreen>
                   delegate: SliverChildListDelegate([
                     HomeTabRevealItem(
                       index: 0,
-                      child: CampusHeader(semester: _currentSemesterText()),
+                      child: CampusHeader(
+                        semester: _currentSemesterText(),
+                        date: widget.nowProvider?.call(),
+                      ),
                     ),
                     if (todayShown) ...[
                       const SizedBox(height: 10),

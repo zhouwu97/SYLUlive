@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +12,7 @@ import '../widgets/cached_avatar.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/global_background_wrapper.dart';
 import '../widgets/community_post_card.dart';
+import '../utils/app_feedback.dart';
 import '../utils/post_route.dart';
 import 'user_home_screen.dart';
 
@@ -28,7 +30,13 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   static const int _pageSize = 20;
 
   late final TextEditingController _searchController;
+  final FocusNode _searchFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
+  AuthProvider? _authProvider;
+  int? _accountId;
+  int? _sessionGeneration;
+  int _requestVersion = 0;
+  CancelToken? _cancelToken;
   String _query = '';
   String _type = 'posts';
   String _sort = 'relevance';
@@ -40,6 +48,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   bool _isLoadingMore = false;
   bool _hasMore = true;
   String? _error;
+  bool _hasInputError = false;
 
   @override
   void initState() {
@@ -47,12 +56,29 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     _query = widget.query.trim();
     _searchController = TextEditingController(text: _query);
     _scrollController.addListener(_handleScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _search());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.watch<AuthProvider>();
+    if (identical(auth, _authProvider) &&
+        _accountId == auth.user?.id &&
+        _sessionGeneration == auth.sessionGeneration) {
+      return;
+    }
+    _authProvider = auth;
+    _accountId = auth.user?.id;
+    _sessionGeneration = auth.sessionGeneration;
+    _search();
   }
 
   @override
   void dispose() {
+    _requestVersion++;
+    _cancelToken?.cancel();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
@@ -69,7 +95,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
   Future<void> _submitSearch(String raw) async {
     final next = raw.trim();
-    if (next.isEmpty) return;
     FocusScope.of(context).unfocus();
     setState(() => _query = next);
     await _search();
@@ -91,29 +116,57 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   Future<void> _search() async {
-    if (_query.isEmpty) return;
+    if (!mounted) return;
+    final version = ++_requestVersion;
+    _cancelToken?.cancel();
+    _cancelToken = CancelToken();
+    final inputError = _validateQuery();
     setState(() {
-      _isLoading = true;
-      _error = null;
+      _isLoading = inputError == null;
+      _isLoadingMore = false;
+      _error = inputError;
+      _hasInputError = inputError != null;
       _page = 1;
-      _hasMore = true;
+      _total = 0;
+      _hasMore = inputError == null;
       _posts = [];
       _users = [];
     });
-    await _fetchPage(1);
+    if (inputError == null) await _fetchPage(1, version);
+  }
+
+  String? _validateQuery() {
+    if (_query.isEmpty) return '请输入搜索内容';
+    final length = _query.runes.length;
+    if (length > 64) return '搜索内容最多 64 个字符';
+    if (RegExp(r'^[%_*?\\]+$').hasMatch(_query)) {
+      return '搜索内容不能只包含通配符';
+    }
+    return null;
   }
 
   Future<void> _loadMore() async {
-    if (_isLoading || _isLoadingMore || !_hasMore) return;
+    if (_isLoading || _isLoadingMore || !_hasMore || _error != null) return;
     setState(() => _isLoadingMore = true);
-    await _fetchPage(_page + 1);
+    await _fetchPage(_page + 1, _requestVersion);
   }
 
-  Future<void> _fetchPage(int page) async {
+  Future<void> _fetchPage(int page, int version) async {
+    final auth = context.read<AuthProvider>();
+    final sessionGeneration = auth.sessionGeneration;
+    final accountId = auth.user?.id;
+    final type = _type;
+    bool isCurrent() =>
+        mounted &&
+        version == _requestVersion &&
+        identical(auth, _authProvider) &&
+        auth.sessionGeneration == sessionGeneration &&
+        auth.user?.id == accountId;
+
     try {
-      final auth = context.read<AuthProvider>();
       final response = await auth.dio.get(
         '/search',
+        cancelToken: _cancelToken,
         queryParameters: {
           'q': _query,
           'type': _type,
@@ -124,24 +177,27 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           if (_type == 'posts') 'board': widget.boardId,
         },
       );
-      if (!mounted) return;
+      if (!isCurrent()) return;
 
       final items = (response.data['items'] as List?) ?? const [];
       final total = (response.data['total'] as num?)?.toInt() ?? items.length;
+      // 先完整解析再提交，避免某条结果解析失败后留下半页数据。
+      final posts = type == 'posts'
+          ? items
+              .map((item) =>
+                  Post.fromJson(Map<String, dynamic>.from(item as Map)))
+              .toList()
+          : <Post>[];
+      final users = type == 'users'
+          ? items
+              .map((item) =>
+                  User.fromJson(Map<String, dynamic>.from(item as Map)))
+              .toList()
+          : <User>[];
       setState(() {
-        if (_type == 'posts') {
-          _posts.addAll(
-            items.map(
-              (item) => Post.fromJson(Map<String, dynamic>.from(item as Map)),
-            ),
-          );
-        } else {
-          _users.addAll(
-            items.map(
-              (item) => User.fromJson(Map<String, dynamic>.from(item as Map)),
-            ),
-          );
-        }
+        _posts.addAll(posts);
+        _users.addAll(users);
+        _error = null;
         _total = total;
         _page = page;
         final loadedCount = _type == 'posts' ? _posts.length : _users.length;
@@ -150,9 +206,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         _isLoadingMore = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrent()) return;
       setState(() {
-        _error = error is Exception ? error.toString() : '搜索失败';
+        _error = error is DioException
+            ? AppFeedback.dioErrorMessage(error, fallback: '搜索失败，请稍后重试')
+            : '搜索结果暂时无法显示，请稍后重试';
         _isLoading = false;
         _isLoadingMore = false;
       });
@@ -201,6 +259,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       child: Row(
         children: [
           IconButton(
+            tooltip: '返回',
             onPressed: () => Navigator.pop(context),
             icon: const Icon(Icons.arrow_back),
           ),
@@ -211,7 +270,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               blur: 14,
               opacity: 0.88,
               child: TextField(
+                key: const ValueKey('search-query-field'),
                 controller: _searchController,
+                focusNode: _searchFocusNode,
                 textInputAction: TextInputAction.search,
                 onSubmitted: _submitSearch,
                 decoration: InputDecoration(
@@ -220,6 +281,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   hintText: '搜索用户 ID、昵称或帖子关键词',
                   prefixIcon: const Icon(Icons.search, size: 20),
                   suffixIcon: IconButton(
+                    tooltip: '搜索',
                     icon: const Icon(Icons.arrow_upward_rounded, size: 19),
                     onPressed: () => _submitSearch(_searchController.text),
                   ),
@@ -300,18 +362,26 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     }
     if (_error != null && _posts.isEmpty && _users.isEmpty) {
       return Center(
-        child: GlassContainer(
-          padding: const EdgeInsets.all(28),
-          borderRadius: 20,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.cloud_off_outlined, size: 48),
-              const SizedBox(height: 12),
-              const Text('搜索失败，请检查网络后重试'),
-              const SizedBox(height: 14),
-              FilledButton.tonal(onPressed: _search, child: const Text('重新搜索')),
-            ],
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: GlassContainer(
+            padding: const EdgeInsets.all(28),
+            borderRadius: 20,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 48),
+                const SizedBox(height: 12),
+                Text(_error!, textAlign: TextAlign.center),
+                const SizedBox(height: 14),
+                FilledButton.tonal(
+                  onPressed: _hasInputError
+                      ? () => _searchFocusNode.requestFocus()
+                      : _search,
+                  child: Text(_hasInputError ? '修改关键词' : '重新搜索'),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -355,13 +425,27 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               child: Center(
                 child: _isLoadingMore
                     ? const CircularProgressIndicator(strokeWidth: 2)
-                    : Text(
-                        _hasMore ? '' : '已显示全部结果',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? Colors.white38 : Colors.black38,
-                        ),
-                      ),
+                    : _error != null
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(_error!, textAlign: TextAlign.center),
+                              TextButton(
+                                onPressed: () {
+                                  setState(() => _error = null);
+                                  _loadMore();
+                                },
+                                child: const Text('重试加载更多'),
+                              ),
+                            ],
+                          )
+                        : Text(
+                            _hasMore ? '' : '已显示全部结果',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? Colors.white38 : Colors.black38,
+                            ),
+                          ),
               ),
             );
           }

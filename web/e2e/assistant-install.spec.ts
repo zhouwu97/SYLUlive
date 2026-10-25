@@ -60,9 +60,12 @@ test('装好助手后不刷新页面自动复检，但不自动读取学校资�
 });
 
 test('安装包不可用时如实降级且不显示下载入口', async ({page}) => {
+  const invalidMarkup: string[] = [];
+  page.on('console', message => { if (message.type() === 'error' && message.text().includes('cannot be a descendant')) invalidMarkup.push(message.text()); });
   // 生产 nginx 的 try_files 会把缺失的 assistant.json 变成 200 + index.html。
   await page.route('**/assistant/assistant.json', route => route.fulfill({status:200,contentType:'text/html',body:'<!doctype html><html><body>index</body></html>'}));
   await openConnectionDialog(page);
   await expect(page.locator('.assistant-guide .notice-line')).toContainText('本站暂无可用的教务助手安装包');
   await expect(page.getByRole('link',{name:/下载教务助手/})).toHaveCount(0);
+  expect(invalidMarkup).toEqual([]);
 });

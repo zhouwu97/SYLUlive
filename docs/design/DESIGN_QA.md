@@ -52,6 +52,22 @@ P2 = 0 或逐项解释
 - `1.5` text scale 仅作为**高风险页面的 overflow stress test**，不是所有页面都要生成 Golden。
 - viewport 与 text profile 通过 `client/test/helpers/` 统一设置，测试内禁止散落 `setSurfaceSize`。
 
+### Pad 补充回归矩阵
+
+涉及大屏布局的变更追加下列 Widget／几何断言和真实渲染检查；它们不替换上表的 canonical 手机像素基线。Pad Golden 像素基线仍须按 §4 在 Linux 上生成和审阅，Windows 本机证据图仅供布局审阅。
+
+| Profile | logical size | 必查内容 |
+| --- | ---: | --- |
+| split-window | 600×800 | dark、1.3×、详情与输入仍可使用 |
+| tablet-portrait | 768×1024、834×1194 | 网格列数、阅读／表单宽度 |
+| split-boundary | 839×1024、840×1024 | 两种导航偏好、侧栏扣除后的实际内容宽度 |
+| tablet-landscape | 1024×768、1280×800 | 信息密度、横竖屏连续 resize |
+
+- 高风险输入路径追加 1.5×、键盘 viewport、焦点、草稿与返回恢复。
+- 打开详情后连续缩放，不能仅在每个尺寸重新创建页面；验证 Element／会话状态、请求不重复及草稿保留。
+- 地图验证退出方向约束、请求未完成时离开页面，以及系统自由旋转策略恢复。
+- 统一视口常量见 `GoldenViewports`；专项入口为 `tablet_display_test.dart`、`market_detail_responsive_test.dart`、`shuitie_tablet_layout_test.dart` 及对应模块用例。
+
 ## 4. Golden 平台
 
 ```text

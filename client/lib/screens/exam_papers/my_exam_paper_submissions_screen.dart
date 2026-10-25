@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/responsive_content.dart';
 import '../../app_bootstrap.dart';
 import '../../models/exam_paper.dart';
 import '../../services/exam_paper_service.dart';
@@ -281,12 +282,13 @@ class _MyExamPaperSubmissionsScreenState
           backgroundColor: Colors.transparent,
           elevation: 0,
         ),
-        body: Column(
+        body: ResponsiveContent.page(
+            child: Column(
           children: [
             _buildStatusFilter(),
             Expanded(child: _buildBody()),
           ],
-        ),
+        )),
       ),
     );
   }

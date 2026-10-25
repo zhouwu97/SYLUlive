@@ -12,7 +12,8 @@ class CampusMapTabPage extends StatefulWidget {
 
 class _CampusMapTabPageState extends State<CampusMapTabPage> {
   late final TransformationController _mapController;
-  bool _isLandscape = false;
+  bool _orientationOverridden = false;
+  bool _changingOrientation = false;
 
   @override
   void initState() {
@@ -22,24 +23,33 @@ class _CampusMapTabPageState extends State<CampusMapTabPage> {
 
   @override
   void dispose() {
-    if (_isLandscape) {
-      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    if (_orientationOverridden) {
+      SystemChrome.setPreferredOrientations(const []);
     }
     _mapController.dispose();
     super.dispose();
   }
 
   Future<void> _toggleLandscape() async {
-    final useLandscape = !_isLandscape;
-    await SystemChrome.setPreferredOrientations(
-      useLandscape
-          ? const [
-              DeviceOrientation.landscapeLeft,
-              DeviceOrientation.landscapeRight,
-            ]
-          : const [DeviceOrientation.portraitUp],
-    );
-    if (mounted) setState(() => _isLandscape = useLandscape);
+    if (_changingOrientation) return;
+    final useLandscape = !_orientationOverridden;
+    setState(() {
+      _changingOrientation = true;
+      // 在请求完成前离开页面也必须恢复 App 默认的系统旋转策略。
+      _orientationOverridden = useLandscape;
+    });
+    try {
+      await SystemChrome.setPreferredOrientations(
+        useLandscape
+            ? const [
+                DeviceOrientation.landscapeLeft,
+                DeviceOrientation.landscapeRight,
+              ]
+            : const [],
+      );
+    } finally {
+      if (mounted) setState(() => _changingOrientation = false);
+    }
   }
 
   void _resetMap() => _mapController.value = Matrix4.identity();
@@ -91,11 +101,11 @@ class _CampusMapTabPageState extends State<CampusMapTabPage> {
                     ),
                   ),
                   Tooltip(
-                    message: _isLandscape ? '恢复竖屏' : '横屏查看',
+                    message: _orientationOverridden ? '跟随系统旋转' : '横屏查看',
                     child: IconButton(
-                      onPressed: _toggleLandscape,
+                      onPressed: _changingOrientation ? null : _toggleLandscape,
                       icon: Icon(
-                        _isLandscape
+                        _orientationOverridden
                             ? Icons.stay_current_portrait_rounded
                             : Icons.stay_current_landscape_rounded,
                       ),

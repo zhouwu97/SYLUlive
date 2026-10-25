@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 
+import '../../widgets/responsive_content.dart';
 import '../../config/beta_release_policy.dart';
 import '../../features/ai_runtime/ai_feature_flags.dart';
 import '../../features/ai_device_bridge/device_tool_worker.dart';
@@ -1361,7 +1362,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   const SizedBox(width: 4),
                 ],
               ),
-              body: Column(
+              body: ResponsiveContent(
+                  child: Column(
                 children: [
                   AiModeSwitch(
                     isPersonalMode: _personalMode,
@@ -1547,7 +1549,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     onBridgeRetry: () => unawaited(_retryDeviceBridge()),
                   ),
                 ],
-              ),
+              )),
             );
           },
         ),

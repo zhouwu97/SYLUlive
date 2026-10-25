@@ -28,8 +28,10 @@ import '../utils/app_navigation.dart';
 class UserHomeScreen extends StatefulWidget {
   final int? userId;
   final BaseCacheManager? backgroundCacheManager;
+  final VoidCallback? onBack;
 
-  const UserHomeScreen({super.key, this.userId, this.backgroundCacheManager});
+  const UserHomeScreen(
+      {super.key, this.userId, this.backgroundCacheManager, this.onBack});
 
   @override
   State<UserHomeScreen> createState() => _UserHomeScreenState();
@@ -329,10 +331,19 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
     if (displayedUser == null) {
       if (_isLoading) {
-        return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        return Scaffold(
+          appBar: widget.onBack == null
+              ? null
+              : AppBar(leading: BackButton(onPressed: widget.onBack)),
+          body: const Center(child: CircularProgressIndicator()),
+        );
       }
       return Scaffold(
-        appBar: AppBar(title: const Text('错误')),
+        appBar: AppBar(
+            title: const Text('错误'),
+            leading: widget.onBack == null
+                ? null
+                : BackButton(onPressed: widget.onBack)),
         body: Center(child: Text(_errorMessage ?? '用户不存在或加载失败')),
       );
     }
@@ -432,7 +443,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                     left: 12,
                                     child: _buildCircleButton(
                                       icon: Icons.arrow_back,
-                                      onTap: () => Navigator.maybePop(context),
+                                      onTap: widget.onBack ??
+                                          () => Navigator.maybePop(context),
                                     ),
                                   ),
 
@@ -566,7 +578,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                           children: [
                             _buildCircleButton(
                               icon: Icons.arrow_back,
-                              onTap: () => Navigator.maybePop(context),
+                              onTap: widget.onBack ??
+                                  () => Navigator.maybePop(context),
                             ),
                             if (!isMe && PrivateChatPolicy.enabled)
                               _buildCircleButton(

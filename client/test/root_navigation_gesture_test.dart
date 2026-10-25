@@ -20,6 +20,7 @@ import 'package:shenliyuan/services/root_page_state_service.dart';
 import 'package:shenliyuan/utils/app_navigator.dart';
 import 'package:shenliyuan/widgets/bottom_nav.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'helpers/golden_viewport.dart';
 
 /// 未登录的 AuthProvider 假实现：首页 bootstrap 与各 Tab 的登录守卫
 /// 只读取 isLoggedIn / user / token / dio，其余成员通过 noSuchMethod 兜底。
@@ -57,6 +58,29 @@ class _HomeAuthProvider extends ChangeNotifier implements AuthProvider {
 }
 
 void main() {
+  testWidgets('Pad 首页切换 rail 与底栏时保留当前页面和搜索草稿', (tester) async {
+    final page = await _pumpHome(tester, initialTab: 1);
+    final screenState = tester.state(find.byType(MarketScreen));
+    final input = find.byType(TextField).first;
+    await tester.enterText(input, '自行车草稿');
+    await tester.pump(const Duration(milliseconds: 400));
+    await page.themeProvider.setBottomNavStyle(BottomNavStyle.normal);
+    for (final size in [
+      GoldenViewports.tabletPortrait834x1194,
+      GoldenViewports.tabletLandscape1280x800,
+      GoldenViewports.tabletSplit600x800
+    ]) {
+      await setGoldenViewport(tester, size);
+      await tester.pumpAndSettle();
+      expect(tester.state(find.byType(MarketScreen)), same(screenState));
+      expect(tester.widget<TextField>(input).controller!.text, '自行车草稿');
+      expect(find.byType(NavigationRail),
+          size.width >= 840 ? findsOneWidget : findsNothing);
+      expect(_rootTabIndex(tester), 1);
+      expect(tester.takeException(), isNull);
+    }
+    await _disposeHome(tester, page);
+  });
   testWidgets('首页内容区域横滑不切换根 Tab', (tester) async {
     final page = await _pumpHome(tester);
 

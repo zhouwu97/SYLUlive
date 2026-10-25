@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/responsive_content.dart';
 import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
 import '../models/browsing_history_item.dart';
@@ -243,12 +244,13 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     return Scaffold(
       backgroundColor: CampusTheme.pageBackground(context),
       appBar: const AppPageAppBar(title: Text('文章详情')),
-      body: SafeArea(
+      body: ResponsiveContent(
+          child: SafeArea(
         child: RefreshIndicator(
           onRefresh: _loadDetail,
           child: _buildBody(context, isDark, summary, detail),
         ),
-      ),
+      )),
     );
   }
 

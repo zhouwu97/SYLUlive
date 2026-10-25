@@ -8,6 +8,13 @@ import 'package:flutter_test/flutter_test.dart';
 abstract final class GoldenViewports {
   static const Size phone360x800 = Size(360, 800);
   static const Size phone390x844 = Size(390, 844);
+  static const Size tabletSplit600x800 = Size(600, 800);
+  static const Size tabletPortrait768x1024 = Size(768, 1024);
+  static const Size tabletPortrait834x1194 = Size(834, 1194);
+  static const Size tabletBoundary839x1024 = Size(839, 1024);
+  static const Size tabletBoundary840x1024 = Size(840, 1024);
+  static const Size tabletLandscape1024x768 = Size(1024, 768);
+  static const Size tabletLandscape1280x800 = Size(1280, 800);
 }
 
 /// 文本缩放档位。

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/responsive_content.dart';
 import '../../app_bootstrap.dart';
 import '../../models/exam_paper.dart';
 import '../../services/exam_paper_service.dart';
@@ -181,7 +182,8 @@ class _ExamPaperAdminEditorScreenState
             ),
           ],
         ),
-        body: Form(
+        body: ResponsiveContent.form(
+            child: Form(
           key: _formKey,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
@@ -329,7 +331,7 @@ class _ExamPaperAdminEditorScreenState
                 ),
             ],
           ),
-        ),
+        )),
       ),
     );
   }

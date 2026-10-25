@@ -440,272 +440,298 @@ class _BottomNavWrapperState extends State<BottomNavWrapper>
           dockHorizontalInset,
           dockBottomInset,
         ),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final dockSize = Size(constraints.maxWidth, _dockHeight);
-                final itemWidth = dockSize.width / _navLabels.length;
-                _itemWidth = itemWidth;
-                _controller.configureTrack(
-                  itemWidth: itemWidth,
-                  trackLeft: itemWidth / 2,
-                  trackRight: itemWidth * (_navLabels.length - 0.5),
-                );
+        child: Align(
+            heightFactor: 1,
+            child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 640),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final dockSize =
+                            Size(constraints.maxWidth, _dockHeight);
+                        final itemWidth = dockSize.width / _navLabels.length;
+                        _itemWidth = itemWidth;
+                        _controller.configureTrack(
+                          itemWidth: itemWidth,
+                          trackLeft: itemWidth / 2,
+                          trackRight: itemWidth * (_navLabels.length - 0.5),
+                        );
 
-                return AnimatedBuilder(
-                  animation: _visualFrameListenable,
-                  builder: (context, child) {
-                    final visualIndex = widget.visualIndexListenable.value;
-                    // 父级或测试 harness 也可能直接推进 logical notifier；这类
-                    // 外部同步不能被表面滞后吞掉，命中区域和选中窗口要立即对齐。
-                    if ((visualIndex - _lastPublishedLogicalPosition).abs() >
-                        0.0001) {
-                      _lastPublishedLogicalPosition = visualIndex;
-                      _surfaceVisualPosition = visualIndex;
-                    }
-                    final effectiveVisualIndex = reduceMotion && !_isDragging
-                        ? widget.currentIndex.toDouble()
-                        : visualIndex;
-                    final phase = widget.qaPhase ?? _phase;
-                    final activation =
-                        (widget.qaActivation ?? _activation).clamp(0.0, 1.0);
-                    if (phase == LiquidNavPhase.idle && !_isDragging) {
-                      _surfaceVisualPosition = effectiveVisualIndex;
-                    }
-                    final surfaceVisualIndex = clampLiquidGlassSurfacePosition(
-                      _surfaceVisualPosition,
-                      _navLabels.length,
-                    );
-                    // QA 的 Dragging 状态没有真实 pointer velocity，使用固定预览值
-                    // 让尾部、方向和边缘压缩仍然可被人工检查；生产路径继续读取真实速度。
-                    final qaPreviewDragging =
-                        widget.qaPhase == LiquidNavPhase.dragging;
-                    final previewVelocityPixelsPerSecond = qaPreviewDragging
-                        ? tuning.velocityNormalization * 0.72
-                        : _velocityPixelsPerSecond;
-                    final previewEdgeCompression =
-                        qaPreviewDragging ? 0.16 : _controller.edgeCompression;
-                    final renderedSurfaceVisualIndex = qaPreviewDragging
-                        ? clampLiquidGlassSurfacePosition(
-                            liquidGlassSurfaceTargetPosition(
-                              logicalPosition: effectiveVisualIndex,
-                              velocityPixelsPerSecond:
-                                  previewVelocityPixelsPerSecond,
-                              itemWidth: itemWidth,
-                              dragging: true,
-                              reduceMotion: reduceMotion,
-                            ),
-                            _navLabels.length,
-                          )
-                        : surfaceVisualIndex;
-                    final idleSelectionIndex = phase == LiquidNavPhase.idle
-                        ? effectiveVisualIndex
-                        : (phase == LiquidNavPhase.collapsing &&
-                                _collapseTargetIndex != null
-                            ? _collapseTargetIndex!.toDouble()
-                            : effectiveVisualIndex);
+                        return AnimatedBuilder(
+                          animation: _visualFrameListenable,
+                          builder: (context, child) {
+                            final visualIndex =
+                                widget.visualIndexListenable.value;
+                            // 父级或测试 harness 也可能直接推进 logical notifier；这类
+                            // 外部同步不能被表面滞后吞掉，命中区域和选中窗口要立即对齐。
+                            if ((visualIndex - _lastPublishedLogicalPosition)
+                                    .abs() >
+                                0.0001) {
+                              _lastPublishedLogicalPosition = visualIndex;
+                              _surfaceVisualPosition = visualIndex;
+                            }
+                            final effectiveVisualIndex =
+                                reduceMotion && !_isDragging
+                                    ? widget.currentIndex.toDouble()
+                                    : visualIndex;
+                            final phase = widget.qaPhase ?? _phase;
+                            final activation =
+                                (widget.qaActivation ?? _activation)
+                                    .clamp(0.0, 1.0);
+                            if (phase == LiquidNavPhase.idle && !_isDragging) {
+                              _surfaceVisualPosition = effectiveVisualIndex;
+                            }
+                            final surfaceVisualIndex =
+                                clampLiquidGlassSurfacePosition(
+                              _surfaceVisualPosition,
+                              _navLabels.length,
+                            );
+                            // QA 的 Dragging 状态没有真实 pointer velocity，使用固定预览值
+                            // 让尾部、方向和边缘压缩仍然可被人工检查；生产路径继续读取真实速度。
+                            final qaPreviewDragging =
+                                widget.qaPhase == LiquidNavPhase.dragging;
+                            final previewVelocityPixelsPerSecond =
+                                qaPreviewDragging
+                                    ? tuning.velocityNormalization * 0.72
+                                    : _velocityPixelsPerSecond;
+                            final previewEdgeCompression = qaPreviewDragging
+                                ? 0.16
+                                : _controller.edgeCompression;
+                            final renderedSurfaceVisualIndex = qaPreviewDragging
+                                ? clampLiquidGlassSurfacePosition(
+                                    liquidGlassSurfaceTargetPosition(
+                                      logicalPosition: effectiveVisualIndex,
+                                      velocityPixelsPerSecond:
+                                          previewVelocityPixelsPerSecond,
+                                      itemWidth: itemWidth,
+                                      dragging: true,
+                                      reduceMotion: reduceMotion,
+                                    ),
+                                    _navLabels.length,
+                                  )
+                                : surfaceVisualIndex;
+                            final idleSelectionIndex =
+                                phase == LiquidNavPhase.idle
+                                    ? effectiveVisualIndex
+                                    : (phase == LiquidNavPhase.collapsing &&
+                                            _collapseTargetIndex != null
+                                        ? _collapseTargetIndex!.toDouble()
+                                        : effectiveVisualIndex);
 
-                    final selectionVelocity =
-                        reduceMotion || phase != LiquidNavPhase.dragging
-                            ? 0.0
-                            : previewVelocityPixelsPerSecond;
-                    final selectionEdgeCompression =
-                        reduceMotion || phase != LiquidNavPhase.dragging
-                            ? 0.0
-                            : previewEdgeCompression;
-                    final motion = liquidGlassMotionFor(
-                      phase: phase,
-                      activation: activation.toDouble(),
-                      velocityPixelsPerSecond: selectionVelocity,
-                      visualPosition: effectiveVisualIndex,
-                      currentIndex: widget.currentIndex,
-                      edgeCompression: selectionEdgeCompression,
-                      reduceMotion: reduceMotion,
-                      tuning: tuning,
-                    );
-                    final selectionRect = _selectionRectFor(
-                      dockSize: dockSize,
-                      itemWidth: itemWidth,
-                      visualIndex: idleSelectionIndex,
-                      activation: activation.toDouble(),
-                      velocityPixelsPerSecond: selectionVelocity,
-                      edgeCompression: selectionEdgeCompression,
-                      useLiquidGlass: useLiquidGlass,
-                      tuning: tuning,
-                    );
-
-                    return Transform.translate(
-                      offset: Offset(motion.dockRecoilX, 0),
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          if (useLiquidGlass)
-                            _FloatingLiquidSelection(
-                              layer: _LiquidSelectionLayer.backdrop,
-                              dockSize: dockSize,
-                              itemWidth: itemWidth,
-                              visualIndex: renderedSurfaceVisualIndex,
-                              velocityPixelsPerSecond: selectionVelocity,
-                              edgeCompression: selectionEdgeCompression,
+                            final selectionVelocity =
+                                reduceMotion || phase != LiquidNavPhase.dragging
+                                    ? 0.0
+                                    : previewVelocityPixelsPerSecond;
+                            final selectionEdgeCompression =
+                                reduceMotion || phase != LiquidNavPhase.dragging
+                                    ? 0.0
+                                    : previewEdgeCompression;
+                            final motion = liquidGlassMotionFor(
                               phase: phase,
                               activation: activation.toDouble(),
-                              pressDepth: phase == LiquidNavPhase.idle ? 0 : 1,
-                              isDark: isDark,
-                              highContrast: highContrast,
+                              velocityPixelsPerSecond: selectionVelocity,
+                              visualPosition: effectiveVisualIndex,
+                              currentIndex: widget.currentIndex,
+                              edgeCompression: selectionEdgeCompression,
                               reduceMotion: reduceMotion,
-                              useLiquidGlass: useLiquidGlass,
-                              useShader: useShader,
                               tuning: tuning,
-                              badges: widget.badges,
-                              motion: motion,
-                              highlightPosition: _highlightPosition,
-                              highlightOpacity:
-                                  _highlightOpacityController.value,
-                            ),
-                          SizedBox(
-                            key: const ValueKey('bottom-nav-floating-dock'),
-                            width: dockSize.width,
-                            height: _dockHeight,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                borderRadius:
-                                    BorderRadius.circular(AppRadius.pill),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(
-                                      alpha: isDark ? 0.24 : 0.09,
+                            );
+                            final selectionRect = _selectionRectFor(
+                              dockSize: dockSize,
+                              itemWidth: itemWidth,
+                              visualIndex: idleSelectionIndex,
+                              activation: activation.toDouble(),
+                              velocityPixelsPerSecond: selectionVelocity,
+                              edgeCompression: selectionEdgeCompression,
+                              useLiquidGlass: useLiquidGlass,
+                              tuning: tuning,
+                            );
+
+                            return Transform.translate(
+                              offset: Offset(motion.dockRecoilX, 0),
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  if (useLiquidGlass)
+                                    _FloatingLiquidSelection(
+                                      layer: _LiquidSelectionLayer.backdrop,
+                                      dockSize: dockSize,
+                                      itemWidth: itemWidth,
+                                      visualIndex: renderedSurfaceVisualIndex,
+                                      velocityPixelsPerSecond:
+                                          selectionVelocity,
+                                      edgeCompression: selectionEdgeCompression,
+                                      phase: phase,
+                                      activation: activation.toDouble(),
+                                      pressDepth:
+                                          phase == LiquidNavPhase.idle ? 0 : 1,
+                                      isDark: isDark,
+                                      highContrast: highContrast,
+                                      reduceMotion: reduceMotion,
+                                      useLiquidGlass: useLiquidGlass,
+                                      useShader: useShader,
+                                      tuning: tuning,
+                                      badges: widget.badges,
+                                      motion: motion,
+                                      highlightPosition: _highlightPosition,
+                                      highlightOpacity:
+                                          _highlightOpacityController.value,
                                     ),
-                                    blurRadius: useLiquidGlass ? 18 : 16,
-                                    offset: const Offset(0, 7),
-                                  ),
-                                ],
-                              ),
-                              child: ClipPath(
-                                key: useLiquidGlass
-                                    ? const ValueKey(
-                                        'bottom-nav-dock-exclusion',
-                                      )
-                                    : null,
-                                clipper: _LiquidSelectionExclusionClipper(
-                                  useLiquidGlass ? selectionRect : null,
-                                ),
-                                child: ClipRRect(
-                                  key: _dockRenderKey,
-                                  borderRadius:
-                                      BorderRadius.circular(AppRadius.pill),
-                                  child: Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      Positioned.fill(
-                                        child: _FloatingDockSurface(
-                                          isDark: isDark,
-                                          highContrast: highContrast,
-                                          useLiquidGlass: useLiquidGlass,
-                                          useShader: useShader,
-                                          tuning: tuning,
-                                          motion: motion,
-                                        ),
-                                      ),
-                                      Positioned(
-                                        top: 0,
-                                        left: _dockHeight * 0.55,
-                                        right: _dockHeight * 0.55,
-                                        height: 1,
-                                        child: IgnorePointer(
-                                          child: DecoratedBox(
-                                            decoration: BoxDecoration(
-                                              gradient: LinearGradient(
-                                                colors: [
-                                                  Colors.white.withValues(
-                                                    alpha: 0,
-                                                  ),
-                                                  Colors.white.withValues(
-                                                    alpha: highContrast
-                                                        ? 0.28
-                                                        : 0.14,
-                                                  ),
-                                                  Colors.white.withValues(
-                                                    alpha: 0,
-                                                  ),
-                                                ],
-                                              ),
+                                  SizedBox(
+                                    key: const ValueKey(
+                                        'bottom-nav-floating-dock'),
+                                    width: dockSize.width,
+                                    height: _dockHeight,
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(
+                                            AppRadius.pill),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(
+                                              alpha: isDark ? 0.24 : 0.09,
                                             ),
+                                            blurRadius:
+                                                useLiquidGlass ? 18 : 16,
+                                            offset: const Offset(0, 7),
+                                          ),
+                                        ],
+                                      ),
+                                      child: ClipPath(
+                                        key: useLiquidGlass
+                                            ? const ValueKey(
+                                                'bottom-nav-dock-exclusion',
+                                              )
+                                            : null,
+                                        clipper:
+                                            _LiquidSelectionExclusionClipper(
+                                          useLiquidGlass ? selectionRect : null,
+                                        ),
+                                        child: ClipRRect(
+                                          key: _dockRenderKey,
+                                          borderRadius: BorderRadius.circular(
+                                              AppRadius.pill),
+                                          child: Stack(
+                                            alignment: Alignment.center,
+                                            children: [
+                                              Positioned.fill(
+                                                child: _FloatingDockSurface(
+                                                  isDark: isDark,
+                                                  highContrast: highContrast,
+                                                  useLiquidGlass:
+                                                      useLiquidGlass,
+                                                  useShader: useShader,
+                                                  tuning: tuning,
+                                                  motion: motion,
+                                                ),
+                                              ),
+                                              Positioned(
+                                                top: 0,
+                                                left: _dockHeight * 0.55,
+                                                right: _dockHeight * 0.55,
+                                                height: 1,
+                                                child: IgnorePointer(
+                                                  child: DecoratedBox(
+                                                    decoration: BoxDecoration(
+                                                      gradient: LinearGradient(
+                                                        colors: [
+                                                          Colors.white
+                                                              .withValues(
+                                                            alpha: 0,
+                                                          ),
+                                                          Colors.white
+                                                              .withValues(
+                                                            alpha: highContrast
+                                                                ? 0.28
+                                                                : 0.14,
+                                                          ),
+                                                          Colors.white
+                                                              .withValues(
+                                                            alpha: 0,
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ),
-                                    ],
+                                    ),
                                   ),
-                                ),
+                                  Positioned.fill(
+                                    child: RepaintBoundary(
+                                      child: _buildGestureLayer(
+                                        context: context,
+                                        itemWidth: itemWidth,
+                                        visualIndex: effectiveVisualIndex,
+                                        useLiquidGlass: useLiquidGlass,
+                                        selectionRect: selectionRect,
+                                      ),
+                                    ),
+                                  ),
+                                  _FloatingLiquidSelection(
+                                    layer: useLiquidGlass
+                                        ? _LiquidSelectionLayer.foreground
+                                        : _LiquidSelectionLayer.backdrop,
+                                    dockSize: dockSize,
+                                    itemWidth: itemWidth,
+                                    visualIndex: renderedSurfaceVisualIndex,
+                                    velocityPixelsPerSecond: selectionVelocity,
+                                    edgeCompression: selectionEdgeCompression,
+                                    phase: phase,
+                                    activation: activation.toDouble(),
+                                    pressDepth:
+                                        phase == LiquidNavPhase.idle ? 0 : 1,
+                                    isDark: isDark,
+                                    highContrast: highContrast,
+                                    reduceMotion: reduceMotion,
+                                    useLiquidGlass: useLiquidGlass,
+                                    useShader: useShader,
+                                    tuning: tuning,
+                                    badges: widget.badges,
+                                    motion: motion,
+                                    highlightPosition: _highlightPosition,
+                                    highlightOpacity:
+                                        _highlightOpacityController.value,
+                                  ),
+                                  if (widget.showDiagnostics)
+                                    Positioned(
+                                      left: 4,
+                                      bottom: _dockHeight + 4,
+                                      child: _LiquidGlassDiagnosticsOverlay(
+                                        visualPosition:
+                                            widget.visualIndexListenable,
+                                        motionFrame: _motionFrame,
+                                        isDragging:
+                                            phase == LiquidNavPhase.dragging,
+                                        phase: phase,
+                                        activation: activation.toDouble(),
+                                        velocityPixelsPerSecond:
+                                            phase == LiquidNavPhase.dragging
+                                                ? previewVelocityPixelsPerSecond
+                                                : _velocityPixelsPerSecond,
+                                        edgeCompression:
+                                            phase == LiquidNavPhase.dragging
+                                                ? previewEdgeCompression
+                                                : 0,
+                                        itemWidth: itemWidth,
+                                        tuning: tuning,
+                                      ),
+                                    ),
+                                ],
                               ),
-                            ),
-                          ),
-                          Positioned.fill(
-                            child: RepaintBoundary(
-                              child: _buildGestureLayer(
-                                context: context,
-                                itemWidth: itemWidth,
-                                visualIndex: effectiveVisualIndex,
-                                useLiquidGlass: useLiquidGlass,
-                                selectionRect: selectionRect,
-                              ),
-                            ),
-                          ),
-                          _FloatingLiquidSelection(
-                            layer: useLiquidGlass
-                                ? _LiquidSelectionLayer.foreground
-                                : _LiquidSelectionLayer.backdrop,
-                            dockSize: dockSize,
-                            itemWidth: itemWidth,
-                            visualIndex: renderedSurfaceVisualIndex,
-                            velocityPixelsPerSecond: selectionVelocity,
-                            edgeCompression: selectionEdgeCompression,
-                            phase: phase,
-                            activation: activation.toDouble(),
-                            pressDepth: phase == LiquidNavPhase.idle ? 0 : 1,
-                            isDark: isDark,
-                            highContrast: highContrast,
-                            reduceMotion: reduceMotion,
-                            useLiquidGlass: useLiquidGlass,
-                            useShader: useShader,
-                            tuning: tuning,
-                            badges: widget.badges,
-                            motion: motion,
-                            highlightPosition: _highlightPosition,
-                            highlightOpacity: _highlightOpacityController.value,
-                          ),
-                          if (widget.showDiagnostics)
-                            Positioned(
-                              left: 4,
-                              bottom: _dockHeight + 4,
-                              child: _LiquidGlassDiagnosticsOverlay(
-                                visualPosition: widget.visualIndexListenable,
-                                motionFrame: _motionFrame,
-                                isDragging: phase == LiquidNavPhase.dragging,
-                                phase: phase,
-                                activation: activation.toDouble(),
-                                velocityPixelsPerSecond:
-                                    phase == LiquidNavPhase.dragging
-                                        ? previewVelocityPixelsPerSecond
-                                        : _velocityPixelsPerSecond,
-                                edgeCompression:
-                                    phase == LiquidNavPhase.dragging
-                                        ? previewEdgeCompression
-                                        : 0,
-                                itemWidth: itemWidth,
-                                tuning: tuning,
-                              ),
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ],
-        ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ],
+                ))),
       ),
     );
   }

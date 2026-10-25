@@ -40,6 +40,8 @@ import '../widgets/cached_avatar.dart';
 import '../widgets/app_action_popup_menu.dart';
 import '../widgets/post_media/post_media_view.dart';
 import '../widgets/post_content_link_text.dart';
+import '../widgets/responsive_content.dart';
+import '../utils/responsive_util.dart';
 import '../widgets/post_reply/post_reply_list.dart';
 import '../widgets/post_reply/reply_image_media.dart';
 import '../widgets/post_reply_composer.dart';
@@ -210,6 +212,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
 
   final Map<int, GlobalKey> _replyKeys = {};
   final GlobalKey _commentsSectionKey = GlobalKey();
+  final GlobalKey _marketComposerKey = GlobalKey();
+  final ScrollController _marketScrollController = ScrollController();
   bool _hasScrolledToTarget = false;
   bool _hasScrolledToReplies = false;
   int? _highlightedReplyId;
@@ -325,6 +329,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       appRouteObserver.unsubscribe(this);
     }
     _replyComposerController.dispose();
+    _marketScrollController.dispose();
     _highlightTimer?.cancel();
     super.dispose();
   }
@@ -2755,12 +2760,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     );
   }
 
-  // ---- 集市布局（完全保留不变） ----
+  // ---- 集市布局 ----
 
   Widget _buildMarketDetail(bool isDark) {
+    return ResponsiveContent(
+      maxWidth:
+          _post!.images.isEmpty ? ResponsiveUtil.readingContentWidth : 1200,
+      child: LayoutBuilder(
+        builder: (context, constraints) => _buildMarketDetailLayout(
+          isDark,
+          useSplitLayout:
+              constraints.maxWidth >= ResponsiveUtil.tabletMaxWidth &&
+                  _post!.images.isNotEmpty,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMarketDetailLayout(bool isDark, {required bool useSplitLayout}) {
     final p = _post!;
-    if (widget.isDesktopSplitMode) {
+    if (useSplitLayout) {
       return Row(
+        key: const ValueKey('market-detail-split'),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 左侧文本与评论区
@@ -2771,6 +2792,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                 Expanded(
                   child: _buildInputDismissRegion(
                     child: SingleChildScrollView(
+                      controller: _marketScrollController,
                       padding: const EdgeInsets.fromLTRB(24, 24, 24, 80),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2914,10 +2936,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     }
 
     return Column(
+      key: const ValueKey('market-detail-single'),
       children: [
         Expanded(
           child: _buildInputDismissRegion(
             child: SingleChildScrollView(
+              controller: _marketScrollController,
               padding: const EdgeInsets.only(bottom: 80),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -5545,7 +5569,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   // ---- 回复输入（集市保留） ----
 
   Widget _buildReplyBar(bool isDark) {
-    return _buildComposerBody(isDark);
+    return KeyedSubtree(
+      key: _marketComposerKey,
+      child: _buildComposerBody(isDark),
+    );
   }
 
   // ---- 工具 ----

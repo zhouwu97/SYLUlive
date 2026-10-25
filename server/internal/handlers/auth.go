@@ -602,21 +602,12 @@ func (h *AuthHandler) loginLock(scope string, now time.Time) (time.Duration, boo
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return 0, false
 		}
-		// 与失败计数写入的故障回退一致，在密码校验前继续执行进程内锁定。
+		// 数据库不可读时执行故障回退；可读时以共享状态为准，避免跨实例解锁后复活旧锁。
 		return currentLoginLock(scope, now)
 	}
-	if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow {
-		_ = h.db.Delete(&record).Error
-		return 0, false
-	}
-	if record.LockedUntil != nil && !now.Before(*record.LockedUntil) {
-		// 只清理已过期的锁，不删除 15 分钟失败窗口内的累计记录。
-		if err := h.db.Model(&record).Update("locked_until", nil).Error; err != nil {
-			return 0, false
-		}
-		return 0, false
-	}
-	if record.LockedUntil == nil {
+	// 检查只读快照，不清除锁：另一个请求可能已经写入新的失败或延长锁定。
+	if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow ||
+		record.LockedUntil == nil || !now.Before(*record.LockedUntil) {
 		return 0, false
 	}
 	return record.LockedUntil.Sub(now), true
@@ -628,11 +619,13 @@ func (h *AuthHandler) registerLoginFailure(scope string, now time.Time) time.Dur
 	}
 	var lockFor time.Duration
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		// 先确保唯一 scope 行存在，再锁定读取；并发首次失败不能因插入冲突丢失计数。
+		seed := models.LoginThrottleRecord{Scope: scope}
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "scope"}}, DoNothing: true}).Create(&seed).Error; err != nil {
+			return err
+		}
 		var record models.LoginThrottleRecord
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("scope = ?", scope).First(&record).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			record = models.LoginThrottleRecord{Scope: scope}
-		} else if err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("scope = ?", scope).First(&record).Error; err != nil {
 			return err
 		}
 		if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow {
@@ -648,9 +641,6 @@ func (h *AuthHandler) registerLoginFailure(scope string, now time.Time) time.Dur
 		if lockFor > 0 {
 			until := now.Add(lockFor)
 			record.LockedUntil = &until
-		}
-		if record.ID == 0 {
-			return tx.Create(&record).Error
 		}
 		return tx.Save(&record).Error
 	})

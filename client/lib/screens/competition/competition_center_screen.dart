@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/responsive_content.dart';
 import '../../config/beta_release_policy.dart';
 import '../../models/agent_context.dart';
 import '../../models/competition.dart';
@@ -606,7 +607,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
               ),
           ],
         ),
-        body: RefreshIndicator(
+        body: ResponsiveContent.page(
+            child: RefreshIndicator(
           onRefresh: _loadAll,
           child: ListView(
             controller: _scrollController,
@@ -614,7 +616,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
             padding: const EdgeInsets.only(bottom: 32),
             children: _buildStudentHome(isDark),
           ),
-        ),
+        )),
       ),
     );
   }

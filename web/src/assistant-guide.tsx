@@ -96,7 +96,7 @@ export function AssistantInstallGuide({
         </>
       )}
       {loaded && availability !== "ok" && (
-        <p className="notice-line">
+        <div className="notice-line">
           <b>本站暂无可用的教务助手安装包</b>
           <p>
             {availability === "unavailable"
@@ -105,7 +105,7 @@ export function AssistantInstallGuide({
                 ? "本站发布的安装包与当前访问地址不是同一环境，装载后无法与此页面握手。"
                 : `本站安装包的授权站点不覆盖 ${location.origin}，请勿装载。`}
           </p>
-        </p>
+        </div>
       )}
     </div>
   );

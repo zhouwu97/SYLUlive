@@ -26,6 +26,159 @@ class _EmojiAdapter implements HttpClientAdapter {
 }
 
 void main() {
+  test('旧图片迁移成功后替换本地身份，不重复保留原 URL', () async {
+    final prefs = MemoryPreferencesStore();
+    await prefs.setBool('emoji_favorites_v1_migrated_8', true);
+    await prefs.setString(
+        'emoji_favorites_cache_v2_8',
+        jsonEncode([
+          {'type': 'image', 'image_url': '/uploads/legacy.png'}
+        ]));
+    final dio = Dio()
+      ..httpClientAdapter =
+          _EmojiAdapter((options) async => ResponseBody.fromString(
+                jsonEncode(options.method == 'GET'
+                    ? {'items': []}
+                    : {
+                        'id': 9,
+                        'kind': 'custom',
+                        'file_id': 44,
+                        'url': '/api/emoji/favorites/9/file'
+                      }),
+                200,
+                headers: {
+                  Headers.contentTypeHeader: ['application/json']
+                },
+              ));
+    final service = EmojiFavoriteService(
+        userId: '8',
+        repository: EmojiFavoriteRepository(dio),
+        preferencesLoader: () async => prefs);
+    final items = await service.load();
+    expect(items, hasLength(1));
+    expect(items.single.serverId, 9);
+    expect(service.syncErrorMessage, isNull);
+  });
+
+  test('迟到的同步快照不能覆盖同步期间新增的收藏', () async {
+    final prefs = MemoryPreferencesStore();
+    await prefs.setBool('emoji_favorites_v1_migrated_8', true);
+    final blocked = Completer<ResponseBody>(), started = Completer<void>();
+    var reads = 0;
+    ResponseBody json(Object body) =>
+        ResponseBody.fromString(jsonEncode(body), 200, headers: {
+          Headers.contentTypeHeader: ['application/json']
+        });
+    final dio = Dio()
+      ..httpClientAdapter = _EmojiAdapter((options) async {
+        if (options.method == 'GET') {
+          if (++reads == 2) {
+            started.complete();
+            return blocked.future;
+          }
+          return json({'items': []});
+        }
+        return json({
+          'id': 9,
+          'kind': 'custom',
+          'file_id': 44,
+          'url': '/api/emoji/favorites/9/file'
+        });
+      });
+    final service = EmojiFavoriteService(
+        userId: '8',
+        repository: EmojiFavoriteRepository(dio),
+        preferencesLoader: () async => prefs);
+    await service.load();
+    final syncing = service.syncFromServer();
+    await started.future;
+    await service.addCustomFromUpload(44);
+    blocked.complete(json({'items': []}));
+    await syncing;
+    expect((await service.load()).single.serverId, 9);
+    final stored =
+        jsonDecode(prefs.getString('emoji_favorites_cache_v2_8')!) as List;
+    expect(stored.single['id'], 9);
+  });
+
+  test('本地收藏上传部分失败保留条目并显示错误，重试成功后清除', () async {
+    final prefs = MemoryPreferencesStore();
+    await prefs.setBool('emoji_favorites_v1_migrated_8', true);
+    await prefs.setString(
+        'emoji_favorites_cache_v2_8',
+        jsonEncode([
+          {'type': 'sticker', 'sticker_id': 'local-sticker'}
+        ]));
+    var fail = true;
+    final dio = Dio()
+      ..httpClientAdapter = _EmojiAdapter((options) async {
+        final creating = options.method == 'POST';
+        return ResponseBody.fromString(
+          jsonEncode(creating
+              ? fail
+                  ? {'message': '收藏上传暂未完成'}
+                  : {'id': 5, 'kind': 'builtin', 'sticker_id': 'local-sticker'}
+              : {'items': []}),
+          creating && fail ? 503 : 200,
+          headers: {
+            Headers.contentTypeHeader: ['application/json']
+          },
+        );
+      });
+    final service = EmojiFavoriteService(
+        userId: '8',
+        repository: EmojiFavoriteRepository(dio),
+        preferencesLoader: () async => prefs);
+    expect((await service.load()).single.stickerId, 'local-sticker');
+    expect(service.syncErrorMessage, '收藏上传暂未完成');
+    expect((await service.load()).single.serverId, isNull);
+    fail = false;
+    await service.syncFromServer();
+    expect(service.syncErrorMessage, isNull);
+    expect((await service.load()).single.serverId, 5);
+  });
+  test('同步失败保留缓存并暴露可恢复错误，成功与切号清除旧错误', () async {
+    AppPreferencesStore.setMockInitialValues({
+      'emoji_favorites_cache_v2_8': jsonEncode([
+        {'type': 'sticker', 'id': 5, 'sticker_id': 'cached-sticker'}
+      ]),
+      'emoji_favorites_v1_migrated_8': true,
+    });
+    var fail = true;
+    final dio = Dio()
+      ..httpClientAdapter =
+          _EmojiAdapter((options) async => ResponseBody.fromString(
+                  jsonEncode(fail
+                      ? {'message': '收藏同步暂未完成'}
+                      : {
+                          'items': [
+                            {
+                              'kind': 'builtin',
+                              'id': 6,
+                              'sticker_id': 'fresh-sticker'
+                            }
+                          ]
+                        }),
+                  fail ? 503 : 200,
+                  headers: {
+                    Headers.contentTypeHeader: ['application/json']
+                  }));
+    final service = EmojiFavoriteService(
+        userId: '8',
+        repository: EmojiFavoriteRepository(dio),
+        preferencesLoader: AppPreferencesStore.getInstance);
+    expect((await service.load()).single.stickerId, 'cached-sticker');
+    expect(service.syncErrorMessage, '收藏同步暂未完成');
+    fail = false;
+    await service.syncFromServer();
+    expect(service.syncErrorMessage, isNull);
+    expect((await service.load()).single.stickerId, 'fresh-sticker');
+    fail = true;
+    await service.syncFromServer();
+    expect(service.syncErrorMessage, isNotNull);
+    service.switchUser('9');
+    expect(service.syncErrorMessage, isNull);
+  });
   test('persists sticker and image favorites newest first', () async {
     AppPreferencesStore.setMockInitialValues({});
     final service = EmojiFavoriteService(
@@ -194,7 +347,8 @@ void main() {
     expect(jsonDecode(migratedV2!), hasLength(2));
   });
 
-  test('toggleImage calls repository to create cloud favorite when user logged in',
+  test(
+      'toggleImage calls repository to create cloud favorite when user logged in',
       () async {
     AppPreferencesStore.setMockInitialValues({});
     var createdFromPublicImage = false;
@@ -242,8 +396,7 @@ void main() {
     expect(items.first.serverId, 99);
   });
 
-  test('迁移崩溃窗口：claim 归 A 时 B 不认领 v1，A 可继续完成且清理 claim/v1',
-      () async {
+  test('迁移崩溃窗口：claim 归 A 时 B 不认领 v1，A 可继续完成且清理 claim/v1', () async {
     // 模拟 A 迁移中途崩溃：claim=A、v1 仍在、A 的 migrated 已写且 v2 已写，
     // 但 remove(v1)/remove(claim) 尚未执行。
     AppPreferencesStore.setMockInitialValues({
@@ -275,7 +428,8 @@ void main() {
     final aItems = await serviceA.load();
     expect(aItems.map((e) => e.key), ['sticker:legacy-sticker']);
     expect(preferences.getString(EmojiFavoriteService.storageKey), isNull);
-    expect(preferences.getString(EmojiFavoriteService.migrationClaimKey), isNull);
+    expect(
+        preferences.getString(EmojiFavoriteService.migrationClaimKey), isNull);
   });
 
   test('A 上传旧收藏途中切到 B：A 的同步结果不写入 B 的缓存键', () async {
@@ -539,4 +693,3 @@ void main() {
     expect(preferences.getString('emoji_favorites_cache_v2_B'), isNull);
   });
 }
-

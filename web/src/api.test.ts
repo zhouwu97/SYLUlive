@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   beginAuthTransition,
+  captureAuthSession,
   request,
   requestBlob,
   setAuthSession,
@@ -28,6 +29,17 @@ beforeEach(() => {
   // 每个用例从干净世代开始，避免上一个用例的 abort 影响断言。
   beginAuthTransition();
   vi.unstubAllGlobals();
+});
+
+it("多步操作的会话检查覆盖 A → B → A 与退出转换", () => {
+  setAuthSession(1);
+  const first = captureAuthSession();
+  expect(first()).toBe(true);
+  setAuthSession(2); setAuthSession(1);
+  expect(first()).toBe(false);
+  const second = captureAuthSession();
+  beginAuthTransition();
+  expect(second()).toBe(false);
 });
 
 function stubFetch(handlers: Array<(call: FetchCall) => Response | Promise<Response>>) {
@@ -109,6 +121,49 @@ it("刷新完成前切号，旧请求不得用新账号会话重放", async () =
   await expect(pending).rejects.toBeInstanceOf(ApiError);
   await expect(pending).rejects.toMatchObject({ status: 409, code: "auth_session_changed" });
   expect(calls.map((call) => call.path)).toEqual(["/api/posts", "/api/refresh"]);
+  expect(calls[1].signal?.aborted).toBe(true);
+});
+
+it("刷新后的重放响应晚于切号时不能交给调用方", async () => {
+  setAuthSession(1);
+  let resolveReplay!: (response: Response) => void;
+  const calls = stubFetch([
+    () => jsonResponse({}, 401),
+    () => new Response(null, { status: 204 }),
+    () => new Promise<Response>((resolve) => { resolveReplay = resolve; }),
+  ]);
+  const pending = request("/api/posts");
+  await vi.waitFor(() => expect(calls).toHaveLength(3));
+  setAuthSession(2);
+  resolveReplay(jsonResponse({ private: "old-account" }));
+  await expect(pending).rejects.toMatchObject({ code: "auth_session_changed" });
+});
+
+it.each(["json", "blob"] as const)("读取 %s 响应体期间切号时丢弃旧账号数据", async (kind) => {
+  setAuthSession(1);
+  let resolveBody!: (value: any) => void;
+  const response = jsonResponse({});
+  const readBody = vi.spyOn(response, kind).mockImplementation(() => new Promise<any>((resolve) => { resolveBody = resolve; }));
+  stubFetch([() => response]);
+  const pending = kind === "json" ? request("/api/user/profile") : requestBlob("/api/emoji/favorites/1/file");
+  await vi.waitFor(() => expect(readBody).toHaveBeenCalledOnce());
+  setAuthSession(2);
+  resolveBody(kind === "json" ? { private: "old-account" } : new Blob(["old-account"]));
+  await expect(pending).rejects.toMatchObject({ code: "auth_session_changed" });
+});
+
+it("刷新网络失败可重试且不会产生未处理的拒绝", async () => {
+  setAuthSession(1);
+  const offline = new TypeError("Network unavailable");
+  stubFetch([
+    () => jsonResponse({}, 401),
+    () => Promise.reject(offline),
+    () => jsonResponse({}, 401),
+    () => new Response(null, { status: 204 }),
+    () => jsonResponse({ ok: true }),
+  ]);
+  await expect(request("/api/posts")).rejects.toBe(offline);
+  await expect(request("/api/posts")).resolves.toEqual({ ok: true });
 });
 
 it("切号或退出会中止在途请求", async () => {

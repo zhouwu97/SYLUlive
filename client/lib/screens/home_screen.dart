@@ -1937,11 +1937,11 @@ class _HomeScreenState extends State<HomeScreen>
                 floatingActionButtonTheme: Theme.of(context)
                     .floatingActionButtonTheme
                     .copyWith(
-                      sizeConstraints: const BoxConstraints.tightFor(
-                        width: 52,
-                        height: 52,
-                      ),
-                    ),
+                          sizeConstraints: const BoxConstraints.tightFor(
+                            width: 52,
+                            height: 52,
+                          ),
+                        ),
               ),
               child: FloatingActionButton(
                 heroTag: 'home_fab',
@@ -2057,11 +2057,9 @@ class _HomeScreenState extends State<HomeScreen>
             animation: _contentTabController,
             serial: _tabTransitionSerial,
             revealEnabled: !_revealedTabs.contains(_currentIndex),
-            child: ClipRRect(
-              child: IndexedStack(
-                index: _currentIndex,
-                children: _buildLazyTabChildren(),
-              ),
+            child: HomeTabKeepAliveStage(
+              index: _currentIndex,
+              children: _buildLazyTabChildren(),
             ),
           ),
         ),

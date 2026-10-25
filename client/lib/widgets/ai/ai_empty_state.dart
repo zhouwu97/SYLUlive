@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/ai_quick_prompt.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
+import 'ai_action_grid.dart';
 
 class AiSuggestedPrompt {
   const AiSuggestedPrompt({
@@ -71,13 +72,7 @@ class AiPublicEmptyState extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              childAspectRatio: 1.62,
+            AiActionGrid(
               children: [
                 _promptCard('本周空闲', '结合课表找可安排时间', '这周哪几天下午比较空？',
                     Icons.event_available_outlined),

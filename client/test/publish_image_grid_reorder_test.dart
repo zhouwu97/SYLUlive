@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:shenliyuan/models/publish_image_item.dart';
 import 'package:shenliyuan/screens/publish/widgets/publish_image_grid.dart';
+import 'helpers/golden_viewport.dart';
 
 PublishImageItem _local(String id) =>
     PublishImageItem.local(XFile('/tmp/$id.jpg'), id);
@@ -27,6 +28,21 @@ Widget _grid(
 }
 
 void main() {
+  testWidgets('Pad 图片预览增加列数，缩放后添加和拖拽入口保留', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    await setGoldenViewport(tester, GoldenViewports.tabletLandscape1280x800);
+    await tester.pumpWidget(_grid([
+      for (final id in ['A', 'B', 'C', 'D', 'E', 'F']) _local(id)
+    ], onReorder: (_, __) {}));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byKey(const ValueKey('A')).first).width,
+        lessThanOrEqualTo(180));
+    expect(find.text('添加照片'), findsOneWidget);
+    await setGoldenViewport(tester, GoldenViewports.tabletSplit600x800);
+    await tester.pumpAndSettle();
+    expect(find.text('添加照片'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('拖拽 A 到 C 触发 onReorder(A, C)，Add 槽不参与', (tester) async {
     final reorders = <List<String>>[];
     await tester.pumpWidget(_grid(

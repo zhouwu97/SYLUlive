@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import 'ai_quick_action_card.dart';
+import 'ai_action_grid.dart';
 
 class AiPersonalEmptyState extends StatelessWidget {
   final bool needsModelConfiguration;
@@ -105,25 +106,17 @@ class AiPersonalEmptyState extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            mainAxisExtent: 76,
-          ),
-          itemCount: quickActions.length,
-          itemBuilder: (context, index) {
-            final action = quickActions[index];
-            return AiQuickActionCard(
-              icon: action.$1,
-              title: action.$2,
-              subtitle: action.$3,
-              onTap: () => onActionSelected(action.$4),
-            );
-          },
+        AiActionGrid(
+          minHeight: 76,
+          children: [
+            for (final action in quickActions)
+              AiQuickActionCard(
+                icon: action.$1,
+                title: action.$2,
+                subtitle: action.$3,
+                onTap: () => onActionSelected(action.$4),
+              ),
+          ],
         ),
       ],
     );

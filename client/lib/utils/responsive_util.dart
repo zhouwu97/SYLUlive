@@ -5,6 +5,15 @@ class ResponsiveUtil {
   static const double mobileMaxWidth = 600;
   static const double tabletMaxWidth = 840;
 
+  static const double formContentWidth = 680;
+  static const double readingContentWidth = 840;
+  static const double pageContentWidth = 1000;
+
+  /// 使用实际内容宽度计算图库列数；手机保留两列，大屏增加信息密度。
+  static int gridColumnCount(double width, {double spacing = 16}) {
+    return ((width + spacing) / (320 + spacing)).ceil().clamp(2, 6);
+  }
+
   /// 是否为手机屏幕（窄屏）
   static bool isMobile(BuildContext context) {
     return MediaQuery.of(context).size.width < mobileMaxWidth;

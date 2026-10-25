@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { asset, errorText, rows, time, useApi, write, type Entity } from "./api";
+import { asset, captureAuthSession, errorText, rows, time, useApi, write, type Entity } from "./api";
 import { useAuth } from "./auth";
-import { MediaUploadPicker, uploadImageFiles } from "./media";
-import { StickerPicker, StickerRenderer, type StickerPayload } from "./emoji";
+import { uploadImageFiles } from "./media";
+import { EmojiSelectionPreview, StickerPicker, StickerRenderer, type StickerPayload } from "./emoji";
+import { messageEmojiFields } from "./emoji-selection";
 import { Empty, Head, Icon, QueryState, useUI } from "./ui";
 import { consumeSSE } from "./sse";
 
@@ -74,7 +75,7 @@ export function Messages() {
             {rows(messages.data, "messages").map((message) => <MessageBubble key={message.id || message.client_message_id} message={message} mine={Number(message.sender_id) === auth.user?.id} />)}
           </div>
         </QueryState>
-        {peer?.id && <MessageComposer targetId={Number(peer.id)} onSent={() => { qc.invalidateQueries({ queryKey: ["api", `/api/messages/conversations/${selected}`] }); qc.invalidateQueries({ queryKey: ["api", "/api/messages/conversations"] }); }} />}
+        {peer?.id && <MessageComposer key={`${auth.user.id}:${peer.id}`} targetId={Number(peer.id)} onSent={() => { qc.invalidateQueries({ queryKey: ["api", `/api/messages/conversations/${selected}`] }); qc.invalidateQueries({ queryKey: ["api", "/api/messages/conversations"] }); }} />}
       </section>
     </div>}
   </>;
@@ -87,22 +88,30 @@ function MessageComposer({ targetId, onSent }: { targetId: number; onSent: () =>
   const [sticker, setSticker] = useState<StickerPayload | null>(null);
   const [showStickers, setShowStickers] = useState(false);
   const [busy, setBusy] = useState(false);
+  const alive = useRef(true), locked = useRef(false);
+  const attempt = useRef<{ signature: string; id: string; fileId?: number } | null>(null);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   async function send() {
-    if (busy || (!content.trim() && !files.length && !sticker)) return;
+    if (busy || locked.current || (!content.trim() && !files.length && !sticker)) return;
     if (files.length && sticker) { ui.notify("图片和表情不能同时发送"); return; }
-    setBusy(true);
+    const session = captureAuthSession(), isCurrent = () => alive.current && session();
+    const signature = JSON.stringify([content.trim(), files.map((file) => [file.name, file.size, file.lastModified]), sticker]);
+    if (attempt.current?.signature !== signature) attempt.current = { signature, id: crypto.randomUUID() };
+    const submission = attempt.current;
+    locked.current = true; setBusy(true);
     try {
-      let fileId: number | undefined;
-      if (files.length) fileId = (await uploadImageFiles(files))[0];
-      await write(`/api/messages/${targetId}`, { content: content.trim(), ...(fileId ? { file_id: fileId } : {}), ...(sticker ? { sticker_id: sticker.sticker_id, asset_key: sticker.asset_key, pack_id: sticker.pack_id } : {}), client_message_id: crypto.randomUUID() });
-      setContent(""); setFiles([]); setSticker(null); setShowStickers(false); onSent(); ui.notify("消息已发送");
-    } catch (error) { ui.notify(errorText(error)); } finally { setBusy(false); }
+      if (files.length && !submission.fileId) submission.fileId = (await uploadImageFiles(files))[0];
+      if (!isCurrent()) return;
+      await write(`/api/messages/${targetId}`, { content: content.trim(), ...(submission.fileId ? { file_id: submission.fileId } : {}), ...(sticker ? messageEmojiFields(sticker) : {}), client_message_id: submission.id });
+      if (!isCurrent()) return;
+      attempt.current = null; setContent(""); setFiles([]); setSticker(null); setShowStickers(false); onSent(); ui.notify("消息已发送");
+    } catch (error) { if (isCurrent()) ui.notify(errorText(error)); } finally { locked.current = false; if (isCurrent()) setBusy(false); }
   }
   return <div className="message-composer">
-    {sticker && <div className="composer-sticker"><StickerRenderer stickerId={sticker.sticker_id} assetKey={sticker.asset_key} packId={sticker.pack_id} label={sticker.label} /><button type="button" className="icon-btn" onClick={() => setSticker(null)} aria-label="移除表情">×</button></div>}
-    {files.length > 0 && <div className="composer-file">已选择 {files.length} 张图片<button type="button" className="link-btn" onClick={() => setFiles([])}>清除</button></div>}
-    {showStickers && <StickerPicker compact onSelect={(value) => { setSticker(value); setFiles([]); }} />}
-    <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="写下想说的话…" rows={2} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); send(); } }} />
-    <div className="composer-actions"><button type="button" className={`icon-btn ${showStickers ? "active" : ""}`} aria-label="选择表情" onClick={() => setShowStickers((value) => !value)}><span>☺</span></button><label className="icon-btn" aria-label="添加图片"><Icon name="file" /><input type="file" accept="image/jpeg,image/png,image/gif" hidden onChange={(event) => { const files = Array.from(event.target.files || []).slice(0, 1); setFiles(files); setSticker(null); }} /></label><button type="button" className="btn primary" disabled={busy} onClick={send}>{busy ? "发送中…" : "发送"}</button></div>
+    {sticker && <div className="composer-sticker"><EmojiSelectionPreview selection={sticker} /><button type="button" className="icon-btn" disabled={busy} onClick={() => setSticker(null)} aria-label="移除表情">×</button></div>}
+    {files.length > 0 && <div className="composer-file">已选择 {files.length} 张图片<button type="button" className="link-btn" disabled={busy} onClick={() => setFiles([])}>清除</button></div>}
+    {showStickers && <StickerPicker compact disabled={busy} onSelect={(value) => { setSticker(value); setFiles([]); }} />}
+    <textarea value={content} disabled={busy} onChange={(event) => setContent(event.target.value)} placeholder="写下想说的话…" rows={2} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); send(); } }} />
+    <div className="composer-actions"><button type="button" className={`icon-btn ${showStickers ? "active" : ""}`} disabled={busy} aria-label="选择表情" onClick={() => setShowStickers((value) => !value)}><span>☺</span></button><label className="icon-btn" aria-label="添加图片"><Icon name="file" /><input type="file" disabled={busy} accept="image/jpeg,image/png,image/gif" hidden onChange={(event) => { const files = Array.from(event.target.files || []).slice(0, 1); setFiles(files); setSticker(null); }} /></label><button type="button" className="btn primary" disabled={busy || (!content.trim() && !files.length && !sticker)} onClick={send}>{busy ? "发送中…" : "发送"}</button></div>
   </div>;
 }

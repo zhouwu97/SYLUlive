@@ -89,6 +89,20 @@ Finder _adminEntry() =>
     find.ancestor(of: find.text('管理处'), matching: find.byType(InkWell));
 
 void main() {
+  testWidgets('Pad 个人页保持阅读宽度与管理员角标', (tester) async {
+    await _pumpProfile(tester, _PendingAdapter(), dark: true, textScale: 1.3);
+    for (final size in [
+      GoldenViewports.tabletPortrait834x1194,
+      GoldenViewports.tabletLandscape1280x800
+    ]) {
+      await setGoldenViewport(tester, size);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(find.byType(CustomScrollView)).width,
+          lessThanOrEqualTo(840));
+      expect(find.text('管理处'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+  });
   setUpAll(loadTestFonts);
   setUp(() => currentHomeTabIndex.value = 4);
 

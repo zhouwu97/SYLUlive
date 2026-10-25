@@ -8,9 +8,31 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/theme/app_colors.dart';
 import 'package:shenliyuan/theme/app_theme.dart';
 import 'package:shenliyuan/widgets/bottom_nav.dart';
+import '../helpers/golden_viewport.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('Pad 悬浮导航居中限宽，缩放后点击坐标与选中状态保持正确', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    await setGoldenViewport(tester, GoldenViewports.tabletLandscape1280x800);
+    final harness = await _pumpNav(tester,
+        liquidGlass: true, viewport: GoldenViewports.tabletLandscape1280x800);
+    final dock = find.byKey(const ValueKey('bottom-nav-floating-dock'));
+    expect(tester.getRect(dock).width, 640);
+    expect(tester.getRect(dock).center.dx, 640);
+    await tester.tap(find.byKey(const ValueKey('bottom-nav-item-4')));
+    await tester.pumpAndSettle();
+    expect(harness.selectedIndex.value, 4);
+    await setGoldenViewport(tester, GoldenViewports.tabletSplit600x800);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(dock).width, 576);
+    expect(tester.getRect(dock).center.dx, 300);
+    await tester.tap(find.byKey(const ValueKey('bottom-nav-item-0')));
+    await tester.pumpAndSettle();
+    expect(harness.selectedIndex.value, 0);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('悬浮液态底栏保留五个入口、选中语义与完整点击区域', (tester) async {
     final harness = await _pumpNav(tester, liquidGlass: true);
@@ -66,8 +88,7 @@ void main() {
     }
   });
 
-  testWidgets('非 liquid 悬浮底栏选中胶囊在浅色/深色模式下都保持半透明',
-      (tester) async {
+  testWidgets('非 liquid 悬浮底栏选中胶囊在浅色/深色模式下都保持半透明', (tester) async {
     for (final darkMode in const [false, true]) {
       await _pumpNav(tester, liquidGlass: false, darkMode: darkMode);
 
@@ -653,10 +674,10 @@ Future<_NavHarness> _pumpNav(
   int initialIndex = 0,
   double? initialVisualIndex,
   bool showDiagnostics = false,
+  Size viewport = GoldenViewports.phone360x800,
 }) async {
-  tester.view.physicalSize = const Size(360, 800);
   tester.view.devicePixelRatio = 1;
-  addTearDown(tester.view.reset);
+  await setGoldenViewport(tester, viewport);
 
   AppPreferencesStore.setMockInitialValues({
     'floating_nav_bar': true,

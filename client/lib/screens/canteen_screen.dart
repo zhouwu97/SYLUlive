@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../utils/responsive_util.dart';
 import '../models/canteen.dart';
 import '../models/canteen_home.dart';
 import '../models/canteen_dish.dart';
@@ -723,120 +724,128 @@ class _CanteenScreenState extends State<CanteenScreen> {
   }
 
   Widget _buildHotDishes(bool isDark, List<CanteenHotDish> dishes) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: dishes.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 0.92,
-      ),
-      itemBuilder: (context, index) {
-        final dish = dishes[index];
-        return GestureDetector(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => CanteenDishDetailScreen(
-                canteenId: dish.canteenId,
-                dishId: dish.id,
-                dishName: dish.name,
-                canteenName: dish.canteenName,
+    return LayoutBuilder(
+        builder: (context, constraints) => GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: dishes.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: ResponsiveUtil.gridColumnCount(
+                    constraints.maxWidth,
+                    spacing: 10),
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 0.92,
               ),
-            ),
-          ),
-          child: Container(
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: CanteenTheme.surfaceBg(isDark),
-              borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
-              border: Border.all(color: CanteenTheme.borderColor(isDark)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: dish.coverImage.isEmpty
-                      ? _buildDishPlaceholder(isDark, index)
-                      : CanteenStatusImage(
-                          imageUrl: dish.coverImage,
-                          variant: 'thumb',
-                          offline: dish.isCanteenOffline,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => Container(
-                            color: CanteenTheme.surfaceMutedBg(isDark),
-                            alignment: Alignment.center,
-                            child: Icon(
-                              Icons.ramen_dining_rounded,
-                              color: CanteenTheme.textTertiaryColor(isDark),
-                            ),
-                          ),
-                        ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        dish.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: CanteenTheme.textPrimaryColor(isDark),
-                        ),
+              itemBuilder: (context, index) {
+                final dish = dishes[index];
+                return GestureDetector(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CanteenDishDetailScreen(
+                        canteenId: dish.canteenId,
+                        dishId: dish.id,
+                        dishName: dish.name,
+                        canteenName: dish.canteenName,
                       ),
-                      const SizedBox(height: 3),
-                      Text(
-                        dish.canteenName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: CanteenTheme.textTertiaryColor(isDark),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(Icons.star_rounded,
-                              size: 14,
-                              color: CanteenTheme.accentColor(isDark)),
-                          const SizedBox(width: 2),
-                          Text(
-                            dish.averageScore > 0
-                                ? dish.averageScore.toStringAsFixed(1)
-                                : '暂无评分',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: CanteenTheme.textPrimaryColor(isDark),
-                            ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            '${dish.reviewerCount}人评',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: CanteenTheme.textTertiaryColor(isDark),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+                  child: Container(
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: CanteenTheme.surfaceBg(isDark),
+                      borderRadius:
+                          BorderRadius.circular(CanteenTheme.radiusMd),
+                      border:
+                          Border.all(color: CanteenTheme.borderColor(isDark)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: dish.coverImage.isEmpty
+                              ? _buildDishPlaceholder(isDark, index)
+                              : CanteenStatusImage(
+                                  imageUrl: dish.coverImage,
+                                  variant: 'thumb',
+                                  offline: dish.isCanteenOffline,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) => Container(
+                                    color: CanteenTheme.surfaceMutedBg(isDark),
+                                    alignment: Alignment.center,
+                                    child: Icon(
+                                      Icons.ramen_dining_rounded,
+                                      color: CanteenTheme.textTertiaryColor(
+                                          isDark),
+                                    ),
+                                  ),
+                                ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                dish.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: CanteenTheme.textPrimaryColor(isDark),
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                dish.canteenName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: CanteenTheme.textTertiaryColor(isDark),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(Icons.star_rounded,
+                                      size: 14,
+                                      color: CanteenTheme.accentColor(isDark)),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    dish.averageScore > 0
+                                        ? dish.averageScore.toStringAsFixed(1)
+                                        : '暂无评分',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color:
+                                          CanteenTheme.textPrimaryColor(isDark),
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    '${dish.reviewerCount}人评',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: CanteenTheme.textTertiaryColor(
+                                          isDark),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ));
   }
 
   Widget _buildDishPlaceholder(bool isDark, int index) {

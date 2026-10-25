@@ -1,4 +1,5 @@
 export const paths: Record<string, string> = {
+  image: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m21 15-5-5L5 21"/>',
   dashboard:
     '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/>',
   community:
@@ -37,8 +38,6 @@ export const paths: Record<string, string> = {
     '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>',
   bookmark: '<path d="M6 3h12v18l-6-4-6 4z"/>',
   share: '<path d="M14 3h7v7m0-7L10 14M10 5H4v15h15v-6"/>',
-  more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
-  chevron: '<path d="m6 9 6 6 6-6"/>',
   arrow: '<path d="M19 12H5m6-6-6 6 6 6"/>',
   file: '<path d="M5 3h9l5 5v13H5zM14 3v6h5M9 13h6m-6 4h6"/>',
   check: '<path d="m5 12 4 4L20 5"/>',

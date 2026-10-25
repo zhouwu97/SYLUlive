@@ -15,46 +15,15 @@ export class ApiError extends Error {
     super(message);
   }
 }
-let refreshing: { epoch: number; promise: Promise<Response> } | undefined;
-let authEpoch = 0;
-let authUserId: number | null = null;
-const inFlight = new Set<AbortController>();
-
-// 登录、退出和跨标签切号共享同一世代；世代变化后旧请求最多被取消，不能再重放。
-export function beginAuthTransition() {
-  authEpoch += 1;
-  for (const controller of inFlight) controller.abort();
-  inFlight.clear();
-  refreshing = undefined;
-}
-
-export function setAuthSession(userId: number | null) {
-  if (authUserId === userId) return;
-  authUserId = userId;
-  beginAuthTransition();
-}
-
-// 多步操作在每次写入前确认仍属于开始时的会话，包括 A → B → A。
-export function captureAuthSession() {
-  const epoch = authEpoch, userId = authUserId;
-  return () => epoch === authEpoch && userId === authUserId;
-}
-
-function assertAuthSession(isCurrent: () => boolean) {
-  if (!isCurrent())
-    throw new ApiError(409, "auth_session_changed", "账号已切换，请重新确认操作");
-}
-
-function isReadMethod(method: string) {
-  return ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
-}
-
-async function send(path: string, init: RequestInit = {}): Promise<Response> {
+let refreshing: Promise<Response> | undefined;
+export async function request<T = Entity>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
   if (!path.startsWith("/api/")) throw new Error("业务请求必须使用同源 API");
   const headers = new Headers(init.headers);
-  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  headers.set("Accept", "application/json");
   headers.set("X-Requested-With", "SYLUlive-Web");
-  headers.set("X-Auth-Transport", "cookie");
   if (init.body && !(init.body instanceof FormData))
     headers.set("Content-Type", "application/json");
   const options = {
@@ -62,69 +31,24 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
     headers,
     credentials: "same-origin" as RequestCredentials,
   };
-  const isCurrent = captureAuthSession();
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-  if (init.signal?.aborted) controller.abort();
-  else init.signal?.addEventListener("abort", abort, { once: true });
-  inFlight.add(controller);
-  options.signal = controller.signal;
-  try {
-    let response = await fetch(path, options);
-    assertAuthSession(isCurrent);
-    controller.signal.throwIfAborted();
-    if (
-      response.status === 401 &&
-      isReadMethod(String(options.method || "GET")) &&
-      !["/api/login", "/api/refresh", "/api/logout"].includes(path)
-    ) {
-      const refreshEpoch = authEpoch;
-      if (!refreshing || refreshing.epoch !== refreshEpoch) {
-        const refreshController = new AbortController();
-        inFlight.add(refreshController);
-        const promise = fetch("/api/refresh", {
-          method: "POST",
-          credentials: "same-origin",
-          signal: refreshController.signal,
-          headers: {
-            "X-Requested-With": "SYLUlive-Web",
-            "X-Auth-Transport": "cookie",
-          },
-        });
-        refreshing = { epoch: refreshEpoch, promise };
-        const cleanup = () => {
-          inFlight.delete(refreshController);
-          if (refreshing?.promise === promise) refreshing = undefined;
-        };
-        // finally 会产生另一个 rejected Promise；网络失败也必须消费清理分支。
-        void promise.then(cleanup, cleanup);
-      }
-      const refreshed = await refreshing.promise;
-      assertAuthSession(isCurrent);
-      controller.signal.throwIfAborted();
-      if (refreshed.ok) response = await fetch(path, options);
-    }
-    assertAuthSession(isCurrent);
-    controller.signal.throwIfAborted();
-    return response;
-  } finally {
-    inFlight.delete(controller);
-    init.signal?.removeEventListener("abort", abort);
+  let response = await fetch(path, options);
+  if (
+    response.status === 401 &&
+    !["/api/login", "/api/refresh", "/api/logout"].includes(path)
+  ) {
+    refreshing ||= fetch("/api/refresh", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "X-Requested-With": "SYLUlive-Web" },
+    }).finally(() => {
+      refreshing = undefined;
+    });
+    if ((await refreshing).ok) response = await fetch(path, options);
   }
-}
-
-export async function request<T = Entity>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
-  const isCurrent = captureAuthSession();
-  const response = await send(path, init);
   const contentType = response.headers.get("content-type") || "";
   const data = contentType.includes("application/json")
     ? await response.json()
     : null;
-  assertAuthSession(isCurrent);
-  init.signal?.throwIfAborted();
   if (!response.ok)
     throw new ApiError(
       response.status,
@@ -135,44 +59,6 @@ export async function request<T = Entity>(
     throw new ApiError(502, "invalid_response", "接口没有返回可读取的数据");
   return data as T;
 }
-
-// 受保护的二进制读取：工单截图这类私有文件只能通过带鉴权的接口取，
-// 不能把 file_id 拼成无鉴权的 /uploads 地址。错误按状态码分成可恢复与不可恢复两类，
-// 让调用方能显示「登录已失效，请重新登录」而不是永久空白。
-export async function requestBlob(
-  path: string,
-  init: RequestInit = {},
-): Promise<Blob> {
-  const isCurrent = captureAuthSession();
-  const headers = new Headers(init.headers);
-  headers.set("Accept", "image/*,application/octet-stream");
-  const response = await send(path, {
-    ...init,
-    headers,
-  });
-  assertAuthSession(isCurrent);
-  if (!response.ok) {
-    const status = response.status;
-    throw new ApiError(
-      status,
-      status === 401
-        ? "attachment_auth_expired"
-        : status === 403 || status === 404
-          ? "attachment_unavailable"
-          : "request_failed",
-      status === 401
-        ? "登录已失效，重新登录后可查看附件"
-        : status === 403 || status === 404
-          ? "无权查看该附件，或文件已被删除"
-          : `附件读取失败（${status}）`,
-    );
-  }
-  const blob = await response.blob();
-  assertAuthSession(isCurrent);
-  init.signal?.throwIfAborted();
-  return blob;
-}
-
 export const write = <T = Entity>(
   path: string,
   body: unknown = {},

@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useLayoutEffect, useState } from "react";
+import { StrictMode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   BrowserRouter,
@@ -11,17 +11,15 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./auth";
 import { Icon, UIProvider, useUI, DialogOutlet } from "./ui";
-import { asset, entity, useApi, rows } from "./api";
+import { useApi, rows } from "./api";
 import {
   Dashboard,
   Exams,
 } from "./pages";
 import {Toolbox} from './toolbox';
-import {Profile} from './profile';
+import {Profile, UserProfile} from './profile';
+import {Avatar} from './post-media';
 import "./styles.css";
-import "./social-shell.css";
-import "./web-polish.css";
-import { useWorkspaceMotion } from "./shell-motion";
 import {Admin} from "./admin";
 import { Polls } from "./polls";
 import {Competition} from './competition';
@@ -32,7 +30,6 @@ import { AiPage } from "./ai";
 import { Feedback, TicketDetail, Notifications } from "./feedback";
 import { Community, PostDetail } from "./community";
 import { AcademicProvider, Schedule, Grades } from "./academic";
-import { Messages } from "./messages";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { staleTime: 15000, refetchOnWindowFocus: false },
@@ -42,7 +39,6 @@ const scrollPositions = new Map<string,number>();
 export const navigation = [
   ["dashboard", "校园工作台"],
   ["community", "校园社区"],
-  ["messages", "私信"],
   ["market", "二手集市"],
   ["schedule", "课表"],
   ["grades", "成绩与学业"],
@@ -94,22 +90,18 @@ function Search() {
 }
 function Rail() {
   const boards = useApi("/api/water/sections");
-  const auth = useAuth();
-  const profile = useApi(auth.user ? "/api/user/profile" : null);
-  const person = entity(profile.data, "user", "data");
-  const level = Number(person.level || 0);
-  const likes = Number(person.total_likes_received || person.like_count || 0);
-  const followers = Number(person.followers_count || person.follower_count || 0);
-  const following = Number(person.following_count || person.following || 0);
   return (
     <aside className="right-rail">
-      <div className="rail-card profile-rail-card">
-        <div className="profile-rail-head">
-          <div className="profile-rail-avatar">{person.avatar || auth.user?.avatar ? <img src={asset(person.avatar || auth.user?.avatar)} alt="" /> : <span>{(person.nickname || auth.user?.nickname || "同").slice(0, 1)}</span>}</div>
-          <div><b>{person.nickname || auth.user?.nickname || "校园同学"}</b><p>{auth.user ? `Lv.${level || 1} · 校园贡献者` : "登录后完善个人主页"}</p></div>
+      <div className="rail-card">
+        <div className="rail-title">
+          <b>考试安排</b>
         </div>
-        <div className="profile-rail-stats"><span><b>{likes}</b><small>获赞</small></span><span><b>{followers}</b><small>关注者</small></span><span><b>{following}</b><small>关注</small></span></div>
-        <NavLink className="btn full-width" to={auth.user ? "/profile" : "/profile"}>{auth.user ? "查看个人主页" : "登录并完善资料"}</NavLink>
+        <div className="rail-body">
+          <p className="tiny muted">查看本机录入和导入的考试</p>
+          <NavLink className="btn full-width" to="/exams">
+            查看考试安排
+          </NavLink>
+        </div>
       </div>
       <div className="rail-card">
         <div className="rail-title">
@@ -152,7 +144,9 @@ function Rail() {
 }
 function Shell() {
   const [menu, setMenu] = useState(false);
-  const [navigationMotion, setNavigationMotion] = useState(true);
+  const [mobile, setMobile] = useState(() => matchMedia('(max-width: 760px)').matches);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const drawer = useRef<HTMLElement>(null);
   const [dark, setDark] = useState(
     () => localStorage.getItem("sylulive-theme") === "dark",
   );
@@ -161,9 +155,7 @@ function Shell() {
     location = useLocation(),
     navigate = useNavigate();
   const active = location.pathname.split("/")[1] || "dashboard";
-  const workspace = useWorkspaceMotion(location.pathname, navigationMotion);
   const unread = useApi(auth.user ? '/api/user/notifications/unread-count' : null);
-  const messageUnread = useApi(auth.user ? '/api/messages/unread_count' : null);
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     localStorage.setItem("sylulive-theme", dark ? "dark" : "light");
@@ -171,6 +163,30 @@ function Shell() {
   useEffect(() => {
     setMenu(false);
   }, [location.pathname]);
+  useEffect(() => {
+    const media = matchMedia('(max-width: 760px)');
+    const change = () => {setMobile(media.matches); if (!media.matches) setMenu(false);};
+    media.addEventListener('change', change);
+    return () => media.removeEventListener('change', change);
+  }, []);
+  useEffect(() => {
+    if (!menu) return;
+    const nav = drawer.current;
+    nav?.querySelector<HTMLElement>('.nav-item')?.focus();
+    const trap = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !nav) return;
+      const items = [...nav.querySelectorAll<HTMLElement>('a[href],button:not(:disabled)')].filter(item => item.getClientRects().length);
+      const first = items[0], last = items[items.length - 1];
+      if (!first) return;
+      if (!nav.contains(document.activeElement) || (!event.shiftKey && document.activeElement === last)) {event.preventDefault(); first.focus();}
+      else if (event.shiftKey && document.activeElement === first) {event.preventDefault(); last.focus();}
+    };
+    document.addEventListener('keydown', trap);
+    return () => {
+      document.removeEventListener('keydown', trap);
+      if (menuButton.current?.getClientRects().length) menuButton.current.focus();
+    };
+  }, [menu]);
   useLayoutEffect(()=>{
     const main=document.getElementById('mainContent');
     const frame=requestAnimationFrame(()=>main?.scrollTo(0,scrollPositions.get(location.key)||0));
@@ -180,6 +196,7 @@ function Shell() {
     const key = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        setMenu(false);
         ui.open("搜索功能", <Search />);
       }
       if (e.key === "Escape") setMenu(false);
@@ -196,8 +213,6 @@ function Shell() {
     <NavLink
       key={id}
       title={label}
-      aria-label={label}
-      onClick={(event) => setNavigationMotion(event.detail !== 0)}
       to={id === "dashboard" ? "/" : `/${id}`}
       end
       className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
@@ -206,20 +221,21 @@ function Shell() {
         <Icon name={id} />
       </span>
       <span className="nav-text">{label}</span>
-      {id === "messages" && Number(messageUnread.data?.unread_count || messageUnread.data?.count) > 0 && <span className="nav-unread">{messageUnread.data?.unread_count || messageUnread.data?.count}</span>}
     </NavLink>
   );
   return (
-    <div className={`app-shell social-shell ${active === "market" ? "market-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
+    <div className="app-shell">
       <a className="skip-link" href="#mainContent">
         跳到主要内容
       </a>
-      <header className="topbar">
+      <header className="topbar" inert={mobile && menu}>
         <div className="topbar-inner">
           <button
+            ref={menuButton}
             className="icon-btn menu-toggle"
             aria-label="打开导航"
             aria-expanded={menu}
+            aria-controls="primaryNavigation"
             onClick={() => setMenu(!menu)}
           >
             <Icon name="menu" />
@@ -268,7 +284,7 @@ function Shell() {
               aria-label={auth.user ? "我的账号" : "登录"}
               onClick={() => (auth.user ? navigate("/profile") : auth.login())}
             >
-              {auth.user ? (auth.user.avatar ? <img src={asset(auth.user.avatar)} alt="" /> : auth.user.nickname?.slice(0, 2)) : "登录"}
+              {auth.user ? <Avatar user={auth.user}/> : "登录"}
             </button>
           </div>
         </div>
@@ -276,11 +292,13 @@ function Shell() {
       <div className="frame">
         <button
           className="nav-mask"
+          tabIndex={-1}
           hidden={!menu}
           aria-label="收起导航"
           onClick={() => setMenu(false)}
         />
-        <aside className={`sidebar ${menu ? "open" : ""}`} aria-label="主导航">
+        <aside ref={drawer} id="primaryNavigation" className={`sidebar ${menu ? "open" : ""}`} aria-label="主导航" inert={mobile && !menu} aria-hidden={mobile && !menu ? true : undefined} role={mobile && menu ? 'dialog' : undefined} aria-modal={mobile && menu ? true : undefined}>
+          <div className="drawer-head"><b>校园导航</b><button className="icon-btn" aria-label="关闭导航" onClick={() => setMenu(false)}>×</button></div>
           <div className="sidebar-scroll">
             {[
               [0, 3, "常用"],
@@ -305,16 +323,15 @@ function Shell() {
           </div>
           <div className="sidebar-footer">沈理校园 · Web</div>
         </aside>
-        <main className="workspace" id="mainContent" ref={workspace}>
+        <main className="workspace" id="mainContent" inert={mobile && menu}>
           <div className={`workspace-grid ${["dashboard","community"].includes(active)?"":"no-rail"}`}>
             <div className="main-pane">
-              <section key={`${location.pathname}${location.search}`} className="page active">
+              <section className="page active">
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/community" element={<Community />} />
                   <Route path="/market" element={<Community market />} />
-                  <Route path="/messages" element={<Messages />} />
-                  <Route path="/post/:id" element={<PostDetail />} />
+                  <Route path="/post/:id" element={<PostDetail key={location.pathname}/>} />
                   <Route path="/schedule" element={<Schedule />} />
                   <Route path="/grades" element={<Grades />} />
                   <Route path="/exams" element={<Exams />} />
@@ -357,6 +374,7 @@ function Shell() {
                   <Route path="/ai" element={<AiPage />} />
                   <Route path="/toolbox" element={<Toolbox />} />
                   <Route path="/profile" element={<Profile />} />
+                  <Route path="/user/:id" element={<UserProfile key={location.pathname}/>} />
                   <Route path="/admin" element={<Admin />} />
                   <Route path="*" element={<Dashboard />} />
                 </Routes>

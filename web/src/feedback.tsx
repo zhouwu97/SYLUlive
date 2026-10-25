@@ -1,6 +1,5 @@
 import {
   Link,
-  useLocation,
   useNavigate,
   useParams,
   useSearchParams,
@@ -9,16 +8,6 @@ import { entity, query, rows, time, useApi, write, type Entity } from "./api";
 import { Empty, Form, Head, Pagination, QueryState, Tabs, useUI } from "./ui";
 import { useAuth } from "./auth";
 import { uploadIDs } from "./community";
-import {
-  attachmentAccept,
-  attachmentHelp,
-  initialAttachmentIDs,
-  isInternalMessage,
-  messageAttachmentIDs,
-  messageSenderLabel,
-  ticketAttachmentLimits,
-  TicketAttachments,
-} from "./attachments";
 const states: Record<string, string> = {
   pending: "待受理",
   accepted: "已受理",
@@ -29,25 +18,10 @@ const states: Record<string, string> = {
   resolved: "已解决",
   closed: "已关闭",
 };
-// 工单列表的筛选条件只写在列表自己的地址里，进详情时必须把它带上，
-// 否则返回会掉回「全部 / 第 1 页」，管理员刚在看的那批工单就找不回来了。
-// 管理端列表是 /admin 的 feedback 标签页，不是独立路由。
-export function ticketRowHREF(admin: boolean, id: unknown, search: string) {
-  return admin
-    ? `/admin/feedback/${id}${search}`
-    : `/feedback/${id}${search}`;
-}
-export function ticketListHREF(admin: boolean, search: string) {
-  if (!admin) return `/feedback${search}`;
-  const params = new URLSearchParams(search);
-  params.set("tab", "feedback");
-  return `/admin?${params}`;
-}
 export function Feedback({ admin = false }: { admin?: boolean }) {
   const auth = useAuth(),
     ui = useUI(),
-    nav = useNavigate(),
-    location = useLocation();
+    nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const status = params.get("status") || "",
     page = Number(params.get("page")) || 1;
@@ -106,19 +80,14 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
                     },
                     {
                       name: "images",
-                      label: `附件图片，最多 ${ticketAttachmentLimits.maxCount} 张`,
+                      label: "附件图片，最多 6 张",
                       type: "file",
                       multiple: true,
-                      accept: attachmentAccept,
-                      help: attachmentHelp,
                     },
                   ]}
                   submit="提交工单"
                   onSubmit={async (data, fd) => {
-                    const image_ids = await uploadIDs(
-                      fd,
-                      ticketAttachmentLimits,
-                    );
+                    const image_ids = await uploadIDs(fd);
                     const { images, ...body } = data;
                     const result = await write(`${base}/tickets`, {
                       ...body,
@@ -158,7 +127,7 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
             <Link
               className="ticket-row"
               key={t.id}
-              to={ticketRowHREF(admin, t.id, location.search)}
+              to={admin ? `/admin/feedback/${t.id}` : `/feedback/${t.id}`}
             >
               <span className="mono">{t.ticket_no}</span>
               <div>
@@ -182,17 +151,14 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
 }
 export function TicketDetail({ admin = false }: { admin?: boolean }) {
   const { id } = useParams(),
-    ui = useUI(),
-    location = useLocation();
+    ui = useUI();
   const base = admin ? "/api/admin/feedback" : "/api/feedback";
   const q = useApi(`${base}/tickets/${id}`);
   const ticket = entity(q.data, "ticket");
-  const back = ticketListHREF(admin, location.search);
-  const closedForUser = !admin && ticket.status === "closed";
   return (
     <>
       <Head title={ticket.title || "工单详情"} description={ticket.ticket_no}>
-        <Link className="btn" to={back}>
+        <Link className="btn" to={admin ? "/admin" : "/feedback"}>
           返回列表
         </Link>
       </Head>
@@ -209,80 +175,67 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
                   <div className="bubble details-text">
                     {q.data?.initial_submission?.content || ticket.description}
                   </div>
-                  <TicketAttachments data={initialAttachmentIDs(q.data)} scope="初始提交附件" />
                 </div>
                 {rows(q.data, "messages").map((m) => (
                   <div
                     key={m.id}
-                    className={`thread-message ${m.sender_type === "admin" ? "official" : ""} ${isInternalMessage(m) ? "internal" : ""}`}
+                    className={`thread-message ${m.sender_type === "admin" ? "official" : ""} ${m.visible_to_user === false ? "internal" : ""}`}
                   >
                     <div className="message-meta">
-                      <b>{messageSenderLabel(m)}</b>
-                      {isInternalMessage(m) && <span className="tag">内部备注</span>}
+                      <b>
+                        {m.sender_type === "admin" ? "官方回复" : "用户补充"}
+                      </b>
+                      {m.visible_to_user === false && (
+                        <span className="tag">内部备注</span>
+                      )}
                       <time>{time(m.created_at)}</time>
                     </div>
                     <div className="bubble details-text">{m.content}</div>
-                    <TicketAttachments data={messageAttachmentIDs(m)} scope="本条消息附件" />
                   </div>
                 ))}
               </div>
               <div className="reply-form">
-                {closedForUser ? (
-                  <div className="panel panel-pad">
-                    <b>该工单已关闭</b>
-                    <p className="muted">
-                      关闭后不能再追加回复；如问题仍在，请在右侧重新打开工单，
-                      再补充新的信息与截图。
-                    </p>
-                  </div>
-                ) : (
-                  <Form
-                    fields={[
-                      {
-                        name: "content",
-                        label: admin ? "官方回复 / 内部备注" : "补充信息",
-                        type: "textarea",
-                        required: true,
-                      },
+                <Form
+                  fields={[
+                    {
+                      name: "content",
+                      label: admin ? "官方回复 / 内部备注" : "补充信息",
+                      type: "textarea",
+                      required: true,
+                    },
+                    ...(admin
+                      ? [
+                          {
+                            name: "scope",
+                            label: "可见范围",
+                            options: [
+                              ["public", "用户可见"],
+                              ["internal", "内部备注"],
+                            ] as [string, string][],
+                          },
+                        ]
+                      : []),
+                    {
+                      name: "images",
+                      label: "附件图片",
+                      type: "file",
+                      multiple: true,
+                    },
+                  ]}
+                  submit="发送"
+                  onSubmit={async (data, fd) => {
+                    const image_ids = await uploadIDs(fd);
+                    await write(`${base}/tickets/${id}/messages`, {
+                      content: data.content,
+                      image_ids,
                       ...(admin
-                        ? [
-                            {
-                              name: "scope",
-                              label: "可见范围",
-                              options: [
-                                ["public", "用户可见"],
-                                ["internal", "内部备注"],
-                              ] as [string, string][],
-                            },
-                          ]
-                        : []),
-                      {
-                        name: "images",
-                        label: "附件图片",
-                        type: "file",
-                        multiple: true,
-                        accept: attachmentAccept,
-                        help: attachmentHelp,
-                      },
-                    ]}
-                    submit="发送"
-                    onSubmit={async (data, fd) => {
-                      const image_ids = await uploadIDs(
-                        fd,
-                        ticketAttachmentLimits,
-                      );
-                      await write(`${base}/tickets/${id}/messages`, {
-                        content: data.content,
-                        image_ids,
-                        ...(admin
-                          ? { visible_to_user: data.scope === "public" }
-                          : {}),
-                      });
-                      await q.refetch();
-                      ui.notify("回复已发送");
-                    }}
-                  />
-                )}
+                        ? { visible_to_user: data.scope === "public" }
+                        : {}),
+                    });
+                    await q.refetch();
+                    ui.notify("回复已发送");
+                  }}
+                />
               </div>
             </div>
           </div>

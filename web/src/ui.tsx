@@ -4,7 +4,6 @@ import {
   useEffect,
   useRef,
   useState,
-  useId,
   type ReactNode,
   type FormEvent,
 } from "react";
@@ -85,7 +84,6 @@ export function Modal({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const titleId = useId();
   useEffect(() => {
     const previous = document.activeElement as HTMLElement;
     const old = document.body.style.overflow;
@@ -133,10 +131,10 @@ export function Modal({
         className="modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby={titleId}
+        aria-label={title}
       >
         <div className="modal-head">
-          <b id={titleId}>{title}</b>
+          <b>{title}</b>
           <button className="icon-btn" aria-label="关闭" onClick={close}>
             ×
           </button>
@@ -158,7 +156,6 @@ export interface Field {
   max?: number;
   help?: string;
   multiple?: boolean;
-  accept?: string;
 }
 export function Form({
   fields,
@@ -213,19 +210,6 @@ export function Form({
               required={f.required}
               defaultValue={f.value ?? f.defaultValue}
             />
-          ) : f.type === "file" ? (
-            <span className="file-field">
-              <b>选择文件</b>
-              <small>{f.multiple ? "可多选文件" : f.accept?.includes("pdf") ? "仅支持 PDF" : "选择附件"}</small>
-              <input
-                className="file-upload-input"
-                name={f.name}
-                type="file"
-                required={f.required}
-                multiple={f.multiple}
-                accept={f.accept}
-              />
-            </span>
           ) : (
             <input
               name={f.name}
@@ -237,7 +221,6 @@ export function Form({
               min={f.min}
               max={f.max}
               multiple={f.multiple}
-              accept={f.accept}
               autoComplete={
                 f.type === "password" ? "current-password" : undefined
               }

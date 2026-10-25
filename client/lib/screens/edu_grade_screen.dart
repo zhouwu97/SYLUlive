@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../widgets/app_page_background.dart';
 import '../widgets/responsive_content.dart';
 import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/application/academic_login_coordinator.dart';
@@ -1030,12 +1031,15 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: Theme.of(context).brightness == Brightness.dark
+      backgroundColor: AppPageBackground.color(context, Theme.of(context).brightness == Brightness.dark
           ? const Color(0xFF111315)
-          : const Color(0xFFFFFAF4),
+          : const Color(0xFFFFFAF4)),
       endDrawerEnableOpenDragGesture: false,
       drawerScrimColor: Colors.black.withValues(alpha: 0.42),
       endDrawer: GradeManageDrawer(
@@ -1060,7 +1064,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         leading: const BackButton(),
         title: const Text('我的成绩'),
         centerTitle: true,
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(context, Colors.transparent),
         elevation: 0,
         actions: [
           IconButton(

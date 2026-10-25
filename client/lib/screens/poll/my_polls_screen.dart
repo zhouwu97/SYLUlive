@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../models/post.dart';
 import '../../providers/poll_provider.dart';
 import '../../screens/poll/poll_composer_screen.dart';
@@ -46,7 +47,10 @@ class _MyPollsScreenState extends State<MyPollsScreen> with SingleTickerProvider
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final provider = context.watch<PollProvider>();
     final state = provider.mineState(_scope);
     return Scaffold(

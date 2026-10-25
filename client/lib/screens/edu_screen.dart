@@ -1,3 +1,4 @@
+import '../widgets/app_page_background.dart';
 import 'academic_data_settings_screen.dart';
 import '../features/academic/presentation/academic_unbind_dialog.dart';
 import 'package:flutter/material.dart';
@@ -84,11 +85,14 @@ class _EduScreenState extends State<EduScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
+      backgroundColor: AppPageBackground.color(context, isDark ? CampusTheme.darkBg : CampusTheme.bg),
       appBar: AppBar(
         title: Text(
           '教务系统',
@@ -99,7 +103,7 @@ class _EduScreenState extends State<EduScreen> {
           ),
         ),
         centerTitle: true,
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(context, Colors.transparent),
         elevation: 0,
         iconTheme: IconThemeData(
           color: isDark ? Colors.white : CampusTheme.text,

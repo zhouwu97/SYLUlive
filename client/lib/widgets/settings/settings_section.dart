@@ -6,11 +6,13 @@ import '../app_card.dart';
 class SettingsSection extends StatelessWidget {
   final String? title;
   final List<Widget> children;
+  final bool showCard;
 
   const SettingsSection({
     super.key,
     this.title,
     required this.children,
+    this.showCard = true,
   });
 
   @override
@@ -26,7 +28,7 @@ class SettingsSection extends StatelessWidget {
       cardItems.add(children[i]);
       if (i < children.length - 1) {
         cardItems.add(
-          Divider(
+          AppCardDivider(
             height: 1,
             thickness: 1,
             indent: 62,
@@ -55,33 +57,36 @@ class SettingsSection extends StatelessWidget {
               ),
             ),
           ],
-          AppCardSurface(
-            decoration: BoxDecoration(
-              color: isDark ? CampusTheme.darkCard : CampusTheme.card,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : CampusTheme.softBorder,
+          if (!showCard)
+            Column(children: children)
+          else
+            AppCardSurface(
+              decoration: BoxDecoration(
+                color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : CampusTheme.softBorder,
+                ),
+                boxShadow: isDark
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.025),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
               ),
-              boxShadow: isDark
-                  ? null
-                  : [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.025),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: cardItems,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: cardItems,
+                ),
               ),
             ),
-          ),
         ],
       ),
     );

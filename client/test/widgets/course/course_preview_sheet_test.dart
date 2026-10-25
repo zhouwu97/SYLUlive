@@ -3,8 +3,41 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/widgets/course/course_preview_sheet.dart';
+import 'package:shenliyuan/widgets/course/course_preview_tile.dart';
+import '../../helpers/golden_viewport.dart';
 
 void main() {
+  for (final scale in [1.0, 1.3, 1.5]) {
+    testWidgets('不连续长周次在窄屏 $scale 倍字号下换行且保留全部信息', (tester) async {
+      await setGoldenViewport(tester, const Size(320, 800));
+      const weeks = '1,2,3,4,5,8,9,10,11,12,13,14,15,16,17,18周';
+      await tester.pumpWidget(MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.linear(scale)),
+          child: child!,
+        ),
+        home: const Scaffold(
+            body: Padding(
+          padding: EdgeInsets.all(24),
+          child: CoursePreviewTile(isDark: false, course: {
+            'name': '概率论与数理统计A',
+            'location': 'A-319',
+            'teacher': '任课教师',
+            'start_section': 7,
+            'end_section': 8,
+            'weeks': [1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+          }),
+        )),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text(weeks), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      final bounds = tester.getRect(find.byType(CoursePreviewTile));
+      expect(bounds.contains(tester.getBottomRight(find.text(weeks))), isTrue);
+    });
+  }
+
   Future<void> pumpPreview(
     WidgetTester tester, {
     required List<Map<String, dynamic>> courses,

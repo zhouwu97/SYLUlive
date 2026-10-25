@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../config/api_constants.dart';
 import '../providers/canteen_provider.dart';
 import '../widgets/app_page_app_bar.dart';
@@ -49,10 +50,13 @@ class _MyCanteenContributionsScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: CanteenTheme.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       appBar: const AppPageAppBar(title: Text('我的食堂贡献')),
       body: RefreshIndicator(
         onRefresh: _reload,

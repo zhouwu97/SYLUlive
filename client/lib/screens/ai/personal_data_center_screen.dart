@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../features/ai_runtime/tool_calling/tool_permission.dart';
 import '../../features/ai_device_bridge/device_credential_store.dart';
 import '../../features/campus_data/erke/erke_repository.dart';
@@ -228,7 +229,10 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final appFingerprint = AccountCacheNamespace.fingerprint(widget.appUserId);
     final sourceFingerprint =
         AccountCacheNamespace.fingerprint(widget.sourceAccountId);

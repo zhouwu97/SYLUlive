@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../widgets/app_page_background.dart';
 import '../app_bootstrap.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
@@ -253,7 +254,9 @@ class _CourtScreenState extends State<CourtScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final appeal = _appeal;
     return Scaffold(
       appBar: const AppPageAppBar(title: Text('公众法庭')),

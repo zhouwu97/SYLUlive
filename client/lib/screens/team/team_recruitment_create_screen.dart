@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../config/api_constants.dart';
 import '../../models/post.dart';
 import '../../models/team_recruitment.dart';
@@ -776,7 +777,10 @@ class _TeamRecruitmentCreateScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final provider = context.watch<TeamRecruitmentProvider>();
     final authProvider = context.watch<AuthProvider>();
     final currentUser = authProvider.user;
@@ -793,9 +797,9 @@ class _TeamRecruitmentCreateScreenState
     final minNeeded = (acceptedCount > 0 ? acceptedCount : 1).clamp(1, 20);
 
     return Scaffold(
-      backgroundColor: pageColor,
+      backgroundColor: AppPageBackground.color(context, pageColor),
       appBar: AppBar(
-        backgroundColor: pageColor,
+        backgroundColor: AppPageBackground.color(context, pageColor),
         surfaceTintColor: Colors.transparent,
         title: Text(widget.initialValue == null ? '发起组队' : '编辑招募'),
         actions: [

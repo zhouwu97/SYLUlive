@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'dart:async';
+import '../widgets/app_page_background.dart';
 import '../models/lottery.dart';
 import '../providers/auth_provider.dart';
 import '../utils/app_feedback.dart';
@@ -258,7 +259,10 @@ class _LotteryScreenState extends State<LotteryScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     const primary = Color(0xFFF59E0B);
     final user = context.watch<AuthProvider>().user;
@@ -271,13 +275,12 @@ class _LotteryScreenState extends State<LotteryScreen> {
         statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor:
-            isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
+        backgroundColor: AppPageBackground.color(context, isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4)),
         appBar: AppBar(
           title:
               const Text('官方抽奖', style: TextStyle(fontWeight: FontWeight.bold)),
           elevation: 0,
-          backgroundColor: Colors.transparent,
+          backgroundColor: AppPageBackground.color(context, Colors.transparent),
         ),
         extendBodyBehindAppBar: true,
         body: Stack(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../widgets/app_page_background.dart';
 import '../providers/water_section_provider.dart';
 import '../models/water_section.dart';
 import '../widgets/water_section/section_avatar.dart';
@@ -24,7 +25,9 @@ class _AdminWaterSectionsScreenState extends State<AdminWaterSectionsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final provider = context.watch<WaterSectionProvider>();
     final sections = provider.activeSections;
     final isDark = Theme.of(context).brightness == Brightness.dark;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/water_moderator.dart';
 import '../models/water_moderation.dart';
 import '../models/water_section.dart';
@@ -177,7 +178,10 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final section = context.watch<WaterSectionProvider>().getBySlug(
               widget.section.slug,
@@ -187,9 +191,9 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4);
 
     return Scaffold(
-      backgroundColor: background,
+      backgroundColor: AppPageBackground.color(context, background),
       appBar: AppBar(
-        backgroundColor: background,
+        backgroundColor: AppPageBackground.color(context, background),
         elevation: 0,
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,

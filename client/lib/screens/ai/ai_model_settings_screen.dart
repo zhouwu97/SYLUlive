@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../features/ai_runtime/ai_endpoint_policy.dart';
 import '../../features/ai_runtime/ai_model_provider.dart';
 import '../../features/ai_runtime/ai_provider_storage.dart';
@@ -410,9 +411,12 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
-      backgroundColor: CampusTheme.pageBackground(context),
+      backgroundColor: AppPageBackground.color(context, CampusTheme.pageBackground(context)),
       appBar: AppPageAppBar(
         title: const Text('模型设置'),
         actions: [

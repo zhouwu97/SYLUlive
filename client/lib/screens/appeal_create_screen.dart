@@ -1,3 +1,4 @@
+import '../widgets/app_page_background.dart';
 import '../widgets/app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -80,7 +81,9 @@ class _AppealCreateScreenState extends State<AppealCreateScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     return Scaffold(
       appBar: const AppPageAppBar(title: Text('申请社区复核')),
       body: ListView(

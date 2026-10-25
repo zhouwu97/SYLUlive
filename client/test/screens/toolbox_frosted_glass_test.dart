@@ -59,9 +59,13 @@ void main() {
     expect(find.text('更多工具'), findsOneWidget);
   });
 
-  for (final profile in ['light', 'dark', 'large-text']) {
+  for (final profile in ['light', 'dark', 'large-text', 'wide-phone']) {
     testWidgets('工具箱 $profile 下滑及停止保持材质，无白边且跟随透明度设置', (tester) async {
-      await setGoldenViewport(tester, GoldenViewports.phone360x800);
+      await setGoldenViewport(
+          tester,
+          profile == 'wide-phone'
+              ? GoldenViewports.phone390x844
+              : GoldenViewports.phone360x800);
       final theme = await _createProvider();
       await theme.setBackgroundImage('morenbeijing.jpeg', fillScreen: true);
       await theme.setFrostedGlass(true);
@@ -81,11 +85,13 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle();
+      // 网格不独立滚动，也不应产生可单独缓存的嵌套 viewport。
+      expect(find.byType(Scrollable), findsOneWidget);
+      expect(find.byType(StretchingOverscrollIndicator), findsNothing);
       // 等待真实壁纸解码，避免把首帧占位底色误判为滚动导致的材质变化。
-      await tester.runAsync(() => precacheImage(
-            const AssetImage('assets/images/morenbeijing.jpeg'),
-            capture.currentContext!,
-          ));
+      final wallpaper = tester.widget<Image>(find.byType(Image).first).image;
+      await tester
+          .runAsync(() => precacheImage(wallpaper, capture.currentContext!));
       await tester.pumpAndSettle();
       final card = find
           .ancestor(
@@ -119,8 +125,11 @@ void main() {
 
       final before = await pixels('idle');
       final gesture = await tester.startGesture(rect.center);
-      await gesture.moveBy(const Offset(0, 20));
-      await tester.pump(const Duration(milliseconds: 16));
+      // 超过触摸阈值并持续拉动，覆盖 Android 的边缘拉伸合成层。
+      await gesture.moveBy(const Offset(0, 24));
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, 120));
+      await tester.pump(const Duration(milliseconds: 100));
       final during = await pixels('drag');
       for (var i = 0; i < 4; i++) {
         expect(during[i], closeTo(before[i], 3), reason: '滚动不能切换材质或透明度');
@@ -128,6 +137,25 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
       expect(await pixels('settled'), before);
+      final scroll = tester.state<ScrollableState>(find.byType(Scrollable));
+      if (scroll.position.maxScrollExtent > 30) {
+        final scrollGesture =
+            await tester.startGesture(Offset(10, rect.center.dy));
+        await scrollGesture.moveBy(const Offset(0, -20));
+        await tester.pump();
+        await scrollGesture.moveBy(const Offset(0, -8));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(scroll.position.pixels, greaterThan(0));
+        final scrolling = await pixels('scrolling');
+        for (var i = 0; i < 4; i++) {
+          expect(scrolling[i], closeTo(before[i], 3));
+        }
+        await scrollGesture.up();
+        await tester.pumpAndSettle();
+        scroll.position.jumpTo(0);
+        await tester.pumpAndSettle();
+        expect(await pixels('returned'), before);
+      }
       final material =
           find.descendant(of: card, matching: find.byType(AppCardSurface));
       final fill = find
@@ -152,6 +180,6 @@ void main() {
       expect(find.byType(BackdropFilter), findsNothing);
       expect(decoration().color!.a, 1);
       expect(tester.takeException(), isNull);
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
   }
 }

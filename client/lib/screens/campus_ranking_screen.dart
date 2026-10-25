@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/teacher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/course_subject_provider.dart';
@@ -84,12 +85,15 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
       };
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = _tabAccent(isDark);
 
     return Scaffold(
-      backgroundColor: RankingTokens.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
       appBar: AppBar(
         leading: const BackButton(),
         title: const Text(
@@ -99,7 +103,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: RankingTokens.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
         foregroundColor: RankingTokens.titleColor(isDark),
         actions: [

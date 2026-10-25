@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import '../../widgets/app_card.dart';
 import 'package:provider/provider.dart';
 
 import '../../controllers/post_reply_composer_controller.dart';
@@ -8,6 +9,8 @@ import '../../models/reply.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/poll_provider.dart';
 import '../../providers/post_provider.dart';
+import '../../providers/theme_provider.dart';
+import '../../widgets/global_background_wrapper.dart';
 import '../../services/poll_service.dart';
 import '../../services/post_reply_service.dart';
 import '../../services/idempotency_key.dart';
@@ -545,12 +548,25 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final page = _buildPage(context);
+    return context.watch<ThemeProvider?>() == null
+        ? page
+        : GlobalBackgroundWrapper(child: page);
+  }
+
+  Widget _buildPage(BuildContext context) {
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
     final post = _post;
     if (_loading && post == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        backgroundColor: customBackground ? Colors.transparent : null,
+        body: const Center(child: CircularProgressIndicator()),
+      );
     }
     if (post == null) {
       return Scaffold(
+        backgroundColor: customBackground ? Colors.transparent : null,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -569,11 +585,15 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
       );
     }
     return Scaffold(
+      backgroundColor: customBackground ? Colors.transparent : null,
       resizeToAvoidBottomInset: false,
       appBar: widget.hideBackButton
           ? null
           : AppBar(
               title: const Text('投票详情'),
+              backgroundColor: customBackground ? Colors.transparent : null,
+              surfaceTintColor: Colors.transparent,
+              scrolledUnderElevation: 0,
               actions: [_buildMoreMenu(post)],
             ),
       body: _buildKeyboardAwareDetail(
@@ -583,6 +603,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
               child: RefreshIndicator(
                 onRefresh: _reload,
                 child: ListView(
+                  addRepaintBoundaries: false,
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
                 children: [
                   if (_pollError != null)
@@ -595,7 +616,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                     ),
                   const Text(
                     '非官方用户投票，结果仅代表参与用户的选择。',
-                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                      style: TextStyle(fontSize: 12),
                   ),
                   const SizedBox(height: 8),
                   PollPostCard(
@@ -614,7 +635,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                               ),
                             ),
                   ),
-                  const Divider(height: 24),
+                    const AppCardDivider(height: 24),
                   Text(
                     '评论 ${post.replyCount}',
                     style: const TextStyle(
@@ -732,9 +753,8 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
         final composerInset = _replyComposerController.keyboardInset;
         final rawInset =
             mediaInset > composerInset ? mediaInset : composerInset;
-        final bottomInset = _replyComposerController.showEmojiPanel
-            ? 0.0
-            : rawInset;
+        final bottomInset =
+            _replyComposerController.showEmojiPanel ? 0.0 : rawInset;
         return Padding(
           padding: EdgeInsets.only(bottom: bottomInset),
           child: child,

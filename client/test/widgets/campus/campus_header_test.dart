@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/campus_calendar.dart';
 import 'package:shenliyuan/providers/campus_calendar_provider.dart';
+import 'package:shenliyuan/providers/theme_provider.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/widgets/campus/campus_header.dart';
 
 import '../../helpers/golden_test_app.dart';
@@ -28,6 +30,7 @@ class _CalendarProvider extends ChangeNotifier
 
 void main() {
   late CampusCalendar calendar;
+  setUp(() => AppPreferencesStore.setMockInitialValues({}));
 
   setUpAll(() async {
     await loadTestFonts();
@@ -108,6 +111,40 @@ void main() {
   });
 
   for (final mode in [ThemeMode.light, ThemeMode.dark]) {
+    testWidgets('周次徽标沿用父卡片玻璃，开关关闭恢复底色 $mode', (tester) async {
+      await setGoldenViewport(tester, GoldenViewports.phone360x800);
+      final theme = ThemeProvider(loadOnStart: false);
+      addTearDown(theme.dispose);
+      await theme.setBackgroundImage('morenbeijing.jpeg');
+      await theme.setFrostedGlass(true);
+      await tester.pumpWidget(MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: theme),
+            ChangeNotifierProvider<CampusCalendarProvider>(
+                create: (_) => _CalendarProvider()..calendar = calendar),
+          ],
+          child: GoldenTestApp(
+              themeMode: mode,
+              home: Scaffold(
+                  body: CampusHeader(
+                      semester: '第一学期', date: DateTime(2026, 10, 25))))));
+      await tester.pumpAndSettle();
+      BoxDecoration badge() => tester
+          .widget<Container>(find.byKey(const ValueKey('campus-week-badge')))
+          .decoration! as BoxDecoration;
+      expect(badge().color, Colors.transparent);
+      expect(badge().border, isNull);
+      expect(find.byType(BackdropFilter), findsOneWidget);
+      expect(find.text('第9周'), findsOneWidget);
+      expect(find.text('10-25'), findsOneWidget);
+      await theme.setFrostedGlass(false);
+      await tester.pumpAndSettle();
+      expect(badge().color!.a, greaterThan(0));
+      expect(badge().border, isNotNull);
+      expect(find.byType(BackdropFilter), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('header supports large text in $mode', (tester) async {
       await pumpHeader(tester, DateTime(2026, 10, 23),
           mode: mode, textScaler: const TextScaler.linear(1.3));

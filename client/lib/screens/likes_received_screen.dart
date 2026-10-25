@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/cached_avatar.dart';
 import '../utils/app_time.dart';
@@ -102,7 +103,9 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('收到的赞')),
       body: !(_auth?.isLoggedIn ?? false)

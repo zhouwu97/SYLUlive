@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../models/post.dart';
 import '../../models/water_team.dart';
 import '../../providers/water_team_provider.dart';
@@ -46,7 +47,10 @@ class _TeamRecruitmentApplicationsScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final meta = _meta;
     final provider = context.watch<WaterTeamProvider>();
     final apps = meta == null

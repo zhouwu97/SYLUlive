@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/app_page_background.dart';
 import '../config/private_chat_policy.dart';
 import 'chat_list_screen.dart';
 
@@ -7,7 +8,10 @@ class MessagesScreen extends StatelessWidget {
   const MessagesScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     // 私聊暂停开放期间该入口不提供会话列表；保留占位说明，
     // 避免通过动态路由等方式进入时出现空白页。
     if (!PrivateChatPolicy.enabled) {

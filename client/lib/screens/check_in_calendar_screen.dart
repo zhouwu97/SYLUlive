@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/app_card.dart';
@@ -574,7 +575,10 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final theme = Theme.of(context);
     final selection = _selectedDaySelection;
     final selectedDateText = _selectedDate == null

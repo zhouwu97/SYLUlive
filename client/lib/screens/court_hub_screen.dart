@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../widgets/app_page_background.dart';
 import '../app_bootstrap.dart';
 import '../widgets/app_page_app_bar.dart';
 import 'court_screen.dart';
@@ -91,7 +92,9 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final pendingCount = _appeals
         .where((appeal) =>
             appeal['can_vote'] == true && appeal['status'] == 'pending')
@@ -227,7 +230,7 @@ class _CourtTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     final labels = ['待陪审', '我的申诉', '参与记录', '结案公示'];
     final scheme = Theme.of(context).colorScheme;
-    return Container(
+    return AppCardSurface(
       height: 44,
       decoration: BoxDecoration(
         border: Border.all(color: scheme.outlineVariant),

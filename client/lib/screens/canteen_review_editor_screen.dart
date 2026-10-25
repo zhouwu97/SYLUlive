@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/canteen_dish.dart';
 import '../models/canteen_review.dart';
 import '../models/canteen_review_draft.dart';
@@ -1148,7 +1149,10 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   // ── Build ──────────────────────────────────────────────────────
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = CanteenTheme.accentColor(isDark);
 
@@ -1158,7 +1162,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         if (!didPop) _handleExit();
       },
       child: Scaffold(
-        backgroundColor: CanteenTheme.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
         appBar: _buildAppBar(isDark),
         bottomNavigationBar: _buildBottomBar(isDark, accent),
         body: SingleChildScrollView(
@@ -1204,7 +1208,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     }
 
     return AppBar(
-      backgroundColor: CanteenTheme.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: true,
@@ -2219,10 +2223,11 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     final canSubmit =
         (_dimensions.isComplete || _draftImages.isNotEmpty) && !_isSubmitting;
 
-    return Container(
+    return AppCardSurface(
       padding: EdgeInsets.fromLTRB(16, 10, 16, bottom + 10),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
+        borderRadius: BorderRadius.zero,
         border: Border(
           top: BorderSide(
             color: CanteenTheme.borderColor(isDark),

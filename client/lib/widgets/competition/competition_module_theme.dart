@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'competition_ui_tokens.dart';
+import '../app_page_background.dart';
 
 class CompetitionModuleTheme {
   const CompetitionModuleTheme._();
@@ -23,9 +24,9 @@ class CompetitionModuleTheme {
 
     return base.copyWith(
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: CompetitionUiTokens.pageBg(isDark),
+      scaffoldBackgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
       appBarTheme: base.appBarTheme.copyWith(
-        backgroundColor: CompetitionUiTokens.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
         foregroundColor: foreground,
         surfaceTintColor: Colors.transparent,
         elevation: 0,

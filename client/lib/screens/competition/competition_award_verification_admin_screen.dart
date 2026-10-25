@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../models/competition_award.dart';
 import '../../utils/app_feedback.dart';
 import '../../services/async_action_guard.dart';
@@ -94,14 +95,17 @@ class _CompetitionAwardVerificationAdminScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final totalPages = (_total / _pageSize).ceil().clamp(1, 999999);
     return Scaffold(
-      backgroundColor: CompetitionUiTokens.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
       appBar: AppBar(
         title: const Text('经历核验'),
-        backgroundColor: CompetitionUiTokens.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
       ),
       body: RefreshIndicator(
@@ -430,10 +434,10 @@ class _CompetitionAwardVerificationDetailScreenState
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: CompetitionUiTokens.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
       appBar: AppBar(
         title: const Text('核验详情'),
-        backgroundColor: CompetitionUiTokens.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
       ),
       body: _loading

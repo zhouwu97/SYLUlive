@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/home_widget_config.dart';
 import '../services/home_widget_service.dart';
 import '../utils/app_feedback.dart';
@@ -190,17 +191,20 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final baseTheme = Theme.of(context);
     final pageBackground = CampusTheme.pageBackground(context);
 
     return Theme(
       data: CampusTheme.withBrandAccent(baseTheme),
       child: Scaffold(
-        backgroundColor: pageBackground,
+        backgroundColor: AppPageBackground.color(context, pageBackground),
         appBar: AppBar(
           title: const Text('桌面小组件'),
-          backgroundColor: pageBackground,
+          backgroundColor: AppPageBackground.color(context, pageBackground),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,

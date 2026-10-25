@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../providers/campus_calendar_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
 import 'campus_theme.dart';
@@ -16,6 +17,7 @@ class CampusHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     final now = date ?? DateTime.now();
@@ -90,18 +92,24 @@ class CampusHeader extends StatelessWidget {
           ),
           // 右侧周次信息同时承担本学期进度提示。
           Container(
+            key: const ValueKey('campus-week-badge'),
             width: 68,
             padding: const EdgeInsets.fromLTRB(7, 7, 7, 6),
             decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : Colors.white.withValues(alpha: 0.78),
+              // 与页头共用一层材质，避免内部实色底遮住毛玻璃。
+              color: glass
+                  ? Colors.transparent
+                  : isDark
+                      ? Colors.white.withValues(alpha: 0.06)
+                      : Colors.white.withValues(alpha: 0.78),
               borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : CampusTheme.border,
-              ),
+              border: glass
+                  ? null
+                  : Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : CampusTheme.border,
+                    ),
             ),
             child: Column(
               children: [

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../features/ai_runtime/deterministic/graduation_requirement_engine.dart';
 
 class GraduationChecklistScreen extends StatelessWidget {
@@ -11,7 +12,10 @@ class GraduationChecklistScreen extends StatelessWidget {
   final GraduationReadiness readiness;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('毕业清单')),
       body: ListView(

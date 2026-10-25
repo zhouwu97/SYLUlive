@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../widgets/global_background_wrapper.dart';
 import '../models/startup_destination.dart';
 import '../services/root_page_state_service.dart';
 import '../utils/app_navigator.dart';
@@ -2071,6 +2072,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final backgroundSettings = context.watch<ThemeProvider?>();
+    final customBackground =
+        backgroundSettings?.shouldShowCustomBackground == true;
     final currentUser = context.watch<AuthProvider>().user;
     final canDelete = _post != null &&
         currentUser != null &&
@@ -2089,13 +2093,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final bool transparentMode =
         widget.isDesktopSplitMode && widget.hideBackButton;
 
-    return PopScope(
+    final page = PopScope(
       canPop: true,
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: overlayStyle,
         child: Scaffold(
           resizeToAvoidBottomInset: false,
-          backgroundColor: transparentMode
+          backgroundColor: transparentMode || customBackground
               ? Colors.transparent
               : (isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
           appBar: transparentMode
@@ -2147,6 +2151,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         ),
       ),
     );
+    return backgroundSettings == null || transparentMode
+        ? page
+        : GlobalBackgroundWrapper(child: page);
   }
 
   /// Scaffold 不随 IME resize 时，由详情页自己为 Composer 预留键盘 viewport。
@@ -2266,8 +2273,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     required bool isAdmin,
   }) {
     return AppBar(
-      backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
-      elevation: 0.5,
+      backgroundColor:
+          context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
+              ? Colors.transparent
+              : isDark
+                  ? const Color(0xFF131720)
+                  : Colors.white,
+      surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
+      elevation: 0,
       automaticallyImplyLeading: !widget.hideBackButton,
       leading: widget.hideBackButton ? null : const BackButton(),
       titleSpacing: widget.hideBackButton ? 16 : 0,
@@ -2958,7 +2972,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                     ),
                   Transform.translate(
                     offset: Offset(0, p.images.isNotEmpty ? -24 : 0),
-                    child: Container(
+                    child: AppCardSurface(
                       width: double.infinity,
                       decoration: BoxDecoration(
                         color: isDark ? const Color(0xFF131720) : Colors.white,
@@ -3194,7 +3208,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         children: [
           // 白色内容卡片：作者 + 标题 + 正文 + 图片 + 信息 + 操作栏
           _buildPostContentDismissWrapper(
-            child: Container(
+            child: AppCardSurface(
               color: isDark ? const Color(0xFF131720) : Colors.white,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3219,10 +3233,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           // 8px 分区
           Container(
             height: 8,
-            color: isDark ? const Color(0xFF1A1E28) : const Color(0xFFF0F0F0),
+            color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                ? Colors.transparent
+                : isDark
+                    ? const Color(0xFF1A1E28)
+                    : const Color(0xFFF0F0F0),
           ),
           // 白色评论区卡片
-          Container(
+          AppCardSurface(
             key: _commentsSectionKey,
             color: isDark ? const Color(0xFF131720) : Colors.white,
             child: _buildWaterCommentsSection(isDark),
@@ -4963,7 +4981,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           ),
         ),
         const SizedBox(height: 10),
-        Divider(
+        AppCardDivider(
           height: 1,
           thickness: 1,
           color: isDark ? Colors.white10 : Colors.grey[200],

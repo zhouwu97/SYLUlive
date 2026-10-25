@@ -1,3 +1,4 @@
+import '../widgets/app_page_background.dart';
 import '../widgets/app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -214,7 +215,10 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final pageBackground = CampusTheme.pageBackground(context);
@@ -222,10 +226,10 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
     return Theme(
       data: CampusTheme.withBrandAccent(theme),
       child: Scaffold(
-        backgroundColor: pageBackground,
+        backgroundColor: AppPageBackground.color(context, pageBackground),
         appBar: AppBar(
           title: const Text('校园资讯'),
-          backgroundColor: pageBackground,
+          backgroundColor: AppPageBackground.color(context, pageBackground),
           foregroundColor: isDark ? Colors.white : CampusTheme.text,
           elevation: 0,
           scrolledUnderElevation: 0,

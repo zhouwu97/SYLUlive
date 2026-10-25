@@ -2724,7 +2724,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         : AppColors.surfaceSecondaryLight;
     final border =
         isDark ? AppColors.borderNormalDark : AppColors.borderNormalLight;
-    return Container(
+    return AppCardSurface(
       height: 46,
       decoration: BoxDecoration(
         color: background,
@@ -2733,6 +2733,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       ),
       child: TextField(
         key: const ValueKey('feed-search-field'),
+        textAlignVertical: TextAlignVertical.center,
         controller: _searchController,
         focusNode: _searchFocusNode,
         onChanged: _onSearchChanged,
@@ -2742,7 +2743,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         decoration: InputDecoration(
           border: InputBorder.none,
           isDense: true,
-          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+          filled: false,
+          contentPadding: EdgeInsets.zero,
+          prefixIconConstraints:
+              const BoxConstraints(minWidth: 44, minHeight: 46),
+          suffixIconConstraints:
+              const BoxConstraints(minWidth: 44, minHeight: 46),
           hintText: '搜索帖子标题、关键词、校园话题',
           hintStyle: TextStyle(
             fontSize: 14,

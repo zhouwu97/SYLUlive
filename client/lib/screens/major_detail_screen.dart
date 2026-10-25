@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import '../providers/major_provider.dart';
 import '../widgets/rating_detail/ranking_tokens.dart';
@@ -121,12 +122,15 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = RankingTokens.majorAccent(isDark);
 
     return Scaffold(
-      backgroundColor: RankingTokens.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
       extendBodyBehindAppBar: false,
       appBar: AppBar(
         systemOverlayStyle: SystemUiOverlayStyle(
@@ -141,7 +145,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
         ),
         iconTheme: IconThemeData(color: RankingTokens.titleColor(isDark)),
         title: const Text('专业评价'),
-        backgroundColor: RankingTokens.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,

@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../widgets/app_page_background.dart';
 import '../app_bootstrap.dart';
 import '../widgets/app_page_app_bar.dart';
 import 'court_screen.dart';
@@ -105,7 +106,9 @@ class _AdminAppealReviewScreenState extends State<AdminAppealReviewScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     return Scaffold(
       appBar: const AppPageAppBar(title: Text('公众法庭复核')),
       body: RefreshIndicator(

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/diagnostic_log_entry.dart';
 import '../services/diagnostic_log_service.dart';
 
@@ -83,7 +84,10 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
       }).toList();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final groups = _DiagnosticGroup.fromEntries(_filteredLogs);
     return Scaffold(

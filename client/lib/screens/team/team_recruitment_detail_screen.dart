@@ -1,3 +1,4 @@
+import '../../widgets/app_page_background.dart';
 import '../../widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -172,7 +173,10 @@ class _TeamRecruitmentDetailScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -184,9 +188,9 @@ class _TeamRecruitmentDetailScreenState
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageColor = TeamUiTokens.pageBg(isDark);
     return Scaffold(
-      backgroundColor: pageColor,
+      backgroundColor: AppPageBackground.color(context, pageColor),
       appBar: AppBar(
-        backgroundColor: pageColor,
+        backgroundColor: AppPageBackground.color(context, pageColor),
         surfaceTintColor: Colors.transparent,
         title: const Text('组队详情'),
         actions: [

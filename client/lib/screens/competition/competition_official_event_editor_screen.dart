@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../models/competition.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
@@ -290,14 +291,17 @@ class _CompetitionOfficialEventEditorScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = CompetitionUiTokens.pageBg(isDark);
 
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: AppPageBackground.color(context, bg),
       appBar: AppBar(
-        backgroundColor: bg,
+        backgroundColor: AppPageBackground.color(context, bg),
         surfaceTintColor: Colors.transparent,
         title: Text(widget.initialData == null ? '手动新建公开比赛' : '编辑公开比赛'),
       ),

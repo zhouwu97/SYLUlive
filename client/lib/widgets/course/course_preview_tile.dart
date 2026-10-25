@@ -169,15 +169,18 @@ class CoursePreviewTile extends StatelessWidget {
                   ),
                 const SizedBox(height: 4),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Icon(Icons.date_range_rounded,
                         size: 14, color: CampusTheme.subText),
                     const SizedBox(width: 4),
-                    Text(
-                      weekStr,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: CampusTheme.subText,
+                    Expanded(
+                      child: Text(
+                        weekStr,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: CampusTheme.subText,
+                        ),
                       ),
                     ),
                   ],

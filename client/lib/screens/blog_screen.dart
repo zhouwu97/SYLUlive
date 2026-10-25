@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import '../widgets/app_page_background.dart';
 import '../platform/contracts/external_navigator.dart';
 import '../widgets/app_card.dart';
 
@@ -27,9 +28,12 @@ class BlogScreen extends StatefulWidget {
 
 class _BlogScreenState extends State<BlogScreen> {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent, // 使用全局默认背景
+      backgroundColor: AppPageBackground.color(context, Colors.transparent), // 使用全局默认背景
       appBar: _buildAppBar(),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
@@ -76,7 +80,7 @@ class _BlogScreenState extends State<BlogScreen> {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: const Color(0xCC0B1121),
+      backgroundColor: AppPageBackground.color(context, const Color(0xCC0B1121)),
       elevation: 0,
       automaticallyImplyLeading: false,
       title: const Row(
@@ -408,9 +412,9 @@ class _ArticleReaderState extends State<_ArticleReader> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0B1121),
+      backgroundColor: AppPageBackground.color(context, const Color(0xFF0B1121)),
       appBar: AppBar(
-        backgroundColor: const Color(0xCC0B1121),
+        backgroundColor: AppPageBackground.color(context, const Color(0xCC0B1121)),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Color(0xFF94A3B8)),

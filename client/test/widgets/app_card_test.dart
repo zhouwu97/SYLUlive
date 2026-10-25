@@ -26,6 +26,40 @@ class _Stripes extends CustomPainter {
 void main() {
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
 
+  testWidgets('去掉玻璃卡片描边后，封面贴合卡片边缘且保留显式内边距', (tester) async {
+    final theme = ThemeProvider(loadOnStart: false);
+    addTearDown(theme.dispose);
+    await theme.setBackgroundImage('morenbeijing.jpeg');
+    await theme.setFrostedGlass(true);
+    const cover = Key('cover');
+    const surface = Key('surface');
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: theme,
+      child: MaterialApp(
+          home: Scaffold(
+              body: AppCardSurface(
+        key: surface,
+        width: 200,
+        height: 120,
+        padding: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Colors.white, width: 2),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const ColoredBox(key: cover, color: Colors.blue),
+      ))),
+    ));
+    await tester.pumpAndSettle();
+    final outer = tester.getRect(find.byKey(surface));
+    expect(tester.getRect(find.byKey(cover)),
+        Rect.fromLTWH(outer.left, outer.top, 200, 108));
+    await theme.setFrostedGlass(false);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byKey(cover)),
+        Rect.fromLTWH(outer.left + 2, outer.top + 2, 196, 104));
+  });
+
   for (final dark in [false, true]) {
     testWidgets('四种卡片材质像素一致，透明度只应用一次，无白边 dark=$dark', (tester) async {
       final theme = ThemeProvider(loadOnStart: false);
@@ -58,6 +92,8 @@ void main() {
                         horizontal: 60, vertical: 10),
                     child: Column(children: [
                       AppCardSurface(
+                        width: 200,
+                        height: 80,
                         decoration: BoxDecoration(
                           color: color,
                           borderRadius: BorderRadius.circular(16),

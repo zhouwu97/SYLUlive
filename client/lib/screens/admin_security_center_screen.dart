@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/security_event.dart';
 import '../providers/auth_provider.dart';
 import '../services/admin_security_service.dart';
@@ -11,7 +12,6 @@ import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../utils/security_event_presentation.dart';
-import '../widgets/global_background_wrapper.dart';
 import '../widgets/app_card.dart';
 
 /// 安全中心。
@@ -518,18 +518,18 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final surface = Theme.of(context).colorScheme.surface;
     return Scaffold(
-      // 之前这里 Scaffold 与 AppBar 同时透明，而背景层只铺在 body 内，
-      // 于是状态栏下方那一条直接露出黑底，标题在深色上几乎不可见。
-      // 安全中心是后台密排页面，不需要透出壁纸：AppBar 用不透明的 surface 色，
-      // Scaffold 底色跟随同一颜色，确保浅色/深色模式下标题与图标都清晰。
-      backgroundColor: surface,
+      // 共用背景覆盖整个页面和顶栏；简洁模式仍使用表面色，
+      // 避免只在 body 铺壁纸时顶部露出黑底。
+      backgroundColor: AppPageBackground.color(context, surface),
       appBar: AppBar(
         title: const Text('安全中心'),
-        backgroundColor: surface,
+        backgroundColor: AppPageBackground.color(context, surface),
         foregroundColor: Theme.of(context).colorScheme.onSurface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
@@ -560,7 +560,6 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
       ),
       body: Stack(
         children: [
-          const Positioned.fill(child: CustomBackgroundLayer()),
           RefreshIndicator(
             onRefresh: _load,
             child: ListView(

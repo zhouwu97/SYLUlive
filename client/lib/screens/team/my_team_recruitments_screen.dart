@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../models/team_recruitment.dart';
 import '../../models/water_team.dart';
 import '../../providers/team_recruitment_provider.dart';
@@ -80,14 +81,17 @@ class _MyTeamRecruitmentsScreenState extends State<MyTeamRecruitmentsScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final provider = context.watch<TeamRecruitmentProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageColor = TeamUiTokens.pageBg(isDark);
     return Scaffold(
-      backgroundColor: pageColor,
+      backgroundColor: AppPageBackground.color(context, pageColor),
       appBar: AppBar(
-          backgroundColor: pageColor,
+          backgroundColor: AppPageBackground.color(context, pageColor),
           surfaceTintColor: Colors.transparent,
           title: const Text('我的组队'),
           bottom: TabBar(

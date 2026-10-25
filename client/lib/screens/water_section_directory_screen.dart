@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../theme/app_colors.dart';
 import '../providers/water_section_provider.dart';
 import '../models/water_section.dart';
@@ -43,7 +44,10 @@ class _WaterSectionDirectoryScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final backgroundColor =
         isDark ? const Color(0xFF0D1117) : const Color(0xFFFFFAF4);
@@ -64,7 +68,7 @@ class _WaterSectionDirectoryScreenState
         const ['投票', '选择', '意见', '调查'].any(_searchQuery.contains);
 
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: AppPageBackground.color(context, backgroundColor),
       body: SafeArea(
         child: CustomScrollView(
           slivers: [

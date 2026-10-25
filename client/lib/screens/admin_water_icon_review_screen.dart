@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../widgets/app_page_background.dart';
 import '../models/water_section_icon_review.dart';
 import '../providers/water_section_provider.dart';
 import '../config/api_constants.dart';
@@ -115,7 +116,9 @@ class _AdminWaterIconReviewScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('版块图标审核'),

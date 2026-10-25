@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/course_evaluation.dart';
 import '../providers/auth_provider.dart';
 import '../providers/course_subject_provider.dart';
@@ -100,7 +101,10 @@ class _SubjectRankingDetailScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
     final accent = RankingTokens.teacherAccent(isDark);
@@ -118,7 +122,7 @@ class _SubjectRankingDetailScreenState
         Navigator.pop(context, _changed);
       },
       child: Scaffold(
-        backgroundColor: RankingTokens.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
         extendBodyBehindAppBar: false,
         appBar: AppBar(
           title: Text(
@@ -128,7 +132,7 @@ class _SubjectRankingDetailScreenState
               fontWeight: FontWeight.w800,
             ),
           ),
-          backgroundColor: RankingTokens.pageBg(isDark),
+          backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,

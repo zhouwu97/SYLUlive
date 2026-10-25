@@ -1,10 +1,14 @@
+import '../widgets/app_page_background.dart';
 import 'package:flutter/material.dart';
 
 class ScamReportPlaceholder extends StatelessWidget {
   const ScamReportPlaceholder({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('骗子曝光')),
       body: Center(

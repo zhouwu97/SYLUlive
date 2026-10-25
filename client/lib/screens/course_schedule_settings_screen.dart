@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../widgets/app_page_background.dart';
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/app_card.dart';
 
@@ -183,17 +184,20 @@ class _CourseScheduleSettingsScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final baseTheme = Theme.of(context);
     final pageBackground = CampusTheme.pageBackground(context);
 
     return Theme(
       data: CampusTheme.withBrandAccent(baseTheme),
       child: Scaffold(
-        backgroundColor: pageBackground,
+        backgroundColor: AppPageBackground.color(context, pageBackground),
         appBar: AppBar(
           title: const Text('课表设置'),
-          backgroundColor: pageBackground,
+          backgroundColor: AppPageBackground.color(context, pageBackground),
           foregroundColor: baseTheme.colorScheme.onSurface,
           surfaceTintColor: Colors.transparent,
           elevation: 0,

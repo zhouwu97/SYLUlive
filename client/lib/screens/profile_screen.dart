@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import '../widgets/app_card.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -995,7 +996,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               for (int i = 0; i < items.length; i++) ...[
                 if (i > 0)
-                  Divider(
+                  AppCardDivider(
                     height: 1,
                     thickness: 0.5,
                     indent: 68,

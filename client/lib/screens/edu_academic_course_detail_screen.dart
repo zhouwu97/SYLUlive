@@ -1,3 +1,4 @@
+import '../widgets/app_page_background.dart';
 import '../widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import '../models/edu_academic_situation.dart';
@@ -11,12 +12,15 @@ class EduAcademicCourseDetailScreen extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('课程完成情况'),
         centerTitle: true,
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(context, Colors.transparent),
         elevation: 0,
       ),
       body: ListView(

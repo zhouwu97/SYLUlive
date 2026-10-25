@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../widgets/app_page_background.dart';
 import '../../models/feedback_ticket.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
@@ -210,7 +211,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
   }
 
   Widget _buildStatsHeader(bool isDark) {
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 10),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -460,7 +461,9 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = themeProvider.isCleanBackgroundMode && !isDark
@@ -468,7 +471,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
         : Theme.of(context).colorScheme.surface;
 
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
         title: _showSearch
             ? TextField(
@@ -486,7 +489,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
               ),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),

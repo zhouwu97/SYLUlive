@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import '../../widgets/app_page_background.dart';
 import '../../widgets/competition/competition_status_helper.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -454,11 +455,14 @@ class _CompetitionAdminImportScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
-      backgroundColor: _competitionBg,
+      backgroundColor: AppPageBackground.color(context, _competitionBg),
       appBar: AppBar(
-        backgroundColor: _competitionBg,
+        backgroundColor: AppPageBackground.color(context, _competitionBg),
         surfaceTintColor: Colors.transparent,
         centerTitle: true,
         title: Text('AI辅助导入比赛'),

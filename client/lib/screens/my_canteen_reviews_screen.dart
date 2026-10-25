@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/app_page_background.dart';
 import '../utils/canteen_review_date.dart';
 import 'package:provider/provider.dart';
 
@@ -206,10 +207,13 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: CanteenTheme.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       appBar: AppPageAppBar(
         title: const Text('我的菜品评价'),
         actions: [

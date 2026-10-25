@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
+import '../widgets/app_page_background.dart';
 import '../config/api_constants.dart';
 import '../models/admin_user_summary.dart';
 import '../providers/auth_provider.dart';
@@ -171,7 +172,9 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('超级管理员面板'),

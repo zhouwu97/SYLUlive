@@ -200,7 +200,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                         crossAxisCount = 1;
                       }
 
-                      return ListView(
+                      final tools = ListView(
                         // 毛玻璃依赖列表外的壁纸，滚动时保持与背景一起合成。
                         addRepaintBoundaries: false,
                         padding: const EdgeInsets.all(20),
@@ -211,18 +211,9 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                             useCustomBackground,
                           ),
                           const SizedBox(height: 12),
-                          GridView(
-                            addRepaintBoundaries: false,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            padding: EdgeInsets.zero,
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossAxisCount,
-                              mainAxisExtent: 88,
-                              mainAxisSpacing: 12,
-                              crossAxisSpacing: 12,
-                            ),
+                          _buildToolGrid(
+                            width: constraints.maxWidth - 40,
+                            columns: crossAxisCount,
                             children: [
                               _buildToolCard(
                                 context,
@@ -289,18 +280,9 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                             useCustomBackground,
                           ),
                           const SizedBox(height: 12),
-                          GridView(
-                            addRepaintBoundaries: false,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            padding: EdgeInsets.zero,
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossAxisCount,
-                              mainAxisExtent: 88,
-                              mainAxisSpacing: 12,
-                              crossAxisSpacing: 12,
-                            ),
+                          _buildToolGrid(
+                            width: constraints.maxWidth - 40,
+                            columns: crossAxisCount,
                             children: [
                               _buildToolCard(
                                 context,
@@ -328,6 +310,13 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                           _buildMoreToolsCard(isDark),
                         ],
                       );
+                      return ScrollConfiguration(
+                        // Android 的边缘拉伸会把列表放入离屏层，隔断壁纸采样。
+                        behavior: themeProvider.frostedGlass
+                            ? ScrollConfiguration.of(context).copyWith(overscroll: false)
+                            : ScrollConfiguration.of(context),
+                        child: tools,
+                      );
                     },
                   ),
                 ),
@@ -336,6 +325,24 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // 这些网格不独立滚动。Wrap 避免嵌套 viewport 被单独缓存，
+  // 让卡片的 BackdropFilter 始终采样外层壁纸，而非离屏透明层。
+  Widget _buildToolGrid({
+    required double width,
+    required int columns,
+    required List<Widget> children,
+  }) {
+    final cardWidth = (width - (columns - 1) * 12) / columns;
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: [
+        for (final card in children)
+          SizedBox(width: cardWidth, height: 88, child: card),
+      ],
     );
   }
 

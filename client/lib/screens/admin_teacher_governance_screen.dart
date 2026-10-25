@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/teacher_governance.dart';
 import '../providers/auth_provider.dart';
 import '../providers/course_subject_provider.dart';
@@ -1183,7 +1184,9 @@ class _AdminTeacherGovernanceScreenState
   // ==========================================
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (_isCheckingCapability) {
@@ -1196,8 +1199,7 @@ class _AdminTeacherGovernanceScreenState
           centerTitle: true,
           elevation: 0,
           scrolledUnderElevation: 0,
-          backgroundColor:
-              isDark ? AppColors.surfaceSecondaryDark : Colors.white,
+          backgroundColor: AppPageBackground.color(context, isDark ? AppColors.surfaceSecondaryDark : Colors.white),
           title: Text(
             '教师与课程数据治理',
             style: TextStyle(
@@ -1221,8 +1223,7 @@ class _AdminTeacherGovernanceScreenState
           centerTitle: true,
           elevation: 0,
           scrolledUnderElevation: 0,
-          backgroundColor:
-              isDark ? AppColors.surfaceSecondaryDark : Colors.white,
+          backgroundColor: AppPageBackground.color(context, isDark ? AppColors.surfaceSecondaryDark : Colors.white),
           title: Text(
             '教师与课程数据治理',
             style: TextStyle(
@@ -1289,8 +1290,7 @@ class _AdminTeacherGovernanceScreenState
           centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor:
-            isDark ? AppColors.surfaceSecondaryDark : Colors.white,
+        backgroundColor: AppPageBackground.color(context, isDark ? AppColors.surfaceSecondaryDark : Colors.white),
         title: Text(
           '教师与课程数据治理',
           style: TextStyle(

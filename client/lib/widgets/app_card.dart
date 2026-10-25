@@ -15,6 +15,26 @@ Color _glassColor(BuildContext context, Color? color, double opacity) {
   return Color.alphaBlend(color ?? base, base).withValues(alpha: opacity);
 }
 
+/// 菜单／设置组内部的装饰分隔线，玻璃模式只保留原有行间距。
+class AppCardDivider extends Divider {
+  const AppCardDivider({
+    super.key,
+    super.height,
+    super.thickness,
+    super.indent,
+    super.endIndent,
+    super.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (context.watch<ThemeProvider?>()?.frostedGlass == true) {
+      return SizedBox(height: height ?? DividerTheme.of(context).space ?? 16);
+    }
+    return super.build(context);
+  }
+}
+
 /// 所有内容卡片共用的材质。关闭毛玻璃时保留原来的实色外观和布局。
 ///
 /// 卡片只模糊背后的内容；文字、图标、封面和点击区域仍按原样绘制。
@@ -97,8 +117,9 @@ class AppCardSurface extends Container {
           sigmaY: blur,
           child: Container(
             alignment: alignment,
-            padding: (padding ?? EdgeInsets.zero)
-                .add(box?.padding ?? EdgeInsets.zero),
+            // 装饰描边已移除，不再保留它隐含的 inset；否则封面周围
+            // 仍会露出一圈卡片底色。调用者的显式内容间距保持不变。
+            padding: padding,
             decoration: material,
             foregroundDecoration: foregroundDecoration,
             child: child,

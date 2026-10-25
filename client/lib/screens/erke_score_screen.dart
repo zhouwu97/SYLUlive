@@ -16,6 +16,8 @@ import '../utils/app_feedback.dart';
 import '../widgets/erke_snapshot_upload_dialog.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import '../widgets/app_card.dart';
+import '../widgets/global_background_wrapper.dart';
+import '../providers/theme_provider.dart';
 
 class ErkeScoreScreen extends StatefulWidget {
   const ErkeScoreScreen({super.key});
@@ -364,16 +366,25 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final backgroundSettings = context.watch<ThemeProvider?>();
+    final customBackground =
+        backgroundSettings?.shouldShowCustomBackground == true;
 
-    return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
+    final page = Scaffold(
+      backgroundColor: customBackground
+          ? Colors.transparent
+          : isDark
+              ? const Color(0xFF111315)
+              : const Color(0xFFFFFAF4),
       appBar: AppBar(
         title:
             const Text('二课成绩查询', style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
-        backgroundColor:
-            isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
+        backgroundColor: customBackground
+            ? Colors.transparent
+            : isDark
+                ? const Color(0xFF111315)
+                : const Color(0xFFFFFAF4),
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
         elevation: 0,
@@ -418,6 +429,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             : _buildLoginForm(),
       ),
     );
+    return backgroundSettings == null
+        ? page
+        : GlobalBackgroundWrapper(child: page);
   }
 
   // ==================================================================
@@ -433,7 +447,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Column(
         children: [
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF1E2226) : const Color(0xFFEAF6F3),
@@ -463,7 +477,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(20),
             decoration: _softCardDecoration(isDark),
             child: Column(

@@ -15,6 +15,7 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/admin_security_center_screen.dart';
 import 'package:shenliyuan/utils/security_event_presentation.dart';
+import 'package:shenliyuan/widgets/global_background_wrapper.dart';
 
 import '../helpers/golden_test_app.dart';
 import '../helpers/load_test_fonts.dart';
@@ -110,7 +111,9 @@ class _Api {
 }
 
 Future<GlobalKey> _pump(WidgetTester tester, _Api api,
-    {ThemeMode mode = ThemeMode.light, double textScale = 1}) async {
+    {ThemeMode mode = ThemeMode.light,
+    double textScale = 1,
+    ThemeProvider? appearance}) async {
   tester.view.physicalSize = const Size(360, 800);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
@@ -120,7 +123,7 @@ Future<GlobalKey> _pump(WidgetTester tester, _Api api,
       providers: [
         ChangeNotifierProvider<AuthProvider>.value(value: api.auth),
         ChangeNotifierProvider(
-            create: (_) => ThemeProvider(loadOnStart: false)),
+            create: (_) => appearance ?? ThemeProvider(loadOnStart: false)),
       ],
       child: RepaintBoundary(
           key: capture,
@@ -154,6 +157,27 @@ Future<void> _visible(WidgetTester tester, Finder finder) async {
 void main() {
   setUpAll(loadTestFonts);
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
+
+  for (final mode in [ThemeMode.light, ThemeMode.dark]) {
+    testWidgets('安全中心顶栏随背景切换且保持文字可读 $mode', (tester) async {
+      final appearance = ThemeProvider(loadOnStart: false);
+      await appearance.setBackgroundImage('morenbeijing.jpeg');
+      final api = _Api();
+      await _pump(tester, api, mode: mode, appearance: appearance);
+      await tester.pumpAndSettle();
+      expect(find.byType(CustomBackgroundLayer), findsOneWidget);
+      expect(tester.widget<AppBar>(find.byType(AppBar)).backgroundColor,
+          Colors.transparent);
+      final scheme = Theme.of(tester.element(find.byType(AppBar))).colorScheme;
+      expect(tester.widget<AppBar>(find.byType(AppBar)).foregroundColor,
+          scheme.onSurface);
+      await appearance.setCleanBackgroundMode();
+      await tester.pumpAndSettle();
+      expect(tester.widget<AppBar>(find.byType(AppBar)).backgroundColor,
+          scheme.surface);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   test('旧接口与不可信来源不会把指纹当作 IP 或暴露伪造地址', () {
     final old =

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../widgets/app_page_background.dart';
 import '../../models/feedback_ticket.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
@@ -1732,7 +1733,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = themeProvider.isCleanBackgroundMode && !isDark
@@ -1740,7 +1743,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         : Theme.of(context).colorScheme.surface;
 
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
         title: Text(
           widget.isAdmin ? '工单处理详情' : '工单详情',
@@ -1748,7 +1751,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         ),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),

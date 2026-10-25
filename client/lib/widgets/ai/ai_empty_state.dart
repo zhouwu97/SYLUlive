@@ -4,6 +4,7 @@ import '../../models/ai_quick_prompt.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import 'ai_action_grid.dart';
+import '../app_card.dart';
 
 class AiSuggestedPrompt {
   const AiSuggestedPrompt({
@@ -97,52 +98,50 @@ class AiPublicEmptyState extends StatelessWidget {
       builder: (context) => Semantics(
         button: true,
         label: '$title：$subtitle',
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: chatEnabled ? () => onPromptSelected?.call(prompt) : null,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            child: Ink(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? AppColors.surfaceSecondaryDark
-                    : Colors.white,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(
+        child: AppCardSurface(
+          decoration: BoxDecoration(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? AppColors.surfaceSecondaryDark
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(
                   color: Theme.of(context).brightness == Brightness.dark
                       ? AppColors.borderNormalDark
-                      : AppColors.borderNormalLight,
-                ),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(icon, size: 19, color: AppColors.brandPrimary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title,
-                            style: TextStyle(
-                                color: Theme.of(context).colorScheme.onSurface,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 4),
-                        Text(subtitle,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                                height: 1.35)),
-                      ],
-                    ),
-                  ),
-                ],
+                      : AppColors.borderNormalLight)),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: chatEnabled ? () => onPromptSelected?.call(prompt) : null,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(icon, size: 19, color: AppColors.brandPrimary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                            Text(title,
+                                style: TextStyle(
+                                    color:
+                                        Theme.of(context).colorScheme.onSurface,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700)),
+                            const SizedBox(height: 4),
+                            Text(subtitle,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                    height: 1.35))
+                          ]))
+                    ]),
               ),
             ),
           ),

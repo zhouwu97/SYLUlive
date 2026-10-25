@@ -9,6 +9,7 @@ import '../models/water_section.dart';
 import '../widgets/water_section/section_avatar.dart';
 import 'water_category_feed_route.dart';
 import 'poll/poll_center_screen.dart';
+import '../widgets/app_card.dart';
 
 class WaterSectionDirectoryScreen extends StatefulWidget {
   const WaterSectionDirectoryScreen({super.key});
@@ -126,7 +127,7 @@ class _WaterSectionDirectoryScreenState
         child: InkWell(
           borderRadius: BorderRadius.circular(18),
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PollCenterScreen())),
-          child: Container(
+          child: AppCardSurface(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: isDark ? AppColors.brandSurfaceDark : AppColors.brandSurfaceLight,
@@ -391,7 +392,7 @@ class _WaterSectionDirectoryScreenState
           ),
         );
       },
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1F2937) : Colors.white,

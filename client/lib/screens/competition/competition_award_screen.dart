@@ -8,6 +8,7 @@ import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_page_scaffold.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
 import 'competition_award_editor_screen.dart';
+import '../../widgets/app_card.dart';
 
 class CompetitionAwardScreen extends StatefulWidget {
   final Dio dio;
@@ -245,7 +246,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
     final trackText = [stage, award.trackName]
         .where((value) => value.trim().isNotEmpty)
         .join(' · ');
-    return Container(
+    return AppCardSurface(
       key: Key('competition-award-${award.id}'),
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.fromLTRB(15, 13, 8, 13),

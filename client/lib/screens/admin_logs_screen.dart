@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/app_card.dart';
 
 class AdminLogsScreen extends StatefulWidget {
   const AdminLogsScreen({super.key});
@@ -76,7 +77,7 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
         itemCount: _logs.length,
         itemBuilder: (_, i) {
           final log = _logs[i];
-          return Card(
+          return AppCard(
             color: isDark ? Colors.grey[850] : Colors.white,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

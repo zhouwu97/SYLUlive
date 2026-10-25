@@ -16,6 +16,7 @@ import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
 import '../services/physical_credential_store.dart';
 import 'physical_percentile_report_screen.dart';
+import '../widgets/app_card.dart';
 
 class PhysicalTestPage extends StatefulWidget {
   final String appUserId;
@@ -870,7 +871,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
 
   Widget _buildScoreListCard(
       List<_GymScoreItem> scores, bool isDark, int displayMode) {
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
         borderRadius: BorderRadius.circular(18),

@@ -4,6 +4,7 @@ import '../providers/water_section_provider.dart';
 import '../models/water_section.dart';
 import '../widgets/water_section/section_avatar.dart';
 import 'water_section_manage_screen.dart';
+import '../widgets/app_card.dart';
 
 class AdminWaterSectionsScreen extends StatefulWidget {
   const AdminWaterSectionsScreen({super.key});
@@ -39,7 +40,7 @@ class _AdminWaterSectionsScreenState extends State<AdminWaterSectionsScreen> {
               itemCount: sections.length,
               itemBuilder: (context, index) {
                 final section = sections[index];
-                return Card(
+                return AppCard(
                   margin: const EdgeInsets.only(bottom: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),

@@ -7,6 +7,7 @@ import '../../providers/team_recruitment_provider.dart';
 import '../../widgets/team/team_recruitment_card.dart';
 import '../../widgets/team/team_ui_tokens.dart';
 import 'team_recruitment_detail_screen.dart';
+import '../../widgets/app_card.dart';
 
 class MyTeamRecruitmentsScreen extends StatefulWidget {
   const MyTeamRecruitmentsScreen({super.key});
@@ -201,7 +202,7 @@ class _ApplicationItem extends StatelessWidget {
     final title = application.post?.title.isNotEmpty == true
         ? application.post!.title
         : '组队招募 #${application.recruitmentId}';
-    return Card(
+    return AppCard(
         margin: EdgeInsets.zero,
         elevation: 0,
         color: TeamUiTokens.cardBg(isDark),

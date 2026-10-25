@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/water_team.dart';
 import '../../providers/water_team_provider.dart';
 import '../post_detail_screen.dart';
+import '../../widgets/app_card.dart';
 
 /// 当前用户提交过的组队申请。
 class MyTeamApplicationsScreen extends StatefulWidget {
@@ -120,7 +121,7 @@ class _MyApplicationCard extends StatelessWidget {
     final title = application.post?.title.isNotEmpty == true
         ? application.post!.title
         : '组队招募帖子 #${application.postId}';
-    return Card(
+    return AppCard(
         child: InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(12),

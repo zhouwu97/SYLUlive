@@ -12,6 +12,7 @@ import '../widgets/required_legal_consent_dialog.dart';
 import '../services/push_settings_service.dart';
 import '../widgets/campus/campus_theme.dart';
 import 'legal_documents_screen.dart';
+import '../widgets/app_card.dart';
 
 class PrivacyCenterScreen extends StatefulWidget {
   final bool restricted;
@@ -518,7 +519,7 @@ class _PrivacySectionCard extends StatelessWidget {
     final bgColor = isDark ? CampusTheme.darkCard : CampusTheme.card;
     final borderColor = isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.softBorder;
 
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(18),

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/admin_security_service.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_card.dart';
 
 /// 超级管理员查看并解除当前生效的来源封禁。
 class AdminSecurityBlocksScreen extends StatefulWidget {
@@ -129,7 +130,7 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
               for (final block in _blocks)
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                  child: Card(
+                  child: AppCard(
                     child: Padding(
                       padding: const EdgeInsets.all(AppSpacing.md),
                       child: Column(

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/competition_action_draft.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
+import '../app_card.dart';
 
 class AiCompetitionPlanDraftCard extends StatefulWidget {
   const AiCompetitionPlanDraftCard({
@@ -46,7 +47,7 @@ class _AiCompetitionPlanDraftCardState
       'cancelled' => '建议已取消',
       _ => '待确认',
     };
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(top: 12, bottom: 4),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(

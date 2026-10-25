@@ -6,6 +6,7 @@ import '../config/api_constants.dart';
 import '../models/admin_user_summary.dart';
 import '../providers/auth_provider.dart';
 import 'admin/app_release_admin_tab.dart';
+import '../widgets/app_card.dart';
 
 class SuperAdminScreen extends StatefulWidget {
   const SuperAdminScreen({super.key});
@@ -233,7 +234,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   }
 
   Widget _buildUserItem(AdminUserSummary user) {
-    return Card(
+    return AppCard(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: ListTile(
         leading: CircleAvatar(
@@ -287,7 +288,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           final inv = _pendingInvitations[i];
           final user = inv['user'] ?? {};
           final inviter = inv['inviter'] ?? {};
-          return Card(
+          return AppCard(
             margin: const EdgeInsets.only(bottom: 10),
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -482,7 +483,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     final createdAt = log['created_at'] ?? '';
     final adminId = log['admin_id'];
 
-    return Card(
+    return AppCard(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
         padding: const EdgeInsets.all(12),

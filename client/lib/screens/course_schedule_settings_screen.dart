@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../widgets/campus/campus_theme.dart';
+import '../widgets/app_card.dart';
 
 class CourseScheduleSettingsSnapshot {
   const CourseScheduleSettingsSnapshot({
@@ -414,7 +415,7 @@ class _CourseSettingsHeaderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     const primary = CampusTheme.primary;
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: primary.withValues(alpha: isDark ? 0.16 : 0.08),

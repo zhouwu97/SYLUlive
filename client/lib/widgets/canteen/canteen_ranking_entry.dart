@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/canteen_home.dart';
 import '../../theme/app_motion.dart';
 import 'canteen_theme.dart';
+import '../app_card.dart';
 
 /// 首页“商家排行”快捷入口。
 ///
@@ -38,7 +39,7 @@ class _CanteenRankingEntryCardState extends State<CanteenRankingEntryCard> {
         scale: _pressed ? 0.99 : 1.0,
         duration: AppMotion.micro,
         curve: AppMotion.standard,
-        child: Container(
+        child: AppCardSurface(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             color: CanteenTheme.surfaceBg(isDark),

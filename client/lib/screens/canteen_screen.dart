@@ -21,6 +21,7 @@ import 'canteen_detail_screen.dart';
 import 'canteen_dish_detail_screen.dart';
 import 'canteen_ranking_screen.dart';
 import 'canteen_review_editor_screen.dart';
+import '../widgets/app_card.dart';
 
 /// 校园餐饮发现首页：搜索 + 今天吃什么 + 热门菜品 + 同学最近评价。
 /// 首页帮助用户快速做出就餐决定，完整排行榜降级为快捷入口。
@@ -382,7 +383,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
         heroTag: 'canteen-search-${canteen.id}',
       ),
       behavior: HitTestBehavior.opaque,
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: CanteenTheme.surfaceBg(isDark),

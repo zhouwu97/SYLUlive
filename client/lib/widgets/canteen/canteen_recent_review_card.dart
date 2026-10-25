@@ -6,6 +6,7 @@ import '../../models/canteen_home.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import 'canteen_theme.dart';
+import '../app_card.dart';
 
 /// 首页“同学最近在吃”独立评价卡。
 ///
@@ -46,7 +47,7 @@ class _CanteenRecentReviewCardState extends State<CanteenRecentReviewCard> {
           scale: _pressed ? 0.99 : 1,
           duration: AppMotion.micro,
           curve: AppMotion.standard,
-          child: Container(
+          child: AppCardSurface(
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 13),
             decoration: BoxDecoration(
               color: CanteenTheme.surfaceBg(isDark),

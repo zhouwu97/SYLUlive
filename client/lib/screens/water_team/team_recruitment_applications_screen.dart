@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/post.dart';
 import '../../models/water_team.dart';
 import '../../providers/water_team_provider.dart';
+import '../../widgets/app_card.dart';
 
 /// 发起人审批组队申请的独立页面。
 class TeamRecruitmentApplicationsScreen extends StatefulWidget {
@@ -211,7 +212,7 @@ class _ApplicationCard extends StatelessWidget {
         ? ''
         : '${applicant.eduMajor.isNotEmpty ? applicant.eduMajor : '校园用户'} · ${applicant.levelLabel}';
     final isPending = application.status == 'pending';
-    return Card(
+    return AppCard(
       margin: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.all(14),

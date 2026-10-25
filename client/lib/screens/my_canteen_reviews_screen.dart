@@ -15,6 +15,7 @@ import 'canteen_review_editor_screen.dart';
 import 'canteen_review_history_screen.dart';
 import 'canteen_screen.dart';
 import 'my_canteen_contributions_screen.dart';
+import '../widgets/app_card.dart';
 
 class MyCanteenReviewsScreen extends StatefulWidget {
   const MyCanteenReviewsScreen({super.key});
@@ -369,7 +370,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
   Widget _buildReviewCard(CanteenReviewEvent item, bool isDark) {
     final canteen = item.canteen;
     final date = formatCanteenReviewDate(item.createdAt, item.updatedAt);
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),

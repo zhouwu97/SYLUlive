@@ -1,3 +1,4 @@
+import '../widgets/app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -87,7 +88,7 @@ class _AppealCreateScreenState extends State<AppealCreateScreen> {
         children: [
           Text('原治理决定', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surface,

@@ -8,6 +8,7 @@ import '../../utils/app_feedback.dart';
 import '../../services/async_action_guard.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
 import '../../services/idempotency_key.dart';
+import '../../widgets/app_card.dart';
 
 class CompetitionAwardVerificationAdminScreen extends StatefulWidget {
   final Dio dio;
@@ -208,7 +209,7 @@ class _CompetitionAwardVerificationAdminScreenState
     final result = [item.awardLevel, item.awardName]
         .where((value) => value.trim().isNotEmpty)
         .join(' · ');
-    return Container(
+    return AppCardSurface(
       key: Key('award-verification-${item.id}'),
       margin: const EdgeInsets.only(bottom: 10),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
@@ -450,7 +451,7 @@ class _CompetitionAwardVerificationDetailScreenState
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
-        Container(
+        AppCardSurface(
           padding: const EdgeInsets.all(16),
           decoration: CompetitionUiTokens.cardDecoration(isDark),
           child: Column(

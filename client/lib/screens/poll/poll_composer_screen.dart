@@ -1,3 +1,4 @@
+import '../../widgets/app_card.dart';
 import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -563,7 +564,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
             const SizedBox(height: 14),
             _sectionTitle('投票设置'),
             const SizedBox(height: 7),
-            Container(
+            AppCardSurface(
               decoration: BoxDecoration(
                 color: isDark ? CampusTheme.darkCard : CampusTheme.card,
                 borderRadius: BorderRadius.circular(14),

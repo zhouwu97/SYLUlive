@@ -612,7 +612,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       child: GlassContainer(
         padding: const EdgeInsets.all(12),
         borderRadius: 12,
-        blur: 0,
         showHighlight: false,
         backgroundColor: isDark
             ? const Color(0xFF1E2226).withValues(alpha: 0.96)

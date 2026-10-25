@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/edu_credit_requirement.dart';
 import '../theme/app_colors.dart';
 import '../widgets/edu_grade/academic_requirement_state.dart';
+import '../widgets/app_card.dart';
 
 class AcademicRequirementDetailScreen extends StatelessWidget {
   final EduCreditRequirementModule module;
@@ -43,7 +44,7 @@ class AcademicRequirementDetailScreen extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
           // 模块进度卡片
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: isDark
@@ -250,7 +251,7 @@ class _RequirementCourseCard extends StatelessWidget {
             ? (isDark ? AppColors.textMutedLight : AppColors.textSecondaryLight)
             : AppColors.brandPrimary;
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(

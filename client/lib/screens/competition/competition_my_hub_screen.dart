@@ -12,6 +12,7 @@ import '../../widgets/competition/competition_ui_tokens.dart';
 import 'competition_award_screen.dart';
 import 'competition_capability_profile_screen.dart';
 import 'competition_preference_screen.dart';
+import '../../widgets/app_card.dart';
 
 class CompetitionMyHubScreen extends StatefulWidget {
   final Dio dio;
@@ -368,7 +369,7 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
 
   Widget _aiAccessCard() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(14, 6, 8, 8),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
       child: _accessError != null && _aiAccess == null

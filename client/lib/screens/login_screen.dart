@@ -1,3 +1,4 @@
+import '../widgets/app_card.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -605,7 +606,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 40),
 
                     // Card
-                    Container(
+                    AppCardSurface(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
                         color: cardBg,

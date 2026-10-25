@@ -1,3 +1,4 @@
+import '../../widgets/app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -103,7 +104,7 @@ class CompetitionCatalogPackageDetailScreen extends StatelessWidget {
               style:
                   const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          Container(
+          AppCardSurface(
             decoration: BoxDecoration(
               color: CompetitionUiTokens.cardBg(isDark),
               borderRadius: BorderRadius.circular(8),

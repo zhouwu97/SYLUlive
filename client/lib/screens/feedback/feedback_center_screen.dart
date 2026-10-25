@@ -7,6 +7,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import 'feedback_create_screen.dart';
 import 'feedback_detail_screen.dart';
+import '../../widgets/app_card.dart';
 
 class FeedbackCenterScreen extends StatefulWidget {
   const FeedbackCenterScreen({super.key});
@@ -242,7 +243,7 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
     final cardBg = isDark ? const Color(0xFF1E2226) : Colors.white;
     final borderColor = isDark ? Colors.white12 : const Color(0xFFE8EEE9);
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
         color: cardBg,

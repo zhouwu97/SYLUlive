@@ -9,6 +9,7 @@ import '../providers/theme_provider.dart';
 import '../widgets/rating_detail/ranking_tokens.dart';
 import 'admin_teacher_governance_screen.dart';
 import 'teacher_detail_screen.dart';
+import '../widgets/app_card.dart';
 
 /// 学科榜详情页。
 ///
@@ -218,7 +219,7 @@ class _SubjectRankingDetailScreenState
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                       children: [
                         // Header card
-                        Container(
+                        AppCardSurface(
                           padding: const EdgeInsets.all(16),
                           decoration: RankingTokens.cardDecoration(isDark),
                           child: Column(
@@ -331,7 +332,7 @@ class _SubjectRankingDetailScreenState
                                         ),
                                         onTap: () =>
                                             _openTeacherDetail(teacher),
-                                        child: Container(
+                                        child: AppCardSurface(
                                           padding: const EdgeInsets.all(12),
                                           decoration:
                                               RankingTokens.cardDecoration(

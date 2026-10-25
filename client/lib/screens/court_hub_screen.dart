@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../app_bootstrap.dart';
 import '../widgets/app_page_app_bar.dart';
 import 'court_screen.dart';
+import '../widgets/app_card.dart';
 
 /// 公众法庭入口：列表优先，申诉编号仅作为详情标识，不再是主流程。
 class CourtHubScreen extends StatefulWidget {
@@ -158,7 +159,7 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
         : const <String, dynamic>{};
     final canVote = appeal['can_vote'] == true;
     final isPublic = _tab == 3;
-    return Card(
+    return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -299,7 +300,7 @@ class _SummaryItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,

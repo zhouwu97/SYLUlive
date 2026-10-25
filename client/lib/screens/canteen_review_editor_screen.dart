@@ -15,6 +15,7 @@ import '../services/canteen_review_draft_repository.dart';
 import '../theme/app_colors.dart';
 import '../widgets/canteen/canteen_review_image_picker.dart';
 import '../widgets/canteen/canteen_theme.dart';
+import '../widgets/app_card.dart';
 
 const List<({String key, String label})> kCanteenTagOptions = [
   (key: 'taste_good', label: '味道不错'),
@@ -1309,7 +1310,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   }
 
   Widget _buildStarRatingCard(bool isDark, Color accent) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
@@ -1520,7 +1521,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   }
 
   Widget _buildExperienceTagsCard(bool isDark, Color accent) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
@@ -1626,7 +1627,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   Widget _buildCommentInputCard(bool isDark) {
     final textLength = _commentController.text.characters.length;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
@@ -1692,7 +1693,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   }
 
   Widget _buildDishSectionCard(bool isDark, Color accent) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
@@ -1730,7 +1731,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   }
 
   Widget _buildPhotoSectionCard(bool isDark) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),

@@ -10,6 +10,7 @@ import '../../models/water_section.dart';
 import '../../models/water_section_icon_review.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/water_section_provider.dart';
+import '../../widgets/app_card.dart';
 
 class WaterSectionDisplayEditScreen extends StatefulWidget {
   final WaterSection section;
@@ -394,7 +395,7 @@ class _WaterSectionDisplayEditScreenState
       required List<Widget> children,
       required bool isDark,
       String? subtitle}) {
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
@@ -456,7 +457,7 @@ class _WaterSectionDisplayEditScreenState
         ? _publishActionController.text
         : '发布帖子';
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),

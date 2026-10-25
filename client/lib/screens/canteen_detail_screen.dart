@@ -1,3 +1,4 @@
+import '../widgets/app_card.dart';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -617,7 +618,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         (_canteenData?['visit_review_count'] as num?)?.toInt() ?? 0;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: CanteenTheme.surfaceBg(isDark),

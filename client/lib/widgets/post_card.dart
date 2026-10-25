@@ -24,6 +24,7 @@ import 'feed/feed_post_action_menu.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'app_card.dart';
 
 const _ignoredLegacyTopicLabels = {'其他', '其它', '默认', '未分类', '综合'};
 
@@ -386,7 +387,7 @@ class _PostCardState extends State<PostCard>
     final contentMaxLines = validImageCount == 0 ? 3 : 2;
     final hasUsefulTag = _isMeaningfulLegacyTopicLabel(labels.tagLabel);
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: AppSpacing.xs),
       decoration: BoxDecoration(
         color: surface,

@@ -17,6 +17,7 @@ import 'widgets/publish_bottom_bar.dart';
 import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
 import 'widgets/publish_type_selector.dart';
+import '../../widgets/app_card.dart';
 
 /// Full-screen marketplace publish form (boardId == 2).
 class MarketPublishForm extends StatefulWidget {
@@ -941,7 +942,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   Widget _buildMarketDetailsCard(bool isDark, ColorScheme colorScheme) {
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF171B24) : Colors.white,
         borderRadius: BorderRadius.circular(18),

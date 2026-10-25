@@ -6,6 +6,7 @@ import '../../providers/theme_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../feedback/feedback_detail_screen.dart';
+import '../../widgets/app_card.dart';
 
 class AdminFeedbackScreen extends StatefulWidget {
   const AdminFeedbackScreen({super.key});
@@ -288,7 +289,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
     final isUnviewed = !ticket.adminViewed;
     final isWaiting = ticket.status == 'waiting_user';
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
         color: cardBg,

@@ -21,6 +21,7 @@ import '../../widgets/team/team_recruitment_card.dart';
 import '../../widgets/team/team_ui_tokens.dart';
 import '../../widgets/water_team/team_deadline_picker.dart';
 import 'team_recruitment_detail_screen.dart';
+import '../../widgets/app_card.dart';
 
 class TeamRecruitmentCreateScreen extends StatefulWidget {
   final TeamRecruitment? initialValue;
@@ -1594,7 +1595,7 @@ class _TeamRecruitmentCreateScreenState
     final majorText =
         [college, major, grade].where((s) => s.isNotEmpty).join(' · ');
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(

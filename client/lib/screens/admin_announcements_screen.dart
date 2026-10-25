@@ -8,6 +8,7 @@ import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/app_page_app_bar.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import '../widgets/app_card.dart';
 
 class AdminAnnouncementsScreen extends StatefulWidget {
   const AdminAnnouncementsScreen({super.key});
@@ -704,7 +705,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                           final title = a['title']?.toString() ?? '';
                           final content = a['content']?.toString() ?? '';
                           final isPinned = a['is_pinned'] == true;
-                          return Card(
+                          return AppCard(
                             margin:
                                 const EdgeInsets.only(bottom: AppSpacing.sm),
                             elevation: 0,

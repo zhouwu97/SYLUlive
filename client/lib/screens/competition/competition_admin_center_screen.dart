@@ -18,6 +18,7 @@ import 'competition_official_event_editor_screen.dart';
 import '../../widgets/competition/competition_batch_action_sheet.dart';
 import '../../widgets/competition/competition_batch_confirm_dialog.dart';
 import '../../widgets/competition/competition_batch_selection_bar.dart';
+import '../../widgets/app_card.dart';
 
 enum _AdminSelectionScope { none, page, allMatching }
 
@@ -280,7 +281,7 @@ class _CompetitionAdminCenterScreenState
           CompetitionUiTokens.pagePadding,
           14,
         ),
-        child: Container(
+        child: AppCardSurface(
           padding: const EdgeInsets.all(14),
           decoration: CompetitionUiTokens.cardDecoration(isDark),
           child: Column(
@@ -358,7 +359,7 @@ class _CompetitionAdminCenterScreenState
         CompetitionUiTokens.pagePadding,
         14,
       ),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: CompetitionUiTokens.cardDecoration(isDark),
         child: Row(

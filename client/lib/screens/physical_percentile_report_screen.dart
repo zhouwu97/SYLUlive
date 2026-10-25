@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../features/physical/physical_percentile_models.dart';
 import '../features/physical/physical_percentile_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/app_card.dart';
 
 class PhysicalPercentileReportScreen extends StatefulWidget {
   final List<PhysicalRawScore> scores;
@@ -112,7 +113,7 @@ class _PhysicalPercentileReportScreenState
         children: [
           Row(
             children: [
-              Container(
+              AppCardSurface(
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
@@ -543,7 +544,7 @@ class _SurfaceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: padding,
       decoration: BoxDecoration(

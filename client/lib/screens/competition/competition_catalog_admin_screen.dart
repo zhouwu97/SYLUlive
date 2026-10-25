@@ -1,3 +1,4 @@
+import '../../widgets/app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -92,7 +93,7 @@ class _CompetitionCatalogAdminScreenState
     CompetitionCatalogPackage package,
     bool isDark,
   ) {
-    return Material(
+    return AppCardMaterial(
       color: CompetitionUiTokens.cardBg(isDark),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),

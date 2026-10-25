@@ -6,6 +6,7 @@ import '../../models/water_section.dart';
 import '../../models/water_section_my_level.dart';
 import '../level_progress_pill.dart';
 import 'section_avatar.dart';
+import '../app_card.dart';
 
 /// 版块沉浸式头图，作为 Stack 底层使用。
 ///
@@ -304,7 +305,7 @@ class SectionHeroHeader extends StatelessWidget {
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.white.withValues(alpha: 0.5);
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       decoration: BoxDecoration(
@@ -373,7 +374,7 @@ class SectionHeroHeader extends StatelessWidget {
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.white.withValues(alpha: 0.5);
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       decoration: BoxDecoration(

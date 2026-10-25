@@ -4,6 +4,7 @@ import '../models/home_widget_config.dart';
 import '../services/home_widget_service.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/campus/campus_theme.dart';
+import '../widgets/app_card.dart';
 
 class HomeWidgetSettingsScreen extends StatefulWidget {
   const HomeWidgetSettingsScreen({super.key});
@@ -249,7 +250,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
       HomeWidgetSyncStage.success => '小组件状态：已同步',
       HomeWidgetSyncStage.failed => '小组件同步失败',
     };
-    return Card(
+    return AppCard(
       child: ListTile(
         leading: Icon(failed ? Icons.error_outline : Icons.sync),
         title: Text(label),
@@ -275,7 +276,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
     final preview = _previews[kind] ?? const HomeWidgetPreviewData();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 24),
       decoration: BoxDecoration(
         color: isDark ? CampusTheme.darkCard : CampusTheme.card,

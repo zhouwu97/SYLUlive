@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/water_team_provider.dart';
 import '../../screens/water_team/team_recruitment_applications_screen.dart';
 import 'team_application_sheet.dart';
+import '../app_card.dart';
 
 /// 帖子详情中的招募摘要。审批列表独立跳转，避免详情页承担长列表状态。
 ///
@@ -106,7 +107,7 @@ class TeamRecruitmentPanel extends StatelessWidget {
     final color = _statusColor(meta, isDark);
     final provider = context.watch<WaterTeamProvider>();
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(

@@ -5,6 +5,7 @@ import '../../providers/campus_calendar_provider.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
 import 'campus_theme.dart';
+import '../app_card.dart';
 
 class CampusHeader extends StatelessWidget {
   final String semester;
@@ -31,7 +32,7 @@ class CampusHeader extends StatelessWidget {
         : (currentSemester.teachingWeeks.indexOf(week) + 1) /
             currentSemester.teachingWeeks.length;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
       decoration: BoxDecoration(
         gradient: isDark

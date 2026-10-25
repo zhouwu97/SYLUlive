@@ -1,3 +1,4 @@
+import '../../widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -371,7 +372,7 @@ class _TeamRecruitmentDetailScreenState
             ),
           ),
         ),
-        Container(
+        AppCardSurface(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(

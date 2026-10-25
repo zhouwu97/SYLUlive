@@ -14,6 +14,7 @@ import '../widgets/campus/campus_theme.dart';
 import '../widgets/course/course_import_sheet.dart';
 import '../widgets/course/course_preview_sheet.dart';
 import '../features/academic/domain/academic_provider.dart';
+import '../widgets/app_card.dart';
 
 class EduScreen extends StatefulWidget {
   const EduScreen({super.key});
@@ -151,7 +152,7 @@ class _EduScreenState extends State<EduScreen> {
       if (eduProvider.grade.isNotEmpty) '${eduProvider.grade}级',
       if (eduProvider.college.isNotEmpty) eduProvider.college,
     ].join(' · ');
-    return Container(
+    return AppCardSurface(
       decoration: CampusTheme.cardDecoration(isDark),
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -388,7 +389,7 @@ class _EduScreenState extends State<EduScreen> {
         : providerId == AcademicProviderId.syluGraduate
             ? '研究生教务当前开放课表；成绩、考试和 GPA 暂未接入'
             : '绑定教务账号后，可以查看课表、成绩和教学评价';
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: CampusTheme.cardDecoration(isDark),
       child: Row(
@@ -422,22 +423,22 @@ class _EduScreenState extends State<EduScreen> {
     required VoidCallback onTap,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Material(
+    return AppCardMaterial(
       color: isDark ? CampusTheme.darkCard : Colors.white,
-      borderRadius: BorderRadius.circular(16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : CampusTheme.softBorder,
+        ),
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Container(
           height: 86,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : CampusTheme.softBorder,
-            ),
-          ),
+          padding: const EdgeInsets.all(1),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [

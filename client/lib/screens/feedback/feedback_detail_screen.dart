@@ -14,6 +14,7 @@ import '../../services/idempotency_key.dart';
 import '../../services/request_id.dart';
 import '../../services/publish_session_scope.dart';
 import '../image_viewer_screen.dart';
+import '../../widgets/app_card.dart';
 
 class FeedbackDetailScreen extends StatefulWidget {
   final int ticketId;
@@ -914,7 +915,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   Widget _buildTopStatusCard(bool isDark) {
     if (_ticket == null) return const SizedBox.shrink();
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1050,7 +1051,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         ? initial!.attachments
         : _ticket!.attachments;
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1467,7 +1468,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       return const SizedBox.shrink();
     }
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(

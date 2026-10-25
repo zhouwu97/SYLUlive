@@ -16,6 +16,7 @@ import '../../widgets/settings/settings_tile.dart';
 import '../../widgets/app_cached_image.dart';
 import 'widgets/background_picker_sheet.dart';
 import 'bottom_navigation_settings_screen.dart';
+import '../../widgets/app_card.dart';
 
 /// 界面设置二级页
 class AppearanceSettingsScreen extends StatelessWidget {
@@ -130,7 +131,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
     final frameWidth = isLandscapeBg ? 230.0 : 122.0;
     final frameHeight = isLandscapeBg ? 130.0 : 216.0;
 
-    return Container(
+    return AppCardSurface(
       height: 240,
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(

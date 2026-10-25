@@ -9,6 +9,7 @@ import '../utils/app_feedback.dart';
 import '../widgets/app_page_app_bar.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import 'canteen_review_editor_screen.dart';
+import '../widgets/app_card.dart';
 
 class CanteenReviewHistoryScreen extends StatefulWidget {
   final int canteenId;
@@ -230,7 +231,7 @@ class _CanteenReviewHistoryScreenState
       curve: AppMotion.outgoing,
       child: deleting
           ? const SizedBox.shrink()
-          : Container(
+          : AppCardSurface(
               key: ValueKey(key),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(

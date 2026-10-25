@@ -5,6 +5,7 @@ import '../../models/team_recruitment.dart';
 import '../../models/water_team.dart';
 import '../../providers/team_recruitment_provider.dart';
 import '../../widgets/team/team_ui_tokens.dart';
+import '../../widgets/app_card.dart';
 
 class TeamApplicationManageScreen extends StatefulWidget {
   final TeamRecruitment recruitment;
@@ -270,7 +271,7 @@ class _ApplicationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Card(
+    return AppCard(
         margin: EdgeInsets.zero,
         elevation: 0,
         color: TeamUiTokens.cardBg(isDark),

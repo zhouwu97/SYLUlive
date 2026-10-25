@@ -11,6 +11,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
+import '../widgets/app_card.dart';
 
 class AdminTeacherGovernanceScreen extends StatefulWidget {
   final int initialTab;
@@ -1568,7 +1569,7 @@ class _AdminTeacherGovernanceScreenState
     required VoidCallback onClear,
     required bool isDark,
   }) {
-    return Card(
+    return AppCard(
       margin: EdgeInsets.zero,
       color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
       shape: RoundedRectangleBorder(
@@ -1733,7 +1734,7 @@ class _AdminTeacherGovernanceScreenState
             ),
           ],
           // 概览
-          Card(
+          AppCard(
             margin: EdgeInsets.zero,
             color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
             shape: RoundedRectangleBorder(
@@ -1920,7 +1921,7 @@ class _AdminTeacherGovernanceScreenState
               final pairedTargetId = _courseTeacherPairings[st.id];
               final isPaired = pairedTargetId != null;
 
-              return Card(
+              return AppCard(
                 margin: const EdgeInsets.only(bottom: 10),
                 color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
                 shape: RoundedRectangleBorder(
@@ -2688,7 +2689,8 @@ class _AdminTeacherGovernanceScreenState
 
   Widget _buildTeacherListItem(
       TeacherGovernanceTeacherItem t, bool isSelected, bool isDark) {
-    return Card(
+    return AppCard(
+      preserveBorder: isSelected,
       margin: EdgeInsets.zero,
       color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
       shape: RoundedRectangleBorder(
@@ -2820,7 +2822,7 @@ class _AdminTeacherGovernanceScreenState
           final isCourseAction =
               first.action == 'course_merge' || first.action == 'course';
 
-          return Card(
+          return AppCard(
             margin: const EdgeInsets.only(bottom: AppSpacing.md),
             color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
             shape: RoundedRectangleBorder(
@@ -3083,7 +3085,7 @@ class _AdminTeacherGovernanceScreenState
   }
 
   Widget _buildAliasListItem(GovernanceAliasItem item, bool isDark) {
-    return Card(
+    return AppCard(
       margin: EdgeInsets.zero,
       color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
       shape: RoundedRectangleBorder(
@@ -3183,7 +3185,7 @@ class _AdminTeacherGovernanceScreenState
         break;
     }
 
-    return Card(
+    return AppCard(
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
       color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
       shape: RoundedRectangleBorder(
@@ -3285,7 +3287,7 @@ class _AdminTeacherGovernanceScreenState
                     ],
                     if (isSuggested) ...[
                       const SizedBox(width: 6),
-                      Container(
+                      AppCardSurface(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 1),
                         decoration: BoxDecoration(
@@ -4194,7 +4196,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
+        AppCardSurface(
           padding: const EdgeInsets.all(AppSpacing.md),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1B232D) : const Color(0xFFF1F5F9),
@@ -4266,7 +4268,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
         ),
         if (preview.ratingConflicts.isNotEmpty) ...[
           const SizedBox(height: 10),
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
               color: Colors.amber.withValues(alpha: isDark ? 0.2 : 0.1),
@@ -4307,7 +4309,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
         ],
         if (!preview.mergeAllowed && preview.blockReason.isNotEmpty) ...[
           const SizedBox(height: 10),
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
               color: Colors.red.withValues(alpha: isDark ? 0.2 : 0.1),
@@ -4531,7 +4533,7 @@ class _GovernanceCoursePickerModalState
                                 const SizedBox(height: 6),
                             itemBuilder: (ctx, idx) {
                               final c = _courses[idx];
-                              return Card(
+                              return AppCard(
                                 margin: EdgeInsets.zero,
                                 color: isDark
                                     ? const Color(0xFF1E293B)

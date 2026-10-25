@@ -53,6 +53,7 @@ import 'water_category_feed_route.dart';
 import 'team/team_recruitment_detail_screen.dart';
 
 import '../utils/app_navigation.dart';
+import '../widgets/app_card.dart';
 
 const _ignoredLegacyWaterTagNames = {'其他', '其它', '默认', '未分类', '综合'};
 
@@ -1926,7 +1927,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   Widget _buildCollabApplicationTile(Map<String, dynamic> item) {
     final applicant = item['applicant'] as Map?;
     final status = item['status']?.toString() ?? '';
-    return Card(
+    return AppCard(
       child: ListTile(
         title: Text(applicant?['nickname']?.toString() ?? '申请人'),
         subtitle: Text('${item['reason'] ?? ''}\n状态：$status'),
@@ -1953,7 +1954,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   Widget _buildRevisionProposalTile(Map<String, dynamic> item) {
     final proposer = item['proposer'] as Map?;
     final status = item['status']?.toString() ?? '';
-    return Card(
+    return AppCard(
       child: ListTile(
         title: Text(item['proposed_title']?.toString().isNotEmpty == true
             ? item['proposed_title'].toString()
@@ -3771,7 +3772,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           _openAuthorHome(p.author!.id);
         }
       },
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: isDark ? const Color(0x99171B24) : const Color(0x0A000000),

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../utils/app_feedback.dart';
+import '../widgets/app_card.dart';
 
 class CheckInCalendarScreen extends StatefulWidget {
   final DateTime Function()? now;
@@ -797,7 +798,7 @@ class _CheckInSummary extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final foreground = isDark ? Colors.white : const Color(0xFF29312C);
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1C211E) : const Color(0xFFF5F7F5),

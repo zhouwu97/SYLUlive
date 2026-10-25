@@ -10,6 +10,7 @@ import '../providers/water_moderator_provider.dart';
 import '../providers/water_moderation_provider.dart';
 import '../providers/water_section_provider.dart';
 import 'water/water_section_display_edit_screen.dart';
+import '../widgets/app_card.dart';
 
 /// 版块管理页。
 /// 按当前用户权限展示任免、禁言列表和操作日志。
@@ -286,7 +287,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       child: Column(
         children: [
           // ── 轻量版块头部卡 ──
-          Container(
+          AppCardSurface(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             padding: const EdgeInsets.all(12),
             decoration: _manageCardDecoration(isDark),
@@ -356,7 +357,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
           ),
 
           // ── 胶囊工具栏 ──
-          Container(
+          AppCardSurface(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
@@ -438,7 +439,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
 
   Widget _buildPreviewCard(WaterSection section, bool isDark) {
     final accent = _sectionAccent();
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -556,7 +557,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   }
 
   Widget _buildContentConfigCard(WaterSection section, bool isDark) {
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: _manageCardDecoration(isDark),
@@ -639,7 +640,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
 
   Widget _buildPromptQuestionsCard(WaterSection section, bool isDark) {
     final questions = section.starterQuestions;
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: _manageCardDecoration(isDark),
@@ -839,7 +840,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   }
 
   Widget _buildTagCard(WaterSection section, WaterSectionTag tag, bool isDark) {
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -1131,7 +1132,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   }
 
   Widget _buildModeratorCard(WaterSectionModerator mod, bool isDark) {
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -1371,7 +1372,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         ),
         const SizedBox(height: 8),
         if (isLoading)
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(20),
             decoration: _manageCardDecoration(isDark),
             child:
@@ -1391,7 +1392,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         : '永久';
     final isExpired =
         mute.until != null && mute.until!.isBefore(DateTime.now());
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -1521,7 +1522,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         ),
         const SizedBox(height: 8),
         if (isLoading)
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(20),
             decoration: _manageCardDecoration(isDark),
             child:
@@ -1559,14 +1560,14 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                 Positioned(
                   top: 8,
                   bottom: -16, // draw line beyond bottom
-                  child: Container(
+                  child: AppCardSurface(
                     width: 2,
                     color: isDark ? Colors.white10 : const Color(0xFFEDEFF3),
                   ),
                 ),
                 Positioned(
                   top: 8,
-                  child: Container(
+                  child: AppCardSurface(
                     width: 8,
                     height: 8,
                     decoration: BoxDecoration(
@@ -1585,7 +1586,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Container(
+            child: AppCardSurface(
               margin: const EdgeInsets.only(bottom: 16),
               padding: const EdgeInsets.all(12),
               decoration: _manageCardDecoration(isDark),
@@ -1775,7 +1776,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
+        AppCardSurface(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: _manageCardDecoration(isDark),

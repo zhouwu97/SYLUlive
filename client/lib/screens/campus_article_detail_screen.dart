@@ -23,6 +23,7 @@ import '../widgets/app_page_app_bar.dart';
 import '../widgets/campus/campus_article_html.dart';
 import '../widgets/campus/campus_theme.dart';
 import 'image_viewer_screen.dart';
+import '../widgets/app_card.dart';
 
 /// 文章详情页。
 ///
@@ -375,7 +376,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
   }
 
   Widget _buildRetryCard(bool isDark, String message) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(AppSpacing.xxl),
       decoration: _surfaceDecoration(isDark),
       child: Column(
@@ -485,7 +486,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
 
     // 弱正文且有附件 → 显示附件提示
     if (detail.isWeakContent && hasAttachments) {
-      return Container(
+      return AppCardSurface(
         padding: const EdgeInsets.all(AppSpacing.lg),
         decoration: _surfaceDecoration(isDark, softGreen: true),
         child: Row(
@@ -530,7 +531,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     }
 
     // 正文为空且无附件 → 引导查看原文
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: _surfaceDecoration(isDark),
       child: Row(
@@ -620,7 +621,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     const primary = AppColors.brandPrimary;
     final isUrlSafe = attachment.isUrlSafe;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: _surfaceDecoration(isDark),
       child: Row(

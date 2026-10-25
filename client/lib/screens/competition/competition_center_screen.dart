@@ -37,6 +37,7 @@ import 'competition_preference_screen.dart';
 
 import 'competition_admin_center_screen.dart';
 import '../ai/ai_assistant_screen.dart';
+import '../../widgets/app_card.dart';
 
 class CompetitionCenterScreen extends StatefulWidget {
   const CompetitionCenterScreen({super.key});
@@ -848,7 +849,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         CompetitionUiTokens.pagePadding,
         14,
       ),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: CompetitionUiTokens.cardDecoration(isDark),
         child: Row(
@@ -1979,7 +1980,7 @@ Widget _detailCard({
   required bool isDark,
   required List<Widget> children,
 }) {
-  return Container(
+  return AppCardSurface(
     margin: const EdgeInsets.only(bottom: 12),
     padding: const EdgeInsets.all(16),
     decoration: CompetitionUiTokens.cardDecoration(isDark),
@@ -3369,7 +3370,7 @@ class _CompetitionCalendarItemEditorScreenState
   }
 
   Widget _buildFormGroup(String title, List<Widget> children, bool isDark) {
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
@@ -3631,7 +3632,7 @@ class _CompetitionShareImportScreenState
             const SizedBox(height: 12),
             FilledButton(onPressed: _previewShare, child: const Text('预览')),
           ] else ...[
-            Container(
+            AppCardSurface(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: CompetitionUiTokens.cardBg(isDark),

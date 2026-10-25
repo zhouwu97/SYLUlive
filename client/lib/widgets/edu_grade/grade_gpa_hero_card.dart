@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/edu_academic_situation.dart';
 import 'grade_progress_strip.dart';
+import '../app_card.dart';
 
 class GradeGpaHeroCard extends StatelessWidget {
   final EduAcademicSituation? situation;
@@ -25,7 +26,7 @@ class GradeGpaHeroCard extends StatelessWidget {
       padding: isDrawerMode
           ? const EdgeInsets.symmetric(horizontal: 0)
           : const EdgeInsets.fromLTRB(16, 10, 16, 8),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: colorScheme.surface,

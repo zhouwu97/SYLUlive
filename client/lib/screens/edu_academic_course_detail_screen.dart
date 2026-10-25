@@ -1,3 +1,4 @@
+import '../widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import '../models/edu_academic_situation.dart';
 
@@ -59,7 +60,7 @@ class EduAcademicCourseDetailScreen extends StatelessWidget {
   }
 
   Widget _section(BuildContext context, List<Widget> children) {
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(8),

@@ -1,3 +1,4 @@
+import '../widgets/app_card.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
@@ -22,9 +23,6 @@ abstract final class AppLayout {
 }
 
 final class _MarketTokens {
-  static Color pageBg(bool isDark) =>
-      isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4);
-
   static Color cardBg(bool isDark) =>
       isDark ? const Color(0xFF1E2226) : Colors.white;
 
@@ -598,7 +596,8 @@ class _MarketScreenState extends State<MarketScreen> {
     final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
-      backgroundColor: _MarketTokens.pageBg(isDark),
+      // 根 Tab 的壁纸与简洁底色统一由 GlobalBackgroundWrapper 绘制。
+      backgroundColor: Colors.transparent,
       appBar: null,
       body: Consumer<PostProvider>(
         builder: (context, postProvider, child) {
@@ -635,12 +634,6 @@ class _MarketScreenState extends State<MarketScreen> {
 
           return Stack(
             children: [
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration:
-                      BoxDecoration(color: _MarketTokens.pageBg(isDark)),
-                ),
-              ),
               RefreshIndicator(
                 onRefresh: _refreshCurrent,
                 child: CustomScrollView(
@@ -851,7 +844,7 @@ class _MarketScreenState extends State<MarketScreen> {
     final showBuy = _allowedTypes.contains('buy');
     final showProxy = _allowedTypes.contains('proxy');
     if (!showBuy && !showProxy) return const SizedBox.shrink();
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
       decoration: BoxDecoration(
         color: _MarketTokens.cardBg(isDark),
@@ -1208,7 +1201,7 @@ class _MarketScreenState extends State<MarketScreen> {
   Widget _buildInitialErrorState(bool isDark, String error) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 48, 16, 0),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         decoration: BoxDecoration(
           color: _MarketTokens.cardBg(isDark),
@@ -1345,7 +1338,7 @@ class _MarketScreenState extends State<MarketScreen> {
     final isNoResults = title.contains('没有找到');
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 48, 16, 0),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
         decoration: BoxDecoration(
           color: _MarketTokens.cardBg(isDark),

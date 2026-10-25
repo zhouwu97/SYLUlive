@@ -19,6 +19,7 @@ import '../services/unified_timeline_service.dart';
 import '../utils/app_feedback.dart';
 import 'ai/ai_assistant_screen.dart';
 import '../widgets/campus/campus_theme.dart';
+import '../widgets/app_card.dart';
 
 class CampusCalendarScreen extends StatefulWidget {
   const CampusCalendarScreen({super.key});
@@ -781,7 +782,7 @@ class _CalendarOverviewCard extends StatelessWidget {
     final titleColor = isDark ? Colors.white : _CalendarPalette.ink;
     final mutedColor = isDark ? Colors.white60 : _CalendarPalette.muted;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(18, 17, 14, 17),
       decoration: _CalendarPalette.cardDecoration(isDark),
       child: Column(
@@ -944,7 +945,7 @@ class _CalendarMonthCard extends StatelessWidget {
     final hasMarkers =
         calendar.events.isNotEmpty || calendar.dayOverrides.isNotEmpty;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
       decoration: _CalendarPalette.cardDecoration(isDark),
       child: Column(
@@ -1404,7 +1405,7 @@ class _DayDetailCard extends StatelessWidget {
       ),
     ];
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: _CalendarPalette.cardDecoration(isDark),
       child: Column(

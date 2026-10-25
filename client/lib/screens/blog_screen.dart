@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import '../platform/contracts/external_navigator.dart';
+import '../widgets/app_card.dart';
 
 // ---- 瑞士极客风博客页面 ----
 
@@ -113,7 +114,7 @@ class _BlogScreenState extends State<BlogScreen> {
         tags: ['Flutter', '状态管理', '架构'],
         date: '2026-04-28',
       ),
-      child: Container(
+      child: AppCardSurface(
         height: 200,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
@@ -239,7 +240,7 @@ class _BlogScreenState extends State<BlogScreen> {
         tags: tags,
         date: date,
       ),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: const Color(0xFF1E293B).withValues(alpha: 0.7),

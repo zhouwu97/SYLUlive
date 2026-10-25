@@ -15,6 +15,7 @@ import '../theme/app_colors.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/erke_snapshot_upload_dialog.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import '../widgets/app_card.dart';
 
 class ErkeScoreScreen extends StatefulWidget {
   const ErkeScoreScreen({super.key});
@@ -731,7 +732,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Widget _buildGraduationProgressCard(ErkeGraduationSummary grad, bool isDark) {
     final percentage = grad.percentage;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _cardBg(isDark),
@@ -845,7 +846,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   Widget _buildGraduationCategoryList(ErkeGraduationSummary grad, bool isDark) {
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: _cardBg(isDark),
         borderRadius: BorderRadius.circular(16),
@@ -933,7 +934,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       bg = _warningSoft(isDark);
     }
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1056,7 +1057,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Widget _buildYearlyProgressCard(ErkeYearlySummary yr, bool isDark) {
     final percentage = yr.percentage;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _cardBg(isDark),
@@ -1153,7 +1154,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   Widget _buildYearlyCategoryList(ErkeYearlySummary yr, bool isDark) {
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: _cardBg(isDark),
         borderRadius: BorderRadius.circular(16),
@@ -1378,7 +1379,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     final formattedDate = _formatDate(item.date);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Container(
+      child: AppCardSurface(
         decoration: BoxDecoration(
           color: _cardBg(isDark),
           borderRadius: BorderRadius.circular(16),

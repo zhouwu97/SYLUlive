@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../app_card.dart';
 
 class AiQuickActionCard extends StatelessWidget {
   final IconData icon;
@@ -20,7 +21,7 @@ class AiQuickActionCard extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: colors.surface,
@@ -96,7 +97,7 @@ class AiPrimaryActionCard extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: colors.primaryContainer,
@@ -173,7 +174,7 @@ class AiPromptCard extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: colors.surface,

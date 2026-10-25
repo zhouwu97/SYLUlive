@@ -10,6 +10,7 @@ import '../config/api_constants.dart';
 import '../widgets/cached_avatar.dart';
 import '../services/async_action_guard.dart';
 import '../services/idempotency_key.dart';
+import '../widgets/app_card.dart';
 
 class LotteryScreen extends StatefulWidget {
   const LotteryScreen({super.key});
@@ -424,7 +425,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
 
   Widget _buildWinnerCard(
       LotteryEvent ev, Color primary, bool isDark, Color titleColor) {
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: _softCardDecoration(isDark, border: const Color(0xFFF4E2C5)),
@@ -647,7 +648,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
       LotteryEvent event, bool isOngoing, Color primary, bool isDark) {
     final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: _softCardDecoration(isDark),
@@ -732,7 +733,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
   Widget _buildJoinedCard(bool isDark) {
     const success = Color(0xFF147C72);
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration:

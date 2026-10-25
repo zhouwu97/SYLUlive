@@ -4,6 +4,7 @@ import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
 import 'campus_theme.dart';
 import 'campus_notice_tag.dart';
+import '../app_card.dart';
 
 class CampusFeatureNoticeCard extends StatefulWidget {
   final CampusArticleSummary article;
@@ -49,118 +50,100 @@ class _CampusFeatureNoticeCardState extends State<CampusFeatureNoticeCard> {
       if (article.hasAttachment) '含附件',
     ].join(' · ');
 
-    final surface = Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: widget.onTap,
-        onHighlightChanged: (highlighted) {
-          if (mounted) setState(() => _pressed = highlighted);
-        },
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        child: Ink(
-          decoration: CampusTheme.cardDecoration(isDark, softGreen: true),
+    final surface = AppCardSurface(
+      decoration: CampusTheme.cardDecoration(isDark, softGreen: true),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onTap,
+          onHighlightChanged: (highlighted) {
+            if (mounted) setState(() => _pressed = highlighted);
+          },
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 120),
-            child: Stack(
-              children: [
+              constraints: const BoxConstraints(minHeight: 120),
+              child: Stack(children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 13, 56, 13),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                    padding: const EdgeInsets.fromLTRB(16, 13, 56, 13),
+                    child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          CampusNoticeTag(
-                            category: article.category.isNotEmpty
-                                ? article.category
-                                : '教务公告',
-                          ),
-                          const Spacer(),
-                          Text(
-                            article.publishDate.isNotEmpty
-                                ? article.shortDate
-                                : '',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color:
-                                  isDark ? Colors.white54 : CampusTheme.subText,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        displayTitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 16,
-                          height: 1.28,
-                          fontWeight: FontWeight.w800,
-                          color: isDark ? Colors.white : CampusTheme.text,
-                        ),
-                      ),
-                      if (departmentInfo.isNotEmpty) ...[
-                        const SizedBox(height: 7),
-                        Text(
-                          departmentInfo,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.2,
-                            color:
-                                isDark ? Colors.white54 : CampusTheme.subText,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
+                          Row(children: [
+                            CampusNoticeTag(
+                                category: article.category.isNotEmpty
+                                    ? article.category
+                                    : '教务公告'),
+                            const Spacer(),
+                            Text(
+                                article.publishDate.isNotEmpty
+                                    ? article.shortDate
+                                    : '',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark
+                                        ? Colors.white54
+                                        : CampusTheme.subText))
+                          ]),
+                          const SizedBox(height: 10),
+                          Text(displayTitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  height: 1.28,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark
+                                      ? Colors.white
+                                      : CampusTheme.text)),
+                          if (departmentInfo.isNotEmpty) ...[
+                            const SizedBox(height: 7),
+                            Text(departmentInfo,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    height: 1.2,
+                                    color: isDark
+                                        ? Colors.white54
+                                        : CampusTheme.subText))
+                          ]
+                        ])),
                 Positioned(
-                  right: 14,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: AnimatedContainer(
-                      duration: reduceMotion ? Duration.zero : AppMotion.micro,
-                      curve: AppMotion.standard,
-                      width: motionPressed ? 36 : 32,
-                      height: motionPressed ? 36 : 32,
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? CampusTheme.primary.withValues(alpha: 0.18)
-                            : CampusTheme.primaryLight,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: CampusTheme.primary.withValues(
-                            alpha: isDark ? 0.3 : 0.12,
-                          ),
-                        ),
-                      ),
-                      child: AnimatedSlide(
-                        duration:
-                            reduceMotion ? Duration.zero : AppMotion.micro,
-                        curve: AppMotion.standard,
-                        offset: motionPressed
-                            ? const Offset(0.08, 0)
-                            : Offset.zero,
-                        child: Icon(
-                          Icons.arrow_outward_rounded,
-                          size: 16,
-                          color: isDark
-                              ? CampusTheme.primaryLight
-                              : CampusTheme.primary,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+                    right: 14,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                        child: AnimatedContainer(
+                            duration:
+                                reduceMotion ? Duration.zero : AppMotion.micro,
+                            curve: AppMotion.standard,
+                            width: motionPressed ? 36 : 32,
+                            height: motionPressed ? 36 : 32,
+                            decoration: BoxDecoration(
+                                color: isDark
+                                    ? CampusTheme.primary
+                                        .withValues(alpha: 0.18)
+                                    : CampusTheme.primaryLight,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                    color: CampusTheme.primary.withValues(
+                                        alpha: isDark ? 0.3 : 0.12))),
+                            child: AnimatedSlide(
+                                duration: reduceMotion
+                                    ? Duration.zero
+                                    : AppMotion.micro,
+                                curve: AppMotion.standard,
+                                offset: motionPressed
+                                    ? const Offset(0.08, 0)
+                                    : Offset.zero,
+                                child: Icon(Icons.arrow_outward_rounded,
+                                    size: 16,
+                                    color: isDark
+                                        ? CampusTheme.primaryLight
+                                        : CampusTheme.primary)))))
+              ])),
         ),
       ),
     );

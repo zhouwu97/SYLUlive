@@ -15,6 +15,7 @@ import '../utils/report_reason_label.dart';
 import 'admin_teacher_governance_screen.dart';
 import 'image_viewer_screen.dart';
 import 'post_detail_screen.dart';
+import '../widgets/app_card.dart';
 
 class AdminReviewTasksScreen extends StatefulWidget {
   const AdminReviewTasksScreen({super.key});
@@ -1186,7 +1187,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
   ) {
     final subColor =
         isDark ? Colors.white.withValues(alpha: 0.62) : Colors.grey[600];
-    return Card(
+    return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
       color: isDark ? Colors.grey[850] : Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1279,7 +1280,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       _PendingPostRectification item, bool isDark) {
     final snapshot = _parseModeratedSnapshot(item.moderatedSnapshot);
     final moderatedRevision = item.moderatedRevision > 0 ? item.moderatedRevision : null;
-    return Card(
+    return AppCard(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       color: isDark ? Colors.grey[850] : Colors.white,
       shape: RoundedRectangleBorder(
@@ -2041,7 +2042,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       final requiredVotes = inv['required_votes'] ?? 3;
       final myVote = inv['my_vote'] == true;
       items.add(
-        Card(
+        AppCard(
           margin: const EdgeInsets.only(bottom: 10),
           color: isDark ? Colors.grey[850] : Colors.white,
           shape:
@@ -2081,7 +2082,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       final canVote = removal['can_vote'] == true;
       final myVote = removal['my_vote'] == true;
       items.add(
-        Card(
+        AppCard(
           margin: const EdgeInsets.only(bottom: 10),
           color: isDark ? Colors.grey[850] : Colors.white,
           shape:
@@ -2134,7 +2135,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       final courseName = (first['course'] ?? '').toString();
 
       items.add(
-        Card(
+        AppCard(
           margin: const EdgeInsets.only(bottom: 10),
           color: isDark ? Colors.grey[850] : Colors.white,
           shape:
@@ -2203,7 +2204,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     }
     for (final m in dedupedMajors) {
       items.add(
-        Card(
+        AppCard(
           margin: const EdgeInsets.only(bottom: 10),
           color: isDark ? Colors.grey[850] : Colors.white,
           shape:

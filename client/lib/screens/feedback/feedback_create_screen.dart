@@ -10,6 +10,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/image_upload_widget.dart';
+import '../../widgets/app_card.dart';
 
 class FeedbackCreateScreen extends StatefulWidget {
   final String? initialRouteName;
@@ -322,7 +323,7 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
   }
 
   Widget _buildDiagnosticsCard(bool isDark) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E2226) : Colors.white,

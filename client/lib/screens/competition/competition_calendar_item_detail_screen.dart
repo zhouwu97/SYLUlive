@@ -8,6 +8,7 @@ import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_status_helper.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
 import 'competition_center_screen.dart';
+import '../../widgets/app_card.dart';
 
 class CompetitionCalendarItemDetailScreen extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -184,7 +185,7 @@ class _CompetitionCalendarItemDetailScreenState
   }
 
   Widget _buildSection(String title, List<Widget> children, bool isDark) {
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
@@ -329,7 +330,7 @@ class _CompetitionCalendarItemDetailScreenState
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
         children: [
           // 顶部信息
-          Container(
+          AppCardSurface(
             margin: const EdgeInsets.only(bottom: 16),
             padding: const EdgeInsets.all(16),
             decoration: CompetitionUiTokens.cardDecoration(isDark),

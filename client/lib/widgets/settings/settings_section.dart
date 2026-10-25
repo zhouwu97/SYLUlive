@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
+import '../app_card.dart';
 
 /// 设置页分组卡片组件
 class SettingsSection extends StatelessWidget {
@@ -54,7 +55,7 @@ class SettingsSection extends StatelessWidget {
               ),
             ),
           ],
-          Container(
+          AppCardSurface(
             decoration: BoxDecoration(
               color: isDark ? CampusTheme.darkCard : CampusTheme.card,
               borderRadius: BorderRadius.circular(18),

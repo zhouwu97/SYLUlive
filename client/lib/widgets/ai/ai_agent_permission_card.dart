@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/ai_run_event.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
+import '../app_card.dart';
 
 /// 单次 Agent 授权卡。长期策略只能从权限 Bottom Sheet 修改。
 class AiAgentPermissionCard extends StatelessWidget {
@@ -22,7 +23,7 @@ class AiAgentPermissionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = _datasetLabel(event.datasets);
-    return Container(
+    return AppCardSurface(
       key: const ValueKey('ai-agent-permission-card'),
       margin: const EdgeInsets.only(top: 0, bottom: 12),
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),

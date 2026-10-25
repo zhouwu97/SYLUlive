@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/competition.dart';
 import 'competition_status_helper.dart';
 import 'competition_ui_tokens.dart';
+import '../app_card.dart';
 
 class CompetitionAdminEventCard extends StatelessWidget {
   final CompetitionEvent event;
@@ -33,7 +34,7 @@ class CompetitionAdminEventCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final chips = _adminChips(event);
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
       child: InkWell(

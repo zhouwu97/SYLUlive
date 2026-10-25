@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_radius.dart';
 import 'campus_theme.dart';
 import 'campus_service_item.dart';
+import '../app_card.dart';
 
 class CampusServiceGrid extends StatelessWidget {
   final bool isDark;
@@ -83,7 +84,7 @@ class CampusServiceGrid extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        Container(
+        AppCardSurface(
           decoration: BoxDecoration(
             gradient: isDark
                 ? const LinearGradient(

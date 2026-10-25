@@ -13,6 +13,7 @@ import '../utils/post_image_cache.dart';
 import '../utils/post_media_access.dart';
 import 'cached_avatar.dart';
 import 'post_media/post_media_view.dart';
+import 'app_card.dart';
 
 final class _CardTokens {
   static Color cardBg(bool isDark) =>
@@ -110,7 +111,7 @@ class MarketPostCard extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(_CardTokens.cardRadius),
           onTap: onTap,
-          child: Container(
+          child: AppCardSurface(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: _CardTokens.cardBg(isDark),
@@ -335,7 +336,7 @@ class MarketPostCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(_CardTokens.cardRadius),
         onTap: onTap,
-        child: Container(
+        child: AppCardSurface(
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: _CardTokens.cardBg(isDark),

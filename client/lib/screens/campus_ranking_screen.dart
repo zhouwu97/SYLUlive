@@ -14,6 +14,7 @@ import 'admin_teacher_governance_screen.dart';
 import 'major_detail_screen.dart';
 import 'subject_ranking_detail_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import '../widgets/app_card.dart';
 
 
 class CampusRankingScreen extends StatefulWidget {
@@ -537,7 +538,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
           borderRadius: BorderRadius.circular(RankingTokens.cardRadius),
           onTap: onTap,
           onLongPress: onLongPress,
-          child: Container(
+          child: AppCardSurface(
             padding: const EdgeInsets.all(12),
             decoration: RankingTokens.cardDecoration(isDark),
             child: Row(

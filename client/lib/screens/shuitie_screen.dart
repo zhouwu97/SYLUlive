@@ -1,3 +1,4 @@
+import '../widgets/app_card.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -2068,7 +2069,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     ),
                   );
                 },
-                child: Container(
+                child: AppCardSurface(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
                     color: isDark ? const Color(0xFF1F2937) : Colors.white,

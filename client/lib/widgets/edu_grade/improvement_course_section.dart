@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/edu_credit_requirement.dart';
+import '../app_card.dart';
 
 /// 提高课程卡片组件。
 ///
@@ -26,7 +27,7 @@ class ImprovementCourseCard extends StatelessWidget {
 
     final isFinished = course.completed == true;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: cardBg,

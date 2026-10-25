@@ -1,3 +1,4 @@
+import '../widgets/app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -356,7 +357,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
+      child: AppCardMaterial(
         color: isDark ? CampusTheme.darkCard : CampusTheme.card,
         borderRadius: BorderRadius.circular(16),
         child: InkWell(

@@ -6,6 +6,7 @@ import '../../models/competition.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
+import '../../widgets/app_card.dart';
 
 class CompetitionOfficialEventEditorScreen extends StatefulWidget {
   final Map<String, dynamic>? initialData;
@@ -627,7 +628,7 @@ class _CompetitionOfficialEventEditorScreenState
     bool isDark,
     List<Widget> children,
   ) {
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
       decoration: CompetitionUiTokens.cardDecoration(isDark),

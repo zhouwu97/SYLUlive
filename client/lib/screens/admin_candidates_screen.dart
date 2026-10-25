@@ -11,6 +11,7 @@ import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/app_page_app_bar.dart';
 import '../config/api_constants.dart';
+import '../widgets/app_card.dart';
 
 class AdminCandidatesScreen extends StatefulWidget {
   const AdminCandidatesScreen({super.key});
@@ -490,7 +491,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
+            AppCardSurface(
               width: 64,
               height: 64,
               decoration: BoxDecoration(
@@ -546,7 +547,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         ? AppColors.surfaceSecondaryDark
         : AppColors.surfaceSecondaryLight;
 
-    return Card(
+    return AppCard(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       elevation: 0,
       color: surface,

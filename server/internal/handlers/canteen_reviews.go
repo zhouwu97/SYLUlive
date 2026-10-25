@@ -187,7 +187,7 @@ func (h *CanteenHandler) CreateReview(c *gin.Context) {
 // UpdateReview 修改自己最近的一次到店评价。
 // PATCH /api/canteens/reviews/:reviewId
 func (h *CanteenHandler) UpdateReview(c *gin.Context) {
-	reviewID, err := strconv.ParseUint(c.Param("reviewId"), 10, 64)
+	reviewID, err := strconv.ParseUint(c.Param("reviewId"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效评价ID"})
 		return
@@ -317,7 +317,7 @@ func (h *CanteenHandler) UpdateReview(c *gin.Context) {
 // DeleteReview 软删除用户自己的 V2 到店评价，并同步清理关联菜品评价与摘要。
 // DELETE /api/canteens/reviews/:reviewId
 func (h *CanteenHandler) DeleteReview(c *gin.Context) {
-	reviewID, err := strconv.ParseUint(c.Param("reviewId"), 10, 64)
+	reviewID, err := strconv.ParseUint(c.Param("reviewId"), 10, strconv.IntSize)
 	if err != nil || reviewID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效评价ID"})
 		return
@@ -461,7 +461,7 @@ func (h *CanteenHandler) DeleteReview(c *gin.Context) {
 // DeleteLegacyRating 软删除旧版 /rate 评价。旧评价没有修改入口，但仍然必须允许用户管理和删除。
 // DELETE /api/canteens/ratings/:ratingId
 func (h *CanteenHandler) DeleteLegacyRating(c *gin.Context) {
-	ratingID, err := strconv.ParseUint(c.Param("ratingId"), 10, 64)
+	ratingID, err := strconv.ParseUint(c.Param("ratingId"), 10, strconv.IntSize)
 	if err != nil || ratingID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效评价ID"})
 		return
@@ -540,7 +540,7 @@ func (h *CanteenHandler) VoteReview(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "登录状态无效"})
 		return
 	}
-	reviewID, err := strconv.ParseUint(c.Param("reviewId"), 10, 64)
+	reviewID, err := strconv.ParseUint(c.Param("reviewId"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效评价ID"})
 		return
@@ -919,7 +919,7 @@ func (h *CanteenHandler) loadReviewDishPhotos(reviewEventID uint) []map[string]i
 // 不允许从评价列表的裁剪字段拼装保存请求。
 // GET /api/canteens/reviews/:reviewId/edit-context
 func (h *CanteenHandler) GetReviewEditContext(c *gin.Context) {
-	reviewID, err := strconv.ParseUint(c.Param("reviewId"), 10, 64)
+	reviewID, err := strconv.ParseUint(c.Param("reviewId"), 10, strconv.IntSize)
 	if err != nil || reviewID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效评价ID"})
 		return
@@ -1173,7 +1173,7 @@ func (h *CanteenHandler) GetReviewHistory(c *gin.Context) {
 	if !h.ensureVerifiedCanteen(c, cid) {
 		return
 	}
-	userID, err := strconv.ParseUint(c.Param("userId"), 10, 64)
+	userID, err := strconv.ParseUint(c.Param("userId"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效用户ID"})
 		return
@@ -1544,10 +1544,10 @@ func numericPayloadID(value interface{}) (uint, bool) {
 	case float64:
 		return uint(value), value > 0
 	case json.Number:
-		parsed, err := strconv.ParseUint(string(value), 10, 64)
+		parsed, err := strconv.ParseUint(string(value), 10, strconv.IntSize)
 		return uint(parsed), err == nil && parsed > 0
 	default:
-		parsed, err := strconv.ParseUint(fmt.Sprint(value), 10, 64)
+		parsed, err := strconv.ParseUint(fmt.Sprint(value), 10, strconv.IntSize)
 		return uint(parsed), err == nil && parsed > 0
 	}
 }
@@ -1678,7 +1678,7 @@ func (h *CanteenHandler) GetDishSuggestions(c *gin.Context) {
 // CreateDishReview 创建独立菜品评价。
 // POST /api/canteens/dishes/:dishId/reviews
 func (h *CanteenHandler) CreateDishReview(c *gin.Context) {
-	dishID, err := strconv.ParseUint(c.Param("dishId"), 10, 64)
+	dishID, err := strconv.ParseUint(c.Param("dishId"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效菜品ID"})
 		return
@@ -1781,7 +1781,7 @@ func (h *CanteenHandler) CreateDishReview(c *gin.Context) {
 // 菜品详情的评论正文以主到店评价为准；菜品三维评分只是可选扩展，不能
 // 因为没有 CanteenDishReviewEvent 就把主评价评论过滤掉。
 func (h *CanteenHandler) GetDishReviews(c *gin.Context) {
-	dishID, err := strconv.ParseUint(c.Param("dishId"), 10, 64)
+	dishID, err := strconv.ParseUint(c.Param("dishId"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效菜品ID"})
 		return
@@ -1974,7 +1974,7 @@ func authenticatedUserID(c *gin.Context) (uint, bool) {
 }
 
 func parseCanteenID(c *gin.Context) (uint, bool) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil || id == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return 0, false

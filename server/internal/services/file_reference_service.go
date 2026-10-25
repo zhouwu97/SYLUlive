@@ -32,7 +32,7 @@ func ParseImageFileIDs(raw string) ([]uint, error) {
 	parts := strings.Split(raw, ",")
 	ids := make([]uint, 0, len(parts))
 	for _, part := range parts {
-		value, err := strconv.ParseUint(strings.TrimSpace(part), 10, 64)
+		value, err := strconv.ParseUint(strings.TrimSpace(part), 10, strconv.IntSize)
 		if err != nil || value == 0 {
 			return nil, fmt.Errorf("%w: 图片 ID 格式错误", ErrInvalidImageFileReference)
 		}

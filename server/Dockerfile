@@ -1,5 +1,5 @@
 # 沈理校园后端
-FROM golang:1.26.6-bookworm AS builder
+FROM golang:1.26.9-bookworm AS builder
 
 WORKDIR /app
 

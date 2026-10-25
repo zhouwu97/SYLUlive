@@ -28,6 +28,8 @@ type CandidateFilter struct {
 	DateStatus              string
 }
 
+const competitionCandidateMaxPageSize = 50
+
 type CompetitionCandidateEngine interface {
 	BuildCandidates(context.Context, uint, CandidateFilter) (dto.CompetitionCandidateResultDTO, error)
 }
@@ -292,7 +294,11 @@ func (e *competitionCandidateEngine) saveRankTrace(
 	if limit <= 0 || limit > len(ordered) {
 		limit = len(ordered)
 	}
-	rows := make([]models.CompetitionRankTrace, 0, limit)
+	// 追踪只覆盖一页，不能依赖调用方已归一化分页参数。
+	if limit > competitionCandidateMaxPageSize {
+		limit = competitionCandidateMaxPageSize
+	}
+	rows := make([]models.CompetitionRankTrace, 0, competitionCandidateMaxPageSize)
 	runKey := strconv.FormatInt(now.UnixNano(), 36)
 	for index := 0; index < limit; index++ {
 		item := ordered[index]
@@ -402,7 +408,7 @@ func normalizeCandidateFilter(filter CandidateFilter) CandidateFilter {
 	if filter.Page < 1 {
 		filter.Page = 1
 	}
-	if filter.PageSize < 1 || filter.PageSize > 50 {
+	if filter.PageSize < 1 || filter.PageSize > competitionCandidateMaxPageSize {
 		filter.PageSize = 20
 	}
 	return filter

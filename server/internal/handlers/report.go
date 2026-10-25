@@ -277,7 +277,7 @@ func (h *ReportHandler) GetList(c *gin.Context) {
 // HandleReportInput 处理举报输入
 type HandleReportInput struct {
 	Status              string `json:"status" binding:"required"` // handled/ignored
-	Action              string `json:"action"`                     // warn/moderated_hidden/delete
+	Action              string `json:"action"`                    // warn/moderated_hidden/delete
 	Result              string `json:"result"`
 	DeleteReason        string `json:"delete_reason"`
 	ConfirmedReasonCode string `json:"confirmed_reason_code"`
@@ -287,7 +287,7 @@ type HandleReportInput struct {
 func (h *ReportHandler) Handle(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	reportIDStr := c.Param("id")
-	reportID, err := strconv.ParseUint(reportIDStr, 10, 64)
+	reportID, err := strconv.ParseUint(reportIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的举报ID"})
 		return

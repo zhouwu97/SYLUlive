@@ -38,6 +38,11 @@ server/uploads/*
 server/*.exe
 server/*.exe~
 /server/shenliyuan-linux
+/server/release-shenliyuan-*
+/client/build.tar.gz
+/client/bugreport-*.zip
+/client/tmp/
+/client/course_old.dart
 *.apk
 .sisyphus/plans/*.jpg
 .sisyphus/plans/*.jpeg
@@ -148,3 +153,11 @@ client/ohos/entry/oh-package-lock.json5
 /set_ip.py
 /update_privacy.py
 /canteen_names_before.tsv
+
+# 本机事件取证、SSH 材料不能随业务源码发布。
+/fanji/
+.ssh/
+id_rsa
+id_ecdsa
+id_ed25519*
+*.ppk

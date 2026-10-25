@@ -10,11 +10,11 @@ type RefreshToken struct {
 	TokenHash    string `gorm:"size:64;not null;uniqueIndex" json:"-"`
 	TokenFamily  string `gorm:"size:64;not null;index" json:"-"`
 	// 0 表示历史版本会话族；新建或迁移后的记录使用 2，便于识别升级前已轮换的链。
-	FamilyVersion int        `gorm:"not null;default:0" json:"-"`
-	ExpiresAt     time.Time  `gorm:"not null;index" json:"expires_at"`
-	LastUsedAt    *time.Time `json:"-"`
-	RevokedAt     *time.Time `gorm:"index" json:"-"`
-	ReplacedBy    *uint      `gorm:"column:replaced_by;index" json:"-"`
+	FamilyVersion      int        `gorm:"not null;default:0" json:"-"`
+	ExpiresAt          time.Time  `gorm:"not null;index" json:"expires_at"`
+	LastUsedAt         *time.Time `json:"-"`
+	RevokedAt          *time.Time `gorm:"index" json:"-"`
+	ReplacedBy         *uint      `gorm:"column:replaced_by;index" json:"-"`
 	CreatedIPHash      string     `gorm:"size:64" json:"-"`
 	UserAgentHash      string     `gorm:"size:64" json:"-"`
 	InstallationIDHash string     `gorm:"size:64;index" json:"-"`

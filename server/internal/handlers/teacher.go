@@ -134,7 +134,7 @@ func (h *TeacherHandler) GetList(c *gin.Context) {
 // GetDetail 教师详情（含评价列表和当前用户的评价）。
 // 已合并的教师返回 merged 标记与目标 ID，客户端据此跳转到保留教师。
 func (h *TeacherHandler) GetDetail(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return
@@ -161,7 +161,7 @@ func (h *TeacherHandler) GetDetail(c *gin.Context) {
 				"created_at":        teacher.CreatedAt,
 				"verified":          teacher.Verified,
 				"canonical_source":  teacher.CanonicalSource,
-				"is_merged":          true,
+				"is_merged":         true,
 				"merged":            true,
 				"merged_into_id":    teacher.MergedIntoID,
 				"merged_into_name":  keeperName,
@@ -300,7 +300,7 @@ func (h *TeacherHandler) Rate(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "请先登录"})
 		return
 	}
-	tid, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	tid, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return
@@ -420,8 +420,8 @@ func (h *TeacherHandler) Verify(c *gin.Context) {
 func (h *TeacherHandler) MergeInto(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var body struct {
-		KeeperID       uint `json:"keeper_id"`
-		RegisterAlias  *bool `json:"register_alias"`
+		KeeperID      uint  `json:"keeper_id"`
+		RegisterAlias *bool `json:"register_alias"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || body.KeeperID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少合并目标"})
@@ -620,7 +620,7 @@ func (h *TeacherHandler) logAdmin(c *gin.Context, action, target, detail string)
 // DeleteRating 删除自己的评价
 func (h *TeacherHandler) DeleteRating(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return
@@ -638,7 +638,7 @@ func (h *TeacherHandler) DeleteRating(c *gin.Context) {
 // VoteRating 给评价投票 (有用/没帮助)
 func (h *TeacherHandler) VoteRating(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	ratingID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	ratingID, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的评价ID"})
 		return
@@ -671,7 +671,7 @@ func (h *TeacherHandler) VoteRating(c *gin.Context) {
 
 // ReportRating 举报评价
 func (h *TeacherHandler) ReportRating(c *gin.Context) {
-	ratingID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	ratingID, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil || ratingID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_rating_id", "error": "无效的评价ID"})
 		return
@@ -703,7 +703,7 @@ func (h *TeacherHandler) ReportRating(c *gin.Context) {
 // VoteRemoveAdmin 投票罢免管理员
 func (h *TeacherHandler) VoteRemoveAdmin(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	adminID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	adminID, _ := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	var input struct {
 		Reason string `json:"reason" binding:"required"`
 	}
@@ -851,7 +851,7 @@ func (h *TeacherHandler) GetViolations(c *gin.Context) {
 func (h *TeacherHandler) GetAdminViolations(c *gin.Context) {
 	query := h.db.Model(&models.UserViolation{}).Preload("User")
 	if userIDStr := strings.TrimSpace(c.Query("user_id")); userIDStr != "" {
-		userID, err := strconv.ParseUint(userIDStr, 10, 64)
+		userID, err := strconv.ParseUint(userIDStr, 10, strconv.IntSize)
 		if err != nil || userID == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
 			return
@@ -905,7 +905,7 @@ func (h *TeacherHandler) AddViolation(c *gin.Context) {
 // AppealViolation 申诉违规
 func (h *TeacherHandler) AppealViolation(c *gin.Context) {
 	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
+	id, err := strconv.ParseUint(idStr, 10, strconv.IntSize)
 	if err != nil || id == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"code": "violation_not_found", "error": "记录不存在"})
 		return
@@ -938,7 +938,7 @@ func (h *TeacherHandler) AppealViolation(c *gin.Context) {
 // HandleAppeal 管理员处理申诉
 func (h *TeacherHandler) HandleAppeal(c *gin.Context) {
 	idStr := c.Param("id")
-	id, _ := strconv.ParseUint(idStr, 10, 64)
+	id, _ := strconv.ParseUint(idStr, 10, strconv.IntSize)
 	var input struct {
 		Approved bool   `json:"approved"`
 		Reason   string `json:"reason"`

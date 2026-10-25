@@ -244,7 +244,7 @@ func (h *PostGovernanceHandler) ResolveRectification(c *gin.Context) {
 			if err := tx.Model(&post).Updates(map[string]interface{}{
 				"status":               models.PostStatusNormal,
 				"moderation_rule_code": "",
-				"moderation_reason":   "",
+				"moderation_reason":    "",
 			}).Error; err != nil {
 				return err
 			}
@@ -328,7 +328,7 @@ func (h *PostGovernanceHandler) AdminRestorePost(c *gin.Context) {
 		if err := tx.Model(&post).Updates(map[string]interface{}{
 			"status":               models.PostStatusNormal,
 			"moderation_rule_code": "",
-			"moderation_reason":   "",
+			"moderation_reason":    "",
 		}).Error; err != nil {
 			return err
 		}

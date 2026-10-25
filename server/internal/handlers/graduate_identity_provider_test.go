@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -146,6 +147,7 @@ func TestGraduateProviderVerifiesSchoolProfileBeforeReturningIdentity(t *testing
 	require.NoError(t, err)
 	pubkey := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: spki}))
 	captchaBytes := []byte("fixture-captcha-image-payload-0123456789")
+	var loginRequests atomic.Int32
 	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/home/stulogin":
@@ -156,6 +158,7 @@ func TestGraduateProviderVerifiesSchoolProfileBeforeReturningIdentity(t *testing
 			writer.Header().Set("Content-Type", "image/gif")
 			_, _ = writer.Write(captchaBytes)
 		case "/home/stulogin_do":
+			loginRequests.Add(1)
 			if err := request.ParseForm(); err != nil || request.Form.Get("json") == "" {
 				writer.WriteHeader(http.StatusBadRequest)
 				return
@@ -185,6 +188,20 @@ func TestGraduateProviderVerifiesSchoolProfileBeforeReturningIdentity(t *testing
 	require.NotEmpty(t, challenge.ChallengeState)
 	fingerprint, err := graduatePublicKeyFingerprint(pubkey)
 	require.NoError(t, err)
+	for _, prefix := range []string{"//attacker.example", "/../admin", "/(S(test))?redirect=https://attacker.example"} {
+		var state graduateChallengeState
+		require.NoError(t, json.Unmarshal(challenge.ChallengeState, &state))
+		state.SessionPrefix = prefix
+		badState, err := json.Marshal(state)
+		require.NoError(t, err)
+		_, err = provider.Verify(context.Background(), AcademicProviderVerifyRequest{
+			UserID: 7, ProviderID: models.AcademicProviderGraduate, StudentID: "G20260001",
+			Captcha: "1234", EncryptedPassword: "rsa-ciphertext", SchoolPublicKeyFingerprint: fingerprint,
+			ChallengeState: badState,
+		})
+		require.ErrorIs(t, err, ErrAcademicChallengeRejected)
+		require.Zero(t, loginRequests.Load(), "恶意会话路径不能发送登录凭据")
+	}
 	profile, err := provider.Verify(context.Background(), AcademicProviderVerifyRequest{
 		UserID: 7, ProviderID: models.AcademicProviderGraduate, StudentID: "G20260001",
 		Captcha: "1234", EncryptedPassword: "rsa-ciphertext", SchoolPublicKeyFingerprint: fingerprint,
@@ -192,6 +209,7 @@ func TestGraduateProviderVerifiesSchoolProfileBeforeReturningIdentity(t *testing
 	})
 	require.NoError(t, err)
 	require.Equal(t, "G20260001", profile.StudentID)
+	require.EqualValues(t, 1, loginRequests.Load())
 }
 
 func TestGraduateProviderProfileFallsBackToPost(t *testing.T) {

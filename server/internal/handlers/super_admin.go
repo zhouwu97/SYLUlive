@@ -92,7 +92,7 @@ func (h *SuperAdminHandler) UpdateUserRole(c *gin.Context) {
 
 	userIDStr := c.Param("id")
 
-	userID, err := strconv.ParseUint(userIDStr, 10, 64)
+	userID, err := strconv.ParseUint(userIDStr, 10, strconv.IntSize)
 
 	if err != nil {
 
@@ -173,7 +173,7 @@ func (h *SuperAdminHandler) UpdateUserCredit(c *gin.Context) {
 
 	userIDStr := c.Param("id")
 
-	userID, err := strconv.ParseUint(userIDStr, 10, 64)
+	userID, err := strconv.ParseUint(userIDStr, 10, strconv.IntSize)
 
 	if err != nil {
 
@@ -208,7 +208,7 @@ func (h *SuperAdminHandler) ResetUserPassword(c *gin.Context) {
 
 	userIDStr := c.Param("id")
 
-	userID, err := strconv.ParseUint(userIDStr, 10, 64)
+	userID, err := strconv.ParseUint(userIDStr, 10, strconv.IntSize)
 
 	if err != nil {
 
@@ -247,7 +247,7 @@ func (h *SuperAdminHandler) DeleteUser(c *gin.Context) {
 
 	userIDStr := c.Param("id")
 
-	userID, err := strconv.ParseUint(userIDStr, 10, 64)
+	userID, err := strconv.ParseUint(userIDStr, 10, strconv.IntSize)
 
 	if err != nil {
 
@@ -583,7 +583,7 @@ func (h *SuperAdminHandler) CreateLotteryEvent(c *gin.Context) {
 
 // DeleteLotteryEvent 删除抽奖活动，同时清理参与记录。
 func (h *SuperAdminHandler) DeleteLotteryEvent(c *gin.Context) {
-	eventID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	eventID, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil || eventID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的抽奖ID"})
 		return
@@ -639,8 +639,8 @@ func (h *SuperAdminHandler) KickLotteryParticipant(c *gin.Context) {
 	eventIDStr := c.Param("event_id")
 	userIDStr := c.Param("user_id")
 
-	eventID, err1 := strconv.ParseUint(eventIDStr, 10, 64)
-	userID, err2 := strconv.ParseUint(userIDStr, 10, 64)
+	eventID, err1 := strconv.ParseUint(eventIDStr, 10, strconv.IntSize)
+	userID, err2 := strconv.ParseUint(userIDStr, 10, strconv.IntSize)
 
 	if err1 != nil || err2 != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的参数"})

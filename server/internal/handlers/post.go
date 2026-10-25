@@ -120,7 +120,7 @@ func parseLatestFeedCursor(c *gin.Context) (*latestFeedCursor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("游标时间无效")
 	}
-	id, err := strconv.ParseUint(idRaw, 10, 64)
+	id, err := strconv.ParseUint(idRaw, 10, strconv.IntSize)
 	if err != nil || id == 0 {
 		return nil, fmt.Errorf("游标 ID 无效")
 	}
@@ -571,7 +571,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	tagIDProvided := tagIDStr != ""
 	var tagID uint
 	if tagIDProvided {
-		parsed, err := strconv.ParseUint(tagIDStr, 10, 64)
+		parsed, err := strconv.ParseUint(tagIDStr, 10, strconv.IntSize)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的标签ID"})
 			return
@@ -615,7 +615,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	topicIDProvided := topicIDStr != ""
 	var topicID uint
 	if topicIDProvided {
-		parsed, parseErr := strconv.ParseUint(topicIDStr, 10, 64)
+		parsed, parseErr := strconv.ParseUint(topicIDStr, 10, strconv.IntSize)
 		if parseErr != nil || parsed == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的话题ID"})
 			return
@@ -1902,7 +1902,7 @@ func postContentSecurityKind(content string, hasImage bool) string {
 // GetOne 获取帖子详情
 func (h *PostHandler) GetOne(c *gin.Context) {
 	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
+	id, err := strconv.ParseUint(idStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
 		return
@@ -2004,7 +2004,7 @@ func (h *PostHandler) Update(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	role, _ := c.Get("role")
 	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
+	id, err := strconv.ParseUint(idStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
 		return
@@ -2348,7 +2348,7 @@ func (h *PostHandler) UpdateStatus(c *gin.Context) {
 	userIDAny, _ := c.Get("user_id")
 	userID := userIDAny.(uint)
 
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
 		return
@@ -2417,7 +2417,7 @@ func (h *PostHandler) Delete(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	role, _ := c.Get("role")
 	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
+	id, err := strconv.ParseUint(idStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
 		return

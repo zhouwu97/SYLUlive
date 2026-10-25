@@ -29,6 +29,7 @@ func (emptyPolicyRetriever) Retrieve(context.Context, string) (ai.RetrievalResul
 
 type handlerBlockingLangChain struct {
 	cancelled chan struct{}
+	started   chan struct{}
 }
 
 func (b *handlerBlockingLangChain) QueryPolicy(context.Context, ai.PolicyRAGInput) (ai.PolicyRAGResult, error) {
@@ -36,15 +37,22 @@ func (b *handlerBlockingLangChain) QueryPolicy(context.Context, ai.PolicyRAGInpu
 }
 
 func (b *handlerBlockingLangChain) StreamPolicy(context.Context, ai.PolicyRAGInput) (ai.PolicyRAGEventStream, error) {
-	return &handlerBlockingPolicyStream{cancelled: b.cancelled}, nil
+	return &handlerBlockingPolicyStream{cancelled: b.cancelled, started: b.started}, nil
 }
 
 type handlerBlockingPolicyStream struct {
 	cancelled chan struct{}
+	started   chan struct{}
+	startOnce sync.Once
 	once      sync.Once
 }
 
 func (s *handlerBlockingPolicyStream) Next(ctx context.Context) (ai.PolicyRAGEvent, error) {
+	s.startOnce.Do(func() {
+		if s.started != nil {
+			close(s.started)
+		}
+	})
 	<-ctx.Done()
 	s.once.Do(func() { close(s.cancelled) })
 	return ai.PolicyRAGEvent{}, ctx.Err()
@@ -73,6 +81,10 @@ func TestAIEventsDisconnectKeepsRunAlive(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())), &gorm.Config{})
 	require.NoError(t, err)
+	// 该用例的后台 run 与状态轮询共享 SQLite，单连接避免夹具读写互相锁表。
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
 		&models.AIConversation{}, &models.AIConversationMessage{}, &models.AIRun{},
 		&models.AIEvent{}, &models.AIToolCall{}, &models.AIQuotaEntry{},
@@ -125,12 +137,16 @@ func TestCancelRunEndpointCancelsRun(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())), &gorm.Config{})
 	require.NoError(t, err)
+	// 内存 SQLite 的并发读写会直接返回 table locked；让测试使用一条连接串行执行 SQL。
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
 		&models.AIConversation{}, &models.AIConversationMessage{}, &models.AIRun{},
 		&models.AIEvent{}, &models.AIToolCall{}, &models.AIQuotaEntry{},
 		&models.AIUserBudget{}, &models.AIBudgetReservation{}, &models.AIUsageRecord{},
 	))
-	blocking := &handlerBlockingLangChain{cancelled: make(chan struct{})}
+	blocking := &handlerBlockingLangChain{cancelled: make(chan struct{}), started: make(chan struct{})}
 	runtime, err := ai.NewRuntime(db, nil, nil, ai.NewEventBroker(), ai.RuntimeConfig{
 		ProviderName: "langchain", Model: "python-policy-rag", RequestTimeout: 5 * time.Second,
 		MaxMessageChars: 20, HourlyMessageLimit: 3,
@@ -144,6 +160,11 @@ func TestCancelRunEndpointCancelsRun(t *testing.T) {
 		ClientRequestID: uuid.NewString(), Message: "怎么请假",
 	})
 	require.NoError(t, err)
+	select {
+	case <-blocking.started:
+	case <-time.After(time.Second):
+		t.Fatal("provider stream must start before cancellation is tested")
+	}
 	require.Eventually(t, func() bool {
 		current, getErr := runtime.GetRun(context.Background(), 27, run.ID)
 		return getErr == nil && current.State == models.AIRunStateRetrieving
@@ -164,7 +185,7 @@ func TestCancelRunEndpointCancelsRun(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 	select {
 	case <-blocking.cancelled:
-	default:
+	case <-time.After(time.Second):
 		t.Fatal("user cancel must propagate to the provider request context")
 	}
 }

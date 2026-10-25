@@ -205,7 +205,7 @@ func applyAppealPass(tx *gorm.DB, appeal models.Appeal) error {
 		if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Updates(map[string]interface{}{
 			"status":               originalStatus,
 			"moderation_rule_code": "",
-			"moderation_reason":   "",
+			"moderation_reason":    "",
 		}).Error; err != nil {
 			return err
 		}

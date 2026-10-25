@@ -19,9 +19,11 @@ Go 的 8080 只允许本机或 Docker 内部访问，公网流量必须经过 Ng
 
 - 服务器操作系统：Ubuntu 20.04+
 - 数据库：PostgreSQL 15 / pgvector
-- 运行环境：Go 1.26.6+。`deploy/deploy-shenliyuan` 会在部署前校验 Go 版本；未安装或版本过低时直接拒绝部署，不会自动安装或升级 Go。
+- 运行环境：Go 1.26.9+。`deploy/deploy-shenliyuan` 会在部署前校验 Go 版本；未安装或版本过低时直接拒绝部署，不会自动安装或升级 Go。
 
 ## 正式发布
+
+登录安全、证据保存、专用 Nginx 规则和告警验收见 [登录安全运维入口](docs/ops/auth-security.md)。
 
 1. 备份 PostgreSQL，并确认回滚二进制或上一稳定 SHA 可用。
 2. 在生产 .env 配置并复核 JWT、数据库、邮件、代理和安全中心变量：

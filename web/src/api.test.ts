@@ -19,6 +19,8 @@ type FetchCall = {
   path: string;
   method: string;
   accept?: string;
+  authTransport?: string;
+  credentials?: RequestCredentials;
   signal?: AbortSignal | null;
 };
 
@@ -39,6 +41,8 @@ function stubFetch(handlers: Array<(call: FetchCall) => Response | Promise<Respo
         path,
         method: String(init.method || "GET"),
         accept: new Headers(init.headers).get("accept") || "",
+        authTransport: new Headers(init.headers).get("X-Auth-Transport") || "",
+        credentials: init.credentials,
         signal: init.signal,
       };
       calls.push(call);
@@ -63,6 +67,19 @@ it("读请求遇到 401 时刷新会话后重放一次", async () => {
     "/api/refresh",
     "/api/posts",
   ]);
+  expect(calls.every((call) => call.authTransport === "cookie")).toBe(true);
+  expect(calls.every((call) => call.credentials === "same-origin")).toBe(true);
+});
+
+it("浏览器登录始终使用 Cookie 传输，调用方不能覆盖为 Bearer", async () => {
+  const calls = stubFetch([() => jsonResponse({ user: { id: 1 } })]);
+  await request("/api/login", {
+    method: "POST",
+    headers: { "X-Auth-Transport": "bearer" },
+    body: JSON.stringify({ account: "test@example.com", password: "test-password" }),
+  });
+  expect(calls[0].authTransport).toBe("cookie");
+  expect(calls[0].credentials).toBe("same-origin");
 });
 
 it("写请求遇到 401 不自动重放，避免跨账号执行非幂等操作", async () => {

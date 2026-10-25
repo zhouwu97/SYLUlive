@@ -74,7 +74,7 @@ async def fetch_courses(
             status_code=401,
             content={
                 "code": getattr(error, "code", "SESSION_EXPIRED"),
-                "error": str(error),
+                "error": "教务会话已过期，请重新登录",
             },
         )
     except CourseNotOpenError as error:

@@ -212,7 +212,7 @@ func TestSMTPVerificationMailerTreatsDataAcceptedAsSuccessWhenQuitFails(t *testi
 			if err != nil {
 				return err
 			}
-			if !strings.HasPrefix(strings.ToUpper(line), prefix) {
+			if !strings.HasPrefix(strings.ToUpper(line), strings.ToUpper(prefix)) {
 				return errors.New("unexpected SMTP command: " + line)
 			}
 			return nil
@@ -242,7 +242,7 @@ func TestSMTPVerificationMailerTreatsDataAcceptedAsSuccessWhenQuitFails(t *testi
 			serverDone <- err
 			return
 		}
-		for _, response := range []string{"MAIL FROM:", "RCPT TO:"} {
+		for _, response := range []string{"MAIL FROM:<from@example.com>", "RCPT TO:<to@example.com>"} {
 			if err := expectPrefix(response); err != nil {
 				serverDone <- err
 				return

@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"fmt"
+	"html"
 	"log"
 
 	crand "crypto/rand"
@@ -37,6 +38,7 @@ import (
 
 	"shenliyuan/internal/middleware"
 
+	"shenliyuan/internal/emailmessage"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 	"shenliyuan/internal/utils"
@@ -600,7 +602,8 @@ func (h *AuthHandler) loginLock(scope string, now time.Time) (time.Duration, boo
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return 0, false
 		}
-		return 0, false
+		// 与失败计数写入的故障回退一致，在密码校验前继续执行进程内锁定。
+		return currentLoginLock(scope, now)
 	}
 	if record.LastFailureAt == nil || now.Sub(*record.LastFailureAt) >= loginFailureWindow {
 		_ = h.db.Delete(&record).Error
@@ -659,8 +662,9 @@ func (h *AuthHandler) registerLoginFailure(scope string, now time.Time) time.Dur
 }
 
 func (h *AuthHandler) clearLoginFailures(scope string) {
+	// 数据库故障期间可能产生内存回退计数，恢复后也必须一起清除。
+	clearLoginFailures(scope)
 	if h.db == nil || !h.db.Migrator().HasTable(&models.LoginThrottleRecord{}) {
-		clearLoginFailures(scope)
 		return
 	}
 	if err := h.db.Where("scope = ?", scope).Delete(&models.LoginThrottleRecord{}).Error; err != nil {
@@ -728,6 +732,9 @@ func consumeQQVerified(qq string) {
 }
 
 func sendMailCode(qq, code string) error {
+	if !validateQQ(qq) {
+		return errors.New("请输入正确的QQ号")
+	}
 
 	if VerifyCodeConfig.SMTPHost == "" || VerifyCodeConfig.SMTPUser == "" || VerifyCodeConfig.SMTPPass == "" || VerifyCodeConfig.SMTPFrom == "" {
 
@@ -742,11 +749,21 @@ func sendMailCode(qq, code string) error {
 	auth := smtp.PlainAuth("", VerifyCodeConfig.SMTPUser, VerifyCodeConfig.SMTPPass, VerifyCodeConfig.SMTPHost)
 
 	message := buildVerifyCodeEmail(to, VerifyCodeConfig.SMTPFrom, code)
+	if len(message) == 0 {
+		return errors.New("验证码邮件地址无效")
+	}
 
 	return smtp.SendMail(addr, auth, VerifyCodeConfig.SMTPFrom, []string{to}, message)
 }
 
 func buildVerifyCodeEmail(to, from, code string) []byte {
+	if _, err := emailmessage.AddressHeader(to); err != nil {
+		return nil
+	}
+	fromHeader, err := emailmessage.AddressHeader(from)
+	if err != nil {
+		return nil
+	}
 	subject := mime.QEncoding.Encode("UTF-8", "沈理校园注册验证码")
 
 	body := fmt.Sprintf(`
@@ -775,11 +792,12 @@ func buildVerifyCodeEmail(to, from, code string) []byte {
 
   </body>
 
-</html>`, code)
+</html>`, html.EscapeString(code))
 
-	return []byte("To: " + to + "\r\n" +
+	// 邮箱仅作为 SMTP 信封收件人，验证码邮件不复制客户端地址到头部。
+	return []byte("To: undisclosed-recipients:;\r\n" +
 
-		"From: " + from + "\r\n" +
+		"From: " + fromHeader + "\r\n" +
 
 		"Subject: " + subject + "\r\n" +
 
@@ -787,9 +805,9 @@ func buildVerifyCodeEmail(to, from, code string) []byte {
 
 		"Content-Type: text/html; charset=UTF-8\r\n" +
 
-		"Content-Transfer-Encoding: 8bit\r\n\r\n" +
+		"Content-Transfer-Encoding: base64\r\n\r\n" +
 
-		body)
+		emailmessage.Body([]byte(body)))
 
 }
 
@@ -1439,7 +1457,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	middleware.InvalidateTokenVersionCache(user.ID)
 	revokeRefreshTokensForUser(h.db, user.ID)
 
-	clearLoginFailures("user:" + strconvUserID(user.ID))
+	h.clearUserLoginFailures(user)
 	h.writeSecurityAudit(user.ID, "password_reset_edu", "")
 
 	c.JSON(http.StatusOK, gin.H{"message": "密码已重置，请使用新密码登录"})
@@ -1557,7 +1575,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	user, err := h.findLoginUser(account)
 	if err != nil {
 
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, services.ErrEmailInvalid) {
 			// 不存在的账号也执行 bcrypt，避免从响应时间区分账号是否存在。
 			_ = bcrypt.CompareHashAndPassword([]byte(dummyLoginPasswordHash), []byte(input.Password))
 			lockFor := h.registerLoginFailure(accountKey, now)
@@ -1641,6 +1659,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	secureRefresh := middleware.SecureCookieEnabled()
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("refresh_token", refreshToken, int(refreshTTL().Seconds()), "/api", "", secureRefresh, true)
+	h.recordSuccessfulLogin(c, user, account, sessionID)
 	c.JSON(http.StatusOK, payload)
 
 }

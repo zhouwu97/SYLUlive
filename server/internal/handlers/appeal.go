@@ -41,7 +41,7 @@ func (h *AppealHandler) SetUploadDir(uploadDir string) {
 func (h *AppealHandler) Create(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	postIDStr := c.Param("id")
-	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	postID, err := strconv.ParseUint(postIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
 		return
@@ -134,7 +134,7 @@ func (h *AppealHandler) Create(c *gin.Context) {
 // CreateByReport 以具体治理决定创建申诉，避免按帖子匹配到历史举报记录。
 func (h *AppealHandler) CreateByReport(c *gin.Context) {
 	userID := c.GetUint("user_id")
-	reportID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	reportID, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的举报ID"})
 		return
@@ -398,12 +398,12 @@ func publicAppealResult(status models.AppealStatus) string {
 
 // GetEvidenceFile 仅向案件参与者返回被冻结快照中的图片，避免直接暴露已删除内容的公开 URL。
 func (h *AppealHandler) GetEvidenceFile(c *gin.Context) {
-	appealID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	appealID, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	fileID, err := strconv.ParseUint(c.Param("file_id"), 10, 64)
+	fileID, err := strconv.ParseUint(c.Param("file_id"), 10, strconv.IntSize)
 	if err != nil || h.uploadDir == "" {
 		c.Status(http.StatusNotFound)
 		return
@@ -477,7 +477,7 @@ func (h *AppealHandler) AdminGetReviewList(c *gin.Context) {
 
 // AdminResolveReview 由管理员对 review_required 案件作最终决定。
 func (h *AppealHandler) AdminResolveReview(c *gin.Context) {
-	appealID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	appealID, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的申诉ID"})
 		return
@@ -566,7 +566,7 @@ func (h *AppealHandler) AdminResolveReview(c *gin.Context) {
 func (h *AppealHandler) GetOne(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	appealIDStr := c.Param("id")
-	appealID, err := strconv.ParseUint(appealIDStr, 10, 64)
+	appealID, err := strconv.ParseUint(appealIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的申诉ID"})
 		return
@@ -640,7 +640,7 @@ type VoteInput struct {
 func (h *AppealHandler) Vote(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	appealIDStr := c.Param("id")
-	appealID, err := strconv.ParseUint(appealIDStr, 10, 64)
+	appealID, err := strconv.ParseUint(appealIDStr, 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的申诉ID"})
 		return
@@ -821,7 +821,7 @@ func appealResultIrreversible(supportCount, opposeCount, eligibleCount int) bool
 // Recuse 允许陪审员在投票前申请回避，回避不会暴露给其他陪审员。
 func (h *AppealHandler) Recuse(c *gin.Context) {
 	userID := c.GetUint("user_id")
-	appealID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	appealID, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的申诉ID"})
 		return
@@ -960,7 +960,7 @@ func applyAppealPass(tx *gorm.DB, appeal models.Appeal) error {
 		if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Updates(map[string]interface{}{
 			"status":               originalStatus,
 			"moderation_rule_code": "",
-			"moderation_reason":   "",
+			"moderation_reason":    "",
 		}).Error; err != nil {
 			return err
 		}

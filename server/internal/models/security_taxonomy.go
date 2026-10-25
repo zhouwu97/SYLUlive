@@ -27,6 +27,9 @@ var securityAuditEventTypes = map[string]struct{}{
 	"password_reset_activity": {},
 	// 单次或少量密码输错，尚未触发任何锁定。
 	"login_failed": {},
+	// 普通成功登录与新设备只是观察信号；管理员新设备另用高危待处置事件。
+	"login_success":    {},
+	"login_new_device": {},
 	// 验证码冷却拦截：用户点太快，属于自助恢复范围。
 	"verification_cooldown": {},
 	// 来源封禁已经在中间件层完成处置，这条只是「封禁生效了多少次」的计数流水。

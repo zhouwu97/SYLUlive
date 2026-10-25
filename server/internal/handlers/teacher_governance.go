@@ -192,14 +192,14 @@ func (h *TeacherGovernanceHandler) ListTeachers(c *gin.Context) {
 	}
 	var cursor uint
 	if raw := c.Query("cursor"); raw != "" {
-		if parsed, err := strconv.ParseUint(raw, 10, 64); err == nil {
+		if parsed, err := strconv.ParseUint(raw, 10, strconv.IntSize); err == nil {
 			cursor = uint(parsed)
 		}
 	}
 	includeMerged := c.Query("include_merged") == "true" || c.Query("include_merged") == "1"
 	var subjectID *uint
 	if raw := c.Query("subject_id"); raw != "" {
-		if parsed, err := strconv.ParseUint(raw, 10, 64); err == nil && parsed > 0 {
+		if parsed, err := strconv.ParseUint(raw, 10, strconv.IntSize); err == nil && parsed > 0 {
 			val := uint(parsed)
 			subjectID = &val
 		}
@@ -281,7 +281,7 @@ func (h *TeacherGovernanceHandler) DeleteAlias(c *gin.Context) {
 		})
 		return
 	}
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil || id == 0 {
 		respondGovernanceError(c, &services.TeacherGovernanceError{
 			Code:    services.CodeTeacherGovernanceInvalidInput,
@@ -326,7 +326,7 @@ func (h *TeacherGovernanceHandler) ListMergeRecords(c *gin.Context) {
 	}
 	var cursor uint
 	if raw := c.Query("cursor"); raw != "" {
-		if parsed, err := strconv.ParseUint(raw, 10, 64); err == nil {
+		if parsed, err := strconv.ParseUint(raw, 10, strconv.IntSize); err == nil {
 			cursor = uint(parsed)
 		}
 	}

@@ -253,11 +253,11 @@ func (h *AuthHandler) UpdateUserEmail(c *gin.Context) {
 	}
 	middleware.InvalidateTokenVersionCache(user.ID)
 	revokeRefreshTokensForUser(h.db, user.ID)
-	clearLoginFailures("user:" + strconvUserID(user.ID))
 	if err := h.db.First(&user, user.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "刷新账号信息失败"})
 		return
 	}
+	h.clearUserLoginFailures(user)
 	h.writeSecurityAudit(user.ID, action, maskEmail(email))
 	h.issueAuthSession(c, user, http.StatusOK)
 }
@@ -432,7 +432,7 @@ func (h *AuthHandler) ResetPasswordByEmail(c *gin.Context) {
 	}
 	middleware.InvalidateTokenVersionCache(user.ID)
 	revokeRefreshTokensForUser(h.db, user.ID)
-	clearLoginFailures("user:" + strconvUserID(user.ID))
+	h.clearUserLoginFailures(user)
 	auditMetadata, _ := json.Marshal(map[string]interface{}{
 		"request_id": middleware.RequestID(c), "consume_source_hash": securitySourceFingerprint(h.security, c.ClientIP()),
 		"challenge_source_hash": challengeSourceHash, "challenge_id": challengeID,

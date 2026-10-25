@@ -36,6 +36,7 @@ const (
 )
 
 var graduateSessionPrefixPattern = regexp.MustCompile(`(?i)^(/+\(S\([^)]+\)\))`)
+var graduateValidatedSessionPrefix = regexp.MustCompile(`^/\(S\([A-Za-z0-9_-]{1,128}\)\)$`)
 var graduatePubKeyTagPattern = regexp.MustCompile(`(?is)<[^>]*\bid=["']pubkey["'][^>]*>`)
 var graduatePubKeyValuePattern = regexp.MustCompile(`(?is)\bvalue=["']([^"']+)["']`)
 var graduatePubKeyValueFirstPattern = regexp.MustCompile(`(?is)<[^>]*\bvalue=["']([^"']+)["'][^>]*\bid=["']pubkey["'][^>]*>`)
@@ -295,10 +296,20 @@ func (p *GraduateAcademicIdentityProvider) Verify(ctx context.Context, request A
 		return AcademicVerifiedProfile{}, ErrAcademicChallengeRejected
 	}
 	loginEndpoint := p.endpointWithPrefix(state.SessionPrefix, "/home/stulogin_do")
-	loginRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, loginEndpoint, bytes.NewReader([]byte("json="+url.QueryEscape(string(encoded)))))
+	if loginEndpoint == "" {
+		return AcademicVerifiedProfile{}, ErrAcademicChallengeRejected
+	}
+	// 固定来源创建请求，挑战状态只能影响已校验的会话路径。
+	loginRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint("/home/stulogin_do"), bytes.NewReader([]byte("json="+url.QueryEscape(string(encoded)))))
 	if err != nil {
 		return AcademicVerifiedProfile{}, graduateProviderUnavailable("login_request", 0)
 	}
+	loginTarget, err := url.Parse(loginEndpoint)
+	if err != nil || !sameGraduateOrigin(p.baseURL, loginTarget) {
+		return AcademicVerifiedProfile{}, ErrAcademicChallengeRejected
+	}
+	loginRequest.URL.Path = loginTarget.Path
+	loginRequest.URL.RawPath = loginTarget.RawPath
 	setGraduateRequestHeaders(loginRequest)
 	loginRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	loginRequest.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -461,7 +472,15 @@ func (p *GraduateAcademicIdentityProvider) endpointWithPrefix(prefix, path strin
 	if prefix != "" && !strings.HasPrefix(prefix, "/") {
 		prefix = "/" + prefix
 	}
-	return strings.TrimRight(p.baseURL.String(), "/") + prefix + "/" + strings.TrimLeft(path, "/")
+	if prefix != "" && !graduateValidatedSessionPrefix.MatchString(prefix) {
+		return ""
+	}
+	endpoint := *p.baseURL
+	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + prefix + "/" + strings.TrimLeft(path, "/")
+	endpoint.RawPath, endpoint.RawQuery, endpoint.Fragment = "", "", ""
+	// 学校的 ASP.NET 会话路径使用字面括号，保留该格式以免会话失效。
+	endpoint.RawPath = strings.ReplaceAll(strings.ReplaceAll(endpoint.EscapedPath(), "%28", "("), "%29", ")")
+	return endpoint.String()
 }
 
 func readGraduateResponseBody(response *http.Response) ([]byte, error) {

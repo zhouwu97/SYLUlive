@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -157,7 +158,7 @@ func (s *EmojiFavoriteService) CreateFromPublicImage(ctx context.Context, userID
 			if pathErr != nil {
 				return nil, fmt.Errorf("%w: 图片路径非法", ErrInvalidImageFileReference)
 			}
-			raw, readErr := os.ReadFile(fullPath)
+			raw, readErr := s.readUploadImage(fullPath)
 			if readErr != nil {
 				return nil, fmt.Errorf("%w: 图片文件不存在", ErrInvalidImageFileReference)
 			}
@@ -534,6 +535,40 @@ func emojiQuotaUsed(tx *gorm.DB, userID uint) (int64, error) {
 
 func (s *EmojiFavoriteService) resolveUploadPath(path string) (string, error) {
 	return ResolveUploadPath(s.uploadDir, path)
+}
+
+// 用目录句柄约束实际打开操作，阻止符号链接和路径竞态越过上传目录。
+func (s *EmojiFavoriteService) readUploadImage(fullPath string) ([]byte, error) {
+	rootPath := s.uploadDir
+	if rootPath == "" {
+		rootPath = "uploads"
+	}
+	rootAbs, err := filepath.Abs(rootPath)
+	if err != nil {
+		return nil, err
+	}
+	relative, err := filepath.Rel(rootAbs, fullPath)
+	if err != nil || !filepath.IsLocal(relative) {
+		return nil, ErrInvalidImageFileReference
+	}
+	root, err := os.OpenRoot(rootAbs)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	file, err := root.Open(relative)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, MaxEmojiQuotaBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > MaxEmojiQuotaBytes {
+		return nil, ErrEmojiQuotaExceeded
+	}
+	return raw, nil
 }
 
 func (s *EmojiFavoriteService) resolveEmojiPath(path string) string {

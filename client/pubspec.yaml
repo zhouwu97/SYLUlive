@@ -55,7 +55,8 @@ dependencies:
   add_2_calendar: 3.0.1
   flutter_staggered_grid_view: ^0.7.0
   gal: ^2.3.2
-  image: ^4.9.2
+  # 与已验证的 archive 4.2.0 成对固定，防止换源解析出依赖 decodeLazy 的不兼容版本。
+  image: 4.9.2
   tflite_flutter: ^0.12.1
   archive: 4.2.0
 

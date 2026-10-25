@@ -76,7 +76,7 @@ func DecodePollListCursor(encoded, sort string) (pollListCursor, bool) {
 	if err != nil {
 		return cursor, false
 	}
-	keyID, err := strconv.ParseUint(parts[3], 10, 64)
+	keyID, err := strconv.ParseUint(parts[3], 10, strconv.IntSize)
 	if err != nil {
 		return cursor, false
 	}
@@ -84,7 +84,7 @@ func DecodePollListCursor(encoded, sort string) (pollListCursor, bool) {
 	if err != nil {
 		return cursor, false
 	}
-	anchorID, err := strconv.ParseUint(parts[5], 10, 64)
+	anchorID, err := strconv.ParseUint(parts[5], 10, strconv.IntSize)
 	if err != nil {
 		return cursor, false
 	}
@@ -137,7 +137,7 @@ func decodePollPoolIDs(raw string) []uint {
 	seen := make(map[uint]struct{}, len(parts))
 	ids := make([]uint, 0, len(parts))
 	for _, part := range parts {
-		id, err := strconv.ParseUint(part, 10, 64)
+		id, err := strconv.ParseUint(part, 10, strconv.IntSize)
 		if err != nil || id == 0 {
 			return nil
 		}

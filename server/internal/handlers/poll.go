@@ -170,7 +170,7 @@ func (h *PollHandler) writeError(c *gin.Context, err error) {
 }
 
 func pollParamID(c *gin.Context) (uint, bool) {
-	value, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	value, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil || value == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"code": services.PollCodeInvalidInput, "error": "投票 ID 无效"})
 		return 0, false

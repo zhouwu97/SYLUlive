@@ -243,7 +243,7 @@ func findForbiddenScheduleField(raw []byte) (string, bool) {
 
 // parseCourseEvaluationID 解析路径参数中的记录 ID。
 func parseCourseEvaluationID(c *gin.Context) (uint, bool) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil || id == 0 {
 		respondCourseEvaluationError(c, &services.CourseEvaluationError{
 			Code:    services.CodeInvalidCourseEvaluationInput,
@@ -459,8 +459,8 @@ func (h *CourseEvaluationHandler) Approve(c *gin.Context) {
 		return
 	}
 	var body struct {
-		Revision           int    `json:"revision"`
-		KeeperTeacherID    uint   `json:"keeper_teacher_id"`
+		Revision            int   `json:"revision"`
+		KeeperTeacherID     uint  `json:"keeper_teacher_id"`
 		RegisterCourseAlias *bool `json:"register_course_alias"`
 	}
 	if err := decodeCourseEvaluationBody(c, &body); err != nil {

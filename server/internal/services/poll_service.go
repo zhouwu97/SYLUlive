@@ -75,6 +75,7 @@ type PollListInput struct {
 // pollRecommendPoolSize 是推荐排序一次装载的候选池上界：最近的这些投票参与重排。
 // 池是有界且可解释的（按发帖时间倒序截取），不是「全量推荐」，所以 total 只按池内条数返回。
 const pollRecommendPoolSize = 500
+const pollListMaxPageSize = 50
 
 // PollListResult 的字段语义：
 //   - total：这一次请求可分页的候选总数。latest/ending 等于全部匹配数；
@@ -704,6 +705,9 @@ func pagePollSnapshot(posts []models.Post, snapshotIDs []uint, start, limit int)
 	if limit <= 0 {
 		limit = 20
 	}
+	if limit > pollListMaxPageSize {
+		limit = pollListMaxPageSize
+	}
 	if start < 0 {
 		start = 0
 	}
@@ -714,7 +718,7 @@ func pagePollSnapshot(posts []models.Post, snapshotIDs []uint, start, limit int)
 	if start > len(snapshotIDs) {
 		start = len(snapshotIDs)
 	}
-	page := make([]models.Post, 0, limit)
+	page := make([]models.Post, 0, pollListMaxPageSize)
 	index := start
 	for ; index < len(snapshotIDs) && len(page) < limit; index++ {
 		if post, ok := byID[snapshotIDs[index]]; ok {
@@ -1037,8 +1041,8 @@ func normalizePollListInput(input PollListInput) PollListInput {
 	if input.Limit < 1 {
 		input.Limit = 20
 	}
-	if input.Limit > 50 {
-		input.Limit = 50
+	if input.Limit > pollListMaxPageSize {
+		input.Limit = pollListMaxPageSize
 	}
 	if input.Sort != "latest" && input.Sort != "ending" {
 		input.Sort = "recommend"

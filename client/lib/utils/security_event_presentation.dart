@@ -1,5 +1,34 @@
 import '../models/security_event.dart';
 
+bool securityEventHasSourceIP(SecurityEvent event) =>
+    event.sourceAttributionValid &&
+    event.sourceIPStatus == 'available' &&
+    event.sourceIP.isNotEmpty;
+
+String securityEventSourceIPLabel(SecurityEvent event) {
+  if (!event.sourceAttributionValid || event.sourceIPStatus == 'untrusted') {
+    return '来源归因不可用';
+  }
+  if (securityEventHasSourceIP(event)) return event.sourceIP;
+  return event.sourceIPStatus == 'unavailable'
+      ? 'IP 暂不可读取'
+      : '未记录 IP（历史记录或审计流水）';
+}
+
+String securityEventSourceRegionLabel(SecurityEvent event) {
+  if (!securityEventHasSourceIP(event)) return '暂无可用 IP，无法查询归属地';
+  return switch (event.sourceRegionStatus) {
+    'resolved' ||
+    'private' ||
+    'local' ||
+    'reserved' when event.sourceRegion.isNotEmpty =>
+      event.sourceRegion,
+    'database_unavailable' => '离线 IP 库未加载',
+    'database_error' => '离线 IP 库查询失败',
+    _ => '未知归属地',
+  };
+}
+
 /// 安全事件的展示语义。
 ///
 /// 这些规则以前直接写在页面里，无法单测，于是「密码重置请求」把申请验证码、实际发信、
@@ -119,7 +148,8 @@ bool isContentQuotaEvent(String eventType) => switch (eventType) {
       'content_post_flood' ||
       'content_reply_flood' ||
       'private_message_flood' ||
-      'feedback_ticket_flood' => true,
+      'feedback_ticket_flood' =>
+        true,
       _ => false,
     };
 
@@ -199,7 +229,8 @@ String securityBlockScopeDescription(
   final scopes = catalog?['scopes'];
   final entry = scopes is Map ? scopes[scope] : null;
   final parts = <String>[];
-  final description = entry is Map ? entry['description']?.toString() ?? '' : '';
+  final description =
+      entry is Map ? entry['description']?.toString() ?? '' : '';
   parts.add(description.isNotEmpty
       ? description
       : switch (scope) {
@@ -219,8 +250,9 @@ String securityBlockScopeDescription(
     parts.add(methodNote);
   }
   if (scope == 'account' && catalog?['account_excludes'] is List) {
-    final excluded =
-        (catalog!['account_excludes'] as List).map((e) => e.toString()).join(' · ');
+    final excluded = (catalog!['account_excludes'] as List)
+        .map((e) => e.toString())
+        .join(' · ');
     if (excluded.isNotEmpty) {
       parts.add('不包含：$excluded');
     }

@@ -2,6 +2,14 @@
 
 本文件旨在提供沈理校园后端的 HTTP API 接口概览。所有的接口均基于 RESTful 风格设计，通过 JSON 格式进行数据交互。
 
+## 安全中心预警来源
+
+`GET /api/admin/security/events` 与 `GET /api/admin/security/events/:id` 延续管理员鉴权；普通用户不可访问。`source_key` 仍只提供给超级管理员，用于既有 HMAC 来源封禁。
+
+预警新增 `source_ip`、`source_ip_status`、`source_region`、`source_region_status`。IP 仅在可信来源且该预警已保存有效密文时返回，状态为 `available`；`not_recorded` 表示历史记录或普通审计未记录 IP，`untrusted` 表示来源归因不可信，`unavailable` 表示密文无法读取。归属地是国家／省／市的离线查询结果，不含经纬度；状态为 `resolved`、`private`、`local`、`reserved`、`unknown`、`database_unavailable` 或 `database_error`。缺少 IP 时不猜测归属地。
+
+列表继续返回 `items`、`total`、`page`、`limit`，客户端支持加载后续页及失败重试。统计接口 `protection.security_ip_location` 和 `security_ip_location_note` 报告本地 IPv4／IPv6 库是否可用。数据库缺失只影响归属地，不能伪装为归属地正常，也不阻断事件采集。
+
 ## 基础信息
 
 - **基础路由 (Base URL)**: `/api`

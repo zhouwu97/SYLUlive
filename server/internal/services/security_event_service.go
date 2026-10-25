@@ -333,6 +333,10 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 		installationHash = s.Hash(input.InstallationID)
 	}
 	attributionValid := s.attributionValidFrom.IsZero() || !now.Before(s.attributionValidFrom)
+	ipCiphertext, err := s.encryptSourceIP(input, sourceHash, attributionValid)
+	if err != nil {
+		return errors.New("安全来源加密失败")
+	}
 	attemptCount := 1
 	if input.SkipAttempt {
 		attemptCount = 0
@@ -341,6 +345,7 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 		BucketKey: key, EventType: truncateSecurityValue(input.EventType, 64), Severity: severity,
 		Status: status, Route: route, Method: method, SourceIPHash: sourceHash,
 		SourceAttributionValid: attributionValid,
+		SourceIPCiphertext:     ipCiphertext,
 		SourceUAHash:           sourceUAHash, InstallationHash: installationHash,
 		ActorUserID: input.ActorUserID, TargetType: truncateSecurityValue(input.TargetType, 32),
 		TargetHash: targetHash, TargetMasked: truncateSecurityValue(input.TargetMasked, 320),
@@ -350,7 +355,7 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 		FirstSeenAt: now, LastSeenAt: now, CreatedAt: now, UpdatedAt: now,
 	}
 
-	err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+	err = s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "bucket_key"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
 			"attempt_count":                securityEventIncrement("attempt_count", attemptCount),
@@ -366,7 +371,8 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 			"action":        securityEventMonotonicRank("action", models.SecurityActionRankSQL),
 			"metadata_json": securityEventMetadataUpdate(),
 			// method 在同一桶内不保证每次都带值（例如聚合计数写入），只在现有值为空时填充。
-			"method": securityEventFillIfEmpty("method"),
+			"method":               securityEventFillIfEmpty("method"),
+			"source_ip_ciphertext": securityEventFillIfEmpty("source_ip_ciphertext"),
 			// 同一五分钟聚合桶再次出现新攻击时重新激活事件，旧的处置结果必须清掉，
 			// 否则后台会同时显示 active 和历史 resolved_at，造成错误判断。
 			"resolved_at":     nil,

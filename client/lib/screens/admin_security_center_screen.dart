@@ -12,6 +12,7 @@ import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../utils/security_event_presentation.dart';
 import '../widgets/global_background_wrapper.dart';
+import '../widgets/app_card.dart';
 
 /// 安全中心。
 ///
@@ -44,9 +45,21 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
   bool _loading = true;
   bool _actionBusy = false;
   int _loadGeneration = 0;
+  int _page = 0;
+  int? _total;
+  bool _hasMore = false;
+  bool _loadingMore = false;
+  String? _loadMoreError;
+  (AuthProvider, int?, String, Dio)? _account;
 
   AdminSecurityService get _service =>
       AdminSecurityService(context.read<AuthProvider>().dio);
+
+  (AuthProvider, int?, String, Dio) _identity(AuthProvider auth) =>
+      (auth, auth.user?.id, auth.user?.role ?? '', auth.dio);
+
+  bool _sameAccount((AuthProvider, int?, String, Dio)? account) =>
+      mounted && account == _identity(context.read<AuthProvider>());
 
   /// 视图 -> 接口筛选参数。
   (String actionable, String status) get _filters => switch (_view) {
@@ -62,18 +75,43 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.watch<AuthProvider>();
+    final account = _identity(auth);
+    if (_account != null && _account != account) {
+      ++_loadGeneration;
+      _overview = null;
+      _events = const [];
+      _error = null;
+      _loading = true;
+      _hasMore = false;
+      _loadingMore = false;
+      _loadMoreError = null;
+      _actionBusy = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _load();
+      });
+    }
+    _account = account;
+  }
+
   Future<void> _load() async {
     if (!mounted) return;
     final requestGeneration = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
+      _loadingMore = false;
+      _loadMoreError = null;
+      _hasMore = false;
     });
     final filters = _filters;
     try {
       final result = await Future.wait([
         _service.loadOverview(),
-        _service.loadEvents(
+        _service.loadEventPage(
           severity: _severity,
           status: filters.$2,
           actionable: filters.$1,
@@ -82,7 +120,11 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
       if (!mounted || requestGeneration != _loadGeneration) return;
       setState(() {
         _overview = result[0] as SecurityOverview;
-        _events = result[1] as List<SecurityEvent>;
+        final page = result[1] as SecurityEventPage;
+        _events = page.items;
+        _page = page.page;
+        _total = page.total;
+        _hasMore = page.hasMore;
         _loading = false;
       });
     } on DioException catch (error) {
@@ -102,6 +144,41 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     }
   }
 
+  Future<void> _loadMore() async {
+    if (_loading || _loadingMore || !_hasMore) return;
+    final generation = _loadGeneration;
+    final filters = _filters;
+    setState(() {
+      _loadingMore = true;
+      _loadMoreError = null;
+    });
+    try {
+      final page = await _service.loadEventPage(
+          severity: _severity,
+          status: filters.$2,
+          actionable: filters.$1,
+          page: _page + 1);
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() {
+        final ids = _events.map((event) => event.id).toSet();
+        _events = [
+          ..._events,
+          ...page.items.where((event) => ids.add(event.id))
+        ];
+        _page = page.page;
+        _total = page.total;
+        _hasMore = page.hasMore;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() {
+        _loadingMore = false;
+        _loadMoreError = '更多预警加载失败';
+      });
+    }
+  }
+
   Future<void> _changeView({String? view, String? severity}) async {
     setState(() {
       if (view != null) _view = view;
@@ -111,6 +188,8 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
   }
 
   Future<void> _resolve(SecurityEvent event, bool falsePositive) async {
+    final account = _account;
+    final service = _service;
     final noteController = TextEditingController();
     final note = await showDialog<String>(
       context: context,
@@ -134,103 +213,134 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
       ),
     );
     noteController.dispose();
-    if (note == null || !mounted) return;
+    if (note == null || !_sameAccount(account)) return;
     setState(() => _actionBusy = true);
     try {
       if (falsePositive) {
-        await _service.markFalsePositive(event.id, note: note);
+        await service.markFalsePositive(event.id, note: note);
       } else {
-        await _service.resolve(event.id, note: note);
+        await service.resolve(event.id, note: note);
       }
-      await _load();
+      if (_sameAccount(account)) await _load();
     } catch (_) {
-      if (mounted) _showMessage('更新安全事件失败');
+      if (_sameAccount(account)) _showMessage('更新安全事件失败');
     } finally {
-      if (mounted) setState(() => _actionBusy = false);
+      if (_sameAccount(account)) setState(() => _actionBusy = false);
     }
   }
 
   Future<void> _showEvent(SecurityEvent event) async {
+    final account = _account;
     final isSuper = context.read<AuthProvider>().user?.isSuperAdmin == true;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(securityEventTitle(event),
-                    style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: AppSpacing.sm),
-                _detailLine('级别',
-                    '${securityEventSeverityLabel(event)}（${securityEventDisplaySeverity(event)}）'),
-                _detailLine('状态', securityEventStatusLabel(event)),
-                _detailLine('处置', securityEventActionLabel(event)),
-                _detailLine('目标', securityEventTargetLabel(event)),
-                ...securityEventMetrics(event).map((line) => Text(line)),
-                ...securityEventContext(event).map((line) => Text(
-                      line,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    )),
-                _detailLine('路由', '${event.method} ${event.route}'),
-                _detailLine('来源指纹',
-                    event.sourceFingerprint.isEmpty ? '未知' : event.sourceFingerprint),
-                _detailLine('最后发生', _formatTime(event.lastSeenAt)),
-                if (!event.actionable)
-                  const Padding(
-                    padding: EdgeInsets.only(top: AppSpacing.xs),
-                    child: Text('审计流水：正常业务记录，无需处置',
-                        style: TextStyle(color: AppColors.info)),
+      builder: (sheetContext) => Consumer<AuthProvider>(
+        builder: (_, auth, child) => account == _identity(auth)
+            ? child!
+            : const SafeArea(
+                child: Padding(
+                    padding: EdgeInsets.all(AppSpacing.lg),
+                    child: Text('账号已切换，请重新打开预警'))),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(securityEventTitle(event),
+                      style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: AppSpacing.sm),
+                  _detailLine('级别',
+                      '${securityEventSeverityLabel(event)}（${securityEventDisplaySeverity(event)}）'),
+                  _detailLine('状态', securityEventStatusLabel(event)),
+                  _detailLine('处置', securityEventActionLabel(event)),
+                  _detailLine('目标', securityEventTargetLabel(event)),
+                  ...securityEventMetrics(event).map((line) => Text(line)),
+                  ...securityEventContext(event).map((line) => Text(
+                        line,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      )),
+                  _detailLine('路由', '${event.method} ${event.route}'),
+                  _detailLine(
+                      '来源指纹',
+                      event.sourceFingerprint.isEmpty
+                          ? '未知'
+                          : event.sourceFingerprint),
+                  SelectableText('预警 IP：${securityEventSourceIPLabel(event)}'),
+                  _detailLine('大致归属地', securityEventSourceRegionLabel(event)),
+                  const Text('归属地来自离线 IP 库，仅代表网络出口的大致位置。'),
+                  if (securityEventHasSourceIP(event))
+                    TextButton.icon(
+                      icon: const Icon(Icons.copy_outlined),
+                      label: const Text('复制 IP'),
+                      onPressed: () async {
+                        if (!_sameAccount(account)) return;
+                        try {
+                          await Clipboard.setData(
+                              ClipboardData(text: event.sourceIP));
+                          if (_sameAccount(account)) _showMessage('IP 已复制');
+                        } catch (_) {
+                          if (_sameAccount(account)) {
+                            _showMessage('复制失败，请长按 IP 手动复制');
+                          }
+                        }
+                      },
+                    ),
+                  _detailLine('最后发生', _formatTime(event.lastSeenAt)),
+                  if (!event.actionable)
+                    const Padding(
+                      padding: EdgeInsets.only(top: AppSpacing.xs),
+                      child: Text('审计流水：正常业务记录，无需处置',
+                          style: TextStyle(color: AppColors.info)),
+                    ),
+                  if (event.installationSeen) const Text('安装标识：已记录（仅用于关联判断）'),
+                  if (isSuper && event.sourceKey.isNotEmpty)
+                    Text('超级管理员来源键：${event.sourceKey}',
+                        style: const TextStyle(fontSize: 12)),
+                  const SizedBox(height: AppSpacing.lg),
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    children: [
+                      if (event.status == 'active')
+                        FilledButton.tonal(
+                          onPressed: _actionBusy
+                              ? null
+                              : () {
+                                  Navigator.pop(sheetContext);
+                                  _resolve(event, false);
+                                },
+                          child: const Text('标记已处理'),
+                        ),
+                      if (event.status == 'active')
+                        OutlinedButton(
+                          onPressed: _actionBusy
+                              ? null
+                              : () {
+                                  Navigator.pop(sheetContext);
+                                  _resolve(event, true);
+                                },
+                          child: const Text('误报'),
+                        ),
+                      if (isSuper && event.sourceKey.isNotEmpty)
+                        OutlinedButton.icon(
+                          onPressed: _actionBusy
+                              ? null
+                              : () {
+                                  Navigator.pop(sheetContext);
+                                  _createBlock(event);
+                                },
+                          icon: const Icon(Icons.block_outlined),
+                          label: const Text('临时封禁来源'),
+                        ),
+                    ],
                   ),
-                if (event.installationSeen)
-                  const Text('安装标识：已记录（仅用于关联判断）'),
-                if (isSuper && event.sourceKey.isNotEmpty)
-                  Text('超级管理员来源键：${event.sourceKey}',
-                      style: const TextStyle(fontSize: 12)),
-                const SizedBox(height: AppSpacing.lg),
-                Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  children: [
-                    if (event.status == 'active')
-                      FilledButton.tonal(
-                        onPressed: _actionBusy
-                            ? null
-                            : () {
-                                Navigator.pop(sheetContext);
-                                _resolve(event, false);
-                              },
-                        child: const Text('标记已处理'),
-                      ),
-                    if (event.status == 'active')
-                      OutlinedButton(
-                        onPressed: _actionBusy
-                            ? null
-                            : () {
-                                Navigator.pop(sheetContext);
-                                _resolve(event, true);
-                              },
-                        child: const Text('误报'),
-                      ),
-                    if (isSuper && event.sourceKey.isNotEmpty)
-                      OutlinedButton.icon(
-                        onPressed: _actionBusy
-                            ? null
-                            : () {
-                                Navigator.pop(sheetContext);
-                                _createBlock(event);
-                              },
-                        icon: const Icon(Icons.block_outlined),
-                        label: const Text('临时封禁来源'),
-                      ),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -249,6 +359,8 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
   /// 接口生效，校园网/宿舍/运营商共享出口一点就可能连坐一批正常同学；
   /// 全部高风险接口必须选中危险项并显式勾选确认。
   Future<void> _createBlock(SecurityEvent event) async {
+    final account = _account;
+    final service = _service;
     final routePrefix = event.route.startsWith('/api/') ? event.route : '';
     var duration = 60;
     var scope = routePrefix.isEmpty ? 'account' : 'route';
@@ -265,10 +377,13 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('来源：${event.sourceFingerprint.isEmpty ? '未知' : event.sourceFingerprint}',
+                Text('预警 IP：${securityEventSourceIPLabel(event)}',
+                    style: Theme.of(context).textTheme.bodySmall),
+                Text('归属地：${securityEventSourceRegionLabel(event)}',
                     style: Theme.of(context).textTheme.bodySmall),
                 const SizedBox(height: AppSpacing.sm),
-                const Text('封禁范围', style: TextStyle(fontWeight: FontWeight.w600)),
+                const Text('封禁范围',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: AppSpacing.xs),
                 Wrap(
                   spacing: AppSpacing.sm,
@@ -284,7 +399,8 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                     ChoiceChip(
                       label: const Text('账号与凭据链路'),
                       selected: scope == 'account',
-                      onSelected: (_) => setDialogState(() => scope = 'account'),
+                      onSelected: (_) =>
+                          setDialogState(() => scope = 'account'),
                     ),
                     ChoiceChip(
                       label: const Text('全部高风险接口'),
@@ -326,8 +442,8 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                     contentPadding: EdgeInsets.zero,
                     controlAffinity: ListTileControlAffinity.leading,
                     value: globalConfirmed,
-                    onChanged: (value) => setDialogState(
-                        () => globalConfirmed = value ?? false),
+                    onChanged: (value) =>
+                        setDialogState(() => globalConfirmed = value ?? false),
                     title: const Text('我已确认该来源不是共享出口'),
                   ),
                 const SizedBox(height: AppSpacing.sm),
@@ -367,10 +483,10 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     );
     final reason = reasonController.text;
     reasonController.dispose();
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !_sameAccount(account)) return;
     setState(() => _actionBusy = true);
     try {
-      await _service.createBlock(
+      await service.createBlock(
         sourceKey: event.sourceKey,
         durationMinutes: duration,
         scope: scope,
@@ -378,11 +494,11 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
         confirmGlobal: scope == 'all',
         reason: reason,
       );
-      _showMessage('已创建临时封禁');
+      if (_sameAccount(account)) _showMessage('已创建临时封禁');
     } catch (error) {
-      _showMessage(_blockErrorMessage(error));
+      if (_sameAccount(account)) _showMessage(_blockErrorMessage(error));
     } finally {
-      if (mounted) setState(() => _actionBusy = false);
+      if (_sameAccount(account)) setState(() => _actionBusy = false);
     }
   }
 
@@ -417,10 +533,9 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
         foregroundColor: Theme.of(context).colorScheme.onSurface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        systemOverlayStyle: (isDark
-                ? SystemUiOverlayStyle.light
-                : SystemUiOverlayStyle.dark)
-            .copyWith(
+        systemOverlayStyle:
+            (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+                .copyWith(
           statusBarColor: Colors.transparent,
           systemNavigationBarColor: Colors.transparent,
         ),
@@ -449,6 +564,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
           RefreshIndicator(
             onRefresh: _load,
             child: ListView(
+              addRepaintBoundaries: false,
               padding: const EdgeInsets.fromLTRB(
                   AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xxl),
               children: [
@@ -469,6 +585,27 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                   )
                 else
                   ..._events.map(_buildEventCard),
+                if (!_loading && _error == null && _events.isNotEmpty) ...[
+                  Text(
+                      _total == null
+                          ? '已加载 ${_events.length} 条'
+                          : '已加载 ${_events.length} 条，共 $_total 条',
+                      textAlign: TextAlign.center),
+                  if (_loadingMore)
+                    const Center(
+                        child: Padding(
+                            padding: EdgeInsets.all(AppSpacing.md),
+                            child: CircularProgressIndicator()))
+                  else if (_hasMore) ...[
+                    if (_loadMoreError != null)
+                      Text(_loadMoreError!, textAlign: TextAlign.center),
+                    Center(
+                        child: OutlinedButton(
+                            onPressed: _loadMore,
+                            child: Text(
+                                _loadMoreError == null ? '加载更多' : '重试加载更多'))),
+                  ],
+                ],
               ],
             ),
           ),
@@ -488,15 +625,32 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     final cards = <(String, String, Color, String)>[
       // 这张卡片的真实含义是「未处理的高危/严重且需要处置的事件数」，
       // 早期标签写成「安全事件」会让人误以为那是事件总数。
-      ('高危待处理', '${overview.pendingHighCount}', AppColors.danger,
-          '高危/严重 · 未处理 · 需处置'),
-      ('${overview.range} 拦截', '${overview.blockedRequests}', AppColors.warning,
-          '本区间被限流或封禁挡下的次数'),
+      (
+        '高危待处理',
+        '${overview.pendingHighCount}',
+        AppColors.danger,
+        '高危/严重 · 未处理 · 需处置'
+      ),
+      (
+        '${overview.range} 拦截',
+        '${overview.blockedRequests}',
+        AppColors.warning,
+        '本区间被限流或封禁挡下的次数'
+      ),
       ('涉及目标', '${overview.affectedUsers}', AppColors.info, '出现事件的账号或邮箱数'),
-      ('涉及来源', '${overview.uniqueSources}', AppColors.brandPrimary, '出现事件的来源指纹数'),
+      (
+        '涉及来源',
+        '${overview.uniqueSources}',
+        AppColors.brandPrimary,
+        '出现事件的来源指纹数'
+      ),
       ('实际发信', '${overview.mailSentCount}', AppColors.success, 'SMTP 真正投递成功'),
-      ('密码重置成功', '${overview.passwordResetSuccessCount}', AppColors.danger,
-          '验证码校验通过并完成改密'),
+      (
+        '密码重置成功',
+        '${overview.passwordResetSuccessCount}',
+        AppColors.danger,
+        '验证码校验通过并完成改密'
+      ),
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -505,7 +659,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
           spacing: AppSpacing.sm,
           runSpacing: AppSpacing.sm,
           children: cards
-              .map((card) => Container(
+              .map((card) => AppCardSurface(
                     width: 156,
                     padding: const EdgeInsets.all(AppSpacing.md),
                     decoration: BoxDecoration(
@@ -530,8 +684,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                                 .titleLarge
                                 ?.copyWith(color: card.$3)),
                         const SizedBox(height: AppSpacing.xs),
-                        Text(card.$4,
-                            style: const TextStyle(fontSize: 11)),
+                        Text(card.$4, style: const TextStyle(fontSize: 11)),
                       ],
                     ),
                   ))
@@ -549,14 +702,23 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     final rows = [
       ('客户端 IP 识别', _protectionLayer(protection, 'client_ip_identification')),
       ('来源封禁', _protectionLayer(protection, 'security_block')),
-      ('SecurityBlock 表', _protectionLayer(protection, 'security_block_schema')),
+      (
+        'SecurityBlock 表',
+        _protectionLayer(protection, 'security_block_schema')
+      ),
       ('安全事件采集', _protectionLayer(protection, 'security_event_collection')),
       ('验证码日限额', _protectionLayer(protection, 'verification_daily_limit')),
       // 主动告警：没配收件人时这里必须显式报「未配置」，不能继续和其它层一样报绿。
       ('高危告警邮件', _protectionLayer(protection, 'security_alerts')),
+      (
+        'IP 离线归属地',
+        _ProtectionLayer(
+            status: value('security_ip_location'),
+            note: protection['security_ip_location_note']?.toString())
+      ),
     ];
     final blockDisabled = value('security_block') == 'disabled';
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
@@ -618,8 +780,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
       Map<String, dynamic> protection, String key) {
     final state = protection['${key}_state'];
     if (state is! Map) {
-      return _ProtectionLayer(
-          status: protection[key]?.toString() ?? 'unknown');
+      return _ProtectionLayer(status: protection[key]?.toString() ?? 'unknown');
     }
     final decoded = Map<String, dynamic>.from(state);
     final detail = decoded['detail'] is Map
@@ -659,7 +820,11 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
       };
 
   Color _protectionColor(String status) => switch (status) {
-        'ready' || 'enabled' || 'configured' || 'ok' || 'healthy' =>
+        'ready' ||
+        'enabled' ||
+        'configured' ||
+        'ok' ||
+        'healthy' =>
           AppColors.success,
         'degraded' || 'disabled' => AppColors.warning,
         'unknown' || 'not_configured' => AppColors.info,
@@ -691,15 +856,17 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
           spacing: AppSpacing.sm,
           runSpacing: AppSpacing.xs,
           children: [
-            chip('全部级别', _severity == 'all',
-                () => _changeView(severity: 'all')),
+            chip(
+                '全部级别', _severity == 'all', () => _changeView(severity: 'all')),
             chip('严重', _severity == 'critical',
                 () => _changeView(severity: 'critical')),
-            chip('高危', _severity == 'high', () => _changeView(severity: 'high')),
+            chip(
+                '高危', _severity == 'high', () => _changeView(severity: 'high')),
             chip('中危', _severity == 'medium',
                 () => _changeView(severity: 'medium')),
             chip('提示', _severity == 'low', () => _changeView(severity: 'low')),
-            chip('信息', _severity == 'info', () => _changeView(severity: 'info')),
+            chip(
+                '信息', _severity == 'info', () => _changeView(severity: 'info')),
           ],
         ),
       ],
@@ -712,7 +879,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     return InkWell(
       onTap: () => _showEvent(event),
       borderRadius: BorderRadius.circular(AppRadius.lg),
-      child: Container(
+      child: AppCardSurface(
         margin: const EdgeInsets.only(bottom: AppSpacing.sm),
         padding: const EdgeInsets.all(AppSpacing.md),
         decoration: BoxDecoration(
@@ -749,6 +916,8 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                 )),
             Text(
                 '来源：${event.sourceFingerprint.isEmpty ? '未知' : event.sourceFingerprint}'),
+            Text('预警 IP：${securityEventSourceIPLabel(event)}'),
+            Text('归属地：${securityEventSourceRegionLabel(event)}'),
             if (!event.sourceAttributionValid)
               const Text('历史来源归因不可用',
                   style: TextStyle(color: AppColors.warning)),

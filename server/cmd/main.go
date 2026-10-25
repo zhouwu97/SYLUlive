@@ -605,6 +605,10 @@ func main() {
 
 	ensureSystemSuperAdmin(db, cfg.SuperAdminID, cfg.SuperAdminPass)
 	securityEvents := services.NewSecurityEventService(db, cfg.SecurityEventHMACSecret, time.Now)
+	securityIPLocator, locationErr := services.NewOfflineSecurityIPLocator(cfg.SecurityIPV4DBPath, cfg.SecurityIPV6DBPath)
+	if locationErr != nil {
+		log.Printf("SECURITY_IP_LOCATION_DEGRADED 离线归属地查询降级: %v", locationErr)
+	}
 	if err := securityEvents.SetSourceAttributionValidFrom(cfg.SecurityAttributionValidFrom); err != nil {
 		log.Printf("SECURITY_SOURCE_ATTRIBUTION_VALID_FROM 无效，将不标记历史归因起点: %v", err)
 	}
@@ -922,6 +926,7 @@ func main() {
 	superAdminHandler := handlers.NewSuperAdminHandlerWithEmailVerification(db, emailVerification)
 	securityAdminHandler := handlers.NewSecurityAdminHandler(db, securityEvents)
 	securityAdminHandler.SetProtectionConfig(cfg.SecurityBlockEnabled, cfg.TrustedProxyCIDRs, cfg.SecurityAttributionValidFrom)
+	securityAdminHandler.SetIPLocator(securityIPLocator)
 	// 安全中心的验证码额度一行要报真实阈值与可读性，而不是写死的 enabled。
 	securityAdminHandler.SetVerificationLimitProber(emailVerification)
 	adminAIHandler := handlers.NewAdminAIHandler(db)

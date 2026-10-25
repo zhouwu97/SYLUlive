@@ -13,6 +13,7 @@ type SecurityEvent struct {
 	Route                     string     `gorm:"size:160;not null;index" json:"route"`
 	Method                    string     `gorm:"size:12;not null" json:"method"`
 	SourceIPHash              string     `gorm:"size:64;index" json:"-"`
+	SourceIPCiphertext        string     `gorm:"size:256;not null;default:''" json:"-"` // 仅待处置预警保存密文，普通审计只保存摘要。
 	SourceAttributionValid    bool       `gorm:"not null;default:true;index" json:"source_attribution_valid"`
 	SourceUAHash              string     `gorm:"size:64" json:"-"`
 	InstallationHash          string     `gorm:"size:64;index" json:"-"`

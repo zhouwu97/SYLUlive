@@ -45,6 +45,7 @@ func auditScope(query *gorm.DB) *gorm.DB {
 type SecurityAdminHandler struct {
 	db                   *gorm.DB
 	security             *services.SecurityEventService
+	ipLocator            services.SecurityIPLocator
 	securityBlockEnabled bool
 	verificationLimits   verificationLimitProber
 	trustedProxyCIDRs    []string
@@ -54,6 +55,17 @@ type SecurityAdminHandler struct {
 
 func NewSecurityAdminHandler(db *gorm.DB, security *services.SecurityEventService) *SecurityAdminHandler {
 	return &SecurityAdminHandler{db: db, security: security}
+}
+
+func (h *SecurityAdminHandler) SetIPLocator(locator services.SecurityIPLocator) {
+	h.ipLocator = locator
+}
+
+func (h *SecurityAdminHandler) ipLocationState() (string, string) {
+	if h.ipLocator == nil {
+		return "not_configured", "未加载离线 IP 库"
+	}
+	return h.ipLocator.State()
 }
 
 // SetProtectionConfig 将部署层的真实 IP 与封禁开关状态暴露给安全中心，便于管理员确认防护是否真正生效。
@@ -75,6 +87,10 @@ type securityEventResponse struct {
 	Route                     string     `json:"route"`
 	Method                    string     `json:"method"`
 	SourceFingerprint         string     `json:"source_fingerprint"`
+	SourceIP                  string     `json:"source_ip,omitempty"`
+	SourceIPStatus            string     `json:"source_ip_status"`
+	SourceRegion              string     `json:"source_region,omitempty"`
+	SourceRegionStatus        string     `json:"source_region_status"`
 	SourceKey                 string     `json:"source_key,omitempty"`
 	InstallationSeen          bool       `json:"installation_seen"`
 	ActorUserID               *uint      `json:"actor_user_id,omitempty"`
@@ -246,6 +262,7 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 	blockState := h.securityBlockState()
 	verificationLimit := h.verificationLimitState(c.Request.Context())
 	alertState := h.securityAlertState()
+	ipLocationState, ipLocationNote := h.ipLocationState()
 	c.JSON(http.StatusOK, gin.H{
 		"range": rangeName, "active_high_count": activeHigh, "total_events": total,
 		// 客户端首页口径：高危待处理 = 待处置 + 未处理 + 高危/严重。
@@ -254,8 +271,10 @@ func (h *SecurityAdminHandler) Overview(c *gin.Context) {
 		"email_abuse_count": emailAbuse, "login_abuse_count": loginAbuse, "critical_count": critical,
 		"mail_sent_count": mailSent, "password_reset_success_count": resetSuccess,
 		"protection": gin.H{
-			"client_ip_identification": map[bool]string{true: "configured", false: "not_configured"}[len(h.trustedProxyCIDRs) > 0],
-			"trusted_proxy_cidrs":      h.trustedProxyCIDRs,
+			"security_ip_location":      ipLocationState,
+			"security_ip_location_note": ipLocationNote,
+			"client_ip_identification":  map[bool]string{true: "configured", false: "not_configured"}[len(h.trustedProxyCIDRs) > 0],
+			"trusted_proxy_cidrs":       h.trustedProxyCIDRs,
 			// security_block 是**配置态**（开关），运行态在 security_block_state：
 			// fail-open 期间查询失败会让这一层暂时给不出判断，只看开关会把「没拦住」读成「一切正常」。
 			"security_block":        map[bool]string{true: "enabled", false: "disabled"}[h.securityBlockEnabled],
@@ -290,7 +309,13 @@ func (h *SecurityAdminHandler) ListEvents(c *gin.Context) {
 	if page <= 0 {
 		page = 1
 	}
-	query := h.db.Model(&models.SecurityEvent{}).Order("last_seen_at DESC, id DESC")
+	if page > int(^uint(0)>>1)/limit {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "安全事件页码超出范围"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), services.SecurityOverviewBudget)
+	defer cancel()
+	query := h.db.WithContext(ctx).Model(&models.SecurityEvent{}).Order("last_seen_at DESC, id DESC")
 	if eventType := strings.TrimSpace(c.Query("event_type")); eventType != "" && eventType != "all" {
 		query = query.Where("event_type = ?", eventType)
 	}
@@ -675,6 +700,19 @@ func (h *SecurityAdminHandler) securityEventDTO(event models.SecurityEvent, isSu
 		Actionable:   models.SecurityEventActionable(event.EventType),
 		MetadataJSON: event.MetadataJSON, FirstSeenAt: event.FirstSeenAt, LastSeenAt: event.LastSeenAt,
 		ResolvedAt: event.ResolvedAt, ResolvedBy: event.ResolvedBy, ResolutionNote: event.ResolutionNote,
+	}
+	// 不可逆摘要不能还原历史 IP；不可信的历史来源也不能显示成真实归因。
+	event.SourceAttributionValid = attributionValid
+	result.SourceIP, result.SourceIPStatus = h.security.SourceIP(event)
+	result.SourceRegionStatus = "not_recorded"
+	if result.SourceIP != "" {
+		var location services.SecurityIPLocation
+		if h.ipLocator == nil {
+			location = services.SecurityIPLocation{Status: "database_unavailable"}
+		} else {
+			location = h.ipLocator.Lookup(result.SourceIP)
+		}
+		result.SourceRegion, result.SourceRegionStatus = location.Region, location.Status
 	}
 	if isSuper {
 		result.SourceKey = event.SourceIPHash

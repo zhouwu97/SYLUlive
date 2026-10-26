@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Link,
   useNavigate,
@@ -7,9 +8,12 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import {
+  asset,
+  captureAuthSession,
   entity,
   query,
   request,
+  requestBlob,
   rows,
   time,
   useApi,
@@ -17,7 +21,11 @@ import {
   type Entity,
 } from "./api";
 import { useAuth } from "./auth";
-import {Avatar, PostMedia, ServerImage} from './post-media';
+import { PostActions, retryInterruptedRead } from "./post-actions";
+import {
+  rejectAttachmentFiles,
+  type AttachmentLimits,
+} from "./attachments";
 import {
   Empty,
   Form,
@@ -28,23 +36,36 @@ import {
   Tabs,
   useUI,
 } from "./ui";
-
-function postTime(value: unknown) {
-  return typeof value === 'string' && Number.isFinite(Date.parse(value))
-    ? new Date(value).toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false})
-    : '';
-}
-export async function uploadIDs(form: FormData) {
-  const ids: number[] = [];
-  for (const file of form.getAll("images")) {
-    if (!(file instanceof File) || !file.size) continue;
-    const body = new FormData();
-    body.append("file", file);
-    const result = await write("/api/upload", body);
-    if (!Number.isInteger(result.file_id))
-      throw new Error("上传没有返回文件编号");
-    ids.push(result.file_id);
+import { MediaGallery, MediaUploadPicker, mediaURL, uploadImageFiles } from "./media";
+import { EmojiSelectionPreview, StickerPicker, StickerRenderer, favoritePublicImage, type StickerPayload } from "./emoji";
+import { messageEmojiFields } from "./emoji-selection";
+import "./community.css";
+import "./market.css";
+// 同一个 File 对象在「提交失败后原样重点提交」时不应再传一遍：
+// 上传接口按字节去重，但重复请求仍会产生新记录与等待。
+const uploadedFileIDs = new WeakMap<File, { id: number; isCurrent: () => boolean }>();
+export async function uploadIDs(form: FormData, limits?: AttachmentLimits) {
+  const isCurrent = captureAuthSession();
+  const cachedID = (file: File) => {
+    const cached = uploadedFileIDs.get(file);
+    return cached?.isCurrent() ? cached.id : undefined;
+  };
+  const files = form
+    .getAll("images")
+    .filter((item): item is File => item instanceof File && item.size > 0);
+  if (limits) {
+    const rejections = rejectAttachmentFiles(files, limits);
+    if (rejections.length)
+      throw new Error(
+        `附件未通过检查：${rejections.map((x) => `${x.file}（${x.reason}）`).join("；")}`,
+      );
   }
+  const uncached = files.filter((file) => cachedID(file) === undefined);
+  const fresh = uncached.length ? await uploadImageFiles(uncached) : [];
+  if (!isCurrent()) throw new Error("账号已切换，请重新确认上传");
+  uncached.forEach((file, index) => { const id = fresh[index]; if (id !== undefined) uploadedFileIDs.set(file, { id, isCurrent }); });
+  const ids: number[] = [];
+  files.forEach((file) => { const id = cachedID(file); if (typeof id === "number" && Number.isInteger(id) && id > 0 && !ids.includes(id)) ids.push(id); });
   return ids;
 }
 export function PostForm({
@@ -56,6 +77,8 @@ export function PostForm({
 }) {
   const ui = useUI(),
     nav = useNavigate();
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const sections = useApi(market ? null : "/api/water/sections");
   return (
     <Form
@@ -116,16 +139,12 @@ export function PostForm({
               },
             ]
           : []),
-        {
-          name: "images",
-          label: "图片（jpg/png/gif，最多 9 张）",
-          type: "file",
-          multiple: true,
-        },
       ]}
       submit={post ? "保存修改" : "发布"}
       onSubmit={async (_, form) => {
+        const session = captureAuthSession(), isCurrent = () => alive.current && session();
         const ids = await uploadIDs(form);
+        if (!isCurrent()) return;
         form.delete("images");
         form.set("board_id", market ? "2" : "1");
         if (ids.length) form.set("file_ids", JSON.stringify(ids));
@@ -134,13 +153,59 @@ export function PostForm({
           form,
           post ? "PUT" : "POST",
         );
+        if (!isCurrent()) return;
         ui.close();
         ui.notify("内容已保存");
         nav(`/post/${post?.id || result.post?.id || result.id}`);
       }}
-    />
+    ><MediaUploadPicker /></Form>
   );
 }
+function PostAvatar({ author }: { author?: Entity }) {
+  const [failed, setFailed] = useState<string>();
+  const src = asset(author?.avatar);
+  return <span className="post-avatar"><span aria-hidden="true">{(author?.nickname || "同").slice(0, 1)}</span>{src && src !== failed && <img key={src} src={src} alt="" onError={() => setFailed(src)} />}</span>;
+}
+
+function PostTime({ value }: { value: unknown }) {
+  const valid = typeof value === "string" && Number.isFinite(Date.parse(value));
+  return <time dateTime={valid ? value : undefined} title={time(value)}>{valid ? new Date(value).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : ""}</time>;
+}
+
+function PostThumbnail({ post, className }: { post: Entity; className: string }) {
+  const [failed, setFailed] = useState<string>();
+  const src = mediaURL(post.images?.[0], "thumb") || mediaURL(post.images?.[0], "origin");
+  return <span className={className}>
+    {src && src !== failed ? <img src={src} alt="" loading="lazy" decoding="async" onError={() => setFailed(src)} /> : <span className="post-thumbnail-empty"><Icon name="market" size={28} />{className === "market-img" && <span>{src ? "图片暂不可用" : "暂无图片"}</span>}</span>}
+  </span>;
+}
+
+function PostAuthor({ post }: { post: Entity }) {
+  const auth = useAuth(), ui = useUI();
+  const [pending, setPending] = useState(false);
+  const lock = useRef(false);
+  const [followed, setFollowed] = useState(Boolean(post.author?.is_following || post.is_following));
+  useEffect(() => setFollowed(Boolean(post.author?.is_following || post.is_following)), [post.id, post.author?.is_following, post.is_following]);
+  return (
+    <div className="author post-author">
+      <PostAvatar author={post.author} />
+      <div className="author-meta">
+        <div className="author-name-line"><b>{post.author?.nickname || "校园同学"}</b><span className="author-level">Lv.{post.author?.level || post.author_level || 1}</span></div>
+        <span><PostTime value={post.created_at} />{post.author?.followers_count != null ? ` · ${post.author.followers_count} 位关注者` : ""}</span>
+      </div>
+      {auth.user && post.author_id && post.author_id !== auth.user.id && (
+        <button className={`author-follow ${followed ? "active" : ""}`} type="button" disabled={pending} aria-pressed={followed} aria-busy={pending} onClick={async () => {
+          if (lock.current) return;
+          lock.current = true;
+          setPending(true);
+          try { if (await ui.act(() => write(`/api/user/${post.author_id}/follow`, {}, followed ? "DELETE" : "POST"), followed ? "已取消关注" : "已关注")) setFollowed(!followed); }
+          finally { lock.current = false; setPending(false); }
+        }}>{followed ? "已关注" : "关注"}</button>
+      )}
+    </div>
+  );
+}
+
 export function PostCard({
   post,
   market = false,
@@ -148,91 +213,41 @@ export function PostCard({
   post: Entity;
   market?: boolean;
 }) {
-  const ui = useUI();
+  const auth = useAuth();
   const location=useLocation();
   const back={from:location.pathname+location.search};
   if (market)
     return (
-      <Link className="market-card" to={`/post/${post.id}`} state={back}>
-        <div className="market-img">
-          {post.images?.[0] ? (
-            <ServerImage
-              alt={post.title || "物品图片"}
-              sources={[post.images[0].medium_url, post.images[0].file?.path, post.images[0].url]}
-            />
-          ) : (
-            <Icon name="market" size={40} />
-          )}
-        </div>
-        <div className="market-info">
-          <span className="tag">
+      <Link className={`market-card ${post.status === "sold" ? "market-sold" : ""}`} to={`/post/${post.id}`} state={back}>
+        <div className="market-cover">
+          <PostThumbnail key={post.id} post={post} className="market-img" />
+          <span className="tag market-status">
             {post.status === "sold"
               ? "已售出"
               : post.post_type === "marketplace_buy"
                 ? "求购"
                 : "出售"}
           </span>
+        </div>
+        <div className="market-info">
           <h3>{post.title || post.content}</h3>
-          <strong className="price">¥ {post.price}</strong>
+          <div className="market-price-row"><strong className="price"><small>¥</small> {post.price ?? "待议"}</strong>{Number(post.reply_count) > 0 && <span>{post.reply_count} 条讨论</span>}</div>
           <div className="market-meta">
-            <span>{post.author?.nickname}</span>
-            <span>{time(post.created_at)}</span>
+            <span className="market-seller"><PostAvatar author={post.author} /><span>{post.author?.nickname || "校园同学"}</span></span>
+            <PostTime value={post.created_at} />
           </div>
         </div>
       </Link>
     );
   return (
     <article className="feed-card">
-      <div className="author">
-        <Link to={`/user/${post.author?.id || post.author_id}`} aria-label={`查看${post.author?.nickname || '作者'}的主页`}><Avatar user={post.author}/></Link>
-        <div className="author-meta">
-          <b>{post.author?.nickname || "校园同学"}</b>
-          <span title={time(post.created_at)}>{postTime(post.created_at)}</span>
-        </div>
-      </div>
-      <Link className="post-content" to={`/post/${post.id}`} state={back}>
-        {post.title?.trim() && <h3 className="post-title">{post.title}</h3>}
-        <p className="post-body">{post.content}</p>
-        {post.content?.length > 220 && <span className="post-read-more">查看全文 →</span>}
+      <PostAuthor key={`author:${post.id}:${auth.user?.id}`} post={post} />
+      <Link to={`/post/${post.id}`} state={back}>
+        {post.title && <h3 className="post-title">{post.title}</h3>}
+        {post.content && <p className={`post-body ${post.title ? "" : "post-text-only"}`}>{post.content.slice(0, 220)}</p>}
       </Link>
-      <PostMedia images={post.images}/>
-      <div className="post-actions">
-        <button
-          className={`post-action ${post.is_liked ? "liked" : ""}`}
-          aria-label={`点赞 ${post.like_count || 0}`}
-          aria-pressed={!!post.is_liked}
-          onClick={() =>
-            ui.act(() =>
-              write(
-                `/api/posts/${post.id}/like`,
-                {},
-                post.is_liked ? "DELETE" : "POST",
-              ),
-            )
-          }
-        >
-          <Icon name="heart" size={16} />
-          赞 {post.like_count || 0}
-        </button>
-        <Link className="post-action" to={`/post/${post.id}`}>
-          <Icon name="community" size={16} />
-          评论 {post.reply_count || 0}
-        </Link>
-        <button
-          className="post-action"
-          onClick={() =>
-            ui.act(
-              () =>
-                navigator.clipboard.writeText(
-                  `${window.location.origin}/web/post/${post.id}`,
-                ),
-              "链接已复制",
-            )
-          }
-        >
-          <Icon name="share" size={16}/>分享
-        </button>
-      </div>
+      <MediaGallery items={post.images} title={post.title || "帖子图片"} />
+      <PostActions key={`actions:${post.id}:${auth.user?.id}`} post={post} from={back.from} />
     </article>
   );
 }
@@ -241,8 +256,8 @@ export function Community({ market = false }: { market?: boolean }) {
     auth = useAuth();
   const [params, setParams] = useSearchParams();
   const page = Number(params.get("page")) || 1,
-    sort = params.get("sort") || "all";
-  const personal=['mine','bookmarks','following'].includes(sort);
+    sort = params.get("sort") || (market ? "time" : "all");
+  const personal=sort==='mine'||sort==='bookmarks';
   const sections = useApi(market ? null : "/api/water/sections");
   const q = useApi(
     personal&&!auth.user?null:query(sort==='bookmarks'?'/api/user/bookmarks':sort==='mine'?`/api/user/${auth.user?.id}/${market?'market-posts':'posts'}`:"/api/posts", {
@@ -263,14 +278,9 @@ export function Community({ market = false }: { market?: boolean }) {
     setParams(next);
   }
   return (
-    <div className={market ? 'market-page' : 'community-page'}>
+    <div className={market ? "market-page" : "community-page"}>
       <Head
         title={market ? "二手集市" : "校园社区"}
-        description={
-          market
-            ? "校内闲置、求购与交易状态"
-            : "关注、分区、精华、投票与校园日常都在这里"
-        }
       >
         <button
           className="btn primary"
@@ -282,7 +292,7 @@ export function Community({ market = false }: { market?: boolean }) {
             )
           }
         >
-          ＋ {market ? "发布闲置" : "发布"}
+          <Icon name="plus" size={18} />{market ? "发布闲置" : "发布"}
         </button>
       </Head>
       {!market && (
@@ -306,6 +316,7 @@ export function Community({ market = false }: { market?: boolean }) {
             filter("q", String(new FormData(e.currentTarget).get("q") || ""));
           }}
         >
+          <Icon name="search" size={18} />
           <input
             name="q"
             defaultValue={params.get("q") || ""}
@@ -324,9 +335,6 @@ export function Community({ market = false }: { market?: boolean }) {
               <option value="time">最新发布</option>
               <option value="price">价格从低到高</option>
               <option value="price_desc">价格从高到低</option>
-            </select>
-            <select aria-label="闲置分类" value={params.get('type')||''} onChange={(e)=>filter('type',e.target.value)}>
-              <option value="">全部类型</option><option value="marketplace_sell">出售</option><option value="marketplace_buy">求购</option>
             </select>
             <label>
               <input
@@ -354,13 +362,14 @@ export function Community({ market = false }: { market?: boolean }) {
           </select>
         )}
       </div>
-      {personal && !auth.user ? <div className="panel"><Empty title={auth.loading ? '正在确认登录状态…' : '登录后查看这里的内容'} description="查看关注动态、自己的发布和收藏。"><button className="btn primary" onClick={auth.login}>登录</button></Empty></div> : <QueryState query={q}>
-        <div className={market ? "market-grid" : "feed-list"}>
+      {market && <div className="market-results-head"><div role="group" aria-label="闲置分类" className="market-types">{[["", "全部闲置"], ["marketplace_sell", "出售"], ["marketplace_buy", "求购"]].map(([value, label]) => <button type="button" key={value} aria-pressed={(params.get("type") || "") === value} onClick={() => filter("type", value)}>{label}</button>)}</div>{q.data && !q.error && <span>本页 {posts.length} 件</span>}</div>}
+      <QueryState query={q}>
+        <div className={market ? "market-grid" : "panel community-feed"}>
           {posts.map((post) => (
             <PostCard key={post.id} post={post} market={market} />
           ))}
         </div>
-        {!posts.length && <Empty />}
+        {!posts.length && <Empty title={market ? "没有找到闲置" : "暂时没有帖子"} description={params.get("q") || params.get("type") || params.get("available") === "1" ? "试试调整搜索词或筛选条件。" : market ? "发布一件闲置，或稍后再来逛逛。" : "分享一段校园日常，开启讨论。"} />}
         <Pagination
           page={page}
           hasMore={q.data?.has_more ?? posts.length === 20}
@@ -370,83 +379,78 @@ export function Community({ market = false }: { market?: boolean }) {
             setParams(next);
           }}
         />
-      </QueryState>}
+      </QueryState>
     </div>
   );
 }
 export function PostDetail() {
   const location=useLocation(),navigate=useNavigate();
-  const [cursor,setCursor]=useState('');
-  const [previousReplies,setPreviousReplies]=useState<Entity[]>([]);
+  const commentRef = useRef<HTMLElement>(null);
+  const [commentSort, setCommentSort] = useState("hot");
   const { id } = useParams(),
     ui = useUI(),
     auth = useAuth();
-  const q = useApi(`/api/posts/${id}`),
-    comments = useApi(query(`/api/posts/${id}/replies`,{limit:30,cursor})),
-    bookmarks = useApi(auth.user ? "/api/user/bookmarks" : null);
+  const q = useApi(`/api/posts/${id}`);
+  const comments = useInfiniteQuery({
+    queryKey: ["api", "post-replies", id, auth.user?.id, commentSort],
+    initialPageParam: "",
+    queryFn: ({ pageParam, signal }) => request<Entity>(query(`/api/posts/${id}/replies`, { limit: 30, cursor: pageParam, sort: commentSort }), { signal }),
+    getNextPageParam: (lastPage) => lastPage.next_cursor || undefined,
+    retry: retryInterruptedRead,
+  });
   const p = entity(q.data, "post");
-  const [saved, setSaved] = useState<boolean | undefined>();
-  const bookmarked = saved ?? rows(bookmarks.data).some((x) => x.id === p.id);
+  const replies = uniqueReplies(comments.data?.pages.flatMap((page) => rows(page, "replies")) || []);
+  const replyIds = new Set(replies.map((reply) => Number(reply.id)));
+  const roots = replies.filter((reply) => !reply.parent_reply_id || !replyIds.has(Number(reply.parent_reply_id)));
+  function focusComments() {
+    commentRef.current?.scrollIntoView({ block: "start" });
+    commentRef.current?.focus({ preventScroll: true });
+  }
+  useEffect(() => {
+    if (location.hash !== "#post-comments" || q.isPending) return;
+    const frame = requestAnimationFrame(focusComments);
+    return () => cancelAnimationFrame(frame);
+  }, [location.hash, q.isPending]);
+  function replyTo(reply?: Entity) {
+    if (!auth.requireUser()) return;
+    ui.open(reply ? `回复 ${reply.author?.nickname || "校园同学"}` : "发表评论", <ReplyComposer postId={Number(id)} parentReplyId={reply ? Number(reply.parent_reply_id || reply.id) : undefined} replyToReplyId={reply?.parent_reply_id ? Number(reply.id) : undefined} replyToUserId={reply?.parent_reply_id ? Number(reply.author_id) : undefined} onSent={ui.close} />);
+  }
   return (
     <div className="post-detail-page">
-      <Head title="帖子详情">
-        <button className="btn" onClick={()=>location.state?.from?navigate(-1):navigate(p.board_id===2?'/market':'/community')}>返回列表</button>
-      </Head>
+      <header className="page-head post-detail-head">
+        <div className="page-title post-detail-heading">
+          <Link to={p.board_id === 2 ? "/market" : "/community"}><Icon name={p.board_id === 2 ? "market" : "community"} size={17} /><span>{p.board_id === 2 ? "二手集市" : "校园社区"}</span></Link>
+          <span aria-hidden="true" className="post-detail-separator">/</span>
+          <h1>帖子详情</h1>
+        </div>
+        <button className="btn post-back" onClick={()=>location.state?.from?navigate(-1):navigate(p.board_id===2?'/market':'/community')}><Icon name="arrow" size={17} />返回列表</button>
+      </header>
       <QueryState query={q}>
+        <div className="post-detail-layout">
+        <div className="post-detail-main">
         <article className="panel post-full">
-          <div className="author">
-            <Link to={`/user/${p.author?.id || p.author_id}`} aria-label={`查看${p.author?.nickname || '作者'}的主页`}><Avatar user={p.author}/></Link>
-            <div className="author-meta"><b>{p.author?.nickname || '校园同学'}</b><span>{time(p.created_at)}</span></div>
-          </div>
-          {p.title?.trim() && <h1>{p.title}</h1>}
+          {p.title && <h1>{p.title}</h1>}
+          <PostAuthor key={`author:${p.id}:${auth.user?.id}`} post={p} />
+          {p.board_id === 2 && <div className="post-market-summary"><strong className="post-market-price"><small>¥</small> {p.price ?? "待议"}</strong><span>{p.status === "sold" ? "已售出" : "交易中"}</span></div>}
           <div className="post-body details-text">{p.content}</div>
-          <PostMedia images={p.images} detail/>
+          <MediaGallery items={p.images} title={p.title || "帖子图片"} className="post-detail-gallery" maxVisible={9} />
           {p.board_id === 2 && (
             <div className="info-box">
-              <b>
-                ¥ {p.price} · {p.status === "sold" ? "已售出" : "交易中"}
-              </b>
               <p>
                 {p.contact_type}：{p.contact || "请通过评论联系"}
               </p>
             </div>
           )}
-          <div className="inline-actions">
+          <PostActions key={`actions:${p.id}:${auth.user?.id}`} post={p} onComment={focusComments} more={<PostMore>
+            {p.images?.[0] && (
+              <button type="button" onClick={async () => { if (!auth.requireUser()) return; const path = mediaURL(p.images[0], "origin"); if (!path) return; await ui.act(() => favoritePublicImage(path), "图片已收藏为表情"); }}>
+                收藏首图为表情
+              </button>
+            )}
             <button
-              className="btn"
+              type="button"
               onClick={() =>
-                ui.act(() =>
-                  write(
-                    `/api/posts/${id}/like`,
-                    {},
-                    p.is_liked ? "DELETE" : "POST",
-                  ),
-                )
-              }
-            >
-              {p.is_liked ? "取消点赞" : "点赞"} {p.like_count || 0}
-            </button>
-            <button
-              className="btn"
-              onClick={async () => {
-                if (
-                  await ui.act(() =>
-                    write(
-                      `/api/posts/${id}/bookmark`,
-                      {},
-                      bookmarked ? "DELETE" : "PUT",
-                    ),
-                  )
-                )
-                  setSaved(!bookmarked);
-              }}
-            >
-              {bookmarked ? "取消收藏" : "收藏"}
-            </button>
-            <button
-              className="btn"
-              onClick={() =>
-                ui.open(
+                auth.requireUser() && ui.open(
                   "举报内容",
                   <Form
                     fields={[
@@ -474,7 +478,7 @@ export function PostDetail() {
             </button>
             {p.viewer_permissions?.can_edit && (
               <button
-                className="btn"
+                type="button"
                 onClick={() =>
                   ui.open(
                     "编辑内容",
@@ -487,7 +491,7 @@ export function PostDetail() {
             )}
             {p.author_id === auth.user?.id && p.board_id === 2 && (
               <button
-                className="btn"
+                type="button"
                 onClick={() =>
                   ui.act(() =>
                     write(
@@ -503,7 +507,7 @@ export function PostDetail() {
             )}
             {p.viewer_permissions?.can_delete && (
               <button
-                className="btn"
+                type="button" className="post-danger-action"
                 onClick={() =>
                   ui.open(
                     "删除内容",
@@ -529,64 +533,167 @@ export function PostDetail() {
                 删除
               </button>
             )}
-          </div>
+          </PostMore>} />
         </article>
-        <div className="panel panel-pad section comments-panel">
-          <h2>评论 <span className="muted">{p.reply_count ?? ''}</span></h2>
-          <QueryState query={comments}>
-            {[...previousReplies,...rows(comments.data, "replies")].map((r) => (
-              <div className="comment-row" key={r.id}>
-                <div className="author"><Avatar user={r.author || r.user}/><div className="author-meta"><b>{r.author?.nickname || r.user?.nickname || '校园同学'}</b><span>{postTime(r.created_at)}</span></div></div>
-                <p className="details-text">{r.content}</p>
-                {r.images?.length > 0 && <div className="comment-media"><PostMedia images={r.images}/></div>}
-                <button
-                  className="link-btn"
-                  onClick={() =>
-                    ui.open(
-                      "回复评论",
-                      <Form
-                        fields={[
-                          {
-                            name: "content",
-                            label: "回复内容",
-                            type: "textarea",
-                            required: true,
-                          },
-                        ]}
-                        onSubmit={async (_, fd) => {
-                          fd.set("parent_reply_id", String(r.id));
-                          await write(`/api/posts/${id}/replies`, fd);
-                          comments.refetch();
-                          ui.close();
-                        }}
-                      />,
-                    )
-                  }
-                >
-                  回复
-                </button>
-              </div>
-            ))}
-            {comments.data?.next_cursor&&<button className="btn" onClick={()=>{setPreviousReplies(current=>[...current,...rows(comments.data,'replies')]);setCursor(comments.data!.next_cursor)}}>加载更多评论</button>}
+        <section className="panel post-comments section" id="post-comments" ref={commentRef} tabIndex={-1} aria-label="评论区">
+          <div className="post-comments-head"><h2>全部评论 <span>{comments.data?.pages[0]?.total ?? p.reply_count ?? 0}</span></h2><select aria-label="评论排序" value={commentSort} onChange={(event) => setCommentSort(event.target.value)}><option value="hot">热门</option><option value="latest">最新</option></select></div>
+          <div className="post-comment-prompt"><PostAvatar author={auth.user || undefined} /><button type="button" className="post-comment-start" onClick={() => replyTo()}><span>{auth.user ? "说说你的想法，一起聊聊…" : "登录后参与讨论…"}</span><Icon name="community" size={19} /></button></div>
+          <QueryState query={{ ...comments, error: comments.data ? null : comments.error }}>
+            {!replies.length && <Empty title="还没有评论" description="分享你的想法，开启这段讨论。" />}
+            {roots.map((reply) => <CommentThread key={`${reply.id}:${auth.user?.id}`} postId={Number(id)} reply={reply} preview={replies.filter((child) => Number(child.parent_reply_id) === Number(reply.id))} onReply={replyTo} />)}
+            {comments.data && comments.error && <div className="post-comments-error" role="alert"><span>{comments.error.message}</span><button type="button" className="btn" disabled={comments.isFetching} onClick={() => comments.isFetchNextPageError ? comments.fetchNextPage() : comments.refetch()}>重试</button></div>}
+            {comments.hasNextPage && <button type="button" className="btn post-load-more" disabled={comments.isFetchingNextPage} onClick={() => comments.fetchNextPage()}>{comments.isFetchingNextPage ? "正在加载…" : "加载更多评论"}</button>}
           </QueryState>
-          <Form
-            fields={[
-              {
-                name: "content",
-                label: "写下你的回复",
-                type: "textarea",
-                required: true,
-              },
-            ]}
-            submit="发布评论"
-            onSubmit={async (_, fd) => {
-              await write(`/api/posts/${id}/replies`, fd);
-              await comments.refetch();
-              ui.notify("回复已发布");
-            }}
-          />
+        </section>
+        </div>
+        <PostDetailRail post={p} replyCount={comments.data?.pages[0]?.total ?? p.reply_count ?? 0} onComment={focusComments} />
         </div>
       </QueryState>
     </div>
   );
+}
+
+function PostDetailRail({ post, replyCount, onComment }: { post: Entity; replyCount: number; onComment: () => void }) {
+  const auth = useAuth(), location = useLocation();
+  const market = post.board_id === 2;
+  const more = useQuery({
+    queryKey: ["api", "post-detail-more", market, auth.user?.id],
+    queryFn: ({ signal }) => request<Entity>(query("/api/posts", { board: market ? 2 : 1, sort: "time", limit: 5, status: market ? "normal" : undefined }), { signal }),
+    retry: retryInterruptedRead,
+  });
+  const posts = rows(more.data, "posts").filter((item) => Number(item.id) > 0 && Number(item.id) !== Number(post.id)).slice(0, 3);
+  const browse = market ? "/market?sort=time" : "/community?sort=time";
+  return <aside className="post-detail-rail" aria-label="帖子相关信息">
+    <section className="rail-card post-context-author">
+      <h2>关于作者</h2>
+      <div className="post-context-person"><PostAvatar author={post.author} /><div><b>{post.author?.nickname || "校园同学"}</b><span>Lv.{post.author?.level || post.author_level || 1}{post.author?.followers_count != null ? ` · ${post.author.followers_count} 位关注者` : ""}</span></div></div>
+      <p className="post-context-time">发布于 <PostTime value={post.created_at} /></p>
+      <dl className="post-context-stats"><div><dt>本帖点赞</dt><dd>{post.like_count || 0}</dd></div><div><dt>本帖评论</dt><dd>{replyCount}</dd></div></dl>
+      <button type="button" className="btn full-width post-context-comment" onClick={onComment}><Icon name="community" size={17} />查看评论</button>
+    </section>
+    <section className="rail-card post-context-more" aria-labelledby="post-context-more-title">
+      <div className="post-context-title"><h2 id="post-context-more-title">{market ? "最新闲置" : "最新校园讨论"}</h2><Link to={browse}>全部</Link></div>
+      {more.isPending ? <p className="post-context-state" role="status">正在加载更多帖子…</p> : more.error ? <div className="post-context-state" role="alert"><p>暂时无法加载更多帖子</p><button type="button" className="btn" disabled={more.isFetching} onClick={() => more.refetch()}>{more.isFetching ? "正在重试…" : "重试"}</button></div> : posts.length ? <div className="post-context-list">{posts.map((item) => <Link key={item.id} className="post-context-item" to={`/post/${item.id}`} state={{ from: location.pathname + location.search }}>
+        <div className="post-context-copy"><b>{item.title || item.content?.slice(0, 80) || (market ? "校园闲置" : "校园讨论")}</b>
+        {item.title && item.content && <p>{item.content.slice(0, 100)}</p>}
+        <span>{market && item.price != null ? <strong>¥ {item.price}</strong> : <span>{item.author?.nickname || "校园同学"}</span>}<span><Icon name="community" size={13} />{item.reply_count || 0}</span></span></div>
+        {!!item.images?.length && <PostThumbnail key={item.id} post={item} className="post-context-thumb" />}
+      </Link>)}</div> : <p className="post-context-state">暂时没有其他帖子</p>}
+      <Link className="post-context-browse" to={browse}>继续逛逛{market ? "二手集市" : "校园社区"}<Icon name="arrow" size={15} /></Link>
+    </section>
+  </aside>;
+}
+
+function PostMore({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => { if (!ref.current?.contains(event.target as Node)) ref.current?.removeAttribute("open"); };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && ref.current?.open) { ref.current.open = false; ref.current.querySelector("summary")?.focus(); }
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
+  }, []);
+  return <details className="post-more" ref={ref}><summary aria-label="更多操作"><Icon name="more" size={20} /><span className="post-more-label">更多</span></summary><div className="post-more-menu" onClick={(event) => { if ((event.target as HTMLElement).closest("button") && ref.current) { ref.current.open = false; ref.current.querySelector("summary")?.focus(); } }}>{children}</div></details>;
+}
+
+function uniqueReplies(replies: Entity[]) {
+  return [...new Map(replies.map((reply) => [Number(reply.id), reply])).values()];
+}
+
+function CommentRow({ reply, onReply }: { reply: Entity; onReply: (reply: Entity) => void }) {
+  const auth = useAuth(), ui = useUI();
+  const [pending, setPending] = useState(false);
+  const locked = useRef(false);
+  const deleted = reply.status === "deleted";
+  return <article className="post-comment" aria-label={`${reply.author?.nickname || "校园同学"}的评论`}>
+    <PostAvatar author={reply.author || reply.user} />
+    <div className="post-comment-main">
+      <div className="post-comment-author"><b>{reply.author?.nickname || reply.user?.nickname || "校园同学"}</b></div>
+      {deleted ? <p className="post-comment-deleted">该评论已删除</p> : <>
+        {reply.content && reply.content !== "[表情]" && <p className="details-text">{reply.content}</p>}
+        {reply.sticker_id && <StickerRenderer stickerId={reply.sticker_id} assetKey={reply.asset_key} packId={reply.pack_id} />}
+        {(reply.images || reply.attachments)?.length > 0 && <MediaGallery items={reply.images || reply.attachments} title="评论图片" maxVisible={4} />}
+      </>}
+      <div className="post-comment-footer"><PostTime value={reply.created_at} />{!deleted && <div className="post-comment-actions">
+        <button type="button" aria-label={`${reply.is_liked ? "取消点赞" : "点赞"}${reply.author?.nickname || "校园同学"}的评论，${reply.like_count || 0}赞`} aria-pressed={!!reply.is_liked} aria-busy={pending} disabled={pending || auth.loading} onClick={async () => {
+          if (locked.current || !auth.requireUser()) return;
+          locked.current = true; setPending(true);
+          try { await ui.act(() => write(`/api/replies/${reply.id}/like`, {}, reply.is_liked ? "DELETE" : "POST"), reply.is_liked ? "已取消点赞" : "已点赞"); }
+          finally { locked.current = false; setPending(false); }
+        }}><Icon name="heart" size={16} /><span>{reply.like_count || "赞"}</span></button>
+        <button type="button" onClick={() => onReply(reply)}><Icon name="community" size={16} />回复</button>
+      </div>}</div>
+    </div>
+  </article>;
+}
+
+function CommentThread({ postId, reply, preview, onReply }: { postId: number; reply: Entity; preview: Entity[]; onReply: (reply: Entity) => void }) {
+  const auth = useAuth();
+  const [expanded, setExpanded] = useState(false);
+  const children = useInfiniteQuery({
+    queryKey: ["api", "reply-children", postId, reply.id, auth.user?.id],
+    enabled: expanded,
+    initialPageParam: "",
+    queryFn: ({ pageParam, signal }) => request<Entity>(query(`/api/posts/${postId}/replies/${reply.id}/children`, { limit: 30, cursor: pageParam }), { signal }),
+    getNextPageParam: (lastPage) => lastPage.next_cursor || undefined,
+    retry: retryInterruptedRead,
+  });
+  const visible = uniqueReplies(expanded ? [...preview, ...(children.data?.pages.flatMap((page) => rows(page, "replies")) || [])] : preview);
+  const remaining = Math.max(0, Number(reply.child_reply_count || 0) - preview.length);
+  return <div className="post-comment-thread">
+    <CommentRow reply={reply} onReply={onReply} />
+    {!!visible.length && <div className="post-comment-children">{visible.map((child) => <CommentRow key={`${child.id}:${auth.user?.id}`} reply={child} onReply={onReply} />)}</div>}
+    {!expanded && remaining > 0 && <button type="button" className="post-thread-toggle" onClick={() => setExpanded(true)}>展开其余 {remaining} 条回复<Icon name="chevron" size={14} /></button>}
+    {expanded && <div className="post-thread-controls"><QueryState query={children}>{children.hasNextPage && <button type="button" className="post-thread-toggle" disabled={children.isFetchingNextPage} onClick={() => children.fetchNextPage()}>{children.isFetchingNextPage ? "正在加载…" : "加载更多回复"}</button>}</QueryState><button type="button" className="post-thread-toggle" onClick={() => setExpanded(false)}>收起回复</button></div>}
+  </div>;
+}
+
+function ReplyComposer({ postId, parentReplyId, replyToReplyId, replyToUserId, onSent }: { postId: number; parentReplyId?: number; replyToReplyId?: number; replyToUserId?: number; onSent: () => unknown }) {
+  const ui = useUI(), auth = useAuth(), qc = useQueryClient();
+  const [sticker, setSticker] = useState<StickerPayload | null>(null);
+  const [showStickers, setShowStickers] = useState(false);
+  const [sending, setSending] = useState(false);
+  const alive = useRef(true), originalUser = useRef(auth.user?.id), invalidated = useRef(false);
+  const uploadedFavorite = useRef<{ favoriteId: number; fileId: number } | null>(null);
+  if (auth.user?.id !== originalUser.current) invalidated.current = true;
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  if (invalidated.current) return <div className="emoji-state"><b>账号已切换，请重新打开评论</b><button type="button" className="btn" onClick={ui.close}>关闭</button></div>;
+  return <fieldset className="reply-emoji-composer" disabled={sending}><Form fields={[{ name: "content", label: "写下你的回复", type: "textarea" }]} submit="发布评论" onSubmit={async (_, fd) => {
+    if (!auth.requireUser()) return;
+    const session = captureAuthSession(), isCurrent = () => alive.current && !invalidated.current && session();
+    const assertCurrent = () => { if (!isCurrent()) throw new Error("账号已切换，请重新确认评论"); };
+    const content = String(fd.get("content") || "").trim();
+    if (!content && !sticker && !fd.getAll("images").some((item) => item instanceof File && item.size > 0)) throw new Error("请输入内容、选择图片或表情");
+    const hasImages = fd.getAll("images").some((item) => item instanceof File && item.size > 0);
+    if (sticker && hasImages) throw new Error("图片和表情不能同时发送");
+    setSending(true);
+    try {
+      const ids = await uploadIDs(fd); assertCurrent(); fd.delete("images");
+      if (sticker?.kind === "image") {
+        // 私有收藏在提交时读取并重新上传；公开评论不能引用原私有 file_id。
+        if (uploadedFavorite.current?.favoriteId !== sticker.favorite_id) {
+          const blob = await requestBlob(sticker.url); assertCurrent();
+          const mime = blob.type || sticker.mime_type || "";
+          const extension = mime === "image/gif" ? "gif" : mime === "image/png" ? "png" : mime === "image/jpeg" ? "jpg" : null;
+          if (!extension) throw new Error("收藏图片格式不可用，请重新选择");
+          const [fileId] = await uploadImageFiles([new File([blob], `favorite.${extension}`, { type: mime })]); assertCurrent();
+          uploadedFavorite.current = { favoriteId: sticker.favorite_id, fileId };
+        }
+        ids.push(uploadedFavorite.current.fileId);
+      } else if (sticker) {
+        Object.entries(messageEmojiFields(sticker)).forEach(([key, value]) => fd.set(key, String(value)));
+        if (!content) fd.set("content", "[表情]");
+      }
+      if (ids.length) fd.set("file_ids", JSON.stringify(ids));
+      if (parentReplyId) fd.set("parent_reply_id", String(parentReplyId));
+      if (replyToReplyId) fd.set("reply_to_reply_id", String(replyToReplyId));
+      if (replyToUserId) fd.set("reply_to_user_id", String(replyToUserId));
+      assertCurrent(); await write(`/api/posts/${postId}/replies`, fd); assertCurrent();
+      setSticker(null); setShowStickers(false); uploadedFavorite.current = null;
+      await qc.invalidateQueries({ queryKey: ["api"] });
+      if (isCurrent()) { await onSent(); ui.notify("回复已发布"); }
+    } finally { if (isCurrent()) setSending(false); }
+  }}><MediaUploadPicker maxCount={4} /><div className="reply-emoji-row"><button type="button" className="btn" onClick={() => setShowStickers((value) => !value)}>☺ {showStickers ? "收起表情" : "添加表情"}</button>{sticker && <span className="sticker-inline"><EmojiSelectionPreview selection={sticker} /><button type="button" className="link-btn" onClick={() => setSticker(null)}>移除</button></span>}</div>{showStickers && <StickerPicker compact disabled={sending} onSelect={(value) => { setSticker(value); setShowStickers(false); }} />}</Form></fieldset>;
 }

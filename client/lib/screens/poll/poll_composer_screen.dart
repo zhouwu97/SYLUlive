@@ -1,3 +1,5 @@
+import '../../widgets/app_page_background.dart';
+import '../../widgets/app_card.dart';
 import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -341,12 +343,15 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: CampusTheme.pageBackground(context),
+      backgroundColor: AppPageBackground.color(context, CampusTheme.pageBackground(context)),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(context, Colors.transparent),
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: true,
@@ -563,7 +568,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
             const SizedBox(height: 14),
             _sectionTitle('投票设置'),
             const SizedBox(height: 7),
-            Container(
+            AppCardSurface(
               decoration: BoxDecoration(
                 color: isDark ? CampusTheme.darkCard : CampusTheme.card,
                 borderRadius: BorderRadius.circular(14),

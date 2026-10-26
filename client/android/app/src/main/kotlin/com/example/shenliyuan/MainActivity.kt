@@ -406,6 +406,11 @@ class MainActivity : FlutterActivity() {
                                 NotificationOpenStore.acknowledge(this, eventId),
                         )
                     }
+                    "syncNotificationRead" -> {
+                        val receipt = call.arguments as? Map<*, *>
+                        if (receipt != null) ReplyNotificationReadStore.record(this, receipt)
+                        result.success(true)
+                    }
                     "clearPendingNotificationOpen" -> {
                         NotificationOpenStore.clear(this)
                         JPushInterface.clearAllNotifications(this)
@@ -1221,6 +1226,12 @@ class MainActivity : FlutterActivity() {
             }
         )
         // 私信渠道：悬浮弹窗
+        manager.createNotificationChannel(
+            NotificationChannel("reply_notifications_v1", "互动回复", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "收到新的帖子和评论回复时提醒"
+                enableVibration(true)
+            }
+        )
         manager.createNotificationChannel(
             NotificationChannel(
                 "private_messages",

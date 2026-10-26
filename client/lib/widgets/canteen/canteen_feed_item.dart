@@ -4,6 +4,7 @@ import '../../models/canteen_home.dart';
 import '../../theme/app_motion.dart';
 import 'canteen_theme.dart';
 import 'canteen_status_image.dart';
+import '../app_card.dart';
 
 /// 推荐信息流条目：按 type 分支渲染。
 /// 商家类（recommended_store / stable_choice / trending）与实拍类（recent_photo）。
@@ -54,7 +55,7 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
   Widget _buildStoreCard(bool isDark) {
     final item = widget.item;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
@@ -187,7 +188,7 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
 
   Widget _buildPhotoCard(bool isDark) {
     final item = widget.item;
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),

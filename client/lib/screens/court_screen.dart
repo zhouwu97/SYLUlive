@@ -4,10 +4,12 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../widgets/app_page_background.dart';
 import '../app_bootstrap.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/app_page_app_bar.dart';
+import '../widgets/app_card.dart';
 
 class CourtScreen extends StatefulWidget {
   final int appealId;
@@ -252,7 +254,9 @@ class _CourtScreenState extends State<CourtScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final appeal = _appeal;
     return Scaffold(
       appBar: const AppPageAppBar(title: Text('公众法庭')),
@@ -440,7 +444,7 @@ class _ManualReviewPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return AppCard(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: Padding(
         padding: const EdgeInsets.all(16),

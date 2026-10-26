@@ -18,8 +18,10 @@ git diff --cached --stat
 
 - Flutter/Android 构建产物：`client/build/`、`client/.dart_tool/`、`client/android/.gradle/`
 - 本地打包文件：`*.apk`、`*.aab`
-- 后端本地编译文件：`server/*.exe`、`server/*.exe~`
-- 本地环境与密钥：`.env`、`key.properties`、`*.jks`
+- 本地打包与诊断文件：`client/build.tar.gz`、`client/bugreport-*.zip`、`client/tmp/`
+- 后端本地编译文件：`server/*.exe`、`server/*.exe~`、`server/release-shenliyuan-*`
+- 本地环境与密钥：`.env`、`key.properties`、`*.jks`、SSH 私钥及 `.ssh/`、`*.ppk`
+- 本机事件取证目录：`fanji/`；生产日志和事件原始材料应放在仓库之外的受限目录
 - IDE/Agent 本地目录：`.idea/`、`.agents/`、`.claude/`、`.codex/`、`.sisyphus/`
 - Python 缓存与探测输出：`__pycache__/`、`.pytest_cache/`、`python-edu-service/tools/*/output/`
 - 崩溃与调试日志：`*.log`、`hs_err_pid*.log`、`replay_pid*.log`

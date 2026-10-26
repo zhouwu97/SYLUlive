@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'competition_ui_tokens.dart';
+import '../app_card.dart';
 
 class CompetitionProfileHubItem {
   final IconData icon;
@@ -26,7 +27,7 @@ class CompetitionProfileHubCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
+    return AppCardSurface(
       decoration: CompetitionUiTokens.cardDecoration(isDark),
       clipBehavior: Clip.antiAlias,
       child: Column(

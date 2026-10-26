@@ -34,8 +34,8 @@ func NewSearchHandler(db *gorm.DB, postHandler *PostHandler, security ...*servic
 
 func (h *SearchHandler) Search(c *gin.Context) {
 	queryText := strings.TrimSpace(c.Query("q"))
-	if runeCount := utf8.RuneCountInString(queryText); runeCount < 2 || runeCount > 64 || onlySearchWildcards(queryText) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "搜索内容需为 2 至 64 个字符，不能只包含通配符"})
+	if runeCount := utf8.RuneCountInString(queryText); runeCount < 1 || runeCount > 64 || onlySearchWildcards(queryText) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "搜索内容需为 1 至 64 个字符，不能只包含通配符"})
 		return
 	}
 	if _, authenticated := c.Get("user_id"); !authenticated && !h.allowAnonymousSearch(c.ClientIP(), time.Now()) {

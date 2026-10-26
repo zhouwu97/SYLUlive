@@ -6,6 +6,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
+import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import '../config/api_constants.dart';
 import '../config/private_chat_policy.dart';
@@ -311,7 +312,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final authUser = context.watch<AuthProvider>().user;
     final auth = context.read<AuthProvider>();
@@ -395,7 +399,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     double width,
   ) {
     return Scaffold(
-      backgroundColor: pageBackground,
+      backgroundColor: AppPageBackground.color(context, pageBackground),
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -525,7 +529,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   ) {
     final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
     return Scaffold(
-      backgroundColor: panelColor,
+      backgroundColor: AppPageBackground.color(context, panelColor),
       body: RefreshIndicator(
         onRefresh: () async {
           await _loadData();

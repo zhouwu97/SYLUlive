@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
+import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import 'post_detail_screen.dart';
+import '../widgets/app_card.dart';
 
 class AdminFeaturedApplicationsScreen extends StatefulWidget {
   const AdminFeaturedApplicationsScreen({super.key});
@@ -173,7 +175,9 @@ class _AdminFeaturedApplicationsScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('精华申请')),
       body: _isLoading
@@ -200,7 +204,7 @@ class _AdminFeaturedApplicationsScreenState
               Map<String, dynamic>.from(_featuredApplications[index] as Map);
           final post = item['post'] as Map?;
           final applicant = item['applicant'] as Map?;
-          return Card(
+          return AppCard(
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Column(

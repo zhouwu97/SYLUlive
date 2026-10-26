@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'competition_module_theme.dart';
 import 'competition_ui_tokens.dart';
+import '../app_page_background.dart';
 
 class CompetitionPageScaffold extends StatelessWidget {
   final String title;
@@ -24,14 +25,16 @@ class CompetitionPageScaffold extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     return Theme(
       data: CompetitionModuleTheme.of(context),
       child: Builder(
         builder: (context) {
           final isDark = Theme.of(context).brightness == Brightness.dark;
           return Scaffold(
-            backgroundColor: CompetitionUiTokens.pageBg(isDark),
+            backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
             resizeToAvoidBottomInset: resizeToAvoidBottomInset,
             appBar: AppBar(
               title: Text(

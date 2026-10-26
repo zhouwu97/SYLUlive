@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../widgets/app_page_background.dart';
 import '../models/edu_grade.dart';
 import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/application/academic_login_coordinator.dart';
 import '../features/academic/presentation/academic_login_dialog.dart';
 import '../providers/edu_provider.dart';
+import '../widgets/app_card.dart';
 
 enum _TagTone { neutral, danger }
 
@@ -233,12 +235,15 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = _pageBg(isDark);
 
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
         leading: const BackButton(),
         title: Text(
@@ -248,7 +253,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         centerTitle: true,
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
       ),
@@ -499,7 +504,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
       if (grade.gpa != null) '绩点 ${grade.gpa!.toStringAsFixed(2)}',
     ];
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
       decoration: _cardDecoration(isDark, softGreen: grade.isPassed != false),
@@ -604,7 +609,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
   }
 
   Widget _buildGradeComponentsCard(BuildContext context, bool isDark) {
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
       decoration: _cardDecoration(isDark),
@@ -666,7 +671,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
         _infoRow(context, '考核方式', grade.assessmentMethod!),
     ];
 
-    return Container(
+    return AppCardSurface(
       decoration: _cardDecoration(isDark),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),

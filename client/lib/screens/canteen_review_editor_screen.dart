@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/canteen_dish.dart';
 import '../models/canteen_review.dart';
 import '../models/canteen_review_draft.dart';
@@ -15,6 +16,7 @@ import '../services/canteen_review_draft_repository.dart';
 import '../theme/app_colors.dart';
 import '../widgets/canteen/canteen_review_image_picker.dart';
 import '../widgets/canteen/canteen_theme.dart';
+import '../widgets/app_card.dart';
 
 const List<({String key, String label})> kCanteenTagOptions = [
   (key: 'taste_good', label: '味道不错'),
@@ -1147,7 +1149,10 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   // ── Build ──────────────────────────────────────────────────────
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = CanteenTheme.accentColor(isDark);
 
@@ -1157,7 +1162,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         if (!didPop) _handleExit();
       },
       child: Scaffold(
-        backgroundColor: CanteenTheme.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
         appBar: _buildAppBar(isDark),
         bottomNavigationBar: _buildBottomBar(isDark, accent),
         body: SingleChildScrollView(
@@ -1203,7 +1208,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     }
 
     return AppBar(
-      backgroundColor: CanteenTheme.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: true,
@@ -1309,7 +1314,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   }
 
   Widget _buildStarRatingCard(bool isDark, Color accent) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
@@ -1520,7 +1525,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   }
 
   Widget _buildExperienceTagsCard(bool isDark, Color accent) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
@@ -1626,7 +1631,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   Widget _buildCommentInputCard(bool isDark) {
     final textLength = _commentController.text.characters.length;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
@@ -1692,7 +1697,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   }
 
   Widget _buildDishSectionCard(bool isDark, Color accent) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
@@ -1730,7 +1735,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   }
 
   Widget _buildPhotoSectionCard(bool isDark) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
@@ -2218,10 +2223,11 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     final canSubmit =
         (_dimensions.isComplete || _draftImages.isNotEmpty) && !_isSubmitting;
 
-    return Container(
+    return AppCardSurface(
       padding: EdgeInsets.fromLTRB(16, 10, 16, bottom + 10),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
+        borderRadius: BorderRadius.zero,
         border: Border(
           top: BorderSide(
             color: CanteenTheme.borderColor(isDark),

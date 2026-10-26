@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 
+import '../widgets/app_page_background.dart';
+import '../widgets/app_card.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../utils/app_feedback.dart';
@@ -103,7 +105,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
           final createdAt =
               detail?['created_at']?.toString() ?? initialCreatedAt;
 
-          return Container(
+          return AppCardSurface(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
             decoration: BoxDecoration(
               color: CanteenTheme.surfaceBg(isDark),
@@ -184,7 +186,10 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = CanteenTheme.accentColor(isDark);
     final auth = context.watch<AuthProvider>();
@@ -192,7 +197,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
         auth.user?.isAdmin == true || auth.user?.isSuperAdmin == true;
 
     return Scaffold(
-      backgroundColor: CanteenTheme.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       appBar: AppBar(
         leading: const BackButton(),
         title: Text(
@@ -202,7 +207,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: CanteenTheme.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
         foregroundColor: CanteenTheme.textPrimaryColor(isDark),
       ),
@@ -417,7 +422,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   }
 
   Widget _buildUploadEntry(bool isDark, Color accent) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceMutedBg(isDark),

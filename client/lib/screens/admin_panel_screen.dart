@@ -22,6 +22,7 @@ import 'admin_teacher_governance_screen.dart';
 import 'admin_security_center_screen.dart';
 import '../models/security_event.dart';
 import '../widgets/global_background_wrapper.dart';
+import '../widgets/glass_container.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -660,68 +661,41 @@ class _AdminActionPillState extends State<_AdminActionPill> {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GlassContainer(
       onTap: _navigationPending ? null : _handleTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        height: 60,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: widget.isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : Colors.white.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: widget.isDark ? Colors.white10 : Colors.white,
-            width: 1.5,
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      borderRadius: 20,
+      child: Row(children: [
+        Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
                 color: widget.iconColor.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(widget.icon, color: widget.iconColor, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
+                shape: BoxShape.circle),
+            child: Icon(widget.icon, color: widget.iconColor, size: 20)),
+        const SizedBox(width: 12),
+        Expanded(
+            child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    widget.title,
-                    style: TextStyle(
+              Text(widget.title,
+                  style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: widget.isDark ? Colors.white : Colors.black87,
-                      height: 1.1,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    widget.subtitle,
-                    style: TextStyle(
+                      height: 1.1)),
+              const SizedBox(height: 2),
+              Text(widget.subtitle,
+                  style: TextStyle(
                       fontSize: 11,
                       color: widget.isDark ? Colors.white54 : Colors.grey[600],
-                      height: 1.1,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.chevron_right,
-              size: 20,
-              color: widget.isDark ? Colors.white30 : Colors.grey[400],
-            ),
-          ],
-        ),
-      ),
+                      height: 1.1))
+            ])),
+        Icon(Icons.chevron_right,
+            size: 20, color: widget.isDark ? Colors.white30 : Colors.grey[400])
+      ]),
     );
   }
 }
@@ -746,60 +720,40 @@ class _AdminMetricPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GlassContainer(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.white.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      borderRadius: 18,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(title,
+            style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: isDark ? Colors.white70 : Colors.black87,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
+                color: isDark ? Colors.white70 : Colors.black87)),
+        const SizedBox(width: 6),
+        Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
                 color: _hasFailed
                     ? (isDark
                         ? Colors.orange.withValues(alpha: 0.3)
                         : Colors.orange[100])
                     : (isDark ? Colors.white24 : Colors.grey[200]),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: isLoading
-                  ? const SizedBox(
-                      width: 10,
-                      height: 10,
-                      child: CircularProgressIndicator(strokeWidth: 1.5),
-                    )
-                  : Text(
-                      count?.toString() ?? '!',
-                      style: TextStyle(
+                borderRadius: BorderRadius.circular(10)),
+            child: isLoading
+                ? const SizedBox(
+                    width: 10,
+                    height: 10,
+                    child: CircularProgressIndicator(strokeWidth: 1.5))
+                : Text(count?.toString() ?? '!',
+                    style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         color: _hasFailed
                             ? (isDark ? Colors.orange[200] : Colors.orange[800])
-                            : (isDark ? Colors.white : Colors.black54),
-                      ),
-                    ),
-            ),
-          ],
-        ),
-      ),
+                            : (isDark ? Colors.white : Colors.black54))))
+      ]),
     );
   }
 }

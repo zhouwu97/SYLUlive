@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/edu_academic_situation.dart';
+import '../app_card.dart';
 
 /// 官方学业概览卡片（置于“学业总览”顶部）
 class AcademicSituationCard extends StatelessWidget {
@@ -33,7 +34,7 @@ class AcademicSituationCard extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
         decoration: BoxDecoration(
           gradient: isDark

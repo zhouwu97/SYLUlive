@@ -73,6 +73,43 @@ void main() {
     expect(find.byType(BackdropFilter), findsNothing);
   });
 
+  for (final dark in [false, true]) {
+    testWidgets('自定义卡片直接使用不透明度设置，简洁模式为实色 dark=$dark', (tester) async {
+      final theme = await _createProvider();
+      await theme.setBackgroundImage('test_bg.jpg');
+      await theme.setFrostedGlass(true);
+      await theme.setComponentOpacity(0.7);
+      await tester.pumpWidget(ChangeNotifierProvider.value(
+        value: theme,
+        child: MaterialApp(
+          theme: dark ? ThemeData.dark() : ThemeData.light(),
+          home: const Scaffold(body: GlassContainer(child: Text('card'))),
+        ),
+      ));
+      Color surface() => (tester
+              .widget<Container>(find
+                  .ancestor(
+                    of: find.text('card'),
+                    matching: find.byType(Container),
+                  )
+                  .first)
+              .decoration! as BoxDecoration)
+          .color!;
+      expect(surface().a, closeTo(0.7, 0.01));
+      await theme.setComponentOpacity(0.4);
+      await tester.pump();
+      expect(surface().a, closeTo(0.4, 0.01));
+      await theme.setCleanBackgroundMode();
+      await tester.pump();
+      expect(surface().a, 1);
+      await theme.trySetCustomBackgroundMode();
+      await theme.setFrostedGlass(false);
+      await tester.pump();
+      expect(surface().a, 1);
+      expect(find.byType(BackdropFilter), findsNothing);
+    });
+  }
+
   testWidgets(
       '底栏设为液态玻璃但 frostedGlass=false 时，GlassContainer 仍然无 BackdropFilter',
       (tester) async {

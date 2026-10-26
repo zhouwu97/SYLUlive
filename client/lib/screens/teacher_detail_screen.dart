@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/teacher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/teacher_provider.dart';
@@ -164,7 +165,10 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
     final accent = RankingTokens.teacherAccent(isDark);
@@ -176,7 +180,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         Navigator.pop(context, _didChange);
       },
       child: Scaffold(
-        backgroundColor: RankingTokens.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
         extendBodyBehindAppBar: false,
         appBar: AppBar(
           systemOverlayStyle: SystemUiOverlayStyle(
@@ -196,7 +200,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
             onPressed: () => Navigator.pop(context, _didChange),
           ),
           title: const Text('教师评价'),
-          backgroundColor: RankingTokens.pageBg(isDark),
+          backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,

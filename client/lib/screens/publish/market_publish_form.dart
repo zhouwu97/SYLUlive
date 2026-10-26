@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import '../../widgets/app_page_background.dart';
 import '../../config/market_contact_type.dart';
 import '../../models/post.dart';
 import '../../models/publish_image_item.dart';
@@ -17,6 +18,7 @@ import 'widgets/publish_bottom_bar.dart';
 import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
 import 'widgets/publish_type_selector.dart';
+import '../../widgets/app_card.dart';
 
 /// Full-screen marketplace publish form (boardId == 2).
 class MarketPublishForm extends StatefulWidget {
@@ -716,7 +718,10 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   // ---------------------------------------------------------------------------
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -726,11 +731,11 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         if (!didPop) _maybePop();
       },
       child: Scaffold(
-        backgroundColor: isDark ? const Color(0xFF111315) : _marketPageBg,
+        backgroundColor: AppPageBackground.color(context, isDark ? const Color(0xFF111315) : _marketPageBg),
         extendBodyBehindAppBar: true,
         resizeToAvoidBottomInset: true,
         appBar: AppBar(
-          backgroundColor: Colors.transparent,
+          backgroundColor: AppPageBackground.color(context, Colors.transparent),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
@@ -941,7 +946,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   Widget _buildMarketDetailsCard(bool isDark, ColorScheme colorScheme) {
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF171B24) : Colors.white,
         borderRadius: BorderRadius.circular(18),

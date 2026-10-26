@@ -230,6 +230,7 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
         notificationMessage: NotificationMessage,
         processName: String,
     ): Boolean {
+        if (ReplyNotificationReadStore.isRead(context, notificationMessage.notificationExtras)) return false
         val conversationId = conversationIdFrom(notificationMessage)
             ?: return super.isNeedShowNotification(context, notificationMessage, processName)
 

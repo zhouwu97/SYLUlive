@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../providers/team_recruitment_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/team/team_recruitment_card.dart';
@@ -95,15 +96,18 @@ class _TeamRecruitmentCenterScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final provider = context.watch<TeamRecruitmentProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageColor = TeamUiTokens.pageBg(isDark);
     final showEmptyAction = provider.viewState == TeamFeedViewState.empty;
     return Scaffold(
-      backgroundColor: pageColor,
+      backgroundColor: AppPageBackground.color(context, pageColor),
       appBar: AppBar(
-        backgroundColor: pageColor,
+        backgroundColor: AppPageBackground.color(context, pageColor),
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
         centerTitle: true,

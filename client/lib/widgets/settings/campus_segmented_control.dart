@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../campus/campus_theme.dart';
+import '../app_card.dart';
 
 class CampusSegmentItem<T> {
   final T value;
@@ -29,7 +30,7 @@ class CampusSegmentedControl<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
+    return AppCardSurface(
       height: 48,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(

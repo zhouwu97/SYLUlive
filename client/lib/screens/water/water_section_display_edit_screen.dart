@@ -5,11 +5,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../config/api_constants.dart';
 import '../../models/water_section.dart';
 import '../../models/water_section_icon_review.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/water_section_provider.dart';
+import '../../widgets/app_card.dart';
 
 class WaterSectionDisplayEditScreen extends StatefulWidget {
   final WaterSection section;
@@ -394,7 +396,7 @@ class _WaterSectionDisplayEditScreenState
       required List<Widget> children,
       required bool isDark,
       String? subtitle}) {
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
@@ -456,7 +458,7 @@ class _WaterSectionDisplayEditScreenState
         ? _publishActionController.text
         : '发布帖子';
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
@@ -945,14 +947,17 @@ class _WaterSectionDisplayEditScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? const Color(0xFF111315) : const Color(0xFFF9FAFB);
 
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: AppPageBackground.color(context, bgColor),
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF111315) : Colors.white,
+        backgroundColor: AppPageBackground.color(context, isDark ? const Color(0xFF111315) : Colors.white),
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         leading: const BackButton(),

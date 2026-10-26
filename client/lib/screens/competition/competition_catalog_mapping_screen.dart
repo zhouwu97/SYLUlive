@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../models/competition.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
@@ -60,17 +61,20 @@ class _CompetitionCatalogMappingScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final confirmed =
         _items.where((item) => item['review_status'] == 'confirmed').length;
     final conflicts =
         _items.where((item) => item['review_status'] == 'conflict').length;
     return Scaffold(
-      backgroundColor: CompetitionUiTokens.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
       appBar: AppBar(
         title: const Text('映射审核'),
-        backgroundColor: CompetitionUiTokens.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
         actions: [
           if (!widget.package.isActive && widget.activePackageId != null)

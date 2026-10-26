@@ -5,6 +5,7 @@ import '../../models/competition_preference.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_page_scaffold.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
+import '../../widgets/app_card.dart';
 
 class CompetitionPreferenceScreen extends StatefulWidget {
   final Dio dio;
@@ -551,7 +552,7 @@ class _CompetitionPreferenceScreenState
     required bool isDark,
     required List<Widget> children,
   }) {
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
       decoration: CompetitionUiTokens.cardDecoration(isDark),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/app_page_background.dart';
 import '../utils/canteen_review_date.dart';
 import 'package:provider/provider.dart';
 
@@ -15,6 +16,7 @@ import 'canteen_review_editor_screen.dart';
 import 'canteen_review_history_screen.dart';
 import 'canteen_screen.dart';
 import 'my_canteen_contributions_screen.dart';
+import '../widgets/app_card.dart';
 
 class MyCanteenReviewsScreen extends StatefulWidget {
   const MyCanteenReviewsScreen({super.key});
@@ -205,10 +207,13 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: CanteenTheme.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       appBar: AppPageAppBar(
         title: const Text('我的菜品评价'),
         actions: [
@@ -369,7 +374,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
   Widget _buildReviewCard(CanteenReviewEvent item, bool isDark) {
     final canteen = item.canteen;
     final date = formatCanteenReviewDate(item.createdAt, item.updatedAt);
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),

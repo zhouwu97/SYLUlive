@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/canteen.dart';
 import '../providers/canteen_provider.dart';
 import '../widgets/canteen/canteen_theme.dart';
@@ -79,14 +80,16 @@ class _AdminCanteenOperationsScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final provider = context.watch<CanteenProvider>();
     return Scaffold(
-      backgroundColor: CanteenTheme.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       appBar: AppBar(
         title: const Text('食堂运营'),
-        backgroundColor: CanteenTheme.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
         foregroundColor: CanteenTheme.textPrimaryColor(isDark),
       ),
       body: _loading && provider.canteens.isEmpty

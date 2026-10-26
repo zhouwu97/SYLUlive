@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import '../utils/app_feedback.dart';
+import '../widgets/app_card.dart';
 
 class CheckInCalendarScreen extends StatefulWidget {
   final DateTime Function()? now;
@@ -573,7 +575,10 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final theme = Theme.of(context);
     final selection = _selectedDaySelection;
     final selectedDateText = _selectedDate == null
@@ -797,7 +802,7 @@ class _CheckInSummary extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final foreground = isDark ? Colors.white : const Color(0xFF29312C);
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1C211E) : const Color(0xFFF5F7F5),

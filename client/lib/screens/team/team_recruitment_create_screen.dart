@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../config/api_constants.dart';
 import '../../models/post.dart';
 import '../../models/team_recruitment.dart';
@@ -21,6 +22,7 @@ import '../../widgets/team/team_recruitment_card.dart';
 import '../../widgets/team/team_ui_tokens.dart';
 import '../../widgets/water_team/team_deadline_picker.dart';
 import 'team_recruitment_detail_screen.dart';
+import '../../widgets/app_card.dart';
 
 class TeamRecruitmentCreateScreen extends StatefulWidget {
   final TeamRecruitment? initialValue;
@@ -775,7 +777,10 @@ class _TeamRecruitmentCreateScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final provider = context.watch<TeamRecruitmentProvider>();
     final authProvider = context.watch<AuthProvider>();
     final currentUser = authProvider.user;
@@ -792,9 +797,9 @@ class _TeamRecruitmentCreateScreenState
     final minNeeded = (acceptedCount > 0 ? acceptedCount : 1).clamp(1, 20);
 
     return Scaffold(
-      backgroundColor: pageColor,
+      backgroundColor: AppPageBackground.color(context, pageColor),
       appBar: AppBar(
-        backgroundColor: pageColor,
+        backgroundColor: AppPageBackground.color(context, pageColor),
         surfaceTintColor: Colors.transparent,
         title: Text(widget.initialValue == null ? '发起组队' : '编辑招募'),
         actions: [
@@ -1594,7 +1599,7 @@ class _TeamRecruitmentCreateScreenState
     final majorText =
         [college, major, grade].where((s) => s.isNotEmpty).join(' · ');
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(

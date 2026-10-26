@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
+import '../../widgets/app_page_background.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/device_diagnostics_service.dart';
@@ -10,6 +11,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/image_upload_widget.dart';
+import '../../widgets/app_card.dart';
 
 class FeedbackCreateScreen extends StatefulWidget {
   final String? initialRouteName;
@@ -322,7 +324,7 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
   }
 
   Widget _buildDiagnosticsCard(bool isDark) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E2226) : Colors.white,
@@ -388,7 +390,9 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = themeProvider.isCleanBackgroundMode && !isDark
@@ -396,7 +400,7 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
         : Theme.of(context).colorScheme.surface;
 
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
         title: const Text(
           '新建反馈',
@@ -404,7 +408,7 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
         ),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),

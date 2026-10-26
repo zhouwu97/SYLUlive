@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../widgets/app_page_background.dart';
 import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
@@ -754,7 +755,10 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final displayExams =
@@ -771,8 +775,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     final availableSemesters = _availableSemesters;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+      backgroundColor: AppPageBackground.color(context, isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
       appBar: AppBar(
         title: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
@@ -827,7 +830,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
             },
           ),
         ),
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(context, Colors.transparent),
         elevation: 0,
         actions: [
           IconButton(

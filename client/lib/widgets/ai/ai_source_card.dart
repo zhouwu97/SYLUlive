@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/ai_source.dart';
+import '../app_card.dart';
 
 class AiSourceCard extends StatelessWidget {
   final AiSource source;
@@ -16,7 +17,7 @@ class AiSourceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(
         color: colors.surface,

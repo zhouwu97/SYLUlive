@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'competition_ui_tokens.dart';
 import '../app_action_popup_menu.dart';
 import 'competition_status_helper.dart';
+import '../app_card.dart';
 
 class MyCompetitionPlanCard extends StatelessWidget {
   final Map<String, dynamic> item;
@@ -62,7 +63,7 @@ class MyCompetitionPlanCard extends StatelessWidget {
       grade: '${item['school_recognition_grade'] ?? ''}',
     );
 
-    final card = Container(
+    final card = AppCardSurface(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
       decoration: CompetitionUiTokens.cardDecoration(isDark),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/app_page_background.dart';
 import '../utils/canteen_review_date.dart';
 import 'package:provider/provider.dart';
 
@@ -9,6 +10,7 @@ import '../utils/app_feedback.dart';
 import '../widgets/app_page_app_bar.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import 'canteen_review_editor_screen.dart';
+import '../widgets/app_card.dart';
 
 class CanteenReviewHistoryScreen extends StatefulWidget {
   final int canteenId;
@@ -135,10 +137,13 @@ class _CanteenReviewHistoryScreenState
       };
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: CanteenTheme.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       appBar: AppPageAppBar(title: Text('我在${widget.canteenName}的评价')),
       body: RefreshIndicator(
         onRefresh: _load,
@@ -230,7 +235,7 @@ class _CanteenReviewHistoryScreenState
       curve: AppMotion.outgoing,
       child: deleting
           ? const SizedBox.shrink()
-          : Container(
+          : AppCardSurface(
               key: ValueKey(key),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(

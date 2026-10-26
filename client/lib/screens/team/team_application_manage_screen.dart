@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../models/team_recruitment.dart';
 import '../../models/water_team.dart';
 import '../../providers/team_recruitment_provider.dart';
 import '../../widgets/team/team_ui_tokens.dart';
+import '../../widgets/app_card.dart';
 
 class TeamApplicationManageScreen extends StatefulWidget {
   final TeamRecruitment recruitment;
@@ -130,7 +132,10 @@ class _TeamApplicationManageScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final provider = context.watch<TeamRecruitmentProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageColor = TeamUiTokens.pageBg(isDark);
@@ -142,9 +147,9 @@ class _TeamApplicationManageScreenState
         provider.loadingApplicationIds.contains(widget.recruitment.id);
     final loadError = provider.applicationErrors[widget.recruitment.id];
     return Scaffold(
-      backgroundColor: pageColor,
+      backgroundColor: AppPageBackground.color(context, pageColor),
       appBar: AppBar(
-        backgroundColor: pageColor,
+        backgroundColor: AppPageBackground.color(context, pageColor),
         surfaceTintColor: Colors.transparent,
         title: const Text('申请管理'),
       ),
@@ -270,7 +275,7 @@ class _ApplicationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Card(
+    return AppCard(
         margin: EdgeInsets.zero,
         elevation: 0,
         color: TeamUiTokens.cardBg(isDark),

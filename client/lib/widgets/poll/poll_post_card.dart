@@ -16,6 +16,7 @@ import '../cached_avatar.dart';
 import '../feed/feed_post_action_menu.dart';
 import '../post_media/post_media_view.dart';
 import 'poll_option_tile.dart';
+import '../app_card.dart';
 
 enum PollCardVariant { homeCompact, centerFull, profileCompact }
 
@@ -130,7 +131,7 @@ class _PollPostCardState extends State<PollPostCard> {
     final canSubmit = poll.canVote && _selected.isNotEmpty && hasChanges;
     final authorName = widget.post.author?.nickname ?? '匿名用户';
 
-    return Card(
+    return AppCard(
       margin: EdgeInsets.only(bottom: homeCompact ? AppSpacing.xs : 10),
       elevation: 0,
       color: isDark

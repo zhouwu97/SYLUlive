@@ -11,6 +11,7 @@ import '../../models/competition_preference.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_page_scaffold.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
+import '../../widgets/app_card.dart';
 
 class _EvidencePreviewItem {
   int? fileId;
@@ -501,7 +502,7 @@ class _CompetitionAwardEditorScreenState
             widget.initial?.verificationStatus ?? 'self_reported'] ??
         competitionAwardStatusLabels['self_reported']!;
     final locked = _coreLocked;
-    return Container(
+    return AppCardSurface(
       key: const Key('competition-award-verification-banner'),
       margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.all(12),
@@ -974,7 +975,7 @@ class _CompetitionEventPickerScreenState
   }
 
   Widget _eventTile(CompetitionEvent event, bool isDark) {
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: CompetitionUiTokens.cardBg(isDark),

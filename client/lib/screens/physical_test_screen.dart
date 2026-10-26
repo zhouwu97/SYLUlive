@@ -6,6 +6,7 @@ import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../widgets/app_page_background.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
 import '../features/campus_data/storage/physical_cache_store.dart';
@@ -16,6 +17,7 @@ import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
 import '../services/physical_credential_store.dart';
 import 'physical_percentile_report_screen.dart';
+import '../widgets/app_card.dart';
 
 class PhysicalTestPage extends StatefulWidget {
   final String appUserId;
@@ -360,16 +362,17 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+      backgroundColor: AppPageBackground.color(context, isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
       appBar: AppBar(
         title: const Text('体测成绩查询'),
-        backgroundColor:
-            isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+        backgroundColor: AppPageBackground.color(context, isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
         elevation: 0,
         actions: [
           IconButton(
@@ -870,7 +873,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
 
   Widget _buildScoreListCard(
       List<_GymScoreItem> scores, bool isDark, int displayMode) {
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
         borderRadius: BorderRadius.circular(18),

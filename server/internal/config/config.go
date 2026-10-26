@@ -54,6 +54,8 @@ type Config struct {
 	// SecurityAlertEmails 是高危安全事件的主动告警收件人；为空表示不外发告警。
 	SecurityAlertEmails     []string
 	SecurityEventHMACSecret string // 安全中心来源/目标 HMAC 密钥，生产环境不得复用 JWT_SECRET
+	SecurityIPV4DBPath      string // 本地 IPv4 ip2region xdb；空值使用 data/geoip 下的默认路径
+	SecurityIPV6DBPath      string // 本地 IPv6 ip2region xdb
 	JPushAppKey             string // 极光推送 AppKey
 	JPushMasterSecret       string // 极光推送 MasterSecret
 	SuperAdminID            string // 超级管理员账号
@@ -648,6 +650,8 @@ func Load() *Config {
 		SMTPFrom:                         smtpFrom,
 		SecurityAlertEmails:              securityAlertEmails,
 		SecurityEventHMACSecret:          securityEventHMACSecret,
+		SecurityIPV4DBPath:               strings.TrimSpace(os.Getenv("SECURITY_IP_V4_DB_PATH")),
+		SecurityIPV6DBPath:               strings.TrimSpace(os.Getenv("SECURITY_IP_V6_DB_PATH")),
 		JPushAppKey:                      jpushAppKey,
 		JPushMasterSecret:                jpushMasterSecret,
 		SuperAdminID:                     superAdminID,

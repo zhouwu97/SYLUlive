@@ -1,3 +1,5 @@
+import '../widgets/app_page_background.dart';
+import '../widgets/app_card.dart';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -227,7 +229,10 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   // ── Build ──────────────────────────────────────────────────────
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = CanteenTheme.accentColor(isDark);
 
@@ -433,7 +438,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         statusBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: CanteenTheme.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
         bottomNavigationBar: bottomNavigationBar,
         body: onRefresh == null
             ? scrollView
@@ -617,7 +622,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         (_canteenData?['visit_review_count'] as num?)?.toInt() ?? 0;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: CanteenTheme.surfaceBg(isDark),
@@ -841,10 +846,11 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     final bottom = MediaQuery.of(context).padding.bottom;
     final canContribute = !_isOffline;
 
-    return Container(
+    return AppCardSurface(
       padding: EdgeInsets.fromLTRB(16, 8, 16, bottom + 8),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
+        borderRadius: BorderRadius.zero,
         border: Border(
           top: BorderSide(color: CanteenTheme.borderColor(isDark)),
         ),
@@ -875,7 +881,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         final canWriteReview = _canCreateReview || _canEditLatest;
         return SafeArea(
           top: false,
-          child: Container(
+          child: AppCardSurface(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
             decoration: BoxDecoration(
               color: CanteenTheme.surfaceBg(isDark),
@@ -1264,7 +1270,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(context).viewInsets.bottom,
               ),
-              child: Container(
+              child: AppCardSurface(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
                 decoration: BoxDecoration(
                   color: CanteenTheme.surfaceBg(isDark),

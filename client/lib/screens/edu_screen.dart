@@ -1,3 +1,4 @@
+import '../widgets/app_page_background.dart';
 import 'academic_data_settings_screen.dart';
 import '../features/academic/presentation/academic_unbind_dialog.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import '../widgets/campus/campus_theme.dart';
 import '../widgets/course/course_import_sheet.dart';
 import '../widgets/course/course_preview_sheet.dart';
 import '../features/academic/domain/academic_provider.dart';
+import '../widgets/app_card.dart';
 
 class EduScreen extends StatefulWidget {
   const EduScreen({super.key});
@@ -64,6 +66,17 @@ class _EduScreenState extends State<EduScreen> {
     await context.read<EduProvider>().refreshStatus();
   }
 
+  Future<void> _reloadProfile() async {
+    final session = context.read<AcademicSessionController>();
+    final ready = await ensureAcademicSessionForRead(
+      context,
+      controller: session,
+      coordinator: _coordinatorOrNull(),
+    );
+    if (!mounted || !ready) return;
+    await session.loadProfile();
+  }
+
   @override
   void dispose() {
     _studentIdController.dispose();
@@ -72,11 +85,14 @@ class _EduScreenState extends State<EduScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
+      backgroundColor: AppPageBackground.color(context, isDark ? CampusTheme.darkBg : CampusTheme.bg),
       appBar: AppBar(
         title: Text(
           '教务系统',
@@ -87,7 +103,7 @@ class _EduScreenState extends State<EduScreen> {
           ),
         ),
         centerTitle: true,
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(context, Colors.transparent),
         elevation: 0,
         iconTheme: IconThemeData(
           color: isDark ? Colors.white : CampusTheme.text,
@@ -140,7 +156,7 @@ class _EduScreenState extends State<EduScreen> {
       if (eduProvider.grade.isNotEmpty) '${eduProvider.grade}级',
       if (eduProvider.college.isNotEmpty) eduProvider.college,
     ].join(' · ');
-    return Container(
+    return AppCardSurface(
       decoration: CampusTheme.cardDecoration(isDark),
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -236,20 +252,22 @@ class _EduScreenState extends State<EduScreen> {
                       children: [
                         if (session.profileStatus !=
                             AcademicProfileStatus.loaded) ...[
-                          Text(session.hasProfileError
-                              ? '个人资料读取失败，请重试'
-                              : '个人资料尚未加载完成'),
+                          Text(!session.isAuthenticated
+                              ? '本机尚未连接，请先连接教务后读取个人资料'
+                              : session.hasProfileError
+                                  ? '个人资料读取失败，请重试'
+                                  : '个人资料尚未加载完成'),
                           TextButton(
                             onPressed: session.profileStatus ==
                                     AcademicProfileStatus.loading
                                 ? null
-                                : () => context
-                                    .read<AcademicSessionController>()
-                                    .loadProfile(),
+                                : _reloadProfile,
                             child: Text(session.profileStatus ==
                                     AcademicProfileStatus.loading
                                 ? '正在读取…'
-                                : '重新读取资料'),
+                                : session.isAuthenticated
+                                    ? '重新读取资料'
+                                    : '连接并读取资料'),
                           ),
                         ] else ...[
                           Text(
@@ -375,7 +393,7 @@ class _EduScreenState extends State<EduScreen> {
         : providerId == AcademicProviderId.syluGraduate
             ? '研究生教务当前开放课表；成绩、考试和 GPA 暂未接入'
             : '绑定教务账号后，可以查看课表、成绩和教学评价';
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: CampusTheme.cardDecoration(isDark),
       child: Row(
@@ -409,22 +427,22 @@ class _EduScreenState extends State<EduScreen> {
     required VoidCallback onTap,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Material(
+    return AppCardMaterial(
       color: isDark ? CampusTheme.darkCard : Colors.white,
-      borderRadius: BorderRadius.circular(16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : CampusTheme.softBorder,
+        ),
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Container(
           height: 86,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : CampusTheme.softBorder,
-            ),
-          ),
+          padding: const EdgeInsets.all(1),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [

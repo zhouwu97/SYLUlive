@@ -12,6 +12,7 @@ import (
 
 const CheckInSchemaMigrationVersion = "20260716_01_checkin_facts_and_stats"
 const CheckInMakeupCardMigrationVersion = "20260717_02_checkin_makeup_cards"
+const CheckInMakeupCardScheduleMigrationVersion = "20261025_04_checkin_makeup_card_schedule"
 
 // EnsureCheckInSchema 将旧的字符串日期迁移为 DATE，并在建立唯一约束前显式校验历史数据。
 func EnsureCheckInSchema(db *gorm.DB) error {
@@ -78,7 +79,20 @@ func EnsureCheckInSchema(db *gorm.DB) error {
 			return err
 		}
 	}
-	return nil
+	// 旧用户也按新周期重建卡数；事务确保失败重试时不会留下部分更新或重复奖励。
+	return db.Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&AppSchemaMigration{}).Where("version = ?", CheckInMakeupCardScheduleMigrationVersion).Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 0 {
+			return nil
+		}
+		if err := RebuildAllUserCheckInStats(tx); err != nil {
+			return err
+		}
+		return tx.Create(&AppSchemaMigration{Version: CheckInMakeupCardScheduleMigrationVersion, AppliedAt: time.Now()}).Error
+	})
 }
 
 func migratePostgresCheckInDate(db *gorm.DB) error {
@@ -193,7 +207,7 @@ func RebuildUserCheckInStats(db *gorm.DB, userID uint) (UserCheckInStat, error) 
 	var rebuilt UserCheckInStat
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var existing UserCheckInStat
-		existingErr := tx.Select("user_id", "makeup_cards_granted").Where("user_id = ?", userID).First(&existing).Error
+		existingErr := tx.Select("user_id", "makeup_cards_earned", "makeup_cards_granted").Where("user_id = ?", userID).First(&existing).Error
 		if existingErr != nil && !errors.Is(existingErr, gorm.ErrRecordNotFound) {
 			return existingErr
 		}
@@ -222,7 +236,7 @@ func RebuildUserCheckInStats(db *gorm.DB, userID uint) (UserCheckInStat, error) 
 			if current > longest {
 				longest = current
 			}
-			if current%30 == 0 {
+			if IsCheckInMakeupCardRewardDay(current) {
 				makeupCardsEarned++
 			}
 			if records[index].IsMakeup {
@@ -238,8 +252,9 @@ func RebuildUserCheckInStats(db *gorm.DB, userID uint) (UserCheckInStat, error) 
 		last := dateOnly(previous)
 		rebuilt = UserCheckInStat{
 			UserID: userID, LastCheckInDate: &last, CurrentStreak: current, LongestStreak: longest,
-			MakeupCardsEarned: makeupCardsEarned, MakeupCardsGranted: existing.MakeupCardsGranted,
-			MakeupCardsUsed: makeupCardsUsed,
+			MakeupCardsEarned:  makeupCardsEarned,
+			MakeupCardsGranted: existing.MakeupCardsGranted + max(0, existing.MakeupCardsEarned-makeupCardsEarned),
+			MakeupCardsUsed:    makeupCardsUsed,
 		}
 		if err := tx.Save(&rebuilt).Error; err != nil {
 			return err

@@ -6,6 +6,7 @@ import '../../models/ai_run_event.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
+import '../app_card.dart';
 
 /// 展示 SSE 真实产生的 Agent activity；收起态是摘要，展开态保留完整审计过程。
 class AiAgentExecutionCard extends StatefulWidget {
@@ -122,7 +123,7 @@ class _AiAgentExecutionCardState extends State<AiAgentExecutionCard> {
     return AnimatedSize(
       duration: AppMotion.duration(context, AppMotion.fast),
       curve: AppMotion.standard,
-      child: Container(
+      child: AppCardSurface(
         key: const ValueKey('ai-agent-execution-card'),
         margin: const EdgeInsets.only(top: 2, bottom: 10),
         decoration: BoxDecoration(

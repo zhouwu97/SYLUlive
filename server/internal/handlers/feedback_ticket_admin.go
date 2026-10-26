@@ -468,6 +468,9 @@ func (h *FeedbackTicketHandler) AdminUpdateStatus(c *gin.Context) {
 
 	now := time.Now()
 	statusNote := strings.TrimSpace(input.StatusNote)
+	if newStatus != models.FeedbackStatusPending && statusNote == "工单已提交，等待管理员查看受理" {
+		statusNote = ""
+	}
 	expectedStatus := strings.ToLower(strings.TrimSpace(input.ExpectedStatus))
 	var ticket models.FeedbackTicket
 	var changed bool

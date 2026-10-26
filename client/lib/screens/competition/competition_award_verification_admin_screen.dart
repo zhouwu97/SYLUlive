@@ -3,11 +3,13 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../models/competition_award.dart';
 import '../../utils/app_feedback.dart';
 import '../../services/async_action_guard.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
 import '../../services/idempotency_key.dart';
+import '../../widgets/app_card.dart';
 
 class CompetitionAwardVerificationAdminScreen extends StatefulWidget {
   final Dio dio;
@@ -93,14 +95,17 @@ class _CompetitionAwardVerificationAdminScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final totalPages = (_total / _pageSize).ceil().clamp(1, 999999);
     return Scaffold(
-      backgroundColor: CompetitionUiTokens.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
       appBar: AppBar(
         title: const Text('经历核验'),
-        backgroundColor: CompetitionUiTokens.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
       ),
       body: RefreshIndicator(
@@ -208,7 +213,7 @@ class _CompetitionAwardVerificationAdminScreenState
     final result = [item.awardLevel, item.awardName]
         .where((value) => value.trim().isNotEmpty)
         .join(' · ');
-    return Container(
+    return AppCardSurface(
       key: Key('award-verification-${item.id}'),
       margin: const EdgeInsets.only(bottom: 10),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
@@ -429,10 +434,10 @@ class _CompetitionAwardVerificationDetailScreenState
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: CompetitionUiTokens.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
       appBar: AppBar(
         title: const Text('核验详情'),
-        backgroundColor: CompetitionUiTokens.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
       ),
       body: _loading
@@ -450,7 +455,7 @@ class _CompetitionAwardVerificationDetailScreenState
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
-        Container(
+        AppCardSurface(
           padding: const EdgeInsets.all(16),
           decoration: CompetitionUiTokens.cardDecoration(isDark),
           child: Column(

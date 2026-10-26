@@ -1,6 +1,6 @@
 {
   "name": "@sylulive/web", "private": true, "version": "0.1.0", "type": "module",
-  "scripts": {"dev": "vite --host 127.0.0.1", "build": "tsc --noEmit && vite build", "check": "tsc --noEmit"},
+  "scripts": {"dev": "vite --host 127.0.0.1", "build": "tsc --noEmit && pnpm --filter @sylulive/extension package:web && vite build", "check": "tsc --noEmit"},
   "dependencies": {
     "@sylulive/academic-contracts": "workspace:*",
     "@tanstack/react-query": "^5.103.1", "react": "^19.3.0", "react-dom": "^19.3.0",

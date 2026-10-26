@@ -18,6 +18,7 @@ import '../../utils/post_media_access.dart';
 import '../cached_avatar.dart';
 import '../post_content_link_text.dart';
 import '../post_media/post_media_view.dart';
+import '../app_card.dart';
 
 const _ignoredLegacyTopicLabels = {'其他', '其它', '默认', '未分类', '综合'};
 
@@ -65,7 +66,7 @@ class SectionPostCard extends StatelessWidget {
     final border =
         dark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: AppSpacing.xs),
       decoration: BoxDecoration(
         color: surface,

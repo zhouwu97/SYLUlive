@@ -6,6 +6,7 @@ import '../cached_avatar.dart';
 import 'ranking_tokens.dart';
 import 'rating_action_row.dart';
 import 'rating_star_row.dart';
+import '../app_card.dart';
 
 class TeacherRatingItemCard extends StatelessWidget {
   final String userName;
@@ -52,7 +53,7 @@ class TeacherRatingItemCard extends StatelessWidget {
         ? accent.withValues(alpha: 0.20)
         : accent.withValues(alpha: 0.12);
 
-    return Container(
+    return AppCardSurface(
       decoration: RankingTokens.cardDecoration(
         isDark,
         borderOverride: accent.withValues(alpha: isDark ? 0.26 : 0.18),

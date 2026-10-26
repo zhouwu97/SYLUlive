@@ -450,10 +450,8 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                               children: [
                                 Image.asset(
                                   previewAsset,
-                                  fit: _isLandscape
-                                      ? BoxFit.cover
-                                      : BoxFit.contain,
-                                  alignment: Alignment.topCenter,
+                                  fit: BoxFit.cover,
+                                  alignment: Alignment.center,
                                   errorBuilder: (_, __, ___) => Container(
                                     color: isDark
                                         ? CampusTheme.darkCard

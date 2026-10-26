@@ -17,6 +17,10 @@ test('开发扩展真实加载、握手及非业务命令隔离',async()=>{
       window.addEventListener('message',listener);window.postMessage({channel:'sylulive-academic-v1',direction:'request',version:1,id,operation:'hello',payload:{}},location.origin);
     }));
     expect(response.ok).toBe(true);expect(response.result.capabilities).toHaveLength(4);
+    // 授权位与已有连接都来自扩展本地 API，这条断言确认 Service Worker 里真的取到了它们。
+    expect(Object.values(response.result.authorized)).toHaveLength(4);
+    expect(Object.values(response.result.authorized).every(v=>typeof v==='boolean')).toBe(true);
+    expect(Array.isArray(response.result.connections)).toBe(true);
     const rejected=await page.evaluate(()=>new Promise<boolean>(resolve=>{
       const id=crypto.randomUUID();let received=false;
       const listener=(e:MessageEvent)=>{if(e.data?.id===id&&e.data?.direction==='response')received=true};

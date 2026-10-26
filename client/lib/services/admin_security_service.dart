@@ -20,6 +20,21 @@ class SecurityBlockGroup {
   final int createdBy;
 }
 
+class SecurityEventPage {
+  const SecurityEventPage(
+      {required this.items,
+      required this.page,
+      required this.limit,
+      this.total});
+  final List<SecurityEvent> items;
+  final int page;
+  final int limit;
+  final int? total;
+  bool get hasMore =>
+      items.isNotEmpty &&
+      (total == null ? items.length >= limit : page * limit < total!);
+}
+
 class AdminSecurityService {
   final Dio dio;
 
@@ -79,6 +94,20 @@ class AdminSecurityService {
     String actionable = 'all',
     int page = 1,
   }) async {
+    return (await loadEventPage(
+            severity: severity,
+            status: status,
+            actionable: actionable,
+            page: page))
+        .items;
+  }
+
+  Future<SecurityEventPage> loadEventPage({
+    String severity = 'all',
+    String status = 'all',
+    String actionable = 'all',
+    int page = 1,
+  }) async {
     final response = await dio.get('/admin/security/events', queryParameters: {
       'severity': severity,
       'status': status,
@@ -88,10 +117,16 @@ class AdminSecurityService {
     });
     final data = Map<String, dynamic>.from(response.data as Map);
     final items = data['items'] as List? ?? const [];
-    return items
-        .whereType<Map>()
-        .map((item) => SecurityEvent.fromJson(Map<String, dynamic>.from(item)))
-        .toList(growable: false);
+    return SecurityEventPage(
+      page: page,
+      limit: (data['limit'] as num?)?.toInt().clamp(1, 100) ?? 50,
+      total: (data['total'] as num?)?.toInt(),
+      items: items
+          .whereType<Map>()
+          .map(
+              (item) => SecurityEvent.fromJson(Map<String, dynamic>.from(item)))
+          .toList(growable: false),
+    );
   }
 
   Future<void> resolve(int id, {String note = ''}) async {

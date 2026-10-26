@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../widgets/responsive_content.dart';
 import '../../config/beta_release_policy.dart';
 import '../../features/ai_runtime/ai_feature_flags.dart';
@@ -70,6 +71,7 @@ import '../../widgets/ai/admin_ai_control_sheet.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../competition/competition_center_screen.dart';
 import '../account_security_screen.dart';
+import '../../widgets/app_card.dart';
 
 enum _ConsentChoice { denied, once, always }
 
@@ -1272,7 +1274,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final pageTheme = CampusTheme.withBrandAccent(Theme.of(context));
     return Theme(
       data: pageTheme,
@@ -1287,7 +1292,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                 ? PersonalAIRuntimeLimits.maximumInputCharacters
                 : capabilities.maxMessageChars;
             return Scaffold(
-              backgroundColor: theme.scaffoldBackgroundColor,
+              backgroundColor: AppPageBackground.color(context, theme.scaffoldBackgroundColor),
               appBar: AppPageAppBar(
                 title: const AiAppBarTitle(),
                 actions: [
@@ -1591,7 +1596,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
               ),
               const SizedBox(height: 12),
               for (final capability in capabilities.capabilities)
-                Card(
+                AppCard(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
                     leading: Icon(

@@ -40,6 +40,7 @@ import '../widgets/campus/campus_theme.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'schedule/course_detail_sheet.dart';
 import '../theme/app_theme_tokens.dart';
+import '../widgets/app_card.dart';
 
 /// 每节课槽的默认高度
 const double defaultSlotHeight = 75.0;
@@ -1295,7 +1296,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 360),
-          child: Container(
+          child: AppCardSurface(
             key: const ValueKey('schedule-semester-start-required'),
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
@@ -4136,6 +4137,7 @@ $classFilterRule
     int wn,
     double slotHeight,
   ) {
+    final glass = context.watch<ThemeProvider>().frostedGlass;
     final first = courses.first;
     final minStart =
         courses.map((c) => c.startSection).reduce((a, b) => a < b ? a : b);
@@ -4155,12 +4157,13 @@ $classFilterRule
       height: h,
       child: GestureDetector(
         onTap: () => _showConflictCoursesSheet(courses),
-        child: Container(
+        child: AppCardSurface(
+          surfaceOpacity: 0.90,
           alignment: Alignment.topLeft,
           padding: EdgeInsets.all(paddingVal),
           clipBehavior: Clip.hardEdge,
           decoration: BoxDecoration(
-            color: const Color(0xFFE65100).withValues(alpha: 0.90),
+            color: const Color(0xFFE65100).withValues(alpha: glass ? 1 : 0.90),
             borderRadius: BorderRadius.circular(6.0),
             border: Border.all(
               color: Colors.white.withValues(alpha: 0.6),
@@ -4319,6 +4322,8 @@ $classFilterRule
     int? wn,
     double slotHeight,
   ) {
+    final glass = context.watch<ThemeProvider>().frostedGlass;
+    final cardOpacity = isActive ? _scheduleCardOpacity : 0.2;
     final top = (c.startSection - 1) * slotHeight;
     final h = c.span * slotHeight - 2;
     String? inactiveLabel;
@@ -4330,7 +4335,7 @@ $classFilterRule
       isActive: isActive,
       courseCode: c.courseCode,
       location: c.location,
-    ).withValues(alpha: isActive ? _scheduleCardOpacity : 0.2);
+    ).withValues(alpha: glass ? 1 : cardOpacity);
 
     // 根据可用宽度动态放大字体和内边距，解决大屏下太空的问题
     final double scale = (exactW / 45.0).clamp(1.0, 1.35);
@@ -4349,7 +4354,8 @@ $classFilterRule
       height: h,
       child: GestureDetector(
         onTap: () => _showDetail(c),
-        child: Container(
+        child: AppCardSurface(
+          surfaceOpacity: cardOpacity,
           alignment: Alignment.topLeft,
           padding: EdgeInsets.all(paddingVal),
           clipBehavior: Clip.hardEdge,

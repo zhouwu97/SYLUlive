@@ -80,6 +80,10 @@ class SecurityEvent {
   final String route;
   final String method;
   final String sourceFingerprint;
+  final String sourceIP;
+  final String sourceIPStatus;
+  final String sourceRegion;
+  final String sourceRegionStatus;
   final String sourceKey;
   final bool installationSeen;
   final int? actorUserId;
@@ -110,6 +114,10 @@ class SecurityEvent {
     required this.route,
     required this.method,
     required this.sourceFingerprint,
+    this.sourceIP = '',
+    this.sourceIPStatus = 'not_recorded',
+    this.sourceRegion = '',
+    this.sourceRegionStatus = 'not_recorded',
     required this.sourceKey,
     required this.installationSeen,
     required this.actorUserId,
@@ -148,6 +156,11 @@ class SecurityEvent {
       route: json['route']?.toString() ?? '',
       method: json['method']?.toString() ?? '',
       sourceFingerprint: json['source_fingerprint']?.toString() ?? '',
+      sourceIP: json['source_ip']?.toString() ?? '',
+      sourceIPStatus: json['source_ip_status']?.toString() ?? 'not_recorded',
+      sourceRegion: json['source_region']?.toString() ?? '',
+      sourceRegionStatus:
+          json['source_region_status']?.toString() ?? 'not_recorded',
       sourceKey: json['source_key']?.toString() ?? '',
       installationSeen: json['installation_seen'] == true,
       actorUserId: (json['actor_user_id'] as num?)?.toInt(),

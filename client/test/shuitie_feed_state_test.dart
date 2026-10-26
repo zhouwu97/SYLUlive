@@ -14,6 +14,7 @@ import 'package:shenliyuan/screens/notifications_screen.dart';
 import 'package:shenliyuan/screens/shuitie_screen.dart';
 import 'package:shenliyuan/services/reply_notification_state.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 class _FeedAuthProvider extends ChangeNotifier implements AuthProvider {
@@ -55,6 +56,31 @@ class _FeedAuthProvider extends ChangeNotifier implements AuthProvider {
 void main() {
   // visibility_detector 在测试里用帧末回调而非内部 Timer，避免残留 pending timer。
   VisibilityDetectorController.instance.updateInterval = Duration.zero;
+
+  testWidgets('首页搜索框响应毛玻璃开关并保留输入和清除', (tester) async {
+    final page = await _pumpFeed(tester);
+    await _pumpFrames(tester);
+    await page.themeProvider.setBackgroundImage('morenbeijing.jpeg');
+    await page.themeProvider.setFrostedGlass(true);
+    await _pumpFrames(tester);
+    final field = find.byKey(const ValueKey('feed-search-field'));
+    final surface = find.ancestor(of: field, matching: find.byType(AppCardSurface));
+    expect(surface, findsOneWidget);
+    expect(tester.widget<TextField>(field).textAlignVertical, TextAlignVertical.center);
+    expect((tester.getCenter(find.descendant(of: field, matching: find.byType(EditableText))).dy -
+        tester.getCenter(surface).dy).abs(), lessThanOrEqualTo(1));
+    expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)), findsOneWidget);
+    await tester.enterText(field, '课表');
+    await _pumpFrames(tester);
+    expect(tester.widget<TextField>(field).controller!.text, '课表');
+    await tester.tap(find.descendant(of: surface, matching: find.byIcon(Icons.close)));
+    await _pumpFrames(tester);
+    expect(tester.widget<TextField>(field).controller!.text, isEmpty);
+    await page.themeProvider.setFrostedGlass(false);
+    await _pumpFrames(tester);
+    expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)), findsNothing);
+    await _disposeFeed(tester, page);
+  });
 
   testWidgets('feed keeps loading state while the first request is pending',
       (tester) async {

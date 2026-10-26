@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../widgets/responsive_content.dart';
 import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
@@ -23,6 +24,7 @@ import '../widgets/app_page_app_bar.dart';
 import '../widgets/campus/campus_article_html.dart';
 import '../widgets/campus/campus_theme.dart';
 import 'image_viewer_screen.dart';
+import '../widgets/app_card.dart';
 
 /// 文章详情页。
 ///
@@ -235,14 +237,17 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final summary = widget.summary;
     final detail = _detail;
 
     return Scaffold(
-      backgroundColor: CampusTheme.pageBackground(context),
+      backgroundColor: AppPageBackground.color(context, CampusTheme.pageBackground(context)),
       appBar: const AppPageAppBar(title: Text('文章详情')),
       body: ResponsiveContent(
           child: SafeArea(
@@ -375,7 +380,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
   }
 
   Widget _buildRetryCard(bool isDark, String message) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(AppSpacing.xxl),
       decoration: _surfaceDecoration(isDark),
       child: Column(
@@ -485,7 +490,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
 
     // 弱正文且有附件 → 显示附件提示
     if (detail.isWeakContent && hasAttachments) {
-      return Container(
+      return AppCardSurface(
         padding: const EdgeInsets.all(AppSpacing.lg),
         decoration: _surfaceDecoration(isDark, softGreen: true),
         child: Row(
@@ -530,7 +535,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     }
 
     // 正文为空且无附件 → 引导查看原文
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: _surfaceDecoration(isDark),
       child: Row(
@@ -620,7 +625,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     const primary = AppColors.brandPrimary;
     final isUrlSafe = attachment.isUrlSafe;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: _surfaceDecoration(isDark),
       child: Row(

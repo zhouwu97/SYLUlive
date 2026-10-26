@@ -9,6 +9,7 @@ import 'package:shenliyuan/screens/settings/appearance_settings_screen.dart';
 import 'package:shenliyuan/theme/app_text_scaler.dart';
 import 'package:shenliyuan/widgets/settings/settings_slider_tile.dart';
 import 'package:shenliyuan/widgets/settings/settings_tile.dart';
+import 'package:shenliyuan/widgets/global_background_wrapper.dart';
 
 Widget _buildTestApp({
   required AuthProvider auth,
@@ -134,6 +135,27 @@ void main() {
     // 底栏样式配置（含液态玻璃）已收敛到底部导航栏二级页，外观页只留入口。
     expect(find.text('液态玻璃 2.0 效果'), findsNothing);
     expect(find.text('悬浮式底栏导航'), findsNothing);
+  });
+
+  testWidgets('界面设置使用共享壁纸，切回简洁模式保留已选图片', (tester) async {
+    await themeProvider.setBackgroundImage('morenbeijing.jpeg');
+    await themeProvider.setFrostedGlass(true);
+    await tester.pumpWidget(_buildTestApp(auth: authProvider, theme: themeProvider));
+    await tester.pumpAndSettle();
+    expect(find.byType(CustomBackgroundLayer), findsOneWidget);
+    expect(tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
+        Colors.transparent);
+    expect(find.byType(BackdropFilter), findsWidgets);
+    await themeProvider.setCleanBackgroundMode();
+    await tester.pumpAndSettle();
+    expect(tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
+        kCleanWarmBackgroundLight);
+    expect(themeProvider.backgroundImage, 'morenbeijing.jpeg');
+    await themeProvider.trySetCustomBackgroundMode();
+    await tester.pumpAndSettle();
+    expect(tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
+        Colors.transparent);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('预测性返回手势与毛玻璃卡片开关默认关闭，点击后切换并持久化', (tester) async {

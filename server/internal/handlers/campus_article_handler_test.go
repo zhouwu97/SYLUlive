@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -79,6 +80,32 @@ func TestListSearchRespectsApprovedSources(t *testing.T) {
 	}
 	if len(result.Items) != 1 || result.Items[0].Title != "教务通知" {
 		t.Fatalf("unexpected search result: %+v", result.Items)
+	}
+}
+
+func TestListSearchAcceptsSingleCharacter(t *testing.T) {
+	db := setupTestDB(t)
+	article := models.CampusArticle{
+		Source: "jwc", SourceArticleID: "single", SourceURL: "https://example.test/single",
+		Title: "2号教务通知", ContentText: "好A😀", ContentHash: "single", Attachments: datatypes.JSON([]byte("[]")),
+	}
+	if err := db.Create(&article).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"2", "教", "好", "a", "😀"} {
+		t.Run(q, func(t *testing.T) {
+			response := performSearchRequest(t, NewCampusArticleHandler(db).List, "/articles?q="+url.QueryEscape(q))
+			if response.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			var result ListResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Items) != 1 || result.Items[0].ID != article.ID {
+				t.Fatalf("unexpected results: %s", response.Body.String())
+			}
+		})
 	}
 }
 

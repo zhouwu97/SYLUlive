@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../widgets/app_page_background.dart';
 import '../config/api_constants.dart';
 import '../providers/auth_provider.dart';
 import '../theme/app_colors.dart';
@@ -8,6 +9,7 @@ import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/app_page_app_bar.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import '../widgets/app_card.dart';
 
 class AdminAnnouncementsScreen extends StatefulWidget {
   const AdminAnnouncementsScreen({super.key});
@@ -622,7 +624,9 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -704,7 +708,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                           final title = a['title']?.toString() ?? '';
                           final content = a['content']?.toString() ?? '';
                           final isPinned = a['is_pinned'] == true;
-                          return Card(
+                          return AppCard(
                             margin:
                                 const EdgeInsets.only(bottom: AppSpacing.sm),
                             elevation: 0,

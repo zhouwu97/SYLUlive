@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/app_page_background.dart';
 import '../features/physical/physical_percentile_models.dart';
 import '../features/physical/physical_percentile_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/app_card.dart';
 
 class PhysicalPercentileReportScreen extends StatefulWidget {
   final List<PhysicalRawScore> scores;
@@ -35,17 +37,20 @@ class _PhysicalPercentileReportScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: isDark
+      backgroundColor: AppPageBackground.color(context, isDark
           ? AppColors.surfacePrimaryDark
-          : AppColors.surfacePrimaryLight,
+          : AppColors.surfacePrimaryLight),
       appBar: AppBar(
         title: const Text('超越了多少大学生'),
-        backgroundColor: isDark
+        backgroundColor: AppPageBackground.color(context, isDark
             ? AppColors.surfacePrimaryDark
-            : AppColors.surfacePrimaryLight,
+            : AppColors.surfacePrimaryLight),
         elevation: 0,
       ),
       body: FutureBuilder<PhysicalPercentileService>(
@@ -112,7 +117,7 @@ class _PhysicalPercentileReportScreenState
         children: [
           Row(
             children: [
-              Container(
+              AppCardSurface(
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
@@ -543,7 +548,7 @@ class _SurfaceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: padding,
       decoration: BoxDecoration(

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../widgets/global_background_wrapper.dart';
 import '../models/startup_destination.dart';
 import '../services/root_page_state_service.dart';
 import '../utils/app_navigator.dart';
@@ -29,6 +30,8 @@ import '../services/emoji_favorite_service.dart';
 import '../services/async_action_guard.dart';
 import '../services/idempotency_key.dart';
 import '../services/post_reply_cache.dart';
+import '../services/reply_notification_service.dart';
+import '../services/reply_notification_state.dart';
 import '../utils/app_feedback.dart';
 import '../utils/image_decode_size.dart';
 import '../utils/post_clipboard.dart';
@@ -51,6 +54,7 @@ import 'water_category_feed_route.dart';
 import 'team/team_recruitment_detail_screen.dart';
 
 import '../utils/app_navigation.dart';
+import '../widgets/app_card.dart';
 
 const _ignoredLegacyWaterTagNames = {'其他', '其它', '默认', '未分类', '综合'};
 
@@ -472,10 +476,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   Future<void> _prepareTargetReplyAndScroll() async {
     final targetId = _activeTargetReplyId;
     if (targetId == null) return;
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    final sessionGeneration = auth.sessionGeneration;
 
     // 快速路径：目标已在已加载分页中 → 原有滚动/高亮逻辑。
     final loadedTarget = _replies.where((r) => r.id == targetId).firstOrNull;
     if (loadedTarget != null) {
+      unawaited(_consumeTargetReplyNotification(targetId));
       setState(() {}); // 触发重新渲染，确保子组件挂载
       _scheduleScrollToTarget(targetId, 3);
       return;
@@ -508,13 +516,47 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     } catch (_) {
       return;
     }
-    if (!mounted) return;
+    if (!mounted ||
+        auth.user?.id != accountId ||
+        auth.sessionGeneration != sessionGeneration) {
+      return;
+    }
     // 目标是根评论本身时打开线程 sheet；子回复目标则锚定到该条并高亮。
+    unawaited(_consumeTargetReplyNotification(targetId));
     final anchored = target.parentReplyId != null;
     await _showReplyThreadSheet(
       parentReply: root,
       anchorReply: anchored ? target : null,
     );
+  }
+
+  final Set<String> _consumedReplyNotificationTargets = {};
+
+  Future<void> _consumeTargetReplyNotification(int replyId) async {
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    final generation = auth.sessionGeneration;
+    if (accountId == null) return;
+    final key = '$accountId:$generation:$replyId';
+    if (!_consumedReplyNotificationTargets.add(key)) return;
+    try {
+      await ReplyNotificationService(auth.dio).markReplyRead(
+        postId: widget.postId,
+        replyId: replyId,
+      );
+      if (!mounted ||
+          auth.user?.id != accountId ||
+          auth.sessionGeneration != generation) {
+        return;
+      }
+      ReplyNotificationState.instance.requestRefresh(
+        accountId: accountId,
+        sessionGeneration: generation,
+      );
+    } catch (_) {
+      // 读取失败保留未读，下次定位允许重试；旧服务端仍可打开原帖。
+      _consumedReplyNotificationTargets.remove(key);
+    }
   }
 
   void _scheduleScrollToTarget(int targetId, int retries) {
@@ -1886,7 +1928,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   Widget _buildCollabApplicationTile(Map<String, dynamic> item) {
     final applicant = item['applicant'] as Map?;
     final status = item['status']?.toString() ?? '';
-    return Card(
+    return AppCard(
       child: ListTile(
         title: Text(applicant?['nickname']?.toString() ?? '申请人'),
         subtitle: Text('${item['reason'] ?? ''}\n状态：$status'),
@@ -1913,7 +1955,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   Widget _buildRevisionProposalTile(Map<String, dynamic> item) {
     final proposer = item['proposer'] as Map?;
     final status = item['status']?.toString() ?? '';
-    return Card(
+    return AppCard(
       child: ListTile(
         title: Text(item['proposed_title']?.toString().isNotEmpty == true
             ? item['proposed_title'].toString()
@@ -2030,6 +2072,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final backgroundSettings = context.watch<ThemeProvider?>();
+    final customBackground =
+        backgroundSettings?.shouldShowCustomBackground == true;
     final currentUser = context.watch<AuthProvider>().user;
     final canDelete = _post != null &&
         currentUser != null &&
@@ -2048,13 +2093,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final bool transparentMode =
         widget.isDesktopSplitMode && widget.hideBackButton;
 
-    return PopScope(
+    final page = PopScope(
       canPop: true,
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: overlayStyle,
         child: Scaffold(
           resizeToAvoidBottomInset: false,
-          backgroundColor: transparentMode
+          backgroundColor: transparentMode || customBackground
               ? Colors.transparent
               : (isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
           appBar: transparentMode
@@ -2106,6 +2151,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         ),
       ),
     );
+    return backgroundSettings == null || transparentMode
+        ? page
+        : GlobalBackgroundWrapper(child: page);
   }
 
   /// Scaffold 不随 IME resize 时，由详情页自己为 Composer 预留键盘 viewport。
@@ -2225,8 +2273,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     required bool isAdmin,
   }) {
     return AppBar(
-      backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
-      elevation: 0.5,
+      backgroundColor:
+          context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
+              ? Colors.transparent
+              : isDark
+                  ? const Color(0xFF131720)
+                  : Colors.white,
+      surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
+      elevation: 0,
       automaticallyImplyLeading: !widget.hideBackButton,
       leading: widget.hideBackButton ? null : const BackButton(),
       titleSpacing: widget.hideBackButton ? 16 : 0,
@@ -2917,7 +2972,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                     ),
                   Transform.translate(
                     offset: Offset(0, p.images.isNotEmpty ? -24 : 0),
-                    child: Container(
+                    child: AppCardSurface(
                       width: double.infinity,
                       decoration: BoxDecoration(
                         color: isDark ? const Color(0xFF131720) : Colors.white,
@@ -3153,7 +3208,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         children: [
           // 白色内容卡片：作者 + 标题 + 正文 + 图片 + 信息 + 操作栏
           _buildPostContentDismissWrapper(
-            child: Container(
+            child: AppCardSurface(
               color: isDark ? const Color(0xFF131720) : Colors.white,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3178,10 +3233,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           // 8px 分区
           Container(
             height: 8,
-            color: isDark ? const Color(0xFF1A1E28) : const Color(0xFFF0F0F0),
+            color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                ? Colors.transparent
+                : isDark
+                    ? const Color(0xFF1A1E28)
+                    : const Color(0xFFF0F0F0),
           ),
           // 白色评论区卡片
-          Container(
+          AppCardSurface(
             key: _commentsSectionKey,
             color: isDark ? const Color(0xFF131720) : Colors.white,
             child: _buildWaterCommentsSection(isDark),
@@ -3731,7 +3790,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           _openAuthorHome(p.author!.id);
         }
       },
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: isDark ? const Color(0x99171B24) : const Color(0x0A000000),
@@ -4922,7 +4981,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           ),
         ),
         const SizedBox(height: 10),
-        Divider(
+        AppCardDivider(
           height: 1,
           thickness: 1,
           color: isDark ? Colors.white10 : Colors.grey[200],

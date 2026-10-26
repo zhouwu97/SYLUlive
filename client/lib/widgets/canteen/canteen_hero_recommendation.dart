@@ -3,6 +3,7 @@ import '../../models/canteen_home.dart';
 import '../../theme/app_motion.dart';
 import 'canteen_theme.dart';
 import 'canteen_status_image.dart';
+import '../app_card.dart';
 
 /// 首页“今天吃什么”Hero 卡。
 ///
@@ -45,7 +46,7 @@ class _CanteenHeroRecommendationCardState
         opacity: _pressed ? 0.94 : 1.0,
         duration: AppMotion.micro,
         curve: AppMotion.standard,
-        child: Container(
+        child: AppCardSurface(
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: CanteenTheme.surfaceBg(isDark),

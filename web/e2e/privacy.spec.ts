@@ -16,7 +16,7 @@ test('个人 AI 摘要只有本次明确确认后才能发送，取消不发送'
   expect(sent).toHaveLength(0);
   await page.getByRole('button',{name:'取消',exact:true}).click();expect(sent).toHaveLength(0);
   await page.getByRole('button',{name:'核对本次摘要'}).click();
-  await page.getByRole('button',{name:'确认本次发送以上摘要'}).click();
+  await page.getByRole('button',{name:'确认发送问题和以上摘要'}).click();
   await expect(page.getByText('测试分析结果',{exact:true})).toBeVisible();expect(sent).toHaveLength(1);
   expect(sent[0].summary).toEqual({kind:'grade_statistics',course_count:1,credits:2,average:85,gpa:3.5});
   expect(JSON.stringify(sent[0])).not.toContain('不应传输的课程名');

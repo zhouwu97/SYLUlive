@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import '../services/admin_security_service.dart';
 import '../theme/app_spacing.dart';
+import '../widgets/app_card.dart';
 
 /// 超级管理员查看并解除当前生效的来源封禁。
 class AdminSecurityBlocksScreen extends StatefulWidget {
@@ -101,7 +103,9 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('当前生效封禁')),
       body: RefreshIndicator(
@@ -129,7 +133,7 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
               for (final block in _blocks)
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                  child: Card(
+                  child: AppCard(
                     child: Padding(
                       padding: const EdgeInsets.all(AppSpacing.md),
                       child: Column(

@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/services.dart';
 import 'package:shenliyuan/models/unread_reply_notification.dart';
 
 class UnreadReplyNotificationPage {
@@ -115,11 +116,35 @@ class ReplyNotificationService {
       },
     );
     _ensureSuccessful(response, '标记通知已读失败');
+    await _syncSystemRead(response);
   }
 
   Future<void> markAllRead() async {
     final response = await _dio.post('/notifications/read');
     _ensureSuccessful(response, '全部标记已读失败');
+    await _syncSystemRead(response);
+  }
+
+  Future<void> markReplyRead({required int postId, required int replyId}) async {
+    final response = await _dio.post('/notifications/read-selected', data: {
+      'post_id': postId,
+      'reply_id': replyId,
+    });
+    _ensureSuccessful(response, '标记回复已读失败');
+    await _syncSystemRead(response);
+  }
+
+  Future<void> _syncSystemRead(Response<dynamic> response) async {
+    final data = response.data;
+    if (data is! Map || data['read_receipt'] is! Map) return;
+    try {
+      await const MethodChannel('shenliyuan/notification_open')
+          .invokeMethod<void>('syncNotificationRead', data['read_receipt']);
+    } on MissingPluginException {
+      // 非 Android 平台仍正常消费服务端已读状态。
+    } on PlatformException {
+      // 服务端已读已成功，原生清理失败不能把成功变成可重复提交的失败。
+    }
   }
 
   void _ensureSuccessful(Response<dynamic> response, String message) {

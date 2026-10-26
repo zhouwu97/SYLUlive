@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../widgets/responsive_content.dart';
 import '../../config/beta_release_policy.dart';
 import '../../models/agent_context.dart';
@@ -37,6 +38,7 @@ import 'competition_preference_screen.dart';
 
 import 'competition_admin_center_screen.dart';
 import '../ai/ai_assistant_screen.dart';
+import '../../widgets/app_card.dart';
 
 class CompetitionCenterScreen extends StatefulWidget {
   const CompetitionCenterScreen({super.key});
@@ -575,7 +577,10 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
     final isAdmin = user?.isAdmin == true || user?.isSuperAdmin == true;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -584,9 +589,9 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     return Theme(
       data: CompetitionModuleTheme.of(context),
       child: Scaffold(
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         appBar: AppBar(
-          backgroundColor: pageBg,
+          backgroundColor: AppPageBackground.color(context, pageBg),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
@@ -848,7 +853,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         CompetitionUiTokens.pagePadding,
         14,
       ),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: CompetitionUiTokens.cardDecoration(isDark),
         child: Row(
@@ -1715,9 +1720,9 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
     final titleColor = CompetitionUiTokens.titleColor(isDark);
 
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         foregroundColor: titleColor,
@@ -1979,7 +1984,7 @@ Widget _detailCard({
   required bool isDark,
   required List<Widget> children,
 }) {
-  return Container(
+  return AppCardSurface(
     margin: const EdgeInsets.only(bottom: 12),
     padding: const EdgeInsets.all(16),
     decoration: CompetitionUiTokens.cardDecoration(isDark),
@@ -2504,9 +2509,9 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
     final grouped = _groupCalendarItems(items);
     final flattenedRows = _flattenedList(grouped);
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -3218,9 +3223,9 @@ class _CompetitionCalendarItemEditorScreenState
     final titleColor = CompetitionUiTokens.titleColor(isDark);
 
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         foregroundColor: titleColor,
@@ -3369,7 +3374,7 @@ class _CompetitionCalendarItemEditorScreenState
   }
 
   Widget _buildFormGroup(String title, List<Widget> children, bool isDark) {
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
@@ -3631,7 +3636,7 @@ class _CompetitionShareImportScreenState
             const SizedBox(height: 12),
             FilledButton(onPressed: _previewShare, child: const Text('预览')),
           ] else ...[
-            Container(
+            AppCardSurface(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: CompetitionUiTokens.cardBg(isDark),

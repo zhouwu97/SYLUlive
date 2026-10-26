@@ -1,3 +1,5 @@
+import '../../widgets/app_page_background.dart';
+import '../../widgets/app_card.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/competition.dart';
@@ -9,14 +11,17 @@ class CompetitionCatalogEventViewScreen extends StatelessWidget {
   final CompetitionEvent event;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = CompetitionUiTokens.pageBg(isDark);
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
         title: const Text('查看目录赛事'),
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         surfaceTintColor: Colors.transparent,
       ),
       body: ListView(
@@ -83,7 +88,7 @@ class CompetitionCatalogEventViewScreen extends StatelessWidget {
               style:
                   const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          Container(
+          AppCardSurface(
             decoration: BoxDecoration(
               color: CompetitionUiTokens.cardBg(isDark),
               borderRadius: BorderRadius.circular(8),

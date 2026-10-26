@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/post.dart';
+import 'app_card.dart';
 
 class PinnedPostSummaryBar extends StatelessWidget {
   final List<Post> posts;
@@ -35,7 +36,7 @@ class PinnedPostSummaryBar extends StatelessWidget {
             _showPinnedSheet(context);
           }
         },
-        child: Container(
+        child: AppCardSurface(
           height: 44,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(

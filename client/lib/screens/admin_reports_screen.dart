@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
+import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/glass_container.dart';
 import '../utils/app_feedback.dart';
 import '../utils/report_reason_label.dart';
 import 'post_detail_screen.dart';
+import '../widgets/app_card.dart';
 
 class AdminReportsScreen extends StatefulWidget {
   const AdminReportsScreen({super.key});
@@ -240,7 +242,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -318,7 +322,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final previewText = _snapshotPreviewText(targetType, snapshot);
     final canOpenTarget = _canOpenTarget(targetType, snapshot);
 
-    return Card(
+    return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
       color: isDark ? Colors.grey[850] : Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -429,7 +433,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final previewText = _snapshotPreviewText(targetType, snapshot);
     final canOpenTarget = _canOpenTarget(targetType, snapshot);
 
-    return Card(
+    return AppCard(
       margin: const EdgeInsets.only(bottom: 8),
       color: isDark ? Colors.grey[850] : Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

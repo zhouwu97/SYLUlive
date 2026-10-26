@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
+import '../../widgets/app_page_background.dart';
 import '../../config/water_post_taxonomy.dart';
 import '../../models/post.dart';
 import '../../models/publish_image_item.dart';
@@ -669,15 +670,17 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? AppColors.surfacePrimaryDark : AppColors.surfacePrimaryLight,
+      backgroundColor: AppPageBackground.color(context, isDark ? AppColors.surfacePrimaryDark : AppColors.surfacePrimaryLight),
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(context, Colors.transparent),
         elevation: 0,
         toolbarHeight: 56,
         leading: IconButton(

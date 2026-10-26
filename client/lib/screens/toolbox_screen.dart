@@ -8,7 +8,6 @@ import '../app_bootstrap.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
-import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../widgets/glass_container.dart';
 import '../services/physical_credential_store.dart';
@@ -17,6 +16,7 @@ import 'physical_test_screen.dart';
 import 'lottery_screen.dart';
 import 'exam_schedule_screen.dart';
 import 'exam_papers/exam_paper_library_screen.dart';
+import '../widgets/app_card.dart';
 
 class ToolboxScreen extends StatefulWidget {
   const ToolboxScreen({super.key});
@@ -131,6 +131,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
           ),
           backgroundColor: Colors.transparent,
           elevation: 0,
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -198,7 +200,9 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                         crossAxisCount = 1;
                       }
 
-                      return ListView(
+                      final tools = ListView(
+                        // 毛玻璃依赖列表外的壁纸，滚动时保持与背景一起合成。
+                        addRepaintBoundaries: false,
                         padding: const EdgeInsets.all(20),
                         children: [
                           _buildSectionTitle(
@@ -207,17 +211,9 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                             useCustomBackground,
                           ),
                           const SizedBox(height: 12),
-                          GridView(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            padding: EdgeInsets.zero,
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossAxisCount,
-                              mainAxisExtent: 88,
-                              mainAxisSpacing: 12,
-                              crossAxisSpacing: 12,
-                            ),
+                          _buildToolGrid(
+                            width: constraints.maxWidth - 40,
+                            columns: crossAxisCount,
                             children: [
                               _buildToolCard(
                                 context,
@@ -231,7 +227,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                     builder: (_) => const ErkeScoreScreen(),
                                   ),
                                 ),
-                                useCustomBackground: useCustomBackground,
                               ),
                               _buildToolCard(
                                 context,
@@ -240,7 +235,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 title: '体测成绩',
                                 subtitle: '扫码核验 / 查询',
                                 onTap: () => _openPhysicalTest(context),
-                                useCustomBackground: useCustomBackground,
                               ),
                               _buildToolCard(
                                 context,
@@ -254,7 +248,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                     builder: (_) => const ExamScheduleScreen(),
                                   ),
                                 ),
-                                useCustomBackground: useCustomBackground,
                               ),
                               _buildToolCard(
                                 context,
@@ -269,7 +262,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                         const ExamPaperLibraryScreen(),
                                   ),
                                 ),
-                                useCustomBackground: useCustomBackground,
                               ),
                               _buildToolCard(
                                 context,
@@ -278,7 +270,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 title: '网站大全',
                                 subtitle: '用得到的网站',
                                 onTap: () => _showWebsiteDirectory(context),
-                                useCustomBackground: useCustomBackground,
                               ),
                             ],
                           ),
@@ -289,17 +280,9 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                             useCustomBackground,
                           ),
                           const SizedBox(height: 12),
-                          GridView(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            padding: EdgeInsets.zero,
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossAxisCount,
-                              mainAxisExtent: 88,
-                              mainAxisSpacing: 12,
-                              crossAxisSpacing: 12,
-                            ),
+                          _buildToolGrid(
+                            width: constraints.maxWidth - 40,
+                            columns: crossAxisCount,
                             children: [
                               _buildToolCard(
                                 context,
@@ -308,7 +291,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 title: '云原神',
                                 subtitle: '点击即玩',
                                 onTap: () => _launchCloudGenshin(context),
-                                useCustomBackground: useCustomBackground,
                               ),
                               _buildToolCard(
                                 context,
@@ -321,16 +303,19 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                   MaterialPageRoute(
                                       builder: (_) => const LotteryScreen()),
                                 ),
-                                useCustomBackground: useCustomBackground,
                               ),
                             ],
                           ),
                           const SizedBox(height: 24),
-                          _buildMoreToolsCard(
-                            isDark,
-                            useCustomBackground,
-                          ),
+                          _buildMoreToolsCard(isDark),
                         ],
+                      );
+                      return ScrollConfiguration(
+                        // Android 的边缘拉伸会把列表放入离屏层，隔断壁纸采样。
+                        behavior: themeProvider.frostedGlass
+                            ? ScrollConfiguration.of(context).copyWith(overscroll: false)
+                            : ScrollConfiguration.of(context),
+                        child: tools,
                       );
                     },
                   ),
@@ -340,6 +325,24 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // 这些网格不独立滚动。Wrap 避免嵌套 viewport 被单独缓存，
+  // 让卡片的 BackdropFilter 始终采样外层壁纸，而非离屏透明层。
+  Widget _buildToolGrid({
+    required double width,
+    required int columns,
+    required List<Widget> children,
+  }) {
+    final cardWidth = (width - (columns - 1) * 12) / columns;
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: [
+        for (final card in children)
+          SizedBox(width: cardWidth, height: 88, child: card),
+      ],
     );
   }
 
@@ -367,27 +370,10 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     );
   }
 
-  Widget _buildMoreToolsCard(bool isDark, bool useCustomBackground) {
-    final frostedGlass = context.watch<ThemeProvider>().frostedGlass;
-    final backgroundColor = isDark
-        ? (frostedGlass
-            ? Colors.black.withValues(alpha: 0.65)
-            : AppColors.surfaceSecondaryDark)
-        : useCustomBackground && frostedGlass
-            ? Colors.white.withValues(alpha: 0.78)
-            : Colors.white;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.1)
-        : useCustomBackground
-            ? Colors.white.withValues(alpha: 0.65)
-            : const Color(0xFFEEF0F5);
-
-    final cardContent = Container(
+  Widget _buildMoreToolsCard(bool isDark) {
+    return GlassContainer(
+      borderRadius: AppRadius.lg,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        border: Border.all(color: borderColor, width: 1),
-      ),
       child: Row(
         children: [
           Container(
@@ -434,27 +420,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
             ),
           ),
         ],
-      ),
-    );
-
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        child: FrostedGlass(
-          sigmaX: 8,
-          sigmaY: 8,
-          child: cardContent,
-        ),
       ),
     );
   }
@@ -526,29 +491,12 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
-    required bool useCustomBackground,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final frostedGlass = context.watch<ThemeProvider>().frostedGlass;
-    final backgroundColor = isDark
-        ? (frostedGlass
-            ? Colors.black.withValues(alpha: 0.65)
-            : AppColors.surfaceSecondaryDark)
-        : useCustomBackground && frostedGlass
-            ? Colors.white.withValues(alpha: 0.78)
-            : Colors.white;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.1)
-        : useCustomBackground
-            ? Colors.white.withValues(alpha: 0.65)
-            : const Color(0xFFEEF0F5);
-
-    final cardContent = Container(
+    return GlassContainer(
+      onTap: onTap,
+      borderRadius: AppRadius.lg,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        border: Border.all(color: borderColor, width: 1),
-      ),
       child: Row(
         children: [
           Container(
@@ -591,30 +539,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
             ),
           ),
         ],
-      ),
-    );
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          child: FrostedGlass(
-            sigmaX: 8,
-            sigmaY: 8,
-            child: cardContent,
-          ),
-        ),
       ),
     );
   }
@@ -760,71 +684,60 @@ class _WebsiteDirectoryCard extends StatelessWidget {
             ? Colors.white.withValues(alpha: 0.65)
             : const Color(0xFFEEF0F5);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        onTap: () => _openWebsiteDirectoryItem(context, item),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-            border: Border.all(color: borderColor),
-            boxShadow: [
-              BoxShadow(
+    return AppCardSurface(
+      decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: borderColor),
+          boxShadow: [
+            BoxShadow(
                 color: Colors.black.withValues(alpha: 0.06),
                 blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
+                offset: const Offset(0, 6))
+          ]),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          onTap: () => _openWebsiteDirectoryItem(context, item),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            child: Row(children: [
               Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: item.color.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Icon(item.icon, color: item.color, size: 23),
-              ),
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                      color: item.color.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(13)),
+                  child: Icon(item.icon, color: item.color, size: 23)),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : const Color(0xFF20232A),
-                      ),
-                    ),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(item.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: isDark
+                                ? Colors.white
+                                : const Color(0xFF20232A))),
                     const SizedBox(height: 4),
-                    Text(
-                      item.subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color:
-                            isDark ? Colors.white60 : const Color(0xFF7D8492),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.open_in_new,
-                size: 18,
-                color: isDark ? Colors.white38 : const Color(0xFF94A3B8),
-              ),
-            ],
+                    Text(item.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: isDark
+                                ? Colors.white60
+                                : const Color(0xFF7D8492)))
+                  ])),
+              Icon(Icons.open_in_new,
+                  size: 18,
+                  color: isDark ? Colors.white38 : const Color(0xFF94A3B8))
+            ]),
           ),
         ),
       ),

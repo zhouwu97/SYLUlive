@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import 'rating_star_row.dart';
+import '../app_card.dart';
 
 class RatingSummaryCard extends StatelessWidget {
   final String title;
@@ -30,7 +31,7 @@ class RatingSummaryCard extends StatelessWidget {
         backgroundColor ?? (isDark ? const Color(0xFF1C2230) : Colors.white);
     final mutedTextColor = isDark ? Colors.grey.shade300 : Colors.grey.shade600;
 
-    return Card(
+    return AppCard(
       elevation: 0,
       color: surfaceColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

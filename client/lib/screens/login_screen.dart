@@ -1,3 +1,5 @@
+import '../widgets/app_page_background.dart';
+import '../widgets/app_card.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -532,7 +534,10 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = isDark ? const Color(0xFF101219) : const Color(0xFFFFFAF4);
     final cardBg = isDark ? const Color(0xFF1E2226) : Colors.white;
@@ -544,7 +549,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final subText = isDark ? Colors.white70 : const Color(0xFF747B82);
 
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
@@ -605,7 +610,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 40),
 
                     // Card
-                    Container(
+                    AppCardSurface(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
                         color: cardBg,

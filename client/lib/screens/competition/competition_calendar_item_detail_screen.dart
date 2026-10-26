@@ -2,12 +2,14 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../models/competition.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_status_helper.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
 import 'competition_center_screen.dart';
+import '../../widgets/app_card.dart';
 
 class CompetitionCalendarItemDetailScreen extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -184,7 +186,7 @@ class _CompetitionCalendarItemDetailScreenState
   }
 
   Widget _buildSection(String title, List<Widget> children, bool isDark) {
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
@@ -237,7 +239,10 @@ class _CompetitionCalendarItemDetailScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = CompetitionUiTokens.pageBg(isDark);
     final titleColor = CompetitionUiTokens.titleColor(isDark);
@@ -284,9 +289,9 @@ class _CompetitionCalendarItemDetailScreenState
     final noticeUrl = '${_item['notice_url'] ?? ''}';
 
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         foregroundColor: titleColor,
@@ -329,7 +334,7 @@ class _CompetitionCalendarItemDetailScreenState
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
         children: [
           // 顶部信息
-          Container(
+          AppCardSurface(
             margin: const EdgeInsets.only(bottom: 16),
             padding: const EdgeInsets.all(16),
             decoration: CompetitionUiTokens.cardDecoration(isDark),

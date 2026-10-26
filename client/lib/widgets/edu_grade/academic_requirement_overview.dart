@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/edu_credit_requirement.dart';
 import '../../theme/app_colors.dart';
 import 'academic_requirement_card.dart';
+import '../app_card.dart';
 
 /// 学分要求总览组件。
 ///
@@ -209,7 +210,7 @@ class _AcademicRequirementOverviewState
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Container(
+      child: AppCardSurface(
         width: double.infinity,
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(

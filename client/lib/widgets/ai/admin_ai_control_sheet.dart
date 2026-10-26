@@ -1,3 +1,4 @@
+import '../app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -410,7 +411,7 @@ class _Section extends StatelessWidget {
   final String title;
   final Widget child;
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => AppCardSurface(
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
           color: Theme.of(context).brightness == Brightness.dark

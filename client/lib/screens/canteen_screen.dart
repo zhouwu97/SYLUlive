@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../widgets/app_page_background.dart';
 import '../utils/responsive_util.dart';
 import '../models/canteen.dart';
 import '../models/canteen_home.dart';
@@ -21,6 +22,7 @@ import 'canteen_detail_screen.dart';
 import 'canteen_dish_detail_screen.dart';
 import 'canteen_ranking_screen.dart';
 import 'canteen_review_editor_screen.dart';
+import '../widgets/app_card.dart';
 
 /// 校园餐饮发现首页：搜索 + 今天吃什么 + 热门菜品 + 同学最近评价。
 /// 首页帮助用户快速做出就餐决定，完整排行榜降级为快捷入口。
@@ -123,11 +125,15 @@ class _CanteenScreenState extends State<CanteenScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: CanteenTheme.pageBg(isDark),
+      backgroundColor:
+          AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       appBar: AppBar(
         leading: const BackButton(),
         title: const Column(
@@ -147,7 +153,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: CanteenTheme.pageBg(isDark),
+        backgroundColor:
+            AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
         foregroundColor: CanteenTheme.textPrimaryColor(isDark),
         actions: [
@@ -171,7 +178,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
 
   Widget _buildSearchBar(bool isDark) => Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-        child: Container(
+        child: AppCardSurface(
           height: 48,
           decoration: BoxDecoration(
             color: CanteenTheme.surfaceBg(isDark),
@@ -180,11 +187,13 @@ class _CanteenScreenState extends State<CanteenScreen> {
           ),
           child: TextField(
             controller: _searchCtrl,
+            textAlignVertical: TextAlignVertical.center,
             style: TextStyle(
               fontSize: 14,
               color: CanteenTheme.textPrimaryColor(isDark),
             ),
             decoration: InputDecoration(
+              filled: false,
               hintText: '搜索商家或菜品',
               hintStyle: TextStyle(
                 fontSize: 14,
@@ -196,10 +205,10 @@ class _CanteenScreenState extends State<CanteenScreen> {
                 color: CanteenTheme.textSecondaryColor(isDark),
               ),
               prefixIconConstraints:
-                  const BoxConstraints(minWidth: 40, minHeight: 40),
+                  const BoxConstraints(minWidth: 40, minHeight: 48),
               border: InputBorder.none,
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              contentPadding: EdgeInsets.zero,
             ),
             onChanged: (value) {
               _searchTimer?.cancel();
@@ -382,7 +391,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
         heroTag: 'canteen-search-${canteen.id}',
       ),
       behavior: HitTestBehavior.opaque,
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: CanteenTheme.surfaceBg(isDark),
@@ -666,7 +675,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
           const SizedBox(width: 10),
           Expanded(
             flex: 9,
-            child: Container(
+            child: AppCardSurface(
               key: const Key('canteen_today_review_card'),
               constraints: const BoxConstraints(minHeight: 108),
               padding: const EdgeInsets.fromLTRB(14, 14, 12, 12),
@@ -751,7 +760,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
                       ),
                     ),
                   ),
-                  child: Container(
+                  child: AppCardSurface(
                     clipBehavior: Clip.antiAlias,
                     decoration: BoxDecoration(
                       color: CanteenTheme.surfaceBg(isDark),
@@ -1018,7 +1027,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
             final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
             return Padding(
               padding: EdgeInsets.only(bottom: bottomInset),
-              child: Container(
+              child: AppCardSurface(
                 decoration: BoxDecoration(
                   color: CanteenTheme.surfaceBg(isDark),
                   borderRadius:

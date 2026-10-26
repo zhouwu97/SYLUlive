@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../utils/edu_semester_utils.dart';
 import '../../models/edu_academic_situation.dart';
 import '../../models/edu_grade.dart';
+import '../app_card.dart';
 
 enum _DrawerPage { menu, semesterList }
 
@@ -149,7 +150,7 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
     final borderColor =
         isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE2EFEA);
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: isDark

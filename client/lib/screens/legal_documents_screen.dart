@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/app_page_background.dart';
 import '../legal/legal_documents.dart';
 import '../widgets/campus/campus_theme.dart';
 class LegalDocumentsScreen extends StatelessWidget {
@@ -16,16 +17,19 @@ class LegalDocumentsScreen extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? CampusTheme.darkBg : CampusTheme.bg;
     final initial = initialDocumentId == null
         ? null
         : LegalDocuments.byId(initialDocumentId!);
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: AppPageBackground.color(context, bg),
       appBar: AppBar(
-        backgroundColor: bg,
+        backgroundColor: AppPageBackground.color(context, bg),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,

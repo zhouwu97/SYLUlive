@@ -4,6 +4,7 @@ import '../cached_avatar.dart';
 import 'ranking_tokens.dart';
 import '../../utils/rating_time_formatter.dart';
 import 'rating_action_row.dart';
+import '../app_card.dart';
 
 class RatingItemCard extends StatelessWidget {
   final String userName;
@@ -45,7 +46,7 @@ class RatingItemCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
+    return AppCardSurface(
       decoration: RankingTokens.cardDecoration(isDark),
       clipBehavior: Clip.antiAlias,
       child: Padding(

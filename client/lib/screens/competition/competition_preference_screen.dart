@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -269,7 +270,7 @@ class _CompetitionPreferenceScreenState
         if (didPop || !_isDirty) return;
         final leave = await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
+          builder: (context) => AppAlertDialog(
             title: const Text('放弃未保存的修改？'),
             content: const Text('返回后，本次修改不会保留。'),
             actions: [

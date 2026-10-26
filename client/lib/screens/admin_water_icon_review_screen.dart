@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -55,7 +57,7 @@ class _AdminWaterIconReviewScreenState
     final reasonController = TextEditingController();
     final bool? confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: Text(isApprove ? '同意更换头像' : '拒绝更换头像'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -123,7 +125,7 @@ class _AdminWaterIconReviewScreenState
       appBar: AppBar(
         title: const Text('版块图标审核'),
         actions: [
-          PopupMenuButton<String>(
+          AppPopupMenuButton<String>(
             initialValue: _statusFilter,
             onSelected: (val) {
               setState(() => _statusFilter = val);

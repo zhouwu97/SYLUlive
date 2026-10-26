@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../../widgets/app_choice_chip.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -673,7 +675,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       ),
       child: Column(
         children: [
-          Container(
+          AppCardSurface(
             height: 46,
             padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
@@ -699,6 +701,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                     textInputAction: TextInputAction.search,
                     onSubmitted: (_) => _submitSearch(),
                     decoration: InputDecoration(
+                      filled: false,
                       hintText: '搜索比赛 / 专业方向 / 标签',
                       hintStyle: TextStyle(
                         color: CompetitionUiTokens.subColor(isDark),
@@ -927,7 +930,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
             for (var index = 0; index < tabs.length; index++) ...[
               SizedBox(
                 height: 34,
-                child: ChoiceChip(
+                child: AppChoiceChip(
                   label: Text(tabs[index].$2),
                   labelPadding: const EdgeInsets.symmetric(horizontal: 7),
                   padding: const EdgeInsets.symmetric(horizontal: 7),
@@ -1389,7 +1392,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       backgroundColor: Colors.transparent,
       builder: (sheetContext) => SafeArea(
         top: false,
-        child: Container(
+        child: AppCardSurface(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
           decoration: BoxDecoration(
             color: CompetitionUiTokens.pageBg(isDark),
@@ -2120,7 +2123,7 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
       minChildSize: 0.45,
       maxChildSize: 0.92,
       builder: (context, scrollController) {
-        return Container(
+        return AppCardSurface(
           decoration: BoxDecoration(
             color: CompetitionUiTokens.pageBg(isDark),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -2304,7 +2307,7 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
 
   Widget _choiceChip(String label, bool selected, VoidCallback onTap) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return ChoiceChip(
+    return AppChoiceChip(
       label: Text(label),
       selected: selected,
       onSelected: (_) => onTap(),
@@ -2448,7 +2451,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
     final dio = context.read<AuthProvider>().dio;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: const Text('删除比赛'),
         content: Text('确定从我的计划删除「${item['title'] ?? '未命名比赛'}」吗？'),
         actions: [

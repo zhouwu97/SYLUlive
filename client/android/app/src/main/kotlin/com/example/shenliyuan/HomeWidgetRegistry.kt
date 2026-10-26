@@ -4,6 +4,7 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
+import android.os.Build
 
 enum class NativeHomeWidgetSize(val storageName: String) {
     SIZE_2X2("2x2"),
@@ -108,6 +109,7 @@ object HomeWidgetRegistry {
         }
     }
 
+    @Synchronized
     fun refreshAll(context: Context): Int {
         val manager = AppWidgetManager.getInstance(context)
         var refreshed = 0
@@ -117,7 +119,7 @@ object HomeWidgetRegistry {
                 manager.updateAppWidget(id, HomeWidgetRenderer.build(context, id, variant))
                 refreshed += 1
             }
-            if (ids.isNotEmpty()) {
+            if (ids.isNotEmpty() && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
                 manager.notifyAppWidgetViewDataChanged(ids, variant.listViewId)
             }
         }

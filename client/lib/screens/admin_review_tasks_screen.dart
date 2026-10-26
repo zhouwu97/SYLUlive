@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -400,7 +401,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     final reasonController = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Text(approve ? '通过整改复审' : '驳回整改复审'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -607,7 +608,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       context: context,
       useRootNavigator: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
+        builder: (ctx, setDialogState) => AppAlertDialog(
           title: Text('驳回「${evaluation.courseName}」评价？'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -765,7 +766,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       int pendingId, int keeperId, String keeperName) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('确认合并到已有教师'),
         content: Text(
             '确定将此待审教师合并到已有教师「$keeperName」吗？\n\n合并后该待审教师原名称将自动登记为别名，避免后续再次重复提交。'),
@@ -1032,7 +1033,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       useRootNavigator: false,
       builder: (ctx) {
         final controller = TextEditingController();
-        return AlertDialog(
+        return AppAlertDialog(
           title: Text('驳回「$name」？'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1097,7 +1098,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     return showDialog<String>(
       context: context,
       useRootNavigator: false,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Text(title),
         content: TextField(
           controller: controller,
@@ -1679,7 +1680,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
 
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Row(
           children: [
             const Icon(Icons.compare_arrows_rounded,
@@ -1802,7 +1803,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                           ),
                         ),
                       ],
-                      const Divider(height: 16),
+                      const AppCardDivider(height: 16),
                       if (snapshot.title.isNotEmpty) ...[
                         Text(
                           snapshot.title,
@@ -1871,7 +1872,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                           ),
                         ],
                       ),
-                      const Divider(height: 16),
+                      const AppCardDivider(height: 16),
                       if (item.postTitle.isNotEmpty) ...[
                         Text(
                           item.postTitle,
@@ -1938,7 +1939,8 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         '${two(local.hour)}:${two(local.minute)}';
   }
 
-  Widget _buildEmptyState(bool isDark) {    return Container(
+  Widget _buildEmptyState(bool isDark) {
+    return AppCardSurface(
       padding: const EdgeInsets.all(AppSpacing.xxl),
       decoration: BoxDecoration(
         gradient: LinearGradient(

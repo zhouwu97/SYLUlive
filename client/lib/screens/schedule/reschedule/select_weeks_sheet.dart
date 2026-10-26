@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import '../../../providers/course_schedule_provider.dart';
 import '../../../theme/app_theme_tokens.dart';
@@ -114,7 +115,7 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
 
     return SafeArea(
       top: false,
-      child: Container(
+      child: AppCardSurface(
         padding: EdgeInsets.only(
           left: 20,
           right: 20,
@@ -173,7 +174,7 @@ class _SelectWeeksSheetState extends State<SelectWeeksSheet> {
               style: TextStyle(fontSize: 12, color: tokens.textSecondary),
             ),
             const SizedBox(height: 16),
-            Divider(color: tokens.divider),
+            AppCardDivider(color: tokens.divider),
             const SizedBox(height: 12),
             Text(
               '修改范围',

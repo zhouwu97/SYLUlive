@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -969,7 +970,7 @@ class _CompetitionAdminCenterScreenState
   ) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Text('确认$actionName'),
         content: Text('确认要将该比赛$actionName吗？'),
         actions: [
@@ -1239,7 +1240,7 @@ class _AdminFilterSheetState extends State<_AdminFilterSheet> {
       maxChildSize: 0.9,
       builder: (context, scrollController) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
-        return Container(
+        return AppCardSurface(
           decoration: BoxDecoration(
             color: CompetitionUiTokens.pageBg(isDark),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),

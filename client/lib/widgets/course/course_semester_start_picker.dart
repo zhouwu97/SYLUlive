@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../models/course_term.dart';
+import '../app_card.dart';
 import '../campus/campus_theme.dart';
 
 /// A bottom-sheet week picker for setting the semester start date.
@@ -135,7 +138,7 @@ class _PickerContentState extends State<_PickerContent> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final height = MediaQuery.of(context).size.height * 0.75;
 
-    return Container(
+    return AppCardSurface(
       height: height,
       decoration: BoxDecoration(
         color: isDark ? CampusTheme.darkCard : CampusTheme.card,
@@ -441,6 +444,7 @@ class _PickerContentState extends State<_PickerContent> {
 
   Widget _buildBottomArea() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
     final primary = _primary(context)!;
 
     return Container(
@@ -451,8 +455,10 @@ class _PickerContentState extends State<_PickerContent> {
         bottom: MediaQuery.of(context).padding.bottom + 16,
       ),
       decoration: BoxDecoration(
-        color: isDark ? CampusTheme.darkCard : CampusTheme.card,
-        boxShadow: [
+        color: glass
+            ? Colors.transparent
+            : (isDark ? CampusTheme.darkCard : CampusTheme.card),
+        boxShadow: glass ? null : [
           BoxShadow(
               color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 10,

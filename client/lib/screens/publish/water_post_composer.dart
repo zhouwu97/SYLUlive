@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -562,7 +564,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     final sections = provider.sections.isNotEmpty
         ? provider.activeSections
         : kWaterPostCategories.map(WaterSection.fromLegacyCategory).toList();
-    final selected = await showModalBottomSheet<String>(
+    final selected = await showAppModalBottomSheet<String>(
       context: context,
       useSafeArea: true,
       showDragHandle: true,
@@ -764,7 +766,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                 Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                  child: Divider(
+                  child: AppCardDivider(
                     height: 1,
                     color: isDark
                         ? AppColors.composerDividerDark

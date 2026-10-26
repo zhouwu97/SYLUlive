@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import '../../widgets/app_card.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -341,7 +343,7 @@ class _TeamRecruitmentCenterScreenState
   }
 
   void _showMoreStatus() {
-    showModalBottomSheet<void>(
+    showAppModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
@@ -365,7 +367,7 @@ class _TeamRecruitmentCenterScreenState
 
   void _showSort() {
     final sortDark = Theme.of(context).brightness == Brightness.dark;
-    showModalBottomSheet<void>(
+    showAppModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
@@ -474,7 +476,7 @@ class _StatusSegment extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(children: [
       Expanded(
-        child: Container(
+        child: AppCardSurface(
           height: 40,
           padding: const EdgeInsets.all(3),
           decoration: BoxDecoration(
@@ -528,8 +530,10 @@ class _SearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return SizedBox(
+    return AppCardSurface(
       height: 44,
+      decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(14)),
       child: TextField(
         controller: controller,
         onChanged: onChanged,
@@ -537,7 +541,7 @@ class _SearchBar extends StatelessWidget {
         decoration: InputDecoration(
           hintText: '搜索竞赛、项目、技能或关键词',
           prefixIcon: const Icon(Icons.search_rounded),
-          filled: true,
+          filled: false,
           fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
           border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),

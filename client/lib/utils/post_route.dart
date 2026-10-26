@@ -20,6 +20,7 @@ Route buildPostDetailRoute(
         ? PollDetailScreen(
             pollId: post.pollMeta!.id,
             initialPost: post,
+            targetReplyId: targetReplyId,
             isDesktopSplitMode: isDesktopSplitMode,
             hideBackButton: hideBackButton,
             onAuthorTap: onAuthorTap)

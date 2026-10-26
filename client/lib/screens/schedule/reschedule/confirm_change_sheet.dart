@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import '../../../providers/course_schedule_provider.dart';
 import '../../../services/schedule/schedule_conflict_service.dart';
@@ -42,7 +43,7 @@ class ConfirmChangeSheet extends StatelessWidget {
 
     return SafeArea(
       top: false,
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         decoration: BoxDecoration(
           color: tokens.surface,

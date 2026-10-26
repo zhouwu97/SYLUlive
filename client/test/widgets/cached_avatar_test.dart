@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/config/api_constants.dart';
@@ -54,5 +55,17 @@ void main() {
       ApiConstants.fullUrl(source),
     ]);
     expect(avatarImageCandidates(''), isEmpty);
+  });
+
+  testWidgets('头像占位保留完整的 emoji 字素，不截断 UTF-16', (tester) async {
+    for (final initial in ['😀', '👩🏽‍🎓', 'e\u0301']) {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: CachedAvatar(fallbackText: '$initial同学'),
+        ),
+      ));
+      expect(tester.takeException(), isNull);
+      expect(find.text(initial.toUpperCase()), findsOneWidget);
+    }
   });
 }

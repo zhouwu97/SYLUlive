@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import '../../utils/edu_semester_utils.dart';
 
@@ -33,7 +35,7 @@ class SemesterSelector extends StatelessWidget {
   void _showPicker(BuildContext context) {
     final semesters = EduSemester.buildSemesterList(enrollmentYear);
 
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -50,7 +52,7 @@ class SemesterSelector extends StatelessWidget {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
-              const Divider(height: 1),
+              const AppCardDivider(height: 1),
               ...semesters.map(
                 (s) {
                   final isSelected =
@@ -113,7 +115,7 @@ class SemesterSelector extends StatelessWidget {
       child: InkWell(
         onTap: () => _showPicker(context),
         borderRadius: BorderRadius.circular(12),
-        child: Container(
+        child: AppCardSurface(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: Theme.of(context).brightness == Brightness.dark

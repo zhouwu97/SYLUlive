@@ -89,23 +89,27 @@ class HomeWidgetAppearance {
     required this.theme,
     required this.title,
     this.fontSize = HomeWidgetFontSize.standard,
+    this.frostedGlass = false,
   });
 
   final HomeWidgetKind kind;
   final HomeWidgetTheme theme;
   final String title;
   final HomeWidgetFontSize fontSize;
+  final bool frostedGlass;
 
   HomeWidgetAppearance copyWith({
     HomeWidgetTheme? theme,
     String? title,
     HomeWidgetFontSize? fontSize,
+    bool? frostedGlass,
   }) {
     return HomeWidgetAppearance(
       kind: kind,
       theme: theme ?? this.theme,
       title: title ?? this.title,
       fontSize: fontSize ?? this.fontSize,
+      frostedGlass: frostedGlass ?? this.frostedGlass,
     );
   }
 }
@@ -137,6 +141,9 @@ class HomeWidgetPreferenceKeys {
         HomeWidgetKind.course => courseFontSize,
         HomeWidgetKind.exam => examFontSize,
       };
+
+  static String frostedGlass(HomeWidgetKind kind) =>
+      'widget_${kind.storageName}_frosted_glass';
 }
 
 /// Flutter 预览与 Android RemoteViews 共用的语义字号角色。

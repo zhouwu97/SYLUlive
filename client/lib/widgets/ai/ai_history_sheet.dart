@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -27,7 +29,7 @@ class _AiHistorySheetState extends State<AiHistorySheet> {
       maxChildSize: 0.82,
       expand: false,
       builder: (context, scrollController) {
-        return Container(
+        return AppCardSurface(
           decoration: BoxDecoration(
             color: colors.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
@@ -146,7 +148,7 @@ class _AiHistorySheetState extends State<AiHistorySheet> {
                                     onDelete: () async {
                                       final confirmed = await showDialog<bool>(
                                         context: context,
-                                        builder: (dialogContext) => AlertDialog(
+                                        builder: (dialogContext) => AppAlertDialog(
                                           title: const Text('删除会话？'),
                                           content:
                                               const Text('删除后无法恢复其中的问答记录。'),

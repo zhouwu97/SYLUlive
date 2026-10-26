@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import '../storage/academic_credential_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -427,7 +428,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
 
         return PopScope(
           canPop: false,
-          child: AlertDialog(
+          child: AppAlertDialog(
             title: Text(widget.changeIdentity
                 ? '更换教务学号'
                 : (serverBinding ? '绑定教务账号' : '本机直连教务')),

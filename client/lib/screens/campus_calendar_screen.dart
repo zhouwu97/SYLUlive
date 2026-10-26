@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -502,7 +503,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
               if (importedExams.isNotEmpty && events.isNotEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Divider(height: 1),
+                  child: AppCardDivider(height: 1),
                 ),
               if (events.isNotEmpty) ...[
                 if (importedExams.isNotEmpty)
@@ -530,7 +531,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
   }
 
   void _selectSemester(CampusCalendar calendar) {
-    showModalBottomSheet<void>(
+    showAppModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
@@ -623,7 +624,7 @@ class _CalendarActionSheet extends StatelessWidget {
                 isDark: isDark,
                 onTap: onImportantEvents,
               ),
-              Divider(
+              AppCardDivider(
                 height: 1,
                 indent: 58,
                 color: isDark
@@ -657,7 +658,7 @@ class _CalendarSheetSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SafeArea(
         top: false,
-        child: Container(
+        child: AppCardSurface(
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1E222B) : Colors.white,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),

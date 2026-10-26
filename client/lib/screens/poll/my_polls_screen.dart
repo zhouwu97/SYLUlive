@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -42,7 +43,7 @@ class _MyPollsScreenState extends State<MyPollsScreen> with SingleTickerProvider
 
   Future<void> _delete(Post post) async {
     final pollId = post.pollMeta!.id;
-    final ok = await showDialog<bool>(context: context, builder: (context) => AlertDialog(title: const Text('删除投票？'), content: const Text('删除后不可恢复。'), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('删除'))])) ?? false;
+    final ok = await showDialog<bool>(context: context, builder: (context) => AppAlertDialog(title: const Text('删除投票？'), content: const Text('删除后不可恢复。'), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('删除'))])) ?? false;
     if (ok && mounted) { await context.read<PollProvider>().deletePoll(pollId); }
   }
 

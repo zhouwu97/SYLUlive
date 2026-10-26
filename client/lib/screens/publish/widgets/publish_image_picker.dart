@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -54,7 +55,7 @@ mixin PublishImagePickerMixin<T extends StatefulWidget> on State<T> {
   // ---------------------------------------------------------------------------
 
   void showImageSourceDialog() {
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       builder: (context) => SafeArea(
         child: Wrap(

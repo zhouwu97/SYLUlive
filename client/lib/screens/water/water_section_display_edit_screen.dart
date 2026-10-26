@@ -994,7 +994,7 @@ class _WaterSectionDisplayEditScreenState
                 ],
               ),
             ),
-            Container(
+            AppCardSurface(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF111315) : Colors.white,

@@ -1,3 +1,6 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../widgets/app_choice_chip.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -193,7 +196,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     final noteController = TextEditingController();
     final note = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: Text(falsePositive ? '标记为误报' : '标记已处理'),
         content: TextField(
           controller: noteController,
@@ -232,7 +235,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
   Future<void> _showEvent(SecurityEvent event) async {
     final account = _account;
     final isSuper = context.read<AuthProvider>().user?.isSuperAdmin == true;
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -370,7 +373,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => AppAlertDialog(
           title: const Text('临时封禁来源'),
           content: SingleChildScrollView(
             child: Column(
@@ -390,19 +393,19 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                   runSpacing: AppSpacing.xs,
                   children: [
                     if (routePrefix.isNotEmpty)
-                      ChoiceChip(
+                      AppChoiceChip(
                         label: Text('仅当前接口 $routePrefix'),
                         selected: scope == 'route',
                         onSelected: (_) =>
                             setDialogState(() => scope = 'route'),
                       ),
-                    ChoiceChip(
+                    AppChoiceChip(
                       label: const Text('账号与凭据链路'),
                       selected: scope == 'account',
                       onSelected: (_) =>
                           setDialogState(() => scope = 'account'),
                     ),
-                    ChoiceChip(
+                    AppChoiceChip(
                       label: const Text('全部高风险接口'),
                       selected: scope == 'all',
                       onSelected: (_) => setDialogState(() => scope = 'all'),
@@ -831,7 +834,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
       };
 
   Widget _buildFilters() {
-    Widget chip(String label, bool selected, VoidCallback onTap) => ChoiceChip(
+    Widget chip(String label, bool selected, VoidCallback onTap) => AppChoiceChip(
         label: Text(label), selected: selected, onSelected: (_) => onTap());
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import '../models/post.dart';
 import 'app_card.dart';
@@ -124,7 +125,7 @@ class PinnedPostSummaryBar extends StatelessWidget {
   }
 
   void _showPinnedSheet(BuildContext context) {
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       showDragHandle: true,
       builder: (_) {
@@ -132,7 +133,7 @@ class PinnedPostSummaryBar extends StatelessWidget {
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
           itemCount: posts.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
+          separatorBuilder: (_, __) => const AppCardDivider(height: 1),
           itemBuilder: (context, index) {
             final post = posts[index];
             final title = post.title.trim().isNotEmpty

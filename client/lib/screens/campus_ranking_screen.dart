@@ -161,7 +161,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
   Widget _buildSegmentedControl(bool isDark) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Container(
+      child: AppCardSurface(
         height: RankingTokens.tabHeight,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
@@ -297,7 +297,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
 
   Widget _buildSearchBar(bool isDark) => Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-        child: Container(
+        child: AppCardSurface(
           height: RankingTokens.searchHeight,
           decoration: BoxDecoration(
             color: RankingTokens.cardBg(isDark),
@@ -311,6 +311,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
               color: RankingTokens.titleColor(isDark),
             ),
             decoration: InputDecoration(
+              filled: false,
               hintText: _tabCtrl.index == 0
                   ? '搜索学科或教师...'
                   : '搜索专业...',
@@ -924,7 +925,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
 
             return Padding(
               padding: EdgeInsets.only(bottom: bottomInset),
-              child: Container(
+              child: AppCardSurface(
                 constraints: BoxConstraints(
                   maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.85,
                 ),
@@ -1300,7 +1301,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
 
             return Padding(
               padding: EdgeInsets.only(bottom: bottomInset),
-              child: Container(
+              child: AppCardSurface(
                 constraints: BoxConstraints(
                   maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.85,
                 ),

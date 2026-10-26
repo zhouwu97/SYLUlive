@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/post.dart';
+import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/poll_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
@@ -68,8 +70,22 @@ Map<String, dynamic> _replyJson() => {
       },
     };
 
-Widget _buildScreen(Dio dio, {Post? initialPost}) {
-  final auth = AuthProvider(dio, loadStoredAuth: false);
+class _NotificationAuth extends AuthProvider {
+  _NotificationAuth(super.dio) : super(loadStoredAuth: false);
+  int account = 7;
+  int generation = 0;
+  @override
+  User? get user => User(
+      id: account, studentId: '', nickname: '通知测试', createdAt: DateTime(2026));
+  @override
+  int get sessionGeneration => generation;
+  @override
+  bool get isLoggedIn => true;
+}
+
+Widget _buildScreen(Dio dio,
+    {Post? initialPost, int? targetReplyId, AuthProvider? notificationAuth}) {
+  final auth = notificationAuth ?? AuthProvider(dio, loadStoredAuth: false);
   return MultiProvider(
     providers: [
       ChangeNotifierProvider.value(value: auth),
@@ -77,12 +93,112 @@ Widget _buildScreen(Dio dio, {Post? initialPost}) {
       ChangeNotifierProvider(create: (_) => PostProvider(dio)),
     ],
     child: MaterialApp(
-      home: PollDetailScreen(pollId: 1, initialPost: initialPost),
+      home: PollDetailScreen(
+          pollId: 1, initialPost: initialPost, targetReplyId: targetReplyId),
     ),
   );
 }
 
 void main() {
+  testWidgets('投票回复深链定位后兼容旧服务消费单条通知并同步原生', (tester) async {
+    final nativeCalls = <MethodCall>[];
+    final writes = <Object?>[];
+    const channel = MethodChannel('shenliyuan/notification_open');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,
+        (call) async {
+      nativeCalls.add(call);
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
+        Object? data;
+        if (o.path == '/polls/1') {
+          data = _pollJson();
+        } else if (o.path == '/posts/1/replies') {
+          data = {'replies': [], 'total': 1};
+        } else if (o.path.endsWith('/context')) {
+          data = {'reply': _replyJson(), 'root_reply': _replyJson()};
+        } else if (o.path == '/notifications') {
+          data = [
+            {'id': 12, 'type': 'reply', 'post_id': 1, 'related_id': 21}
+          ];
+        } else if (o.method == 'POST' &&
+            o.path == '/notifications/read-selected') {
+          writes.add(o.data);
+          if ((o.data as Map).containsKey('post_id')) {
+            h.reject(DioException(
+                requestOptions: o,
+                response: Response(requestOptions: o, statusCode: 400)));
+            return;
+          }
+          data = {'updated': 1};
+        } else {
+          h.reject(DioException(requestOptions: o));
+          return;
+        }
+        h.resolve(Response(requestOptions: o, statusCode: 200, data: data));
+      }));
+    await tester.pumpWidget(_buildScreen(dio,
+        initialPost: Post.fromJson(_pollJson()),
+        targetReplyId: 21,
+        notificationAuth: _NotificationAuth(dio)));
+    await tester.pumpAndSettle();
+    expect(find.text('这是统一后的评论'), findsOneWidget);
+    expect(writes, [
+      {'post_id': 1, 'reply_id': 21},
+      {
+        'ids': [12]
+      }
+    ]);
+    expect(nativeCalls.single.arguments, {
+      'recipient_user_id': 7,
+      'ids': [12],
+      'reply_ids': [21]
+    });
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('目标读取期间切换账号不消费投票回复通知', (tester) async {
+    final gate = Completer<void>();
+    var writes = 0;
+    var locating = false;
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (o, h) async {
+        if (o.method == 'POST') {
+          writes++;
+        }
+        Object? data;
+        if (o.path == '/polls/1') {
+          data = _pollJson();
+        } else if (o.path.endsWith('/context')) {
+          locating = true;
+          await gate.future;
+          data = {'reply': _replyJson(), 'root_reply': _replyJson()};
+        } else if (o.path == '/posts/1/replies') {
+          data = {'replies': [], 'total': 1};
+        } else {
+          h.reject(DioException(requestOptions: o));
+          return;
+        }
+        h.resolve(Response(requestOptions: o, statusCode: 200, data: data));
+      }));
+    final auth = _NotificationAuth(dio);
+    await tester.pumpWidget(_buildScreen(dio,
+        initialPost: Post.fromJson(_pollJson()),
+        targetReplyId: 21,
+        notificationAuth: auth));
+    await tester.pumpAndSettle();
+    expect(locating, isTrue);
+    auth.account = 8;
+    auth.generation++;
+    auth.notifyListeners();
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(writes, 0);
+    expect(find.text('这是统一后的评论'), findsNothing);
+  });
   testWidgets('评论接口失败时投票主体仍然显示', (tester) async {
     final dio = Dio();
     dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
@@ -458,18 +574,22 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final initialComposerBottom = tester.getBottomLeft(
-      find.byKey(const ValueKey('post-reply-composer')),
-    ).dy;
+    final initialComposerBottom = tester
+        .getBottomLeft(
+          find.byKey(const ValueKey('post-reply-composer')),
+        )
+        .dy;
 
     final dpr = tester.view.devicePixelRatio;
     // 注入系统软键盘高度 300 逻辑像素 (300 * dpr 物理像素)
     tester.view.viewInsets = FakeViewPadding(bottom: 300 * dpr);
     await tester.pump();
 
-    final raisedComposerBottom = tester.getBottomLeft(
-      find.byKey(const ValueKey('post-reply-composer')),
-    ).dy;
+    final raisedComposerBottom = tester
+        .getBottomLeft(
+          find.byKey(const ValueKey('post-reply-composer')),
+        )
+        .dy;
 
     // 输入栏应被整体抬起 300 逻辑像素
     expect(initialComposerBottom - raisedComposerBottom, 300);

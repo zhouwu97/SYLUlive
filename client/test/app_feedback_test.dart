@@ -105,7 +105,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.bySubtype<AlertDialog>(), findsOneWidget);
     expect(find.text('QQ群号已复制到剪贴板'), findsOneWidget);
   });
 
@@ -147,7 +147,7 @@ void main() {
     await tester.tap(find.text('复制群号'));
     await tester.pump();
 
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.bySubtype<AlertDialog>(), findsOneWidget);
     expect(find.text('QQ群号已复制到剪贴板'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

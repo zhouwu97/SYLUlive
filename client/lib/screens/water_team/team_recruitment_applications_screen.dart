@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -135,7 +136,7 @@ class _TeamRecruitmentApplicationsScreenState
     if (accept) {
       final confirmed = await showDialog<bool>(
           context: context,
-          builder: (_) => AlertDialog(
+          builder: (_) => AppAlertDialog(
                 title: const Text('确认通过该申请？'),
                 content: const Text('通过后将占用一个招募名额。'),
                 actions: [
@@ -178,7 +179,7 @@ class _TeamRecruitmentApplicationsScreenState
     final controller = TextEditingController();
     final value = await showDialog<String>(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (_) => AppAlertDialog(
               title: const Text('拒绝申请'),
               content: TextField(
                   controller: controller,

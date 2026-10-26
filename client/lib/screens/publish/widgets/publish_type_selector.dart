@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -46,7 +47,7 @@ class PublishTypeSelector extends StatelessWidget {
 
         return SafeArea(
           top: false,
-          child: Container(
+          child: AppCardSurface(
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF171B24) : Colors.white,
               borderRadius:

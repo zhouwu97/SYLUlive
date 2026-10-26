@@ -572,6 +572,8 @@ class MainActivity : FlutterActivity() {
                             examTheme = call.argument("exam_theme"),
                             examTitle = call.argument("exam_title"),
                             examFontSize = call.argument("exam_font_size"),
+                            courseFrostedGlass = call.argument("course_frosted_glass"),
+                            examFrostedGlass = call.argument("exam_frosted_glass"),
                         )
                         refreshWidgets()
                         result.success(true)

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/edu_grade.dart';
+import '../app_card.dart';
 
 class GradeCourseItem extends StatelessWidget {
   final EduGrade grade;
@@ -39,7 +40,7 @@ class GradeCourseItem extends StatelessWidget {
     final gpaText =
         grade.gpa != null ? '绩点 ${grade.gpa!.toStringAsFixed(2)}' : '绩点 --';
 
-    final content = Container(
+    final content = AppCardSurface(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.fromLTRB(16, 14, 14, 13),
       decoration: BoxDecoration(

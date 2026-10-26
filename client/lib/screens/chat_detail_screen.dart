@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -1545,7 +1547,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
               SizedBox(
                 width: 44,
                 height: 44,
-                child: PopupMenuButton<String>(
+                child: AppPopupMenuButton<String>(
                   key: const ValueKey('chat-header-more'),
                   tooltip: '更多',
                   padding: EdgeInsets.zero,
@@ -2150,7 +2152,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
             : false;
     if (!mounted) return;
 
-    final action = await showModalBottomSheet<String>(
+    final action = await showAppModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(

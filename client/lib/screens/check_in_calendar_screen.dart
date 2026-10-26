@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -349,7 +351,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
       context: context,
       builder: (dialogContext) {
         final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
-        return AlertDialog(
+        return AppAlertDialog(
           title: const Text('使用补签卡'),
           content: Text(
             '确定补签 ${date.month} 月 ${date.day} 日吗？\n将消耗 1 张补签卡，并按连续签到规则补发经验。',
@@ -464,7 +466,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
   }
 
   Future<void> _showSuccessSheet(int streakDays, int earnedExp) {
-    return showModalBottomSheet<void>(
+    return showAppModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (context) {
@@ -896,7 +898,7 @@ class _CheckInSummary extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          Divider(
+          AppCardDivider(
             height: 1,
             color: foreground.withValues(alpha: 0.10),
           ),

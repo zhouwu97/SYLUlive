@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../../widgets/app_tab_bar_surface.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -49,7 +51,7 @@ class _MyTeamRecruitmentsScreenState extends State<MyTeamRecruitmentsScreen>
   Future<void> _deleteRecruitment(TeamRecruitment item) async {
     final confirmed = await showDialog<bool>(
           context: context,
-          builder: (dialogContext) => AlertDialog(
+          builder: (dialogContext) => AppAlertDialog(
             title: const Text('删除组队'),
             content: Text('“${item.title}”将从组队大厅和相关列表中移除，删除后无法恢复。'),
             actions: [
@@ -94,7 +96,7 @@ class _MyTeamRecruitmentsScreenState extends State<MyTeamRecruitmentsScreen>
           backgroundColor: AppPageBackground.color(context, pageColor),
           surfaceTintColor: Colors.transparent,
           title: const Text('我的组队'),
-          bottom: TabBar(
+          bottom: AppTabBarSurface(child: TabBar(
             controller: _tabs,
             indicatorColor: TeamUiTokens.accent(isDark),
             labelColor: TeamUiTokens.accent(isDark),
@@ -103,7 +105,7 @@ class _MyTeamRecruitmentsScreenState extends State<MyTeamRecruitmentsScreen>
               Tab(text: '我发起的 ${provider.myCreated.length}'),
               Tab(text: '我申请的 ${provider.myApplications.length}'),
             ],
-          )),
+          ))),
       body: provider.isLoadingMine && provider.myCreated.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : TabBarView(controller: _tabs, children: [
@@ -247,7 +249,7 @@ class _ApplicationItem extends StatelessWidget {
                           : () async {
                               final confirmed = await showDialog<bool>(
                                     context: context,
-                                    builder: (dialogContext) => AlertDialog(
+                                    builder: (dialogContext) => AppAlertDialog(
                                       title: const Text('撤回申请'),
                                       content:
                                           const Text('撤回后可在需要时重新申请，确定继续吗？'),
@@ -292,7 +294,7 @@ class _ApplicationItem extends StatelessWidget {
                         : () async {
                             final confirmed = await showDialog<bool>(
                                   context: context,
-                                  builder: (dialogContext) => AlertDialog(
+                                  builder: (dialogContext) => AppAlertDialog(
                                     title: const Text('退出队伍'),
                                     content: const Text('退出后名额会重新开放，确定继续吗？'),
                                     actions: [

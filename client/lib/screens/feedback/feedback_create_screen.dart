@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
@@ -164,7 +165,7 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
     if (_diagInfo == null) return;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF1E2226) : Colors.white,

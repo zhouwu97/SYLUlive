@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -76,7 +77,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       builder: (ctx) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
         return StatefulBuilder(
-          builder: (dialogContext, setDialogState) => AlertDialog(
+          builder: (dialogContext, setDialogState) => AppAlertDialog(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
@@ -95,7 +96,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   GlassContainer(
                     padding: const EdgeInsets.all(12),
                     borderRadius: 12,
-                    blur: 0,
+                    blur: 10,
                     opacity: isDark ? 0.1 : 0.05,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

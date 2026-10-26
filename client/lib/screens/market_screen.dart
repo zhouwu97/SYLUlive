@@ -324,7 +324,7 @@ class _MarketScreenState extends State<MarketScreen> {
       builder: (ctx) {
         return SafeArea(
           top: false,
-          child: Container(
+          child: AppCardSurface(
             padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
             decoration: BoxDecoration(
               color: _MarketTokens.cardBg(isDark),
@@ -419,7 +419,7 @@ class _MarketScreenState extends State<MarketScreen> {
           builder: (context, setSheetState) {
             return SafeArea(
               top: false,
-              child: Container(
+              child: AppCardSurface(
                 margin: const EdgeInsets.only(top: 80),
                 padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
                 decoration: BoxDecoration(
@@ -1267,7 +1267,7 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Widget _buildStaleErrorBanner(bool isDark, String error) {
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 
 import 'package:flutter/gestures.dart';
@@ -179,7 +180,7 @@ class _PostContentLinkTextState extends State<PostContentLinkText> {
   Future<void> _confirmOpen(Uri uri) async {
     final shouldOpen = await showDialog<bool>(
           context: context,
-          builder: (dialogContext) => AlertDialog(
+          builder: (dialogContext) => AppAlertDialog(
             title: const Text('打开网页？'),
             content: Text(
               '确定要跳转到以下网址吗？\n${uri.toString()}',

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 
 import '../widgets/app_page_background.dart';
@@ -43,7 +44,7 @@ class LegalDocumentsScreen extends StatelessWidget {
           ? ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 8),
               itemCount: LegalDocuments.all.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              separatorBuilder: (_, __) => const AppCardDivider(height: 1),
               itemBuilder: (context, index) {
                 final document = LegalDocuments.all[index];
                 return ListTile(

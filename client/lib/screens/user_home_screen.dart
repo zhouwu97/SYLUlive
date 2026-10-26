@@ -1,3 +1,5 @@
+import '../widgets/app_tab_bar_surface.dart';
+import '../widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:shenliyuan/utils/post_image_cache.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import '../config/api_constants.dart';
 import '../config/private_chat_policy.dart';
 import '../models/user.dart';
@@ -475,7 +478,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
           // 右侧帖子区域
           Expanded(
-            child: Container(
+            child: AppCardSurface(
               margin: const EdgeInsets.only(top: 16, right: 16, bottom: 16),
               decoration: BoxDecoration(
                 color: panelColor,
@@ -616,7 +619,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                 // 底部圆角标签栏
                 bottom: PreferredSize(
                   preferredSize: const Size.fromHeight(46),
-                  child: Container(
+                  child: AppTabBarSurface(
                     height: 46,
                     width: double.infinity,
                     decoration: BoxDecoration(
@@ -710,6 +713,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
 
     return ListView.builder(
+                addRepaintBoundaries: false,
       padding: padding,
       itemCount: _posts.length,
       itemBuilder: (context, index) {
@@ -762,6 +766,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
 
     return ListView.builder(
+                addRepaintBoundaries: false,
       padding: padding,
       itemCount: _marketPosts.length,
       itemBuilder: (context, index) {
@@ -1367,7 +1372,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         maxWidth: 420,
         maxHeight: MediaQuery.sizeOf(context).height * 0.82,
       ),
-      child: Container(
+      child: AppCardSurface(
+        key: const ValueKey('edit-profile-surface'),
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
           borderRadius: BorderRadius.circular(24),
@@ -1417,7 +1423,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   padding:
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.grey[800] : Colors.grey[100],
+                    color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                        ? Colors.transparent : isDark ? Colors.grey[800] : Colors.grey[100],
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -1446,7 +1453,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   padding:
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.grey[800] : Colors.grey[100],
+                    color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                        ? Colors.transparent : isDark ? Colors.grey[800] : Colors.grey[100],
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(

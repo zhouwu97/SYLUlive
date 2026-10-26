@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -24,7 +25,7 @@ class TeamApplicationSheet extends StatefulWidget {
     required int recruitmentId,
     required int postId,
   }) {
-    return showModalBottomSheet<TeamMutationResult?>(
+    return showAppModalBottomSheet<TeamMutationResult?>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,

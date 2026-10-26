@@ -110,7 +110,7 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 8),
-        const Divider(),
+        const AppCardDivider(),
         const SizedBox(height: 12),
         Row(
           children: [

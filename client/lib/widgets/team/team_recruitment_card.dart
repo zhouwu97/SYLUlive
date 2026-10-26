@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/team_recruitment.dart';
@@ -57,7 +58,7 @@ class TeamRecruitmentCard extends StatelessWidget {
                 TeamStatusBadge(status: status),
                 if (onDelete != null) ...[
                   const SizedBox(width: 2),
-                  PopupMenuButton<String>(
+                  AppPopupMenuButton<String>(
                     tooltip: '组队操作',
                     enabled: !isDeleting,
                     padding: EdgeInsets.zero,

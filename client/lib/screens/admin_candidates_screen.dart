@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../providers/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
@@ -272,7 +274,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
     return showDialog<String>(
       context: context,
       useRootNavigator: false,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Text(title),
         content: TextField(
           controller: controller,
@@ -336,7 +338,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         AppSpacing.lg,
         AppSpacing.xs,
       ),
-      child: DecoratedBox(
+      child: AppCardSurface(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -405,7 +407,8 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
     return Container(
       width: 1,
       height: 34,
-      color: isDark
+      color: context.watch<ThemeProvider?>()?.frostedGlass == true
+          ? Colors.transparent : isDark
           ? Colors.white.withValues(alpha: 0.1)
           : AppColors.borderSubtleLight,
     );
@@ -420,7 +423,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         AppSpacing.lg,
         AppSpacing.sm,
       ),
-      child: DecoratedBox(
+      child: AppCardSurface(
         decoration: BoxDecoration(
           color: isDark
               ? AppColors.surfaceSecondaryDark
@@ -437,7 +440,9 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
           onChanged: (_) => setState(() {}),
           onSubmitted: (_) => _searchCandidates(),
           textInputAction: TextInputAction.search,
+          textAlignVertical: TextAlignVertical.center,
           decoration: InputDecoration(
+            filled: false,
             prefixIcon: Icon(
               Icons.search_rounded,
               color: isDark
@@ -722,6 +727,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         controller: _scrollController,
         thumbVisibility: true,
         child: ListView.builder(
+                addRepaintBoundaries: false,
           controller: _scrollController,
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           physics: const AlwaysScrollableScrollPhysics(

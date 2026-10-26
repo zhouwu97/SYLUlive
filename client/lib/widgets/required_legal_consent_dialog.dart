@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -102,7 +103,7 @@ class _RequiredLegalConsentDialogState
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      child: AlertDialog(
+      child: AppAlertDialog(
         title: Text(widget.communityRulesOnly ? '请确认社区规则' : '请确认协议与隐私政策'),
         content: SingleChildScrollView(
           child: Column(

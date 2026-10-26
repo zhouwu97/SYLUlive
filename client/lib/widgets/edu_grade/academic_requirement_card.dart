@@ -184,7 +184,7 @@ class _AcademicRequirementCardState extends State<AcademicRequirementCard> {
       children: [
         for (var index = 0; index < courses.length; index++) ...[
           if (index > 0)
-            Divider(
+            AppCardDivider(
               height: 1,
               indent: 14,
               endIndent: 14,

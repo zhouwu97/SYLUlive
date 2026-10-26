@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -160,7 +161,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     if (!isOfficial) {
       final shouldOpen = await showDialog<bool>(
             context: context,
-            builder: (dialogContext) => AlertDialog(
+            builder: (dialogContext) => AppAlertDialog(
               title: const Text('打开外部链接？'),
               content: Text(
                 '该链接不属于学校官网，将交给系统浏览器打开：\n${uri.host}',

@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../widgets/app_tab_bar_surface.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
@@ -817,7 +819,7 @@ class _AdminTeacherGovernanceScreenState
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('确认执行课程合并'),
         content: Text(
           '将把「${_sourceCourse!.name}」(#${_sourceCourse!.id}) 并入「${_targetCourse!.name}」(#${_targetCourse!.id})。\n\n'
@@ -957,7 +959,7 @@ class _AdminTeacherGovernanceScreenState
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
+        builder: (ctx, setDialogState) => AppAlertDialog(
           title: Text(_aliasType == 'teacher' ? '添加教师别名' : '添加课程别名'),
           content: SingleChildScrollView(
             child: Column(
@@ -1087,7 +1089,7 @@ class _AdminTeacherGovernanceScreenState
   Future<void> _confirmDeleteAlias(GovernanceAliasItem item) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('确认删除别名'),
         content: Text('确定删除别名「${item.alias}」吗？\n删除后该名称将不再被自动解析至对应目标。'),
         actions: [
@@ -1299,7 +1301,7 @@ class _AdminTeacherGovernanceScreenState
             color: isDark ? Colors.white : AppColors.textPrimaryLight,
           ),
         ),
-        bottom: TabBar(
+        bottom: AppTabBarSurface(child: TabBar(
           controller: _tabController,
           isScrollable: false,
           labelColor: AppColors.brandPrimary,
@@ -1340,7 +1342,7 @@ class _AdminTeacherGovernanceScreenState
               ),
             ),
           ],
-        ),
+        )),
       ),
       body: SafeArea(
         top: false,
@@ -1367,10 +1369,11 @@ class _AdminTeacherGovernanceScreenState
     return Column(
       children: [
         // 步骤进度条
-        Container(
+        AppCardSurface(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
+            borderRadius: BorderRadius.zero,
             border: Border(
               bottom: BorderSide(
                 color: isDark ? Colors.white12 : AppColors.borderNormalLight,
@@ -1447,7 +1450,7 @@ class _AdminTeacherGovernanceScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 提示条
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
               color: AppColors.brandPrimary.withValues(alpha: isDark ? 0.15 : 0.08),
@@ -1861,7 +1864,7 @@ class _AdminTeacherGovernanceScreenState
             ),
           ),
 
-          const Divider(height: 24),
+          const AppCardDivider(height: 24),
 
           // 2. 授课教师迁移与合并方案
           Row(
@@ -2062,7 +2065,7 @@ class _AdminTeacherGovernanceScreenState
             }),
           ],
 
-          const Divider(height: 24),
+          const AppCardDivider(height: 24),
 
           // 3. 合并原因
           Text(
@@ -2596,7 +2599,7 @@ class _AdminTeacherGovernanceScreenState
         ),
         // 底部多选治理浮动栏 (跨搜索选择保留)
         if (_selectedTeachers.length >= 2) ...[
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.md, vertical: 10),
             decoration: BoxDecoration(
@@ -2895,7 +2898,7 @@ class _AdminTeacherGovernanceScreenState
                     ),
                   ],
                   const SizedBox(height: 8),
-                  const Divider(height: 1),
+                  const AppCardDivider(height: 1),
                   const SizedBox(height: 8),
                   // 合并条目
                   ...batchRecords.map((r) {
@@ -3245,7 +3248,7 @@ class _AdminTeacherGovernanceScreenState
               ),
               const SizedBox(height: 10),
             ],
-            const Divider(height: 1),
+            const AppCardDivider(height: 1),
             const SizedBox(height: 10),
             ...group.teachers.map((t) {
               final isSuggested = t.id == group.suggestedKeeperId;
@@ -3836,7 +3839,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final finalName = _finalTeacherNameCtrl.text.trim();
 
-    return Container(
+    return AppCardSurface(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.88,
       ),
@@ -3880,7 +3883,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
               ],
             ),
           ),
-          const Divider(height: 1),
+          const AppCardDivider(height: 1),
           Expanded(
             child: SingleChildScrollView(
               padding: EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm,
@@ -3935,7 +3938,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Divider(height: 1),
+                  const AppCardDivider(height: 1),
                   const SizedBox(height: 12),
 
                   // 第二部分：确认最终姓名与原因
@@ -3989,7 +3992,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
                   ),
 
                   const SizedBox(height: 12),
-                  const Divider(height: 1),
+                  const AppCardDivider(height: 1),
                   const SizedBox(height: 12),
 
                   // 第三部分：实体影响预览
@@ -4120,7 +4123,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
                                   ),
                                   value: CrossSubjectDecision.teacherOnly,
                                 ),
-                                Divider(height: 12),
+                                AppCardDivider(height: 12),
                                 RadioListTile<CrossSubjectDecision>(
                                   contentPadding: EdgeInsets.zero,
                                   activeColor: AppColors.brandPrimary,
@@ -4464,7 +4467,7 @@ class _GovernanceCoursePickerModalState
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
+    return AppCardSurface(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
@@ -4502,7 +4505,7 @@ class _GovernanceCoursePickerModalState
               ],
             ),
           ),
-          const Divider(height: 1),
+          const AppCardDivider(height: 1),
           Padding(
             padding: const EdgeInsets.all(AppSpacing.md),
             child: TextField(

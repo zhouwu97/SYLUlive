@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
@@ -104,7 +106,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     final ctrl = TextEditingController();
     final reason = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Text(approve ? '同意理由' : '驳回理由'),
         content: TextField(
           controller: ctrl,
@@ -255,7 +257,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           ],
         ),
         isThreeLine: true,
-        trailing: PopupMenuButton<String>(
+        trailing: AppPopupMenuButton<String>(
           onSelected: (v) => _handleUserAction(user, v),
           itemBuilder: (_) => [
             const PopupMenuItem(value: 'role', child: Text('修改角色')),
@@ -384,7 +386,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   void _showChangeRoleDialog(AdminUserSummary user) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('修改角色'),
         content: Text('用户: ${user.nickname}'),
         actions: [
@@ -434,7 +436,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   Future<void> _deleteUser(int uid) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('确认删除'),
         content: const Text('不可撤销'),
         actions: [
@@ -554,7 +556,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Text('追回 $adminName 的管理经验'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -817,7 +819,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   Future<void> _deleteLotteryEvent(dynamic eventId) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('删除抽奖'),
         content: const Text('确定删除当前抽奖吗？参与记录也会一起删除，此操作不可恢复。'),
         actions: [
@@ -862,7 +864,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   }) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: const Text('踢出用户'),
         content: Text('确定要将 $userLabel 踢出本次抽奖吗？'),
         actions: [
@@ -908,7 +910,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     final created = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
+        builder: (ctx, setDialogState) => AppAlertDialog(
           title: const Text('发布抽奖'),
           content: SingleChildScrollView(
             child: Column(

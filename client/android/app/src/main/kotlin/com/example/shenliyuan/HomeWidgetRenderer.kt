@@ -5,9 +5,10 @@ import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.util.TypedValue
-import android.view.View
 import android.widget.RemoteViews
+import android.widget.RemoteViewsService
 
 object HomeWidgetRenderer {
     fun build(
@@ -28,7 +29,8 @@ object HomeWidgetRenderer {
             null
         }
 
-        views.setInt(android.R.id.background, "setBackgroundResource", theme.backgroundResource)
+        // 材质覆盖整个根容器，列表行保持透明，避免出现局部实色块或叠加边框。
+        views.setInt(android.R.id.background, "setBackgroundResource", theme.backgroundResource(appearance.frostedGlass))
         views.setTextViewText(R.id.tv_widget_title, appearance.title)
         views.setTextViewTextSize(
             R.id.tv_widget_title,
@@ -42,22 +44,6 @@ object HomeWidgetRenderer {
             typography.emptySp,
         )
         views.setTextColor(R.id.empty_view, theme.mutedTextColor)
-
-        if (appearance.fontSize == NativeHomeWidgetFontSize.EXTRA_LARGE &&
-            variant.size == NativeHomeWidgetSize.SIZE_4X2
-        ) {
-            val itemCount = courseData?.courses?.size
-                ?: ExamDataReader.read(context).exams.size
-            views.setViewVisibility(
-                R.id.widget_center_divider,
-                if (itemCount > 1) View.VISIBLE else View.GONE,
-            )
-            views.setInt(
-                R.id.widget_center_divider,
-                "setBackgroundColor",
-                theme.dividerColor,
-            )
-        }
 
         if (variant.kind == NativeHomeWidgetKind.COURSE) {
             val data = checkNotNull(courseData)
@@ -93,6 +79,44 @@ object HomeWidgetRenderer {
         views.setOnClickPendingIntent(android.R.id.background, launchPendingIntent)
         views.setOnClickPendingIntent(R.id.empty_view, launchPendingIntent)
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // 背景、标题和条目使用同一次捕获的外观并一起提交。旧式服务转换／
+            // notify 会异步重发缓存的整页 RemoteViews，导致旧背景覆盖新主题。
+            val factory: RemoteViewsService.RemoteViewsFactory = if (variant.kind == NativeHomeWidgetKind.COURSE) {
+                CourseRemoteViewsFactory(context, variant, theme, typography, appearance.fontSize).apply { loadData() }
+            } else {
+                ExamRemoteViewsFactory(context, variant, theme, typography, appearance.fontSize).apply { loadData() }
+            }
+            val items = RemoteViews.RemoteCollectionItems.Builder()
+                .setHasStableIds(true)
+                .setViewTypeCount(factory.viewTypeCount)
+            for (position in 0 until factory.count) {
+                items.addItem(factory.getItemId(position), factory.getViewAt(position))
+            }
+            views.setRemoteAdapter(variant.listViewId, items.build())
+        } else {
+            setLegacyAdapter(context, views, appWidgetId, variant, theme, appearance.fontSize)
+        }
+        views.setEmptyView(variant.listViewId, R.id.empty_view)
+
+        val templatePendingIntent = PendingIntent.getActivity(
+            context,
+            baseRequestCode + 1,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+        )
+        views.setPendingIntentTemplate(variant.listViewId, templatePendingIntent)
+        return views
+    }
+
+    private fun setLegacyAdapter(
+        context: Context,
+        views: RemoteViews,
+        appWidgetId: Int,
+        variant: NativeWidgetVariant,
+        theme: HomeWidgetThemeConfig,
+        fontSize: NativeHomeWidgetFontSize,
+    ) {
         val serviceClass = if (variant.kind == NativeHomeWidgetKind.COURSE) {
             CourseWidgetService::class.java
         } else {
@@ -105,7 +129,7 @@ object HomeWidgetRenderer {
                 HomeWidgetRegistry.EXTRA_RESOLVED_THEME,
                 theme.resolvedTheme.storageName,
             )
-            putExtra(HomeWidgetRegistry.EXTRA_FONT_SIZE, appearance.fontSize.storageName)
+            putExtra(HomeWidgetRegistry.EXTRA_FONT_SIZE, fontSize.storageName)
             // RemoteViewsService 会按 Intent.filterEquals 缓存工厂；主题写进 data 才能让
             // 启动器在外观变化时放弃旧列表，避免新背景继续复用旧文字颜色。
             data = Uri.Builder()
@@ -114,20 +138,10 @@ object HomeWidgetRenderer {
                 .appendPath(appWidgetId.toString())
                 .appendQueryParameter(
                     "appearance",
-                    "${theme.resolvedTheme.storageName}-${appearance.fontSize.storageName}",
+                    "${theme.resolvedTheme.storageName}-${fontSize.storageName}",
                 )
                 .build()
         }
         views.setRemoteAdapter(variant.listViewId, serviceIntent)
-        views.setEmptyView(variant.listViewId, R.id.empty_view)
-
-        val templatePendingIntent = PendingIntent.getActivity(
-            context,
-            baseRequestCode + 1,
-            launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-        )
-        views.setPendingIntentTemplate(variant.listViewId, templatePendingIntent)
-        return views
     }
 }

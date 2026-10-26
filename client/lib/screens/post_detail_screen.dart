@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,6 +33,7 @@ import '../services/async_action_guard.dart';
 import '../services/idempotency_key.dart';
 import '../services/post_reply_cache.dart';
 import '../services/reply_notification_service.dart';
+import '../services/reply_notification_session.dart';
 import '../services/reply_notification_state.dart';
 import '../utils/app_feedback.dart';
 import '../utils/image_decode_size.dart';
@@ -125,7 +128,7 @@ class _PinPostDialogState extends State<_PinPostDialog> {
       dayOptions.add(30);
     }
 
-    return AlertDialog(
+    return AppAlertDialog(
       title: const Text('置顶到首页'),
       content: SingleChildScrollView(
         child: Column(
@@ -477,8 +480,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final targetId = _activeTargetReplyId;
     if (targetId == null) return;
     final auth = context.read<AuthProvider>();
-    final accountId = auth.user?.id;
-    final sessionGeneration = auth.sessionGeneration;
+    final session = ReplyNotificationSession.capture(auth);
 
     // 快速路径：目标已在已加载分页中 → 原有滚动/高亮逻辑。
     final loadedTarget = _replies.where((r) => r.id == targetId).firstOrNull;
@@ -516,9 +518,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     } catch (_) {
       return;
     }
-    if (!mounted ||
-        auth.user?.id != accountId ||
-        auth.sessionGeneration != sessionGeneration) {
+    if (!mounted || !session.isCurrent(auth)) {
       return;
     }
     // 目标是根评论本身时打开线程 sheet；子回复目标则锚定到该条并高亮。
@@ -534,24 +534,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
 
   Future<void> _consumeTargetReplyNotification(int replyId) async {
     final auth = context.read<AuthProvider>();
-    final accountId = auth.user?.id;
-    final generation = auth.sessionGeneration;
+    final session = ReplyNotificationSession.capture(auth);
+    final accountId = session.accountId;
     if (accountId == null) return;
-    final key = '$accountId:$generation:$replyId';
+    final key = '$accountId:${session.accountEpoch}:$replyId';
     if (!_consumedReplyNotificationTargets.add(key)) return;
     try {
-      await ReplyNotificationService(auth.dio).markReplyRead(
+      await ReplyNotificationService(auth.dio,
+          recipientUserId: accountId,
+          isCurrentSession: () => session.isCurrent(auth)).markReplyRead(
         postId: widget.postId,
         replyId: replyId,
       );
-      if (!mounted ||
-          auth.user?.id != accountId ||
-          auth.sessionGeneration != generation) {
+      if (!session.isCurrent(auth)) {
         return;
       }
       ReplyNotificationState.instance.requestRefresh(
         accountId: accountId,
-        sessionGeneration: generation,
+        sessionGeneration: auth.sessionGeneration,
       );
     } catch (_) {
       // 读取失败保留未读，下次定位允许重试；旧服务端仍可打开原帖。
@@ -1796,7 +1796,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       _dio.get('/user/revision-proposals/received'),
     ]);
     if (!mounted) return;
-    await showModalBottomSheet(
+    await showAppModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (ctx) {
@@ -1855,7 +1855,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final summaryController = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('提交修改版本'),
         content: SizedBox(
           width: 520,
@@ -2335,7 +2335,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     );
   }
 
-  /// 水帖专用 AppBar：不透明背景 + 分类入口 + 更多菜单
+  /// 水帖分类与操作栏沿用当前页面背景。
   PreferredSizeWidget _buildWaterAppBar(
     bool isDark, {
     required bool canEdit,
@@ -2344,8 +2344,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     required bool isAdmin,
   }) {
     return AppBar(
-      backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
-      elevation: 0.5,
+      backgroundColor: context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
+          ? Colors.transparent : isDark ? const Color(0xFF131720) : Colors.white,
+      surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
+      elevation: 0,
       automaticallyImplyLeading: !widget.hideBackButton,
       leadingWidth: widget.hideBackButton ? null : 56,
       leading: widget.hideBackButton ? null : const BackButton(),
@@ -2544,7 +2547,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         }
       }
 
-      entries.add(const Divider());
+      entries.add(const AppCardDivider());
     }
 
     if (isAdmin && _post?.boardId == 1) {
@@ -2605,7 +2608,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       }
     }
 
-    entries.add(const Divider());
+    entries.add(const AppCardDivider());
 
     if (_post != null &&
         (_post!.content.trim().isNotEmpty || _post!.title.trim().isNotEmpty)) {
@@ -2722,7 +2725,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(40),
-        child: Container(
+        child: AppCardSurface(
           padding: const EdgeInsets.all(28),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF171B24) : Colors.white,
@@ -4160,7 +4163,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   void _showReplySortSheet(bool isDark) {
-    showModalBottomSheet<void>(
+    showAppModalBottomSheet<void>(
       context: context,
       backgroundColor: isDark ? const Color(0xFF1E1E32) : Colors.white,
       shape: const RoundedRectangleBorder(
@@ -4415,7 +4418,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               margin: const EdgeInsets.only(left: 44, top: 4),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: isDark
+                color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                    ? Colors.transparent : isDark
                     ? Colors.white.withValues(alpha: 0.03)
                     : const Color(0xFFF8F9FA),
                 borderRadius: BorderRadius.circular(12),
@@ -4580,7 +4584,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1F222A) : const Color(0xFFF7F8FA),
+              color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                  ? Colors.transparent : isDark ? const Color(0xFF1F222A) : const Color(0xFFF7F8FA),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Column(
@@ -4807,7 +4812,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                     maxChildSize: 0.92,
                     expand: false,
                     builder: (context, scrollController) {
-                      return Container(
+                      return AppCardSurface(
+                        key: const ValueKey('reply-thread-surface'),
                         decoration: BoxDecoration(
                           color:
                               isDark ? const Color(0xFF171B24) : Colors.white,
@@ -4861,6 +4867,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                               ),
                             ),
                             PostReplyComposer(
+                              embedded: true,
                               controller: threadComposerController,
                               sending: isSending,
                               enabled: context.watch<AuthProvider>().isLoggedIn,
@@ -5143,8 +5150,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
+        AppCardDivider(
           height: 8,
+          thickness: 8,
           color: isDark ? Colors.black26 : const Color(0xFFF3F4F6),
         ),
         Padding(
@@ -5251,6 +5259,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           );
         },
         childCount: children.length + (hasTrailer ? 1 : 0),
+        addRepaintBoundaries:
+            context.watch<ThemeProvider?>()?.frostedGlass != true,
       ),
     );
   }
@@ -5755,7 +5765,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   void _showReplyActionSheet(Reply r, bool isOwn, bool isDark) {
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       backgroundColor: isDark ? const Color(0xFF1E1E32) : Colors.white,
       shape: const RoundedRectangleBorder(
@@ -5810,7 +5820,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final service = EmojiFavoriteService.instance;
     final isFavorite = await service.containsSticker(sticker.id);
     if (!mounted) return;
-    final shouldToggle = await showModalBottomSheet<bool>(
+    final shouldToggle = await showAppModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
@@ -5839,7 +5849,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final service = EmojiFavoriteService.instance;
     final isFavorite = await service.containsImage(normalizedUrl);
     if (!mounted) return;
-    final shouldToggle = await showModalBottomSheet<bool>(
+    final shouldToggle = await showAppModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
@@ -6118,7 +6128,7 @@ class _PremiumInputDialogState extends State<_PremiumInputDialog> {
     final titleColor = isDark ? Colors.white : const Color(0xFF2D3142);
     final accent = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
 
-    return AlertDialog(
+    return AppAlertDialog(
       backgroundColor: dialogBackground,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -6186,7 +6196,7 @@ class _PremiumOptionsDialog<T> extends StatelessWidget {
     final tileColor =
         isDark ? const Color(0x0AFFFFFF) : const Color(0x08000000);
 
-    return AlertDialog(
+    return AppAlertDialog(
       backgroundColor: dialogBackground,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

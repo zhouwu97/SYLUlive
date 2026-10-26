@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'competition_ui_tokens.dart';
 
@@ -41,7 +42,7 @@ class CompetitionBatchConfirmDialog extends StatelessWidget {
     final dangerColor = CompetitionUiTokens.dangerColor(isDark);
     final primaryColor = CompetitionUiTokens.accent(isDark);
 
-    return AlertDialog(
+    return AppAlertDialog(
       backgroundColor: bg,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Text(

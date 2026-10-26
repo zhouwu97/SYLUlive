@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 
 import '../../widgets/app_page_background.dart';
@@ -27,7 +28,7 @@ class GraduationChecklistScreen extends StatelessWidget {
             title: const Text('适用规则'),
             subtitle: Text(readiness.policyId),
           ),
-          const Divider(),
+          const AppCardDivider(),
           ...readiness.items.map(
             (item) => ListTile(
               contentPadding: EdgeInsets.zero,
@@ -38,7 +39,7 @@ class GraduationChecklistScreen extends StatelessWidget {
             ),
           ),
           if (readiness.warnings.isNotEmpty) ...[
-            const Divider(),
+            const AppCardDivider(),
             ...readiness.warnings.map(
               (warning) => ListTile(
                 contentPadding: EdgeInsets.zero,

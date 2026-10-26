@@ -1,3 +1,4 @@
+import '../widgets/app_page_background.dart';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -849,9 +850,9 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+    return AppPageBackground(builder: (context) => Scaffold(
+      backgroundColor: AppPageBackground.color(context,
+          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
       appBar: AppBar(
         title: const Text('体测成绩查询'),
         backgroundColor: Colors.transparent,
@@ -973,6 +974,6 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
           ),
         ),
       ),
-    );
+    ));
   }
 }

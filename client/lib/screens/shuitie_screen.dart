@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import '../widgets/app_card.dart';
 import 'dart:async';
 
@@ -40,6 +41,7 @@ import '../services/feed_session_service.dart';
 import '../services/post_cache_service.dart';
 import '../services/root_page_state_service.dart';
 import '../services/reply_notification_service.dart';
+import '../services/reply_notification_session.dart';
 import '../services/reply_notification_state.dart';
 import '../services/app_resume_coordinator.dart';
 import '../widgets/home_service_drawer.dart';
@@ -654,15 +656,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       return;
     }
 
-    final generation = authProvider.sessionGeneration;
+    final session = ReplyNotificationSession.capture(authProvider);
     final syncVersion = ReplyNotificationState.instance.version;
     try {
       final page =
           await ReplyNotificationService(authProvider.dio).fetchUnread();
       if (!mounted ||
           requestSerial != _unreadReplyLoadSerial ||
-          !authProvider.isLoggedIn ||
-          authProvider.sessionGeneration != generation ||
+          !session.isCurrent(authProvider) ||
           ReplyNotificationState.instance.version != syncVersion) {
         return;
       }
@@ -682,7 +683,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         .where((item) => item.id != notificationId)
         .toList(growable: false);
     final wasPresent = nextItems.length != _unreadReplyNotifications.length;
-    if (!wasPresent && _unreadReplyCount <= 0) return;
+    if (!wasPresent) {
+      // 重复进入已读历史不能再扣减其他回复；分页外的通知向服务端校准。
+      if (_unreadReplyCount > 0) unawaited(_loadUnreadReplyNotifications());
+      return;
+    }
     setState(() {
       _unreadReplyNotifications = nextItems;
       _unreadReplyCount = _unreadReplyCount > 0 ? _unreadReplyCount - 1 : 0;
@@ -722,8 +727,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (_openingUnreadReplyIds.contains(item.id)) return;
     _openingUnreadReplyIds.add(item.id);
     final authProvider = context.read<AuthProvider>();
-    final sessionGeneration = authProvider.sessionGeneration;
-    final accountIdOrNull = authProvider.user?.id;
+    final session = ReplyNotificationSession.capture(authProvider);
+    final accountIdOrNull = session.accountId;
     if (!authProvider.isLoggedIn || accountIdOrNull == null) {
       _openingUnreadReplyIds.remove(item.id);
       return;
@@ -731,11 +736,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final accountId = accountIdOrNull;
     try {
       final response = await authProvider.dio.get('/posts/${item.postId}');
-      if (!_isCurrentReplyNotificationSession(
-        authProvider,
-        accountId: accountId,
-        sessionGeneration: sessionGeneration,
-      )) {
+      if (!session.isCurrent(authProvider)) {
         return;
       }
       if (response.statusCode != 200 ||
@@ -744,15 +745,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       }
       final post = Post.fromJson(response.data as Map<String, dynamic>);
       try {
-        await ReplyNotificationService(authProvider.dio).markRead(item.id);
-        if (_isCurrentReplyNotificationSession(
-          authProvider,
-          accountId: accountId,
-          sessionGeneration: sessionGeneration,
-        )) {
+        await ReplyNotificationService(authProvider.dio,
+                recipientUserId: accountId,
+                isCurrentSession: () => session.isCurrent(authProvider))
+            .markRead(item.id, replyId: item.relatedId);
+        if (session.isCurrent(authProvider)) {
           ReplyNotificationState.instance.markRead(
             accountId: accountId,
-            sessionGeneration: sessionGeneration,
+            sessionGeneration: authProvider.sessionGeneration,
             notificationId: item.id,
           );
         }
@@ -762,26 +762,25 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           AppFeedback.showSnackBar(context, '标记已读失败，请重试', isError: true);
         }
       }
-      if (!mounted) return;
+      if (!mounted || !session.isCurrent(authProvider)) return;
       await Navigator.of(context).push(
         buildPostDetailRoute(post, targetReplyId: item.relatedId),
       );
       if (mounted) unawaited(_loadUnreadReplyNotifications());
     } on DioException catch (error) {
-      if (!mounted) return;
+      if (!mounted || !session.isCurrent(authProvider)) return;
       if (error.response?.statusCode == 404) {
         try {
-          await ReplyNotificationService(authProvider.dio).markRead(item.id);
-          if (!_isCurrentReplyNotificationSession(
-            authProvider,
-            accountId: accountId,
-            sessionGeneration: sessionGeneration,
-          )) {
+          await ReplyNotificationService(authProvider.dio,
+                  recipientUserId: accountId,
+                  isCurrentSession: () => session.isCurrent(authProvider))
+              .markRead(item.id, replyId: item.relatedId);
+          if (!session.isCurrent(authProvider)) {
             return;
           }
           ReplyNotificationState.instance.markRead(
             accountId: accountId,
-            sessionGeneration: sessionGeneration,
+            sessionGeneration: authProvider.sessionGeneration,
             notificationId: item.id,
           );
           if (mounted) {
@@ -1442,7 +1441,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
 
     return ColoredBox(
-      color: isDark ? const Color(0xFF131720) : Colors.white,
+      color: context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
+          ? Colors.transparent : isDark ? const Color(0xFF131720) : Colors.white,
       child: content,
     );
   }
@@ -1642,7 +1642,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('删除帖子'),
         content: const Text('删除后不可恢复，确定删除吗？'),
         actions: [
@@ -1713,7 +1713,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Widget _buildFeedTabs(bool isDark) {
     const tabWidth = 56.0;
-    const activeColor = AppColors.brandPrimary;
+    final activeColor =
+        isDark ? Theme.of(context).colorScheme.primary : AppColors.brandPrimary;
     final inactiveColor =
         isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
 
@@ -1945,7 +1946,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           ),
           const SizedBox(height: AppSpacing.xs),
           if (posts.isEmpty && !isFeedLoading)
-            Container(
+            AppCardSurface(
               height: 100,
               width: double.infinity,
               decoration: BoxDecoration(
@@ -3004,7 +3005,7 @@ class CheckInSuccessDialog extends StatelessWidget {
       insetPadding: const EdgeInsets.symmetric(horizontal: 32),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 304),
-        child: Container(
+        child: AppCardSurface(
           padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1D1F24) : Colors.white,

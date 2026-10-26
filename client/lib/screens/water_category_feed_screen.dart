@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -797,7 +798,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         user?.isSuperAdmin == true ||
         permission.isGlobalAdmin ||
         permission.isModerator;
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(

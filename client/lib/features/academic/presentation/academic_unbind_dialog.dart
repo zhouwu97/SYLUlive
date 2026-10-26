@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../application/academic_session_controller.dart';
@@ -10,7 +11,7 @@ Future<bool> confirmAcademicUnbind(BuildContext context) async {
   if (identity == null) return false;
   final confirmed = await showDialog<bool>(
     context: context,
-    builder: (dialogContext) => AlertDialog(
+    builder: (dialogContext) => AppAlertDialog(
       title: Text('解绑${identity.providerId.displayName}？'),
       content: Text(
           '将解除学号 ${identity.studentId} 的服务端可信学生身份，并移除云端教务配置及本机密码、会话和缓存。App 登录账号和其他教务账号不变，云端配置将在联网后同步。'),

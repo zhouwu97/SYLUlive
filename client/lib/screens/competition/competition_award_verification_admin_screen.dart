@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -353,7 +354,7 @@ class _CompetitionAwardVerificationDetailScreenState
     var note = '';
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: Text(approve ? '确认通过材料核验？' : '驳回材料核验？'),
         content: Column(
           mainAxisSize: MainAxisSize.min,

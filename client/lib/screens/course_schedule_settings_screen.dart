@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -144,7 +145,7 @@ class _CourseScheduleSettingsScreenState
 
   Future<void> _pickReminderMinutes() async {
     final sheetTheme = CampusTheme.withBrandAccent(Theme.of(context));
-    final selected = await showModalBottomSheet<int>(
+    final selected = await showAppModalBottomSheet<int>(
       context: context,
       showDragHandle: true,
       builder: (context) => Theme(
@@ -501,7 +502,7 @@ class _CourseSettingsSection extends StatelessWidget {
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
             ),
           ),
-          DecoratedBox(
+          AppCardSurface(
             decoration: BoxDecoration(
               color: isDark ? CampusTheme.darkCard : CampusTheme.card,
               borderRadius: BorderRadius.circular(16),

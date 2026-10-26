@@ -6,6 +6,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import 'cached_avatar.dart';
+import 'app_card.dart';
 
 /// 首页信息流中的未读回复摘要；展示本身不触发已读消费。
 class ReplyNotificationReminder extends StatelessWidget {
@@ -31,7 +32,7 @@ class ReplyNotificationReminder extends StatelessWidget {
       button: true,
       excludeSemantics: true,
       label: '互动回复，$count 条未读，查看',
-      child: Material(
+      child: AppCardMaterial(
         color: colors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -112,8 +113,9 @@ Future<void> showReplyNotificationList(
     context: context,
     useSafeArea: true,
     isScrollControlled: true,
+    backgroundColor: Colors.transparent,
     showDragHandle: true,
-    builder: (sheetContext) => Material(
+    builder: (sheetContext) => AppCardMaterial(
       color: Theme.of(sheetContext).colorScheme.surface,
       borderRadius: const BorderRadius.vertical(
         top: Radius.circular(AppRadius.sheet),
@@ -155,7 +157,7 @@ class _ReplyNotificationSheetContent extends StatelessWidget {
       shrinkWrap: items.length <= 6,
       physics: items.length <= 6 ? const NeverScrollableScrollPhysics() : null,
       itemCount: items.length,
-      separatorBuilder: (_, __) => Divider(
+      separatorBuilder: (_, __) => AppCardDivider(
         height: 1,
         color: colors.outlineVariant.withValues(alpha: 0.25),
       ),

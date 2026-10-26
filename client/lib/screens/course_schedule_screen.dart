@@ -1,3 +1,4 @@
+import '../widgets/app_dialog.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
@@ -757,7 +758,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }).toList()
       ..sort((a, b) => a.startSection.compareTo(b.startSection));
 
-    return Container(
+    return AppCardSurface(
       width: 320,
       margin: const EdgeInsets.only(right: 16, top: 16, bottom: 16, left: 16),
       decoration: BoxDecoration(
@@ -1405,7 +1406,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: const Text('从教务刷新'),
         content: const Text('将从教务系统重新拉取当前学期课表，并覆盖当前教务课表数据。自定义课程会保留。'),
         actions: [
@@ -1600,13 +1601,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             builder: (context, value, child) {
               return Transform.scale(
                 scale: value,
-                child: Container(
+                child: AppCardSurface(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 32,
                     vertical: 24,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? CampusTheme.darkCard : Colors.white,
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
@@ -1632,12 +1634,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      const Text(
+                      Text(
                         '导入成功！',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                          color: Theme.of(context).colorScheme.onSurface,
                           decoration: TextDecoration.none,
                         ),
                       ),
@@ -2197,7 +2199,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       context: context,
       builder: (dialogContext) => Theme(
         data: dialogTheme,
-        child: AlertDialog(
+        child: AppAlertDialog(
           title: const Text('后台保活授权'),
           content: const Text(
             '请在系统页面允许忽略电池优化、精确闹钟、自启动或后台运行。'
@@ -2291,7 +2293,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('开启课程提醒'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -2390,7 +2392,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => SafeArea(
           top: false,
-          child: Container(
+          child: AppCardSurface(
             constraints: BoxConstraints(
               maxHeight: MediaQuery.of(ctx).size.height * 0.7,
             ),
@@ -2480,10 +2482,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // 🔄 从教务系统刷新
-                        Container(
+                        AppCardSurface(
                           width: double.infinity,
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
+                            gradient: ctx.watch<ThemeProvider>().frostedGlass
+                                ? null : LinearGradient(
                               colors: [
                                 const Color(
                                   0xFF6366F1,
@@ -2592,7 +2595,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         const SizedBox(height: 16),
 
                         // 💾 保存当前为新存档
-                        Container(
+                        AppCardSurface(
                           width: double.infinity,
                           decoration: BoxDecoration(
                             color: isDark
@@ -2739,7 +2742,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
                         // 存档列表
                         if (sc.archives.isEmpty)
-                          Container(
+                          AppCardSurface(
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(vertical: 36),
                             decoration: tileDecoration(),
@@ -2803,7 +2806,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                 confirmDismiss: (_) async {
                                   return await showDialog<bool>(
                                     context: ctx,
-                                    builder: (dialogCtx) => AlertDialog(
+                                    builder: (dialogCtx) => AppAlertDialog(
                                       title: const Text('删除存档'),
                                       content: Text('确定删除"${archive.name}"吗？'),
                                       actions: [
@@ -2833,7 +2836,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   await sc.deleteArchive(archive.id);
                                   setSheetState(() {});
                                 },
-                                child: Container(
+                                child: AppCardSurface(
                                   decoration: tileDecoration(),
                                   child: Material(
                                     color: Colors.transparent,
@@ -3020,7 +3023,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   ) async {
     final shouldProceed = await showDialog<bool>(
       context: sheetCtx,
-      builder: (dialogCtx) => AlertDialog(
+      builder: (dialogCtx) => AppAlertDialog(
         title: const Text('从文件导入'),
         content: const Text(
           '请在接下来的文件选择器中选择你之前导出的课表 .json 文件。\n如果是通过微信/QQ等软件收发的，请前往对应软件的下载目录寻找。',
@@ -3239,7 +3242,7 @@ $classFilterRule
               isUndergraduate && RegExp(r'^\d{10}$').hasMatch(studentId)
                   ? studentId.substring(0, studentId.length - 2)
                   : '';
-          return AlertDialog(
+          return AppAlertDialog(
             title: Text(editCourse == null ? '添加自定义课程' : '编辑自定义课程'),
             content: SingleChildScrollView(
               child: Column(
@@ -3712,7 +3715,7 @@ $classFilterRule
         // 发现冲突，弹出三选一对话框
         showDialog(
           context: context,
-          builder: (dialogContext) => AlertDialog(
+          builder: (dialogContext) => AppAlertDialog(
             title: const Text("时间重叠提醒"),
             content: Text("检测到新导入的课程与已有课程\n\n$conflictNames\n\n存在时间重叠。请选择操作："),
             actions: [
@@ -4225,7 +4228,7 @@ $classFilterRule
         final tokens = AppThemeTokens.of(ctx);
         return SafeArea(
           top: false,
-          child: Container(
+          child: AppCardSurface(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
             decoration: BoxDecoration(
               color: tokens.surface,
@@ -4444,7 +4447,7 @@ $classFilterRule
   Future<void> _confirmDeleteCourse(CourseBlock c) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('删除课程'),
         content: const Text('确定要删除这门自定义课程吗？'),
         actions: [
@@ -4504,7 +4507,7 @@ class _SaveArchiveDialogState extends State<_SaveArchiveDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return AppAlertDialog(
       title: const Text('保存为存档'),
       content: TextField(
         controller: nameCtrl,

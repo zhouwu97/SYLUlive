@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -95,7 +97,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
   Future<void> _delete(CompetitionAward award) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: const Text('删除竞赛经历？'),
         content: Text('“${award.competitionTitle}”将从你的私有档案中删除。'),
         actions: [
@@ -143,7 +145,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
     }
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: Text(submit ? '提交材料核验？' : '取消材料核验？'),
         content: Text(
             submit ? '提交后，比赛信息和证明材料在核验完成前不可修改。' : '取消后将恢复为“本人填写”，你可以继续修改材料。'),
@@ -306,7 +308,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
                       dimension: 18,
                       child: CircularProgressIndicator(strokeWidth: 2)),
                 )
-              : PopupMenuButton<String>(
+              : AppPopupMenuButton<String>(
                   tooltip: '经历操作',
                   onSelected: (value) {
                     if (value == 'edit') _openEditor(award);

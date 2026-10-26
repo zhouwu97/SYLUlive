@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
@@ -320,7 +321,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                   ),
                   if (context.read<AuthProvider>().user?.id !=
                       (review['user_id'] as num?)?.toInt())
-                    PopupMenuButton<String>(
+                    AppPopupMenuButton<String>(
                       tooltip: '举报评价',
                       padding: EdgeInsets.zero,
                       onSelected: (_) => _reportDishReview(review),

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 
 import '../../widgets/responsive_content.dart';
@@ -123,7 +124,7 @@ class _ExamPaperAdminEditorScreenState
   Future<bool?> _confirm(String content) {
     return showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: const Text('请确认'),
         content: Text(content),
         actions: [

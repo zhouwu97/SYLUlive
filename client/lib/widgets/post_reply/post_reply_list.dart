@@ -1,5 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/theme_provider.dart';
 
 import '../../config/api_constants.dart';
 import '../../models/reply.dart';
@@ -19,6 +21,7 @@ class PostReplyList extends StatelessWidget {
     this.onLongPress,
     this.onLike,
     this.isLikePending,
+    this.replyKeys,
   });
 
   final List<Reply> replies;
@@ -28,6 +31,7 @@ class PostReplyList extends StatelessWidget {
   final ValueChanged<Reply>? onLongPress;
   final ValueChanged<Reply>? onLike;
   final bool Function(int replyId)? isLikePending;
+  final Map<int, GlobalKey>? replyKeys;
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +76,7 @@ class PostReplyList extends StatelessWidget {
       children: [
         for (final reply in topLevel) ...[
           PostReplyItem(
+            key: replyKeys?[reply.id],
             reply: reply,
             onReply: () => onReply(reply),
             onAuthorTap:
@@ -448,7 +453,8 @@ class _ChildReplySummary extends StatelessWidget {
       margin: const EdgeInsets.only(left: 46, top: 4),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: isDark
+        color: context.watch<ThemeProvider?>()?.frostedGlass == true
+            ? Colors.transparent : isDark
             ? Colors.white.withValues(alpha: 0.03)
             : const Color(0xFFF8F9FA),
         borderRadius: BorderRadius.circular(8),

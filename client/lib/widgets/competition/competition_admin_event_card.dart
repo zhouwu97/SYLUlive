@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/competition.dart';
@@ -159,7 +160,7 @@ class CompetitionAdminEventCard extends StatelessWidget {
                         child: const Text('恢复草稿'),
                       ),
                     if (event.mutable)
-                      PopupMenuButton<String>(
+                      AppPopupMenuButton<String>(
                         tooltip: '更多操作',
                         icon: Icon(
                           Icons.more_horiz_rounded,

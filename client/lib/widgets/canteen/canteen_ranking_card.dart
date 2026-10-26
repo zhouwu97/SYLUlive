@@ -1,3 +1,4 @@
+import '../app_card.dart';
 import 'package:flutter/material.dart';
 
 import '../../theme/app_motion.dart';
@@ -164,7 +165,7 @@ class _CanteenRankingCardState extends State<CanteenRankingCard> {
           ),
         ),
         const SizedBox(height: 12),
-        Divider(
+        AppCardDivider(
           height: 1,
           thickness: 0.5,
           color: CanteenTheme.borderColor(isDark),

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
@@ -117,7 +118,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     final nameCtrl = TextEditingController(text: '考试存档_$_currentSemester');
     final route = DialogRoute<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('导出存档'),
         content: TextField(
           controller: nameCtrl,
@@ -308,7 +309,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   Future<void> _deleteExam(ExamModel exam) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('确认删除'),
         content: Text('确定要删除“${exam.name}”吗？'),
         actions: [
@@ -370,7 +371,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
           final isDark = Theme.of(context).brightness == Brightness.dark;
-          return AlertDialog(
+          return AppAlertDialog(
             backgroundColor: isDark ? const Color(0xFF1E2235) : Colors.white,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
@@ -933,7 +934,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                     return await showDialog(
                       context: context,
                       builder: (BuildContext context) {
-                        return AlertDialog(
+                        return AppAlertDialog(
                           title: const Text("确认删除"),
                           content: const Text("确定要删除这场考试吗？"),
                           actions: [

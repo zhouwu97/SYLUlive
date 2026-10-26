@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -117,7 +118,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       // 不能因为 [_hasDraft] 被判成 false 就无声离开、让旧流程继续提交。
       final confirmed = await showDialog<bool>(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (_) => AppAlertDialog(
           title: const Text('取消本次发布？'),
           content: const Text('发布正在进行中，返回会取消这次提交。已经上传的图片不会发布。'),
           actions: [
@@ -146,7 +147,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (_) => AppAlertDialog(
         title: const Text('放弃编辑？'),
         content: const Text('当前填写的内容还没有发布，返回后会丢失。'),
         actions: [
@@ -996,7 +997,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   Widget _buildCardDivider(ColorScheme colorScheme) {
-    return Divider(
+    return AppCardDivider(
       height: 1,
       indent: 16,
       endIndent: 16,

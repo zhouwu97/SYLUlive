@@ -4,11 +4,13 @@ import 'package:provider/provider.dart';
 
 import '../controllers/post_reply_composer_controller.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
 import '../utils/app_feedback.dart';
 import '../utils/text_editing_helper.dart';
 import 'app_composer_bar.dart';
+import 'app_card.dart';
 import 'emoji/app_emoji_panel.dart';
 import 'emoji/favorite_image_composer_preview.dart';
 import 'emoji/local_image_composer_preview.dart';
@@ -29,6 +31,7 @@ class PostReplyComposer extends StatefulWidget {
     this.preserveReplyTargetOnSuccess = false,
     this.emojiPanelFallbackHeight,
     this.emojiPanelMaxHeight,
+    this.embedded = false,
   });
 
   final PostReplyComposerController controller;
@@ -40,6 +43,8 @@ class PostReplyComposer extends StatefulWidget {
   final bool preserveReplyTargetOnSuccess;
   final double? emojiPanelFallbackHeight;
   final double? emojiPanelMaxHeight;
+  /// 弹层已有统一材质时，输入栏沿用父表面，避免叠加两次不透明度。
+  final bool embedded;
 
   @override
   State<PostReplyComposer> createState() => _PostReplyComposerState();
@@ -238,12 +243,14 @@ class _PostReplyComposerState extends State<PostReplyComposer>
     required bool bottomSafeArea,
     required Widget child,
   }) {
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
-        color: isDark
+        borderRadius: BorderRadius.zero,
+        color: widget.embedded ? Colors.transparent : isDark
             ? AppColors.composerSurfaceDark
             : AppColors.composerSurfaceLight,
-        border: Border(
+        border: widget.embedded && context.watch<ThemeProvider?>()?.frostedGlass == true
+            ? null : Border(
           top: BorderSide(
             color: isDark
                 ? AppColors.composerDividerDark
@@ -252,6 +259,7 @@ class _PostReplyComposerState extends State<PostReplyComposer>
           ),
         ),
       ),
+      blur: widget.embedded ? 0 : 10,
       // 固定输入区父子结构，避免键盘高度变化时重建编辑器。
       child: SafeArea(
         top: false,

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -180,7 +181,7 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     if (dialogContext == null) return _retryLater(_showFailedDialog);
     final retry = await showDialog<bool>(
       context: dialogContext,
-      builder: (_) => AlertDialog(
+      builder: (_) => AppAlertDialog(
         title: const Text('更新包下载失败'),
         content: const Text('可以稍后重试，也可以前往 GitHub Releases 手动下载。'),
         actions: [
@@ -237,7 +238,7 @@ class _UpdateDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final active = downloadStatus.isActive;
     final ready = downloadStatus.state == AppUpdateDownloadState.ready;
-    return AlertDialog(
+    return AppAlertDialog(
       title: Text(required ? '需要更新沈理校园' : '发现新版本 ${info.latestVersionName}'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 260),

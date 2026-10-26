@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -199,7 +200,7 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
             : '社区评议未达到法定人数，以上票数仅作评议记录；最终由独立管理员复核。';
     await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: Text('案件 #${appeal['id']} · 已结案'),
         content: Text(
             '${appeal['result'] ?? '社区复核已完成'}\n\n支持申诉 ${appeal['support_count'] ?? 0} · 维持处理 ${appeal['oppose_count'] ?? 0}\n\n${isManual ? manualNote : '陪审员身份不公开。'}'),

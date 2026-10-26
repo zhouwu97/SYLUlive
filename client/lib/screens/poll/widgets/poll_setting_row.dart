@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import '../../../widgets/campus/campus_theme.dart';
 
@@ -57,7 +58,7 @@ class PollSettingRow extends StatelessWidget {
         if (showDivider)
           const Padding(
             padding: EdgeInsets.only(left: 47),
-            child: Divider(height: 1, thickness: 0.5, color: Color(0xFFE2EFEA)),
+            child: AppCardDivider(height: 1, thickness: 0.5, color: Color(0xFFE2EFEA)),
           ),
       ],
     );

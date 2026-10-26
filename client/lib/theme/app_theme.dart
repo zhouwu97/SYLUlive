@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_colors.dart';
 import 'app_radius.dart';
@@ -56,6 +57,8 @@ class AppTheme {
       // 全局紧凑密度
       visualDensity: VisualDensity.compact,
       appBarTheme: AppBarTheme(
+        systemOverlayStyle: brightness == Brightness.dark
+            ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,

@@ -221,7 +221,7 @@ class _WaterSectionDirectoryScreenState
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Container(
+        child: AppCardSurface(
           height: 44,
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1F2937) : Colors.white,

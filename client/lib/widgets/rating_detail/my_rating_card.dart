@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:flutter/material.dart';
 import 'ranking_tokens.dart';
 import '../app_card.dart';
@@ -54,7 +55,7 @@ class MyRatingCard extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               else
-                PopupMenuButton<String>(
+                AppPopupMenuButton<String>(
                   child: Padding(
                     padding: const EdgeInsets.only(
                         left: 8, right: 0, top: 4, bottom: 4),

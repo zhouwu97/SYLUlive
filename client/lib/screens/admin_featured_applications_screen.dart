@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
@@ -77,7 +78,7 @@ class _AdminFeaturedApplicationsScreenState
           final controller = TextEditingController();
           int points = 5;
           return StatefulBuilder(builder: (context, setState) {
-            return AlertDialog(
+            return AppAlertDialog(
               title: const Text('恶意驳回并扣分'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -152,7 +153,7 @@ class _AdminFeaturedApplicationsScreenState
     final controller = TextEditingController();
     return showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Text(title),
         content: TextField(
           controller: controller,

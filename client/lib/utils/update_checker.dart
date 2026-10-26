@@ -1,3 +1,4 @@
+import '../widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -33,7 +34,7 @@ class UpdateChecker {
       await showDialog<void>(
         context: context,
         useRootNavigator: true,
-        builder: (dialogContext) => AlertDialog(
+        builder: (dialogContext) => AppAlertDialog(
           title: const Text('检查更新'),
           content: const Text('当前已经是最新版本'),
           actions: [
@@ -63,7 +64,7 @@ class UpdateChecker {
   ) async {
     final install = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (_) => AppAlertDialog(
         title: Text('沈理校园 ${info.latestVersionName} 已准备好'),
         content: const Text('更新包已经下载并校验完成，现在安装吗？'),
         actions: [
@@ -87,7 +88,7 @@ class UpdateChecker {
   ) async {
     final useCurrentNetwork = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (_) => AppAlertDialog(
         title: Text('沈理校园 ${info.latestVersionName} 正在后台下载'),
         content: Text(
           '${_size(status.receivedBytes)} / ${_size(status.totalBytes)}'
@@ -118,7 +119,7 @@ class UpdateChecker {
   ) async {
     final download = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (_) => AppAlertDialog(
         title: Text('发现新版本 ${info.latestVersionName}'),
         content: Text(
             '${_size(info.fileSize)}\n\n${info.changelog.isEmpty ? '本次更新优化了使用体验。' : info.changelog}'),

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -57,7 +58,7 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
     if (_busy) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('解除来源封禁'),
         content: Text('将一次解除此操作的全部 ${block.routePrefixes.length} 个路由封禁。'),
         actions: [

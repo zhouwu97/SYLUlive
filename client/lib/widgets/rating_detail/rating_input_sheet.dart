@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'ranking_tokens.dart';
 import 'rating_star_picker.dart';
@@ -71,7 +72,7 @@ class _RatingInputSheetState extends State<_RatingInputSheet> {
     final accent = isDark ? const Color(0xFF80C4FC) : const Color(0xFF76C4FF);
     final viewInsets = MediaQuery.of(context).viewInsets;
 
-    return Container(
+    return AppCardSurface(
       margin: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 20),
       decoration: BoxDecoration(
         color: RankingTokens.cardBg(isDark),

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -254,7 +255,7 @@ class _EmojiDownloadScreenState extends State<EmojiDownloadScreen> {
                     .textTheme
                     .bodySmall
                     ?.copyWith(color: Theme.of(context).colorScheme.error))),
-      Divider(height: 1, color: emojiBorder(context)),
+      AppCardDivider(height: 1, color: emojiBorder(context)),
     ]);
   }
 }

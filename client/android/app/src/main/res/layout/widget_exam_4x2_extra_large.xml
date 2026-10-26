@@ -39,13 +39,6 @@
             android:stretchMode="columnWidth"
             android:verticalSpacing="0dp" />
 
-        <TextView
-            android:id="@+id/widget_center_divider"
-            android:layout_width="1dp"
-            android:layout_height="96dp"
-            android:layout_gravity="center"
-            android:background="#E5E7EB"
-            android:visibility="gone" />
     </FrameLayout>
 
     <TextView

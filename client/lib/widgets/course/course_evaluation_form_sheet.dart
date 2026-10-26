@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -36,7 +37,7 @@ class CourseEvaluationFormSheet extends StatefulWidget {
     CourseEvaluationResolveResult? resolveResult,
     CourseEvaluationSubmission? submission,
   }) {
-    return showModalBottomSheet(
+    return showAppModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(

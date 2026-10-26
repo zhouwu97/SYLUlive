@@ -132,7 +132,7 @@ class TeacherRatingItemCard extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.only(top: 8, bottom: 3),
-              child: Divider(
+              child: AppCardDivider(
                 height: 1,
                 color: RankingTokens.borderColor(isDark),
               ),

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -229,7 +230,7 @@ class _CampusArticleHtmlViewState extends State<CampusArticleHtmlView> {
       final isDark = Theme.of(context).brightness == Brightness.dark;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-        child: Divider(
+        child: AppCardDivider(
           height: 1,
           color:
               isDark ? AppColors.borderNormalDark : AppColors.borderNormalLight,

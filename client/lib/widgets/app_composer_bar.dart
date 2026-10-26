@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_colors.dart';
+import 'app_card.dart';
 
 typedef AppComposerCanSend = bool Function(TextEditingValue value);
 
@@ -117,11 +118,13 @@ class AppComposerBar extends StatelessWidget {
             ? AppColors.disabledControlTextDark
             : AppColors.disabledControlTextLight);
 
-    return Container(
+    return AppCardSurface(
       key: composerKey,
+      blur: decorate ? 10 : 0,
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
       decoration: decorate
           ? BoxDecoration(
+              borderRadius: BorderRadius.zero,
               color: effectiveShellColor,
               border: Border(
                 top: BorderSide(

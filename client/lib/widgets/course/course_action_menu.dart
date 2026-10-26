@@ -1,3 +1,4 @@
+import '../app_popup_menu.dart';
 import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
 
@@ -22,7 +23,7 @@ class CourseActionMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<CourseMenuAction>(
+    return AppPopupMenuButton<CourseMenuAction>(
       icon: Icon(
         Icons.more_horiz_rounded,
         color: isDark ? Colors.white : CampusTheme.text,

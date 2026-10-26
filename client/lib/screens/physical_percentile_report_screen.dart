@@ -306,7 +306,7 @@ class _PhysicalPercentileReportScreenState
             children: [
               _MetricRow(metric: entry.value, isDark: isDark),
               if (entry.key < metrics.length - 1)
-                Divider(
+                AppCardDivider(
                   height: 1,
                   thickness: 1,
                   color: isDark

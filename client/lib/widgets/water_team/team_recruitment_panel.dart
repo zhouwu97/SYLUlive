@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -56,7 +57,7 @@ class TeamRecruitmentPanel extends StatelessWidget {
   Future<void> _cancel(BuildContext context, TeamRecruitmentMeta meta) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (_) => AppAlertDialog(
         title: const Text('取消申请？'),
         content: const Text('取消后，招募仍开放时可以重新申请。'),
         actions: [
@@ -230,7 +231,7 @@ class TeamRecruitmentPanel extends StatelessWidget {
     final action = close ? '关闭' : '重新开启';
     final ok = await showDialog<bool>(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (_) => AppAlertDialog(
               title: Text('$action招募？'),
               content: Text(close
                   ? '关闭后其他用户将不能继续申请。'

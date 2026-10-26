@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
  * 刷新逻辑：
  * 1. 读取 SharedPreferences 最新数据
  * 2. 对每个 widget 实例重建 RemoteViews（更新标题/日期）
- * 3. 调用 notifyAppWidgetViewDataChanged 触发 ListView 重新加载
+ * 3. Android 12+ 整体提交条目；旧系统通知 ListView 重新加载
  */
 class WidgetUpdateWorker(
     appContext: Context,

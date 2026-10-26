@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/competition.dart';
@@ -44,7 +45,7 @@ class CompetitionMatchReasonSheet extends StatelessWidget {
     ];
     return SafeArea(
       top: false,
-      child: Container(
+      child: AppCardSurface(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.sizeOf(context).height * .84,
         ),

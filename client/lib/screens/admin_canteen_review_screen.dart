@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -113,7 +114,7 @@ class _AdminCanteenReviewScreenState extends State<AdminCanteenReviewScreen> {
       context: context,
       builder: (ctx) {
         final controller = TextEditingController();
-        return AlertDialog(
+        return AppAlertDialog(
           title: Text('驳回「$name」？'),
           content: Column(
             mainAxisSize: MainAxisSize.min,

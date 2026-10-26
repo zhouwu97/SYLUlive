@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import '../../widgets/app_page_background.dart';
 import '../../widgets/app_card.dart';
 import 'package:dio/dio.dart';
@@ -140,7 +141,7 @@ class CompetitionCatalogPackageDetailScreen extends StatelessWidget {
       int count(String key) => ((data[key] as List?) ?? const []).length;
       await showDialog<void>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
+        builder: (dialogContext) => AppAlertDialog(
           title: const Text('目录差异'),
           content: Text(
             '新增 ${count('added')} 条\n移除 ${count('removed')} 条\n变更 ${count('changed')} 条',

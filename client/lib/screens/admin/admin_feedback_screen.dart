@@ -1,3 +1,4 @@
+import '../../widgets/app_tab_bar_surface.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../widgets/app_page_background.dart';
@@ -252,12 +253,17 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
     return Container(
       width: 1,
       height: 24,
-      color: isDark ? Colors.white12 : const Color(0xFFE2EFEA),
+      color: context.watch<ThemeProvider>().frostedGlass
+          ? Colors.transparent : isDark ? Colors.white12 : const Color(0xFFE2EFEA),
     );
   }
 
   Widget _buildStatItem(String label, String count, Color color, int tabIndex) {
-    return InkWell(
+    return Material(
+      type: MaterialType.transparency,
+      clipBehavior: Clip.antiAlias,
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      child: InkWell(
       onTap: () => _selectTab(tabIndex),
       borderRadius: BorderRadius.circular(AppRadius.sm),
       child: Padding(
@@ -279,6 +285,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -514,8 +521,8 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
       body: Column(
         children: [
           _buildStatsHeader(isDark),
-          Container(
-            height: 40,
+          AppTabBarSurface(
+            height: 44,
             margin: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
               color: isDark
@@ -525,10 +532,13 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
             ),
             child: TabBar(
               controller: _tabController,
+              automaticIndicatorColorAdjustment: false,
               isScrollable: true,
               tabAlignment: TabAlignment.start,
               indicator: BoxDecoration(
-                color: isDark ? const Color(0xFF262C33) : Colors.white,
+                color: (isDark ? const Color(0xFF262C33) : Colors.white).withValues(
+                  alpha: themeProvider.frostedGlass && themeProvider.shouldShowCustomBackground
+                      ? themeProvider.componentOpacity : 1),
                 borderRadius: BorderRadius.circular(AppRadius.md - 2),
                 boxShadow: isDark
                     ? null
@@ -582,6 +592,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
                             },
                             color: AppColors.brandPrimary,
                             child: ListView(
+                              addRepaintBoundaries: false,
                               controller: _listScrollController,
                               physics: const AlwaysScrollableScrollPhysics(
                                 parent: BouncingScrollPhysics(),
@@ -601,6 +612,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
                             },
                             color: AppColors.brandPrimary,
                             child: ListView.builder(
+                              addRepaintBoundaries: false,
                               controller: _listScrollController,
                               physics: const AlwaysScrollableScrollPhysics(
                                 parent: BouncingScrollPhysics(),

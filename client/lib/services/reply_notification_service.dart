@@ -25,8 +25,17 @@ class UnreadReplyNotificationPage {
 
 class ReplyNotificationService {
   final Dio _dio;
+  final int? recipientUserId;
+  final bool Function()? isCurrentSession;
 
-  const ReplyNotificationService(this._dio);
+  const ReplyNotificationService(this._dio,
+      {this.recipientUserId, this.isCurrentSession});
+
+  void _checkSession() {
+    if (isCurrentSession?.call() == false) {
+      throw StateError('通知所属账号已切换');
+    }
+  }
 
   Future<UnreadReplyNotificationPage> fetchUnread({int limit = 20}) async {
     final safeLimit = limit.clamp(1, 20).toInt();
@@ -108,7 +117,11 @@ class ReplyNotificationService {
         .toList(growable: false);
   }
 
-  Future<void> markRead(int notificationId) async {
+  Future<void> markRead(int notificationId, {int? replyId}) async {
+    _checkSession();
+    if (notificationId <= 0) {
+      throw ArgumentError.value(notificationId, 'notificationId');
+    }
     final response = await _dio.post(
       '/notifications/read-selected',
       data: {
@@ -116,30 +129,101 @@ class ReplyNotificationService {
       },
     );
     _ensureSuccessful(response, '标记通知已读失败');
-    await _syncSystemRead(response);
+    await _syncSystemRead(response, fallback: {
+      'ids': [notificationId],
+      if (replyId != null && replyId > 0) 'reply_ids': [replyId],
+    });
   }
 
   Future<void> markAllRead() async {
+    _checkSession();
     final response = await _dio.post('/notifications/read');
     _ensureSuccessful(response, '全部标记已读失败');
     await _syncSystemRead(response);
   }
 
-  Future<void> markReplyRead({required int postId, required int replyId}) async {
-    final response = await _dio.post('/notifications/read-selected', data: {
-      'post_id': postId,
-      'reply_id': replyId,
-    });
+  Future<void> markReplyRead(
+      {required int postId, required int replyId}) async {
+    _checkSession();
+    if (postId <= 0 || replyId <= 0) throw ArgumentError('帖子和回复 ID 必须为正数');
+    Response<dynamic> response;
+    try {
+      response = await _dio.post('/notifications/read-selected', data: {
+        'post_id': postId,
+        'reply_id': replyId,
+      });
+      if (response.statusCode == 400) {
+        return _markLegacyReplyRead(postId, replyId);
+      }
+    } on DioException catch (error) {
+      if (error.response?.statusCode != 400) rethrow;
+      return _markLegacyReplyRead(postId, replyId);
+    }
     _ensureSuccessful(response, '标记回复已读失败');
-    await _syncSystemRead(response);
+    await _syncSystemRead(response, fallback: {
+      'reply_ids': [replyId]
+    });
   }
 
-  Future<void> _syncSystemRead(Response<dynamic> response) async {
+  Future<void> _markLegacyReplyRead(int postId, int replyId) async {
+    // 旧服务只接受通知 ID。按账号内列表的帖子＋回复精确反查，不能退化为全部已读。
+    String? cursor;
+    final cursors = <String>{};
+    for (var page = 0; page < 20; page++) {
+      _checkSession();
+      final response = await _dio.get('/notifications', queryParameters: {
+        'limit': 50,
+        if (cursor != null) 'cursor': cursor,
+      });
+      _checkSession();
+      _ensureSuccessful(response, '读取回复通知失败');
+      final data = response.data;
+      final raw = data is List ? data : (data is Map ? data['items'] : null);
+      if (raw is! List) throw StateError('通知接口返回格式错误');
+      final ids = raw
+          .whereType<Map>()
+          .where((item) =>
+              item['type'] == 'reply' &&
+              _id(item['post_id']) == postId &&
+              _id(item['related_id']) == replyId)
+          .map((item) => _id(item['id']))
+          .whereType<int>()
+          .where((id) => id > 0)
+          .toSet();
+      if (ids.isNotEmpty) {
+        for (final id in ids) {
+          await markRead(id, replyId: replyId);
+        }
+        return;
+      }
+      final next = data is Map ? data['next_cursor']?.toString() : null;
+      if (next == null || next.isEmpty || !cursors.add(next)) break;
+      cursor = next;
+    }
+    throw StateError('未找到目标回复通知，保留未读状态');
+  }
+
+  static int? _id(Object? value) =>
+      value is num ? value.toInt() : int.tryParse(value?.toString() ?? '');
+
+  Future<void> _syncSystemRead(Response<dynamic> response,
+      {Map<String, dynamic>? fallback}) async {
+    _checkSession();
     final data = response.data;
-    if (data is! Map || data['read_receipt'] is! Map) return;
+    final remote = data is Map ? data['read_receipt'] : null;
+    final receipt = remote is Map
+        ? Map<String, dynamic>.from(remote)
+        : recipientUserId != null && recipientUserId! > 0 && fallback != null
+            ? {'recipient_user_id': recipientUserId, ...fallback}
+            : null;
+    if (receipt == null ||
+        (recipientUserId != null &&
+            _id(receipt['recipient_user_id']) != recipientUserId)) {
+      return;
+    }
     try {
       await const MethodChannel('shenliyuan/notification_open')
-          .invokeMethod<void>('syncNotificationRead', data['read_receipt']);
+          .invokeMethod<void>('syncNotificationRead', receipt);
     } on MissingPluginException {
       // 非 Android 平台仍正常消费服务端已读状态。
     } on PlatformException {

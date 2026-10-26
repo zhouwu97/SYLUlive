@@ -5,6 +5,171 @@ import 'package:shenliyuan/services/reply_notification_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('旧服务无回执时，只同步当前账号已成功读取的单条通知', () async {
+    final calls = <MethodCall>[];
+    const channel = MethodChannel('shenliyuan/notification_open');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(
+          onRequest: (o, h) => h.resolve(Response(
+              requestOptions: o, statusCode: 200, data: {'updated': 1}))));
+    await ReplyNotificationService(dio, recipientUserId: 7)
+        .markRead(11, replyId: 13);
+    expect(calls.single.arguments, {
+      'recipient_user_id': 7,
+      'ids': [11],
+      'reply_ids': [13]
+    });
+  });
+
+  test('旧服务拒绝帖子回复条件时，翻页精确匹配通知 ID 再同步系统', () async {
+    final calls = <MethodCall>[];
+    final writes = <Object?>[];
+    const channel = MethodChannel('shenliyuan/notification_open');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
+        if (o.method == 'POST') {
+          writes.add(o.data);
+          if ((o.data as Map).containsKey('post_id')) {
+            h.reject(DioException(
+                requestOptions: o,
+                response: Response(
+                    requestOptions: o,
+                    statusCode: 400,
+                    data: {'error': 'ids不能为空'})));
+          } else {
+            h.resolve(Response(
+                requestOptions: o, statusCode: 200, data: {'updated': 1}));
+          }
+        } else {
+          final second = o.queryParameters['cursor'] == 'next';
+          h.resolve(Response(requestOptions: o, statusCode: 200, data: {
+            'items': second
+                ? [
+                    {
+                      'id': '11',
+                      'type': 'reply',
+                      'post_id': 20,
+                      'related_id': 13
+                    }
+                  ]
+                : [
+                    {
+                      'id': 99,
+                      'type': 'reply',
+                      'post_id': 21,
+                      'related_id': 13
+                    },
+                    {'id': 98, 'type': 'reply', 'post_id': 20, 'related_id': 14}
+                  ],
+            'next_cursor': second ? '' : 'next',
+          }));
+        }
+      }));
+    await ReplyNotificationService(dio, recipientUserId: 7)
+        .markReplyRead(postId: 20, replyId: 13);
+    expect(writes, [
+      {'post_id': 20, 'reply_id': 13},
+      {
+        'ids': [11]
+      }
+    ]);
+    expect(calls.single.arguments, {
+      'recipient_user_id': 7,
+      'ids': [11],
+      'reply_ids': [13]
+    });
+  });
+
+  test('旧服务写入失败或目标不存在时保留系统通知', () async {
+    final calls = <MethodCall>[];
+    const channel = MethodChannel('shenliyuan/notification_open');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
+        if (o.method == 'POST') {
+          h.reject(DioException(
+              requestOptions: o,
+              response: Response(requestOptions: o, statusCode: 400)));
+        } else {
+          h.resolve(Response(
+              requestOptions: o,
+              statusCode: 200,
+              data: {'items': [], 'next_cursor': ''}));
+        }
+      }));
+    await expectLater(
+        ReplyNotificationService(dio, recipientUserId: 7)
+            .markReplyRead(postId: 20, replyId: 13),
+        throwsStateError);
+    expect(calls, isEmpty);
+  });
+
+  test('账号切换后的旧请求不得继续反查或清除系统通知', () async {
+    var current = true;
+    var reads = 0;
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
+        if (o.method == 'GET') reads++;
+        current = false;
+        h.reject(DioException(
+            requestOptions: o,
+            response: Response(requestOptions: o, statusCode: 400)));
+      }));
+    await expectLater(
+        ReplyNotificationService(dio,
+                recipientUserId: 7, isCurrentSession: () => current)
+            .markReplyRead(postId: 20, replyId: 13),
+        throwsStateError);
+    expect(reads, 0);
+  });
+
+  test('已读回执属于其他账号时不清理原生通知', () async {
+    final calls = <MethodCall>[];
+    const channel = MethodChannel('shenliyuan/notification_open');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(
+          onRequest: (o, h) =>
+              h.resolve(Response(requestOptions: o, statusCode: 200, data: {
+                'read_receipt': {
+                  'recipient_user_id': 8,
+                  'ids': [11]
+                }
+              }))));
+    await ReplyNotificationService(dio, recipientUserId: 7).markRead(11);
+    expect(calls, isEmpty);
+  });
+  TestWidgetsFlutterBinding.ensureInitialized();
   test('定位回复后只消费对应帖子和回复的通知', () async {
     final dio = Dio();
     dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {

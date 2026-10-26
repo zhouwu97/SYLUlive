@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -343,7 +344,7 @@ class _TeamRecruitmentCreateScreenState
     final previewItem = _buildSyntheticPreviewRecruitment(currentUser);
     final totalImagesCount = _existingImages.length + _images.length;
 
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: TeamUiTokens.pageBg(isDark),
@@ -383,7 +384,7 @@ class _TeamRecruitmentCreateScreenState
                     ],
                   ),
                 ),
-                const Divider(height: 1),
+                const AppCardDivider(height: 1),
                 Expanded(
                   child: ListView(
                     controller: scrollController,
@@ -451,7 +452,7 @@ class _TeamRecruitmentCreateScreenState
                                     .toList(),
                               ),
                             const SizedBox(height: 12),
-                            const Divider(height: 1),
+                            const AppCardDivider(height: 1),
                             const SizedBox(height: 12),
                             Text(
                               previewItem.description,
@@ -464,7 +465,7 @@ class _TeamRecruitmentCreateScreenState
                             // 本地与已有图片统一展示
                             if (totalImagesCount > 0) ...[
                               const SizedBox(height: 16),
-                              const Divider(height: 1),
+                              const AppCardDivider(height: 1),
                               const SizedBox(height: 12),
                               Text(
                                 '项目展示图片 ($totalImagesCount 张)',
@@ -620,7 +621,7 @@ class _TeamRecruitmentCreateScreenState
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final webUrl = TeamShareLink.webUri(created.id).toString();
 
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       isDismissible: false,
       enableDrag: false,

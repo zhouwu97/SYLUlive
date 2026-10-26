@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/ai_personal_data_evidence.dart';
@@ -64,7 +65,7 @@ class AiSourceChips extends StatelessWidget {
       useSafeArea: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
+      builder: (_) => AppCardSurface(
         constraints: const BoxConstraints(maxHeight: 720),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
         decoration: BoxDecoration(

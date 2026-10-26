@@ -1,3 +1,6 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
@@ -913,7 +916,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          PopupMenuButton<String>(
+          AppPopupMenuButton<String>(
             icon: Icon(
               Icons.more_horiz,
               size: 20,
@@ -1008,7 +1011,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
 
   void _showTagFormSheet(WaterSection section, {WaterSectionTag? existing}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -1027,7 +1030,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     final willEnable = !tag.isEnabled;
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Text(willEnable ? '恢复标签' : '归档标签'),
         content: Text(
           willEnable
@@ -1235,7 +1238,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
               ],
             ),
           ),
-          PopupMenuButton<String>(
+          AppPopupMenuButton<String>(
             icon: Icon(
               Icons.more_horiz,
               size: 20,
@@ -1285,7 +1288,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
 
   void _showAddModeratorSheet({WaterSectionModerator? existing}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -1307,7 +1310,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   void _confirmRevoke(WaterSectionModerator mod) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('罢免版主'),
         content: Text('确认要罢免「${mod.displayName}」在'
             '「${widget.section.title}」版块的版主权限吗？'),
@@ -1466,7 +1469,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   void _confirmUnmute(WaterSectionMute mute) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('解除禁言'),
         content: Text('确认解除「${mute.displayName}」在本版块的禁言吗？'),
         actions: [
@@ -1659,7 +1662,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     final reasonController = TextEditingController(text: '恢复误删帖子');
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('恢复帖子'),
         content: Column(
           mainAxisSize: MainAxisSize.min,

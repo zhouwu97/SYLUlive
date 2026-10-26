@@ -1,3 +1,4 @@
+import '../../widgets/app_tab_bar_surface.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../widgets/app_page_background.dart';
@@ -508,6 +509,7 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
           return false;
         },
         child: ListView.builder(
+                addRepaintBoundaries: false,
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
@@ -561,7 +563,7 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
       body: Column(
         children: [
           _buildTopBanner(isDark),
-          Container(
+          AppTabBarSurface(
             height: 42,
             margin: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
@@ -572,8 +574,11 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
             ),
             child: TabBar(
               controller: _tabController,
+              automaticIndicatorColorAdjustment: false,
               indicator: BoxDecoration(
-                color: isDark ? const Color(0xFF262C33) : Colors.white,
+                color: (isDark ? const Color(0xFF262C33) : Colors.white).withValues(
+                  alpha: themeProvider.frostedGlass && themeProvider.shouldShowCustomBackground
+                      ? themeProvider.componentOpacity : 1),
                 borderRadius: BorderRadius.circular(AppRadius.md - 2),
                 boxShadow: isDark
                     ? null

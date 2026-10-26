@@ -288,9 +288,9 @@ class _LotteryScreenState extends State<LotteryScreen> {
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: isDark
+                  color: AppPageBackground.color(context, isDark
                       ? const Color(0xFF111315)
-                      : const Color(0xFFFFFAF4),
+                      : const Color(0xFFFFFAF4)),
                 ),
               ),
             ),
@@ -549,7 +549,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
       LotteryEvent event, bool isOngoing, Color primary, bool isDark) {
     final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(

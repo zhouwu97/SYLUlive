@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -252,7 +253,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         barrierDismissible: false,
         builder: (dialogContext) => Theme(
           data: dialogTheme,
-          child: AlertDialog(
+          child: AppAlertDialog(
             title: Text(
               isDeviceConsent
                   ? '校园 Agent 想在你的设备上执行一次操作'
@@ -947,7 +948,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       context: context,
       builder: (dialogContext) => Theme(
         data: dialogTheme,
-        child: AlertDialog(
+        child: AppAlertDialog(
           title: const Text('确认加入计划？'),
           content: const Text(
             '加入后会出现在我的计划中，不会自动报名，也不代表学校确认参赛资格。',
@@ -1004,7 +1005,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     };
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: Text('确认$actionLabel？'),
         content: Text(
           draft.actionType == 'calendar_event_delete'
@@ -1576,6 +1577,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         final colors = Theme.of(sheetContext).colorScheme;
         return DraggableScrollableSheet(
@@ -1583,7 +1585,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           initialChildSize: 0.72,
           minChildSize: 0.42,
           maxChildSize: 0.92,
-          builder: (_, controller) => ListView(
+          builder: (_, controller) => AppCardSurface(
+            decoration: BoxDecoration(color: colors.surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16))),
+            child: ListView(
             controller: controller,
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             children: [
@@ -1615,6 +1620,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   ),
                 ),
             ],
+          ),
           ),
         );
       },

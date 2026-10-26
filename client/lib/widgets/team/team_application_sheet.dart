@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 
 import 'team_ui_tokens.dart';
@@ -9,7 +10,7 @@ class TeamRecruitmentApplicationSheet extends StatefulWidget {
   const TeamRecruitmentApplicationSheet({super.key});
 
   static Future<TeamApplicationDraft?> show(BuildContext context) {
-    return showModalBottomSheet<TeamApplicationDraft>(
+    return showAppModalBottomSheet<TeamApplicationDraft>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,

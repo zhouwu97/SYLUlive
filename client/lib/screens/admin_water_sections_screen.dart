@@ -39,6 +39,7 @@ class _AdminWaterSectionsScreenState extends State<AdminWaterSectionsScreen> {
       body: provider.isLoading && sections.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : ListView.builder(
+                addRepaintBoundaries: false,
               padding: const EdgeInsets.all(12),
               itemCount: sections.length,
               itemBuilder: (context, index) {

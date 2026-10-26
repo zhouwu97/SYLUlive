@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -181,7 +182,7 @@ class _CampusPersonalDataPermissionScreenState
               height: 20,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : PopupMenuButton<AiPersonalDataPermissionPolicy>(
+          : AppPopupMenuButton<AiPersonalDataPermissionPolicy>(
               tooltip: '修改${_scopeTitle(scope)}权限',
               initialValue: policy,
               onSelected: (next) => _update(permissions, scope, next),

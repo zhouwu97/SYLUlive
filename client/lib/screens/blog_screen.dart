@@ -500,7 +500,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
                 ),
               ),
               const SizedBox(height: 24),
-              Divider(color: Colors.white.withValues(alpha: 0.06)),
+              AppCardDivider(color: Colors.white.withValues(alpha: 0.06)),
               const SizedBox(height: 20),
               _buildRichContent(widget.content),
               const SizedBox(height: 14),
@@ -527,7 +527,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Divider(color: Colors.white.withValues(alpha: 0.06)),
+        AppCardDivider(color: Colors.white.withValues(alpha: 0.06)),
         const SizedBox(height: 12),
         Row(
           children: [

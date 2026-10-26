@@ -1,9 +1,11 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../../theme/app_radius.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/app_page_app_bar.dart';
+import '../../../widgets/app_page_background.dart';
 import '../../../widgets/campus/campus_theme.dart';
 import '../../../widgets/responsive_content.dart';
 
@@ -51,8 +53,8 @@ class EmojiPageScaffold extends StatelessWidget {
           materialTapTargetSize: MaterialTapTargetSize.padded,
         ),
         child: Builder(
-            builder: (context) => Scaffold(
-                  backgroundColor: CampusTheme.pageBackground(context),
+            builder: (context) => AppPageBackground(builder: (context) => Scaffold(
+                  backgroundColor: AppPageBackground.color(context, CampusTheme.pageBackground(context)),
                   appBar: AppPageAppBar(title: Text(title), actions: actions),
                   body: SafeArea(
                       top: false, child: ResponsiveContent.page(child: body)),
@@ -61,7 +63,7 @@ class EmojiPageScaffold extends StatelessWidget {
                       : Column(mainAxisSize: MainAxisSize.min, children: [
                           ResponsiveContent.page(child: bottomNavigationBar!),
                         ]),
-                )),
+                ))),
       );
 }
 
@@ -394,7 +396,7 @@ Future<void> showEmojiPreview(BuildContext context, EmojiPreviewItem item,
                       },
                       child: const Text('重试图片')))),
         );
-  Widget dialog(BuildContext dialogContext) => AlertDialog(
+  Widget dialog(BuildContext dialogContext) => AppAlertDialog(
         title: Text(isCurrent?.call() == false ? '预览已结束' : item.name),
         content: preview(dialogContext),
         actions: [

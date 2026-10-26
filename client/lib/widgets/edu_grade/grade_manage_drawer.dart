@@ -1,3 +1,5 @@
+import '../../providers/theme_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
 import '../../utils/edu_semester_utils.dart';
 import '../../models/edu_academic_situation.dart';
@@ -85,14 +87,16 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
     return Drawer(
       width: (MediaQuery.sizeOf(context).width * 0.80).clamp(300.0, 340.0),
       elevation: 0,
-      backgroundColor:
-          isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
+      backgroundColor: Colors.transparent,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.horizontal(
           left: Radius.circular(24),
         ),
       ),
-      child: SafeArea(
+      child: AppCardSurface(
+        decoration: BoxDecoration(color: isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
+          borderRadius: const BorderRadius.horizontal(left: Radius.circular(24))),
+        child: SafeArea(
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 220),
           switchInCurve: Curves.easeOutCubic,
@@ -100,6 +104,7 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
           child: _page == _DrawerPage.menu
               ? _buildMenu(context)
               : _buildSemesterList(context),
+        ),
         ),
       ),
     );
@@ -284,7 +289,7 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
     final accent = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
     final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
 
-    return Material(
+    return AppCardMaterial(
       color: isDark ? const Color(0xFF1E2226) : Colors.white,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
@@ -295,7 +300,7 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isDark
+              color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : isDark
                   ? Colors.white.withValues(alpha: 0.08)
                   : const Color(0xFFE6E8EB),
             ),
@@ -380,7 +385,7 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
     final accent = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
     final textColor = isDark ? Colors.white : const Color(0xFF1F2328);
 
-    return Material(
+    return AppCardMaterial(
       color: isDark ? const Color(0xFF1E2226) : Colors.white,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
@@ -392,7 +397,7 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isDark
+              color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : isDark
                   ? Colors.white.withValues(alpha: 0.08)
                   : const Color(0xFFE6E8EB),
             ),
@@ -468,6 +473,8 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
         Expanded(
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20),
+            addRepaintBoundaries:
+                context.watch<ThemeProvider?>()?.frostedGlass != true,
             children: () {
               String? lastYear;
               final widgets = <Widget>[];
@@ -503,7 +510,7 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
                 final disabled = _loadingSemesterKey != null;
 
                 widgets.add(
-                  Material(
+                  AppCardMaterial(
                     color: isSelected ? selectedBg : Colors.transparent,
                     borderRadius: BorderRadius.circular(10),
                     child: ListTile(
@@ -559,6 +566,7 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
                     ),
                   ),
                 );
+                widgets.add(const SizedBox(height: 8));
               }
               return widgets;
             }(),

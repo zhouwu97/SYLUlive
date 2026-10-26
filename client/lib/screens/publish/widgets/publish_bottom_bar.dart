@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/app_card.dart';
 
 /// Fixed bottom bar with a full-width publish / save button.
 class PublishBottomBar extends StatelessWidget {
@@ -21,9 +22,10 @@ class PublishBottomBar extends StatelessWidget {
 
     return SafeArea(
       top: false,
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
         decoration: BoxDecoration(
+          borderRadius: BorderRadius.zero,
           color: isDark ? const Color(0xFF1E2226) : Colors.white,
           border: Border(
             top: BorderSide(

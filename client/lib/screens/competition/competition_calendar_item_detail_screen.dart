@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -56,7 +58,7 @@ class _CompetitionCalendarItemDetailScreenState
   Future<void> _archiveItem() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: const Text('归档比赛'),
         content: Text('确定归档「${_item['title'] ?? '未命名比赛'}」吗？归档后将移至已结束分组。'),
         actions: [
@@ -98,7 +100,7 @@ class _CompetitionCalendarItemDetailScreenState
   Future<void> _deleteItem() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: const Text('删除比赛'),
         content: Text('确定从我的计划删除「${_item['title'] ?? '未命名比赛'}」吗？'),
         actions: [
@@ -305,7 +307,7 @@ class _CompetitionCalendarItemDetailScreenState
           ),
         ),
         actions: [
-          PopupMenuButton<String>(
+          AppPopupMenuButton<String>(
             icon: Icon(Icons.more_horiz_rounded, color: titleColor),
             onSelected: (value) {
               if (value == 'edit') _openEditor();

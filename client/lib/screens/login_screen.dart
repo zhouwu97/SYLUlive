@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import '../widgets/app_page_background.dart';
 import '../widgets/app_card.dart';
 import 'dart:async';
@@ -110,7 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         backgroundColor: cardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text('登录受限'),
@@ -276,7 +277,7 @@ class _LoginScreenState extends State<LoginScreen> {
             final subText = isDark ? Colors.white70 : const Color(0xFF747B82);
             final cardBg = isDark ? const Color(0xFF1E2226) : Colors.white;
 
-            return AlertDialog(
+            return AppAlertDialog(
               backgroundColor: cardBg,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),

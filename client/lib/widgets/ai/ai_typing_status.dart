@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 
 import '../campus/campus_theme.dart';
@@ -10,10 +11,11 @@ class AiTypingStatus extends StatelessWidget {
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.centerLeft,
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).brightness == Brightness.dark
+              ? CampusTheme.darkCard : Colors.white,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: CampusTheme.softBorder),
         ),

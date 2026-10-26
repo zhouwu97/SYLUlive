@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
@@ -60,7 +61,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
     final deptCtrl = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('添加教师'),
         content: Column(
@@ -130,7 +131,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
     final commentCtrl = TextEditingController();
     final rating = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('打分 ${teacher['name']}'),
         content: const Text('请选择推荐或不推荐。'),

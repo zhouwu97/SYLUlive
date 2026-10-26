@@ -1,6 +1,12 @@
 /// Teaching Evaluation Assistant screen.
 library;
 
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+
+import 'package:shenliyuan/widgets/app_dialog.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -103,7 +109,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('一键填写'),
         content: const Text(
           '将自动选择每项评价的最高分选项。\n\n'
@@ -130,7 +136,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
   Future<void> _handleClearCookies() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('清除登录状态'),
         content: const Text('将清除教务网站 (jxw.sylu.edu.cn) 的登录 Cookie。清除后需要重新登录。'),
         actions: [
@@ -210,7 +216,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
                   ),
             tooltip: '一键填写',
           ),
-          PopupMenuButton<String>(
+          AppPopupMenuButton<String>(
             onSelected: (value) {
               switch (value) {
                 case 'diagnostics':
@@ -488,7 +494,7 @@ class EvaluationResultSheet {
   static void show(BuildContext context, EvaluationFillResult result) {
     final hasError = result.error != null && result.error!.isNotEmpty;
 
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -682,7 +688,7 @@ class DiagnosticsDialog {
   static void show(BuildContext context, String message) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Row(
           children: [
             Icon(Icons.bug_report_outlined, size: 20),

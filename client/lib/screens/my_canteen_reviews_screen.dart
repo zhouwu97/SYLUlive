@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:flutter/material.dart';
 import '../widgets/app_page_background.dart';
 import '../utils/canteen_review_date.dart';
@@ -520,7 +521,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                   onPressed: () => _openHistory(item),
                   child: const Text('历史评价'),
                 ),
-              PopupMenuButton<String>(
+              AppPopupMenuButton<String>(
                 tooltip: '评价操作',
                 onSelected: (value) {
                   if (value == 'edit') _edit(item);

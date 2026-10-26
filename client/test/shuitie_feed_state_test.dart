@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/user.dart';
@@ -31,6 +32,7 @@ class _FeedAuthProvider extends ChangeNotifier implements AuthProvider {
   final bool loggedIn;
   late User _currentUser;
   int _sessionGeneration = 0;
+  int _accountEpoch = 0;
 
   @override
   User? get user => loggedIn ? _currentUser : null;
@@ -42,9 +44,18 @@ class _FeedAuthProvider extends ChangeNotifier implements AuthProvider {
   int get sessionGeneration => _sessionGeneration;
 
   @override
+  int get accountSessionEpoch => _accountEpoch;
+
+  @override
   Dio get dio => client;
 
   void advanceSession() {
+    _sessionGeneration++;
+    _accountEpoch++;
+    notifyListeners();
+  }
+
+  void refreshProfile() {
     _sessionGeneration++;
     notifyListeners();
   }
@@ -54,6 +65,20 @@ class _FeedAuthProvider extends ChangeNotifier implements AuthProvider {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  final nativeReads = <MethodCall>[];
+  const nativeChannel = MethodChannel('shenliyuan/notification_open');
+  setUp(() {
+    nativeReads.clear();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(nativeChannel, (call) async {
+      nativeReads.add(call);
+      return null;
+    });
+  });
+  tearDown(() => TestDefaultBinaryMessengerBinding
+      .instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(nativeChannel, null));
   // visibility_detector 在测试里用帧末回调而非内部 Timer，避免残留 pending timer。
   VisibilityDetectorController.instance.updateInterval = Duration.zero;
 
@@ -64,21 +89,32 @@ void main() {
     await page.themeProvider.setFrostedGlass(true);
     await _pumpFrames(tester);
     final field = find.byKey(const ValueKey('feed-search-field'));
-    final surface = find.ancestor(of: field, matching: find.byType(AppCardSurface));
+    final surface =
+        find.ancestor(of: field, matching: find.byType(AppCardSurface));
     expect(surface, findsOneWidget);
-    expect(tester.widget<TextField>(field).textAlignVertical, TextAlignVertical.center);
-    expect((tester.getCenter(find.descendant(of: field, matching: find.byType(EditableText))).dy -
-        tester.getCenter(surface).dy).abs(), lessThanOrEqualTo(1));
-    expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)), findsOneWidget);
+    expect(tester.widget<TextField>(field).textAlignVertical,
+        TextAlignVertical.center);
+    expect(
+        (tester
+                    .getCenter(find.descendant(
+                        of: field, matching: find.byType(EditableText)))
+                    .dy -
+                tester.getCenter(surface).dy)
+            .abs(),
+        lessThanOrEqualTo(1));
+    expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)),
+        findsOneWidget);
     await tester.enterText(field, '课表');
     await _pumpFrames(tester);
     expect(tester.widget<TextField>(field).controller!.text, '课表');
-    await tester.tap(find.descendant(of: surface, matching: find.byIcon(Icons.close)));
+    await tester
+        .tap(find.descendant(of: surface, matching: find.byIcon(Icons.close)));
     await _pumpFrames(tester);
     expect(tester.widget<TextField>(field).controller!.text, isEmpty);
     await page.themeProvider.setFrostedGlass(false);
     await _pumpFrames(tester);
-    expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)), findsNothing);
+    expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)),
+        findsNothing);
     await _disposeFeed(tester, page);
   });
 
@@ -284,6 +320,11 @@ void main() {
     await _pumpFrames(tester);
 
     expect(markedReadIds, contains(11));
+    expect(nativeReads.single.arguments, {
+      'recipient_user_id': 1,
+      'ids': [11],
+      'reply_ids': [511],
+    });
     expect(find.text('原帖已删除，已移除提醒'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('home-reply-notification-reminder')),
@@ -318,6 +359,54 @@ void main() {
     await _disposeFeed(tester, page);
   });
 
+  testWidgets('再次进入已读通知仍校准首页并清理系统提醒', (tester) async {
+    final writes = <int>[];
+    final page = await _pumpFeed(tester,
+        loggedIn: true,
+        unreadItems: [_unreadReply(11)],
+        notificationItems: [
+          _notification(11)
+            ..['is_read'] = true
+            ..['related_id'] = 511
+        ],
+        onMarkRead: writes.addAll);
+    await _pumpFrames(tester);
+    unawaited(Navigator.of(tester.element(find.byType(ShuitieScreen))).push(
+        MaterialPageRoute<void>(builder: (_) => const NotificationsScreen())));
+    await _pumpFrames(tester);
+    await tester.tap(find.text('通知中心测试回复'));
+    await _pumpFrames(tester);
+    expect(writes, [11]);
+    expect(nativeReads.single.arguments, {
+      'recipient_user_id': 1,
+      'ids': [11],
+      'reply_ids': [511]
+    });
+    expect(find.byKey(const ValueKey('home-reply-notification-reminder')),
+        findsNothing);
+    await _disposeFeed(tester, page);
+  });
+
+  testWidgets('消费期间同账号资料刷新不应丢弃成功回执', (tester) async {
+    late _FeedTestPage page;
+    page = await _pumpFeed(tester,
+        loggedIn: true,
+        unreadItems: [_unreadReply(11)],
+        notificationItems: [_notification(11)],
+        onMarkRead: (_) => page.auth.refreshProfile());
+    await _pumpFrames(tester);
+    unawaited(Navigator.of(tester.element(find.byType(ShuitieScreen))).push(
+        MaterialPageRoute<void>(builder: (_) => const NotificationsScreen())));
+    await _pumpFrames(tester);
+    await tester.tap(find.text('通知中心测试回复'));
+    await _pumpFrames(tester);
+    expect(nativeReads, hasLength(1));
+    expect(find.text('标记已读失败，请重试'), findsNothing);
+    expect(find.byKey(const ValueKey('home-reply-notification-reminder')),
+        findsNothing);
+    await _disposeFeed(tester, page);
+  });
+
   testWidgets('读取两条回复中的一条：首页只减少一条提醒', (tester) async {
     final page = await _pumpFeed(
       tester,
@@ -338,6 +427,53 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('1 条新回复'), findsOneWidget);
+    await _disposeFeed(tester, page);
+  });
+
+  testWidgets('重复进入同一条已读历史不扣减另一条未读回复', (tester) async {
+    final unread = [_unreadReply(11), _unreadReply(12)];
+    final page = await _pumpFeed(tester,
+        loggedIn: true,
+        unreadItems: unread,
+        notificationItems: [_notification(11)],
+        onMarkRead: (ids) =>
+            unread.removeWhere((item) => ids.contains(item['id'])));
+    await _pumpFrames(tester);
+    unawaited(Navigator.of(tester.element(find.byType(ShuitieScreen))).push(
+        MaterialPageRoute<void>(builder: (_) => const NotificationsScreen())));
+    await _pumpFrames(tester);
+    await tester.tap(find.text('通知中心测试回复'));
+    await _pumpFrames(tester);
+    await tester.tap(find.text('通知中心测试回复'));
+    await _pumpFrames(tester);
+    Navigator.of(tester.element(find.byType(NotificationsScreen))).pop();
+    await _pumpFrames(tester);
+    expect(find.text('1 条新回复'), findsOneWidget);
+    expect(nativeReads, hasLength(2));
+    await _disposeFeed(tester, page);
+  });
+
+  testWidgets('读取期间返回首页仍同步成功回执且不跳转详情', (tester) async {
+    final gate = Completer<void>();
+    final page = await _pumpFeed(tester,
+        loggedIn: true,
+        unreadItems: [_unreadReply(11)],
+        notificationItems: [_notification(11)],
+        readSelectedGate: gate);
+    await _pumpFrames(tester);
+    unawaited(Navigator.of(tester.element(find.byType(ShuitieScreen))).push(
+        MaterialPageRoute<void>(builder: (_) => const NotificationsScreen())));
+    await _pumpFrames(tester);
+    await tester.tap(find.text('通知中心测试回复'));
+    await tester.pump();
+    Navigator.of(tester.element(find.byType(NotificationsScreen))).pop();
+    await _pumpFrames(tester);
+    gate.complete();
+    await _pumpFrames(tester);
+    expect(find.byType(NotificationsScreen), findsNothing);
+    expect(find.byKey(const ValueKey('home-reply-notification-reminder')),
+        findsNothing);
+    expect(nativeReads, hasLength(1));
     await _disposeFeed(tester, page);
   });
 

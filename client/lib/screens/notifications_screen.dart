@@ -15,6 +15,7 @@ import '../utils/app_feedback.dart';
 import '../models/post.dart';
 import '../utils/post_route.dart';
 import '../services/reply_notification_service.dart';
+import '../services/reply_notification_session.dart';
 import '../services/reply_notification_state.dart';
 import 'my_content_screen.dart';
 import 'post_detail_screen.dart';
@@ -182,9 +183,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       return;
     }
 
-    final accountId = auth.user?.id;
-    final sessionGeneration = auth.sessionGeneration;
-    if (accountId == null) return;
+    final session = ReplyNotificationSession.capture(auth);
+    if (session.accountId == null) return;
     final requestGeneration = ++_requestGeneration;
 
     if (mounted) {
@@ -212,7 +212,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       );
       if (!mounted ||
           requestGeneration != _requestGeneration ||
-          !_isCurrentSession(auth, accountId, sessionGeneration)) {
+          !_isCurrentSession(auth, session)) {
         return;
       }
 
@@ -259,8 +259,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     } on DioException catch (e) {
       _handleLoadError(
         auth,
-        accountId,
-        sessionGeneration,
+        session,
         requestGeneration,
         loadMore,
         AppFeedback.dioErrorMessage(e, fallback: '通知加载失败'),
@@ -268,8 +267,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     } catch (e) {
       _handleLoadError(
         auth,
-        accountId,
-        sessionGeneration,
+        session,
         requestGeneration,
         loadMore,
         '通知加载失败，请稍后重试',
@@ -279,15 +277,14 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   void _handleLoadError(
     AuthProvider auth,
-    int accountId,
-    int sessionGeneration,
+    ReplyNotificationSession session,
     int requestGeneration,
     bool loadMore,
     String message,
   ) {
     if (!mounted ||
         requestGeneration != _requestGeneration ||
-        !_isCurrentSession(auth, accountId, sessionGeneration)) {
+        !_isCurrentSession(auth, session)) {
       return;
     }
     setState(() {
@@ -319,23 +316,26 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   Future<void> _markAllRead() async {
     final auth = context.read<AuthProvider>();
-    final accountId = auth.user?.id;
-    final sessionGeneration = auth.sessionGeneration;
+    final session = ReplyNotificationSession.capture(auth);
+    final accountId = session.accountId;
     if (accountId == null) return;
     try {
-      await ReplyNotificationService(auth.dio).markAllRead();
-      if (!mounted || !_isCurrentSession(auth, accountId, sessionGeneration)) {
+      await ReplyNotificationService(auth.dio,
+          recipientUserId: accountId,
+          isCurrentSession: () => session.isCurrent(auth)).markAllRead();
+      if (!session.isCurrent(auth)) {
         return;
       }
+      ReplyNotificationState.instance.notifyAllRead(
+        accountId: accountId,
+        sessionGeneration: auth.sessionGeneration,
+      );
+      if (!mounted) return;
       setState(() {
         for (var item in _notifications) {
           item['is_read'] = true;
         }
       });
-      ReplyNotificationState.instance.notifyAllRead(
-        accountId: accountId,
-        sessionGeneration: sessionGeneration,
-      );
       AppFeedback.showSnackBar(context, '已全部标记为已读');
     } catch (e) {
       if (mounted) {
@@ -507,24 +507,31 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     return InkWell(
       onTap: () async {
         final auth = context.read<AuthProvider>();
+        final session = ReplyNotificationSession.capture(auth);
+        if (!session.isCurrent(auth)) return;
         if (id != null && !_openingNotificationIds.add(id)) return;
         try {
-          if (!isRead && id != null) {
-            final accountId = auth.user?.id;
-            final sessionGeneration = auth.sessionGeneration;
+          // 已读历史也要校准其他入口，不能因本页红点已消失而跳过系统清理。
+          if ((type == 'reply' || !isRead) && id != null) {
+            final accountId = session.accountId;
             if (accountId == null) return;
             try {
-              await ReplyNotificationService(auth.dio).markRead(id);
-              if (!_isCurrentSession(auth, accountId, sessionGeneration)) {
+              await ReplyNotificationService(auth.dio,
+                      recipientUserId: accountId,
+                      isCurrentSession: () => session.isCurrent(auth))
+                  .markRead(id, replyId: type == 'reply' ? relatedId : null);
+              if (!session.isCurrent(auth)) {
                 return;
               }
-              setState(() {
-                notification['is_read'] = true;
-              });
+              if (mounted) {
+                setState(() {
+                  notification['is_read'] = true;
+                });
+              }
               if (type == 'reply') {
                 ReplyNotificationState.instance.markRead(
                   accountId: accountId,
-                  sessionGeneration: sessionGeneration,
+                  sessionGeneration: auth.sessionGeneration,
                   notificationId: id,
                 );
               }
@@ -537,6 +544,8 @@ class _NotificationsScreenState extends State<NotificationsScreen>
               );
             }
           }
+
+          if (!_isCurrentSession(auth, session)) return;
 
           if ((type == 'content_governed' ||
                   type == 'rectification_approved' ||
@@ -567,7 +576,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           } else if (postId != null) {
             try {
               final response = await auth.dio.get('/posts/$postId');
-              if (!mounted) return;
+              if (!mounted || !_isCurrentSession(auth, session)) return;
               final post = Post.fromJson(
                   Map<String, dynamic>.from(response.data as Map));
               await Navigator.push(
@@ -719,13 +728,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   bool _isCurrentSession(
     AuthProvider auth,
-    int accountId,
-    int sessionGeneration,
+    ReplyNotificationSession session,
   ) {
-    return mounted &&
-        auth.isLoggedIn &&
-        auth.user?.id == accountId &&
-        auth.sessionGeneration == sessionGeneration;
+    return mounted && session.isCurrent(auth);
   }
 
   Widget _buildEmptyView(bool isDark) {

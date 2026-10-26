@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -37,7 +38,7 @@ class _ToolPermissionDialogState extends State<ToolPermissionDialog> {
   Widget build(BuildContext context) {
     final preview = widget.preview;
     final canGrantSession = preview.sensitivity == SkillSensitivity.low;
-    return AlertDialog(
+    return AppAlertDialog(
       title: const Text('个人数据授权'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),

@@ -39,24 +39,40 @@ class CourseWidgetService : RemoteViewsService() {
 class CourseRemoteViewsFactory(
     private val context: Context,
     private val variant: NativeWidgetVariant,
-    private val theme: HomeWidgetThemeConfig,
-    private val typography: HomeWidgetTypography,
-    private val fontSize: NativeHomeWidgetFontSize,
+    private var theme: HomeWidgetThemeConfig,
+    private var typography: HomeWidgetTypography,
+    private var fontSize: NativeHomeWidgetFontSize,
 ) : RemoteViewsService.RemoteViewsFactory {
     private val courses = mutableListOf<WidgetCourseData.Course>()
 
     override fun onCreate() = Unit
 
+    @Synchronized
     override fun onDataSetChanged() {
+        // 启动器可能复用旧的 RemoteViewsFactory；每次刷新从原子快照读取完整外观，
+        // 不继续使用创建服务时的 Intent extras 和主题对象。
+        val appearance = HomeWidgetAppearanceStore.read(context, variant.kind)
+        theme = HomeWidgetThemeConfig.resolve(context, appearance.theme)
+        fontSize = appearance.fontSize
+        typography = HomeWidgetTypography.resolve(variant.size, fontSize)
+        loadData()
+    }
+
+    /** 整体 RemoteViews 更新时沿用调用方捕获的外观，只读取课程内容。 */
+    @Synchronized
+    internal fun loadData() {
         courses.clear()
         val data = CourseDataReader.read(context)
         courses.addAll(data.courses.take(variant.maxItems(fontSize)))
     }
 
+    @Synchronized
     override fun onDestroy() = courses.clear()
 
+    @Synchronized
     override fun getCount(): Int = courses.size
 
+    @Synchronized
     override fun getViewAt(position: Int): RemoteViews {
         val views = RemoteViews(
             context.packageName,
@@ -143,7 +159,8 @@ class CourseRemoteViewsFactory(
     }
 
     override fun getLoadingView(): RemoteViews? = null
-    override fun getViewTypeCount(): Int = 1
+    // 同一工厂可能在普通／超大字号布局之间切换。
+    override fun getViewTypeCount(): Int = 2
     override fun getItemId(position: Int): Long = position.toLong()
     override fun hasStableIds(): Boolean = true
 }

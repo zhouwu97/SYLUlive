@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../../widgets/app_card.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -213,7 +215,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
         final theme = Theme.of(context);
         final isDark = theme.brightness == Brightness.dark;
         final selectedModel = _modelController.text.trim();
-        return Container(
+        return AppCardSurface(
           constraints: BoxConstraints(
             maxHeight: MediaQuery.sizeOf(context).height * 0.68,
           ),
@@ -351,7 +353,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
   Future<void> _deleteConfiguration() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('删除模型配置？'),
         content: const Text('会同时删除该配置的 API Key。'),
         actions: [
@@ -458,36 +460,38 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                   ),
                   const SizedBox(height: 18),
                 ],
-                TextField(
+                AppCardSurface(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)), child: TextField(
                   controller: _endpointController,
                   keyboardType: TextInputType.url,
                   autocorrect: false,
                   enableSuggestions: false,
                   decoration: const InputDecoration(
+                    filled: false,
                     labelText: 'HTTPS 服务地址',
                     hintText: 'https://api.example.com/v1',
                   ),
-                ),
+                )),
                 const SizedBox(height: 18),
-                TextField(
+                AppCardSurface(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)), child: TextField(
                   controller: _apiKeyController,
                   obscureText: true,
                   autocorrect: false,
                   enableSuggestions: false,
                   decoration: InputDecoration(
+                    filled: false,
                     labelText: 'API Key',
                     hintText: _hasStoredApiKey ? '已安全保存，留空则保持不变' : null,
                   ),
-                ),
+                )),
                 const SizedBox(height: 18),
-                TextField(
+                AppCardSurface(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)), child: TextField(
                   controller: _modelController,
                   autocorrect: false,
                   enableSuggestions: false,
-                  decoration: const InputDecoration(labelText: '模型名称'),
-                ),
+                  decoration: const InputDecoration(filled: false, labelText: '模型名称'),
+                )),
                 const SizedBox(height: 18),
-                DropdownButtonFormField<OpenAIWireApi>(
+                AppCardSurface(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)), child: DropdownButtonFormField<OpenAIWireApi>(
                   key: ValueKey(_wireApi),
                   initialValue: _wireApi,
                   decoration: const InputDecoration(labelText: '请求协议'),
@@ -509,7 +513,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                             _probeSuccess = null;
                           });
                         },
-                ),
+                )),
                 const SizedBox(height: 8),
                 Text(
                   switch (_wireApi) {

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import '../widgets/app_card.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
@@ -471,7 +472,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       backgroundColor: Colors.transparent,
       builder: (sheetContext) => Padding(
         padding: const EdgeInsets.all(16),
-        child: Material(
+        child: AppCardMaterial(
           color: Theme.of(context).brightness == Brightness.dark
               ? const Color(0xFF1E1E1E)
               : Colors.white,

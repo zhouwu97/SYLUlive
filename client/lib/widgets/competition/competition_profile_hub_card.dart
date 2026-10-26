@@ -35,7 +35,7 @@ class CompetitionProfileHubCard extends StatelessWidget {
           for (var index = 0; index < items.length; index++) ...[
             _HubRow(item: items[index]),
             if (index != items.length - 1)
-              Divider(
+              AppCardDivider(
                 height: 1,
                 indent: 52,
                 color: CompetitionUiTokens.borderColor(isDark),

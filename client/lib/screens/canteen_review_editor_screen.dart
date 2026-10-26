@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -515,7 +516,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (dialogCtx) => AlertDialog(
+      builder: (dialogCtx) => AppAlertDialog(
         backgroundColor: CanteenTheme.surfaceBg(isDark),
         title: Text(
           '发现评价冲突',
@@ -675,7 +676,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       context: context,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
-        return Container(
+        return AppCardSurface(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
           decoration: BoxDecoration(
             color: CanteenTheme.surfaceBg(isDark),
@@ -1015,7 +1016,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         final isDark = Theme.of(context).brightness == Brightness.dark;
         final resolveAction = await showDialog<String>(
           context: context,
-          builder: (dialogCtx) => AlertDialog(
+          builder: (dialogCtx) => AppAlertDialog(
             backgroundColor: CanteenTheme.surfaceBg(isDark),
             title: Text(
               '评价版本冲突',
@@ -1352,7 +1353,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             ),
           ),
           const SizedBox(height: 14),
-          Divider(height: 1, color: CanteenTheme.borderColor(isDark)),
+          AppCardDivider(height: 1, color: CanteenTheme.borderColor(isDark)),
           const SizedBox(height: 14),
           _buildDimensionRow('味道', _dimensions.taste, isDark, (score) {
             _setDimension(_dimensions.copyWith(taste: score));

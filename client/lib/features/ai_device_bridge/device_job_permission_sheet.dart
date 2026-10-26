@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 
 import 'device_job_models.dart';
@@ -9,7 +10,7 @@ class DeviceJobPermissionSheet extends StatelessWidget {
   final DeviceToolJob job;
 
   static Future<bool> request(BuildContext context, DeviceToolJob job) async {
-    final allowed = await showModalBottomSheet<bool>(
+    final allowed = await showAppModalBottomSheet<bool>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,

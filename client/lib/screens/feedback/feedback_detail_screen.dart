@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -435,7 +437,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     final reasonController = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('重新打开工单'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -522,7 +524,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     if (_ticket == null) return;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF1E2226) : Colors.white,
@@ -552,7 +554,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                   _showUpdateStatusDialog();
                 },
               ),
-              const Divider(height: 1),
+              const AppCardDivider(height: 1),
               ListTile(
                 leading: const Icon(Icons.contact_support_outlined,
                     color: Colors.orange),
@@ -564,7 +566,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                   _showRequestInfoDialog();
                 },
               ),
-              const Divider(height: 1),
+              const AppCardDivider(height: 1),
               ListTile(
                 leading: const Icon(Icons.flag_outlined, color: Colors.indigo),
                 title: const Text('设置优先级与负责人'),
@@ -603,7 +605,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => AppAlertDialog(
           title: const Text('更新处理进度'),
           content: SingleChildScrollView(
             child: Column(
@@ -706,7 +708,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => AppAlertDialog(
           title: const Text('请求用户补充信息'),
           content: SingleChildScrollView(
             child: Column(
@@ -824,7 +826,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => AppAlertDialog(
           title: const Text('设置工单优先级'),
           content: SingleChildScrollView(
             child: Column(
@@ -841,7 +843,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     },
                   );
                 }),
-                const Divider(),
+                const AppCardDivider(),
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Text('负责人',
@@ -1536,7 +1538,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   Widget _buildBottomComposer(bool isDark) {
     final isClosed = _ticket?.status == 'closed';
     if (isClosed && !widget.isAdmin) {
-      return Container(
+      return AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         color: isDark ? const Color(0xFF1E2226) : Colors.white,
         child: Row(
@@ -1558,7 +1560,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       );
     }
     if (isClosed && widget.isAdmin && !_adminInternalNote) {
-      return Container(
+      return AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         color: isDark ? const Color(0xFF1E2226) : Colors.white,
         child: Row(
@@ -1580,7 +1582,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       );
     }
 
-    return Container(
+    return AppCardSurface(
       padding: EdgeInsets.fromLTRB(
         12,
         8,
@@ -1709,9 +1711,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         children: [
-          const Expanded(child: Divider(indent: 40, endIndent: 10)),
+          const Expanded(child: AppCardDivider(indent: 40, endIndent: 10)),
           Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-          const Expanded(child: Divider(indent: 10, endIndent: 40)),
+          const Expanded(child: AppCardDivider(indent: 10, endIndent: 40)),
         ],
       ),
     );

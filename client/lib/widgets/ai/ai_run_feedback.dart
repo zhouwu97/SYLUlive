@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/ai_run_feedback.dart';
@@ -27,7 +28,7 @@ class AiRunFeedbackButtons extends StatelessWidget {
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, setState) {
           final colors = Theme.of(context).colorScheme;
-          return Container(
+          return AppCardSurface(
             padding: EdgeInsets.fromLTRB(
               20,
               18,

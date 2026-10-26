@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -53,7 +55,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('删除评价'),
         content: const Text('确定删除自己的这条评价吗？删除后评分会重新计算。'),
         actions: [
@@ -93,7 +95,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
 
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('删除专业'),
         content: const Text('确定要删除这个专业吗？删除后该专业下的所有评分也将一并清除。'),
         actions: [
@@ -151,7 +153,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
         scrolledUnderElevation: 0,
         actions: [
           if (context.watch<AuthProvider>().user?.isAdmin == true)
-            PopupMenuButton<String>(
+            AppPopupMenuButton<String>(
               icon: Icon(
                 Icons.more_horiz,
                 color: RankingTokens.titleColor(isDark),

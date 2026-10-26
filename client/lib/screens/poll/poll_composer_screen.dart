@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import '../../widgets/app_page_background.dart';
 import '../../widgets/app_card.dart';
 import 'dart:convert';
@@ -312,7 +314,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
   void _preview() {
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: Text(_titleController.text.trim().isEmpty
             ? '投票预览'
             : _titleController.text.trim()),
@@ -583,7 +585,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                   PollSettingRow(
                     icon: Icons.grid_view_rounded,
                     title: '分类',
-                    trailing: PopupMenuButton<String>(
+                    trailing: AppPopupMenuButton<String>(
                       initialValue: _category,
                       enabled: !_rulesLocked,
                       color: Colors.white,
@@ -616,7 +618,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                     PollSettingRow(
                       icon: Icons.format_list_numbered,
                       title: '每人最多选择',
-                      trailing: PopupMenuButton<int>(
+                      trailing: AppPopupMenuButton<int>(
                         initialValue:
                             _maxChoices.clamp(2, _optionControllers.length),
                         enabled: !_rulesLocked,
@@ -651,7 +653,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                     subtitle: _durationHours == null
                         ? _formatDate(_customEndsAt!)
                         : null,
-                    trailing: PopupMenuButton<int>(
+                    trailing: AppPopupMenuButton<int>(
                       enabled: !_rulesLocked,
                       color: Colors.white,
                       elevation: 3,
@@ -847,7 +849,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
           ),
         const Padding(
           padding: EdgeInsets.only(left: 47),
-          child: Divider(
+          child: AppCardDivider(
             height: 1,
             thickness: 0.5,
             color: Color(0xFFE2EFEA),

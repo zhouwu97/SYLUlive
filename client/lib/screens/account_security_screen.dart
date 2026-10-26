@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'academic_data_settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -61,7 +62,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
+        builder: (dialogContext, setDialogState) => AppAlertDialog(
           title: Text(_emailBound ? '修改邮箱' : '绑定邮箱'),
           content: Form(
             key: formKey,
@@ -163,7 +164,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     final password = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('解除邮箱'),
         content: TextField(
           controller: password,
@@ -205,7 +206,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     final formKey = GlobalKey<FormState>();
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('修改 APP 密码'),
         content: Form(
           key: formKey,

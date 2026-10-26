@@ -120,7 +120,7 @@ class _PollPostCardState extends State<PollPostCard> {
     final isMutating = provider.isMutating(poll.id);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final homeCompact = widget.variant == PollCardVariant.homeCompact;
-    final primary = homeCompact
+    final primary = homeCompact && !isDark
         ? AppColors.brandPrimary
         : Theme.of(context).colorScheme.primary;
     final options = widget.variant == PollCardVariant.centerFull

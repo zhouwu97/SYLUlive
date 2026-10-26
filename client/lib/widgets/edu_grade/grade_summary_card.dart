@@ -189,7 +189,7 @@ class GradeSummaryCard extends StatelessWidget {
       backgroundColor: Colors.transparent,
       builder: (ctx) {
         final isDark = Theme.of(ctx).brightness == Brightness.dark;
-        return Container(
+        return AppCardSurface(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1E2226) : Colors.white,

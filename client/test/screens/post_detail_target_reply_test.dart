@@ -19,6 +19,8 @@ import 'package:shenliyuan/theme/app_theme.dart';
 import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
 import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
 import 'package:shenliyuan/widgets/post_media/post_media_view.dart';
+import 'package:shenliyuan/widgets/post_reply_composer.dart';
+import '../helpers/golden_viewport.dart';
 
 final List<int> transparentImage = [
   0x89,
@@ -678,6 +680,54 @@ void main() {
   tearDownAll(() {
     HttpOverrides.global = null;
   });
+
+  for (final dark in [false, true]) {
+    testWidgets('评论线程沿用单层玻璃表面并保留输入与关闭 dark=$dark', (tester) async {
+      await setGoldenViewport(tester, GoldenViewports.phone390x844);
+      AppPreferencesStore.setMockInitialValues({});
+      final appearance = ThemeProvider(loadOnStart: false);
+      addTearDown(appearance.dispose);
+      await appearance.setBackgroundImage('morenbeijing.jpeg');
+      await appearance.setFrostedGlass(true);
+      final post = Post(id: 106, title: '玻璃线程', content: 'Content',
+          boardId: 1, authorId: 1, createdAt: DateTime(2026));
+      await tester.pumpWidget(MultiProvider(providers: [
+        ChangeNotifierProvider<AuthProvider>(create: (_) => FakeAuthProvider()),
+        ChangeNotifierProvider<PostProvider>(create: (_) => FakePostProvider()),
+        ChangeNotifierProvider<ThemeProvider>.value(value: appearance),
+      ], child: MaterialApp(
+        theme: dark ? ThemeData.dark() : ThemeData.light(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.3)),
+          child: child!,
+        ),
+        home: PostDetailScreen(postId: post.id, initialPost: post),
+      )));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('共 51 条回复'));
+      await tester.pumpAndSettle();
+      final surface = find.byKey(const ValueKey('reply-thread-surface'));
+      expect(surface, findsOneWidget);
+      expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)), findsOneWidget);
+      final input = find.descendant(of: surface, matching: find.byType(PostReplyComposer));
+      expect(tester.widget<PostReplyComposer>(input).embedded, isTrue);
+      await tester.enterText(find.descendant(of: surface,
+          matching: find.byKey(const ValueKey('post-reply-input'))), '保留草稿');
+      await tester.pump();
+      await appearance.setFrostedGlass(false);
+      await tester.pump();
+      expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)), findsNothing);
+      expect(find.text('保留草稿'), findsOneWidget);
+      await appearance.setFrostedGlass(true);
+      await appearance.setCleanBackgroundMode();
+      await tester.pumpAndSettle();
+      expect(find.text('保留草稿'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(surface, findsNothing);
+    });
+  }
 
   testWidgets('PostDetailScreen 滚动到目标子回复并高亮测试', (WidgetTester tester) async {
     FakeDio.readTargets.clear();

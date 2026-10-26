@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -156,7 +157,7 @@ class _SubjectRankingDetailScreenState
             Consumer<AuthProvider>(
               builder: (context, auth, _) {
                 if (auth.user?.isAdmin != true) return const SizedBox.shrink();
-                return PopupMenuButton<String>(
+                return AppPopupMenuButton<String>(
                   icon: const Icon(Icons.more_horiz_rounded),
                   onSelected: (value) async {
                     if (value == 'merge') {

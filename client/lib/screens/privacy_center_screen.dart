@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -104,7 +106,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     var password = '';
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('撤销全部同意'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -168,7 +170,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     final auth = context.read<AuthProvider>();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('注销账号'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -234,7 +236,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     final bg = isDark ? CampusTheme.darkBg : CampusTheme.bg;
     final auth = context.read<AuthProvider>();
 
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
@@ -560,7 +562,7 @@ class _PrivacyDivider extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final borderColor = isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.softBorder;
 
-    return Divider(
+    return AppCardDivider(
       height: 1,
       thickness: 1,
       indent: 64,

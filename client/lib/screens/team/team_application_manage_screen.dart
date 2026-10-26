@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -61,7 +62,7 @@ class _TeamApplicationManageScreenState
     );
     final reply = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: Text(accepted ? '通过申请' : '拒绝申请'),
         content: TextField(
           controller: replyController,
@@ -107,7 +108,7 @@ class _TeamApplicationManageScreenState
   Future<void> _remove(WaterTeamApplication app) async {
     final confirmed = await showDialog<bool>(
           context: context,
-          builder: (dialogContext) => AlertDialog(
+          builder: (dialogContext) => AppAlertDialog(
             title: const Text('移除成员'),
             content: const Text('移除后名额会重新开放，确定继续吗？'),
             actions: [

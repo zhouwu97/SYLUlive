@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import 'ranking_tokens.dart';
 
@@ -8,7 +9,7 @@ Future<void> showRatingReportSheet({
   required Future<bool> Function(String reasonCode, String description)
       onSubmit,
 }) {
-  return showModalBottomSheet(
+  return showAppModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor:

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'ranking_tokens.dart';
 
@@ -41,7 +42,7 @@ class RatingBottomInputBar extends StatelessWidget {
             child: GestureDetector(
               onTap: onTap,
               behavior: HitTestBehavior.opaque,
-              child: Container(
+              child: AppCardSurface(
                 height: 40,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(

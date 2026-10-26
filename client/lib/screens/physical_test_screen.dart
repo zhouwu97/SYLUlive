@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'dart:convert';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:crypto/crypto.dart';
@@ -483,7 +484,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           const Spacer(),
           GestureDetector(
             onTap: () {
-              showModalBottomSheet(
+              showAppModalBottomSheet(
                 context: context,
                 backgroundColor: isDark ? Colors.grey[900] : Colors.white,
                 shape: const RoundedRectangleBorder(
@@ -554,7 +555,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           insetPadding: const EdgeInsets.symmetric(horizontal: 24),
           backgroundColor: Colors.transparent,
           elevation: 0,
-          child: Container(
+          child: AppCardSurface(
             width: dialogWidth,
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
             decoration: BoxDecoration(
@@ -989,7 +990,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 ),
               ),
               if (index < scores.length - 1)
-                Divider(
+                AppCardDivider(
                   height: 1,
                   thickness: 1,
                   color: isDark

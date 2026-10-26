@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -35,7 +37,7 @@ class _AdminCanteenOperationsScreenState
     final controller = TextEditingController();
     final reason = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: Text('下架「${canteen.name}」'),
         content: TextField(
           controller: controller,
@@ -97,12 +99,13 @@ class _AdminCanteenOperationsScreenState
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView.separated(
+                addRepaintBoundaries: false,
                 padding: const EdgeInsets.all(16),
                 itemCount: provider.canteens.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 10),
                 itemBuilder: (_, index) {
                   final canteen = provider.canteens[index];
-                  return Container(
+                  return AppCardSurface(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                       color: CanteenTheme.surfaceBg(isDark),

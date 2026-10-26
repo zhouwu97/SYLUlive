@@ -6,13 +6,57 @@ import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import 'frosted_glass.dart';
 
-Color _glassColor(BuildContext context, Color? color, double opacity) {
+/// 卡片及系统弹层共用的最终底色，透明度只应用一次。
+Color appGlassSurfaceColor(BuildContext context, Color? color, double opacity) {
   final base = Theme.of(context).brightness == Brightness.dark
       ? AppColors.surfaceSecondaryDark
       : AppColors.surfaceSecondaryLight;
   // 语义色的浅色底（如 warning.withValues(alpha: .08)）仍保持原来的色调，
   // 仅把最终卡片底面的透明度交给全局设置。
   return Color.alphaBlend(color ?? base, base).withValues(alpha: opacity);
+}
+
+Gradient _glassGradient(
+    BuildContext context, Gradient gradient, double opacity) {
+  // 先合成原本的淡色，再应用组件不透明度；直接 withOpacity 会把
+  // 8% 的语义渐变变成 70%／100% 饱和色，深色及简洁模式尤为明显。
+  final colors = gradient.colors
+      .map((color) => appGlassSurfaceColor(context, color, opacity))
+      .toList(growable: false);
+  if (gradient is LinearGradient) {
+    return LinearGradient(
+      begin: gradient.begin,
+      end: gradient.end,
+      colors: colors,
+      stops: gradient.stops,
+      tileMode: gradient.tileMode,
+      transform: gradient.transform,
+    );
+  }
+  if (gradient is RadialGradient) {
+    return RadialGradient(
+      center: gradient.center,
+      radius: gradient.radius,
+      colors: colors,
+      stops: gradient.stops,
+      tileMode: gradient.tileMode,
+      focal: gradient.focal,
+      focalRadius: gradient.focalRadius,
+      transform: gradient.transform,
+    );
+  }
+  if (gradient is SweepGradient) {
+    return SweepGradient(
+      center: gradient.center,
+      startAngle: gradient.startAngle,
+      endAngle: gradient.endAngle,
+      colors: colors,
+      stops: gradient.stops,
+      tileMode: gradient.tileMode,
+      transform: gradient.transform,
+    );
+  }
+  return gradient.scale(opacity);
 }
 
 /// 菜单／设置组内部的装饰分隔线，玻璃模式只保留原有行间距。
@@ -98,8 +142,10 @@ class AppCardSurface extends Container {
         : RoundedRectangleBorder(borderRadius: radius);
     final material = BoxDecoration(
       color:
-          box?.gradient == null ? _glassColor(context, surface, alpha) : null,
-      gradient: box?.gradient?.withOpacity(alpha),
+          box?.gradient == null ? appGlassSurfaceColor(context, surface, alpha) : null,
+      gradient: box?.gradient == null
+          ? null
+          : _glassGradient(context, box!.gradient!, alpha),
       image: box?.image,
       borderRadius: box?.shape == BoxShape.circle ? null : radius,
       shape: box?.shape ?? BoxShape.rectangle,
@@ -187,7 +233,7 @@ class AppCard extends Card {
         child: FrostedGlass(
           enabled: true,
           child: Material(
-            color: _glassColor(
+            color: appGlassSurfaceColor(
                 context,
                 surface,
                 settings!.shouldShowCustomBackground
@@ -250,7 +296,7 @@ class _AppCardMaterialState extends State<Material> {
       type: widget.type,
       elevation: glass ? 0 : widget.elevation,
       color: glass
-          ? _glassColor(
+          ? appGlassSurfaceColor(
               context,
               surface,
               settings!.shouldShowCustomBackground

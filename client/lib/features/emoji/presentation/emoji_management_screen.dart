@@ -1,3 +1,6 @@
+import 'package:shenliyuan/widgets/app_card.dart';
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -259,7 +262,7 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
         context: context,
         builder: (context) => AnimatedBuilder(
             animation: _recentManager,
-            builder: (context, _) => AlertDialog(
+            builder: (context, _) => AppAlertDialog(
                   title: const Text('删除本地安装？'),
                   content: Text(_current(epoch)
                       ? '将删除“${pack.name}”的本机文件，历史消息仍会保留。'
@@ -369,7 +372,7 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
                       },
               )),
         if (!_sorting)
-          PopupMenuButton<_PackAction>(
+          AppPopupMenuButton<_PackAction>(
             tooltip: '${pack.name}更多操作',
             enabled: !_busy,
             onOpened: () => _menuOpen = true,
@@ -815,7 +818,7 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
                             title: '没有找到这个表情包', detail: '换个关键词试试。'),
                       for (final pack in visible) ...[
                         _packRow(pack),
-                        Divider(height: 1, color: emojiBorder(context))
+                        AppCardDivider(height: 1, color: emojiBorder(context))
                       ],
                     ],
                     const EmojiSectionHeader(title: '系统内置'),

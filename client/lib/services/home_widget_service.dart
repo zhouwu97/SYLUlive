@@ -138,7 +138,7 @@ class HomeWidgetService {
   static List<HomeWidgetExamEntry>? _lastExamEntries;
   // 重新同步考试数据时必须沿用最近一次写入的身份，避免无参刷新把 owner 清掉。
   static AcademicIdentityKey? _lastExamIdentity;
-  static Future<void> _appearanceUpdateQueue = Future<void>.value();
+  static Future<void>? _appearanceUpdateQueue;
   static HomeWidgetSyncStatus _syncStatus = const HomeWidgetSyncStatus();
 
   static HomeWidgetSyncStatus get syncStatus => _syncStatus;
@@ -195,18 +195,27 @@ class HomeWidgetService {
       fontSize: HomeWidgetFontSize.fromStorage(
         prefs.getString(HomeWidgetPreferenceKeys.fontSize(kind)),
       ),
+      frostedGlass:
+          prefs.getBool(HomeWidgetPreferenceKeys.frostedGlass(kind)) ?? false,
     );
   }
 
   static Future<void> updateAppearance(HomeWidgetAppearance appearance) {
-    final operation = _appearanceUpdateQueue.then(
-      (_) => _persistAppearance(appearance),
-    );
+    final operation = _appearanceUpdateQueue?.then(
+          (_) => _persistAppearance(appearance),
+        ) ??
+        _persistAppearance(appearance);
     // 外观写入和原生刷新必须保持调用顺序，避免快速切换时旧请求后完成并覆盖新主题。
-    _appearanceUpdateQueue = operation.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace __) {},
-    );
+    late final Future<void> tail;
+    void release() {
+      if (identical(_appearanceUpdateQueue, tail)) {
+        _appearanceUpdateQueue = null;
+      }
+    }
+
+    tail = operation.then<void>((_) => release(),
+        onError: (Object _, StackTrace __) => release());
+    _appearanceUpdateQueue = tail;
     return operation;
   }
 
@@ -216,6 +225,8 @@ class HomeWidgetService {
     await migrateLegacyAppearance();
     final prefs = await AppPreferencesStore.getInstance();
     final results = await Future.wait([
+      prefs.setBool(HomeWidgetPreferenceKeys.frostedGlass(appearance.kind),
+          appearance.frostedGlass),
       prefs.setString(
         HomeWidgetPreferenceKeys.theme(appearance.kind),
         appearance.theme.storageName,
@@ -661,6 +672,9 @@ class HomeWidgetService {
               prefs.getString(HomeWidgetPreferenceKeys.title(kind)),
           '${kind.storageName}_font_size':
               prefs.getString(HomeWidgetPreferenceKeys.fontSize(kind)),
+          '${kind.storageName}_frosted_glass':
+              prefs.getBool(HomeWidgetPreferenceKeys.frostedGlass(kind)) ??
+                  false,
         },
       });
     } on MissingPluginException {

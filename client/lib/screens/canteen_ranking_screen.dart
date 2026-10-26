@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -54,7 +55,7 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
   void _showExplanation(bool isDark) {
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         backgroundColor: CanteenTheme.surfaceBg(isDark),
         title: Text(
           '综合排序是怎么算的？',
@@ -109,7 +110,7 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
   Future<void> _confirmDelete(CanteenRankingItem item) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('删除商家'),
         content: Text('确定要删除商家 "${item.name}" 吗？'),
         actions: [

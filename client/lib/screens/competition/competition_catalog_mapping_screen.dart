@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -93,7 +94,7 @@ class _CompetitionCatalogMappingScreenState
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                 itemCount: _items.length + 1,
-                separatorBuilder: (_, __) => const Divider(height: 1),
+                separatorBuilder: (_, __) => const AppCardDivider(height: 1),
                 itemBuilder: (_, index) {
                   if (index == 0) {
                     return Padding(

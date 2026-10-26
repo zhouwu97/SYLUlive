@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 import 'dart:ui';
 import 'package:dio/dio.dart';
@@ -1251,7 +1252,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      backgroundColor: colors.surface,
+      backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (sheetContext, setSheetState) {
@@ -1310,7 +1311,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               );
             }
 
-            return SafeArea(
+            return AppCardSurface(
+              decoration: BoxDecoration(color: colors.surface,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16))),
+              child: SafeArea(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1346,6 +1350,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 8),
                 ],
+              ),
               ),
             );
           },
@@ -1483,7 +1488,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final controller = TextEditingController(text: authProvider.user?.nickname);
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: const Text('编辑资料'),
         content: TextField(
           controller: controller,
@@ -1582,7 +1587,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
+      builder: (context) => AppCardSurface(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: Theme.of(context).scaffoldBackgroundColor,

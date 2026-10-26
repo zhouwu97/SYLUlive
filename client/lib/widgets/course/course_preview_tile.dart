@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
 
@@ -101,7 +102,7 @@ class CoursePreviewTile extends StatelessWidget {
       weekStr = '周次未知';
     }
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(

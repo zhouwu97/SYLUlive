@@ -190,7 +190,11 @@ Future<void> _seedVault(
             },
           ],
           'hidden_course_ids': <int>[],
-          'semester_start': configuredSemesterStart.toUtc().toIso8601String(),
+          // 与 ScheduleCacheStore.updateSemesterStart 一致：这是校历日期，
+          // 以 UTC 年月日保存，不能按本地时刻换算成前一天。
+          'semester_start': DateTime.utc(configuredSemesterStart.year,
+                  configuredSemesterStart.month, configuredSemesterStart.day)
+              .toIso8601String(),
           'archives': <dynamic>[],
           'active_archive_id': null,
         },

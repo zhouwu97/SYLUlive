@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 
 /// A bottom-sheet date picker for team recruitment deadlines.
@@ -171,7 +172,7 @@ class _TeamDeadlinePickerContentState
     const calendarHeight = 380.0;
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),

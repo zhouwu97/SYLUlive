@@ -41,6 +41,7 @@ data class NativeHomeWidgetAppearance(
     val theme: NativeHomeWidgetTheme,
     val title: String,
     val fontSize: NativeHomeWidgetFontSize,
+    val frostedGlass: Boolean = false,
 )
 
 data class HomeWidgetThemeConfig(
@@ -52,6 +53,12 @@ data class HomeWidgetThemeConfig(
     val accentColor: Int,
     val dividerColor: Int,
 ) {
+    fun backgroundResource(frostedGlass: Boolean): Int = if (!frostedGlass) backgroundResource else when (resolvedTheme) {
+        NativeHomeWidgetTheme.DARK -> R.drawable.widget_bg_glass_dark
+        NativeHomeWidgetTheme.CAMPUS_BLUE -> R.drawable.widget_bg_glass_campus_blue
+        else -> R.drawable.widget_bg_glass_light
+    }
+
     companion object {
         fun resolve(context: Context, theme: NativeHomeWidgetTheme): HomeWidgetThemeConfig {
             val resolved = if (theme == NativeHomeWidgetTheme.SYSTEM) {
@@ -127,6 +134,7 @@ object HomeWidgetAppearanceStore {
             fontSize = NativeHomeWidgetFontSize.fromStorage(
                 prefs.getString(fontSizeKey, null),
             ),
+            frostedGlass = prefs.getBoolean(glassKey(kind), false),
         )
     }
 
@@ -142,9 +150,13 @@ object HomeWidgetAppearanceStore {
         examTheme: String?,
         examTitle: String?,
         examFontSize: String?,
+        courseFrostedGlass: Boolean? = null,
+        examFrostedGlass: Boolean? = null,
     ) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val editor = prefs.edit()
+        courseFrostedGlass?.let { editor.putBoolean(glassKey(NativeHomeWidgetKind.COURSE), it) }
+        examFrostedGlass?.let { editor.putBoolean(glassKey(NativeHomeWidgetKind.EXAM), it) }
         courseTheme?.let {
             editor.putString(COURSE_THEME, NativeHomeWidgetTheme.fromStorage(it).storageName)
         }
@@ -175,6 +187,8 @@ object HomeWidgetAppearanceStore {
     /** 暴露纯字符串映射，便于在不启动 Android/Launcher 环境时做契约测试。 */
     fun fontSizeStorageKey(kind: NativeHomeWidgetKind): String =
         if (kind == NativeHomeWidgetKind.COURSE) COURSE_FONT_SIZE else EXAM_FONT_SIZE
+
+    private fun glassKey(kind: NativeHomeWidgetKind) = "flutter.widget_${kind.storageName}_frosted_glass"
 
     fun migrateLegacy(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

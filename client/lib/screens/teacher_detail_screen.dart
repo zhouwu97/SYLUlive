@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -84,7 +86,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('确认删除'),
         content: Text('确定要删除教师「${widget.teacherName}」吗？此操作不可撤销。'),
         actions: [
@@ -128,7 +130,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('删除评价'),
         content: const Text('确定删除自己的这条评价吗？删除后评分会重新计算。'),
         actions: [
@@ -206,7 +208,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
           scrolledUnderElevation: 0,
           actions: [
             if (context.watch<AuthProvider>().user?.isAdmin == true)
-              PopupMenuButton<String>(
+              AppPopupMenuButton<String>(
                 icon: Icon(
                   Icons.more_horiz,
                   color: RankingTokens.titleColor(isDark),

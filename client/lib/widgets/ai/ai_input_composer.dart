@@ -1,3 +1,4 @@
+import '../app_card.dart';
 import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
@@ -125,7 +126,7 @@ class _AiInputComposerState extends State<AiInputComposer> {
                   onBridgeRetry: widget.onBridgeRetry,
                 ),
               ),
-            Container(
+            AppCardSurface(
               height: 48,
               padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
               decoration: BoxDecoration(
@@ -148,6 +149,7 @@ class _AiInputComposerState extends State<AiInputComposer> {
                         if (_inlineError != null) _inlineError = null;
                       },
                       decoration: InputDecoration(
+                        filled: false,
                         hintText:
                             widget.enabled ? widget.hintText : '校园 Agent 暂不可用',
                         border: InputBorder.none,

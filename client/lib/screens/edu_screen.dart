@@ -1,3 +1,4 @@
+import '../providers/theme_provider.dart';
 import '../widgets/app_page_background.dart';
 import 'academic_data_settings_screen.dart';
 import '../features/academic/presentation/academic_unbind_dialog.dart';
@@ -239,7 +240,8 @@ class _EduScreenState extends State<EduScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: isDark
+                color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                    ? Colors.transparent : isDark
                     ? Colors.white.withValues(alpha: 0.04)
                     : const Color(0xFFF8F9FA),
                 borderRadius: BorderRadius.circular(12),

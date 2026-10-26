@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -894,7 +895,7 @@ class _HomeScreenState extends State<HomeScreen>
             horizontal: 22,
             vertical: 24,
           ),
-          child: Container(
+          child: AppCardSurface(
             constraints: const BoxConstraints(maxWidth: 520),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF161B24) : Colors.white,
@@ -1236,7 +1237,7 @@ class _HomeScreenState extends State<HomeScreen>
                 horizontal: 22,
                 vertical: 24,
               ),
-              child: Container(
+              child: AppCardSurface(
                 constraints: const BoxConstraints(maxWidth: 520),
                 decoration: BoxDecoration(
                   color: isDark ? const Color(0xFF161B24) : Colors.white,

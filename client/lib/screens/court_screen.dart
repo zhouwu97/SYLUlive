@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -168,7 +169,7 @@ class _CourtScreenState extends State<CourtScreen> {
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) {
           final canSubmit = controller.text.trim().isNotEmpty;
-          return AlertDialog(
+          return AppAlertDialog(
             insetPadding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.lg, vertical: AppSpacing.xxl),
             titlePadding: const EdgeInsets.fromLTRB(

@@ -119,6 +119,12 @@ class ScheduleResolver {
               break;
 
             case ScheduleOverrideType.reschedule:
+              final targetWeeks = ov.targetWeeksFor(actualWeeks);
+              if (targetWeeks.any((w) =>
+                  w < 1 ||
+                  (totalTeachingWeeks != null && w > totalTeachingWeeks))) {
+                throw const ScheduleResolverException('目标周次超出本学期范围');
+              }
               resolvedList.add(ResolvedMeeting(
                 semesterId: course.semesterId,
                 courseKey: course.courseKey,
@@ -126,7 +132,7 @@ class ScheduleResolver {
                 weekday: ov.toWeekday ?? meeting.weekday,
                 startSection: ov.toStartSection ?? meeting.startSection,
                 endSection: ov.toEndSection ?? meeting.endSection,
-                weeks: actualWeeks,
+                weeks: targetWeeks,
                 room: ov.toRoom ?? meeting.room,
                 teacher: meeting.teacher ?? course.teacher,
                 source: CourseSource.edu,
@@ -188,7 +194,30 @@ class ScheduleResolver {
     }
 
     // 5. 冲突检测（Section 20 & 21: 识别时间重叠的课程）
-    return _detectConflicts(resolvedList);
+    // 合并只作用于同一课程、完全相同时间的教务原安排，绝不吞掉其他调整。
+    final replacements = activeOverrides
+        .where((o) =>
+            o.type == ScheduleOverrideType.reschedule && o.replaceSameCourse)
+        .map((o) => o.id)
+        .toSet();
+    final replacingMeetings =
+        resolvedList.where((r) => replacements.contains(r.overrideId)).toList();
+    final merged = <ResolvedMeeting>[];
+    for (final meeting in resolvedList) {
+      var weeks = meeting.weeks;
+      if (!meeting.isOverridden && meeting.source == CourseSource.edu) {
+        for (final replacement in replacingMeetings) {
+          if (meeting.courseKey == replacement.courseKey &&
+              meeting.weekday == replacement.weekday &&
+              meeting.startSection == replacement.startSection &&
+              meeting.endSection == replacement.endSection) {
+            weeks = weeks.difference(replacement.weeks);
+          }
+        }
+      }
+      if (weeks.isNotEmpty) merged.add(meeting.copyWith(weeks: weeks));
+    }
+    return _detectConflicts(merged);
   }
 
   static ResolvedMeeting _createResolved({

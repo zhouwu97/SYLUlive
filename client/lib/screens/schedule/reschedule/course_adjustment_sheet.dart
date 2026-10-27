@@ -53,7 +53,19 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
   ({int weekday, int startSection, int endSection, String? newRoom})? _target;
   ScheduleConflictCheckResult? _conflict;
   bool _saving = false;
+  int _weekOffset = 0;
+  bool _replaceSameCourse = false;
+  String? _saveError;
+  late final String _scope;
   late final Meeting? _baseMeeting = _findBaseMeeting();
+
+  @override
+  void initState() {
+    super.initState();
+    _scope = '${widget.provider.sessionKey}:${widget.provider.currentTerm.id}';
+    _weekOffset = widget.existingOverride?.weekOffset ?? 0;
+    _replaceSameCourse = widget.existingOverride?.replaceSameCourse ?? false;
+  }
 
   Meeting? _findBaseMeeting() {
     final courseKey = widget.course.courseKey;
@@ -75,42 +87,56 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
         int endSection,
         String? newRoom
       }) target) {
-    final conflict = const ScheduleConflictService().check(
-      currentResolved: widget.provider.resolvedMeetings,
-      targetCourseKey: widget.course.courseKey ?? '',
-      targetMeetingKey: widget.course.meetingKey ?? '',
-      targetWeekday: target.weekday,
-      targetStartSection: target.startSection,
-      targetEndSection: target.endSection,
-      targetWeeks: _affectedWeeks ?? const <int>{},
-      editingOverrideId:
-          widget.existingOverride?.id ?? widget.course.overrideId,
-    );
-    setState(() {
-      _target = target;
-      _conflict = conflict;
-      _step = 3;
-    });
+    try {
+      final conflict = widget.provider.previewReschedule(
+        courseKey: widget.course.courseKey ?? '',
+        meetingKey: widget.course.meetingKey ?? '',
+        toWeekday: target.weekday,
+        toStartSection: target.startSection,
+        toEndSection: target.endSection,
+        affectedWeeks: _affectedWeeks ?? const <int>{},
+        weekOffset: _weekOffset,
+        overrideId: widget.existingOverride?.id ?? widget.course.overrideId,
+      );
+      setState(() {
+        _target = target;
+        _conflict = conflict;
+        _saveError = null;
+        _step = 3;
+      });
+    } catch (error) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('$error')));
+    }
   }
 
   Future<void> _save() async {
+    if (_saving) return;
+    if (_scope !=
+        '${widget.provider.sessionKey}:${widget.provider.currentTerm.id}') {
+      setState(() => _saveError = '账号或学期已切换，请关闭后重新打开课表');
+      return;
+    }
     final target = _target;
     final weeks = _affectedWeeks;
     if (target == null || weeks == null || weeks.isEmpty) return;
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
     final course = widget.course;
     final base = _baseMeeting!;
     final snapshot = widget.existingOverride?.sourceSnapshotHash ??
         base.computeSnapshotHash();
     final normalizedRoom = target.newRoom?.trim() ?? '';
-    final timeChanged = target.weekday != base.weekday ||
+    final timeChanged = _weekOffset != 0 ||
+        target.weekday != base.weekday ||
         target.startSection != base.startSection ||
         target.endSection != base.endSection;
     final roomChanged = normalizedRoom != (base.room?.trim() ?? '');
     if (!timeChanged && !roomChanged) {
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('未检测到任何修改')));
+      setState(() => _saveError = '未检测到任何修改；恢复课程请使用“恢复原安排”');
       return;
     }
     try {
@@ -121,6 +147,8 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
           meetingKey:
               course.meetingKey ?? 'm_${course.weekday}_${course.startSection}',
           affectedWeeks: weeks,
+          weekOffset: _weekOffset,
+          replaceSameCourse: _replaceSameCourse,
           toWeekday: target.weekday,
           toStartSection: target.startSection,
           toEndSection: target.endSection,
@@ -130,7 +158,9 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
           fromStartSection: base.startSection,
           fromEndSection: base.endSection,
           fromRoom: base.room,
-          allowConflict: _conflict?.hasConflict ?? false,
+          allowConflict: _conflict?.conflicts
+                  .any((c) => !_replaceSameCourse || !c.canReplaceSameCourse) ??
+              false,
         );
       } else {
         await widget.provider.createChangeRoomOverride(
@@ -147,8 +177,8 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('保存调整失败，请重试：$error')));
+        setState(() => _saveError =
+            '保存调整失败，请重试：${error.toString().replaceFirst('Bad state: ', '')}');
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -173,9 +203,9 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
     }
     final base = _baseMeeting!;
     return PopScope(
-      canPop: _step == 1,
+      canPop: !_saving && _step == 1,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _step > 1) setState(() => _step--);
+        if (!didPop && !_saving && _step > 1) setState(() => _step--);
       },
       child: switch (_step) {
         1 => SelectWeeksSheet(
@@ -183,7 +213,8 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
             currentAcademicWeek: widget.currentAcademicWeek,
             totalTeachingWeeks: widget.provider.currentTerm.maxWeek,
             sourceWeeks: base.weeks,
-            initialAffectedWeeks: widget.existingOverride?.affectedWeeks,
+            initialAffectedWeeks:
+                _affectedWeeks ?? widget.existingOverride?.affectedWeeks,
             onBack: () => Navigator.pop(context),
             onClose: () => Navigator.pop(context),
             onNext: (weeks) => setState(() {
@@ -194,6 +225,8 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
         2 => SelectTimeSheet(
             course: widget.course,
             affectedWeeks: _affectedWeeks ?? const <int>{},
+            initialWeekOffset: _weekOffset,
+            totalTeachingWeeks: widget.provider.currentTerm.maxWeek,
             initialWeekday: _target?.weekday ??
                 widget.existingOverride?.toWeekday ??
                 base.weekday,
@@ -208,16 +241,28 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
                 base.room,
             onBack: () => setState(() => _step = 1),
             onClose: () => Navigator.pop(context),
-            onNext: (weekday, start, end, room) => _goConfirm((
-              weekday: weekday,
-              startSection: start,
-              endSection: end,
-              newRoom: room,
-            )),
+            onNext: (weekday, start, end, room, offset) {
+              _weekOffset = offset;
+              _goConfirm((
+                weekday: weekday,
+                startSection: start,
+                endSection: end,
+                newRoom: room,
+              ));
+            },
           ),
         _ => ConfirmChangeSheet(
             course: widget.course,
             affectedWeeks: _affectedWeeks ?? const <int>{},
+            weekOffset: _weekOffset,
+            fromWeekday: base.weekday,
+            fromStartSection: base.startSection,
+            fromEndSection: base.endSection,
+            saving: _saving,
+            saveError: _saveError,
+            replaceSameCourse: _replaceSameCourse,
+            onReplacementChanged: (value) =>
+                setState(() => _replaceSameCourse = value),
             toWeekday: _target!.weekday,
             toStartSection: _target!.startSection,
             toEndSection: _target!.endSection,
@@ -226,7 +271,7 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
             onBackToEdit: () => setState(() => _step = 2),
             onBack: () => setState(() => _step = 2),
             onClose: () => Navigator.pop(context),
-            onConfirm: _saving ? () {} : _save,
+            onConfirm: _saving ? null : _save,
           ),
       },
     );

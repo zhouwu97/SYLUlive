@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +22,8 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 /// 首次 pump 之前永远不会完成，会导致 setup await 挂死。
 class _MemorySnapshotStore implements AccountScopedSnapshotStore {
   PersonalSnapshot? _snapshot;
+  Completer<bool>? pendingWrite;
+  int writes = 0;
 
   @override
   final String accountFingerprint = 'course-test-account';
@@ -69,6 +72,9 @@ class _MemorySnapshotStore implements AccountScopedSnapshotStore {
     DateTime? fetchedAt,
     DateTime? expiresAt,
   }) async {
+    writes++;
+    final pending = pendingWrite;
+    if (pending != null && !await pending.future) throw StateError('测试保存失败');
     _snapshot = PersonalSnapshot(
       appUserFingerprint: accountFingerprint,
       sourceAccountFingerprint: 'test-source',
@@ -149,6 +155,48 @@ void main() {
 
   tearDown(() {
     AcademicPersistenceRegistry.clear('1');
+  });
+
+  testWidgets('手动添加显示保存状态，失败提示留在弹窗中，重试后立即关闭并显示课程', (tester) async {
+    final store = _MemorySnapshotStore();
+    final page = await _pumpCourse(tester, memoryStore: store);
+    await page.scheduleProvider.applyFetchedCourses([{
+      'name': '原有课程', 'time': 1, 'end_time': 2, 'week_day': 1, 'weeks': [1, 2],
+    }]);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.more_horiz_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('课表设置'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('添加自定义课程'));
+    await tester.tap(find.text('添加自定义课程'));
+    // 设置页在等待弹窗关闭时持续显示进度，弹窗内只推进必要的动画帧。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('添加'));
+    await tester.pump();
+    expect(find.text('请输入课程名称'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).first, '手动补课');
+    store.pendingWrite = Completer<bool>();
+    final writesBefore = store.writes;
+    await tester.tap(find.text('添加'));
+    await tester.pump();
+    expect(find.text('正在保存…'), findsOneWidget);
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '正在保存…')).onPressed, isNull);
+    expect(store.writes, writesBefore + 1);
+    store.pendingWrite!.complete(false);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.textContaining('保存失败，请重试'), findsOneWidget);
+    expect(page.scheduleProvider.courses.any((c) => c.name == '手动补课'), isFalse);
+    expect(tester.widget<TextField>(find.byType(TextField).first).controller!.text, '手动补课');
+    store.pendingWrite = null;
+    await tester.tap(find.text('添加'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(page.scheduleProvider.courses.where((c) => c.name == '手动补课'), hasLength(1));
+    expect(tester.takeException(), isNull);
+    await _disposeCourse(tester, page);
   });
 
   testWidgets('课表中部横滑切周', (tester) async {
@@ -512,6 +560,7 @@ Future<_CourseTestPage> _pumpCourse(
   ThemeMode themeMode = ThemeMode.light,
   double textScaleFactor = 1,
   Map<String, Object> initialPreferences = const <String, Object>{},
+  _MemorySnapshotStore? memoryStore,
 }) async {
   AppPreferencesStore.setMockInitialValues(initialPreferences);
   tester.view.physicalSize = physicalSize;
@@ -540,7 +589,7 @@ Future<_CourseTestPage> _pumpCourse(
   );
 
   // 通过内存快照商店预置一门课程，让课表走「本地缓存优先」路径渲染周分页器。
-  final snapshotStore = _MemorySnapshotStore();
+  final snapshotStore = memoryStore ?? _MemorySnapshotStore();
   final scheduleProvider = CourseScheduleProvider(dio, (_) => snapshotStore);
   scheduleProvider.syncSessionContext('1', 'edu-1');
   // 测试字体 Ahem 下每个字符都是全宽，过长的学期标题会让表头行溢出；

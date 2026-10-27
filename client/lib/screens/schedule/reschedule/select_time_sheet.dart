@@ -11,10 +11,12 @@ class SelectTimeSheet extends StatefulWidget {
   final int? initialStartSection;
   final int? initialEndSection;
   final String? initialRoom;
+  final int initialWeekOffset;
+  final int totalTeachingWeeks;
   final VoidCallback? onBack;
   final VoidCallback? onClose;
-  final void Function(
-      int weekday, int startSection, int endSection, String? newRoom) onNext;
+  final void Function(int weekday, int startSection, int endSection,
+      String? newRoom, int weekOffset) onNext;
 
   const SelectTimeSheet({
     super.key,
@@ -24,13 +26,21 @@ class SelectTimeSheet extends StatefulWidget {
     this.initialStartSection,
     this.initialEndSection,
     this.initialRoom,
+    this.initialWeekOffset = 0,
+    this.totalTeachingWeeks = 20,
     this.onBack,
     this.onClose,
     required this.onNext,
   });
 
   static Future<
-      ({int weekday, int startSection, int endSection, String? newRoom})?> show(
+      ({
+        int weekday,
+        int startSection,
+        int endSection,
+        String? newRoom,
+        int weekOffset
+      })?> show(
     BuildContext context, {
     required CourseBlock course,
     required Set<int> affectedWeeks,
@@ -38,9 +48,17 @@ class SelectTimeSheet extends StatefulWidget {
     int? initialStartSection,
     int? initialEndSection,
     String? initialRoom,
+    int initialWeekOffset = 0,
+    int totalTeachingWeeks = 20,
   }) {
     return showModalBottomSheet<
-        ({int weekday, int startSection, int endSection, String? newRoom})>(
+        ({
+          int weekday,
+          int startSection,
+          int endSection,
+          String? newRoom,
+          int weekOffset
+        })>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -51,12 +69,15 @@ class SelectTimeSheet extends StatefulWidget {
         initialStartSection: initialStartSection,
         initialEndSection: initialEndSection,
         initialRoom: initialRoom,
-        onNext: (weekday, start, end, room) {
+        initialWeekOffset: initialWeekOffset,
+        totalTeachingWeeks: totalTeachingWeeks,
+        onNext: (weekday, start, end, room, offset) {
           Navigator.pop(ctx, (
             weekday: weekday,
             startSection: start,
             endSection: end,
             newRoom: room,
+            weekOffset: offset,
           ));
         },
       ),
@@ -71,6 +92,7 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
   int _selectedWeekday = 1;
   int _selectedStartSection = 1;
   int _selectedEndSection = 2;
+  late int _weekOffset;
   late TextEditingController _roomController;
 
   static const _weekdays = ['一', '二', '三', '四', '五', '六', '日'];
@@ -105,6 +127,10 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
   @override
   void initState() {
     super.initState();
+    final first = widget.affectedWeeks.reduce((a, b) => a < b ? a : b);
+    final last = widget.affectedWeeks.reduce((a, b) => a > b ? a : b);
+    _weekOffset = widget.initialWeekOffset
+        .clamp(1 - first, widget.totalTeachingWeeks - last);
     _selectedWeekday = widget.initialWeekday ?? widget.course.weekday;
     _selectedStartSection =
         widget.initialStartSection ?? widget.course.startSection;
@@ -172,6 +198,7 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                     ),
                   ),
                   IconButton(
+                    tooltip: '关闭调课',
                     icon: Icon(Icons.close,
                         color: tokens.textSecondary, size: 20),
                     onPressed: widget.onClose ?? () => Navigator.pop(context),
@@ -194,6 +221,31 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
               const SizedBox(height: 16),
               AppCardDivider(color: tokens.divider),
               const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                key: const ValueKey('reschedule-target-week'),
+                initialValue: _weekOffset,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: '目标起始周'),
+                items: [
+                  for (var offset = 1 - sortedWeeks.first;
+                      offset <= widget.totalTeachingWeeks - sortedWeeks.last;
+                      offset++)
+                    DropdownMenuItem(
+                        value: offset,
+                        child: Text(
+                            '第 ${sortedWeeks.first + offset} 周${offset == 0 ? '（周次不变）' : ''}')),
+                ],
+                onChanged: (offset) =>
+                    setState(() => _weekOffset = offset ?? 0),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                  '目标周次：第 ${sortedWeeks.map((w) => w + _weekOffset).join('、')} 周；所选原周次将整体平移，保持原有间隔。',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: tokens.textSecondary)),
+              const SizedBox(height: 16),
               Text(
                 '目标星期',
                 style: TextStyle(
@@ -203,8 +255,9 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                 ),
               ),
               const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
                 children: List.generate(7, (i) {
                   final day = i + 1;
                   final isSelected = _selectedWeekday == day;
@@ -212,8 +265,8 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                     borderRadius: BorderRadius.circular(10),
                     onTap: () => setState(() => _selectedWeekday = day),
                     child: Container(
-                      width: 42,
-                      height: 42,
+                      width: 44,
+                      height: 44,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: isSelected
@@ -325,14 +378,15 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                   children: [
                     Icon(Icons.schedule, size: 20, color: tokens.primary),
                     const SizedBox(width: 8),
-                    Text(
+                    Expanded(
+                        child: Text(
                       '新时间：周${_weekdays[_selectedWeekday - 1]} 第$_selectedStartSection-$_selectedEndSection节',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color: tokens.primary,
                       ),
-                    ),
+                    )),
                   ],
                 ),
               ),
@@ -342,6 +396,7 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                 height: 46,
                 child: FilledButton(
                   style: FilledButton.styleFrom(
+                    textStyle: Theme.of(context).textTheme.labelLarge,
                     backgroundColor: tokens.primary,
                     foregroundColor: tokens.onPrimary,
                     shape: RoundedRectangleBorder(
@@ -355,6 +410,7 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                       _selectedStartSection,
                       _selectedEndSection,
                       room.isNotEmpty ? room : null,
+                      _weekOffset,
                     );
                   },
                   child: const Text('下一步：冲突检查与确认',

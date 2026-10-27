@@ -2,20 +2,30 @@ import 'package:flutter/material.dart';
 import '../../../providers/course_schedule_provider.dart';
 import '../../../services/schedule/schedule_conflict_service.dart';
 import '../../../theme/app_theme_tokens.dart';
+import '../../../theme/app_radius.dart';
+import '../../../utils/week_formatter.dart';
 
-/// 调课第三步：确认与冲突检查
+/// 调课第三步：确认源周次、目标周次、合并方式及真实冲突。
 class ConfirmChangeSheet extends StatelessWidget {
   final CourseBlock course;
   final Set<int> affectedWeeks;
+  final int weekOffset;
   final int toWeekday;
   final int toStartSection;
   final int toEndSection;
   final String? toRoom;
   final ScheduleConflictCheckResult conflictResult;
-  final VoidCallback onConfirm;
+  final VoidCallback? onConfirm;
   final VoidCallback onBackToEdit;
   final VoidCallback? onBack;
   final VoidCallback? onClose;
+  final bool replaceSameCourse;
+  final ValueChanged<bool>? onReplacementChanged;
+  final bool saving;
+  final String? saveError;
+  final int? fromWeekday;
+  final int? fromStartSection;
+  final int? fromEndSection;
 
   const ConfirmChangeSheet({
     super.key,
@@ -30,6 +40,14 @@ class ConfirmChangeSheet extends StatelessWidget {
     required this.onBackToEdit,
     this.onBack,
     this.onClose,
+    this.weekOffset = 0,
+    this.replaceSameCourse = false,
+    this.onReplacementChanged,
+    this.saving = false,
+    this.saveError,
+    this.fromWeekday,
+    this.fromStartSection,
+    this.fromEndSection,
   });
 
   static const _weekdays = ['一', '二', '三', '四', '五', '六', '日'];
@@ -37,282 +55,146 @@ class ConfirmChangeSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
-    final sortedWeeks = affectedWeeks.toList()..sort();
-    final hasConflict = conflictResult.hasConflict;
+    final text = Theme.of(context).textTheme;
+    final sourceWeeks = affectedWeeks.toList()..sort();
+    final targetWeeks = sourceWeeks.map((w) => w + weekOffset).toList();
+    final matches =
+        conflictResult.conflicts.where((c) => c.canReplaceSameCourse).toList();
+    final conflicts = conflictResult.conflicts
+        .where((c) => !replaceSameCourse || !c.canReplaceSameCourse)
+        .toList();
+    final hasConflict = conflicts.isNotEmpty ||
+        (conflictResult.hasConflict && conflictResult.conflicts.isEmpty);
+
+    Widget arrangement(
+            String label, List<int> weeks, int weekday, int start, int end) =>
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label,
+              style: text.labelLarge?.copyWith(color: tokens.textSecondary)),
+          const SizedBox(height: 4),
+          Text(WeekFormatter.format(weeks, prefixWithDi: true),
+              style: text.bodyMedium),
+          Text('周${_weekdays[weekday - 1]} 第$start-$end节',
+              style: text.bodyMedium),
+        ]);
 
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        padding: EdgeInsets.fromLTRB(
+            20, 16, 20, 24 + MediaQuery.viewInsetsOf(context).bottom),
         decoration: BoxDecoration(
-          color: tokens.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
+            color: tokens.surface,
+            borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(AppRadius.sheet))),
         child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 38,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: tokens.divider,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
+            child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              IconButton(
+                  tooltip: '返回修改',
+                  onPressed: saving ? null : onBack ?? onBackToEdit,
+                  icon: const Icon(Icons.arrow_back)),
+              Expanded(child: Text('确认修改 (3/3)', style: text.titleMedium)),
+              IconButton(
+                  tooltip: '关闭调课',
+                  onPressed:
+                      saving ? null : onClose ?? () => Navigator.pop(context),
+                  icon: const Icon(Icons.close)),
+            ]),
+            const SizedBox(height: 12),
+            Text(course.name,
+                style: text.titleSmall?.copyWith(color: tokens.primary)),
+            const SizedBox(height: 16),
+            arrangement(
+                '原时间',
+                sourceWeeks,
+                fromWeekday ?? course.weekday,
+                fromStartSection ?? course.startSection,
+                fromEndSection ?? course.endSection),
+            const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Icon(Icons.arrow_downward)),
+            arrangement(
+                '新时间', targetWeeks, toWeekday, toStartSection, toEndSection),
+            if (toRoom?.isNotEmpty == true)
+              Text('教室：$toRoom', style: text.bodyMedium),
+            const SizedBox(height: 12),
+            Text('原周次的所选安排将移除，其他周次按原安排显示。',
+                style: text.bodySmall?.copyWith(color: tokens.textSecondary)),
+            if (matches.isNotEmpty) ...[
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '确认修改 (3/3)',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: tokens.textPrimary,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close,
-                        color: tokens.textSecondary, size: 20),
-                    onPressed: onClose ?? () => Navigator.pop(context),
-                  ),
-                ],
+              Text('目标时间已有同一课程', style: text.titleSmall),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: replaceSameCourse,
+                onChanged: saving || onReplacementChanged == null
+                    ? null
+                    : (value) => onReplacementChanged!(value ?? false),
+                title: const Text('合并同一课程的原安排'),
+                subtitle: const Text('仅合并同一课程且时间完全相同的原安排，目标位置显示一次；恢复原安排时一并还原。'),
               ),
-              Text(
-                course.name,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: tokens.primary,
-                ),
-              ),
-              const SizedBox(height: 12),
-              // 调整范围与时间对比卡片
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: tokens.inputBackground,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: tokens.outline),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '影响周次：第 ${sortedWeeks.join('、')} 周 (共 ${sortedWeeks.length} 周)',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: tokens.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('原时间',
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      color: tokens.textSecondary)),
-                              const SizedBox(height: 2),
-                              Text(
-                                '周${_weekdays[course.weekday - 1]} 第${course.startSection}-${course.endSection}节',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: tokens.textPrimary,
-                                ),
-                              ),
-                              if (course.location != null)
-                                Text(course.location!,
-                                    style: TextStyle(
-                                        fontSize: 11,
-                                        color: tokens.textSecondary)),
-                            ],
-                          ),
-                        ),
-                        Icon(Icons.arrow_forward_rounded,
-                            size: 20, color: tokens.primary),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('新时间',
-                                  style: TextStyle(
-                                      fontSize: 11, color: tokens.primary)),
-                              const SizedBox(height: 2),
-                              Text(
-                                '周${_weekdays[toWeekday - 1]} 第$toStartSection-$toEndSection节',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: tokens.primary,
-                                ),
-                              ),
-                              if (toRoom != null && toRoom!.isNotEmpty)
-                                Text(toRoom!,
-                                    style: TextStyle(
-                                        fontSize: 11,
-                                        color: tokens.textSecondary)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              // 冲突检测状态
-              if (!hasConflict) ...[
-                Container(
-                  width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: tokens.isDark
-                        ? const Color(0xFF142B1F)
-                        : const Color(0xFFE8F7EE),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.check_circle_outline,
-                          color: tokens.success, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        '未发现课程冲突',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: tokens.success,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 46,
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: tokens.primary,
-                      foregroundColor: tokens.onPrimary,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onPressed: onConfirm,
-                    child: const Text('确认修改',
-                        style: TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ] else ...[
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: tokens.isDark
-                        ? const Color(0xFF2E2413)
-                        : const Color(0xFFFFF3DD),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: tokens.warning.withValues(alpha: 0.5)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.warning_amber_rounded,
-                              color: tokens.warning, size: 20),
-                          const SizedBox(width: 8),
-                          Text(
-                            '发现时间冲突',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: tokens.warning,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      ...conflictResult.conflicts.map((conf) {
-                        final weeksList = conf.conflictingWeeks.toList()
-                          ..sort();
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Text(
-                            '• 第${weeksList.join('、')}周 周${_weekdays[conf.weekday - 1]} 第${conf.startSection}-${conf.endSection}节 已有课程：${conf.existingCourseName}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: tokens.isDark
-                                  ? Colors.amber[200]
-                                  : Colors.brown[800],
-                            ),
-                          ),
-                        );
-                      }),
-                      const SizedBox(height: 6),
-                      Text(
-                        '继续保存后，两门课程将在同一时间出现。',
-                        style: TextStyle(
-                            fontSize: 11, color: tokens.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: tokens.textPrimary,
-                          side: BorderSide(color: tokens.outline),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onPressed: onBackToEdit,
-                        child: const Text('返回修改'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: tokens.warning,
-                          foregroundColor: Colors.black87,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onPressed: onConfirm,
-                        child: const Text('保留冲突并保存',
-                            style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
             ],
-          ),
-        ),
+            const SizedBox(height: 16),
+            Row(children: [
+              Icon(
+                  hasConflict
+                      ? Icons.warning_amber_rounded
+                      : Icons.check_circle_outline,
+                  color: hasConflict ? tokens.warning : tokens.success),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: Text(hasConflict ? '发现时间冲突' : '未发现课程冲突',
+                      style: text.titleSmall?.copyWith(
+                          color:
+                              hasConflict ? tokens.warning : tokens.success))),
+            ]),
+            for (final conflict in conflicts)
+              Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                      '${WeekFormatter.format(conflict.conflictingWeeks.toList(), prefixWithDi: true)} '
+                      '周${_weekdays[conflict.weekday - 1]} 第${conflict.startSection}-${conflict.endSection}节 '
+                      '已有课程：${conflict.existingCourseName}',
+                      style: text.bodySmall)),
+            if (hasConflict)
+              Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('继续保存后，重叠的课程会同时保留并标注冲突。', style: text.bodySmall)),
+            if (saveError != null)
+              Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: Semantics(
+                      liveRegion: true,
+                      child: Text(saveError!,
+                          style:
+                              text.bodyMedium?.copyWith(color: tokens.error)))),
+            const SizedBox(height: 20),
+            SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                    style: FilledButton.styleFrom(textStyle: text.labelLarge),
+                    onPressed: saving ? null : onConfirm,
+                    child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Text(saving
+                            ? '正在保存…'
+                            : hasConflict
+                                ? '保留冲突并保存'
+                                : replaceSameCourse && matches.isNotEmpty
+                                    ? '合并并确认修改'
+                                    : '确认修改')))),
+            if (hasConflict)
+              SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                      onPressed: saving ? null : onBackToEdit,
+                      child: const Text('返回修改'))),
+          ],
+        )),
       ),
     );
   }

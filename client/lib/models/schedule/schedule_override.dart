@@ -45,6 +45,12 @@ class ScheduleOverride {
 
   final Set<int> affectedWeeks;
 
+  /// 原周次到目标周次的平移量；旧规则默认为 0，单双周间隔保持不变。
+  final int weekOffset;
+
+  /// 经用户确认后，合并目标时间中同一课程的未调整安排。
+  final bool replaceSameCourse;
+
   final int? toWeekday;
   final int? toStartSection;
   final int? toEndSection;
@@ -71,6 +77,8 @@ class ScheduleOverride {
     required this.type,
     this.status = ScheduleOverrideStatus.active,
     required this.affectedWeeks,
+    this.weekOffset = 0,
+    this.replaceSameCourse = false,
     this.toWeekday,
     this.toStartSection,
     this.toEndSection,
@@ -84,7 +92,12 @@ class ScheduleOverride {
     required this.updatedAt,
   });
 
-  bool get isActive => status == ScheduleOverrideStatus.active || status == ScheduleOverrideStatus.conflicted;
+  bool get isActive =>
+      status == ScheduleOverrideStatus.active ||
+      status == ScheduleOverrideStatus.conflicted;
+
+  Set<int> targetWeeksFor(Set<int> sourceWeeks) =>
+      sourceWeeks.map((week) => week + weekOffset).toSet();
 
   ScheduleOverride copyWith({
     String? id,
@@ -94,6 +107,8 @@ class ScheduleOverride {
     ScheduleOverrideType? type,
     ScheduleOverrideStatus? status,
     Set<int>? affectedWeeks,
+    int? weekOffset,
+    bool? replaceSameCourse,
     int? toWeekday,
     int? toStartSection,
     int? toEndSection,
@@ -114,6 +129,8 @@ class ScheduleOverride {
       type: type ?? this.type,
       status: status ?? this.status,
       affectedWeeks: affectedWeeks ?? this.affectedWeeks,
+      weekOffset: weekOffset ?? this.weekOffset,
+      replaceSameCourse: replaceSameCourse ?? this.replaceSameCourse,
       toWeekday: toWeekday ?? this.toWeekday,
       toStartSection: toStartSection ?? this.toStartSection,
       toEndSection: toEndSection ?? this.toEndSection,
@@ -138,6 +155,8 @@ class ScheduleOverride {
       'type': type.name,
       'status': status.name,
       'affected_weeks': sortedWeeks,
+      if (weekOffset != 0) 'week_offset': weekOffset,
+      if (replaceSameCourse) 'replace_same_course': true,
       if (toWeekday != null) 'to_weekday': toWeekday,
       if (toStartSection != null) 'to_start_section': toStartSection,
       if (toEndSection != null) 'to_end_section': toEndSection,
@@ -179,6 +198,8 @@ class ScheduleOverride {
       type: type,
       status: status,
       affectedWeeks: parsedWeeks,
+      weekOffset: (json['week_offset'] as num?)?.toInt() ?? 0,
+      replaceSameCourse: json['replace_same_course'] == true,
       toWeekday: (json['to_weekday'] as num?)?.toInt(),
       toStartSection: (json['to_start_section'] as num?)?.toInt(),
       toEndSection: (json['to_end_section'] as num?)?.toInt(),
@@ -207,6 +228,8 @@ class ScheduleOverride {
           type == other.type &&
           status == other.status &&
           setEquals(affectedWeeks, other.affectedWeeks) &&
+          weekOffset == other.weekOffset &&
+          replaceSameCourse == other.replaceSameCourse &&
           toWeekday == other.toWeekday &&
           toStartSection == other.toStartSection &&
           toEndSection == other.toEndSection &&

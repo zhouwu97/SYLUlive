@@ -3172,11 +3172,16 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     int endSection = editCourse?.endSection ?? 2;
     final sc = context.read<CourseScheduleProvider>();
     final wn = sc.getAcademicWeek(_weekStart) ?? 1;
+    final maxWeek = sc.currentTerm.maxWeek;
+    final dialogScope = '${sc.sessionKey}:${sc.currentTerm.id}';
+    bool manualSaving = false;
+    String? manualError;
     int startWeek =
-        editCourse?.weeks.isNotEmpty == true ? editCourse!.weeks.first : wn;
+        (editCourse?.weeks.isNotEmpty == true ? editCourse!.weeks.first : wn)
+            .clamp(1, maxWeek);
     int endWeek = editCourse?.weeks.isNotEmpty == true
         ? editCourse!.weeks.last
-        : (wn + 15).clamp(wn, 20);
+        : (startWeek + 15).clamp(startWeek, maxWeek);
 
     // AI 导入模式状态
     bool isAiMode = false;
@@ -3218,8 +3223,9 @@ $classFilterRule
 
 ```""";
 
-    return showDialog(
+    final courseDialog = DialogRoute<void>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           // 弹窗独立监听本机身份恢复，不依赖外层页面重建或旧账号投影。
@@ -3239,394 +3245,454 @@ $classFilterRule
               isUndergraduate && RegExp(r'^\d{10}$').hasMatch(studentId)
                   ? studentId.substring(0, studentId.length - 2)
                   : '';
-          return AlertDialog(
-            title: Text(editCourse == null ? '添加自定义课程' : '编辑自定义课程'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (editCourse == null) ...[
-                    SegmentedButton<bool>(
-                      segments: const [
-                        ButtonSegment(value: false, label: Text('手动添加')),
-                        ButtonSegment(value: true, label: Text('AI 导入')),
-                      ],
-                      selected: {isAiMode},
-                      onSelectionChanged: (Set<bool> newSelection) {
-                        setDialogState(() {
-                          isAiMode = newSelection.first;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                  if (!isAiMode) ...[
-                    // 手动添加视图
-                    TextField(
-                      controller: nameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: '课程名称',
-                        hintText: '如：高等数学',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // 星期几
-                    DropdownButtonFormField<int>(
-                      value: weekday,
-                      decoration: const InputDecoration(labelText: '星期'),
-                      items: List.generate(7, (i) => i + 1)
-                          .map(
-                            (d) => DropdownMenuItem(
-                              value: d,
-                              child: Text('周${_wd[d - 1]}'),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) => setDialogState(() => weekday = v ?? 1),
-                    ),
-                    const SizedBox(height: 12),
-                    // 节次
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<int>(
-                            value: startSection,
-                            decoration:
-                                const InputDecoration(labelText: '开始节次'),
-                            items: List.generate(12, (i) => i + 1)
-                                .map(
-                                  (s) => DropdownMenuItem(
-                                    value: s,
-                                    child: Text('第$s节'),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (v) {
-                              setDialogState(() {
-                                startSection = v ?? 1;
-                                if (endSection < startSection) {
-                                  endSection = startSection;
-                                }
-                              });
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: DropdownButtonFormField<int>(
-                            value: endSection,
-                            decoration:
-                                const InputDecoration(labelText: '结束节次'),
-                            items: List.generate(12, (i) => i + 1)
-                                .where((s) => s >= startSection)
-                                .map(
-                                  (s) => DropdownMenuItem(
-                                    value: s,
-                                    child: Text('第$s节'),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (v) => setDialogState(
-                              () => endSection = v ?? startSection,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    // 周次范围
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<int>(
-                            value: startWeek.clamp(1, 20),
-                            decoration: const InputDecoration(labelText: '开始周'),
-                            items: List.generate(20, (i) => i + 1).map((w) {
-                              return DropdownMenuItem(
-                                value: w,
-                                child: Text('第$w周'),
-                              );
-                            }).toList(),
-                            onChanged: (v) {
-                              setDialogState(() {
-                                startWeek = v ?? 1;
-                                if (endWeek < startWeek) endWeek = startWeek;
-                              });
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: DropdownButtonFormField<int>(
-                            value: endWeek.clamp(startWeek, 20),
-                            decoration: const InputDecoration(labelText: '结束周'),
-                            items: List.generate(20, (i) => i + 1)
-                                .where((w) => w >= startWeek)
-                                .map(
-                                  (w) => DropdownMenuItem(
-                                    value: w,
-                                    child: Text('第$w周'),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (v) =>
-                                setDialogState(() => endWeek = v ?? startWeek),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: teacherCtrl,
-                      decoration: const InputDecoration(
-                        labelText: '教师（可选）',
-                        hintText: '如：张老师',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: locationCtrl,
-                      decoration: const InputDecoration(
-                        labelText: '教室（可选）',
-                        hintText: '如：综A101',
-                      ),
-                    ),
-                  ] else ...[
-                    // AI 导入视图
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.secondaryContainer.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+          return PopScope(
+              canPop: !manualSaving,
+              child: AlertDialog(
+                title: Text(editCourse == null ? '添加自定义课程' : '编辑自定义课程'),
+                content: AbsorbPointer(
+                    absorbing: manualSaving,
+                    child: SingleChildScrollView(
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.lightbulb_outline,
-                                size: 16,
-                                color: Theme.of(context).colorScheme.secondary,
+                          if (editCourse == null) ...[
+                            SegmentedButton<bool>(
+                              segments: const [
+                                ButtonSegment(
+                                    value: false, label: Text('手动添加')),
+                                ButtonSegment(
+                                    value: true, label: Text('AI 导入')),
+                              ],
+                              selected: {isAiMode},
+                              onSelectionChanged: (Set<bool> newSelection) {
+                                setDialogState(() {
+                                  isAiMode = newSelection.first;
+                                });
+                              },
+                            ),
+                            const SizedBox(height: 20),
+                          ],
+                          if (!isAiMode) ...[
+                            // 手动添加视图
+                            TextField(
+                              controller: nameCtrl,
+                              decoration: const InputDecoration(
+                                labelText: '课程名称',
+                                hintText: '如：高等数学',
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '使用步骤',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                  color:
-                                      Theme.of(context).colorScheme.secondary,
+                            ),
+                            const SizedBox(height: 12),
+                            // 星期几
+                            DropdownButtonFormField<int>(
+                              value: weekday,
+                              decoration:
+                                  const InputDecoration(labelText: '星期'),
+                              items: List.generate(7, (i) => i + 1)
+                                  .map(
+                                    (d) => DropdownMenuItem(
+                                      value: d,
+                                      child: Text('周${_wd[d - 1]}'),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (v) =>
+                                  setDialogState(() => weekday = v ?? 1),
+                            ),
+                            const SizedBox(height: 12),
+                            // 节次
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: DropdownButtonFormField<int>(
+                                    value: startSection,
+                                    decoration: const InputDecoration(
+                                        labelText: '开始节次'),
+                                    items: List.generate(12, (i) => i + 1)
+                                        .map(
+                                          (s) => DropdownMenuItem(
+                                            value: s,
+                                            child: Text('第$s节'),
+                                          ),
+                                        )
+                                        .toList(),
+                                    onChanged: (v) {
+                                      setDialogState(() {
+                                        startSection = v ?? 1;
+                                        if (endSection < startSection) {
+                                          endSection = startSection;
+                                        }
+                                      });
+                                    },
+                                  ),
                                 ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: DropdownButtonFormField<int>(
+                                    value: endSection,
+                                    decoration: const InputDecoration(
+                                        labelText: '结束节次'),
+                                    items: List.generate(12, (i) => i + 1)
+                                        .where((s) => s >= startSection)
+                                        .map(
+                                          (s) => DropdownMenuItem(
+                                            value: s,
+                                            child: Text('第$s节'),
+                                          ),
+                                        )
+                                        .toList(),
+                                    onChanged: (v) => setDialogState(
+                                      () => endSection = v ?? startSection,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            // 周次范围
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: DropdownButtonFormField<int>(
+                                    value: startWeek.clamp(1, maxWeek),
+                                    decoration:
+                                        const InputDecoration(labelText: '开始周'),
+                                    items: List.generate(maxWeek, (i) => i + 1)
+                                        .map((w) {
+                                      return DropdownMenuItem(
+                                        value: w,
+                                        child: Text('第$w周'),
+                                      );
+                                    }).toList(),
+                                    onChanged: (v) {
+                                      setDialogState(() {
+                                        startWeek = v ?? 1;
+                                        if (endWeek < startWeek) {
+                                          endWeek = startWeek;
+                                        }
+                                      });
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: DropdownButtonFormField<int>(
+                                    value: endWeek.clamp(startWeek, maxWeek),
+                                    decoration:
+                                        const InputDecoration(labelText: '结束周'),
+                                    items: List.generate(maxWeek, (i) => i + 1)
+                                        .where((w) => w >= startWeek)
+                                        .map(
+                                          (w) => DropdownMenuItem(
+                                            value: w,
+                                            child: Text('第$w周'),
+                                          ),
+                                        )
+                                        .toList(),
+                                    onChanged: (v) => setDialogState(
+                                        () => endWeek = v ?? startWeek),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: teacherCtrl,
+                              decoration: const InputDecoration(
+                                labelText: '教师（可选）',
+                                hintText: '如：张老师',
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '1. 点击下方按钮复制提示词；',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
                             ),
-                          ),
-                          Text(
-                            '2. 发送提示词与课表(图/文)给 AI，建议关闭 AI 的“快速/极速模式”；',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: locationCtrl,
+                              decoration: const InputDecoration(
+                                labelText: '教室（可选）',
+                                hintText: '如：综A101',
+                              ),
                             ),
-                          ),
-                          Text(
-                            '3. 粘贴 AI 的全部回复。请务必利用 AI 的中文总结核对时间地点。',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
+                          ] else ...[
+                            // AI 导入视图
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Theme.of(
+                                  context,
+                                )
+                                    .colorScheme
+                                    .secondaryContainer
+                                    .withOpacity(0.5),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.lightbulb_outline,
+                                        size: 16,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .secondary,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '使用步骤',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .secondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    '1. 点击下方按钮复制提示词；',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  Text(
+                                    '2. 发送提示词与课表(图/文)给 AI，建议关闭 AI 的“快速/极速模式”；',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  Text(
+                                    '3. 粘贴 AI 的全部回复。请务必利用 AI 的中文总结核对时间地点。',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  CheckboxListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    value: includeClassId,
+                                    title: const Text('在提示词中加入我的班级号'),
+                                    subtitle: Text(classIdStr.isEmpty
+                                        ? (academic?.providerId ==
+                                                AcademicProviderId.syluGraduate
+                                            ? '研究生暂不支持按学号推导班级号'
+                                            : '当前未读取到可用的本科班级号')
+                                        : '用于过滤 $classIdStr 班课程'),
+                                    onChanged: classIdStr.isEmpty
+                                        ? null
+                                        : (value) {
+                                            setDialogState(() =>
+                                                includeClassId = value == true);
+                                          },
+                                  ),
+                                  Text(
+                                    'AI 识别结果可能存在遗漏或错误。导入前请逐项核对课程名称、周次、时间、地点和班级范围，并以学校官方课表为准。未经用户确认的结果不会自动写入正式课表。',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color:
+                                          Theme.of(context).colorScheme.outline,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 6),
-                          CheckboxListTile(
-                            contentPadding: EdgeInsets.zero,
-                            value: includeClassId,
-                            title: const Text('在提示词中加入我的班级号'),
-                            subtitle: Text(classIdStr.isEmpty
-                                ? (academic?.providerId ==
-                                        AcademicProviderId.syluGraduate
-                                    ? '研究生暂不支持按学号推导班级号'
-                                    : '当前未读取到可用的本科班级号')
-                                : '用于过滤 $classIdStr 班课程'),
-                            onChanged: classIdStr.isEmpty
-                                ? null
-                                : (value) {
-                                    setDialogState(
-                                        () => includeClassId = value == true);
-                                  },
-                          ),
-                          Text(
-                            'AI 识别结果可能存在遗漏或错误。导入前请逐项核对课程名称、周次、时间、地点和班级范围，并以学校官方课表为准。未经用户确认的结果不会自动写入正式课表。',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Theme.of(context).colorScheme.outline,
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              icon: const Icon(Icons.copy, size: 18),
+                              label: const Text('一键复制 AI 提示词'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.primaryContainer,
+                                foregroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimaryContainer,
+                              ),
+                              onPressed: () {
+                                final prompt =
+                                    includeClassId && classIdStr.isNotEmpty
+                                        ? aiPromptTemplate.replaceFirst(
+                                            classFilterRule,
+                                            '7. 班级过滤 (Class Filtering)：当前用户的班级号是“$classIdStr班”。请仅提取属于该班级的课程行。',
+                                          )
+                                        : aiPromptTemplate;
+                                Clipboard.setData(ClipboardData(text: prompt));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      '提示词已复制。请前往你选择的外部 AI 服务提交，处理规则由对应服务商决定。',
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
-                          ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: jsonController,
+                              maxLines: 8,
+                              minLines: 5,
+                              decoration: InputDecoration(
+                                hintText: '在此粘贴 AI 生成的 JSON 代码...',
+                                border: const OutlineInputBorder(),
+                                filled: true,
+                                fillColor: Theme.of(
+                                  context,
+                                )
+                                    .colorScheme
+                                    .surfaceContainerHighest
+                                    .withOpacity(0.3),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '请确保粘贴的内容包含完整的 { } 结构',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.outline,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
+                    )),
+                actions: [
+                  if (manualError != null)
+                    SizedBox(
+                        width: double.infinity,
+                        child: Semantics(
+                            liveRegion: true,
+                            child: Text(manualError!,
+                                style: Theme.of(ctx)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                        color:
+                                            Theme.of(ctx).colorScheme.error)))),
+                  TextButton(
+                    onPressed:
+                        manualSaving ? null : () => Navigator.pop(dialogCtx),
+                    child: const Text('取消'),
+                  ),
+                  if (!isAiMode)
+                    FilledButton(
+                      onPressed: manualSaving
+                          ? null
+                          : () async {
+                              if (dialogScope !=
+                                  '${sc.sessionKey}:${sc.currentTerm.id}') {
+                                setDialogState(
+                                    () => manualError = '账号或学期已切换，请关闭后重新打开课表');
+                                return;
+                              }
+                              if (nameCtrl.text.trim().isEmpty) {
+                                setDialogState(() => manualError = '请输入课程名称');
+                                return;
+                              }
+                              setDialogState(() {
+                                manualSaving = true;
+                                manualError = null;
+                              });
+                              try {
+                                if (editCourse == null) {
+                                  await sc.addCustomCourse(
+                                    name: nameCtrl.text.trim(),
+                                    weekday: weekday,
+                                    startSection: startSection,
+                                    endSection: endSection,
+                                    startWeek: startWeek,
+                                    endWeek: endWeek,
+                                    teacher: teacherCtrl.text.trim().isEmpty
+                                        ? null
+                                        : teacherCtrl.text.trim(),
+                                    location: locationCtrl.text.trim().isEmpty
+                                        ? null
+                                        : locationCtrl.text.trim(),
+                                  );
+                                } else {
+                                  await sc.editCustomCourse(
+                                    id: editCourse.id,
+                                    name: nameCtrl.text.trim(),
+                                    weekday: weekday,
+                                    startSection: startSection,
+                                    endSection: endSection,
+                                    startWeek: startWeek,
+                                    endWeek: endWeek,
+                                    teacher: teacherCtrl.text.trim().isEmpty
+                                        ? null
+                                        : teacherCtrl.text.trim(),
+                                    location: locationCtrl.text.trim().isEmpty
+                                        ? null
+                                        : locationCtrl.text.trim(),
+                                  );
+                                }
+                                if (!dialogCtx.mounted) return;
+                                if (dialogScope !=
+                                    '${sc.sessionKey}:${sc.currentTerm.id}') {
+                                  throw StateError('账号或学期已切换，请重新打开课表');
+                                }
+                                Navigator.pop(dialogCtx);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(editCourse == null
+                                          ? '课程已添加'
+                                          : '课程已更新'),
+                                    ),
+                                  );
+                                  // 课表已保存，提醒权限和平台服务不阻塞关闭表单。
+                                  unawaited(_syncCourseReminders(sc)
+                                      .catchError((Object _) {}));
+                                  if (mounted) setState(() => _hasCache = true);
+                                }
+                              } catch (e) {
+                                if (dialogCtx.mounted) {
+                                  setDialogState(() => manualError =
+                                      '保存失败，请重试：${e.toString().replaceAll('Bad state: ', '')}');
+                                }
+                              } finally {
+                                if (dialogCtx.mounted) {
+                                  setDialogState(() => manualSaving = false);
+                                }
+                              }
+                            },
+                      child: Text(manualSaving
+                          ? '正在保存…'
+                          : editCourse == null
+                              ? '添加'
+                              : '保存'),
                     ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.copy, size: 18),
-                      label: const Text('一键复制 AI 提示词'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Theme.of(
-                          context,
-                        ).colorScheme.primaryContainer,
-                        foregroundColor: Theme.of(
-                          context,
-                        ).colorScheme.onPrimaryContainer,
-                      ),
+                  if (isAiMode)
+                    FilledButton(
                       onPressed: () {
-                        final prompt = includeClassId && classIdStr.isNotEmpty
-                            ? aiPromptTemplate.replaceFirst(
-                                classFilterRule,
-                                '7. 班级过滤 (Class Filtering)：当前用户的班级号是“$classIdStr班”。请仅提取属于该班级的课程行。',
-                              )
-                            : aiPromptTemplate;
-                        Clipboard.setData(ClipboardData(text: prompt));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              '提示词已复制。请前往你选择的外部 AI 服务提交，处理规则由对应服务商决定。',
-                            ),
-                          ),
-                        );
+                        _handleAiImport(dialogCtx, jsonController.text);
                       },
+                      child: const Text('解析并导入'),
                     ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: jsonController,
-                      maxLines: 8,
-                      minLines: 5,
-                      decoration: InputDecoration(
-                        hintText: '在此粘贴 AI 生成的 JSON 代码...',
-                        border: const OutlineInputBorder(),
-                        filled: true,
-                        fillColor: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '请确保粘贴的内容包含完整的 { } 结构',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
-                    ),
-                  ],
                 ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogCtx),
-                child: const Text('取消'),
-              ),
-              if (!isAiMode)
-                FilledButton(
-                  onPressed: () async {
-                    if (nameCtrl.text.trim().isEmpty) {
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(const SnackBar(content: Text('请输入课程名称')));
-                      return;
-                    }
-                    try {
-                      if (editCourse == null) {
-                        await sc.addCustomCourse(
-                          name: nameCtrl.text.trim(),
-                          weekday: weekday,
-                          startSection: startSection,
-                          endSection: endSection,
-                          startWeek: startWeek,
-                          endWeek: endWeek,
-                          teacher: teacherCtrl.text.trim().isEmpty
-                              ? null
-                              : teacherCtrl.text.trim(),
-                          location: locationCtrl.text.trim().isEmpty
-                              ? null
-                              : locationCtrl.text.trim(),
-                        );
-                      } else {
-                        await sc.editCustomCourse(
-                          id: editCourse.id,
-                          name: nameCtrl.text.trim(),
-                          weekday: weekday,
-                          startSection: startSection,
-                          endSection: endSection,
-                          startWeek: startWeek,
-                          endWeek: endWeek,
-                          teacher: teacherCtrl.text.trim().isEmpty
-                              ? null
-                              : teacherCtrl.text.trim(),
-                          location: locationCtrl.text.trim().isEmpty
-                              ? null
-                              : locationCtrl.text.trim(),
-                        );
-                      }
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content:
-                                Text(editCourse == null ? '课程已添加' : '课程已更新'),
-                          ),
-                        );
-                        await _syncCourseReminders(sc);
-                        if (mounted) setState(() => _hasCache = true);
-                      }
-                      Navigator.pop(dialogCtx);
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              e
-                                  .toString()
-                                  .replaceAll('Exception: ', '')
-                                  .replaceAll('StateError: ', ''),
-                            ),
-                          ),
-                        );
-                      }
-                    }
-                  },
-                  child: Text(editCourse == null ? '添加' : '保存'),
-                ),
-              if (isAiMode)
-                FilledButton(
-                  onPressed: () {
-                    _handleAiImport(dialogCtx, jsonController.text);
-                  },
-                  child: const Text('解析并导入'),
-                ),
-            ],
-          );
+              ));
         },
       ),
-    ).then((_) {
+    );
+    final dismissed =
+        Navigator.of(context, rootNavigator: true).push(courseDialog);
+    // popped 早于退出动画结束；等 Route 移除后才释放输入控制器。
+    unawaited(courseDialog.completed.then((_) {
       nameCtrl.dispose();
       teacherCtrl.dispose();
       locationCtrl.dispose();
       jsonController.dispose();
-    });
+    }));
+    return dismissed;
   }
 
   // ====== AI 导入与冲突检测 ======

@@ -6,6 +6,9 @@ import '../../../config/api_constants.dart';
 import '../../../models/publish_image_item.dart';
 import '../../../theme/app_motion.dart';
 import 'dashed_outline.dart';
+import '../../../widgets/app_card.dart';
+import 'package:provider/provider.dart';
+import '../../../providers/theme_provider.dart';
 
 /// 发布表单图片网格（C-2 统一模型）。
 ///
@@ -73,6 +76,8 @@ class PublishImageGrid extends StatelessWidget {
 
     return LayoutBuilder(
         builder: (context, constraints) => GridView.builder(
+              addRepaintBoundaries:
+                  context.watch<ThemeProvider?>()?.frostedGlass != true,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -465,7 +470,8 @@ class PublishImageGrid extends StatelessWidget {
             ? _marketAccent.withValues(alpha: 0.55)
             : _marketAccent.withValues(alpha: 0.34),
         radius: _radius + 4,
-        child: Container(
+        child: AppCardSurface(
+          key: const ValueKey('publish-image-add-surface'),
           decoration: BoxDecoration(
             color: isDark
                 ? _marketAccent.withValues(alpha: 0.08)

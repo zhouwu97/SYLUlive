@@ -9,6 +9,7 @@ import '../../config/market_contact_type.dart';
 import '../../models/post.dart';
 import '../../models/publish_image_item.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../features/academic/application/academic_session_controller.dart';
 import '../../providers/post_provider.dart';
 import '../../services/publish_session_scope.dart';
@@ -736,6 +737,15 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         extendBodyBehindAppBar: true,
         resizeToAvoidBottomInset: true,
         appBar: AppBar(
+          systemOverlayStyle:
+              (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+                  .copyWith(
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarDividerColor: Colors.transparent,
+            systemNavigationBarIconBrightness:
+                isDark ? Brightness.light : Brightness.dark,
+            systemNavigationBarContrastEnforced: false,
+          ),
           backgroundColor: AppPageBackground.color(context, Colors.transparent),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
@@ -757,8 +767,10 @@ class _MarketPublishFormState extends State<MarketPublishForm>
           accent: _marketAccent,
         ),
         body: DecoratedBox(
+          key: const ValueKey('market-publish-page-body'),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF111315) : _marketPageBg,
+            color: AppPageBackground.color(
+                context, isDark ? const Color(0xFF111315) : _marketPageBg),
           ),
           child: SafeArea(
             bottom: false,
@@ -948,6 +960,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
 
   Widget _buildMarketDetailsCard(bool isDark, ColorScheme colorScheme) {
     return AppCardSurface(
+      key: const ValueKey('market-publish-details-surface'),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF171B24) : Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -1100,7 +1113,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
                 color: colorScheme.onSurfaceVariant.withValues(alpha: 0.54),
                 fontSize: 14,
               ),
-              filled: true,
+              filled: context.watch<ThemeProvider?>()?.frostedGlass != true,
               fillColor: isDark
                   ? Colors.white.withValues(alpha: 0.06)
                   : const Color(0xFFF8F7F5),
@@ -1211,7 +1224,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
+        AppCardSurface(
           padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF171B24) : Colors.white,
@@ -1273,7 +1286,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   Widget _buildExposureAmountField(bool isDark) {
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF171B24) : Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -1465,7 +1478,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         fontSize: 14,
         color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
       ),
-      filled: true,
+      filled: context.watch<ThemeProvider?>()?.frostedGlass != true,
       fillColor: isDark
           ? Colors.white.withValues(alpha: 0.05)
           : const Color(0xFFF7F7FA),

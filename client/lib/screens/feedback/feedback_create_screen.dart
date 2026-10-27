@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_input_surface.dart';
+import 'package:shenliyuan/widgets/app_glass_button_style.dart';
 import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -251,13 +253,15 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () => Navigator.pop(ctx),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.brandPrimary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                    ),
-                  ),
+                  style: appGlassButtonStyle(
+                      context,
+                      ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.brandPrimary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                        ),
+                      )),
                   child: const Text('我知道了'),
                 ),
               ),
@@ -279,8 +283,12 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
           // 复现信息只属于问题反馈，切换类型后立即收起，避免误填。
           if (type != 'bug') _expandRepro = false;
         }),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
+        child: AppCardSurface(
+          foregroundDecoration: isSelected
+              ? BoxDecoration(
+                  border: Border.all(color: AppColors.brandPrimary, width: 1.6),
+                  borderRadius: BorderRadius.circular(AppRadius.md))
+              : null,
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
             color: isSelected
@@ -444,7 +452,8 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            TextField(
+            AppInputSurface(
+                child: TextField(
               controller: _titleController,
               maxLength: 60,
               decoration: InputDecoration(
@@ -452,10 +461,10 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
                     _type == 'bug' ? '例如：课表重新同步后课程时间没有更新' : '例如：希望课表支持临时调整课程',
                 hintStyle: TextStyle(
                   fontSize: 14,
-                  color: isDark ? Colors.white38 : Colors.grey[400],
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
-                filled: true,
-                fillColor: isDark ? const Color(0xFF1E2226) : Colors.white,
+                filled: false,
+                fillColor: Colors.transparent,
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 border: OutlineInputBorder(
@@ -472,7 +481,7 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
                 ),
                 counterText: '',
               ),
-            ),
+            )),
             const SizedBox(height: 20),
 
             // 详细描述
@@ -481,7 +490,8 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            TextField(
+            AppInputSurface(
+                child: TextField(
               controller: _descController,
               maxLines: 5,
               maxLength: 1000,
@@ -490,10 +500,10 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
                     _type == 'bug' ? '请描述发生了什么，什么情况下会出现……' : '请描述你的想法与期望如何使用……',
                 hintStyle: TextStyle(
                   fontSize: 14,
-                  color: isDark ? Colors.white38 : Colors.grey[400],
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
-                filled: true,
-                fillColor: isDark ? const Color(0xFF1E2226) : Colors.white,
+                filled: false,
+                fillColor: Colors.transparent,
                 contentPadding: const EdgeInsets.all(16),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppRadius.md),
@@ -508,7 +518,7 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
                   ),
                 ),
               ),
-            ),
+            )),
             const SizedBox(height: 8),
 
             // 复现信息只对问题反馈开放，建议和其他类型保持简洁描述链路。
@@ -542,7 +552,7 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
 
             if (_type == 'bug' && _expandRepro) ...[
               const SizedBox(height: 8),
-              Container(
+              AppCardSurface(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: isDark
@@ -630,14 +640,16 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
               height: 48,
               child: ElevatedButton(
                 onPressed: _isSubmitting ? null : _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.brandPrimary,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                  ),
-                ),
+                style: appGlassButtonStyle(
+                    context,
+                    ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.brandPrimary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                      ),
+                    )),
                 child: _isSubmitting
                     ? const SizedBox(
                         width: 22,

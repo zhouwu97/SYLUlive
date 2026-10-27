@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_glass_button_style.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../widgets/app_page_background.dart';
@@ -92,11 +93,13 @@ class _AdminWaterSectionsScreenState extends State<AdminWaterSectionsScreen> {
                           ),
                         );
                       },
-                      style: ElevatedButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
+                      style: appGlassButtonStyle(
+                          context,
+                          ElevatedButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          )),
                       child: const Text('管理'),
                     ),
                   ),

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_glass_button_style.dart';
 import '../widgets/app_tab_bar_surface.dart';
 import '../widgets/app_card.dart';
 import 'package:flutter/material.dart';
@@ -1520,12 +1521,14 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _isSaving ? null : _saveProfile,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
+                  style: appGlassButtonStyle(
+                      context,
+                      ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      )),
                   child: _isSaving
                       ? const SizedBox(
                           width: 20,

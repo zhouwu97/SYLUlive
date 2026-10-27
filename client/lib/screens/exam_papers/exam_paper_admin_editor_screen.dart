@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_glass_button_style.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 
@@ -292,6 +293,8 @@ class _ExamPaperAdminEditorScreenState
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
+                        style:
+                            appGlassButtonStyle(context, const ButtonStyle()),
                         onPressed: _reject,
                         icon: const Icon(Icons.close, color: Colors.redAccent),
                         label: const Text('拒绝'),
@@ -300,6 +303,9 @@ class _ExamPaperAdminEditorScreenState
                     const SizedBox(width: 12),
                     Expanded(
                       child: FilledButton.icon(
+                        style: appGlassButtonStyle(context, const ButtonStyle(),
+                            fallbackBackground:
+                                Theme.of(context).colorScheme.primary),
                         onPressed: _approve,
                         icon: const Icon(Icons.check),
                         label: const Text('通过并奖励'),
@@ -313,6 +319,9 @@ class _ExamPaperAdminEditorScreenState
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
+                        style: appGlassButtonStyle(context, const ButtonStyle(),
+                            fallbackBackground:
+                                Theme.of(context).colorScheme.primary),
                         onPressed: _savePublished,
                         icon: const Icon(Icons.save_outlined),
                         label: const Text('保存元数据'),
@@ -322,6 +331,8 @@ class _ExamPaperAdminEditorScreenState
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
+                        style:
+                            appGlassButtonStyle(context, const ButtonStyle()),
                         onPressed: _unpublish,
                         icon: const Icon(Icons.archive_outlined,
                             color: Colors.redAccent),

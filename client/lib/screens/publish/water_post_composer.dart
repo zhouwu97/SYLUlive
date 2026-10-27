@@ -682,6 +682,15 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       backgroundColor: AppPageBackground.color(context, isDark ? AppColors.surfacePrimaryDark : AppColors.surfacePrimaryLight),
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
+        systemOverlayStyle:
+            (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+                .copyWith(
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarDividerColor: Colors.transparent,
+          systemNavigationBarIconBrightness:
+              isDark ? Brightness.light : Brightness.dark,
+          systemNavigationBarContrastEnforced: false,
+        ),
         backgroundColor: AppPageBackground.color(context, Colors.transparent),
         elevation: 0,
         toolbarHeight: 56,

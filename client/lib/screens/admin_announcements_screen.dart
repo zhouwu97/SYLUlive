@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_glass_button_style.dart';
 import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -412,15 +413,19 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                             const SizedBox(width: AppSpacing.sm),
                             FilledButton(
                               onPressed: () => Navigator.pop(ctx, true),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.brandPrimary,
-                                foregroundColor: Colors.white,
-                                minimumSize: const Size(84, 44),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(AppRadius.md),
-                                ),
-                              ),
+                              style: appGlassButtonStyle(
+                                  context,
+                                  FilledButton.styleFrom(
+                                    backgroundColor: AppColors.brandPrimary,
+                                    foregroundColor: Colors.white,
+                                    minimumSize: const Size(84, 44),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(AppRadius.md),
+                                    ),
+                                  ),
+                                  fallbackBackground:
+                                      Theme.of(context).colorScheme.primary),
                               child: Text(isEditing ? '保存' : '发布'),
                             ),
                           ],
@@ -605,14 +610,18 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                   const SizedBox(height: AppSpacing.lg),
                   FilledButton.tonalIcon(
                     onPressed: onPressed,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: isDark
-                          ? AppColors.brandPrimary.withValues(alpha: 0.24)
-                          : const Color(0xFFE5F4F1),
-                      foregroundColor: isDark
-                          ? const Color(0xFF8DE0D3)
-                          : AppColors.brandPrimary,
-                    ),
+                    style: appGlassButtonStyle(
+                        context,
+                        FilledButton.styleFrom(
+                          backgroundColor: isDark
+                              ? AppColors.brandPrimary.withValues(alpha: 0.24)
+                              : const Color(0xFFE5F4F1),
+                          foregroundColor: isDark
+                              ? const Color(0xFF8DE0D3)
+                              : AppColors.brandPrimary,
+                        ),
+                        fallbackBackground:
+                            Theme.of(context).colorScheme.primary),
                     icon: const Icon(Icons.refresh_rounded, size: 18),
                     label: const Text('重新加载'),
                   ),
@@ -648,14 +657,17 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                 onPressed: () => _showAnnouncementEditor(context),
                 icon: const Icon(Icons.add_rounded, size: 18),
                 label: const Text('发布公告'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
-                  backgroundColor: AppColors.brandPrimary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                  ),
-                ),
+                style: appGlassButtonStyle(
+                    context,
+                    FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                      backgroundColor: AppColors.brandPrimary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                      ),
+                    ),
+                    fallbackBackground: Theme.of(context).colorScheme.primary),
               ),
             ),
             Expanded(

@@ -1,8 +1,10 @@
+import 'package:shenliyuan/widgets/app_glass_button_style.dart';
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../../theme/app_radius.dart';
 import '../../../theme/app_spacing.dart';
+import '../../../widgets/app_card.dart';
 
 /// 发布页底部动作区。图片计数属于媒体区，底部只保留字数和主动作。
 class WaterPostBottomBar extends StatelessWidget {
@@ -38,15 +40,18 @@ class WaterPostBottomBar extends StatelessWidget {
       width: compact ? 132 : double.infinity,
       child: FilledButton(
         onPressed: isLoading ? null : onPublish,
-        style: FilledButton.styleFrom(
-          backgroundColor: AppColors.brandPrimary,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor:
-              AppColors.brandPrimary.withValues(alpha: 0.48),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-        ),
+        style: appGlassButtonStyle(
+            context,
+            FilledButton.styleFrom(
+              backgroundColor: AppColors.brandPrimary,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor:
+                  AppColors.brandPrimary.withValues(alpha: 0.48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+            ),
+            fallbackBackground: Theme.of(context).colorScheme.primary),
         child: isLoading
             ? const SizedBox(
                 width: 20,
@@ -58,44 +63,49 @@ class WaterPostBottomBar extends StatelessWidget {
               )
             : Text(
                 publishLabel,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                    ),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
               ),
       ),
     );
 
-    return SafeArea(
-      top: false,
-      child: Container(
+    return AppCardSurface(
+      key: const ValueKey('water-publish-bottom-surface'),
+      decoration: BoxDecoration(
         color: isDark
             ? AppColors.surfacePrimaryDark
             : AppColors.surfacePrimaryLight,
-        padding: EdgeInsets.fromLTRB(
-          AppSpacing.lg,
-          compact ? AppSpacing.xs : AppSpacing.sm,
-          AppSpacing.lg,
-          compact ? AppSpacing.xs : AppSpacing.sm,
+        borderRadius: BorderRadius.zero,
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            compact ? AppSpacing.xs : AppSpacing.sm,
+            AppSpacing.lg,
+            compact ? AppSpacing.xs : AppSpacing.sm,
+          ),
+          child: compact
+              ? Row(
+                  children: [
+                    counter,
+                    const Spacer(),
+                    button,
+                  ],
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    counter,
+                    const SizedBox(height: AppSpacing.xs),
+                    button,
+                  ],
+                ),
         ),
-        child: compact
-            ? Row(
-                children: [
-                  counter,
-                  const Spacer(),
-                  button,
-                ],
-              )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  counter,
-                  const SizedBox(height: AppSpacing.xs),
-                  button,
-                ],
-              ),
       ),
     );
   }

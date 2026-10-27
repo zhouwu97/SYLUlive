@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_glass_button_style.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import '../widgets/app_tab_bar_surface.dart';
 import 'dart:async';
@@ -835,7 +836,9 @@ class _AdminTeacherGovernanceScreenState
             child: const Text('取消'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.brandPrimary),
+            style: appGlassButtonStyle(context,
+                FilledButton.styleFrom(backgroundColor: AppColors.brandPrimary),
+                fallbackBackground: Theme.of(context).colorScheme.primary),
             onPressed: () => Navigator.pop(ctx, true),
             child: Text('确认合并为「${_coursePreview!.finalCourseName}」'),
           ),
@@ -1098,7 +1101,9 @@ class _AdminTeacherGovernanceScreenState
             child: const Text('取消'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: appGlassButtonStyle(
+                context, FilledButton.styleFrom(backgroundColor: Colors.red),
+                fallbackBackground: Theme.of(context).colorScheme.primary),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('确认删除'),
           ),
@@ -1267,8 +1272,12 @@ class _AdminTeacherGovernanceScreenState
                   onPressed: _checkServerCapabilities,
                   icon: const Icon(Icons.refresh),
                   label: const Text('重新检测能力'),
-                  style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.brandPrimary),
+                  style: appGlassButtonStyle(
+                      context,
+                      FilledButton.styleFrom(
+                          backgroundColor: AppColors.brandPrimary),
+                      fallbackBackground:
+                          Theme.of(context).colorScheme.primary),
                 ),
               ],
             ),
@@ -1290,76 +1299,79 @@ class _AdminTeacherGovernanceScreenState
             onPressed: () => Navigator.of(context).pop(_hasChanged),
           ),
           centerTitle: true,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        backgroundColor: AppPageBackground.color(context, isDark ? AppColors.surfaceSecondaryDark : Colors.white),
-        title: Text(
-          '教师与课程数据治理',
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-            color: isDark ? Colors.white : AppColors.textPrimaryLight,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          backgroundColor: AppPageBackground.color(
+              context, isDark ? AppColors.surfaceSecondaryDark : Colors.white),
+          title: Text(
+            '教师与课程数据治理',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : AppColors.textPrimaryLight,
+            ),
           ),
-        ),
-        bottom: AppTabBarSurface(child: TabBar(
-          controller: _tabController,
-          isScrollable: false,
-          labelColor: AppColors.brandPrimary,
-          unselectedLabelColor: isDark ? Colors.white60 : Colors.black54,
-          indicatorColor: AppColors.brandPrimary,
-          indicatorWeight: 3,
-          labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-          tabs: [
-            const Tab(text: '课程合并'),
-            const Tab(text: '教师合并'),
-            const Tab(text: '处理记录'),
-            const Tab(text: '别名管理'),
-            Tab(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('疑似推荐'),
-                  if (_candidateGroups.isNotEmpty) ...[
-                    const SizedBox(width: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: Colors.amber,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '${_candidateGroups.length}',
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
+          bottom: AppTabBarSurface(
+              child: TabBar(
+            controller: _tabController,
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            labelColor: isDark ? Theme.of(context).primaryColor : AppColors.brandPrimary,
+            unselectedLabelColor: isDark ? Colors.white60 : Colors.black54,
+            indicatorColor: AppColors.brandPrimary,
+            indicatorWeight: 3,
+            labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+            tabs: [
+              const Tab(text: '课程合并'),
+              const Tab(text: '教师合并'),
+              const Tab(text: '处理记录'),
+              const Tab(text: '别名管理'),
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('疑似推荐'),
+                    if (_candidateGroups.isNotEmpty) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.amber,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${_candidateGroups.length}',
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
-        )),
-      ),
-      body: SafeArea(
-        top: false,
-        child: TabBarView(
-          controller: _tabController,
-          children: [
-            _buildCourseMergeTab(isDark),
-            _buildAllTeachersTab(isDark),
-            _buildRecordsTab(isDark),
-            _buildAliasesTab(isDark),
-            _buildDuplicateGroupsTab(isDark),
-          ],
+            ],
+          )),
+        ),
+        body: SafeArea(
+          top: false,
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildCourseMergeTab(isDark),
+              _buildAllTeachersTab(isDark),
+              _buildRecordsTab(isDark),
+              _buildAliasesTab(isDark),
+              _buildDuplicateGroupsTab(isDark),
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   // ============================================================================
   // Tab 0: 课程合并 (选择对象 → 确认名称与教师对应 → 预览并执行)
@@ -1497,10 +1509,12 @@ class _AdminTeacherGovernanceScreenState
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Center(
               child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                ),
+                style: appGlassButtonStyle(
+                    context,
+                    OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                    )),
                 onPressed: (_sourceCourse != null && _targetCourse != null)
                     ? _swapCourseDirection
                     : null,
@@ -1529,12 +1543,15 @@ class _AdminTeacherGovernanceScreenState
             width: double.infinity,
             height: 48,
             child: FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.brandPrimary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                ),
-              ),
+              style: appGlassButtonStyle(
+                  context,
+                  FilledButton.styleFrom(
+                    backgroundColor: AppColors.brandPrimary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                    ),
+                  ),
+                  fallbackBackground: Theme.of(context).colorScheme.primary),
               onPressed: (_sourceCourse != null &&
                       _targetCourse != null &&
                       _sourceCourse!.id != _targetCourse!.id &&
@@ -1666,12 +1683,14 @@ class _AdminTeacherGovernanceScreenState
               ),
             ] else ...[
               OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                  ),
-                ),
+                style: appGlassButtonStyle(
+                    context,
+                    OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                      ),
+                    )),
                 onPressed: onPick,
                 icon: const Icon(Icons.search, size: 18),
                 label: const Text('点击搜索并选择课程'),
@@ -2095,12 +2114,14 @@ class _AdminTeacherGovernanceScreenState
             children: [
               Expanded(
                 child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                    ),
-                  ),
+                  style: appGlassButtonStyle(
+                      context,
+                      OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                        ),
+                      )),
                   onPressed: () => setState(() => _courseMergeStep = 0),
                   child: const Text('上一步：重新选课'),
                 ),
@@ -2109,16 +2130,19 @@ class _AdminTeacherGovernanceScreenState
               Expanded(
                 flex: 2,
                 child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.brandPrimary,
-                    minimumSize: const Size(0, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                    ),
-                  ),
-                  onPressed: _isLoadingCoursePreview
-                      ? null
-                      : _fetchCourseMergePreview,
+                  style: appGlassButtonStyle(
+                      context,
+                      FilledButton.styleFrom(
+                        backgroundColor: AppColors.brandPrimary,
+                        minimumSize: const Size(0, 48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                        ),
+                      ),
+                      fallbackBackground:
+                          Theme.of(context).colorScheme.primary),
+                  onPressed:
+                      _isLoadingCoursePreview ? null : _fetchCourseMergePreview,
                   child: _isLoadingCoursePreview
                       ? const SizedBox(
                           width: 20,
@@ -2440,12 +2464,14 @@ class _AdminTeacherGovernanceScreenState
             children: [
               Expanded(
                 child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                    ),
-                  ),
+                  style: appGlassButtonStyle(
+                      context,
+                      OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                        ),
+                      )),
                   onPressed: () => setState(() => _courseMergeStep = 1),
                   child: const Text('返回修改配置'),
                 ),
@@ -2454,13 +2480,17 @@ class _AdminTeacherGovernanceScreenState
               Expanded(
                 flex: 2,
                 child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.brandPrimary,
-                    minimumSize: const Size(0, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                    ),
-                  ),
+                  style: appGlassButtonStyle(
+                      context,
+                      FilledButton.styleFrom(
+                        backgroundColor: AppColors.brandPrimary,
+                        minimumSize: const Size(0, 48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                        ),
+                      ),
+                      fallbackBackground:
+                          Theme.of(context).colorScheme.primary),
                   onPressed: (!p.mergeAllowed || _isExecutingCourseMerge)
                       ? null
                       : _executeCourseMerge,
@@ -2636,9 +2666,13 @@ class _AdminTeacherGovernanceScreenState
                     ),
                     const SizedBox(width: 8),
                     FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.brandPrimary,
-                      ),
+                      style: appGlassButtonStyle(
+                          context,
+                          FilledButton.styleFrom(
+                            backgroundColor: AppColors.brandPrimary,
+                          ),
+                          fallbackBackground:
+                              Theme.of(context).colorScheme.primary),
                       onPressed: () {
                         _openTeacherMergeSheet(
                             context, _selectedTeachers.values.toList());
@@ -2996,11 +3030,14 @@ class _AdminTeacherGovernanceScreenState
               ),
               const Spacer(),
               FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.brandPrimary,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                ),
+                style: appGlassButtonStyle(
+                    context,
+                    FilledButton.styleFrom(
+                      backgroundColor: AppColors.brandPrimary,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                    ),
+                    fallbackBackground: Theme.of(context).colorScheme.primary),
                 onPressed: _showAddAliasDialog,
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('添加别名'),
@@ -3353,11 +3390,15 @@ class _AdminTeacherGovernanceScreenState
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.brandPrimary,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.md, vertical: 8),
-                    ),
+                    style: appGlassButtonStyle(
+                        context,
+                        FilledButton.styleFrom(
+                          backgroundColor: AppColors.brandPrimary,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.md, vertical: 8),
+                        ),
+                        fallbackBackground:
+                            Theme.of(context).colorScheme.primary),
                     onPressed: () {
                       _openTeacherMergeSheet(
                         context,
@@ -4156,12 +4197,15 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
               width: double.infinity,
               height: 48,
               child: FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.brandPrimary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                  ),
-                ),
+                style: appGlassButtonStyle(
+                    context,
+                    FilledButton.styleFrom(
+                      backgroundColor: AppColors.brandPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                      ),
+                    ),
+                    fallbackBackground: Theme.of(context).colorScheme.primary),
                 onPressed: (_isLoadingPreview ||
                         _isSubmitting ||
                         _preview == null ||

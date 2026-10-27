@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_glass_button_style.dart';
 import '../../widgets/app_tab_bar_surface.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -344,14 +345,14 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
                       style: TextStyle(
                         fontSize: 11,
                         fontFamily: 'monospace',
-                        color: isDark ? Colors.white38 : Colors.grey[500],
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                     Text(
                       _formatTimeAgo(ticket.updatedAt),
                       style: TextStyle(
                         fontSize: 11,
-                        color: isDark ? Colors.white38 : Colors.grey[500],
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -414,19 +415,22 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
             },
             icon: const Icon(Icons.add, size: 16),
             label: const Text('新建反馈'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.brandPrimary,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(999),
-              ),
-              textStyle: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            style: appGlassButtonStyle(
+                context,
+                ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.brandPrimary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                )),
           ),
         ],
       ),
@@ -481,14 +485,14 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
             Icon(
               Icons.assignment_turned_in_outlined,
               size: 48,
-              color: isDark ? Colors.white24 : Colors.grey[300],
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 12),
             Text(
               tabIndex == 0 ? '暂无反馈记录' : '当前分类下没有工单',
               style: TextStyle(
                 fontSize: 14,
-                color: isDark ? Colors.white38 : Colors.grey[500],
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ],

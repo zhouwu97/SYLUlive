@@ -2952,15 +2952,8 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    final visibleFraction = (1.0 - shrinkOffset / maxExtent).clamp(0.0, 1.0);
-    return Opacity(
-      opacity: visibleFraction,
-      child: Align(
-        alignment: Alignment.topCenter,
-        heightFactor: visibleFraction,
-        child: child,
-      ),
-    );
+    // 固定高度的搜索框不需要淡出；Opacity 的合成层会隔断毛玻璃采样。
+    return child;
   }
 
   @override

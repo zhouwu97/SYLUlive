@@ -16,6 +16,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/shuitie_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 class _FeedAuthProvider extends ChangeNotifier implements AuthProvider {
@@ -104,6 +105,7 @@ Dio _feedDio({required List<Map<String, dynamic>> timePosts}) {
 Future<_FeedTestPage> _pumpFeed(
   WidgetTester tester, {
   required List<Map<String, dynamic>> timePosts,
+  bool dark = false,
 }) async {
   AppPreferencesStore.setMockInitialValues({});
   tester.view.devicePixelRatio = 1;
@@ -133,6 +135,7 @@ Future<_FeedTestPage> _pumpFeed(
         ),
       ],
       child: GoldenTestApp(
+          themeMode: dark ? ThemeMode.dark : ThemeMode.light,
           home: RepaintBoundary(
               key: feedBoundary,
               child: Scaffold(
@@ -209,6 +212,49 @@ void main() {
     VisibilityDetectorController.instance.updateInterval =
         const Duration(milliseconds: 500);
   });
+  for (final dark in [false, true]) {
+    for (final glass in [false, true]) {
+      testWidgets('水贴搜索框滚动时保持可见和可输入 dark=$dark glass=$glass',
+          (tester) async {
+        auditFeedRail = false;
+        auditFeedSize = GoldenViewports.phone390x844;
+        final page = await _pumpFeed(tester,
+            dark: dark,
+            timePosts: List.generate(
+                12, (i) => _post(100 + i, '测试帖 $i', DateTime(2026))));
+        await page.themeProvider.setBackgroundImage('morenbeijing.jpeg');
+        await page.themeProvider.setFrostedGlass(glass);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('最新').first);
+        await tester.pumpAndSettle();
+        final field = find.byKey(const ValueKey('feed-search-field'));
+        final header = find.ancestor(
+            of: field, matching: find.byType(SliverPersistentHeader));
+        final scroll = tester.widget<CustomScrollView>(find.byKey(
+            const PageStorageKey<String>('home-feed-scroll-new')));
+        expect(scroll.controller!.position.maxScrollExtent, greaterThan(80));
+        final fieldHeight = tester.getSize(field).height;
+        expect(fieldHeight, greaterThanOrEqualTo(44));
+        for (final offset in [0.0, 25.0, 80.0, 25.0, 0.0]) {
+          scroll.controller!.jumpTo(offset);
+          await tester.pump();
+          expect(tester.getSize(field).height, fieldHeight);
+          expect(
+              find.descendant(
+                  of: header,
+                  matching: find.byWidgetPredicate(
+                      (widget) => widget is Opacity && widget.opacity < 1)),
+              findsNothing);
+          expect(find.ancestor(of: field, matching: find.byType(AppCardSurface)),
+              findsOneWidget);
+          expect(tester.takeException(), isNull);
+        }
+        await tester.enterText(field, '校园');
+        expect(tester.widget<TextField>(field).controller!.text, '校园');
+        await _dispose(tester, page);
+      });
+    }
+  }
   for (final rail in [false, true]) {
     testWidgets('水贴按实际内容分栏，rail=$rail', (tester) async {
       auditFeedRail = rail;

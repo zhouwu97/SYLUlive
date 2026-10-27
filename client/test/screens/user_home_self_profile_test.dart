@@ -10,10 +10,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/social_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/user_home_screen.dart';
+import 'package:shenliyuan/widgets/global_background_wrapper.dart';
 
 class _ProfileRouteAdapter implements HttpClientAdapter {
   final requestedPaths = <String>[];
@@ -146,6 +148,96 @@ void main() {
 
   tearDownAll(() {
     HttpOverrides.global = null;
+  });
+  testWidgets('个人主页滚动时封面和壁纸固定，资料和帖子仍滚动', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    const keepAliveChannel = MethodChannel('shenliyuan/keep_alive');
+    const gradeReminderChannel = MethodChannel('shenliyuan/grade_reminders');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(keepAliveChannel, (call) async => true);
+    messenger.setMockMethodCallHandler(
+        gradeReminderChannel, (call) async => null);
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(keepAliveChannel, null);
+      messenger.setMockMethodCallHandler(gradeReminderChannel, null);
+    });
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test'));
+    dio.httpClientAdapter = _ProfileRouteAdapter(
+      postsResponse: List.generate(
+          12,
+          (i) => {
+                'id': 100 + i,
+                'title': '滚动测试帖 $i',
+                'content': '滚动测试内容',
+                'board_id': 1,
+                'author_id': 2,
+                'created_at': '2026-07-15T00:00:00Z',
+              }),
+    );
+    final auth = AuthProvider(dio,
+        credentialStore: _MemoryAuthCredentialStore(),
+        loadStoredAuth: false,
+        onAuthenticated: () {});
+    await auth.applyAuthPayload('token', {
+      'id': 2,
+      'student_id': '20260002',
+      'nickname': '女生用户',
+      'legal_consents_active': true,
+      'legal_consents_required': false,
+      'created_at': '2026-07-15T00:00:00Z',
+    });
+    final theme = ThemeProvider(loadOnStart: false);
+    await theme.setBackgroundImage('morenbeijing.jpeg');
+    await theme.setFrostedGlass(true);
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthProvider>.value(value: auth),
+        ChangeNotifierProvider<SocialProvider>(
+            create: (_) => SocialProvider(dio)),
+        ChangeNotifierProvider<WaterSectionProvider>(
+            create: (_) => WaterSectionProvider(dio)),
+        ChangeNotifierProvider<ThemeProvider>.value(value: theme),
+      ],
+      child: const MaterialApp(home: UserHomeScreen(userId: 2)),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    final cover = find.descendant(
+      of: find.byType(FlexibleSpaceBar),
+      matching:
+          find.byWidgetPredicate((w) => w is Image && w.image is AssetImage),
+    );
+    expect(cover, findsOneWidget);
+    final wallpaper = find.byType(CustomBackgroundLayer);
+    expect(wallpaper, findsOneWidget);
+    final coverPosition = tester.getTopLeft(cover);
+    final wallpaperRect = tester.getRect(wallpaper);
+    final profilePosition = tester.getTopLeft(find.text('编辑资料'));
+    final post = find.text('滚动测试帖 0');
+    final postPosition = tester.getTopLeft(post);
+    final nested =
+        tester.widget<NestedScrollView>(find.byType(NestedScrollView));
+    expect(nested.controller!.position.maxScrollExtent, greaterThan(120));
+    for (final offset in [120.0, 200.0, 120.0, 0.0]) {
+      nested.controller!.jumpTo(offset);
+      await tester.pump();
+      expect(tester.getTopLeft(cover), coverPosition);
+      expect(tester.getRect(wallpaper), wallpaperRect);
+      if (offset > 0) {
+        expect(tester.getTopLeft(find.text('编辑资料')).dy,
+            lessThan(profilePosition.dy));
+        expect(tester.getTopLeft(post).dy, lessThan(postPosition.dy));
+      }
+      expect(tester.takeException(), isNull);
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+    auth.dispose();
+    theme.dispose();
   });
   testWidgets('自己的主页刷新后保留登录态中的女性性别', (tester) async {
     const keepAliveChannel = MethodChannel('shenliyuan/keep_alive');

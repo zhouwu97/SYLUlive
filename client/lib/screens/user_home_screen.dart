@@ -554,66 +554,90 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                 automaticallyImplyLeading: false,
                 flexibleSpace: FlexibleSpaceBar(
                   collapseMode: CollapseMode.parallax,
-                  background: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // 背景图
-                      _buildProfileBackground(context, user),
-
-                      // 下部渐暗遮罩
-                      const DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            stops: [0.0, 0.42, 1.0],
-                            colors: [
-                              Colors.transparent,
-                              Color(0x22000000),
-                              Color(0xDD000000),
-                            ],
+                  background: Builder(
+                    builder: (context) {
+                      final settings = context
+                          .dependOnInheritedWidgetOfExactType<
+                            FlexibleSpaceBarSettings
+                          >()!;
+                      // 抵消 FlexibleSpaceBar 的 1/4 视差，仅固定图片与遮罩；
+                      // 资料和按钮仍随原有折叠效果移动。
+                      final backgroundOffset =
+                          (settings.maxExtent - settings.currentExtent).clamp(
+                            0.0,
+                            settings.maxExtent - settings.minExtent,
+                          ) /
+                          4;
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          // 背景图
+                          Transform.translate(
+                            offset: Offset(0, backgroundOffset),
+                            child: _buildProfileBackground(context, user),
                           ),
-                        ),
-                      ),
 
-                      // 顶部按钮行（返回 + 私信）
-                      Positioned(
-                        top: MediaQuery.of(context).padding.top + 8,
-                        left: 12,
-                        right: 12,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            _buildCircleButton(
-                              icon: Icons.arrow_back,
-                              onTap: widget.onBack ??
-                                  () => Navigator.maybePop(context),
-                            ),
-                            if (!isMe && PrivateChatPolicy.enabled)
-                              _buildCircleButton(
-                                icon: Icons.mail_outline,
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          ChatDetailScreen(targetUser: user),
-                                    ),
-                                  );
-                                },
+                          // 下部渐暗遮罩
+                          Transform.translate(
+                            offset: Offset(0, backgroundOffset),
+                            child: const DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  stops: [0.0, 0.42, 1.0],
+                                  colors: [
+                                    Colors.transparent,
+                                    Color(0x22000000),
+                                    Color(0xDD000000),
+                                  ],
+                                ),
                               ),
-                          ],
-                        ),
-                      ),
+                            ),
+                          ),
 
-                      // 所有资料覆盖在背景图下半部分
-                      Positioned(
-                        left: 20,
-                        right: 20,
-                        bottom: 64,
-                        child: _buildProfileOverlay(context, user, isMe),
-                      ),
-                    ],
+                          // 顶部按钮行（返回 + 私信）
+                          Positioned(
+                            top: MediaQuery.of(context).padding.top + 8,
+                            left: 12,
+                            right: 12,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                _buildCircleButton(
+                                  icon: Icons.arrow_back,
+                                  onTap:
+                                      widget.onBack ??
+                                      () => Navigator.maybePop(context),
+                                ),
+                                if (!isMe && PrivateChatPolicy.enabled)
+                                  _buildCircleButton(
+                                    icon: Icons.mail_outline,
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => ChatDetailScreen(
+                                            targetUser: user,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ),
+
+                          // 所有资料覆盖在背景图下半部分
+                          Positioned(
+                            left: 20,
+                            right: 20,
+                            bottom: 64,
+                            child: _buildProfileOverlay(context, user, isMe),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
 

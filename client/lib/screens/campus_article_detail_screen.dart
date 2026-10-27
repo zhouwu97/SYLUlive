@@ -11,6 +11,7 @@ import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
 import '../models/browsing_history_item.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import '../repositories/browsing_history_repository.dart';
 import '../platform/contracts/external_navigator.dart';
 import '../services/campus_article_service.dart';
@@ -279,7 +280,18 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
       return _buildLoadingState(isDark);
     }
 
+    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
+    final article = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildHeader(isDark, detail),
+        const SizedBox(height: 20),
+        _buildContentSection(isDark, detail, insideGlass: glass),
+      ],
+    );
     return ListView(
+      // 毛玻璃需要采样列表外的壁纸，子项重绘边界会隔断背景采样。
+      addRepaintBoundaries: false,
       padding: EdgeInsets.fromLTRB(
         AppSpacing.lg,
         AppSpacing.lg,
@@ -287,9 +299,15 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
         MediaQuery.viewPaddingOf(context).bottom + AppSpacing.section,
       ),
       children: [
-        _buildHeader(isDark, detail),
-        const SizedBox(height: 20),
-        _buildContentSection(isDark, detail),
+        if (glass)
+          AppCardSurface(
+            key: const ValueKey('campus-article-reading-surface'),
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            decoration: _surfaceDecoration(isDark),
+            child: article,
+          )
+        else
+          article,
         if (detail.attachments.isNotEmpty) ...[
           const SizedBox(height: 20),
           _buildAttachmentSection(isDark, detail.attachments),
@@ -476,7 +494,11 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
 
   // ── 正文区域 ───────────────────────────────────────────────────
 
-  Widget _buildContentSection(bool isDark, CampusArticleDetail detail) {
+  Widget _buildContentSection(
+    bool isDark,
+    CampusArticleDetail detail, {
+    bool insideGlass = false,
+  }) {
     final hasAttachments = detail.attachments.isNotEmpty;
 
     // HTML 是正文的权威展示源，优先保留段落、列表、表格、图片和链接语义。
@@ -491,31 +513,34 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
 
     // 弱正文且有附件 → 显示附件提示
     if (detail.isWeakContent && hasAttachments) {
-      return AppCardSurface(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        decoration: _surfaceDecoration(isDark, softGreen: true),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Icons.info_outline_rounded,
-              size: 20,
-              color: isDark ? Colors.white54 : Colors.black54,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                '该通知的主要内容位于附件中，请前往学校网站验证后下载。',
-                style: TextStyle(
-                  fontSize: 14,
-                  height: 1.6,
-                  color: isDark ? Colors.white70 : Colors.black87,
-                ),
+      final notice = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline_rounded,
+            size: 20,
+            color: isDark ? Colors.white54 : Colors.black54,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '该通知的主要内容位于附件中，请前往学校网站验证后下载。',
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.6,
+                color: isDark ? Colors.white70 : Colors.black87,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       );
+      return insideGlass
+          ? notice
+          : AppCardSurface(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              decoration: _surfaceDecoration(isDark, softGreen: true),
+              child: notice,
+            );
     }
 
     // 仅有纯文本正文时直接展示，避免给整篇文章套一张大卡片。
@@ -536,31 +561,34 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     }
 
     // 正文为空且无附件 → 引导查看原文
-    return AppCardSurface(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: _surfaceDecoration(isDark),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.info_outline_rounded,
-            size: 20,
-            color: isDark ? Colors.white54 : Colors.black54,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '该通知未提取到正文内容，请查看学校原文获取完整信息。',
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.6,
-                color: isDark ? Colors.white70 : Colors.black87,
-              ),
+    final notice = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          Icons.info_outline_rounded,
+          size: 20,
+          color: isDark ? Colors.white54 : Colors.black54,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            '该通知未提取到正文内容，请查看学校原文获取完整信息。',
+            style: TextStyle(
+              fontSize: 14,
+              height: 1.6,
+              color: isDark ? Colors.white70 : Colors.black87,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
+    return insideGlass
+        ? notice
+        : AppCardSurface(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            decoration: _surfaceDecoration(isDark),
+            child: notice,
+          );
   }
 
   // ── 附件区域 ───────────────────────────────────────────────────

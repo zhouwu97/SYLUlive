@@ -46,32 +46,51 @@ class FloatingBottomNav extends StatelessWidget {
                           selected: selected,
                           label:
                               '${LiquidBottomNav.labels[i]}${badges[i] == true ? '，有新消息' : ''}',
-                          child: InkWell(
-                            key: ValueKey('bottom-nav-item-$i'),
-                            onTap: () => onTap(i),
-                            child: ExcludeSemantics(
-                                child: Container(
-                              margin: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                  color: selected
-                                      ? color.withValues(alpha: .10)
-                                      : null,
-                                  borderRadius: BorderRadius.circular(28)),
-                              child: Center(
-                                  child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                    Badge(
-                                        isLabelVisible: badges[i] == true,
-                                        child: Icon(LiquidBottomNav.icons[i],
-                                            color: color, size: 24)),
-                                    const SizedBox(height: 3),
-                                    Text(LiquidBottomNav.labels[i],
-                                        maxLines: 1,
-                                        style: TextStyle(
-                                            fontSize: 11, color: color)),
-                                  ])),
-                            )),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Ink(
+                              decoration: ShapeDecoration(
+                                color: selected
+                                    ? color.withValues(alpha: .10)
+                                    : Colors.transparent,
+                                shape: const StadiumBorder(),
+                              ),
+                              child: InkWell(
+                                key: ValueKey('bottom-nav-item-$i'),
+                                onTap: () => onTap(i),
+                                customBorder: const StadiumBorder(),
+                                splashFactory: NoSplash.splashFactory,
+                                overlayColor:
+                                    WidgetStateProperty.resolveWith((states) {
+                                  if (states.contains(WidgetState.pressed)) {
+                                    return color.withValues(alpha: .12);
+                                  }
+                                  if (states.contains(WidgetState.focused) ||
+                                      states.contains(WidgetState.hovered)) {
+                                    return color.withValues(alpha: .06);
+                                  }
+                                  return Colors.transparent;
+                                }),
+                                child: ExcludeSemantics(
+                                  child: Center(
+                                      child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                        Badge(
+                                            isLabelVisible: badges[i] == true,
+                                            child: Icon(
+                                                LiquidBottomNav.icons[i],
+                                                color: color,
+                                                size: 24)),
+                                        const SizedBox(height: 3),
+                                        Text(LiquidBottomNav.labels[i],
+                                            maxLines: 1,
+                                            style: TextStyle(
+                                                fontSize: 11, color: color)),
+                                      ])),
+                                ),
+                              ),
+                            ),
                           ),
                         ));
                       }))),

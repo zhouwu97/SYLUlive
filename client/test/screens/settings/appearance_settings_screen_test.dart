@@ -351,9 +351,9 @@ void main() {
     // 旧的重复入口已删除，避免与底栏二级页形成双份控制。
     expect(find.widgetWithText(SettingsTile, '液态玻璃 2.0 效果'), findsNothing);
     expect(find.widgetWithText(SettingsTile, '悬浮式底栏导航'), findsNothing);
-    // 液态玻璃状态只能经底栏二级页修改（那里有 GPU 确认弹窗）。
-    expect(themeProvider.liquidGlass, isFalse);
-    expect(themeProvider.bottomNavStyle, BottomNavStyle.floating);
+    // 打开外观页不会改变新版底栏的默认液态效果，控制入口统一在二级页。
+    expect(themeProvider.liquidGlass, isTrue);
+    expect(themeProvider.bottomNavStyle, BottomNavStyle.liquidGlass);
 
     // 二级页入口仍然可达。
     await tester.scrollUntilVisible(

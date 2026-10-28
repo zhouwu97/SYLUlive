@@ -1,811 +1,397 @@
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
-import 'package:shenliyuan/theme/app_colors.dart';
 import 'package:shenliyuan/theme/app_theme.dart';
 import 'package:shenliyuan/widgets/bottom_nav.dart';
+import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_renderer.dart';
+import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_runtime.dart';
+import 'package:shenliyuan/widgets/liquid_glass/liquid_glass_qa_screen.dart';
 import '../helpers/golden_viewport.dart';
+import '../helpers/load_test_fonts.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets('正式底栏实时应用持久化的清透材质', (tester) async {
+    final h = await pumpNav(tester);
+    await h.theme.setBottomNavClearMaterial(true);
+    await tester.pumpAndSettle();
+    final optics = tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer));
+    expect(optics.blur, 0);
+    expect(optics.tint, .06);
+    expect(liquidGlassRuntimeStatus.value.tier, LiquidGlassTier.a);
+    await h.theme.loadThemeForTesting();
+    expect(h.theme.bottomNavClearMaterial, isTrue);
+  });
+  testWidgets('透镜从原处进入按压态并连续移向课表，跟手且松手才切页', (tester) async {
+    final h = await pumpNav(tester);
+    final target = tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-2')));
+    final drag = await tester.startGesture(target);
+    expect(h.position.value, 0, reason: '按下不得瞬移');
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(h.position.value, greaterThan(0));
+    expect(h.position.value, lessThan(1));
+    expect(tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer)).press, greaterThan(0));
+    await drag.moveBy(const Offset(1, 0));
+    for (var i = 0; i < 7; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(h.position.value, greaterThan(.5));
+    expect(h.position.value, lessThan(2), reason: '液态按压途中应仍在行进');
+    expect(h.selected.value, 0);
+    expect(h.commits, 0);
+    expect(tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer)).press, greaterThan(.4));
+    await tester.pumpAndSettle();
+    expect(h.position.value, closeTo(2, .03));
+    expect(h.commits, 0);
+    final next = tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-3')));
+    for (var i = 1; i <= 12; i++) {
+      await drag.moveTo(Offset.lerp(target, next, i / 12)!);
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(h.position.value, greaterThan(2.4));
+    expect(h.selected.value, 0);
+    await drag.up();
+    await tester.pumpAndSettle();
+    expect(h.selected.value, 3);
+    expect(h.commits, 1);
+    expect(tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer)).press, closeTo(0, .001));
+  });
 
-  testWidgets('Pad 悬浮导航居中限宽，缩放后点击坐标与选中状态保持正确', (tester) async {
-    tester.view.devicePixelRatio = 1;
-    await setGoldenViewport(tester, GoldenViewports.tabletLandscape1280x800);
-    final harness = await _pumpNav(tester,
-        liquidGlass: true, viewport: GoldenViewports.tabletLandscape1280x800);
+  testWidgets('QA 清透开关在按压态仍区分磨砂和清透像素', (tester) async {
+    await tester.runAsync(() async { await loadLiquidGlassProgram(); });
+    final boundaryKey = GlobalKey();
+    await tester.pumpWidget(MaterialApp(home: RepaintBoundary(
+      key: boundaryKey, child: const LiquidGlassQaScreen())));
+    await tester.runAsync(() async {});
+    await tester.pumpAndSettle();
+    Future<List<int>> capture() async {
+      return (await tester.runAsync(() async {
+        final boundary = boundaryKey.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+        final image = await boundary.toImage(pixelRatio: 1);
+        final bytes = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+        final data = bytes.buffer.asUint8List().toList();
+        final start = ((image.height - 100) * image.width * 4).clamp(0, data.length);
+        image.dispose();
+        return data.sublist(start);
+      }))!;
+    }
+    final held = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-2'))), pointer: 7);
+    await tester.pumpAndSettle();
+    expect(tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer)).press, greaterThan(.9));
+    final frosted = await capture();
+    await tester.tap(find.text('清透材质'));
+    await tester.pumpAndSettle();
+    final clear = await capture();
+    expect(liquidGlassRuntimeStatus.value.tier, LiquidGlassTier.a);
+    var changed = 0;
+    for (var i = 0; i < clear.length; i += 4) {
+      if ((clear[i] - frosted[i]).abs() > 10) changed++;
+    }
+    expect(changed, greaterThan(1000), reason: '不能只切换按钮，真实底栏材质必须有明显像素差异');
+    await held.cancel();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('同一拖动高性能形变更轻，高画质与高性能都保持折射', (tester) async {
+    final bends = <double>[];
+    final stretches = <double>[];
+    for (final mode in [
+      BottomNavPerformanceMode.highQuality,
+      BottomNavPerformanceMode.highPerformance
+    ]) {
+      final h = await pumpNav(tester);
+      await h.theme.setBottomNavPerformanceMode(mode);
+      await tester.pumpAndSettle();
+      final start =
+          tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-0')));
+      final drag = await tester.startGesture(start);
+      for (var i = 1; i <= 12; i++) {
+        await drag.moveTo(start + Offset(i * 13, -12));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      final optics =
+          tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer));
+      bends.add(optics.bend.distance);
+      stretches.add(optics.stretch);
+      expect(liquidGlassRuntimeStatus.value.tier, LiquidGlassTier.a);
+      await drag.cancel();
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+    expect(bends.first, greaterThan(2));
+    expect(bends.last, closeTo(bends.first * .35, .001));
+    expect(stretches.last, closeTo(stretches.first * .35, .001));
+  });
+
+  testWidgets('液态导航保留五个触控入口、语义、角标，松手只提交一次', (tester) async {
+    final h = await pumpNav(tester);
+    final semantics = tester.ensureSemantics();
+
+    for (var i = 0; i < 5; i++) {
+      expect(tester.getSize(find.byKey(ValueKey('bottom-nav-item-$i'))).height,
+          greaterThanOrEqualTo(44));
+    }
+    expect(find.bySemanticsLabel('我，有新消息'), findsOneWidget);
+    final start =
+        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-0')));
+    final gesture = await tester.startGesture(start);
+    await tester.pump();
+    for (var i = 1; i <= 12; i++) {
+      await gesture.moveTo(start + Offset(i * 13, -12));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    final optics =
+        tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer));
+    expect(optics.bend.dx, greaterThan(2));
+    expect(optics.stretch, greaterThan(.07));
+    expect(h.commits, 0);
+    expect(h.selected.value, 0);
+    await snapshot(tester, h, 'drag');
+    await gesture.up();
+    expect(h.commits, 1);
+    await tester.pumpAndSettle();
+    expect(h.selected.value, 2);
+    expect(h.position.value, closeTo(2, .001));
+    expect(liquidGlassRuntimeStatus.value.tier, LiquidGlassTier.a);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+    semantics.dispose();
+  });
+
+  testWidgets('取消和第二指针不提交；快速重新抓取仍可导航', (tester) async {
+    final h = await pumpNav(tester);
+    final first = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-0'))),
+        pointer: 1);
+    final second = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-4'))),
+        pointer: 2);
+    await second.up();
+    await first.moveBy(const Offset(170, 0));
+    await tester.pump(const Duration(milliseconds: 40));
+    await first.cancel();
+    await tester.pumpAndSettle();
+    expect(h.commits, 0);
+    expect(h.selected.value, 0);
+    await tester.tap(find.byKey(const ValueKey('bottom-nav-item-4')));
+    await tester.pump(const Duration(milliseconds: 16));
+    await tester.tap(find.byKey(const ValueKey('bottom-nav-item-1')));
+    await tester.pumpAndSettle();
+    expect(h.selected.value, 1);
+    expect(h.position.value, closeTo(1, .001));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('父页面转场通知不会覆盖正在吸附的透镜；外部切页仍同步', (tester) async {
+    final h = await pumpNav(tester);
+    await tester.tap(find.byKey(const ValueKey('bottom-nav-item-4')));
+    for (var i = 0; i < 6; i++) {
+      h.position.value = i / 6;
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await tester.pumpAndSettle();
+    expect(h.position.value, closeTo(4, .001));
+    h.selected.value = 2;
+    h.position.value = 2;
+    await tester.pumpAndSettle();
+    expect(h.position.value, closeTo(2, .001));
+  });
+
+  testWidgets('Pad 限宽和连续缩放后首尾点击对齐', (tester) async {
+    final h = await pumpNav(tester,
+        viewport: GoldenViewports.tabletLandscape1280x800);
     final dock = find.byKey(const ValueKey('bottom-nav-floating-dock'));
-    expect(tester.getRect(dock).width, 640);
-    expect(tester.getRect(dock).center.dx, 640);
+    expect(tester.getSize(dock).width, 440);
+    expect(tester.getCenter(dock).dx, 640);
     await tester.tap(find.byKey(const ValueKey('bottom-nav-item-4')));
     await tester.pumpAndSettle();
-    expect(harness.selectedIndex.value, 4);
+    expect(h.selected.value, 4);
     await setGoldenViewport(tester, GoldenViewports.tabletSplit600x800);
     await tester.pumpAndSettle();
-    expect(tester.getRect(dock).width, 576);
-    expect(tester.getRect(dock).center.dx, 300);
+    expect(tester.getSize(dock).width, 440);
     await tester.tap(find.byKey(const ValueKey('bottom-nav-item-0')));
     await tester.pumpAndSettle();
-    expect(harness.selectedIndex.value, 0);
-    expect(tester.takeException(), isNull);
+    expect(h.selected.value, 0);
   });
 
-  testWidgets('悬浮液态底栏保留五个入口、选中语义与完整点击区域', (tester) async {
-    final harness = await _pumpNav(tester, liquidGlass: true);
-    final semantics = tester.ensureSemantics();
-    try {
-      expect(find.byKey(const ValueKey('bottom-nav-floating-dock')),
-          findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('bottom-nav-selection')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey('bottom-nav-liquid-diagnostics')),
-        findsNothing,
-      );
-      expect(
-        find.byKey(const ValueKey('bottom-nav-selection')),
-        findsOneWidget,
-      );
+  testWidgets('浅色、深色、1.3 倍文字、滚动采样使用正式渲染器', (tester) async {
+    for (final mode in ['light', 'dark', 'large-text']) {
+      final h = await pumpNav(tester,
+          dark: mode == 'dark', textScale: mode == 'large-text' ? 1.3 : 1);
+      expect(liquidGlassRuntimeStatus.value.tier, LiquidGlassTier.a);
+      await snapshot(tester, h, mode);
+      await tester.drag(find.byType(ListView), const Offset(0, -180));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
 
-      for (final label in const ['首页', '集市', '课表', '校园', '我']) {
-        expect(find.text(label), findsWidgets);
-        expect(find.bySemanticsLabel(label), findsOneWidget);
+  testWidgets('高性能保留真实折射；仅缺少采样容器才降级且可点击', (tester) async {
+    for (final scope in [true, false]) {
+      final h = await pumpNav(tester, withScope: scope);
+      if (scope) {
+        await h.theme.setBottomNavPerformanceMode(
+            BottomNavPerformanceMode.highPerformance);
+        await tester.pumpAndSettle();
       }
-
+      expect(liquidGlassRuntimeStatus.value.tier,
+          scope ? LiquidGlassTier.a : LiquidGlassTier.c);
       await tester.tap(find.byKey(const ValueKey('bottom-nav-item-3')));
-      // 先让 tap-up 回调启动两条 spring，再推进动画时间。
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 40));
-
-      expect(harness.phase.value, LiquidNavPhase.settling);
-      expect(harness.activation.value, greaterThan(0));
-      expect(harness.visualIndex.value, greaterThan(0));
-      expect(harness.visualIndex.value, lessThan(3));
-      // 页面提交不再等待 Lens spring 完成；此时视觉位置仍在追随目标。
-      expect(harness.selectedIndex.value, 3);
-      expect(harness.commitCount.value, 1);
-
       await tester.pumpAndSettle();
-
-      expect(harness.selectedIndex.value, 3);
-      expect(harness.lastTappedIndex.value, isNull);
-      expect(harness.lastCommittedIndex.value, 3);
-      expect(harness.commitCount.value, 1);
-      expect(harness.phase.value, LiquidNavPhase.idle);
-      expect(
-          tester
-              .getSize(find.byKey(const ValueKey('bottom-nav-item-3')))
-              .height,
-          greaterThanOrEqualTo(44));
-    } finally {
-      semantics.dispose();
+      expect(h.selected.value, 3);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
     }
   });
 
-  testWidgets('非 liquid 悬浮底栏选中胶囊在浅色/深色模式下都保持半透明', (tester) async {
-    for (final darkMode in const [false, true]) {
-      await _pumpNav(tester, liquidGlass: false, darkMode: darkMode);
+  testWidgets('减少动态效果、无障碍动作保留即时导航', (tester) async {
+    final h = await pumpNav(tester, reduced: true);
+    final semantics = tester.ensureSemantics();
 
-      expect(
-        find.byKey(const ValueKey('bottom-nav-floating-dock')),
-        findsOneWidget,
-      );
-      // 非 liquid 模式没有液态光学层，选中胶囊是 backdrop 装饰本身。
-      expect(
-        find.byKey(const ValueKey('bottom-nav-selection-base-blur')),
-        findsNothing,
-      );
-
-      final backdrop = tester.widget<DecoratedBox>(
-        find.byKey(const ValueKey('bottom-nav-selection-backdrop')),
-      );
-      final gradient =
-          (backdrop.decoration as BoxDecoration).gradient! as LinearGradient;
-      for (final color in gradient.colors) {
-        expect(color.a, greaterThan(0), reason: 'darkMode=$darkMode');
-        // 胶囊绘制在 Normal Row 内容之上，任何不透明填充都会盖住选中 Tab。
-        expect(color.a, lessThan(1), reason: 'darkMode=$darkMode');
-        expect(
-          color,
-          AppColors.brandPrimary.withValues(alpha: color.a),
-          reason: 'darkMode=$darkMode',
-        );
-      }
-    }
-  });
-
-  testWidgets('frosted idle 保留背景 blur、Normal Row 挖空和 Accent 前景分层',
-      (tester) async {
-    await _pumpNav(tester, liquidGlass: true);
-
-    expect(
-      find.byKey(const ValueKey('bottom-nav-selection-backdrop')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('bottom-nav-selection-base-blur')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('bottom-nav-selection-base-surface')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('bottom-nav-normal-exclusion')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('bottom-nav-dock-exclusion')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('bottom-nav-selection-foreground')),
-      findsOneWidget,
-    );
-    // 常态只显示独立毛玻璃；彩色边缘折射等交互激活后才出现。
-    expect(
-      find.byKey(const ValueKey('bottom-nav-selection-edge-halo')),
-      findsNothing,
-    );
-    final material = tester.widget<DecoratedBox>(
-      find.byKey(const ValueKey('bottom-nav-selection-material')),
-    );
-    final decoration = material.decoration as BoxDecoration;
-    expect(decoration.boxShadow, isNull);
-    // Idle 由 frosted blur + 轻轮廓组成，不启动 Liquid Lens halo。
-    expect(decoration.border, isNotNull);
-    final backdrop = tester.widget<DecoratedBox>(
-      find.byKey(const ValueKey('bottom-nav-selection-backdrop')),
-    );
-    final backdropDecoration = backdrop.decoration as BoxDecoration;
-    expect(backdropDecoration.boxShadow, isNull);
-    final surface = tester.widget<ColoredBox>(
-      find.descendant(
-        of: find.byKey(
-          const ValueKey('bottom-nav-selection-base-surface'),
-        ),
-        matching: find.byType(ColoredBox),
-      ),
-    );
-    expect(surface.color.a, closeTo(0.18, 0.001));
-    final dockWidth = tester
-        .getSize(find.byKey(const ValueKey('bottom-nav-floating-dock')))
-        .width;
-    final selectionWidth = tester
-        .getSize(find.byKey(const ValueKey('bottom-nav-selection')))
-        .width;
-    expect(selectionWidth / (dockWidth / 5), closeTo(1.0, 0.01));
-    final dockRect = tester.getRect(
-      find.byKey(const ValueKey('bottom-nav-floating-dock')),
-    );
-    final selectionRect = tester.getRect(
-      find.byKey(const ValueKey('bottom-nav-selection')),
-    );
-    expect(selectionRect.left, greaterThanOrEqualTo(dockRect.left));
-    expect(selectionRect.right, lessThanOrEqualTo(dockRect.right));
-  });
-
-  testWidgets('V9 正式 Normal Row 始终 neutral/scale=1，Accent Copy 独立在窗口内',
-      (tester) async {
-    final harness = await _pumpNav(tester, liquidGlass: true);
-    final item = find.byKey(const ValueKey('bottom-nav-item-2'));
-    final normalTransform = tester.widget<Transform>(
-      find.byKey(const ValueKey('bottom-nav-normal-content-2')),
-    );
-    expect(normalTransform.transform.storage[0], closeTo(1, 0.0001));
-    expect(
-      tester
-          .widget<Icon>(find.descendant(of: item, matching: find.byType(Icon)))
-          .color,
-      AppColors.iconMutedLight,
-    );
-    expect(
-      tester
-          .widget<Transform>(
-            find.byKey(
-              const ValueKey('bottom-nav-accent-content-scale-0'),
-            ),
-          )
-          .transform
-          .storage[0],
-      closeTo(1, 0.0001),
-    );
-    final accentIcons = find.descendant(
-      of: find.byKey(const ValueKey('bottom-nav-accent-tabs')),
-      matching: find.byType(Icon),
-    );
-    expect(accentIcons, findsNWidgets(5));
-    for (var index = 0; index < 5; index++) {
-      expect(
-        tester.widget<Icon>(accentIcons.at(index)).color,
-        AppColors.brandPrimary,
-      );
-    }
-    expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
-    expect(
-        find.byKey(const ValueKey('bottom-nav-accent-tabs')), findsOneWidget);
-
-    final gestureLayer = find.byKey(
-      const ValueKey('bottom-nav-gesture-layer'),
-    );
-    final topLeft = tester.getTopLeft(gestureLayer);
-    final itemWidth = tester.getSize(gestureLayer).width / 5;
-
-    for (final position in const [0.0, 0.5, 1.0, 2.5]) {
-      harness.visualIndex.value = position;
-      await tester.pump();
-      for (var index = 0; index < 5; index++) {
-        final transform = tester.widget<Transform>(
-          find.byKey(ValueKey('bottom-nav-normal-content-$index')),
-        );
-        expect(transform.transform.storage[0], closeTo(1, 0.0001));
-        final icon = tester.widget<Icon>(
-          find.descendant(
-            of: find.byKey(ValueKey('bottom-nav-item-$index')),
-            matching: find.byType(Icon),
-          ),
-        );
-        expect(icon.color, AppColors.iconMutedLight);
-        final label = tester.widget<Text>(
-          find.descendant(
-            of: find.byKey(ValueKey('bottom-nav-item-$index')),
-            matching: find.byType(Text),
-          ),
-        );
-        expect(label.style?.color, AppColors.iconMutedLight);
-      }
-    }
-
-    final gesture = await tester.startGesture(
-      Offset(topLeft.dx + itemWidth * 0.5, topLeft.dy + 30),
-    );
-    await tester.pumpFrames(harness, const Duration(milliseconds: 120));
-    await gesture.moveTo(Offset(topLeft.dx + itemWidth * 2, topLeft.dy + 30));
-    await tester.pump();
-
-    expect(
-      tester
-          .widget<Transform>(
-            find.byKey(
-              const ValueKey('bottom-nav-accent-content-scale-0'),
-            ),
-          )
-          .transform
-          .storage[0],
-      greaterThan(1.0),
-    );
-
-    for (var index = 0; index < 5; index++) {
-      final transform = tester.widget<Transform>(
-        find.byKey(ValueKey('bottom-nav-normal-content-$index')),
-      );
-      expect(transform.transform.storage[0], closeTo(1, 0.0001));
-      final icon = tester.widget<Icon>(
-        find.descendant(
-          of: find.byKey(ValueKey('bottom-nav-item-$index')),
-          matching: find.byType(Icon),
-        ),
-      );
-      expect(icon.color, AppColors.iconMutedLight);
-      final label = tester.widget<Text>(
-        find.descendant(
-          of: find.byKey(ValueKey('bottom-nav-item-$index')),
-          matching: find.byType(Text),
-        ),
-      );
-      expect(label.style?.color, AppColors.iconMutedLight);
-    }
-    expect(
-        find.byKey(const ValueKey('bottom-nav-accent-tabs')), findsOneWidget);
-    await gesture.cancel();
+    await tester.tap(find.byKey(const ValueKey('bottom-nav-item-4')));
     await tester.pumpAndSettle();
-  });
-
-  testWidgets('拖动透镜保持连续位置，松手后才吸附并恢复', (tester) async {
-    final harness = await _pumpNav(tester, liquidGlass: true);
-    final lensFinder = find.byKey(const ValueKey('bottom-nav-selection'));
-    expect(lensFinder, findsOneWidget);
-
-    final gestureLayer = find.byKey(
-      const ValueKey('bottom-nav-gesture-layer'),
-    );
-    final layerTopLeft = tester.getTopLeft(gestureLayer);
-    final itemWidth = tester.getSize(gestureLayer).width / 5;
-    final gesture = await tester.startGesture(
-      Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
-    );
-    await tester.pumpFrames(harness, const Duration(milliseconds: 120));
-    expect(lensFinder, findsOneWidget);
-    await gesture.moveTo(
-      Offset(layerTopLeft.dx + itemWidth * 2.0, layerTopLeft.dy + 30),
-    );
-    await tester.pump(const Duration(milliseconds: 80));
-    await tester.pump();
-
-    expect(harness.visualIndex.value, closeTo(1.5, 0.02));
-    expect(harness.selectedIndex.value, 0);
-    expect(harness.commitCount.value, 0);
-
-    await gesture.up();
-    expect(harness.phase.value, LiquidNavPhase.settling);
-    expect(harness.selectedIndex.value, 2);
-    expect(harness.lastCommittedIndex.value, 2);
-    expect(harness.commitCount.value, 1);
+    final optics =
+        tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer));
+    expect(optics.press, 0);
+    expect(optics.bend, Offset.zero);
+    expect(h.selected.value, 4);
+    final node = tester
+        .getSemantics(find.byKey(const ValueKey('bottom-nav-semantic-1')));
+    tester
+        .renderObject(find.byKey(const ValueKey('bottom-nav-semantic-1')))
+        .owner!
+        .semanticsOwner!
+        .performAction(node.id, ui.SemanticsAction.tap);
     await tester.pumpAndSettle();
-
-    expect(lensFinder, findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('bottom-nav-selection')),
-      findsOneWidget,
-    );
-    expect(harness.visualIndex.value, closeTo(2, 0.01));
-    expect(harness.selectedIndex.value, 2);
-    expect(harness.lastCommittedIndex.value, 2);
-    expect(harness.commitCount.value, 1);
+    expect(h.selected.value, 1);
+    semantics.dispose();
   });
 
-  testWidgets('拖拽形变左右镜像，边界压缩不会丢失反馈', (tester) async {
-    final harness = await _pumpNav(
-      tester,
-      liquidGlass: true,
-      initialIndex: 2,
-    );
-    final gestureLayer = find.byKey(
-      const ValueKey('bottom-nav-gesture-layer'),
-    );
-    final layerTopLeft = tester.getTopLeft(gestureLayer);
-    final itemWidth = tester.getSize(gestureLayer).width / 5;
-    final lensFinder = find.byKey(const ValueKey('bottom-nav-selection'));
-    final idleWidth = tester.getSize(lensFinder).width;
-
-    Future<double> dragAndMeasure(double targetCenter) async {
-      final gesture = await tester.startGesture(
-        Offset(layerTopLeft.dx + itemWidth * 2.5, layerTopLeft.dy + 30),
-      );
-      await tester.pumpFrames(harness, const Duration(milliseconds: 120));
-      await gesture.moveTo(
-        Offset(
-            layerTopLeft.dx + itemWidth * targetCenter, layerTopLeft.dy + 30),
-      );
-      await tester.pump(const Duration(milliseconds: 80));
-      final width = tester.getSize(lensFinder).width;
-      await gesture.cancel();
+  testWidgets('旧样式调用也保持完整的新液态底栏', (tester) async {
+    final h = await pumpNav(tester);
+    for (final style in [BottomNavStyle.normal, BottomNavStyle.floating]) {
+      await h.theme.setBottomNavStyle(style);
       await tester.pumpAndSettle();
-      return width;
+      await tester.tap(find.byKey(const ValueKey('bottom-nav-item-3')));
+      await tester.pumpAndSettle();
+      expect(h.selected.value, 3);
+      expect(find.byType(LiquidGlassRenderer), findsOneWidget);
     }
-
-    final leftWidth = await dragAndMeasure(1.5);
-    final rightWidth = await dragAndMeasure(3.5);
-
-    expect(leftWidth, greaterThan(idleWidth));
-    expect(rightWidth, greaterThan(idleWidth));
-    expect(leftWidth, closeTo(rightWidth, 1.0));
-  });
-
-  testWidgets('V9 按住当前选中块激活连续 Capsule，松手回到 frosted idle', (tester) async {
-    final harness = await _pumpNav(tester, liquidGlass: true);
-    final gestureLayer = find.byKey(
-      const ValueKey('bottom-nav-gesture-layer'),
-    );
-    final layerTopLeft = tester.getTopLeft(gestureLayer);
-    final itemWidth = tester.getSize(gestureLayer).width / 5;
-
-    expect(harness.phase.value, LiquidNavPhase.idle);
-    expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
-
-    final gesture = await tester.startGesture(
-      Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
-    );
-    await tester.pumpFrames(harness, const Duration(milliseconds: 60));
-
-    expect(harness.phase.value, LiquidNavPhase.pressing);
-    expect(harness.activation.value, greaterThan(0));
-    expect(harness.activation.value, lessThan(1));
-    expect(
-      find.byKey(
-        const ValueKey('bottom-nav-selection-interactive-highlight'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('bottom-nav-selection-base-blur')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('bottom-nav-selection-edge-halo')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
-
-    await tester.pumpFrames(harness, const Duration(milliseconds: 70));
-    // V9 使用可中断 spring，不把 progress 人为截成 tween 的终点；
-    // 此时应已进入完整玻璃态的接近区间，但仍允许物理收敛。
-    expect(harness.activation.value, greaterThan(0.90));
-    expect(
-      find.byKey(const ValueKey('bottom-nav-selection')),
-      findsOneWidget,
-    );
-
-    // Hold 不应因为没有移动而超时收回；这是 Press-to-Liquid 与普通长按的
-    // 关键区别，完整 Lens 要一直保持到 pointer up。
-    await tester.pumpFrames(harness, const Duration(seconds: 2));
-    expect(harness.phase.value, LiquidNavPhase.pressing);
-    expect(harness.activation.value, closeTo(1, 0.01));
-    expect(
-      find.byKey(const ValueKey('bottom-nav-selection')),
-      findsOneWidget,
-    );
-
-    await gesture.up();
-    await tester.pumpAndSettle();
-
-    expect(harness.phase.value, LiquidNavPhase.idle);
-    expect(
-      find.byKey(const ValueKey('bottom-nav-selection-base-blur')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('bottom-nav-selection-edge-halo')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(
-        const ValueKey('bottom-nav-selection-interactive-highlight'),
-      ),
-      findsNothing,
-    );
-    expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
-    expect(harness.commitCount.value, 0);
-  });
-
-  testWidgets('V9 快速点击只短暂触发 Pressed，不提交也不残留 Lens', (tester) async {
-    final harness = await _pumpNav(tester, liquidGlass: true);
-    final gestureLayer = find.byKey(
-      const ValueKey('bottom-nav-gesture-layer'),
-    );
-    final layerTopLeft = tester.getTopLeft(gestureLayer);
-    final itemWidth = tester.getSize(gestureLayer).width / 5;
-    final gesture = await tester.startGesture(
-      Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
-    );
-
-    await tester.pumpFrames(harness, const Duration(milliseconds: 40));
-    expect(harness.phase.value, LiquidNavPhase.pressing);
-    expect(harness.activation.value, lessThan(1));
-
-    await gesture.up();
-    await tester.pumpAndSettle();
-
-    expect(harness.phase.value, LiquidNavPhase.idle);
-    expect(harness.commitCount.value, 0);
-    expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('bottom-nav-selection')),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('V9 拖动经历 dragging → settling → collapsing 并只提交一次',
-      (tester) async {
-    final harness = await _pumpNav(tester, liquidGlass: true);
-    final gestureLayer = find.byKey(
-      const ValueKey('bottom-nav-gesture-layer'),
-    );
-    final layerTopLeft = tester.getTopLeft(gestureLayer);
-    final itemWidth = tester.getSize(gestureLayer).width / 5;
-    final gesture = await tester.startGesture(
-      Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
-    );
-    await tester.pumpFrames(harness, const Duration(milliseconds: 120));
-    await gesture.moveTo(
-      Offset(layerTopLeft.dx + itemWidth * 2.0, layerTopLeft.dy + 30),
-    );
-    await tester.pump();
-
-    expect(harness.phase.value, LiquidNavPhase.dragging);
-    expect(harness.visualIndex.value, closeTo(1.5, 0.02));
-
-    await gesture.up();
-    expect(harness.phase.value, LiquidNavPhase.settling);
-    // Drag release 立即提交业务 Tab，settling 仅负责 Lens 的视觉收尾。
-    expect(harness.selectedIndex.value, 2);
-    expect(harness.commitCount.value, 1);
-    await tester.pumpAndSettle();
-
-    expect(harness.phase.value, LiquidNavPhase.idle);
-    expect(harness.selectedIndex.value, 2);
-    expect(harness.commitCount.value, 1);
-    expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
-  });
-
-  testWidgets('多指触控锁定首个 pointer，不让第二个 pointer 接管 Lens', (tester) async {
-    final harness = await _pumpNav(tester, liquidGlass: true);
-    final gestureLayer = find.byKey(
-      const ValueKey('bottom-nav-gesture-layer'),
-    );
-    final layerTopLeft = tester.getTopLeft(gestureLayer);
-    final itemWidth = tester.getSize(gestureLayer).width / 5;
-    final first = await tester.startGesture(
-      Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
-      pointer: 1,
-    );
-
-    await first.moveTo(
-      Offset(layerTopLeft.dx + itemWidth * 1.5, layerTopLeft.dy + 30),
-    );
-    await tester.pump();
-    expect(harness.visualIndex.value, closeTo(1, 0.02));
-
-    final second = await tester.startGesture(
-      Offset(layerTopLeft.dx + itemWidth * 2.5, layerTopLeft.dy + 30),
-      pointer: 2,
-    );
-    await second.moveTo(
-      Offset(layerTopLeft.dx + itemWidth * 4.5, layerTopLeft.dy + 30),
-    );
-    await tester.pump();
-
-    expect(harness.visualIndex.value, closeTo(1, 0.02));
-    await second.cancel();
-    await first.up();
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets('首尾 Lens 中心与固定 Tab 中心对齐且不受 Dock 裁剪限制', (tester) async {
-    final harness = await _pumpNav(tester, liquidGlass: true);
-    final lensFinder = find.byKey(const ValueKey('bottom-nav-selection'));
-    final firstItem = find.byKey(const ValueKey('bottom-nav-item-0'));
-    final lastItem = find.byKey(const ValueKey('bottom-nav-item-4'));
-
-    final gestureLayer = find.byKey(
-      const ValueKey('bottom-nav-gesture-layer'),
-    );
-    final layerTopLeft = tester.getTopLeft(gestureLayer);
-    final itemWidth = tester.getSize(gestureLayer).width / 5;
-    final gesture = await tester.startGesture(
-      Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
-    );
-    await tester.pumpFrames(harness, const Duration(milliseconds: 120));
-    expect(
-      find.ancestor(of: lensFinder, matching: find.byType(ClipRRect)),
-      findsNothing,
-    );
-    expect(
-      tester.getCenter(lensFinder).dx,
-      closeTo(tester.getCenter(firstItem).dx, 1),
-    );
-
-    harness.visualIndex.value = 4;
-    await tester.pump();
-
-    expect(
-      tester.getCenter(lensFinder).dx,
-      closeTo(tester.getCenter(lastItem).dx, 1),
-    );
-    await gesture.cancel();
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets('连续位置不会在跨过 Tab 中点时提前吸附', (tester) async {
-    final harness = await _pumpNav(tester, liquidGlass: true);
-    final gestureLayer = find.byKey(
-      const ValueKey('bottom-nav-gesture-layer'),
-    );
-    final layerTopLeft = tester.getTopLeft(gestureLayer);
-    final itemWidth = tester.getSize(gestureLayer).width / 5;
-    final gesture = await tester.startGesture(
-      Offset(layerTopLeft.dx + itemWidth * 0.5, layerTopLeft.dy + 30),
-    );
-    await gesture.moveTo(
-      Offset(layerTopLeft.dx + itemWidth * 1.25, layerTopLeft.dy + 30),
-    );
-    await tester.pump(const Duration(milliseconds: 120));
-    await tester.pump();
-
-    expect(harness.visualIndex.value, closeTo(0.75, 0.02));
-    expect(harness.selectedIndex.value, 0);
-    await gesture.cancel();
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets('Reduced Motion 直接让透镜落在当前 Tab', (tester) async {
-    await _pumpNav(
-      tester,
-      liquidGlass: true,
-      disableAnimations: true,
-      initialIndex: 3,
-      initialVisualIndex: 0.4,
-    );
-
-    expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
-    expect(
-      tester.getCenter(find.byKey(const ValueKey('bottom-nav-selection'))).dx,
-      closeTo(
-        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-3'))).dx,
-        1,
-      ),
-    );
-  });
-
-  testWidgets('关闭液态玻璃时使用稳定的实色选中态', (tester) async {
-    await _pumpNav(tester, liquidGlass: false);
-
-    expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('bottom-nav-selection')),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('暗色与 1.3 倍字号下底栏不溢出', (tester) async {
-    await _pumpNav(
-      tester,
-      liquidGlass: true,
-      darkMode: true,
-      textScale: 1.3,
-    );
-
-    expect(tester.takeException(), isNull);
-    expect(find.byKey(const ValueKey('bottom-nav-selection')), findsOneWidget);
-  });
-
-  testWidgets('渲染诊断仅在显式 QA 开关开启时出现', (tester) async {
-    await _pumpNav(tester, liquidGlass: true, showDiagnostics: true);
-
-    expect(
-      find.byKey(const ValueKey('bottom-nav-liquid-diagnostics')),
-      findsOneWidget,
-    );
+    expect(h.commits, 2);
+    expect(h.taps, 0);
   });
 }
 
-Future<_NavHarness> _pumpNav(
+class NavHarness {
+  NavHarness(this.theme, this.auth);
+  final ThemeProvider theme;
+  final AuthProvider auth;
+  final selected = ValueNotifier(0);
+  final position = ValueNotifier(0.0);
+  final boundary = GlobalKey();
+  int commits = 0, taps = 0;
+  void dispose() {
+    theme.dispose();
+    auth.dispose();
+    selected.dispose();
+    position.dispose();
+  }
+}
+
+Future<NavHarness> pumpNav(
   WidgetTester tester, {
-  required bool liquidGlass,
-  bool darkMode = false,
-  bool disableAnimations = false,
+  Size viewport = GoldenViewports.phone390x844,
+  bool dark = false,
+  bool reduced = false,
   double textScale = 1,
-  int initialIndex = 0,
-  double? initialVisualIndex,
-  bool showDiagnostics = false,
-  Size viewport = GoldenViewports.phone360x800,
+  bool withScope = true,
 }) async {
   tester.view.devicePixelRatio = 1;
   await setGoldenViewport(tester, viewport);
-
-  AppPreferencesStore.setMockInitialValues({
-    'floating_nav_bar': true,
-    'liquid_glass_v2': liquidGlass,
+  await tester.runAsync(() async {
+    await loadTestFonts();
+    final icons = FontLoader('MaterialIcons')
+      ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await icons.load();
+    await loadLiquidGlassProgram();
   });
-  final themeProvider = ThemeProvider(
-    loadOnStart: false,
-    // 固定高性能档：auto 模式按 CPU 核数探测（桌面 ≥6 核才算 high），CI 的
-    // 4 vCPU runner 会被判成 medium 而关闭 shader，edge-halo 断言随之失真。
-    performanceLevel: DevicePerformanceLevel.high,
-  );
-  await themeProvider.loadThemeForTesting();
-  final authProvider = AuthProvider(Dio(), loadStoredAuth: false);
-  final harness = _NavHarness(
-    themeProvider: themeProvider,
-    authProvider: authProvider,
-    selectedIndex: ValueNotifier(initialIndex),
-    visualIndex: ValueNotifier(initialVisualIndex ?? initialIndex.toDouble()),
-    darkMode: darkMode,
-    disableAnimations: disableAnimations,
-    textScale: textScale,
-    showDiagnostics: showDiagnostics,
-  );
-  addTearDown(harness.dispose);
-
-  await tester.pumpWidget(harness);
+  AppPreferencesStore.setMockInitialValues({});
+  final theme = ThemeProvider(
+      loadOnStart: false, performanceLevel: DevicePerformanceLevel.high);
+  await theme.setBottomNavStyle(BottomNavStyle.liquidGlass);
+  final h = NavHarness(theme, AuthProvider(Dio(), loadStoredAuth: false));
+  addTearDown(h.dispose);
+  await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: theme,
+      child: MaterialApp(
+        theme: dark ? AppTheme.darkTheme : AppTheme.lightTheme,
+        home: Builder(
+            builder: (context) => MediaQuery(
+                  data: MediaQuery.of(context).copyWith(
+                      disableAnimations: reduced,
+                      textScaler: TextScaler.linear(textScale)),
+                  child: RepaintBoundary(
+                      key: h.boundary,
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: h.selected,
+                        builder: (context, selected, child) {
+                          final content = ListView(
+                              children: List.generate(
+                                  30,
+                                  (i) => SizedBox(
+                                      height: 60,
+                                      child: ColoredBox(
+                                          color: i.isEven
+                                              ? const Color(0xffb7dbe4)
+                                              : const Color(0xffe9d7cc),
+                                          child: Text('背景纹理 $i')))));
+                          final scaffold = Scaffold(
+                              extendBody: true,
+                              body: withScope
+                                  ? LiquidGlassBackground(child: content)
+                                  : content,
+                              bottomNavigationBar: BottomNavWrapper(
+                                  currentIndex: selected,
+                                  visualIndexListenable: h.position,
+                                  onTap: (v) {
+                                    h.taps++;
+                                    h.selected.value = v;
+                                  },
+                                  onNavigationCommitted: (v) {
+                                    h.commits++;
+                                    h.selected.value = v;
+                                  },
+                                  authProvider: h.auth,
+                                  badges: const {4: true}));
+                          return withScope
+                              ? LiquidGlassScope(child: scaffold)
+                              : scaffold;
+                        },
+                      )),
+                )),
+      )));
+  await tester.runAsync(() async {});
   await tester.pumpAndSettle();
-  return harness;
+  return h;
 }
 
-class _NavHarness extends StatelessWidget {
-  _NavHarness({
-    required this.themeProvider,
-    required this.authProvider,
-    required this.selectedIndex,
-    required this.visualIndex,
-    required this.darkMode,
-    required this.disableAnimations,
-    required this.textScale,
-    required this.showDiagnostics,
-  })  : lastTappedIndex = ValueNotifier(null),
-        lastCommittedIndex = ValueNotifier(null),
-        commitCount = ValueNotifier(0),
-        phase = ValueNotifier(LiquidNavPhase.idle),
-        activation = ValueNotifier(0);
-
-  final ThemeProvider themeProvider;
-  final AuthProvider authProvider;
-  final ValueNotifier<int> selectedIndex;
-  final ValueNotifier<double> visualIndex;
-  final bool darkMode;
-  final bool disableAnimations;
-  final double textScale;
-  final bool showDiagnostics;
-  final ValueNotifier<int?> lastTappedIndex;
-  final ValueNotifier<int?> lastCommittedIndex;
-  final ValueNotifier<int> commitCount;
-  final ValueNotifier<LiquidNavPhase> phase;
-  final ValueNotifier<double> activation;
-
-  void dispose() {
-    selectedIndex.dispose();
-    visualIndex.dispose();
-    lastTappedIndex.dispose();
-    lastCommittedIndex.dispose();
-    commitCount.dispose();
-    phase.dispose();
-    activation.dispose();
-    themeProvider.dispose();
-    authProvider.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ChangeNotifierProvider<ThemeProvider>.value(
-      value: themeProvider,
-      child: MaterialApp(
-        theme: AppTheme.lightTheme,
-        darkTheme: AppTheme.darkTheme,
-        themeMode: darkMode ? ThemeMode.dark : ThemeMode.light,
-        home: Builder(
-          builder: (context) {
-            final mediaQuery = MediaQuery.of(context);
-            return MediaQuery(
-              data: mediaQuery.copyWith(
-                disableAnimations: disableAnimations,
-                textScaler: TextScaler.linear(textScale),
-              ),
-              child: ValueListenableBuilder<int>(
-                valueListenable: selectedIndex,
-                builder: (context, currentIndex, child) {
-                  return Scaffold(
-                    extendBody: true,
-                    body: const DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [Color(0xFFFFE5B2), Color(0xFF8EDFD3)],
-                        ),
-                      ),
-                      child: SizedBox.expand(),
-                    ),
-                    bottomNavigationBar: BottomNavWrapper(
-                      currentIndex: currentIndex,
-                      visualIndexListenable: visualIndex,
-                      onTap: (index) {
-                        lastTappedIndex.value = index;
-                        selectedIndex.value = index;
-                      },
-                      onNavigationCommitted: (index) {
-                        lastCommittedIndex.value = index;
-                        commitCount.value++;
-                        selectedIndex.value = index;
-                      },
-                      onLiquidPhaseChanged: (value) => phase.value = value,
-                      onLiquidActivationChanged: (value) =>
-                          activation.value = value,
-                      authProvider: authProvider,
-                      showDiagnostics: showDiagnostics,
-                    ),
-                  );
-                },
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
+Future<void> snapshot(WidgetTester tester, NavHarness h, String name) async {
+  final boundary =
+      h.boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+  await tester.runAsync(() async {
+    final image = await boundary.toImage(pixelRatio: 1);
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    final dir = Directory('build/verification')..createSync(recursive: true);
+    await File('${dir.path}/liquid-nav-$name.png')
+        .writeAsBytes(bytes!.buffer.asUint8List());
+    image.dispose();
+  });
 }

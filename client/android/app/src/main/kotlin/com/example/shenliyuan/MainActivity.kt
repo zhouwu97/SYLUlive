@@ -25,6 +25,7 @@ import java.io.File
 import java.util.Locale
 
 class MainActivity : FlutterActivity() {
+    private var liquidGlassGravity: LiquidGlassGravityBridge? = null
 
     private var lastWidgetNightMode = Configuration.UI_MODE_NIGHT_UNDEFINED
 
@@ -170,6 +171,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
+        liquidGlassGravity?.resume()
         appInForeground = true
         UpdateAppForeground.onActivityResumed()
         PrivateMessageNotificationState.setAppForeground(this, true)
@@ -181,6 +183,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onPause() {
+        liquidGlassGravity?.pause()
         appInForeground = false
         UpdateAppForeground.onActivityPaused()
         // Flutter 生命周期异常时也由 Native 兜底撤销禁止后台运行的更新任务。
@@ -206,6 +209,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        liquidGlassGravity?.dispose()
+        liquidGlassGravity = null
         keepAliveHandler.removeCallbacksAndMessages(null)
         val remainingInstances = synchronized(activityInstanceLock) {
             if (activityInstanceRegistered) {
@@ -353,6 +358,8 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        liquidGlassGravity?.dispose()
+        liquidGlassGravity = LiquidGlassGravityBridge(this, flutterEngine.dartExecutor.binaryMessenger)
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger,
             "shenliyuan/academic_archive").setMethodCallHandler { call, result ->

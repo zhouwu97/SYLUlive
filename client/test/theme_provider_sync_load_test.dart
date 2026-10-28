@@ -49,7 +49,7 @@ void main() {
     expect(provider.predictiveBack, isFalse);
     expect(provider.frostedGlass, isFalse);
     expect(provider.backgroundBlur, 0);
-    expect(provider.liquidGlass, isFalse);
+    expect(provider.liquidGlass, isTrue);
   });
 
   test('显式保存的预测性返回和毛玻璃设置不会被默认值覆盖', () async {

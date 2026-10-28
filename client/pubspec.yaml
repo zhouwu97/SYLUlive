@@ -71,8 +71,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   shaders:
-    - shaders/liquid_nav_lens.frag
-    - shaders/liquid_nav_dock.frag
+    - shaders/liquid_glass.frag
   assets:
     - assets/images/bg-mobile.png
     - assets/images/map.png

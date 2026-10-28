@@ -401,8 +401,9 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
       return;
     }
     _replyComposerController.openReply(
-      parentReplyId: reply.id,
+      parentReplyId: reply.parentReplyId ?? reply.id,
       replyToUserId: reply.authorId,
+      replyToReplyId: reply.id,
       replyToName: reply.author?.nickname,
     );
   }

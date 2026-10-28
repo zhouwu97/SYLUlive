@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
+import '../theme/app_spacing.dart';
 import '../utils/app_feedback.dart';
 import '../utils/text_editing_helper.dart';
 import 'app_composer_bar.dart';
@@ -119,6 +120,35 @@ class _PostReplyComposerState extends State<PostReplyComposer>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (controller.parentReplyId != null)
+            Padding(
+              key: const ValueKey('post-reply-target-banner'),
+              padding: const EdgeInsets.only(left: AppSpacing.lg),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '回复 @${controller.replyToName?.trim().isNotEmpty == true ? controller.replyToName!.trim() : '同学'}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                    ),
+                  ),
+                  IconButton(
+                    key: const ValueKey('post-reply-clear-target'),
+                    tooltip: '取消回复对象，改为评论帖子',
+                    visualDensity: VisualDensity.standard,
+                    constraints:
+                        const BoxConstraints(minWidth: 44, minHeight: 44),
+                    onPressed:
+                        widget.sending ? null : controller.clearReplyTarget,
+                    icon: const Icon(Icons.close, size: 18),
+                  ),
+                ],
+              ),
+            ),
           if (controller.sticker != null)
             StickerComposerPreview(
               sticker: controller.sticker!,
@@ -190,7 +220,8 @@ class _PostReplyComposerState extends State<PostReplyComposer>
             final reduceMotion = MediaQuery.disableAnimationsOf(context);
             final baseEmojiHeight = controller.hasObservedKeyboardHeight
                 ? controller.stableKeyboardHeight
-                : (widget.emojiPanelFallbackHeight ?? controller.stableKeyboardHeight);
+                : (widget.emojiPanelFallbackHeight ??
+                    controller.stableKeyboardHeight);
             final emojiHeight = widget.emojiPanelMaxHeight != null
                 ? baseEmojiHeight.clamp(0.0, widget.emojiPanelMaxHeight!)
                 : baseEmojiHeight;
@@ -220,7 +251,8 @@ class _PostReplyComposerState extends State<PostReplyComposer>
                       onEmojiSelected: (emoji) =>
                           insertAtSelection(controller.textController, emoji),
                       onStickerSelected: controller.selectSticker,
-                      onPackAssetSelected: (path, asset) => controller.selectLocalImage(XFile(path), emojiAsset: asset),
+                      onPackAssetSelected: (path, asset) => controller
+                          .selectLocalImage(XFile(path), emojiAsset: asset),
                       onFavoriteImageSelected: controller.selectFavoriteImage,
                       onAddImage: widget.pickImage != null ? _pickImage : null,
                       favoriteImageHeaders: _favoriteImageHeaders(context),
@@ -322,7 +354,16 @@ class _PostReplyComposerState extends State<PostReplyComposer>
     }
     final draft = controller.draft;
     final sent = await widget.onSubmit(draft);
-    if (sent) {
+    if (!mounted || !sent) return;
+    final latest = controller.draft;
+    // 发送过程中仍可能从评论列表切换目标，成功回包只能清理已发送的草稿。
+    if (latest.text == draft.text &&
+        latest.parentReplyId == draft.parentReplyId &&
+        latest.replyToUserId == draft.replyToUserId &&
+        latest.replyToReplyId == draft.replyToReplyId &&
+        identical(latest.sticker, draft.sticker) &&
+        identical(latest.favoriteImage, draft.favoriteImage) &&
+        identical(latest.localImage, draft.localImage)) {
       controller.close(
         clearDraft: true,
         preserveReplyTarget: widget.preserveReplyTargetOnSuccess,

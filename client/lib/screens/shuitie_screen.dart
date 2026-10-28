@@ -43,6 +43,7 @@ import '../services/root_page_state_service.dart';
 import '../services/reply_notification_service.dart';
 import '../services/reply_notification_session.dart';
 import '../services/reply_notification_state.dart';
+import '../services/publish_session_scope.dart';
 import '../services/app_resume_coordinator.dart';
 import '../widgets/home_service_drawer.dart';
 import '../widgets/pinned_post_summary_bar.dart';
@@ -708,18 +709,55 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Future<void> _handleUnreadReplyReminderPressed() async {
     final items = List<UnreadReplyNotification>.of(_unreadReplyNotifications);
     if (items.isEmpty) return;
-    if (items.length == 1) {
-      await _openUnreadReply(items.single);
-      return;
-    }
     if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    if (!auth.isLoggedIn || accountId == null) return;
+    final session = PublishSessionScope(
+      accountId: accountId,
+      accountSessionEpoch: auth.accountSessionEpoch,
+    );
     await showReplyNotificationList(
       context,
       items: items,
       totalCount: _unreadReplyCount,
+      onMarkAllRead: () => _markAllUnreadRepliesRead(auth, session),
       onSelected: (item) {
+        if (!session.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
+          return;
+        }
         unawaited(_openUnreadReply(item));
       },
+    );
+  }
+
+  Future<void> _markAllUnreadRepliesRead(
+    AuthProvider auth,
+    PublishSessionScope session,
+  ) async {
+    if (!mounted || !auth.isLoggedIn) {
+      throw const PublishSessionChanged();
+    }
+    session.ensure(
+        userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
+    await ReplyNotificationService(auth.dio,
+        recipientUserId: session.accountId,
+        isCurrentSession: () => session.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch))
+        .markAllRead(repliesOnly: true, session: session);
+    if (!mounted ||
+        !session.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
+      return;
+    }
+    ReplyNotificationState.instance.notifyAllRead(
+      accountId: session.accountId,
+      sessionGeneration: auth.sessionGeneration,
+    );
+    ReplyNotificationState.instance.requestRefresh(
+      accountId: session.accountId,
+      sessionGeneration: auth.sessionGeneration,
     );
   }
 
@@ -727,16 +765,20 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (_openingUnreadReplyIds.contains(item.id)) return;
     _openingUnreadReplyIds.add(item.id);
     final authProvider = context.read<AuthProvider>();
-    final session = ReplyNotificationSession.capture(authProvider);
-    final accountIdOrNull = session.accountId;
+    final notificationSession = ReplyNotificationSession.capture(authProvider);
+    final accountIdOrNull = notificationSession.accountId;
     if (!authProvider.isLoggedIn || accountIdOrNull == null) {
       _openingUnreadReplyIds.remove(item.id);
       return;
     }
     final accountId = accountIdOrNull;
+    final session = PublishSessionScope(
+      accountId: accountId,
+      accountSessionEpoch: authProvider.accountSessionEpoch,
+    );
     try {
       final response = await authProvider.dio.get('/posts/${item.postId}');
-      if (!session.isCurrent(authProvider)) {
+      if (!notificationSession.isCurrent(authProvider)) {
         return;
       }
       if (response.statusCode != 200 ||
@@ -745,11 +787,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       }
       final post = Post.fromJson(response.data as Map<String, dynamic>);
       try {
-        await ReplyNotificationService(authProvider.dio,
-                recipientUserId: accountId,
-                isCurrentSession: () => session.isCurrent(authProvider))
-            .markRead(item.id, replyId: item.relatedId);
-        if (session.isCurrent(authProvider)) {
+        await ReplyNotificationService(authProvider.dio, recipientUserId: accountId, isCurrentSession: () => session.owns(userId: authProvider.user?.id, sessionEpoch: authProvider.accountSessionEpoch))
+            .markRead(item.id, replyId: item.relatedId, session: session);
+        if ((mounted && notificationSession.isCurrent(authProvider))) {
           ReplyNotificationState.instance.markRead(
             accountId: accountId,
             sessionGeneration: authProvider.sessionGeneration,
@@ -758,24 +798,26 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         }
       } catch (error) {
         debugPrint('消费回复通知失败: $error');
-        if (mounted) {
+        if ((mounted && notificationSession.isCurrent(authProvider))) {
           AppFeedback.showSnackBar(context, '标记已读失败，请重试', isError: true);
         }
       }
-      if (!mounted || !session.isCurrent(authProvider)) return;
+      if (!(mounted && notificationSession.isCurrent(authProvider))) {
+        return;
+      }
       await Navigator.of(context).push(
         buildPostDetailRoute(post, targetReplyId: item.relatedId),
       );
       if (mounted) unawaited(_loadUnreadReplyNotifications());
     } on DioException catch (error) {
-      if (!mounted || !session.isCurrent(authProvider)) return;
+      if (!(mounted && notificationSession.isCurrent(authProvider))) {
+        return;
+      }
       if (error.response?.statusCode == 404) {
         try {
-          await ReplyNotificationService(authProvider.dio,
-                  recipientUserId: accountId,
-                  isCurrentSession: () => session.isCurrent(authProvider))
-              .markRead(item.id, replyId: item.relatedId);
-          if (!session.isCurrent(authProvider)) {
+          await ReplyNotificationService(authProvider.dio, recipientUserId: accountId, isCurrentSession: () => session.owns(userId: authProvider.user?.id, sessionEpoch: authProvider.accountSessionEpoch))
+              .markRead(item.id, replyId: item.relatedId, session: session);
+          if (!(mounted && notificationSession.isCurrent(authProvider))) {
             return;
           }
           ReplyNotificationState.instance.markRead(
@@ -788,7 +830,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           }
         } catch (markError) {
           debugPrint('消费失效回复通知失败: $markError');
-          if (mounted) {
+          if ((mounted && notificationSession.isCurrent(authProvider))) {
             AppFeedback.showSnackBar(context, '原帖已删除，但提醒清理失败', isError: true);
           }
         }

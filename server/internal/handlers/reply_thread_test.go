@@ -99,8 +99,8 @@ func TestReplyListTombstoneRootKeepsChildren(t *testing.T) {
 		Title: "幽灵评论测试帖", Content: "正文",
 		BoardID: models.BoardShuitie, AuthorID: 1,
 		ContentKind: models.PostContentKindNormal,
-		Status: models.PostStatusNormal,
-		CreatedAt: now, LastActivityAt: now,
+		Status:      models.PostStatusNormal,
+		CreatedAt:   now, LastActivityAt: now,
 	}
 	require.NoError(t, db.Create(&post).Error)
 
@@ -244,8 +244,8 @@ func TestReplyCreateNotifiesPreciseTarget(t *testing.T) {
 		Title: "通知目标测试帖", Content: "正文",
 		BoardID: models.BoardShuitie, AuthorID: 1,
 		ContentKind: models.PostContentKindNormal,
-		Status: models.PostStatusNormal,
-		CreatedAt: now, LastActivityAt: now,
+		Status:      models.PostStatusNormal,
+		CreatedAt:   now, LastActivityAt: now,
 	}
 	require.NoError(t, db.Create(&post).Error)
 
@@ -256,15 +256,18 @@ func TestReplyCreateNotifiesPreciseTarget(t *testing.T) {
 
 	// C 点击 A 的"回复"：parent=root, reply_to_user_id=3, reply_to_reply_id=A。
 	rec := performReplyCreateRequestAs(t, db, post.ID, 4, url.Values{
-		"content":          {"@Carol 你好"},
-		"parent_reply_id":  {fmt.Sprint(root.ID)},
-		"reply_to_user_id": {fmt.Sprint(3)},
+		"content":           {"你好"},
+		"parent_reply_id":   {fmt.Sprint(root.ID)},
+		"reply_to_user_id":  {fmt.Sprint(3)},
 		"reply_to_reply_id": {fmt.Sprint(childA.ID)},
 	})
 	require.Equal(t, http.StatusCreated, rec.Code, "body=%s", rec.Body.String())
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "Carol", body["reply_to_name"], "回复目标昵称应可见，不能只依赖正文里的 @")
 
 	var created models.Reply
-	require.NoError(t, db.Where("author_id = ? AND content = ?", 4, "@Carol 你好").First(&created).Error)
+	require.NoError(t, db.Where("author_id = ? AND content = ?", 4, "你好").First(&created).Error)
 	require.NotNil(t, created.ReplyToUserID)
 	require.Equal(t, uint(3), *created.ReplyToUserID)
 	require.NotNil(t, created.ReplyToReplyID)
@@ -274,6 +277,16 @@ func TestReplyCreateNotifiesPreciseTarget(t *testing.T) {
 	var n models.Notification
 	require.NoError(t, db.Where("type = ? AND related_id = ?", "reply", created.ID).First(&n).Error)
 	require.Equal(t, uint(3), n.UserID, "通知必须发给精确回复目标")
+
+	children := performGetChildrenRequest(t, db, post.ID, root.ID, "", 4)
+	require.Equal(t, http.StatusOK, children.Code)
+	var page struct {
+		Replies []map[string]interface{} `json:"replies"`
+	}
+	require.NoError(t, json.Unmarshal(children.Body.Bytes(), &page))
+	require.Len(t, page.Replies, 2)
+	require.Equal(t, "Carol", page.Replies[1]["reply_to_name"], "重新加载楼中楼仍应知道回复给谁")
+	require.NotContains(t, page.Replies[1], "ReplyToUser", "内部用户关联不得序列化")
 }
 
 // TestReplyCreateRejectsCrossThreadReplyTarget reply_to_reply_id 必须与 parent 同线程。
@@ -321,8 +334,8 @@ func TestReplyCreateIgnoresForgedReplyToUserID(t *testing.T) {
 		Title: "伪造通知目标测试帖", Content: "正文",
 		BoardID: models.BoardShuitie, AuthorID: 1,
 		ContentKind: models.PostContentKindNormal,
-		Status: models.PostStatusNormal,
-		CreatedAt: now, LastActivityAt: now,
+		Status:      models.PostStatusNormal,
+		CreatedAt:   now, LastActivityAt: now,
 	}
 	require.NoError(t, db.Create(&post).Error)
 
@@ -333,9 +346,9 @@ func TestReplyCreateIgnoresForgedReplyToUserID(t *testing.T) {
 
 	// 攻击者 C 故意把 reply_to_user_id 指向任意用户 999。
 	rec := performReplyCreateRequestAs(t, db, post.ID, 4, url.Values{
-		"content":          {"@Carol 你好"},
-		"parent_reply_id":  {fmt.Sprint(root.ID)},
-		"reply_to_user_id": {"999"},
+		"content":           {"@Carol 你好"},
+		"parent_reply_id":   {fmt.Sprint(root.ID)},
+		"reply_to_user_id":  {"999"},
 		"reply_to_reply_id": {fmt.Sprint(childA.ID)},
 	})
 	require.Equal(t, http.StatusCreated, rec.Code, "body=%s", rec.Body.String())
@@ -367,8 +380,8 @@ func TestReplyCreateUnderTombstoneRoot(t *testing.T) {
 		Title: "tombstone 续聊测试帖", Content: "正文",
 		BoardID: models.BoardShuitie, AuthorID: 1,
 		ContentKind: models.PostContentKindNormal,
-		Status: models.PostStatusNormal,
-		CreatedAt: now, LastActivityAt: now,
+		Status:      models.PostStatusNormal,
+		CreatedAt:   now, LastActivityAt: now,
 	}
 	require.NoError(t, db.Create(&post).Error)
 
@@ -383,8 +396,8 @@ func TestReplyCreateUnderTombstoneRoot(t *testing.T) {
 
 	// 回复 tombstone 下的 A：应成功，通知 A 的作者 3。
 	rec := performReplyCreateRequestAs(t, db, post.ID, 1, url.Values{
-		"content":          {"回复A"},
-		"parent_reply_id":  {fmt.Sprint(root.ID)},
+		"content":           {"回复A"},
+		"parent_reply_id":   {fmt.Sprint(root.ID)},
 		"reply_to_reply_id": {fmt.Sprint(childA.ID)},
 	})
 	require.Equal(t, http.StatusCreated, rec.Code, "body=%s", rec.Body.String())
@@ -405,8 +418,8 @@ func TestReplyCreateRejectsReplyUnderFrozenTombstone(t *testing.T) {
 		Title: "冻结 tombstone 测试帖", Content: "正文",
 		BoardID: models.BoardShuitie, AuthorID: 1,
 		ContentKind: models.PostContentKindNormal,
-		Status: models.PostStatusNormal,
-		CreatedAt: now, LastActivityAt: now,
+		Status:      models.PostStatusNormal,
+		CreatedAt:   now, LastActivityAt: now,
 	}
 	require.NoError(t, db.Create(&post).Error)
 
@@ -434,8 +447,8 @@ func TestReplyCreateRejectsDirectReplyToTombstoneRoot(t *testing.T) {
 		Title: "直接回复 tombstone 测试帖", Content: "正文",
 		BoardID: models.BoardShuitie, AuthorID: 1,
 		ContentKind: models.PostContentKindNormal,
-		Status: models.PostStatusNormal,
-		CreatedAt: now, LastActivityAt: now,
+		Status:      models.PostStatusNormal,
+		CreatedAt:   now, LastActivityAt: now,
 	}
 	require.NoError(t, db.Create(&post).Error)
 
@@ -501,8 +514,8 @@ func TestGetReplyContextChildTarget(t *testing.T) {
 		Title: "context 测试帖", Content: "正文",
 		BoardID: models.BoardShuitie, AuthorID: 1,
 		ContentKind: models.PostContentKindNormal,
-		Status: models.PostStatusNormal,
-		CreatedAt: now, LastActivityAt: now,
+		Status:      models.PostStatusNormal,
+		CreatedAt:   now, LastActivityAt: now,
 	}
 	require.NoError(t, db.Create(&post).Error)
 	root := models.Reply{PostID: post.ID, AuthorID: 2, Content: "root", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}
@@ -529,8 +542,8 @@ func TestGetReplyContextRootTarget(t *testing.T) {
 		Title: "context 根目标帖", Content: "正文",
 		BoardID: models.BoardShuitie, AuthorID: 1,
 		ContentKind: models.PostContentKindNormal,
-		Status: models.PostStatusNormal,
-		CreatedAt: now, LastActivityAt: now,
+		Status:      models.PostStatusNormal,
+		CreatedAt:   now, LastActivityAt: now,
 	}
 	require.NoError(t, db.Create(&post).Error)
 	root := models.Reply{PostID: post.ID, AuthorID: 1, Content: "root", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}
@@ -554,8 +567,8 @@ func TestGetReplyContextCrossPost(t *testing.T) {
 		Title: "帖子B", Content: "正文",
 		BoardID: models.BoardShuitie, AuthorID: 1,
 		ContentKind: models.PostContentKindNormal,
-		Status: models.PostStatusNormal,
-		CreatedAt: now, LastActivityAt: now,
+		Status:      models.PostStatusNormal,
+		CreatedAt:   now, LastActivityAt: now,
 	}
 	require.NoError(t, db.Create(&postB).Error)
 	rootB := models.Reply{PostID: postB.ID, AuthorID: 1, Content: "B 的根", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}
@@ -634,8 +647,8 @@ func TestGetChildrenRejectsCrossPostURL(t *testing.T) {
 		Title: "帖子B", Content: "正文",
 		BoardID: models.BoardShuitie, AuthorID: 1,
 		ContentKind: models.PostContentKindNormal,
-		Status: models.PostStatusNormal,
-		CreatedAt: now, LastActivityAt: now,
+		Status:      models.PostStatusNormal,
+		CreatedAt:   now, LastActivityAt: now,
 	}
 	require.NoError(t, db.Create(&postB).Error)
 	rootB := models.Reply{PostID: postB.ID, AuthorID: 1, Content: "B 的根", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}

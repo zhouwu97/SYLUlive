@@ -20,7 +20,8 @@ import (
 )
 
 func withReplyImageVariants(db *gorm.DB) *gorm.DB {
-	return db.Preload("Images.Variants", "recipe_version = ?", services.ImageVariantRecipeVersion)
+	return db.Preload("Images.Variants", "recipe_version = ?", services.ImageVariantRecipeVersion).
+		Preload("ReplyToUser", func(query *gorm.DB) *gorm.DB { return query.Select("id", "nickname") })
 }
 
 // ReplyHandler 回复处理器
@@ -1030,6 +1031,7 @@ func (h *ReplyHandler) GetMeList(c *gin.Context) {
 	var replies []models.Reply
 	err := h.db.Model(&models.Reply{}).
 		Select("replies.*").
+		Preload("ReplyToUser", func(query *gorm.DB) *gorm.DB { return query.Select("id", "nickname") }).
 		Where(whereClause, args...).
 		Order("replies.created_at DESC, replies.id DESC").
 		Limit(limit + 1).
@@ -1118,7 +1120,7 @@ func (h *ReplyHandler) GetReceivedList(c *gin.Context) {
 	replyByID := map[uint]models.Reply{}
 	if len(relatedIDs) > 0 {
 		var replies []models.Reply
-		if err := h.db.Preload("Author").Where("id IN ?", relatedIDs).Find(&replies).Error; err == nil {
+		if err := h.db.Preload("Author").Preload("ReplyToUser", func(query *gorm.DB) *gorm.DB { return query.Select("id", "nickname") }).Where("id IN ?", relatedIDs).Find(&replies).Error; err == nil {
 			for _, r := range replies {
 				replyByID[r.ID] = r
 			}

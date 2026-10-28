@@ -313,10 +313,13 @@ void main() {
       findsOneWidget,
     );
 
-    // 点击单条提醒打开
+    // 摘要先打开回复列表，再选择目标回复。
     await tester.tap(
       find.byKey(const ValueKey('home-reply-notification-reminder')),
     );
+    await _pumpFrames(tester);
+
+    await tester.tap(find.text('死提醒测试回复'));
     await _pumpFrames(tester);
 
     expect(markedReadIds, contains(11));
@@ -736,6 +739,7 @@ Future<_FeedTestPage> _pumpFeed(
 
   final dio = Dio();
   var unreadRequestIndex = 0;
+  var allRepliesRead = false;
   dio.interceptors.add(
     InterceptorsWrapper(
       onRequest: (options, handler) async {
@@ -781,7 +785,9 @@ Future<_FeedTestPage> _pumpFeed(
           }
           final requestGate = unreadRequestGatesByIndex?[requestIndex];
           if (requestGate != null) await requestGate.future;
-          final responseItems = unreadItemsByRequest != null &&
+          final responseItems = allRepliesRead
+              ? <Map<String, dynamic>>[]
+              : unreadItemsByRequest != null &&
                   requestIndex < unreadItemsByRequest.length
               ? unreadItemsByRequest[requestIndex]
               : unreadItems;
@@ -805,6 +811,16 @@ Future<_FeedTestPage> _pumpFeed(
               data: notificationItems,
             ),
           );
+          return;
+        }
+        if (options.path == '/notifications/read' ||
+            options.path == '/notifications/replies/read') {
+          allRepliesRead = true;
+          handler.resolve(Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: {'success': true},
+          ));
           return;
         }
         if (post404Id != null && options.path == '/posts/$post404Id') {

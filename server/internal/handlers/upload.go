@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
@@ -25,7 +26,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// ValidatedImageMetadata 一次校验得到的完整图片元数据，避免对同一文件重复解码。
+// ValidatedImageMetadata 校验图片内容后得到的元数据。
 type ValidatedImageMetadata struct {
 	MimeType string
 	Width    int
@@ -46,8 +47,8 @@ func canonicalImageExt(mimeType string) string {
 }
 
 const (
-	maxImageDimension = 12000
-	maxImagePixels    = 50_000_000
+	maxImageDimension = services.ImageMaxDimension
+	maxImagePixels    = services.ImageMaxPixels
 )
 
 func validateImageFile(src io.ReadSeeker) (ValidatedImageMetadata, error) {
@@ -81,6 +82,18 @@ func validateImageFile(src io.ReadSeeker) (ValidatedImageMetadata, error) {
 	if config.Width > maxImageDimension || config.Height > maxImageDimension ||
 		int64(config.Width)*int64(config.Height) > maxImagePixels {
 		return meta, fmt.Errorf("图片分辨率过高")
+	}
+	// DecodeConfig 只读取文件头，缺失像素数据的文件也可能通过。先限制解码
+	// 内存，再验证实际图像，避免用户上传成功后才在帖子中看到坏图。
+	decoded, _, err := image.Decode(src)
+	if err != nil {
+		return meta, fmt.Errorf("图片文件损坏或格式不支持")
+	}
+	if mimeType != "image/gif" && (decoded.Bounds().Dx() != config.Width || decoded.Bounds().Dy() != config.Height) {
+		return meta, fmt.Errorf("图片文件损坏或格式不支持")
+	}
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		return meta, err
 	}
 
 	meta = ValidatedImageMetadata{
@@ -619,6 +632,10 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 	}
 
 	files := form.File["files"]
+	if len(files) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择要上传的文件"})
+		return
+	}
 	if len(files) > 9 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "最多上传9个文件"})
 		return
@@ -865,9 +882,11 @@ func (h *UploadHandler) grantFileToUser(fileID, userID uint) error {
 		if file.Status == models.FileStatusDeleting {
 			return fmt.Errorf("%w: 文件正在清理", services.ErrFileBeingDeleted)
 		}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.FileUploadGrant{
-			FileID: fileID,
-			UserID: userID,
+		return tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "file_id"}, {Name: "user_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"created_at"}),
+		}).Create(&models.FileUploadGrant{
+			FileID: fileID, UserID: userID, CreatedAt: time.Now(),
 		}).Error
 	})
 }

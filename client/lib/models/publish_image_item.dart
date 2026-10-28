@@ -74,9 +74,13 @@ class PublishImageItem {
   /// 服务器 fileId：existing 由 existingImage 派生；local 上传成功后由上传流程写入。
   int? fileId;
 
+  /// 本页最近一次上传成功的时间；临时文件过期前重新上传，避免长时间编辑后引用失效。
+  DateTime? uploadedAt;
+
   /// 上传状态与进度（C-3 启用；local 项在上传流程中更新）。
   PublishImageUploadState uploadState = PublishImageUploadState.waiting;
   double progress = 0;
+  UploadImageResult? uploadError;
 }
 
 /// 按 UI 顺序解析 file_ids（C-2 数据正确性核心）。

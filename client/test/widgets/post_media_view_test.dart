@@ -32,6 +32,58 @@ Widget _buildDetailMedia(List<PostImage> images) {
 }
 
 void main() {
+  testWidgets('极长截图在单图与多图预览保留阅读宽度并限制解码像素', (tester) async {
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetDevicePixelRatio);
+    for (final count in [1, 2]) {
+      final images = List.generate(
+          count,
+          (index) => PostImage(
+                id: index + 1,
+                postId: 1,
+                fileId: index + 1,
+                file: FileItem(
+                    id: index + 1,
+                    hash: 'long-$index',
+                    path: '/uploads/long-$index.png',
+                    size: 5 * 1024 * 1024,
+                    mimeType: 'image/png',
+                    width: 1080,
+                    height: 12000),
+                originUrl: '/uploads/long-$index.png',
+                thumbUrl: '/uploads/long-$index-thumb.png',
+                mediumUrl: '/uploads/long-$index-medium.png',
+                viewerUrl: '/uploads/long-$index-viewer.png',
+                variantStatus: const {
+                  'thumb': 'ready',
+                  'medium': 'ready',
+                  'viewer': 'ready'
+                },
+              ));
+      await tester.pumpWidget(MaterialApp(
+          home: Scaffold(
+              body: SizedBox(
+                  width: 390,
+                  child: PostMediaView(
+                      images: images, variant: PostMediaVariant.homeFeed)))));
+      final previews = tester
+          .widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+          .toList();
+      final primary = previews
+          .firstWhere((image) => image.imageUrl.contains('-medium.png'));
+      expect(primary.memCacheWidth, greaterThanOrEqualTo(300),
+          reason: '$count 张长图不能被压成窄条');
+      expect(primary.memCacheHeight, greaterThan(1280));
+      expect(primary.memCacheWidth! * primary.memCacheHeight!,
+          lessThanOrEqualTo(5 * 1000 * 1000));
+      final thumb =
+          previews.firstWhere((image) => image.imageUrl.contains('-thumb.png'));
+      expect(thumb.memCacheWidth, greaterThanOrEqualTo(300));
+      expect(thumb.memCacheWidth! * thumb.memCacheHeight!,
+          lessThanOrEqualTo(1500 * 1000));
+    }
+  });
+
   group('calculateSinglePostImageSize', () {
     test('16:9 横图', () {
       final size = calculateSinglePostImageSize(

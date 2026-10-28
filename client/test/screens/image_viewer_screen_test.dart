@@ -347,6 +347,48 @@ void main() {
     expect(resize.height, 960);
   });
 
+  testWidgets('长截图查看和原图共用有界清晰解码，允许放大阅读', (tester) async {
+    const item = ImageViewerItem(
+      previewUrl: 'https://example.test/long-medium.png',
+      viewerUrl: 'https://example.test/long-viewer.png',
+      originalUrl: 'https://example.test/long-original.png',
+      originalSizeBytes: 5 * 1024 * 1024,
+      width: 1080,
+      height: 12000,
+      useProgressiveLoading: true,
+    );
+    await tester.pumpWidget(MaterialApp(
+      home: ImageViewerScreen(
+          items: const [item], cacheManager: _TrackingFakeCacheManager()),
+    ));
+    await tester.pump();
+    final rendered = tester.widget<Image>(find.byType(Image));
+    final resized = rendered.image as ResizeImage;
+    expect(resized.width, greaterThanOrEqualTo(900));
+    expect(resized.height, greaterThan(2048));
+    expect(
+        resized.width! * resized.height!, lessThanOrEqualTo(10 * 1000 * 1000));
+    expect((resized.imageProvider as CachedNetworkImageProvider).url,
+        item.viewerUrl);
+    expect(
+        tester
+            .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+            .maxScale,
+        greaterThanOrEqualTo(6));
+
+    await tester.pumpWidget(MaterialApp(
+      home: ImageViewerScreen(
+          items: const [item],
+          cacheManager: _TrackingFakeCacheManager(),
+          decodeMaxLongEdge: 960),
+    ));
+    await tester.pump();
+    final limited =
+        tester.widget<Image>(find.byType(Image)).image as ResizeImage;
+    expect(limited.width, 960);
+    expect(limited.height, 960);
+  });
+
   testWidgets('GIF 查看不套用解码缩放，保留动画帧', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(

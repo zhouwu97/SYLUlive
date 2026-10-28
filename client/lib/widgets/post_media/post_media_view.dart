@@ -225,7 +225,10 @@ class PostMediaView extends StatelessWidget {
               constraints.maxWidth,
               constraints.maxHeight,
             );
-            if (isHomeSection && sourceWidth > 0 && sourceHeight > 0) {
+            if ((isHomeSection ||
+                    isLongImageDimensions(sourceWidth, sourceHeight)) &&
+                sourceWidth > 0 &&
+                sourceHeight > 0) {
               final boxRatio = constraints.maxWidth / constraints.maxHeight;
               final sourceRatio = sourceWidth / sourceHeight;
               decodeLogicalSize = sourceRatio >= boxRatio
@@ -244,6 +247,11 @@ class PostMediaView extends StatelessWidget {
               maxLongEdge:
                   isHomeSection ? imageMediumLongEdge : imageThumbLongEdge,
               fallbackLogicalSize: const Size(120, 120),
+              longImageTier: isHomeSection
+                  ? LongImageDecodeTier.medium
+                  : LongImageDecodeTier.thumb,
+              sourceWidth: sourceWidth,
+              sourceHeight: sourceHeight,
             );
             return _progressiveNetworkImage(
               image: image,
@@ -278,8 +286,18 @@ class PostMediaView extends StatelessWidget {
         originUrl.toLowerCase().split('?').first.endsWith('.gif');
     final originalSizeBytes = image.file?.size ?? 0;
     final hasVariantStatus = image.variantStatus.isNotEmpty;
+    final isLongImage =
+        isLongImageDimensions(image.file?.width ?? 0, image.file?.height ?? 0);
+    final shortEdge = math.min(target.width, target.height);
+    final resourceEdge = shortEdge <= 320
+        ? imageThumbLongEdge
+        : shortEdge <= 960
+            ? imageMediumLongEdge
+            : imageViewerLongEdge;
     return selectImageResource(
-      target: target,
+      target: isLongImage
+          ? ImageDecodeTarget(width: resourceEdge, height: resourceEdge)
+          : target,
       thumbUrl: ApiConstants.fullUrl(image.resolvedThumbUrl),
       mediumUrl: ApiConstants.fullUrl(image.resolvedMediumUrl),
       viewerUrl: ApiConstants.fullUrl(image.resolvedViewerUrl),
@@ -351,6 +369,11 @@ class PostMediaView extends StatelessWidget {
   }
 
   static ImageDecodeTarget _thumbDecodeTarget(ImageDecodeTarget target) {
+    final longTarget = calculateLongImageDecodeTarget(
+        sourceWidth: target.width,
+        sourceHeight: target.height,
+        tier: LongImageDecodeTier.thumb);
+    if (longTarget != null) return longTarget;
     if (target.longEdge <= imageThumbLongEdge) return target;
     final scale = imageThumbLongEdge / target.longEdge;
     return ImageDecodeTarget(
@@ -692,6 +715,9 @@ class _SinglePostImageState extends State<_SinglePostImage> {
           devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
           maxLongEdge: imageMediumLongEdge,
           fallbackLogicalSize: const Size(250, 220),
+          longImageTier: LongImageDecodeTier.medium,
+          sourceWidth: widget.image.file?.width ?? 0,
+          sourceHeight: widget.image.file?.height ?? 0,
         );
         return Align(
           alignment: Alignment.centerLeft,

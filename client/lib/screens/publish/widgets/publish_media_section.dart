@@ -13,6 +13,7 @@ import 'publish_image_grid.dart';
 class PublishMediaSection extends StatelessWidget {
   final List<PublishImageItem> images;
   final bool canAddMore;
+  final bool canRemove;
   final int maxImages;
   final VoidCallback onAdd;
   final ValueChanged<String> onRemove;
@@ -23,6 +24,7 @@ class PublishMediaSection extends StatelessWidget {
     super.key,
     required this.images,
     required this.canAddMore,
+    this.canRemove = true,
     required this.maxImages,
     required this.onAdd,
     required this.onRemove,
@@ -101,6 +103,7 @@ class PublishMediaSection extends StatelessWidget {
             PublishImageGrid(
               images: images,
               canAddMore: canAddMore,
+              canRemove: canRemove,
               onAdd: onAdd,
               onRemove: onRemove,
               onReorder: onReorder,

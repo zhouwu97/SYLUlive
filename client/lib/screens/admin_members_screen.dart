@@ -286,7 +286,7 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                                   ),
                                 ),
                                 Text(
-                                  member.academicConfigLabel,
+                                  member.academicStatusLabel,
                                 style: TextStyle(
                                   fontSize: 13,
                                 color:

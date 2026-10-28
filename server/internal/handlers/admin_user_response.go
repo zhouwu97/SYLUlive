@@ -42,11 +42,11 @@ type adminAcademicIdentity struct {
 	Verified  bool
 }
 
-// loadAdminAcademicStudentIDs 从新的教务身份表批量读取管理员页面需要展示的学号。
-// users.student_id 只保留为旧数据兼容字段，不能再作为教务绑定事实来源。
+// loadAdminAcademicStudentIDs 优先展示可信身份学号，再展示用户已登记的有效配置学号。
+// 配置只补全管理员可见的账号标识，不授予身份；users.student_id 仅用于旧账号兼容。
 func loadAdminAcademicStudentIDs(db *gorm.DB, users []models.User) (map[uint]adminAcademicIdentity, error) {
 	studentIDs := make(map[uint]adminAcademicIdentity, len(users))
-	if db == nil || len(users) == 0 || !db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
+	if db == nil || len(users) == 0 {
 		return studentIDs, nil
 	}
 
@@ -55,23 +55,45 @@ func loadAdminAcademicStudentIDs(db *gorm.DB, users []models.User) (map[uint]adm
 		userIDs = append(userIDs, user.ID)
 	}
 
-	var bindings []models.AcademicIdentityBinding
-	if err := models.TrustedAcademicBindingScope(db.
-		Select("user_id", "provider_id", "student_id", "verified_at", "verification_method").
-		Where("user_id IN ? AND verified_at > ?", userIDs, time.Time{})).
-		Order("user_id ASC, provider_id DESC, student_id ASC").
-		Find(&bindings).Error; err != nil {
-		return nil, err
-	}
-	for _, binding := range bindings {
-		if _, exists := studentIDs[binding.UserID]; exists {
-			continue
+	if db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
+		var bindings []models.AcademicIdentityBinding
+		if err := models.TrustedAcademicBindingScope(db.
+			Select("user_id", "provider_id", "student_id", "verified_at", "verification_method").
+			Where("user_id IN ? AND verified_at > ?", userIDs, time.Time{})).
+			Order("user_id ASC, provider_id DESC, student_id ASC").
+			Find(&bindings).Error; err != nil {
+			return nil, err
 		}
-		if studentID := strings.TrimSpace(binding.StudentID); studentID != "" {
-			studentIDs[binding.UserID] = adminAcademicIdentity{StudentID: studentID, Verified: true}
+		for _, binding := range bindings {
+			if _, exists := studentIDs[binding.UserID]; exists {
+				continue
+			}
+			if studentID := strings.TrimSpace(binding.StudentID); studentID != "" {
+				studentIDs[binding.UserID] = adminAcademicIdentity{StudentID: studentID, Verified: true}
+			}
+		}
+	}
+	if db.Migrator().HasTable(&models.AcademicAccountConfig{}) {
+		var configs []models.AcademicAccountConfig
+		if err := activeAdminAcademicConfigs(db).
+			Select("user_id", "provider_id", "student_id").
+			Where("user_id IN ?", userIDs).
+			Order("user_id ASC, updated_at DESC, provider_id DESC").
+			Find(&configs).Error; err != nil {
+			return nil, err
+		}
+		for _, config := range configs {
+			if _, exists := studentIDs[config.UserID]; !exists {
+				studentIDs[config.UserID] = adminAcademicIdentity{StudentID: strings.TrimSpace(config.StudentID)}
+			}
 		}
 	}
 	return studentIDs, nil
+}
+
+func activeAdminAcademicConfigs(db *gorm.DB) *gorm.DB {
+	return db.Model(&models.AcademicAccountConfig{}).
+		Where("state = ? AND TRIM(student_id) <> ''", "active")
 }
 
 // loadAdminAcademicConfigured 只反映配置表中存在可用的 active 记录，
@@ -89,9 +111,9 @@ func loadAdminAcademicConfigured(db *gorm.DB, users []models.User) (map[uint]boo
 	var rows []struct {
 		UserID uint `gorm:"column:user_id"`
 	}
-	if err := db.Model(&models.AcademicAccountConfig{}).
+	if err := activeAdminAcademicConfigs(db).
 		Select("user_id").
-		Where("user_id IN ? AND state = ? AND TRIM(student_id) <> ''", userIDs, "active").
+		Where("user_id IN ?", userIDs).
 		Group("user_id").
 		Find(&rows).Error; err != nil {
 		return nil, err
@@ -118,7 +140,7 @@ func adminStudentVerified(user models.User, academicStudentIDs map[uint]adminAca
 	return user.IsStudentVerified()
 }
 
-// withAdminUserSearch 让管理端可按内部 ID、旧账号字段、昵称或已验证教务学号搜索。
+// withAdminUserSearch 让管理端可按内部 ID、旧账号字段、昵称及可信/已登记教务学号搜索。
 func withAdminUserSearch(query, db *gorm.DB, keyword string) *gorm.DB {
 	keyword = strings.TrimSpace(keyword)
 	if keyword == "" {
@@ -139,7 +161,31 @@ func withAdminUserSearch(query, db *gorm.DB, keyword string) *gorm.DB {
 		conditions += " OR id IN (?)"
 		args = append(args, identityOwners)
 	}
+	if db != nil && db.Migrator().HasTable(&models.AcademicAccountConfig{}) {
+		configOwners := activeAdminAcademicConfigs(db).
+			Select("user_id").Where("LOWER(student_id) LIKE ?", like)
+		conditions += " OR id IN (?)"
+		args = append(args, configOwners)
+	}
 	return query.Where(conditions, args...)
+}
+
+// withAdminAcademicAccounts 只统计仍存在的 App 用户，多 Provider/多来源不重复计数。
+// 教务配置登记、可信学生身份和旧教务授权是独立事实，任一存在即有教务账号记录。
+func withAdminAcademicAccounts(db *gorm.DB) *gorm.DB {
+	conditions := "edu_authorized = ?"
+	args := []interface{}{true}
+	if db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
+		identityOwners := models.TrustedAcademicBindingScope(db.Model(&models.AcademicIdentityBinding{})).
+			Select("user_id").Where("verified_at > ? AND TRIM(student_id) <> ''", time.Time{})
+		conditions += " OR id IN (?)"
+		args = append(args, identityOwners)
+	}
+	if db.Migrator().HasTable(&models.AcademicAccountConfig{}) {
+		conditions += " OR id IN (?)"
+		args = append(args, activeAdminAcademicConfigs(db).Select("user_id"))
+	}
+	return db.Model(&models.User{}).Where(conditions, args...)
 }
 
 func adminUserBriefResponse(user models.User, studentID string, studentVerified bool, academicConfigured bool) AdminUserBriefResponse {

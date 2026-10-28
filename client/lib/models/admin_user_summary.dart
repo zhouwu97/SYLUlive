@@ -48,4 +48,6 @@ class AdminUserSummary {
       studentId.isEmpty ? '学号/账号：未填写' : '学号/账号：$studentId';
   String get academicConfigLabel =>
       academicConfigured ? '教务配置：已登记' : '教务配置：未登记';
+  String get academicStatusLabel =>
+      '$academicConfigLabel\n学生身份：${studentVerified ? '已验证' : '未验证'}';
 }

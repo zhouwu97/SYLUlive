@@ -367,17 +367,34 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                   ),
                   _buildStatDivider(isDark),
                   _buildStatItem(
-                    '教务账号',
+                    '教务有记录',
                     _statsError == null ? _eduUsers : null,
                     isDark,
                   ),
                   _buildStatDivider(isDark),
                   _buildStatItem(
-                    '其他',
+                    '暂无记录',
                     _statsError == null ? _otherUsers : null,
                     isDark,
                   ),
                 ],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                  AppSpacing.lg,
+                  0,
+                ),
+                child: Text(
+                  '按云端配置、可信身份或旧授权去重；本机尚未同步的记录暂不计入。',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.62)
+                        : AppColors.textSecondaryLight,
+                  ),
+                ),
               ),
               if (_statsLoading) ...[
                 const SizedBox(height: AppSpacing.sm),
@@ -628,7 +645,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    candidate.academicConfigLabel,
+                    candidate.academicStatusLabel,
                     style: AppTextStyles.bodyMedium.copyWith(
                       color: isDark
                           ? Colors.white.withValues(alpha: 0.62)

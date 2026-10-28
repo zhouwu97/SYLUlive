@@ -3,6 +3,50 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/utils/image_decode_size.dart';
 
 void main() {
+  test('长图解码按短边保可读性，总像素有界且不放大原图', () {
+    for (final tier in LongImageDecodeTier.values) {
+      final target = calculateLongImageDecodeTarget(
+          sourceWidth: 1080, sourceHeight: 12000, tier: tier)!;
+      final budget = switch (tier) {
+        LongImageDecodeTier.thumb => 1500000,
+        LongImageDecodeTier.medium => 5000000,
+        LongImageDecodeTier.viewer => 10000000
+      };
+      expect(target.width, greaterThan(300));
+      expect(target.width * target.height, lessThanOrEqualTo(budget));
+      expect(target.longEdge, lessThanOrEqualTo(12000));
+      final landscape = calculateLongImageDecodeTarget(
+          sourceWidth: 12000, sourceHeight: 1080, tier: tier)!;
+      expect(landscape.width, target.height);
+      expect(landscape.height, target.width);
+      final small = calculateLongImageDecodeTarget(
+          sourceWidth: 100, sourceHeight: 400, tier: tier)!;
+      expect(small.width, 100);
+      expect(small.height, 400);
+    }
+    expect(
+        calculateLongImageDecodeTarget(
+            sourceWidth: 900,
+            sourceHeight: 1600,
+            tier: LongImageDecodeTier.medium),
+        isNull);
+    final small = calculateImageDecodeTarget(
+      logicalSize: const Size(250, 1000),
+      devicePixelRatio: 3,
+      maxLongEdge: 1280,
+      fallbackLogicalSize: const Size(250, 220),
+      longImageTier: LongImageDecodeTier.medium,
+      sourceWidth: 100,
+      sourceHeight: 400,
+    );
+    expect(small.width, 100);
+    expect(small.height, 400);
+    expect(
+        calculateLongImageDecodeTarget(
+            sourceWidth: 0, sourceHeight: 0, tier: LongImageDecodeTier.viewer),
+        isNull);
+  });
+
   group('calculateImageDecodeTarget', () {
     test('按布局尺寸、DPR 和冗余系数计算目标解码尺寸', () {
       final target = calculateImageDecodeTarget(

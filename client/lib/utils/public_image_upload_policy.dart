@@ -17,21 +17,26 @@ class PublicImageCompressionDecision {
   final String outputExtension;
 }
 
-/// 统一公开 JPEG 的上传前压缩边界。
-///
-/// 这里只决定是否需要重编码，不处理文件 I/O 或平台压缩实现，便于将
-/// GIF、透明 PNG 和私有媒体彻底排除在公开 JPEG 路径之外。
+/// 公开图约 5MiB 的柔性目标，10MiB 上传硬限；PNG 保留透明，GIF 保留动画。
 abstract final class PublicImageUploadPolicy {
-  static const int maxDimension = 2048;
-  static const int targetSizeBytes = 3 * 1024 * 1024;
-  static const int jpegQuality = 85;
+  static const int maxDimension = 12000;
+  static const int maxPixels = 50 * 1000 * 1000;
+  static const int targetSizeBytes = 5 * 1024 * 1024;
+  static const int maxUploadSizeBytes = 10 * 1024 * 1024;
+  static const int maxInputSizeBytes = 100 * 1024 * 1024;
+  static const int jpegQuality = 94;
 
   static PublicImageCompressionDecision decide({
     required Uint8List bytes,
     required int fileSize,
   }) {
     final isJpeg = bytes.length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8;
-    if (!isJpeg) {
+    final isPng = bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47;
+    if (!isJpeg && !isPng) {
       return const PublicImageCompressionDecision(
         shouldCompress: false,
         maxDimension: maxDimension,
@@ -53,7 +58,7 @@ abstract final class PublicImageUploadPolicy {
       shouldCompress: shouldCompress,
       maxDimension: maxDimension,
       quality: jpegQuality,
-      outputExtension: '.jpg',
+      outputExtension: isPng ? '.png' : '.jpg',
     );
   }
 }

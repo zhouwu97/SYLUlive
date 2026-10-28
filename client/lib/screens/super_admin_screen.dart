@@ -252,7 +252,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           children: [
             Text(user.publicIdLabel),
             Text(user.accountLabel),
-            Text('${user.academicConfigLabel} | 可信身份：${user.studentVerified ? '已验证' : '未验证'} | 旧授权：${user.eduBound ? '有' : '无'}'),
+            Text(user.academicStatusLabel),
+            Text('旧教务授权：${user.eduBound ? '有' : '无'}'),
             Text('角色: ${user.role} | 诚信: ${user.creditScore}%'),
           ],
         ),

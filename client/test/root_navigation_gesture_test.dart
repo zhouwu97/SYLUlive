@@ -58,6 +58,31 @@ class _HomeAuthProvider extends ChangeNotifier implements AuthProvider {
 }
 
 void main() {
+  testWidgets('液态底栏接入真实首页后松手切页，Pad 切换保留页面状态', (tester) async {
+    final page = await _pumpHome(tester);
+    await page.themeProvider.setBottomNavStyle(BottomNavStyle.liquidGlass);
+    await tester.pumpAndSettle();
+    final start = tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-0')));
+    final end = tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-1')));
+    final drag = await tester.startGesture(start);
+    for (var i = 1; i <= 10; i++) {
+      await drag.moveTo(Offset.lerp(start, end, i / 10)!);
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(_rootTabIndex(tester), 0);
+    await drag.up();
+    await tester.pumpAndSettle();
+    expect(_rootTabIndex(tester), 1);
+    final state = tester.state(find.byType(MarketScreen));
+    await page.themeProvider.setBottomNavStyle(BottomNavStyle.normal);
+    await setGoldenViewport(tester, GoldenViewports.tabletLandscape1280x800);
+    await tester.pumpAndSettle();
+    expect(tester.state(find.byType(MarketScreen)), same(state));
+    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _disposeHome(tester, page);
+  });
+
   testWidgets('Pad 首页切换 rail 与底栏时保留当前页面和搜索草稿', (tester) async {
     final page = await _pumpHome(tester, initialTab: 1);
     final screenState = tester.state(find.byType(MarketScreen));
@@ -283,7 +308,7 @@ void main() {
 Finder _navLabel(String label) {
   return find.descendant(
     of: find.byType(BottomNavWrapper),
-    matching: find.text(label),
+    matching: find.byKey(ValueKey('bottom-nav-item-${const ['首页', '集市', '课表', '校园', '我'].indexOf(label)}')),
   );
 }
 

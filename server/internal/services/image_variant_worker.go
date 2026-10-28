@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -218,6 +219,18 @@ func (worker *ImageVariantWorker) generate(job models.ImageVariant) error {
 	if actualMime := http.DetectContentType(header[:n]); actualMime != file.MimeType {
 		return fmt.Errorf("原图 MIME 校验失败: %s", actualMime)
 	}
+	config, _, err := image.DecodeConfig(source)
+	if err != nil {
+		return fmt.Errorf("读取原图尺寸失败: %w", err)
+	}
+	if config.Width <= 0 || config.Height <= 0 ||
+		config.Width > ImageMaxDimension || config.Height > ImageMaxDimension ||
+		int64(config.Width)*int64(config.Height) > ImageMaxPixels {
+		return fmt.Errorf("原图分辨率超出安全范围")
+	}
+	if _, err := source.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("重置原图读取位置失败: %w", err)
+	}
 	decoded, _, err := image.Decode(source)
 	if err != nil {
 		return fmt.Errorf("解码原图失败: %w", err)
@@ -226,7 +239,7 @@ func (worker *ImageVariantWorker) generate(job models.ImageVariant) error {
 	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
 		return fmt.Errorf("原图尺寸无效")
 	}
-	targetWidth, targetHeight := scaledImageSize(bounds.Dx(), bounds.Dy(), maxDimension)
+	targetWidth, targetHeight := imageVariantSize(bounds.Dx(), bounds.Dy(), maxDimension, job.Variant)
 	resized := image.NewNRGBA(image.Rect(0, 0, targetWidth, targetHeight))
 	xdraw.CatmullRom.Scale(resized, resized.Bounds(), decoded, bounds, xdraw.Over, nil)
 
@@ -291,13 +304,39 @@ func scaledImageSize(width, height, maxDimension int) (int, int) {
 	return max(1, int(float64(width)*scale)), max(1, int(float64(height)*scale))
 }
 
+// 长截图按短边保留文字密度，再以各档像素预算控制成本。普通照片仍使用
+// 原有长边配方；极长图不会因为统一的 1280/2048 长边被缩成几十像素宽。
+func imageVariantSize(width, height, maxDimension int, variant string) (int, int) {
+	shortEdge, longEdge := min(width, height), max(width, height)
+	if shortEdge <= 0 || longEdge < 3*shortEdge {
+		return scaledImageSize(width, height, maxDimension)
+	}
+	var maxShortEdge int
+	var maxPixels int64
+	switch variant {
+	case ImageVariantThumb:
+		maxShortEdge, maxPixels = 320, 1_500_000
+	case ImageVariantMedium:
+		maxShortEdge, maxPixels = 960, 5_000_000
+	case ImageVariantViewer:
+		maxShortEdge, maxPixels = 1280, 10_000_000
+	default:
+		return scaledImageSize(width, height, maxDimension)
+	}
+	scale := math.Min(1, float64(maxShortEdge)/float64(shortEdge))
+	scale = math.Min(scale, math.Sqrt(float64(maxPixels)/(float64(width)*float64(height))))
+	return max(1, int(float64(width)*scale)), max(1, int(float64(height)*scale))
+}
+
 func encodeImageVariant(output *os.File, mimeType string, imageValue image.Image, quality int) error {
 	var err error
 	switch mimeType {
 	case "image/jpeg":
 		err = jpeg.Encode(output, imageValue, &jpeg.Options{Quality: quality})
 	case "image/png":
-		err = png.Encode(output, imageValue)
+		// 截图和透明图保留 PNG，先做无损编码优化，不为凑固定字节数牺牲文字与透明度。
+		encoder := png.Encoder{CompressionLevel: png.BestCompression}
+		err = encoder.Encode(output, imageValue)
 	default:
 		return fmt.Errorf("不支持生成变体的 MIME: %s", mimeType)
 	}

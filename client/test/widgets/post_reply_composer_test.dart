@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
@@ -148,7 +150,7 @@ void main() {
     expect(find.byKey(const ValueKey('post-reply-input')), findsOneWidget);
   });
 
-  testWidgets('回复某人时不自动插入 @昵称，但保留回复对象且 Composer 尺寸稳定', (tester) async {
+  testWidgets('回复某人时持续显示 @对象并通过元数据发送', (tester) async {
     final controller = PostReplyComposerController();
     addTearDown(controller.dispose);
     PostReplyDraft? submitted;
@@ -178,7 +180,8 @@ void main() {
     expect(controller.textController.text, isEmpty);
     expect(controller.replyToUserId, 12);
     expect(
-        find.byKey(const ValueKey('post-reply-target-banner')), findsNothing);
+        find.byKey(const ValueKey('post-reply-target-banner')), findsOneWidget);
+    expect(find.text('回复 @纯合子'), findsOneWidget);
 
     // Composer 自身高度保持稳定，不发生跳跃
     final openedHeight = tester
@@ -192,6 +195,7 @@ void main() {
       '收到攻略',
     );
     await tester.pump();
+    expect(find.text('回复 @纯合子'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('post-reply-send-button')));
     await tester.pumpAndSettle();
 
@@ -204,6 +208,58 @@ void main() {
     expect(controller.parentReplyId, isNull);
     expect(
         find.byKey(const ValueKey('post-reply-target-banner')), findsNothing);
+  });
+
+  testWidgets('取消回复对象保留草稿并改为顶级评论，失败仍保留对象', (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(_buildComposer(
+      controller: controller,
+      onSubmit: (_) async => false,
+    ));
+    controller.setReplyTarget(
+      parentReplyId: 9,
+      replyToUserId: 12,
+      replyToReplyId: 10,
+      replyToName: '纯合子',
+    );
+    controller.textController.text = '保留这份草稿';
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('post-reply-send-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('回复 @纯合子'), findsOneWidget);
+    expect(controller.draft.replyToReplyId, 10);
+    await tester.tap(find.byKey(const ValueKey('post-reply-clear-target')));
+    await tester.pump();
+    expect(controller.draft.text, '保留这份草稿');
+    expect(controller.draft.parentReplyId, isNull);
+    expect(controller.draft.replyToUserId, isNull);
+    expect(controller.draft.replyToReplyId, isNull);
+    expect(
+        find.byKey(const ValueKey('post-reply-target-banner')), findsNothing);
+  });
+
+  testWidgets('发送完成不能清空等待期间切换的新回复对象和草稿', (tester) async {
+    final controller = PostReplyComposerController();
+    addTearDown(controller.dispose);
+    final pending = Completer<bool>();
+    await tester.pumpWidget(_buildComposer(
+      controller: controller,
+      onSubmit: (_) => pending.future,
+    ));
+    controller.setReplyTarget(
+        parentReplyId: 9, replyToUserId: 12, replyToName: '张三');
+    controller.textController.text = '给张三的回复';
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('post-reply-send-button')));
+    controller.setReplyTarget(
+        parentReplyId: 9, replyToUserId: 13, replyToName: '李四');
+    controller.textController.text = '给李四的新草稿';
+    pending.complete(true);
+    await tester.pumpAndSettle();
+    expect(find.text('回复 @李四'), findsOneWidget);
+    expect(controller.draft.replyToUserId, 13);
+    expect(controller.draft.text, '给李四的新草稿');
   });
 
   testWidgets('连续切换回复对象时保留已有文本且不追加 @', (tester) async {
@@ -797,8 +853,7 @@ void main() {
     expect(panelSize.height, 230);
   });
 
-  testWidgets('键盘弹起后使用实际测量高度，但不超过 emojiPanelMaxHeight 约束',
-      (tester) async {
+  testWidgets('键盘弹起后使用实际测量高度，但不超过 emojiPanelMaxHeight 约束', (tester) async {
     final controller = PostReplyComposerController();
     addTearDown(controller.dispose);
 
@@ -827,8 +882,7 @@ void main() {
     expect(panelSize.height, 280);
   });
 
-  testWidgets('Emoji 面板内部由 SafeArea 保护底部系统导航区',
-      (tester) async {
+  testWidgets('Emoji 面板内部由 SafeArea 保护底部系统导航区', (tester) async {
     final controller = PostReplyComposerController();
     addTearDown(controller.dispose);
 
@@ -874,7 +928,8 @@ void main() {
     // 键盘弹出后，验证 EditableTextState 仍然是同一个实例，没有因为 SafeArea 属性变化被销毁重建
     final currentEditableTextState =
         tester.state<EditableTextState>(find.byType(EditableText));
-    expect(identical(initialEditableTextState, currentEditableTextState), isTrue);
+    expect(
+        identical(initialEditableTextState, currentEditableTextState), isTrue);
 
     // 验证输入通道有效，可以正常输入内容
     await tester.enterText(
@@ -896,8 +951,7 @@ void main() {
     );
   });
 
-  testWidgets('表情面板打开时点击输入框触发平滑交接 (handoff)，不发生面板突变闪退',
-      (tester) async {
+  testWidgets('表情面板打开时点击输入框触发平滑交接 (handoff)，不发生面板突变闪退', (tester) async {
     final controller = PostReplyComposerController();
     addTearDown(controller.dispose);
 
@@ -922,8 +976,7 @@ void main() {
     expect(controller.bottomPanel, PostReplyBottomPanel.keyboard);
   });
 
-  testWidgets('open 后立即 close，失效下一帧的延迟聚焦请求，避免焦点反弹',
-      (tester) async {
+  testWidgets('open 后立即 close，失效下一帧的延迟聚焦请求，避免焦点反弹', (tester) async {
     final controller = PostReplyComposerController();
     addTearDown(controller.dispose);
 
@@ -941,8 +994,7 @@ void main() {
     expect(controller.isOpen, isFalse);
   });
 
-  testWidgets('Emoji 交接完成切入键盘态时，表情容器高度单帧归零不执行收缩动画，防止双重底部占位',
-      (tester) async {
+  testWidgets('Emoji 交接完成切入键盘态时，表情容器高度单帧归零不执行收缩动画，防止双重底部占位', (tester) async {
     final controller = PostReplyComposerController();
     addTearDown(controller.dispose);
 

@@ -62,6 +62,7 @@ func TestGetUsersSeparatesAcademicConfigurationFromIdentityAndAuthorization(t *t
 		name       string
 		configs    []models.AcademicAccountConfig
 		configured bool
+		studentID  string
 	}{
 		{name: "没有配置"},
 		{
@@ -70,6 +71,7 @@ func TestGetUsersSeparatesAcademicConfigurationFromIdentityAndAuthorization(t *t
 				{ProviderID: models.AcademicProviderUndergraduate, StudentID: "2408010446", State: "active", Revision: 1},
 			},
 			configured: true,
+			studentID:  "2408010446",
 		},
 		{
 			name: "已删除配置",
@@ -90,6 +92,7 @@ func TestGetUsersSeparatesAcademicConfigurationFromIdentityAndAuthorization(t *t
 				{ProviderID: models.AcademicProviderGraduate, StudentID: "2606610446", State: "active", Revision: 1},
 			},
 			configured: true,
+			studentID:  "2606610446",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -122,10 +125,40 @@ func TestGetUsersSeparatesAcademicConfigurationFromIdentityAndAuthorization(t *t
 			if response[0]["academic_configured"] != test.configured {
 				t.Fatalf("教务配置状态错误: %s", recorder.Body.String())
 			}
-			if response[0]["student_verified"] != false || response[0]["edu_bound"] != false || response[0]["student_id"] != "" {
+			if response[0]["student_verified"] != false || response[0]["edu_bound"] != false || response[0]["student_id"] != test.studentID {
 				t.Fatalf("自报配置不能授予身份认证或旧教务授权: %s", recorder.Body.String())
 			}
 		})
+	}
+}
+
+func TestGetUsersSearchesActiveConfiguredStudentIDWithoutGrantingIdentity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newInvitationResponseTestDB(t)
+	for _, config := range []models.AcademicAccountConfig{
+		{UserID: 901, ProviderID: models.AcademicProviderUndergraduate, StudentID: "configured-901", State: "active", Revision: 1},
+		{UserID: 902, ProviderID: models.AcademicProviderUndergraduate, StudentID: "deleted-902", State: "deleted", Revision: 2},
+	} {
+		createInvitationResponseTestUser(t, db, models.User{ID: config.UserID, Nickname: "配置用户", Role: models.RoleUser})
+		if err := db.Create(&config).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, test := range []struct {
+		search string
+		count  int
+	}{{"configured-901", 1}, {"deleted-902", 0}} {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodGet, "/api/super/users?search="+test.search, nil)
+		NewSuperAdminHandler(db).GetUsers(context)
+		response := decodeInvitationResponse(t, recorder)
+		if len(response) != test.count {
+			t.Fatalf("search=%s: %s", test.search, recorder.Body.String())
+		}
+		if len(response) > 0 && (response[0]["student_id"] != test.search || response[0]["student_verified"] != false || response[0]["edu_bound"] != false) {
+			t.Fatalf("配置学号显示或权限错误: %s", recorder.Body.String())
+		}
 	}
 }
 

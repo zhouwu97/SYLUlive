@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/models/unread_reply_notification.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/widgets/reply_notification_reminder.dart';
+import 'package:shenliyuan/services/publish_session_scope.dart';
 
 UnreadReplyNotification _notification(int id, String postTitle) {
   return UnreadReplyNotification(
@@ -27,6 +30,69 @@ Widget _testApp(Widget child) {
 }
 
 void main() {
+  testWidgets('旧账号弹层被拒绝后保留提醒并解释重新打开', (tester) async {
+    const session = PublishSessionScope(accountId: 1, accountSessionEpoch: 7);
+    var currentId = 1;
+    var writes = 0;
+    await tester.pumpWidget(_testApp(Builder(
+        builder: (context) => ElevatedButton(
+            onPressed: () => showReplyNotificationList(context,
+                    items: [_notification(11, '旧账号帖子')],
+                    onSelected: (_) {}, onMarkAllRead: () async {
+                  session.ensure(userId: currentId, sessionEpoch: 7);
+                  writes++;
+                }),
+            child: const Text('打开')))));
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+    currentId = 2;
+    await tester.tap(find.text('一键已读'));
+    await tester.pumpAndSettle();
+    expect(writes, 0);
+    expect(find.text('账号已切换，请关闭后重新打开'), findsOneWidget);
+    expect(find.byKey(const ValueKey('reply-notification-11')), findsOneWidget);
+  });
+  testWidgets('一键已读等待成功才关闭，防止重复提交并支持失败重试', (tester) async {
+    final pending = Completer<void>();
+    var requests = 0;
+    await tester.pumpWidget(_testApp(Builder(
+      builder: (context) => ElevatedButton(
+        onPressed: () => showReplyNotificationList(
+          context,
+          items: [_notification(11, '我的水帖')],
+          totalCount: 37,
+          onSelected: (_) {},
+          onMarkAllRead: () {
+            requests++;
+            return requests == 1 ? pending.future : Future.value();
+          },
+        ),
+        child: const Text('打开'),
+      ),
+    )));
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+    expect(find.text('未读回复 37'), findsOneWidget);
+    await tester.tap(find.text('一键已读'));
+    await tester.pump();
+    expect(find.text('处理中…'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextButton>(
+              find.byKey(const ValueKey('reply-notifications-mark-all-read')))
+          .onPressed,
+      isNull,
+    );
+    expect(requests, 1);
+    pending.completeError(StateError('离线'));
+    await tester.pumpAndSettle();
+    expect(find.text('标记已读失败，请重试'), findsOneWidget);
+    expect(find.byKey(const ValueKey('reply-notification-11')), findsOneWidget);
+    await tester.tap(find.text('一键已读'));
+    await tester.pumpAndSettle();
+    expect(requests, 2);
+    expect(find.text('一键已读'), findsNothing);
+  });
   testWidgets('单条提醒在首页只显示类型和数量并提供完整语义', (tester) async {
     final semantics = tester.ensureSemantics();
     var tapped = false;

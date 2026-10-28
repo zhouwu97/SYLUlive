@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:shenliyuan/services/reply_notification_service.dart';
+import 'package:shenliyuan/services/publish_session_scope.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -363,6 +364,43 @@ void main() {
     );
 
     await ReplyNotificationService(dio).markAllRead();
+  });
+
+  test('互动弹层一键已读仅标记回复，包含未加载的回复', () async {
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(onRequest: (options, handler) {
+        expect(options.path, '/notifications/replies/read');
+        expect(options.queryParameters, isEmpty);
+        expect(options.data, isNull);
+        handler.resolve(Response(requestOptions: options, statusCode: 200));
+      }),
+    );
+    await ReplyNotificationService(dio).markAllRead(repliesOnly: true);
+  });
+
+  test('已读写请求携带发起会话，旧服务端 404 不降级为全部已读', () async {
+    final dio = Dio();
+    final paths = <String>[];
+    const session = PublishSessionScope(accountId: 1, accountSessionEpoch: 7);
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      paths.add(options.path);
+      expect(options.extra, containsPair('expectedAuthUserId', 1));
+      expect(options.extra, containsPair('expectedAuthSessionEpoch', 7));
+      handler.reject(DioException(
+          requestOptions: options,
+          response: Response(requestOptions: options, statusCode: 404)));
+    }));
+    await expectLater(
+        ReplyNotificationService(dio)
+            .markAllRead(repliesOnly: true, session: session),
+        throwsA(isA<DioException>()));
+    expect(paths, ['/notifications/replies/read']);
+    paths.clear();
+    await expectLater(
+        ReplyNotificationService(dio).markRead(11, session: session),
+        throwsA(isA<DioException>()));
+    expect(paths, ['/notifications/read-selected']);
   });
 
   test('已读接口返回非 2xx 时抛出错误', () async {

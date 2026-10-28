@@ -33,14 +33,54 @@ const int imageThumbLongEdge = 480;
 const int imageMediumLongEdge = 1280;
 const int imageViewerLongEdge = 2048;
 
+enum LongImageDecodeTier { thumb, medium, viewer }
+
+bool isLongImageDimensions(int width, int height) =>
+    width > 0 &&
+    height > 0 &&
+    math.max(width, height) >= 3 * math.min(width, height);
+
+/// 与服务端长图预览共用短边和像素预算，避免将整张截图再次压到固定长边。
+/// 无尺寸或普通比例返回 null，调用方继续使用原有解码策略。
+ImageDecodeTarget? calculateLongImageDecodeTarget({
+  required int sourceWidth,
+  required int sourceHeight,
+  required LongImageDecodeTier tier,
+  int? desiredShortEdge,
+}) {
+  if (!isLongImageDimensions(sourceWidth, sourceHeight)) return null;
+  final (maxShortEdge, maxPixels) = switch (tier) {
+    LongImageDecodeTier.thumb => (320, 1500000),
+    LongImageDecodeTier.medium => (960, 5000000),
+    LongImageDecodeTier.viewer => (1280, 10000000),
+  };
+  final shortEdge = math.min(sourceWidth, sourceHeight);
+  final requested = (desiredShortEdge ?? maxShortEdge).clamp(1, maxShortEdge);
+  final scale = math.min(
+    1.0,
+    math.min(
+        requested / shortEdge,
+        math.min(12000 / math.max(sourceWidth, sourceHeight),
+            math.sqrt(maxPixels / (sourceWidth * sourceHeight)))),
+  );
+  return ImageDecodeTarget(
+    width: math.max(1, (sourceWidth * scale).floor()),
+    height: math.max(1, (sourceHeight * scale).floor()),
+  );
+}
+
 /// 按布局尺寸、设备 DPR 和冗余系数计算目标解码尺寸。
 ///
-/// 无效或无限约束使用 [fallbackLogicalSize]，并在 [maxLongEdge] 内等比缩小。
+/// 无效或无限约束使用 [fallbackLogicalSize]。普通图遵守 [maxLongEdge]，
+/// 已知长图可显式使用 [longImageTier] 的短边和总像素预算。
 ImageDecodeTarget calculateImageDecodeTarget({
   required Size logicalSize,
   required double devicePixelRatio,
   required int maxLongEdge,
   required Size fallbackLogicalSize,
+  LongImageDecodeTier? longImageTier,
+  int sourceWidth = 0,
+  int sourceHeight = 0,
 }) {
   final sourceSize = _isUsableSize(logicalSize)
       ? logicalSize
@@ -60,6 +100,16 @@ ImageDecodeTarget calculateImageDecodeTarget({
     (sourceSize.height * safeDpr * _decodeOverscan).ceil(),
   );
   final rawLongEdge = math.max(rawWidth, rawHeight);
+
+  if (longImageTier != null && sourceWidth > 0 && sourceHeight > 0) {
+    final longTarget = calculateLongImageDecodeTarget(
+      sourceWidth: sourceWidth,
+      sourceHeight: sourceHeight,
+      tier: longImageTier,
+      desiredShortEdge: math.min(rawWidth, rawHeight),
+    );
+    if (longTarget != null) return longTarget;
+  }
 
   if (rawLongEdge <= safeMaxLongEdge) {
     return ImageDecodeTarget(width: rawWidth, height: rawHeight);

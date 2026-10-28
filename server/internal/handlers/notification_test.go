@@ -25,6 +25,62 @@ func TestReplyPushExtrasIncludesRecipient(t *testing.T) {
 	}
 }
 
+func TestMarkAllReplyNotificationsReadIsScopedAndComplete(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.Notification{}); err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < 37; index++ {
+		if err := db.Create(&models.Notification{UserID: 1, Type: "reply", Content: "回复"}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, notification := range []models.Notification{
+		{UserID: 1, Type: "feedback", Content: "反馈未读"},
+		{UserID: 2, Type: "reply", Content: "其他账号未读"},
+	} {
+		if err := db.Create(&notification).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	gin.SetMode(gin.TestMode)
+	handler := NewNotificationHandler(db)
+	mark := func(repliesOnly bool) int {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodPost, "/notifications/read", nil)
+		ctx.Set("user_id", uint(1))
+		if repliesOnly {
+			handler.MarkAllRepliesRead(ctx)
+		} else {
+			handler.MarkAllRead(ctx)
+		}
+		return recorder.Code
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if got := mark(true); got != http.StatusOK {
+			t.Fatalf("status=%d", got)
+		}
+	}
+	var repliesUnread, feedbackUnread, otherUserUnread int64
+	db.Model(&models.Notification{}).Where("user_id = 1 AND type = 'reply' AND is_read = false").Count(&repliesUnread)
+	db.Model(&models.Notification{}).Where("user_id = 1 AND type = 'feedback' AND is_read = false").Count(&feedbackUnread)
+	db.Model(&models.Notification{}).Where("user_id = 2 AND is_read = false").Count(&otherUserUnread)
+	if repliesUnread != 0 || feedbackUnread != 1 || otherUserUnread != 1 {
+		t.Fatalf("scope leaked or hidden pages not read: replies=%d feedback=%d other=%d", repliesUnread, feedbackUnread, otherUserUnread)
+	}
+	if got := mark(false); got != http.StatusOK {
+		t.Fatalf("legacy status=%d", got)
+	}
+	db.Model(&models.Notification{}).Where("user_id = 1 AND is_read = false").Count(&feedbackUnread)
+	if feedbackUnread != 0 {
+		t.Fatal("legacy mark-all must still read all types")
+	}
+}
+
 func TestNotificationHandlerExcludesRetiredNotifications(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

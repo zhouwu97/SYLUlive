@@ -1728,15 +1728,29 @@ class PostProvider extends ChangeNotifier {
     XFile file, {
     void Function(int sent, int total)? onProgress,
     PublishSessionScope? session,
+    CancelToken? cancelToken,
   }) async {
+    const cancelled = UploadImageResult.failure(
+      message: '图片上传已取消',
+      errorCode: 'upload_cancelled',
+    );
+    if (cancelToken?.isCancelled == true) return cancelled;
     final PreparedPublicImage prepared;
     try {
-      prepared = await _publicImageCompressor.prepare(file);
+      prepared = await _publicImageCompressor.prepare(
+        file,
+        shouldContinue: () => cancelToken?.isCancelled != true,
+      );
+    } on PublicImagePreparationException catch (e) {
+      if (cancelToken?.isCancelled == true) return cancelled;
+      return UploadImageResult.failure(message: e.message);
     } catch (e) {
+      if (cancelToken?.isCancelled == true) return cancelled;
       debugPrint('上传前图片处理失败: $e');
       return const UploadImageResult.failure(message: '图片处理失败，请重试或更换图片');
     }
     try {
+      if (cancelToken?.isCancelled == true) return cancelled;
       final uploadFile = prepared.file;
       final rawName = uploadFile.name.trim().isNotEmpty
           ? uploadFile.name.trim()
@@ -1748,12 +1762,14 @@ class PostProvider extends ChangeNotifier {
       final pathUsable = path.isNotEmpty &&
           !path.startsWith('blob:') &&
           await File(path).exists();
+      if (cancelToken?.isCancelled == true) return cancelled;
       if (pathUsable) {
         multipartFile = await MultipartFile.fromFile(path, filename: filename);
       } else {
         final bytes = await uploadFile.readAsBytes();
         multipartFile = MultipartFile.fromBytes(bytes, filename: filename);
       }
+      if (cancelToken?.isCancelled == true) return cancelled;
 
       final formData = FormData.fromMap({'file': multipartFile});
 
@@ -1761,6 +1777,7 @@ class PostProvider extends ChangeNotifier {
         '/upload',
         data: formData,
         onSendProgress: onProgress,
+        cancelToken: cancelToken,
         options: Options(
           extra: <String, dynamic>{
             if (session != null) ...session.requestExtra,
@@ -1774,6 +1791,10 @@ class PostProvider extends ChangeNotifier {
       }
       return const UploadImageResult.failure(message: '上传失败，请稍后重试');
     } on DioException catch (e) {
+      if (cancelToken?.isCancelled == true ||
+          e.type == DioExceptionType.cancel) {
+        return cancelled;
+      }
       final result = _uploadFailureFromDio(e);
       debugPrint(
         '上传图片失败: status=${result.statusCode} code=${result.errorCode} message=${result.message}',

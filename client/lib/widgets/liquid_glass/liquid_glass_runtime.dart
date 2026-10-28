@@ -1,12 +1,9 @@
 import 'package:flutter/foundation.dart';
 
-export 'liquid_glass_tuning.dart';
-
 /// Liquid Glass 的运行时渲染诊断。
 ///
-/// A 表示当前 Lens 使用了 FragmentShader；C 表示已经明确降级到
-/// BackdropFilter blur。B 保留给未来的中间实现，不把“尚未探测完成”误报成
-/// 任何一个真实渲染等级。
+/// A 表示已捕获真实背景并通过 GPU 合成；C 表示缺少背景或 shader，
+/// 正使用基本可访问导航。B 保留兼容；unknown 表示尚未完成初始化。
 enum LiquidGlassTier { unknown, a, b, c }
 
 class LiquidGlassRuntimeStatus {

@@ -216,7 +216,11 @@ func TestGetCandidatesReportsConfigurationWithoutVerifyingIdentity(t *testing.T)
 		if candidate["academic_configured"] != (candidate["id"] == float64(446)) {
 			t.Fatalf("候选人配置状态错误: %s", recorder.Body.String())
 		}
-		if candidate["student_verified"] != false || candidate["student_id"] != "" {
+		expectedStudentID := ""
+		if candidate["id"] == float64(446) {
+			expectedStudentID = "2408010446"
+		}
+		if candidate["student_verified"] != false || candidate["student_id"] != expectedStudentID {
 			t.Fatalf("自报配置不能授予学生身份认证: %s", recorder.Body.String())
 		}
 	}
@@ -226,8 +230,8 @@ func TestGetCandidatesReportsConfigurationWithoutVerifyingIdentity(t *testing.T)
 	context.Request = httptest.NewRequest(http.MethodGet, "/api/admin/candidates/stats", nil)
 	NewInvitationHandler(db, "test-secret").GetCandidatesStats(context)
 	stats := decodePaginatedResponse(t, recorder)
-	if stats["edu"] != float64(0) || stats["other"] != float64(2) {
-		t.Fatalf("配置登记不应增加已验证教务账号统计: %s", recorder.Body.String())
+	if stats["edu"] != float64(1) || stats["other"] != float64(1) {
+		t.Fatalf("有效配置用户应计入已登记教务账号: %s", recorder.Body.String())
 	}
 }
 

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -68,7 +69,65 @@ void main() {
     await tmpDir.delete(recursive: true);
   });
 
-  test('uploadImage 对超出尺寸限制的公开 JPEG 上传压缩后的实际请求体', () async {
+  test('已取消的预上传不读取文件也不发网络请求', () async {
+    final token = CancelToken()..cancel('left composer');
+    var requests = 0;
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+        requests++;
+        handler.resolve(Response(
+            requestOptions: options, statusCode: 200, data: {'file_id': 91}));
+      }));
+    final provider = PostProvider(dio, enableCache: false);
+    final result = await provider.uploadImage(
+      XFile('not-existing-cancelled.jpg'),
+      cancelToken: token,
+    );
+    expect(result.errorCode, 'upload_cancelled');
+    expect(requests, 0);
+  });
+
+  test('准备图片时取消，完成准备后不继续上传', () async {
+    final token = CancelToken();
+    var requests = 0;
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+        requests++;
+        handler.resolve(Response(
+            requestOptions: options, statusCode: 200, data: {'file_id': 91}));
+      }));
+    final provider = PostProvider(dio, enableCache: false);
+    final result = await provider.uploadImage(
+      _CancelWhilePreparingFile(token),
+      cancelToken: token,
+    );
+    expect(token.isCancelled, isTrue);
+    expect(result.errorCode, 'upload_cancelled');
+    expect(requests, 0);
+  });
+
+  test('预上传取消令牌传递到实际Dio请求', () async {
+    final root = await Directory.systemTemp.createTemp('upload-cancel-');
+    addTearDown(() => root.delete(recursive: true));
+    final file = File('${root.path}/photo.jpg');
+    await file.writeAsBytes([1, 2, 3, 4]);
+    final token = CancelToken();
+    CancelToken? captured;
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+        captured = options.cancelToken;
+        token.cancel('deleted image');
+        handler.reject(DioException(
+            requestOptions: options, type: DioExceptionType.cancel));
+      }));
+    final provider = PostProvider(dio, enableCache: false);
+    final result =
+        await provider.uploadImage(XFile(file.path), cancelToken: token);
+    expect(captured, same(token));
+    expect(result.errorCode, 'upload_cancelled');
+  });
+
+  test('uploadImage 对大于5MB的JPEG上传压缩后的实际请求体', () async {
     final tmpDir = await Directory.systemTemp.createTemp('upload-compress-');
     addTearDown(() => tmpDir.delete(recursive: true));
     final file = File('${tmpDir.path}/large.jpg');
@@ -76,7 +135,10 @@ void main() {
       image.Image(width: 3000, height: 1200),
       color: image.ColorRgb8(20, 80, 180),
     );
-    final sourceBytes = image.encodeJpg(source, quality: 95);
+    final sourceBytes = [
+      ...image.encodeJpg(source, quality: 95),
+      ...List<int>.filled(6 * 1024 * 1024, 0)
+    ];
     await file.writeAsBytes(sourceBytes);
 
     MultipartFile? uploadedFile;
@@ -158,13 +220,15 @@ void main() {
     });
 
     test('403 被限制上传提示切换网络', () async {
-      final result = await uploadWithResponse(403, '<html>403 Forbidden</html>');
+      final result =
+          await uploadWithResponse(403, '<html>403 Forbidden</html>');
       expect(result.statusCode, 403);
       expect(result.message, '当前网络被限制上传，请切换网络后重试');
     });
 
     test('400 透传服务端校验提示', () async {
-      final result = await uploadWithResponse(400, {'error': '只支持 jpg/png/gif 格式'});
+      final result =
+          await uploadWithResponse(400, {'error': '只支持 jpg/png/gif 格式'});
       expect(result.statusCode, 400);
       expect(result.message, '只支持 jpg/png/gif 格式');
     });
@@ -175,4 +239,18 @@ void main() {
       expect(result.message, '服务器暂时不可用，请稍后再试');
     });
   });
+}
+
+class _CancelWhilePreparingFile extends XFile {
+  _CancelWhilePreparingFile(this.token) : super('not-existing-preparing.jpg');
+  final CancelToken token;
+
+  @override
+  Future<int> length() async {
+    token.cancel('deleted during preparation');
+    return 4;
+  }
+
+  @override
+  Future<Uint8List> readAsBytes() async => Uint8List.fromList([1, 2, 3, 4]);
 }

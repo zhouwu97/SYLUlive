@@ -39,19 +39,27 @@ type Reply struct {
 	ExpAwards []ExpAward   `gorm:"-" json:"exp_awards,omitempty"`
 	Images    []ReplyImage `gorm:"foreignKey:ReplyID" json:"images"`
 	Author    User         `gorm:"foreignKey:AuthorID" json:"author"`
-	CreatedAt time.Time    `gorm:"index:idx_replies_post_status_created,priority:3" json:"created_at"`
-	UpdatedAt time.Time    `json:"updated_at"`
+	// 仅预载公开昵称，不新增字段或外键；实际通知对象仍由服务端校验。
+	ReplyToUser *User     `gorm:"foreignKey:ReplyToUserID;-:migration" json:"-"`
+	CreatedAt   time.Time `gorm:"index:idx_replies_post_status_created,priority:3" json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // MarshalJSON 确保回复作者始终使用公开 DTO，而非数据库 User 模型。
 func (r Reply) MarshalJSON() ([]byte, error) {
 	type replyAlias Reply
+	replyToName := ""
+	if r.ReplyToUser != nil {
+		replyToName = r.ReplyToUser.Nickname
+	}
 	return json.Marshal(struct {
 		replyAlias
-		Author PublicUserResponse `json:"author"`
+		Author      PublicUserResponse `json:"author"`
+		ReplyToName string             `json:"reply_to_name,omitempty"`
 	}{
-		replyAlias: replyAlias(r),
-		Author:     PublicUser(r.Author),
+		replyAlias:  replyAlias(r),
+		Author:      PublicUser(r.Author),
+		ReplyToName: replyToName,
 	})
 }
 

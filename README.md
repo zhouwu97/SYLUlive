@@ -140,9 +140,17 @@ server/               Go 服务端
 python-rag-service/   校园公共知识 RAG
 python-edu-service/   迁移期教务兼容服务
 knowledge-base/       校园政策知识库
+web/                  Web 应用
+browser-extension/    浏览器教务助手
+packages/             Web 与扩展共享契约
+_mcp/                 MCP 能力适配服务
+experiments/jiaowu_dart_poc/  正式客户端依赖的教务协议库
+deploy/、nginx/        部署脚本与网关配置
 docs/                 项目文档
 sylulive_site_v5/     官方网站
 ```
+
+功能回归测试、测试夹具、CI 和构建脚本属于可维护的软件项目，应与源码一起保留。一次性 AI 任务计划、源码替换脚本、独立诊断应用、截图和本地发布产物不纳入源码；历史材料可从 Git 历史查阅。`experiments/jiaowu_dart_poc/` 虽沿用实验目录名，已是客户端的正式依赖，不能作为临时文件删除。
 
 ## 本地运行
 

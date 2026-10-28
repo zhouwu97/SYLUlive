@@ -1605,6 +1605,7 @@ func main() {
 		user.GET("/notifications/unread_count", notificationHandler.GetUnreadCount)
 		user.GET("/notifications/unread-count", notificationHandler.GetUnreadCount)
 		user.POST("/notifications/read", notificationHandler.MarkAllRead)
+		user.POST("/notifications/replies/read", notificationHandler.MarkAllRepliesRead)
 		user.POST("/notifications/read-selected", notificationHandler.MarkSelectedRead)
 
 		user.GET("/competition-calendar", competitionHandler.GetCalendar)
@@ -1720,6 +1721,7 @@ func main() {
 	r.GET("/api/notifications/unread-count", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetUnreadCount)
 	r.GET("/api/notifications/unread_count", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetUnreadCount) // keep for backwards compatibility just in case
 	r.POST("/api/notifications/read", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.MarkAllRead)
+	r.POST("/api/notifications/replies/read", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.MarkAllRepliesRead)
 	r.POST("/api/notifications/read-selected", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.MarkSelectedRead)
 
 	// 帖子路由

@@ -213,6 +213,15 @@ func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 
 // MarkAllRead 将所有通知标记为已读
 func (h *NotificationHandler) MarkAllRead(c *gin.Context) {
+	h.markNotificationsRead(c, "")
+}
+
+// MarkAllRepliesRead 仅消费互动回复；独立路径让旧服务端安全返回 404，不能误清其他通知。
+func (h *NotificationHandler) MarkAllRepliesRead(c *gin.Context) {
+	h.markNotificationsRead(c, "reply")
+}
+
+func (h *NotificationHandler) markNotificationsRead(c *gin.Context, notificationType string) {
 	userID, _ := c.Get("user_id")
 	uid := userID.(uint)
 
@@ -221,7 +230,11 @@ func (h *NotificationHandler) MarkAllRead(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取通知水位失败"})
 		return
 	}
-	if err := h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ? AND id <= ?", uid, false, maxID).Update("is_read", true).Error; err != nil {
+	query := h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ? AND id <= ?", uid, false, maxID)
+	if notificationType != "" {
+		query = query.Where("type = ?", notificationType)
+	}
+	if err := query.Update("is_read", true).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "标记已读失败"})
 		return
 	}

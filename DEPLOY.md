@@ -1,6 +1,6 @@
 # SYLUlive 部署总入口
 
-正式部署以不可变 commit SHA 为准，生产服务由 systemd 或 Docker Compose 管理。本文包含当前生产拓扑、基线要求、P3 传输规范、独立文件服务运维守则与专项文档入口；历史部署演进细节已归档到 docs/archive/。
+正式部署以不可变 commit SHA 为准，生产服务由 systemd 或 Docker Compose 管理。本文包含当前生产拓扑、基线要求、P3 传输规范、独立文件服务运维守则与专项文档入口；历史部署演进细节可从 Git 历史查阅。
 
 ## 当前生产拓扑
 

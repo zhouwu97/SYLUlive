@@ -174,6 +174,55 @@ func TestServePublicPrivateFileReturnsNoStore404(t *testing.T) {
 	}
 }
 
+func TestServePublicPrivateVariantRequiresSourceFileAuthorization(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newUploadTestDB(t)
+	uploadDir := t.TempDir()
+	file := models.File{
+		Hash: "private-variant-authorization", Path: "/uploads/private-variant-authorization.png",
+		MimeType: "image/png", AccessScope: models.FileAccessPrivate,
+		UploaderID: 42, Status: models.FileStatusActive,
+	}
+	if err := db.Create(&file).Error; err != nil {
+		t.Fatal(err)
+	}
+	const variantPath = "/uploads/private-variant-authorization_v1_thumb.png"
+	if err := db.Create(&models.ImageVariant{
+		FileID: file.ID, Variant: "thumb", RecipeVersion: 1,
+		Status: models.ImageVariantStatusReady, Path: variantPath, MimeType: "image/png",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(uploadDir, "private-variant-authorization_v1_thumb.png"), []byte("private preview"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, testCase := range []struct {
+		name   string
+		userID uint
+		role   string
+		status int
+	}{
+		{"anonymous", 0, "", http.StatusNotFound},
+		{"another-user", 43, "user", http.StatusNotFound},
+		{"uploader", 42, "user", http.StatusOK},
+		{"admin", 43, "admin", http.StatusOK},
+		{"super-admin", 43, "super_admin", http.StatusOK},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			context, _ := gin.CreateTestContext(response)
+			context.Request = httptest.NewRequest(http.MethodGet, variantPath, nil)
+			context.Params = gin.Params{{Key: "filepath", Value: "/private-variant-authorization_v1_thumb.png"}}
+			context.Set("user_id", testCase.userID)
+			context.Set("role", testCase.role)
+			NewUploadHandler(uploadDir, 10<<20, db).ServePublic(context)
+			if response.Code != testCase.status || response.Header().Get("Cache-Control") != "private, no-store" && response.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("私有变体权限或缓存响应错误: code=%d cache=%s", response.Code, response.Header().Get("Cache-Control"))
+			}
+		})
+	}
+}
+
 func TestServePublicPendingVariantReturnsNoStore404(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newUploadTestDB(t)

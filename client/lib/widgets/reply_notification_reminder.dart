@@ -5,6 +5,7 @@ import '../models/unread_reply_notification.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
+import '../services/publish_session_scope.dart';
 import 'cached_avatar.dart';
 import 'app_card.dart';
 
@@ -108,6 +109,7 @@ Future<void> showReplyNotificationList(
   required List<UnreadReplyNotification> items,
   int totalCount = 0,
   required ValueChanged<UnreadReplyNotification> onSelected,
+  Future<void> Function()? onMarkAllRead,
 }) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -129,6 +131,7 @@ Future<void> showReplyNotificationList(
             items: items,
             totalCount: totalCount,
             onSelected: onSelected,
+            onMarkAllRead: onMarkAllRead,
             onClose: () => Navigator.of(sheetContext).pop(),
           ),
         ),
@@ -137,21 +140,54 @@ Future<void> showReplyNotificationList(
   );
 }
 
-class _ReplyNotificationSheetContent extends StatelessWidget {
+class _ReplyNotificationSheetContent extends StatefulWidget {
   final List<UnreadReplyNotification> items;
   final int totalCount;
   final ValueChanged<UnreadReplyNotification> onSelected;
   final VoidCallback onClose;
+  final Future<void> Function()? onMarkAllRead;
 
   const _ReplyNotificationSheetContent({
     required this.items,
     required this.totalCount,
     required this.onSelected,
     required this.onClose,
+    this.onMarkAllRead,
   });
 
   @override
+  State<_ReplyNotificationSheetContent> createState() =>
+      _ReplyNotificationSheetContentState();
+}
+
+class _ReplyNotificationSheetContentState
+    extends State<_ReplyNotificationSheetContent> {
+  bool _markingRead = false;
+  String? _readError;
+
+  Future<void> _markAllRead() async {
+    if (_markingRead) return;
+    setState(() {
+      _markingRead = true;
+      _readError = null;
+    });
+    try {
+      await widget.onMarkAllRead!();
+      if (mounted) widget.onClose();
+    } catch (error) {
+      if (mounted) {
+        setState(() => _readError =
+            error is PublishSessionChanged ? '账号已切换，请关闭后重新打开' : '标记已读失败，请重试');
+      }
+    } finally {
+      if (mounted) setState(() => _markingRead = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final items = widget.items;
+    final totalCount = widget.totalCount;
     final colors = Theme.of(context).colorScheme;
     final list = ListView.separated(
       shrinkWrap: items.length <= 6,
@@ -163,12 +199,14 @@ class _ReplyNotificationSheetContent extends StatelessWidget {
       ),
       itemBuilder: (_, index) {
         final item = items[index];
-        final title = item.postTitle.trim().isEmpty ? '帖子' : item.postTitle.trim();
+        final title =
+            item.postTitle.trim().isEmpty ? '帖子' : item.postTitle.trim();
         final nickname = item.fromUser?.nickname.trim().isNotEmpty == true
             ? item.fromUser!.nickname.trim()
             : '同学';
         final avatar = item.fromUser?.avatar.trim() ?? '';
-        final avatarUrl = avatar.isNotEmpty ? ApiConstants.fullUrl(avatar) : null;
+        final avatarUrl =
+            avatar.isNotEmpty ? ApiConstants.fullUrl(avatar) : null;
         final time = _formatReplyNotificationTime(item.createdAt);
         final content =
             item.content.trim().isEmpty ? '回复了你的内容' : item.content.trim();
@@ -180,8 +218,8 @@ class _ReplyNotificationSheetContent extends StatelessWidget {
           child: InkWell(
             key: ValueKey('reply-notification-${item.id}'),
             onTap: () {
-              onClose();
-              onSelected(item);
+              widget.onClose();
+              widget.onSelected(item);
             },
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -235,24 +273,20 @@ class _ReplyNotificationSheetContent extends StatelessWidget {
                           content,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.copyWith(
-                                color: colors.onSurface,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: colors.onSurface,
+                                  ),
                         ),
                         const SizedBox(height: AppSpacing.xs),
                         Text(
                           '回复于《$title》',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(
-                                color: colors.onSurfaceVariant,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: colors.onSurfaceVariant,
+                                  ),
                         ),
                       ],
                     ),
@@ -287,29 +321,55 @@ class _ReplyNotificationSheetContent extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: Row(
               children: [
-                Text(
-                  showRecentTag
-                      ? '未读回复 $totalCount'
-                      : '未读回复 (${items.length})',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: colors.onSurface,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        showRecentTag
+                            ? '未读回复 $totalCount'
+                            : '未读回复 (${items.length})',
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: colors.onSurface,
+                                ),
                       ),
-                ),
-                if (showRecentTag) ...[
-                  const SizedBox(width: AppSpacing.xs),
-                  Text(
-                    '最近 ${items.length} 条',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.onSurfaceVariant,
+                      if (showRecentTag)
+                        Text(
+                          '最近 ${items.length} 条',
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: colors.onSurfaceVariant,
+                                  ),
                         ),
+                    ],
                   ),
-                ],
+                ),
+                if (widget.onMarkAllRead != null)
+                  TextButton(
+                    key: const ValueKey('reply-notifications-mark-all-read'),
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(44, 44),
+                      visualDensity: VisualDensity.standard,
+                    ),
+                    onPressed: _markingRead ? null : _markAllRead,
+                    child: Text(_markingRead ? '处理中…' : '一键已读'),
+                  ),
               ],
             ),
           ),
         ),
+        if (_readError != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            child: Text(
+              _readError!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.error,
+                  ),
+            ),
+          ),
         if (items.length <= 6)
           list
         else

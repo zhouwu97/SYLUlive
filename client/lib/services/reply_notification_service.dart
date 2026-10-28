@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:shenliyuan/models/unread_reply_notification.dart';
+import 'publish_session_scope.dart';
 
 class UnreadReplyNotificationPage {
   final int count;
@@ -117,7 +118,7 @@ class ReplyNotificationService {
         .toList(growable: false);
   }
 
-  Future<void> markRead(int notificationId, {int? replyId}) async {
+  Future<void> markRead(int notificationId, {int? replyId, PublishSessionScope? session}) async {
     _checkSession();
     if (notificationId <= 0) {
       throw ArgumentError.value(notificationId, 'notificationId');
@@ -127,6 +128,7 @@ class ReplyNotificationService {
       data: {
         'ids': [notificationId]
       },
+      options: session == null ? null : Options(extra: session.requestExtra),
     );
     _ensureSuccessful(response, '标记通知已读失败');
     await _syncSystemRead(response, fallback: {
@@ -135,9 +137,15 @@ class ReplyNotificationService {
     });
   }
 
-  Future<void> markAllRead() async {
+  Future<void> markAllRead({
+    bool repliesOnly = false,
+    PublishSessionScope? session,
+  }) async {
     _checkSession();
-    final response = await _dio.post('/notifications/read');
+    final response = await _dio.post(
+      repliesOnly ? '/notifications/replies/read' : '/notifications/read',
+      options: session == null ? null : Options(extra: session.requestExtra),
+    );
     _ensureSuccessful(response, '全部标记已读失败');
     await _syncSystemRead(response);
   }

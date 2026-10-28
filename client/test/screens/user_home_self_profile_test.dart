@@ -536,6 +536,26 @@ void main() {
     expect(auth.user?.nickname, '新名字');
     expect(auth.user?.gender, '');
     expect(find.text('新名字'), findsOneWidget);
+    expect(updateRequest.extra['expectedAuthUserId'], 2);
+
+    // 旧编辑弹层属于打开时的会话，重新登录后不能用它继续保存。
+    await tester.tap(find.text('编辑资料'));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => auth.applyAuthPayload('next-token', {
+          'id': 2,
+          'student_id': '20260002',
+          'nickname': '重新登录后的资料',
+          'legal_consents_active': true,
+          'legal_consents_required': false,
+          'created_at': '2026-07-15T00:00:00Z',
+        }));
+    await tester.pumpAndSettle();
+    adapter.requests.clear();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(adapter.requests.where((r) => r.method == 'PUT'), isEmpty);
+    expect(find.text('登录状态已变化，请关闭后重新编辑资料'), findsOneWidget);
+    expect(auth.token, 'next-token');
   });
 
   testWidgets('背景更新响应写入登录态且页面立即使用新背景', (tester) async {

@@ -8,34 +8,34 @@ void main() {
     test('尺寸和体积均在限制内的 JPEG 不重复编码', () {
       final decision = PublicImageUploadPolicy.decide(
         bytes: _jpegHeader(width: 2048, height: 1200),
-        fileSize: 3 * 1024 * 1024,
+        fileSize: 5 * 1024 * 1024,
       );
 
       expect(decision.shouldCompress, isFalse);
       expect(decision.outputExtension, '.jpg');
     });
 
-    test('超过最长边限制的 JPEG 需要按公开上传配方压缩', () {
+    test('超过服务端最长边限制的 JPEG 才需要调整尺寸', () {
       final decision = PublicImageUploadPolicy.decide(
-        bytes: _jpegHeader(width: 3000, height: 1200),
+        bytes: _jpegHeader(width: 13000, height: 1200),
         fileSize: 1024,
       );
 
       expect(decision.shouldCompress, isTrue);
-      expect(decision.maxDimension, 2048);
-      expect(decision.quality, 85);
+      expect(decision.maxDimension, 12000);
+      expect(decision.quality, 94);
     });
 
     test('超过目标体积的 JPEG 即使尺寸合格也需要压缩', () {
       final decision = PublicImageUploadPolicy.decide(
         bytes: _jpegHeader(width: 1600, height: 1200),
-        fileSize: 3 * 1024 * 1024 + 1,
+        fileSize: 5 * 1024 * 1024 + 1,
       );
 
       expect(decision.shouldCompress, isTrue);
     });
 
-    test('透明 PNG 与 GIF 不进入 JPEG 压缩路径', () {
+    test('PNG 保留格式处理，GIF 保留动画不进入重编码路径', () {
       final png = Uint8List.fromList(<int>[
         0x89,
         0x50,
@@ -81,8 +81,8 @@ void main() {
 
       expect(
         PublicImageUploadPolicy.decide(bytes: png, fileSize: 9 * 1024 * 1024)
-            .shouldCompress,
-        isFalse,
+            .outputExtension,
+        '.png',
       );
       expect(
         PublicImageUploadPolicy.decide(bytes: gif, fileSize: 9 * 1024 * 1024)

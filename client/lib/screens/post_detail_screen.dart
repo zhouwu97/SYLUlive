@@ -4652,14 +4652,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   InlineSpan _buildCompactContentSpan(Reply r, bool isDark) {
     if (r.hasSticker) {
       return TextSpan(
-        text: r.hasTextContent ? '${r.content} [表情]' : '[表情]',
+        text: '${r.displayContent} [表情]',
         style: TextStyle(
           fontSize: 12.5,
           color: isDark ? Colors.white60 : const Color(0xFF4B5563),
         ),
       );
     }
-    final content = r.content;
+    final content = r.displayContent;
     final atRegex = RegExp(r'^@(\S+)\s');
     final match = atRegex.firstMatch(content);
     if (match != null) {
@@ -5509,7 +5509,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         onTextTap: onTextTap,
       );
     }
-    final content = r.content;
+    final content = r.displayContent;
     final atRegex = RegExp(r'^@(\S+)\s');
     final match = atRegex.firstMatch(content);
 
@@ -5517,7 +5517,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       text: content,
       selectable: true,
       onPlainTextTap: onTextTap,
-      leadingTextEnd: match?.end,
+      leadingTextEnd: r.replyTargetPrefix.isNotEmpty
+          ? r.replyTargetPrefix.length
+          : match?.end,
       leadingTextStyle: TextStyle(
         fontSize: 13,
         height: 1.4,
@@ -5539,7 +5541,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     VoidCallback? onTextTap,
   }) {
     final textWidget = PostContentLinkText(
-      text: reply.content,
+      text: reply.displayContent,
+      leadingTextEnd: reply.replyTargetPrefix.length,
+      leadingTextStyle: TextStyle(color: Theme.of(context).colorScheme.primary),
       selectable: true,
       onPlainTextTap: onTextTap,
       style: TextStyle(
@@ -5549,7 +5553,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       ),
     );
     final contentWidgets = <Widget>[];
-    if (reply.hasTextContent) {
+    if (reply.hasTextContent || reply.replyTargetPrefix.isNotEmpty) {
       contentWidgets.add(textWidget);
     }
     if (reply.hasSticker) {

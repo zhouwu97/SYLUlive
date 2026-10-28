@@ -24,7 +24,8 @@
 ## 隐私与安全
 
 - [隐私数据台账](./privacy-data-inventory.md)
-- [安全与迁移计划](./plans/)
+- [竞赛推荐产品契约](./plans/competition-recommendation-plan.md)
+- [竞赛推荐算法契约](./plans/competition-recommendation-algorithm-plan.md)
 - [架构决策记录](./design/adr/)
 
 ## 设计
@@ -35,14 +36,14 @@
 - [无障碍规范](./design/ACCESSIBILITY.md)
 - [设计 QA](./design/DESIGN_QA.md)
 
-## AI、知识库与实验
+## AI、知识库与教务协议
 
 - [AI 文档](./ai/)
 - [校园政策知识库](../knowledge-base/README.md)
 - [RAG 服务](../python-rag-service/README.md)
 - [MCP 适配器](../_mcp/README.md)
-- [实验与探针](../experiments/)
+- [客户端教务协议库](../experiments/jiaowu_dart_poc/README.md)：正式客户端的本地依赖，保留源码、协议测试及夹具
 
 ## 历史记录
 
-迁移期方案、一次性验收记录和旧版本报告应标注日期并放在 docs/archive/ 或 docs/reports/，不作为当前开发规范、生产事实或发布门禁的唯一依据。
+一次性任务计划、截图、诊断应用和构建产物不纳入软件源码。历史材料可从 Git 历史查阅；新的本地验收记录可放在已忽略的 `docs/reports/`，正式发布证据应随发布记录或 CI 产物保存。现有产品契约仍引用的报告继续保留，不作为当前生产状态的证明。

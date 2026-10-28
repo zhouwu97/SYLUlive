@@ -26,6 +26,8 @@ import '../utils/app_navigator.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
 import '../widgets/bottom_nav.dart';
+import '../widgets/bottom_nav_setup_hint.dart';
+import '../widgets/global_background_wrapper.dart' show CustomBackgroundLayer;
 import '../widgets/glass_container.dart';
 import '../widgets/home_tab_reveal.dart';
 import '../utils/responsive_util.dart';
@@ -1647,8 +1649,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _onTabTapped(int index) {
-    final useSideRail = ResponsiveUtil.useDesktopShell(context) &&
-        !context.read<ThemeProvider>().floatingNavBar;
+    final useSideRail = ResponsiveUtil.useDesktopShell(context);
     if (useSideRail) {
       _switchTab(index);
       return;
@@ -1897,7 +1898,7 @@ class _HomeScreenState extends State<HomeScreen>
     final authProvider = context.watch<AuthProvider>();
 
     // 宽屏默认按 Pad 版处理；开启悬浮底栏时，宽屏也切到浮动导航。
-    final useSideRail = useDesktopShell && !themeProvider.floatingNavBar;
+    final useSideRail = useDesktopShell;
     final useBottomNav = !useSideRail;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1906,21 +1907,25 @@ class _HomeScreenState extends State<HomeScreen>
       }
     });
 
-    final normalHome = Scaffold(
+    final normalHome = LiquidGlassScope(child: Scaffold(
       backgroundColor: Colors.transparent,
       extendBody: true,
       extendBodyBehindAppBar: true,
-      body: Stack(
+      body: LiquidGlassBackground(child: Stack(
         children: [
+          // 捕获区域必须包含壁纸和业务内容，不能只采透明的页面图层。
+          const Positioned.fill(child: CustomBackgroundLayer()),
           // 实际内容区
           useSideRail
               ? _buildWideLayout(bottomSafe, authProvider, false)
               : _buildNarrowLayout(bottomSafe, authProvider),
         ],
-      ),
+      )),
       bottomNavigationBar: useSideRail
           ? null
-          : BottomNavWrapper(
+          : Column(mainAxisSize: MainAxisSize.min, children: [
+            BottomNavSetupHint(eligible: !_restoringInitialDeepPage && !_announcementDialogOpen),
+            BottomNavWrapper(
               currentIndex: _currentIndex,
               visualIndexListenable: _mainVisualIndexListenable,
               onTap: _onTabTapped,
@@ -1932,6 +1937,7 @@ class _HomeScreenState extends State<HomeScreen>
                 4: _hasAdminTasks,
               },
             ),
+          ]),
       floatingActionButton: _currentIndex == 0 && useBottomNav
           ? Theme(
               data: Theme.of(context).copyWith(
@@ -1956,7 +1962,7 @@ class _HomeScreenState extends State<HomeScreen>
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-    );
+    ));
 
     return Stack(
       children: [

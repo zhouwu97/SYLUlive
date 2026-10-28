@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
+import '../services/publish_session_scope.dart';
 import '../providers/theme_provider.dart';
 import '../config/api_constants.dart';
 import '../config/private_chat_policy.dart';
@@ -1238,11 +1239,15 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   late TextEditingController _nicknameController;
   late String _selectedGender;
   bool _isSaving = false;
+  late final PublishSessionScope _editingSession;
 
   @override
   void initState() {
     super.initState();
     _nicknameController = TextEditingController(text: widget.user.nickname);
+    _editingSession = PublishSessionScope(
+        accountId: widget.user.id,
+        accountSessionEpoch: context.read<AuthProvider>().accountSessionEpoch);
     _selectedGender = switch (widget.user.gender) {
       'male' || 'female' => widget.user.gender,
       _ => '',
@@ -1256,9 +1261,17 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   }
 
   Future<void> _pickAndUploadBackground() async {
+    final auth = context.read<AuthProvider>();
+    if (!_canEdit(auth)) return;
+    final session = _editingSession;
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
+    if (picked == null ||
+        !mounted ||
+        !session.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
+      return;
+    }
 
     final cropped = await ImageCropper().cropImage(
       sourcePath: picked.path,
@@ -1284,12 +1297,17 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
     if (cropped == null) return;
 
-    if (!mounted) return;
-    final auth = context.read<AuthProvider>();
+    if (!mounted ||
+        !session.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
+      return;
+    }
 
     try {
       setState(() => _isSaving = true);
       final croppedBytes = await cropped.readAsBytes();
+      session.ensure(
+          userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
       final croppedName =
           'background_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final formData = FormData.fromMap({
@@ -1299,18 +1317,29 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           contentType: DioMediaType('image', 'jpeg'),
         ),
       });
-      final uploadRes = await auth.dio.post('/upload', data: formData);
+      final uploadRes = await auth.dio.post('/upload',
+          data: formData, options: Options(extra: session.requestExtra));
+      session.ensure(
+          userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
       if (uploadRes.statusCode == 200 && uploadRes.data['url'] != null) {
         final url = uploadRes.data['url'] as String;
-        final response =
-            await auth.dio.put('/user/background', data: {'background': url});
+        final response = await auth.dio.put('/user/background',
+            data: {'background': url},
+            options: Options(extra: session.requestExtra));
+        session.ensure(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
 
         await auth.applyProfileResponse(
           Map<String, dynamic>.from(response.data),
+          request: response.requestOptions,
         );
-
+        session.ensure(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
         await widget.onSaved();
-        if (mounted) {
+        if (mounted &&
+            session.owns(
+                userId: auth.user?.id,
+                sessionEpoch: auth.accountSessionEpoch)) {
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(const SnackBar(content: Text('背景更换成功')));
@@ -1329,7 +1358,9 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       debugPrint(
         '背景上传 DioException: type=${e.type}, status=${e.response?.statusCode}',
       );
-      if (mounted) {
+      if (mounted &&
+          session.owns(
+              userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(
@@ -1338,7 +1369,9 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       }
     } catch (e) {
       debugPrint('背景上传异常: ${e.runtimeType}');
-      if (mounted) {
+      if (mounted &&
+          session.owns(
+              userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(
@@ -1355,28 +1388,39 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   Future<void> _saveProfile() async {
     final newNickname = _nicknameController.text.trim();
     if (newNickname.isEmpty) return;
+    final auth = context.read<AuthProvider>();
+    if (!_canEdit(auth)) return;
+    final session = _editingSession;
 
     setState(() => _isSaving = true);
     try {
-      final auth = context.read<AuthProvider>();
       final response = await auth.dio.put(
         '/user/profile',
         data: {'nickname': newNickname, 'gender': _selectedGender},
+        options: Options(extra: session.requestExtra),
       );
+      session.ensure(
+          userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
 
       await auth.applyProfileResponse(
         Map<String, dynamic>.from(response.data),
+        request: response.requestOptions,
       );
-
+      session.ensure(
+          userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
       await widget.onSaved();
-      if (mounted) {
+      if (mounted &&
+          session.owns(
+              userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
         Navigator.pop(context);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('资料已保存')));
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted &&
+          session.owns(
+              userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('保存失败: $e')));
@@ -1386,6 +1430,18 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         setState(() => _isSaving = false);
       }
     }
+  }
+
+  bool _canEdit(AuthProvider auth) {
+    if (auth.isLoggedIn &&
+        _editingSession.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
+      return true;
+    }
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(const SnackBar(content: Text('登录状态已变化，请关闭后重新编辑资料')));
+    return false;
   }
 
   @override

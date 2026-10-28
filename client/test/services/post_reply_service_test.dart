@@ -9,6 +9,7 @@ import 'package:shenliyuan/controllers/post_reply_composer_controller.dart';
 import 'package:shenliyuan/services/post_reply_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   test('本地评论图片先上传并通过 file_ids 提交', () async {
     final tempDirectory = await Directory.systemTemp.createTemp(
       'post-reply-service-test-',
@@ -81,7 +82,7 @@ void main() {
     expect(reply.id, 9);
   });
 
-  test('公开评论图片上传使用压缩后的 JPEG 请求体', () async {
+  test('5MiB 内 JPEG 评论图片保留原始质量与字节', () async {
     final tempDirectory = await Directory.systemTemp.createTemp(
       'post-reply-compress-test-',
     );
@@ -140,6 +141,50 @@ void main() {
     );
 
     expect(uploadedFile, isNotNull);
-    expect(uploadedFile!.length, lessThan(sourceBytes.length));
+    expect(uploadedFile!.length, sourceBytes.length);
+    final uploadedBytes =
+        await uploadedFile!.finalize().expand((chunk) => chunk).toList();
+    expect(uploadedBytes, sourceBytes);
   });
+
+  for (final format in ['png', 'gif']) {
+    test('小体积 $format 评论保留格式与完整字节', () async {
+      final directory = await Directory.systemTemp.createTemp('reply-$format-');
+      addTearDown(() => directory.delete(recursive: true));
+      final source = image.fill(image.Image(width: 24, height: 24),
+          color: image.ColorRgba8(50, 100, 180, 120));
+      final bytes =
+          format == 'png' ? image.encodePng(source) : image.encodeGif(source);
+      final file = File('${directory.path}/reply.$format');
+      await file.writeAsBytes(bytes);
+      MultipartFile? uploaded;
+      final dio = Dio();
+      dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+        if (options.path == '/upload') {
+          uploaded = (options.data as FormData).files.single.value;
+          handler.resolve(Response(
+              requestOptions: options, statusCode: 200, data: {'file_id': 74}));
+        } else {
+          handler.resolve(
+              Response(requestOptions: options, statusCode: 200, data: {
+            'id': 10,
+            'post_id': 8,
+            'author_id': 1,
+            'content': '图片回复',
+            'created_at': DateTime(2026).toIso8601String(),
+          }));
+        }
+      }));
+      await PostReplyService(dio).submit(
+          8,
+          PostReplyDraft(
+            text: '图片回复',
+            localImage: XFile(file.path, name: 'reply.$format'),
+          ));
+      expect(uploaded!.contentType.toString(), 'image/$format');
+      expect(uploaded!.filename, endsWith('.$format'));
+      expect(
+          await uploaded!.finalize().expand((chunk) => chunk).toList(), bytes);
+    });
+  }
 }

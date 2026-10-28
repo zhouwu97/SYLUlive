@@ -258,10 +258,13 @@ class _ReplyContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final content = <Widget>[];
-    if (reply.hasTextContent) {
+    if (reply.hasTextContent || reply.replyTargetPrefix.isNotEmpty) {
       content.add(
         PostContentLinkText(
-          text: reply.content,
+          text: reply.displayContent,
+          leadingTextEnd: reply.replyTargetPrefix.length,
+          leadingTextStyle:
+              TextStyle(color: Theme.of(context).colorScheme.primary),
           selectable: true,
           onPlainTextTap: onTextTap,
           style: TextStyle(
@@ -325,7 +328,7 @@ class _ReplyContent extends StatelessWidget {
 
     if (content.isEmpty) {
       return PostContentLinkText(
-        text: reply.content,
+        text: reply.displayContent,
         selectable: true,
         onPlainTextTap: onTextTap,
         style: TextStyle(
@@ -483,9 +486,8 @@ class _ChildReplySummary extends StatelessWidget {
                             ),
                           ),
                           TextSpan(
-                            text: reply.hasSticker && !reply.hasTextContent
-                                ? '[表情]'
-                                : reply.content,
+                            text:
+                                '${reply.displayContent}${reply.hasSticker ? ' [表情]' : ''}',
                           ),
                           if (reply.images.any(ReplyImageMedia.hasAnyImageUrl))
                             const TextSpan(text: ' [图片]'),

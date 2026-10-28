@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/theme_provider.dart';
 import '../campus/campus_theme.dart';
+import '../global_background_wrapper.dart';
 
 /// 统一的设置中心页面脚手架 (恢复 18dp 标准舒服边距)
 class SettingsPageScaffold extends StatelessWidget {
@@ -20,12 +23,16 @@ class SettingsPageScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final baseTheme = Theme.of(context);
     final isDark = baseTheme.brightness == Brightness.dark;
-    final pageBg = CampusTheme.pageBackground(context);
+    final appearance = context.watch<ThemeProvider?>();
+    final pageBg = appearance?.shouldShowCustomBackground == true
+        ? Colors.transparent
+        : CampusTheme.pageBackground(context);
 
     Widget content = Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 680),
         child: ListView(
+          addRepaintBoundaries: false,
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
@@ -48,34 +55,35 @@ class SettingsPageScaffold extends StatelessWidget {
       );
     }
 
-    return Theme(
-      data: CampusTheme.withBrandAccent(baseTheme),
-      child: Scaffold(
-        backgroundColor: pageBg,
-        appBar: AppBar(
-          title: Text(
-            title,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : CampusTheme.text,
-            ),
-          ),
-          centerTitle: false,
-          backgroundColor: pageBg,
-          surfaceTintColor: Colors.transparent,
-          scrolledUnderElevation: 0,
-          elevation: 0,
-          iconTheme: IconThemeData(
+    final page = Scaffold(
+      backgroundColor: pageBg,
+      appBar: AppBar(
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
             color: isDark ? Colors.white : CampusTheme.text,
           ),
-          actions: actions,
         ),
-        body: SafeArea(
-          top: false,
-          child: content,
+        centerTitle: false,
+        backgroundColor: pageBg,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        elevation: 0,
+        iconTheme: IconThemeData(
+          color: isDark ? Colors.white : CampusTheme.text,
         ),
+        actions: actions,
       ),
+      body: SafeArea(
+        top: false,
+        child: content,
+      ),
+    );
+    return Theme(
+      data: CampusTheme.withBrandAccent(baseTheme),
+      child: appearance == null ? page : GlobalBackgroundWrapper(child: page),
     );
   }
 }

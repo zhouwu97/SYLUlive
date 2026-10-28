@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_colors.dart';
 import 'canteen_pending_review_image.dart';
+import '../app_card.dart';
 
 /// 待审核食堂卡片（纵向大图审核卡）：
 /// 1. 顶部 16:9 大尺寸私有门面图（带鉴权加载与点击全屏查看）；
@@ -62,7 +63,7 @@ class CanteenPendingCard extends StatelessWidget {
     final textSecondary =
         isDark ? const Color(0xFFA0AAB3) : const Color(0xFF6B7280);
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: cardBg,

@@ -87,6 +87,37 @@ void main() {
     return CourseScheduleProvider(dio, createSnapshotStore);
   }
 
+  test('跨周调课合并在进程重建、教务重同步后保留，恢复时还原源和目标周', () async {
+    final provider = createProvider()..syncSessionContext('1001', '2403130233');
+    addTearDown(provider.dispose);
+    const term = CourseTerm(id: '2026_3', year: '2026', semester: 3, title: '测试学期');
+    final raw = [<String, dynamic>{
+      'name': '网络安全技术', 'course_code': 'CROSS-WEEK',
+      'time': 5, 'end_time': 6, 'week_day': 1, 'weeks': [8, 9, 10],
+    }];
+    await provider.applyFetchedCoursesForTerm(term: term, rawCourses: raw);
+    final course = provider.baseSchedule.single;
+    final meeting = course.meetings.single;
+    final override = await provider.createRescheduleOverride(
+      courseKey: course.courseKey, meetingKey: meeting.meetingKey,
+      affectedWeeks: {9}, weekOffset: -1, replaceSameCourse: true,
+      toWeekday: 1, toStartSection: 5, toEndSection: 6,
+      sourceSnapshotHash: meeting.computeSnapshotHash(),
+    );
+    expect(provider.courses.where((c) => c.weeks.contains(8)), hasLength(1));
+    final restored = createProvider()..syncSessionContext('1001', '2403130233');
+    addTearDown(restored.dispose);
+    await restored.loadCachedCoursesIfAvailable();
+    expect(restored.overrides.single.weekOffset, -1);
+    expect(restored.courses.any((c) => c.weeks.contains(9)), isFalse);
+    await restored.applyFetchedCoursesForTerm(term: term, rawCourses: raw);
+    expect(restored.overrides.single.isActive, isTrue);
+    expect(restored.courses.where((c) => c.weeks.contains(8)), hasLength(1));
+    await restored.restoreBaseMeeting(override.id);
+    expect(restored.courses.single.weeks, [8, 9, 10]);
+    expect(restored.overrides, isEmpty);
+  });
+
   test('后台重建时密钥暂不可读不应判为空课表，重试恢复原学期和课程', () async {
     final flakySecureStore = _TemporarilyUnavailableSecureStore();
     secureStore = flakySecureStore;

@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../../widgets/app_choice_chip.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -7,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
+import '../../widgets/responsive_content.dart';
 import '../../config/beta_release_policy.dart';
 import '../../models/agent_context.dart';
 import '../../models/competition.dart';
@@ -36,6 +40,7 @@ import 'competition_preference_screen.dart';
 
 import 'competition_admin_center_screen.dart';
 import '../ai/ai_assistant_screen.dart';
+import '../../widgets/app_card.dart';
 
 class CompetitionCenterScreen extends StatefulWidget {
   const CompetitionCenterScreen({super.key});
@@ -574,7 +579,10 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
     final isAdmin = user?.isAdmin == true || user?.isSuperAdmin == true;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -583,9 +591,9 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     return Theme(
       data: CompetitionModuleTheme.of(context),
       child: Scaffold(
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         appBar: AppBar(
-          backgroundColor: pageBg,
+          backgroundColor: AppPageBackground.color(context, pageBg),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
@@ -606,7 +614,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
               ),
           ],
         ),
-        body: RefreshIndicator(
+        body: ResponsiveContent.page(
+            child: RefreshIndicator(
           onRefresh: _loadAll,
           child: ListView(
             controller: _scrollController,
@@ -614,7 +623,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
             padding: const EdgeInsets.only(bottom: 32),
             children: _buildStudentHome(isDark),
           ),
-        ),
+        )),
       ),
     );
   }
@@ -666,7 +675,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       ),
       child: Column(
         children: [
-          Container(
+          AppCardSurface(
             height: 46,
             padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
@@ -692,6 +701,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                     textInputAction: TextInputAction.search,
                     onSubmitted: (_) => _submitSearch(),
                     decoration: InputDecoration(
+                      filled: false,
                       hintText: '搜索比赛 / 专业方向 / 标签',
                       hintStyle: TextStyle(
                         color: CompetitionUiTokens.subColor(isDark),
@@ -846,7 +856,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         CompetitionUiTokens.pagePadding,
         14,
       ),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: CompetitionUiTokens.cardDecoration(isDark),
         child: Row(
@@ -920,7 +930,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
             for (var index = 0; index < tabs.length; index++) ...[
               SizedBox(
                 height: 34,
-                child: ChoiceChip(
+                child: AppChoiceChip(
                   label: Text(tabs[index].$2),
                   labelPadding: const EdgeInsets.symmetric(horizontal: 7),
                   padding: const EdgeInsets.symmetric(horizontal: 7),
@@ -1382,7 +1392,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       backgroundColor: Colors.transparent,
       builder: (sheetContext) => SafeArea(
         top: false,
-        child: Container(
+        child: AppCardSurface(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
           decoration: BoxDecoration(
             color: CompetitionUiTokens.pageBg(isDark),
@@ -1713,9 +1723,9 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
     final titleColor = CompetitionUiTokens.titleColor(isDark);
 
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         foregroundColor: titleColor,
@@ -1977,7 +1987,7 @@ Widget _detailCard({
   required bool isDark,
   required List<Widget> children,
 }) {
-  return Container(
+  return AppCardSurface(
     margin: const EdgeInsets.only(bottom: 12),
     padding: const EdgeInsets.all(16),
     decoration: CompetitionUiTokens.cardDecoration(isDark),
@@ -2113,7 +2123,7 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
       minChildSize: 0.45,
       maxChildSize: 0.92,
       builder: (context, scrollController) {
-        return Container(
+        return AppCardSurface(
           decoration: BoxDecoration(
             color: CompetitionUiTokens.pageBg(isDark),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -2297,7 +2307,7 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
 
   Widget _choiceChip(String label, bool selected, VoidCallback onTap) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return ChoiceChip(
+    return AppChoiceChip(
       label: Text(label),
       selected: selected,
       onSelected: (_) => onTap(),
@@ -2441,7 +2451,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
     final dio = context.read<AuthProvider>().dio;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: const Text('删除比赛'),
         content: Text('确定从我的计划删除「${item['title'] ?? '未命名比赛'}」吗？'),
         actions: [
@@ -2502,9 +2512,9 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
     final grouped = _groupCalendarItems(items);
     final flattenedRows = _flattenedList(grouped);
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -3216,9 +3226,9 @@ class _CompetitionCalendarItemEditorScreenState
     final titleColor = CompetitionUiTokens.titleColor(isDark);
 
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         foregroundColor: titleColor,
@@ -3367,7 +3377,7 @@ class _CompetitionCalendarItemEditorScreenState
   }
 
   Widget _buildFormGroup(String title, List<Widget> children, bool isDark) {
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
@@ -3629,7 +3639,7 @@ class _CompetitionShareImportScreenState
             const SizedBox(height: 12),
             FilledButton(onPressed: _previewShare, child: const Text('预览')),
           ] else ...[
-            Container(
+            AppCardSurface(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: CompetitionUiTokens.cardBg(isDark),

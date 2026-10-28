@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/competition_dashboard_summary.dart';
 import 'competition_ui_tokens.dart';
+import '../app_card.dart';
 
 class CompetitionProfileCompactCard extends StatelessWidget {
   final bool isLoggedIn;
@@ -47,7 +48,7 @@ class CompetitionProfileCompactCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: SizedBox(
         height: 68,
-        child: Material(
+        child: AppCardMaterial(
           color: CompetitionUiTokens.cardBg(isDark),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(

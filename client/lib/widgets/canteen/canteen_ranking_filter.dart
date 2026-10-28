@@ -1,3 +1,4 @@
+import '../app_card.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/canteen_ranking.dart';
@@ -101,8 +102,7 @@ class CanteenRankingFilterBar extends StatelessWidget {
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+      child: AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         alignment: Alignment.center,
         decoration: BoxDecoration(
@@ -180,7 +180,7 @@ class _LocationFilterSheetState extends State<_LocationFilterSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = widget.isDark;
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),

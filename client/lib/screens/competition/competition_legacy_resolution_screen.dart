@@ -1,6 +1,8 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
 
@@ -56,14 +58,17 @@ class _CompetitionLegacyResolutionScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = CompetitionUiTokens.pageBg(isDark);
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
         title: const Text('历史归并'),
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         surfaceTintColor: Colors.transparent,
       ),
       body: _loading
@@ -74,7 +79,7 @@ class _CompetitionLegacyResolutionScreenState
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                 itemCount: _items.length + 1,
-                separatorBuilder: (_, __) => const Divider(height: 1),
+                separatorBuilder: (_, __) => const AppCardDivider(height: 1),
                 itemBuilder: (_, index) {
                   if (index == 0) {
                     return Padding(

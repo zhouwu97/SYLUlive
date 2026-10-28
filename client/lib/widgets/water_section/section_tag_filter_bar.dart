@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/water_section.dart';
@@ -99,7 +100,7 @@ class SectionTagFilterBar extends StatelessWidget {
 
   Widget _buildSortMenuButton(BuildContext context) {
     final isDefaultSort = currentSort == 'all';
-    return PopupMenuButton<String>(
+    return AppPopupMenuButton<String>(
       tooltip: '排序方式',
       position: PopupMenuPosition.under,
       offset: const Offset(0, 4),

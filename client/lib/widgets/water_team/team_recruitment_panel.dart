@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/water_team_provider.dart';
 import '../../screens/water_team/team_recruitment_applications_screen.dart';
 import 'team_application_sheet.dart';
+import '../app_card.dart';
 
 /// 帖子详情中的招募摘要。审批列表独立跳转，避免详情页承担长列表状态。
 ///
@@ -55,7 +57,7 @@ class TeamRecruitmentPanel extends StatelessWidget {
   Future<void> _cancel(BuildContext context, TeamRecruitmentMeta meta) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (_) => AppAlertDialog(
         title: const Text('取消申请？'),
         content: const Text('取消后，招募仍开放时可以重新申请。'),
         actions: [
@@ -106,7 +108,7 @@ class TeamRecruitmentPanel extends StatelessWidget {
     final color = _statusColor(meta, isDark);
     final provider = context.watch<WaterTeamProvider>();
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -229,7 +231,7 @@ class TeamRecruitmentPanel extends StatelessWidget {
     final action = close ? '关闭' : '重新开启';
     final ok = await showDialog<bool>(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (_) => AppAlertDialog(
               title: Text('$action招募？'),
               content: Text(close
                   ? '关闭后其他用户将不能继续申请。'

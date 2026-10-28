@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../models/post.dart';
 import '../../providers/poll_provider.dart';
 import '../../widgets/community_post_card.dart';
@@ -71,7 +72,10 @@ class _PollCenterScreenState extends State<PollCenterScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final provider = context.watch<PollProvider>();
     final state = provider.stateFor(sort: _sort, category: _category);
     final controller = _scrollController();

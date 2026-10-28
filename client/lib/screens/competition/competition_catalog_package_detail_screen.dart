@@ -1,3 +1,6 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../../widgets/app_page_background.dart';
+import '../../widgets/app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -19,14 +22,17 @@ class CompetitionCatalogPackageDetailScreen extends StatelessWidget {
   final int? activePackageId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = CompetitionUiTokens.pageBg(isDark);
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
         title: Text('目录包 ${package.id}'),
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         surfaceTintColor: Colors.transparent,
       ),
       body: ListView(
@@ -103,7 +109,7 @@ class CompetitionCatalogPackageDetailScreen extends StatelessWidget {
               style:
                   const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          Container(
+          AppCardSurface(
             decoration: BoxDecoration(
               color: CompetitionUiTokens.cardBg(isDark),
               borderRadius: BorderRadius.circular(8),
@@ -135,7 +141,7 @@ class CompetitionCatalogPackageDetailScreen extends StatelessWidget {
       int count(String key) => ((data[key] as List?) ?? const []).length;
       await showDialog<void>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
+        builder: (dialogContext) => AppAlertDialog(
           title: const Text('目录差异'),
           content: Text(
             '新增 ${count('added')} 条\n移除 ${count('removed')} 条\n变更 ${count('changed')} 条',

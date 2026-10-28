@@ -1,3 +1,6 @@
+import '../../providers/theme_provider.dart';
+import 'package:provider/provider.dart';
+import '../app_card.dart';
 import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
@@ -18,7 +21,7 @@ class AiModeSwitch extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Container(
+      child: AppCardSurface(
         height: 48,
         padding: const EdgeInsets.all(2),
         decoration: BoxDecoration(
@@ -84,7 +87,8 @@ class _ModeButton extends StatelessWidget {
           child: Container(
             constraints: const BoxConstraints(minHeight: 44),
             decoration: BoxDecoration(
-              color: isSelected ? colors.surface : Colors.transparent,
+              color: isSelected ? colors.surface.withValues(alpha:
+                  context.watch<ThemeProvider?>()?.frostedGlass == true ? .16 : 1) : Colors.transparent,
               borderRadius: BorderRadius.circular(AppRadius.sm),
               boxShadow: isSelected
                   ? [

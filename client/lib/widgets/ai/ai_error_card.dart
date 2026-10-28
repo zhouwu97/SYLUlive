@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../app_card.dart';
 
 class AiErrorCard extends StatelessWidget {
   final String message;
@@ -15,7 +16,7 @@ class AiErrorCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(

@@ -1,7 +1,9 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/campus_calendar.dart';
 import '../models/agent_context.dart';
 import '../models/campus_timeline.dart';
@@ -19,6 +21,7 @@ import '../services/unified_timeline_service.dart';
 import '../utils/app_feedback.dart';
 import 'ai/ai_assistant_screen.dart';
 import '../widgets/campus/campus_theme.dart';
+import '../widgets/app_card.dart';
 
 class CampusCalendarScreen extends StatefulWidget {
   const CampusCalendarScreen({super.key});
@@ -251,21 +254,24 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final provider = context.watch<CampusCalendarProvider>();
     final calendar = provider.calendar;
     final background = isDark ? CampusTheme.darkBg : CampusTheme.bg;
 
     return Scaffold(
-      backgroundColor: background,
+      backgroundColor: AppPageBackground.color(context, background),
       appBar: AppBar(
         leading: const BackButton(),
         title: const Text('校历'),
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: background,
+        backgroundColor: AppPageBackground.color(context, background),
         surfaceTintColor: Colors.transparent,
         foregroundColor: isDark ? Colors.white : _CalendarPalette.ink,
         actions: [
@@ -497,7 +503,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
               if (importedExams.isNotEmpty && events.isNotEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Divider(height: 1),
+                  child: AppCardDivider(height: 1),
                 ),
               if (events.isNotEmpty) ...[
                 if (importedExams.isNotEmpty)
@@ -525,7 +531,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
   }
 
   void _selectSemester(CampusCalendar calendar) {
-    showModalBottomSheet<void>(
+    showAppModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
@@ -618,7 +624,7 @@ class _CalendarActionSheet extends StatelessWidget {
                 isDark: isDark,
                 onTap: onImportantEvents,
               ),
-              Divider(
+              AppCardDivider(
                 height: 1,
                 indent: 58,
                 color: isDark
@@ -652,7 +658,7 @@ class _CalendarSheetSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SafeArea(
         top: false,
-        child: Container(
+        child: AppCardSurface(
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1E222B) : Colors.white,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -781,7 +787,7 @@ class _CalendarOverviewCard extends StatelessWidget {
     final titleColor = isDark ? Colors.white : _CalendarPalette.ink;
     final mutedColor = isDark ? Colors.white60 : _CalendarPalette.muted;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(18, 17, 14, 17),
       decoration: _CalendarPalette.cardDecoration(isDark),
       child: Column(
@@ -944,7 +950,7 @@ class _CalendarMonthCard extends StatelessWidget {
     final hasMarkers =
         calendar.events.isNotEmpty || calendar.dayOverrides.isNotEmpty;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
       decoration: _CalendarPalette.cardDecoration(isDark),
       child: Column(
@@ -1404,7 +1410,7 @@ class _DayDetailCard extends StatelessWidget {
       ),
     ];
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(16),
       decoration: _CalendarPalette.cardDecoration(isDark),
       child: Column(
@@ -1696,10 +1702,10 @@ class _OfficialCalendarSourceScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
+      backgroundColor: AppPageBackground.color(context, isDark ? CampusTheme.darkBg : CampusTheme.bg),
       appBar: AppBar(
         title: const Text('官方校历原图'),
-        backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
+        backgroundColor: AppPageBackground.color(context, isDark ? CampusTheme.darkBg : CampusTheme.bg),
         surfaceTintColor: Colors.transparent,
       ),
       body: InteractiveViewer(

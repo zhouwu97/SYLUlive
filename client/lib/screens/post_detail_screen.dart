@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../widgets/global_background_wrapper.dart';
 import '../models/startup_destination.dart';
 import '../services/root_page_state_service.dart';
 import '../utils/app_navigator.dart';
@@ -29,6 +32,9 @@ import '../services/emoji_favorite_service.dart';
 import '../services/async_action_guard.dart';
 import '../services/idempotency_key.dart';
 import '../services/post_reply_cache.dart';
+import '../services/reply_notification_service.dart';
+import '../services/reply_notification_session.dart';
+import '../services/reply_notification_state.dart';
 import '../utils/app_feedback.dart';
 import '../utils/image_decode_size.dart';
 import '../utils/post_clipboard.dart';
@@ -38,17 +44,21 @@ import '../widgets/cached_avatar.dart';
 import '../widgets/app_action_popup_menu.dart';
 import '../widgets/post_media/post_media_view.dart';
 import '../widgets/post_content_link_text.dart';
+import '../widgets/responsive_content.dart';
+import '../utils/responsive_util.dart';
 import '../widgets/post_reply/post_reply_list.dart';
 import '../widgets/post_reply/reply_image_media.dart';
 import '../widgets/post_reply_composer.dart';
 import '../widgets/emoji/sticker_catalog.dart';
 import 'create_post_screen.dart';
 import 'court_screen.dart';
+import 'poll/poll_detail_screen.dart';
 import 'image_viewer_screen.dart';
 import 'water_category_feed_route.dart';
 import 'team/team_recruitment_detail_screen.dart';
 
 import '../utils/app_navigation.dart';
+import '../widgets/app_card.dart';
 
 const _ignoredLegacyWaterTagNames = {'其他', '其它', '默认', '未分类', '综合'};
 
@@ -119,7 +129,7 @@ class _PinPostDialogState extends State<_PinPostDialog> {
       dayOptions.add(30);
     }
 
-    return AlertDialog(
+    return AppAlertDialog(
       title: const Text('置顶到首页'),
       content: SingleChildScrollView(
         child: Column(
@@ -208,6 +218,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
 
   final Map<int, GlobalKey> _replyKeys = {};
   final GlobalKey _commentsSectionKey = GlobalKey();
+  final GlobalKey _marketComposerKey = GlobalKey();
+  final ScrollController _marketScrollController = ScrollController();
   bool _hasScrolledToTarget = false;
   bool _hasScrolledToReplies = false;
   int? _highlightedReplyId;
@@ -268,7 +280,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       _isLoading = false;
     }
     _activeTargetReplyId = widget.targetReplyId;
-    _loadPost(forceReplies: false);
+    if (_post?.isPoll != true) _loadPost(forceReplies: false);
     if (widget.scrollToReplies && widget.initialPost != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _scheduleScrollToReplies();
@@ -323,6 +335,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       appRouteObserver.unsubscribe(this);
     }
     _replyComposerController.dispose();
+    _marketScrollController.dispose();
     _highlightTimer?.cancel();
     super.dispose();
   }
@@ -350,8 +363,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         _errorMessage = null;
       });
     try {
-      final response = await _dio.get('/posts/${widget.postId}');
+      final response = await _dio.get('/posts/${widget.postId}',
+          queryParameters: {'capabilities': 'poll_v1'});
       final fetchedPost = Post.fromJson(response.data);
+      if (!mounted) return;
+      final currentAuth = context.read<AuthProvider>();
+      if (visitAccountEpoch != null &&
+          currentAuth.accountSessionEpoch != visitAccountEpoch) {
+        return;
+      }
+      // 历史记录、通知和仅有帖子 ID 的入口也必须恢复投票详情。
+      if (fetchedPost.isPoll) {
+        setState(() {
+          _post = fetchedPost;
+          _isLoading = false;
+        });
+        context.read<PostProvider>().updatePostInCache(fetchedPost);
+        return;
+      }
       final recruitmentId = fetchedPost.teamRecruitment?.recruitmentId;
       if (recruitmentId != null && recruitmentId > 0 && mounted) {
         Navigator.of(context).pushReplacement(
@@ -467,10 +496,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   Future<void> _prepareTargetReplyAndScroll() async {
     final targetId = _activeTargetReplyId;
     if (targetId == null) return;
+    final auth = context.read<AuthProvider>();
+    final session = ReplyNotificationSession.capture(auth);
 
     // 快速路径：目标已在已加载分页中 → 原有滚动/高亮逻辑。
     final loadedTarget = _replies.where((r) => r.id == targetId).firstOrNull;
     if (loadedTarget != null) {
+      unawaited(_consumeTargetReplyNotification(targetId));
       setState(() {}); // 触发重新渲染，确保子组件挂载
       _scheduleScrollToTarget(targetId, 3);
       return;
@@ -503,13 +535,45 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     } catch (_) {
       return;
     }
-    if (!mounted) return;
+    if (!mounted || !session.isCurrent(auth)) {
+      return;
+    }
     // 目标是根评论本身时打开线程 sheet；子回复目标则锚定到该条并高亮。
+    unawaited(_consumeTargetReplyNotification(targetId));
     final anchored = target.parentReplyId != null;
     await _showReplyThreadSheet(
       parentReply: root,
       anchorReply: anchored ? target : null,
     );
+  }
+
+  final Set<String> _consumedReplyNotificationTargets = {};
+
+  Future<void> _consumeTargetReplyNotification(int replyId) async {
+    final auth = context.read<AuthProvider>();
+    final session = ReplyNotificationSession.capture(auth);
+    final accountId = session.accountId;
+    if (accountId == null) return;
+    final key = '$accountId:${session.accountEpoch}:$replyId';
+    if (!_consumedReplyNotificationTargets.add(key)) return;
+    try {
+      await ReplyNotificationService(auth.dio,
+          recipientUserId: accountId,
+          isCurrentSession: () => session.isCurrent(auth)).markReplyRead(
+        postId: widget.postId,
+        replyId: replyId,
+      );
+      if (!session.isCurrent(auth)) {
+        return;
+      }
+      ReplyNotificationState.instance.requestRefresh(
+        accountId: accountId,
+        sessionGeneration: auth.sessionGeneration,
+      );
+    } catch (_) {
+      // 读取失败保留未读，下次定位允许重试；旧服务端仍可打开原帖。
+      _consumedReplyNotificationTargets.remove(key);
+    }
   }
 
   void _scheduleScrollToTarget(int targetId, int retries) {
@@ -1749,7 +1813,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       _dio.get('/user/revision-proposals/received'),
     ]);
     if (!mounted) return;
-    await showModalBottomSheet(
+    await showAppModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (ctx) {
@@ -1808,7 +1872,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final summaryController = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('提交修改版本'),
         content: SizedBox(
           width: 520,
@@ -1881,7 +1945,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   Widget _buildCollabApplicationTile(Map<String, dynamic> item) {
     final applicant = item['applicant'] as Map?;
     final status = item['status']?.toString() ?? '';
-    return Card(
+    return AppCard(
       child: ListTile(
         title: Text(applicant?['nickname']?.toString() ?? '申请人'),
         subtitle: Text('${item['reason'] ?? ''}\n状态：$status'),
@@ -1908,7 +1972,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   Widget _buildRevisionProposalTile(Map<String, dynamic> item) {
     final proposer = item['proposer'] as Map?;
     final status = item['status']?.toString() ?? '';
-    return Card(
+    return AppCard(
       child: ListTile(
         title: Text(item['proposed_title']?.toString().isNotEmpty == true
             ? item['proposed_title'].toString()
@@ -2025,6 +2089,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pollPost = _post;
+    if (pollPost?.isPoll == true) {
+      return PollDetailScreen(
+        key: ValueKey('post-poll-${pollPost!.id}'),
+        pollId: pollPost.pollMeta!.id,
+        initialPost: pollPost,
+        targetReplyId: widget.targetReplyId,
+        isDesktopSplitMode: widget.isDesktopSplitMode,
+        hideBackButton: widget.hideBackButton,
+        onAuthorTap: widget.onAuthorTap,
+      );
+    }
+    final backgroundSettings = context.watch<ThemeProvider?>();
+    final customBackground =
+        backgroundSettings?.shouldShowCustomBackground == true;
     final currentUser = context.watch<AuthProvider>().user;
     final canDelete = _post != null &&
         currentUser != null &&
@@ -2043,13 +2122,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final bool transparentMode =
         widget.isDesktopSplitMode && widget.hideBackButton;
 
-    return PopScope(
+    final page = PopScope(
       canPop: true,
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: overlayStyle,
         child: Scaffold(
           resizeToAvoidBottomInset: false,
-          backgroundColor: transparentMode
+          backgroundColor: transparentMode || customBackground
               ? Colors.transparent
               : (isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
           appBar: transparentMode
@@ -2101,6 +2180,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         ),
       ),
     );
+    return backgroundSettings == null || transparentMode
+        ? page
+        : GlobalBackgroundWrapper(child: page);
   }
 
   /// Scaffold 不随 IME resize 时，由详情页自己为 Composer 预留键盘 viewport。
@@ -2220,8 +2302,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     required bool isAdmin,
   }) {
     return AppBar(
-      backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
-      elevation: 0.5,
+      backgroundColor:
+          context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
+              ? Colors.transparent
+              : isDark
+                  ? const Color(0xFF131720)
+                  : Colors.white,
+      surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
+      elevation: 0,
       automaticallyImplyLeading: !widget.hideBackButton,
       leading: widget.hideBackButton ? null : const BackButton(),
       titleSpacing: widget.hideBackButton ? 16 : 0,
@@ -2275,7 +2364,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     );
   }
 
-  /// 水帖专用 AppBar：不透明背景 + 分类入口 + 更多菜单
+  /// 水帖分类与操作栏沿用当前页面背景。
   PreferredSizeWidget _buildWaterAppBar(
     bool isDark, {
     required bool canEdit,
@@ -2284,8 +2373,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     required bool isAdmin,
   }) {
     return AppBar(
-      backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
-      elevation: 0.5,
+      backgroundColor: context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
+          ? Colors.transparent : isDark ? const Color(0xFF131720) : Colors.white,
+      surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
+      elevation: 0,
       automaticallyImplyLeading: !widget.hideBackButton,
       leadingWidth: widget.hideBackButton ? null : 56,
       leading: widget.hideBackButton ? null : const BackButton(),
@@ -2484,7 +2576,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         }
       }
 
-      entries.add(const Divider());
+      entries.add(const AppCardDivider());
     }
 
     if (isAdmin && _post?.boardId == 1) {
@@ -2545,7 +2637,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       }
     }
 
-    entries.add(const Divider());
+    entries.add(const AppCardDivider());
 
     if (_post != null &&
         (_post!.content.trim().isNotEmpty || _post!.title.trim().isNotEmpty)) {
@@ -2662,7 +2754,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(40),
-        child: Container(
+        child: AppCardSurface(
           padding: const EdgeInsets.all(28),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF171B24) : Colors.white,
@@ -2715,12 +2807,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     );
   }
 
-  // ---- 集市布局（完全保留不变） ----
+  // ---- 集市布局 ----
 
   Widget _buildMarketDetail(bool isDark) {
+    return ResponsiveContent(
+      maxWidth:
+          _post!.images.isEmpty ? ResponsiveUtil.readingContentWidth : 1200,
+      child: LayoutBuilder(
+        builder: (context, constraints) => _buildMarketDetailLayout(
+          isDark,
+          useSplitLayout:
+              constraints.maxWidth >= ResponsiveUtil.tabletMaxWidth &&
+                  _post!.images.isNotEmpty,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMarketDetailLayout(bool isDark, {required bool useSplitLayout}) {
     final p = _post!;
-    if (widget.isDesktopSplitMode) {
+    if (useSplitLayout) {
       return Row(
+        key: const ValueKey('market-detail-split'),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 左侧文本与评论区
@@ -2731,6 +2839,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                 Expanded(
                   child: _buildInputDismissRegion(
                     child: SingleChildScrollView(
+                      controller: _marketScrollController,
                       padding: const EdgeInsets.fromLTRB(24, 24, 24, 80),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2874,10 +2983,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     }
 
     return Column(
+      key: const ValueKey('market-detail-single'),
       children: [
         Expanded(
           child: _buildInputDismissRegion(
             child: SingleChildScrollView(
+              controller: _marketScrollController,
               padding: const EdgeInsets.only(bottom: 80),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2893,7 +3004,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                     ),
                   Transform.translate(
                     offset: Offset(0, p.images.isNotEmpty ? -24 : 0),
-                    child: Container(
+                    child: AppCardSurface(
                       width: double.infinity,
                       decoration: BoxDecoration(
                         color: isDark ? const Color(0xFF131720) : Colors.white,
@@ -3129,7 +3240,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         children: [
           // 白色内容卡片：作者 + 标题 + 正文 + 图片 + 信息 + 操作栏
           _buildPostContentDismissWrapper(
-            child: Container(
+            child: AppCardSurface(
               color: isDark ? const Color(0xFF131720) : Colors.white,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3154,10 +3265,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           // 8px 分区
           Container(
             height: 8,
-            color: isDark ? const Color(0xFF1A1E28) : const Color(0xFFF0F0F0),
+            color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                ? Colors.transparent
+                : isDark
+                    ? const Color(0xFF1A1E28)
+                    : const Color(0xFFF0F0F0),
           ),
           // 白色评论区卡片
-          Container(
+          AppCardSurface(
             key: _commentsSectionKey,
             color: isDark ? const Color(0xFF131720) : Colors.white,
             child: _buildWaterCommentsSection(isDark),
@@ -3707,7 +3822,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           _openAuthorHome(p.author!.id);
         }
       },
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: isDark ? const Color(0x99171B24) : const Color(0x0A000000),
@@ -4077,7 +4192,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   void _showReplySortSheet(bool isDark) {
-    showModalBottomSheet<void>(
+    showAppModalBottomSheet<void>(
       context: context,
       backgroundColor: isDark ? const Color(0xFF1E1E32) : Colors.white,
       shape: const RoundedRectangleBorder(
@@ -4332,7 +4447,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               margin: const EdgeInsets.only(left: 44, top: 4),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: isDark
+                color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                    ? Colors.transparent : isDark
                     ? Colors.white.withValues(alpha: 0.03)
                     : const Color(0xFFF8F9FA),
                 borderRadius: BorderRadius.circular(12),
@@ -4497,7 +4613,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1F222A) : const Color(0xFFF7F8FA),
+              color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                  ? Colors.transparent : isDark ? const Color(0xFF1F222A) : const Color(0xFFF7F8FA),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Column(
@@ -4535,14 +4652,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   InlineSpan _buildCompactContentSpan(Reply r, bool isDark) {
     if (r.hasSticker) {
       return TextSpan(
-        text: r.hasTextContent ? '${r.content} [表情]' : '[表情]',
+        text: '${r.displayContent} [表情]',
         style: TextStyle(
           fontSize: 12.5,
           color: isDark ? Colors.white60 : const Color(0xFF4B5563),
         ),
       );
     }
-    final content = r.content;
+    final content = r.displayContent;
     final atRegex = RegExp(r'^@(\S+)\s');
     final match = atRegex.firstMatch(content);
     if (match != null) {
@@ -4724,7 +4841,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                     maxChildSize: 0.92,
                     expand: false,
                     builder: (context, scrollController) {
-                      return Container(
+                      return AppCardSurface(
+                        key: const ValueKey('reply-thread-surface'),
                         decoration: BoxDecoration(
                           color:
                               isDark ? const Color(0xFF171B24) : Colors.white,
@@ -4778,6 +4896,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                               ),
                             ),
                             PostReplyComposer(
+                              embedded: true,
                               controller: threadComposerController,
                               sending: isSending,
                               enabled: context.watch<AuthProvider>().isLoggedIn,
@@ -4898,7 +5017,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           ),
         ),
         const SizedBox(height: 10),
-        Divider(
+        AppCardDivider(
           height: 1,
           thickness: 1,
           color: isDark ? Colors.white10 : Colors.grey[200],
@@ -5060,8 +5179,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
+        AppCardDivider(
           height: 8,
+          thickness: 8,
           color: isDark ? Colors.black26 : const Color(0xFFF3F4F6),
         ),
         Padding(
@@ -5168,6 +5288,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           );
         },
         childCount: children.length + (hasTrailer ? 1 : 0),
+        addRepaintBoundaries:
+            context.watch<ThemeProvider?>()?.frostedGlass != true,
       ),
     );
   }
@@ -5387,7 +5509,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         onTextTap: onTextTap,
       );
     }
-    final content = r.content;
+    final content = r.displayContent;
     final atRegex = RegExp(r'^@(\S+)\s');
     final match = atRegex.firstMatch(content);
 
@@ -5395,7 +5517,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       text: content,
       selectable: true,
       onPlainTextTap: onTextTap,
-      leadingTextEnd: match?.end,
+      leadingTextEnd: r.replyTargetPrefix.isNotEmpty
+          ? r.replyTargetPrefix.length
+          : match?.end,
       leadingTextStyle: TextStyle(
         fontSize: 13,
         height: 1.4,
@@ -5417,7 +5541,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     VoidCallback? onTextTap,
   }) {
     final textWidget = PostContentLinkText(
-      text: reply.content,
+      text: reply.displayContent,
+      leadingTextEnd: reply.replyTargetPrefix.length,
+      leadingTextStyle: TextStyle(color: Theme.of(context).colorScheme.primary),
       selectable: true,
       onPlainTextTap: onTextTap,
       style: TextStyle(
@@ -5427,7 +5553,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       ),
     );
     final contentWidgets = <Widget>[];
-    if (reply.hasTextContent) {
+    if (reply.hasTextContent || reply.replyTargetPrefix.isNotEmpty) {
       contentWidgets.add(textWidget);
     }
     if (reply.hasSticker) {
@@ -5505,7 +5631,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   // ---- 回复输入（集市保留） ----
 
   Widget _buildReplyBar(bool isDark) {
-    return _buildComposerBody(isDark);
+    return KeyedSubtree(
+      key: _marketComposerKey,
+      child: _buildComposerBody(isDark),
+    );
   }
 
   // ---- 工具 ----
@@ -5669,7 +5798,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   void _showReplyActionSheet(Reply r, bool isOwn, bool isDark) {
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       backgroundColor: isDark ? const Color(0xFF1E1E32) : Colors.white,
       shape: const RoundedRectangleBorder(
@@ -5724,7 +5853,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final service = EmojiFavoriteService.instance;
     final isFavorite = await service.containsSticker(sticker.id);
     if (!mounted) return;
-    final shouldToggle = await showModalBottomSheet<bool>(
+    final shouldToggle = await showAppModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
@@ -5753,7 +5882,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final service = EmojiFavoriteService.instance;
     final isFavorite = await service.containsImage(normalizedUrl);
     if (!mounted) return;
-    final shouldToggle = await showModalBottomSheet<bool>(
+    final shouldToggle = await showAppModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
@@ -6032,7 +6161,7 @@ class _PremiumInputDialogState extends State<_PremiumInputDialog> {
     final titleColor = isDark ? Colors.white : const Color(0xFF2D3142);
     final accent = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
 
-    return AlertDialog(
+    return AppAlertDialog(
       backgroundColor: dialogBackground,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -6100,7 +6229,7 @@ class _PremiumOptionsDialog<T> extends StatelessWidget {
     final tileColor =
         isDark ? const Color(0x0AFFFFFF) : const Color(0x08000000);
 
-    return AlertDialog(
+    return AppAlertDialog(
       backgroundColor: dialogBackground,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

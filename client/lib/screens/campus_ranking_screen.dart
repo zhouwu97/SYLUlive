@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/teacher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/course_subject_provider.dart';
@@ -14,6 +15,7 @@ import 'admin_teacher_governance_screen.dart';
 import 'major_detail_screen.dart';
 import 'subject_ranking_detail_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import '../widgets/app_card.dart';
 
 
 class CampusRankingScreen extends StatefulWidget {
@@ -83,12 +85,15 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
       };
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = _tabAccent(isDark);
 
     return Scaffold(
-      backgroundColor: RankingTokens.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
       appBar: AppBar(
         leading: const BackButton(),
         title: const Text(
@@ -98,7 +103,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: RankingTokens.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
         foregroundColor: RankingTokens.titleColor(isDark),
         actions: [
@@ -156,7 +161,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
   Widget _buildSegmentedControl(bool isDark) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Container(
+      child: AppCardSurface(
         height: RankingTokens.tabHeight,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
@@ -292,7 +297,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
 
   Widget _buildSearchBar(bool isDark) => Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-        child: Container(
+        child: AppCardSurface(
           height: RankingTokens.searchHeight,
           decoration: BoxDecoration(
             color: RankingTokens.cardBg(isDark),
@@ -306,6 +311,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
               color: RankingTokens.titleColor(isDark),
             ),
             decoration: InputDecoration(
+              filled: false,
               hintText: _tabCtrl.index == 0
                   ? '搜索学科或教师...'
                   : '搜索专业...',
@@ -537,7 +543,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
           borderRadius: BorderRadius.circular(RankingTokens.cardRadius),
           onTap: onTap,
           onLongPress: onLongPress,
-          child: Container(
+          child: AppCardSurface(
             padding: const EdgeInsets.all(12),
             decoration: RankingTokens.cardDecoration(isDark),
             child: Row(
@@ -919,7 +925,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
 
             return Padding(
               padding: EdgeInsets.only(bottom: bottomInset),
-              child: Container(
+              child: AppCardSurface(
                 constraints: BoxConstraints(
                   maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.85,
                 ),
@@ -1295,7 +1301,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
 
             return Padding(
               padding: EdgeInsets.only(bottom: bottomInset),
-              child: Container(
+              child: AppCardSurface(
                 constraints: BoxConstraints(
                   maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.85,
                 ),

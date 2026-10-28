@@ -1,7 +1,10 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/teacher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/teacher_provider.dart';
@@ -83,7 +86,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('确认删除'),
         content: Text('确定要删除教师「${widget.teacherName}」吗？此操作不可撤销。'),
         actions: [
@@ -127,7 +130,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('删除评价'),
         content: const Text('确定删除自己的这条评价吗？删除后评分会重新计算。'),
         actions: [
@@ -164,7 +167,10 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
     final accent = RankingTokens.teacherAccent(isDark);
@@ -176,7 +182,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         Navigator.pop(context, _didChange);
       },
       child: Scaffold(
-        backgroundColor: RankingTokens.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
         extendBodyBehindAppBar: false,
         appBar: AppBar(
           systemOverlayStyle: SystemUiOverlayStyle(
@@ -196,13 +202,13 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
             onPressed: () => Navigator.pop(context, _didChange),
           ),
           title: const Text('教师评价'),
-          backgroundColor: RankingTokens.pageBg(isDark),
+          backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
           actions: [
             if (context.watch<AuthProvider>().user?.isAdmin == true)
-              PopupMenuButton<String>(
+              AppPopupMenuButton<String>(
                 icon: Icon(
                   Icons.more_horiz,
                   color: RankingTokens.titleColor(isDark),

@@ -6,6 +6,7 @@ import '../../../theme/app_radius.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../theme/app_text_styles.dart';
 import '../../../widgets/water_section/section_avatar.dart';
+import '../../../widgets/app_card.dart';
 
 /// Composer 顶部的一级版块选择器。
 ///
@@ -54,7 +55,8 @@ class PublishSectionSelector extends StatelessWidget {
             InkWell(
               onTap: onTap,
               borderRadius: BorderRadius.circular(AppRadius.md),
-              child: Container(
+              child: AppCardSurface(
+                key: const ValueKey('publish-section-surface'),
                 constraints: const BoxConstraints(minHeight: 52),
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.md,

@@ -24,6 +24,12 @@ type emailCodeInput struct {
 	Purpose string `json:"purpose" binding:"required"`
 }
 
+// 登录后的用途由当前账号实际绑定状态决定，保留显式 purpose 供旧客户端校验。
+type userEmailCodeInput struct {
+	Email   string `json:"email" binding:"required"`
+	Purpose string `json:"purpose"`
+}
+
 type emailRegisterInput struct {
 	Email    string `json:"email" binding:"required"`
 	Code     string `json:"code" binding:"required,len=6"`
@@ -161,7 +167,7 @@ func (h *AuthHandler) RegisterWithEmail(c *gin.Context) {
 
 // RequestUserEmailCode 为已登录用户发送绑定或修改邮箱验证码。
 func (h *AuthHandler) RequestUserEmailCode(c *gin.Context) {
-	var input emailCodeInput
+	var input userEmailCodeInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
@@ -176,11 +182,11 @@ func (h *AuthHandler) RequestUserEmailCode(c *gin.Context) {
 	if user.Email != "" {
 		expectedPurpose = models.EmailVerificationPurposeChange
 	}
-	if input.Purpose != expectedPurpose {
+	if input.Purpose != "" && input.Purpose != expectedPurpose {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码用途与当前账号状态不一致"})
 		return
 	}
-	if err := h.requestEmailCode(c, input.Email, input.Purpose, &userID); err != nil {
+	if err := h.requestEmailCode(c, input.Email, expectedPurpose, &userID); err != nil {
 		writeEmailVerificationError(c, err)
 		return
 	}

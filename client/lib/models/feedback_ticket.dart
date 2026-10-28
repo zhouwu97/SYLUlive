@@ -129,6 +129,16 @@ class FeedbackTicket {
     return statusLabel(isAdmin: false);
   }
 
+  String get progressDescription {
+    final note = statusNote?.trim() ?? '';
+    // 历史工单和旧管理端会沿用提交时的自动说明，不能让它覆盖实际状态。
+    if (note.isNotEmpty &&
+        !(status != 'pending' && note == '工单已提交，等待管理员查看受理')) {
+      return note;
+    }
+    return statusDisplayName;
+  }
+
   String get adminStatusDisplayName {
     return statusLabel(isAdmin: true);
   }

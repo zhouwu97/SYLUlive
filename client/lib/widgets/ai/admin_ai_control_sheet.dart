@@ -1,3 +1,4 @@
+import '../app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +9,11 @@ import '../../providers/auth_provider.dart';
 import '../../screens/ai/ai_model_settings_screen.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
+
+Color _secondaryColor(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark
+        ? AppColors.textSecondaryDark
+        : AppColors.textSecondaryLight;
 
 /// 管理员专属 AI 控制面板。官方运行数据只显示服务端返回值，不填充演示数字。
 class AdminAiControlSheet extends StatefulWidget {
@@ -46,6 +52,10 @@ class _AdminAiControlSheetState extends State<AdminAiControlSheet> {
   }
 
   Future<void> _loadMetrics() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final response = await widget.dio.get(
         '/admin/ai/metrics',
@@ -73,7 +83,7 @@ class _AdminAiControlSheetState extends State<AdminAiControlSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
+    return AppCardSurface(
       constraints: const BoxConstraints(maxHeight: 760),
       decoration: BoxDecoration(
         color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
@@ -87,26 +97,28 @@ class _AdminAiControlSheetState extends State<AdminAiControlSheet> {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                  color: AppColors.borderNormalLight,
+                  color: isDark
+                      ? AppColors.borderNormalDark
+                      : AppColors.borderNormalLight,
                   borderRadius: BorderRadius.circular(AppRadius.pill))),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 14, 12, 12),
             child: Row(
               children: [
-                const Icon(Icons.tune_rounded, color: AppColors.brandPrimary),
+                Icon(Icons.tune_rounded,
+                    color: Theme.of(context).colorScheme.primary),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('AI 调用管理',
+                      const Text('AI 调用管理',
                           style: TextStyle(
                               fontSize: 17, fontWeight: FontWeight.w700)),
-                      SizedBox(height: 3),
+                      const SizedBox(height: 3),
                       Text('仅管理员可见 · 生产与个人调试隔离',
                           style: TextStyle(
-                              fontSize: 11.5,
-                              color: AppColors.textSecondaryLight)),
+                              fontSize: 11.5, color: _secondaryColor(context))),
                     ],
                   ),
                 ),
@@ -128,33 +140,37 @@ class _AdminAiControlSheetState extends State<AdminAiControlSheet> {
   Widget _officialPanel() {
     final metrics = _metrics;
     return ListView(
+      addRepaintBoundaries: false,
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
       children: [
-        Container(
+        AppCardSurface(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-              color: AppColors.brandSurfaceLight,
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? AppColors.brandSurfaceDark
+                  : AppColors.brandSurfaceLight,
               borderRadius: BorderRadius.circular(AppRadius.md)),
           child: Row(
             children: [
-              const Expanded(
+              Expanded(
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                    Text('AI Runtime 状态',
+                    const Text('AI Runtime 状态',
                         style: TextStyle(
                             fontSize: 14, fontWeight: FontWeight.w700)),
-                    SizedBox(height: 3),
+                    const SizedBox(height: 3),
                     Text('校园 Agent、MCP、设备桥接状态来自当前服务',
                         style: TextStyle(
-                            fontSize: 11.5,
-                            color: AppColors.textSecondaryLight))
+                            fontSize: 11.5, color: _secondaryColor(context)))
                   ])),
               Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                   decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? AppColors.surfaceMutedDark
+                          : Colors.white,
                       borderRadius: BorderRadius.circular(AppRadius.pill)),
                   child: Text(
                       _loading
@@ -162,9 +178,9 @@ class _AdminAiControlSheetState extends State<AdminAiControlSheet> {
                           : _error == null
                               ? '生产在线'
                               : '状态未知',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 10.5,
-                          color: AppColors.brandPrimary,
+                          color: Theme.of(context).colorScheme.primary,
                           fontWeight: FontWeight.w700))),
             ],
           ),
@@ -178,11 +194,9 @@ class _AdminAiControlSheetState extends State<AdminAiControlSheet> {
         const SizedBox(height: 12),
         _Section(title: '最近调用', child: _recentCalls(metrics)),
         const SizedBox(height: 12),
-        const Text('费用、Token、错误码与延迟均由服务端 usage ledger 聚合；客户端不自行计算，也不展示密钥。',
+        Text('费用、Token、错误码与延迟均由服务端 usage ledger 聚合；客户端不自行计算，也不展示密钥。',
             style: TextStyle(
-                fontSize: 11.5,
-                height: 1.45,
-                color: AppColors.textSecondaryLight)),
+                fontSize: 11.5, height: 1.45, color: _secondaryColor(context))),
       ],
     );
   }
@@ -196,11 +210,9 @@ class _AdminAiControlSheetState extends State<AdminAiControlSheet> {
         const Text('我的 AI',
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
-        const Text('复用个人助手的本机 Provider 配置。只影响当前管理员自己的测试，不改变官方 AI 或普通用户路由。',
+        Text('复用个人助手的本机 Provider 配置。只影响当前管理员自己的测试，不改变官方 AI 或普通用户路由。',
             style: TextStyle(
-                fontSize: 12.5,
-                height: 1.45,
-                color: AppColors.textSecondaryLight)),
+                fontSize: 12.5, height: 1.45, color: _secondaryColor(context))),
         const SizedBox(height: 14),
         _Section(
           title: 'Provider',
@@ -237,19 +249,21 @@ class _AdminAiControlSheetState extends State<AdminAiControlSheet> {
           ),
         ),
         const SizedBox(height: 12),
-        const _Section(
+        _Section(
             title: '测试边界',
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('✓ 普通对话', style: TextStyle(fontSize: 12.5)),
-              SizedBox(height: 6),
-              Text('✓ Tool Calling（只读/模拟工具）', style: TextStyle(fontSize: 12.5)),
-              SizedBox(height: 6),
-              Text('○ 真实 MCP 数据（需要单独授权）', style: TextStyle(fontSize: 12.5)),
-              SizedBox(height: 10),
+              const Text('✓ 普通对话', style: TextStyle(fontSize: 12.5)),
+              const SizedBox(height: 6),
+              const Text('✓ Tool Calling（只读/模拟工具）',
+                  style: TextStyle(fontSize: 12.5)),
+              const SizedBox(height: 6),
+              const Text('○ 真实 MCP 数据（需要单独授权）',
+                  style: TextStyle(fontSize: 12.5)),
+              const SizedBox(height: 10),
               Text('测试请求不会写入生产数据。',
                   style: TextStyle(
-                      fontSize: 11.5, color: AppColors.textSecondaryLight))
+                      fontSize: 11.5, color: _secondaryColor(context)))
             ])),
       ],
     );
@@ -258,9 +272,8 @@ class _AdminAiControlSheetState extends State<AdminAiControlSheet> {
   Widget _modelSummary(Map<String, dynamic>? metrics) {
     final models = metrics?['models'];
     if (models is! List || models.isEmpty) {
-      return const Text('暂不可用',
-          style:
-              TextStyle(fontSize: 12.5, color: AppColors.textSecondaryLight));
+      return Text('暂不可用',
+          style: TextStyle(fontSize: 12.5, color: _secondaryColor(context)));
     }
     return Column(children: [
       for (final item in models.whereType<Map>())
@@ -273,9 +286,8 @@ class _AdminAiControlSheetState extends State<AdminAiControlSheet> {
   Widget _recentCalls(Map<String, dynamic>? metrics) {
     final calls = metrics?['recent_calls'];
     if (calls is! List || calls.isEmpty) {
-      return const Text('暂不可用',
-          style:
-              TextStyle(fontSize: 12.5, color: AppColors.textSecondaryLight));
+      return Text('暂不可用',
+          style: TextStyle(fontSize: 12.5, color: _secondaryColor(context)));
     }
     return Column(children: [
       for (final item in calls.whereType<Map>())
@@ -330,15 +342,15 @@ class _Tab extends StatelessWidget {
                   border: Border(
                       bottom: BorderSide(
                           color: selected
-                              ? AppColors.brandPrimary
+                              ? Theme.of(context).colorScheme.primary
                               : Colors.transparent,
                           width: 2))),
               child: Text(label,
                   style: TextStyle(
                       fontSize: 13,
                       color: selected
-                          ? AppColors.brandPrimary
-                          : AppColors.textSecondaryLight,
+                          ? Theme.of(context).colorScheme.primary
+                          : _secondaryColor(context),
                       fontWeight:
                           selected ? FontWeight.w700 : FontWeight.w500)))));
 }
@@ -361,6 +373,7 @@ class _MetricGrid extends StatelessWidget {
     }
 
     return GridView.count(
+        addRepaintBoundaries: false,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         crossAxisCount: 2,
@@ -382,7 +395,7 @@ class _Metric extends StatelessWidget {
   final String label;
   final String value;
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => AppCardSurface(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
           color: Theme.of(context).brightness == Brightness.dark
@@ -394,8 +407,8 @@ class _Metric extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(label,
-                style: const TextStyle(
-                    fontSize: 10.5, color: AppColors.textSecondaryLight)),
+                style:
+                    TextStyle(fontSize: 10.5, color: _secondaryColor(context))),
             const SizedBox(height: 4),
             Text(value,
                 maxLines: 1,
@@ -410,7 +423,7 @@ class _Section extends StatelessWidget {
   final String title;
   final Widget child;
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => AppCardSurface(
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
           color: Theme.of(context).brightness == Brightness.dark
@@ -439,8 +452,8 @@ class _ConfigRow extends StatelessWidget {
       child: Row(children: [
         Expanded(
             child: Text(label,
-                style: const TextStyle(
-                    fontSize: 12, color: AppColors.textSecondaryLight))),
+                style:
+                    TextStyle(fontSize: 12, color: _secondaryColor(context)))),
         Flexible(
             child: Text(value,
                 textAlign: TextAlign.right,

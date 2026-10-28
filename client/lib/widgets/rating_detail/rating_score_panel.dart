@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'ranking_tokens.dart';
 import 'rating_distribution_bar.dart';
+import '../app_card.dart';
 
 class RatingScorePanel extends StatelessWidget {
   final double averageStar;
@@ -34,7 +35,7 @@ class RatingScorePanel extends StatelessWidget {
       sampleHint = '评价数据逐渐稳定';
     }
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       decoration: RankingTokens.cardDecoration(isDark),
       child: Column(

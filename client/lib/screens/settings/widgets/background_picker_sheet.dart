@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_card.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -246,7 +248,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
     final title = _isLandscape ? '删除横屏背景' : '删除竖屏背景';
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Text(title),
         content: Text('确定要删除已保存的${_isLandscape ? '横屏' : '竖屏'}背景图片吗？'),
         actions: [
@@ -278,7 +280,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
   Future<void> _confirmClearAll(ThemeProvider themeProvider) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('删除全部背景'),
         content: const Text('确定要删除已保存的竖屏和横屏背景图片吗？删除后将自动切换为简洁模式。'),
         actions: [
@@ -323,7 +325,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
         ? themeProvider.hasLandscapeBackground
         : themeProvider.hasBackground;
 
-    return Container(
+    return AppCardSurface(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.82,
       ),
@@ -450,10 +452,8 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                               children: [
                                 Image.asset(
                                   previewAsset,
-                                  fit: _isLandscape
-                                      ? BoxFit.cover
-                                      : BoxFit.contain,
-                                  alignment: Alignment.topCenter,
+                                  fit: BoxFit.cover,
+                                  alignment: Alignment.center,
                                   errorBuilder: (_, __, ___) => Container(
                                     color: isDark
                                         ? CampusTheme.darkCard

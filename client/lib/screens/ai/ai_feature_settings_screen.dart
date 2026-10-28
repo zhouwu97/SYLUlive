@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../features/ai_runtime/ai_feature_flags.dart';
 
 class AIFeatureSettingsScreen extends StatefulWidget {
@@ -32,7 +33,10 @@ class _AIFeatureSettingsScreenState extends State<AIFeatureSettingsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final values = _values;
     return Scaffold(
       appBar: AppBar(title: const Text('AI 功能开关')),

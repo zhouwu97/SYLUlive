@@ -1,4 +1,7 @@
+import 'package:provider/provider.dart';
+import '../../../providers/theme_provider.dart';
 import 'package:flutter/material.dart';
+import '../../../widgets/app_card.dart';
 
 import '../../../models/publish_image_item.dart';
 import '../../../theme/app_colors.dart';
@@ -10,6 +13,7 @@ import 'publish_image_grid.dart';
 class PublishMediaSection extends StatelessWidget {
   final List<PublishImageItem> images;
   final bool canAddMore;
+  final bool canRemove;
   final int maxImages;
   final VoidCallback onAdd;
   final ValueChanged<String> onRemove;
@@ -20,6 +24,7 @@ class PublishMediaSection extends StatelessWidget {
     super.key,
     required this.images,
     required this.canAddMore,
+    this.canRemove = true,
     required this.maxImages,
     required this.onAdd,
     required this.onRemove,
@@ -30,6 +35,7 @@ class PublishMediaSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
     final secondary =
         isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
     return Padding(
@@ -64,19 +70,31 @@ class PublishMediaSection extends StatelessWidget {
           if (images.isEmpty)
             SizedBox(
               height: 44,
-              child: OutlinedButton.icon(
-                onPressed: canAddMore ? onAdd : null,
-                icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-                label: const Text('添加图片'),
-                style: OutlinedButton.styleFrom(
-                  alignment: Alignment.centerLeft,
-                  foregroundColor: isDark
-                      ? AppColors.textPrimaryDark
-                      : AppColors.textPrimaryLight,
-                  side: BorderSide(
-                    color: isDark
-                        ? AppColors.borderNormalDark
-                        : AppColors.borderNormalLight,
+              child: AppCardSurface(
+                key: const ValueKey('water-image-add-surface'),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? AppColors.surfaceSecondaryDark
+                      : AppColors.surfaceSecondaryLight,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: OutlinedButton.icon(
+                  onPressed: canAddMore ? onAdd : null,
+                  icon:
+                      const Icon(Icons.add_photo_alternate_outlined, size: 18),
+                  label: const Text('添加图片'),
+                  style: OutlinedButton.styleFrom(
+                    alignment: Alignment.centerLeft,
+                    foregroundColor: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
+                    side: glass
+                        ? BorderSide.none
+                        : BorderSide(
+                            color: isDark
+                                ? AppColors.borderNormalDark
+                                : AppColors.borderNormalLight,
+                          ),
                   ),
                 ),
               ),
@@ -85,6 +103,7 @@ class PublishMediaSection extends StatelessWidget {
             PublishImageGrid(
               images: images,
               canAddMore: canAddMore,
+              canRemove: canRemove,
               onAdd: onAdd,
               onRemove: onRemove,
               onReorder: onReorder,

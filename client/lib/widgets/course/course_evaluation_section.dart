@@ -5,6 +5,7 @@ import '../../models/course_evaluation.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/course_evaluation_provider.dart';
 import 'course_evaluation_form_sheet.dart';
+import '../app_card.dart';
 
 /// 课表课程详情中的教师评价入口。
 ///
@@ -109,7 +110,7 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 8),
-        const Divider(),
+        const AppCardDivider(),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -320,7 +321,7 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Theme.of(context).primaryColor.withValues(alpha: 0.04),
@@ -387,7 +388,7 @@ class _CourseEvaluationSectionState extends State<CourseEvaluationSection> {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: statusColor.withValues(alpha: 0.05),

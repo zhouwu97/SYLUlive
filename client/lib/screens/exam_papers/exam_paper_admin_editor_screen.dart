@@ -1,5 +1,8 @@
+import 'package:shenliyuan/widgets/app_glass_button_style.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 
+import '../../widgets/responsive_content.dart';
 import '../../app_bootstrap.dart';
 import '../../models/exam_paper.dart';
 import '../../services/exam_paper_service.dart';
@@ -122,7 +125,7 @@ class _ExamPaperAdminEditorScreenState
   Future<bool?> _confirm(String content) {
     return showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: const Text('请确认'),
         content: Text(content),
         actions: [
@@ -181,7 +184,8 @@ class _ExamPaperAdminEditorScreenState
             ),
           ],
         ),
-        body: Form(
+        body: ResponsiveContent.form(
+            child: Form(
           key: _formKey,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
@@ -289,6 +293,8 @@ class _ExamPaperAdminEditorScreenState
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
+                        style:
+                            appGlassButtonStyle(context, const ButtonStyle()),
                         onPressed: _reject,
                         icon: const Icon(Icons.close, color: Colors.redAccent),
                         label: const Text('拒绝'),
@@ -297,6 +303,9 @@ class _ExamPaperAdminEditorScreenState
                     const SizedBox(width: 12),
                     Expanded(
                       child: FilledButton.icon(
+                        style: appGlassButtonStyle(context, const ButtonStyle(),
+                            fallbackBackground:
+                                Theme.of(context).colorScheme.primary),
                         onPressed: _approve,
                         icon: const Icon(Icons.check),
                         label: const Text('通过并奖励'),
@@ -310,6 +319,9 @@ class _ExamPaperAdminEditorScreenState
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
+                        style: appGlassButtonStyle(context, const ButtonStyle(),
+                            fallbackBackground:
+                                Theme.of(context).colorScheme.primary),
                         onPressed: _savePublished,
                         icon: const Icon(Icons.save_outlined),
                         label: const Text('保存元数据'),
@@ -319,6 +331,8 @@ class _ExamPaperAdminEditorScreenState
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
+                        style:
+                            appGlassButtonStyle(context, const ButtonStyle()),
                         onPressed: _unpublish,
                         icon: const Icon(Icons.archive_outlined,
                             color: Colors.redAccent),
@@ -329,7 +343,7 @@ class _ExamPaperAdminEditorScreenState
                 ),
             ],
           ),
-        ),
+        )),
       ),
     );
   }

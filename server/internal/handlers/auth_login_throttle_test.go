@@ -103,6 +103,39 @@ func TestLoginThrottleDatabaseReadRemainsAuthoritative(t *testing.T) {
 	require.Equal(t, 20*time.Second, remaining, "the shared database deadline takes precedence")
 }
 
+func TestDatabaseLoginThrottleReadCannotEraseConcurrentFailure(t *testing.T) {
+	for _, expiredWindow := range []bool{false, true} {
+		t.Run(map[bool]string{false: "expired_lock", true: "expired_failure_window"}[expiredWindow], func(t *testing.T) {
+			db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+			require.NoError(t, err)
+			require.NoError(t, db.AutoMigrate(&models.LoginThrottleRecord{}))
+			now := time.Now()
+			lastFailure, oldLock := now.Add(-2*time.Minute), now.Add(-time.Minute)
+			if expiredWindow {
+				lastFailure = now.Add(-16 * time.Minute)
+			}
+			record := models.LoginThrottleRecord{Scope: loginThrottleScope("account", t.Name()), FailureCount: 3, LastFailureAt: &lastFailure, LockedUntil: &oldLock}
+			require.NoError(t, db.Create(&record).Error)
+			newLock := now.Add(3 * time.Minute)
+			// 读操作已取得过期快照时，另一个请求完成新的失败计数。
+			require.NoError(t, db.Callback().Query().After("gorm:query").Register("test:concurrent-failure", func(tx *gorm.DB) {
+				if tx.Statement.Table == "login_throttle_records" {
+					require.NoError(t, db.Model(&models.LoginThrottleRecord{}).Where("id = ?", record.ID).Updates(map[string]interface{}{
+						"failure_count": 4, "last_failure_at": now, "locked_until": newLock,
+					}).Error)
+				}
+			}))
+			h := &AuthHandler{db: db}
+			h.loginLock(record.Scope, now)
+			require.NoError(t, db.Callback().Query().Remove("test:concurrent-failure"))
+			var stored models.LoginThrottleRecord
+			require.NoError(t, db.First(&stored, record.ID).Error)
+			require.NotNil(t, stored.LockedUntil)
+			require.WithinDuration(t, newLock, *stored.LockedUntil, time.Millisecond)
+		})
+	}
+}
+
 func TestLoginLockDurationForFailures(t *testing.T) {
 	cases := []struct {
 		failures int

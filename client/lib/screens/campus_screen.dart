@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/responsive_content.dart';
 import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
 import '../models/ai_capabilities.dart';
@@ -40,6 +41,7 @@ import 'exam_schedule_screen.dart';
 import 'canteen_screen.dart';
 import 'campus_ranking_screen.dart';
 import 'team/team_recruitment_center_screen.dart';
+import '../widgets/app_card.dart';
 
 class CampusScreen extends StatefulWidget {
   /// 可选依赖仅用于测试；生产环境继续复用全局 Dio 与鉴权头。
@@ -407,8 +409,10 @@ class _CampusScreenState extends State<CampusScreen>
     final todayShown = _todayItems.isNotEmpty;
 
     return Scaffold(
-      backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
-      body: SafeArea(
+      // 根 Tab 的壁纸与简洁底色统一由 GlobalBackgroundWrapper 绘制。
+      backgroundColor: Colors.transparent,
+      body: ResponsiveContent.page(
+          child: SafeArea(
         bottom: false,
         child: RefreshIndicator(
           onRefresh: () => _loadAll(force: true),
@@ -423,7 +427,10 @@ class _CampusScreenState extends State<CampusScreen>
                   delegate: SliverChildListDelegate([
                     HomeTabRevealItem(
                       index: 0,
-                      child: CampusHeader(semester: _currentSemesterText()),
+                      child: CampusHeader(
+                        semester: _currentSemesterText(),
+                        date: widget.nowProvider?.call(),
+                      ),
                     ),
                     if (todayShown) ...[
                       const SizedBox(height: 10),
@@ -489,7 +496,7 @@ class _CampusScreenState extends State<CampusScreen>
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 
@@ -632,7 +639,7 @@ class _LatestCardSkeleton extends StatelessWidget {
 
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 112),
-      child: Container(
+      child: AppCardSurface(
         width: double.infinity,
         clipBehavior: Clip.antiAlias,
         decoration: CampusTheme.cardDecoration(isDark, softGreen: true),
@@ -700,7 +707,7 @@ class _LatestCardError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(20),
       decoration: CampusTheme.cardDecoration(isDark),
       child: Column(
@@ -736,7 +743,7 @@ class _LatestCardEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(20),
       decoration: CampusTheme.cardDecoration(isDark),
       child: Column(
@@ -771,7 +778,7 @@ class _RecentListSkeleton extends StatelessWidget {
     return Column(
       children: [
         for (int i = 0; i < 3; i++) ...[
-          Container(
+          AppCardSurface(
             height: 90,
             padding: const EdgeInsets.all(14),
             decoration: CampusTheme.cardDecoration(isDark),
@@ -818,7 +825,7 @@ class _RecentListError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(24),
       decoration: CampusTheme.cardDecoration(isDark),
       child: Column(
@@ -854,7 +861,7 @@ class _RecentListEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(24),
       decoration: CampusTheme.cardDecoration(isDark),
       child: Column(

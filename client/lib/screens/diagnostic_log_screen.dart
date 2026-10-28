@@ -1,9 +1,16 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import '../widgets/app_choice_chip.dart';
+import '../widgets/app_dialog.dart';
+import '../providers/theme_provider.dart';
+import 'package:provider/provider.dart';
+import '../widgets/app_card.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/diagnostic_log_entry.dart';
 import '../services/diagnostic_log_service.dart';
 
@@ -51,7 +58,7 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
   Future<void> _clearLogs() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: const Text('清空诊断记录'),
         content: const Text('确定清空所有诊断记录吗？此操作无法恢复。'),
         actions: [
@@ -83,7 +90,10 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
       }).toList();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final groups = _DiagnosticGroup.fromEntries(_filteredLogs);
     return Scaffold(
@@ -180,8 +190,9 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
               final selected = _category == item.$1;
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: FilterChip(
+                child: AppChoiceChip(
                   selected: selected,
+                  showCheckmark: true,
                   label: Text(item.$2),
                   onSelected: (_) => setState(() => _category = item.$1),
                   side: BorderSide(
@@ -235,8 +246,8 @@ class _OverviewBand extends StatelessWidget {
     final issues = _IssueSummary.fromEntries(recent);
     final attentionCount = issues.length;
 
-    return ColoredBox(
-      color: colors.surfaceContainerLow,
+    return AppCardSurface(
+      decoration: BoxDecoration(color: colors.surfaceContainerLow, borderRadius: BorderRadius.zero),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
         child: Column(
@@ -450,13 +461,15 @@ class _DiagnosticTimelineItemState extends State<_DiagnosticTimelineItem> {
         : group.isWarning
             ? colors.tertiary
             : colors.primary;
-    return Container(
+    return AppCardSurface(
+      foregroundDecoration: BoxDecoration(border: Border(left: BorderSide(color: accent, width: 2))),
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: emphasized ? accent.withValues(alpha: 0.06) : Colors.transparent,
         border: Border(
           left: BorderSide(color: accent, width: 2),
-          bottom: BorderSide(color: colors.outlineVariant),
+          bottom: BorderSide(color: context.watch<ThemeProvider?>()?.frostedGlass == true
+              ? Colors.transparent : colors.outlineVariant),
         ),
       ),
       child: InkWell(
@@ -736,7 +749,7 @@ Future<void> _showDetails(
   BuildContext context,
   List<DiagnosticLogEntry> entries,
 ) {
-  return showModalBottomSheet<void>(
+  return showAppModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
@@ -753,7 +766,7 @@ Future<void> _showDetails(
                 icon: const Icon(Icons.copy_outlined),
               ),
             ),
-            const Divider(height: 1),
+            const AppCardDivider(height: 1),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(16),

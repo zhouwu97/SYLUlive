@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../widgets/responsive_content.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -322,8 +323,8 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
-    final canAccess =
-        auth.isLoggedIn && (user?.isAdmin == true || user?.studentVerified == true);
+    final canAccess = auth.isLoggedIn &&
+        (user?.isAdmin == true || user?.studentVerified == true);
 
     return GlobalBackgroundWrapper(
       child: Scaffold(
@@ -360,7 +361,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
                         type: ExamPaperAccessGuideType.eduVerification,
                         onAction: _openEduVerification,
                       )
-                    : _buildLibrary(),
+                    : ResponsiveContent.page(child: _buildLibrary()),
       ),
     );
   }

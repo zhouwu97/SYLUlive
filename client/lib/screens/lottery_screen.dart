@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'dart:async';
+import '../widgets/app_page_background.dart';
 import '../models/lottery.dart';
 import '../providers/auth_provider.dart';
 import '../utils/app_feedback.dart';
@@ -10,6 +11,7 @@ import '../config/api_constants.dart';
 import '../widgets/cached_avatar.dart';
 import '../services/async_action_guard.dart';
 import '../services/idempotency_key.dart';
+import '../widgets/app_card.dart';
 
 class LotteryScreen extends StatefulWidget {
   const LotteryScreen({super.key});
@@ -257,7 +259,10 @@ class _LotteryScreenState extends State<LotteryScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     const primary = Color(0xFFF59E0B);
     final user = context.watch<AuthProvider>().user;
@@ -270,13 +275,12 @@ class _LotteryScreenState extends State<LotteryScreen> {
         statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor:
-            isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
+        backgroundColor: AppPageBackground.color(context, isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4)),
         appBar: AppBar(
           title:
               const Text('官方抽奖', style: TextStyle(fontWeight: FontWeight.bold)),
           elevation: 0,
-          backgroundColor: Colors.transparent,
+          backgroundColor: AppPageBackground.color(context, Colors.transparent),
         ),
         extendBodyBehindAppBar: true,
         body: Stack(
@@ -284,9 +288,9 @@ class _LotteryScreenState extends State<LotteryScreen> {
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: isDark
+                  color: AppPageBackground.color(context, isDark
                       ? const Color(0xFF111315)
-                      : const Color(0xFFFFFAF4),
+                      : const Color(0xFFFFFAF4)),
                 ),
               ),
             ),
@@ -424,7 +428,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
 
   Widget _buildWinnerCard(
       LotteryEvent ev, Color primary, bool isDark, Color titleColor) {
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: _softCardDecoration(isDark, border: const Color(0xFFF4E2C5)),
@@ -545,7 +549,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
       LotteryEvent event, bool isOngoing, Color primary, bool isDark) {
     final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -647,7 +651,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
       LotteryEvent event, bool isOngoing, Color primary, bool isDark) {
     final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: _softCardDecoration(isDark),
@@ -732,7 +736,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
   Widget _buildJoinedCard(bool isDark) {
     const success = Color(0xFF147C72);
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration:

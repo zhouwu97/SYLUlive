@@ -230,6 +230,7 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
         notificationMessage: NotificationMessage,
         processName: String,
     ): Boolean {
+        if (ReplyNotificationReadStore.isRead(context, notificationMessage.notificationExtras)) return false
         val conversationId = conversationIdFrom(notificationMessage)
             ?: return super.isNeedShowNotification(context, notificationMessage, processName)
 
@@ -244,6 +245,8 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
         context: Context,
         notificationMessage: NotificationMessage,
     ) {
+        ReplyNotificationReadStore.trackDisplayed(context, notificationMessage.notificationId,
+            notificationMessage.notificationExtras)
         val conversationId = conversationIdFrom(notificationMessage)
 
         if (conversationId != null &&
@@ -262,6 +265,8 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
         context: Context,
         notificationMessage: NotificationMessage,
     ) {
+        ReplyNotificationReadStore.trackDisplayed(context, notificationMessage.notificationId,
+            notificationMessage.notificationExtras)
         val extras = notificationMessage.notificationExtras.orEmpty()
         val json = try {
             JSONObject(extras)
@@ -343,6 +348,7 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
         context: Context,
         notificationMessage: NotificationMessage,
     ) {
+        ReplyNotificationReadStore.removeDisplayed(context, notificationMessage.notificationId)
         val conversationId = conversationIdFrom(notificationMessage)
         val notificationId = notificationMessage.notificationId
 

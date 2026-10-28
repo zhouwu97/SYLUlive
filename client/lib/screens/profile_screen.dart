@@ -1,13 +1,16 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import '../widgets/app_card.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/responsive_content.dart';
 import '../models/startup_destination.dart';
 import '../services/app_resume_coordinator.dart';
 import '../services/root_page_state_service.dart';
@@ -38,6 +41,7 @@ import 'super_admin_screen.dart';
 import 'admin_members_screen.dart';
 
 import 'notifications_screen.dart';
+import 'likes_received_screen.dart';
 import 'settings_screen.dart';
 import 'feedback/feedback_center_screen.dart';
 import 'admin/admin_feedback_screen.dart';
@@ -263,7 +267,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       value: overlayStyle,
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: Stack(
+        body: ResponsiveContent(
+            child: Stack(
           children: [
             // 内容
             CustomScrollView(
@@ -333,7 +338,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
           ],
-        ),
+        )),
       ),
     );
   }
@@ -992,7 +997,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               for (int i = 0; i < items.length; i++) ...[
                 if (i > 0)
-                  Divider(
+                  AppCardDivider(
                     height: 1,
                     thickness: 0.5,
                     indent: 68,
@@ -1074,6 +1079,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _loadUnreadCount();
             });
           },
+        ),
+      ),
+      _buildSettingsRow(
+        child: _buildSettingsTile(
+          icon: Icons.favorite_outline,
+          iconColor: AppColors.brandPrimary,
+          title: '收到的赞',
+          subtitle: '查看谁赞了我的帖子和评论',
+          isDark: isDark,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const LikesReceivedScreen()),
+          ),
         ),
       ),
       _buildSettingsRow(
@@ -1234,7 +1252,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      backgroundColor: colors.surface,
+      backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (sheetContext, setSheetState) {
@@ -1293,7 +1311,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               );
             }
 
-            return SafeArea(
+            return AppCardSurface(
+              decoration: BoxDecoration(color: colors.surface,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16))),
+              child: SafeArea(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1329,6 +1350,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 8),
                 ],
+              ),
               ),
             );
           },
@@ -1466,7 +1488,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final controller = TextEditingController(text: authProvider.user?.nickname);
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: const Text('编辑资料'),
         content: TextField(
           controller: controller,
@@ -1565,7 +1587,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
+      builder: (context) => AppCardSurface(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: Theme.of(context).scaffoldBackgroundColor,

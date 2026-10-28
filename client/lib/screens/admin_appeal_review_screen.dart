@@ -1,9 +1,11 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../widgets/app_page_background.dart';
 import '../app_bootstrap.dart';
 import '../widgets/app_page_app_bar.dart';
 import 'court_screen.dart';
+import '../widgets/app_card.dart';
 
 /// 管理员处理陪审人数不足、平票等 review_required 案件。
 class AdminAppealReviewScreen extends StatefulWidget {
@@ -104,7 +106,9 @@ class _AdminAppealReviewScreenState extends State<AdminAppealReviewScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     return Scaffold(
       appBar: const AppPageAppBar(title: Text('公众法庭复核')),
       body: RefreshIndicator(
@@ -199,7 +203,7 @@ class _AdminAppealReviewScreenState extends State<AdminAppealReviewScreen> {
   }
 
   Widget _buildCard(Map<String, dynamic> appeal) {
-    return Card(
+    return AppCard(
       child: InkWell(
         onTap: () => _openDetail(appeal),
         borderRadius: BorderRadius.circular(12),

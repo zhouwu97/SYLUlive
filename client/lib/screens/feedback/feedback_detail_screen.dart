@@ -1,18 +1,23 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../widgets/app_page_background.dart';
 import '../../models/feedback_ticket.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../utils/app_feedback.dart';
+import '../../utils/app_time.dart';
 import '../../services/idempotency_key.dart';
 import '../../services/request_id.dart';
 import '../../services/publish_session_scope.dart';
 import '../image_viewer_screen.dart';
+import '../../widgets/app_card.dart';
 
 class FeedbackDetailScreen extends StatefulWidget {
   final int ticketId;
@@ -240,9 +245,14 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   }
 
   String _formatDateTime(DateTime value) {
-    final dt = value.toLocal();
+    final dt = AppTime.toShanghai(value);
     return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
         '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _formatMessageTime(DateTime value) {
+    final dt = AppTime.toShanghai(value);
+    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
   Future<void> _sendMessage({
@@ -427,7 +437,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     final reasonController = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('重新打开工单'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -514,7 +524,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     if (_ticket == null) return;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF1E2226) : Colors.white,
@@ -544,7 +554,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                   _showUpdateStatusDialog();
                 },
               ),
-              const Divider(height: 1),
+              const AppCardDivider(height: 1),
               ListTile(
                 leading: const Icon(Icons.contact_support_outlined,
                     color: Colors.orange),
@@ -556,7 +566,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                   _showRequestInfoDialog();
                 },
               ),
-              const Divider(height: 1),
+              const AppCardDivider(height: 1),
               ListTile(
                 leading: const Icon(Icons.flag_outlined, color: Colors.indigo),
                 title: const Text('设置优先级与负责人'),
@@ -595,7 +605,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => AppAlertDialog(
           title: const Text('更新处理进度'),
           content: SingleChildScrollView(
             child: Column(
@@ -644,7 +654,10 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     '/admin/feedback/tickets/${widget.ticketId}/status',
                     data: {
                       'status': selectedStatus,
-                      'status_note': noteController.text.trim(),
+                      'status_note': selectedStatus != _ticket!.status &&
+                              noteController.text.trim() == '工单已提交，等待管理员查看受理'
+                          ? ''
+                          : noteController.text.trim(),
                       'expected_status': _ticket!.status,
                     },
                     options:
@@ -695,7 +708,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => AppAlertDialog(
           title: const Text('请求用户补充信息'),
           content: SingleChildScrollView(
             child: Column(
@@ -813,7 +826,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => AppAlertDialog(
           title: const Text('设置工单优先级'),
           content: SingleChildScrollView(
             child: Column(
@@ -830,7 +843,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                     },
                   );
                 }),
-                const Divider(),
+                const AppCardDivider(),
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Text('负责人',
@@ -905,7 +918,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   Widget _buildTopStatusCard(bool isDark) {
     if (_ticket == null) return const SizedBox.shrink();
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -949,9 +962,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
             ],
           ),
           const SizedBox(height: 10),
-          if (_ticket!.statusNote != null && _ticket!.statusNote!.isNotEmpty)
+          if (_ticket!.progressDescription.isNotEmpty)
             Text(
-              _ticket!.statusNote!,
+              _ticket!.progressDescription,
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
@@ -960,8 +973,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
               ),
             ),
           const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
             children: [
               Text(
                 '#${_ticket!.ticketNo}',
@@ -1040,7 +1054,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         ? initial!.attachments
         : _ticket!.attachments;
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1397,7 +1411,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          '${msg.createdAt.hour.toString().padLeft(2, '0')}:${msg.createdAt.minute.toString().padLeft(2, '0')}',
+                          _formatMessageTime(msg.createdAt),
                           style:
                               TextStyle(fontSize: 10, color: Colors.grey[400]),
                         ),
@@ -1422,7 +1436,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                   if (isOutgoing) ...[
                     const SizedBox(height: 4),
                     Text(
-                      '${msg.createdAt.hour.toString().padLeft(2, '0')}:${msg.createdAt.minute.toString().padLeft(2, '0')}',
+                      _formatMessageTime(msg.createdAt),
                       style: TextStyle(
                           fontSize: 10,
                           color: Colors.white.withValues(alpha: 0.7)),
@@ -1457,7 +1471,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       return const SizedBox.shrink();
     }
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1524,7 +1538,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   Widget _buildBottomComposer(bool isDark) {
     final isClosed = _ticket?.status == 'closed';
     if (isClosed && !widget.isAdmin) {
-      return Container(
+      return AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         color: isDark ? const Color(0xFF1E2226) : Colors.white,
         child: Row(
@@ -1546,7 +1560,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       );
     }
     if (isClosed && widget.isAdmin && !_adminInternalNote) {
-      return Container(
+      return AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         color: isDark ? const Color(0xFF1E2226) : Colors.white,
         child: Row(
@@ -1568,7 +1582,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       );
     }
 
-    return Container(
+    return AppCardSurface(
       padding: EdgeInsets.fromLTRB(
         12,
         8,
@@ -1590,7 +1604,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
           if (widget.isAdmin)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   ChoiceChip(
                     label: const Text('回复用户'),
@@ -1599,7 +1615,6 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                         ? null
                         : (val) => setState(() => _adminInternalNote = !val),
                   ),
-                  const SizedBox(width: 8),
                   ChoiceChip(
                     label: const Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1689,16 +1704,16 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   }
 
   Widget _buildDateSeparator(DateTime value) {
-    final dt = value.toLocal();
+    final dt = AppTime.toShanghai(value);
     final label =
         '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         children: [
-          const Expanded(child: Divider(indent: 40, endIndent: 10)),
+          const Expanded(child: AppCardDivider(indent: 40, endIndent: 10)),
           Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-          const Expanded(child: Divider(indent: 10, endIndent: 40)),
+          const Expanded(child: AppCardDivider(indent: 10, endIndent: 40)),
         ],
       ),
     );
@@ -1708,7 +1723,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     final children = <Widget>[];
     String? lastDay;
     for (final message in _messages) {
-      final dt = message.createdAt.toLocal();
+      final dt = AppTime.toShanghai(message.createdAt);
       final day = '${dt.year}-${dt.month}-${dt.day}';
       if (day != lastDay) {
         children.add(_buildDateSeparator(message.createdAt));
@@ -1720,7 +1735,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = themeProvider.isCleanBackgroundMode && !isDark
@@ -1728,7 +1745,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         : Theme.of(context).colorScheme.surface;
 
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
         title: Text(
           widget.isAdmin ? '工单处理详情' : '工单详情',
@@ -1736,7 +1753,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         ),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),

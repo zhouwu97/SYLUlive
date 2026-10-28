@@ -27,14 +27,23 @@ go run ./cmd
 - SECURITY_EVENT_HMAC_SECRET
 - SECURITY_BLOCK_ENABLED
 - SECURITY_SOURCE_ATTRIBUTION_VALID_FROM
+- SECURITY_IP_V4_DB_PATH、SECURITY_IP_V6_DB_PATH（离线 IP 归属地库）
 - SCHOOL_AUTHORITY_RETIRED
 - SCHOOL_ACADEMIC_ROUTES_RETIRED
 
 以 .env.example、配置加载代码和部署文档为准，不要把开发默认值直接带入生产。
 
+### 安全预警 IP 与离线归属地
+
+仅需管理员处置的预警保存 IP 密文；普通登录、验证码等审计流水仍只保存来源摘要。管理员安全接口可查看预警 IP 和国家／省市归属地，普通用户接口不返回这些字段。历史摘要不可逆，升级前的记录显示「未记录 IP」。
+
+本地运行前在 `server/` 执行 `go run ./cmd/install_geoip`，安装并校验固定版本的 IPv4／IPv6 离线库。Docker 构建自动执行相同步骤并携带数据文件；运行期间不下载数据，也不会向第三方发送用户 IP。systemd／独立二进制发布须一并携带 `data/geoip/`，或用上述环境变量指定可读路径。缺失或损坏的库会在安全中心显示不可用／降级，其他安全采集与处置继续工作。来源、校验值、许可与更新方式见 [离线库说明](data/geoip/README.md)。
+
 ## 数据库与迁移
 
 迁移由服务端启动流程和仓库迁移脚本共同维护。生产执行前先备份 PostgreSQL，并在独立环境验证升级、回滚和安全表清理。不要直接修改生产表结构绕过迁移。
+
+签到补签卡规则见 [用户接口说明](API.md#2-用户与个人中心-user)。迁移 `20261025_04_checkin_makeup_card_schedule` 在启动时按历史签到事实重建「每段连续签到第 7 天首张、之后每隔 14 天再发一张」的汇总，保留额外发放数量并按补签事实保留已使用数量，不修改用户经验或经验流水。若旧规则或补签合并前已经发放的奖励多于重建结果，差额转入 `makeup_cards_granted` 保留，后续重建不重复补发。整批重建与迁移标记在同一事务内，可失败重试；也兼容已存在 `20261025_03_checkin_weekly_makeup_cards` 标记的数据。升级期间应停止旧版实例写入签到；回退旧版前应同步恢复备份中的签到事实和汇总，避免旧版周期与新版余额混用。
 
 ## 测试
 

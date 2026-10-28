@@ -1,9 +1,12 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../models/post.dart';
 import '../../models/water_team.dart';
 import '../../providers/water_team_provider.dart';
+import '../../widgets/app_card.dart';
 
 /// 发起人审批组队申请的独立页面。
 class TeamRecruitmentApplicationsScreen extends StatefulWidget {
@@ -45,7 +48,10 @@ class _TeamRecruitmentApplicationsScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final meta = _meta;
     final provider = context.watch<WaterTeamProvider>();
     final apps = meta == null
@@ -130,7 +136,7 @@ class _TeamRecruitmentApplicationsScreenState
     if (accept) {
       final confirmed = await showDialog<bool>(
           context: context,
-          builder: (_) => AlertDialog(
+          builder: (_) => AppAlertDialog(
                 title: const Text('确认通过该申请？'),
                 content: const Text('通过后将占用一个招募名额。'),
                 actions: [
@@ -173,7 +179,7 @@ class _TeamRecruitmentApplicationsScreenState
     final controller = TextEditingController();
     final value = await showDialog<String>(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (_) => AppAlertDialog(
               title: const Text('拒绝申请'),
               content: TextField(
                   controller: controller,
@@ -211,7 +217,7 @@ class _ApplicationCard extends StatelessWidget {
         ? ''
         : '${applicant.eduMajor.isNotEmpty ? applicant.eduMajor : '校园用户'} · ${applicant.levelLabel}';
     final isPending = application.status == 'pending';
-    return Card(
+    return AppCard(
       margin: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.all(14),

@@ -1,5 +1,8 @@
+import 'package:shenliyuan/widgets/app_glass_button_style.dart';
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../widgets/app_page_background.dart';
 import '../config/api_constants.dart';
 import '../providers/auth_provider.dart';
 import '../theme/app_colors.dart';
@@ -8,6 +11,8 @@ import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/app_page_app_bar.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import '../widgets/app_card.dart';
+import '../widgets/app_dialog.dart';
 
 class AdminAnnouncementsScreen extends StatefulWidget {
   const AdminAnnouncementsScreen({super.key});
@@ -109,7 +114,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
               .toDouble();
           final isDark = Theme.of(ctx).brightness == Brightness.dark;
 
-          return Dialog(
+          return AppDialog(
             insetPadding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.lg,
               vertical: AppSpacing.xxl,
@@ -395,7 +400,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                           ),
                         ),
                       ),
-                      const Divider(height: 1),
+                      const AppCardDivider(height: 1),
                       Padding(
                         padding: const EdgeInsets.only(top: AppSpacing.sm),
                         child: Row(
@@ -408,15 +413,19 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                             const SizedBox(width: AppSpacing.sm),
                             FilledButton(
                               onPressed: () => Navigator.pop(ctx, true),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.brandPrimary,
-                                foregroundColor: Colors.white,
-                                minimumSize: const Size(84, 44),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(AppRadius.md),
-                                ),
-                              ),
+                              style: appGlassButtonStyle(
+                                  context,
+                                  FilledButton.styleFrom(
+                                    backgroundColor: AppColors.brandPrimary,
+                                    foregroundColor: Colors.white,
+                                    minimumSize: const Size(84, 44),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(AppRadius.md),
+                                    ),
+                                  ),
+                                  fallbackBackground:
+                                      Theme.of(context).colorScheme.primary),
                               child: Text(isEditing ? '保存' : '发布'),
                             ),
                           ],
@@ -601,14 +610,18 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                   const SizedBox(height: AppSpacing.lg),
                   FilledButton.tonalIcon(
                     onPressed: onPressed,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: isDark
-                          ? AppColors.brandPrimary.withValues(alpha: 0.24)
-                          : const Color(0xFFE5F4F1),
-                      foregroundColor: isDark
-                          ? const Color(0xFF8DE0D3)
-                          : AppColors.brandPrimary,
-                    ),
+                    style: appGlassButtonStyle(
+                        context,
+                        FilledButton.styleFrom(
+                          backgroundColor: isDark
+                              ? AppColors.brandPrimary.withValues(alpha: 0.24)
+                              : const Color(0xFFE5F4F1),
+                          foregroundColor: isDark
+                              ? const Color(0xFF8DE0D3)
+                              : AppColors.brandPrimary,
+                        ),
+                        fallbackBackground:
+                            Theme.of(context).colorScheme.primary),
                     icon: const Icon(Icons.refresh_rounded, size: 18),
                     label: const Text('重新加载'),
                   ),
@@ -622,7 +635,9 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -642,14 +657,17 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                 onPressed: () => _showAnnouncementEditor(context),
                 icon: const Icon(Icons.add_rounded, size: 18),
                 label: const Text('发布公告'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
-                  backgroundColor: AppColors.brandPrimary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                  ),
-                ),
+                style: appGlassButtonStyle(
+                    context,
+                    FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                      backgroundColor: AppColors.brandPrimary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                      ),
+                    ),
+                    fallbackBackground: Theme.of(context).colorScheme.primary),
               ),
             ),
             Expanded(
@@ -686,6 +704,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                     child: Scrollbar(
                       thumbVisibility: true,
                       child: ListView.builder(
+                addRepaintBoundaries: false,
                         keyboardDismissBehavior:
                             ScrollViewKeyboardDismissBehavior.onDrag,
                         physics: const AlwaysScrollableScrollPhysics(
@@ -704,7 +723,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                           final title = a['title']?.toString() ?? '';
                           final content = a['content']?.toString() ?? '';
                           final isPinned = a['is_pinned'] == true;
-                          return Card(
+                          return AppCard(
                             margin:
                                 const EdgeInsets.only(bottom: AppSpacing.sm),
                             elevation: 0,
@@ -793,7 +812,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                                         ],
                                       ),
                                     ),
-                                    PopupMenuButton<String>(
+                                    AppPopupMenuButton<String>(
                                       tooltip: '更多操作',
                                       padding: EdgeInsets.zero,
                                       icon: const Icon(Icons.more_vert_rounded),

@@ -22,6 +22,10 @@ const (
 
 // 变体长边上限，与 image_variant_worker.go 的 imageVariantRecipe 保持一致。
 const (
+	// 上传与后台解码共用边界，防止历史文件绕过上传校验后耗尽解码内存。
+	ImageMaxDimension = 12000
+	ImageMaxPixels    = 50_000_000
+
 	ImageVariantThumbMaxDimension  = 480
 	ImageVariantMediumMaxDimension = 1280
 	ImageVariantViewerMaxDimension = 2048

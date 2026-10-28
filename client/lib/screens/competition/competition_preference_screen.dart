@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -5,6 +6,7 @@ import '../../models/competition_preference.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_page_scaffold.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
+import '../../widgets/app_card.dart';
 
 class CompetitionPreferenceScreen extends StatefulWidget {
   final Dio dio;
@@ -268,7 +270,7 @@ class _CompetitionPreferenceScreenState
         if (didPop || !_isDirty) return;
         final leave = await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
+          builder: (context) => AppAlertDialog(
             title: const Text('放弃未保存的修改？'),
             content: const Text('返回后，本次修改不会保留。'),
             actions: [
@@ -551,7 +553,7 @@ class _CompetitionPreferenceScreenState
     required bool isDark,
     required List<Widget> children,
   }) {
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
       decoration: CompetitionUiTokens.cardDecoration(isDark),

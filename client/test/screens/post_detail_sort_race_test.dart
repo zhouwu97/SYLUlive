@@ -136,6 +136,12 @@ class RaceThemeProvider extends Fake
     implements ThemeProvider {
   @override
   bool get isDarkMode => false;
+
+  @override
+  bool get shouldShowCustomBackground => false;
+
+  @override
+  bool get frostedGlass => false;
 }
 
 Widget buildRaceApp(SortRaceDio dio) {

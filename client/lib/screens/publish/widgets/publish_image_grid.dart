@@ -6,10 +6,13 @@ import '../../../config/api_constants.dart';
 import '../../../models/publish_image_item.dart';
 import '../../../theme/app_motion.dart';
 import 'dashed_outline.dart';
+import '../../../widgets/app_card.dart';
+import 'package:provider/provider.dart';
+import '../../../providers/theme_provider.dart';
 
 /// 发布表单图片网格（C-2 统一模型）。
 ///
-/// 以三列方形网格展示统一 [PublishImageItem] 列表（服务器已有图 + 本地新选图可混合）。
+/// 按可用宽度展示至少三列方形网格（服务器已有图 + 本地新选图可混合）。
 /// 第一张标记「封面」。支持长按拖拽排序（Add 按钮不参与）。
 /// 空状态展示添加入口，水帖页渲染成单个虚线上传卡片。
 class PublishImageGrid extends StatelessWidget {
@@ -17,6 +20,7 @@ class PublishImageGrid extends StatelessWidget {
 
   final List<PublishImageItem> images;
   final bool canAddMore;
+  final bool canRemove;
   final VoidCallback onAdd;
   final ValueChanged<String> onRemove;
   final void Function(String draggedId, String targetId) onReorder;
@@ -31,6 +35,7 @@ class PublishImageGrid extends StatelessWidget {
     super.key,
     required this.images,
     required this.canAddMore,
+    this.canRemove = true,
     required this.onAdd,
     required this.onRemove,
     required this.onReorder,
@@ -71,26 +76,32 @@ class PublishImageGrid extends StatelessWidget {
     final int cellCount =
         max(1, totalImages) + (canAddMore && totalImages > 0 ? 1 : 0);
 
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: _spacing,
-        mainAxisSpacing: _spacing,
-      ),
-      itemCount: cellCount,
-      itemBuilder: (context, index) {
-        // ---- 添加入口：空状态在首位，有图片时在末尾；不参与排序 ----
-        final isAddSlot = (totalImages == 0) || (index == totalImages);
-        if (isAddSlot) {
-          return _buildAddCell(isDark);
-        }
+    return LayoutBuilder(
+        builder: (context, constraints) => GridView.builder(
+              addRepaintBoundaries:
+                  context.watch<ThemeProvider?>()?.frostedGlass != true,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount:
+                    ((constraints.maxWidth + _spacing) / (180 + _spacing))
+                        .ceil()
+                        .clamp(3, 8),
+                crossAxisSpacing: _spacing,
+                mainAxisSpacing: _spacing,
+              ),
+              itemCount: cellCount,
+              itemBuilder: (context, index) {
+                // ---- 添加入口：空状态在首位，有图片时在末尾；不参与排序 ----
+                final isAddSlot = (totalImages == 0) || (index == totalImages);
+                if (isAddSlot) {
+                  return _buildAddCell(isDark);
+                }
 
-        final item = images[index];
-        return _buildDraggableItem(context, item, index, isDark);
-      },
-    );
+                final item = images[index];
+                return _buildDraggableItem(context, item, index, isDark);
+              },
+            ));
   }
 
   // ---- 可拖拽图片项（长按拖动，drop 到目标位交换） ----
@@ -167,8 +178,9 @@ class PublishImageGrid extends StatelessWidget {
                     child: const Icon(Icons.broken_image),
                   ),
                 ),
-              PublishImageSource.local => Image.file(
-                  File(item.localFile!.path),
+              PublishImageSource.local => Image(
+                  image: ResizeImage(FileImage(File(item.localFile!.path)),
+                      width: 512, height: 512, policy: ResizeImagePolicy.fit),
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(
                     color: Colors.grey[300],
@@ -178,39 +190,7 @@ class PublishImageGrid extends StatelessWidget {
             },
           ),
 
-          // 上传状态覆盖层（仅本地新图；C-3）
-          if (item.source == PublishImageSource.local &&
-              item.uploadState == PublishImageUploadState.uploading)
-            Positioned.fill(
-              child: ColoredBox(
-                color: Colors.black45,
-                child: Center(
-                  child: SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      value: item.progress > 0 ? item.progress : null,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          if (item.source == PublishImageSource.local &&
-              item.uploadState == PublishImageUploadState.failed)
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: onRetry == null ? null : () => onRetry!(item.id),
-                child: const ColoredBox(
-                  color: Colors.black45,
-                  child: Center(
-                    child: Icon(Icons.refresh_rounded,
-                        color: Colors.white, size: 26),
-                  ),
-                ),
-              ),
-            ),
+          if (item.source == PublishImageSource.local) ..._uploadStatus(item),
 
           // 封面角标
           if (isFirst)
@@ -218,8 +198,7 @@ class PublishImageGrid extends StatelessWidget {
               top: 6,
               left: 6,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: Theme.of(context)
                       .colorScheme
@@ -234,25 +213,11 @@ class PublishImageGrid extends StatelessWidget {
               ),
             ),
 
-          // 删除按钮
+          // 覆盖层之上的独立取消按钮，失败与上传中均可移除。
           Positioned(
-            top: 4,
-            right: 4,
-            child: GestureDetector(
-              onTap: () => onRemove(item.id),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(
-                  color: Colors.black54,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.close,
-                  color: Colors.white,
-                  size: 14,
-                ),
-              ),
-            ),
+            top: 0,
+            right: 0,
+            child: _buildRemoveButton(item),
           ),
         ],
       ),
@@ -345,12 +310,14 @@ class PublishImageGrid extends StatelessWidget {
               fit: BoxFit.cover,
               errorWidget: (_, __, ___) => _buildBrokenImage(),
             ),
-          PublishImageSource.local => Image.file(
-              File(item.localFile!.path),
+          PublishImageSource.local => Image(
+              image: ResizeImage(FileImage(File(item.localFile!.path)),
+                  width: 640, height: 640, policy: ResizeImagePolicy.fit),
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => _buildBrokenImage(),
             ),
         },
+        if (item.source == PublishImageSource.local) ..._uploadStatus(item),
         Positioned(
           top: 10,
           left: 10,
@@ -372,26 +339,117 @@ class PublishImageGrid extends StatelessWidget {
           ),
         ),
         Positioned(
-          top: 8,
-          right: 8,
-          child: GestureDetector(
-            onTap: () => onRemove(item.id),
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.48),
-                shape: BoxShape.circle,
+          top: 0,
+          right: 0,
+          child: _buildRemoveButton(item),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRemoveButton(PublishImageItem item) {
+    final label = !canRemove
+        ? '正在发布，暂不能移除图片'
+        : item.source == PublishImageSource.existing
+            ? '移除图片'
+            : switch (item.uploadState) {
+                PublishImageUploadState.waiting => '取消等待并移除图片',
+                PublishImageUploadState.uploading => '取消上传并移除图片',
+                PublishImageUploadState.failed => '移除上传失败的图片',
+                PublishImageUploadState.success => '移除已上传图片',
+              };
+    return IconButton(
+      key: ValueKey('publish-image-remove-${item.id}'),
+      tooltip: label,
+      onPressed: canRemove ? () => onRemove(item.id) : null,
+      visualDensity: VisualDensity.standard,
+      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+      padding: const EdgeInsets.all(10),
+      icon: DecoratedBox(
+        decoration:
+            const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(Icons.close,
+              size: 16, color: canRemove ? Colors.white : Colors.white54),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _uploadStatus(PublishImageItem item) {
+    final state = item.uploadState;
+    if (state == PublishImageUploadState.success) {
+      return [
+        Positioned(
+          bottom: 4,
+          right: 4,
+          child: Semantics(
+            label: '图片已上传',
+            child: const ColoredBox(
+              color: Colors.black54,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Text('已上传',
+                    style: TextStyle(color: Colors.white, fontSize: 11)),
               ),
-              child: const Icon(
-                Icons.close_rounded,
-                color: Colors.white,
-                size: 17,
+            ),
+          ),
+        )
+      ];
+    }
+    final failed = state == PublishImageUploadState.failed;
+    final label = failed
+        ? '上传失败，点击重试'
+        : state == PublishImageUploadState.waiting
+            ? '等待上传'
+            : item.progress > 0
+                ? '上传 ${(item.progress * 100).round()}%'
+                : '正在处理';
+    return [
+      Positioned.fill(
+        child: Semantics(
+          label:
+              failed ? '${item.uploadError?.message ?? '图片上传失败'}，点击重试' : label,
+          button: failed,
+          child: Tooltip(
+            triggerMode: TooltipTriggerMode.manual,
+            message: failed ? item.uploadError?.message ?? label : label,
+            child: GestureDetector(
+              onTap: failed && onRetry != null ? () => onRetry!(item.id) : null,
+              child: ColoredBox(
+                color: Colors.black54,
+                child: Center(
+                    child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (failed)
+                      const Icon(Icons.refresh_rounded,
+                          color: Colors.white, size: 24)
+                    else if (state == PublishImageUploadState.waiting)
+                      const Icon(Icons.schedule, color: Colors.white, size: 22)
+                    else
+                      SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            value: item.progress > 0 ? item.progress : null,
+                            color: Colors.white,
+                          )),
+                    const SizedBox(height: 4),
+                    Text(label,
+                        textAlign: TextAlign.center,
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 10)),
+                  ],
+                )),
               ),
             ),
           ),
         ),
-      ],
-    );
+      )
+    ];
   }
 
   Widget _buildSingleAddContent(bool isDark) {
@@ -462,7 +520,8 @@ class PublishImageGrid extends StatelessWidget {
             ? _marketAccent.withValues(alpha: 0.55)
             : _marketAccent.withValues(alpha: 0.34),
         radius: _radius + 4,
-        child: Container(
+        child: AppCardSurface(
+          key: const ValueKey('publish-image-add-surface'),
           decoration: BoxDecoration(
             color: isDark
                 ? _marketAccent.withValues(alpha: 0.08)

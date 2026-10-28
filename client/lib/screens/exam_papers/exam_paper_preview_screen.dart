@@ -1,3 +1,4 @@
+import '../../widgets/app_page_background.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -80,7 +81,9 @@ class _ExamPaperPreviewScreenState extends State<ExamPaperPreviewScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(widget.paper.title)),
       body: _buildBody(),

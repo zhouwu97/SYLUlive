@@ -6,23 +6,78 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"shenliyuan/internal/models"
 )
 
 func TestPostgresEmailResetRecovery(t *testing.T) {
+	isolated := remediationPostgresDB(t)
+	h, fixtureDB, user, mailer := remediationAuthFixtureForDB(t, isolated)
+	t.Run("throttle_query_failure", func(t *testing.T) {
+		testLoginThrottleQueryFailurePreservesMemoryLock(t, h, fixtureDB, user)
+	})
+	testEmailResetRecovery(t, h, fixtureDB, user, mailer)
+}
+
+func TestPostgresLoginThrottleConcurrentFirstFailures(t *testing.T) {
+	db := remediationPostgresDB(t)
+	require.NoError(t, db.AutoMigrate(&models.LoginThrottleRecord{}))
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	const workers = 16
+	sqlDB.SetMaxOpenConns(workers + 4)
+	ready := make(chan struct{}, workers)
+	release := make(chan struct{})
+	require.NoError(t, db.Callback().Create().Before("gorm:create").Register("test:concurrent-first-failures", func(tx *gorm.DB) {
+		if tx.Statement.Table == "login_throttle_records" {
+			ready <- struct{}{}
+			<-release
+		}
+	}))
+	h := &AuthHandler{db: db}
+	scope := loginThrottleScope("account", t.Name())
+	clearLoginFailures(scope)
+	t.Cleanup(func() { clearLoginFailures(scope) })
+	now := time.Now()
+	var group sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		group.Go(func() { h.registerLoginFailure(scope, now) })
+	}
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	for i := 0; i < workers; i++ {
+		select {
+		case <-ready:
+		case <-timer.C:
+			close(release)
+			group.Wait()
+			t.Fatal("并发请求没有全部进入首次计数窗口")
+		}
+	}
+	close(release)
+	group.Wait()
+	var record models.LoginThrottleRecord
+	require.NoError(t, db.Where("scope = ?", scope).First(&record).Error)
+	require.Equal(t, workers, record.FailureCount, "跨实例保护不能把唯一键冲突丢给单进程回退")
+}
+
+func remediationPostgresDB(t *testing.T) *gorm.DB {
+	t.Helper()
 	dsn, ok := postgresIntegrationDSN(t, "缺少独立 PostgreSQL 测试库")
 	if !ok {
-		return
+		return nil
 	}
 	if os.Getenv("ALLOW_DESTRUCTIVE_INTEGRATION_TESTS") != "1" {
 		requireIntegrationEnv(t, "未允许可丢弃测试库写入")
-		return
+		return nil
 	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
@@ -50,9 +105,5 @@ func TestPostgresEmailResetRecovery(t *testing.T) {
 	isolatedSQL, err := isolated.DB()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = isolatedSQL.Close() })
-	h, fixtureDB, user, mailer := remediationAuthFixtureForDB(t, isolated)
-	t.Run("throttle_query_failure", func(t *testing.T) {
-		testLoginThrottleQueryFailurePreservesMemoryLock(t, h, fixtureDB, user)
-	})
-	testEmailResetRecovery(t, h, fixtureDB, user, mailer)
+	return isolated
 }

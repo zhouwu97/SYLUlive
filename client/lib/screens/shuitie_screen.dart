@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../widgets/app_card.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -39,7 +41,9 @@ import '../services/feed_session_service.dart';
 import '../services/post_cache_service.dart';
 import '../services/root_page_state_service.dart';
 import '../services/reply_notification_service.dart';
+import '../services/reply_notification_session.dart';
 import '../services/reply_notification_state.dart';
+import '../services/publish_session_scope.dart';
 import '../services/app_resume_coordinator.dart';
 import '../widgets/home_service_drawer.dart';
 import '../widgets/pinned_post_summary_bar.dart';
@@ -134,6 +138,7 @@ class ShuitieScreen extends StatefulWidget {
 
 class _ShuitieScreenState extends State<ShuitieScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
+  bool _useSplitLayout = false;
   late final Map<String, ScrollController> _feedScrollControllers;
   late final ImagePrefetchCoordinator _feedImagePrefetchCoordinator;
   String? _feedPrefetchMode;
@@ -652,15 +657,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       return;
     }
 
-    final generation = authProvider.sessionGeneration;
+    final session = ReplyNotificationSession.capture(authProvider);
     final syncVersion = ReplyNotificationState.instance.version;
     try {
       final page =
           await ReplyNotificationService(authProvider.dio).fetchUnread();
       if (!mounted ||
           requestSerial != _unreadReplyLoadSerial ||
-          !authProvider.isLoggedIn ||
-          authProvider.sessionGeneration != generation ||
+          !session.isCurrent(authProvider) ||
           ReplyNotificationState.instance.version != syncVersion) {
         return;
       }
@@ -680,7 +684,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         .where((item) => item.id != notificationId)
         .toList(growable: false);
     final wasPresent = nextItems.length != _unreadReplyNotifications.length;
-    if (!wasPresent && _unreadReplyCount <= 0) return;
+    if (!wasPresent) {
+      // 重复进入已读历史不能再扣减其他回复；分页外的通知向服务端校准。
+      if (_unreadReplyCount > 0) unawaited(_loadUnreadReplyNotifications());
+      return;
+    }
     setState(() {
       _unreadReplyNotifications = nextItems;
       _unreadReplyCount = _unreadReplyCount > 0 ? _unreadReplyCount - 1 : 0;
@@ -701,18 +709,55 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Future<void> _handleUnreadReplyReminderPressed() async {
     final items = List<UnreadReplyNotification>.of(_unreadReplyNotifications);
     if (items.isEmpty) return;
-    if (items.length == 1) {
-      await _openUnreadReply(items.single);
-      return;
-    }
     if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    if (!auth.isLoggedIn || accountId == null) return;
+    final session = PublishSessionScope(
+      accountId: accountId,
+      accountSessionEpoch: auth.accountSessionEpoch,
+    );
     await showReplyNotificationList(
       context,
       items: items,
       totalCount: _unreadReplyCount,
+      onMarkAllRead: () => _markAllUnreadRepliesRead(auth, session),
       onSelected: (item) {
+        if (!session.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
+          return;
+        }
         unawaited(_openUnreadReply(item));
       },
+    );
+  }
+
+  Future<void> _markAllUnreadRepliesRead(
+    AuthProvider auth,
+    PublishSessionScope session,
+  ) async {
+    if (!mounted || !auth.isLoggedIn) {
+      throw const PublishSessionChanged();
+    }
+    session.ensure(
+        userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
+    await ReplyNotificationService(auth.dio,
+        recipientUserId: session.accountId,
+        isCurrentSession: () => session.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch))
+        .markAllRead(repliesOnly: true, session: session);
+    if (!mounted ||
+        !session.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
+      return;
+    }
+    ReplyNotificationState.instance.notifyAllRead(
+      accountId: session.accountId,
+      sessionGeneration: auth.sessionGeneration,
+    );
+    ReplyNotificationState.instance.requestRefresh(
+      accountId: session.accountId,
+      sessionGeneration: auth.sessionGeneration,
     );
   }
 
@@ -720,20 +765,20 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (_openingUnreadReplyIds.contains(item.id)) return;
     _openingUnreadReplyIds.add(item.id);
     final authProvider = context.read<AuthProvider>();
-    final sessionGeneration = authProvider.sessionGeneration;
-    final accountIdOrNull = authProvider.user?.id;
+    final notificationSession = ReplyNotificationSession.capture(authProvider);
+    final accountIdOrNull = notificationSession.accountId;
     if (!authProvider.isLoggedIn || accountIdOrNull == null) {
       _openingUnreadReplyIds.remove(item.id);
       return;
     }
     final accountId = accountIdOrNull;
+    final session = PublishSessionScope(
+      accountId: accountId,
+      accountSessionEpoch: authProvider.accountSessionEpoch,
+    );
     try {
       final response = await authProvider.dio.get('/posts/${item.postId}');
-      if (!_isCurrentReplyNotificationSession(
-        authProvider,
-        accountId: accountId,
-        sessionGeneration: sessionGeneration,
-      )) {
+      if (!notificationSession.isCurrent(authProvider)) {
         return;
       }
       if (response.statusCode != 200 ||
@@ -742,44 +787,42 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       }
       final post = Post.fromJson(response.data as Map<String, dynamic>);
       try {
-        await ReplyNotificationService(authProvider.dio).markRead(item.id);
-        if (_isCurrentReplyNotificationSession(
-          authProvider,
-          accountId: accountId,
-          sessionGeneration: sessionGeneration,
-        )) {
+        await ReplyNotificationService(authProvider.dio, recipientUserId: accountId, isCurrentSession: () => session.owns(userId: authProvider.user?.id, sessionEpoch: authProvider.accountSessionEpoch))
+            .markRead(item.id, replyId: item.relatedId, session: session);
+        if ((mounted && notificationSession.isCurrent(authProvider))) {
           ReplyNotificationState.instance.markRead(
             accountId: accountId,
-            sessionGeneration: sessionGeneration,
+            sessionGeneration: authProvider.sessionGeneration,
             notificationId: item.id,
           );
         }
       } catch (error) {
         debugPrint('消费回复通知失败: $error');
-        if (mounted) {
+        if ((mounted && notificationSession.isCurrent(authProvider))) {
           AppFeedback.showSnackBar(context, '标记已读失败，请重试', isError: true);
         }
       }
-      if (!mounted) return;
+      if (!(mounted && notificationSession.isCurrent(authProvider))) {
+        return;
+      }
       await Navigator.of(context).push(
         buildPostDetailRoute(post, targetReplyId: item.relatedId),
       );
       if (mounted) unawaited(_loadUnreadReplyNotifications());
     } on DioException catch (error) {
-      if (!mounted) return;
+      if (!(mounted && notificationSession.isCurrent(authProvider))) {
+        return;
+      }
       if (error.response?.statusCode == 404) {
         try {
-          await ReplyNotificationService(authProvider.dio).markRead(item.id);
-          if (!_isCurrentReplyNotificationSession(
-            authProvider,
-            accountId: accountId,
-            sessionGeneration: sessionGeneration,
-          )) {
+          await ReplyNotificationService(authProvider.dio, recipientUserId: accountId, isCurrentSession: () => session.owns(userId: authProvider.user?.id, sessionEpoch: authProvider.accountSessionEpoch))
+              .markRead(item.id, replyId: item.relatedId, session: session);
+          if (!(mounted && notificationSession.isCurrent(authProvider))) {
             return;
           }
           ReplyNotificationState.instance.markRead(
             accountId: accountId,
-            sessionGeneration: sessionGeneration,
+            sessionGeneration: authProvider.sessionGeneration,
             notificationId: item.id,
           );
           if (mounted) {
@@ -787,7 +830,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           }
         } catch (markError) {
           debugPrint('消费失效回复通知失败: $markError');
-          if (mounted) {
+          if ((mounted && notificationSession.isCurrent(authProvider))) {
             AppFeedback.showSnackBar(context, '原帖已删除，但提醒清理失败', isError: true);
           }
         }
@@ -1316,50 +1359,92 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       });
     }
 
-    final useDesktopShell = ResponsiveUtil.useDesktopShell(context);
-
     return Scaffold(
       backgroundColor: showCustomBackground
           ? Colors.transparent
           : (isDark ? const Color(0xFF101219) : kCleanWarmBackgroundLight),
       extendBodyBehindAppBar: true,
-      body: Stack(
-        children: [
-          useDesktopShell
-              ? _buildDesktopLayout(isDark)
-              : _buildMobileLayout(isDark),
-        ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // 380px 主栏 + 至少 460px 详情；首页 rail 占宽后按剩余空间判断。
+          _useSplitLayout = constraints.maxWidth >= 840;
+          final hasDetail = _selectedPost != null || _selectedUserId != null;
+          return PopScope(
+            canPop: _useSplitLayout || !hasDetail,
+            onPopInvokedWithResult: (didPop, result) {
+              if (!didPop) _closeNarrowDetail();
+            },
+            child:
+                _buildResponsiveLayout(isDark, constraints.maxWidth, hasDetail),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildDesktopLayout(bool isDark) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildResponsiveLayout(bool isDark, double width, bool hasDetail) {
+    // 两个区域保持相同的 Element 路径，缩放窗口时保留滚动、焦点和回复草稿。
+    return Stack(
       children: [
-        // 左侧 Master 列表
-        Container(
-          width: 380,
-          decoration: BoxDecoration(
-            border: Border(
-              right: BorderSide(
-                color: isDark
-                    ? Colors.white10
-                    : Colors.black.withValues(alpha: 0.05),
-                width: 1,
+        Positioned(
+          top: 0,
+          bottom: 0,
+          left: 0,
+          width: _useSplitLayout ? 380 : width,
+          child: Offstage(
+            offstage: !_useSplitLayout && hasDetail,
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border(
+                  right: BorderSide(
+                    color: isDark
+                        ? Colors.white10
+                        : Colors.black.withValues(alpha: 0.05),
+                    width: _useSplitLayout ? 1 : 0,
+                  ),
+                ),
               ),
+              child: Stack(children: [_buildMobileLayout(isDark)]),
             ),
           ),
-          child: Stack(children: [_buildMobileLayout(isDark)]),
         ),
-        // 右侧 Detail 详情
-        Expanded(
-          child: _selectedPost == null && _selectedUserId == null
-              ? _buildEmptyDetailState(isDark)
-              : _buildRightDetailContainer(isDark),
+        Positioned(
+          top: 0,
+          bottom: 0,
+          left: _useSplitLayout ? 380 : 0,
+          right: 0,
+          child: Offstage(
+            offstage: !_useSplitLayout && !hasDetail,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: hasDetail
+                      ? _buildRightDetailContainer(isDark)
+                      : _buildEmptyDetailState(isDark),
+                ),
+                if (!_useSplitLayout && hasDetail && _selectedUserId == null)
+                  Positioned(
+                    top: 0,
+                    left: 8,
+                    child: SafeArea(
+                      bottom: false,
+                      child: BackButton(onPressed: _closeNarrowDetail),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ],
     );
+  }
+
+  void _closeNarrowDetail() {
+    _finalizeSplitDwell();
+    setState(() {
+      _selectedPost = null;
+      _selectedUserId = null;
+    });
   }
 
   Widget _buildRightDetailContainer(bool isDark) {
@@ -1370,6 +1455,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         child: UserHomeScreen(
           key: ValueKey('user-$selectedUserId'),
           userId: selectedUserId,
+          onBack: _closeNarrowDetail,
         ),
       );
     }
@@ -1397,7 +1483,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
 
     return ColoredBox(
-      color: isDark ? const Color(0xFF131720) : Colors.white,
+      color: context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
+          ? Colors.transparent : isDark ? const Color(0xFF131720) : Colors.white,
       child: content,
     );
   }
@@ -1520,7 +1607,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void _openUserInSplit(int userId) {
     if (!mounted) return;
     _finalizeSplitDwell();
-    if (MediaQuery.of(context).size.width <= 600) {
+    if (!_useSplitLayout) {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => UserHomeScreen(userId: userId)),
@@ -1597,7 +1684,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('删除帖子'),
         content: const Text('删除后不可恢复，确定删除吗？'),
         actions: [
@@ -1668,7 +1755,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Widget _buildFeedTabs(bool isDark) {
     const tabWidth = 56.0;
-    const activeColor = AppColors.brandPrimary;
+    final activeColor =
+        isDark ? Theme.of(context).colorScheme.primary : AppColors.brandPrimary;
     final inactiveColor =
         isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
 
@@ -1900,7 +1988,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           ),
           const SizedBox(height: AppSpacing.xs),
           if (posts.isEmpty && !isFeedLoading)
-            Container(
+            AppCardSurface(
               height: 100,
               width: double.infinity,
               decoration: BoxDecoration(
@@ -1940,7 +2028,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   onPostAction: (action) => _handlePostAction(post, action),
                   allowNotInterested: false,
                   onTap: () {
-                    if (ResponsiveUtil.useDesktopShell(context)) {
+                    if (_useSplitLayout) {
                       _openPostInSplit(post,
                           feedKind: 'following', position: position);
                     } else {
@@ -2024,7 +2112,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     ),
                   );
                 },
-                child: Container(
+                child: AppCardSurface(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
                     color: isDark ? const Color(0xFF1F2937) : Colors.white,
@@ -2522,7 +2610,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                             isDark: isDark,
                             label: '置顶',
                             onOpenPost: (post) {
-                              if (ResponsiveUtil.useDesktopShell(context)) {
+                              if (_useSplitLayout) {
                                 _openPostInSplit(post);
                               } else {
                                 Navigator.push(
@@ -2538,7 +2626,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                           final post = normalPosts[index];
                           final isSelected = _selectedPost?.id == post.id &&
                               _selectedUserId == null &&
-                              ResponsiveUtil.useDesktopShell(context);
+                              _useSplitLayout;
                           return Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 10),
                             child: Container(
@@ -2575,8 +2663,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                       _handlePostAction(post, action),
                                   allowNotInterested: sort == 'all',
                                   onCommentTap: (commentPost) {
-                                    if (ResponsiveUtil.useDesktopShell(
-                                        context)) {
+                                    if (_useSplitLayout) {
                                       _openPostInSplit(commentPost,
                                           scrollToReplies: true);
                                     } else {
@@ -2597,8 +2684,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                     if (_exitSearchInputMode()) {
                                       return;
                                     }
-                                    if (ResponsiveUtil.useDesktopShell(
-                                        context)) {
+                                    if (_useSplitLayout) {
                                       _openPostInSplit(post,
                                           feedKind: sort, position: index);
                                     } else {
@@ -2681,7 +2767,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         : AppColors.surfaceSecondaryLight;
     final border =
         isDark ? AppColors.borderNormalDark : AppColors.borderNormalLight;
-    return Container(
+    return AppCardSurface(
       height: 46,
       decoration: BoxDecoration(
         color: background,
@@ -2690,6 +2776,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       ),
       child: TextField(
         key: const ValueKey('feed-search-field'),
+        textAlignVertical: TextAlignVertical.center,
         controller: _searchController,
         focusNode: _searchFocusNode,
         onChanged: _onSearchChanged,
@@ -2699,7 +2786,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         decoration: InputDecoration(
           border: InputBorder.none,
           isDense: true,
-          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+          filled: false,
+          contentPadding: EdgeInsets.zero,
+          prefixIconConstraints:
+              const BoxConstraints(minWidth: 44, minHeight: 46),
+          suffixIconConstraints:
+              const BoxConstraints(minWidth: 44, minHeight: 46),
           hintText: '搜索帖子标题、关键词、校园话题',
           hintStyle: TextStyle(
             fontSize: 14,
@@ -2902,15 +2994,8 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    final visibleFraction = (1.0 - shrinkOffset / maxExtent).clamp(0.0, 1.0);
-    return Opacity(
-      opacity: visibleFraction,
-      child: Align(
-        alignment: Alignment.topCenter,
-        heightFactor: visibleFraction,
-        child: child,
-      ),
-    );
+    // 固定高度的搜索框不需要淡出；Opacity 的合成层会隔断毛玻璃采样。
+    return child;
   }
 
   @override
@@ -2955,7 +3040,7 @@ class CheckInSuccessDialog extends StatelessWidget {
       insetPadding: const EdgeInsets.symmetric(horizontal: 32),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 304),
-        child: Container(
+        child: AppCardSurface(
           padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1D1F24) : Colors.white,

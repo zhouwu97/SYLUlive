@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 
 import '../app_action_popup_menu.dart';
@@ -57,7 +58,7 @@ class FeedPostActionMenu extends StatelessWidget {
             icon: Icons.visibility_off_outlined,
           ),
         if ((allowNotInterested || allowHideAuthor) && allowReport)
-          const Divider(),
+          const AppCardDivider(),
         if (allowReport)
           const AppPopupAction(
             value: 'report',

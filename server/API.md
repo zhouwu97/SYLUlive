@@ -2,6 +2,14 @@
 
 本文件旨在提供沈理校园后端的 HTTP API 接口概览。所有的接口均基于 RESTful 风格设计，通过 JSON 格式进行数据交互。
 
+## 安全中心预警来源
+
+`GET /api/admin/security/events` 与 `GET /api/admin/security/events/:id` 延续管理员鉴权；普通用户不可访问。`source_key` 仍只提供给超级管理员，用于既有 HMAC 来源封禁。
+
+预警新增 `source_ip`、`source_ip_status`、`source_region`、`source_region_status`。IP 仅在可信来源且该预警已保存有效密文时返回，状态为 `available`；`not_recorded` 表示历史记录或普通审计未记录 IP，`untrusted` 表示来源归因不可信，`unavailable` 表示密文无法读取。归属地是国家／省／市的离线查询结果，不含经纬度；状态为 `resolved`、`private`、`local`、`reserved`、`unknown`、`database_unavailable` 或 `database_error`。缺少 IP 时不猜测归属地。
+
+列表继续返回 `items`、`total`、`page`、`limit`，客户端支持加载后续页及失败重试。统计接口 `protection.security_ip_location` 和 `security_ip_location_note` 报告本地 IPv4／IPv6 库是否可用。数据库缺失只影响归属地，不能伪装为归属地正常，也不阻断事件采集。
+
 ## 基础信息
 
 - **基础路由 (Base URL)**: `/api`
@@ -49,6 +57,10 @@
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/user/profile` | 获取当前用户资料 |
+| `GET` | `/api/user/account-security` | 当前账号的私有安全资料；完整邮箱仅在此返回 |
+| `POST` | `/api/user/email/code` | 向目标邮箱发送绑定或换绑验证码；省略 `purpose` 时按账号实际绑定状态推导 |
+| `PUT` | `/api/user/email` | 使用邮箱验证码和当前 App 密码绑定或换绑邮箱，成功签发新会话 |
+| `DELETE` | `/api/user/email` | 使用当前 App 密码解除邮箱；唯一登录方式不能解除 |
 | `PUT` | `/api/user/profile` | 更新个人资料 (昵称、性别等) |
 | `PUT` | `/api/user/avatar` | 更新头像 URL |
 | `PUT` | `/api/user/background`| 更新个人主页背景 |
@@ -60,6 +72,8 @@
 | `POST`| `/api/user/:id/follow` | 关注指定用户 |
 | `DELETE`| `/api/user/:id/follow`| 取消关注指定用户 |
 | `GET` | `/api/user/:id/posts` | 获取指定用户发布的帖子 |
+
+每段连续签到第 7 天获得首张补签卡，此后每隔 14 天再获得 1 张，即该段第 7、21、35、49 天各发 1 张；第 14 天不额外发卡。每次断签后重新开始均按此规则计算，已获得的卡保留。补签接续连续天数时按同一规则重算奖励，若合并两段记录导致理论奖励减少，已发奖励转为保留额度，不额外追扣。使用时消耗 1 张，仅可补签本月今天之前的未签到日期；重复请求不重复发卡或扣卡，签到经验规则保持不变。
 
 ## 3. 教务系统 (Edu)
 
@@ -126,6 +140,8 @@
 | `POST` | `/api/posts/:id/replies`| 发表回复或楼中楼 |
 | `DELETE` | `/api/replies/:id` | 删除回复 |
 | `POST` | `/api/replies/:id/like`| 点赞回复 |
+
+楼中楼请求传 `parent_reply_id`（线程根）与 `reply_to_reply_id`（实际点击的评论）。服务端校验两者属于同一线程并推导 `reply_to_user_id`，回复通知仅发给实际对象；客户端传入的用户 ID 不作为通知依据。回复响应中的 `reply_to_name` 为对象的公开昵称，列表、子回复分页、定位和创建响应均携带；客户端持续展示“回复 @昵称”，不要求把昵称写入正文。
 
 ## 4.1 Feed 推荐用户控制 (Feed) — FEED-1
 
@@ -291,6 +307,11 @@ FEED-H1 加固：
 | `GET` | `/api/messages/unread_count` | 获取私信未读总数 |
 | `GET` | `/api/user/notifications/unread_count`| 获取未读系统通知和互动红点数 |
 | `POST`| `/api/user/notifications/read` | 标记所有通知为已读 |
+| `POST`| `/api/notifications/read-selected` | 以当前登录用户为接收者。支持 `{"ids":[通知ID]}`（最多100个），或成功打开目标回复后发送 `{"post_id":帖子ID,"reply_id":回复ID}`；只消费匹配的回复通知 |
+| `GET` | `/api/user/likes/received` | 当前用户的帖子、评论收到的历史点赞；`limit` 默认30、最大50，`cursor` 为上一页返回的点赞ID。响应 `{items,has_more,next_cursor}`，每项含 `id,user_id,nickname,avatar,target_type,target_id,post_id,post_title,created_at`；过滤自赞、取消的赞、已删除/受限内容和注销账号 |
+
+通知已读接口在原有响应上附加 `read_receipt`：`recipient_user_id` 表示接收账号，单条/目标回复读取返回实际归属该账号的 `ids` 和 `reply_ids`，全部已读返回 `all_before_id`。全部已读只处理该水位之前的通知，新产生的通知保持未读。旧客户端可忽略此附加字段。Android 用回执清理系统通知并阻止延迟重放；新回复推送附带 `notification_id`，使用 `reply_notifications_v1` 高优先级渠道，仍遵从用户的系统通知权限。
+| `POST` | `/api/notifications/replies/read` | 将当前账号全部回复通知标为已读，包含未加载分页；不影响其他类型通知。旧服务端无此路径返回 `404`，客户端保留提醒且提示重试，不降级为全部通知已读 |
 
 ## 6.1 统一搜索 (Search)
 
@@ -298,6 +319,10 @@ FEED-H1 加固：
 |---|---|---|
 | `GET` | `/api/search?type=posts&q=关键词&sort=relevance` | 按标题或正文搜索帖子，支持 relevance/latest/hot |
 | `GET` | `/api/search?type=users&q=用户ID或昵称&sort=relevance` | 公开搜索仅支持精确用户 ID 或昵称，支持 relevance/newest |
+
+`q` 去除首尾空白后须为 1 至 64 个 Unicode 字符，支持单字符关键词（例如 `2`、`好`）和单数字用户 ID。不能只包含 `%`、`_`、`*`、`?`、`\` 等通配符。无效输入返回 `400`，正常搜索但无匹配内容返回 `200` 和空 `items`。匿名搜索每个来源每分钟最多 30 次，超限返回 `429` 和 `Retry-After: 60`。
+
+校园资讯 `GET /api/campus/articles?q=关键词` 同样支持 1 至 64 个字符；省略 `q` 时仍返回未按关键词筛选的列表。
 
 ## 7. 管理员与超级管理员 (Admin)
 
@@ -307,6 +332,8 @@ FEED-H1 加固：
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/admin/members` | 获取当前管理员列表，返回用户 ID 与学号/登录账号 |
+| `GET` | `/api/admin/candidates` | 管理员候选列表，`q` 支持用户 ID、学号/账号或昵称；分页保留候选资格筛选 |
+| `GET` | `/api/admin/candidates/stats` | `edu` 为有有效云端教务配置、可信身份或旧教务授权的现存用户去重数，`other=total-edu`；不表示身份验证人数 |
 | `POST` | `/api/admin/invite/:id`| 邀请指定用户成为管理员 |
 | `POST` | `/api/teachers/admin/:id/vote-remove` | 投票罢免管理员 |
 | `GET` | `/api/admin/feed/metrics?from=YYYY-MM-DD&to=YYYY-MM-DD&feed_kind=all` | Feed 每日指标（曝光/open/CTR/avg_dwell/互动密度/负反馈）；默认最近 7 个上海自然日 |
@@ -320,16 +347,40 @@ FEED-H1 加固：
 | `POST`| `/api/super/users/:id/reset_password`| 强制重置密码 |
 | `GET` | `/api/super/stats` | 获取系统整体统计大盘数据 |
 
+管理用户摘要中的 `student_id` 依次取可信身份学号、最近更新的有效云端配置学号、旧登录账号字段。`academic_configured` 仅表示存在有效配置，`student_verified` 仍按可信身份独立判断；登记配置不授予学生权限。搜索包含所有有效云端配置学号，已删除配置不用于搜索或展示。本机连接尚未同步时服务端无法据此登记；管理接口不返回学校密码、Cookie 或会话，公开用户接口也不增加学号。
+
+### 安全中心
+
+| Method | Endpoint | 权限与行为 |
+|---|---|---|
+| `GET` | `/api/admin/security/overview?range=24h` | 管理员；支持 `1h`、`24h`、`7d`，返回统计与防护运行状态 |
+| `GET` | `/api/admin/security/events` | 管理员；按 `severity`、`status`、`actionable` 筛选，返回 `items/total/page/limit` |
+| `GET` | `/api/admin/security/events/:id` | 管理员；单条事件详情 |
+| `POST` | `/api/admin/security/events/:id/resolve` | 管理员；仅从 `active` 标记为已处理，备注可选，最多 500 个 Unicode 字符 |
+| `POST` | `/api/admin/security/events/:id/false-positive` | 管理员；仅从 `active` 标记为误报，备注规则同上 |
+| `GET` | `/api/super/security/blocks?page=1` | 超级管理员；每页 200 条生效封禁，同一操作按 `group_id` 归组 |
+| `POST` | `/api/super/security/blocks` | 超级管理员；`route/account/all` 作用域，`all` 必须 `confirm_global=true`；时长 15/60/1440 分钟；原因最多 200 个 Unicode 字符 |
+| `DELETE` | `/api/super/security/blocks/:id` | 超级管理员；一次解除同一操作组全部封禁 |
+
+事件列表默认每页 50 条，最多 100 条；事件和封禁页码最多 10000。事件按最后发生时间、ID 倒序稳定排序。正常验证码、正常改密等流水通过 `actionable=false` 区分，默认待办使用 `actionable=true&status=active`。普通管理员只取得脱敏来源指纹，完整来源键仅返回给超级管理员。
+
+事件处置请求接受 `{"note":"处理说明"}`，兼容空请求体；非法 JSON 返回 `400`，不存在返回 `404`，已被其他请求处置返回 `409/security_event_already_handled`，保留第一次处理结论和审计。数据库故障返回 `500`。客户端收到冲突后刷新列表。防护数据加载失败时不沿用旧的健康状态；缺失的运行态保持“未验证”。
+
 ## 8. 公共服务 (Public & AI)
 
 | Method | Endpoint | Description |
 |---|---|---|
 | `POST` | `/api/upload` | 上传单张图片/文件 |
+| `POST` | `/api/upload_multiple` | 逐项返回结果的图片批量上传，1–9 张 |
 | `GET` | `/api/announcements/active` | 获取活跃系统公告 |
 | `POST` | `/api/feedback` | 提交产品功能建议或Bug |
 | `POST` | `/api/v1/question/solve` | 触发大模型 AI 解答题目接口 |
 
 > **注**: 以上仅为摘要级接口列表。请求载荷 (Body) 和返回体结构请参考对应处理器 (Handlers) 的 Go 源码定义。
+
+图片上传接受 JPG、PNG、GIF，单张最多 10 MiB，最长边不超过 12000 像素且总像素不超过 5000 万；先校验尺寸，再解码验证图片内容。客户端选择后即可上传，响应继续返回 `file_id`、`url`，发帖只需认领已上传的文件。上传后仍为 `temporary/private`，未发出的图片沿用临时文件留存与配额规则；成功重传相同图片会刷新当前用户授权的临时保留窗口，文件创建时间与访问权限保持不变，正在删除的文件仍拒绝复用。发帖认领后才生成公开预览任务。GIF 保留动画原文件，预览使用静态首帧；PNG 预览保留透明度并采用无损编码压缩。
+
+预览沿用 `_v1_thumb`、`_v1_medium`、`_v1_viewer` 路径与原图回退。普通图片的长边上限仍为 480、1280、2048；长宽比达到 3 的长图改按短边 320、960、1280 和总像素 150 万、500 万、1000 万的双重预算等比缩放，避免长截图文字被固定长边缩成窄条，不放大小图，不为达到固定字节数强行降清晰度。已有 ready 预览和原图保持不变，无需迁移或批量重编码。
 
 ## 试卷库
 

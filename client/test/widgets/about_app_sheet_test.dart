@@ -61,13 +61,13 @@ void main() {
       await tester.ensureVisible(find.text('检查更新'));
       await tester.tap(find.text('检查更新'));
       await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.bySubtype<AlertDialog>(), findsOneWidget);
       expect(find.text('当前已经是最新版本').hitTestable(), findsOneWidget);
       expect(find.byType(SnackBar), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.tap(find.text('知道了'));
       await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.bySubtype<AlertDialog>(), findsNothing);
       expect(find.byType(AboutAppSheet), findsOneWidget);
       expect(find.text('检查更新').hitTestable(), findsOneWidget);
     });

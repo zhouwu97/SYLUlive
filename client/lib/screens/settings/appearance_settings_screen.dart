@@ -16,6 +16,7 @@ import '../../widgets/settings/settings_tile.dart';
 import '../../widgets/app_cached_image.dart';
 import 'widgets/background_picker_sheet.dart';
 import 'bottom_navigation_settings_screen.dart';
+import '../../widgets/app_card.dart';
 
 /// 界面设置二级页
 class AppearanceSettingsScreen extends StatelessWidget {
@@ -84,14 +85,14 @@ class AppearanceSettingsScreen extends StatelessWidget {
         backgroundWidget = Image(
           image: imageProvider,
           fit: BoxFit.cover,
-          alignment: isLandscapeBg ? Alignment.center : Alignment.topCenter,
+          alignment: Alignment.center,
           errorBuilder: (_, __, ___) => Container(color: pageBgColor),
         );
       } else {
         backgroundWidget = AppCachedImage.public(
           imageUrl: bgPath,
           fit: BoxFit.cover,
-          alignment: isLandscapeBg ? Alignment.center : Alignment.topCenter,
+          alignment: Alignment.center,
           memCacheWidth: 1024,
           memCacheHeight: 1024,
           errorWidget: (_, __, ___) => Container(color: pageBgColor),
@@ -119,6 +120,15 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ),
         );
       }
+      // 缩略预览与真实页面保持相同明暗遮罩，深色下不再显示过亮壁纸。
+      backgroundWidget = Stack(fit: StackFit.expand, children: [
+        ColoredBox(color: pageBgColor, child: backgroundWidget),
+        ColoredBox(
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.25),
+        ),
+      ]);
     } else {
       backgroundWidget = Container(color: pageBgColor);
     }
@@ -130,7 +140,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
     final frameWidth = isLandscapeBg ? 230.0 : 122.0;
     final frameHeight = isLandscapeBg ? 130.0 : 216.0;
 
-    return Container(
+    return AppCardSurface(
       height: 240,
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -300,24 +310,22 @@ class AppearanceSettingsScreen extends StatelessWidget {
         // 主题模式段落
         SettingsSection(
           title: '界面主题模式',
+          showCard: false,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: CampusSegmentedControl<AppBackgroundMode>(
-                items: const [
-                  CampusSegmentItem(
-                    value: AppBackgroundMode.clean,
-                    label: '简洁模式',
-                  ),
-                  CampusSegmentItem(
-                    value: AppBackgroundMode.custom,
-                    label: '自定义背景',
-                  ),
-                ],
-                selectedValue: themeProvider.backgroundMode,
-                onSelectionChanged: (mode) =>
-                    _handleBackgroundModeChange(context, themeProvider, mode),
-              ),
+            CampusSegmentedControl<AppBackgroundMode>(
+              items: const [
+                CampusSegmentItem(
+                  value: AppBackgroundMode.clean,
+                  label: '简洁模式',
+                ),
+                CampusSegmentItem(
+                  value: AppBackgroundMode.custom,
+                  label: '自定义背景',
+                ),
+              ],
+              selectedValue: themeProvider.backgroundMode,
+              onSelectionChanged: (mode) =>
+                  _handleBackgroundModeChange(context, themeProvider, mode),
             ),
           ],
         ),

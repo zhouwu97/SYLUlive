@@ -104,6 +104,7 @@ WaterPostCategory? waterCategoryOf(String? value) {
 }
 
 String waterCategoryLabelOf(String? value) {
+  if (value == 'poll') return '投票';
   return waterCategoryOf(value)?.label ?? '校园生活';
 }
 

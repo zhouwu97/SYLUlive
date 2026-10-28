@@ -294,7 +294,7 @@ func (p *UploadProtection) PersistTemporaryFile(ctx context.Context, record *mod
 			if existing.Status == models.FileStatusDeleting {
 				return fmt.Errorf("%w: 文件正在清理", ErrFileBeingDeleted)
 			}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.FileUploadGrant{FileID: existing.ID, UserID: record.UploaderID}).Error; err != nil {
+			if err := refreshFileUploadGrant(tx, existing.ID, record.UploaderID, p.now()); err != nil {
 				return err
 			}
 			result = UploadPersistResult{File: existing, Reused: true}
@@ -330,7 +330,7 @@ func (p *UploadProtection) PersistTemporaryFile(ctx context.Context, record *mod
 		if record.Status == models.FileStatusDeleting {
 			return fmt.Errorf("%w: 文件正在清理", ErrFileBeingDeleted)
 		}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.FileUploadGrant{FileID: record.ID, UserID: record.UploaderID}).Error; err != nil {
+		if err := refreshFileUploadGrant(tx, record.ID, record.UploaderID, p.now()); err != nil {
 			return err
 		}
 		result = UploadPersistResult{File: *record, Reused: createResult.RowsAffected == 0}
@@ -393,7 +393,7 @@ func (p *UploadProtection) ReuseOrRestoreFile(ctx context.Context, record *model
 			if info.IsDir() {
 				return fmt.Errorf("文件路径指向目录")
 			}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.FileUploadGrant{FileID: existing.ID, UserID: record.UploaderID}).Error; err != nil {
+			if err := refreshFileUploadGrant(tx, existing.ID, record.UploaderID, p.now()); err != nil {
 				return err
 			}
 			result = UploadPersistResult{File: existing, Reused: true}
@@ -428,13 +428,24 @@ func (p *UploadProtection) ReuseOrRestoreFile(ctx context.Context, record *model
 		existing.MimeType = record.MimeType
 		existing.Width = record.Width
 		existing.Height = record.Height
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.FileUploadGrant{FileID: existing.ID, UserID: record.UploaderID}).Error; err != nil {
+		if err := refreshFileUploadGrant(tx, existing.ID, record.UploaderID, p.now()); err != nil {
 			return err
 		}
 		result = UploadPersistResult{File: existing, Reused: false}
 		return nil
 	})
 	return result, found, err
+}
+
+// 调用方已持有文件行锁并拒绝 deleting。成功重传只刷新本用户的临时保留窗口，
+// 不修改文件创建时间、生命周期或访问权限；时间不承担首次上传审计语义。
+func refreshFileUploadGrant(tx *gorm.DB, fileID, userID uint, now time.Time) error {
+	return tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "file_id"}, {Name: "user_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"created_at"}),
+	}).Create(&models.FileUploadGrant{
+		FileID: fileID, UserID: userID, CreatedAt: now,
+	}).Error
 }
 
 func (p *UploadProtection) cleanupFailedTemporaryPath(hash, publicPath string) error {

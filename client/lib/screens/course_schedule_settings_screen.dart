@@ -1,8 +1,11 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../widgets/app_page_background.dart';
 import '../widgets/campus/campus_theme.dart';
+import '../widgets/app_card.dart';
 
 class CourseScheduleSettingsSnapshot {
   const CourseScheduleSettingsSnapshot({
@@ -142,7 +145,7 @@ class _CourseScheduleSettingsScreenState
 
   Future<void> _pickReminderMinutes() async {
     final sheetTheme = CampusTheme.withBrandAccent(Theme.of(context));
-    final selected = await showModalBottomSheet<int>(
+    final selected = await showAppModalBottomSheet<int>(
       context: context,
       showDragHandle: true,
       builder: (context) => Theme(
@@ -182,17 +185,20 @@ class _CourseScheduleSettingsScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final baseTheme = Theme.of(context);
     final pageBackground = CampusTheme.pageBackground(context);
 
     return Theme(
       data: CampusTheme.withBrandAccent(baseTheme),
       child: Scaffold(
-        backgroundColor: pageBackground,
+        backgroundColor: AppPageBackground.color(context, pageBackground),
         appBar: AppBar(
           title: const Text('课表设置'),
-          backgroundColor: pageBackground,
+          backgroundColor: AppPageBackground.color(context, pageBackground),
           foregroundColor: baseTheme.colorScheme.onSurface,
           surfaceTintColor: Colors.transparent,
           elevation: 0,
@@ -414,7 +420,7 @@ class _CourseSettingsHeaderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     const primary = CampusTheme.primary;
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: primary.withValues(alpha: isDark ? 0.16 : 0.08),
@@ -496,7 +502,7 @@ class _CourseSettingsSection extends StatelessWidget {
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
             ),
           ),
-          DecoratedBox(
+          AppCardSurface(
             decoration: BoxDecoration(
               color: isDark ? CampusTheme.darkCard : CampusTheme.card,
               borderRadius: BorderRadius.circular(16),

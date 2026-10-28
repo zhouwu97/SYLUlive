@@ -100,6 +100,7 @@ import 'platform/platform_capabilities.dart';
 import 'widgets/app_update_gate.dart';
 import 'widgets/app_crash_fallback.dart';
 import 'widgets/global_background_wrapper.dart';
+import 'widgets/app_scroll_behavior.dart';
 import 'widgets/startup_recovery_screen.dart';
 import 'widgets/required_legal_consent_dialog.dart';
 import 'platform/contracts/preferences_store.dart';
@@ -1896,6 +1897,7 @@ class _AppContent extends StatelessWidget {
     final themeProvider = context.watch<ThemeProvider>();
     return MaterialApp(
       title: '沈理校园',
+      scrollBehavior: AppScrollBehavior(frostedGlass: themeProvider.frostedGlass),
       debugShowCheckedModeBanner: false,
       locale: const Locale('zh', 'CN'),
       supportedLocales: const [

@@ -1,9 +1,12 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 
+import '../../widgets/app_page_background.dart';
+import '../../widgets/responsive_content.dart';
 import '../../config/beta_release_policy.dart';
 import '../../features/ai_runtime/ai_feature_flags.dart';
 import '../../features/ai_device_bridge/device_tool_worker.dart';
@@ -69,6 +72,7 @@ import '../../widgets/ai/admin_ai_control_sheet.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../competition/competition_center_screen.dart';
 import '../account_security_screen.dart';
+import '../../widgets/app_card.dart';
 
 enum _ConsentChoice { denied, once, always }
 
@@ -249,7 +253,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         barrierDismissible: false,
         builder: (dialogContext) => Theme(
           data: dialogTheme,
-          child: AlertDialog(
+          child: AppAlertDialog(
             title: Text(
               isDeviceConsent
                   ? '校园 Agent 想在你的设备上执行一次操作'
@@ -944,7 +948,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       context: context,
       builder: (dialogContext) => Theme(
         data: dialogTheme,
-        child: AlertDialog(
+        child: AppAlertDialog(
           title: const Text('确认加入计划？'),
           content: const Text(
             '加入后会出现在我的计划中，不会自动报名，也不代表学校确认参赛资格。',
@@ -1001,7 +1005,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     };
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: Text('确认$actionLabel？'),
         content: Text(
           draft.actionType == 'calendar_event_delete'
@@ -1271,7 +1275,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final pageTheme = CampusTheme.withBrandAccent(Theme.of(context));
     return Theme(
       data: pageTheme,
@@ -1286,7 +1293,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                 ? PersonalAIRuntimeLimits.maximumInputCharacters
                 : capabilities.maxMessageChars;
             return Scaffold(
-              backgroundColor: theme.scaffoldBackgroundColor,
+              backgroundColor: AppPageBackground.color(context, theme.scaffoldBackgroundColor),
               appBar: AppPageAppBar(
                 title: const AiAppBarTitle(),
                 actions: [
@@ -1361,7 +1368,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   const SizedBox(width: 4),
                 ],
               ),
-              body: Column(
+              body: ResponsiveContent(
+                  child: Column(
                 children: [
                   AiModeSwitch(
                     isPersonalMode: _personalMode,
@@ -1547,7 +1555,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     onBridgeRetry: () => unawaited(_retryDeviceBridge()),
                   ),
                 ],
-              ),
+              )),
             );
           },
         ),
@@ -1569,6 +1577,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         final colors = Theme.of(sheetContext).colorScheme;
         return DraggableScrollableSheet(
@@ -1576,7 +1585,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           initialChildSize: 0.72,
           minChildSize: 0.42,
           maxChildSize: 0.92,
-          builder: (_, controller) => ListView(
+          builder: (_, controller) => AppCardSurface(
+            decoration: BoxDecoration(color: colors.surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16))),
+            child: ListView(
             controller: controller,
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             children: [
@@ -1589,7 +1601,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
               ),
               const SizedBox(height: 12),
               for (final capability in capabilities.capabilities)
-                Card(
+                AppCard(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
                     leading: Icon(
@@ -1608,6 +1620,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   ),
                 ),
             ],
+          ),
           ),
         );
       },

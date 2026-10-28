@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,9 +15,10 @@ import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/services/publish_session_scope.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/publish/water_post_composer.dart';
+import 'package:shenliyuan/screens/publish/widgets/publish_image_grid.dart';
 import 'package:shenliyuan/services/post_draft_service.dart';
 import 'package:shenliyuan/theme/app_colors.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 
 class FakeAuthProvider extends Fake
     with ChangeNotifier
@@ -50,16 +52,36 @@ class FakeAuthProvider extends Fake
   }
 }
 
+class _MultiPicker extends ImagePickerPlatform {
+  _MultiPicker(this.files, {this.onPick});
+  final List<XFile> files;
+  final void Function()? onPick;
+  int? limit;
+  @override
+  Future<List<XFile>> getMultiImageWithOptions({
+    MultiImagePickerOptions options = const MultiImagePickerOptions(),
+  }) async {
+    limit = options.limit;
+    onPick?.call();
+    return files;
+  }
+}
+
 class FakePostProvider extends Fake
     with ChangeNotifier
     implements PostProvider {
   int createPostCalls = 0;
   int updatePostCalls = 0;
+  int uploadCalls = 0;
+  List<int>? lastFileIds;
   String? lastContent;
   String? lastTitle;
   List<TopicSelection>? lastTopics;
   Completer<CreatePostResult>? createPostCompleter;
   PublishSessionScope? lastSession;
+  Completer<UploadImageResult>? uploadCompleter;
+  UploadImageResult uploadResult = const UploadImageResult.success(1);
+  final uploadTokens = <CancelToken>[];
 
   @override
   Post? postFor(int postId) => null;
@@ -83,6 +105,7 @@ class FakePostProvider extends Fake
     PublishSessionScope? session,
   }) async {
     createPostCalls++;
+    lastFileIds = fileIds;
     lastContent = content;
     lastTitle = title;
     lastTopics = topics;
@@ -122,9 +145,13 @@ class FakePostProvider extends Fake
   @override
   Future<UploadImageResult> uploadImage(XFile file,
       {void Function(int sent, int total)? onProgress,
-      PublishSessionScope? session}) async {
+      PublishSessionScope? session,
+      CancelToken? cancelToken}) async {
+    uploadCalls++;
     lastSession = session;
-    return const UploadImageResult.success(1);
+    if (cancelToken != null) uploadTokens.add(cancelToken);
+    if (uploadCompleter != null) return uploadCompleter!.future;
+    return uploadResult;
   }
 }
 
@@ -191,6 +218,160 @@ Widget buildComposerNavigationTestApp(
 void main() {
   setUp(() {
     AppPreferencesStore.setMockInitialValues({});
+  });
+
+  for (final failed in [false, true]) {
+    testWidgets('${failed ? '上传失败' : '上传成功'}后移除图片，发布不再引用也不重传', (tester) async {
+      final provider = FakePostProvider()
+        ..uploadResult = failed
+            ? const UploadImageResult.failure(message: '网络失败')
+            : const UploadImageResult.success(1);
+      await tester.pumpWidget(buildComposerTestApp(provider));
+      await tester.pumpAndSettle();
+      final dynamic state = tester.state(find.byType(WaterPostComposer));
+      state.onImageAdded(XFile('/tmp/removable.jpg'));
+      await tester.pumpAndSettle();
+      final id = tester
+          .widget<PublishImageGrid>(find.byType(PublishImageGrid))
+          .images
+          .single
+          .id;
+      final remove = find.byKey(ValueKey('publish-image-remove-$id'));
+      await tester.ensureVisible(remove);
+      await tester.tap(remove);
+      await tester.pumpAndSettle();
+      expect(find.byType(PublishImageGrid), findsNothing);
+      await tester.enterText(find.byType(TextFormField).last, '只发文字');
+      await tester.tap(find.text('发布'));
+      await tester.pumpAndSettle();
+      expect(provider.createPostCalls, 1);
+      expect(provider.lastFileIds, isNull);
+      expect(provider.uploadCalls, 1);
+    });
+  }
+
+  testWidgets('发布仍等待上传时可以取消单图，不再等待旧请求或引用已删图片', (tester) async {
+    final pending = Completer<UploadImageResult>();
+    final provider = FakePostProvider()..uploadCompleter = pending;
+    await tester.pumpWidget(buildComposerTestApp(provider));
+    await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(WaterPostComposer));
+    state.onImageAdded(XFile('/tmp/uploading.jpg'));
+    await tester.pump();
+    final id = tester
+        .widget<PublishImageGrid>(find.byType(PublishImageGrid))
+        .images
+        .single
+        .id;
+    await tester.enterText(find.byType(TextFormField).last, '取消图片后继续发布');
+    await tester.tap(find.text('发布'));
+    await tester.pump();
+    expect(provider.createPostCalls, 0);
+    final remove = find.byKey(ValueKey('publish-image-remove-$id'));
+    expect(tester.widget<IconButton>(remove).onPressed, isNotNull);
+    await tester.ensureVisible(remove);
+    await tester.tap(remove);
+    await tester.pumpAndSettle();
+    expect(provider.uploadTokens.single.isCancelled, isTrue);
+    expect(provider.createPostCalls, 1);
+    expect(provider.lastFileIds, isNull);
+    pending.complete(const UploadImageResult.success(99));
+    await tester.pumpAndSettle();
+    expect(provider.createPostCalls, 1);
+    expect(provider.lastFileIds, isNull);
+  });
+
+  testWidgets('帖子写入HTTP已经开始时明确禁用移除，已发送附件不假装取消', (tester) async {
+    final pending = Completer<CreatePostResult>();
+    final provider = FakePostProvider()..createPostCompleter = pending;
+    await tester.pumpWidget(buildComposerTestApp(provider));
+    await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(WaterPostComposer));
+    state.onImageAdded(XFile('/tmp/uploaded.jpg'));
+    await tester.pumpAndSettle();
+    final id = tester
+        .widget<PublishImageGrid>(find.byType(PublishImageGrid))
+        .images
+        .single
+        .id;
+    await tester.enterText(find.byType(TextFormField).last, '正在发帖');
+    await tester.tap(find.text('发布'));
+    await tester.pump();
+    expect(provider.createPostCalls, 1);
+    final button = tester
+        .widget<IconButton>(find.byKey(ValueKey('publish-image-remove-$id')));
+    expect(button.onPressed, isNull);
+    expect(button.tooltip, contains('正在发布'));
+    expect(provider.lastFileIds, [1]);
+    pending.complete(
+        const CreatePostResult(success: false, errorMessage: '服务器暂不可用'));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<IconButton>(
+                find.byKey(ValueKey('publish-image-remove-$id')))
+            .onPressed,
+        isNotNull,
+        reason: '发布失败后恢复取消入口');
+  });
+
+  testWidgets('选择图片立即预上传，发布复用文件且最多九张', (tester) async {
+    final provider = FakePostProvider();
+    await tester.pumpWidget(buildComposerTestApp(provider));
+    await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(WaterPostComposer));
+    for (var i = 0; i < 10; i++) {
+      state.onImageAdded(XFile('/tmp/selected-$i.jpg'));
+    }
+    await tester.pumpAndSettle();
+    expect(provider.uploadCalls, 9);
+    expect(provider.createPostCalls, 0);
+    await tester.enterText(find.byType(TextFormField).last, '多图发布');
+    await tester.tap(find.text('发布'));
+    await tester.pumpAndSettle();
+    expect(provider.uploadCalls, 9);
+    expect(provider.lastFileIds, hasLength(9));
+  });
+
+  testWidgets('相册支持多选，剩一格时忽略超选并接受大于10MB的可处理图片', (tester) async {
+    final original = ImagePickerPlatform.instance;
+    addTearDown(() => ImagePickerPlatform.instance = original);
+    final picker = _MultiPicker([
+      XFile.fromData(Uint8List(11 * 1024 * 1024), name: 'large.jpg'),
+      XFile.fromData(Uint8List(1), name: 'extra.jpg'),
+    ]);
+    ImagePickerPlatform.instance = picker;
+    final provider = FakePostProvider();
+    await tester.pumpWidget(buildComposerTestApp(provider));
+    await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(WaterPostComposer));
+    for (var i = 0; i < 8; i++) {
+      state.onImageAdded(XFile('/tmp/photo-$i.jpg'));
+    }
+    await tester.pumpAndSettle();
+    await state.pickImage(ImageSource.gallery);
+    await tester.pumpAndSettle();
+    expect(picker.limit, 2);
+    expect(provider.uploadCalls, 9);
+    expect(find.text('9/9'), findsOneWidget);
+    expect(find.text('图片大小不能超过 10MB'), findsNothing);
+  });
+
+  testWidgets('相册返回前切换账号，不把旧选择上传给新账号', (tester) async {
+    final original = ImagePickerPlatform.instance;
+    addTearDown(() => ImagePickerPlatform.instance = original);
+    final auth = FakeAuthProvider();
+    ImagePickerPlatform.instance = _MultiPicker([
+      XFile.fromData(Uint8List(1), name: 'photo.jpg'),
+    ], onPick: () => auth.switchAccount(2));
+    final provider = FakePostProvider();
+    await tester.pumpWidget(buildComposerTestApp(provider, authProvider: auth));
+    await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(WaterPostComposer));
+    await state.pickImage(ImageSource.gallery);
+    await tester.pumpAndSettle();
+    expect(provider.uploadCalls, 0);
+    expect(find.text('登录状态已变化，请重新选择图片'), findsOneWidget);
   });
 
   testWidgets('成功发布后下一次打开发布页不恢复已发布草稿', (WidgetTester tester) async {

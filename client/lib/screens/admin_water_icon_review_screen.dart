@@ -1,9 +1,13 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../widgets/app_page_background.dart';
 import '../models/water_section_icon_review.dart';
 import '../providers/water_section_provider.dart';
 import '../config/api_constants.dart';
+import '../widgets/app_card.dart';
 
 class AdminWaterIconReviewScreen extends StatefulWidget {
   const AdminWaterIconReviewScreen({super.key});
@@ -53,7 +57,7 @@ class _AdminWaterIconReviewScreenState
     final reasonController = TextEditingController();
     final bool? confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: Text(isApprove ? '同意更换头像' : '拒绝更换头像'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -114,12 +118,14 @@ class _AdminWaterIconReviewScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('版块图标审核'),
         actions: [
-          PopupMenuButton<String>(
+          AppPopupMenuButton<String>(
             initialValue: _statusFilter,
             onSelected: (val) {
               setState(() => _statusFilter = val);
@@ -145,7 +151,7 @@ class _AdminWaterIconReviewScreenState
                   separatorBuilder: (_, __) => const SizedBox(height: 16),
                   itemBuilder: (context, index) {
                     final review = _reviews[index];
-                    return Card(
+                    return AppCard(
                       elevation: 0,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),

@@ -3,9 +3,11 @@
 /// 展示单个模块的完整课程列表。
 
 import 'package:flutter/material.dart';
+import '../widgets/app_page_background.dart';
 import '../models/edu_credit_requirement.dart';
 import '../theme/app_colors.dart';
 import '../widgets/edu_grade/academic_requirement_state.dart';
+import '../widgets/app_card.dart';
 
 class AcademicRequirementDetailScreen extends StatelessWidget {
   final EduCreditRequirementModule module;
@@ -16,7 +18,10 @@ class AcademicRequirementDetailScreen extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     const accent = AppColors.brandPrimary;
     final titleColor =
@@ -25,8 +30,7 @@ class AcademicRequirementDetailScreen extends StatelessWidget {
         isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? AppColors.surfacePrimaryDark : AppColors.surfacePrimaryLight,
+      backgroundColor: AppPageBackground.color(context, isDark ? AppColors.surfacePrimaryDark : AppColors.surfacePrimaryLight),
       appBar: AppBar(
         leading: const BackButton(),
         title: Text(
@@ -36,14 +40,14 @@ class AcademicRequirementDetailScreen extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         centerTitle: true,
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(context, Colors.transparent),
         elevation: 0,
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
           // 模块进度卡片
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: isDark
@@ -250,7 +254,7 @@ class _RequirementCourseCard extends StatelessWidget {
             ? (isDark ? AppColors.textMutedLight : AppColors.textSecondaryLight)
             : AppColors.brandPrimary;
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(

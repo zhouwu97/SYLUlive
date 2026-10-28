@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'team_ui_tokens.dart';
+import '../app_card.dart';
 
 class TeamFormSection extends StatelessWidget {
   final String title;
@@ -29,7 +30,7 @@ class TeamFormSection extends StatelessWidget {
             ),
           ),
         ),
-        Container(
+        AppCardSurface(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(

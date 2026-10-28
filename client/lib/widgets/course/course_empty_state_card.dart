@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
 import '../../models/course_term.dart';
+import '../app_card.dart';
 
 enum CourseEmptyStateType { unlogged, unbound, noCache, currentTermNoCache }
 
@@ -27,7 +28,7 @@ class CourseEmptyStateCard extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Container(
+        AppCardSurface(
           margin: const EdgeInsets.symmetric(horizontal: 24),
           decoration: BoxDecoration(
             color: isDark ? CampusTheme.darkCard : Colors.white,

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -74,28 +75,62 @@ func TestCheckInStatusUsesFactsAndResetsAfterGap(t *testing.T) {
 	require.Equal(t, 1, status.NextExp)
 }
 
-func TestCheckInAwardsMakeupCardEveryThirtyConsecutiveDays(t *testing.T) {
+func TestCheckInAwardsFirstMakeupCardAfterSevenDaysThenEveryFourteen(t *testing.T) {
 	db := newCheckInTestDB(t)
 	user := createCheckInTestUser(t, db, "checkin-makeup-card-award")
 	service := NewCheckInService(db)
 	loc := time.FixedZone("CST", 8*3600)
-	start := time.Date(2026, 5, 1, 9, 0, 0, 0, loc)
+	start := time.Date(2026, 5, 26, 9, 0, 0, 0, loc)
 
-	for day := 0; day < 30; day++ {
+	awardDays := map[int]int{7: 1, 21: 2, 35: 3, 49: 4}
+	expectedCards := 0
+	for day := 0; day < 49; day++ {
 		result, err := service.CheckIn(user.ID, start.AddDate(0, 0, day))
 		require.NoError(t, err)
-		if day < 29 {
-			require.Zero(t, result.MakeupCards)
+		if total, awarded := awardDays[day+1]; awarded {
+			expectedCards = total
+			require.Equal(t, 1, result.MakeupCardsAwarded)
+			retry, err := service.CheckIn(user.ID, start.AddDate(0, 0, day))
+			require.NoError(t, err)
+			require.True(t, retry.Already)
+			require.Zero(t, retry.MakeupCardsAwarded)
+			require.Equal(t, result.MakeupCards, retry.MakeupCards)
+		} else {
 			require.Zero(t, result.MakeupCardsAwarded)
-			continue
 		}
-		require.Equal(t, 1, result.MakeupCards)
-		require.Equal(t, 1, result.MakeupCardsAwarded)
+		require.Equal(t, expectedCards, result.MakeupCards, "day %d", day+1)
 	}
 
-	status, err := service.Status(user.ID, start.AddDate(0, 0, 29))
+	status, err := service.Status(user.ID, start.AddDate(0, 0, 48))
 	require.NoError(t, err)
-	require.Equal(t, 1, status.MakeupCards)
+	require.Equal(t, 4, status.MakeupCards)
+}
+
+func TestCheckInRestartsMakeupCardScheduleAfterEveryGap(t *testing.T) {
+	db := newCheckInTestDB(t)
+	user := createCheckInTestUser(t, db, "checkin-makeup-card-reset")
+	service := NewCheckInService(db)
+	start := time.Date(2026, 5, 1, 9, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	for segment := 0; segment < 3; segment++ {
+		for day := 1; day <= 21; day++ {
+			result, err := service.CheckIn(user.ID, start.AddDate(0, 0, segment*22+day-1))
+			require.NoError(t, err)
+			require.Equal(t, day, result.StreakDays)
+			expected := segment * 2
+			if day >= 7 {
+				expected++
+			}
+			if day == 21 {
+				expected++
+			}
+			require.Equal(t, expected, result.MakeupCards, "segment %d day %d", segment+1, day)
+			if day == 7 || day == 21 {
+				require.Equal(t, 1, result.MakeupCardsAwarded)
+			} else {
+				require.Zero(t, result.MakeupCardsAwarded)
+			}
+		}
+	}
 }
 
 func TestMakeupCheckInConsumesCardAndRecalculatesLaterExperience(t *testing.T) {
@@ -104,7 +139,7 @@ func TestMakeupCheckInConsumesCardAndRecalculatesLaterExperience(t *testing.T) {
 	service := NewCheckInService(db)
 	loc := time.FixedZone("CST", 8*3600)
 	mayStart := time.Date(2026, 5, 1, 9, 0, 0, 0, loc)
-	for day := 0; day < 30; day++ {
+	for day := 0; day < 7; day++ {
 		_, err := service.CheckIn(user.ID, mayStart.AddDate(0, 0, day))
 		require.NoError(t, err)
 	}
@@ -191,39 +226,101 @@ func TestMakeupCheckInConsumesGrantedCard(t *testing.T) {
 	require.Equal(t, 1, stat.MakeupCardsUsed)
 }
 
-func TestMakeupCompletingThirtyDaysAwardsReplacementCard(t *testing.T) {
-	db := newCheckInTestDB(t)
-	user := createCheckInTestUser(t, db, "checkin-makeup-replacement-card")
-	service := NewCheckInService(db)
-	loc := time.FixedZone("CST", 8*3600)
-	mayStart := time.Date(2026, 5, 1, 9, 0, 0, 0, loc)
-	for day := 0; day < 30; day++ {
-		_, err := service.CheckIn(user.ID, mayStart.AddDate(0, 0, day))
-		require.NoError(t, err)
+func TestMakeupRecalculatesFirstSevenThenFourteenDayMilestones(t *testing.T) {
+	for _, tc := range []struct {
+		days, missingDay, totalCards, awarded int
+	}{
+		{7, 4, 1, 1},
+		{14, 7, 1, 0},
+		{21, 7, 2, 1},
+	} {
+		t.Run(fmt.Sprint(tc.days), func(t *testing.T) {
+			db := newCheckInTestDB(t)
+			user := createCheckInTestUser(t, db, "checkin-makeup-replacement-card")
+			require.NoError(t, db.Create(&models.UserCheckInStat{UserID: user.ID, MakeupCardsGranted: 1}).Error)
+			service := NewCheckInService(db)
+			loc := time.FixedZone("CST", 8*3600)
+			start := time.Date(2026, 8, 1, 9, 0, 0, 0, loc)
+			for day := 1; day <= tc.days; day++ {
+				if day == tc.missingDay {
+					continue
+				}
+				_, err := service.CheckIn(user.ID, start.AddDate(0, 0, day-1))
+				require.NoError(t, err)
+			}
+
+			target, now := start.AddDate(0, 0, tc.missingDay-1), start.AddDate(0, 0, tc.days)
+			result, err := service.Makeup(user.ID, target, now)
+			require.NoError(t, err)
+			require.Equal(t, tc.awarded, result.MakeupCardsAwarded)
+			require.Equal(t, tc.totalCards, result.MakeupCards)
+
+			retry, err := service.Makeup(user.ID, target, now)
+			require.NoError(t, err)
+			require.True(t, retry.Already)
+			require.Zero(t, retry.MakeupCardsAwarded)
+			require.Equal(t, result.MakeupCards, retry.MakeupCards)
+
+			var stat models.UserCheckInStat
+			require.NoError(t, db.First(&stat, "user_id = ?", user.ID).Error)
+			require.Equal(t, tc.totalCards, stat.MakeupCardsEarned)
+			require.Equal(t, 1, stat.MakeupCardsGranted)
+			require.Equal(t, 1, stat.MakeupCardsUsed)
+			require.Equal(t, tc.days, stat.CurrentStreak)
+		})
 	}
-	augustStart := time.Date(2026, 8, 1, 9, 0, 0, 0, loc)
-	for day := 0; day < 30; day++ {
-		if day == 14 {
+}
+
+func TestMakeupJoiningRewardedStreaksPreservesIssuedCards(t *testing.T) {
+	db := newCheckInTestDB(t)
+	user := createCheckInTestUser(t, db, "checkin-makeup-merge-rewards")
+	service := NewCheckInService(db)
+	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	for day := 1; day <= 15; day++ {
+		if day == 8 {
 			continue
 		}
-		_, err := service.CheckIn(user.ID, augustStart.AddDate(0, 0, day))
+		_, err := service.CheckIn(user.ID, start.AddDate(0, 0, day-1))
 		require.NoError(t, err)
 	}
-
-	result, err := service.Makeup(
-		user.ID,
-		time.Date(2026, 8, 15, 0, 0, 0, 0, loc),
-		time.Date(2026, 8, 31, 9, 0, 0, 0, loc),
-	)
+	target, now := start.AddDate(0, 0, 7), start.AddDate(0, 0, 15)
+	status, err := service.Status(user.ID, now)
 	require.NoError(t, err)
-	require.Equal(t, 1, result.MakeupCardsAwarded)
+	require.Equal(t, 2, status.MakeupCards)
+	result, err := service.Makeup(user.ID, target, now)
+	require.NoError(t, err)
 	require.Equal(t, 1, result.MakeupCards)
+	require.Zero(t, result.MakeupCardsAwarded)
+	retry, err := service.Makeup(user.ID, target, now)
+	require.NoError(t, err)
+	require.True(t, retry.Already)
+	require.Equal(t, 1, retry.MakeupCards)
 
-	var stat models.UserCheckInStat
-	require.NoError(t, db.First(&stat, "user_id = ?", user.ID).Error)
-	require.Equal(t, 2, stat.MakeupCardsEarned)
-	require.Equal(t, 1, stat.MakeupCardsUsed)
-	require.Equal(t, 30, stat.CurrentStreak)
+	for range 2 {
+		rebuilt, err := service.RebuildUserStats(user.ID)
+		require.NoError(t, err)
+		require.Equal(t, 1, rebuilt.MakeupCardsEarned)
+		require.Equal(t, 1, rebuilt.MakeupCardsGranted)
+		require.Equal(t, 1, rebuilt.MakeupCardsUsed)
+	}
+	var log models.CheckInRepairLog
+	require.NoError(t, db.Where("user_id = ? AND action = ?", user.ID, "user_makeup").First(&log).Error)
+	require.Contains(t, log.Reason, "保留历史奖励补签卡 1 张")
+	for day := 16; day <= 21; day++ {
+		result, err := service.CheckIn(user.ID, start.AddDate(0, 0, day-1))
+		require.NoError(t, err)
+		if day < 21 {
+			require.Zero(t, result.MakeupCardsAwarded)
+			require.Equal(t, 1, result.MakeupCards)
+		} else {
+			require.Equal(t, 1, result.MakeupCardsAwarded)
+			require.Equal(t, 2, result.MakeupCards)
+		}
+	}
+	makeup, err := service.Makeup(user.ID, start.AddDate(0, 0, 21), start.AddDate(0, 0, 22))
+	require.NoError(t, err)
+	require.Zero(t, makeup.MakeupCardsAwarded)
+	require.Equal(t, 1, makeup.MakeupCards)
 }
 
 func TestCheckInExpRewardThresholds(t *testing.T) {
@@ -326,6 +423,174 @@ func TestRebuildUserCheckInStatsPreservesGrantedCardsWithoutRecords(t *testing.T
 	var stat models.UserCheckInStat
 	require.NoError(t, db.First(&stat, "user_id = ?", user.ID).Error)
 	require.Equal(t, 2, stat.MakeupCardsGranted)
+}
+
+func TestMakeupCardScheduleMigrationRebuildsHistoryAndIsIdempotent(t *testing.T) {
+	db := newCheckInTestDB(t)
+	user := createCheckInTestUser(t, db, "checkin-weekly-migration")
+	grantOnly := createCheckInTestUser(t, db, "checkin-weekly-grant-only")
+	missingStat := createCheckInTestUser(t, db, "checkin-weekly-missing-stat")
+	for _, segment := range []struct {
+		start time.Time
+		days  int
+	}{
+		{time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), 30},
+		{time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), 14},
+	} {
+		for day := 0; day < segment.days; day++ {
+			require.NoError(t, db.Create(&models.CheckIn{
+				UserID: user.ID, CheckInDate: segment.start.AddDate(0, 0, day),
+				StreakDays: day + 1, ExpEarned: 7, IsMakeup: segment.start.Month() == time.May && day == 2,
+			}).Error)
+		}
+	}
+	for day := 1; day <= 7; day++ {
+		require.NoError(t, db.Create(&models.CheckIn{
+			UserID: missingStat.ID, CheckInDate: time.Date(2026, 7, day, 0, 0, 0, 0, time.UTC),
+			StreakDays: day, ExpEarned: 1,
+		}).Error)
+	}
+	last := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, db.Create(&models.UserCheckInStat{
+		UserID: user.ID, LastCheckInDate: &last, CurrentStreak: 14, LongestStreak: 30,
+		MakeupCardsEarned: 1, MakeupCardsGranted: 2, MakeupCardsUsed: 1,
+	}).Error)
+	require.NoError(t, db.Create(&models.UserCheckInStat{UserID: grantOnly.ID, MakeupCardsGranted: 3}).Error)
+	var ledgerFact models.CheckIn
+	require.NoError(t, db.Where("user_id = ? AND check_in_date = ?", user.ID,
+		time.Date(2026, 5, 13, 0, 0, 0, 0, time.UTC)).First(&ledgerFact).Error)
+	require.NoError(t, db.Create(&models.UserExperienceLedger{
+		UserID: user.ID, SourceType: "checkin", SourceID: ledgerFact.ID, Delta: 13, Reason: "历史经验",
+	}).Error)
+	require.NoError(t, db.Where("version = ?", models.CheckInMakeupCardScheduleMigrationVersion).Delete(&models.AppSchemaMigration{}).Error)
+
+	for range 2 {
+		require.NoError(t, models.EnsureCheckInSchema(db))
+		var stat models.UserCheckInStat
+		require.NoError(t, db.First(&stat, "user_id = ?", user.ID).Error)
+		require.Equal(t, 3, stat.MakeupCardsEarned) // 30 天 2 张，另一个连续 14 天 1 张。
+		require.Equal(t, 2, stat.MakeupCardsGranted)
+		require.Equal(t, 1, stat.MakeupCardsUsed)
+		require.Equal(t, 14, stat.CurrentStreak)
+		require.Equal(t, 30, stat.LongestStreak)
+		var missing models.UserCheckInStat
+		require.NoError(t, db.First(&missing, "user_id = ?", missingStat.ID).Error)
+		require.Equal(t, 1, missing.MakeupCardsEarned)
+		var granted models.UserCheckInStat
+		require.NoError(t, db.First(&granted, "user_id = ?", grantOnly.ID).Error)
+		require.Equal(t, 3, granted.MakeupCardsGranted)
+		var refreshed models.User
+		require.NoError(t, db.First(&refreshed, user.ID).Error)
+		require.Equal(t, 10, refreshed.Exp)
+		var records []models.CheckIn
+		require.NoError(t, db.Where("user_id = ?", user.ID).Find(&records).Error)
+		require.Len(t, records, 44)
+		for _, record := range records {
+			require.Equal(t, 7, record.ExpEarned)
+		}
+		var ledger models.UserExperienceLedger
+		require.NoError(t, db.Where("user_id = ?", user.ID).First(&ledger).Error)
+		require.Equal(t, 13, ledger.Delta)
+	}
+	var count int64
+	require.NoError(t, db.Model(&models.AppSchemaMigration{}).Where("version = ?", models.CheckInMakeupCardScheduleMigrationVersion).Count(&count).Error)
+	require.Equal(t, int64(1), count)
+
+	service := NewCheckInService(db)
+	loc := time.FixedZone("CST", 8*3600)
+	now := time.Date(2026, 7, 17, 9, 0, 0, 0, loc)
+	status, err := service.Status(user.ID, now)
+	require.NoError(t, err)
+	require.Equal(t, 4, status.MakeupCards)
+	target := now.AddDate(0, 0, -1)
+	makeup, err := service.Makeup(user.ID, target, now)
+	require.NoError(t, err)
+	require.Equal(t, 3, makeup.MakeupCards)
+	require.Zero(t, makeup.MakeupCardsAwarded)
+	require.Equal(t, 11, makeup.TotalExp)
+	retry, err := service.Makeup(user.ID, target, now)
+	require.NoError(t, err)
+	require.True(t, retry.Already)
+	require.Equal(t, 3, retry.MakeupCards)
+}
+
+func TestMakeupCardScheduleMigrationRollsBackAndCanRetry(t *testing.T) {
+	db := newCheckInTestDB(t)
+	user := createCheckInTestUser(t, db, "checkin-weekly-migration-retry")
+	for day := 1; day <= 14; day++ {
+		require.NoError(t, db.Create(&models.CheckIn{
+			UserID: user.ID, CheckInDate: time.Date(2026, 7, day, 0, 0, 0, 0, time.UTC),
+			StreakDays: day, ExpEarned: 1,
+		}).Error)
+	}
+	require.NoError(t, db.Create(&models.UserCheckInStat{UserID: user.ID, MakeupCardsGranted: 2}).Error)
+	require.NoError(t, db.Where("version = ?", models.CheckInMakeupCardScheduleMigrationVersion).Delete(&models.AppSchemaMigration{}).Error)
+	require.NoError(t, db.Callback().Create().Before("gorm:create").Register("test:reject_weekly_marker", func(tx *gorm.DB) {
+		if marker, ok := tx.Statement.Dest.(*models.AppSchemaMigration); ok && marker.Version == models.CheckInMakeupCardScheduleMigrationVersion {
+			tx.AddError(fmt.Errorf("test weekly migration marker failure"))
+		}
+	}))
+	err := models.EnsureCheckInSchema(db)
+	require.ErrorContains(t, err, "test weekly migration marker failure")
+	var stat models.UserCheckInStat
+	require.NoError(t, db.First(&stat, "user_id = ?", user.ID).Error)
+	require.Zero(t, stat.MakeupCardsEarned)
+	require.Equal(t, 2, stat.MakeupCardsGranted)
+	var count int64
+	require.NoError(t, db.Model(&models.AppSchemaMigration{}).Where("version = ?", models.CheckInMakeupCardScheduleMigrationVersion).Count(&count).Error)
+	require.Zero(t, count)
+	require.NoError(t, db.Callback().Create().Remove("test:reject_weekly_marker"))
+	require.NoError(t, models.EnsureCheckInSchema(db))
+	require.NoError(t, db.First(&stat, "user_id = ?", user.ID).Error)
+	require.Equal(t, 1, stat.MakeupCardsEarned)
+	require.Equal(t, 2, stat.MakeupCardsGranted)
+}
+
+func TestMakeupCardScheduleMigrationPreservesPreviouslyIssuedWeeklyCards(t *testing.T) {
+	db := newCheckInTestDB(t)
+	user := createCheckInTestUser(t, db, "checkin-migration-weekly-retained")
+	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	for day := 1; day <= 14; day++ {
+		require.NoError(t, db.Create(&models.CheckIn{
+			UserID: user.ID, CheckInDate: checkInDateOnly(start.AddDate(0, 0, day-1)),
+			StreakDays: day, ExpEarned: 1, IsMakeup: day == 4,
+		}).Error)
+	}
+	require.NoError(t, db.Create(&models.UserCheckInStat{
+		UserID: user.ID, MakeupCardsEarned: 2, MakeupCardsGranted: 2, MakeupCardsUsed: 1,
+	}).Error)
+	require.NoError(t, db.Create(&models.AppSchemaMigration{
+		Version: "20261025_03_checkin_weekly_makeup_cards", AppliedAt: time.Now(),
+	}).Error)
+	require.NoError(t, db.Where("version = ?", models.CheckInMakeupCardScheduleMigrationVersion).Delete(&models.AppSchemaMigration{}).Error)
+	service := NewCheckInService(db)
+	for range 2 {
+		require.NoError(t, models.EnsureCheckInSchema(db))
+		rebuilt, err := service.RebuildUserStats(user.ID)
+		require.NoError(t, err)
+		require.Equal(t, 1, rebuilt.MakeupCardsEarned)
+		require.Equal(t, 3, rebuilt.MakeupCardsGranted)
+		require.Equal(t, 1, rebuilt.MakeupCardsUsed)
+		status, err := service.Status(user.ID, start.AddDate(0, 0, 14))
+		require.NoError(t, err)
+		require.Equal(t, 3, status.MakeupCards)
+	}
+	for day := 15; day <= 21; day++ {
+		result, err := service.CheckIn(user.ID, start.AddDate(0, 0, day-1))
+		require.NoError(t, err)
+		if day < 21 {
+			require.Zero(t, result.MakeupCardsAwarded)
+			require.Equal(t, 3, result.MakeupCards)
+		} else {
+			require.Equal(t, 1, result.MakeupCardsAwarded)
+			require.Equal(t, 4, result.MakeupCards)
+		}
+	}
+	rebuilt, err := service.RebuildUserStats(user.ID)
+	require.NoError(t, err)
+	require.Equal(t, 2, rebuilt.MakeupCardsEarned)
+	require.Equal(t, 3, rebuilt.MakeupCardsGranted)
+	require.Equal(t, 1, rebuilt.MakeupCardsUsed)
 }
 
 func TestCheckInCompensationClaimIsIdempotent(t *testing.T) {

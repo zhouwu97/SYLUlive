@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'competition_ui_tokens.dart';
 
@@ -35,7 +36,7 @@ class CompetitionBatchActionSheet extends StatelessWidget {
     final dangerColor = CompetitionUiTokens.dangerColor(isDark);
     final primaryColor = CompetitionUiTokens.accent(isDark);
 
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: bg,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
@@ -89,7 +90,7 @@ class CompetitionBatchActionSheet extends StatelessWidget {
           ...actions.map((action) =>
               _buildActionTile(context, action, titleColor, dangerColor)),
           const SizedBox(height: 8),
-          Divider(color: Colors.grey.withValues(alpha: 0.2)),
+          AppCardDivider(color: Colors.grey.withValues(alpha: 0.2)),
           ListTile(
             title: const Center(
               child: Text(

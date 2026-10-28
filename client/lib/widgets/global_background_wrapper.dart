@@ -77,9 +77,6 @@ class CustomBackgroundLayer extends StatelessWidget {
     final resolvedPath =
         isAsset ? ThemeProvider.resolveBundledAssetPath(bgPath) : bgPath;
     const alignment = Alignment.center;
-    final fillScreen =
-        themeProvider.getCustomBackgroundFillScreenFor(context) ||
-            _isUsingFallbackDirection(context, themeProvider);
     final baseProvider = isAsset
         ? AssetImage(resolvedPath) as ImageProvider
         : isLocalFile
@@ -95,7 +92,7 @@ class CustomBackgroundLayer extends StatelessWidget {
       baseProvider,
       targetWidth: targetWidth,
       targetHeight: targetHeight,
-      fit: fillScreen ? BoxFit.cover : BoxFit.contain,
+      fit: BoxFit.cover,
       maxDimension: WallpaperPrefetchService.maxDecodeDimension,
       maxDecodedPixels: WallpaperPrefetchService.maxDecodedPixels,
     );
@@ -107,7 +104,6 @@ class CustomBackgroundLayer extends StatelessWidget {
           imageProvider: imageProvider,
           alignment: alignment,
           isDark: isDark,
-          fillScreen: fillScreen,
           blur: themeProvider.backgroundBlur,
           bgPath: isLocalFile ? bgPath : null,
         ),
@@ -120,21 +116,10 @@ class CustomBackgroundLayer extends StatelessWidget {
     );
   }
 
-  bool _isUsingFallbackDirection(
-    BuildContext context,
-    ThemeProvider themeProvider,
-  ) {
-    final isWide =
-        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
-    return (isWide && !themeProvider.hasLandscapeBackground) ||
-        (!isWide && !themeProvider.hasBackground);
-  }
-
   Widget _buildBackgroundImage({
     required ImageProvider imageProvider,
     required Alignment alignment,
     required bool isDark,
-    required bool fillScreen,
     required double blur,
     String? bgPath,
   }) {
@@ -153,47 +138,19 @@ class CustomBackgroundLayer extends StatelessWidget {
       }
     }
 
-    Widget imageLayer;
-    if (fillScreen) {
-      imageLayer = Image(
-        image: imageProvider,
-        fit: BoxFit.cover,
-        alignment: alignment,
-        gaplessPlayback: true,
-        errorBuilder: (_, __, ___) {
-          handleDecodeError();
-          return Container(
-            color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-          );
-        },
-      );
-    } else {
-      imageLayer = Stack(
-        fit: StackFit.expand,
-        children: [
-          Image(
-            image: imageProvider,
-            fit: BoxFit.cover,
-            alignment: alignment,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) {
-              handleDecodeError();
-              return Container(
-                color:
-                    isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-              );
-            },
-          ),
-          Image(
-            image: imageProvider,
-            fit: BoxFit.contain,
-            alignment: alignment,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-          ),
-        ],
-      );
-    }
+    // 始终用单张图片等比放大覆盖画布，兼容旧的非铺满偏好，避免留白。
+    final imageLayer = Image(
+      image: imageProvider,
+      fit: BoxFit.cover,
+      alignment: alignment,
+      gaplessPlayback: true,
+      errorBuilder: (_, __, ___) {
+        handleDecodeError();
+        return Container(
+          color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+        );
+      },
+    );
 
     final effectiveBlur = blur.clamp(0.0, 30.0);
     if (effectiveBlur <= 0.01) return imageLayer;

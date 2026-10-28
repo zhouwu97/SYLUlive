@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import '../app_card.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import 'ai_quick_action_card.dart';
+import 'ai_action_grid.dart';
 
 class AiPersonalEmptyState extends StatelessWidget {
   final bool needsModelConfiguration;
@@ -18,6 +20,7 @@ class AiPersonalEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     final quickActions = <(IconData, String, String, String)>[
       (Icons.school_outlined, '我的学业', '计算我的 GPA 和学分情况。', '分析我的学业情况'),
       (Icons.emoji_events_outlined, '竞赛搜索', '搜索近期公开竞赛。', '搜索近期公开竞赛'),
@@ -29,11 +32,11 @@ class AiPersonalEmptyState extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 28, 16, 24),
       children: [
         if (needsModelConfiguration)
-          Container(
+          AppCardSurface(
             margin: const EdgeInsets.only(bottom: 24),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: AppColors.warningSurfaceLight,
+              color: dark ? AppColors.warningSurfaceDark : AppColors.warningSurfaceLight,
               borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(color: const Color(0xFFF2DDBD), width: 1),
             ),
@@ -42,7 +45,7 @@ class AiPersonalEmptyState extends StatelessWidget {
                 const Icon(Icons.info_outline_rounded,
                     size: 20, color: Color(0xFFF97316)),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -51,13 +54,13 @@ class AiPersonalEmptyState extends StatelessWidget {
                         style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF9A3412)),
+                            color: dark ? colors.onSurface : const Color(0xFF9A3412)),
                       ),
-                      SizedBox(height: 2),
+                      const SizedBox(height: 2),
                       Text(
                         '配置仅保存在本机，可随时更换',
                         style:
-                            TextStyle(fontSize: 11, color: Color(0xFFC2410C)),
+                            TextStyle(fontSize: 11, color: dark ? colors.onSurfaceVariant : const Color(0xFFC2410C)),
                       ),
                     ],
                   ),
@@ -105,25 +108,17 @@ class AiPersonalEmptyState extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            mainAxisExtent: 76,
-          ),
-          itemCount: quickActions.length,
-          itemBuilder: (context, index) {
-            final action = quickActions[index];
-            return AiQuickActionCard(
-              icon: action.$1,
-              title: action.$2,
-              subtitle: action.$3,
-              onTap: () => onActionSelected(action.$4),
-            );
-          },
+        AiActionGrid(
+          minHeight: 76,
+          children: [
+            for (final action in quickActions)
+              AiQuickActionCard(
+                icon: action.$1,
+                title: action.$2,
+                subtitle: action.$3,
+                onTap: () => onActionSelected(action.$4),
+              ),
+          ],
         ),
       ],
     );

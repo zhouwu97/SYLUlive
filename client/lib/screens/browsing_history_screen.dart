@@ -1,6 +1,10 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../providers/theme_provider.dart';
+import '../widgets/app_tab_bar_surface.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../widgets/app_page_background.dart';
 import '../models/browsing_history_item.dart';
 import '../models/campus_article.dart';
 import '../providers/auth_provider.dart';
@@ -116,7 +120,7 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
     final tokens = AppThemeTokens.of(context);
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         backgroundColor: tokens.surface,
         title: Text('清空浏览记录', style: TextStyle(color: tokens.textPrimary)),
         content: Text(
@@ -187,11 +191,14 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
 
     return Scaffold(
-      backgroundColor: tokens.background,
+      backgroundColor: AppPageBackground.color(context, tokens.background),
       appBar: AppBar(
         title: Text(
           '浏览记录',
@@ -201,7 +208,7 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
             color: tokens.textPrimary,
           ),
         ),
-        backgroundColor: tokens.surface,
+        backgroundColor: AppPageBackground.color(context, tokens.surface),
         elevation: 0,
         actions: [
           if (_allItems.isNotEmpty)
@@ -214,12 +221,14 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(44),
-          child: Container(
+          child: AppTabBarSurface(
             alignment: Alignment.centerLeft,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
               color: tokens.surface,
-              border: Border(bottom: BorderSide(color: tokens.divider)),
+              borderRadius: BorderRadius.zero,
+              border: Border(bottom: BorderSide(color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                  ? Colors.transparent : tokens.divider)),
             ),
             child: TabBar(
               controller: _tabController,
@@ -316,7 +325,8 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             border:
-                Border(bottom: BorderSide(color: tokens.divider, width: 0.5)),
+                Border(bottom: BorderSide(color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                    ? Colors.transparent : tokens.divider, width: 0.5)),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,

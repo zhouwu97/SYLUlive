@@ -1,5 +1,7 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:flutter/material.dart';
 import 'ranking_tokens.dart';
+import '../app_card.dart';
 
 class MyRatingCard extends StatelessWidget {
   final int currentStar;
@@ -24,7 +26,7 @@ class MyRatingCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = accentOverride ?? RankingTokens.teacherAccent(isDark);
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
         color: isDark
@@ -53,7 +55,7 @@ class MyRatingCard extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               else
-                PopupMenuButton<String>(
+                AppPopupMenuButton<String>(
                   child: Padding(
                     padding: const EdgeInsets.only(
                         left: 8, right: 0, top: 4, bottom: 4),

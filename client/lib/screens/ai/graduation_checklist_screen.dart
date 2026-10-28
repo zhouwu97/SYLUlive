@@ -1,5 +1,7 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../features/ai_runtime/deterministic/graduation_requirement_engine.dart';
 
 class GraduationChecklistScreen extends StatelessWidget {
@@ -11,7 +13,10 @@ class GraduationChecklistScreen extends StatelessWidget {
   final GraduationReadiness readiness;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('毕业清单')),
       body: ListView(
@@ -23,7 +28,7 @@ class GraduationChecklistScreen extends StatelessWidget {
             title: const Text('适用规则'),
             subtitle: Text(readiness.policyId),
           ),
-          const Divider(),
+          const AppCardDivider(),
           ...readiness.items.map(
             (item) => ListTile(
               contentPadding: EdgeInsets.zero,
@@ -34,7 +39,7 @@ class GraduationChecklistScreen extends StatelessWidget {
             ),
           ),
           if (readiness.warnings.isNotEmpty) ...[
-            const Divider(),
+            const AppCardDivider(),
             ...readiness.warnings.map(
               (warning) => ListTile(
                 contentPadding: EdgeInsets.zero,

@@ -1,3 +1,7 @@
+import '../providers/theme_provider.dart';
+import 'package:provider/provider.dart';
+import 'app_card.dart';
+import 'app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -58,7 +62,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
 
     return FractionallySizedBox(
       heightFactor: 0.72,
-      child: Container(
+      child: AppCardSurface(
         decoration: BoxDecoration(
           color: pageBg,
           borderRadius: const BorderRadius.only(
@@ -154,16 +158,16 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                       _buildSectionTitle('版本信息', text),
                       Container(
                         decoration: BoxDecoration(
-                          color: cardBg,
+                          color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : cardBg,
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: border),
+                          border: Border.all(color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : border),
                         ),
                         child: Column(
                           children: [
                             _buildInfoRow(
                                 '当前版本', _currentVersion, text, subText,
                                 height: 52),
-                            Divider(
+                            AppCardDivider(
                                 height: 1,
                                 color: border,
                                 indent: 16,
@@ -171,7 +175,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                             _buildInfoRow(
                                 '自动更新状态', _autoUpdateStatus, text, subText,
                                 height: 52),
-                            Divider(
+                            AppCardDivider(
                                 height: 1,
                                 color: border,
                                 indent: 16,
@@ -184,7 +188,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                               child: _buildActionRow('检查更新', text, subText,
                                   height: 52),
                             ),
-                            Divider(
+                            AppCardDivider(
                                 height: 1,
                                 color: border,
                                 indent: 16,
@@ -212,9 +216,9 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 16),
                         decoration: BoxDecoration(
-                          color: cardBg,
+                          color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : cardBg,
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: border),
+                          border: Border.all(color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : border),
                         ),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -262,9 +266,9 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                       _buildSectionTitle('相关链接', text),
                       Container(
                         decoration: BoxDecoration(
-                          color: cardBg,
+                          color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : cardBg,
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: border),
+                          border: Border.all(color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : border),
                         ),
                         child: Column(
                           children: [
@@ -279,7 +283,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                               onTap: () => _launchUrl(
                                   'https://github.com/zhouwu97/SYLUlive'),
                             ),
-                            Divider(
+                            AppCardDivider(
                                 height: 1,
                                 color: border,
                                 indent: 56,
@@ -298,7 +302,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                               border: border,
                               onTap: () => showGroupChatDialog(context),
                             ),
-                            Divider(
+                            AppCardDivider(
                                 height: 1,
                                 color: border,
                                 indent: 56,
@@ -486,7 +490,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
     showDialog<void>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
+        return AppAlertDialog(
           backgroundColor: dialogBackground,
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(

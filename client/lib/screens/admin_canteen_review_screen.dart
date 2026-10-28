@@ -1,6 +1,8 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../theme/app_colors.dart';
@@ -112,7 +114,7 @@ class _AdminCanteenReviewScreenState extends State<AdminCanteenReviewScreen> {
       context: context,
       builder: (ctx) {
         final controller = TextEditingController();
-        return AlertDialog(
+        return AppAlertDialog(
           title: Text('驳回「$name」？'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -162,7 +164,9 @@ class _AdminCanteenReviewScreenState extends State<AdminCanteenReviewScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     Widget body;

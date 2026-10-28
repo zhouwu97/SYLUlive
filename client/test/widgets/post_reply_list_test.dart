@@ -16,6 +16,8 @@ void main() {
       id: 2,
       postId: 100,
       parentReplyId: root.id,
+      replyToUserId: root.authorId,
+      replyToName: '目标 同学',
       authorId: 2,
       content: '带图片的楼中楼回复',
       createdAt: DateTime(2026, 9, 24),
@@ -45,6 +47,7 @@ void main() {
         (widget) =>
             widget is RichText &&
             widget.text.toPlainText().contains('带图片的楼中楼回复') &&
+            widget.text.toPlainText().contains('回复 @目标 同学：') &&
             widget.text.toPlainText().contains('[图片]'),
       ),
       findsOneWidget,

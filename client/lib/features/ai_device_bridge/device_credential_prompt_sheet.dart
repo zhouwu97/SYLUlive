@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 
 import '../../theme/app_radius.dart';
@@ -35,7 +36,7 @@ class DeviceCredentialPromptSheet extends StatefulWidget {
     required DeviceCredentialKind kind,
     required String sourceAccountId,
   }) {
-    return showModalBottomSheet<DeviceCredentialInput>(
+    return showAppModalBottomSheet<DeviceCredentialInput>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,

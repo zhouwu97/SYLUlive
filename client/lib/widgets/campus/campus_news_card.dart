@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../models/campus_article.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
 import 'campus_notice_tag.dart';
 import 'campus_theme.dart';
+import '../app_card.dart';
 
 class CampusNewsCard extends StatefulWidget {
   final CampusArticleSummary article;
@@ -29,8 +32,9 @@ class _CampusNewsCardState extends State<CampusNewsCard> {
     final article = widget.article;
     final isDark = widget.isDark;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
 
-    final surface = Material(
+    final surface = AppCardMaterial(
       color: isDark ? CampusTheme.darkCard : CampusTheme.card,
       borderRadius: BorderRadius.circular(AppRadius.lg),
       child: InkWell(
@@ -48,9 +52,11 @@ class _CampusNewsCardState extends State<CampusNewsCard> {
             border: Border.all(
               color: _pressed
                   ? CampusTheme.primary.withValues(alpha: isDark ? 0.3 : 0.18)
-                  : isDark
-                      ? Colors.white.withValues(alpha: 0.08)
-                      : CampusTheme.softBorder,
+                  : glass
+                      ? Colors.transparent
+                      : isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : CampusTheme.softBorder,
             ),
             boxShadow: _pressed
                 ? [

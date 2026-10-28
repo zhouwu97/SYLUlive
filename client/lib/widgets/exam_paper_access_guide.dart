@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'app_card.dart';
 
 enum ExamPaperAccessGuideType { login, eduVerification }
 
@@ -18,7 +19,7 @@ class ExamPaperAccessGuide extends StatelessWidget {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
-        child: Card(
+        child: AppCard(
           margin: const EdgeInsets.all(24),
           elevation: 0,
           color: Theme.of(context)

@@ -1,15 +1,19 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import '../../widgets/app_page_background.dart';
 import '../../config/market_contact_type.dart';
 import '../../models/post.dart';
 import '../../models/publish_image_item.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../features/academic/application/academic_session_controller.dart';
 import '../../providers/post_provider.dart';
 import '../../services/publish_session_scope.dart';
+import '../../services/publish_image_upload_queue.dart';
 import '../../utils/app_feedback.dart';
 import 'market_publish_eligibility.dart';
 import 'exposure_publish_form.dart';
@@ -17,6 +21,7 @@ import 'widgets/publish_bottom_bar.dart';
 import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
 import 'widgets/publish_type_selector.dart';
+import '../../widgets/app_card.dart';
 
 /// Full-screen marketplace publish form (boardId == 2).
 class MarketPublishForm extends StatefulWidget {
@@ -60,6 +65,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   String _postType = '';
   String _contactType = '';
   bool _isLoading = false;
+  bool _isWritingPost = false;
   Set<_PublishField> _attentionFields = {};
   int _attentionPulse = 0;
   // C-2 统一图片列表（existing + local 混合，顺序即发布顺序）。
@@ -115,7 +121,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       // 不能因为 [_hasDraft] 被判成 false 就无声离开、让旧流程继续提交。
       final confirmed = await showDialog<bool>(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (_) => AppAlertDialog(
           title: const Text('取消本次发布？'),
           content: const Text('发布正在进行中，返回会取消这次提交。已经上传的图片不会发布。'),
           actions: [
@@ -144,7 +150,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (_) => AppAlertDialog(
         title: const Text('放弃编辑？'),
         content: const Text('当前填写的内容还没有发布，返回后会丢失。'),
         actions: [
@@ -208,59 +214,97 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   // ---------------------------------------------------------------------------
 
   @override
-  void onImageAdded(XFile image) => setState(
-      () => _images.add(PublishImageItem.local(image, _nextLocalImageId())));
+  void onImageAdded(XFile image) {
+    if (!mounted || !canAddMoreImages) return;
+    setState(() => _images.add(PublishImageItem.local(image, _nextLocalImageId())));
+    _preuploadImages(retryId: _images.last.id);
+  }
 
   // ---- 统一图片操作 ----
 
   void _removeImage(String id) {
+    if (_isWritingPost) return;
+    for (final item in _images.where((e) => e.id == id)) {
+      _imageUploads?.remove(item);
+    }
     setState(() => _images.removeWhere((e) => e.id == id));
   }
 
   void _moveImage(String draggedId, String targetId) {
+    if (_isLoading) return;
     reorderImages(_images, draggedId, targetId);
     setState(() {});
   }
 
-  /// 上传所有本地图（并发 ≤3），更新每个 item 的 uploadState / progress / fileId。
-  /// 全部成功返回 true；任一失败返回 false（失败项留在 failed 态，可重试），
-  /// 首个失败的结构化结果保存在 [_lastUploadError] 用于准确提示。
+  PublishImageUploadQueue? _imageUploads;
+  PublishSessionScope? _imageUploadScope;
   UploadImageResult? _lastUploadError;
+
+  PublishImageUploadQueue _queueFor(AuthProvider auth, PublishSessionScope scope) {
+    _imageUploadScope?.ensure(
+      userId: auth.user?.id,
+      sessionEpoch: auth.accountSessionEpoch,
+    );
+    _ensurePublishSession(auth, scope);
+    _imageUploadScope ??= scope;
+    return _imageUploads ??= PublishImageUploadQueue(
+      isActive: (item) =>
+          _ownsPublishSession(auth, scope) && _images.contains(item),
+      upload: (item, cancelToken) async {
+        _ensurePublishSession(auth, scope);
+        final result = await context.read<PostProvider>().uploadImage(
+          item.localFile!,
+          session: scope,
+          cancelToken: cancelToken,
+          onProgress: (sent, total) {
+            if (total > 0 && _ownsPublishSession(auth, scope) &&
+                _images.contains(item)) {
+              item.progress = sent / total;
+              setState(() {});
+            }
+          },
+        );
+        _ensurePublishSession(auth, scope);
+        return result;
+      },
+      onStateChanged: () {
+        if (_ownsPublishSession(auth, scope)) setState(() {});
+      },
+    );
+  }
+
+  void _preuploadImages({String? retryId}) {
+    final auth = context.read<AuthProvider>();
+    final accountId = auth.user?.id;
+    if (accountId == null || accountId <= 0) return;
+    final scope = PublishSessionScope(
+      accountId: accountId,
+      accountSessionEpoch: auth.accountSessionEpoch,
+    );
+    try {
+      final queue = _queueFor(auth, scope);
+      for (final item in _images) {
+        if (retryId == null || item.id == retryId) {
+          queue.enqueue(item, retry: retryId != null);
+        }
+      }
+    } on PublishSessionChanged {
+      AppFeedback.error('登录状态已变化，请重新打开发布页', context: context);
+    }
+  }
 
   Future<bool> _uploadLocalImages(
     PostProvider postProvider, {
     required AuthProvider auth,
     required PublishSessionScope scope,
-  }) {
+  }) async {
+    final success = await _queueFor(auth, scope).uploadAll(_images);
+    _ensurePublishSession(auth, scope);
     _lastUploadError = null;
-    return uploadImagesConcurrently(
-      _images,
-      maxConcurrent: 3,
-      upload: (item) async {
-        // 每个异步边界都要重新确认：图片压缩耗时，最容易发生"等待期间切号"。
-        _ensurePublishSession(auth, scope);
-        final result = await postProvider.uploadImage(
-          item.localFile!,
-          session: scope,
-          onProgress: (sent, total) {
-            if (total > 0 && _ownsPublishSession(auth, scope)) {
-              item.progress = sent / total;
-              if (mounted) setState(() {});
-            }
-          },
-        );
-        _ensurePublishSession(auth, scope);
-        if (!result.isSuccess) {
-          _lastUploadError ??= result;
-        }
-        return result.fileId;
-      },
-      onStateChanged: () {
-        if (mounted && _ownsPublishSession(auth, scope)) {
-          setState(() {});
-        }
-      },
-    );
+    for (final item in _images) {
+      _lastUploadError ??= item.uploadError;
+    }
+    return success;
   }
 
   /// 本机是否已连接教务——注意这**不等于**学生认证。
@@ -297,16 +341,10 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     }
   }
 
-  /// 重试单个失败图片：清空 fileId，置为 waiting，下次提交时重新上传。
+  /// 点击失败项立即重试，成功项继续复用。
   void _retryImage(String id) {
-    for (final item in _images) {
-      if (item.id == id && item.source == PublishImageSource.local) {
-        item.fileId = null;
-        item.uploadState = PublishImageUploadState.waiting;
-        item.progress = 0;
-      }
-    }
-    setState(() {});
+    if (_isLoading) return;
+    _preuploadImages(retryId: id);
   }
 
   /// 按 UI 顺序组装 file_ids（上传完成后调用；未成功上传的 local 返回 null）。
@@ -334,7 +372,10 @@ class _MarketPublishFormState extends State<MarketPublishForm>
 
   @override
   bool get canAddMoreImages =>
-      _totalImageCount < _maxImages;
+      !_isLoading && _totalImageCount < _maxImages;
+
+  @override
+  int get remainingImageSlots => _maxImages - _totalImageCount;
 
   bool get _showsPriceField => _postType != 'lost' && _postType != 'found';
 
@@ -461,6 +502,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
 
   @override
   void dispose() {
+    _imageUploads?.close();
     _shakeController.dispose();
     _titleController.dispose();
     _contentController.dispose();
@@ -629,7 +671,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     try {
       final postProvider = context.read<PostProvider>();
 
-      // C-3：并发上传本地图（失败项可重试，不提交）。
+      // 复用选图时的预上传任务；仅等待未完成项，失败项由图片上的重试恢复。
       if (!await _uploadLocalImages(postProvider, auth: auth, scope: scope)) {
         if (mounted) {
           AppFeedback.error(
@@ -637,6 +679,11 @@ class _MarketPublishFormState extends State<MarketPublishForm>
             context: context,
           );
         }
+        return;
+      }
+
+      if (_requiresImage && _images.isEmpty) {
+        _validate();
         return;
       }
 
@@ -653,6 +700,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       }
 
       _ensurePublishSession(auth, scope);
+      setState(() => _isWritingPost = true);
       final result = _isEditing
           ? await postProvider.updatePost(
               postId: widget.editingPost!.id,
@@ -707,7 +755,12 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         AppFeedback.error('发布失败：$e', context: context);
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isWritingPost = false;
+        });
+      }
     }
   }
 
@@ -716,7 +769,10 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   // ---------------------------------------------------------------------------
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -726,11 +782,20 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         if (!didPop) _maybePop();
       },
       child: Scaffold(
-        backgroundColor: isDark ? const Color(0xFF111315) : _marketPageBg,
+        backgroundColor: AppPageBackground.color(context, isDark ? const Color(0xFF111315) : _marketPageBg),
         extendBodyBehindAppBar: true,
         resizeToAvoidBottomInset: true,
         appBar: AppBar(
-          backgroundColor: Colors.transparent,
+          systemOverlayStyle:
+              (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+                  .copyWith(
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarDividerColor: Colors.transparent,
+            systemNavigationBarIconBrightness:
+                isDark ? Brightness.light : Brightness.dark,
+            systemNavigationBarContrastEnforced: false,
+          ),
+          backgroundColor: AppPageBackground.color(context, Colors.transparent),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
@@ -751,8 +816,10 @@ class _MarketPublishFormState extends State<MarketPublishForm>
           accent: _marketAccent,
         ),
         body: DecoratedBox(
+          key: const ValueKey('market-publish-page-body'),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF111315) : _marketPageBg,
+            color: AppPageBackground.color(
+                context, isDark ? const Color(0xFF111315) : _marketPageBg),
           ),
           child: SafeArea(
             bottom: false,
@@ -913,6 +980,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
           child: PublishImageGrid(
             images: _images,
             canAddMore: canAddMoreImages,
+                  canRemove: !_isWritingPost,
             onAdd: showImageSourceDialog,
             onRemove: _removeImage,
             onReorder: _moveImage,
@@ -941,7 +1009,8 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   Widget _buildMarketDetailsCard(bool isDark, ColorScheme colorScheme) {
-    return Container(
+    return AppCardSurface(
+      key: const ValueKey('market-publish-details-surface'),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF171B24) : Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -991,7 +1060,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   Widget _buildCardDivider(ColorScheme colorScheme) {
-    return Divider(
+    return AppCardDivider(
       height: 1,
       indent: 16,
       endIndent: 16,
@@ -1094,7 +1163,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
                 color: colorScheme.onSurfaceVariant.withValues(alpha: 0.54),
                 fontSize: 14,
               ),
-              filled: true,
+              filled: context.watch<ThemeProvider?>()?.frostedGlass != true,
               fillColor: isDark
                   ? Colors.white.withValues(alpha: 0.06)
                   : const Color(0xFFF8F7F5),
@@ -1205,7 +1274,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
+        AppCardSurface(
           padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF171B24) : Colors.white,
@@ -1267,7 +1336,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   Widget _buildExposureAmountField(bool isDark) {
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF171B24) : Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -1459,7 +1528,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         fontSize: 14,
         color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
       ),
-      filled: true,
+      filled: context.watch<ThemeProvider?>()?.frostedGlass != true,
       fillColor: isDark
           ? Colors.white.withValues(alpha: 0.05)
           : const Color(0xFFF7F7FA),

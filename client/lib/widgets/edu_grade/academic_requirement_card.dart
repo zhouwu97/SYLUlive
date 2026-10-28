@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../models/edu_credit_requirement.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import 'academic_requirement_state.dart';
+import '../app_card.dart';
 
 /// 可折叠的学分要求模块。
 ///
@@ -28,24 +31,28 @@ class _AcademicRequirementCardState extends State<AcademicRequirementCard> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardBackground =
-        isDark ? AppColors.surfaceSecondaryDark : AppColors.surfaceSecondaryLight;
-    final headerBackground =
+    final cardBackground = isDark
+        ? AppColors.surfaceSecondaryDark
+        : AppColors.surfaceSecondaryLight;
+    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
+    final headerTint =
         isDark ? AppColors.brandSurfaceDark : AppColors.brandSurfaceLight;
+    final headerBackground =
+        glass ? headerTint.withValues(alpha: 0.12) : headerTint;
     final borderColor =
         isDark ? AppColors.borderSubtleDark : AppColors.borderNormalLight;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Material(
+      child: AppCardMaterial(
         color: cardBackground,
-        borderRadius: BorderRadius.circular(8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: borderColor),
+        ),
         clipBehavior: Clip.antiAlias,
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: borderColor),
-          ),
+        child: Padding(
+          padding: const EdgeInsets.all(1),
           child: Column(
             children: [
               _buildHeader(isDark, headerBackground),
@@ -177,7 +184,7 @@ class _AcademicRequirementCardState extends State<AcademicRequirementCard> {
       children: [
         for (var index = 0; index < courses.length; index++) ...[
           if (index > 0)
-            Divider(
+            AppCardDivider(
               height: 1,
               indent: 14,
               endIndent: 14,

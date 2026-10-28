@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../features/ai_runtime/ai_model_provider.dart';
 import '../../features/ai_runtime/ai_model_runtime.dart';
 import '../../features/ai_runtime/ai_provider_storage.dart';
@@ -70,7 +71,10 @@ class _AIModelChatScreenState extends State<AIModelChatScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, _) => Scaffold(

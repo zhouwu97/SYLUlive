@@ -1,3 +1,9 @@
+import 'package:shenliyuan/widgets/app_glass_button_style.dart';
+import 'package:flutter/services.dart';
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../../widgets/app_page_background.dart';
+import '../../widgets/app_card.dart';
 import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -15,6 +21,8 @@ import '../../services/publish_session_scope.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/campus/campus_theme.dart';
 import 'widgets/poll_option_editor.dart';
+import 'package:shenliyuan/widgets/app_input_surface.dart';
+import '../../providers/theme_provider.dart';
 import 'widgets/poll_setting_row.dart';
 
 class PollComposerScreen extends StatefulWidget {
@@ -310,7 +318,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
   void _preview() {
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: Text(_titleController.text.trim().isEmpty
             ? '投票预览'
             : _titleController.text.trim()),
@@ -341,24 +349,38 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
     return Scaffold(
-      backgroundColor: CampusTheme.pageBackground(context),
+      backgroundColor: AppPageBackground.color(context, CampusTheme.pageBackground(context)),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        systemOverlayStyle:
+            (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+                .copyWith(
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarDividerColor: Colors.transparent,
+          systemNavigationBarIconBrightness:
+              isDark ? Brightness.light : Brightness.dark,
+          systemNavigationBarContrastEnforced: false,
+        ),
+        backgroundColor: AppPageBackground.color(context, Colors.transparent),
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: true,
         title: Text(
           _isEditing ? '编辑投票' : '发起投票',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w600,
-            color: CampusTheme.text,
+            color: isDark ? Colors.white : CampusTheme.text,
           ),
         ),
-        iconTheme: const IconThemeData(color: CampusTheme.text),
+        iconTheme:
+            IconThemeData(color: isDark ? Colors.white : CampusTheme.text),
         actions: [
           TextButton.icon(
             onPressed: _preview,
@@ -371,41 +393,48 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
       ),
       body: SafeArea(
         child: ListView(
+          addRepaintBoundaries: !glass,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
           children: [
             if (_rulesLocked) const _Notice(text: '已有用户参与，为保证公平，只能修改补充说明和图片。'),
             Stack(
               alignment: Alignment.bottomRight,
               children: [
-                TextField(
-                  controller: _titleController,
-                  focusNode: _titleFocus,
-                  enabled: !_rulesLocked,
-                  maxLength: 80,
-                  onChanged: (_) {
-                    if (_titleError != null) setState(() => _titleError = null);
-                    setState(() {});
-                  },
-                  decoration: InputDecoration(
-                    hintText: '投票标题',
-                    errorText: _titleError,
-                    counterText: '',
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 14),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide:
-                          const BorderSide(color: CampusTheme.border, width: 1),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(
-                          color: CampusTheme.primary, width: 1),
-                    ),
-                  ),
-                ),
+                AppInputSurface(
+                    radius: 8,
+                    child: TextField(
+                      controller: _titleController,
+                      focusNode: _titleFocus,
+                      enabled: !_rulesLocked,
+                      maxLength: 80,
+                      onChanged: (_) {
+                        if (_titleError != null) {
+                          setState(() => _titleError = null);
+                        }
+                        setState(() {});
+                      },
+                      decoration: InputDecoration(
+                        hintText: '投票标题',
+                        errorText: _titleError,
+                        counterText: '',
+                        filled: false,
+                        fillColor: Colors.transparent,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 14),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: glass
+                              ? BorderSide.none
+                              : const BorderSide(
+                                  color: CampusTheme.border, width: 1),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(
+                              color: CampusTheme.primary, width: 1),
+                        ),
+                      ),
+                    )),
                 Padding(
                   padding: EdgeInsets.only(
                       right: 12, bottom: _titleError != null ? 30 : 12),
@@ -419,32 +448,36 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
             Stack(
               alignment: Alignment.bottomRight,
               children: [
-                TextField(
-                  controller: _descriptionController,
-                  maxLength: 1000,
-                  minLines: 4,
-                  maxLines: 6,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    hintText: '补充说明（可选）',
-                    alignLabelWithHint: true,
-                    counterText: '',
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 14),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide:
-                          const BorderSide(color: CampusTheme.border, width: 1),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(
-                          color: CampusTheme.primary, width: 1),
-                    ),
-                  ),
-                ),
+                AppInputSurface(
+                    radius: 8,
+                    child: TextField(
+                      controller: _descriptionController,
+                      maxLength: 1000,
+                      minLines: 4,
+                      maxLines: 6,
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        hintText: '补充说明（可选）',
+                        alignLabelWithHint: true,
+                        counterText: '',
+                        filled: false,
+                        fillColor: Colors.transparent,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 14),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: glass
+                              ? BorderSide.none
+                              : const BorderSide(
+                                  color: CampusTheme.border, width: 1),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(
+                              color: CampusTheme.primary, width: 1),
+                        ),
+                      ),
+                    )),
                 Padding(
                   padding: const EdgeInsets.only(right: 12, bottom: 12),
                   child: Text('${_descriptionController.text.length}/1000',
@@ -464,6 +497,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
             SizedBox(
               height: 108,
               child: ListView(
+                addRepaintBoundaries: !glass,
                 scrollDirection: Axis.horizontal,
                 children: [
                   ..._existingImages.asMap().entries.map((entry) =>
@@ -483,10 +517,12 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                     InkWell(
                       onTap: _pickImages,
                       borderRadius: BorderRadius.circular(8),
-                      child: Container(
+                      child: AppCardSurface(
+                        key: const ValueKey('poll-image-add-surface'),
                         width: 108,
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color:
+                              isDark ? CampusTheme.darkCard : CampusTheme.card,
                           border: Border.all(
                               color:
                                   CampusTheme.primary.withValues(alpha: 0.3)),
@@ -563,7 +599,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
             const SizedBox(height: 14),
             _sectionTitle('投票设置'),
             const SizedBox(height: 7),
-            Container(
+            AppCardSurface(
               decoration: BoxDecoration(
                 color: isDark ? CampusTheme.darkCard : CampusTheme.card,
                 borderRadius: BorderRadius.circular(14),
@@ -578,7 +614,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                   PollSettingRow(
                     icon: Icons.grid_view_rounded,
                     title: '分类',
-                    trailing: PopupMenuButton<String>(
+                    trailing: AppPopupMenuButton<String>(
                       initialValue: _category,
                       enabled: !_rulesLocked,
                       color: Colors.white,
@@ -611,7 +647,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                     PollSettingRow(
                       icon: Icons.format_list_numbered,
                       title: '每人最多选择',
-                      trailing: PopupMenuButton<int>(
+                      trailing: AppPopupMenuButton<int>(
                         initialValue:
                             _maxChoices.clamp(2, _optionControllers.length),
                         enabled: !_rulesLocked,
@@ -646,7 +682,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                     subtitle: _durationHours == null
                         ? _formatDate(_customEndsAt!)
                         : null,
-                    trailing: PopupMenuButton<int>(
+                    trailing: AppPopupMenuButton<int>(
                       enabled: !_rulesLocked,
                       color: Colors.white,
                       elevation: 3,
@@ -706,28 +742,37 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: SizedBox(
-          height: 48,
-          child: FilledButton.icon(
-            onPressed: _submitting ? null : _submit,
-            style: FilledButton.styleFrom(
-                backgroundColor: _accent,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8))),
-            icon: _submitting
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.near_me_outlined, size: 18),
-            label: Text(_isEditing ? '保存修改' : '发布投票',
-                style: const TextStyle(fontSize: 15)),
-          ),
-        ),
-      ),
+      bottomNavigationBar: AppCardSurface(
+          key: const ValueKey('poll-publish-bottom-surface'),
+          decoration: BoxDecoration(
+              color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+              borderRadius: BorderRadius.zero),
+          child: SafeArea(
+            top: false,
+            minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: SizedBox(
+              height: 48,
+              child: FilledButton.icon(
+                onPressed: _submitting ? null : _submit,
+                style: appGlassButtonStyle(
+                    context,
+                    FilledButton.styleFrom(
+                        backgroundColor: _accent,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8))),
+                    fallbackBackground: Theme.of(context).colorScheme.primary),
+                icon: _submitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.near_me_outlined, size: 18),
+                label: Text(_isEditing ? '保存修改' : '发布投票',
+                    style: const TextStyle(fontSize: 15)),
+              ),
+            ),
+          )),
     );
   }
 
@@ -753,11 +798,15 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
       '${value.month}月${value.day}日 ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
   Widget _buildSelectionControl() {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
     return Container(
       height: 32,
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: CampusTheme.border),
+        color: glass
+            ? Colors.transparent
+            : (dark ? CampusTheme.darkCard : CampusTheme.card),
+        border: Border.all(color: dark ? Colors.white24 : CampusTheme.border),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
@@ -842,7 +891,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
           ),
         const Padding(
           padding: EdgeInsets.only(left: 47),
-          child: Divider(
+          child: AppCardDivider(
             height: 1,
             thickness: 0.5,
             color: Color(0xFFE2EFEA),

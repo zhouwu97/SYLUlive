@@ -2,7 +2,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/app_card.dart';
 
 class AdminAIMetricsScreen extends StatefulWidget {
   const AdminAIMetricsScreen({super.key});
@@ -51,7 +53,10 @@ class _AdminAIMetricsScreenState extends State<AdminAIMetricsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final metrics = _metrics;
     return Scaffold(
       appBar: AppBar(
@@ -124,7 +129,7 @@ class _AdminAIMetricsScreenState extends State<AdminAIMetricsScreen> {
 
   Widget _metric(String label, String value) => SizedBox(
         width: 150,
-        child: Card(
+        child: AppCard(
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(
@@ -143,7 +148,7 @@ class _AdminAIMetricsScreenState extends State<AdminAIMetricsScreen> {
 
   Widget _section(String title, dynamic value) {
     if (value is List && value.isNotEmpty) {
-      return Card(
+      return AppCard(
         margin: const EdgeInsets.only(bottom: 10),
         child: ExpansionTile(
           title: Text(title),
@@ -163,7 +168,7 @@ class _AdminAIMetricsScreenState extends State<AdminAIMetricsScreen> {
       );
     }
     if (value is! Map || value.isEmpty) return const SizedBox.shrink();
-    return Card(
+    return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
       child: ExpansionTile(
         title: Text(title),

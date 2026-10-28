@@ -8,6 +8,7 @@ import '../../screens/login_screen.dart';
 import '../campus/campus_theme.dart';
 import '../cached_avatar.dart';
 import 'settings_status_badge.dart';
+import '../app_card.dart';
 
 /// 设置页账号摘要卡片组件 (恢复大气舒展样式)
 class SettingsAccountHeader extends StatelessWidget {
@@ -41,7 +42,7 @@ class SettingsAccountHeader extends StatelessWidget {
       avatarUrl = null;
     }
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
         color: isDark ? CampusTheme.darkCard : CampusTheme.card,

@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,11 +9,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/required_legal_consent_dialog.dart';
 import '../services/push_settings_service.dart';
 import '../widgets/campus/campus_theme.dart';
 import 'legal_documents_screen.dart';
+import '../widgets/app_card.dart';
 
 class PrivacyCenterScreen extends StatefulWidget {
   final bool restricted;
@@ -102,7 +106,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     var password = '';
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('撤销全部同意'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -166,7 +170,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     final auth = context.read<AuthProvider>();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('注销账号'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -232,7 +236,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     final bg = isDark ? CampusTheme.darkBg : CampusTheme.bg;
     final auth = context.read<AuthProvider>();
 
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
@@ -312,7 +316,10 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final restricted = widget.restricted || !(auth.user?.legalConsentsActive ?? true);
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -320,9 +327,9 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     final accent = isDark ? const Color(0xFF62CDBD) : CampusTheme.primary;
 
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: AppPageBackground.color(context, bg),
       appBar: AppBar(
-        backgroundColor: bg,
+        backgroundColor: AppPageBackground.color(context, bg),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -518,7 +525,7 @@ class _PrivacySectionCard extends StatelessWidget {
     final bgColor = isDark ? CampusTheme.darkCard : CampusTheme.card;
     final borderColor = isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.softBorder;
 
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(18),
@@ -555,7 +562,7 @@ class _PrivacyDivider extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final borderColor = isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.softBorder;
 
-    return Divider(
+    return AppCardDivider(
       height: 1,
       thickness: 1,
       indent: 64,
@@ -730,9 +737,9 @@ class _PersonalDataScreenState extends State<_PersonalDataScreen> {
     final bg = CampusTheme.pageBackground(context);
 
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: AppPageBackground.color(context, bg),
       appBar: AppBar(
-        backgroundColor: bg,
+        backgroundColor: AppPageBackground.color(context, bg),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,

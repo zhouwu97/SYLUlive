@@ -1,5 +1,7 @@
+import '../widgets/app_tab_bar_surface.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../widgets/app_page_background.dart';
 import '../providers/social_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
@@ -37,17 +39,20 @@ class _SocialListScreenState extends State<SocialListScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('关注与粉丝'),
-        bottom: TabBar(
+        bottom: AppTabBarSurface(child: TabBar(
           controller: _tabController,
           tabs: const [
             Tab(text: '关注'),
             Tab(text: '粉丝'),
           ],
-        ),
+        )),
       ),
       body: TabBarView(
         controller: _tabController,

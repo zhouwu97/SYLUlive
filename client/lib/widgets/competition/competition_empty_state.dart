@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'competition_ui_tokens.dart';
+import '../app_card.dart';
 
 class CompetitionEmptyState extends StatelessWidget {
   final VoidCallback onPrimaryTap;
@@ -23,7 +24,7 @@ class CompetitionEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.symmetric(
           horizontal: CompetitionUiTokens.pagePadding, vertical: 12),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),

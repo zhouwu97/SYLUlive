@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import '../widgets/app_card.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
@@ -55,7 +57,7 @@ class ImageViewerItem {
   /// 预览占位档（通常为 thumb 480）。
   final String? thumbUrl;
 
-  /// 全屏默认显示档（通常为 medium 1280）。
+  /// 全屏默认显示档（通常为 medium，已知长图优先 viewer）。
   final String? previewUrl;
 
   /// 可选的全屏预览档（通常为 viewer 2048），只在 previewUrl 不可用时使用。
@@ -74,7 +76,7 @@ class ImageViewerItem {
   /// 服务端返回的原图大小。未知时为 0。
   final int originalSizeBytes;
 
-  /// 服务端原图尺寸，供上层后续扩展使用；查看器本身不按它拉取原图。
+  /// 服务端原图尺寸，用于长图解码与缩放预算，不触发原图下载。
   final int width;
   final int height;
 
@@ -443,6 +445,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                     return GestureDetector(
                       onLongPress: () => _showLongPressMenu(context),
                       child: InteractiveViewer(
+                        maxScale: _maxScaleForItem(_resolvedItems[index]),
                         child: Center(
                           child: _buildPageImage(index),
                         ),
@@ -471,7 +474,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       backgroundColor: Colors.transparent,
       builder: (sheetContext) => Padding(
         padding: const EdgeInsets.all(16),
-        child: Material(
+        child: AppCardMaterial(
           color: Theme.of(context).brightness == Brightness.dark
               ? const Color(0xFF1E1E1E)
               : Colors.white,
@@ -509,7 +512,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     if (item.bytes != null && item.bytes!.isNotEmpty) {
       return Image(
         key: ValueKey('viewer-memory-image-$index'),
-        image: _decodeConstrained(MemoryImage(item.bytes!)),
+        image: _decodeConstrained(MemoryImage(item.bytes!), item: item),
         fit: BoxFit.contain,
       );
     }
@@ -518,7 +521,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     if (localPath != null) {
       return Image(
         key: ValueKey('viewer-local-image-$index'),
-        image: _decodeConstrained(FileImage(File(localPath))),
+        image: _decodeConstrained(FileImage(File(localPath)), item: item),
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => _buildPreviewImage(item, index),
       );
@@ -614,6 +617,10 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
     if (item.useProgressiveLoading) {
       // 分层资源先尝试中间档和缩略图；原图只能在明确允许时作为最后兜底。
+      if (widget.decodeMaxLongEdge == null &&
+          isLongImageDimensions(item.width, item.height)) {
+        add(item.viewerUrl);
+      }
       add(item.previewUrl);
       add(item.viewerUrl);
       add(item.thumbUrl);
@@ -635,7 +642,30 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
   bool _hasPreview(ImageViewerItem item) => _previewCandidates(item).isNotEmpty;
 
-  ImageProvider _decodeConstrained(ImageProvider provider) {
+  double _maxScaleForItem(ImageViewerItem item) {
+    if (!isLongImageDimensions(item.width, item.height)) return 2.5;
+    final viewport = MediaQuery.sizeOf(context);
+    final imageRatio = item.width / item.height;
+    final viewportRatio = viewport.width / math.max(1, viewport.height);
+    final fillScale =
+        math.max(imageRatio / viewportRatio, viewportRatio / imageRatio);
+    return (fillScale * 2).clamp(8.0, 64.0);
+  }
+
+  ImageProvider _decodeConstrained(ImageProvider provider,
+      {ImageViewerItem? item}) {
+    if (widget.decodeMaxLongEdge == null && item != null) {
+      final target = calculateLongImageDecodeTarget(
+          sourceWidth: item.width,
+          sourceHeight: item.height,
+          tier: LongImageDecodeTier.viewer);
+      if (target != null) {
+        return ResizeImage(provider,
+            width: target.width,
+            height: target.height,
+            policy: ResizeImagePolicy.fit);
+      }
+    }
     final maxLongEdge = (widget.decodeMaxLongEdge ?? imageViewerLongEdge)
         .clamp(1, imageViewerLongEdge)
         .toInt();
@@ -649,12 +679,15 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
   ImageProvider _imageProviderForFile(File file, ImageViewerItem item) {
     final provider = FileImage(file);
-    return item.isAnimatedGif ? provider : _decodeConstrained(provider);
+    return item.isAnimatedGif
+        ? provider
+        : _decodeConstrained(provider, item: item);
   }
 
   ImageProvider _imageProviderForUrl(
     String url, {
     bool isAnimated = false,
+    ImageViewerItem? item,
   }) {
     final provider = CachedNetworkImageProvider(
       url,
@@ -664,7 +697,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     );
     return isAnimated || _isGifUrl(url)
         ? provider
-        : _decodeConstrained(provider);
+        : _decodeConstrained(provider, item: item);
   }
 
   Widget _buildNetworkImage(
@@ -690,7 +723,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
     return Image(
       key: key,
-      image: _imageProviderForUrl(url, isAnimated: isAnimated),
+      image: _imageProviderForUrl(url,
+          isAnimated: isAnimated, item: _resolvedItems[index]),
       fit: BoxFit.contain,
       loadingBuilder: (context, child, loadingProgress) {
         if (loadingProgress == null) return child;
@@ -1238,7 +1272,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         preload: () {
           if (!mounted) return Future<void>.value();
           return precacheImage(
-            _imageProviderForUrl(url),
+            _imageProviderForUrl(url, item: item),
             context,
           );
         },

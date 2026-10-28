@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import '../../widgets/app_page_background.dart';
 import '../../widgets/competition/competition_status_helper.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +12,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
+import '../../widgets/app_card.dart';
 
 const _competitionCategorySlugHint =
     'innovation_startup、computer_ai、electronic_info、smart_manufacturing_vehicle、art_design、business_economics、math_science、materials_chem_env、language_humanities、defense_security_other';
@@ -453,11 +455,14 @@ class _CompetitionAdminImportScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
-      backgroundColor: _competitionBg,
+      backgroundColor: AppPageBackground.color(context, _competitionBg),
       appBar: AppBar(
-        backgroundColor: _competitionBg,
+        backgroundColor: AppPageBackground.color(context, _competitionBg),
         surfaceTintColor: Colors.transparent,
         centerTitle: true,
         title: Text('AI辅助导入比赛'),
@@ -553,7 +558,7 @@ class _CompetitionAdminImportScreenState
   }
 
   Widget _buildJsonFileImportCard() {
-    return Container(
+    return AppCardSurface(
       padding: EdgeInsets.fromLTRB(16, 14, 16, 14),
       decoration: BoxDecoration(
         color: _cardBg,
@@ -597,7 +602,7 @@ class _CompetitionAdminImportScreenState
   }
 
   Widget _buildPromptCard() {
-    return Container(
+    return AppCardSurface(
       padding: EdgeInsets.fromLTRB(16, 16, 16, 14),
       decoration: BoxDecoration(
         color: _cardBg,
@@ -724,7 +729,7 @@ class _CompetitionAdminImportScreenState
     final draftEvents = _sortedDraftEvents;
     final filteredEvents = _filteredDraftEvents;
     final visibleEvents = _visibleDraftEvents;
-    return Container(
+    return AppCardSurface(
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _cardBg,
@@ -879,7 +884,7 @@ class _CompetitionAdminImportScreenState
             : _competitionPrimary;
     final validCount = (_preview?['valid_count'] as num?)?.toInt() ?? 0;
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: EdgeInsets.all(13),
       decoration: BoxDecoration(
@@ -1157,7 +1162,7 @@ class _CompetitionAdminImportScreenState
     final problems = _draftProblems(event);
     final previewIndex =
         int.tryParse(_draftValue(event, '__preview_index')) ?? 0;
-    return Container(
+    return AppCardSurface(
       margin: EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: _competitionBg,

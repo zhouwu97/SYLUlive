@@ -39,6 +39,7 @@ type File struct {
 }
 
 // FileUploadGrant 记录用户通过上传接口取得的文件引用权，兼容全局哈希去重。
+// CreatedAt 记录最近一次成功上传授予引用权的时间，用于临时文件保留；首次上传时间见 File.CreatedAt。
 type FileUploadGrant struct {
 	ID        uint      `gorm:"primaryKey" json:"-"`
 	FileID    uint      `gorm:"not null;uniqueIndex:idx_file_upload_grant" json:"-"`

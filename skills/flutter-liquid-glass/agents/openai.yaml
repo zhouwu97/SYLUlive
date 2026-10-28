@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flutter Liquid Glass"
+  short_description: "Velocity-driven glass optics and navigation in Flutter"
+  default_prompt: "Use $flutter-liquid-glass to implement and verify a velocity-driven Flutter liquid glass navigation bar."

@@ -130,7 +130,7 @@ func (s *CheckInService) CheckIn(userID uint, now time.Time) (CheckInResult, err
 		if err != nil {
 			return err
 		}
-		if streak%30 == 0 {
+		if models.IsCheckInMakeupCardRewardDay(streak) {
 			stat.MakeupCardsEarned++
 			if err := tx.Model(&models.UserCheckInStat{}).Where("user_id = ?", userID).
 				Update("makeup_cards_earned", stat.MakeupCardsEarned).Error; err != nil {
@@ -295,7 +295,7 @@ func (s *CheckInService) Makeup(userID uint, targetDate, now time.Time) (MakeupC
 			if current > longest {
 				longest = current
 			}
-			if current%30 == 0 {
+			if models.IsCheckInMakeupCardRewardDay(current) {
 				makeupCardsEarned++
 			}
 			if record.IsMakeup {
@@ -332,24 +332,25 @@ func (s *CheckInService) Makeup(userID uint, targetDate, now time.Time) (MakeupC
 			previousDate = record.CheckInDate
 		}
 
-		if makeupCardsEarned < previousStat.MakeupCardsEarned {
-			return errors.New("补签卡统计异常")
-		}
-		result.MakeupCardsAwarded = makeupCardsEarned - previousStat.MakeupCardsEarned
+		// 两段都已领过首张卡时，补签连成一段可能减少理论奖励；已发卡转入保留额度，不能追扣。
+		retainedCards := max(0, previousStat.MakeupCardsEarned-makeupCardsEarned)
+		makeupCardsGranted := previousStat.MakeupCardsGranted + retainedCards
+		result.MakeupCardsAwarded = max(0, makeupCardsEarned-previousStat.MakeupCardsEarned)
 		result.MakeupCards = availableMakeupCards(models.UserCheckInStat{
 			MakeupCardsEarned:  makeupCardsEarned,
-			MakeupCardsGranted: previousStat.MakeupCardsGranted,
+			MakeupCardsGranted: makeupCardsGranted,
 			MakeupCardsUsed:    makeupCardsUsed,
 		})
 		result.ExpEarned = expDelta
 		result.TotalExp = user.Exp + expDelta
 		lastDate := checkInDateOnly(previousDate)
 		if err := tx.Model(&models.UserCheckInStat{}).Where("user_id = ?", userID).Updates(map[string]interface{}{
-			"last_check_in_date":  lastDate,
-			"current_streak":      current,
-			"longest_streak":      longest,
-			"makeup_cards_earned": makeupCardsEarned,
-			"makeup_cards_used":   makeupCardsUsed,
+			"last_check_in_date":   lastDate,
+			"current_streak":       current,
+			"longest_streak":       longest,
+			"makeup_cards_earned":  makeupCardsEarned,
+			"makeup_cards_granted": makeupCardsGranted,
+			"makeup_cards_used":    makeupCardsUsed,
 		}).Error; err != nil {
 			return err
 		}
@@ -359,9 +360,13 @@ func (s *CheckInService) Makeup(userID uint, targetDate, now time.Time) (MakeupC
 		}).Error; err != nil {
 			return err
 		}
+		reason := fmt.Sprintf("用户使用补签卡补签 %s", FormatCheckInDate(targetDate))
+		if retainedCards > 0 {
+			reason += fmt.Sprintf("；保留历史奖励补签卡 %d 张", retainedCards)
+		}
 		return tx.Create(&models.CheckInRepairLog{
 			UserID: userID, OperatorID: userID, Action: "user_makeup",
-			Reason:         fmt.Sprintf("用户使用补签卡补签 %s", FormatCheckInDate(targetDate)),
+			Reason:         reason,
 			PreviousStreak: previousStat.CurrentStreak, NewStreak: current, ExpDelta: expDelta,
 		}).Error
 	})

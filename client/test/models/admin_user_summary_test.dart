@@ -31,4 +31,18 @@ void main() {
     expect(user.creditScore, 100);
     expect(user.accountLabel, '学号/账号：未填写');
   });
+
+  test('教务配置登记展示学号并明确不等于可信身份', () {
+    final user = AdminUserSummary.fromJson({
+      'id': 901,
+      'student_id': 'configured-901',
+      'academic_configured': true,
+      'student_verified': false,
+    });
+
+    expect(user.accountLabel, '学号/账号：configured-901');
+    expect(user.academicStatusLabel, '教务配置：已登记\n学生身份：未验证');
+    expect(user.eduBound, isFalse);
+    expect(user.studentVerified, isFalse);
+  });
 }

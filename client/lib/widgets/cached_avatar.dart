@@ -262,7 +262,7 @@ class _CachedAvatarState extends State<CachedAvatar> {
     }
     if (widget.fallbackText != null && widget.fallbackText!.isNotEmpty) {
       return Text(
-        widget.fallbackText![0].toUpperCase(),
+        widget.fallbackText!.characters.first.toUpperCase(),
         style: TextStyle(
           fontWeight: FontWeight.w600,
           fontSize: widget.radius * 0.6,

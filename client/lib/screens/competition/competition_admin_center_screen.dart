@@ -1,7 +1,9 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../models/competition.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
@@ -18,6 +20,7 @@ import 'competition_official_event_editor_screen.dart';
 import '../../widgets/competition/competition_batch_action_sheet.dart';
 import '../../widgets/competition/competition_batch_confirm_dialog.dart';
 import '../../widgets/competition/competition_batch_selection_bar.dart';
+import '../../widgets/app_card.dart';
 
 enum _AdminSelectionScope { none, page, allMatching }
 
@@ -211,7 +214,10 @@ class _CompetitionAdminCenterScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = CompetitionUiTokens.pageBg(isDark);
     final canVerifyAwards = canVerifyCompetitionAwards(
@@ -219,9 +225,9 @@ class _CompetitionAdminCenterScreenState
     );
 
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
@@ -280,7 +286,7 @@ class _CompetitionAdminCenterScreenState
           CompetitionUiTokens.pagePadding,
           14,
         ),
-        child: Container(
+        child: AppCardSurface(
           padding: const EdgeInsets.all(14),
           decoration: CompetitionUiTokens.cardDecoration(isDark),
           child: Column(
@@ -358,7 +364,7 @@ class _CompetitionAdminCenterScreenState
         CompetitionUiTokens.pagePadding,
         14,
       ),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: CompetitionUiTokens.cardDecoration(isDark),
         child: Row(
@@ -964,7 +970,7 @@ class _CompetitionAdminCenterScreenState
   ) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Text('确认$actionName'),
         content: Text('确认要将该比赛$actionName吗？'),
         actions: [
@@ -1234,7 +1240,7 @@ class _AdminFilterSheetState extends State<_AdminFilterSheet> {
       maxChildSize: 0.9,
       builder: (context, scrollController) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
-        return Container(
+        return AppCardSurface(
           decoration: BoxDecoration(
             color: CompetitionUiTokens.pageBg(isDark),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),

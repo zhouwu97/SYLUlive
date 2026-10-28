@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/course_schedule_provider.dart';
@@ -75,7 +76,7 @@ class CourseDetailSheet extends StatelessWidget {
       child: SingleChildScrollView(
         child: SafeArea(
           top: false,
-          child: Container(
+          child: AppCardSurface(
             padding: const EdgeInsets.all(22),
             decoration: BoxDecoration(
               color: tokens.surface,
@@ -287,7 +288,7 @@ class CourseDetailSheet extends StatelessWidget {
                 ],
 
                 const SizedBox(height: 16),
-                Divider(color: tokens.divider),
+                AppCardDivider(color: tokens.divider),
                 const SizedBox(height: 12),
 
                 // 操作按钮区 (Section 16 & 17 & 23)

@@ -1,3 +1,4 @@
+import 'app_dialog.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -60,7 +61,7 @@ class _GroupChatDialogState extends State<_GroupChatDialog> {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        AlertDialog(
+        AppAlertDialog(
           backgroundColor: dialogBackground,
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(
@@ -238,7 +239,7 @@ Future<void> _handleDownload(BuildContext context) async {
 
   final confirm = await showDialog<bool>(
     context: context,
-    builder: (ctx) => AlertDialog(
+    builder: (ctx) => AppAlertDialog(
       backgroundColor: dialogBackground,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(

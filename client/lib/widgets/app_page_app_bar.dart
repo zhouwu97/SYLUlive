@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'campus/campus_theme.dart';
+import 'app_page_background.dart';
 
 /// 应用内二级页面统一顶栏，避免不同模块各自覆盖高度与标题样式。
 class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -30,7 +31,8 @@ class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
       toolbarHeight: preferredSize.height,
       centerTitle: true,
       titleSpacing: 0,
-      backgroundColor: CampusTheme.pageBackground(context),
+      backgroundColor:
+          AppPageBackground.color(context, CampusTheme.pageBackground(context)),
       foregroundColor: theme.colorScheme.onSurface,
       surfaceTintColor: Colors.transparent,
       elevation: 0,

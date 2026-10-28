@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_spacing.dart';
+import '../app_card.dart';
 
 /// 版块 Feed 的排序栏。
 class SectionFilterHeader extends StatelessWidget {
@@ -31,10 +32,14 @@ class SectionFilterHeader extends StatelessWidget {
     final inactive =
         isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
 
-    return Container(
+    return AppCardSurface(
       height: height,
-      color:
-          isDark ? AppColors.surfacePrimaryDark : AppColors.surfacePrimaryLight,
+      decoration: BoxDecoration(
+        color: isDark
+            ? AppColors.surfacePrimaryDark
+            : AppColors.surfacePrimaryLight,
+        borderRadius: BorderRadius.zero,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
       child: Row(
         children: tabs.map((tab) {

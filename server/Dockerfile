@@ -10,6 +10,9 @@ COPY . .
 
 RUN go mod download
 
+# 下载固定提交并校验 SHA-256；运行时归属地查询完全离线。
+RUN go run ./cmd/install_geoip -dir /app/data/geoip
+
 RUN go build -ldflags="-w -s" -o server ./cmd
 
 FROM debian:bookworm-slim
@@ -20,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/server .
+COPY --from=builder /app/data/geoip /app/data/geoip
 
 RUN groupadd --system --gid 10001 sylulive \
 	&& useradd --system --uid 10001 --gid sylulive --home-dir /app --no-create-home --shell /usr/sbin/nologin sylulive \

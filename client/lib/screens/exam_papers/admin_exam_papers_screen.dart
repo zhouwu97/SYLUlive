@@ -1,8 +1,10 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/responsive_content.dart';
 import '../../app_bootstrap.dart';
 import '../../models/exam_paper.dart';
 import '../../providers/auth_provider.dart';
@@ -162,7 +164,7 @@ class _AdminExamPapersScreenState extends State<AdminExamPapersScreen>
     if (_approving.contains(paper.id)) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: const Text('确认通过该试卷？'),
         content: Text('将按当前元数据发布：\n${paper.title}'),
         actions: [
@@ -218,7 +220,8 @@ class _AdminExamPapersScreenState extends State<AdminExamPapersScreen>
             ],
           ),
         ),
-        body: Column(
+        body: ResponsiveContent.page(
+            child: Column(
           children: [
             _buildToolbar(),
             Expanded(
@@ -243,7 +246,7 @@ class _AdminExamPapersScreenState extends State<AdminExamPapersScreen>
               ),
             ),
           ],
-        ),
+        )),
       ),
     );
   }

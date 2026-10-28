@@ -1,8 +1,11 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
+import '../widgets/app_card.dart';
 import '../config/water_post_taxonomy.dart';
 import '../models/post.dart';
 import '../models/water_section.dart';
@@ -391,7 +394,10 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final section = _activeSection;
     final filter = _resolveFilterKey(_selectedFilterKey);
     return Selector<
@@ -479,7 +485,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         .toList(growable: false);
 
     return Scaffold(
-      backgroundColor: background,
+      backgroundColor: AppPageBackground.color(context, background),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 680),
@@ -627,8 +633,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     return SliverAppBar(
       pinned: true,
       automaticallyImplyLeading: false,
-      backgroundColor:
-          dark ? AppColors.surfacePrimaryDark : AppColors.surfacePrimaryLight,
+      backgroundColor: AppPageBackground.color(context,
+          dark ? AppColors.surfacePrimaryDark : AppColors.surfacePrimaryLight),
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       scrolledUnderElevation: 0,
@@ -678,9 +684,12 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         ? '本版 Lv.0 · 关注后开始积攒经验'
         : '本版 Lv.$levelNumber${levelTitle.isNotEmpty ? ' $levelTitle' : ''}';
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
-      color: accent.withValues(alpha: dark ? 0.10 : 0.08),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: dark ? 0.10 : 0.08),
+        borderRadius: BorderRadius.zero,
+      ),
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.lg,
         AppSpacing.sm,
@@ -789,7 +798,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         user?.isSuperAdmin == true ||
         permission.isGlobalAdmin ||
         permission.isModerator;
-    await showModalBottomSheet<void>(
+    await showAppModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(

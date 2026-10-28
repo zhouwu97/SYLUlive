@@ -61,31 +61,36 @@ extension BottomNavStyleStorage on BottomNavStyle {
 }
 
 enum BottomNavPerformanceMode {
-  auto,
+  off,
   highPerformance,
   highQuality,
+  custom,
 }
 
 extension BottomNavPerformanceModeStorage on BottomNavPerformanceMode {
   String get storageValue {
     switch (this) {
-      case BottomNavPerformanceMode.auto:
-        return 'auto';
+      case BottomNavPerformanceMode.off:
+        return 'off';
       case BottomNavPerformanceMode.highPerformance:
         return 'high_performance';
       case BottomNavPerformanceMode.highQuality:
         return 'high_quality';
+      case BottomNavPerformanceMode.custom:
+        return 'custom';
     }
   }
 
   String get label {
     switch (this) {
-      case BottomNavPerformanceMode.auto:
-        return '自动';
+      case BottomNavPerformanceMode.off:
+        return '关';
       case BottomNavPerformanceMode.highPerformance:
         return '高性能';
       case BottomNavPerformanceMode.highQuality:
         return '高画质';
+      case BottomNavPerformanceMode.custom:
+        return '自定义';
     }
   }
 
@@ -95,8 +100,10 @@ extension BottomNavPerformanceModeStorage on BottomNavPerformanceMode {
         return BottomNavPerformanceMode.highPerformance;
       case 'high_quality':
         return BottomNavPerformanceMode.highQuality;
+      case 'custom':
+        return BottomNavPerformanceMode.custom;
       default:
-        return BottomNavPerformanceMode.auto;
+        return BottomNavPerformanceMode.off;
     }
   }
 }
@@ -164,9 +171,9 @@ class ThemeProvider extends ChangeNotifier {
   // 新导航配置的稳定 key；旧 key 仍同步写入，保证升级不丢设置。
   static const String _bottomNavStyleKey = 'bottom_nav_style';
   static const String _bottomNavPerformanceModeKey =
-      'bottom_nav_performance_mode';
+      'bottom_nav_performance_mode_v2';
   static const String _bottomNavAnimationIntensityKey =
-      'bottom_nav_animation_intensity';
+      'bottom_nav_animation_intensity_v2';
   static const String _bottomNavFloatingKey = 'floating_nav';
   static const String _bottomNavLiquidGlassKey = 'liquid_glass';
   static const String _bottomNavLiquidGlassConfirmedKey =
@@ -198,12 +205,16 @@ class ThemeProvider extends ChangeNotifier {
   double _backgroundBlur = _defaultBackgroundBlur;
   double _componentOpacity = 0.7;
   bool _frostedGlass = _defaultFrostedGlass;
-  bool _liquidGlass = false;
+  bool _liquidGlass = true;
   bool _floatingNavBar = true;
-  BottomNavStyle _bottomNavStyle = BottomNavStyle.floating;
+  BottomNavStyle _bottomNavStyle = BottomNavStyle.liquidGlass;
   BottomNavPerformanceMode _bottomNavPerformanceMode =
-      BottomNavPerformanceMode.auto;
-  double _bottomNavAnimationIntensity = 0.65;
+      BottomNavPerformanceMode.highQuality;
+  double _bottomNavAnimationIntensity = 1.0;
+  double _bottomNavCustomIntensity = .65;
+  bool _bottomNavClearMaterial = false;
+  bool _bottomNavSetupHintDismissed = false;
+  bool _bottomNavSetupHintSeen = false;
   bool _bottomNavLiquidGlassConfirmed = false;
   final DevicePerformanceLevel? _performanceLevelOverride;
   bool _predictiveBack = _defaultPredictiveBack;
@@ -229,7 +240,7 @@ class ThemeProvider extends ChangeNotifier {
   double get backgroundBlur => _backgroundBlur;
   double get componentOpacity => _componentOpacity;
   bool get frostedGlass => _frostedGlass;
-  bool get liquidGlass => _liquidGlass;
+  bool get liquidGlass => _liquidGlass && _bottomNavPerformanceMode != BottomNavPerformanceMode.off;
   bool get floatingNavBar => _floatingNavBar;
   bool get predictiveBack => _predictiveBack;
 
@@ -338,28 +349,34 @@ class ThemeProvider extends ChangeNotifier {
     return _loadTheme();
   }
 
-  BottomNavStyle get bottomNavStyle => _bottomNavStyle;
+  BottomNavStyle get bottomNavStyle => _bottomNavPerformanceMode == BottomNavPerformanceMode.off
+      ? BottomNavStyle.floating : _bottomNavStyle;
   BottomNavPerformanceMode get bottomNavPerformanceMode =>
       _bottomNavPerformanceMode;
   double get bottomNavAnimationIntensity => _bottomNavAnimationIntensity;
+  bool get bottomNavClearMaterial => _bottomNavClearMaterial;
+  bool get showBottomNavSetupHint => isLoaded && !_bottomNavSetupHintDismissed && !_bottomNavSetupHintSeen;
+  double get bottomNavBlur => _bottomNavClearMaterial ? 0 : 2;
+  double? get bottomNavTint => _bottomNavClearMaterial ? .06 : .26;
   DevicePerformanceLevel get devicePerformanceLevel =>
       _performanceLevelOverride ?? DevicePerformanceDetector.current;
   bool get bottomNavLiquidGlassConfirmed => _bottomNavLiquidGlassConfirmed;
 
-  /// 自动模式只让高性能设备尝试 shader；中端设备保留 blur，低端设备的
-  /// 默认样式由 [DevicePerformanceDetector.defaultStyleFor] 降为普通底栏。
-  bool get bottomNavShaderEnabled {
-    if (_bottomNavStyle != BottomNavStyle.liquidGlass) return false;
-    switch (_bottomNavPerformanceMode) {
-      case BottomNavPerformanceMode.auto:
-        return devicePerformanceLevel == DevicePerformanceLevel.high;
-      case BottomNavPerformanceMode.highPerformance:
-        return false;
-      case BottomNavPerformanceMode.highQuality:
-        return true;
-    }
-  }
+  /// 两个液态档位保留折射；关档使用独立的普通悬浮底栏。
+  bool get bottomNavShaderEnabled => _bottomNavPerformanceMode != BottomNavPerformanceMode.off;
 
+  double _motionPreset(BottomNavPerformanceMode mode) => switch (mode) {
+    BottomNavPerformanceMode.highQuality => 1.0,
+    BottomNavPerformanceMode.highPerformance => .35,
+    BottomNavPerformanceMode.off => 0.0,
+    BottomNavPerformanceMode.custom => _bottomNavCustomIntensity,
+  };
+
+  BottomNavPerformanceMode _modeForIntensity(double value) {
+    if ((value - .35).abs() < .0001) return BottomNavPerformanceMode.highPerformance;
+    if ((value - 1).abs() < .0001) return BottomNavPerformanceMode.highQuality;
+    return BottomNavPerformanceMode.custom;
+  }
   Future<void> _loadTheme() async {
     try {
       final prefs = await AppPreferencesStore.getInstance();
@@ -394,33 +411,30 @@ class ThemeProvider extends ChangeNotifier {
     _componentOpacity = prefs.getDouble(_componentOpacityKey) ?? 0.7;
     _frostedGlass =
         prefs.getBool(_frostedGlassKey) ?? _defaultFrostedGlass;
-    final storedStyle = BottomNavStyleStorage.fromStorage(
-      prefs.getString(_bottomNavStyleKey),
-    );
-    final legacyFloating = prefs.getBool(_bottomNavFloatingKey) ??
-        prefs.getBool(_floatingNavBarKey);
-    final legacyLiquid = prefs.getBool(_bottomNavLiquidGlassKey) ??
-        prefs.getBool(_liquidGlassKey) ??
-        false;
-    _bottomNavStyle = storedStyle ??
-        (legacyLiquid
-            ? BottomNavStyle.liquidGlass
-            : legacyFloating == false
-                ? BottomNavStyle.normal
-                : legacyFloating == true
-                    ? BottomNavStyle.floating
-                    : DevicePerformanceDetector.defaultStyleFor(
-                        devicePerformanceLevel,
-                      ));
-    _liquidGlass = _bottomNavStyle == BottomNavStyle.liquidGlass;
-    _floatingNavBar = _bottomNavStyle != BottomNavStyle.normal;
-    _bottomNavPerformanceMode = BottomNavPerformanceModeStorage.fromStorage(
-      prefs.getString(_bottomNavPerformanceModeKey),
-    );
+    // 新底栏完整替换旧样式；旧模式/强度不能让升级后的首帧退回旧效果。
+    _bottomNavStyle = BottomNavStyle.liquidGlass;
+    _liquidGlass = true;
+    _floatingNavBar = true;
+    final materialMode = prefs.getString(_bottomNavPerformanceModeKey);
+    _bottomNavClearMaterial = prefs.getBool('bottom_nav_clear_material') ?? false;
+    _bottomNavSetupHintDismissed = prefs.getBool('bottom_nav_setup_hint_dismissed') ?? false;
+    _bottomNavSetupHintSeen = prefs.getBool('bottom_nav_setup_hint_seen') ?? false;
+    _bottomNavCustomIntensity = (prefs.getDouble('bottom_nav_custom_intensity') ?? .65).clamp(0.0, 1.0);
+    _bottomNavPerformanceMode = materialMode == null
+        ? BottomNavPerformanceMode.highQuality
+        : BottomNavPerformanceModeStorage.fromStorage(materialMode);
     _bottomNavAnimationIntensity =
-        (prefs.getDouble(_bottomNavAnimationIntensityKey) ?? 0.65)
-            .clamp(0.0, 1.0)
-            .toDouble();
+        (prefs.getDouble(_bottomNavAnimationIntensityKey) ?? _motionPreset(_bottomNavPerformanceMode))
+            .clamp(0.0, 1.0).toDouble();
+    // Repair previously saved mismatched labels without discarding user strength.
+    if (_bottomNavPerformanceMode == BottomNavPerformanceMode.off) {
+      _bottomNavAnimationIntensity = 0;
+    } else {
+      _bottomNavPerformanceMode = _modeForIntensity(_bottomNavAnimationIntensity);
+      if (_bottomNavPerformanceMode == BottomNavPerformanceMode.custom) {
+        _bottomNavCustomIntensity = _bottomNavAnimationIntensity;
+      }
+    }
     _bottomNavLiquidGlassConfirmed =
         prefs.getBool(_bottomNavLiquidGlassConfirmedKey) ?? false;
     _predictiveBack =
@@ -570,9 +584,9 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   Future<void> setBottomNavStyle(BottomNavStyle style) async {
-    _bottomNavStyle = style;
-    _liquidGlass = style == BottomNavStyle.liquidGlass;
-    _floatingNavBar = style != BottomNavStyle.normal;
+    _bottomNavStyle = BottomNavStyle.liquidGlass;
+    _liquidGlass = true;
+    _floatingNavBar = true;
     final prefs = await AppPreferencesStore.getInstance();
     await _persistBottomNavPreferences(prefs);
     notifyListeners();
@@ -581,19 +595,55 @@ class ThemeProvider extends ChangeNotifier {
   Future<void> setBottomNavPerformanceMode(
     BottomNavPerformanceMode mode,
   ) async {
+    if (mode == BottomNavPerformanceMode.custom && _bottomNavPerformanceMode == mode) return;
     _bottomNavPerformanceMode = mode;
+    _bottomNavAnimationIntensity = _motionPreset(mode);
     final prefs = await AppPreferencesStore.getInstance();
     await prefs.setString(_bottomNavPerformanceModeKey, mode.storageValue);
+    await prefs.setDouble(_bottomNavAnimationIntensityKey, _bottomNavAnimationIntensity);
+    await prefs.setDouble('bottom_nav_custom_intensity', _bottomNavCustomIntensity);
     notifyListeners();
   }
 
   Future<void> setBottomNavAnimationIntensity(double value) async {
-    _bottomNavAnimationIntensity = value.clamp(0.0, 1.0).toDouble();
+    _bottomNavAnimationIntensity = (value.clamp(0.0, 1.0) * 100).round() / 100;
+    if (_bottomNavPerformanceMode != BottomNavPerformanceMode.off) {
+      _bottomNavPerformanceMode = _modeForIntensity(_bottomNavAnimationIntensity);
+      if (_bottomNavPerformanceMode == BottomNavPerformanceMode.custom) {
+        _bottomNavCustomIntensity = _bottomNavAnimationIntensity;
+      }
+    } else {
+      // Off is a distinct ordinary navigation mode, not 0% liquid motion.
+      _bottomNavAnimationIntensity = 0;
+    }
     final prefs = await AppPreferencesStore.getInstance();
+    await prefs.setString(_bottomNavPerformanceModeKey, _bottomNavPerformanceMode.storageValue);
+    await prefs.setDouble('bottom_nav_custom_intensity', _bottomNavCustomIntensity);
     await prefs.setDouble(
       _bottomNavAnimationIntensityKey,
       _bottomNavAnimationIntensity,
     );
+    notifyListeners();
+  }
+
+  Future<void> setBottomNavClearMaterial(bool value) async {
+    _bottomNavClearMaterial = value;
+    final prefs = await AppPreferencesStore.getInstance();
+    await prefs.setBool('bottom_nav_clear_material', value);
+    notifyListeners();
+  }
+
+  Future<void> dismissBottomNavSetupHint() async {
+    _bottomNavSetupHintDismissed = true;
+    final prefs = await AppPreferencesStore.getInstance();
+    await prefs.setBool('bottom_nav_setup_hint_dismissed', true);
+    notifyListeners();
+  }
+
+  Future<void> markBottomNavSetupHintSeen() async {
+    _bottomNavSetupHintSeen = true;
+    final prefs = await AppPreferencesStore.getInstance();
+    await prefs.setBool('bottom_nav_setup_hint_seen', true);
     notifyListeners();
   }
 

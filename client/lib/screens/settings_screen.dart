@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -151,7 +152,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('退出登录'),
         content: const Text(
           '退出后会清理当前运行中的教务会话，但保留本机安全凭据和教务资料。',

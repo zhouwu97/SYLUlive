@@ -5,10 +5,12 @@ package services
 import (
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -31,21 +33,42 @@ func openExpAwardPG(t *testing.T) *gorm.DB {
 	})
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: quiet})
 	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if os.Getenv("ALLOW_DESTRUCTIVE_INTEGRATION_TESTS") != "1" {
-		t.Skip("ALLOW_DESTRUCTIVE_INTEGRATION_TESTS 未显式开启，跳过经验奖励 PostgreSQL 幂等测试")
+		requireIntegrationEnv(t, "ALLOW_DESTRUCTIVE_INTEGRATION_TESTS 未显式开启，跳过经验奖励 PostgreSQL 幂等测试")
 	}
 	var dbName string
 	require.NoError(t, db.Raw("SELECT current_database()").Scan(&dbName).Error)
 	require.True(t, strings.HasSuffix(strings.ToLower(dbName), "_test"),
 		"拒绝在非 *_test 数据库上执行经验奖励集成测试：%s", dbName)
-	require.NoError(t, db.AutoMigrate(
+	// 其他集成夹具会重置 users 的序列，不能复用上轮残留的同 user_id 奖励流水。
+	schema := "exp_award_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	require.NoError(t, db.Exec(`CREATE SCHEMA "`+schema+`"`).Error)
+	t.Cleanup(func() { require.NoError(t, db.Exec(`DROP SCHEMA IF EXISTS "`+schema+`" CASCADE`).Error) })
+	isolatedDSN := dsn + " search_path=" + schema
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		parsed, err := url.Parse(dsn)
+		require.NoError(t, err)
+		query := parsed.Query()
+		query.Set("search_path", schema)
+		parsed.RawQuery = query.Encode()
+		isolatedDSN = parsed.String()
+	}
+	isolated, err := gorm.Open(postgres.Open(isolatedDSN), &gorm.Config{Logger: quiet})
+	require.NoError(t, err)
+	isolatedSQL, err := isolated.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = isolatedSQL.Close() })
+	require.NoError(t, isolated.AutoMigrate(
 		&models.User{},
 		&models.ExpLog{},
 		&models.WaterSectionExpLog{},
 		&models.WaterSectionUserStat{},
 		&models.WaterSectionLevelTitle{},
 	))
-	return db
+	return isolated
 }
 
 func TestAwardDailyGlobalExpPostgresIsIdempotent(t *testing.T) {

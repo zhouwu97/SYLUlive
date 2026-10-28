@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../campus/campus_theme.dart';
@@ -70,7 +71,7 @@ class CoursePreviewSheet extends StatelessWidget {
         .length;
     final weekNames = ['一', '二', '三', '四', '五', '六', '日'];
 
-    return Container(
+    return AppCardSurface(
       height: MediaQuery.of(context).size.height * 0.85,
       decoration: BoxDecoration(
         color: isDark ? CampusTheme.darkBg : CampusTheme.bg,

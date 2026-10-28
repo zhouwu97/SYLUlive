@@ -1,3 +1,6 @@
+import 'package:shenliyuan/widgets/app_glass_button_style.dart';
+import '../widgets/app_tab_bar_surface.dart';
+import '../widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:shenliyuan/utils/post_image_cache.dart';
 import 'package:provider/provider.dart';
@@ -6,7 +9,10 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
+import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
+import '../services/publish_session_scope.dart';
+import '../providers/theme_provider.dart';
 import '../config/api_constants.dart';
 import '../config/private_chat_policy.dart';
 import '../models/user.dart';
@@ -28,8 +34,10 @@ import '../utils/app_navigation.dart';
 class UserHomeScreen extends StatefulWidget {
   final int? userId;
   final BaseCacheManager? backgroundCacheManager;
+  final VoidCallback? onBack;
 
-  const UserHomeScreen({super.key, this.userId, this.backgroundCacheManager});
+  const UserHomeScreen(
+      {super.key, this.userId, this.backgroundCacheManager, this.onBack});
 
   @override
   State<UserHomeScreen> createState() => _UserHomeScreenState();
@@ -309,7 +317,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final authUser = context.watch<AuthProvider>().user;
     final auth = context.read<AuthProvider>();
@@ -329,10 +340,19 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
     if (displayedUser == null) {
       if (_isLoading) {
-        return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        return Scaffold(
+          appBar: widget.onBack == null
+              ? null
+              : AppBar(leading: BackButton(onPressed: widget.onBack)),
+          body: const Center(child: CircularProgressIndicator()),
+        );
       }
       return Scaffold(
-        appBar: AppBar(title: const Text('错误')),
+        appBar: AppBar(
+            title: const Text('错误'),
+            leading: widget.onBack == null
+                ? null
+                : BackButton(onPressed: widget.onBack)),
         body: Center(child: Text(_errorMessage ?? '用户不存在或加载失败')),
       );
     }
@@ -384,7 +404,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     double width,
   ) {
     return Scaffold(
-      backgroundColor: pageBackground,
+      backgroundColor: AppPageBackground.color(context, pageBackground),
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -432,7 +452,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                     left: 12,
                                     child: _buildCircleButton(
                                       icon: Icons.arrow_back,
-                                      onTap: () => Navigator.maybePop(context),
+                                      onTap: widget.onBack ??
+                                          () => Navigator.maybePop(context),
                                     ),
                                   ),
 
@@ -459,7 +480,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
           // 右侧帖子区域
           Expanded(
-            child: Container(
+            child: AppCardSurface(
               margin: const EdgeInsets.only(top: 16, right: 16, bottom: 16),
               decoration: BoxDecoration(
                 color: panelColor,
@@ -513,7 +534,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   ) {
     final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
     return Scaffold(
-      backgroundColor: panelColor,
+      backgroundColor: AppPageBackground.color(context, panelColor),
       body: RefreshIndicator(
         onRefresh: () async {
           await _loadData();
@@ -534,72 +555,97 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                 automaticallyImplyLeading: false,
                 flexibleSpace: FlexibleSpaceBar(
                   collapseMode: CollapseMode.parallax,
-                  background: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // 背景图
-                      _buildProfileBackground(context, user),
-
-                      // 下部渐暗遮罩
-                      const DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            stops: [0.0, 0.42, 1.0],
-                            colors: [
-                              Colors.transparent,
-                              Color(0x22000000),
-                              Color(0xDD000000),
-                            ],
+                  background: Builder(
+                    builder: (context) {
+                      final settings = context
+                          .dependOnInheritedWidgetOfExactType<
+                            FlexibleSpaceBarSettings
+                          >()!;
+                      // 抵消 FlexibleSpaceBar 的 1/4 视差，仅固定图片与遮罩；
+                      // 资料和按钮仍随原有折叠效果移动。
+                      final backgroundOffset =
+                          (settings.maxExtent - settings.currentExtent).clamp(
+                            0.0,
+                            settings.maxExtent - settings.minExtent,
+                          ) /
+                          4;
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          // 背景图
+                          Transform.translate(
+                            offset: Offset(0, backgroundOffset),
+                            child: _buildProfileBackground(context, user),
                           ),
-                        ),
-                      ),
 
-                      // 顶部按钮行（返回 + 私信）
-                      Positioned(
-                        top: MediaQuery.of(context).padding.top + 8,
-                        left: 12,
-                        right: 12,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            _buildCircleButton(
-                              icon: Icons.arrow_back,
-                              onTap: () => Navigator.maybePop(context),
-                            ),
-                            if (!isMe && PrivateChatPolicy.enabled)
-                              _buildCircleButton(
-                                icon: Icons.mail_outline,
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          ChatDetailScreen(targetUser: user),
-                                    ),
-                                  );
-                                },
+                          // 下部渐暗遮罩
+                          Transform.translate(
+                            offset: Offset(0, backgroundOffset),
+                            child: const DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  stops: [0.0, 0.42, 1.0],
+                                  colors: [
+                                    Colors.transparent,
+                                    Color(0x22000000),
+                                    Color(0xDD000000),
+                                  ],
+                                ),
                               ),
-                          ],
-                        ),
-                      ),
+                            ),
+                          ),
 
-                      // 所有资料覆盖在背景图下半部分
-                      Positioned(
-                        left: 20,
-                        right: 20,
-                        bottom: 64,
-                        child: _buildProfileOverlay(context, user, isMe),
-                      ),
-                    ],
+                          // 顶部按钮行（返回 + 私信）
+                          Positioned(
+                            top: MediaQuery.of(context).padding.top + 8,
+                            left: 12,
+                            right: 12,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                _buildCircleButton(
+                                  icon: Icons.arrow_back,
+                                  onTap:
+                                      widget.onBack ??
+                                      () => Navigator.maybePop(context),
+                                ),
+                                if (!isMe && PrivateChatPolicy.enabled)
+                                  _buildCircleButton(
+                                    icon: Icons.mail_outline,
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => ChatDetailScreen(
+                                            targetUser: user,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ),
+
+                          // 所有资料覆盖在背景图下半部分
+                          Positioned(
+                            left: 20,
+                            right: 20,
+                            bottom: 64,
+                            child: _buildProfileOverlay(context, user, isMe),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
 
                 // 底部圆角标签栏
                 bottom: PreferredSize(
                   preferredSize: const Size.fromHeight(46),
-                  child: Container(
+                  child: AppTabBarSurface(
                     height: 46,
                     width: double.infinity,
                     decoration: BoxDecoration(
@@ -693,6 +739,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
 
     return ListView.builder(
+                addRepaintBoundaries: false,
       padding: padding,
       itemCount: _posts.length,
       itemBuilder: (context, index) {
@@ -745,6 +792,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
 
     return ListView.builder(
+                addRepaintBoundaries: false,
       padding: padding,
       itemCount: _marketPosts.length,
       itemBuilder: (context, index) {
@@ -1191,11 +1239,15 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   late TextEditingController _nicknameController;
   late String _selectedGender;
   bool _isSaving = false;
+  late final PublishSessionScope _editingSession;
 
   @override
   void initState() {
     super.initState();
     _nicknameController = TextEditingController(text: widget.user.nickname);
+    _editingSession = PublishSessionScope(
+        accountId: widget.user.id,
+        accountSessionEpoch: context.read<AuthProvider>().accountSessionEpoch);
     _selectedGender = switch (widget.user.gender) {
       'male' || 'female' => widget.user.gender,
       _ => '',
@@ -1209,9 +1261,17 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   }
 
   Future<void> _pickAndUploadBackground() async {
+    final auth = context.read<AuthProvider>();
+    if (!_canEdit(auth)) return;
+    final session = _editingSession;
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
+    if (picked == null ||
+        !mounted ||
+        !session.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
+      return;
+    }
 
     final cropped = await ImageCropper().cropImage(
       sourcePath: picked.path,
@@ -1237,12 +1297,17 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
     if (cropped == null) return;
 
-    if (!mounted) return;
-    final auth = context.read<AuthProvider>();
+    if (!mounted ||
+        !session.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
+      return;
+    }
 
     try {
       setState(() => _isSaving = true);
       final croppedBytes = await cropped.readAsBytes();
+      session.ensure(
+          userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
       final croppedName =
           'background_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final formData = FormData.fromMap({
@@ -1252,18 +1317,29 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           contentType: DioMediaType('image', 'jpeg'),
         ),
       });
-      final uploadRes = await auth.dio.post('/upload', data: formData);
+      final uploadRes = await auth.dio.post('/upload',
+          data: formData, options: Options(extra: session.requestExtra));
+      session.ensure(
+          userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
       if (uploadRes.statusCode == 200 && uploadRes.data['url'] != null) {
         final url = uploadRes.data['url'] as String;
-        final response =
-            await auth.dio.put('/user/background', data: {'background': url});
+        final response = await auth.dio.put('/user/background',
+            data: {'background': url},
+            options: Options(extra: session.requestExtra));
+        session.ensure(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
 
         await auth.applyProfileResponse(
           Map<String, dynamic>.from(response.data),
+          request: response.requestOptions,
         );
-
+        session.ensure(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
         await widget.onSaved();
-        if (mounted) {
+        if (mounted &&
+            session.owns(
+                userId: auth.user?.id,
+                sessionEpoch: auth.accountSessionEpoch)) {
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(const SnackBar(content: Text('背景更换成功')));
@@ -1282,7 +1358,9 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       debugPrint(
         '背景上传 DioException: type=${e.type}, status=${e.response?.statusCode}',
       );
-      if (mounted) {
+      if (mounted &&
+          session.owns(
+              userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(
@@ -1291,7 +1369,9 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       }
     } catch (e) {
       debugPrint('背景上传异常: ${e.runtimeType}');
-      if (mounted) {
+      if (mounted &&
+          session.owns(
+              userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(
@@ -1308,28 +1388,39 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   Future<void> _saveProfile() async {
     final newNickname = _nicknameController.text.trim();
     if (newNickname.isEmpty) return;
+    final auth = context.read<AuthProvider>();
+    if (!_canEdit(auth)) return;
+    final session = _editingSession;
 
     setState(() => _isSaving = true);
     try {
-      final auth = context.read<AuthProvider>();
       final response = await auth.dio.put(
         '/user/profile',
         data: {'nickname': newNickname, 'gender': _selectedGender},
+        options: Options(extra: session.requestExtra),
       );
+      session.ensure(
+          userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
 
       await auth.applyProfileResponse(
         Map<String, dynamic>.from(response.data),
+        request: response.requestOptions,
       );
-
+      session.ensure(
+          userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
       await widget.onSaved();
-      if (mounted) {
+      if (mounted &&
+          session.owns(
+              userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
         Navigator.pop(context);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('资料已保存')));
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted &&
+          session.owns(
+              userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('保存失败: $e')));
@@ -1341,6 +1432,18 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     }
   }
 
+  bool _canEdit(AuthProvider auth) {
+    if (auth.isLoggedIn &&
+        _editingSession.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
+      return true;
+    }
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(const SnackBar(content: Text('登录状态已变化，请关闭后重新编辑资料')));
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -1350,7 +1453,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         maxWidth: 420,
         maxHeight: MediaQuery.sizeOf(context).height * 0.82,
       ),
-      child: Container(
+      child: AppCardSurface(
+        key: const ValueKey('edit-profile-surface'),
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
           borderRadius: BorderRadius.circular(24),
@@ -1400,7 +1504,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   padding:
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.grey[800] : Colors.grey[100],
+                    color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                        ? Colors.transparent : isDark ? Colors.grey[800] : Colors.grey[100],
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -1429,7 +1534,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   padding:
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.grey[800] : Colors.grey[100],
+                    color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                        ? Colors.transparent : isDark ? Colors.grey[800] : Colors.grey[100],
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -1495,12 +1601,14 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _isSaving ? null : _saveProfile,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
+                  style: appGlassButtonStyle(
+                      context,
+                      ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      )),
                   child: _isSaving
                       ? const SizedBox(
                           width: 20,

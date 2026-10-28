@@ -1,3 +1,6 @@
+import 'app_dialog.dart';
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 import 'package:flutter/material.dart';
 
 import '../features/personal_data_sync/erke_snapshot_upload.dart';
@@ -26,7 +29,7 @@ class ErkeSnapshotUploadDialog extends StatelessWidget {
     final hintFg =
         isDark ? AppColors.textSecondaryDark : const Color(0xFF48645F);
 
-    return Dialog(
+    return AppDialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       backgroundColor: isDark
           ? AppColors.surfaceSecondaryDark
@@ -201,7 +204,8 @@ class ErkeSnapshotUploadDialog extends StatelessWidget {
                   SizedBox(
                     height: 20,
                     child: VerticalDivider(
-                      color: isDark
+                      color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                          ? Colors.transparent : isDark
                           ? AppColors.borderSubtleDark
                           : AppColors.borderSubtleLight,
                     ),

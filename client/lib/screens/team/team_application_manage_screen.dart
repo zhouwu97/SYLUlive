@@ -1,10 +1,13 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../models/team_recruitment.dart';
 import '../../models/water_team.dart';
 import '../../providers/team_recruitment_provider.dart';
 import '../../widgets/team/team_ui_tokens.dart';
+import '../../widgets/app_card.dart';
 
 class TeamApplicationManageScreen extends StatefulWidget {
   final TeamRecruitment recruitment;
@@ -59,7 +62,7 @@ class _TeamApplicationManageScreenState
     );
     final reply = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: Text(accepted ? '通过申请' : '拒绝申请'),
         content: TextField(
           controller: replyController,
@@ -105,7 +108,7 @@ class _TeamApplicationManageScreenState
   Future<void> _remove(WaterTeamApplication app) async {
     final confirmed = await showDialog<bool>(
           context: context,
-          builder: (dialogContext) => AlertDialog(
+          builder: (dialogContext) => AppAlertDialog(
             title: const Text('移除成员'),
             content: const Text('移除后名额会重新开放，确定继续吗？'),
             actions: [
@@ -130,7 +133,10 @@ class _TeamApplicationManageScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final provider = context.watch<TeamRecruitmentProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageColor = TeamUiTokens.pageBg(isDark);
@@ -142,9 +148,9 @@ class _TeamApplicationManageScreenState
         provider.loadingApplicationIds.contains(widget.recruitment.id);
     final loadError = provider.applicationErrors[widget.recruitment.id];
     return Scaffold(
-      backgroundColor: pageColor,
+      backgroundColor: AppPageBackground.color(context, pageColor),
       appBar: AppBar(
-        backgroundColor: pageColor,
+        backgroundColor: AppPageBackground.color(context, pageColor),
         surfaceTintColor: Colors.transparent,
         title: const Text('申请管理'),
       ),
@@ -270,7 +276,7 @@ class _ApplicationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Card(
+    return AppCard(
         margin: EdgeInsets.zero,
         elevation: 0,
         color: TeamUiTokens.cardBg(isDark),

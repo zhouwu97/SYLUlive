@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/team_recruitment.dart';
@@ -5,6 +6,7 @@ import '../../widgets/campus/campus_theme.dart';
 import '../../widgets/team/team_ui_tokens.dart';
 import '../../widgets/cached_avatar.dart';
 import '../../config/api_constants.dart';
+import '../app_card.dart';
 
 class TeamRecruitmentCard extends StatelessWidget {
   final TeamRecruitment recruitment;
@@ -34,7 +36,7 @@ class TeamRecruitmentCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Opacity(
       opacity: isInactive ? 0.62 : 1,
-      child: Card(
+      child: AppCard(
         margin: EdgeInsets.zero,
         elevation: 0,
         color: TeamUiTokens.cardBg(isDark),
@@ -56,7 +58,7 @@ class TeamRecruitmentCard extends StatelessWidget {
                 TeamStatusBadge(status: status),
                 if (onDelete != null) ...[
                   const SizedBox(width: 2),
-                  PopupMenuButton<String>(
+                  AppPopupMenuButton<String>(
                     tooltip: '组队操作',
                     enabled: !isDeleting,
                     padding: EdgeInsets.zero,

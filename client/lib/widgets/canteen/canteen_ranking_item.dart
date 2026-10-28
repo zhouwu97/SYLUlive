@@ -1,3 +1,4 @@
+import '../app_card.dart';
 import 'package:flutter/material.dart';
 
 import '../../config/api_constants.dart';
@@ -185,7 +186,7 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
           ),
         ),
         const SizedBox(height: 12),
-        Divider(
+        AppCardDivider(
           height: 1,
           thickness: 0.5,
           color: CanteenTheme.borderColor(isDark),

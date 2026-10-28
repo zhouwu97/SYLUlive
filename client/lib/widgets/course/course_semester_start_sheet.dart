@@ -1,4 +1,7 @@
+import '../app_card.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../models/course_term.dart';
 
 class CourseSemesterStartSheet extends StatefulWidget {
@@ -326,6 +329,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
 
   Widget _buildBottomArea() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
 
     return Container(
       padding: EdgeInsets.only(
@@ -335,8 +339,10 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
         bottom: MediaQuery.of(context).padding.bottom + 16,
       ),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A2A2A) : Colors.white,
-        boxShadow: [
+        color: glass
+            ? Colors.transparent
+            : (isDark ? const Color(0xFF2A2A2A) : Colors.white),
+        boxShadow: glass ? null : [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
             blurRadius: 10,
@@ -410,7 +416,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
+    return AppCardSurface(
       height: MediaQuery.of(context).size.height * 0.72,
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[50],

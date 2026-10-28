@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../app_card.dart';
 
 import '../../models/ai_quota.dart';
 import '../../theme/app_colors.dart';
@@ -30,16 +31,17 @@ class AiQuotaBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!_shouldShow) return const SizedBox.shrink();
     final isEmpty = quota.remaining <= 0;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 4),
-      child: Container(
+      child: AppCardSurface(
         width: double.infinity,
         constraints: const BoxConstraints(minHeight: 36),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: isEmpty
-              ? AppColors.dangerSurfaceLight
-              : AppColors.warningSurfaceLight,
+              ? (dark ? AppColors.dangerSurfaceDark : AppColors.dangerSurfaceLight)
+              : (dark ? AppColors.warningSurfaceDark : AppColors.warningSurfaceLight),
           borderRadius: BorderRadius.circular(AppRadius.sm),
           border: Border.all(
             color: isEmpty ? AppColors.danger : const Color(0xFFF2DDBD),
@@ -57,7 +59,8 @@ class AiQuotaBanner extends StatelessWidget {
               child: Text(
                 '$_message · 每次最多 $maxCharacters 字',
                 style: TextStyle(
-                  color: isEmpty ? AppColors.danger : const Color(0xFF8A5A12),
+                  color: dark ? Theme.of(context).colorScheme.onSurface
+                      : isEmpty ? AppColors.danger : const Color(0xFF8A5A12),
                   fontSize: 11.5,
                   fontWeight: FontWeight.w600,
                 ),

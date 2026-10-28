@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/edu_grade.dart';
 import '../../utils/edu_semester_utils.dart';
+import '../app_card.dart';
 
 class GradeSummaryCard extends StatelessWidget {
   final String selectedYear;
@@ -34,7 +35,7 @@ class GradeSummaryCard extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         decoration: BoxDecoration(
           gradient: isDark
@@ -188,7 +189,7 @@ class GradeSummaryCard extends StatelessWidget {
       backgroundColor: Colors.transparent,
       builder: (ctx) {
         final isDark = Theme.of(ctx).brightness == Brightness.dark;
-        return Container(
+        return AppCardSurface(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1E2226) : Colors.white,

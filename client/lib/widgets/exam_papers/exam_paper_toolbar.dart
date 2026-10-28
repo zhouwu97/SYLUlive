@@ -1,3 +1,5 @@
+import '../../providers/theme_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
 
 import '../glass_container.dart';
@@ -103,7 +105,7 @@ class ExamPaperToolbar extends StatelessWidget {
       child: GlassContainer(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         borderRadius: 14,
-        blur: 0,
+        blur: 10,
         showHighlight: false,
         child: Column(
           children: [
@@ -114,6 +116,7 @@ class ExamPaperToolbar extends StatelessWidget {
                 onChanged: onSearchChanged,
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
+                  filled: false,
                   hintText: '搜索课程名或关键词',
                   prefixIcon: const Icon(Icons.search, size: 20),
                   suffixIcon: searchController.text.isEmpty
@@ -183,7 +186,7 @@ class _CompactDropdown extends StatelessWidget {
     return Container(
       height: 28,
       decoration: BoxDecoration(
-        color: Theme.of(context)
+        color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : Theme.of(context)
             .colorScheme
             .surfaceContainerHighest
             .withValues(alpha: 0.65),

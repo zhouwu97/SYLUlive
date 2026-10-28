@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -5,8 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import '../utils/app_feedback.dart';
+import '../widgets/app_card.dart';
 
 class CheckInCalendarScreen extends StatefulWidget {
   final DateTime Function()? now;
@@ -347,7 +351,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
       context: context,
       builder: (dialogContext) {
         final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
-        return AlertDialog(
+        return AppAlertDialog(
           title: const Text('使用补签卡'),
           content: Text(
             '确定补签 ${date.month} 月 ${date.day} 日吗？\n将消耗 1 张补签卡，并按连续签到规则补发经验。',
@@ -462,7 +466,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
   }
 
   Future<void> _showSuccessSheet(int streakDays, int earnedExp) {
-    return showModalBottomSheet<void>(
+    return showAppModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (context) {
@@ -573,7 +577,10 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final theme = Theme.of(context);
     final selection = _selectedDaySelection;
     final selectedDateText = _selectedDate == null
@@ -797,7 +804,7 @@ class _CheckInSummary extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final foreground = isDark ? Colors.white : const Color(0xFF29312C);
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1C211E) : const Color(0xFFF5F7F5),
@@ -891,7 +898,7 @@ class _CheckInSummary extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          Divider(
+          AppCardDivider(
             height: 1,
             color: foreground.withValues(alpha: 0.10),
           ),

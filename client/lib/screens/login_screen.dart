@@ -1,7 +1,11 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../widgets/app_page_background.dart';
+import '../widgets/app_card.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../widgets/responsive_content.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import 'legal_documents_screen.dart';
@@ -107,7 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         backgroundColor: cardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text('登录受限'),
@@ -273,7 +277,7 @@ class _LoginScreenState extends State<LoginScreen> {
             final subText = isDark ? Colors.white70 : const Color(0xFF747B82);
             final cardBg = isDark ? const Color(0xFF1E2226) : Colors.white;
 
-            return AlertDialog(
+            return AppAlertDialog(
               backgroundColor: cardBg,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),
@@ -531,7 +535,10 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = isDark ? const Color(0xFF101219) : const Color(0xFFFFFAF4);
     final cardBg = isDark ? const Color(0xFF1E2226) : Colors.white;
@@ -543,12 +550,13 @@ class _LoginScreenState extends State<LoginScreen> {
     final subText = isDark ? Colors.white70 : const Color(0xFF747B82);
 
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
         child: SafeArea(
-          child: Stack(
+          child: ResponsiveContent.form(
+              child: Stack(
             children: [
               SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(24, 18, 24, 28),
@@ -603,7 +611,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 40),
 
                     // Card
-                    Container(
+                    AppCardSurface(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
                         color: cardBg,
@@ -848,7 +856,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
             ],
-          ),
+          )),
         ),
       ),
     );

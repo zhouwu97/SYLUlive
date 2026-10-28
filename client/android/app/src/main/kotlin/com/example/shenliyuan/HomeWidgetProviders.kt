@@ -3,6 +3,7 @@ package com.example.shenliyuan
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.os.Build
 
 abstract class BaseHomeWidgetProvider(
     private val variant: NativeWidgetVariant,
@@ -18,7 +19,7 @@ abstract class BaseHomeWidgetProvider(
                 HomeWidgetRenderer.build(context, appWidgetId, variant),
             )
         }
-        if (appWidgetIds.isNotEmpty()) {
+        if (appWidgetIds.isNotEmpty() && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetIds, variant.listViewId)
         }
     }

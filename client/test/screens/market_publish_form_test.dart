@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +13,7 @@ import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/services/publish_session_scope.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/publish/market_publish_form.dart';
+import 'package:shenliyuan/screens/publish/widgets/publish_image_grid.dart';
 import 'package:image_picker/image_picker.dart';
 
 class _FakeAuthProvider extends Fake
@@ -57,6 +61,8 @@ class _FakePostProvider extends Fake
   PublishSessionScope? lastSession;
   void Function()? onUpload;
   Duration uploadDelay = Duration.zero;
+  Completer<UploadImageResult>? uploadCompleter;
+  final uploadTokens = <CancelToken>[];
 
   @override
   Post? postFor(int postId) => null;
@@ -123,8 +129,11 @@ class _FakePostProvider extends Fake
   @override
   Future<UploadImageResult> uploadImage(XFile file,
       {void Function(int sent, int total)? onProgress,
-      PublishSessionScope? session}) async {
+      PublishSessionScope? session,
+      CancelToken? cancelToken}) async {
     lastSession = session;
+    if (cancelToken != null) uploadTokens.add(cancelToken);
+    if (uploadCompleter != null) return uploadCompleter!.future;
     if (uploadDelay > Duration.zero) await Future<void>.delayed(uploadDelay);
     onUpload?.call();
     return const UploadImageResult.success(1);
@@ -179,6 +188,34 @@ void main() {
     state.onImageAdded(XFile('/tmp/market-publish-form-test.png'));
     await tester.pump();
   }
+
+  testWidgets('等待发布时取消最后一张上传图，商品必填校验重新生效', (tester) async {
+    final pending = Completer<UploadImageResult>();
+    final provider = _FakePostProvider()..uploadCompleter = pending;
+    await tester.pumpWidget(_buildMarketForm(postProvider: provider));
+    await tester.pumpAndSettle();
+    await fillRequiredMarketFields(tester);
+    await addLocalImage(tester);
+    final id = tester
+        .widget<PublishImageGrid>(find.byType(PublishImageGrid))
+        .images
+        .single
+        .id;
+    await tester.tap(find.text('发布出售').last);
+    await tester.pump();
+    final remove = find.byKey(ValueKey('publish-image-remove-$id'));
+    await tester.ensureVisible(remove);
+    await tester.tap(remove);
+    await tester.pumpAndSettle();
+    expect(provider.uploadTokens.single.isCancelled, isTrue);
+    expect(provider.createPostCalls, 0);
+    expect(find.byKey(const ValueKey('market-image-required-error')),
+        findsOneWidget);
+    pending.complete(const UploadImageResult.success(99));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 2));
+    expect(provider.createPostCalls, 0);
+  });
 
   testWidgets('发布商品时把点亮的描述选项作为 marketTags 提交', (tester) async {
     final postProvider = _FakePostProvider();
@@ -447,8 +484,8 @@ void main() {
   testWidgets('提交时把发起账号的会话边界带给图片上传和写入', (tester) async {
     final auth = _FakeAuthProvider(accountSessionEpoch: 7);
     final postProvider = _FakePostProvider();
-    await tester.pumpWidget(
-        _buildMarketForm(postProvider: postProvider, auth: auth));
+    await tester
+        .pumpWidget(_buildMarketForm(postProvider: postProvider, auth: auth));
     await tester.pumpAndSettle();
 
     await fillRequiredMarketFields(tester);
@@ -472,8 +509,8 @@ void main() {
     final postProvider = _FakePostProvider()
       ..uploadDelay = const Duration(milliseconds: 40)
       ..onUpload = () => auth.switchAccount();
-    await tester.pumpWidget(
-        _buildMarketForm(postProvider: postProvider, auth: auth));
+    await tester
+        .pumpWidget(_buildMarketForm(postProvider: postProvider, auth: auth));
     await tester.pumpAndSettle();
 
     await fillRequiredMarketFields(tester);
@@ -552,8 +589,8 @@ void main() {
       ),
     );
     final postProvider = _FakePostProvider();
-    await tester.pumpWidget(
-        _buildMarketForm(postProvider: postProvider, auth: auth));
+    await tester
+        .pumpWidget(_buildMarketForm(postProvider: postProvider, auth: auth));
     await tester.pumpAndSettle();
 
     await fillRequiredMarketFields(tester);

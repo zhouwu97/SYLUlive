@@ -64,7 +64,7 @@ void main() {
     );
   });
 
-  testWidgets('自定义背景 contain 模式整个组合层被统一模糊', (tester) async {
+  testWidgets('旧非铺满配置自动等比放大，单张图覆盖画布并统一模糊', (tester) async {
     final theme = await _createProvider();
     await theme.setBackgroundImage('portrait.jpg', fillScreen: false);
     await theme.setLandscapeBackgroundImage('landscape.jpg', fillScreen: false);
@@ -73,13 +73,14 @@ void main() {
     await tester.pumpWidget(_buildWrapper(theme));
     await tester.pump();
 
-    // 外层只存在一个 ImageFiltered，同时包含 cover 补边图与 contain 主图
+    // 旧非铺满配置也应自动放大，避免画布留白或重复叠图。
     expect(find.byType(ImageFiltered), findsOneWidget);
     final filtered = find.byType(ImageFiltered);
     expect(
       find.descendant(of: filtered, matching: find.byType(Image)),
-      findsNWidgets(2),
+      findsOneWidget,
     );
+    expect(tester.widget<Image>(find.byType(Image)).fit, BoxFit.cover);
   });
 
   testWidgets('blur 为 0 时不创建 ImageFiltered', (tester) async {

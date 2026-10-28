@@ -10,6 +10,7 @@ import '../../widgets/competition/competition_page_scaffold.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
 import 'competition_award_screen.dart';
 import 'competition_preference_screen.dart';
+import '../../widgets/app_card.dart';
 
 class CompetitionCapabilityProfileScreen extends StatefulWidget {
   final Dio dio;
@@ -286,7 +287,7 @@ class _CompetitionCapabilityProfileScreenState
       ),
     ];
     final complete = items.where((item) => item.$2).length;
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: CompetitionUiTokens.cardBg(isDark),
@@ -337,7 +338,7 @@ class _CompetitionCapabilityProfileScreenState
   }
 
   Widget _emptyProfileCard(bool isDark) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(20, 30, 20, 24),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
       child: Column(
@@ -414,7 +415,7 @@ class _CompetitionCapabilityProfileScreenState
   }
 
   Widget _countBand(CompetitionCapabilityProfile profile, bool isDark) {
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: CompetitionUiTokens.cardBg(isDark),
         border: Border.all(color: CompetitionUiTokens.borderColor(isDark)),

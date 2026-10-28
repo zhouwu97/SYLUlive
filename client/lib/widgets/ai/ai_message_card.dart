@@ -13,6 +13,7 @@ import 'ai_calendar_action_draft_card.dart';
 import 'ai_competition_plan_draft_card.dart';
 import 'ai_source_chips.dart';
 import 'ai_run_feedback.dart' as feedback_widgets;
+import '../app_card.dart';
 
 class AiMessageCard extends StatelessWidget {
   const AiMessageCard({
@@ -54,7 +55,7 @@ class AiMessageCard extends StatelessWidget {
         alignment: Alignment.centerRight,
         child: FractionallySizedBox(
           widthFactor: 0.78,
-          child: Container(
+          child: AppCardSurface(
             key: ValueKey('ai-message-card-${message.id}'),
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
@@ -83,7 +84,7 @@ class AiMessageCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
+              AppCardSurface(
                 width: 25,
                 height: 25,
                 alignment: Alignment.center,

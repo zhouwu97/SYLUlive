@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -131,7 +132,7 @@ class _CanteenReviewImagePickerState extends State<CanteenReviewImagePicker> {
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         final isDark = Theme.of(sheetContext).brightness == Brightness.dark;
-        return Container(
+        return AppCardSurface(
           decoration: BoxDecoration(
             color: CanteenTheme.surfaceBg(isDark),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),

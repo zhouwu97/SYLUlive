@@ -1,3 +1,6 @@
+import 'package:provider/provider.dart';
+import '../../../providers/theme_provider.dart';
+import 'package:shenliyuan/widgets/app_input_surface.dart';
 import 'package:flutter/material.dart';
 import '../../../widgets/campus/campus_theme.dart';
 
@@ -19,6 +22,7 @@ class PollOptionEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
     return Row(
       key: ValueKey(controller),
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -41,27 +45,33 @@ class PollOptionEditor extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: TextField(
-            controller: controller,
-            enabled: enabled,
-            maxLength: 50,
-            decoration: InputDecoration(
-              hintText: '请输入选项',
-              counterText: '',
-              filled: true,
-              isDense: true,
-              fillColor: Colors.white,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: CampusTheme.border, width: 1),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: CampusTheme.primary, width: 1),
-              ),
-            ),
-          ),
+          child: AppInputSurface(
+              radius: 8,
+              child: TextField(
+                controller: controller,
+                enabled: enabled,
+                maxLength: 50,
+                decoration: InputDecoration(
+                  hintText: '请输入选项',
+                  counterText: '',
+                  filled: false,
+                  isDense: true,
+                  fillColor: Colors.transparent,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: glass
+                        ? BorderSide.none
+                        : const BorderSide(color: CampusTheme.border, width: 1),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide:
+                        const BorderSide(color: CampusTheme.primary, width: 1),
+                  ),
+                ),
+              )),
         ),
         SizedBox(
           width: 36,

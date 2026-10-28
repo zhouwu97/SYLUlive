@@ -1,5 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/theme_provider.dart';
 
 import '../../config/api_constants.dart';
 import '../../models/reply.dart';
@@ -19,6 +21,7 @@ class PostReplyList extends StatelessWidget {
     this.onLongPress,
     this.onLike,
     this.isLikePending,
+    this.replyKeys,
   });
 
   final List<Reply> replies;
@@ -28,6 +31,7 @@ class PostReplyList extends StatelessWidget {
   final ValueChanged<Reply>? onLongPress;
   final ValueChanged<Reply>? onLike;
   final bool Function(int replyId)? isLikePending;
+  final Map<int, GlobalKey>? replyKeys;
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +76,7 @@ class PostReplyList extends StatelessWidget {
       children: [
         for (final reply in topLevel) ...[
           PostReplyItem(
+            key: replyKeys?[reply.id],
             reply: reply,
             onReply: () => onReply(reply),
             onAuthorTap:
@@ -253,10 +258,13 @@ class _ReplyContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final content = <Widget>[];
-    if (reply.hasTextContent) {
+    if (reply.hasTextContent || reply.replyTargetPrefix.isNotEmpty) {
       content.add(
         PostContentLinkText(
-          text: reply.content,
+          text: reply.displayContent,
+          leadingTextEnd: reply.replyTargetPrefix.length,
+          leadingTextStyle:
+              TextStyle(color: Theme.of(context).colorScheme.primary),
           selectable: true,
           onPlainTextTap: onTextTap,
           style: TextStyle(
@@ -320,7 +328,7 @@ class _ReplyContent extends StatelessWidget {
 
     if (content.isEmpty) {
       return PostContentLinkText(
-        text: reply.content,
+        text: reply.displayContent,
         selectable: true,
         onPlainTextTap: onTextTap,
         style: TextStyle(
@@ -448,7 +456,8 @@ class _ChildReplySummary extends StatelessWidget {
       margin: const EdgeInsets.only(left: 46, top: 4),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: isDark
+        color: context.watch<ThemeProvider?>()?.frostedGlass == true
+            ? Colors.transparent : isDark
             ? Colors.white.withValues(alpha: 0.03)
             : const Color(0xFFF8F9FA),
         borderRadius: BorderRadius.circular(8),
@@ -477,9 +486,8 @@ class _ChildReplySummary extends StatelessWidget {
                             ),
                           ),
                           TextSpan(
-                            text: reply.hasSticker && !reply.hasTextContent
-                                ? '[表情]'
-                                : reply.content,
+                            text:
+                                '${reply.displayContent}${reply.hasSticker ? ' [表情]' : ''}',
                           ),
                           if (reply.images.any(ReplyImageMedia.hasAnyImageUrl))
                             const TextSpan(text: ' [图片]'),

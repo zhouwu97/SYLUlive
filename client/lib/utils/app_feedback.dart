@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
@@ -236,7 +237,7 @@ class AppFeedback {
   }) {
     return showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Row(
           children: [
@@ -264,7 +265,7 @@ class AppFeedback {
   }) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Text(title),
         content: Text(message, style: const TextStyle(height: 1.45)),

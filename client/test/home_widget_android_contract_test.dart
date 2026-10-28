@@ -22,6 +22,21 @@ void main() {
         registry, contains('HomeWidgetRenderer.build(context, id, variant)'));
   });
 
+  test('Android12及以上整页提交列表，不再异步重发旧背景', () {
+    final renderer = source(
+        'android/app/src/main/kotlin/com/example/shenliyuan/HomeWidgetRenderer.kt');
+    expect(renderer, contains('RemoteViews.RemoteCollectionItems.Builder()'));
+    expect(renderer,
+        contains('views.setRemoteAdapter(variant.listViewId, items.build())'));
+    for (final path in [
+      'android/app/src/main/kotlin/com/example/shenliyuan/HomeWidgetRegistry.kt',
+      'android/app/src/main/kotlin/com/example/shenliyuan/HomeWidgetProviders.kt',
+    ]) {
+      expect(source(path),
+          contains('Build.VERSION.SDK_INT < Build.VERSION_CODES.S'));
+    }
+  });
+
   test('2×2 和 4×2 使用不同布局及不同数量限制', () {
     final registry = source(
       'android/app/src/main/kotlin/com/example/shenliyuan/HomeWidgetRegistry.kt',
@@ -57,7 +72,8 @@ void main() {
       'android/app/src/main/res/layout/widget_exam_item_extra_large_compact.xml',
     ]) {
       final layout = source(path);
-      expect(layout, contains('android:layout_height="68dp"'));
+      expect(layout, contains('android:minHeight="68dp"'));
+      expect(layout, contains('android:layout_height="wrap_content"'));
     }
 
     for (final path in const [
@@ -70,7 +86,8 @@ void main() {
       expect(layout, contains('android:paddingTop="24dp"'));
       expect(layout, contains('android:paddingStart="8dp"'));
       expect(layout, contains('android:paddingEnd="8dp"'));
-      expect(layout, contains('android:id="@+id/widget_center_divider"'));
+      expect(layout, isNot(contains('widget_center_divider')));
+      expect(layout, contains('android:horizontalSpacing="24dp"'));
     }
   });
 
@@ -158,7 +175,7 @@ void main() {
     expect(mainActivity, contains('HomeWidgetRegistry.refreshAll(this)'));
   });
 
-  test('列表适配器使用与背景相同的主题快照并通过 URI 失效旧缓存', () {
+  test('列表适配器通过 URI 失效缓存，复用工厂也重新读取完整外观', () {
     final renderer = source(
       'android/app/src/main/kotlin/com/example/shenliyuan/HomeWidgetRenderer.kt',
     );
@@ -176,7 +193,11 @@ void main() {
       expect(service, contains('EXTRA_FONT_SIZE'));
       final dataSetChanged =
           service.split('override fun onDataSetChanged()')[1];
-      expect(dataSetChanged, isNot(contains('HomeWidgetAppearanceStore.read')));
+      expect(dataSetChanged, contains('HomeWidgetAppearanceStore.read'));
+      expect(dataSetChanged, contains('theme = HomeWidgetThemeConfig.resolve'));
+      expect(dataSetChanged, contains('fontSize = appearance.fontSize'));
+      expect(dataSetChanged,
+          contains('typography = HomeWidgetTypography.resolve'));
     }
   });
 

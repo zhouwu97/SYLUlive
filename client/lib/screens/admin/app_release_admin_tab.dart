@@ -1,3 +1,6 @@
+import 'package:shenliyuan/widgets/app_card.dart';
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -59,7 +62,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
                       itemCount: _releases.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (_, __) => const AppCardDivider(height: 1),
                       itemBuilder: (_, index) =>
                           _buildReleaseItem(_releases[index]),
                     ),
@@ -105,7 +108,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
         overflow: TextOverflow.ellipsis,
       ),
       isThreeLine: true,
-      trailing: PopupMenuButton<_ReleaseAction>(
+      trailing: AppPopupMenuButton<_ReleaseAction>(
         tooltip: '版本操作',
         onSelected: (action) => _handleAction(release, action),
         itemBuilder: (_) => [
@@ -179,7 +182,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
     final payload = await showDialog<_DraftPayload>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => AppAlertDialog(
           title: const Text('上传应用版本'),
           content: SizedBox(
             width: 420,
@@ -363,7 +366,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
     final formKey = GlobalKey<FormState>();
     final update = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: Text(isDraft ? '编辑草稿' : '调整最低支持版本'),
         content: SizedBox(
           width: 420,
@@ -439,7 +442,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
   }) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: Text(title),
         content: Text(content),
         actions: [

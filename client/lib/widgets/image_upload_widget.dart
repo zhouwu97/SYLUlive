@@ -1,3 +1,5 @@
+import 'app_glass_button_style.dart';
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -238,7 +240,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
   }
 
   void _showImageSourceDialog() {
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       builder: (context) => SafeArea(
         child: Wrap(
@@ -366,6 +368,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
         ],
         if (_canAddMoreImages)
           OutlinedButton.icon(
+            style: appGlassButtonStyle(context, const ButtonStyle()),
             onPressed: _isUploading ? null : _showImageSourceDialog,
             icon: _isUploading
                 ? const SizedBox(

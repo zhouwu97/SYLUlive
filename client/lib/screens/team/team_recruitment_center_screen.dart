@@ -1,9 +1,12 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import '../../widgets/app_card.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../providers/team_recruitment_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/team/team_recruitment_card.dart';
@@ -95,15 +98,18 @@ class _TeamRecruitmentCenterScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final provider = context.watch<TeamRecruitmentProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageColor = TeamUiTokens.pageBg(isDark);
     final showEmptyAction = provider.viewState == TeamFeedViewState.empty;
     return Scaffold(
-      backgroundColor: pageColor,
+      backgroundColor: AppPageBackground.color(context, pageColor),
       appBar: AppBar(
-        backgroundColor: pageColor,
+        backgroundColor: AppPageBackground.color(context, pageColor),
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
         centerTitle: true,
@@ -337,7 +343,7 @@ class _TeamRecruitmentCenterScreenState
   }
 
   void _showMoreStatus() {
-    showModalBottomSheet<void>(
+    showAppModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
@@ -361,7 +367,7 @@ class _TeamRecruitmentCenterScreenState
 
   void _showSort() {
     final sortDark = Theme.of(context).brightness == Brightness.dark;
-    showModalBottomSheet<void>(
+    showAppModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
@@ -470,7 +476,7 @@ class _StatusSegment extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(children: [
       Expanded(
-        child: Container(
+        child: AppCardSurface(
           height: 40,
           padding: const EdgeInsets.all(3),
           decoration: BoxDecoration(
@@ -524,8 +530,10 @@ class _SearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return SizedBox(
+    return AppCardSurface(
       height: 44,
+      decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(14)),
       child: TextField(
         controller: controller,
         onChanged: onChanged,
@@ -533,7 +541,7 @@ class _SearchBar extends StatelessWidget {
         decoration: InputDecoration(
           hintText: '搜索竞赛、项目、技能或关键词',
           prefixIcon: const Icon(Icons.search_rounded),
-          filled: true,
+          filled: false,
           fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
           border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),

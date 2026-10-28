@@ -1,5 +1,8 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../../widgets/app_choice_chip.dart';
 import 'package:flutter/material.dart';
 
+import '../../widgets/responsive_content.dart';
 import '../../app_bootstrap.dart';
 import '../../models/exam_paper.dart';
 import '../../services/exam_paper_service.dart';
@@ -130,7 +133,7 @@ class _MyExamPaperSubmissionsScreenState
   Future<void> _withdraw(ExamPaper paper) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: const Text('撤回投稿'),
         content: Text('确认撤回《${paper.title}》吗？撤回后文件会被删除。'),
         actions: [
@@ -162,7 +165,7 @@ class _MyExamPaperSubmissionsScreenState
     try {
       final confirmed = await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (context) => AppAlertDialog(
           title: const Text('永久删除投稿'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -281,12 +284,13 @@ class _MyExamPaperSubmissionsScreenState
           backgroundColor: Colors.transparent,
           elevation: 0,
         ),
-        body: Column(
+        body: ResponsiveContent.page(
+            child: Column(
           children: [
             _buildStatusFilter(),
             Expanded(child: _buildBody()),
           ],
-        ),
+        )),
       ),
     );
   }
@@ -362,7 +366,7 @@ class _MyExamPaperSubmissionsScreenState
           for (final item in statuses)
             Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
+              child: AppChoiceChip(
                 selected: _status == item.$1,
                 onSelected: (_) => _changeStatus(item.$1),
                 label: Text('${item.$2} ${_statusCounts[item.$1] ?? 0}'),

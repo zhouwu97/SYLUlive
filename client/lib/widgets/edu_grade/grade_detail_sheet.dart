@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/edu_grade.dart';
@@ -23,7 +25,7 @@ class GradeDetailSheet extends StatefulWidget {
     required String year,
     required int semester,
   }) {
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -135,7 +137,7 @@ class _GradeDetailSheetState extends State<GradeDetailSheet> {
               ),
             ),
             const SizedBox(height: 20),
-            const Divider(),
+            const AppCardDivider(),
             const SizedBox(height: 12),
             _sectionHeader('课程信息'),
             const SizedBox(height: 8),
@@ -157,7 +159,7 @@ class _GradeDetailSheetState extends State<GradeDetailSheet> {
             if (grade.assessmentMethod != null)
               _infoRow(context, '考核方式', grade.assessmentMethod!),
             const SizedBox(height: 20),
-            const Divider(),
+            const AppCardDivider(),
             const SizedBox(height: 12),
             _sectionHeader('成绩构成'),
             const SizedBox(height: 8),

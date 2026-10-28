@@ -1,4 +1,7 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'dart:async';
+import '../widgets/app_page_background.dart';
+import '../widgets/responsive_content.dart';
 import '../features/academic/application/academic_session_controller.dart';
 import '../features/academic/application/academic_login_coordinator.dart';
 import '../features/academic/presentation/academic_login_dialog.dart';
@@ -7,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import '../models/edu_academic_situation.dart';
 import '../models/edu_credit_requirement.dart';
 import '../models/edu_grade.dart';
@@ -1029,12 +1033,15 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: Theme.of(context).brightness == Brightness.dark
+      backgroundColor: AppPageBackground.color(context, Theme.of(context).brightness == Brightness.dark
           ? const Color(0xFF111315)
-          : const Color(0xFFFFFAF4),
+          : const Color(0xFFFFFAF4)),
       endDrawerEnableOpenDragGesture: false,
       drawerScrimColor: Colors.black.withValues(alpha: 0.42),
       endDrawer: GradeManageDrawer(
@@ -1059,7 +1066,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         leading: const BackButton(),
         title: const Text('我的成绩'),
         centerTitle: true,
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(context, Colors.transparent),
         elevation: 0,
         actions: [
           IconButton(
@@ -1071,7 +1078,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           ),
         ],
       ),
-      body: _buildBody(),
+      body: ResponsiveContent(child: _buildBody()),
     );
   }
 
@@ -1281,6 +1288,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
                   );
                 },
                 childCount: _filteredGrades.length,
+                addRepaintBoundaries:
+                    context.watch<ThemeProvider?>()?.frostedGlass != true,
               ),
             ),
           )
@@ -1363,7 +1372,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       backgroundColor: Colors.transparent,
       builder: (context) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
-        return Container(
+        return AppCardSurface(
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1D2024) : Colors.white,

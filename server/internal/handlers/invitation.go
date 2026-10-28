@@ -112,13 +112,7 @@ func (h *InvitationHandler) GetCandidatesStats(c *gin.Context) {
 		return
 	}
 
-	eduQuery := h.db.Model(&models.User{}).Where("edu_bound = ?", true)
-	if h.db.Migrator().HasTable(&models.AcademicIdentityBinding{}) {
-		eduQuery = models.TrustedAcademicBindingScope(h.db.Model(&models.AcademicIdentityBinding{}).
-			Where("verified_at > ?", time.Time{})).
-			Distinct("user_id")
-	}
-	if err := eduQuery.Count(&eduCount).Error; err != nil {
+	if err := withAdminAcademicAccounts(h.db).Count(&eduCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取统计数据失败"})
 		return
 	}

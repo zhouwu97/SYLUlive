@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
+import '../app_card.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -164,7 +166,7 @@ class CanteenReviewSection extends StatelessWidget {
                     children: [
                       for (var i = 0; i < reviews.length; i++) ...[
                         if (i > 0)
-                          Divider(
+                          AppCardDivider(
                             height: 1,
                             thickness: 0.5,
                             color: CanteenTheme.borderColor(isDark),
@@ -241,9 +243,7 @@ class CanteenReviewSection extends StatelessWidget {
     final selected = filter == value;
     return GestureDetector(
       onTap: selected ? null : () => onFilterChanged(value),
-      child: AnimatedContainer(
-        duration: AppMotion.fast,
-        curve: AppMotion.standard,
+      child: AppCardSurface(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
           color: selected
@@ -611,7 +611,7 @@ class _ReviewItemContent extends StatelessWidget {
               ],
               if (!isOwn && onReport != null) ...[
                 const SizedBox(width: 4),
-                PopupMenuButton<String>(
+                AppPopupMenuButton<String>(
                   tooltip: '更多操作',
                   padding: EdgeInsets.zero,
                   onSelected: (value) {
@@ -625,7 +625,7 @@ class _ReviewItemContent extends StatelessWidget {
               if (isOwn &&
                   ((isLatestV2 && onEditLatestReview != null) ||
                       onDelete != null))
-                PopupMenuButton<String>(
+                AppPopupMenuButton<String>(
                   tooltip: '评价操作',
                   padding: EdgeInsets.zero,
                   onSelected: (value) async {

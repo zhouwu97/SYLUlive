@@ -1,3 +1,4 @@
+import '../../widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -220,7 +221,7 @@ class _NotificationBackgroundSettingsScreenState
           context: context,
           builder: (ctx) => Theme(
             data: dialogTheme,
-            child: AlertDialog(
+            child: AppAlertDialog(
               title: const Text('后台保活推荐设置'),
               content: const SingleChildScrollView(
                 child: Column(

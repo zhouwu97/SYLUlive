@@ -1,3 +1,6 @@
+import '../../providers/theme_provider.dart';
+import 'package:provider/provider.dart';
+import '../app_card.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -254,7 +257,7 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: isDark ? CampusTheme.darkBg : CampusTheme.bg,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -319,7 +322,8 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                     decoration: BoxDecoration(
                       color: isSelected
                           ? CampusTheme.primary.withValues(alpha: 0.1)
-                          : (isDark ? CampusTheme.darkCard : Colors.white),
+                          : (context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent
+                              : isDark ? CampusTheme.darkCard : Colors.white),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: isSelected

@@ -7,7 +7,7 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from "react";
-import { asset, errorText, write, type Entity } from "./api";
+import { ApiError, asset, captureAuthSession, errorText, write, type Entity } from "./api";
 import { useUI } from "./ui";
 import { rejectAttachmentFiles, ticketAttachmentLimits } from "./attachments";
 import "./media.css";
@@ -53,6 +53,7 @@ export function normalizeMedia(value: unknown): MediaItem {
 }
 
 export async function uploadImageFiles(files: File[]): Promise<number[]> {
+  const isCurrent = captureAuthSession();
   const valid = files.filter((file) => file.size > 0);
   const rejected = rejectAttachmentFiles(valid, mediaLimits);
   if (rejected.length) {
@@ -64,6 +65,7 @@ export async function uploadImageFiles(files: File[]): Promise<number[]> {
   valid.forEach((file) => body.append("files", file));
   try {
     const response = await write<{ results?: Entity[] }>("/api/upload_multiple", body);
+    if (!isCurrent()) throw new Error("账号已切换，请重新确认上传");
     const results = Array.isArray(response.results) ? response.results : [];
     const failed = results.filter((item) => item.error);
     const ids = results.map((item) => Number(item.file_id)).filter((id) => Number.isInteger(id) && id > 0);
@@ -72,15 +74,18 @@ export async function uploadImageFiles(files: File[]): Promise<number[]> {
     }
     return ids;
   } catch (error) {
+    if (!isCurrent() || (error instanceof DOMException && error.name === "AbortError")) throw error;
     // 旧服务实例没有批量端点时退回单文件上传，保持帖子发布可用。
-    if (error instanceof Error && error.message.includes("部分图片上传失败")) throw error;
+    if (!(error instanceof ApiError) || ![404, 405, 501].includes(error.status)) throw error;
     const ids: number[] = [];
     for (const file of valid) {
+      if (!isCurrent()) throw new Error("账号已切换，请重新确认上传");
       const result = await write<{ file_id?: number }>("/api/upload", (() => {
         const one = new FormData();
         one.append("file", file);
         return one;
       })());
+      if (!isCurrent()) throw new Error("账号已切换，请重新确认上传");
       const id = Number(result.file_id);
       if (!Number.isInteger(id) || id <= 0) throw new Error("上传没有返回有效的图片编号");
       ids.push(id);

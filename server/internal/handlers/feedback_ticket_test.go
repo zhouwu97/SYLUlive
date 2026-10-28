@@ -66,6 +66,31 @@ func TestFeedbackSnippetForColumnLimitsRunes(t *testing.T) {
 	}
 }
 
+func TestFeedbackStatusDiscardsStaleSubmissionNote(t *testing.T) {
+	db, handler := setupTestFeedbackDB(t)
+	ticket := models.FeedbackTicket{UserID: 10, TicketNo: "TEST2601000001", Status: models.FeedbackStatusPending, StatusNote: "工单已提交，等待管理员查看受理"}
+	if err := db.Create(&ticket).Error; err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Set("user_id", uint(99))
+	c.Params = gin.Params{{Key: "id", Value: fmt.Sprint(ticket.ID)}}
+	c.Request = httptest.NewRequest("PATCH", "/admin/tickets/1/status", strings.NewReader(`{"status":"accepted","status_note":"工单已提交，等待管理员查看受理","expected_status":"pending"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	handler.AdminUpdateStatus(c)
+	if recorder.Code != 200 {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var updated models.FeedbackTicket
+	if err := db.First(&updated, ticket.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if updated.Status != models.FeedbackStatusAccepted || updated.StatusNote != "" {
+		t.Fatalf("status=%s note=%s", updated.Status, updated.StatusNote)
+	}
+}
+
 func TestFeedbackTicket_ConcurrencyReopenVsConfirmResolved(t *testing.T) {
 	db, handler := setupTestFeedbackDB(t)
 

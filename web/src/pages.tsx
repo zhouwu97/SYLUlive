@@ -76,8 +76,9 @@ export function Dashboard() {
   const nav = useNavigate(),
     ui = useUI();
   const posts = useRows("/api/posts?page=1&limit=5&sort=time", "posts");
-  const { user, requireUser } = useAuth();
+  const { requireUser } = useAuth();
   const academic = useAcademic();
+  const hasSchedule = !!academic.updated || academic.data.courses.length > 0;
   const week = academic.data.termStart
     ? teachingWeek(academic.data.termStart)
     : null;
@@ -91,7 +92,7 @@ export function Dashboard() {
   return (
     <>
       <Head
-        title={user ? `${user.nickname}，你好` : "欢迎来到沈理校园"}
+        title="校园工作台"
         description={new Date().toLocaleDateString("zh-CN", {
           year: "numeric",
           month: "long",
@@ -113,27 +114,28 @@ export function Dashboard() {
         </button>
       </Head>
       <div className="today-card">
-        <div>
-          <span className="tag brand">
-            {week ? `第 ${week} 周` : "我的课表"}
+        <div className="today-copy">
+          <span className="today-label">
+            <Icon name="schedule" size={16} />
+            {week ? `今日课表 · 第 ${week} 周` : "今日课表"}
           </span>
           <h2>
             {today[0]?.name ||
-              (academic.updated ? "今天没有课程" : "连接你的校园日程")}
+              (hasSchedule ? "今天没有课程" : "课表尚未连接")}
           </h2>
           <p>
             {today[0]
               ? `${today[0].room} · ${today[0].teacher} · 第 ${today[0].periods.join("、")} 节`
-              : "通过教务助手在本机读取课表，或添加个人课程。"}
+              : hasSchedule ? "可查看本周课表或添加个人课程。" : "连接教务助手后显示今日课程。"}
           </p>
-          <button className="btn" onClick={() => nav("/schedule")}>
-            {academic.updated ? "查看今日课表" : "连接教务助手"}
-          </button>
         </div>
-        <div className="today-side">
+        {hasSchedule && <div className="today-side">
           <div className="today-time">{today.length}</div>
           <span className="muted">今日课程</span>
-        </div>
+        </div>}
+        <button className="btn" onClick={() => nav("/schedule")}>
+          {hasSchedule ? "查看今日课表" : "连接教务助手"}
+        </button>
       </div>
       <div className="section quick-section">
         <div className="section-head">
@@ -151,11 +153,11 @@ export function Dashboard() {
             ["canteen", "食堂"],
             ["ai", "AI 助手"],
           ].map(([id, name]) => (
-            <button className="quick" key={id} onClick={() => nav(`/${id}`)}>
+            <button className="quick" key={id} aria-label={name} onClick={() => nav(`/${id}`)}>
               <i>
                 <Icon name={id} />
               </i>
-              <span>{name}</span>
+              <span className="quick-copy"><b>{name}</b></span>
             </button>
           ))}
         </div>
@@ -167,7 +169,7 @@ export function Dashboard() {
             进入社区 →
           </button>
         </div>
-        <div className="panel">
+        <div className="panel dashboard-feed">
           <QueryState query={posts}>
             {posts.items.map((post) => (
               <CommunityPostCard post={post} key={post.id} />
@@ -336,5 +338,3 @@ export function Exams() {
     </>
   );
 }
-
-

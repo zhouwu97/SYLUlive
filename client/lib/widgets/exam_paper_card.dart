@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -118,7 +119,7 @@ class ExamPaperCard extends StatelessWidget {
           ),
           if (footer != null) ...[
             const SizedBox(height: 10),
-            Divider(height: 1, color: theme.colorScheme.outlineVariant),
+            AppCardDivider(height: 1, color: theme.colorScheme.outlineVariant),
             const SizedBox(height: 10),
             footer!,
           ],

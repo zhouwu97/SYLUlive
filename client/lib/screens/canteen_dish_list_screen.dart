@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../widgets/app_page_background.dart';
+import '../utils/responsive_util.dart';
 import '../config/api_constants.dart';
 import '../models/canteen_dish.dart';
 import '../providers/canteen_provider.dart';
@@ -102,11 +104,14 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: CanteenTheme.pageBg(isDark),
+      backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       appBar: AppBar(
         leading: const BackButton(),
         title: const Text(
@@ -116,7 +121,7 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: CanteenTheme.pageBg(isDark),
+        backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
         foregroundColor: CanteenTheme.textPrimaryColor(isDark),
       ),
@@ -132,25 +137,27 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
                 )
               : _visibleDishes.isEmpty
                   ? _buildEmptyState()
-                  : GridView.builder(
-                      padding: const EdgeInsets.all(16),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 16,
-                        crossAxisSpacing: 16,
-                        childAspectRatio: 0.82,
-                      ),
-                      itemCount: _visibleDishes.length,
-                      itemBuilder: (context, index) {
-                        final dish = _visibleDishes[index];
-                        return _GridDishCard(
-                          dish: dish,
-                          isDark: isDark,
-                          onTap: () => _openDish(dish),
-                        );
-                      },
-                    ),
+                  : LayoutBuilder(
+                      builder: (context, constraints) => GridView.builder(
+                            padding: const EdgeInsets.all(16),
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: ResponsiveUtil.gridColumnCount(
+                                  constraints.maxWidth - 32),
+                              mainAxisSpacing: 16,
+                              crossAxisSpacing: 16,
+                              childAspectRatio: 0.82,
+                            ),
+                            itemCount: _visibleDishes.length,
+                            itemBuilder: (context, index) {
+                              final dish = _visibleDishes[index];
+                              return _GridDishCard(
+                                dish: dish,
+                                isDark: isDark,
+                                onTap: () => _openDish(dish),
+                              );
+                            },
+                          )),
     );
   }
 }

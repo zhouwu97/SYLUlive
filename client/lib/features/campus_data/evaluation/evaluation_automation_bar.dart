@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'evaluation_automation_models.dart';
 import 'evaluation_automation_controller.dart';
@@ -242,7 +243,7 @@ class EvaluationAutomationBar extends StatelessWidget {
   Future<bool?> _showConfirmDialog(BuildContext context, bool isDark) {
     return showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('自动批量处理'),
         content: const Text(
           '将自动填写并保存所有待评价课程。\n\n'
@@ -266,7 +267,7 @@ class EvaluationAutomationBar extends StatelessWidget {
   Future<bool?> _showSubmitConfirmDialog(BuildContext context, bool isDark) {
     return showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Row(
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.red),

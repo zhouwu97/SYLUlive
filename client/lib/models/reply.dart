@@ -8,6 +8,7 @@ class Reply {
   final int? parentReplyId;
   final int? replyToUserId;
   final int? replyToReplyId;
+  final String replyToName;
   final int authorId;
   final String content;
   final String? stickerId;
@@ -31,6 +32,7 @@ class Reply {
     this.parentReplyId,
     this.replyToUserId,
     this.replyToReplyId,
+    this.replyToName = '',
     required this.authorId,
     required this.content,
     this.stickerId,
@@ -56,6 +58,7 @@ class Reply {
       parentReplyId: json['parent_reply_id'],
       replyToUserId: json['reply_to_user_id'],
       replyToReplyId: json['reply_to_reply_id'],
+      replyToName: json['reply_to_name']?.toString() ?? '',
       authorId: json['author_id'] ?? 0,
       content: json['content'] ?? '',
       stickerId: json['sticker_id']?.toString(),
@@ -83,6 +86,27 @@ class Reply {
 
   bool get hasSticker => stickerId?.trim().isNotEmpty == true;
 
+  String get _displayReplyTargetName {
+    final explicitName = replyToName.trim();
+    if (explicitName.isNotEmpty || parentReplyId == null) return explicitName;
+    // 旧版只约定开头的单词 @昵称；含空格的名字必须依赖明确元数据。
+    return RegExp(r'^@(\S+) ').firstMatch(content)?.group(1) ?? '';
+  }
+
+  /// 回复关系由元数据表达，正文不必包含 @；兼容旧版正文里的同名提及。
+  String get replyTargetPrefix => parentReplyId == null
+      ? ''
+      : '回复 @${_displayReplyTargetName.isEmpty ? '同学' : _displayReplyTargetName}：';
+
+  String get displayContent {
+    final targetName = _displayReplyTargetName;
+    var body = hasTextContent ? content : '';
+    if (targetName.isNotEmpty && body.startsWith('@$targetName ')) {
+      body = body.substring(targetName.length + 2);
+    }
+    return '$replyTargetPrefix$body';
+  }
+
   bool get hasTextContent {
     final text = content.trim();
     return text.isNotEmpty && !(hasSticker && text == '[表情]');
@@ -105,6 +129,7 @@ class Reply {
     int? parentReplyId,
     int? replyToUserId,
     int? replyToReplyId,
+    String? replyToName,
     int? authorId,
     String? content,
     String? stickerId,
@@ -126,6 +151,7 @@ class Reply {
       parentReplyId: parentReplyId ?? this.parentReplyId,
       replyToUserId: replyToUserId ?? this.replyToUserId,
       replyToReplyId: replyToReplyId ?? this.replyToReplyId,
+      replyToName: replyToName ?? this.replyToName,
       authorId: authorId ?? this.authorId,
       content: content ?? this.content,
       stickerId: stickerId ?? this.stickerId,

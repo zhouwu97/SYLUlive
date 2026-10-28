@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import '../widgets/app_page_background.dart';
 import '../platform/contracts/external_navigator.dart';
+import '../widgets/app_card.dart';
 
 // ---- 瑞士极客风博客页面 ----
 
@@ -26,9 +28,12 @@ class BlogScreen extends StatefulWidget {
 
 class _BlogScreenState extends State<BlogScreen> {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent, // 使用全局默认背景
+      backgroundColor: AppPageBackground.color(context, Colors.transparent), // 使用全局默认背景
       appBar: _buildAppBar(),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
@@ -75,7 +80,7 @@ class _BlogScreenState extends State<BlogScreen> {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: const Color(0xCC0B1121),
+      backgroundColor: AppPageBackground.color(context, const Color(0xCC0B1121)),
       elevation: 0,
       automaticallyImplyLeading: false,
       title: const Row(
@@ -113,7 +118,7 @@ class _BlogScreenState extends State<BlogScreen> {
         tags: ['Flutter', '状态管理', '架构'],
         date: '2026-04-28',
       ),
-      child: Container(
+      child: AppCardSurface(
         height: 200,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
@@ -239,7 +244,7 @@ class _BlogScreenState extends State<BlogScreen> {
         tags: tags,
         date: date,
       ),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: const Color(0xFF1E293B).withValues(alpha: 0.7),
@@ -407,9 +412,9 @@ class _ArticleReaderState extends State<_ArticleReader> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0B1121),
+      backgroundColor: AppPageBackground.color(context, const Color(0xFF0B1121)),
       appBar: AppBar(
-        backgroundColor: const Color(0xCC0B1121),
+        backgroundColor: AppPageBackground.color(context, const Color(0xCC0B1121)),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Color(0xFF94A3B8)),
@@ -495,7 +500,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
                 ),
               ),
               const SizedBox(height: 24),
-              Divider(color: Colors.white.withValues(alpha: 0.06)),
+              AppCardDivider(color: Colors.white.withValues(alpha: 0.06)),
               const SizedBox(height: 20),
               _buildRichContent(widget.content),
               const SizedBox(height: 14),
@@ -522,7 +527,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Divider(color: Colors.white.withValues(alpha: 0.06)),
+        AppCardDivider(color: Colors.white.withValues(alpha: 0.06)),
         const SizedBox(height: 12),
         Row(
           children: [

@@ -20,6 +20,7 @@ import 'package:shenliyuan/services/root_page_state_service.dart';
 import 'package:shenliyuan/utils/app_navigator.dart';
 import 'package:shenliyuan/widgets/bottom_nav.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'helpers/golden_viewport.dart';
 
 /// 未登录的 AuthProvider 假实现：首页 bootstrap 与各 Tab 的登录守卫
 /// 只读取 isLoggedIn / user / token / dio，其余成员通过 noSuchMethod 兜底。
@@ -57,6 +58,54 @@ class _HomeAuthProvider extends ChangeNotifier implements AuthProvider {
 }
 
 void main() {
+  testWidgets('液态底栏接入真实首页后松手切页，Pad 切换保留页面状态', (tester) async {
+    final page = await _pumpHome(tester);
+    await page.themeProvider.setBottomNavStyle(BottomNavStyle.liquidGlass);
+    await tester.pumpAndSettle();
+    final start = tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-0')));
+    final end = tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-1')));
+    final drag = await tester.startGesture(start);
+    for (var i = 1; i <= 10; i++) {
+      await drag.moveTo(Offset.lerp(start, end, i / 10)!);
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(_rootTabIndex(tester), 0);
+    await drag.up();
+    await tester.pumpAndSettle();
+    expect(_rootTabIndex(tester), 1);
+    final state = tester.state(find.byType(MarketScreen));
+    await page.themeProvider.setBottomNavStyle(BottomNavStyle.normal);
+    await setGoldenViewport(tester, GoldenViewports.tabletLandscape1280x800);
+    await tester.pumpAndSettle();
+    expect(tester.state(find.byType(MarketScreen)), same(state));
+    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _disposeHome(tester, page);
+  });
+
+  testWidgets('Pad 首页切换 rail 与底栏时保留当前页面和搜索草稿', (tester) async {
+    final page = await _pumpHome(tester, initialTab: 1);
+    final screenState = tester.state(find.byType(MarketScreen));
+    final input = find.byType(TextField).first;
+    await tester.enterText(input, '自行车草稿');
+    await tester.pump(const Duration(milliseconds: 400));
+    await page.themeProvider.setBottomNavStyle(BottomNavStyle.normal);
+    for (final size in [
+      GoldenViewports.tabletPortrait834x1194,
+      GoldenViewports.tabletLandscape1280x800,
+      GoldenViewports.tabletSplit600x800
+    ]) {
+      await setGoldenViewport(tester, size);
+      await tester.pumpAndSettle();
+      expect(tester.state(find.byType(MarketScreen)), same(screenState));
+      expect(tester.widget<TextField>(input).controller!.text, '自行车草稿');
+      expect(find.byType(NavigationRail),
+          size.width >= 840 ? findsOneWidget : findsNothing);
+      expect(_rootTabIndex(tester), 1);
+      expect(tester.takeException(), isNull);
+    }
+    await _disposeHome(tester, page);
+  });
   testWidgets('首页内容区域横滑不切换根 Tab', (tester) async {
     final page = await _pumpHome(tester);
 
@@ -259,7 +308,7 @@ void main() {
 Finder _navLabel(String label) {
   return find.descendant(
     of: find.byType(BottomNavWrapper),
-    matching: find.text(label),
+    matching: find.byKey(ValueKey('bottom-nav-item-${const ['首页', '集市', '课表', '校园', '我'].indexOf(label)}')),
   );
 }
 

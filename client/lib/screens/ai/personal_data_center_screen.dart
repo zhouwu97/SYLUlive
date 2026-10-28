@@ -1,8 +1,11 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../../widgets/app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../features/ai_runtime/tool_calling/tool_permission.dart';
 import '../../features/ai_device_bridge/device_credential_store.dart';
 import '../../features/campus_data/erke/erke_repository.dart';
@@ -162,7 +165,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
     try {
       return await showDialog<PersonalErkeCredentials>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
+        builder: (dialogContext) => AppAlertDialog(
           title: const Text('更新二课数据'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -228,7 +231,10 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final appFingerprint = AccountCacheNamespace.fingerprint(widget.appUserId);
     final sourceFingerprint =
         AccountCacheNamespace.fingerprint(widget.sourceAccountId);
@@ -249,7 +255,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
                 title: const Text('当前账号'),
                 subtitle: Text('App $appFingerprint · 来源 $sourceFingerprint'),
               ),
-              const Divider(),
+              const AppCardDivider(),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.admin_panel_settings_outlined),
@@ -264,7 +270,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
                   ),
                 ),
               ),
-              const Divider(),
+              const AppCardDivider(),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -343,7 +349,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
   Future<void> _confirm(String title, Future<void> Function() action) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppAlertDialog(
         title: Text(title),
         content: const Text('删除后需要重新同步，操作不可撤销。'),
         actions: [

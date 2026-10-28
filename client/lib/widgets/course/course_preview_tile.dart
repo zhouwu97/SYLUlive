@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
 
@@ -101,7 +102,7 @@ class CoursePreviewTile extends StatelessWidget {
       weekStr = '周次未知';
     }
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -169,15 +170,18 @@ class CoursePreviewTile extends StatelessWidget {
                   ),
                 const SizedBox(height: 4),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Icon(Icons.date_range_rounded,
                         size: 14, color: CampusTheme.subText),
                     const SizedBox(width: 4),
-                    Text(
-                      weekStr,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: CampusTheme.subText,
+                    Expanded(
+                      child: Text(
+                        weekStr,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: CampusTheme.subText,
+                        ),
                       ),
                     ),
                   ],

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
@@ -143,7 +144,7 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final targetLabel = widget.targetType == 'reply' ? '举报评论' : '举报帖子';
 
-    return Container(
+    return AppCardSurface(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.75,
       ),
@@ -181,7 +182,7 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
               ],
             ),
           ),
-          const Divider(),
+          const AppCardDivider(),
           // 举报原因
           Flexible(
             child: ListView(
@@ -194,7 +195,7 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
                 GlassContainer(
                   padding: const EdgeInsets.all(12),
                   borderRadius: 14,
-                  blur: 0,
+                  blur: 10,
                   opacity: 0.06,
                   child: TextField(
                     controller: _reasonController,

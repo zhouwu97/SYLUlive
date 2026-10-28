@@ -2,6 +2,17 @@ package models
 
 import "time"
 
+const (
+	CheckInFirstMakeupCardDays    = 7
+	CheckInMakeupCardIntervalDays = 14
+)
+
+// IsCheckInMakeupCardRewardDay 每段连续签到第 7 天首次发卡，此后每隔 14 天发卡。
+func IsCheckInMakeupCardRewardDay(streakDays int) bool {
+	return streakDays >= CheckInFirstMakeupCardDays &&
+		(streakDays-CheckInFirstMakeupCardDays)%CheckInMakeupCardIntervalDays == 0
+}
+
 // CheckIn 是每天签到的不可变事实记录。签到日期使用 DATE，避免时区导致同一天重复。
 type CheckIn struct {
 	ID          uint      `gorm:"primaryKey" json:"id"`

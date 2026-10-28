@@ -1,3 +1,6 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../../widgets/app_page_background.dart';
+import '../../widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -114,7 +117,7 @@ class _TeamRecruitmentDetailScreenState
   Future<void> _delete(TeamRecruitment item) async {
     final confirmed = await showDialog<bool>(
           context: context,
-          builder: (dialogContext) => AlertDialog(
+          builder: (dialogContext) => AppAlertDialog(
             title: const Text('删除组队'),
             content: Text('“${item.title}”将从组队大厅和相关列表中移除，删除后无法恢复。'),
             actions: [
@@ -171,7 +174,10 @@ class _TeamRecruitmentDetailScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -183,9 +189,9 @@ class _TeamRecruitmentDetailScreenState
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageColor = TeamUiTokens.pageBg(isDark);
     return Scaffold(
-      backgroundColor: pageColor,
+      backgroundColor: AppPageBackground.color(context, pageColor),
       appBar: AppBar(
-        backgroundColor: pageColor,
+        backgroundColor: AppPageBackground.color(context, pageColor),
         surfaceTintColor: Colors.transparent,
         title: const Text('组队详情'),
         actions: [
@@ -371,7 +377,7 @@ class _TeamRecruitmentDetailScreenState
             ),
           ),
         ),
-        Container(
+        AppCardSurface(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -477,7 +483,7 @@ class _TeamRecruitmentDetailScreenState
                 : () async {
                     final confirmed = await showDialog<bool>(
                           context: context,
-                          builder: (dialogContext) => AlertDialog(
+                          builder: (dialogContext) => AppAlertDialog(
                             title: const Text('退出队伍'),
                             content: const Text('退出后名额会重新开放，确定继续吗？'),
                             actions: [

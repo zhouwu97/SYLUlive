@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/app_card.dart';
 import '../../theme/app_colors.dart';
 
 enum PublishType { waterPost, poll }
@@ -34,7 +35,7 @@ class _PublishTypeSheetState extends State<PublishTypeSheet> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E2226) : Colors.white,

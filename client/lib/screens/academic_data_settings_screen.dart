@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import '../features/academic/presentation/academic_unbind_dialog.dart';
 import '../features/academic/domain/academic_provider.dart';
 import '../features/academic/data/academic_identity_client.dart';
@@ -432,7 +433,7 @@ class _AcademicDataSettingsScreenState
         : '课表（含自定义课程、隐藏记录和存档）和课程提醒';
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('关闭本机教务资料保存？'),
         content: Text('关闭后会删除本机$retainedData。此后课表修改不会在重启后保留；教务绑定和登录凭据不受影响。'),
         actions: [
@@ -502,7 +503,7 @@ class _AcademicDataSettingsScreenState
         : '教务凭据、课表和本机设置';
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('清除本机教务资料？'),
         content: Text('将删除$retainedData、学校会话及其密钥，保留云端账号配置和 App 账号。此操作不可恢复。'),
         actions: [

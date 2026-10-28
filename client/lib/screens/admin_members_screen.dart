@@ -2,9 +2,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/admin_user_summary.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../widgets/app_card.dart';
 
 class AdminMembersScreen extends StatefulWidget {
   const AdminMembersScreen({super.key});
@@ -54,16 +56,17 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final auth = context.watch<AuthProvider>();
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF10131A) : kCleanWarmBackgroundLight,
+      backgroundColor: AppPageBackground.color(context, isDark ? const Color(0xFF10131A) : kCleanWarmBackgroundLight),
       appBar: AppBar(
         title: const Text('管理人员'),
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(context, Colors.transparent),
         elevation: 0,
       ),
       body: SafeArea(
@@ -121,7 +124,7 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                   MediaQuery.viewPaddingOf(context).bottom + 24,
                 ),
                 children: [
-                  Container(
+                  AppCardSurface(
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
@@ -187,7 +190,7 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                         ? const Color(0xFF7C4DFF)
                         : const Color(0xFFFF8F00);
 
-                    return Container(
+                    return AppCardSurface(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -283,7 +286,7 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                                   ),
                                 ),
                                 Text(
-                                  member.academicConfigLabel,
+                                  member.academicStatusLabel,
                                 style: TextStyle(
                                   fontSize: 13,
                                 color:

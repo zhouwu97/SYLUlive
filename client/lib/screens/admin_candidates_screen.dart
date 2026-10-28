@@ -1,7 +1,10 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../providers/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/admin_user_summary.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/cached_avatar.dart';
@@ -11,6 +14,7 @@ import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/app_page_app_bar.dart';
 import '../config/api_constants.dart';
+import '../widgets/app_card.dart';
 
 class AdminCandidatesScreen extends StatefulWidget {
   const AdminCandidatesScreen({super.key});
@@ -270,7 +274,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
     return showDialog<String>(
       context: context,
       useRootNavigator: false,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Text(title),
         content: TextField(
           controller: controller,
@@ -334,7 +338,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         AppSpacing.lg,
         AppSpacing.xs,
       ),
-      child: DecoratedBox(
+      child: AppCardSurface(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -363,17 +367,34 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                   ),
                   _buildStatDivider(isDark),
                   _buildStatItem(
-                    '教务账号',
+                    '教务有记录',
                     _statsError == null ? _eduUsers : null,
                     isDark,
                   ),
                   _buildStatDivider(isDark),
                   _buildStatItem(
-                    '其他',
+                    '暂无记录',
                     _statsError == null ? _otherUsers : null,
                     isDark,
                   ),
                 ],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                  AppSpacing.lg,
+                  0,
+                ),
+                child: Text(
+                  '按云端配置、可信身份或旧授权去重；本机尚未同步的记录暂不计入。',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.62)
+                        : AppColors.textSecondaryLight,
+                  ),
+                ),
               ),
               if (_statsLoading) ...[
                 const SizedBox(height: AppSpacing.sm),
@@ -403,7 +424,8 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
     return Container(
       width: 1,
       height: 34,
-      color: isDark
+      color: context.watch<ThemeProvider?>()?.frostedGlass == true
+          ? Colors.transparent : isDark
           ? Colors.white.withValues(alpha: 0.1)
           : AppColors.borderSubtleLight,
     );
@@ -418,7 +440,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         AppSpacing.lg,
         AppSpacing.sm,
       ),
-      child: DecoratedBox(
+      child: AppCardSurface(
         decoration: BoxDecoration(
           color: isDark
               ? AppColors.surfaceSecondaryDark
@@ -435,7 +457,9 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
           onChanged: (_) => setState(() {}),
           onSubmitted: (_) => _searchCandidates(),
           textInputAction: TextInputAction.search,
+          textAlignVertical: TextAlignVertical.center,
           decoration: InputDecoration(
+            filled: false,
             prefixIcon: Icon(
               Icons.search_rounded,
               color: isDark
@@ -490,7 +514,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
+            AppCardSurface(
               width: 64,
               height: 64,
               decoration: BoxDecoration(
@@ -546,7 +570,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         ? AppColors.surfaceSecondaryDark
         : AppColors.surfaceSecondaryLight;
 
-    return Card(
+    return AppCard(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       elevation: 0,
       color: surface,
@@ -621,7 +645,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    candidate.academicConfigLabel,
+                    candidate.academicStatusLabel,
                     style: AppTextStyles.bodyMedium.copyWith(
                       color: isDark
                           ? Colors.white.withValues(alpha: 0.62)
@@ -720,6 +744,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         controller: _scrollController,
         thumbVisibility: true,
         child: ListView.builder(
+                addRepaintBoundaries: false,
           controller: _scrollController,
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           physics: const AlwaysScrollableScrollPhysics(
@@ -840,7 +865,9 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(

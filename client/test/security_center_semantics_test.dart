@@ -239,21 +239,8 @@ void main() {
     expect(event.metadata, isEmpty);
   });
 
-  // 顶部黑底是 Scaffold 与 AppBar 同时透明、而背景层只铺在 body 内导致的。
-  // 这里沿用仓库既有的源码断言风格（见 security_regression_test.dart），
-  // 防止后续改回透明 AppBar 再次出现深色底上深色字。
-  test('安全中心 AppBar 使用不透明表面色', () {
-    final source =
-        File('lib/screens/admin_security_center_screen.dart').readAsStringSync();
-
-    expect(source, isNot(contains('backgroundColor: Colors.transparent')));
-    expect(source, contains('backgroundColor: surface'));
-    expect(
-      source,
-      contains('foregroundColor: Theme.of(context).colorScheme.onSurface'),
-    );
-    expect(source, contains('surfaceTintColor: Colors.transparent'));
-  });
+  // 顶栏背景与文字的实际渲染契约见 admin_security_source_ip_test.dart：
+  // 自定义背景覆盖整个页面，简洁模式恢复不透明表面色。
 
   test('临时封禁默认最小作用域，全站封禁必须显式确认', () {
     final service =

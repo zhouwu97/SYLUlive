@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/admin_security_center_screen.dart';
@@ -42,13 +43,32 @@ ResponseBody _json(Object? data, {int statusCode = 200}) {
   );
 }
 
+class _AdminAuth extends AuthProvider {
+  _AdminAuth(this.requests) : super(Dio(), loadStoredAuth: false);
+  final Dio requests;
+
+  @override
+  Dio get dio => requests;
+
+  @override
+  bool get isLoggedIn => true;
+
+  @override
+  User get user => User(
+      id: 1,
+      studentId: '',
+      nickname: '测试管理员',
+      role: 'admin',
+      createdAt: DateTime(2026));
+}
+
 Widget _app(Widget home, HttpClientAdapter adapter) {
   final dio = Dio(BaseOptions(baseUrl: 'https://example.test'));
   dio.httpClientAdapter = adapter;
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<AuthProvider>.value(
-        value: AuthProvider(dio, loadStoredAuth: false),
+        value: _AdminAuth(dio),
       ),
       ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
     ],

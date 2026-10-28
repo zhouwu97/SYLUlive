@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import '../../../widgets/campus/campus_theme.dart';
 
@@ -19,13 +20,14 @@ class PollSettingRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
-          height: 50,
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 50),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             child: Row(
               children: [
                 Icon(icon, size: 19, color: CampusTheme.primary),
@@ -36,9 +38,10 @@ class PollSettingRow extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(title,
-                          style: const TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.normal,
-                              color: Color(0xFF1F2328))),
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.normal,
+                              color: isDark ? Colors.white : CampusTheme.text)),
                       if (subtitle != null) ...[
                         const SizedBox(height: 2),
                         Text(subtitle!,
@@ -57,7 +60,7 @@ class PollSettingRow extends StatelessWidget {
         if (showDivider)
           const Padding(
             padding: EdgeInsets.only(left: 47),
-            child: Divider(height: 1, thickness: 0.5, color: Color(0xFFE2EFEA)),
+            child: AppCardDivider(height: 1, thickness: 0.5, color: Color(0xFFE2EFEA)),
           ),
       ],
     );

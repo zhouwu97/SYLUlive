@@ -1,8 +1,10 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
+import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
@@ -15,6 +17,7 @@ import '../utils/report_reason_label.dart';
 import 'admin_teacher_governance_screen.dart';
 import 'image_viewer_screen.dart';
 import 'post_detail_screen.dart';
+import '../widgets/app_card.dart';
 
 class AdminReviewTasksScreen extends StatefulWidget {
   const AdminReviewTasksScreen({super.key});
@@ -398,7 +401,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     final reasonController = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Text(approve ? '通过整改复审' : '驳回整改复审'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -605,7 +608,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       context: context,
       useRootNavigator: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
+        builder: (ctx, setDialogState) => AppAlertDialog(
           title: Text('驳回「${evaluation.courseName}」评价？'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -763,7 +766,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       int pendingId, int keeperId, String keeperName) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('确认合并到已有教师'),
         content: Text(
             '确定将此待审教师合并到已有教师「$keeperName」吗？\n\n合并后该待审教师原名称将自动登记为别名，避免后续再次重复提交。'),
@@ -1030,7 +1033,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       useRootNavigator: false,
       builder: (ctx) {
         final controller = TextEditingController();
-        return AlertDialog(
+        return AppAlertDialog(
           title: Text('驳回「$name」？'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1095,7 +1098,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     return showDialog<String>(
       context: context,
       useRootNavigator: false,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Text(title),
         content: TextField(
           controller: controller,
@@ -1127,7 +1130,9 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     Widget body;
@@ -1186,7 +1191,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
   ) {
     final subColor =
         isDark ? Colors.white.withValues(alpha: 0.62) : Colors.grey[600];
-    return Card(
+    return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
       color: isDark ? Colors.grey[850] : Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1279,7 +1284,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       _PendingPostRectification item, bool isDark) {
     final snapshot = _parseModeratedSnapshot(item.moderatedSnapshot);
     final moderatedRevision = item.moderatedRevision > 0 ? item.moderatedRevision : null;
-    return Card(
+    return AppCard(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       color: isDark ? Colors.grey[850] : Colors.white,
       shape: RoundedRectangleBorder(
@@ -1675,7 +1680,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
 
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: Row(
           children: [
             const Icon(Icons.compare_arrows_rounded,
@@ -1798,7 +1803,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                           ),
                         ),
                       ],
-                      const Divider(height: 16),
+                      const AppCardDivider(height: 16),
                       if (snapshot.title.isNotEmpty) ...[
                         Text(
                           snapshot.title,
@@ -1867,7 +1872,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                           ),
                         ],
                       ),
-                      const Divider(height: 16),
+                      const AppCardDivider(height: 16),
                       if (item.postTitle.isNotEmpty) ...[
                         Text(
                           item.postTitle,
@@ -1934,7 +1939,8 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         '${two(local.hour)}:${two(local.minute)}';
   }
 
-  Widget _buildEmptyState(bool isDark) {    return Container(
+  Widget _buildEmptyState(bool isDark) {
+    return AppCardSurface(
       padding: const EdgeInsets.all(AppSpacing.xxl),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -2041,7 +2047,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       final requiredVotes = inv['required_votes'] ?? 3;
       final myVote = inv['my_vote'] == true;
       items.add(
-        Card(
+        AppCard(
           margin: const EdgeInsets.only(bottom: 10),
           color: isDark ? Colors.grey[850] : Colors.white,
           shape:
@@ -2081,7 +2087,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       final canVote = removal['can_vote'] == true;
       final myVote = removal['my_vote'] == true;
       items.add(
-        Card(
+        AppCard(
           margin: const EdgeInsets.only(bottom: 10),
           color: isDark ? Colors.grey[850] : Colors.white,
           shape:
@@ -2134,7 +2140,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       final courseName = (first['course'] ?? '').toString();
 
       items.add(
-        Card(
+        AppCard(
           margin: const EdgeInsets.only(bottom: 10),
           color: isDark ? Colors.grey[850] : Colors.white,
           shape:
@@ -2203,7 +2209,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     }
     for (final m in dedupedMajors) {
       items.add(
-        Card(
+        AppCard(
           margin: const EdgeInsets.only(bottom: 10),
           color: isDark ? Colors.grey[850] : Colors.white,
           shape:

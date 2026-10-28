@@ -1,9 +1,14 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../widgets/app_choice_chip.dart';
 import 'package:flutter/material.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/home_widget_config.dart';
+import '../theme/app_text_scaler.dart';
 import '../services/home_widget_service.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/campus/campus_theme.dart';
+import '../widgets/app_card.dart';
 
 class HomeWidgetSettingsScreen extends StatefulWidget {
   const HomeWidgetSettingsScreen({super.key});
@@ -105,7 +110,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
       context: context,
       builder: (dialogContext) => Theme(
         data: dialogTheme,
-        child: AlertDialog(
+        child: AppAlertDialog(
           title: Text('${_kindTitle(kind)}标题'),
           content: TextField(
             controller: controller,
@@ -189,17 +194,20 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final baseTheme = Theme.of(context);
     final pageBackground = CampusTheme.pageBackground(context);
 
     return Theme(
       data: CampusTheme.withBrandAccent(baseTheme),
       child: Scaffold(
-        backgroundColor: pageBackground,
+        backgroundColor: AppPageBackground.color(context, pageBackground),
         appBar: AppBar(
           title: const Text('桌面小组件'),
-          backgroundColor: pageBackground,
+          backgroundColor: AppPageBackground.color(context, pageBackground),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
@@ -249,7 +257,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
       HomeWidgetSyncStage.success => '小组件状态：已同步',
       HomeWidgetSyncStage.failed => '小组件同步失败',
     };
-    return Card(
+    return AppCard(
       child: ListTile(
         leading: Icon(failed ? Icons.error_outline : Icons.sync),
         title: Text(label),
@@ -275,7 +283,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
     final preview = _previews[kind] ?? const HomeWidgetPreviewData();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 24),
       decoration: BoxDecoration(
         color: isDark ? CampusTheme.darkCard : CampusTheme.card,
@@ -373,14 +381,28 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
               runSpacing: 8,
               children: [
                 for (final theme in HomeWidgetTheme.values)
-                  ChoiceChip(
+                  AppChoiceChip(
                     label: Text(theme.label),
                     selected: appearance.theme == theme,
                     onSelected: (_) => _updateAppearance(
-                      appearance.copyWith(theme: theme),
+                      _appearances[kind]!.copyWith(theme: theme),
                     ),
                   ),
               ],
+            ),
+            const SizedBox(height: 12),
+            _WidgetSettingRow(
+              title: '小组件毛玻璃',
+              subtitle: '独立于应用内设置；使用半透明材质，桌面模糊效果取决于启动器',
+              trailing: Semantics(
+                container: true,
+                label: '${_kindTitle(kind)}毛玻璃',
+                child: Switch(
+                  value: appearance.frostedGlass,
+                  onChanged: (value) => _updateAppearance(
+                      _appearances[kind]!.copyWith(frostedGlass: value)),
+                ),
+              ),
             ),
             const SizedBox(height: 12),
             const Text('字号', style: TextStyle(fontWeight: FontWeight.w700)),
@@ -390,11 +412,11 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
               runSpacing: 8,
               children: [
                 for (final fontSize in HomeWidgetFontSize.values)
-                  ChoiceChip(
+                  AppChoiceChip(
                     label: Text(fontSize.label),
                     selected: appearance.fontSize == fontSize,
                     onSelected: (_) => _updateAppearance(
-                      appearance.copyWith(fontSize: fontSize),
+                      _appearances[kind]!.copyWith(fontSize: fontSize),
                     ),
                   ),
               ],
@@ -415,7 +437,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
                 child: const Text('修改'),
               ),
             ),
-            const Divider(height: 1),
+            const AppCardDivider(height: 1),
             _WidgetSizeRow(
               title: '2×2 紧凑版',
               subtitle: appearance.fontSize == HomeWidgetFontSize.extraLarge
@@ -428,7 +450,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
               count: _counts.countFor(kind, HomeWidgetSize.size2x2),
               onAdd: () => _requestPin(kind, HomeWidgetSize.size2x2),
             ),
-            const Divider(height: 1),
+            const AppCardDivider(height: 1),
             _WidgetSizeRow(
               title: '4×2 列表版',
               subtitle: appearance.fontSize == HomeWidgetFontSize.extraLarge
@@ -441,7 +463,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
               count: _counts.countFor(kind, HomeWidgetSize.size4x2),
               onAdd: () => _requestPin(kind, HomeWidgetSize.size4x2),
             ),
-            const Divider(height: 1),
+            const AppCardDivider(height: 1),
             _WidgetSettingRow(
               title: '立即同步',
               subtitle: '刷新数据、主题、标题、字号和倒计时',
@@ -488,115 +510,137 @@ class _HomeWidgetPreview extends StatelessWidget {
       appearance.fontSize,
     );
     final items = data.items.take(maxItems).toList();
+    final textScaler = MediaQuery.textScalerOf(context);
+    // 桌面组件使用系统 sp，预览不应再叠加 App 内字号倍率。
+    final systemScaler =
+        textScaler is AppTextScaler ? textScaler.systemScaler : textScaler;
+    final rowHeight = systemScaler.scale(typography.primary) * 1.1 +
+        systemScaler.scale(typography.secondary) * 1.5 +
+        systemScaler.scale(typography.tertiary) * 1.5 +
+        8 +
+        (isWide ? systemScaler.scale(typography.badge) * 1.5 : 0);
+    final contentHeight = 28 +
+        systemScaler.scale(typography.title) * 1.5 +
+        6 +
+        rowHeight * (isWide ? 1 : items.length.clamp(1, 2));
+    final previewHeight =
+        highReadability ? contentHeight.clamp(155.0, double.infinity) : 155.0;
 
-    return Container(
-      width: double.infinity,
-      height: 240,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        // 用渐变色模拟壁纸，让预览更逼真
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isDark
-              ? [const Color(0xFF2C3E50), const Color(0xFF000000)]
-              : [const Color(0xFFE0EAFC), const Color(0xFFCFDEF3)],
-        ),
-      ),
-      child: Center(
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOutCubic,
-          width: isWide ? 310 : 170, // 增加基础宽度，避免内容被截断
-          height: 155, // 微调高度使其更协调
-          padding: const EdgeInsets.all(14),
+    return MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: systemScaler),
+        child: Container(
+          width: double.infinity,
+          height: (previewHeight + 50).clamp(240.0, double.infinity),
           decoration: BoxDecoration(
-            color: palette.background,
-            borderRadius: BorderRadius.circular(22),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
-                blurRadius: 15,
-                offset: const Offset(0, 5),
-              ),
-            ],
-            border: Border.all(color: palette.border, width: 0.5),
+            borderRadius: BorderRadius.circular(20),
+            // 用渐变色模拟壁纸，让预览更逼真
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: isDark
+                  ? [const Color(0xFF2C3E50), const Color(0xFF000000)]
+                  : [const Color(0xFFE0EAFC), const Color(0xFFCFDEF3)],
+            ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      appearance.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: palette.primaryText,
-                        fontSize: typography.title,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+          child: Center(
+            // 字号与所需高度同时生效，避免高度动画期间用旧约束布局新文字。
+            child: Container(
+              width: isWide ? 310 : 170, // 增加基础宽度，避免内容被截断
+              height: previewHeight,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: appearance.frostedGlass
+                    ? palette.background.withValues(alpha: 0.78)
+                    : palette.background,
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    blurRadius: 15,
+                    offset: const Offset(0, 5),
                   ),
-                  if (kind == HomeWidgetKind.course &&
-                      !(highReadability && !isWide))
-                    Flexible(
-                      child: Text(
-                        data.subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.end,
-                        style: TextStyle(
-                          color: palette.secondaryText,
-                          fontSize: typography.subtitle,
-                        ),
-                      ),
-                    ),
                 ],
+                border: appearance.frostedGlass
+                    ? null
+                    : Border.all(color: palette.border, width: 0.5),
               ),
-              const SizedBox(height: 6),
-              Expanded(
-                child: items.isEmpty
-                    ? Center(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
                         child: Text(
-                          kind == HomeWidgetKind.course ? '今天没有课' : '近期暂无考试',
+                          appearance.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: palette.mutedText,
-                            fontSize: typography.empty,
+                            color: palette.primaryText,
+                            fontSize: typography.title,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
-                      )
-                    : highReadability
-                        ? _HighReadabilityPreviewItems(
-                            items: items,
-                            kind: kind,
-                            isWide: isWide,
-                            palette: palette,
-                            typography: typography,
+                      ),
+                      if (kind == HomeWidgetKind.course &&
+                          !(highReadability && !isWide))
+                        Flexible(
+                          child: Text(
+                            data.subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: TextStyle(
+                              color: palette.secondaryText,
+                              fontSize: typography.subtitle,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Expanded(
+                    child: items.isEmpty
+                        ? Center(
+                            child: Text(
+                              kind == HomeWidgetKind.course
+                                  ? '今天没有课'
+                                  : '近期暂无考试',
+                              style: TextStyle(
+                                color: palette.mutedText,
+                                fontSize: typography.empty,
+                              ),
+                            ),
                           )
-                        : ListView.separated(
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: items.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 5),
-                            itemBuilder: (context, index) {
-                              final item = items[index];
-                              return _PreviewItem(
-                                item: item,
+                        : highReadability
+                            ? _HighReadabilityPreviewItems(
+                                items: items,
                                 kind: kind,
-                                detailed: isWide,
+                                isWide: isWide,
                                 palette: palette,
                                 typography: typography,
-                              );
-                            },
-                          ),
+                              )
+                            : ListView.separated(
+                                physics: const NeverScrollableScrollPhysics(),
+                                itemCount: items.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 5),
+                                itemBuilder: (context, index) {
+                                  final item = items[index];
+                                  return _PreviewItem(
+                                    item: item,
+                                    kind: kind,
+                                    detailed: isWide,
+                                    palette: palette,
+                                    typography: typography,
+                                  );
+                                },
+                              ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
-    );
+        ));
   }
 }
 
@@ -642,7 +686,7 @@ class _HighReadabilityPreviewItems extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(child: itemAt(0)),
-        VerticalDivider(width: 18, thickness: 1, color: palette.border),
+        const SizedBox(width: 18),
         Expanded(child: itemAt(1)),
       ],
     );

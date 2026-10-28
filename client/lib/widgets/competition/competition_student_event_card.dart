@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/competition.dart';
 import 'competition_status_helper.dart';
 import 'competition_ui_tokens.dart';
+import '../app_card.dart';
 
 class CompetitionStudentEventCard extends StatelessWidget {
   final CompetitionEvent event;
@@ -46,7 +47,7 @@ class CompetitionStudentEventCard extends StatelessWidget {
       clusters: event.matchedClusters,
     );
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
       child: InkWell(

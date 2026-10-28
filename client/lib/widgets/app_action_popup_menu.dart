@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'app_popup_menu.dart';
 
 class AppPopupAction {
   final String value;
@@ -47,7 +48,7 @@ class AppActionPopupMenu extends StatelessWidget {
     final danger = dangerColor ?? const Color(0xFFE54848);
     final accent = accentColor ?? const Color(0xFF147C72);
 
-    return PopupMenuButton<String>(
+    return AppPopupMenuButton<String>(
       padding: EdgeInsets.zero,
       tooltip: '更多操作',
       icon: icon,

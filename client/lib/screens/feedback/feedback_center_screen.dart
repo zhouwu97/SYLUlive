@@ -1,5 +1,8 @@
+import 'package:shenliyuan/widgets/app_glass_button_style.dart';
+import '../../widgets/app_tab_bar_surface.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../widgets/app_page_background.dart';
 import '../../models/feedback_ticket.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
@@ -7,6 +10,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import 'feedback_create_screen.dart';
 import 'feedback_detail_screen.dart';
+import '../../widgets/app_card.dart';
 
 class FeedbackCenterScreen extends StatefulWidget {
   const FeedbackCenterScreen({super.key});
@@ -242,7 +246,7 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
     final cardBg = isDark ? const Color(0xFF1E2226) : Colors.white;
     final borderColor = isDark ? Colors.white12 : const Color(0xFFE8EEE9);
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
         color: cardBg,
@@ -341,14 +345,14 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
                       style: TextStyle(
                         fontSize: 11,
                         fontFamily: 'monospace',
-                        color: isDark ? Colors.white38 : Colors.grey[500],
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                     Text(
                       _formatTimeAgo(ticket.updatedAt),
                       style: TextStyle(
                         fontSize: 11,
-                        color: isDark ? Colors.white38 : Colors.grey[500],
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -362,7 +366,7 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
   }
 
   Widget _buildTopBanner(bool isDark) {
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
@@ -411,19 +415,22 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
             },
             icon: const Icon(Icons.add, size: 16),
             label: const Text('新建反馈'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.brandPrimary,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(999),
-              ),
-              textStyle: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            style: appGlassButtonStyle(
+                context,
+                ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.brandPrimary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                )),
           ),
         ],
       ),
@@ -478,14 +485,14 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
             Icon(
               Icons.assignment_turned_in_outlined,
               size: 48,
-              color: isDark ? Colors.white24 : Colors.grey[300],
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 12),
             Text(
               tabIndex == 0 ? '暂无反馈记录' : '当前分类下没有工单',
               style: TextStyle(
                 fontSize: 14,
-                color: isDark ? Colors.white38 : Colors.grey[500],
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -506,6 +513,7 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
           return false;
         },
         child: ListView.builder(
+                addRepaintBoundaries: false,
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
@@ -532,7 +540,9 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = themeProvider.isCleanBackgroundMode && !isDark
@@ -540,7 +550,7 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
         : Theme.of(context).colorScheme.surface;
 
     return Scaffold(
-      backgroundColor: pageBg,
+      backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
         title: const Text(
           '帮助与反馈',
@@ -548,7 +558,7 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
         ),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: pageBg,
+        backgroundColor: AppPageBackground.color(context, pageBg),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -557,7 +567,7 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
       body: Column(
         children: [
           _buildTopBanner(isDark),
-          Container(
+          AppTabBarSurface(
             height: 42,
             margin: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
@@ -568,8 +578,11 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
             ),
             child: TabBar(
               controller: _tabController,
+              automaticIndicatorColorAdjustment: false,
               indicator: BoxDecoration(
-                color: isDark ? const Color(0xFF262C33) : Colors.white,
+                color: (isDark ? const Color(0xFF262C33) : Colors.white).withValues(
+                  alpha: themeProvider.frostedGlass && themeProvider.shouldShowCustomBackground
+                      ? themeProvider.componentOpacity : 1),
                 borderRadius: BorderRadius.circular(AppRadius.md - 2),
                 boxShadow: isDark
                     ? null

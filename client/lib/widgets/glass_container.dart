@@ -1,38 +1,10 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_colors.dart';
+import 'app_card.dart';
 
-/// 组件级毛玻璃统一门控。
-///
-/// 壁纸模糊和液态玻璃底栏有各自的设置，不应通过本开关间接控制。
-class FrostedGlass extends StatelessWidget {
-  final Widget child;
-  final double sigmaX;
-  final double sigmaY;
-  final bool? enabled;
-
-  const FrostedGlass({
-    super.key,
-    required this.child,
-    this.sigmaX = 10,
-    this.sigmaY = 10,
-    this.enabled,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final useFrostedGlass =
-        enabled ?? context.watch<ThemeProvider>().frostedGlass;
-    if (!useFrostedGlass || sigmaX <= 0 || sigmaY <= 0) return child;
-
-    return BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: sigmaX, sigmaY: sigmaY),
-      child: child,
-    );
-  }
-}
+export 'frosted_glass.dart';
 
 class GlassContainer extends StatelessWidget {
   final Widget child;
@@ -43,12 +15,16 @@ class GlassContainer extends StatelessWidget {
   final double borderRadius;
   final Color? backgroundColor;
   final double blur;
+
+  /// 保留旧调用兼容；卡片透明度统一由 ThemeProvider.componentOpacity 控制。
   final double opacity;
   final double borderWidth;
   final Color? borderColor;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final List<Color>? gradientColors;
+
+  /// 保留旧调用兼容；统一材质不再叠加白色高光。
   final bool showHighlight;
 
   const GlassContainer({
@@ -75,130 +51,73 @@ class GlassContainer extends StatelessWidget {
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final useFrostedGlass = themeProvider.frostedGlass && blur > 0;
-    final compOpacity = themeProvider.componentOpacity;
-    final useCleanDefaultSurface = themeProvider.isCleanBackgroundMode &&
-        backgroundColor == null &&
-        gradientColors == null;
-
-    final defaultBorderColor = isDark
-        ? AppColors.borderNormalDark
-        : (useCleanDefaultSurface || !useFrostedGlass
-            ? AppColors.borderNormalLight
-            : Colors.white.withValues(alpha: 0.6));
-    final defaultBgColor = useCleanDefaultSurface
-        ? (isDark
-            ? AppColors.surfaceSecondaryDark.withValues(alpha: 0.96)
-            : AppColors.surfaceSecondaryLight.withValues(alpha: 0.98))
-        : (isDark
-            ? (useFrostedGlass
-                ? Colors.white.withValues(alpha: compOpacity * 0.12)
-                : AppColors.surfaceSecondaryDark.withValues(
-                    alpha: (compOpacity * 0.2 + 0.75).clamp(0.85, 0.95),
-                  ))
-            : (useFrostedGlass
-                ? Colors.white.withValues(alpha: compOpacity * 0.55)
-                : AppColors.surfaceSecondaryLight.withValues(
-                    alpha: (compOpacity * 0.15 + 0.80).clamp(0.88, 0.96),
-                  )));
     final solidSurface = isDark
         ? AppColors.surfaceSecondaryDark
         : AppColors.surfaceSecondaryLight;
-    final effectiveBackgroundColor = useFrostedGlass
-        ? (backgroundColor ?? defaultBgColor)
-        : Color.alphaBlend(backgroundColor ?? defaultBgColor, solidSurface);
-    final effectiveGradientColors = !useFrostedGlass && gradientColors != null
-        ? gradientColors!
-            .map((color) => Color.alphaBlend(color, solidSurface))
-            .toList(growable: false)
-        : gradientColors;
-
-    Widget content = Container(
+    final background = backgroundColor ?? solidSurface;
+    final interactive = onTap != null || onLongPress != null;
+    // 只绘制一次材质；旧实现把渐变放在模糊层前并叠加白色高光，
+    // 导致不透明度失真、白边，以及不同卡片之间的材质差异。
+    final content = AppCardSurface(
       width: width,
       height: height,
       margin: margin,
-      child: ClipRRect(
+      padding: interactive ? null : padding,
+      blur: blur,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: gradientColors == null
+            ? (useFrostedGlass
+                ? background
+                : Color.alphaBlend(background, solidSurface))
+            : null,
+        gradient: gradientColors == null
+            ? null
+            : LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: useFrostedGlass
+                    ? gradientColors!
+                    : gradientColors!
+                        .map((color) => Color.alphaBlend(color, solidSurface))
+                        .toList(growable: false),
+              ),
         borderRadius: BorderRadius.circular(borderRadius),
-        child: Stack(
-          children: [
-            if (effectiveGradientColors != null)
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(borderRadius),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: effectiveGradientColors,
-                  ),
-                ),
+        border: useFrostedGlass
+            ? null
+            : Border.all(
+                color: borderColor ??
+                    (isDark
+                        ? AppColors.borderNormalDark
+                        : AppColors.borderNormalLight),
+                width: borderWidth,
               ),
-            FrostedGlass(
-              enabled: useFrostedGlass,
-              sigmaX: blur,
-              sigmaY: blur,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: effectiveGradientColors == null
-                      ? effectiveBackgroundColor
-                      : (effectiveGradientColors.first).withValues(
-                          alpha: useFrostedGlass ? 0.35 : 1,
-                        ),
-                  borderRadius: BorderRadius.circular(borderRadius),
-                  border: Border.all(
-                    color: borderColor ?? defaultBorderColor,
-                    width: borderWidth,
-                  ),
-                  boxShadow: useFrostedGlass
-                      ? null
-                      : [
-                          BoxShadow(
-                            color: (isDark ? Colors.black : Colors.grey)
-                                .withValues(alpha: 0.15),
-                            blurRadius: blur * 2,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                ),
-                padding: padding,
-                child: child,
-              ),
-            ),
-            if (useFrostedGlass && showHighlight)
-              Positioned(
-                top: 0,
-                left: borderRadius * 0.5,
-                right: borderRadius * 0.5,
-                height: 0.5,
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(borderRadius),
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white.withValues(alpha: 0.4),
-                        Colors.white.withValues(alpha: 0.0),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
+        boxShadow: useFrostedGlass
+            ? null
+            : [
+                BoxShadow(
+                  color: (isDark ? Colors.black : Colors.grey)
+                      .withValues(alpha: 0.15),
+                  blurRadius: blur * 2,
+                  offset: const Offset(0, 2),
+                )
+              ],
       ),
+      child: interactive
+          ? Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onTap,
+                onLongPress: onLongPress,
+                borderRadius: BorderRadius.circular(borderRadius),
+                child: Padding(
+                  padding: padding ?? EdgeInsets.zero,
+                  child: child,
+                ),
+              ),
+            )
+          : child,
     );
-
-    if (onTap != null || onLongPress != null) {
-      return Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          onLongPress: onLongPress,
-          borderRadius: BorderRadius.circular(borderRadius),
-          child: content,
-        ),
-      );
-    }
-
     return content;
   }
 }
@@ -231,7 +150,7 @@ class PremiumCard extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
-      child: Container(
+      child: AppCardSurface(
         margin: margin,
         decoration: BoxDecoration(
           gradient: LinearGradient(

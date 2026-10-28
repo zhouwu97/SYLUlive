@@ -1,7 +1,9 @@
+import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../widgets/app_page_background.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/ai_personal_data_permission_service.dart';
 import '../../utils/app_feedback.dart';
@@ -108,7 +110,10 @@ class _CampusPersonalDataPermissionScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('校园 Agent 数据权限')),
       body: FutureBuilder<
@@ -177,7 +182,7 @@ class _CampusPersonalDataPermissionScreenState
               height: 20,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : PopupMenuButton<AiPersonalDataPermissionPolicy>(
+          : AppPopupMenuButton<AiPersonalDataPermissionPolicy>(
               tooltip: '修改${_scopeTitle(scope)}权限',
               initialValue: policy,
               onSelected: (next) => _update(permissions, scope, next),

@@ -1,8 +1,12 @@
+import 'package:shenliyuan/widgets/app_glass_button_style.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../widgets/app_tab_bar_surface.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/app_page_background.dart';
 import '../models/teacher_governance.dart';
 import '../providers/auth_provider.dart';
 import '../providers/course_subject_provider.dart';
@@ -11,6 +15,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
+import '../widgets/app_card.dart';
 
 class AdminTeacherGovernanceScreen extends StatefulWidget {
   final int initialTab;
@@ -815,7 +820,7 @@ class _AdminTeacherGovernanceScreenState
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('确认执行课程合并'),
         content: Text(
           '将把「${_sourceCourse!.name}」(#${_sourceCourse!.id}) 并入「${_targetCourse!.name}」(#${_targetCourse!.id})。\n\n'
@@ -831,7 +836,9 @@ class _AdminTeacherGovernanceScreenState
             child: const Text('取消'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.brandPrimary),
+            style: appGlassButtonStyle(context,
+                FilledButton.styleFrom(backgroundColor: AppColors.brandPrimary),
+                fallbackBackground: Theme.of(context).colorScheme.primary),
             onPressed: () => Navigator.pop(ctx, true),
             child: Text('确认合并为「${_coursePreview!.finalCourseName}」'),
           ),
@@ -955,7 +962,7 @@ class _AdminTeacherGovernanceScreenState
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
+        builder: (ctx, setDialogState) => AppAlertDialog(
           title: Text(_aliasType == 'teacher' ? '添加教师别名' : '添加课程别名'),
           content: SingleChildScrollView(
             child: Column(
@@ -1085,7 +1092,7 @@ class _AdminTeacherGovernanceScreenState
   Future<void> _confirmDeleteAlias(GovernanceAliasItem item) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         title: const Text('确认删除别名'),
         content: Text('确定删除别名「${item.alias}」吗？\n删除后该名称将不再被自动解析至对应目标。'),
         actions: [
@@ -1094,7 +1101,9 @@ class _AdminTeacherGovernanceScreenState
             child: const Text('取消'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: appGlassButtonStyle(
+                context, FilledButton.styleFrom(backgroundColor: Colors.red),
+                fallbackBackground: Theme.of(context).colorScheme.primary),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('确认删除'),
           ),
@@ -1182,7 +1191,9 @@ class _AdminTeacherGovernanceScreenState
   // ==========================================
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AppPageBackground(builder: _buildPage);
+
+  Widget _buildPage(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (_isCheckingCapability) {
@@ -1195,8 +1206,7 @@ class _AdminTeacherGovernanceScreenState
           centerTitle: true,
           elevation: 0,
           scrolledUnderElevation: 0,
-          backgroundColor:
-              isDark ? AppColors.surfaceSecondaryDark : Colors.white,
+          backgroundColor: AppPageBackground.color(context, isDark ? AppColors.surfaceSecondaryDark : Colors.white),
           title: Text(
             '教师与课程数据治理',
             style: TextStyle(
@@ -1220,8 +1230,7 @@ class _AdminTeacherGovernanceScreenState
           centerTitle: true,
           elevation: 0,
           scrolledUnderElevation: 0,
-          backgroundColor:
-              isDark ? AppColors.surfaceSecondaryDark : Colors.white,
+          backgroundColor: AppPageBackground.color(context, isDark ? AppColors.surfaceSecondaryDark : Colors.white),
           title: Text(
             '教师与课程数据治理',
             style: TextStyle(
@@ -1263,8 +1272,12 @@ class _AdminTeacherGovernanceScreenState
                   onPressed: _checkServerCapabilities,
                   icon: const Icon(Icons.refresh),
                   label: const Text('重新检测能力'),
-                  style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.brandPrimary),
+                  style: appGlassButtonStyle(
+                      context,
+                      FilledButton.styleFrom(
+                          backgroundColor: AppColors.brandPrimary),
+                      fallbackBackground:
+                          Theme.of(context).colorScheme.primary),
                 ),
               ],
             ),
@@ -1286,77 +1299,79 @@ class _AdminTeacherGovernanceScreenState
             onPressed: () => Navigator.of(context).pop(_hasChanged),
           ),
           centerTitle: true,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        backgroundColor:
-            isDark ? AppColors.surfaceSecondaryDark : Colors.white,
-        title: Text(
-          '教师与课程数据治理',
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-            color: isDark ? Colors.white : AppColors.textPrimaryLight,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          backgroundColor: AppPageBackground.color(
+              context, isDark ? AppColors.surfaceSecondaryDark : Colors.white),
+          title: Text(
+            '教师与课程数据治理',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : AppColors.textPrimaryLight,
+            ),
           ),
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: false,
-          labelColor: AppColors.brandPrimary,
-          unselectedLabelColor: isDark ? Colors.white60 : Colors.black54,
-          indicatorColor: AppColors.brandPrimary,
-          indicatorWeight: 3,
-          labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-          tabs: [
-            const Tab(text: '课程合并'),
-            const Tab(text: '教师合并'),
-            const Tab(text: '处理记录'),
-            const Tab(text: '别名管理'),
-            Tab(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('疑似推荐'),
-                  if (_candidateGroups.isNotEmpty) ...[
-                    const SizedBox(width: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: Colors.amber,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '${_candidateGroups.length}',
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
+          bottom: AppTabBarSurface(
+              child: TabBar(
+            controller: _tabController,
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            labelColor: isDark ? Theme.of(context).primaryColor : AppColors.brandPrimary,
+            unselectedLabelColor: isDark ? Colors.white60 : Colors.black54,
+            indicatorColor: AppColors.brandPrimary,
+            indicatorWeight: 3,
+            labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+            tabs: [
+              const Tab(text: '课程合并'),
+              const Tab(text: '教师合并'),
+              const Tab(text: '处理记录'),
+              const Tab(text: '别名管理'),
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('疑似推荐'),
+                    if (_candidateGroups.isNotEmpty) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.amber,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${_candidateGroups.length}',
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          )),
+        ),
+        body: SafeArea(
+          top: false,
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildCourseMergeTab(isDark),
+              _buildAllTeachersTab(isDark),
+              _buildRecordsTab(isDark),
+              _buildAliasesTab(isDark),
+              _buildDuplicateGroupsTab(isDark),
+            ],
+          ),
         ),
       ),
-      body: SafeArea(
-        top: false,
-        child: TabBarView(
-          controller: _tabController,
-          children: [
-            _buildCourseMergeTab(isDark),
-            _buildAllTeachersTab(isDark),
-            _buildRecordsTab(isDark),
-            _buildAliasesTab(isDark),
-            _buildDuplicateGroupsTab(isDark),
-          ],
-        ),
-      ),
-    ),
-  );
-}
+    );
+  }
 
   // ============================================================================
   // Tab 0: 课程合并 (选择对象 → 确认名称与教师对应 → 预览并执行)
@@ -1366,10 +1381,11 @@ class _AdminTeacherGovernanceScreenState
     return Column(
       children: [
         // 步骤进度条
-        Container(
+        AppCardSurface(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
+            borderRadius: BorderRadius.zero,
             border: Border(
               bottom: BorderSide(
                 color: isDark ? Colors.white12 : AppColors.borderNormalLight,
@@ -1446,7 +1462,7 @@ class _AdminTeacherGovernanceScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 提示条
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
               color: AppColors.brandPrimary.withValues(alpha: isDark ? 0.15 : 0.08),
@@ -1493,10 +1509,12 @@ class _AdminTeacherGovernanceScreenState
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Center(
               child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                ),
+                style: appGlassButtonStyle(
+                    context,
+                    OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                    )),
                 onPressed: (_sourceCourse != null && _targetCourse != null)
                     ? _swapCourseDirection
                     : null,
@@ -1525,12 +1543,15 @@ class _AdminTeacherGovernanceScreenState
             width: double.infinity,
             height: 48,
             child: FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.brandPrimary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                ),
-              ),
+              style: appGlassButtonStyle(
+                  context,
+                  FilledButton.styleFrom(
+                    backgroundColor: AppColors.brandPrimary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                    ),
+                  ),
+                  fallbackBackground: Theme.of(context).colorScheme.primary),
               onPressed: (_sourceCourse != null &&
                       _targetCourse != null &&
                       _sourceCourse!.id != _targetCourse!.id &&
@@ -1568,7 +1589,7 @@ class _AdminTeacherGovernanceScreenState
     required VoidCallback onClear,
     required bool isDark,
   }) {
-    return Card(
+    return AppCard(
       margin: EdgeInsets.zero,
       color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
       shape: RoundedRectangleBorder(
@@ -1662,12 +1683,14 @@ class _AdminTeacherGovernanceScreenState
               ),
             ] else ...[
               OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                  ),
-                ),
+                style: appGlassButtonStyle(
+                    context,
+                    OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                      ),
+                    )),
                 onPressed: onPick,
                 icon: const Icon(Icons.search, size: 18),
                 label: const Text('点击搜索并选择课程'),
@@ -1733,7 +1756,7 @@ class _AdminTeacherGovernanceScreenState
             ),
           ],
           // 概览
-          Card(
+          AppCard(
             margin: EdgeInsets.zero,
             color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
             shape: RoundedRectangleBorder(
@@ -1860,7 +1883,7 @@ class _AdminTeacherGovernanceScreenState
             ),
           ),
 
-          const Divider(height: 24),
+          const AppCardDivider(height: 24),
 
           // 2. 授课教师迁移与合并方案
           Row(
@@ -1920,7 +1943,7 @@ class _AdminTeacherGovernanceScreenState
               final pairedTargetId = _courseTeacherPairings[st.id];
               final isPaired = pairedTargetId != null;
 
-              return Card(
+              return AppCard(
                 margin: const EdgeInsets.only(bottom: 10),
                 color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
                 shape: RoundedRectangleBorder(
@@ -2061,7 +2084,7 @@ class _AdminTeacherGovernanceScreenState
             }),
           ],
 
-          const Divider(height: 24),
+          const AppCardDivider(height: 24),
 
           // 3. 合并原因
           Text(
@@ -2091,12 +2114,14 @@ class _AdminTeacherGovernanceScreenState
             children: [
               Expanded(
                 child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                    ),
-                  ),
+                  style: appGlassButtonStyle(
+                      context,
+                      OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                        ),
+                      )),
                   onPressed: () => setState(() => _courseMergeStep = 0),
                   child: const Text('上一步：重新选课'),
                 ),
@@ -2105,16 +2130,19 @@ class _AdminTeacherGovernanceScreenState
               Expanded(
                 flex: 2,
                 child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.brandPrimary,
-                    minimumSize: const Size(0, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                    ),
-                  ),
-                  onPressed: _isLoadingCoursePreview
-                      ? null
-                      : _fetchCourseMergePreview,
+                  style: appGlassButtonStyle(
+                      context,
+                      FilledButton.styleFrom(
+                        backgroundColor: AppColors.brandPrimary,
+                        minimumSize: const Size(0, 48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                        ),
+                      ),
+                      fallbackBackground:
+                          Theme.of(context).colorScheme.primary),
+                  onPressed:
+                      _isLoadingCoursePreview ? null : _fetchCourseMergePreview,
                   child: _isLoadingCoursePreview
                       ? const SizedBox(
                           width: 20,
@@ -2436,12 +2464,14 @@ class _AdminTeacherGovernanceScreenState
             children: [
               Expanded(
                 child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                    ),
-                  ),
+                  style: appGlassButtonStyle(
+                      context,
+                      OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                        ),
+                      )),
                   onPressed: () => setState(() => _courseMergeStep = 1),
                   child: const Text('返回修改配置'),
                 ),
@@ -2450,13 +2480,17 @@ class _AdminTeacherGovernanceScreenState
               Expanded(
                 flex: 2,
                 child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.brandPrimary,
-                    minimumSize: const Size(0, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                    ),
-                  ),
+                  style: appGlassButtonStyle(
+                      context,
+                      FilledButton.styleFrom(
+                        backgroundColor: AppColors.brandPrimary,
+                        minimumSize: const Size(0, 48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                        ),
+                      ),
+                      fallbackBackground:
+                          Theme.of(context).colorScheme.primary),
                   onPressed: (!p.mergeAllowed || _isExecutingCourseMerge)
                       ? null
                       : _executeCourseMerge,
@@ -2595,7 +2629,7 @@ class _AdminTeacherGovernanceScreenState
         ),
         // 底部多选治理浮动栏 (跨搜索选择保留)
         if (_selectedTeachers.length >= 2) ...[
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.md, vertical: 10),
             decoration: BoxDecoration(
@@ -2632,9 +2666,13 @@ class _AdminTeacherGovernanceScreenState
                     ),
                     const SizedBox(width: 8),
                     FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.brandPrimary,
-                      ),
+                      style: appGlassButtonStyle(
+                          context,
+                          FilledButton.styleFrom(
+                            backgroundColor: AppColors.brandPrimary,
+                          ),
+                          fallbackBackground:
+                              Theme.of(context).colorScheme.primary),
                       onPressed: () {
                         _openTeacherMergeSheet(
                             context, _selectedTeachers.values.toList());
@@ -2688,7 +2726,8 @@ class _AdminTeacherGovernanceScreenState
 
   Widget _buildTeacherListItem(
       TeacherGovernanceTeacherItem t, bool isSelected, bool isDark) {
-    return Card(
+    return AppCard(
+      preserveBorder: isSelected,
       margin: EdgeInsets.zero,
       color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
       shape: RoundedRectangleBorder(
@@ -2820,7 +2859,7 @@ class _AdminTeacherGovernanceScreenState
           final isCourseAction =
               first.action == 'course_merge' || first.action == 'course';
 
-          return Card(
+          return AppCard(
             margin: const EdgeInsets.only(bottom: AppSpacing.md),
             color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
             shape: RoundedRectangleBorder(
@@ -2893,7 +2932,7 @@ class _AdminTeacherGovernanceScreenState
                     ),
                   ],
                   const SizedBox(height: 8),
-                  const Divider(height: 1),
+                  const AppCardDivider(height: 1),
                   const SizedBox(height: 8),
                   // 合并条目
                   ...batchRecords.map((r) {
@@ -2991,11 +3030,14 @@ class _AdminTeacherGovernanceScreenState
               ),
               const Spacer(),
               FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.brandPrimary,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                ),
+                style: appGlassButtonStyle(
+                    context,
+                    FilledButton.styleFrom(
+                      backgroundColor: AppColors.brandPrimary,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                    ),
+                    fallbackBackground: Theme.of(context).colorScheme.primary),
                 onPressed: _showAddAliasDialog,
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('添加别名'),
@@ -3083,7 +3125,7 @@ class _AdminTeacherGovernanceScreenState
   }
 
   Widget _buildAliasListItem(GovernanceAliasItem item, bool isDark) {
-    return Card(
+    return AppCard(
       margin: EdgeInsets.zero,
       color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
       shape: RoundedRectangleBorder(
@@ -3183,7 +3225,7 @@ class _AdminTeacherGovernanceScreenState
         break;
     }
 
-    return Card(
+    return AppCard(
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
       color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
       shape: RoundedRectangleBorder(
@@ -3243,7 +3285,7 @@ class _AdminTeacherGovernanceScreenState
               ),
               const SizedBox(height: 10),
             ],
-            const Divider(height: 1),
+            const AppCardDivider(height: 1),
             const SizedBox(height: 10),
             ...group.teachers.map((t) {
               final isSuggested = t.id == group.suggestedKeeperId;
@@ -3285,7 +3327,7 @@ class _AdminTeacherGovernanceScreenState
                     ],
                     if (isSuggested) ...[
                       const SizedBox(width: 6),
-                      Container(
+                      AppCardSurface(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 1),
                         decoration: BoxDecoration(
@@ -3348,11 +3390,15 @@ class _AdminTeacherGovernanceScreenState
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.brandPrimary,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.md, vertical: 8),
-                    ),
+                    style: appGlassButtonStyle(
+                        context,
+                        FilledButton.styleFrom(
+                          backgroundColor: AppColors.brandPrimary,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.md, vertical: 8),
+                        ),
+                        fallbackBackground:
+                            Theme.of(context).colorScheme.primary),
                     onPressed: () {
                       _openTeacherMergeSheet(
                         context,
@@ -3834,7 +3880,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final finalName = _finalTeacherNameCtrl.text.trim();
 
-    return Container(
+    return AppCardSurface(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.88,
       ),
@@ -3878,7 +3924,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
               ],
             ),
           ),
-          const Divider(height: 1),
+          const AppCardDivider(height: 1),
           Expanded(
             child: SingleChildScrollView(
               padding: EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm,
@@ -3933,7 +3979,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Divider(height: 1),
+                  const AppCardDivider(height: 1),
                   const SizedBox(height: 12),
 
                   // 第二部分：确认最终姓名与原因
@@ -3987,7 +4033,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
                   ),
 
                   const SizedBox(height: 12),
-                  const Divider(height: 1),
+                  const AppCardDivider(height: 1),
                   const SizedBox(height: 12),
 
                   // 第三部分：实体影响预览
@@ -4118,7 +4164,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
                                   ),
                                   value: CrossSubjectDecision.teacherOnly,
                                 ),
-                                Divider(height: 12),
+                                AppCardDivider(height: 12),
                                 RadioListTile<CrossSubjectDecision>(
                                   contentPadding: EdgeInsets.zero,
                                   activeColor: AppColors.brandPrimary,
@@ -4151,12 +4197,15 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
               width: double.infinity,
               height: 48,
               child: FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.brandPrimary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                  ),
-                ),
+                style: appGlassButtonStyle(
+                    context,
+                    FilledButton.styleFrom(
+                      backgroundColor: AppColors.brandPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                      ),
+                    ),
+                    fallbackBackground: Theme.of(context).colorScheme.primary),
                 onPressed: (_isLoadingPreview ||
                         _isSubmitting ||
                         _preview == null ||
@@ -4194,7 +4243,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
+        AppCardSurface(
           padding: const EdgeInsets.all(AppSpacing.md),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1B232D) : const Color(0xFFF1F5F9),
@@ -4266,7 +4315,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
         ),
         if (preview.ratingConflicts.isNotEmpty) ...[
           const SizedBox(height: 10),
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
               color: Colors.amber.withValues(alpha: isDark ? 0.2 : 0.1),
@@ -4307,7 +4356,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
         ],
         if (!preview.mergeAllowed && preview.blockReason.isNotEmpty) ...[
           const SizedBox(height: 10),
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
               color: Colors.red.withValues(alpha: isDark ? 0.2 : 0.1),
@@ -4462,7 +4511,7 @@ class _GovernanceCoursePickerModalState
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
+    return AppCardSurface(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
@@ -4500,7 +4549,7 @@ class _GovernanceCoursePickerModalState
               ],
             ),
           ),
-          const Divider(height: 1),
+          const AppCardDivider(height: 1),
           Padding(
             padding: const EdgeInsets.all(AppSpacing.md),
             child: TextField(
@@ -4531,7 +4580,7 @@ class _GovernanceCoursePickerModalState
                                 const SizedBox(height: 6),
                             itemBuilder: (ctx, idx) {
                               final c = _courses[idx];
-                              return Card(
+                              return AppCard(
                                 margin: EdgeInsets.zero,
                                 color: isDark
                                     ? const Color(0xFF1E293B)

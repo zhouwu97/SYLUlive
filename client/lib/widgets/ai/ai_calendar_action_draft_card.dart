@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/user_calendar.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
+import '../app_card.dart';
 
 class AiCalendarActionDraftCard extends StatefulWidget {
   const AiCalendarActionDraftCard({
@@ -40,7 +41,7 @@ class _AiCalendarActionDraftCardState extends State<AiCalendarActionDraftCard> {
     final colors = Theme.of(context).colorScheme;
     final pending = draft.isPending && !draft.isExpired;
     final danger = draft.actionType == 'calendar_event_delete';
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(top: 12, bottom: 4),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(

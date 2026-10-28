@@ -1,3 +1,4 @@
+import '../app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -78,7 +79,7 @@ class _AiAgentPermissionSheetState extends State<AiAgentPermissionSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    return Container(
+    return AppCardSurface(
       constraints: const BoxConstraints(maxHeight: 460),
       decoration: BoxDecoration(
         color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,

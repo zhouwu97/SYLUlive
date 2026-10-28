@@ -87,8 +87,8 @@ func (h *CampusArticleHandler) List(c *gin.Context) {
 	query := h.db.Model(&models.CampusArticle{}).
 		Where("source IN ?", allowedCampusSources)
 	if keyword := strings.TrimSpace(c.Query("q")); keyword != "" {
-		if size := utf8.RuneCountInString(keyword); size < 2 || size > 64 || onlySearchWildcards(keyword) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "搜索内容需为 2 至 64 个字符，不能只包含通配符"})
+		if size := utf8.RuneCountInString(keyword); size > 64 || onlySearchWildcards(keyword) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "搜索内容需为 1 至 64 个字符，不能只包含通配符"})
 			return
 		}
 		if !h.allowAnonymousArticleSearch(c.ClientIP(), time.Now()) {

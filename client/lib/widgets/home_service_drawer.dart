@@ -6,6 +6,8 @@ import '../models/announcement.dart' as model;
 import '../models/water_section.dart';
 import '../providers/theme_provider.dart';
 import 'group_chat_dialog.dart';
+import 'app_card.dart';
+import 'global_background_wrapper.dart';
 import 'water_section/section_avatar.dart';
 
 /// 校园服务抽屉 —— 纯展示组件，所有数据和回调由外部提供。
@@ -66,13 +68,16 @@ class HomeServiceDrawer extends StatelessWidget {
     final themeProvider = context.watch<ThemeProvider>();
     final isCustomMode = !themeProvider.isCleanBackgroundMode;
 
-    final drawerBg = isDark
-        ? const Color(0xFF151A24)
-        : isCustomMode
-            ? kCleanWarmBackgroundLight.withValues(alpha: 0.96)
-            : kCleanWarmBackgroundLight;
+    final drawerBg =
+        themeProvider.shouldShowCustomBackground && themeProvider.frostedGlass
+            ? Colors.transparent
+            : isDark
+                ? const Color(0xFF151A24)
+                : isCustomMode
+                    ? kCleanWarmBackgroundLight.withValues(alpha: 0.96)
+                    : kCleanWarmBackgroundLight;
 
-    return Container(
+    final drawer = Container(
       width: drawerWidth,
       decoration: BoxDecoration(
         color: drawerBg,
@@ -119,6 +124,27 @@ class HomeServiceDrawer extends StatelessWidget {
         ),
       ),
     );
+    if (!themeProvider.shouldShowCustomBackground ||
+        !themeProvider.frostedGlass) {
+      return drawer;
+    }
+    return SizedBox(
+      width: drawerWidth,
+      child: ClipRRect(
+        borderRadius: const BorderRadius.only(
+            topRight: Radius.circular(28), bottomRight: Radius.circular(28)),
+        child: Stack(fit: StackFit.expand, children: [
+          // 使用整屏画布再裁切侧栏，避免按侧栏宽度重缩壁纸造成构图断层。
+          OverflowBox(
+            alignment: Alignment.topLeft,
+            minWidth: screenWidth,
+            maxWidth: screenWidth,
+            child: const CustomBackgroundLayer(),
+          ),
+          drawer,
+        ]),
+      ),
+    );
   }
 
   // ---- 标题区域 ----
@@ -157,7 +183,7 @@ class HomeServiceDrawer extends StatelessWidget {
 
   // ---- 快捷入口（签到、工具箱）----
   Widget _buildQuickEntries(BuildContext context, bool isDark) {
-    return Container(
+    return AppCardSurface(
       height: 50,
       decoration: BoxDecoration(
         color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.white,
@@ -184,7 +210,7 @@ class HomeServiceDrawer extends StatelessWidget {
               onTap: checkInError ? (onRetryCheckIn ?? onCheckIn) : onCheckIn,
             ),
           ),
-          _buildQuickDivider(isDark),
+          _buildQuickDivider(context, isDark),
           Expanded(
             child: _CompactQuickEntryItem(
               icon: Icons.handyman_outlined,
@@ -199,11 +225,13 @@ class HomeServiceDrawer extends StatelessWidget {
     );
   }
 
-  Widget _buildQuickDivider(bool isDark) {
+  Widget _buildQuickDivider(BuildContext context, bool isDark) {
     return Container(
       width: 1,
       height: 24,
-      color: isDark
+      color: context.watch<ThemeProvider>().frostedGlass
+          ? Colors.transparent
+          : isDark
           ? Colors.white.withValues(alpha: 0.08)
           : const Color(0xFFE5E7EB),
     );
@@ -219,7 +247,7 @@ class HomeServiceDrawer extends StatelessWidget {
       child: InkWell(
         onTap: onOpenAnnouncements,
         borderRadius: BorderRadius.circular(16),
-        child: Container(
+        child: AppCardSurface(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -398,7 +426,7 @@ class HomeServiceDrawer extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        Container(
+        AppCardSurface(
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
           decoration: BoxDecoration(
@@ -483,7 +511,7 @@ class HomeServiceDrawer extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
-        Container(
+        AppCardSurface(
           decoration: BoxDecoration(
             color:
                 isDark ? Colors.white.withValues(alpha: 0.045) : Colors.white,
@@ -521,7 +549,7 @@ class HomeServiceDrawer extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
-        Container(
+        AppCardSurface(
           decoration: BoxDecoration(
             color:
                 isDark ? Colors.white.withValues(alpha: 0.045) : Colors.white,
@@ -588,7 +616,7 @@ class HomeServiceDrawer extends StatelessWidget {
   Widget _buildServiceDivider(bool isDark) {
     return Padding(
       padding: const EdgeInsets.only(left: 58, right: 14),
-      child: Divider(
+      child: AppCardDivider(
         height: 1,
         thickness: 1,
         color: isDark
@@ -688,6 +716,7 @@ class _WaterCategoryMiniItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = colorHexToColor(section.colorHex);
+    final glass = context.watch<ThemeProvider>().frostedGlass;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -697,14 +726,19 @@ class _WaterCategoryMiniItem extends StatelessWidget {
           height: 74,
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color:
-                isDark ? Colors.white.withValues(alpha: 0.045) : Colors.white,
+            color: glass
+                ? Colors.transparent
+                : isDark
+                    ? Colors.white.withValues(alpha: 0.045)
+                    : Colors.white,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.07)
-                  : kCleanWarmCardBorderLight,
-            ),
+            border: glass
+                ? null
+                : Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.07)
+                        : kCleanWarmCardBorderLight,
+                  ),
           ),
           child: Row(
             children: [

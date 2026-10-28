@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/water_section.dart';
 import '../../theme/app_colors.dart';
+import '../app_card.dart';
 
 /// 版块频道入口卡片。
 /// 展示版块的公告/规则，敏感版块额外显示安全提醒条。
@@ -52,7 +53,7 @@ class SectionChannelCard extends StatelessWidget {
   }
 
   Widget _buildChannelCard(_ChannelConfig cfg) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         color: isDark ? AppColors.surfaceSecondaryDark : AppColors.surfaceSecondaryLight,

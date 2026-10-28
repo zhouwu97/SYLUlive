@@ -1,3 +1,6 @@
+import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../widgets/app_popup_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -15,6 +18,9 @@ import '../theme/app_colors.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/erke_snapshot_upload_dialog.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import '../widgets/app_card.dart';
+import '../widgets/global_background_wrapper.dart';
+import '../providers/theme_provider.dart';
 
 class ErkeScoreScreen extends StatefulWidget {
   const ErkeScoreScreen({super.key});
@@ -275,7 +281,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     }
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('删除已上传二课快照？'),
         content: const Text('删除后校园 Agent 将无法继续读取该快照。'),
         actions: [
@@ -363,22 +369,31 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final backgroundSettings = context.watch<ThemeProvider?>();
+    final customBackground =
+        backgroundSettings?.shouldShowCustomBackground == true;
 
-    return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
+    final page = Scaffold(
+      backgroundColor: customBackground
+          ? Colors.transparent
+          : isDark
+              ? const Color(0xFF111315)
+              : const Color(0xFFFFFAF4),
       appBar: AppBar(
         title:
             const Text('二课成绩查询', style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
-        backgroundColor:
-            isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
+        backgroundColor: customBackground
+            ? Colors.transparent
+            : isDark
+                ? const Color(0xFF111315)
+                : const Color(0xFFFFFAF4),
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
         elevation: 0,
         actions: [
           if (_repo.hasCachedData)
-            PopupMenuButton<String>(
+            AppPopupMenuButton<String>(
               onSelected: (value) async {
                 if (value == 'relogin') {
                   // 保留缓存，只重置在线会话
@@ -417,6 +432,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             : _buildLoginForm(),
       ),
     );
+    return backgroundSettings == null
+        ? page
+        : GlobalBackgroundWrapper(child: page);
   }
 
   // ==================================================================
@@ -432,7 +450,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Column(
         children: [
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF1E2226) : const Color(0xFFEAF6F3),
@@ -462,7 +480,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          Container(
+          AppCardSurface(
             padding: const EdgeInsets.all(20),
             decoration: _softCardDecoration(isDark),
             child: Column(
@@ -648,7 +666,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Widget _buildModeSwitcher(bool isDark) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-      child: Container(
+      child: AppCardSurface(
         height: 40,
         decoration: BoxDecoration(
           color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.white,
@@ -731,7 +749,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Widget _buildGraduationProgressCard(ErkeGraduationSummary grad, bool isDark) {
     final percentage = grad.percentage;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _cardBg(isDark),
@@ -845,7 +863,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   Widget _buildGraduationCategoryList(ErkeGraduationSummary grad, bool isDark) {
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: _cardBg(isDark),
         borderRadius: BorderRadius.circular(16),
@@ -860,7 +878,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             children: [
               _buildGraduationCategoryRow(cat, isDark),
               if (!isLast)
-                Divider(
+                AppCardDivider(
                   height: 1,
                   indent: 16,
                   endIndent: 16,
@@ -933,7 +951,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       bg = _warningSoft(isDark);
     }
 
-    return Container(
+    return AppCardSurface(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1001,7 +1019,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   Widget _buildYearSelector(ErkeYearlySummary yr, bool isDark) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
         color: _cardBg(isDark),
@@ -1056,7 +1074,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Widget _buildYearlyProgressCard(ErkeYearlySummary yr, bool isDark) {
     final percentage = yr.percentage;
 
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _cardBg(isDark),
@@ -1153,7 +1171,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   Widget _buildYearlyCategoryList(ErkeYearlySummary yr, bool isDark) {
-    return Container(
+    return AppCardSurface(
       decoration: BoxDecoration(
         color: _cardBg(isDark),
         borderRadius: BorderRadius.circular(16),
@@ -1168,7 +1186,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             children: [
               _buildYearlyCategoryRow(cat, isDark),
               if (!isLast)
-                Divider(
+                AppCardDivider(
                   height: 1,
                   indent: 16,
                   endIndent: 16,
@@ -1327,7 +1345,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   void _showFilterSheet(BuildContext context, List<String> categories) {
-    showModalBottomSheet(
+    showAppModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).brightness == Brightness.dark
           ? AppColors.surfaceSecondaryDark
@@ -1378,7 +1396,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     final formattedDate = _formatDate(item.date);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Container(
+      child: AppCardSurface(
         decoration: BoxDecoration(
           color: _cardBg(isDark),
           borderRadius: BorderRadius.circular(16),

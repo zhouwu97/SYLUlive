@@ -213,3 +213,66 @@ func TestPublicEmailCodeQueueFailureDoesNotExposeAccountExistence(t *testing.T) 
 		}
 	}
 }
+
+func TestUserEmailCodePurposeContract(t *testing.T) {
+	for _, tc := range []struct {
+		name, boundEmail, purpose string
+		status                    int
+		expected                  string
+	}{
+		{"new-client-bind", "", "", 200, models.EmailVerificationPurposeBind},
+		{"new-client-change", "old@example.com", "", 200, models.EmailVerificationPurposeChange},
+		{"legacy-bind", "", models.EmailVerificationPurposeBind, 200, models.EmailVerificationPurposeBind},
+		{"legacy-change", "old@example.com", models.EmailVerificationPurposeChange, 200, models.EmailVerificationPurposeChange},
+		{"reject-wrong-bind", "", models.EmailVerificationPurposeChange, 400, ""},
+		{"reject-wrong-change", "old@example.com", models.EmailVerificationPurposeBind, 400, ""},
+		{"reject-public-purpose", "", models.EmailVerificationPurposeResetPassword, 400, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			sqlDB, _ := db.DB()
+			t.Cleanup(func() { _ = sqlDB.Close() })
+			if err := db.AutoMigrate(&models.User{}, &models.EmailVerificationChallenge{}, &models.EmailVerificationRequest{}); err != nil {
+				t.Fatal(err)
+			}
+			now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
+			user := models.User{StudentID: "email-contract", Email: tc.boundEmail, Nickname: "验收账号"}
+			if tc.boundEmail != "" {
+				user.EmailVerifiedAt = &now
+			}
+			if err := db.Create(&user).Error; err != nil {
+				t.Fatal(err)
+			}
+			mailer := &accountSecurityTestMailer{}
+			verification := services.NewEmailVerificationService(db, mailer, "synthetic-secret", func() time.Time { return now })
+			h := NewAuthHandlerWithEmailVerification(db, "synthetic-jwt-secret", verification)
+			r := gin.New()
+			r.POST("/user/email/code", func(c *gin.Context) { c.Set("user_id", user.ID); h.RequestUserEmailCode(c) })
+			body := map[string]string{"email": "new@example.com"}
+			if tc.purpose != "" {
+				body["purpose"] = tc.purpose
+			}
+			payload, _ := json.Marshal(body)
+			response := httptest.NewRecorder()
+			r.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/user/email/code", bytes.NewReader(payload)))
+			if response.Code != tc.status {
+				t.Fatalf("用途契约不匹配: %d %s", response.Code, response.Body.String())
+			}
+			var challenges []models.EmailVerificationChallenge
+			if err := db.Find(&challenges).Error; err != nil {
+				t.Fatal(err)
+			}
+			if tc.status == 200 {
+				if len(challenges) != 1 || challenges[0].Purpose != tc.expected || challenges[0].UserID == nil || *challenges[0].UserID != user.ID || mailer.codes["new@example.com:"+tc.expected] == "" {
+					t.Fatalf("用途或接收账号错误: %+v", challenges)
+				}
+			} else if len(challenges) != 0 || len(mailer.codes) != 0 {
+				t.Fatal("拒绝的请求仍发送验证码")
+			}
+		})
+	}
+}

@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../models/security_event.dart';
+import 'publish_session_scope.dart';
 
 class SecurityBlockGroup {
   const SecurityBlockGroup({
@@ -40,11 +41,13 @@ class AdminSecurityService {
 
   const AdminSecurityService(this.dio);
 
-  Future<List<SecurityBlockGroup>> loadBlocks() async {
+  Future<List<SecurityBlockGroup>> loadBlocks(
+      {PublishSessionScope? session}) async {
     final rows = <Map>[];
     for (var page = 1;; page++) {
-      final response = await dio
-          .get('/super/security/blocks', queryParameters: {'page': page});
+      final response = await dio.get('/super/security/blocks',
+          queryParameters: {'page': page},
+          options: Options(extra: session?.requestExtra));
       final batch = (response.data as List).whereType<Map>().toList();
       rows.addAll(batch);
       if (batch.length < 200) break;
@@ -72,13 +75,16 @@ class AdminSecurityService {
     }).toList(growable: false);
   }
 
-  Future<void> revokeBlock(int id) async {
-    await dio.delete('/super/security/blocks/$id');
+  Future<void> revokeBlock(int id, {PublishSessionScope? session}) async {
+    await dio.delete('/super/security/blocks/$id',
+        options: Options(extra: session?.requestExtra));
   }
 
-  Future<SecurityOverview> loadOverview({String range = '24h'}) async {
-    final response = await dio
-        .get('/admin/security/overview', queryParameters: {'range': range});
+  Future<SecurityOverview> loadOverview(
+      {String range = '24h', PublishSessionScope? session}) async {
+    final response = await dio.get('/admin/security/overview',
+        queryParameters: {'range': range},
+        options: Options(extra: session?.requestExtra));
     return SecurityOverview.fromJson(
         Map<String, dynamic>.from(response.data as Map));
   }
@@ -93,49 +99,54 @@ class AdminSecurityService {
     String status = 'all',
     String actionable = 'all',
     int page = 1,
-  }) async {
-    return (await loadEventPage(
-            severity: severity,
-            status: status,
-            actionable: actionable,
-            page: page))
-        .items;
-  }
+    PublishSessionScope? session,
+  }) async =>
+      (await loadEventPage(
+              severity: severity,
+              status: status,
+              actionable: actionable,
+              page: page,
+              session: session))
+          .items;
 
   Future<SecurityEventPage> loadEventPage({
     String severity = 'all',
     String status = 'all',
     String actionable = 'all',
     int page = 1,
+    PublishSessionScope? session,
   }) async {
-    final response = await dio.get('/admin/security/events', queryParameters: {
-      'severity': severity,
-      'status': status,
-      'actionable': actionable,
-      'page': page,
-      'limit': 50,
-    });
+    final response = await dio.get('/admin/security/events',
+        queryParameters: {
+          'severity': severity,
+          'status': status,
+          'actionable': actionable,
+          'page': page,
+          'limit': 50,
+        },
+        options: Options(extra: session?.requestExtra));
     final data = Map<String, dynamic>.from(response.data as Map);
     final items = data['items'] as List? ?? const [];
+    final events = items
+        .whereType<Map>()
+        .map((item) => SecurityEvent.fromJson(Map<String, dynamic>.from(item)))
+        .toList(growable: false);
+    final total = (data['total'] as num?)?.toInt();
+    final limit = (data['limit'] as num?)?.toInt() ?? 50;
     return SecurityEventPage(
-      page: page,
-      limit: (data['limit'] as num?)?.toInt().clamp(1, 100) ?? 50,
-      total: (data['total'] as num?)?.toInt(),
-      items: items
-          .whereType<Map>()
-          .map(
-              (item) => SecurityEvent.fromJson(Map<String, dynamic>.from(item)))
-          .toList(growable: false),
-    );
+        items: events, page: page, total: total, limit: limit.clamp(1, 100));
   }
 
-  Future<void> resolve(int id, {String note = ''}) async {
-    await dio.post('/admin/security/events/$id/resolve', data: {'note': note});
+  Future<void> resolve(int id,
+      {String note = '', PublishSessionScope? session}) async {
+    await dio.post('/admin/security/events/$id/resolve',
+        data: {'note': note}, options: Options(extra: session?.requestExtra));
   }
 
-  Future<void> markFalsePositive(int id, {String note = ''}) async {
+  Future<void> markFalsePositive(int id,
+      {String note = '', PublishSessionScope? session}) async {
     await dio.post('/admin/security/events/$id/false-positive',
-        data: {'note': note});
+        data: {'note': note}, options: Options(extra: session?.requestExtra));
   }
 
   /// 创建临时来源封禁。
@@ -152,14 +163,17 @@ class AdminSecurityService {
     String routePrefix = '',
     bool confirmGlobal = false,
     String reason = '',
+    PublishSessionScope? session,
   }) async {
-    await dio.post('/super/security/blocks', data: {
-      'source_key': sourceKey,
-      'duration_minutes': durationMinutes,
-      'scope': scope,
-      'route_prefix': routePrefix,
-      'confirm_global': confirmGlobal,
-      'reason': reason,
-    });
+    await dio.post('/super/security/blocks',
+        data: {
+          'source_key': sourceKey,
+          'duration_minutes': durationMinutes,
+          'scope': scope,
+          'route_prefix': routePrefix,
+          'confirm_global': confirmGlobal,
+          'reason': reason,
+        },
+        options: Options(extra: session?.requestExtra));
   }
 }

@@ -58,13 +58,46 @@ class _RouteJsonAdapter implements HttpClientAdapter {
   }
 }
 
-Widget _buildApp(Widget home, Map<String, Object> responses) {
+class _TestCredentials implements AuthCredentialStore {
+  StoredAuthCredentials stored = const StoredAuthCredentials();
+  @override
+  Future<StoredAuthCredentials> read() async => stored;
+  @override
+  Future<void> clear() async {
+    stored = const StoredAuthCredentials();
+  }
+
+  @override
+  Future<void> write({required String token, required String userJson}) async {
+    stored = StoredAuthCredentials(token: token, userJson: userJson);
+  }
+}
+
+Future<Widget> _buildApp(Widget home, Map<String, Object> responses) async {
   final dio = Dio(BaseOptions(baseUrl: 'https://example.test'));
   dio.httpClientAdapter = _RouteJsonAdapter(responses);
+  final auth = AuthProvider(dio,
+      credentialStore: _TestCredentials(), loadStoredAuth: false);
+  addTearDown(() {
+    auth.dispose();
+    dio.close(force: true);
+  });
+  if (home is AdminPanelScreen) {
+    // 面板的查询测试必须先建立真实管理员会话，不能以访客绕过权限门禁。
+    await auth.applyAuthPayload('synthetic-admin-token', {
+      'id': 7,
+      'student_id': '',
+      'nickname': '验收管理员',
+      'role': 'admin',
+      'created_at': '2026-01-01T00:00:00Z',
+      'legal_consents_active': true,
+      'legal_consents_required': false,
+    });
+  }
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<AuthProvider>.value(
-        value: AuthProvider(dio, loadStoredAuth: false),
+        value: auth,
       ),
       ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
     ],
@@ -86,7 +119,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      _buildApp(
+      await _buildApp(
         const AdminMembersScreen(),
         {'/admin/members': members},
       ),
@@ -104,7 +137,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
-      _buildApp(
+      await _buildApp(
         const AdminCandidatesScreen(),
         {
           '/admin/candidates/stats': {
@@ -158,7 +191,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      _buildApp(
+      await _buildApp(
         const AdminCandidatesScreen(),
         {
           '/admin/candidates/stats': {
@@ -197,7 +230,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
-      _buildApp(
+      await _buildApp(
         MediaQuery(
           data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
           child: Theme(
@@ -252,8 +285,7 @@ void main() {
             (index) => {
               'id': index + 1,
               'nickname': '候选人${index + 1}',
-              'student_id':
-                  '2026000${(index + 1).toString().padLeft(3, '0')}',
+              'student_id': '2026000${(index + 1).toString().padLeft(3, '0')}',
               'role': 'user',
               'avatar': null,
             },
@@ -270,8 +302,7 @@ void main() {
           (index) => {
             'id': 21 + index,
             'nickname': '候选人${21 + index}',
-            'student_id':
-                '2026000${(21 + index).toString().padLeft(3, '0')}',
+            'student_id': '2026000${(21 + index).toString().padLeft(3, '0')}',
             'role': 'user',
             'avatar': null,
           },
@@ -284,7 +315,7 @@ void main() {
     }
 
     await tester.pumpWidget(
-      _buildApp(
+      await _buildApp(
         const AdminCandidatesScreen(),
         {
           '/admin/candidates/stats': {
@@ -319,7 +350,7 @@ void main() {
     AppPreferencesStore.setMockInitialValues({});
 
     await tester.pumpWidget(
-      _buildApp(
+      await _buildApp(
         const AdminAnnouncementsScreen(),
         {'/notices/admin/list': <Map<String, Object>>[]},
       ),
@@ -343,7 +374,7 @@ void main() {
 
   testWidgets('审核待办空态提供明确反馈与刷新入口', (tester) async {
     await tester.pumpWidget(
-      _buildApp(
+      await _buildApp(
         const AdminReviewTasksScreen(),
         {
           '/teachers/pending': <Object>[],
@@ -370,41 +401,43 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     String? requestedReportStatus;
-    await tester.pumpWidget(
-      _buildApp(
-        const AdminPanelScreen(),
-        {
-          '/reports': (RequestOptions opt) {
-            requestedReportStatus = opt.uri.queryParameters['status'];
-            return [
-              {'id': 1, 'status': 'pending'},
-              {'id': 2, 'status': 'pending'},
-            ];
-          },
-          '/admin/featured-applications': [
-            {'id': 1},
-          ],
-          '/teachers/pending': [
-            {'id': 1},
-          ],
-          '/majors/pending': [
-            {'id': 1},
-            {'id': 2},
-          ],
-          '/admin/invitations/pending': [
-            {'id': 1},
-          ],
-          '/admin/removals/pending': <Object>[],
-          '/admin/exam-papers/pending-count': {'count': 5},
-          '/canteens/pending': {'items': <Object>[]},
-          '/admin/course-evaluations/pending': {
-            'items': [
+    final app = await tester.runAsync(() => _buildApp(
+          const AdminPanelScreen(),
+          {
+            '/reports': (RequestOptions opt) {
+              expect(opt.extra['expectedAuthUserId'], 7);
+              requestedReportStatus = opt.uri.queryParameters['status'];
+              return [
+                {'id': 1, 'status': 'pending'},
+                {'id': 2, 'status': 'pending'},
+              ];
+            },
+            '/admin/featured-applications': [
               {'id': 1},
             ],
+            '/teachers/pending': [
+              {'id': 1},
+            ],
+            '/majors/pending': [
+              {'id': 1},
+              {'id': 2},
+            ],
+            '/admin/invitations/pending': [
+              {'id': 1},
+            ],
+            '/admin/removals/pending': <Object>[],
+            '/admin/exam-papers/pending-count': {'count': 5},
+            '/admin/appeals/review': {'items': <Object>[]},
+            '/admin/security/overview': {'actionable_high_count': 3},
+            '/canteens/pending': {'items': <Object>[]},
+            '/admin/course-evaluations/pending': {
+              'items': [
+                {'id': 1},
+              ],
+            },
           },
-        },
-      ),
-    );
+        ));
+    await tester.pumpWidget(app!);
     await tester.pumpAndSettle();
 
     // 验证举报接口携带 status=pending 过滤

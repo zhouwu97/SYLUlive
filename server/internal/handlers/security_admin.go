@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -309,7 +310,7 @@ func (h *SecurityAdminHandler) ListEvents(c *gin.Context) {
 	if page <= 0 {
 		page = 1
 	}
-	if page > int(^uint(0)>>1)/limit {
+	if page > 10000 || page > int(^uint(0)>>1)/limit {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "安全事件页码超出范围"})
 		return
 	}
@@ -383,24 +384,38 @@ func (h *SecurityAdminHandler) FalsePositive(c *gin.Context) {
 
 func (h *SecurityAdminHandler) updateEventStatus(c *gin.Context, status string) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
+	if err != nil || id == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的安全事件 ID"})
 		return
 	}
 	var input securityResolutionInput
-	_ = c.ShouldBindJSON(&input)
+	if err := c.ShouldBindJSON(&input); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "处理备注格式无效"})
+		return
+	}
 	input.Note = truncateSecurityNote(input.Note)
 	operatorID := c.GetUint("user_id")
 	now := time.Now()
 	var event models.SecurityEvent
-	if err := h.db.First(&event, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "安全事件不存在"})
+	db := h.db.WithContext(c.Request.Context())
+	if err := db.First(&event, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "安全事件不存在"})
+		} else {
+			h.securityDatabaseError(c)
+		}
 		return
 	}
-	if err := h.db.Model(&event).Updates(map[string]interface{}{
+	// 仅允许从 active 处置一次；并发管理员不能覆盖已写入的结论、备注和处理人。
+	result := db.Model(&event).Where("status = ?", models.SecurityEventStatusActive).Updates(map[string]interface{}{
 		"status": status, "resolved_at": now, "resolved_by": operatorID, "resolution_note": input.Note,
-	}).Error; err != nil {
+	})
+	if result.Error != nil {
 		h.securityDatabaseError(c)
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusConflict, gin.H{"code": "security_event_already_handled", "error": "安全事件已被处理，请刷新查看最新结果"})
 		return
 	}
 	h.writeSecurityAdminLog(c, "security_event_"+status, strconv.FormatUint(id, 10), input.Note)
@@ -595,7 +610,7 @@ func (h *SecurityAdminHandler) CreateBlock(c *gin.Context) {
 	}
 	now := time.Now()
 	expiresAt := now.Add(time.Duration(input.DurationMin) * time.Minute)
-	reason := truncateSecurityNote(input.Reason)
+	reason := truncateSecurityText(input.Reason, 200)
 	groupID := uuid.NewString()
 	blocks := make([]models.SecurityBlock, 0, len(scopes))
 	// 一个作用域可能对应多条前缀（例如账号安全 = 登录 + 密码链路），
@@ -736,9 +751,13 @@ func isAllowedBlockDuration(minutes int) bool {
 }
 
 func truncateSecurityNote(value string) string {
-	value = strings.TrimSpace(value)
-	if len(value) > 500 {
-		return value[:500]
+	return truncateSecurityText(value, 500)
+}
+
+func truncateSecurityText(value string, maxRunes int) string {
+	characters := []rune(strings.TrimSpace(value))
+	if len(characters) > maxRunes {
+		characters = characters[:maxRunes]
 	}
-	return value
+	return string(characters)
 }

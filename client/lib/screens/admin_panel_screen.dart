@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/publish_session_scope.dart';
+import '../widgets/security_session_guard.dart';
 import 'admin_reports_screen.dart';
 import 'admin_candidates_screen.dart';
 import 'admin_review_tasks_screen.dart';
@@ -43,23 +45,63 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   int? _courtReviewCount;
   int? _securityCount;
   bool _hasLoadError = false;
+  int _loadGeneration = 0;
+  PublishSessionScope? _session;
+  int? _observedEpoch;
+  int? _observedUserId;
+  String? _observedRole;
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadCounts());
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.watch<AuthProvider>();
+    if (_observedEpoch == auth.accountSessionEpoch &&
+        _observedUserId == auth.user?.id &&
+        _observedRole == auth.user?.role) {
+      return;
+    }
+    _observedEpoch = auth.accountSessionEpoch;
+    _observedUserId = auth.user?.id;
+    _observedRole = auth.user?.role;
+    _session = auth.isLoggedIn && auth.user?.isAdmin == true
+        ? PublishSessionScope(
+            accountId: auth.user!.id,
+            accountSessionEpoch: auth.accountSessionEpoch)
+        : null;
+    _loadGeneration++;
+    _reportsCount = _featuredCount = _reviewTasksCount = _adminTasksCount =
+        _examPapersCount = _courtReviewCount = _securityCount = null;
+    _hasLoadError = false;
+    _isLoading = _session != null;
+    final session = _session;
+    if (session != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_owns(session)) _loadCounts();
+      });
+    }
   }
 
+  bool _owns(PublishSessionScope session) =>
+      mounted &&
+      SecuritySessionGuard.owns(context.read<AuthProvider>(), session,
+          requireAdmin: true);
+
   Future<void> _loadCounts() async {
-    if (!mounted) return;
+    final session = _session;
+    if (session == null || !_owns(session)) return;
+    final generation = ++_loadGeneration;
     setState(() => _isLoading = true);
 
     final dio = context.read<AuthProvider>().dio;
 
-    Future<Response<dynamic>?> safeGet(
-        Future<Response<dynamic>> request) async {
+    Future<Response<dynamic>?> safeGet(String path,
+        {Map<String, dynamic>? queryParameters}) async {
       try {
-        return await request.timeout(const Duration(seconds: 8));
+        return await dio
+            .get(path,
+                queryParameters: queryParameters,
+                options: Options(extra: session.requestExtra))
+            .timeout(const Duration(seconds: 8));
       } catch (error) {
         debugPrint('[AdminPanel] pending count request failed: $error');
         return null;
@@ -67,22 +109,21 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     }
 
     final responses = await Future.wait<Response<dynamic>?>([
-      safeGet(dio.get('/reports', queryParameters: {'status': 'pending'})),
-      safeGet(dio.get('/admin/featured-applications')),
-      safeGet(dio.get('/teachers/pending')),
-      safeGet(dio.get('/majors/pending')),
-      safeGet(dio.get('/admin/invitations/pending')),
-      safeGet(dio.get('/admin/removals/pending')),
-      safeGet(dio.get('/admin/exam-papers/pending-count')),
-      safeGet(dio.get('/canteens/pending')),
-      safeGet(dio.get('/admin/course-evaluations/pending',
-          queryParameters: {'limit': 50})),
-      safeGet(dio.get('/admin/appeals/review')),
-      safeGet(dio
-          .get('/admin/security/overview', queryParameters: {'range': '24h'})),
+      safeGet('/reports', queryParameters: {'status': 'pending'}),
+      safeGet('/admin/featured-applications'),
+      safeGet('/teachers/pending'),
+      safeGet('/majors/pending'),
+      safeGet('/admin/invitations/pending'),
+      safeGet('/admin/removals/pending'),
+      safeGet('/admin/exam-papers/pending-count'),
+      safeGet('/canteens/pending'),
+      safeGet('/admin/course-evaluations/pending',
+          queryParameters: {'limit': 50}),
+      safeGet('/admin/appeals/review'),
+      safeGet('/admin/security/overview', queryParameters: {'range': '24h'}),
     ]);
 
-    if (!mounted) return;
+    if (!_owns(session) || generation != _loadGeneration) return;
 
     int? getCount(Response<dynamic>? response) {
       if (response == null) return null;
@@ -133,6 +174,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_session == null) {
+      return Scaffold(
+          appBar: AppBar(title: const Text('管理员面板')),
+          body: const Center(child: Text('需要管理员权限，请返回')));
+    }
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bottomSafe = MediaQuery.of(context).padding.bottom;
 

@@ -30,6 +30,8 @@ class _Auth extends AuthProvider {
       createdAt: DateTime(2026));
   @override
   User get user => current;
+  @override
+  bool get isLoggedIn => true;
   void switchAccount() {
     current = User(
         id: 2,
@@ -151,6 +153,7 @@ Future<void> _save(WidgetTester tester, GlobalKey capture, String name) async {
 Future<void> _visible(WidgetTester tester, Finder finder) async {
   await tester.scrollUntilVisible(finder, 300,
       scrollable: find.byType(Scrollable).first, maxScrolls: 100);
+  await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5);
   await tester.pump();
 }
 
@@ -256,7 +259,7 @@ void main() {
     await _visible(tester, more);
     await tester.tap(more);
     await tester.pumpAndSettle();
-    expect(find.text('更多预警加载失败'), findsOneWidget);
+    expect(find.text('加载更多失败，请重试'), findsOneWidget);
     expect(find.text('已加载 50 条，共 51 条'), findsOneWidget);
     final retry = find.text('重试加载更多');
     await _visible(tester, retry);
@@ -356,7 +359,7 @@ void main() {
     expect(find.text('复制 IP'), findsOneWidget);
     api.auth.switchAccount();
     await tester.pumpAndSettle();
-    expect(find.text('账号已切换，请重新打开预警'), findsOneWidget);
+    expect(find.text('登录状态或权限已变化，请重新打开安全页面。'), findsOneWidget);
     expect(find.text('复制 IP'), findsNothing);
     expect(find.textContaining('预警 IP：1.2.3.4'), findsNothing);
     expect(find.text('标记已处理'), findsNothing);

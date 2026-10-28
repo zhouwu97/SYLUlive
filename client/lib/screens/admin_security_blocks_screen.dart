@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import '../services/admin_security_service.dart';
+import '../services/publish_session_scope.dart';
+import '../widgets/security_session_guard.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/app_card.dart';
 
@@ -22,31 +24,67 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
   bool _loading = true;
   bool _busy = false;
   String? _error;
+  PublishSessionScope? _session;
+  int? _observedEpoch;
+  int? _observedUserId;
+  String? _observedRole;
+  int _generation = 0;
 
   AdminSecurityService get _service =>
       AdminSecurityService(context.read<AuthProvider>().dio);
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.watch<AuthProvider>();
+    if (_observedEpoch == auth.accountSessionEpoch &&
+        _observedUserId == auth.user?.id &&
+        _observedRole == auth.user?.role) {
+      return;
+    }
+    _observedEpoch = auth.accountSessionEpoch;
+    _observedUserId = auth.user?.id;
+    _observedRole = auth.user?.role;
+    _session = auth.isLoggedIn && auth.user?.isSuperAdmin == true
+        ? PublishSessionScope(
+            accountId: auth.user!.id,
+            accountSessionEpoch: auth.accountSessionEpoch)
+        : null;
+    _generation++;
+    _blocks = const [];
+    _busy = false;
+    _loading = _session != null;
+    _error = _session == null ? '需要超级管理员权限，请返回安全中心' : null;
+    final session = _session;
+    if (session != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_owns(session)) _load();
+      });
+    }
   }
 
+  bool _owns(PublishSessionScope session) =>
+      mounted &&
+      SecuritySessionGuard.owns(context.read<AuthProvider>(), session,
+          requireSuperAdmin: true);
+
   Future<void> _load() async {
-    if (!mounted) return;
+    final session = _session;
+    if (session == null || !_owns(session)) return;
+    final generation = ++_generation;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final blocks = await _service.loadBlocks();
-      if (!mounted) return;
+      final blocks = await _service.loadBlocks(session: session);
+      if (!_owns(session) || generation != _generation) return;
       setState(() {
         _blocks = blocks;
         _loading = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!_owns(session) || generation != _generation) return;
       setState(() {
         _error = '读取生效封禁失败';
         _loading = false;
@@ -55,42 +93,47 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
   }
 
   Future<void> _revoke(SecurityBlockGroup block) async {
-    if (_busy) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AppAlertDialog(
-        title: const Text('解除来源封禁'),
-        content: Text('将一次解除此操作的全部 ${block.routePrefixes.length} 个路由封禁。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('确认解除'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+    final session = _session;
+    if (_busy || session == null || !_owns(session)) return;
     setState(() => _busy = true);
     try {
-      await _service.revokeBlock(block.id);
-      if (mounted) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => SecuritySessionGuard(
+            auth: context.read<AuthProvider>(),
+            session: session,
+            requireSuperAdmin: true,
+            child: AppAlertDialog(
+              title: const Text('解除来源封禁'),
+              content: Text('将一次解除此操作的全部 ${block.routePrefixes.length} 个路由封禁。'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('确认解除'),
+                ),
+              ],
+            )),
+      );
+      if (confirmed != true || !_owns(session)) return;
+      await _service.revokeBlock(block.id, session: session);
+      if (mounted && _owns(session)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('封禁已解除')),
         );
         await _load();
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && _owns(session)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('解除失败，请刷新后重试')),
         );
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (_owns(session)) setState(() => _busy = false);
     }
   }
 
@@ -112,6 +155,7 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
             Text(
@@ -125,7 +169,8 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
               Center(
                 child: Column(children: [
                   Text(_error!),
-                  TextButton(onPressed: _load, child: const Text('重试')),
+                  if (_session != null)
+                    TextButton(onPressed: _load, child: const Text('重试')),
                 ]),
               )
             else if (_blocks.isEmpty)
@@ -152,6 +197,8 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(
+                              style: TextButton.styleFrom(
+                                  visualDensity: VisualDensity.standard),
                               onPressed: _busy ? null : () => _revoke(block),
                               child: const Text('解除封禁'),
                             ),

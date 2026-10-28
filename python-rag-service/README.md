@@ -24,6 +24,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8001
 | --- | --- | --- |
 | Python | 3.11 | Docker 与 CI 基准版本 |
 | FastEmbed | 0.9.1 | 允许 Pillow 13；保持显式模型、向量维度与下载权限配置 |
+| ONNX Runtime | 1.30.0 | 保持已验证的推理输出；升级须单独核对模型数值兼容性 |
 | Pillow | 13.0.0 | Python 3.11+，图片处理安全修复 |
 | pypdf | 6.21.2 | PDF 解析安全修复 |
 | FastAPI | 0.141.1 | Pydantic v2 |
@@ -34,6 +35,8 @@ uvicorn app.main:app --host 127.0.0.1 --port 8001
 | langchain-openai | 1.6.0 | OpenAI-compatible ChatModel |
 | langchain-text-splitters | 1.1.2 | T03 使用 |
 | psycopg | 3.2.9 | 后续只读 PostgreSQL 检索 |
+
+安全依赖升级不联动变更推理内核。部署时使用既有缓存模型和非敏感样本，对照升级前的模型名、版本、维度与向量数值；健康接口通过不能替代模型兼容性核验。
 
 升级时必须在单独变更中同时更新锁定版本、离线契约测试和本表。不得只升级单个 LangChain 包；先检查弃用警告，再运行 Python 全量测试及 Go `RAGClient|LangChain|Runtime` 契约测试。测试默认注入 Fake Retriever 和 Fake ChatModel，不配置 Provider、不下载模型、不访问网络。
 

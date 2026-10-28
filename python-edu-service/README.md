@@ -12,7 +12,7 @@
 
 ## 本地运行
 
-使用 Python 3.11 或更高版本；Pillow 13.0.0 的最低 Python 版本为 3.11，Docker 与 CI 均使用 3.11。
+使用 Python 3.11 或更高版本；Pillow 13.0.0 的最低 Python 版本为 3.11，Docker 与 CI 均使用 3.11。ONNX Runtime 固定为 1.30.0，维持已验证的 OCR 推理运行时。
 
 ```bash
 pip install -r requirements.txt

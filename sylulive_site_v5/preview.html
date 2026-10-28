@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>官网预览 · 沈理校园</title>
+<link rel="icon" href="assets/sylulive-app-icon.png">
+<style>
+*{box-sizing:border-box}body{margin:0;background:#eef0eb;color:#1c3026;font:14px/1.5 system-ui,"Microsoft YaHei",sans-serif}
+.bar{min-height:82px;padding:14px 24px;background:#fff;border-bottom:1px solid #dce4db;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.brand{display:flex;gap:10px;align-items:center}.brand img{width:36px;height:36px}.brand strong{font-size:15px}.brand small{display:block;color:#7a847d;font-size:11px}
+.choices,.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}button,a{font:inherit;min-height:40px;padding:9px 15px;border-radius:7px;border:1px solid #dce4db;background:#fff;color:inherit;text-decoration:none;cursor:pointer}button[aria-pressed="true"]{background:#126d55;border-color:#126d55;color:#fff}button:focus-visible,a:focus-visible{outline:3px solid #75b69b;outline-offset:3px}.actions button{font-size:12px;padding:9px 12px}.actions a{font-size:12px;border-color:transparent}
+.description{padding:11px 24px;font-size:12px;color:#657267;display:flex;justify-content:space-between;gap:16px}.description p{margin:0}.frame-wrap{padding:0 16px 16px;display:flex;justify-content:center}
+iframe{display:block;border:1px solid #d6dfd4;background:#fff;width:100%;height:calc(100dvh - 142px);min-height:560px;border-radius:8px}body.mobile iframe{width:390px;max-width:100%;height:calc(100dvh - 142px)}
+@media(max-width:900px){.bar{flex-wrap:wrap;padding:12px 16px;gap:12px}.brand{margin-right:auto}.choices{order:3;width:100%}.choices button{flex:1}.description{padding:10px 16px}.description span{display:none}.frame-wrap{padding:0 8px 8px}iframe,body.mobile iframe{height:calc(100dvh - 188px);min-height:500px}.actions .size-choice{display:none}}
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><img src="assets/sylulive-app-icon.png" alt=""><div><strong>官网预览</strong><small>沈理校园 · 完整页面与手机预览</small></div></div>
+  <div class="choices" role="group" aria-label="选择官网方向">
+    <button type="button" data-look="editorial" aria-pressed="true">A · 完善后的官网</button>
+    <button type="button" data-look="journal" aria-pressed="false">B · 手账风格对照</button>
+  </div>
+  <div class="actions"><button class="size-choice" type="button" id="wide" aria-pressed="true">宽屏</button><button class="size-choice" type="button" id="mobile" aria-pressed="false">手机</button><a id="full" href="index.html?look=editorial" target="_blank" rel="noopener">单独打开 ↗</a></div>
+</header>
+<div class="description"><p id="description">青绿配色、真实界面与校园手写标注；包含完整产品介绍和下载入口。</p><span>下方可以直接滚动、切换展示和使用导航</span></div>
+<main class="frame-wrap"><iframe id="preview" src="index.html?look=editorial" title="完善后的官网可操作预览"></iframe></main>
+<script>
+const frame=document.getElementById('preview'),full=document.getElementById('full'),description=document.getElementById('description');
+document.querySelectorAll('[data-look]').forEach(button=>button.addEventListener('click',()=>{
+  document.querySelectorAll('[data-look]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
+  const look=button.dataset.look,url=`index.html?look=${look}`;
+  frame.src=url;full.href=url;
+  frame.title=look==='journal'?'校园手账版可操作预览':'完善后的官网可操作预览';
+  description.textContent=look==='journal'?'米白纸张、青绿胶带和校园小画，融合清爽配色与手账排版。':'青绿配色、真实界面与校园手写标注；包含完整产品介绍和下载入口。';
+}));
+for(const id of ['wide','mobile'])document.getElementById(id).addEventListener('click',()=>{
+  document.body.classList.toggle('mobile',id==='mobile');
+  document.getElementById('wide').setAttribute('aria-pressed',String(id==='wide'));
+  document.getElementById('mobile').setAttribute('aria-pressed',String(id==='mobile'));
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+/* Each chapter fills the screen when its content fits; longer content can grow. */
+@media (min-height: 621px) {
+  .official-home { scroll-snap-type: y mandatory; }
+  .official-home :is(.hero, .life, .ai, .open, .faq, .final) {
+    scroll-snap-align: start;
+    scroll-margin-top: -112px;
+  }
+  .official-home .hero {
+    min-height: calc(100svh - 93px);
+    padding-top: 100px;
+    display: flex;
+    flex-direction: column;
+  }
+  .official-home .hero-inner { flex: 1; min-height: 0; }
+  .official-home .hero-visual { height: clamp(340px, calc(100svh - 280px), 590px); }
+  .official-home .hero-bottom { margin-top: auto; }
+
+  .official-home :is(.life, .ai, .open, .faq) {
+    min-height: 100svh;
+    display: flex;
+    align-items: center;
+    padding-block: 104px 32px;
+    scroll-margin-top: -112px;
+  }
+  .official-home .life .section-heading { margin-bottom: clamp(16px, 2vh, 32px); }
+  .official-home .life-panel { padding-block: clamp(16px, 2vh, 26px); }
+  .official-home .life-content { padding-top: clamp(16px, 2vh, 28px); }
+  .official-home .life-device { height: clamp(210px, calc(100svh - 465px), 480px); }
+  .official-home .final {
+    min-height: calc(100svh - 176px);
+    display: flex;
+    align-items: center;
+    padding-block: 104px 32px;
+  }
+}
+
+@media (max-width: 800px) and (min-height: 621px) {
+  .official-home .hero { min-height: calc(100svh - 140px); }
+}
+
+@media (max-width: 600px) and (min-height: 621px) {
+  .official-home :is(.hero, .life, .ai, .open, .faq, .final) { scroll-margin-top: -96px; }
+  .official-home .hero { min-height: 100svh; padding-top: 88px; }
+  .official-home .hero-inner { gap: 12px; }
+  .official-home .hero-eyebrow { margin-bottom: 12px; }
+  .official-home .hero-title { font-size: clamp(39px, 11vw, 58px); }
+  .official-home .hero-sub { margin-top: 12px; }
+  .official-home .hero .actions { margin-top: 16px; }
+  .official-home .hero-signoff { margin-top: 12px; }
+  .official-home .hero-visual { height: clamp(200px, calc(100svh - 575px), 300px); }
+  .official-home .hero-mascot { width: 66px; }
+  .official-home .hero-note { padding: 8px 10px; }
+  .official-home .note-course { bottom: 24px; }
+  .official-home .note-life { display: none; }
+  .official-home .visual-note { top: 8px; font-size: 15px; }
+  .official-home .hero-bottom { padding-block: 12px; }
+
+  .official-home :is(.life, .ai, .open, .faq) {
+    padding-block: 88px 24px;
+    scroll-margin-top: -96px;
+  }
+  .official-home .life .section-title { font-size: 28px; }
+  .official-home .life .section-lead { margin-top: 8px; font-size: 12px; line-height: 1.6; }
+  .official-home .life-panel { padding: 12px 16px 18px; }
+  .official-home .life-content { gap: 10px; padding-top: 12px; }
+  .official-home .life-copy h3 { font-size: 25px; }
+  .official-home .life-copy p { margin-top: 8px; font-size: 12px; line-height: 1.6; }
+  .official-home .life-points { margin-top: 10px; }
+  .official-home .life-device { height: clamp(155px, calc(100svh - 620px), 260px); }
+
+  .official-home .ai-grid, .official-home .open-grid { gap: 20px; }
+  .official-home .ai h2 { font-size: 30px; }
+  .official-home .ai-lead, .official-home .open-copy p { margin-top: 12px; }
+  .official-home .ai-points { gap: 8px; margin-top: 14px; }
+  .official-home .ai .text-link { margin-top: 12px; }
+  .official-home .console-top { padding-block: 12px; }
+  .official-home .console-body { padding-block: 14px; }
+  .official-home .retrieval { gap: 5px; margin-top: 12px; }
+  .official-home .bubble.bot { margin-top: 10px; }
+  .official-home .ai-example-note { padding-block: 10px; }
+  .official-home .open-copy .actions { margin-top: 18px; }
+  .official-home .repo-row { padding-block: 12px; }
+  .official-home .repo-note { margin-top: 10px; }
+  .official-home .final { min-height: calc(100svh - 285px); padding-block: 88px 24px; }
+  .official-home .final-icon { width: 60px; height: auto; top: 20px; }
+  .official-home .final p { max-width: calc(100% - 65px); }
+}
+
+@media (max-height: 620px), (prefers-reduced-motion: reduce) {
+  .official-home { scroll-snap-type: none; }
+}
+
+/* The closing mascot stays upright at every viewport height. */
+.official-home .final-icon { transform: none; height: auto; }

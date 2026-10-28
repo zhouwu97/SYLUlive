@@ -61,6 +61,52 @@ Response<dynamic> _feedResponse(RequestOptions options) {
 }
 
 void main() {
+  for (final hydrated in [true, false]) {
+    test('点赞冲突刷新保留投票类型和选项 hydrated=$hydrated', () async {
+      final meta = {
+        'id': 17,
+        'post_id': 1,
+        'ends_at': '2099-01-01T00:00:00Z',
+        'options': [
+          {'id': 41, 'text': '选项一', 'sort_order': 0}
+        ],
+      };
+      final poll = Post.fromJson({
+        ..._postJson(1),
+        'post_type': 'poll',
+        'content_kind': 'poll',
+        'poll_meta': meta
+      });
+      final dio = Dio()
+        ..interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
+          if (o.path.endsWith('/like')) {
+            h.reject(DioException(
+                requestOptions: o,
+                response: Response(requestOptions: o, statusCode: 400, data: {
+                  'code': 'post_like_conflict',
+                  'message': 'already liked'
+                })));
+            return;
+          }
+          expect(o.queryParameters['capabilities'], 'poll_v1');
+          h.resolve(Response(requestOptions: o, statusCode: 200, data: {
+            ..._postJson(1, isLiked: true, likeCount: 99),
+            'post_type': 'poll',
+            'content_kind': 'poll',
+            if (hydrated) 'poll_meta': meta,
+          }));
+        }));
+      final provider = PostProvider(dio, enableCache: false);
+      addTearDown(provider.dispose);
+      provider.applyExternalPostUpdate(poll);
+      final result = await provider.toggleLikeOptimistic(poll);
+      expect(result.status, LikeMutationStatus.conflict);
+      expect(result.reconciledPost!.isPoll, isTrue);
+      expect(provider.postFor(1)!.pollMeta!.options.single.text, '选项一');
+      expect(provider.postFor(1)!.likeCount, 99);
+    });
+  }
+
   test('乐观点赞立即翻转并同步到所有信息流', () async {
     final likeGate = Completer<void>();
     final requests = <String>[];

@@ -2213,9 +2213,11 @@ class PostProvider extends ChangeNotifier {
 
   Future<Post?> _reconcilePost(int postId) async {
     try {
-      final response = await _dio.get('/posts/$postId');
+      final response = await _dio.get('/posts/$postId',
+          queryParameters: {'capabilities': 'poll_v1'});
       if (response.statusCode != 200 || response.data is! Map) return null;
-      return Post.fromJson(response.data as Map<String, dynamic>);
+      return _mergeMutationPost(
+          Post.fromJson(response.data as Map<String, dynamic>), postId);
     } catch (e) {
       debugPrint('点赞冲突 reconcile 失败: $e');
       return null;

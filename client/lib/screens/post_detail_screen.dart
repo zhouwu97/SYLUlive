@@ -52,6 +52,7 @@ import '../widgets/post_reply_composer.dart';
 import '../widgets/emoji/sticker_catalog.dart';
 import 'create_post_screen.dart';
 import 'court_screen.dart';
+import 'poll/poll_detail_screen.dart';
 import 'image_viewer_screen.dart';
 import 'water_category_feed_route.dart';
 import 'team/team_recruitment_detail_screen.dart';
@@ -279,7 +280,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       _isLoading = false;
     }
     _activeTargetReplyId = widget.targetReplyId;
-    _loadPost(forceReplies: false);
+    if (_post?.isPoll != true) _loadPost(forceReplies: false);
     if (widget.scrollToReplies && widget.initialPost != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _scheduleScrollToReplies();
@@ -362,8 +363,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         _errorMessage = null;
       });
     try {
-      final response = await _dio.get('/posts/${widget.postId}');
+      final response = await _dio.get('/posts/${widget.postId}',
+          queryParameters: {'capabilities': 'poll_v1'});
       final fetchedPost = Post.fromJson(response.data);
+      if (!mounted) return;
+      final currentAuth = context.read<AuthProvider>();
+      if (visitAccountEpoch != null &&
+          currentAuth.accountSessionEpoch != visitAccountEpoch) {
+        return;
+      }
+      // 历史记录、通知和仅有帖子 ID 的入口也必须恢复投票详情。
+      if (fetchedPost.isPoll) {
+        setState(() {
+          _post = fetchedPost;
+          _isLoading = false;
+        });
+        context.read<PostProvider>().updatePostInCache(fetchedPost);
+        return;
+      }
       final recruitmentId = fetchedPost.teamRecruitment?.recruitmentId;
       if (recruitmentId != null && recruitmentId > 0 && mounted) {
         Navigator.of(context).pushReplacement(
@@ -2072,6 +2089,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pollPost = _post;
+    if (pollPost?.isPoll == true) {
+      return PollDetailScreen(
+        key: ValueKey('post-poll-${pollPost!.id}'),
+        pollId: pollPost.pollMeta!.id,
+        initialPost: pollPost,
+        targetReplyId: widget.targetReplyId,
+        isDesktopSplitMode: widget.isDesktopSplitMode,
+        hideBackButton: widget.hideBackButton,
+        onAuthorTap: widget.onAuthorTap,
+      );
+    }
     final backgroundSettings = context.watch<ThemeProvider?>();
     final customBackground =
         backgroundSettings?.shouldShowCustomBackground == true;

@@ -11,7 +11,7 @@ HTTP + CookieJar → CSRF → RSA PKCS#1 v1.5 → 登录探活 → 学生信息
 
 当前版本覆盖登录、会话、Profile，课表 Desktop/Mobile fallback、成绩列表 warmup 与分页、
 原始记录、周次解析和 canonical JSON；验证码使用同一 CookieJar 完成图片挑战和续登，
-真机 Flutter Probe 负责交互验证。这样可以先把已验证的协议边界稳定下来，再逐步扩展协议。
+设备上的交互验证通过正式客户端完成。独立 Flutter 诊断应用已移出源码树，不影响本协议库或主 App 的构建。
 
 ## 安全边界
 
@@ -70,8 +70,8 @@ dart run bin/jiaowu_probe.dart --action all
 ```
 
 也支持 `--student-id`、`--password`，但不建议在共享终端使用。Probe 默认只执行
-登录和学生信息；`--action login` 只验证登录，不再次获取学生信息。检测到验证码时，
-CLI 会安全退出并提示使用 Mobile Probe 完成图片挑战。`--action courses`
+登录和学生信息；`--action login` 只验证登录，不再次获取学生信息。图片验证码交互
+通过正式客户端完成，CLI 不提供图片挑战界面。`--action courses`
 和 `--action grades` 会在登录成功后查询对应数据；`--action all --year ... --semester ...`
 会依次执行 Profile 和课表查询。
 
@@ -104,5 +104,5 @@ CLI 会安全退出并提示使用 Mobile Probe 完成图片挑战。`--action c
 2. P1：课表 Desktop/Mobile fallback、RawCourse、周次解析、CLI canonical JSON。
 3. P1：Python ↔ Dart 真实课表 canonical JSON 差分。
 4. P1：成绩列表 warmup、分页、严格解析、CLI canonical JSON 与真实差分。
-5. P2：最小 Flutter Android 真机 Probe。
+5. P2：正式客户端的 Android 设备登录、验证码、课表和成绩回归。
 6. 真实教务协议变化时，先更新 fixture、差分报告和安全边界，再同步主 App 使用的 path dependency。

@@ -161,3 +161,24 @@ id_rsa
 id_ecdsa
 id_ed25519*
 *.ppk
+
+# 本地诊断应用、采集探针与一次性任务材料，不随软件源码提交。
+/experiments/jiaowu_mobile_probe/
+/experiments/jiaowu_dart_poc/android_probe/
+/experiments/jiaowu_dart_poc/BATCH_7_1_SUMMARY.md
+/experiments/jiaowu_dart_poc/docs/batch_7_1_report.md
+/python-edu-service/tools/edu_probe/
+/python-edu-service/tools/jwc_public_probe/
+/python-edu-service/tools/probe_course_kblist_identity.py
+/client/release-artifacts/
+/docs/reports/
+/docs/archive/*/
+# 当前产品契约被已接受的 ADR 和实现引用，继续维护。
+/docs/plans/*
+!/docs/plans/competition-recommendation-plan.md
+!/docs/plans/competition-recommendation-algorithm-plan.md
+/client/scripts/add_editor_import.py
+/client/scripts/fix_*.py
+/client/scripts/modify_center.py
+/client/scripts/refactor*.py
+/client/scripts/run_center_refactor.py

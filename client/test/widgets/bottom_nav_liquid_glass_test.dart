@@ -18,6 +18,19 @@ import '../helpers/golden_viewport.dart';
 import '../helpers/load_test_fonts.dart';
 
 void main() {
+  testWidgets('关闭档不创建液态渲染器，普通悬浮入口仍切页', (tester) async {
+    final h = await pumpNav(tester);
+    await h.theme.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
+    await tester.pumpAndSettle();
+    expect(find.byType(LiquidGlassRenderer), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('bottom-nav-item-3')));
+    await tester.pumpAndSettle();
+    expect(h.selected.value, 3);
+    expect(h.taps, 1);
+    expect(h.commits, 0);
+    await h.theme.loadThemeForTesting();
+    expect(h.theme.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
+  });
   testWidgets('正式底栏实时应用持久化的清透材质', (tester) async {
     final h = await pumpNav(tester);
     await h.theme.setBottomNavClearMaterial(true);

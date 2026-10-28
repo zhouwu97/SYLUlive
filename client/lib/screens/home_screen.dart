@@ -26,6 +26,7 @@ import '../utils/app_navigator.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
 import '../widgets/bottom_nav.dart';
+import '../widgets/bottom_nav_setup_hint.dart';
 import '../widgets/global_background_wrapper.dart' show CustomBackgroundLayer;
 import '../widgets/glass_container.dart';
 import '../widgets/home_tab_reveal.dart';
@@ -1922,7 +1923,9 @@ class _HomeScreenState extends State<HomeScreen>
       )),
       bottomNavigationBar: useSideRail
           ? null
-          : BottomNavWrapper(
+          : Column(mainAxisSize: MainAxisSize.min, children: [
+            BottomNavSetupHint(eligible: !_restoringInitialDeepPage && !_announcementDialogOpen),
+            BottomNavWrapper(
               currentIndex: _currentIndex,
               visualIndexListenable: _mainVisualIndexListenable,
               onTap: _onTabTapped,
@@ -1934,6 +1937,7 @@ class _HomeScreenState extends State<HomeScreen>
                 4: _hasAdminTasks,
               },
             ),
+          ]),
       floatingActionButton: _currentIndex == 0 && useBottomNav
           ? Theme(
               data: Theme.of(context).copyWith(

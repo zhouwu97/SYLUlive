@@ -77,8 +77,8 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               onTap: (v) => setState(() => _selected = v),
               compare: _compare,
               intensity: _intensity,
-              blur: _clear ? 0 : 6,
-              tint: _clear ? .06 : null,
+              blur: _clear ? 0 : 2,
+              tint: _clear ? .06 : .26,
             )),
       ),
     );

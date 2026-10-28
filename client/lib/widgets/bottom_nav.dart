@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import 'liquid_bottom_nav.dart';
+import 'floating_bottom_nav.dart';
 export 'liquid_glass/bottom_nav_controller.dart';
 export 'liquid_glass/liquid_glass_scene.dart';
 
@@ -31,6 +32,9 @@ class BottomNavWrapper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final preferences = context.watch<ThemeProvider>();
+    if (preferences.bottomNavPerformanceMode == BottomNavPerformanceMode.off) {
+      return FloatingBottomNav(currentIndex: currentIndex, onTap: onTap, badges: badges);
+    }
     return LiquidBottomNav(
       currentIndex: currentIndex,
       visualIndexListenable: visualIndexListenable,

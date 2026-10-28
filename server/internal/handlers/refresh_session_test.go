@@ -286,6 +286,46 @@ func TestRefreshSessionCookieTransportDoesNotExposeToken(t *testing.T) {
 	require.NotEmpty(t, rec.Header().Get("Set-Cookie"))
 }
 
+// 401 必须同时下发过期 Cookie：否则浏览器会把同一枚作废凭据在每次页面跳转时
+// 重试一遍，每一遍都会再次命中重放分支，安全中心就会被同一起事件刷屏。
+func TestRefreshSessionReuseClearsAuthCookies(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.User{}, &models.RefreshToken{}, &models.UserLegalConsent{}))
+	user := models.User{PasswordHash: "x", AccountStatus: "active", Role: models.RoleUser}
+	require.NoError(t, db.Create(&user).Error)
+	h := NewAuthHandler(db, "test-secret")
+	seedCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	seedCtx.Request = httptest.NewRequest("POST", "/api/refresh", nil)
+	raw, _, err := h.issueRefreshSession(user.ID, seedCtx)
+	require.NoError(t, err)
+	body, _ := json.Marshal(map[string]string{"refresh_token": raw})
+
+	refreshWithUA := func(userAgent string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(rec)
+		ctx.Request = httptest.NewRequest("POST", "/api/refresh", bytes.NewReader(body))
+		ctx.Request.Header.Set("Content-Type", "application/json")
+		ctx.Request.Header.Set("User-Agent", userAgent)
+		h.Refresh(ctx)
+		return rec
+	}
+
+	// 先正常轮换一次，让旧凭据进入"已撤销 + 已替换"状态。
+	require.Equal(t, 200, refreshWithUA("device-a").Code)
+
+	rec := refreshWithUA("device-b")
+	require.Equal(t, 401, rec.Code)
+	require.Contains(t, rec.Body.String(), "refresh_token_reused")
+	cleared := false
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == "refresh_token" && cookie.Value == "" && cookie.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	require.True(t, cleared, "401 必须清除 refresh_token Cookie")
+}
+
 func TestLogoutRevokesAccessTokenSessionFamily(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)

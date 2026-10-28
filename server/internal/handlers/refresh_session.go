@@ -273,6 +273,19 @@ func writeRefreshResponse(c *gin.Context, access string, response SelfUserRespon
 	c.JSON(http.StatusOK, payload)
 }
 
+// clearAuthCookies 清掉浏览器侧的刷新凭据与访问凭据。
+//
+// 刷新失败返回 401 时如果只回 JSON、不删 Cookie，持有一枚已作废凭据的浏览器会在
+// 每次页面跳转时原样重试同一个 token：每一次都会再次命中"重放"分支，既不断刷出
+// 高危事件，也让客户端永远回不到登录页。这里主动下发过期 Cookie，
+// 让浏览器在下一次请求前就丢掉死凭据。
+func clearAuthCookies(c *gin.Context) {
+	secure := middleware.SecureCookieEnabled()
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("refresh_token", "", -1, "/api", "", secure, true)
+	c.SetCookie("jwt", "", -1, "/api", "", secure, true)
+}
+
 func (h *AuthHandler) Refresh(c *gin.Context) {
 	if raw := strings.TrimSpace(os.Getenv("AUTH_REFRESH_ENABLED")); raw != "" && !strings.EqualFold(raw, "true") {
 		c.JSON(404, gin.H{"error": "刷新会话未启用", "code": "refresh_disabled"})
@@ -291,6 +304,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	var current models.RefreshToken
 	if err := h.db.Where("token_hash = ?", refreshHash(input.RefreshToken)).First(&current).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			clearAuthCookies(c)
 			c.JSON(401, gin.H{"error": "刷新凭据无效", "code": "invalid_refresh_token"})
 		} else {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
@@ -316,16 +330,19 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		}
 		h.revokeRefreshRotationFamilies(current, input.RefreshToken)
 		h.recordRefreshTokenReuse(c, current)
+		clearAuthCookies(c)
 		c.JSON(401, gin.H{"error": "刷新凭据已重复使用", "code": "refresh_token_reused"})
 		return
 	}
 	if current.RevokedAt != nil || !current.ExpiresAt.After(now) {
+		clearAuthCookies(c)
 		c.JSON(401, gin.H{"error": "刷新凭据已失效", "code": "refresh_token_expired"})
 		return
 	}
 	var user models.User
 	if err := h.db.First(&user, current.UserID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			clearAuthCookies(c)
 			c.JSON(401, gin.H{"error": "账号不可用", "code": "invalid_refresh_token"})
 		} else {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "刷新服务暂时不可用", "code": "auth_service_unavailable"})
@@ -333,10 +350,12 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 	if user.AccountStatus != "active" {
+		clearAuthCookies(c)
 		c.JSON(401, gin.H{"error": "账号不可用", "code": "invalid_refresh_token"})
 		return
 	}
 	if user.TokenVersion != current.TokenVersion {
+		clearAuthCookies(c)
 		c.JSON(401, gin.H{"error": "会话已失效", "code": "refresh_token_expired"})
 		return
 	}
@@ -408,6 +427,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		}
 		h.revokeRefreshRotationFamilies(rotated, input.RefreshToken)
 		h.recordRefreshTokenReuse(c, rotated)
+		clearAuthCookies(c)
 		c.JSON(401, gin.H{"error": "刷新凭据已重复使用", "code": "refresh_token_reused"})
 		return
 	}
@@ -423,12 +443,20 @@ func (h *AuthHandler) recordRefreshTokenReuse(c *gin.Context, token models.Refre
 		return
 	}
 	userID := token.UserID
+	// 同一 token family 的连续重放收敛成一条事件（attempt_count 累加）。
+	// 浏览器缺陷或客户端重试会把同一枚作废凭据反复送上来，按五分钟时间桶聚合会
+	// 生成十几张几乎一样的高危卡片，把真正需要处置的事件挤出视野。
+	aggregateKey := fmt.Sprintf("refresh_token_reused|user:%d|token:%s", token.UserID, token.TokenHash)
+	if family := strings.TrimSpace(token.TokenFamily); family != "" {
+		aggregateKey = fmt.Sprintf("refresh_token_reused|user:%d|family:%s", token.UserID, family)
+	}
 	_ = h.security.RecordContext(securityAuditContext(c), services.SecurityEventInput{
 		EventType: "refresh_token_reused", Severity: models.SecuritySeverityCritical,
 		Route: "/api/refresh", Method: http.MethodPost, ClientIP: c.ClientIP(),
 		UserAgent: c.GetHeader("User-Agent"), InstallationID: c.GetHeader("X-Installation-ID"),
 		ActorUserID: &userID, TargetType: "user", TargetValue: fmt.Sprintf("user:%d", token.UserID),
 		TargetMasked: fmt.Sprintf("用户 #%d", token.UserID), Blocked: true, Action: "blocked",
-		Metadata: map[string]interface{}{"reason": "rotated_refresh_token_reused"},
+		AggregateKey: aggregateKey,
+		Metadata:     map[string]interface{}{"reason": "rotated_refresh_token_reused"},
 	})
 }

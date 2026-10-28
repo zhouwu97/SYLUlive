@@ -1,13 +1,13 @@
 fastapi==0.141.1
 starlette==1.6.0
 uvicorn[standard]==0.52.4
-fastembed==0.8.0
+fastembed==0.9.1
 jieba==0.42.1
-pypdf==6.19.0
+pypdf==6.21.2
 python-docx==1.2.0
 beautifulsoup4==4.15.0
 pydantic==2.12.5
-Pillow==12.3.0
+Pillow==13.0.0
 langchain==1.4.0
 langchain-classic==1.0.8
 langchain-core==1.6.1

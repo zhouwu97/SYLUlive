@@ -23,6 +23,9 @@ uvicorn app.main:app --host 127.0.0.1 --port 8001
 | 组件 | 锁定版本 | 兼容边界 |
 | --- | --- | --- |
 | Python | 3.11 | Docker 与 CI 基准版本 |
+| FastEmbed | 0.9.1 | 允许 Pillow 13；保持显式模型、向量维度与下载权限配置 |
+| Pillow | 13.0.0 | Python 3.11+，图片处理安全修复 |
+| pypdf | 6.21.2 | PDF 解析安全修复 |
 | FastAPI | 0.141.1 | Pydantic v2 |
 | Pydantic | 2.12.5 | 禁止 v1 compatibility imports |
 | langchain | 1.4.0 | 仅使用 LCEL，不使用弃用 Chain 类 |

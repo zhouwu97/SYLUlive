@@ -12,6 +12,8 @@
 
 ## 本地运行
 
+使用 Python 3.11 或更高版本；Pillow 13.0.0 的最低 Python 版本为 3.11，Docker 与 CI 均使用 3.11。
+
 ```bash
 pip install -r requirements.txt
 python main.py

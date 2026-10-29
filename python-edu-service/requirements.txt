@@ -10,5 +10,7 @@ aiosqlite==0.22.1
 requests==2.34.2
 beautifulsoup4==4.15.0
 ddddocr==1.6.1
-Pillow==12.3.0
+# Verify existing model outputs before upgrading the inference runtime.
+onnxruntime==1.30.0
+Pillow==13.0.0
 pycryptodome==3.23.0

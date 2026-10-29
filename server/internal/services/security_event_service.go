@@ -40,7 +40,12 @@ type SecurityEventInput struct {
 	TargetMasked   string
 	RequestID      string
 	// SkipAttempt 用于同一请求派生出的邮件投递/结果回调，避免把一次 HTTP 请求重复计入请求数。
-	SkipAttempt            bool
+	SkipAttempt bool
+	// AggregateKey 覆盖默认的「事件类型+来源+目标+路由+五分钟时间桶」聚合维度。
+	// 用于「同一次攻击的连续重试」：调用方按攻击对象（例如 token family）给出稳定键，
+	// 连续重试就会落在同一行上累加 attempt_count，而不是每五分钟新开一条事件。
+	// 留空时保持原有按时间桶聚合的行为。
+	AggregateKey           string
 	Blocked                bool
 	MailSent               bool
 	PasswordResetSucceeded bool
@@ -324,6 +329,11 @@ func (s *SecurityEventService) RecordContext(ctx context.Context, input Security
 	route := truncateSecurityValue(strings.TrimSpace(input.Route), 160)
 	method := truncateSecurityValue(strings.ToUpper(strings.TrimSpace(input.Method)), 12)
 	key := fmt.Sprintf("%s|%s|%s|%s|%d", input.EventType, sourceHash, targetHash, route, bucket.Unix())
+	// 允许调用方用「攻击对象」而不是「时间桶」做聚合维度：同一 token family 的连续
+	// 重放必须收敛成一条事件，否则客户端每重试一次就会多出一张待处置的高危卡片。
+	if aggregateKey := strings.TrimSpace(input.AggregateKey); aggregateKey != "" {
+		key = truncateSecurityValue(aggregateKey, 512)
+	}
 	sourceUAHash := ""
 	if strings.TrimSpace(input.UserAgent) != "" {
 		sourceUAHash = s.Hash(input.UserAgent)

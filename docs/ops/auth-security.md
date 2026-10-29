@@ -62,7 +62,7 @@ Docker 的 `nginx/docker.conf` 已有通用防洪保护，专用 `login_ip` zone
 - Go 模块测试、vet、build、govulncheck，Web check/test/build，Nginx 完整候选配置检验；
 - 正式 CI 安全证据，包括 Gitleaks 与两个 Python pip-audit matrix jobs。未执行或失败不能填为成功。
 
-生产 Go 构建最低版本为 1.26.9。通过正式发布入口部署固定 SHA，保留上一二进制与 Nginx 配置；部署后验证 `/health`、`/version`、回环监听、登录与刷新、错误恢复、安全流水和实际告警。
+生产 Go 构建最低版本为 1.26.10。通过正式发布入口部署固定 SHA，保留上一二进制与 Nginx 配置；部署后验证 `/health`、`/version`、回环监听、登录与刷新、错误恢复、安全流水和实际告警。
 
 回滚先恢复上一 Nginx 配置并 `nginx -t`，再按正式部署入口恢复上一稳定二进制。此轮复用已有表结构，不需要删除审计或刷新会话表。回滚代码不能恢复已经因密码重置失效的凭据，也不能恢复滚动清理已删除的记录，事故证据必须提前另行保存。
 

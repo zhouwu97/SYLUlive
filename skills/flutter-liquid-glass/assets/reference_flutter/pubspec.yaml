@@ -1,0 +1,23 @@
+name: bottom_nav_demo
+description: Live refractive liquid glass navigation in Flutter.
+publish_to: 'none'
+version: 1.0.0+1
+environment:
+  sdk: ^3.11.5
+dependencies:
+  flutter:
+    sdk: flutter
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true
+  shaders:
+    - shaders/liquid_glass.frag
+  fonts:
+    - family: NotoSansCJKsc
+      fonts:
+        - asset: assets/fonts/NotoSansCJKsc-Regular.otf

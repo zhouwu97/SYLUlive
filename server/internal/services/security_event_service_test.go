@@ -41,6 +41,40 @@ func TestSecurityEventAggregatesWithoutPersistingRawSource(t *testing.T) {
 	}
 }
 
+func TestSecurityEventAggregateKeyCollapsesRepeatedReplays(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("打开数据库失败: %v", err)
+	}
+	if err := db.AutoMigrate(&models.SecurityEvent{}); err != nil {
+		t.Fatalf("迁移安全表失败: %v", err)
+	}
+	now := time.Date(2026, time.July, 22, 12, 0, 0, 0, time.UTC)
+	service := NewSecurityEventService(db, "security-test-secret", func() time.Time { return now })
+	// 每次跨过一个聚合窗口：默认按五分钟分桶时这里会生成三条事件，
+	// 显式 AggregateKey 必须把它们收敛到同一行并累加尝试次数。
+	for i := 0; i < 3; i++ {
+		now = now.Add(7 * time.Minute)
+		if err := service.Record(SecurityEventInput{
+			EventType: "refresh_token_reused", Severity: models.SecuritySeverityCritical,
+			Route: "/api/refresh", Method: "POST", ClientIP: "203.0.113.9",
+			AggregateKey: "refresh_token_reused|user:2|family:deadbeef", Blocked: true,
+		}); err != nil {
+			t.Fatalf("写入重放事件失败: %v", err)
+		}
+	}
+	var events []models.SecurityEvent
+	if err := db.Find(&events).Error; err != nil {
+		t.Fatalf("读取安全事件失败: %v", err)
+	}
+	if len(events) != 1 || events[0].AttemptCount != 3 || events[0].BlockedCount != 3 {
+		t.Fatalf("同一 family 的重放未收敛: %+v", events)
+	}
+	if !events[0].LastSeenAt.Equal(now) {
+		t.Fatalf("聚合事件未推进 last_seen_at: %+v", events[0])
+	}
+}
+
 func TestSecurityEventMailCallbackDoesNotDoubleCountRequest(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

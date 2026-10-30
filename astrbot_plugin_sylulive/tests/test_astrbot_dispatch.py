@@ -4,6 +4,7 @@ Install the fixed AstrBot version to run this integration check. It never opens
 QQ, calls a model, connects a school account, or uses production data.
 """
 import importlib
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
@@ -19,6 +20,7 @@ from astrbot.core.platform.message_type import MessageType
 from astrbot.core.platform.platform_metadata import PlatformMetadata
 from astrbot.core.star.star import star_map
 from astrbot.core.star.filter.command import CommandFilter
+from astrbot.api.provider import ProviderRequest
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 
 from astrbot_plugin_sylulive.client import IntegrationProblem
@@ -132,3 +134,48 @@ def test_english_keywords_match_real_registered_command_filters(handler_name, ke
     filters = [f for f in metadata.event_filters if isinstance(f, CommandFilter)]
     assert len(filters) == 1
     assert filters[0].filter(event, {})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["owner_private", "other_sender", "other_platform", "group"])
+async def test_presentation_hook_preserves_context_and_is_scoped(scope):
+    module = importlib.import_module("astrbot_plugin_sylulive.main")
+    plugin = module.SYLUlivePlugin.__new__(module.SYLUlivePlugin)
+    plugin.owner = "owner"
+    plugin.platform = "synthetic-platform"
+    event = message("other" if scope == "other_sender" else "owner")
+    if scope == "other_platform":
+        event.platform_meta = PlatformMetadata("aiocqhttp", "synthetic", "another-platform")
+    if scope == "group":
+        event.message_obj.type = MessageType.GROUP_MESSAGE
+        event.message_obj.group_id = "synthetic-group"
+    contexts = [{"role": "tool", "content": '{"post_id":811,"reply_id":2013,"source_version":"fixture"}'}]
+    request = ProviderRequest(prompt="总结刚才那篇帖子", system_prompt="原有人格", contexts=deepcopy(contexts))
+    await plugin.present_community_naturally(event, request)
+    assert request.prompt == "总结刚才那篇帖子" and request.contexts == contexts
+    if scope == "owner_private":
+        assert request.system_prompt.startswith("原有人格") and request.system_prompt != "原有人格"
+        first = request.system_prompt
+        await plugin.present_community_naturally(event, request)
+        assert request.system_prompt == first
+    else:
+        assert request.system_prompt == "原有人格"
+
+
+def test_presentation_hook_is_registered_with_real_sdk():
+    module = importlib.import_module("astrbot_plugin_sylulive.main")
+    metadata = next(item for item in star_handlers_registry.star_handlers_map.values()
+                    if item.handler_module_path == module.__name__ and item.handler_name == "present_community_naturally")
+    assert metadata.event_type == EventType.OnLLMRequestEvent
+
+
+@pytest.mark.asyncio
+async def test_status_uses_nickname_without_database_account_id():
+    cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
+    plugin = cls.__new__(cls)
+    plugin.owner, plugin.platform = "owner", "synthetic-platform"
+    plugin.client = BusinessClientFixture(False)
+    event = message("owner")
+    responses = [result async for result in plugin.status(event)]
+    text = "".join(getattr(component, "text", "") for component in responses[0].chain)
+    assert "synthetic" in text and "#1" not in text

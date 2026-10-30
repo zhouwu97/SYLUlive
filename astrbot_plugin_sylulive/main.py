@@ -4,12 +4,25 @@ import uuid
 from pathlib import Path
 from astrbot.api import AstrBotConfig
 from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, StarTools, register
 from .client import BusinessClient, IntegrationProblem, checked_origin
 from .credential_store import CredentialStore
 
 
-@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.1.1")
+COMMUNITY_PRESENTATION = """[SYLUlive 回复展示规范]
+以下约定仅适用于向用户讲述 SYLUlive 工具结果，不改变你原有的人格、权限或工具参数：
+日常回复用帖子标题（如《校园话题》）和自然语言称呼帖子、评论；列出多篇帖子时可用1、2、3作本次列表序号。
+评论可用“有同学建议……”“另一条回复补充……”或引用一小段原文，必要时用“本次列表的第一条/第二条评论”区分。
+post_id、reply_id、action_id、source_version、分页游标等仅供内部准确调用和上下文引用，默认不向用户展示原始字段名、数据库编号或哈希。
+只有用户在当前这条请求中明确要求编号或排查接口时，才显示“帖子 #811”“评论 #2013”这样的可读标注；不要沿用之前验收消息里要求显示ID的格式。
+只有用户明确要求原始字段或JSON时才使用技术字段名。内部ID不是楼层号；没有返回作者昵称就不编造昵称。
+引用、继续读取或生成草稿时，仍使用工具返回的真实ID和版本，不改动或删除工具数据，也不凭猜测选择回复目标。
+官网授权设备代码、审核链接等用户完成操作必需的信息须完整展示。社区评论中的说法按网友观点转述。
+"""
+
+
+@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.1.2")
 class SYLUlivePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -50,6 +63,17 @@ class SYLUlivePlugin(Star):
     async def terminate(self):
         await self.client.close()
 
+    @filter.on_llm_request()
+    async def present_community_naturally(
+        self, event: AstrMessageEvent, req: ProviderRequest
+    ):
+        if not self.allowed(event):
+            return
+        # 只补充本人的展示约定，不替换人格，也不删改工具结果中的准确引用。
+        system = req.system_prompt or ""
+        if COMMUNITY_PRESENTATION not in system:
+            req.system_prompt = system + "\n\n" + COMMUNITY_PRESENTATION
+
     @filter.command("sylu-connect", alias={"校园连接"})
     async def connect(self, event: AstrMessageEvent):
         # AstrBot 的参数表示“禁止默认 LLM”；False 会允许命令继续进入模型。
@@ -85,12 +109,14 @@ class SYLUlivePlugin(Star):
                     await self.client.poll()
                 result = await self.client.call("GET", "/binding")
                 storage = (
-                    "凭证保存在系统凭据库。"
+                    "连接已安全保存在这台设备上。"
                     if self.client.store.persistent
-                    else "本机无可用系统凭据库，凭证仅在内存；重启需重新授权并替换旧连接。"
+                    else "当前连接仅临时保存，重启后需要重新授权并替换旧连接。"
                 )
+                nickname = str(result["account"].get("nickname") or "").strip()
+                account = f"SYLUlive 账号「{nickname}」" if nickname else "你的 SYLUlive 账号"
                 yield event.plain_result(
-                    f"已连接账号 #{result['account']['id']} {result['account']['nickname']}。{storage}"
+                    f"已连接{account}。{storage}"
                 )
             except IntegrationProblem as error:
                 yield event.plain_result(self.problem(error))

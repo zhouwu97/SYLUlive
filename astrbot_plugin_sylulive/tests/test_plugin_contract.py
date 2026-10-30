@@ -44,9 +44,12 @@ def test_owner_and_group_boundary_and_same_message_operation(monkeypatch):
     api.AstrBotConfig = dict
     events = types.ModuleType("astrbot.api.event")
     events.AstrMessageEvent = object
-    events.filter = types.SimpleNamespace(command=decorator, llm_tool=decorator, on_llm_request=decorator)
+    events.filter = types.SimpleNamespace(command=decorator, llm_tool=decorator, on_llm_request=decorator, on_agent_done=decorator)
     providers = types.ModuleType("astrbot.api.provider")
     providers.ProviderRequest = object
+    providers.LLMResponse = object
+    agent_messages = types.ModuleType("astrbot.core.agent.message")
+    agent_messages.TextPart = object
     stars = types.ModuleType("astrbot.api.star")
     stars.Context = object
     stars.Star = object
@@ -57,6 +60,7 @@ def test_owner_and_group_boundary_and_same_message_operation(monkeypatch):
         ("astrbot.api", api),
         ("astrbot.api.event", events),
         ("astrbot.api.provider", providers),
+        ("astrbot.core.agent.message", agent_messages),
         ("astrbot.api.star", stars),
     ]:
         monkeypatch.setitem(sys.modules, name, module)

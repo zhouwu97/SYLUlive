@@ -20,7 +20,9 @@ from astrbot.core.platform.message_type import MessageType
 from astrbot.core.platform.platform_metadata import PlatformMetadata
 from astrbot.core.star.star import star_map
 from astrbot.core.star.filter.command import CommandFilter
-from astrbot.api.provider import ProviderRequest
+from astrbot.api.provider import ProviderRequest, LLMResponse
+from astrbot.core.agent.message import Message, TextPart
+from astrbot.core.agent.run_context import ContextWrapper
 from astrbot.core.star.star_handler import EventType, star_handlers_registry
 
 from astrbot_plugin_sylulive.client import IntegrationProblem
@@ -179,3 +181,45 @@ async def test_status_uses_nickname_without_database_account_id():
     responses = [result async for result in plugin.status(event)]
     text = "".join(getattr(component, "text", "") for component in responses[0].chain)
     assert "synthetic" in text and "#1" not in text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fresh_reads", [[], ["/community/posts/811"], ["/community/posts/811", "/community/posts/811/replies"]])
+async def test_followup_summary_requires_new_post_and_comment_reads(fresh_reads):
+    cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
+    plugin = cls.__new__(cls)
+    plugin.owner, plugin.platform = "owner", "synthetic-platform"
+    class ReaderFixture:
+        async def call(self, *args, **kwargs):
+            return {"data": {"post_id": 811}}
+    plugin.client = ReaderFixture()
+    event = message("owner")
+    request = ProviderRequest(prompt="把刚才那篇讨论再自然地总结一下", contexts=[
+        {"role": "assistant", "tool_calls": [{"id": "previous", "type": "function", "function": {"name": "sylulive_get_post", "arguments": '{"post_id":811}'}}]},
+        {"role": "tool", "tool_call_id": "previous", "content": '{"data":{"post_id":811,"content":"旧帖子正文"}}'},
+    ])
+    await plugin.present_community_naturally(event, request)
+    for path in fresh_reads:
+        await plugin.tool(event, "GET", path)
+    response = LLMResponse(role="assistant", completion_text="刚刚读到的讨论内容。")
+    run_context = ContextWrapper(context=None, messages=[Message(role="assistant", content=[TextPart(text=response.completion_text)])])
+    await plugin.verify_current_read(event, run_context, response)
+    if len(fresh_reads) < 2:
+        assert "没有取得新的社区查询结果" in response.completion_text
+        assert "刚刚读到" not in response.completion_text
+        assert run_context.messages[-1].content[0].text == response.completion_text
+    else:
+        assert response.completion_text == "刚刚读到的讨论内容。"
+
+
+@pytest.mark.asyncio
+async def test_explicit_rewrite_can_use_previous_result_without_claiming_a_new_read():
+    cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
+    plugin = cls.__new__(cls)
+    plugin.owner, plugin.platform = "owner", "synthetic-platform"
+    event = message("owner")
+    request = ProviderRequest(prompt="只改写上面的总结，不要重新读取。")
+    await plugin.present_community_naturally(event, request)
+    response = LLMResponse(role="assistant", completion_text="根据上次读取的内容整理。")
+    await plugin.verify_current_read(event, ContextWrapper(context=None), response)
+    assert response.completion_text == "根据上次读取的内容整理。"

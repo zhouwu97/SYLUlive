@@ -45,6 +45,8 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 	}
 	middleware.InvalidateTokenVersionCache(owner)
 	r := gin.New()
+	// 使用生产全局中间件，防止标准 OAuth 错误被改写或网页/插件被 APK 版本策略拦截。
+	r.Use(middleware.RequestTraceMiddleware(), middleware.AppVersionMiddleware(db, true, false))
 	deliveries := 0
 	h := NewIntegrationHandler(db, IntegrationOptions{PublicOrigin: "https://fixture.invalid", ProposalsEnabled: true, OwnerPublishEnabled: true, AfterReplyCommit: func(n models.Notification) {
 		deliveries++

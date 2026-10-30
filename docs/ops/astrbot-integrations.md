@@ -29,6 +29,7 @@ INTEGRATION_PUBLIC_ORIGIN=https://sylulive.online
 
 - `/health`、`/version` 正常，版本 SHA 与候选一致，原 App 登录/刷新及普通社区读取保留。
 - 未认证访问 `/api/integrations/v1/binding` 返回身份错误，不能是 404 或无保护数据。
+- OAuth 三个协议端点的失败响应保留标准 `error` 字段（例如 `authorization_pending`、`slow_down`），不能被全局业务错误格式改写。官网助手与插件接口不受 Android APK 版本头约束；开启强制更新后仍须验证它们的真实鉴权。
 - `/web/connected-apps` 载入正确发布物，静态资源和路由可恢复；缺资格、近期登录失效、网络错误均显示实际失败。
 - 用户在 QQ 执行 `/sylu-connect`，在官网确认后执行 `/sylu-status`，随后读取公开帖子；记录真实 `post_id`，确认浏览量未增加、无私有字段。
 - 用户撤销连接后旧凭证被拒绝；不通过改提示词或本机白名单绕过服务端授权。

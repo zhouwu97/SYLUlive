@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { beginAuthTransition, entity, setAuthSession, useApi, write, type User } from "./api";
 import { Form, useUI } from "./ui";
@@ -19,10 +19,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     qc = useQueryClient();
   const raw = entity(q.data, "user", "data");
   const user = raw.id ? (raw as User) : null;
+  const [reloading, setReloading] = useState(false);
+  const reloadSequence = useRef(0), reloadInProgress = useRef(false);
   useEffect(() => {
-    setAuthSession(user?.id ?? null);
-  }, [user?.id]);
-  useEffect(()=>{const channel=new BroadcastChannel('sylulive-auth');channel.onmessage=()=>{beginAuthTransition();qc.clear();ui.close()};return()=>channel.close()},[qc,ui]);
+    if (!reloadInProgress.current) setAuthSession(user?.id ?? null);
+  }, [user?.id, reloading]);
+  useEffect(() => {
+    const channel = new BroadcastChannel('sylulive-auth');
+    channel.onmessage = async () => {
+      const sequence = ++reloadSequence.current;
+      reloadInProgress.current = true;
+      setReloading(true);
+      beginAuthTransition();
+      setAuthSession(null);
+      qc.clear();
+      ui.close();
+      // 清空缓存会暂时移除 user；此时不能让会话 effect 再次中止新 profile 请求。
+      try { await q.refetch(); }
+      finally {
+        if (reloadSequence.current === sequence) {
+          reloadInProgress.current = false;
+          setReloading(false);
+        }
+      }
+    };
+    return () => channel.close();
+  }, [qc, ui, q.refetch]);
   function login() {
     ui.open("登录沈理校园", <Login />);
   }
@@ -38,11 +60,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
-        user,
-        loading: q.isPending,
+        user: reloading ? null : user,
+        loading: reloading || q.isPending,
         login,
         logout,
         requireUser: () => {
+          if (reloading) return false;
           if (user) return true;
           login();
           return false;

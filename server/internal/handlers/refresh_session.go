@@ -137,7 +137,9 @@ func issueRefreshTokenRecordForDB(db *gorm.DB, userID uint, family string, c *gi
 	if installID := strings.TrimSpace(c.GetHeader("X-Installation-ID")); installID != "" {
 		installHash = refreshHash(installID)
 	}
+	authenticatedAt := time.Now()
 	row := &models.RefreshToken{
+		AuthenticatedAt:    &authenticatedAt,
 		UserID:             userID,
 		TokenVersion:       user.TokenVersion,
 		TokenHash:          refreshHash(raw),
@@ -373,6 +375,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		TokenVersion:       user.TokenVersion,
 		TokenHash:          refreshHash(newRaw),
 		TokenFamily:        targetFamily,
+		AuthenticatedAt:    current.AuthenticatedAt,
 		FamilyVersion:      2,
 		ExpiresAt:          now.Add(refreshTTL()),
 		CreatedIPHash:      refreshHash(c.ClientIP()),

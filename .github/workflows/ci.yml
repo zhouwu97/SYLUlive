@@ -46,6 +46,27 @@ jobs:
       - name: Run Go tests
         run: bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 ./...
 
+  astrbot-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install fixed AstrBot SDK and plugin test dependencies
+        run: >-
+          python -m pip install astrbot==4.29.3
+          -r astrbot_plugin_sylulive/requirements.txt
+          pytest pytest-asyncio docstring-parser
+      - name: Check real AstrBot dispatch and plugin contracts in isolation
+        shell: bash
+        run: |
+          validation_dir=$(mktemp -d)
+          cd "$validation_dir"
+          export ASTRBOT_ROOT="$validation_dir"
+          export PYTHONPATH="$GITHUB_WORKSPACE"
+          python -m pytest "$GITHUB_WORKSPACE/astrbot_plugin_sylulive/tests" -q
+
   postgres-integration:
     runs-on: ubuntu-latest
     services:
@@ -87,6 +108,13 @@ jobs:
           bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 -tags=integration -p 1 ./internal/handlers ./internal/services
           -run '^(TestPostPublishQuota|TestReplyRejectedWhenPostHidden|TestSecurityEvent|TestFeedbackTicket.*Postgres|TestAwardDaily.*Postgres|TestPostgresEmailResetRecovery|TestPostgresLoginThrottleConcurrentFirstFailures)'
           -count=1
+      - name: Run AstrBot authorization and publish-lock PostgreSQL regressions
+        working-directory: server
+        env:
+          INTEGRATION_TEST_POSTGRES_DSN: host=127.0.0.1 port=5432 user=postgres password=postgres dbname=sylulive_integration_test sslmode=disable
+        run: >-
+          bash "$GITHUB_WORKSPACE/scripts/ci-go-test.sh" 1 -p 1 ./internal/handlers ./internal/services
+          -run '^TestIntegration' -count=1
       # 食堂并发乐观锁单独一步跑：它的夹具会整表清 canteen_* / files，
       # 与上面那批共用一次执行会互相抹数据（工单用例就依赖 files 表）。
       # 这条用例曾因夹具缺表被长期排除：Rate 判可信学生身份读

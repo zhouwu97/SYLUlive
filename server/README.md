@@ -9,6 +9,14 @@ server/ 是沈理校园的 Go 后端，负责 App 账号、社区、竞赛、通
 - Python RAG 服务处理允许的校园公共知识；个人教务凭据、Cookie 和原始学校响应不得进入 RAG。
 - python-edu-service 是迁移期兼容组件。SCHOOL_AUTHORITY_RETIRED、SCHOOL_ACADEMIC_ROUTES_RETIRED 和客户端能力探测共同决定旧链路状态。
 
+## AstrBot 个人授权插件
+
+新增集成以 AstrBot 为主助手，Go 提供限定 scope 的公开社区读取、草稿、本人确认发布与撤销。无需打开 Go AI 模型或 MCP 开关。安装、配置、准入限制与真实联调状态以 [插件 README](../astrbot_plugin_sylulive/README.md) 为入口。
+
+`INTEGRATIONS_ENABLED`、`INTEGRATION_PROPOSALS_ENABLED`、`INTEGRATION_OWNER_PUBLISH_ENABLED` 默认全关；后两项依次依赖前项。启用时必须配置 `INTEGRATION_PUBLIC_ORIGIN` 为官网 HTTPS origin（本地开发允许回环 HTTP）；该地址与插件 `server_origin` 保持一致。新增设备请求、授权、凭证摘要、草稿、审计与限流表及内容来源列；迁移需使用原有备份/发布流程，不能先开生产开关再补验收。
+
+官方网页入口 `/web/connected-apps`；授权与发布需10分钟内真实登录。助手授权独立于 App 登录设备；QQ 平台实例和发送者白名单由插件本地检查，不作为后端身份。教务资格、scope、用户状态及内容源版本由后端当前数据复核。正常 App 的发帖/评论仍使用原规则，助手复用核心额度与评论统计事务。
+
 ## 本地运行
 
 准备 PostgreSQL 和环境变量后：
@@ -32,6 +40,18 @@ go run ./cmd
 - SCHOOL_ACADEMIC_ROUTES_RETIRED
 
 以 .env.example、配置加载代码和部署文档为准，不要把开发默认值直接带入生产。
+
+### 社区 Agent 只读增量
+
+`AI_COMMUNITY_READ_ENABLED=false` 默认不注册新增社区工具。隔离开发环境显式启用后，已有 Go Runtime 可用 `community.list_feed`、`community.search_posts`、`community.get_post`、`community.list_replies`、`community.get_reply_context`、`community.list_stickers`。同时需要已有 AI 配置和支持工具调用的模型；若使用 Agent 能力白名单，也需放行相应工具。关闭开关并重启后，新请求无法使用这些工具。
+
+本增量只读取正常状态的普通水帖，不包含集市、投票、隐藏或删除帖子。工具只选择允许的文字与定位字段，不加载作者资料、联系方式列、图片或上传地址；不走会增加浏览量的 HTTP 详情流程。内置表情与现有评论校验使用同一资源目录。正文截断会明确标记，`source_version` 基于完整选定内容计算，不含浏览量、点赞数、回复数或 `UpdatedAt`。
+
+帖子列表按 ID 降序，评论列表按 ID 升序，最多每页 20 条；响应包含 `items` 和 `next_after_id`，游标为 0 表示已到末页。表情目录按 ID 升序，使用字符串游标 `next_after_sticker_id`，空字符串表示末页。评论上下文包含所属帖子、当前评论及适用的根评论、精确回复目标；已删除根评论和目标仅返回墓碑。
+
+创建 Run 可传 `post` 或 `reply` 引用，格式见 [API 说明](API.md#社区页面上下文只读增量)。服务端验证当前可见性，并在模型生成前通过已有审计工具读取；已缓存的社区结果在幂等重放前复核来源。帖子和评论文字仍可能包含用户自填个人信息；列白名单不是自动脱敏。外部模型接收范围、工具审计保存与尚未完成的撤回边界见 [隐私数据台账](../docs/privacy-data-inventory.md)。
+
+当前仅交付读取基础，未实现 AI 专用账号、基础人格版本、社区草稿、批准、发布事务、River 队列或 QQ 接入。不得把此增量视为 M1/M2 完整验收。生产开放前仍需完成来源删除传播、运行中授权代次、留存治理及专门验收；已经发给外部模型的数据无法由本地删除逆向撤回。
 
 ### 安全预警 IP 与离线归属地
 

@@ -101,7 +101,7 @@ func capabilityTokens(value string) []string {
 		return nil
 	}
 	// 中英文校园领域词的最小 token 化；不会把原文写入日志或 Grant。
-	known := []string{"比赛", "竞赛", "成绩", "学分", "课表", "课程", "日程", "空闲", "冲突", "规划", "计划", "政策", "通知", "食堂", "截止", "适合", "推荐", "就业", "学业", "安排"}
+	known := []string{"比赛", "竞赛", "成绩", "学分", "课表", "课程", "日程", "空闲", "冲突", "规划", "计划", "政策", "通知", "食堂", "截止", "适合", "推荐", "就业", "学业", "安排", "社区", "帖子", "评论", "表情"}
 	result := make([]string, 0, len(known)+4)
 	for _, token := range known {
 		if strings.Contains(value, token) {
@@ -133,6 +133,13 @@ func (r *AgentCapabilityRegistry) Public() []AgentCapability {
 		return false
 	}
 	capabilities := []AgentCapability{
+		{
+			ID: "community.read", Version: AgentContractVersion, Provider: "sylulive_go", Lane: "public", Kind: "read",
+			Description: "读取公开水帖、帖子评论和内置表情目录，不增加真人浏览量", Available: toolAvailable("community.get_post"),
+			Tags:       []string{"社区", "帖子", "评论", "表情"},
+			ToolNames:  []string{"community.list_feed", "community.search_posts", "community.get_post", "community.list_replies", "community.get_reply_context", "community.list_stickers"},
+			SideEffect: SideEffectNone, Confirmation: ConfirmationNever, Freshness: FreshnessLive,
+		},
 		{
 			ID: "system.status", Version: AgentContractVersion, Provider: "sylulive_mcp", Lane: "public", Kind: "read",
 			Description: "读取纯能力层契约和健康状态", Available: r != nil,

@@ -214,6 +214,9 @@ func main() {
 		&models.AcademicAccountConfig{},
 		&models.AcademicConfigReceipt{},
 		&models.AcademicIdentityChallenge{},
+		&models.IntegrationDeviceRequest{}, &models.IntegrationBinding{},
+		&models.IntegrationCredential{}, &models.IntegrationAction{},
+		&models.IntegrationAudit{}, &models.IntegrationRateBucket{},
 		&models.EmailVerificationChallenge{},
 		&models.EmailVerificationRequest{},
 		&models.VerificationAttemptBucket{},
@@ -801,6 +804,32 @@ func main() {
 		log.Println("个人教务能力已退役，跳过教务客户端初始化")
 	}
 	authHandler := handlers.NewAuthHandlerWithEmailVerificationAndCleanup(db, cfg.JWTSecret, emailVerification, eduCredentialCleanupJobs)
+	if cfg.IntegrationsEnabled {
+		integrationHandler := handlers.NewIntegrationHandler(db, handlers.IntegrationOptions{
+			PublicOrigin: cfg.IntegrationPublicOrigin, ProposalsEnabled: cfg.IntegrationProposalsEnabled, OwnerPublishEnabled: cfg.IntegrationOwnerPublishEnabled,
+			AfterReplyCommit: func(n models.Notification) {
+				handlers.SendJPushNotification(cfg.JPushAppKey, cfg.JPushMasterSecret, db, n.UserID, n.FromUID, n.RelatedID, n.PostID, n.Content)
+			},
+		})
+		integrationHandler.Register(r, cfg.JWTSecret)
+	}
+	// 关闭功能开关也继续清理历史凭证与过期草稿。
+	go func() {
+		clean := func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := services.NewIntegrationAuthService(db).Purge(ctx); err != nil {
+				log.Printf("[INTEGRATION_CLEANUP] failed")
+			}
+		}
+		clean()
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			clean()
+		}
+	}()
+
 	authHandler.SetSecurityEventService(securityEvents)
 	authHandler.SetSchoolPersonalDataVisible(!cfg.SchoolAuthorityRetired)
 
@@ -1108,10 +1137,20 @@ func main() {
 			}
 		}
 		policyRetriever := ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion)
-		tools := ai.NewCampusMCPTools(
-			db, academicSnapshotService, personalSnapshotService,
+		campusOptions := []ai.CampusMCPOption{
 			ai.WithCampusPolicyRetriever(policyRetriever),
 			ai.WithCampusPersonalDataPermissionReader(aiUserPermissionService),
+		}
+		if cfg.AICommunityReadEnabled {
+			stickers := make([]ai.CommunitySticker, 0)
+			for _, item := range handlers.ListBuiltinStickers() {
+				stickers = append(stickers, ai.CommunitySticker{ID: item.ID, Label: item.Label})
+			}
+			campusOptions = append(campusOptions, ai.WithCampusCommunityReadTools(stickers))
+		}
+		tools := ai.NewCampusMCPTools(
+			db, academicSnapshotService, personalSnapshotService,
+			campusOptions...,
 		)
 		// Campus Agent 只允许创建待确认草稿，确认/执行仍走用户 Action Draft API。
 		tools = append(tools, handlers.NewCampusCalendarActionProposalTool(userCalendarHandler))

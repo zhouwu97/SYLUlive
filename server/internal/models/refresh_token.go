@@ -11,6 +11,7 @@ type RefreshToken struct {
 	TokenFamily  string `gorm:"size:64;not null;index" json:"-"`
 	// 0 表示历史版本会话族；新建或迁移后的记录使用 2，便于识别升级前已轮换的链。
 	FamilyVersion      int        `gorm:"not null;default:0" json:"-"`
+	AuthenticatedAt    *time.Time `json:"-"` // 真实登录时间，轮换不能刷新近期认证证明。
 	ExpiresAt          time.Time  `gorm:"not null;index" json:"expires_at"`
 	LastUsedAt         *time.Time `json:"-"`
 	RevokedAt          *time.Time `gorm:"index" json:"-"`

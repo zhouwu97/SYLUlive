@@ -79,11 +79,16 @@ type Config struct {
 	AIReserveMicroYuan                     int64    // 每次模型调用的最坏成本预留
 	AIInputPriceMicroYuanPerMillionTokens  int64
 	AIOutputPriceMicroYuanPerMillionTokens int64
-	AIPolicyRAGEnabled                     bool     // 政策知识库能力独立开关
-	AILangChainRAGEnabled                  bool     // 政策请求改由 Python LCEL 完整编排
-	AILangChainRAGRolloutPercent           int      // 稳定分配给 LangChain 的账号比例
-	AILegacyRAGEnabled                     bool     // 旧 Go 检索与生成路径独立回滚开关
-	AIAgentEnabled                         bool     // Agent Kernel v5 总开关
+	AIPolicyRAGEnabled                     bool // 政策知识库能力独立开关
+	AILangChainRAGEnabled                  bool // 政策请求改由 Python LCEL 完整编排
+	AILangChainRAGRolloutPercent           int  // 稳定分配给 LangChain 的账号比例
+	AILegacyRAGEnabled                     bool // 旧 Go 检索与生成路径独立回滚开关
+	AIAgentEnabled                         bool // Agent Kernel v5 总开关
+	AICommunityReadEnabled                 bool // 公开水帖/评论/内置表情只读工具，默认关闭
+	IntegrationsEnabled                    bool
+	IntegrationProposalsEnabled            bool
+	IntegrationOwnerPublishEnabled         bool
+	IntegrationPublicOrigin                string
 	AIAgentRolloutPercent                  int      // Agent v5 用户灰度比例
 	AIAgentRolloutUserIDs                  []uint   // Agent v5 显式放行用户
 	AIAgentAppVersionAllowlist             []string // Agent v5 客户端版本白名单
@@ -610,6 +615,14 @@ func Load() *Config {
 		panic(err)
 	}
 
+	integrationEnabled := envBool("INTEGRATIONS_ENABLED", false)
+	integrationProposals := envBool("INTEGRATION_PROPOSALS_ENABLED", false)
+	integrationPublish := envBool("INTEGRATION_OWNER_PUBLISH_ENABLED", false)
+	integrationOrigin := strings.TrimRight(strings.TrimSpace(os.Getenv("INTEGRATION_PUBLIC_ORIGIN")), "/")
+	if err := validateIntegrationConfig(integrationEnabled, integrationProposals, integrationPublish, integrationOrigin, releaseMode); err != nil {
+		panic(err)
+	}
+
 	return &Config{
 		ReleaseMode:                      releaseMode,
 		JWTSecret:                        jwtSecret,
@@ -680,6 +693,11 @@ func Load() *Config {
 		AILangChainRAGRolloutPercent:           aiLangChainRAGRolloutPercent,
 		AILegacyRAGEnabled:                     aiLegacyRAGEnabled,
 		AIAgentEnabled:                         aiAgentEnabled,
+		AICommunityReadEnabled:                 envBool("AI_COMMUNITY_READ_ENABLED", false),
+		IntegrationsEnabled:                    integrationEnabled,
+		IntegrationProposalsEnabled:            integrationProposals,
+		IntegrationOwnerPublishEnabled:         integrationPublish,
+		IntegrationPublicOrigin:                integrationOrigin,
 		AIAgentRolloutPercent:                  aiAgentRolloutPercent,
 		AIAgentRolloutUserIDs:                  aiAgentRolloutUserIDs,
 		AIAgentAppVersionAllowlist:             aiAgentAppVersionAllowlist,
@@ -845,7 +863,7 @@ func envPositiveUintList(name string) []uint {
 
 func approvedAIChatModel(model string) bool {
 	switch model {
-	case "gpt-5.4", "gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.6-terra":
+	case "gpt-5.4", "gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-6-luna", "gpt-6.1-sol":
 		return true
 	default:
 		return false
@@ -872,7 +890,7 @@ func validateAIConfig(
 		return fmt.Errorf("AI_ENABLED=true 时模型名称不能为空")
 	}
 	if !approvedAIChatModel(model) {
-		return fmt.Errorf("AI_CHAT_MODEL 只能是已审核的 gpt-5.4、gpt-5.4-mini、gpt-5.6-luna 或 gpt-5.6-terra")
+		return fmt.Errorf("AI_CHAT_MODEL 只能是已审核的 gpt-5.4、gpt-5.4-mini、gpt-5.6-luna、gpt-5.6-terra、gpt-6-luna 或 gpt-6.1-sol")
 	}
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
@@ -1088,4 +1106,24 @@ func homeFeedV5Percent() int {
 		return 100
 	}
 	return p
+}
+
+func validateIntegrationConfig(enabled, proposals, publish bool, origin string, release bool) error {
+	if (!enabled && (proposals || publish)) || (publish && !proposals) {
+		return fmt.Errorf("集成开关依赖不满足：发布需要提案，提案需要启用集成")
+	}
+	if !enabled {
+		return nil
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" || u.Opaque != "" {
+		return fmt.Errorf("INTEGRATION_PUBLIC_ORIGIN 必须是官方网页的完整 origin，不含路径或凭证")
+	}
+	if u.Scheme == "https" {
+		return nil
+	}
+	if !release && u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1") {
+		return nil
+	}
+	return fmt.Errorf("INTEGRATION_PUBLIC_ORIGIN 必须使用 HTTPS；本地开发允许回环 HTTP")
 }

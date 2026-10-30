@@ -47,11 +47,12 @@ const (
 
 // Post 帖子模型
 type Post struct {
-	ID       uint    `gorm:"primaryKey" json:"id"`
-	Title    string  `gorm:"size:200" json:"title"`           // 标题（水贴可为空）
-	Content  string  `gorm:"type:text" json:"content"`        // Markdown内容
-	BoardID  BoardID `gorm:"not null;index" json:"board_id"`  // 板块ID
-	AuthorID uint    `gorm:"not null;index" json:"author_id"` // 作者ID
+	ContentOrigin string  `gorm:"size:20;not null;default:''" json:"content_origin,omitempty"`
+	ID            uint    `gorm:"primaryKey" json:"id"`
+	Title         string  `gorm:"size:200" json:"title"`           // 标题（水贴可为空）
+	Content       string  `gorm:"type:text" json:"content"`        // Markdown内容
+	BoardID       BoardID `gorm:"not null;index" json:"board_id"`  // 板块ID
+	AuthorID      uint    `gorm:"not null;index" json:"author_id"` // 作者ID
 	// PostType 板块相关类型：
 	//   board_id = BoardShuitie 时，post_type 表示 WaterSection.Slug（如 course_study）。
 	//   board_id = BoardMarket 时，post_type 仍为 marketplace_buy / marketplace_sell 等旧语义。

@@ -5,9 +5,36 @@ import (
 	"log"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"shenliyuan/internal/models"
+	textutils "shenliyuan/internal/utils"
 	"shenliyuan/utils"
 )
+
+// CreateReplyNotification 可参与发布事务；返回 nil 表示自回复或该事件已通知。
+// 站内通知按事件去重，外部推送由调用者在提交后触发。
+func CreateReplyNotification(db *gorm.DB, toUserID, fromUserID, replyID, postID uint, content string) (*models.Notification, error) {
+	if toUserID == 0 || toUserID == fromUserID {
+		return nil, nil
+	}
+	n := models.Notification{
+		UserID: toUserID, Type: "reply", Content: textutils.TruncateGraphemes(content, 80),
+		RelatedID: replyID, PostID: postID, FromUID: fromUserID,
+		DedupKey: fmt.Sprintf("reply:%d", replyID), IsRead: false,
+	}
+	result := db.Clauses(clause.OnConflict{
+		Columns:     []clause.Column{{Name: "user_id"}, {Name: "type"}, {Name: "dedup_key"}},
+		TargetWhere: clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "dedup_key <> ''"}}},
+		DoNothing:   true,
+	}).Create(&n)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &n, nil
+}
 
 type NotificationService struct {
 	db                *gorm.DB

@@ -13,6 +13,12 @@ pnpm dev
 
 访问 `http://127.0.0.1:5173/web/`。默认代理仓库中的 `https://sylulive.online`，会访问真实业务服务。需要本地 Go 服务时先设置 `$env:SYLULIVE_API_ORIGIN='http://127.0.0.1:8080'`，再启动。Go 启动沿用服务端原有环境配置，不把生产密钥复制到前端。
 
+## AstrBot 授权与草稿确认
+
+个人主页“已授权助手”进入 `/web/connected-apps`，核对设备代码、选择 scope、替换/撤销连接；`/web/connected-apps/actions/:id` 显示不可变草稿并由本人确认。提案权限默认不选，模型不能直接发布。近期登录失效时重新登录后再加载；token refresh 不延长近期认证。帖子来源或授权变化时，页面禁止发布并要求重读。
+
+详见 [插件安装与本地配置](../astrbot_plugin_sylulive/README.md)。本地开发务必设置前述 `SYLULIVE_API_ORIGIN`，插件与 `INTEGRATION_PUBLIC_ORIGIN` 均指向本地网页 origin 5173。未启用后端新集成时，这些页面不会伪装成功。该入口不改变现有 Web/Flutter 校园 AI。
+
 ## 扩展安装与本机查询
 
 ```powershell

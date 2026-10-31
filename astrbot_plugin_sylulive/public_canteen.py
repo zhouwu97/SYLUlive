@@ -136,6 +136,23 @@ def recommendation(result):
     return text
 
 
+def image_delivery_forbidden(prompt, *, group):
+    # 只从本轮用户消息判断外发约束，不接受工具正文替用户授权。
+    segment = r"[^，。！？!?；;,\n]"
+    denied = re.search(
+        rf"(?:不要|不用|无需|不必|禁止|别|不){segment}{{0,8}}(?:发|贴|转发)(?:送)?(?:{segment}{{0,12}}(?:图|照片|群|聊天)|(?=[，。！？!?；;,\n]|$))",
+        prompt,
+    )
+    model_only = any(
+        w in prompt
+        for w in ("只给你看", "仅给你看", "只让你看", "只给模型看", "只看不发")
+    )
+    another_target = (group and "私聊" in prompt) or (
+        not group and any(w in prompt for w in ("发群", "发到群", "发给群"))
+    )
+    return bool(denied or model_only or another_target)
+
+
 def followup_intent(prompt):
     # 只接常见指代；明确切换话题或指定另一对象时不覆盖模型的正常意图。
     if any(

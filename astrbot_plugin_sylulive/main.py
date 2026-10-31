@@ -16,7 +16,7 @@ from astrbot.core.agent.message import TextPart
 
 from .client import MAP_PATH, BusinessClient, IntegrationProblem, checked_origin
 from .credential_store import CredentialStore
-from .public_canteen import followup_intent, recommendation
+from .public_canteen import followup_intent, image_delivery_forbidden, recommendation
 from .public_canteen import summary as canteen_summary
 
 COMMUNITY_PRESENTATION = """[SYLUlive 回复展示规范]
@@ -50,6 +50,12 @@ GROUP_PUBLIC_READING = """[SYLUlive 群内范围]
 连接问题请让维护者私聊机器人处理，不在群中索取登录凭据、设备代码或授权链接。
 群内只能使用当前群的公开上下文；不能查看其他群或私聊记录，也不能把私人查询、凭证或记忆发送到本群。管理员身份不能代替 SYLUlive 的账号授权。
 发送公开图片请使用 sylulive_public_image 的 send_to_chat；不使用跨会话发送或本地文件工具。
+"""
+
+PUBLIC_SESSION_READING = """[SYLUlive 公开查询范围]
+当前聊天可匿名查询公开帖子、评论、食堂、图片、地图、资讯和学校校历，不需要绑定校园账号。
+不能使用部署者的账号资料、本人帖子、签到、授权、草稿或私有记忆；不能读取别人的聊天或向其他聊天发送内容。
+公开工具拒绝请求时按实际错误说明，不虚构名为Public Session的后台权限开关。
 """
 
 PUBLIC_GROUP_TOOLS = frozenset(
@@ -222,7 +228,7 @@ def read_kinds(path):
     return set()
 
 
-@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.1.11")
+@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.1.12")
 class SYLUlivePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -320,7 +326,7 @@ class SYLUlivePlugin(Star):
             and str(event.get_platform_id()) == self.platform
         )
 
-    def allowed_public_group(self, event):
+    def allowed_review_group(self, event):
         groups = getattr(self, "config", {}).get("public_read_group_ids", [])
         if not isinstance(groups, list):
             return False
@@ -332,8 +338,30 @@ class SYLUlivePlugin(Star):
             and group in {str(value).strip() for value in groups if str(value).strip()}
         )
 
+    def open_public_reading(self, event):
+        return (
+            bool(self.owner and self.platform)
+            and str(event.get_platform_id()) == self.platform
+            and getattr(self, "config", {}).get("public_read_all_sessions", False)
+            is True
+        )
+
+    def allowed_public_group(self, event):
+        return self.allowed_review_group(event) or (
+            self.open_public_reading(event)
+            and bool(event.get_group_id())
+            and not event.is_private_chat()
+        )
+
     def allowed_reading(self, event):
-        return self.allowed(event) or self.allowed_public_group(event)
+        return (
+            self.allowed(event)
+            or self.allowed_public_group(event)
+            or self.open_public_reading(event)
+        )
+
+    def public_only_session(self, event):
+        return self.allowed_reading(event) and not self.allowed(event)
 
     async def terminate(self):
         await self.client.close()
@@ -407,7 +435,7 @@ class SYLUlivePlugin(Star):
         """只在绑定本人私聊查询今天的签到状态，不执行签到或补签。需要本人单独授权签到权限。"""
         return await self.checkin_result(event, submit=False)
 
-    @filter.command("sylu-eat", alias={"吃什么"})
+    @filter.command("sylu-eat", alias={"吃什么", "今天吃什么"})
     async def eat_command(self, event: AstrMessageEvent):
         event.should_call_llm(True)
         try:
@@ -478,7 +506,7 @@ class SYLUlivePlugin(Star):
         ):
             # 业务结果需通过完成钩子校验后再发出；不改普通闲聊的流式设置。
             event.set_extra("enable_streaming", False)
-        if not self.allowed_public_group(event):
+        if not self.public_only_session(event):
             return
         from astrbot.api import sp
 
@@ -502,7 +530,7 @@ class SYLUlivePlugin(Star):
             req.func_tool = ToolSet(
                 [t for t in req.func_tool.tools if t.name != "send_message_to_user"]
             )
-        if self.allowed_public_group(event):
+        if self.public_only_session(event):
             from astrbot.core.agent.tool import ToolSet
 
             conversation = req.conversation
@@ -527,6 +555,10 @@ class SYLUlivePlugin(Star):
                         tool
                         for tool in req.func_tool.tools
                         if tool.name in PUBLIC_GROUP_TOOLS
+                        and (
+                            event.get_group_id()
+                            or tool.name != "get_group_message_history"
+                        )
                     ]
                 )
         # 只补充获准会话的展示约定，不替换人格，也不删改工具结果中的准确引用。
@@ -537,6 +569,8 @@ class SYLUlivePlugin(Star):
             system += "\n\n" + COMMUNITY_READING
         if self.allowed_public_group(event) and GROUP_PUBLIC_READING not in system:
             system += "\n\n" + GROUP_PUBLIC_READING
+        elif self.public_only_session(event) and PUBLIC_SESSION_READING not in system:
+            system += "\n\n" + PUBLIC_SESSION_READING
         if getattr(self, "config", {}).get("allow_private_review", False):
             system += "\n[私有审核入口] 本机启用了逐条审核。需要私有结果时可提示绑定本人或可信管理员在获准群发送 /sylu-review account（仅本人最小校园账号资料）或 /sylu-review qq QQ号（本机已存聊天）。系统会私聊预览；只有原发起人私聊输入审核码确认才可发回原群。你不能代确认、调用不存在的私人 API，或直接读其他会话；成绩、课表、站内私信尚未接入。\n"
         req.system_prompt = system
@@ -670,12 +704,13 @@ class SYLUlivePlugin(Star):
     async def status(self, event: AstrMessageEvent):
         event.should_call_llm(True)
         try:
-            if self.allowed_public_group(event):
+            if self.public_only_session(event):
                 result = json.loads(
                     await self.tool(event, "GET", "/community/sections")
                 )
                 text = (
-                    "本群 SYLUlive 公开读取可用，可查询校园帖子、评论、版块和表情。账号连接由维护者私聊管理。"
+                    ("本群" if event.get_group_id() else "当前聊天")
+                    + " SYLUlive 公开读取可用，可查询校园帖子、食堂、地图等公开信息。账号连接由维护者私聊管理。"
                     if "sections" in result
                     else result.get(
                         "message", "公开读取暂不可用，请让维护者私聊检查连接。"
@@ -745,13 +780,13 @@ class SYLUlivePlugin(Star):
         )
 
     def read_problem(self, event, error):
-        if self.allowed_public_group(event):
+        if self.public_only_session(event):
             return "校园公开读取暂不可用，请稍后重试或请维护者检查服务与网络。"
         return self.problem(error)
 
     async def tool(self, event, method, path, params=None, payload=None):
         if not self.allowed(event) and not (
-            self.allowed_public_group(event)
+            self.public_only_session(event)
             and method == "GET"
             and public_read_path(path)
         ):
@@ -902,7 +937,10 @@ class SYLUlivePlugin(Star):
 
     async def food(self, event, path, params=None):
         if not self.allowed_reading(event):
-            return {"error": "public_session_required"}
+            return {
+                "error": "public_session_required",
+                "message": "当前聊天未开放校园公开查询，请维护者检查插件读取范围；公开查询不需要绑定账号。",
+            }
         try:
             return await self.client.public_call(path, params=params)
         except IntegrationProblem as error:
@@ -1002,8 +1040,12 @@ class SYLUlivePlugin(Star):
                 f"「{detail['canteen'].get('name', '这家店')}」目前没有可用的公开图片。",
             )
             return
+        send_to_chat = not image_delivery_forbidden(
+            req.prompt or "", group=bool(event.get_group_id())
+        )
+        event.set_extra("sylulive_image_delivery_forbidden", not send_to_chat)
         result = await self.public_image(
-            event, "canteen", recent["id"], send_to_chat=True
+            event, "canteen", recent["id"], send_to_chat=send_to_chat
         )
         if isinstance(result, str):
             event.set_extra(
@@ -1023,13 +1065,17 @@ class SYLUlivePlugin(Star):
         )
         event.set_extra(
             "sylulive_food_caption",
-            f"已发来刚才这家店的{'门面照片' if label == 'storefront' else '公开照片'}。\n"
+            (
+                f"已发来刚才这家店的{'门面照片' if label == 'storefront' else '公开照片'}。\n"
+                if send_to_chat
+                else "已按要求只读取图片，没有发送到当前聊天。\n"
+            )
             + caption,
         )
         req.contexts.append(
             {
                 "role": "user",
-                "content": f"[本轮已实际读取并向当前聊天投递该店图片，类型 {label}。图片随本请求提供，不要重复发送；门面照片不能当成菜品实拍，识别不清不要猜。照片价目仅是拍摄时标价，不代表当前价格或营业状态。]",
+                "content": f"[本轮已实际读取该店图片，类型 {label}；{'已投递当前聊天，不要重复发送' if send_to_chat else '按用户要求未发送，不得声称已发出，也不能另用工具发送'}。图片随本请求提供；门面照片不能当成菜品实拍，识别不清不要猜。照片价目仅是拍摄时标价，不代表当前价格或营业状态。]",
             }
         )
 
@@ -1372,7 +1418,14 @@ class SYLUlivePlugin(Star):
             send_to_chat(boolean): 仅当用户明确要发送图片时设为true；否则只给模型看。
         """
         if not self.allowed_reading(event):
-            return '{"error":"public_session_required"}'
+            return '{"error":"public_session_required","message":"当前聊天未开放校园公开查询，公开查询不需要绑定账号，请维护者检查插件读取范围。"}'
+        if send_to_chat and (
+            event.get_extra("sylulive_image_delivery_forbidden", False)
+            or image_delivery_forbidden(
+                event.message_str or "", group=bool(event.get_group_id())
+            )
+        ):
+            return '{"error":"image_send_not_allowed","message":"按本轮要求未向当前聊天发送图片；可使用send_to_chat=false仅查看。"}'
         target = event.get_extra("sylulive_food_target")
         if target and not (
             (source == "canteen" and source_id == target)

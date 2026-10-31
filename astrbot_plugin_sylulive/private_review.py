@@ -118,7 +118,7 @@ class PrivateReview:
 
     async def request(self, event, source, target=""):
         p = self.plugin
-        if not self.authorized(event) or not p.allowed_public_group(event):
+        if not self.authorized(event) or not p.allowed_review_group(event):
             raise ReviewProblem(
                 "仅获准群内的绑定本人或可信管理员可以发起逐条审核；结果先发本人私聊。"
             )

@@ -168,7 +168,7 @@ async def test_open_public_sessions_still_cannot_use_owner_checkin(group):
 )
 async def test_explicit_no_group_image_blocks_prefetch_and_direct_send(prompt):
     plugin, event, _ = meal_fixture()
-    await plugin.eat_what(event)
+    await plugin.select_meal(event)
     _, follow, _ = fixture()
     follow.message_str = prompt
     follow.send = AsyncMock()

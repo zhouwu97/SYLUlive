@@ -144,7 +144,7 @@ async def test_random_meal_uses_full_real_rankings_without_credentials_and_no_im
     try:
         previous = None
         for _ in range(10):
-            result = json.loads(await plugin.eat_what(event))
+            result = json.loads(await plugin.select_meal(event))
             assert (
                 result["candidate_count"] == 127
                 and result["selection"]["id"] != previous
@@ -167,7 +167,7 @@ async def test_random_meal_uses_full_real_rankings_without_credentials_and_no_im
 async def test_empty_or_invalid_rankings_do_not_invent_meal(rows):
     plugin, event, _ = fixture()
     plugin.client = SimpleNamespace(public_call=AsyncMock(return_value={"items": rows}))
-    result = json.loads(await plugin.eat_what(event))
+    result = json.loads(await plugin.select_meal(event))
     assert result["error"] == "empty_rankings" and "selection" not in result
 
 
@@ -179,10 +179,10 @@ async def test_single_candidate_and_unknown_session_boundaries():
             return_value={"items": [{"id": 1, "name": "唯一店", "rank": 1}]}
         )
     )
-    assert json.loads(await plugin.eat_what(event))["selection"]["name"] == "唯一店"
+    assert json.loads(await plugin.select_meal(event))["selection"]["name"] == "唯一店"
     plugin.config["public_read_group_ids"] = []
     assert (
-        json.loads(await plugin.eat_what(event))["error"] == "public_session_required"
+        json.loads(await plugin.select_meal(event))["error"] == "public_session_required"
     )
     assert plugin.client.public_call.await_count == 1
 

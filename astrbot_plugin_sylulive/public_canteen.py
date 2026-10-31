@@ -127,7 +127,32 @@ def recommendation(result):
         text += "\n目前取到的评价没有文字内容，暂时无法总结口味。"
     else:
         text += "\n目前还没有公开评价，暂时无法判断大家觉得好不好吃。"
-    if detail.get("image_count"):
+    if "image_delivery" in result:
+        delivery = result["image_delivery"]
+        sent = [r for r in delivery if r["state"] == "sent"]
+        labels = {
+            "storefront": "门面照", "dish_photo": "菜品实拍", "review": "评价配图",
+        }
+        if sent:
+            text += "\n已附：" + "、".join(labels[r["kind"]] for r in sent) + "。"
+        if result.get("images_withheld"):
+            text += "\n按要求仅文字推荐，未发送图片。"
+        elif any(r["state"] == "uncertain" for r in delivery):
+            text += "\n有图片的投递结果不确定，本轮不自动重发。"
+        elif any(r["state"] == "failed" for r in delivery):
+            text += "\n部分图片本次未能取得或发送，不能当作已收到。"
+        elif not delivery and detail.get("dish_images_error"):
+            text += "\n菜品图库暂时读取失败，本次未发送图片，稍后可再试。"
+        elif not delivery:
+            text += "\n目前没有可用的公开图片。"
+        if detail.get("dish_images_error"):
+            text += "\n菜品实拍暂未读到，不能确认这家是否有实物图。"
+        elif not result.get("images_withheld") and not any(
+            r["kind"] == "dish_photo" for r in delivery
+        ):
+            text += "\n暂未找到这家的已审核菜品实拍；门面照和评价配图不等于实物图。"
+        text += "\n不想吃这家可以说“换一家”。"
+    elif detail.get("image_count"):
         text += (
             "\n有公开图片，想看可以说“看看这家的图片”；也可以继续问评价或让我换一家。"
         )

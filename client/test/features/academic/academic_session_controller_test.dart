@@ -21,6 +21,7 @@ import 'package:shenliyuan/features/academic/storage/academic_persistence_policy
 import 'package:shenliyuan/features/academic/storage/academic_storage_preferences.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
+import '../../helpers/golden_viewport.dart';
 
 void main() {
   for (final failures in [1, 2]) {
@@ -98,6 +99,7 @@ void main() {
   });
 
   testWidgets('研究生验证码连续两次自动失败后才显示人工输入', (tester) async {
+    await setGoldenViewport(tester, GoldenViewports.phone360x800);
     AppPreferencesStore.setMockInitialValues({});
     final png = base64Decode(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF1cAAAAASUVORK5CYII=',
@@ -146,6 +148,12 @@ void main() {
 
     expect(source.captchaSubmissions, 2);
     expect(find.text('请输入验证码'), findsOneWidget);
+    expect(
+      tester.getRect(find.byType(SingleChildScrollView).first).overlaps(
+            tester.getRect(find.text('请输入验证码')),
+          ),
+      isTrue,
+    );
     expect(find.widgetWithText(FilledButton, '继续登录'), findsOneWidget);
     expect(find.text('密码已在本次登录中保留，无需重新输入'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -779,6 +787,37 @@ void main() {
           .saveCredentials,
       isTrue,
     );
+    controller.dispose();
+  });
+
+  testWidgets('本机教务拒绝凭据时显示学校返回的错误', (tester) async {
+    await setGoldenViewport(tester, GoldenViewports.phone360x800);
+    final source = _FakeAcademicDataSource(
+      loginResult: const InvalidCredentials(message: '教务账号或密码错误'),
+    );
+    final controller = _newController(source);
+    await controller.syncAppUser('app-user-a');
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: AcademicLoginDialog(
+          controller: controller,
+          coordinator: _newCoordinator(controller,
+              _MemoryAcademicCredentialStore(), MemoryPreferencesStore()),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).at(0), '2026000001');
+    await tester.enterText(find.byType(TextFormField).at(1), 'fixture');
+    await tester.tap(find.widgetWithText(FilledButton, '登录教务'));
+    await tester.pumpAndSettle();
+
+    final error = find.text('教务账号或密码错误');
+    expect(error, findsOneWidget);
+    expect(tester.getRect(find.byType(SingleChildScrollView).first)
+        .overlaps(tester.getRect(error)), isTrue);
+    expect(find.widgetWithText(FilledButton, '登录教务'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     controller.dispose();
   });
 

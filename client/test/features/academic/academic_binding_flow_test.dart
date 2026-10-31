@@ -95,6 +95,7 @@ void main() {
   bool rejectRevoke = false;
   bool expireSession = false;
   bool rejectResume = false;
+  bool rejectBind = false;
   int revokeStatus = 200;
   Completer<void>? loginGate;
 
@@ -104,6 +105,7 @@ void main() {
     rejectRevoke = false;
     expireSession = false;
     rejectResume = false;
+    rejectBind = false;
     revokeStatus = 200;
     loginGate = null;
     requests = [];
@@ -113,6 +115,14 @@ void main() {
         requests.add(options);
         if (options.path == '/edu/bind') {
           if (loginGate != null) await loginGate!.future;
+          if (rejectBind) {
+            handler.reject(DioException(
+              requestOptions: options,
+              type: DioExceptionType.connectionError,
+              message: '网络连接失败',
+            ));
+            return;
+          }
           authorized = true;
         }
         if (options.path == '/edu/session/resume') {
@@ -257,6 +267,51 @@ void main() {
         return preferences.saveAcademicData;
       });
       expect(storedChoice, saveData);
+    });
+  }
+
+  for (final scaler in [TextScaler.noScaling, GoldenTextProfile.large.scaler]) {
+    testWidgets('绑定失败后立即显示原因并允许重试：$scaler', (tester) async {
+      await openDialog(tester, scaler: scaler);
+      rejectBind = true;
+      await tester.enterText(find.byType(TextFormField).at(0), '2026000001');
+      await tester.enterText(find.byType(TextFormField).at(1), 'test-password');
+      await tester.ensureVisible(find.byType(CheckboxListTile));
+      await tester.tap(find.byType(CheckboxListTile));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '同意并绑定'));
+      for (var i = 0; i < 100; i++) {
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)));
+        await tester.pump(const Duration(milliseconds: 20));
+        if (requests.any((r) => r.path == '/edu/bind') &&
+            find.widgetWithText(FilledButton, '同意并绑定').evaluate().isNotEmpty) {
+          break;
+        }
+      }
+      await tester.pumpAndSettle();
+      expect(requests.where((r) => r.path == '/edu/bind'), hasLength(1));
+      final error = find.text('旧教务代理暂时不可用，请稍后重试');
+      expect(error, findsWidgets);
+      final viewport = tester.getRect(find.byType(SingleChildScrollView).first);
+      expect(viewport.overlaps(tester.getRect(error.first)), isTrue);
+      expect(tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, '同意并绑定'),
+      ).onPressed, isNotNull);
+      rejectBind = false;
+      await tester.tap(find.widgetWithText(FilledButton, '同意并绑定'));
+      for (var i = 0;
+          i < 100 && find.byType(AcademicLoginDialog).evaluate().isNotEmpty;
+          i++) {
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)));
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      await tester.pumpAndSettle();
+      expect(find.byType(AcademicLoginDialog), findsNothing);
+      expect(requests.where((r) => r.path == '/edu/bind'), hasLength(2));
+      expect(controller.isAuthenticated, isTrue);
+      expect(tester.takeException(), isNull);
     });
   }
 

@@ -806,6 +806,15 @@ class SYLUlivePlugin(Star):
                 event, f"/api/canteens/{canteen_id}/dishes/{source_id}"
             )
             images = [{"url": p.get("image")} for p in result.get("photos", [])]
+        elif source == "canteen":
+            result = await self.food(
+                event, "/api/canteens/rankings", {"sort": "composite"}
+            )
+            images = [
+                {"url": item["image"]}
+                for item in result.get("items", [])
+                if item.get("id") == source_id and item.get("image")
+            ]
         else:
             raise IntegrationProblem("invalid_image_source")
         if "error" in result:
@@ -824,10 +833,10 @@ class SYLUlivePlugin(Star):
         canteen_id: int = 0,
         send_to_chat: bool = False,
     ):
-        """真正把一张公开图片交给当前模型理解，可按用户要求发送到当前聊天。仅限可见帖子、正常评论和已审核菜品实拍，不接受任意 URL、文件路径或接收人。每轮最多2张，GIF只查看首帧；不得声称看完未读取图片。
+        """真正把一张公开图片交给当前模型理解，可按用户要求发送到当前聊天。仅限可见帖子、正常评论、公开食堂门面和已审核菜品实拍，不接受任意 URL、文件路径或接收人。每轮最多2张，GIF只查看首帧；不得声称看完未读取图片。
 
         Args:
-            source(string): post 帖子、reply 评论、dish 菜品。
+            source(string): post 帖子、reply 评论、dish 菜品、canteen 食堂门面。
             source_id(number): 对应帖子、评论或菜品编号。
             image_index(number): 图片序号，从1开始。
             canteen_id(number): source=dish时必填所属食堂编号，其他为0。

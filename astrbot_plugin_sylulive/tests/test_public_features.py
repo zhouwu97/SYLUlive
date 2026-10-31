@@ -329,3 +329,24 @@ async def test_business_reply_guard_prevents_streaming_unverified_text():
     chat.message_str = "你好"
     await plugin.isolate_public_group_knowledge(chat)
     assert chat.get_extra("enable_streaming") is None
+
+
+@pytest.mark.asyncio
+async def test_canteen_cover_does_not_require_a_dish_photo_or_private_token():
+    plugin, event, _ = fixture()
+    plugin.food = AsyncMock(
+        return_value={
+            "items": [{"id": 34, "image": "/uploads/shop.jpg", "dish_count": 0}]
+        }
+    )
+    assert await plugin.image_reference(event, "canteen", 34, 0, 1) == (
+        "/uploads/shop.jpg",
+        1,
+    )
+    plugin.food.assert_awaited_with(
+        event, "/api/canteens/rankings", {"sort": "composite"}
+    )
+    from astrbot_plugin_sylulive.client import IntegrationProblem
+
+    with pytest.raises(IntegrationProblem):
+        await plugin.image_reference(event, "canteen", 99, 0, 1)

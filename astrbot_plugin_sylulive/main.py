@@ -367,6 +367,8 @@ class SYLUlivePlugin(Star):
             system += "\n\n" + COMMUNITY_READING
         if self.allowed_public_group(event) and GROUP_PUBLIC_READING not in system:
             system += "\n\n" + GROUP_PUBLIC_READING
+        if getattr(self, "config", {}).get("allow_private_review", False):
+            system += "\n[私有审核入口] 本机启用了逐条审核。需要私有结果时可提示绑定本人或可信管理员在获准群发送 /sylu-review account（仅本人最小校园账号资料）或 /sylu-review qq QQ号（本机已存聊天）。系统会私聊预览；只有原发起人私聊输入审核码确认才可发回原群。你不能代确认、调用不存在的私人 API，或直接读其他会话；成绩、课表、站内私信尚未接入。\n"
         req.system_prompt = system
         required = required_read_kinds(req)
         event.set_extra("sylulive_required_reads", required)

@@ -17,6 +17,8 @@ INTEGRATION_PUBLIC_ORIGIN=https://sylulive.online
 
 插件 `server_origin` 同为 `https://sylulive.online`、`allow_proposals=false`。生产数据库和服务开关只能在维护者明确批准本次发布、备份与门禁就绪后修改。后两项开关不能因读取验收通过自动开启。
 
+需要指定群共享公开读取时，在插件中显式配置 `public_read_group_ids`，并在 AstrBot 接收白名单允许对应群。群仅开放公开帖子、评论、版块和表情读取；账号连接/断开、本人帖子、草稿和动作查询仍限维护者私聊。群状态检查只查询公开资源，不能展示绑定账号昵称或授权链接。默认群列表为空，不通过放宽私人接口鉴权实现群功能。
+
 ## 发布前
 
 1. 固定不可变候选 SHA，完整测试并按开发规范核验 CI/安全证据。新增 `astrbot-plugin` job 使用真实 AstrBot SDK；PostgreSQL job 显式运行 `TestIntegration` 并提供本机专用测试 DSN，不能让这些测试因缺环境静默跳过。

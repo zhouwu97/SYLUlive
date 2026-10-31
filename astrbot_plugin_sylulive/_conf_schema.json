@@ -2,6 +2,7 @@
  "server_origin":{"description":"SYLUlive 官方服务 origin（HTTPS，不含路径）；本地测试允许回环 HTTP","type":"string","default":"https://sylulive.online"},
  "owner_platform_id":{"description":"AstrBot 消息平台实例 ID，必须与本人的私聊来源一致","type":"string","default":""},
  "owner_sender_id":{"description":"仅允许此消息发送者在私聊使用插件；QQ 平台填本人 QQ 号。这是本地路由规则，不是 SYLUlive 身份证明","type":"string","default":""},
+ "public_read_group_ids":{"description":"允许共享公开帖子、评论、版块和表情查询的群号列表；使用上方平台实例。默认不开放群。不会开放本人资料、绑定、草稿或发布权限","type":"list","default":[]},
  "installation_name":{"description":"官网显示的安装名称（由本机提供）","type":"string","default":"我的 AstrBot"},
  "allow_proposals":{"description":"请求创建发帖/评论草稿的权限；仍须本人在官网逐次确认发布","type":"bool","default":false}
 }

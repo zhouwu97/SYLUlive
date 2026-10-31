@@ -41,9 +41,11 @@ class BusinessClientFixture:
             raise IntegrationProblem("network_unavailable")
         return {"user_code": "SYNTHETIC", "verification_uri": "https://fixture.invalid/authorize"}
 
-    async def call(self, *args):
+    async def call(self, *args, **kwargs):
         if self.fail:
             raise IntegrationProblem("connect_first")
+        if args[1] == "/community/sections":
+            return {"sections": []}
         return {"account": {"id": 1, "nickname": "synthetic"}}
 
     async def disconnect(self):
@@ -79,7 +81,7 @@ def message(sender):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("command", ["connect", "status", "disconnect"])
-@pytest.mark.parametrize("sender", ["owner", "other"])
+@pytest.mark.parametrize("sender", ["owner", "other", "group"])
 @pytest.mark.parametrize("fail", [True, False])
 async def test_business_command_never_falls_through_to_default_agent(monkeypatch, command, sender, fail):
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
@@ -87,9 +89,12 @@ async def test_business_command_never_falls_through_to_default_agent(monkeypatch
     plugin.owner = "owner"
     plugin.platform = "synthetic-platform"
     plugin.installation = "synthetic-installation"
-    plugin.config = {}
+    plugin.config = {"public_read_group_ids": ["synthetic-group"]}
     plugin.client = BusinessClientFixture(fail)
     event = message(sender)
+    if sender == "group":
+        event.message_obj.type = MessageType.GROUP_MESSAGE
+        event.message_obj.group_id = "synthetic-group"
     metadata = SimpleNamespace(
         handler=getattr(plugin, command), handler_name=command,
         handler_full_name="synthetic." + command,
@@ -112,7 +117,7 @@ async def test_business_command_never_falls_through_to_default_agent(monkeypatch
             responses.append("".join(getattr(c, "text", "") for c in result.chain))
     assert stage.agent_sub_stage.calls == 0, "Business command triggered a second model reply"
     assert event.is_stopped(), "Command must terminate propagation after its response"
-    assert len(responses) == (1 if sender == "owner" or command == "connect" else 0)
+    assert len(responses) == (1 if sender in ("owner", "group") or command == "connect" else 0)
 
 
 def test_connection_error_does_not_claim_a_publish_was_attempted():

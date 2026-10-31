@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -11,6 +12,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"shenliyuan/internal/middleware"
@@ -131,6 +133,32 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 	var preview services.IntegrationActionPreview
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &preview))
 	decision := services.IntegrationActionDecision{Allow: true, Nonce: preview.Nonce, Version: preview.Action.Version, PayloadHash: preview.Action.PayloadHash}
+	// 真实事务已经提交，但确认响应在网络上超时；重试不得再次创建评论或通知。
+	committed, releaseResponse := make(chan struct{}), make(chan struct{})
+	lossy := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		recorder := httptest.NewRecorder()
+		r.ServeHTTP(recorder, request)
+		close(committed)
+		<-releaseResponse
+	}))
+	defer lossy.Close()
+	encodedDecision, err := json.Marshal(decision)
+	require.NoError(t, err)
+	request, err := http.NewRequest("POST", lossy.URL+actionPath+"/decision", strings.NewReader(string(encodedDecision)))
+	require.NoError(t, err)
+	request.Header.Set("Authorization", "Bearer "+jwt)
+	request.Header.Set("Content-Type", "application/json")
+	lost, networkErr := (&http.Client{Timeout: time.Second}).Do(request)
+	close(releaseResponse)
+	if lost != nil {
+		_ = lost.Body.Close()
+	}
+	require.True(t, errors.Is(networkErr, context.DeadlineExceeded), "确认响应应在事务提交后超时: %v", networkErr)
+	select {
+	case <-committed:
+	case <-time.After(time.Second):
+		t.Fatal("确认请求未进入真实处理器")
+	}
 	for i := 0; i < 2; i++ {
 		w = postJSON(actionPath+"/decision", jwt, decision)
 		require.Equal(t, 200, w.Code, w.Body.String())

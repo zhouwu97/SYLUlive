@@ -942,6 +942,9 @@ func originalSnapshotStatus(snapshot, fallback string) string {
 // 只有仍为 handled 的原举报会执行回滚，避免重复结案时重复扣减计数。
 func applyAppealPass(tx *gorm.DB, appeal models.Appeal) error {
 	if appeal.TargetType == "reply" {
+		if _, err := services.LockPostStatusForReply(tx, appeal.PostID); err != nil {
+			return err
+		}
 		originalStatus := appeal.OriginalTargetStatus
 		if originalStatus == "" {
 			originalStatus = string(models.ReplyStatusNormal)

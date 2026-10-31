@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 	textutils "shenliyuan/internal/utils"
 	"shenliyuan/utils"
 
@@ -461,19 +462,8 @@ func (h *NotificationHandler) GetUnreadReplyNotifications(c *gin.Context) {
 
 // CreateReplyNotification 创建回复通知（被 reply handler 调用）
 func CreateReplyNotification(db *gorm.DB, toUserID, fromUserID, replyID, postID uint, content string) error {
-	if toUserID == fromUserID {
-		return nil // 不通知自己
-	}
-	notification := models.Notification{
-		UserID:    toUserID,
-		Type:      "reply",
-		Content:   content,
-		RelatedID: replyID,
-		PostID:    postID,
-		FromUID:   fromUserID,
-		IsRead:    false,
-	}
-	return db.Create(&notification).Error
+	_, err := services.CreateReplyNotification(db, toUserID, fromUserID, replyID, postID, content)
+	return err
 }
 
 // CreateAppealNotification 写入公众法庭业务通知，dedupKey 保证定时任务重试不会重复提醒。
@@ -577,10 +567,13 @@ func replyPushExtras(toUserID, replyID, postID uint) map[string]interface{} {
 
 // CreateReplyNotificationFull 创建回复通知并触发极光推送
 func CreateReplyNotificationFull(jpushAppKey, jpushMasterSecret string, db *gorm.DB, toUserID, fromUserID, replyID, postID uint, content string) error {
-	if err := CreateReplyNotification(db, toUserID, fromUserID, replyID, postID, content); err != nil {
+	notification, err := services.CreateReplyNotification(db, toUserID, fromUserID, replyID, postID, content)
+	if err != nil {
 		return err
 	}
-	SendJPushNotification(jpushAppKey, jpushMasterSecret, db, toUserID, fromUserID, replyID, postID, content)
+	if notification != nil {
+		SendJPushNotification(jpushAppKey, jpushMasterSecret, db, toUserID, fromUserID, replyID, postID, notification.Content)
+	}
 	return nil
 }
 

@@ -86,6 +86,11 @@ func AppVersionMiddleware(db *gorm.DB, enabled, allowMissingVersionHeaders bool)
 
 // isAppVersionExempt 返回在强制更新期间仍必须能访问的接口。
 func isAppVersionExempt(path string) bool {
+	// 授权插件和官网不是 Android APK；权限仍由各自的 token/本人登录校验。
+	if isOAuthProtocolPath(path) || path == "/api/connected-apps" || strings.HasPrefix(path, "/api/connected-apps/") ||
+		path == "/api/integrations/v1" || strings.HasPrefix(path, "/api/integrations/v1/") {
+		return true
+	}
 	if path == "/health" || path == "/api/app/update" {
 		return true
 	}

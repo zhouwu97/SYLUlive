@@ -126,3 +126,20 @@ func TestAppVersionMiddlewareAllowsRequestsBeforeAnyRelease(t *testing.T) {
 	r.ServeHTTP(response, appVersionRequest(http.MethodGet, "/api/business", "1"))
 	require.Equal(t, http.StatusNoContent, response.Code)
 }
+
+func TestAppVersionMiddlewareSeparatesAssistantAndAndroidEndpoints(t *testing.T) {
+	db := newAppVersionTestDB(t)
+	createPublishedRelease(t, db, 1603, 1602)
+	r := newAppVersionRouter(db, false)
+	for _, path := range []string{"/api/oauth/device_authorization", "/api/oauth/token", "/api/oauth/revoke", "/api/connected-apps", "/api/connected-apps/device-requests/lookup", "/api/integrations/v1/binding"} {
+		r.GET(path, func(c *gin.Context) { c.Status(http.StatusUnauthorized) })
+		response := httptest.NewRecorder()
+		r.ServeHTTP(response, appVersionRequest(http.MethodGet, path, ""))
+		require.Equal(t, http.StatusUnauthorized, response.Code, path)
+	}
+	for _, path := range []string{"/api/business", "/api/oauth/unknown", "/api/connected-apps-other", "/api/integrations/v10/binding"} {
+		response := httptest.NewRecorder()
+		r.ServeHTTP(response, appVersionRequest(http.MethodGet, path, ""))
+		require.Equal(t, http.StatusUpgradeRequired, response.Code, path)
+	}
+}

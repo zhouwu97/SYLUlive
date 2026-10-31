@@ -16,6 +16,25 @@
 - **内容类型 (Content-Type)**: `application/json` (除文件上传外)
 - **鉴权方式 (Authentication)**: 大部分接口依赖 JWT 进行鉴权，通过 `Authorization: Bearer <token>` 传递。
 
+### 社区页面上下文（只读增量）
+
+现有 `POST /api/ai/runs` 的 `context.context_refs` 增加 `post`、`reply` 两种引用，ID 为十进制字符串。仅在服务端开启 `AI_COMMUNITY_READ_ENABLED` 且相应读取工具已注册时接受；继续使用当前 JWT 身份和现有 AI 额度。
+
+~~~json
+{
+  "client_request_id": "7ad76984-81e7-45fd-b4c8-f5c7319f971b",
+  "message": "请阅读这条讨论，概括大家的意见",
+  "context": {
+    "entrypoint": "post_detail",
+    "context_refs": [{"type": "post", "id": "123"}]
+  }
+}
+~~~
+
+帖子引用在生成前读取当前正文和首批评论；评论引用读取评论及所属帖子、适用的根评论与精确回复目标。更多评论由只读工具分页获取。隐藏、删除、非水帖或投票等范围外来源返回 HTTP 422 / `invalid_agent_context`，与不存在的 ID 一致，不返回私有内容。通过验证后状态改变，预读取仍重新查询；预读取失败沿用现有 Run 失败/不完整结果处理，不根据客户端对象猜测事实。
+
+此接口不创建社区评论，不改变真人浏览统计；不会自动查询私信或上传图片。Flutter 页面入口和审核发布 UI 尚未在该增量中交付。
+
 ---
 
 ## 目录
@@ -413,3 +432,40 @@ FEED-H1 加固：
 远端上传相关错误码包括：`request_body_too_large`、`invalid_upload_session_request`、`privacy_confirmation_required`、`invalid_file_size`、`file_too_large`、`upload_session_not_found`、`upload_session_expired`、`upload_session_invalid`、`upload_receipt_invalid`、`upload_retry_exhausted`、`upload_unclaimed_quota_exceeded`、`exam_paper_pending_limit_reached`、`duplicate_exam_paper`、`storage_unavailable` 和 `client_upgrade_required`。两个上传会话 JSON 接口的请求体上限均为 64 KiB，超限返回 HTTP `413`。上传 token 只能对应一个上传会话和一个 `expected_size`；首次成功后，同一 token 的重放返回原始回执且不会重复落盘，其他 token 不得消费该会话。独立文件服务对同一会话最多记录 3 次上传失败，第 4 次在读取请求体和占用 PDF 校验槽位前返回 HTTP `429` 与 `upload_retry_exhausted`；失败事实会保留至授权过期后 24 小时，孤立且超过保留期的记录由维护任务清理，避免重启或维护意外重置有效重试限制。每个用户的未认领文件实际字节数和进行中上传预留量合计最多 100 MiB，超限同样在读取请求体前返回 HTTP `429` 与 `upload_unclaimed_quota_exceeded`。文件被认领、移入回收站或作为 7 天未认领文件清理后会持久释放配额。损坏的 `uploading` 或 `completed` 会话状态会按单份 20 MiB 保守计入配额，并由维护任务隔离为 `.corrupt` 文件；隔离文件保留 7 天后清理。`readonly-remote` 模式禁止创建新上传会话和旧 multipart 上传，但允许已创建会话提交回执完成入库。
 
 文件存储维护结果除原有文件、回收站和会话清理计数外，还包含 `upload_failure_records_removed`、`corrupt_upload_session_records_quarantined`、`corrupt_upload_session_records_removed` 和 `upload_session_temp_files_removed`，分别表示过期孤立失败记录、当次隔离的损坏状态、过期隔离状态及崩溃遗留会话临时文件的清理数量。
+
+
+## 个人 AstrBot 集成（默认关闭）
+
+启用与真实联调状态见 [插件 README](../astrbot_plugin_sylulive/README.md)。主模型在人部署的 AstrBot，业务仍由 Go 统一校验。以下 OAuth/集成/连接管理接口绕过全局响应幂等缓存，不能缓存凭证、nonce 或重放旧来源；动作使用业务内 `operation_id`/`action_id`。
+
+| 路径 | 身份 | 用途 |
+| --- | --- | --- |
+| `POST /api/oauth/device_authorization` | 公开客户端 `client_id=sylulive-astrbot` | URLencoded：`installation_id` UUID、自报名称、scope；返回 RFC8628 字段，有效10分钟 |
+| `POST /api/oauth/token` | 设备 secret 或 refresh token | URLencoded；device grant 或 refresh grant。access 10分钟、refresh闲置7天、绝对30天；旧 refresh 重用撤销该授权 |
+| `POST /api/oauth/revoke` | 所撤凭证 | RFC7009，同属授权一并撤销；不会注销 App 登录 |
+| `GET /api/connected-apps` | App 登录 | 本人的连接列表，不返回凭证 |
+| `POST /api/connected-apps/device-requests/lookup` | App 登录且10分钟内真实登录 | JSON `user_code`，返回待核对范围与一次性确认 nonce |
+| `POST /api/connected-apps/device-requests/:id/decision` | 同上 | `allow`、`scopes`、`confirmation_nonce`；替换还须旧 `replace_binding_id` 与 `expected_epoch` |
+| `POST /api/connected-apps/:id/revoke` | 本人 App 登录 | 立即撤销，无近期登录额外门槛 |
+| `GET /api/integrations/v1/binding` | scoped Bearer | `profile:read_minimal`，账号 ID 与昵称、授权范围 |
+| `GET /api/integrations/v1/community/posts` | `community:read` | `query`、`after_id`、`limit`（1至20），最近/搜索公开普通水帖 |
+| `GET /api/integrations/v1/community/posts/:id` | 同上 | 文字详情、`post_id`、`source_version`；`data` 就是帖子 DTO |
+| `GET /api/integrations/v1/community/posts/:id/replies` | 同上 | 评论分页，`after_id` 与 `limit` |
+| `GET /api/integrations/v1/community/replies/:id/context` | 同上 | 线程根和精确目标；删除正文不恢复 |
+| `GET /api/integrations/v1/community/stickers` | 同上 | `query`、`limit`、`after_sticker_id`，内置表情 ID 与标签 |
+| `GET /api/integrations/v1/community/sections` | 同上 | 活跃版块 slug 与标题 |
+| `GET /api/integrations/v1/me/public-posts` | `content:read_own_public` | 服务端从授权推导本人；不接收 owner 参数，仅正常普通社区帖子 |
+| `POST /api/integrations/v1/actions` | `community:propose` | 只创建草稿，不能发布；需开启提案开关 |
+| `GET /api/integrations/v1/actions/:id` | `actions:read_own` | 本授权动作，不能得到发布确认 nonce；来源变更时阻断旧草稿正文 |
+| `GET /api/connected-apps/actions/:id` | 本人 App 登录且近期认证 | 草稿预览与5分钟确认 nonce；本人官网使用 |
+| `POST /api/connected-apps/actions/:id/decision` | 同上 | `allow`、`draft_version`、`payload_hash`、`confirmation_nonce`；发布需独立开关 |
+
+助手凭证不能调用普通 App API，App JWT 也不能调用集成 API。允许的 scope 为 `profile:read_minimal community:read content:read_own_public actions:read_own community:propose` 的子集；提案必须同时批准读取和结果查询。普通教务本地声明不满足可信核验要求；无权限失败返回稳定 `code`，OAuth 错误使用 `error`。所有含授权数据的响应设置 `Cache-Control: no-store`。
+
+评论草稿 JSON：
+
+```json
+{"operation_id":"YOUR_UUID","kind":"reply","post_id":123,"source_version":"刚读取的64位版本摘要","content":"正文","sticker_id":"可选白名单表情","reply_to_reply_id":0,"reply_source_version":""}
+```
+
+精确回复需真实目标 ID 和目标 `source_version`；父线程与通知用户由服务器推导，不接受伪造 author、role 或 parent。发帖草稿使用 `kind=post`、有效 `post_type`、`title`（可空）、`content`，不接受评论字段、附件、市场/投票/公告操作。响应是 `action_id`、`state`、`review_uri`、`expires_at`，不表示发布完成。单 owner 每24小时最多30个新草稿、20次正式助手发布，并计入原有发帖/评论额度；发布事务内完成当前权限、来源/版块/禁言、额度、内容、计数、动作状态与审计的一致性更新。统计变化不影响来源版本，内容变化需要重读重建。助手评论与站内回复通知原子提交，按评论与接收人去重，自回复不提醒；精确回复通知目标评论作者。提交后复用现有推送流程，外部投递失败不回滚已提交评论，也不宣称必达。创建/删除/评论治理/恢复按先帖子后评论顺序加锁。已使用旧refresh在摘要保留期内重放仍撤销同一授权，不因旧闲置期限过期而跳过检测。无奖励、无后台队列、无无人确认发布。

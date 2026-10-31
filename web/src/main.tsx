@@ -32,6 +32,7 @@ import { AiPage } from "./ai";
 import { Feedback, TicketDetail, Notifications } from "./feedback";
 import { Community, PostDetail } from "./community";
 import { AcademicProvider, Schedule, Grades } from "./academic";
+import { ConnectedApps, ConnectedAction } from "./connected-apps";
 import { Messages } from "./messages";
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -357,6 +358,8 @@ function Shell() {
                   <Route path="/ai" element={<AiPage />} />
                   <Route path="/toolbox" element={<Toolbox />} />
                   <Route path="/profile" element={<Profile />} />
+                  <Route path="/connected-apps" element={<ConnectedApps />} />
+                  <Route path="/connected-apps/actions/:id" element={<ConnectedAction />} />
                   <Route path="/admin" element={<Admin />} />
                   <Route path="*" element={<Dashboard />} />
                 </Routes>

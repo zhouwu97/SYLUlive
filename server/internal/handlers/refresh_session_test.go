@@ -37,6 +37,9 @@ func TestRefreshSessionRotatesAndStoresOnlyHash(t *testing.T) {
 	require.NotEqual(t, raw, stored.TokenHash)
 	require.NotEqual(t, raw, family)
 	require.Equal(t, family, stored.TokenFamily)
+	require.NotNil(t, stored.AuthenticatedAt)
+	loginAt := time.Now().Add(-2 * time.Hour).Truncate(time.Millisecond)
+	require.NoError(t, db.Model(&stored).Update("authenticated_at", loginAt).Error)
 
 	access, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, "test-secret", family)
 	require.NoError(t, err)
@@ -61,6 +64,10 @@ func TestRefreshSessionRotatesAndStoresOnlyHash(t *testing.T) {
 	var count int64
 	db.Model(&models.RefreshToken{}).Where("revoked_at IS NULL").Count(&count)
 	require.Equal(t, int64(1), count)
+	var rotated models.RefreshToken
+	require.NoError(t, db.Where("revoked_at IS NULL").First(&rotated).Error)
+	require.NotNil(t, rotated.AuthenticatedAt)
+	require.True(t, rotated.AuthenticatedAt.Equal(loginAt), "刷新不能延长近期本人认证时间")
 	require.True(t, stored.ExpiresAt.After(time.Now()))
 	var firstPayload map[string]interface{}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &firstPayload))

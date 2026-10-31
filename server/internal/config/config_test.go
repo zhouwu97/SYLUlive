@@ -346,6 +346,9 @@ func TestLoadReleaseAcceptsDistinctExamPaperStorageSecrets(t *testing.T) {
 }
 
 func setBaseConfigEnv(t *testing.T, ginMode string) {
+	t.Setenv("INTEGRATIONS_ENABLED", "false")
+	t.Setenv("INTEGRATION_PROPOSALS_ENABLED", "false")
+	t.Setenv("INTEGRATION_OWNER_PUBLISH_ENABLED", "false")
 	t.Helper()
 	t.Setenv("GIN_MODE", ginMode)
 	t.Setenv("JWT_SECRET", "realistic-release-secret-0123456789")
@@ -372,6 +375,7 @@ func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "")
 	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "")
 	t.Setenv("AI_ENABLED", "false")
+	t.Setenv("AI_COMMUNITY_READ_ENABLED", "")
 	t.Setenv("AI_PROVIDER", "openai-compatible")
 	t.Setenv("AI_API_KEY", "")
 	t.Setenv("AI_BASE_URL", "https://api.openai.com/v1")
@@ -390,10 +394,17 @@ func TestLoadAIConfigDefaultsDisabled(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	cfg := Load()
 	require.False(t, cfg.AIEnabled)
+	require.False(t, cfg.AICommunityReadEnabled)
 	require.Empty(t, cfg.AIAPIKey)
 	require.Equal(t, "gpt-5.4", cfg.AIChatModel)
 	require.Equal(t, "openai-compatible", cfg.AIProvider)
 	require.False(t, cfg.AILangChainRAGEnabled)
+}
+
+func TestLoadCommunityReadRequiresExplicitOptIn(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_COMMUNITY_READ_ENABLED", "true")
+	require.True(t, Load().AICommunityReadEnabled)
 }
 
 func TestLoadAgentDefaultsDisabledWhenLegacyAIIsEnabled(t *testing.T) {

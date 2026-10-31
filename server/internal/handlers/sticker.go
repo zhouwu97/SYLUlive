@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -34,6 +35,21 @@ type stickerCatalogGroup struct {
 var stickerAssets = mustLoadStickerAssets()
 
 const stickerFallbackText = "[表情]"
+
+type BuiltinSticker struct {
+	ID    string
+	Label string
+}
+
+// ListBuiltinStickers 与评论校验复用同一白名单，调用方拿到独立副本。
+func ListBuiltinStickers() []BuiltinSticker {
+	items := make([]BuiltinSticker, 0, len(stickerAssets))
+	for _, item := range stickerAssets {
+		items = append(items, BuiltinSticker{ID: item.ID, Label: item.Label})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+	return items
+}
 
 func mustLoadStickerAssets() map[string]stickerCatalogItem {
 	data, err := stickerAssetFS.ReadFile("sticker_assets/catalog.json")

@@ -432,6 +432,9 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 				if err := tx.First(&reply, report.TargetID).Error; err != nil {
 					return err
 				}
+				if _, err := services.LockPostStatusForReply(tx, reply.PostID); err != nil {
+					return err
+				}
 				if err := tx.Model(&reply).Update("status", models.ReplyStatusDeleted).Error; err != nil {
 					return err
 				}

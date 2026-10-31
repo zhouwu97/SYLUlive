@@ -71,6 +71,32 @@ func (r *Runtime) validateAgentContext(
 			if len(refID) != 10 || refID[4] != '-' || refID[7] != '-' {
 				return nil, runtimeContextError("日期上下文 ID 无效")
 			}
+		case "post", "reply":
+			id, err := strconv.ParseUint(refID, 10, 64)
+			toolName := "community.get_post"
+			if refType == "reply" {
+				toolName = "community.get_reply_context"
+			}
+			if err != nil || id == 0 || uint64(uint(id)) != id || r.tools == nil || !r.tools.HasTool(toolName) {
+				return nil, runtimeContextError("社区上下文无效或能力未开启")
+			}
+			postID := uint(id)
+			if refType == "reply" {
+				var reply models.Reply
+				if err := r.db.WithContext(ctx).Select("post_id").Where("id = ? AND status = ?", id, models.ReplyStatusNormal).Take(&reply).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						return nil, runtimeContextError("评论上下文已不存在或不可见")
+					}
+					return nil, err
+				}
+				postID = reply.PostID
+			}
+			if _, err := communityPostByID(ctx, r.db, postID); err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil, runtimeContextError("帖子上下文已不存在或不可见")
+				}
+				return nil, err
+			}
 		case "canteen", "canteen_dish", "academic_term", "announcement":
 			// 这些引用类型先做格式边界校验；对应领域服务在后续读取时
 			// 仍需按用户权限重新查找，不能把客户端对象当作事实源。
@@ -248,6 +274,17 @@ func agentContextPreflightCalls(envelope AgentContextEnvelope) []agentContextPre
 			add("calendar.get_day", map[string]interface{}{"date": ref.ID})
 			if envelope.Entrypoint == "calendar" {
 				add("personal_calendar.get_day", map[string]interface{}{"date": ref.ID})
+			}
+		case "post":
+			id, err := strconv.ParseUint(ref.ID, 10, 64)
+			if err == nil && id > 0 {
+				add("community.get_post", map[string]interface{}{"post_id": id})
+				add("community.list_replies", map[string]interface{}{"post_id": id, "limit": 10})
+			}
+		case "reply":
+			id, err := strconv.ParseUint(ref.ID, 10, 64)
+			if err == nil && id > 0 {
+				add("community.get_reply_context", map[string]interface{}{"reply_id": id})
 			}
 		}
 	}

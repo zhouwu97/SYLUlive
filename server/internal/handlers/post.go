@@ -1725,7 +1725,7 @@ func (h *PostHandler) Create(c *gin.Context) {
 		}
 		// 等待锁之后再确定发表时刻，避免长时间等待导致额度窗口与 CreatedAt 不一致。
 		txNow := time.Now()
-		if quotaErr := services.CheckPostPublishQuota(tx, user.ID, txNow); quotaErr != nil {
+		if quotaErr := services.PreparePostPublish(tx, &post, txNow); quotaErr != nil {
 			return quotaErr
 		}
 		post.CreatedAt = txNow

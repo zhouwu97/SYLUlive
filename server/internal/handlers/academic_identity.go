@@ -804,6 +804,11 @@ func persistAcademicIdentityBinding(db *gorm.DB, userID uint, providerID, studen
 		return nil
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
+		var integrationOwner models.User
+		if err := tx.Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).Select("id").First(&integrationOwner, userID).Error; err != nil {
+			return err
+		}
+
 		var conflict models.AcademicIdentityBinding
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider_id = ? AND student_id = ?", providerID, studentID).First(&conflict).Error
 		if err == nil && conflict.UserID != userID {

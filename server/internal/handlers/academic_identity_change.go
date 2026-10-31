@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 	"strings"
 	"time"
 )
@@ -26,6 +27,11 @@ func (h *AcademicIdentityHandler) Change(c *gin.Context) {
 
 func (h *AcademicIdentityHandler) changeBinding(claims academicChallengeClaims, now time.Time) error {
 	return h.db.Transaction(func(tx *gorm.DB) error {
+		var user models.User
+		if err := tx.Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).First(&user, claims.UserID).Error; err != nil {
+			return err
+		}
+
 		var current models.AcademicIdentityBinding
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", claims.CurrentBindingID, claims.UserID).First(&current).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -54,10 +60,6 @@ func (h *AcademicIdentityHandler) changeBinding(claims academicChallengeClaims, 
 
 		// 撤销被替换的旧本科投影与授权，避免身份列表或后台任务重新挂回旧学号。
 		if current.ProviderID == models.AcademicProviderUndergraduate {
-			var user models.User
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, claims.UserID).Error; err != nil {
-				return err
-			}
 			updates := map[string]interface{}{}
 			if user.StudentID == current.StudentID {
 				updates["student_verified_at"] = nil
@@ -81,6 +83,9 @@ func (h *AcademicIdentityHandler) changeBinding(claims academicChallengeClaims, 
 					return err
 				}
 			}
+		}
+		if err := services.InvalidateUserIntegrations(tx, claims.UserID, now); err != nil {
+			return err
 		}
 		// 审计与身份更新同一事务，不记录密码、验证码、公钥挑战或学校会话。
 		metadata, err := json.Marshal(map[string]interface{}{"binding_id": current.ID, "binding_version": claims.CurrentBindingVersion + 1, "old_provider": current.ProviderID, "new_provider": claims.ProviderID})

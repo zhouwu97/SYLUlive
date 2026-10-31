@@ -108,8 +108,9 @@ func IdempotencyMiddlewareWithJWT(db *gorm.DB, jwtSecret string) gin.HandlerFunc
 
 func idempotencyMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 教务配置由业务事务持久化幂等结果，不能叠加有时限的全局响应缓存。
-		if strings.HasPrefix(c.Request.URL.Path, "/api/academic-account-configs/") {
+		// 教务配置和集成草稿由业务事务持久化幂等结果。OAuth/授权页也不能缓存
+		// 凭证或确认 nonce，读取缓存重放必须经过集成当前权限与来源复核。
+		if strings.HasPrefix(c.Request.URL.Path, "/api/academic-account-configs/") || strings.HasPrefix(c.Request.URL.Path, "/api/oauth/") || strings.HasPrefix(c.Request.URL.Path, "/api/integrations/") || strings.HasPrefix(c.Request.URL.Path, "/api/connected-apps") {
 			c.Next()
 			return
 		}

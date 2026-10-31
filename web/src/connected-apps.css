@@ -1,0 +1,26 @@
+.integration-panel {
+  overflow-wrap: anywhere;
+}
+.integration-panel .field:has(input[type="checkbox"]) {
+  padding: 10px 0;
+  min-height: 44px;
+}
+.integration-panel .field > span:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 400;
+}
+.integration-panel input[type="checkbox"] {
+  flex: 0 0 20px;
+  width: 20px;
+  min-height: 20px;
+  height: 20px;
+  margin: 0;
+}
+.integration-panel .integration-sticker {
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+  display: block;
+}

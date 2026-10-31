@@ -47,6 +47,55 @@ def fixture(*, group="allowed-group", sender="member", platform="configured-plat
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("unique_session", [False, True])
+async def test_native_group_allowlist_survives_member_session_isolation(unique_session):
+    from types import SimpleNamespace
+    from astrbot.core.event_bus import EventBus
+    from astrbot.core.pipeline.whitelist_check.stage import WhitelistCheckStage
+
+    config = {"platform_settings": {
+        "unique_session": unique_session,
+        "enable_id_white_list": True,
+        "id_whitelist": ["configured-platform:FriendMessage:owner", "allowed-group"],
+        "wl_ignore_admin_on_group": False, "wl_ignore_admin_on_friend": False,
+        "id_whitelist_log": False,
+    }}
+    stage = WhitelistCheckStage()
+    await stage.initialize(SimpleNamespace(astrbot_config=config))
+    for sender, group, expected in [
+        ("owner", "", True), ("owner", "allowed-group", True),
+        ("member", "allowed-group", True), ("other", "", False),
+        ("owner", "other-group", False),
+    ]:
+        plugin, event, _ = fixture(sender=sender, group=group)
+        EventBus.__new__(EventBus)._apply_session_isolation(event, config)
+        await stage.process(event)
+        assert (not event.is_stopped()) is expected
+        if group:
+            assert not plugin.allowed(event), "群白名单不授予本人账号能力"
+
+
+@pytest.mark.asyncio
+async def test_old_full_group_umo_is_not_a_wildcard_for_isolated_members():
+    from types import SimpleNamespace
+    from astrbot.core.event_bus import EventBus
+    from astrbot.core.pipeline.whitelist_check.stage import WhitelistCheckStage
+
+    config = {"platform_settings": {
+        "unique_session": True, "enable_id_white_list": True,
+        "id_whitelist": ["configured-platform:GroupMessage:allowed-group"],
+        "wl_ignore_admin_on_group": False, "wl_ignore_admin_on_friend": False,
+        "id_whitelist_log": False,
+    }}
+    _, event, _ = fixture()
+    EventBus.__new__(EventBus)._apply_session_isolation(event, config)
+    stage = WhitelistCheckStage()
+    await stage.initialize(SimpleNamespace(astrbot_config=config))
+    await stage.process(event)
+    assert event.is_stopped(), "完整旧群UMO不是通配符，不能在隔离开启后继续使用"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("path", ["/community/posts", "/community/posts/811", "/community/posts/811/replies", "/community/replies/2013/context", "/community/stickers", "/community/sections"])
 async def test_enabled_group_can_only_read_public_resources(path):
     plugin, event, calls = fixture()

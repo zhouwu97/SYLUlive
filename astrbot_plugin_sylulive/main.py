@@ -191,7 +191,7 @@ def read_kinds(path):
     return set()
 
 
-@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.1.7")
+@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.1.8")
 class SYLUlivePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -308,6 +308,21 @@ class SYLUlivePlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.ALL, priority=10000)
     async def isolate_public_group_knowledge(self, event: AstrMessageEvent):
+        if self.allowed_reading(event) and any(
+            w in (event.message_str or "")
+            for w in (
+                "SYLUlive",
+                "sylu-",
+                "帖子",
+                "评论",
+                "食堂榜",
+                "菜品",
+                "刚才那篇",
+                "刚才的讨论",
+            )
+        ):
+            # 业务结果需通过完成钩子校验后再发出；不改普通闲聊的流式设置。
+            event.set_extra("enable_streaming", False)
         if not self.allowed_public_group(event):
             return
         from astrbot.api import sp
@@ -380,6 +395,16 @@ class SYLUlivePlugin(Star):
         recent = getattr(self, "recent_posts", {}).get(
             (getattr(event, "unified_msg_origin", ""), conversation_id)
         )
+        if getattr(event, "trace", None):
+            event.trace.record(
+                "sylulive_read_policy",
+                reader_instance=str(id(self)),
+                conversation_id=conversation_id,
+                required=sorted(required),
+                reference_found=bool(recent),
+                reference_post_id=recent["post_id"] if recent else None,
+                cache_size=len(getattr(self, "recent_posts", {})),
+            )
         named = re.search(r"(?:帖子|post_id)[\s:#：]*([1-9]\d*)", req.prompt or "")
         if (
             not event.get_extra("sylulive_prefetch_done", False)
@@ -577,6 +602,13 @@ class SYLUlivePlugin(Star):
                                 event.get_extra("sylulive_conversation_id", ""),
                             )
                         ] = {"post_id": post_id, "read_at": time.monotonic()}
+                if read_kinds(path) and getattr(event, "trace", None):
+                    event.trace.record(
+                        "sylulive_read_complete",
+                        path=path,
+                        reader_instance=str(id(self)),
+                        conversation_id=event.get_extra("sylulive_conversation_id", ""),
+                    )
             return json.dumps(result, ensure_ascii=False)
         except IntegrationProblem as error:
             if method == "GET" and read_kinds(path):

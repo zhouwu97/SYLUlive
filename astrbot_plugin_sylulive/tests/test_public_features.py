@@ -317,3 +317,15 @@ async def test_followup_without_reference_fails_closed_and_never_crosses_convers
         "replies",
     }
     assert not req.contexts
+
+
+@pytest.mark.asyncio
+async def test_business_reply_guard_prevents_streaming_unverified_text():
+    plugin, event, _ = fixture(group="", sender="owner")
+    event.message_str = "读取SYLUlive帖子811"
+    await plugin.isolate_public_group_knowledge(event)
+    assert event.get_extra("enable_streaming") is False
+    _, chat, _ = fixture(group="", sender="owner")
+    chat.message_str = "你好"
+    await plugin.isolate_public_group_knowledge(chat)
+    assert chat.get_extra("enable_streaming") is None

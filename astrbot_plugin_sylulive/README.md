@@ -59,7 +59,7 @@ pnpm dev
 
 1. 安装用户自己选择的 AstrBot 固定版本和 QQ 协议端，先证明普通 QQ 私聊能收发。
 2. 将本目录复制至 AstrBot `data/plugins/astrbot_plugin_sylulive/`，保持 `main.py`、`metadata.yaml` 等文件直接位于该目录。按 AstrBot 插件管理流程安装 `requirements.txt` 并重启/重载插件。
-3. 或在本仓库运行 `python scripts/package-astrbot-plugin.py` 得到 `dist/astrbot_plugin_sylulive.zip`，使用支持本地 ZIP 的 AstrBot 管理界面安装。包内只有明确列出的源码/配置/文档，不含 token、缓存、测试数据或协议端。
+3. 或在本仓库运行 `python scripts/package-astrbot-plugin.py` 得到 `dist/astrbot_plugin_sylulive.zip`，使用支持本地 ZIP 的 AstrBot 管理界面安装。脚本输出 SHA256，固定归档条目顺序、时间与权限；相同源码及 Python/zlib 工具链的输出一致，不受检出文件时间影响。包内只有明确列出的源码/配置/文档，不含 token、缓存、测试数据或协议端。只读安装保持 `allow_proposals=false`。
 4. 在插件设置中填写 `server_origin`、消息平台**实例 ID** `owner_platform_id`、本人发送者 ID `owner_sender_id`。QQ 平台填自己的 QQ 号；不能只填通用平台名称 `aiocqhttp` 代替实例 ID。群聊一律拒绝工具执行。
 5. 如需草稿，打开插件 `allow_proposals`。在当前 AstrBot 人格/工具集启用本插件的 `sylulive_*` 工具，并使用支持 tool calling 的模型。不要关闭 AstrBot 主模型或把聊天桥接至 Go。
 

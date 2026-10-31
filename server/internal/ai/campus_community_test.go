@@ -17,7 +17,7 @@ import (
 func communityTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := newRuntimeTestDB(t)
-	require.NoError(t, db.AutoMigrate(&models.Post{}, &models.Reply{}))
+	require.NoError(t, db.AutoMigrate(&models.Post{}, &models.Reply{}, &models.PostImage{}, &models.ReplyImage{}, &models.File{}))
 	return db
 }
 
@@ -96,18 +96,18 @@ func TestCommunityReadVisibilityAndLiteralSearch(t *testing.T) {
 func TestCommunityReadSemanticVersionAndTruncation(t *testing.T) {
 	db := communityTestDB(t)
 	post := communityTestPost(t, db, 1)
-	require.NoError(t, db.Model(&post).Update("content", strings.Repeat("校", 6001)).Error)
+	require.NoError(t, db.Model(&post).Update("content", strings.Repeat("校", 10001)).Error)
 	tools := NewCampusMCPTools(db, nil, nil, WithCampusCommunityReadTools(nil))
 	read := func() communityPostView {
 		return communityTestRead(t, tools, "community.get_post", `{"post_id":1}`).Data.(communityPostView)
 	}
 	before := read()
 	require.True(t, before.Truncated)
-	require.LessOrEqual(t, len([]rune(before.Content)), 6003)
+	require.LessOrEqual(t, len([]rune(before.Content)), 10003)
 	require.NoError(t, db.Model(&post).Updates(map[string]interface{}{"view_count": 99, "like_count": 31, "reply_count": 42}).Error)
 	require.Equal(t, before.SourceVersion, read().SourceVersion)
 	// 修改被截断的部分，也必须使版本发生变化。
-	require.NoError(t, db.Model(&post).Update("content", strings.Repeat("校", 6000)+"园").Error)
+	require.NoError(t, db.Model(&post).Update("content", strings.Repeat("校", 10000)+"园").Error)
 	require.NotEqual(t, before.SourceVersion, read().SourceVersion)
 }
 

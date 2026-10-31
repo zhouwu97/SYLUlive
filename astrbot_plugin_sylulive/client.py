@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+import re
 from urllib.parse import urlsplit
 import httpx
 
@@ -222,6 +223,55 @@ class BusinessClient:
             if generation != self.generation:
                 raise IntegrationProblem("authorization_changed")
         return result
+
+    async def public_call(self, path, *, params=None):
+        # 匿名公开接口绝不携带绑定账号的令牌或浏览器 Cookie。
+        if path not in (
+            "/api/canteens/rankings",
+            "/api/canteens/search",
+        ) and not re.fullmatch(r"/api/canteens/[1-9]\d*/dishes(?:/[1-9]\d*)?", path):
+            raise IntegrationProblem("public_path_refused")
+        if path.endswith("/dishes"):
+            body = await self._public_request(path, params)
+            if not isinstance(body, list):
+                raise IntegrationProblem("invalid_response")
+            return {"items": body}
+        return await self._request("GET", path, params=params)
+
+    async def _public_request(self, path, params):
+        try:
+            response = await self.http.get(path, params=params)
+        except httpx.HTTPError:
+            raise IntegrationProblem("network_unavailable") from None
+        if response.is_redirect or response.is_error or len(response.content) > 300_000:
+            raise IntegrationProblem("public_read_failed")
+        try:
+            return response.json()
+        except ValueError:
+            raise IntegrationProblem("invalid_response") from None
+
+    async def public_image(self, path):
+        if (
+            not isinstance(path, str)
+            or not path.startswith("/uploads/")
+            or any(v in path for v in ("..", "\\", "?", "#", "%"))
+        ):
+            raise IntegrationProblem("public_image_refused")
+        try:
+            async with self.http.stream("GET", path) as response:
+                if response.is_redirect or response.is_error:
+                    raise IntegrationProblem("public_image_unavailable")
+                mime = response.headers.get("content-type", "").split(";", 1)[0]
+                if mime not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+                    raise IntegrationProblem("unsupported_image")
+                data = bytearray()
+                async for part in response.aiter_bytes():
+                    data.extend(part)
+                    if len(data) > 4 * 1024 * 1024:
+                        raise IntegrationProblem("image_too_large")
+                return bytes(data)
+        except httpx.HTTPError:
+            raise IntegrationProblem("network_unavailable") from None
 
     def clear(self):
         self.generation += 1

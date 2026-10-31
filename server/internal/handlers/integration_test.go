@@ -36,7 +36,7 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 	const secret = "integration-http-test-secret"
 	require.NoError(t, db.Create(&models.User{ID: owner, Nickname: "合成账号", Role: models.RoleUser, AccountStatus: "active"}).Error)
 	require.NoError(t, db.Create(&models.User{ID: recipient, Nickname: "合成收件人", Role: models.RoleUser, AccountStatus: "active"}).Error)
-	require.NoError(t, db.AutoMigrate(&models.Notification{}))
+	require.NoError(t, db.AutoMigrate(&models.Notification{}, &models.PostImage{}, &models.ReplyImage{}, &models.File{}))
 	require.NoError(t, db.Create(&models.AcademicIdentityBinding{UserID: owner, ProviderID: models.AcademicProviderUndergraduate, StudentID: "synthetic-http", VerifiedAt: time.Now(), VerificationMethod: "school_profile", VerificationVersion: "v1"}).Error)
 	for _, doc := range []string{models.LegalDocumentUserAgreement, models.LegalDocumentPrivacyPolicy, models.LegalDocumentCommunityRules} {
 		ack := ""
@@ -104,6 +104,10 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 		"/api/integrations/v1/community/replies/18446744073709551616/context",
 		"/api/integrations/v1/community/posts?after_id=18446744073709551616",
 		"/api/integrations/v1/community/posts/-1",
+		"/api/integrations/v1/community/posts?sort=not-supported",
+		"/api/integrations/v1/community/posts?sort=likes&after_id=1",
+		"/api/integrations/v1/community/posts?sort=likes&cursor=broken",
+		"/api/integrations/v1/community/posts?cursor=unexpected",
 	} {
 		require.Equal(t, 422, send("GET", path, tokens.AccessToken, "", "").Code, path)
 	}
@@ -113,6 +117,13 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 	w = send("GET", fmt.Sprintf("/api/integrations/v1/community/posts/%d", source.ID), tokens.AccessToken, "", "")
 	require.Equal(t, 200, w.Code, w.Body.String())
 	require.NotContains(t, w.Body.String(), source.Contact)
+	require.Contains(t, w.Body.String(), `"nickname":"合成收件人"`)
+	require.Contains(t, w.Body.String(), `"like_count":0`)
+	require.Contains(t, w.Body.String(), `"images":[]`)
+	w = send("GET", "/api/integrations/v1/community/posts?sort=likes&limit=1", tokens.AccessToken, "", "")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"sort":"likes"`)
+	w = send("GET", fmt.Sprintf("/api/integrations/v1/community/posts/%d", source.ID), tokens.AccessToken, "", "")
 	var read struct {
 		Data struct {
 			SourceVersion string `json:"source_version"`

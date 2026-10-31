@@ -39,6 +39,7 @@ func TestCommunityReadRunHTTPFlow(t *testing.T) {
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	require.NoError(t, db.AutoMigrate(
+		&models.User{}, &models.PostImage{}, &models.ReplyImage{}, &models.File{},
 		&models.Post{}, &models.Reply{}, &models.AIConversation{}, &models.AIConversationMessage{},
 		&models.AIRun{}, &models.AIEvent{}, &models.AIToolCall{}, &models.AIQuotaEntry{},
 		&models.AIUserBudget{}, &models.AIBudgetReservation{}, &models.AIUsageRecord{},

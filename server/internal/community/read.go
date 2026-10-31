@@ -3,6 +3,7 @@ package community
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -26,6 +27,8 @@ type Request struct {
 	Limit           int    `json:"limit"`
 	Query           string `json:"query"`
 	AfterStickerID  string `json:"after_sticker_id"`
+	Sort            string `json:"sort"`
+	Cursor          string `json:"cursor"`
 }
 
 type Reader struct {
@@ -48,9 +51,40 @@ func truncateText(value string, maxRunes int) string {
 	return string(runes[:maxRunes]) + "..."
 }
 
-// 仅选择模型允许接收的列。不要预载 User、联系方式、治理备注或上传资源。
-const communityPostColumns = "id, title, content, board_id, post_type, content_kind, status, revision, created_at"
-const communityReplyColumns = "id, post_id, parent_reply_id, reply_to_reply_id, content, sticker_id, status, created_at"
+// 仅选择允许公开的列；作者和图片使用独立列白名单查询，不预载完整 User/File。
+const communityPostColumns = "id, author_id, title, content, board_id, post_type, content_kind, status, revision, created_at, like_count, reply_count"
+const communityReplyColumns = "id, author_id, post_id, parent_reply_id, reply_to_reply_id, content, sticker_id, status, created_at, like_count"
+
+// 排名游标只定位公开列表，不提供授权；查询条件变化时拒绝沿用。
+var ErrInvalidReadOptions = errors.New("invalid_read_options")
+
+type rankCursor struct {
+	Sort  string `json:"sort"`
+	Score int    `json:"score"`
+	ID    uint   `json:"id"`
+	Scope string `json:"scope"`
+}
+
+func ValidateOptions(input Request) error {
+	if input.Sort != "" && input.Sort != "newest" && input.Sort != "likes" && input.Sort != "replies" {
+		return ErrInvalidReadOptions
+	}
+	if len(input.Cursor) > 512 || (input.Cursor != "" && (input.Sort == "" || input.Sort == "newest")) || (input.Sort != "" && input.Sort != "newest" && input.AfterID != 0) {
+		return ErrInvalidReadOptions
+	}
+	return nil
+}
+
+type PublicAuthor struct {
+	Nickname string `json:"nickname"`
+}
+type PublicImage struct {
+	Index    int    `json:"index"`
+	URL      string `json:"url"`
+	MimeType string `json:"mime_type"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+}
 
 func VisiblePosts(db *gorm.DB) *gorm.DB {
 	return db.Model(&models.Post{}).Where("board_id = ? AND status = ? AND content_kind = ?", models.BoardShuitie, models.PostStatusNormal, models.PostContentKindNormal)
@@ -63,28 +97,35 @@ func ReadPostModel(ctx context.Context, db *gorm.DB, id uint) (models.Post, erro
 }
 
 type PostView struct {
-	PostID        uint      `json:"post_id"`
-	Title         string    `json:"title"`
-	Content       string    `json:"content"`
-	PostType      string    `json:"post_type"`
-	Revision      int       `json:"revision"`
-	SourceVersion string    `json:"source_version"`
-	Status        string    `json:"status"`
-	Truncated     bool      `json:"truncated"`
-	CreatedAt     time.Time `json:"created_at"`
+	PostID        uint          `json:"post_id"`
+	Title         string        `json:"title"`
+	Content       string        `json:"content"`
+	PostType      string        `json:"post_type"`
+	Revision      int           `json:"revision"`
+	SourceVersion string        `json:"source_version"`
+	Status        string        `json:"status"`
+	Truncated     bool          `json:"truncated"`
+	CreatedAt     time.Time     `json:"created_at"`
+	Author        *PublicAuthor `json:"author,omitempty"`
+	LikeCount     int           `json:"like_count"`
+	ReplyCount    int           `json:"reply_count"`
+	Images        []PublicImage `json:"images"`
 }
 
 type ReplyView struct {
-	ReplyID        uint      `json:"reply_id"`
-	PostID         uint      `json:"post_id"`
-	ParentReplyID  *uint     `json:"parent_reply_id,omitempty"`
-	ReplyToReplyID *uint     `json:"reply_to_reply_id,omitempty"`
-	Content        string    `json:"content"`
-	StickerID      *string   `json:"sticker_id,omitempty"`
-	SourceVersion  string    `json:"source_version"`
-	Status         string    `json:"status"`
-	Truncated      bool      `json:"truncated"`
-	CreatedAt      time.Time `json:"created_at"`
+	ReplyID        uint          `json:"reply_id"`
+	PostID         uint          `json:"post_id"`
+	ParentReplyID  *uint         `json:"parent_reply_id,omitempty"`
+	ReplyToReplyID *uint         `json:"reply_to_reply_id,omitempty"`
+	Content        string        `json:"content"`
+	StickerID      *string       `json:"sticker_id,omitempty"`
+	SourceVersion  string        `json:"source_version"`
+	Status         string        `json:"status"`
+	Truncated      bool          `json:"truncated"`
+	CreatedAt      time.Time     `json:"created_at"`
+	Author         *PublicAuthor `json:"author,omitempty"`
+	LikeCount      int           `json:"like_count"`
+	Images         []PublicImage `json:"images,omitempty"`
 }
 
 func contentVersion(value interface{}) string {
@@ -96,7 +137,7 @@ func contentVersion(value interface{}) string {
 func PostDTO(post models.Post, maxRunes int) PostView {
 	// 版本不含浏览、点赞、回复数或 UpdatedAt；统计变化不使未来草稿失效。
 	version := contentVersion([]interface{}{post.ID, post.Title, post.Content, post.BoardID, post.PostType, post.ContentKind, post.Status, post.Revision})
-	return PostView{post.ID, post.Title, truncateText(post.Content, maxRunes), post.PostType, post.Revision, version, string(post.Status), len([]rune(post.Content)) > maxRunes, post.CreatedAt}
+	return PostView{PostID: post.ID, Title: post.Title, Content: truncateText(post.Content, maxRunes), PostType: post.PostType, Revision: post.Revision, SourceVersion: version, Status: string(post.Status), Truncated: len([]rune(post.Content)) > maxRunes, CreatedAt: post.CreatedAt, LikeCount: post.LikeCount, ReplyCount: post.ReplyCount, Images: []PublicImage{}}
 }
 
 func ReplyDTO(reply models.Reply) ReplyView {
@@ -105,10 +146,113 @@ func ReplyDTO(reply models.Reply) ReplyView {
 		return ReplyView{ReplyID: reply.ID, PostID: reply.PostID, Status: "deleted", SourceVersion: contentVersion([]interface{}{reply.ID, reply.PostID, "deleted"})}
 	}
 	version := contentVersion([]interface{}{reply.ID, reply.PostID, reply.ParentReplyID, reply.ReplyToReplyID, reply.Content, reply.StickerID, reply.Status})
-	return ReplyView{reply.ID, reply.PostID, reply.ParentReplyID, reply.ReplyToReplyID, truncateText(reply.Content, 2000), reply.StickerID, version, string(reply.Status), len([]rune(reply.Content)) > 2000, reply.CreatedAt}
+	return ReplyView{ReplyID: reply.ID, PostID: reply.PostID, ParentReplyID: reply.ParentReplyID, ReplyToReplyID: reply.ReplyToReplyID, Content: truncateText(reply.Content, 2000), StickerID: reply.StickerID, SourceVersion: version, Status: string(reply.Status), Truncated: len([]rune(reply.Content)) > 2000, CreatedAt: reply.CreatedAt, LikeCount: reply.LikeCount}
+}
+
+func publicAuthors(db *gorm.DB, ids []uint) (map[uint]*PublicAuthor, error) {
+	var users []models.User
+	if err := db.Select("id, nickname, account_status").Where("id IN ?", ids).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	result := map[uint]*PublicAuthor{}
+	for _, user := range users {
+		name := strings.TrimSpace(user.Nickname)
+		if user.AccountStatus == "cancelled" {
+			name = "已注销用户"
+		}
+		if name == "" {
+			name = "未知用户"
+		}
+		result[user.ID] = &PublicAuthor{Nickname: name}
+	}
+	return result, nil
+}
+
+func publicImages(db *gorm.DB, kind string, ids []uint) (map[uint][]PublicImage, error) {
+	table, column := "post_images", "post_id"
+	if kind == "reply" {
+		table, column = "reply_images", "reply_id"
+	}
+	var rows []struct {
+		ParentID uint
+		Path     string
+		MimeType string
+		Width    int
+		Height   int
+	}
+	err := db.Table(table+" AS i").Select("i."+column+" AS parent_id, f.path, f.mime_type, f.width, f.height").Joins("JOIN files f ON f.id = i.file_id").Where("i."+column+" IN ? AND f.access_scope = ? AND f.status = ?", ids, models.FileAccessPublic, models.FileStatusActive).Order("i.sort_order ASC, i.id ASC").Scan(&rows).Error
+	result := map[uint][]PublicImage{}
+	for _, row := range rows {
+		// 只允许本站已公开的上传资源，不给工具任意 URL、私有文件或磁盘路径。
+		if !strings.HasPrefix(row.Path, "/uploads/") || strings.ContainsAny(row.Path, "\\?#%") || strings.Contains(row.Path, "..") || !strings.HasPrefix(row.MimeType, "image/") {
+			continue
+		}
+		result[row.ParentID] = append(result[row.ParentID], PublicImage{Index: len(result[row.ParentID]) + 1, URL: row.Path, MimeType: row.MimeType, Width: row.Width, Height: row.Height})
+	}
+	return result, err
+}
+
+func postViews(db *gorm.DB, posts []models.Post, maxRunes int) ([]PostView, error) {
+	ids, authors := []uint{}, []uint{}
+	for _, p := range posts {
+		ids = append(ids, p.ID)
+		authors = append(authors, p.AuthorID)
+	}
+	names, err := publicAuthors(db, authors)
+	if err != nil {
+		return nil, err
+	}
+	images, err := publicImages(db, "post", ids)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]PostView, 0, len(posts))
+	for _, p := range posts {
+		item := PostDTO(p, maxRunes)
+		item.Author = names[p.AuthorID]
+		if images[p.ID] != nil {
+			item.Images = images[p.ID]
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func replyViews(db *gorm.DB, replies []models.Reply) ([]ReplyView, error) {
+	ids, authors := []uint{}, []uint{}
+	for _, r := range replies {
+		if r.Status == models.ReplyStatusNormal {
+			ids = append(ids, r.ID)
+			authors = append(authors, r.AuthorID)
+		}
+	}
+	names, err := publicAuthors(db, authors)
+	if err != nil {
+		return nil, err
+	}
+	images, err := publicImages(db, "reply", ids)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]ReplyView, 0, len(replies))
+	for _, r := range replies {
+		item := ReplyDTO(r)
+		if r.Status == models.ReplyStatusNormal {
+			item.Author = names[r.AuthorID]
+			item.Images = images[r.ID]
+		}
+		items = append(items, item)
+	}
+	return items, nil
 }
 
 func (reader *Reader) Read(ctx context.Context, name string, input Request) (interface{}, error) {
+	if input.Limit == 0 {
+		input.Limit = 10
+	}
+	if input.Limit < 1 || input.Limit > 20 {
+		return nil, ErrInvalidReadOptions
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -136,6 +280,9 @@ func (reader *Reader) Read(ctx context.Context, name string, input Request) (int
 	db := reader.db.WithContext(ctx)
 	switch name {
 	case "community.list_feed", "community.search_posts":
+		if err := ValidateOptions(input); err != nil {
+			return nil, err
+		}
 		query := VisiblePosts(db).Select(communityPostColumns)
 		if input.InternalOwnerID != 0 {
 			query = query.Where("author_id = ?", input.InternalOwnerID)
@@ -148,29 +295,66 @@ func (reader *Reader) Read(ctx context.Context, name string, input Request) (int
 			pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.ToLower(input.Query)) + "%"
 			query = query.Where("(LOWER(title) LIKE ? ESCAPE '!' OR LOWER(content) LIKE ? ESCAPE '!')", pattern, pattern)
 		}
+		order := "id DESC"
+		ranked := input.Sort == "likes" || input.Sort == "replies"
+		column := "like_count"
+		if input.Sort == "replies" {
+			column = "reply_count"
+		}
+		scope := contentVersion([]interface{}{input.Query, input.InternalOwnerID})
+		if ranked {
+			order = column + " DESC, id DESC"
+			if input.Cursor != "" {
+				var cursor rankCursor
+				raw, err := base64.RawURLEncoding.DecodeString(input.Cursor)
+				if err != nil || json.Unmarshal(raw, &cursor) != nil || cursor.Sort != input.Sort || cursor.ID == 0 || cursor.Score < 0 || cursor.Scope != scope {
+					return nil, ErrInvalidReadOptions
+				}
+				query = query.Where("("+column+" < ? OR ("+column+" = ? AND id < ?))", cursor.Score, cursor.Score, cursor.ID)
+			}
+		}
 		var posts []models.Post
-		if err := query.Order("id DESC").Limit(input.Limit + 1).Find(&posts).Error; err != nil {
+		if err := query.Order(order).Limit(input.Limit + 1).Find(&posts).Error; err != nil {
 			return nil, err
 		}
-		items := make([]PostView, 0, input.Limit)
 		more := len(posts) > input.Limit
 		if more {
 			posts = posts[:input.Limit]
 		}
-		for _, post := range posts {
-			items = append(items, PostDTO(post, 600))
+		items, err := postViews(db, posts, 600)
+		if err != nil {
+			return nil, err
 		}
 		next := uint(0)
+		nextCursor := ""
 		if more {
-			next = posts[len(posts)-1].ID
+			last := posts[len(posts)-1]
+			if ranked {
+				score := last.LikeCount
+				if input.Sort == "replies" {
+					score = last.ReplyCount
+				}
+				raw, _ := json.Marshal(rankCursor{Sort: input.Sort, Score: score, ID: last.ID, Scope: scope})
+				nextCursor = base64.RawURLEncoding.EncodeToString(raw)
+			} else {
+				next = last.ID
+			}
 		}
-		return map[string]interface{}{"items": items, "next_after_id": next}, nil
+		mode := input.Sort
+		if mode == "" {
+			mode = "newest"
+		}
+		return map[string]interface{}{"items": items, "next_after_id": next, "next_cursor": nextCursor, "sort": mode}, nil
 	case "community.get_post":
 		post, err := ReadPostModel(ctx, db, input.PostID)
 		if err != nil {
 			return nil, err
 		}
-		return PostDTO(post, 6000), nil
+		items, err := postViews(db, []models.Post{post}, 10000)
+		if err != nil {
+			return nil, err
+		}
+		return items[0], nil
 	case "community.list_replies":
 		// 同一查询复核父帖状态，避免仅验证页面上下文后直接读取已隐藏帖的评论。
 		var replies []models.Reply
@@ -184,13 +368,13 @@ func (reader *Reader) Read(ctx context.Context, name string, input Request) (int
 		if _, err := ReadPostModel(ctx, db, input.PostID); err != nil {
 			return nil, err
 		}
-		items := make([]ReplyView, 0, input.Limit)
 		more := len(replies) > input.Limit
 		if more {
 			replies = replies[:input.Limit]
 		}
-		for _, reply := range replies {
-			items = append(items, ReplyDTO(reply))
+		items, err := replyViews(db, replies)
+		if err != nil {
+			return nil, err
 		}
 		next := uint(0)
 		if more {
@@ -206,13 +390,18 @@ func (reader *Reader) Read(ctx context.Context, name string, input Request) (int
 		if err != nil {
 			return nil, err
 		}
-		data := map[string]interface{}{"post": PostDTO(post, 6000), "reply": ReplyDTO(reply)}
+		posts, err := postViews(db, []models.Post{post}, 10000)
+		if err != nil {
+			return nil, err
+		}
+		data := map[string]interface{}{"post": posts[0]}
+		thread := []models.Reply{reply}
 		if reply.ParentReplyID != nil {
 			var root models.Reply
 			if err := db.Select(communityReplyColumns).Where("id = ? AND post_id = ? AND parent_reply_id IS NULL", *reply.ParentReplyID, reply.PostID).Take(&root).Error; err != nil {
 				return nil, err
 			}
-			data["root_reply"] = ReplyDTO(root)
+			thread = append(thread, root)
 			if reply.ReplyToReplyID != nil && *reply.ReplyToReplyID != root.ID {
 				var target models.Reply
 				if err := db.Select(communityReplyColumns).
@@ -220,8 +409,19 @@ func (reader *Reader) Read(ctx context.Context, name string, input Request) (int
 					Take(&target).Error; err != nil {
 					return nil, err
 				}
-				data["target_reply"] = ReplyDTO(target)
+				thread = append(thread, target)
 			}
+		}
+		views, err := replyViews(db, thread)
+		if err != nil {
+			return nil, err
+		}
+		data["reply"] = views[0]
+		if len(views) > 1 {
+			data["root_reply"] = views[1]
+		}
+		if len(views) > 2 {
+			data["target_reply"] = views[2]
 		}
 		return data, nil
 	default:

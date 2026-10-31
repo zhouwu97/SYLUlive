@@ -272,3 +272,77 @@ def test_first_post_comments_and_campus_feed_require_current_reads():
     contexts = [{"role": "assistant", "tool_calls": [{"function": {"name": "sylulive_posts"}}]}]
     assert required_read_kinds(ProviderRequest(prompt="列出最近的校园帖子")) == {"feed"}
     assert required_read_kinds(ProviderRequest(prompt="看看刚才列表中第一篇帖子的评论", contexts=contexts)) == {"post", "replies"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "handler,args",
+    [
+        ("request_private_review", {"source": "account"}),
+        ("share_private_review", {"code": "0123456789abcdef"}),
+        ("cancel_private_review", {"code": "0123456789abcdef"}),
+    ],
+)
+@pytest.mark.parametrize("fail", [True, False])
+async def test_private_review_commands_do_not_enter_group_or_private_model(
+    monkeypatch, handler, args, fail
+):
+    from astrbot_plugin_sylulive.private_review import ReviewProblem
+
+    cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
+    plugin = cls.__new__(cls)
+
+    async def result(*a, **k):
+        if fail:
+            raise ReviewProblem("受控拒绝")
+        return "受控处理结果"
+
+    plugin.private_reviews = SimpleNamespace(request=result, decide=result)
+    event = message("owner")
+    event.message_obj.type = MessageType.GROUP_MESSAGE
+    event.message_obj.group_id = "synthetic-group"
+    md = SimpleNamespace(
+        handler=getattr(plugin, handler),
+        handler_name=handler,
+        handler_full_name="review." + handler,
+        handler_module_path="synthetic.review",
+        event_filters=[],
+        event_type=EventType.AdapterMessageEvent,
+        extras_configs={},
+    )
+    monkeypatch.setitem(
+        star_map,
+        md.handler_module_path,
+        SimpleNamespace(name="review", display_name="review"),
+    )
+    event.set_extra("activated_handlers", [md])
+    event.set_extra("handlers_parsed_params", {md.handler_full_name: args})
+    stage = ProcessStage()
+    stage.ctx = SimpleNamespace(astrbot_config={"provider_settings": {"enable": True}})
+    stage.star_request_sub_stage = StarRequestSubStage()
+    stage.agent_sub_stage = DefaultAgentProbe()
+    async for _ in stage.process(event):
+        pass
+    assert event.is_stopped() and stage.agent_sub_stage.calls == 0
+
+
+@pytest.mark.parametrize(
+    "handler,command",
+    [
+        ("request_private_review", "sylu-review account"),
+        ("share_private_review", "sylu-share 0123456789abcdef"),
+        ("cancel_private_review", "sylu-cancel 0123456789abcdef"),
+    ],
+)
+def test_native_command_parser_accepts_review_commands(handler, command):
+    module = importlib.import_module("astrbot_plugin_sylulive.main")
+    metadata = next(
+        item
+        for item in star_handlers_registry.star_handlers_map.values()
+        if item.handler_module_path == module.__name__ and item.handler_name == handler
+    )
+    event = message("owner")
+    event.message_str = command
+    assert next(
+        f for f in metadata.event_filters if isinstance(f, CommandFilter)
+    ).filter(event, {})

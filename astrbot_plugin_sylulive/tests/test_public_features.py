@@ -169,6 +169,10 @@ async def test_actual_image_payload_fresh_visibility_and_fixed_chat_delivery():
     assert len(images) == 1 and base64.b64decode(images[0].data).startswith(b"\xff\xd8")
     assert plugin.image_reference.await_count == 2 and event.send.await_count == 1
     assert "session" not in event.send.call_args.kwargs
+    repeated = json.loads(
+        await plugin.public_image(event, "post", 811, send_to_chat=True)
+    )
+    assert repeated["delivery_state"] == "sent" and event.send.await_count == 1
     await plugin.public_image(event, "post", 811)
     assert (
         json.loads(await plugin.public_image(event, "post", 811))["error"]
@@ -247,3 +251,69 @@ async def test_removed_image_not_sent_or_exposed_to_model_after_download():
         await plugin.public_image(event, "post", 811, send_to_chat=True)
     )
     assert result["error"] == "not_found" and event.send.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_owner_cannot_bypass_review_with_generic_cross_session_sender():
+    plugin, event, _ = fixture(group="", sender="owner")
+    tools = ToolSet(
+        [
+            FunctionTool(name=name, description="synthetic", parameters={})
+            for name in (
+                "send_message_to_user",
+                "private_memory_search",
+                "sylulive_public_image",
+            )
+        ]
+    )
+    req = ProviderRequest(prompt="查图片", func_tool=tools)
+    await plugin.present_community_naturally(event, req)
+    assert req.func_tool.get_tool("send_message_to_user") is None
+    assert req.func_tool.get_tool("private_memory_search") is not None
+    assert tools.get_tool("send_message_to_user") is not None
+
+
+@pytest.mark.asyncio
+async def test_followup_prefetches_fresh_public_context_in_same_conversation():
+    plugin, event, calls = fixture(group="", sender="owner")
+    first = ProviderRequest(
+        prompt="读取帖子811",
+        conversation=SimpleNamespace(user_id=event.unified_msg_origin, cid="c1"),
+    )
+    await plugin.present_community_naturally(event, first)
+    await plugin.get_post(event, 811)
+    _, follow, _ = fixture(group="", sender="owner")
+    req = ProviderRequest(
+        prompt="把刚才那篇讨论再自然地总结一下",
+        contexts=[],
+        conversation=first.conversation,
+    )
+    await plugin.present_community_naturally(follow, req)
+    assert calls == [
+        ("GET", "/community/posts/811"),
+        ("GET", "/community/posts/811"),
+        ("GET", "/community/posts/811/replies"),
+    ]
+    assert follow.get_extra("sylulive_completed_reads") == {"post", "replies"}
+    assert "本轮公开原帖" in req.contexts[-1]["content"]
+    assert follow.get_extra("sylulive_prefetched_post") == 811
+
+
+@pytest.mark.asyncio
+async def test_followup_without_reference_fails_closed_and_never_crosses_conversation():
+    plugin, event, calls = fixture()
+    import time
+
+    plugin.recent_posts = {
+        (event.unified_msg_origin, "another-conversation"): {
+            "post_id": 811,
+            "read_at": time.monotonic(),
+        }
+    }
+    req = ProviderRequest(prompt="把刚才那篇讨论再自然地总结一下", contexts=[])
+    await plugin.present_community_naturally(event, req)
+    assert calls == [] and event.get_extra("sylulive_required_reads") == {
+        "post",
+        "replies",
+    }
+    assert not req.contexts

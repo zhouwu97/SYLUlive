@@ -114,7 +114,15 @@ def recommendation(result):
             quote = re.sub(r"\s+", " ", row["comment"]).strip()
             quote = quote[:180] + ("…" if len(quote) > 180 else "")
             date = str(row.get("created_at", ""))[:10]
-            text += f"\n• {date + ' ' if date else ''}“{quote}”"
+            nickname = row.get("user_name")
+            author = (
+                re.sub(r"\s+", " ", nickname).strip()
+                if isinstance(nickname, str)
+                else ""
+            )
+            text += (
+                f"\n• {author or '有同学'}{f'（{date}）' if date else ''}：“{quote}”"
+            )
     elif detail.get("review_total", 0):
         text += "\n目前取到的评价没有文字内容，暂时无法总结口味。"
     else:

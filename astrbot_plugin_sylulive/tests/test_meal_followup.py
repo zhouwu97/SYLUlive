@@ -72,6 +72,7 @@ async def test_random_command_shows_location_and_real_review_without_rank_noise(
         if hasattr(part, "text")
     )
     assert "二食堂" in text and "一楼" in text and "味道清爽" in text
+    assert "同学甲（2026-10-31）" in text
     assert "73" not in text and "家店中随机" not in text
 
 
@@ -244,6 +245,7 @@ async def test_photo_followup_reads_real_bytes_sends_current_chat_once_and_gives
         and "已发来" in malformed.completion_text
     )
     assert "味道清爽" in malformed.completion_text
+    assert "同学甲（2026-10-31）" in malformed.completion_text
 
 
 @pytest.mark.asyncio

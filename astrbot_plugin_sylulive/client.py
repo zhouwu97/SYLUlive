@@ -2,12 +2,15 @@
 
 import asyncio
 import json
+import re
 import time
 from urllib.parse import urlsplit
+
 import httpx
 
 CLIENT_ID = "sylulive-astrbot"
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
+MAP_PATH = "/web/assets/campus-map.png"
 
 
 class IntegrationProblem(Exception):
@@ -81,15 +84,17 @@ class BusinessClient:
             raise IntegrationProblem(code)
         return body
 
-    async def begin(self, installation_id, name, proposals):
+    async def begin(self, installation_id, name, proposals, *, checkin=False):
         async with self.lock:
             if self.pending and self.pending["deadline"] > time.monotonic():
                 raise IntegrationProblem("authorization_pending")
             if self.tokens:
                 raise IntegrationProblem("already_connected")
-            scope = "profile:read_minimal community:read content:read_own_public actions:read_own"
+            scope = "profile:read_minimal content:read_own_public actions:read_own"
             if proposals:
-                scope += " community:propose"
+                scope += " community:read community:propose"
+            if checkin:
+                scope += " checkin:write"
             body = await self._request(
                 "POST",
                 "/api/oauth/device_authorization",
@@ -222,6 +227,68 @@ class BusinessClient:
             if generation != self.generation:
                 raise IntegrationProblem("authorization_changed")
         return result
+
+    async def public_call(self, path, *, params=None):
+        # 匿名公开接口绝不携带绑定账号的令牌或浏览器 Cookie。
+        if path not in (
+            "/api/canteens/rankings",
+            "/api/canteens/search",
+            "/api/campus/articles",
+            "/api/campus/articles/latest",
+            "/api/campus-calendars/current",
+        ) and not any(
+            re.fullmatch(pattern, path)
+            for pattern in (
+                r"/api/canteens/[1-9]\d*",
+                r"/api/canteens/[1-9]\d*/dishes(?:/[1-9]\d*)?",
+                r"/api/campus/articles/[1-9]\d*",
+                r"/api/campus-calendars/\d{4}-\d{4}",
+                r"/api/integrations/v1/public/community/(?:posts(?:/[1-9]\d*(?:/replies)?)?|replies/[1-9]\d*/context|stickers|sections)",
+            )
+        ):
+            raise IntegrationProblem("public_path_refused")
+        if path.endswith("/dishes"):
+            body = await self._public_request(path, params)
+            if not isinstance(body, list):
+                raise IntegrationProblem("invalid_response")
+            return {"items": body}
+        return await self._request("GET", path, params=params)
+
+    async def _public_request(self, path, params):
+        try:
+            response = await self.http.get(path, params=params)
+        except httpx.HTTPError:
+            raise IntegrationProblem("network_unavailable") from None
+        if response.is_redirect or response.is_error or len(response.content) > 300_000:
+            raise IntegrationProblem("public_read_failed")
+        try:
+            return response.json()
+        except ValueError:
+            raise IntegrationProblem("invalid_response") from None
+
+    async def public_image(self, path):
+        if path != MAP_PATH and (
+            not isinstance(path, str)
+            or not path.startswith("/uploads/")
+            or any(v in path for v in ("..", "\\", "?", "#", "%"))
+        ):
+            raise IntegrationProblem("public_image_refused")
+        try:
+            async with self.http.stream("GET", path) as response:
+                if response.is_redirect or response.is_error:
+                    raise IntegrationProblem("public_image_unavailable")
+                mime = response.headers.get("content-type", "").split(";", 1)[0]
+                if mime not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+                    raise IntegrationProblem("unsupported_image")
+                data = bytearray()
+                async for part in response.aiter_bytes():
+                    data.extend(part)
+                    # 官网原始地图约4.4MB；仅该固定公开资源允许8MiB，其他图片仍4MiB。
+                    if len(data) > (8 if path == MAP_PATH else 4) * 1024 * 1024:
+                        raise IntegrationProblem("image_too_large")
+                return bytes(data)
+        except httpx.HTTPError:
+            raise IntegrationProblem("network_unavailable") from None
 
     def clear(self):
         self.generation += 1

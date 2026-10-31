@@ -1169,10 +1169,14 @@ func TestToolResultForModelMarksInstructionLikeToolDataAsUntrusted(t *testing.T)
 
 type gatedScriptedProvider struct {
 	scriptedToolProvider
-	gate chan struct{}
+	gate    chan struct{}
+	started chan struct{}
 }
 
 func (provider *gatedScriptedProvider) Start(ctx context.Context, request ProviderRequest) (ProviderStream, error) {
+	if provider.started != nil {
+		close(provider.started)
+	}
 	<-provider.gate
 	return provider.scriptedToolProvider.Start(ctx, request)
 }
@@ -1309,18 +1313,33 @@ func TestRuntimeToolLoopPureToolRoundEmitsNoDeltaOrRollback(t *testing.T) {
 func TestAnswerStreamEmitterPersistenceAndBroadcast(t *testing.T) {
 	db := newRuntimeTestDB(t)
 	gate := make(chan struct{})
+	defer func() {
+		select {
+		case <-gate:
+		default:
+			close(gate)
+		}
+	}()
+	started := make(chan struct{})
 	provider := &gatedScriptedProvider{scriptedToolProvider: scriptedToolProvider{rounds: [][]ProviderEvent{
 		{
 			{Type: ProviderEventTextDelta, Text: "最终回答。"},
 			{Type: ProviderEventCompleted},
 		},
-	}}, gate: gate}
+	}}, gate: gate, started: started}
 	runtime := newToolRuntime(t, db, provider, overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
 		return map[string]bool{"ok": true}, nil
 	}})
 
 	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "请分析成绩"})
 	require.NoError(t, err)
+	// 等真实 Run 发布完启动事件并停在 Provider 门闩，再订阅手动 emitter。
+	// 否则 run.started 偶尔抢在 answer.delta 前面，测试会误报回答广播失败。
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("runtime did not reach the gated provider")
+	}
 	subscription, cancel := runtime.Broker().Subscribe(run.ID)
 	defer cancel()
 

@@ -72,12 +72,12 @@ func (r *Runtime) validateAgentContext(
 				return nil, runtimeContextError("日期上下文 ID 无效")
 			}
 		case "post", "reply":
-			id, err := strconv.ParseUint(refID, 10, 64)
+			id, err := strconv.ParseUint(refID, 10, strconv.IntSize)
 			toolName := "community.get_post"
 			if refType == "reply" {
 				toolName = "community.get_reply_context"
 			}
-			if err != nil || id == 0 || uint64(uint(id)) != id || r.tools == nil || !r.tools.HasTool(toolName) {
+			if err != nil || id == 0 || r.tools == nil || !r.tools.HasTool(toolName) {
 				return nil, runtimeContextError("社区上下文无效或能力未开启")
 			}
 			postID := uint(id)

@@ -78,6 +78,10 @@ func (h *IntegrationHandler) Sections(c *gin.Context) {
 		writeIntegrationError(c, &services.IntegrationError{Code: "insufficient_scope", Status: 403}, false)
 		return
 	}
+	h.PublicSections(c)
+}
+
+func (h *IntegrationHandler) PublicSections(c *gin.Context) {
 	var sections []struct {
 		Slug  string `json:"slug"`
 		Title string `json:"title"`

@@ -437,7 +437,7 @@ func TestLoadAIGenericConfigOverridesLegacyProviderVariables(t *testing.T) {
 }
 
 func TestLoadAIAllowsApprovedChatModels(t *testing.T) {
-	for _, model := range []string{"gpt-5.4", "gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.6-terra"} {
+	for _, model := range []string{"gpt-5.4", "gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-6-luna", "gpt-6.1-sol"} {
 		setBaseConfigEnv(t, "debug")
 		t.Setenv("AI_ENABLED", "true")
 		t.Setenv("AI_API_KEY", "server-only-key")

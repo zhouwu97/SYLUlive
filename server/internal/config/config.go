@@ -863,7 +863,7 @@ func envPositiveUintList(name string) []uint {
 
 func approvedAIChatModel(model string) bool {
 	switch model {
-	case "gpt-5.4", "gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.6-terra":
+	case "gpt-5.4", "gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-6-luna", "gpt-6.1-sol":
 		return true
 	default:
 		return false
@@ -890,7 +890,7 @@ func validateAIConfig(
 		return fmt.Errorf("AI_ENABLED=true 时模型名称不能为空")
 	}
 	if !approvedAIChatModel(model) {
-		return fmt.Errorf("AI_CHAT_MODEL 只能是已审核的 gpt-5.4、gpt-5.4-mini、gpt-5.6-luna 或 gpt-5.6-terra")
+		return fmt.Errorf("AI_CHAT_MODEL 只能是已审核的 gpt-5.4、gpt-5.4-mini、gpt-5.6-luna、gpt-5.6-terra、gpt-6-luna 或 gpt-6.1-sol")
 	}
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {

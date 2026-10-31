@@ -33,7 +33,7 @@ def test_tool_definitions_match_documented_astrbot_schema():
             for t in params.values()
         )
         assert not ({"token", "owner_id", "role", "password", "approve"} & expected)
-    assert len(tools) == 10
+    assert len(tools) == 20
 
 
 def test_owner_and_group_boundary_and_same_message_operation(monkeypatch):
@@ -44,7 +44,7 @@ def test_owner_and_group_boundary_and_same_message_operation(monkeypatch):
     api.AstrBotConfig = dict
     events = types.ModuleType("astrbot.api.event")
     events.AstrMessageEvent = object
-    events.filter = types.SimpleNamespace(command=decorator, llm_tool=decorator, on_llm_request=decorator, on_agent_done=decorator)
+    events.filter = types.SimpleNamespace(command=decorator, llm_tool=decorator, on_llm_request=decorator, on_agent_done=decorator, event_message_type=decorator, EventMessageType=types.SimpleNamespace(ALL=0))
     providers = types.ModuleType("astrbot.api.provider")
     providers.ProviderRequest = object
     providers.LLMResponse = object

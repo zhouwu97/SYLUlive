@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -11,6 +12,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"shenliyuan/internal/middleware"
@@ -34,7 +36,7 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 	const secret = "integration-http-test-secret"
 	require.NoError(t, db.Create(&models.User{ID: owner, Nickname: "合成账号", Role: models.RoleUser, AccountStatus: "active"}).Error)
 	require.NoError(t, db.Create(&models.User{ID: recipient, Nickname: "合成收件人", Role: models.RoleUser, AccountStatus: "active"}).Error)
-	require.NoError(t, db.AutoMigrate(&models.Notification{}))
+	require.NoError(t, db.AutoMigrate(&models.Notification{}, &models.PostImage{}, &models.ReplyImage{}, &models.File{}))
 	require.NoError(t, db.Create(&models.AcademicIdentityBinding{UserID: owner, ProviderID: models.AcademicProviderUndergraduate, StudentID: "synthetic-http", VerifiedAt: time.Now(), VerificationMethod: "school_profile", VerificationVersion: "v1"}).Error)
 	for _, doc := range []string{models.LegalDocumentUserAgreement, models.LegalDocumentPrivacyPolicy, models.LegalDocumentCommunityRules} {
 		ack := ""
@@ -96,12 +98,32 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 	require.Equal(t, 401, send("GET", "/ordinary-app", tokens.AccessToken, "", "").Code)
 	require.Equal(t, 401, send("GET", "/api/integrations/v1/binding", jwt, "", "").Code)
 	require.Equal(t, 401, send("GET", "/api/integrations/v1/binding", tokens.RefreshToken, "", "").Code)
+	// 外部编号必须在转换为 uint 前受当前平台位宽约束，不能截断后命中其他对象。
+	for _, path := range []string{
+		"/api/integrations/v1/community/posts/18446744073709551616",
+		"/api/integrations/v1/community/replies/18446744073709551616/context",
+		"/api/integrations/v1/community/posts?after_id=18446744073709551616",
+		"/api/integrations/v1/community/posts/-1",
+		"/api/integrations/v1/community/posts?sort=not-supported",
+		"/api/integrations/v1/community/posts?sort=likes&after_id=1",
+		"/api/integrations/v1/community/posts?sort=likes&cursor=broken",
+		"/api/integrations/v1/community/posts?cursor=unexpected",
+	} {
+		require.Equal(t, 422, send("GET", path, tokens.AccessToken, "", "").Code, path)
+	}
 	require.NoError(t, db.Create(&models.WaterSection{Slug: "campus_life", Title: "校园生活", Status: "active"}).Error)
 	source := models.Post{BoardID: models.BoardShuitie, AuthorID: recipient, PostType: "campus_life", Status: models.PostStatusNormal, ContentKind: models.PostContentKindNormal, Content: "合成帖子", Contact: "must-not-leak", CreatedAt: time.Now().Add(-time.Hour)}
 	require.NoError(t, db.Create(&source).Error)
 	w = send("GET", fmt.Sprintf("/api/integrations/v1/community/posts/%d", source.ID), tokens.AccessToken, "", "")
 	require.Equal(t, 200, w.Code, w.Body.String())
 	require.NotContains(t, w.Body.String(), source.Contact)
+	require.Contains(t, w.Body.String(), `"nickname":"合成收件人"`)
+	require.Contains(t, w.Body.String(), `"like_count":0`)
+	require.Contains(t, w.Body.String(), `"images":[]`)
+	w = send("GET", "/api/integrations/v1/community/posts?sort=likes&limit=1", tokens.AccessToken, "", "")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"sort":"likes"`)
+	w = send("GET", fmt.Sprintf("/api/integrations/v1/community/posts/%d", source.ID), tokens.AccessToken, "", "")
 	var read struct {
 		Data struct {
 			SourceVersion string `json:"source_version"`
@@ -122,6 +144,37 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 	var preview services.IntegrationActionPreview
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &preview))
 	decision := services.IntegrationActionDecision{Allow: true, Nonce: preview.Nonce, Version: preview.Action.Version, PayloadHash: preview.Action.PayloadHash}
+	// 真实事务已经提交，但确认响应在网络上超时；重试不得再次创建评论或通知。
+	committed, releaseResponse := make(chan int, 1), make(chan struct{})
+	lossy := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		recorder := httptest.NewRecorder()
+		r.ServeHTTP(recorder, request)
+		committed <- recorder.Code
+		<-releaseResponse
+	}))
+	defer lossy.Close()
+	encodedDecision, err := json.Marshal(decision)
+	require.NoError(t, err)
+	request, err := http.NewRequest("POST", lossy.URL+actionPath+"/decision", strings.NewReader(string(encodedDecision)))
+	require.NoError(t, err)
+	request.Header.Set("Authorization", "Bearer "+jwt)
+	request.Header.Set("Content-Type", "application/json")
+	lost, networkErr := (&http.Client{Timeout: time.Second}).Do(request)
+	close(releaseResponse)
+	if lost != nil {
+		_ = lost.Body.Close()
+	}
+	require.True(t, errors.Is(networkErr, context.DeadlineExceeded), "确认响应应在事务提交后超时: %v", networkErr)
+	select {
+	case status := <-committed:
+		require.Equal(t, 200, status, "丢失响应前必须已成功发布，不能把回滚当成超时后幂等")
+	case <-time.After(time.Second):
+		t.Fatal("确认请求未进入真实处理器")
+	}
+	var committedCount int64
+	require.NoError(t, db.Model(&models.Reply{}).Count(&committedCount).Error)
+	require.EqualValues(t, 1, committedCount, "重试之前必须已有一条提交成功的评论")
+	require.Equal(t, 1, deliveries)
 	for i := 0; i < 2; i++ {
 		w = postJSON(actionPath+"/decision", jwt, decision)
 		require.Equal(t, 200, w.Code, w.Body.String())

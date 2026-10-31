@@ -88,6 +88,10 @@
 | `POST`| `/api/user/checkin/makeup` | 使用补签卡补签本月过去的未签到日期 |
 | `GET` | `/api/user/checkin/status` | 获取签到状态 |
 | `GET` | `/api/user/checkin/calendar?month=YYYY-MM` | 获取指定月份的签到记录 |
+
+AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人状态）与 `POST /api/integrations/v1/me/checkin`（本人当日签到），二者需本人明确批准 `checkin:write`。不接受用户编号、日期、补签或经验参数；与 App 共用同日事实、奖励及幂等，撤权与签到串行复核。请求体仅允许空或 `{}`，拒绝额外字段／查询参数；返回日期、连续天数、本次奖励等最小数据，不返回学号或经验总额。
+
+公开工具接口 `GET /api/integrations/v1/public/community/{posts,posts/:id,posts/:id/replies,replies/:id/context,stickers,sections}` 无需账号令牌，仍按固定字段／可见状态过滤、限流且不增加浏览量。原有带授权路径保留兼容；本人资料／签到／草稿不属于该公开命名空间。食堂、校园资讯 `/api/campus/articles`、学校校历 `/api/campus-calendars/current` 沿用既有公开接口。
 | `POST`| `/api/user/:id/follow` | 关注指定用户 |
 | `DELETE`| `/api/user/:id/follow`| 取消关注指定用户 |
 | `GET` | `/api/user/:id/posts` | 获取指定用户发布的帖子 |
@@ -469,3 +473,11 @@ FEED-H1 加固：
 ```
 
 精确回复需真实目标 ID 和目标 `source_version`；父线程与通知用户由服务器推导，不接受伪造 author、role 或 parent。发帖草稿使用 `kind=post`、有效 `post_type`、`title`（可空）、`content`，不接受评论字段、附件、市场/投票/公告操作。响应是 `action_id`、`state`、`review_uri`、`expires_at`，不表示发布完成。单 owner 每24小时最多30个新草稿、20次正式助手发布，并计入原有发帖/评论额度；发布事务内完成当前权限、来源/版块/禁言、额度、内容、计数、动作状态与审计的一致性更新。统计变化不影响来源版本，内容变化需要重读重建。助手评论与站内回复通知原子提交，按评论与接收人去重，自回复不提醒；精确回复通知目标评论作者。提交后复用现有推送流程，外部投递失败不回滚已提交评论，也不宣称必达。创建/删除/评论治理/恢复按先帖子后评论顺序加锁。已使用旧refresh在摘要保留期内重放仍撤销同一授权，不因旧闲置期限过期而跳过检测。无奖励、无后台队列、无无人确认发布。
+
+### 集成公开阅读字段与排名
+
+`GET /api/integrations/v1/community/posts` 新增 `sort=newest|likes|replies`（默认 newest）、`cursor`。最新按 ID 倒序用 `next_after_id`；排名按真实计数与 ID 倒序用 `next_cursor`，不与 after_id 混用，游标绑定排序和查询条件。错误组合返回 422，统计变化不保证列表快照。
+
+公开帖子和正常评论新增 `author.nickname`、`like_count`、`images`；帖子含 `reply_count`。图片只包含当前可见内容关联且 public/active 的图片 URL、MIME、尺寸与序号，不返回上传者、存储元数据或私有文件。详情正文上限 10000 字；列表仍为 600 字摘要，评论分页不变。新增展示字段不参与草稿 source_version，统计／改名不使草稿失效。删除评论仍只留墓碑；所有路径保留 scope、当前资格和授权复核，不增加浏览量。
+
+AstrBot 食堂工具直接匿名复用现有 `/api/canteens/rankings`、`/search`、`/:id/dishes`、`/:id/dishes/:dishId`；不新增私有资料、学校登录或私信 scope。

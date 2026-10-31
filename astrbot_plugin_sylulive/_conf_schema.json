@@ -2,6 +2,9 @@
  "server_origin":{"description":"SYLUlive 官方服务 origin（HTTPS，不含路径）；本地测试允许回环 HTTP","type":"string","default":"https://sylulive.online"},
  "owner_platform_id":{"description":"AstrBot 消息平台实例 ID，必须与本人的私聊来源一致","type":"string","default":""},
  "owner_sender_id":{"description":"仅允许此消息发送者在私聊使用插件；QQ 平台填本人 QQ 号。这是本地路由规则，不是 SYLUlive 身份证明","type":"string","default":""},
+ "public_read_group_ids":{"description":"允许共享公开帖子、评论、版块和表情查询的群号列表；使用上方平台实例。默认不开放群。不会开放本人资料、绑定、草稿或发布权限","type":"list","default":[]},
  "installation_name":{"description":"官网显示的安装名称（由本机提供）","type":"string","default":"我的 AstrBot"},
- "allow_proposals":{"description":"请求创建发帖/评论草稿的权限；仍须本人在官网逐次确认发布","type":"bool","default":false}
+ "allow_private_review":{"description":"启用私有结果逐条审核，默认关闭。仅绑定本人／可信管理员可用群内命令请求预览，必须原发起人在私聊确认后才发到原允许群；管理员不能继承别人的 SYLUlive 账号权限","type":"bool","default":false},
+ "allow_proposals":{"description":"请求创建发帖/评论草稿的权限；仍须本人在官网逐次确认发布","type":"bool","default":false},
+ "allow_checkin":{"description":"允许本人私聊指令每日签到；须重新连接并在官网明确勾选签到权限，旧只读授权不会自动扩权。不含补签或自动定时签到","type":"bool","default":false}
 }

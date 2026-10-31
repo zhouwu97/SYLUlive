@@ -4,6 +4,7 @@ Install the fixed AstrBot version to run this integration check. It never opens
 QQ, calls a model, connects a school account, or uses production data.
 """
 import importlib
+import json
 from copy import deepcopy
 from types import SimpleNamespace
 
@@ -35,15 +36,20 @@ class BusinessClientFixture:
     def __init__(self, fail):
         self.fail = fail
 
-    async def begin(self, *args):
+    async def begin(self, *args, **kwargs):
         if self.fail:
             raise IntegrationProblem("network_unavailable")
         return {"user_code": "SYNTHETIC", "verification_uri": "https://fixture.invalid/authorize"}
 
-    async def call(self, *args):
+    async def call(self, *args, **kwargs):
         if self.fail:
             raise IntegrationProblem("connect_first")
+        if args[1] == "/community/sections":
+            return {"sections": []}
         return {"account": {"id": 1, "nickname": "synthetic"}}
+
+    async def public_call(self, path, **kwargs):
+        return await self.call("GET", path.removeprefix("/api/integrations/v1/public"), **kwargs)
 
     async def disconnect(self):
         if self.fail:
@@ -78,7 +84,7 @@ def message(sender):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("command", ["connect", "status", "disconnect"])
-@pytest.mark.parametrize("sender", ["owner", "other"])
+@pytest.mark.parametrize("sender", ["owner", "other", "group"])
 @pytest.mark.parametrize("fail", [True, False])
 async def test_business_command_never_falls_through_to_default_agent(monkeypatch, command, sender, fail):
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
@@ -86,9 +92,12 @@ async def test_business_command_never_falls_through_to_default_agent(monkeypatch
     plugin.owner = "owner"
     plugin.platform = "synthetic-platform"
     plugin.installation = "synthetic-installation"
-    plugin.config = {}
+    plugin.config = {"public_read_group_ids": ["synthetic-group"]}
     plugin.client = BusinessClientFixture(fail)
     event = message(sender)
+    if sender == "group":
+        event.message_obj.type = MessageType.GROUP_MESSAGE
+        event.message_obj.group_id = "synthetic-group"
     metadata = SimpleNamespace(
         handler=getattr(plugin, command), handler_name=command,
         handler_full_name="synthetic." + command,
@@ -111,7 +120,7 @@ async def test_business_command_never_falls_through_to_default_agent(monkeypatch
             responses.append("".join(getattr(c, "text", "") for c in result.chain))
     assert stage.agent_sub_stage.calls == 0, "Business command triggered a second model reply"
     assert event.is_stopped(), "Command must terminate propagation after its response"
-    assert len(responses) == (1 if sender == "owner" or command == "connect" else 0)
+    assert len(responses) == (1 if sender in ("owner", "group") or command == "connect" else 0)
 
 
 def test_connection_error_does_not_claim_a_publish_was_attempted():
@@ -123,6 +132,10 @@ def test_connection_error_does_not_claim_a_publish_was_attempted():
 @pytest.mark.parametrize("handler_name,keyword", [
     ("connect", "sylu-connect"), ("status", "sylu-status"),
     ("disconnect", "sylu-disconnect"),
+    ("daily_checkin", "sylu-checkin"), ("daily_checkin", "签到"),
+    ("daily_checkin_status", "sylu-checkin-status"),
+    ("eat_command", "sylu-eat"), ("eat_command", "吃什么"),
+    ("map_command", "sylu-map"), ("map_command", "校园地图"),
 ])
 def test_english_keywords_match_real_registered_command_filters(handler_name, keyword):
     module = importlib.import_module("astrbot_plugin_sylulive.main")
@@ -190,6 +203,9 @@ async def test_followup_summary_requires_new_post_and_comment_reads(fresh_reads)
     plugin = cls.__new__(cls)
     plugin.owner, plugin.platform = "owner", "synthetic-platform"
     class ReaderFixture:
+        async def public_call(self, *args, **kwargs):
+            return {"data": {"post_id": 811}}
+
         async def call(self, *args, **kwargs):
             return {"data": {"post_id": 811}}
     plugin.client = ReaderFixture()
@@ -223,3 +239,123 @@ async def test_explicit_rewrite_can_use_previous_result_without_claiming_a_new_r
     response = LLMResponse(role="assistant", completion_text="根据上次读取的内容整理。")
     await plugin.verify_current_read(event, ContextWrapper(context=None), response)
     assert response.completion_text == "根据上次读取的内容整理。"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [None, "post", "replies"])
+async def test_comment_tool_rereads_parent_and_fails_closed(failure):
+    cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
+    plugin = cls.__new__(cls)
+    plugin.owner, plugin.platform = "owner", "synthetic-platform"
+    calls = []
+
+    class ReaderFixture:
+        async def public_call(self, path, **kwargs):
+            return await self.call("GET", path.removeprefix("/api/integrations/v1/public"), **kwargs)
+
+        async def call(self, method, path, **kwargs):
+            calls.append((method, path, kwargs.get("params")))
+            kind = "replies" if path.endswith("/replies") else "post"
+            if kind == failure:
+                raise IntegrationProblem("invalid_token")
+            if kind == "post":
+                return {"data": {"post_id": 811, "content": "本轮原帖", "source_version": "fresh"}}
+            return {"data": {"items": [{"reply_id": 2013, "post_id": 811}], "next_after_id": 2013}}
+
+    plugin.client = ReaderFixture()
+    event = message("owner")
+    result = json.loads(await plugin.replies(event, 811, after_id=2000))
+    assert calls[0][:2] == ("GET", "/community/posts/811")
+    if failure == "post":
+        assert len(calls) == 1
+    else:
+        assert calls[1] == ("GET", "/community/posts/811/replies", {"after_id": 2000})
+    if failure:
+        assert result["error"] == "invalid_token" and "data" not in result
+        assert "message" in result
+        assert "replies" not in event.get_extra("sylulive_completed_reads", set())
+    else:
+        assert result["data"]["post"]["content"] == "本轮原帖"
+        assert result["data"]["items"][0]["reply_id"] == 2013
+        assert {"post", "replies"}.issubset(event.get_extra("sylulive_completed_reads"))
+
+
+def test_first_post_comments_and_campus_feed_require_current_reads():
+    from astrbot_plugin_sylulive.main import required_read_kinds
+    contexts = [{"role": "assistant", "tool_calls": [{"function": {"name": "sylulive_posts"}}]}]
+    assert required_read_kinds(ProviderRequest(prompt="列出最近的校园帖子")) == {"feed"}
+    assert required_read_kinds(ProviderRequest(prompt="看看刚才列表中第一篇帖子的评论", contexts=contexts)) == {"post", "replies"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "handler,args",
+    [
+        ("request_private_review", {"source": "account"}),
+        ("share_private_review", {"code": "0123456789abcdef"}),
+        ("cancel_private_review", {"code": "0123456789abcdef"}),
+    ],
+)
+@pytest.mark.parametrize("fail", [True, False])
+async def test_private_review_commands_do_not_enter_group_or_private_model(
+    monkeypatch, handler, args, fail
+):
+    from astrbot_plugin_sylulive.private_review import ReviewProblem
+
+    cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
+    plugin = cls.__new__(cls)
+
+    async def result(*a, **k):
+        if fail:
+            raise ReviewProblem("受控拒绝")
+        return "受控处理结果"
+
+    plugin.private_reviews = SimpleNamespace(request=result, decide=result)
+    event = message("owner")
+    event.message_obj.type = MessageType.GROUP_MESSAGE
+    event.message_obj.group_id = "synthetic-group"
+    md = SimpleNamespace(
+        handler=getattr(plugin, handler),
+        handler_name=handler,
+        handler_full_name="review." + handler,
+        handler_module_path="synthetic.review",
+        event_filters=[],
+        event_type=EventType.AdapterMessageEvent,
+        extras_configs={},
+    )
+    monkeypatch.setitem(
+        star_map,
+        md.handler_module_path,
+        SimpleNamespace(name="review", display_name="review"),
+    )
+    event.set_extra("activated_handlers", [md])
+    event.set_extra("handlers_parsed_params", {md.handler_full_name: args})
+    stage = ProcessStage()
+    stage.ctx = SimpleNamespace(astrbot_config={"provider_settings": {"enable": True}})
+    stage.star_request_sub_stage = StarRequestSubStage()
+    stage.agent_sub_stage = DefaultAgentProbe()
+    async for _ in stage.process(event):
+        pass
+    assert event.is_stopped() and stage.agent_sub_stage.calls == 0
+
+
+@pytest.mark.parametrize(
+    "handler,command",
+    [
+        ("request_private_review", "sylu-review account"),
+        ("share_private_review", "sylu-share 0123456789abcdef"),
+        ("cancel_private_review", "sylu-cancel 0123456789abcdef"),
+    ],
+)
+def test_native_command_parser_accepts_review_commands(handler, command):
+    module = importlib.import_module("astrbot_plugin_sylulive.main")
+    metadata = next(
+        item
+        for item in star_handlers_registry.star_handlers_map.values()
+        if item.handler_module_path == module.__name__ and item.handler_name == handler
+    )
+    event = message("owner")
+    event.message_str = command
+    assert next(
+        f for f in metadata.event_filters if isinstance(f, CommandFilter)
+    ).filter(event, {})

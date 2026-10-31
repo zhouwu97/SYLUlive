@@ -11,6 +11,7 @@ const consent = {
     "community:read",
     "actions:read_own",
     "community:propose",
+    "checkin:write",
   ],
   confirmation_nonce: "owner-nonce",
   expires_at: "2099-01-01T00:00:00Z",
@@ -130,8 +131,17 @@ test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身
   ).toBeVisible();
   expect(writes).toHaveLength(0);
   await page.getByRole("button", { name: "查看授权请求" }).click();
+  await expect(
+    page.getByLabel("公开帖子与评论、作者昵称、互动统计、公开图片和表情目录"),
+  ).toBeVisible();
+  await expect(page.getByText("本连接不提供站内私信", { exact: false })).toBeVisible();
+  await page.screenshot({
+    path: test.info().outputPath("consent-public-media.png"),
+    fullPage: true,
+  });
   const writeScope = page.getByLabel("创建待本人确认的帖子或评论草稿");
   await expect(writeScope).not.toBeChecked();
+  await expect(page.getByLabel("查看本人签到状态，并按本人指令每日签到（不含补签）")).not.toBeChecked();
   await expect(page.getByRole("button", { name: "授权此助手" })).toBeDisabled();
   await page.getByLabel("我已核对设备代码与当前账号，并了解外发范围").check();
   await page.getByRole("button", { name: "授权此助手" }).click();
@@ -140,6 +150,7 @@ test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身
   ).toBeVisible();
   const decision = writes.find((x) => x.path.endsWith("/decision"))!;
   expect(decision.body.scopes).not.toContain("community:propose");
+  expect(decision.body.scopes).not.toContain("checkin:write");
   expect(decision.body.confirmation_nonce).toBe("owner-nonce");
   expect(decision.body).not.toHaveProperty("qq");
   expect(decision.body).not.toHaveProperty("owner_id");

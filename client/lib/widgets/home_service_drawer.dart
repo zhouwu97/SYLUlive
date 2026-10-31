@@ -66,11 +66,16 @@ class HomeServiceDrawer extends StatelessWidget {
     final drawerWidth = (screenWidth * 0.8).clamp(0.0, 360.0);
 
     final themeProvider = context.watch<ThemeProvider>();
-    final drawerBg = themeProvider.shouldShowCustomBackground
-        ? Colors.transparent
-        : isDark
-            ? const Color(0xFF151A24)
-            : kCleanWarmBackgroundLight;
+    final isCustomMode = !themeProvider.isCleanBackgroundMode;
+
+    final drawerBg =
+        themeProvider.shouldShowCustomBackground && themeProvider.frostedGlass
+            ? Colors.transparent
+            : isDark
+                ? const Color(0xFF151A24)
+                : isCustomMode
+                    ? kCleanWarmBackgroundLight.withValues(alpha: 0.96)
+                    : kCleanWarmBackgroundLight;
 
     final drawer = Container(
       width: drawerWidth,
@@ -119,7 +124,8 @@ class HomeServiceDrawer extends StatelessWidget {
         ),
       ),
     );
-    if (!themeProvider.shouldShowCustomBackground) {
+    if (!themeProvider.shouldShowCustomBackground ||
+        !themeProvider.frostedGlass) {
       return drawer;
     }
     return SizedBox(

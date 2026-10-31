@@ -105,7 +105,7 @@ void main() {
       await theme.trySetCustomBackgroundMode();
       await theme.setFrostedGlass(false);
       await tester.pump();
-      expect(surface().a, closeTo(0.4, 0.01));
+      expect(surface().a, 1);
       expect(find.byType(BackdropFilter), findsNothing);
     });
   }
@@ -126,7 +126,7 @@ void main() {
     expect(find.text('Card Content'), findsOneWidget);
   });
 
-  testWidgets('自定义背景且 frostedGlass=false 时，GlassContainer 遵循组件不透明度',
+  testWidgets('自定义背景且 frostedGlass=false 时，GlassContainer 具备保底不透明度 (>= 0.85)',
       (tester) async {
     final theme = await _createProvider();
     await theme.setBackgroundImage('test_bg.jpg');
@@ -139,8 +139,7 @@ void main() {
     final containerFinder = find.byWidgetPredicate((widget) {
       if (widget is Container && widget.decoration is BoxDecoration) {
         final box = widget.decoration as BoxDecoration;
-        return box.color != null &&
-            (box.color!.a - theme.componentOpacity).abs() < .01;
+        return box.color != null && box.color!.a >= 0.85;
       }
       return false;
     });

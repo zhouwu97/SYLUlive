@@ -33,7 +33,7 @@ def test_tool_definitions_match_documented_astrbot_schema():
             for t in params.values()
         )
         assert not ({"token", "owner_id", "role", "password", "approve"} & expected)
-    assert len(tools) == 13
+    assert len(tools) == 19
 
 
 def test_owner_and_group_boundary_and_same_message_operation(monkeypatch):

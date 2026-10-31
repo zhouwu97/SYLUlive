@@ -23,6 +23,10 @@ INTEGRATION_PUBLIC_ORIGIN=https://sylulive.online
 
 ## 发布前
 
+0.1.9 公开查询不再依赖部署者的绑定：先发布服务端匿名 `/api/integrations/v1/public/community/*` 再更新插件，否则新插件会明确读取失败，不回退到私人令牌。验证无凭证可读公开帖、隐藏／删除后不可读、不增加浏览量，`binding`／`me/checkin` 仍需令牌。资讯与校历复用现有匿名 App API；地图要求已发布 `/web/assets/campus-map.png`。不得通过关闭本人接口鉴权满足公开查询。
+
+每日签到单独使用 `checkin:write`，官网默认不勾选，插件 `allow_checkin` 默认关闭。首次启用需本人重连并核对代码／权限，不能代替用户确认、修改旧授权scope或把原有只读授权恢复成写授权。对可丢弃库验证同日重复、与App混用、跨自然日、撤权／scope变更、审计失败整体回滚和并发；本地插件只给本人私聊提供确定签到命令，模型仅可查询状态。不开放补签或定时任务，不开启社区提案／发布开关。
+
 1. 固定不可变候选 SHA，完整测试并按开发规范核验 CI/安全证据。新增 `astrbot-plugin` job 使用真实 AstrBot SDK；PostgreSQL job 显式运行 `TestIntegration` 并提供本机专用测试 DSN，不能让这些测试因缺环境静默跳过。
 2. 保存当前二进制、运行环境、有效 Nginx 配置及源码工作树差异。现场已有未提交修改时停止直接部署，先确认其行为被候选保留；不得使用强制重置丢弃它。
 3. 只读统计教务核验分布。插件只认可 `school_profile` 且版本为 `v1` / `undergraduate-preverify-v1`；统计是绑定记录数，不是保证可授权人数。用户状态、当前协议和近期登录仍在授权时复核。

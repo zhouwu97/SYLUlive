@@ -52,6 +52,7 @@ const labels: Record<string, string> = {
   "content:read_own_public": "本人公开帖子",
   "actions:read_own": "本授权创建的草稿与发布结果",
   "community:propose": "创建待本人确认的帖子或评论草稿",
+  "checkin:write": "查看本人签到状态，并按本人指令每日签到（不含补签）",
 };
 const errors: Record<string, string> = {
   recent_authentication_required:
@@ -152,7 +153,9 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
       if (current()) {
         setConsent(result);
         setSelected(
-          result.requested_scopes.filter((s) => s !== "community:propose"),
+          result.requested_scopes.filter(
+            (s) => s !== "community:propose" && s !== "checkin:write",
+          ),
         );
       }
     } catch (e) {

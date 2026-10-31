@@ -36,7 +36,7 @@ class BusinessClientFixture:
     def __init__(self, fail):
         self.fail = fail
 
-    async def begin(self, *args):
+    async def begin(self, *args, **kwargs):
         if self.fail:
             raise IntegrationProblem("network_unavailable")
         return {"user_code": "SYNTHETIC", "verification_uri": "https://fixture.invalid/authorize"}
@@ -47,6 +47,9 @@ class BusinessClientFixture:
         if args[1] == "/community/sections":
             return {"sections": []}
         return {"account": {"id": 1, "nickname": "synthetic"}}
+
+    async def public_call(self, path, **kwargs):
+        return await self.call("GET", path.removeprefix("/api/integrations/v1/public"), **kwargs)
 
     async def disconnect(self):
         if self.fail:
@@ -129,6 +132,10 @@ def test_connection_error_does_not_claim_a_publish_was_attempted():
 @pytest.mark.parametrize("handler_name,keyword", [
     ("connect", "sylu-connect"), ("status", "sylu-status"),
     ("disconnect", "sylu-disconnect"),
+    ("daily_checkin", "sylu-checkin"), ("daily_checkin", "签到"),
+    ("daily_checkin_status", "sylu-checkin-status"),
+    ("eat_command", "sylu-eat"), ("eat_command", "吃什么"),
+    ("map_command", "sylu-map"), ("map_command", "校园地图"),
 ])
 def test_english_keywords_match_real_registered_command_filters(handler_name, keyword):
     module = importlib.import_module("astrbot_plugin_sylulive.main")
@@ -196,6 +203,9 @@ async def test_followup_summary_requires_new_post_and_comment_reads(fresh_reads)
     plugin = cls.__new__(cls)
     plugin.owner, plugin.platform = "owner", "synthetic-platform"
     class ReaderFixture:
+        async def public_call(self, *args, **kwargs):
+            return {"data": {"post_id": 811}}
+
         async def call(self, *args, **kwargs):
             return {"data": {"post_id": 811}}
     plugin.client = ReaderFixture()
@@ -240,6 +250,9 @@ async def test_comment_tool_rereads_parent_and_fails_closed(failure):
     calls = []
 
     class ReaderFixture:
+        async def public_call(self, path, **kwargs):
+            return await self.call("GET", path.removeprefix("/api/integrations/v1/public"), **kwargs)
+
         async def call(self, method, path, **kwargs):
             calls.append((method, path, kwargs.get("params")))
             kind = "replies" if path.endswith("/replies") else "post"

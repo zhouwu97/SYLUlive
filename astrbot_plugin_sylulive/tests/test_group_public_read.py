@@ -22,6 +22,9 @@ def fixture(*, group="allowed-group", sender="member", platform="configured-plat
     calls = []
 
     class Reader:
+        async def public_call(self, path, **kwargs):
+            return await self.call("GET", path.removeprefix("/api/integrations/v1/public"), **kwargs)
+
         async def call(self, method, path, **kwargs):
             calls.append((method, path))
             if fail:
@@ -99,7 +102,8 @@ async def test_group_status_queries_public_resource_without_owner_profile():
 async def test_group_error_does_not_offer_account_authorization_in_group():
     plugin, event, calls = fixture(fail=True)
     result = json.loads(await plugin.replies(event, 811))
-    assert result["error"] == "connect_first" and "私聊" in result["message"]
+    assert result["error"] == "connect_first" and "服务与网络" in result["message"]
+    assert "授权" not in result["message"]  # 公开读取故障不能要求扩大私人授权。
     assert "/sylu-connect" not in result["message"] and "http" not in result["message"]
     assert len(calls) == 1
 

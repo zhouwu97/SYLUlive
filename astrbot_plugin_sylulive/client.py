@@ -9,6 +9,7 @@ import httpx
 
 CLIENT_ID = "sylulive-astrbot"
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
+MAP_PATH = "/web/assets/campus-map.png"
 
 
 class IntegrationProblem(Exception):
@@ -82,15 +83,17 @@ class BusinessClient:
             raise IntegrationProblem(code)
         return body
 
-    async def begin(self, installation_id, name, proposals):
+    async def begin(self, installation_id, name, proposals, *, checkin=False):
         async with self.lock:
             if self.pending and self.pending["deadline"] > time.monotonic():
                 raise IntegrationProblem("authorization_pending")
             if self.tokens:
                 raise IntegrationProblem("already_connected")
-            scope = "profile:read_minimal community:read content:read_own_public actions:read_own"
+            scope = "profile:read_minimal content:read_own_public actions:read_own"
             if proposals:
-                scope += " community:propose"
+                scope += " community:read community:propose"
+            if checkin:
+                scope += " checkin:write"
             body = await self._request(
                 "POST",
                 "/api/oauth/device_authorization",
@@ -229,7 +232,18 @@ class BusinessClient:
         if path not in (
             "/api/canteens/rankings",
             "/api/canteens/search",
-        ) and not re.fullmatch(r"/api/canteens/[1-9]\d*/dishes(?:/[1-9]\d*)?", path):
+            "/api/campus/articles",
+            "/api/campus/articles/latest",
+            "/api/campus-calendars/current",
+        ) and not any(
+            re.fullmatch(pattern, path)
+            for pattern in (
+                r"/api/canteens/[1-9]\d*/dishes(?:/[1-9]\d*)?",
+                r"/api/campus/articles/[1-9]\d*",
+                r"/api/campus-calendars/\d{4}-\d{4}",
+                r"/api/integrations/v1/public/community/(?:posts(?:/[1-9]\d*(?:/replies)?)?|replies/[1-9]\d*/context|stickers|sections)",
+            )
+        ):
             raise IntegrationProblem("public_path_refused")
         if path.endswith("/dishes"):
             body = await self._public_request(path, params)
@@ -251,7 +265,7 @@ class BusinessClient:
             raise IntegrationProblem("invalid_response") from None
 
     async def public_image(self, path):
-        if (
+        if path != MAP_PATH and (
             not isinstance(path, str)
             or not path.startswith("/uploads/")
             or any(v in path for v in ("..", "\\", "?", "#", "%"))
@@ -267,7 +281,8 @@ class BusinessClient:
                 data = bytearray()
                 async for part in response.aiter_bytes():
                     data.extend(part)
-                    if len(data) > 4 * 1024 * 1024:
+                    # 官网原始地图约4.4MB；仅该固定公开资源允许8MiB，其他图片仍4MiB。
+                    if len(data) > (8 if path == MAP_PATH else 4) * 1024 * 1024:
                         raise IntegrationProblem("image_too_large")
                 return bytes(data)
         except httpx.HTTPError:

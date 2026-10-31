@@ -88,6 +88,10 @@
 | `POST`| `/api/user/checkin/makeup` | 使用补签卡补签本月过去的未签到日期 |
 | `GET` | `/api/user/checkin/status` | 获取签到状态 |
 | `GET` | `/api/user/checkin/calendar?month=YYYY-MM` | 获取指定月份的签到记录 |
+
+AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人状态）与 `POST /api/integrations/v1/me/checkin`（本人当日签到），二者需本人明确批准 `checkin:write`。不接受用户编号、日期、补签或经验参数；与 App 共用同日事实、奖励及幂等，撤权与签到串行复核。请求体仅允许空或 `{}`，拒绝额外字段／查询参数；返回日期、连续天数、本次奖励等最小数据，不返回学号或经验总额。
+
+公开工具接口 `GET /api/integrations/v1/public/community/{posts,posts/:id,posts/:id/replies,replies/:id/context,stickers,sections}` 无需账号令牌，仍按固定字段／可见状态过滤、限流且不增加浏览量。原有带授权路径保留兼容；本人资料／签到／草稿不属于该公开命名空间。食堂、校园资讯 `/api/campus/articles`、学校校历 `/api/campus-calendars/current` 沿用既有公开接口。
 | `POST`| `/api/user/:id/follow` | 关注指定用户 |
 | `DELETE`| `/api/user/:id/follow`| 取消关注指定用户 |
 | `GET` | `/api/user/:id/posts` | 获取指定用户发布的帖子 |

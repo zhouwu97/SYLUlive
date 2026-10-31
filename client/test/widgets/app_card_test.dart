@@ -26,6 +26,99 @@ class _Stripes extends CustomPainter {
 void main() {
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
 
+  testWidgets('关闭模糊时渐变只应用一次透明度，保留装饰、课表和透明容器', (tester) async {
+    final theme = ThemeProvider(loadOnStart: false);
+    addTearDown(theme.dispose);
+    await theme.setBackgroundImage('morenbeijing.jpeg');
+    await theme.setComponentOpacity(.4);
+    const decoration = BoxDecoration(
+      gradient: LinearGradient(
+        colors: [Color(0x146366F1), Color(0x0A8B5CF6)],
+        begin: Alignment.topRight,
+        end: Alignment.bottomLeft,
+        stops: [.2, .8],
+      ),
+      border: Border.fromBorderSide(BorderSide(color: Colors.blue)),
+      boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
+      borderRadius: BorderRadius.all(Radius.circular(16)),
+    );
+    const courseDecoration = BoxDecoration(color: Color(0x33FF0000));
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: theme,
+      child: MaterialApp(
+          home: Scaffold(
+              body: Column(children: [
+        AppCardSurface(
+          key: const ValueKey('gradient'),
+          height: 80,
+          blur: 0,
+          decoration: decoration,
+        ),
+        AppCardSurface(
+          key: const ValueKey('course'),
+          height: 80,
+          surfaceOpacity: .2,
+          decoration: courseDecoration,
+        ),
+        const AppCardMaterial(
+          color: Colors.transparent,
+          child: SizedBox(height: 40),
+        ),
+        const AppCardMaterial(
+          type: MaterialType.transparency,
+          child: SizedBox(height: 40),
+        ),
+      ]))),
+    ));
+    BoxDecoration surface(String key) => tester
+        .widget<Container>(
+          find
+              .descendant(
+                  of: find.byKey(ValueKey(key)),
+                  matching: find.byType(Container))
+              .first,
+        )
+        .decoration! as BoxDecoration;
+    void check() {
+      final actual = surface('gradient');
+      final gradient = actual.gradient! as LinearGradient;
+      expect(actual.border, decoration.border);
+      expect(actual.boxShadow, decoration.boxShadow);
+      expect(actual.borderRadius, decoration.borderRadius);
+      expect(gradient.begin, Alignment.topRight);
+      expect(gradient.end, Alignment.bottomLeft);
+      expect(gradient.stops, [.2, .8]);
+      expect(
+          gradient.colors,
+          decoration.gradient!.colors
+              .map((color) =>
+                  Color.alphaBlend(color, AppColors.surfaceSecondaryLight)
+                      .withValues(alpha: .4))
+              .toList());
+    }
+
+    check();
+    expect(surface('course'), courseDecoration);
+    final materials = tester
+        .widgetList<Material>(find.descendant(
+          of: find.byType(AppCardMaterial),
+          matching: find.byType(Material),
+        ))
+        .toList();
+    expect(materials.first.color, Colors.transparent);
+    expect(materials.last.type, MaterialType.transparency);
+    expect(find.byType(BackdropFilter), findsNothing);
+    await theme.setFrostedGlass(true);
+    await tester.pumpAndSettle();
+    check(); // blur=0 同样服从卡片透明度。
+    await theme.setFrostedGlass(false);
+    await theme.setCleanBackgroundMode();
+    await tester.pumpAndSettle();
+    expect(surface('gradient'), decoration);
+    expect(surface('course'), courseDecoration);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('去掉玻璃卡片描边后，封面贴合卡片边缘且保留显式内边距', (tester) async {
     final theme = ThemeProvider(loadOnStart: false);
     addTearDown(theme.dispose);
@@ -134,7 +227,7 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      Future<void> checkPixels(double alpha) async {
+      Future<void> checkPixels(double alpha, {bool blurred = true}) async {
         final bytes = (await tester.runAsync(() async {
           final boundary = capture.currentContext!.findRenderObject()!
               as RenderRepaintBoundary;
@@ -148,9 +241,17 @@ void main() {
           // 卡片中心的两条相邻黑白条纹都必须被模糊；材质不能重复叠底。
           for (final x in [148, 152]) {
             final offset = ((50 + row * 90) * 320 + x) * 4;
+            var background = blurred ? 127.5 : ((x ~/ 4).isEven ? 255.0 : 0.0);
+            if (!blurred && row == 3) {
+              // GlassContainer 的普通样式保留原有 15% 阴影，阴影也会透过底面。
+              background =
+                  background * .85 + (dark ? 0 : Colors.grey.r * 255) * .15;
+            }
             expect(bytes.getUint8(offset),
-                closeTo(color.r * 255 * alpha + 127.5 * (1 - alpha), 3));
+                closeTo(color.r * 255 * alpha + background * (1 - alpha), 3),
+                reason: 'row=$row x=$x alpha=$alpha blurred=$blurred');
           }
+          if (!blurred) continue; // 普通卡片恢复调用者的装饰描边。
           // 直边中部也不能绘制额外的白色描边。
           final edge = ((50 + row * 90) * 320 + 61) * 4;
           expect(bytes.getUint8(edge),
@@ -168,6 +269,16 @@ void main() {
       await theme.setComponentOpacity(.4);
       await tester.pumpAndSettle();
       await checkPixels(.4);
+      await theme.setFrostedGlass(false);
+      await tester.pumpAndSettle();
+      expect(find.byType(BackdropFilter), findsNothing);
+      await checkPixels(.4, blurred: false);
+      await theme.setComponentOpacity(.65);
+      await tester.pumpAndSettle();
+      await checkPixels(.65, blurred: false);
+      await theme.setFrostedGlass(true);
+      await tester.pumpAndSettle();
+      await checkPixels(.65);
       await theme.setCleanBackgroundMode();
       await tester.pumpAndSettle();
       await checkPixels(1);

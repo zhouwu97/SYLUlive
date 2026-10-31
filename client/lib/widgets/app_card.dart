@@ -79,7 +79,7 @@ class AppCardDivider extends Divider {
   }
 }
 
-/// 所有内容卡片共用的材质。关闭毛玻璃时保留原来的实色外观和布局。
+/// 所有内容卡片共用的材质。卡片不透明度独立于毛玻璃开关。
 ///
 /// 卡片只模糊背后的内容；文字、图标、封面和点击区域仍按原样绘制。
 class AppCardSurface extends Container {
@@ -110,11 +110,29 @@ class AppCardSurface extends Container {
   Widget build(BuildContext context) {
     final settings = context.watch<ThemeProvider?>();
     if (settings?.frostedGlass != true || blur <= 0) {
+      final box =
+          decoration is BoxDecoration ? decoration! as BoxDecoration : null;
+      // 关闭毛玻璃只恢复边框、阴影并停止模糊，壁纸模式仍使用卡片不透明度。
+      // 课表已有独立透明度及配色，继续保留调用者提供的底面。
+      final custom = settings?.shouldShowCustomBackground == true &&
+          surfaceOpacity == null;
+      final alpha = settings?.componentOpacity ?? 1;
       return Container(
         alignment: alignment,
         padding: padding,
-        color: color,
-        decoration: decoration,
+        color: custom && color != null
+            ? appGlassSurfaceColor(context, color, alpha)
+            : color,
+        decoration: custom && box != null
+            ? box.copyWith(
+                color: box.color == null
+                    ? null
+                    : appGlassSurfaceColor(context, box.color, alpha),
+                gradient: box.gradient == null
+                    ? null
+                    : _glassGradient(context, box.gradient!, alpha),
+              )
+            : decoration,
         foregroundDecoration: foregroundDecoration,
         constraints: constraints,
         margin: margin,
@@ -199,10 +217,19 @@ class AppCard extends Card {
   Widget build(BuildContext context) {
     final settings = context.watch<ThemeProvider?>();
     if (settings?.frostedGlass != true) {
+      final theme = Theme.of(context);
+      final custom = settings?.shouldShowCustomBackground == true;
+      final surface = color ??
+          CardTheme.of(context).color ??
+          (theme.useMaterial3
+              ? theme.colorScheme.surfaceContainerLow
+              : theme.cardColor);
       return Card(
-        color: color,
+        color: custom
+            ? appGlassSurfaceColor(context, surface, settings!.componentOpacity)
+            : color,
         shadowColor: shadowColor,
-        surfaceTintColor: surfaceTintColor,
+        surfaceTintColor: custom ? Colors.transparent : surfaceTintColor,
         elevation: elevation,
         shape: shape,
         borderOnForeground: borderOnForeground,
@@ -279,6 +306,9 @@ class _AppCardMaterialState extends State<Material> {
   Widget build(BuildContext context) {
     final settings = context.watch<ThemeProvider?>();
     final glass = settings?.frostedGlass == true;
+    final custom = settings?.shouldShowCustomBackground == true &&
+        widget.type != MaterialType.transparency &&
+        widget.color != Colors.transparent;
     final originalShape = widget.shape ??
         RoundedRectangleBorder(
           borderRadius:
@@ -295,7 +325,7 @@ class _AppCardMaterialState extends State<Material> {
     final content = Material(
       type: widget.type,
       elevation: glass ? 0 : widget.elevation,
-      color: glass
+      color: glass || custom
           ? appGlassSurfaceColor(
               context,
               surface,
@@ -304,7 +334,8 @@ class _AppCardMaterialState extends State<Material> {
                   : 1)
           : widget.color,
       shadowColor: widget.shadowColor,
-      surfaceTintColor: glass ? Colors.transparent : widget.surfaceTintColor,
+      surfaceTintColor:
+          glass || custom ? Colors.transparent : widget.surfaceTintColor,
       textStyle: widget.textStyle,
       shape: glass ? shape : widget.shape,
       borderRadius: glass ? null : widget.borderRadius,

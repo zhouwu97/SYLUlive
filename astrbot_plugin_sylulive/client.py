@@ -2,9 +2,10 @@
 
 import asyncio
 import json
-import time
 import re
+import time
 from urllib.parse import urlsplit
+
 import httpx
 
 CLIENT_ID = "sylulive-astrbot"
@@ -238,6 +239,7 @@ class BusinessClient:
         ) and not any(
             re.fullmatch(pattern, path)
             for pattern in (
+                r"/api/canteens/[1-9]\d*",
                 r"/api/canteens/[1-9]\d*/dishes(?:/[1-9]\d*)?",
                 r"/api/campus/articles/[1-9]\d*",
                 r"/api/campus-calendars/\d{4}-\d{4}",

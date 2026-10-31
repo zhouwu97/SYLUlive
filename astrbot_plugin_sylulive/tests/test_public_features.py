@@ -336,7 +336,8 @@ async def test_canteen_cover_does_not_require_a_dish_photo_or_private_token():
     plugin, event, _ = fixture()
     plugin.food = AsyncMock(
         return_value={
-            "items": [{"id": 34, "image": "/uploads/shop.jpg", "dish_count": 0}]
+            "canteen": {"id": 34, "verified": True, "image": "/uploads/shop.jpg"},
+            "display_reviews": [],
         }
     )
     assert await plugin.image_reference(event, "canteen", 34, 0, 1) == (
@@ -344,7 +345,7 @@ async def test_canteen_cover_does_not_require_a_dish_photo_or_private_token():
         1,
     )
     plugin.food.assert_awaited_with(
-        event, "/api/canteens/rankings", {"sort": "composite"}
+        event, "/api/canteens/34", {"review_sort": "latest", "review_filter": "all"}
     )
     from astrbot_plugin_sylulive.client import IntegrationProblem
 

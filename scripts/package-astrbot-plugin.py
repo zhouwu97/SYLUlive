@@ -12,6 +12,7 @@ files = [
     "client.py",
     "credential_store.py",
     "private_review.py",
+    "public_canteen.py",
     "metadata.yaml",
     "_conf_schema.json",
     "requirements.txt",

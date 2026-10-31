@@ -35,16 +35,16 @@ def required_read_kinds(req):
     prompt = req.prompt or ""
     if any(word in prompt for word in ("只改写", "仅改写", "只润色", "不要重新", "不用重新", "不必重新", "别查", "不要查询", "不用查询")):
         return set()
-    if not any(word in prompt for word in ("读", "看", "查", "总结", "概括", "最新", "现在", "更新")):
+    if not any(word in prompt for word in ("读", "看", "查", "列出", "搜", "总结", "概括", "最近", "最新", "现在", "更新")):
         return set()
-    if any(word in prompt for word in ("帖子列表", "最近的帖子", "最近帖子", "最新帖子", "最新的帖子", "搜索帖子", "搜帖子")):
+    if any(word in prompt for word in ("帖子列表", "最近的帖子", "最近帖子", "最新帖子", "最新的帖子", "搜索帖子", "搜帖子")) or re.search(r"(?:最近|最新)(?:的)?校园帖子", prompt):
         return {"feed"}
     previous = any(
-        call.get("function", {}).get("name") in ("sylulive_get_post", "sylulive_replies", "sylulive_reply_context")
+        call.get("function", {}).get("name") in ("sylulive_posts", "sylulive_my_public_posts", "sylulive_get_post", "sylulive_replies", "sylulive_reply_context")
         for message in req.contexts for call in (message.get("tool_calls") or [])
     )
     known_target = bool(re.search(r"(?:帖子|post_id)[\s:#：]*[1-9]\d*", prompt)) or (
-        previous and any(word in prompt for word in ("刚才那篇", "刚才的讨论", "这篇帖子", "那篇帖子", "那篇讨论", "那条评论", "这条评论"))
+        previous and any(word in prompt for word in ("刚才那篇", "刚才的讨论", "这篇帖子", "那篇帖子", "那篇讨论", "那条评论", "这条评论", "第一篇帖子", "第一篇帖", "第1篇帖子"))
     )
     if not known_target:
         return set()
@@ -61,7 +61,7 @@ def read_kinds(path):
     return set()
 
 
-@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.1.3")
+@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.1.4")
 class SYLUlivePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -256,18 +256,24 @@ class SYLUlivePlugin(Star):
 
     @filter.llm_tool(name="sylulive_replies")
     async def replies(self, event: AstrMessageEvent, post_id: int, after_id: int = 0):
-        """分页读取指定帖子的评论，保留线程编号和版本。
+        """同时重新读取指定原帖正文和一页评论，返回 data.post 与 data.items，保留线程编号和版本。跟进讨论可直接使用本工具。
 
         Args:
             post_id(number): 帖子编号。
             after_id(number): 上一页 next_after_id，首屏为0。
         """
-        return await self.tool(
+        post = json.loads(await self.get_post(event, post_id))
+        if "error" in post:
+            return json.dumps(post, ensure_ascii=False)
+        replies = json.loads(await self.tool(
             event,
             "GET",
             f"/community/posts/{int(post_id)}/replies",
             {"after_id": after_id},
-        )
+        ))
+        if "data" in replies:
+            replies["data"]["post"] = post["data"]
+        return json.dumps(replies, ensure_ascii=False)
 
     @filter.llm_tool(name="sylulive_reply_context")
     async def reply_context(self, event: AstrMessageEvent, reply_id: int):

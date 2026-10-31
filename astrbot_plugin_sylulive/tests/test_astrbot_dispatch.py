@@ -4,6 +4,7 @@ Install the fixed AstrBot version to run this integration check. It never opens
 QQ, calls a model, connects a school account, or uses production data.
 """
 import importlib
+import json
 from copy import deepcopy
 from types import SimpleNamespace
 
@@ -223,3 +224,46 @@ async def test_explicit_rewrite_can_use_previous_result_without_claiming_a_new_r
     response = LLMResponse(role="assistant", completion_text="根据上次读取的内容整理。")
     await plugin.verify_current_read(event, ContextWrapper(context=None), response)
     assert response.completion_text == "根据上次读取的内容整理。"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [None, "post", "replies"])
+async def test_comment_tool_rereads_parent_and_fails_closed(failure):
+    cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
+    plugin = cls.__new__(cls)
+    plugin.owner, plugin.platform = "owner", "synthetic-platform"
+    calls = []
+
+    class ReaderFixture:
+        async def call(self, method, path, **kwargs):
+            calls.append((method, path, kwargs.get("params")))
+            kind = "replies" if path.endswith("/replies") else "post"
+            if kind == failure:
+                raise IntegrationProblem("invalid_token")
+            if kind == "post":
+                return {"data": {"post_id": 811, "content": "本轮原帖", "source_version": "fresh"}}
+            return {"data": {"items": [{"reply_id": 2013, "post_id": 811}], "next_after_id": 2013}}
+
+    plugin.client = ReaderFixture()
+    event = message("owner")
+    result = json.loads(await plugin.replies(event, 811, after_id=2000))
+    assert calls[0][:2] == ("GET", "/community/posts/811")
+    if failure == "post":
+        assert len(calls) == 1
+    else:
+        assert calls[1] == ("GET", "/community/posts/811/replies", {"after_id": 2000})
+    if failure:
+        assert result["error"] == "invalid_token" and "data" not in result
+        assert "message" in result
+        assert "replies" not in event.get_extra("sylulive_completed_reads", set())
+    else:
+        assert result["data"]["post"]["content"] == "本轮原帖"
+        assert result["data"]["items"][0]["reply_id"] == 2013
+        assert {"post", "replies"}.issubset(event.get_extra("sylulive_completed_reads"))
+
+
+def test_first_post_comments_and_campus_feed_require_current_reads():
+    from astrbot_plugin_sylulive.main import required_read_kinds
+    contexts = [{"role": "assistant", "tool_calls": [{"function": {"name": "sylulive_posts"}}]}]
+    assert required_read_kinds(ProviderRequest(prompt="列出最近的校园帖子")) == {"feed"}
+    assert required_read_kinds(ProviderRequest(prompt="看看刚才列表中第一篇帖子的评论", contexts=contexts)) == {"post", "replies"}

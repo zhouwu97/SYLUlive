@@ -347,7 +347,7 @@ func (h *IntegrationHandler) Read(name, scope string) gin.HandlerFunc {
 			input.Limit = n
 		}
 		if value, ok := c.GetQuery("after_id"); ok {
-			n, err := strconv.ParseUint(value, 10, 64)
+			n, err := strconv.ParseUint(value, 10, strconv.IntSize)
 			if err != nil {
 				invalid()
 				return
@@ -361,7 +361,7 @@ func (h *IntegrationHandler) Read(name, scope string) gin.HandlerFunc {
 			return
 		}
 		if id := c.Param("id"); id != "" {
-			n, err := strconv.ParseUint(id, 10, 64)
+			n, err := strconv.ParseUint(id, 10, strconv.IntSize)
 			if err != nil || n == 0 {
 				invalid()
 				return

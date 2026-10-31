@@ -96,6 +96,15 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 	require.Equal(t, 401, send("GET", "/ordinary-app", tokens.AccessToken, "", "").Code)
 	require.Equal(t, 401, send("GET", "/api/integrations/v1/binding", jwt, "", "").Code)
 	require.Equal(t, 401, send("GET", "/api/integrations/v1/binding", tokens.RefreshToken, "", "").Code)
+	// 外部编号必须在转换为 uint 前受当前平台位宽约束，不能截断后命中其他对象。
+	for _, path := range []string{
+		"/api/integrations/v1/community/posts/18446744073709551616",
+		"/api/integrations/v1/community/replies/18446744073709551616/context",
+		"/api/integrations/v1/community/posts?after_id=18446744073709551616",
+		"/api/integrations/v1/community/posts/-1",
+	} {
+		require.Equal(t, 422, send("GET", path, tokens.AccessToken, "", "").Code, path)
+	}
 	require.NoError(t, db.Create(&models.WaterSection{Slug: "campus_life", Title: "校园生活", Status: "active"}).Error)
 	source := models.Post{BoardID: models.BoardShuitie, AuthorID: recipient, PostType: "campus_life", Status: models.PostStatusNormal, ContentKind: models.PostContentKindNormal, Content: "合成帖子", Contact: "must-not-leak", CreatedAt: time.Now().Add(-time.Hour)}
 	require.NoError(t, db.Create(&source).Error)

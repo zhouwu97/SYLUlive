@@ -134,11 +134,11 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &preview))
 	decision := services.IntegrationActionDecision{Allow: true, Nonce: preview.Nonce, Version: preview.Action.Version, PayloadHash: preview.Action.PayloadHash}
 	// 真实事务已经提交，但确认响应在网络上超时；重试不得再次创建评论或通知。
-	committed, releaseResponse := make(chan struct{}), make(chan struct{})
+	committed, releaseResponse := make(chan int, 1), make(chan struct{})
 	lossy := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
 		recorder := httptest.NewRecorder()
 		r.ServeHTTP(recorder, request)
-		close(committed)
+		committed <- recorder.Code
 		<-releaseResponse
 	}))
 	defer lossy.Close()
@@ -155,10 +155,15 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 	}
 	require.True(t, errors.Is(networkErr, context.DeadlineExceeded), "确认响应应在事务提交后超时: %v", networkErr)
 	select {
-	case <-committed:
+	case status := <-committed:
+		require.Equal(t, 200, status, "丢失响应前必须已成功发布，不能把回滚当成超时后幂等")
 	case <-time.After(time.Second):
 		t.Fatal("确认请求未进入真实处理器")
 	}
+	var committedCount int64
+	require.NoError(t, db.Model(&models.Reply{}).Count(&committedCount).Error)
+	require.EqualValues(t, 1, committedCount, "重试之前必须已有一条提交成功的评论")
+	require.Equal(t, 1, deliveries)
 	for i := 0; i < 2; i++ {
 		w = postJSON(actionPath+"/decision", jwt, decision)
 		require.Equal(t, 200, w.Code, w.Body.String())

@@ -130,6 +130,14 @@ test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身
   ).toBeVisible();
   expect(writes).toHaveLength(0);
   await page.getByRole("button", { name: "查看授权请求" }).click();
+  await expect(
+    page.getByLabel("公开帖子与评论、作者昵称、互动统计、公开图片和表情目录"),
+  ).toBeVisible();
+  await expect(page.getByText("本连接不提供站内私信", { exact: false })).toBeVisible();
+  await page.screenshot({
+    path: test.info().outputPath("consent-public-media.png"),
+    fullPage: true,
+  });
   const writeScope = page.getByLabel("创建待本人确认的帖子或评论草稿");
   await expect(writeScope).not.toBeChecked();
   await expect(page.getByRole("button", { name: "授权此助手" })).toBeDisabled();

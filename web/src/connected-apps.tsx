@@ -48,7 +48,7 @@ type Preview = {
 };
 const labels: Record<string, string> = {
   "profile:read_minimal": "账号编号与昵称",
-  "community:read": "公开社区文字、评论和内置表情目录",
+  "community:read": "公开帖子与评论、作者昵称、互动统计、公开图片和表情目录",
   "content:read_own_public": "本人公开帖子",
   "actions:read_own": "本授权创建的草稿与发布结果",
   "community:propose": "创建待本人确认的帖子或评论草稿",
@@ -274,9 +274,9 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
               </label>
             ))}
             <p>
-              读取的文字会交给你部署的
-              AstrBot，可能继续发送至你选择的模型和记忆插件。SYLUlive
-              无法收回已经外发的数据。本连接不提供私信、成绩、学校密码或学校登录会话。
+              获准读取的公开文字、作者昵称、互动统计和图片会交给你部署的
+              AstrBot，可能继续发送至你选择的模型、记忆插件或部署者允许的群。SYLUlive
+              无法收回已经外发的数据。本连接不提供站内私信、成绩、课表、学校密码或学校登录会话。
             </p>
             <label className="field">
               <span>

@@ -86,8 +86,8 @@ class BusinessClient:
 
     async def begin(self, installation_id, name, proposals, *, checkin=False, personal=False):
         async with self.lock:
-            if self.pending and self.pending["deadline"] > time.monotonic():
-                raise IntegrationProblem("authorization_pending")
+            if self.pending:
+                raise IntegrationProblem("authorization_pending" if self.pending["deadline"] > time.monotonic() else "authorization_expired")
             if self.tokens:
                 raise IntegrationProblem("already_connected")
             scope = "profile:read_minimal content:read_own_public actions:read_own"
@@ -145,7 +145,6 @@ class BusinessClient:
         async with self.lock:
             pending = self.pending
             if not pending or pending["deadline"] <= time.monotonic():
-                self.pending = None
                 raise IntegrationProblem("authorization_expired")
             if pending["next"] > time.monotonic():
                 raise IntegrationProblem("poll_later")
@@ -164,8 +163,7 @@ class BusinessClient:
                 if error.code == "slow_down":
                     pending["interval"] += 5
                     pending["next"] = time.monotonic() + pending["interval"]
-                elif error.code not in ("authorization_pending", "network_unavailable"):
-                    self.pending = None
+                # 终止状态仍保留设备秘密，供本人明确解绑时撤销已批准／不确定的请求。
                 raise
             self._save(body)
             self.pending = None
@@ -303,6 +301,12 @@ class BusinessClient:
 
     async def disconnect(self):
         async with self.lock:
+            if self.pending:
+                # 不能只丢弃本机状态：旧链接可能已被官网批准但尚未领到token。
+                await self._request(
+                    "POST", "/api/oauth/device_authorization/cancel",
+                    data={"client_id": CLIENT_ID, "device_code": self.pending["device_code"]},
+                )
             raw = self.tokens.get("refresh_token") if self.tokens else None
             if raw:
                 # If this fails, keep the credential for a safe retry and tell the user.

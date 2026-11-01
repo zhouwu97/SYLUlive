@@ -68,6 +68,9 @@
 | `POST` | `/api/password/email/reset` | 使用邮箱验证码重置密码 |
 | `POST` | `/api/forgot_password` | 旧教务找回入口，已退役，固定返回 `410` |
 | `POST` | `/api/change_password` | 修改密码 (需 JWT) |
+| `POST` | `/api/auth/reauthenticate` | 验证当前已登录账号密码，补充当前会话的近期认证（需 JWT） |
+
+密码再验证请求为`{"password":"当前SYLUlive密码","expected_user_id":当前页面账号ID}`。预期账号只用于拒绝切号竞态，不能指定认证主体；主体和会话族始终来自现有登录。成功返回`authenticated`、`user_id`、`valid_until`，不返回／更换令牌或Cookie，不延长登录有效期，不批准助手scope。错误密码返回403 `reauthentication_failed`，重复失败返回429 `reauthentication_throttled`；真正失效或撤销的登录返回401，账号不匹配返回409。请求限制4096字节，拒绝额外字段；普通token刷新不会补充近期认证。网页验证成功后重新读取请求／草稿并由本人再次确认，不自动重放写入。
 
 ## 2. 用户与个人中心 (User)
 
@@ -447,6 +450,7 @@ FEED-H1 加固：
 | `POST /api/oauth/device_authorization` | 公开客户端 `client_id=sylulive-astrbot` | URLencoded：`installation_id` UUID、自报名称、scope；返回 RFC8628 字段，有效10分钟 |
 | `POST /api/oauth/token` | 设备 secret 或 refresh token | URLencoded；device grant 或 refresh grant。access 10分钟、refresh闲置7天、绝对30天；旧 refresh 重用撤销该授权 |
 | `POST /api/oauth/revoke` | 所撤凭证 | RFC7009，同属授权一并撤销；不会注销 App 登录 |
+| `POST /api/oauth/device_authorization/cancel` | 本次设备 secret | URLencoded `client_id`、`device_code`；取消未完成请求及其已产生的绑定，无需先领取token。成功空200、重复安全；不可用410、归属并发变化409可重试。不是凭网页user_code或QQ号撤销他人授权 |
 | `GET /api/connected-apps` | App 登录 | 本人的连接列表，不返回凭证 |
 | `POST /api/connected-apps/device-requests/lookup` | App 登录且10分钟内真实登录 | JSON `user_code`，返回待核对范围与一次性确认 nonce |
 | `POST /api/connected-apps/device-requests/:id/decision` | 同上 | `allow`、`scopes`、`confirmation_nonce`；替换还须旧 `replace_binding_id` 与 `expected_epoch` |

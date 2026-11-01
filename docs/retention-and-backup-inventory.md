@@ -7,7 +7,7 @@
 | `uploads/` | 服务器/对象存储 | TODO | 内容删除与备份轮换 | 待核验 |
 | Caddy/Nginx 日志 | TODO | TODO | 日志轮换 | 待核验 |
 | systemd/Go/Python 日志 | TODO | TODO | 日志轮换、敏感字段脱敏 | 待核验 |
-| 成功登录逐条流水及安全中心聚合事件 | PostgreSQL `account_security_audit_logs`（仅 `login_success`）、`security_events` | 90 天 | 服务端定时 `PurgeSecurityData`；事故保全副本按专门事件记录管理 | 普通审计保留脱敏摘要，需处置预警附来源 IP 密文；密文随事件一并到期删除，其他账号安全审计沿用原策略 |
+| 成功登录／当前会话密码验证流水及安全中心聚合事件 | PostgreSQL `account_security_audit_logs`（`login_success`、`reauthentication_success`）、`security_events` | 90 天 | 服务端定时 `PurgeSecurityData`；事故保全副本按专门事件记录管理 | 密码验证仅记录账号、请求ID、会话族摘要和时间，不保存密码；普通审计保留脱敏摘要，需处置预警附来源 IP 密文；其他账号安全审计沿用原策略 |
 | 个人信息请求记录 | PostgreSQL | 按法定/治理义务确定 | 管理员处理与到期归档 | 已有模型，期限 TODO |
 | 教务凭证清理任务 | PostgreSQL + Python 服务 | 直到成功或人工处置 | 任务重试、审计结果 | 已有模型 |
 | 社区 AI 工具审计与相关回答 | PostgreSQL `ai_tool_calls` 及现有会话/Run 表 | 当前沿用会话生命周期；未建立社区来源专项 TTL | 用户删除会话时清理所属 Run 与工具审计；来源删除尚未自动级联历史副本 | 新社区读取开关默认关闭；生产开放前须完成来源失效、运行中撤权和留存验收，不能将 `expires_at` 视为自动清理 |

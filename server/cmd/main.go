@@ -1566,6 +1566,7 @@ func main() {
 		auth.POST("/register/email", authHandler.RegisterWithEmail)
 
 		auth.POST("/login", authHandler.Login)
+		auth.POST("/auth/reauthenticate", middleware.AuthMiddleware(db, cfg.JWTSecret), authHandler.Reauthenticate)
 		auth.POST("/refresh", authHandler.Refresh)
 		auth.POST("/auth/refresh", authHandler.Refresh)
 

@@ -21,12 +21,15 @@ func TestSecurityPurgeBoundsLoginHistoryWithoutDeletingOtherAudits(t *testing.T)
 		{UserID: 1, Action: "login_success", CreatedAt: now.Add(-91 * 24 * time.Hour)},
 		{UserID: 1, Action: "login_success", CreatedAt: now.Add(-89 * 24 * time.Hour)},
 		{UserID: 1, Action: "password_reset_email", CreatedAt: now.Add(-91 * 24 * time.Hour)},
+		{UserID: 1, Action: "reauthentication_success", CreatedAt: now.Add(-91 * 24 * time.Hour)},
+		{UserID: 1, Action: "reauthentication_success", CreatedAt: now.Add(-89 * 24 * time.Hour)},
 	}
 	require.NoError(t, db.Create(&rows).Error)
 	require.NoError(t, PurgeSecurityData(db, now))
 	var kept []models.AccountSecurityAuditLog
 	require.NoError(t, db.Order("id ASC").Find(&kept).Error)
-	require.Len(t, kept, 2)
+	require.Len(t, kept, 3)
 	require.Equal(t, rows[1].ID, kept[0].ID)
 	require.Equal(t, rows[2].ID, kept[1].ID)
+	require.Equal(t, rows[4].ID, kept[2].ID)
 }

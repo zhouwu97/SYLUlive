@@ -6,6 +6,7 @@ import { Empty, Head, QueryState } from "./ui";
 import "./connected-apps.css";
 import { integrationScopeLabels as labels } from "./integration-scopes";
 import { IntegrationPersonalSync } from "./integration-personal-sync";
+import { PasswordReauthentication } from "./reauthenticate";
 
 type Binding = {
   binding_id: string;
@@ -50,7 +51,7 @@ type Preview = {
 };
 const errors: Record<string, string> = {
   recent_authentication_required:
-    "请重新登录验证本人身份，然后重试。刷新页面或刷新凭证不能代替重新登录。",
+    "继续前请验证当前账号的密码。验证成功后可继续本次操作，无需重新登录。",
   academic_verification_required:
     "当前账号尚无符合要求的教务核验。请在账号设置完成受支持的身份核验；本地自报资料不能用于此授权。",
   source_changed: "原帖或回复内容已变化，请让助手重新读取并生成草稿。",
@@ -99,16 +100,11 @@ function SignIn() {
     </Empty>
   );
 }
-function Problem({ message }: { message: string }) {
-  const auth = useAuth();
+function Problem({ message, onVerified }: { message: string; onVerified?: () => Promise<unknown> }) {
   return message ? (
     <div role="alert">
       <p>{message}</p>
-      {message.includes("重新登录") && (
-        <button className="btn" onClick={auth.login}>
-          重新登录验证
-        </button>
-      )}
+      {message === errors.recent_authentication_required && onVerified && <PasswordReauthentication onVerified={onVerified} />}
     </div>
   ) : null;
 }
@@ -245,7 +241,11 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
             查看授权请求
           </button>
         </form>
-        <Problem message={message} />
+        <Problem message={message} onVerified={async () => {
+          setMessage("");
+          if (code.trim()) await lookup();
+          else await q.refetch();
+        }} />
         {success && <p role="status">{success}</p>}
         {consent && (
           <div>
@@ -443,7 +443,7 @@ function ActionPanel({ id, nickname }: { id: string; nickname: string }) {
         </p>
         {q.error ? (
           <>
-            <Problem message={explain(q.error)} />
+            <Problem message={explain(q.error)} onVerified={async () => { setChecked(false); await q.refetch(); }} />
             <button className="btn" onClick={() => void q.refetch()}>
               重新加载
             </button>
@@ -569,7 +569,7 @@ function ActionPanel({ id, nickname }: { id: string; nickname: string }) {
             )}
           </QueryState>
         )}
-        <Problem message={message} />
+        <Problem message={message} onVerified={async () => { setChecked(false); setMessage(""); await q.refetch(); }} />
         {message && (
           <button
             className="btn"

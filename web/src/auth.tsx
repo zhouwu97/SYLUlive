@@ -20,9 +20,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const raw = entity(q.data, "user", "data");
   const user = raw.id ? (raw as User) : null;
   const [reloading, setReloading] = useState(false);
+  const [sessionUserId, setSessionUserId] = useState<number | null | undefined>(undefined);
+  const userId = user?.id ?? null, syncingSession = sessionUserId !== userId;
   const reloadSequence = useRef(0), reloadInProgress = useRef(false);
   useEffect(() => {
-    if (!reloadInProgress.current) setAuthSession(user?.id ?? null);
+    if (!reloadInProgress.current) {
+      setAuthSession(userId);
+      setSessionUserId(userId);
+    }
   }, [user?.id, reloading]);
   useEffect(() => {
     const channel = new BroadcastChannel('sylulive-auth');
@@ -60,12 +65,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
-        user: reloading ? null : user,
-        loading: reloading || q.isPending,
+        user: reloading || syncingSession ? null : user,
+        loading: reloading || q.isPending || syncingSession,
         login,
         logout,
         requireUser: () => {
-          if (reloading) return false;
+          if (reloading || syncingSession) return false;
           if (user) return true;
           login();
           return false;

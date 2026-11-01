@@ -100,6 +100,8 @@ async def test_each_private_actor_connects_with_their_own_link_and_no_owner_cred
         assert event.is_stopped()
     assert clients['one'].begin.await_args.args[0] == 'one-installation'
     assert clients['two'].begin.await_args.args[0] == 'two-installation'
+    assert clients['one'].begin.await_args.args[1].startswith('QQ one · ')
+    assert clients['two'].begin.await_args.args[1].startswith('QQ two · ')
     plugin.client.begin.assert_not_awaited()
 
 

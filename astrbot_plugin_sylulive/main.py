@@ -230,7 +230,7 @@ def read_kinds(path):
     return set()
 
 
-@register("astrbot_plugin_sylulive", "SYLUlive", "按用户授权的校园业务工具", "0.2.0")
+@register("astrbot_plugin_sylulive", "SYLUlive", "按用户授权的校园业务工具", "0.2.1")
 class SYLUlivePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -349,6 +349,77 @@ class SYLUlivePlugin(Star):
         if str(event.get_sender_id()) == self.owner:
             return self.client, self.installation
         return self.accounts.get(str(event.get_sender_id()), str(event.message_obj.self_id), create=create)
+
+    def binding_group(self, event):
+        config = getattr(self, "config", {})
+        return (
+            config.get("allow_group_binding", False) is True
+            and config.get("allow_multi_user", False) is True
+            and self.allowed_public_group(event)
+            and bool(re.fullmatch(r"[1-9]\d{4,14}", str(event.get_sender_id())))
+            and bool(re.fullmatch(r"[1-9]\d{4,14}", str(event.get_group_id())))
+        )
+
+    def binding_account(self, event, *, create=False):
+        if not self.binding_group(event):
+            return self.account(event, create=create)
+        if str(event.get_sender_id()) == self.owner:
+            return self.client, self.installation
+        return self.accounts.get(str(event.get_sender_id()), str(event.message_obj.self_id), create=create)
+
+    async def send_binding_link(self, event, text):
+        # 目标只来自本次QQ事件；不接受命令参数或模型指定的另一个QQ。
+        actor, group = str(event.get_sender_id()), str(event.get_group_id())
+        native = getattr(getattr(event, "bot", None), "send_private_msg", None)
+        if callable(native):
+            # group_id 允许协议端在支持时使用当前群的临时会话，不要求先加好友。
+            result = await native(user_id=int(actor), group_id=int(group), message=[{"type":"text","data":{"text":text}}])
+            return isinstance(result, dict) and result.get("message_id") is not None
+        return await self.send_review_message(f"{self.platform}:FriendMessage:{actor}", text) is True
+
+    @filter.command("sylu")
+    async def sylu_commands(self, event: AstrMessageEvent, action: str = "help"):
+        """SYLUlive 校园助手，使用 /sylu help 查看指引。"""
+        if action != "help":
+            event.should_call_llm(True)
+            try:
+                yield event.plain_result("请发送 /sylu help 查看校园助手用法。")
+            finally:
+                event.stop_event()
+            return
+        async for result in self.help_command(event):
+            yield result
+
+    @filter.command("sylu-help", alias={"校园帮助", "sylu帮助"})
+    async def help_command(self, event: AstrMessageEvent):
+        event.should_call_llm(True)
+        try:
+            if str(event.get_platform_id()) != self.platform:
+                return
+            group = self.config.get("allow_group_binding",False) and self.config.get("allow_multi_user",False)
+            text = (
+                "SYLUlive 校园助手\n"
+                "\n公开查询，不用绑定：\n"
+                "• 说“看看最新校园帖子”“看看第一篇的评论”\n"
+                "• /sylu-eat 或“今天吃什么”：随机一家食堂、真实评价和现有图片\n"
+                "• /sylu-map：校园地图；也可问校园资讯和公开校历\n"
+                "\n绑定自己的校园账号：\n"
+                + ("1. 群里或私聊发 /sylu-connect；群发起时链接只私发本人，不发到群里。\n" if group else "1. 私聊发 /sylu-connect，获取本人的官网授权链接。\n")
+                + "2. 官网用自己的SYLUlive账号登录，核对设备代码并按需同意权限。\n"
+                "3. 官网授权后，可直接私聊使用已开放且已授权的本人功能；/sylu-status 查看连接状态。\n"
+                "• 每个人使用自己的链接；误绑时本人私聊 /sylu-disconnect，再 /sylu-connect 重新绑定，不影响别人\n"
+            )
+            if self.config.get("allow_checkin",False):
+                text += "\n/sylu-checkin 或“签到”：本人私聊每日签到，须先在官网勾选签到；同日不重复领奖。\n"
+            text += (
+                "\n/sylu-grades（我的成绩）、/sylu-erke（我的二课）：仅本人私聊，须单独授权并先同步资料；不是实时登录学校。\n"
+                if self.config.get("allow_personal_queries",False)
+                else "\n成绩、二课当前尚未开放，绑定成功不代表这两项已经可用。\n"
+            )
+            text += "\n群里不显示成绩、二课或授权凭证；发帖、评论也不会因为绑定而自动开放。\n帮助：/sylu-help 或 /sylu help。"
+            yield event.plain_result(text)
+        finally:
+            event.stop_event()
 
     def open_public_reading(self, event):
         return (
@@ -733,21 +804,20 @@ class SYLUlivePlugin(Star):
         # AstrBot 的参数表示“禁止默认 LLM”；False 会允许命令继续进入模型。
         event.should_call_llm(True)
         try:
-            if self.allowed_public_group(event):
+            group_binding = self.binding_group(event)
+            if self.allowed_public_group(event) and not group_binding:
                 yield event.plain_result(
                     "公开帖子不用绑定。请本人私聊机器人发送 /sylu-connect 获取专属授权链接；链接和代码不在群里展示。"
                 )
                 return
-            if not self.allowed(event):
+            if not self.allowed(event) and not group_binding:
                 yield event.plain_result(
                     "请在维护者开放的平台用本人私聊连接；多用户模式须启用，不要使用他人的校园账号。"
                 )
                 return
             try:
-                client, installation = self.account(event, create=True)
-                name = str(self.config.get("installation_name", "我的 AstrBot"))
-                if self.config.get("allow_multi_user", False):
-                    name = f"QQ {event.get_sender_id()} · {name}"[:80]
+                client, installation = self.binding_account(event, create=True)
+                name = f"QQ {event.get_sender_id()} · {self.config.get('installation_name', '我的 AstrBot')}"[:80]
                 result = await client.begin(
                     installation,
                     name,
@@ -755,10 +825,21 @@ class SYLUlivePlugin(Star):
                     checkin=bool(self.config.get("allow_checkin", False)),
                     personal=bool(self.config.get("allow_personal_queries", False)),
                 )
-                yield event.plain_result(
-                    f"仅在你自己的 SYLUlive 账号授权。核对设备代码 {result['user_code']}：\n{result['verification_uri']}\n网页确认后发送：/sylu-status。不要把代码转发给别人。"
+                text = (
+                    f"这是 QQ {event.get_sender_id()} 的本次绑定链接，请在自己的 SYLUlive 账号授权。核对设备代码 {result['user_code']}：\n{result['verification_uri']}\n官网确认后可直接使用已开放且已授权的本人功能；/sylu-status 查看状态。不要转发链接。误绑可私聊 /sylu-disconnect 后重新绑定。"
                     + ("\n也可直接私聊问“我的成绩”“我的二课”或“签到”，需本人勾选对应权限；缺少资料时请先在官网“已授权助手”显式同步。" if self.config.get("allow_personal_queries",False) else "")
                 )
+                if group_binding:
+                    try:
+                        delivered = await self.send_binding_link(event,text)
+                    except Exception:
+                        delivered = False
+                    yield event.plain_result(
+                        "绑定链接已私发给本次发起人。请核对官网账号和代码并授权，之后可直接私聊使用已授权功能；/sylu-status 查看状态。"
+                        if delivered else "未能确认绑定链接私信送达。请检查机器人私聊，必要时添加好友后重试；本次尚未绑定，不会将链接或代码发到群里。"
+                    )
+                else:
+                    yield event.plain_result(text)
             except IntegrationProblem as error:
                 yield event.plain_result(self.problem(error))
         finally:
@@ -768,6 +849,23 @@ class SYLUlivePlugin(Star):
     async def status(self, event: AstrMessageEvent):
         event.should_call_llm(True)
         try:
+            group_binding = self.binding_group(event)
+            if group_binding:
+                try:
+                    client, _ = self.binding_account(event)
+                    if client.pending:
+                        await client.poll()
+                    if not client.tokens:
+                        raise IntegrationProblem("connect_first")
+                    try:
+                        await client.call("GET", "/binding")
+                    except IntegrationProblem as error:
+                        if error.code != "insufficient_scope" or "profile:read_minimal" in client.tokens.get("scope", "").split():
+                            raise
+                    yield event.plain_result("你的校园连接已建立。具体账号与权限请本人私聊发送 /sylu-status 查看；私人查询不在群里返回。")
+                except IntegrationProblem as error:
+                    yield event.plain_result(self.problem(error))
+                return
             if not self.allowed(event) and self.public_only_session(event):
                 result = json.loads(
                     await self.tool(event, "GET", "/community/sections")
@@ -823,12 +921,9 @@ class SYLUlivePlugin(Star):
                 return
             try:
                 client, _ = self.account(event)
-                pending_only = bool(getattr(client,"pending",None)) and not getattr(client,"tokens",None)
                 await client.disconnect()
                 yield event.plain_result(
-                    "已取消本机待授权请求。如果已在官网批准，请在官网‘已授权助手’撤销那条记录；尚未取得凭证，不能代你声称已撤销官网授权。"
-                    if pending_only else
-                    "本机连接已清除；已有凭证已请求服务端撤销。也可到官网‘已授权助手’检查。"
+                    "你的连接已断开，本次旧绑定链接已取消。需要重新绑定时发送 /sylu-connect；其他人的连接不受影响。"
                 )
             except IntegrationProblem as error:
                 yield event.plain_result(
@@ -842,6 +937,11 @@ class SYLUlivePlugin(Star):
         messages = {
             "connect_first": "尚未授权 SYLUlive 账号。请先发送 /sylu-connect。",
             "authorization_pending": "请在官网确认，再发送 /sylu-status。",
+            "authorization_expired": "绑定链接已过期，请先发 /sylu-disconnect 取消旧请求，再发 /sylu-connect 获取新链接。",
+            "expired_token": "绑定链接已过期，请先发 /sylu-disconnect，再重新连接。",
+            "access_denied": "这次授权已拒绝或取消。请先发 /sylu-disconnect 清理旧请求，需要时再重新连接。",
+            "device_request_unavailable": "旧请求已不存在，未能确认服务端撤销结果，请到官网‘已授权助手’检查，或联系维护者处理误绑。",
+            "authorization_changed": "连接状态刚发生变化，请重试本次操作；未借用其他人的授权。",
             "poll_later": "请稍等几秒再查询连接状态。",
             "slow_down": "查询过快，请稍后再试。",
             "already_connected": "已有本机连接，请查询状态或先断开。",

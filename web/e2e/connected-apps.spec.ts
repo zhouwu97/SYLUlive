@@ -226,18 +226,136 @@ test("正式发布必须本人核对，重复点击只发送一次确认并展�
   });
 });
 
-test("过旧登录给出重新登录入口，不发送授权确认", async ({ page }) => {
+test("过旧登录只要求当前账号密码，不跳完整登录或自动授权", async ({ page }) => {
   const writes = await fixture(page, { recent: true });
   await page.goto("./connected-apps?user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求" }).click();
   await expect(page.getByRole("alert")).toContainText(
-    "刷新页面或刷新凭证不能代替重新登录",
+    "无需重新登录",
   );
   await expect(
-    page.getByRole("button", { name: "重新登录验证" }),
+    page.getByLabel("当前账号密码", { exact: true }),
   ).toBeVisible();
+  await expect(page.getByLabel("邮箱或账号")).toHaveCount(0);
   expect(writes.filter((x) => x.path.endsWith("/decision"))).toHaveLength(0);
 });
+
+test("当前会话密码验证后保留设备代码并重读请求，错误密码可重试", async ({ page }) => {
+  const options = { recent: true }, writes = await fixture(page, options);
+  const attempts: Record<string, unknown>[] = [];
+  let fullLogins = 0;
+  await page.route("**/api/login", route => { fullLogins++; return route.fulfill({ status: 500 }); });
+  await page.route("**/api/auth/reauthenticate", route => {
+    const body = route.request().postDataJSON(); attempts.push(body);
+    if (body.password !== "synthetic-password") return route.fulfill({ status: 403, json: { code: "reauthentication_failed", message: "密码不正确，请重新输入" } });
+    options.recent = false;
+    return route.fulfill({ json: { authenticated: true, user_id: 991 } });
+  });
+  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.getByRole("button", { name: "查看授权请求" }).click();
+  await page.getByLabel("当前账号密码", { exact: true }).fill("wrong-password");
+  await page.getByRole("button", { name: "验证并继续", exact: true }).click();
+  await expect(page.getByText("密码不正确，请重新输入", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("当前账号密码", { exact: true })).toHaveValue("");
+  await expect(page.getByLabel("设备代码", { exact: true })).toHaveValue("ABCD-1234");
+  await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
+  await page.getByRole("button", { name: "验证并继续", exact: true }).click();
+  await expect(page.getByRole("button", { name: "授权此助手", exact: true })).toBeVisible();
+  await expect(page.getByLabel("我已核对设备代码与当前账号，并了解外发范围")).not.toBeChecked();
+  expect(fullLogins).toBe(0);
+  expect(attempts).toEqual([{ password: "wrong-password", expected_user_id: 991 }, { password: "synthetic-password", expected_user_id: 991 }]);
+  expect(writes.filter(x => x.path.endsWith("/decision"))).toHaveLength(0);
+});
+
+test("验证取消后迟到响应不会自动继续，期间不会重复提交", async ({ page }) => {
+  await fixture(page, { recent: true });
+  let resolve!: () => void, requests = 0, lookups = 0;
+  await page.route("**/api/connected-apps/device-requests/lookup", route => { lookups++; return route.fulfill({ status: 403, json: { code: "recent_authentication_required" } }); });
+  await page.route("**/api/auth/reauthenticate", async route => {
+    requests++;
+    await new Promise<void>(done => { resolve = done; });
+    await route.fulfill({ json: { authenticated: true, user_id: 991 } }).catch(() => {});
+  });
+  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.getByRole("button", { name: "查看授权请求" }).click();
+  await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
+  await page.getByRole("button", { name: "验证并继续", exact: true }).click();
+  await expect(page.getByRole("button", { name: "正在验证…", exact: true })).toBeDisabled();
+  await expect.poll(() => requests).toBe(1);
+  await page.getByRole("button", { name: "取消验证", exact: true }).click();
+  resolve();
+  await expect(page.getByLabel("当前账号密码", { exact: true })).toHaveValue("");
+  await expect(page.getByText("signal is aborted", { exact: false })).toHaveCount(0);
+  expect(lookups).toBe(1);
+  expect(requests).toBe(1);
+});
+
+test("密码验证限流保留页面且不当作账号退出", async ({ page }) => {
+  await fixture(page, { recent: true });
+  await page.route("**/api/auth/reauthenticate", route => route.fulfill({ status: 429, json: { code: "reauthentication_throttled", message: "验证次数过多，请稍后重试" } }));
+  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.getByRole("button", { name: "查看授权请求" }).click();
+  await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
+  await page.getByRole("button", { name: "验证并继续", exact: true }).click();
+  await expect(page.getByText("验证次数过多，请稍后重试", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "登录状态已失效，重新登录", exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("设备代码", { exact: true })).toHaveValue("ABCD-1234");
+});
+
+test("草稿补充密码验证后仍需重新核对，不能自动重放发布", async ({ page }) => {
+  await fixture(page);
+  let verified = false, publishAttempts = 0;
+  await page.route("**/api/connected-apps/actions/action-one/decision", route => {
+    publishAttempts++;
+    return route.fulfill({ status: verified ? 500 : 403, json: { code: verified ? "unexpected_replay" : "recent_authentication_required" } });
+  });
+  await page.route("**/api/auth/reauthenticate", route => { verified = true; return route.fulfill({ json: { authenticated: true, user_id: 991 } }); });
+  await page.goto("./connected-apps/actions/action-one");
+  await page.getByLabel("我已核对全文、回复目标和发布账号").check();
+  await page.getByRole("button", { name: "确认并发布", exact: true }).click();
+  await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
+  await page.getByRole("button", { name: "验证并继续", exact: true }).click();
+  await expect(page.getByLabel("当前账号密码", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("我已核对全文、回复目标和发布账号")).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "确认并发布", exact: true })).toBeDisabled();
+  expect(publishAttempts).toBe(1);
+});
+
+test("验证中跨标签切号不会把旧响应当作新账号的验证或授权", async ({ page }) => {
+  const writes = await fixture(page, { recent: true });
+  let userId = 991, release!: () => void, pending = false;
+  await page.route("**/api/user/profile", route => route.fulfill({ json: { id: userId, nickname: `合成账号${userId}`, role: "user" } }));
+  await page.route("**/api/auth/reauthenticate", async route => {
+    pending = true;
+    await new Promise<void>(resolve => { release = resolve; });
+    await route.fulfill({ json: { authenticated: true, user_id: 991 } }).catch(() => {});
+  });
+  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.getByRole("button", { name: "查看授权请求" }).click();
+  await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
+  await page.getByRole("button", { name: "验证并继续", exact: true }).click();
+  await expect.poll(() => pending).toBe(true);
+  userId = 992;
+  await page.evaluate(() => { const channel = new BroadcastChannel("sylulive-auth"); channel.postMessage("changed"); channel.close(); });
+  await expect(page.getByText(/当前账号：合成账号992/)).toBeVisible();
+  release();
+  await expect(page.getByRole("button", { name: "授权此助手", exact: true })).toHaveCount(0);
+  await expect(page.getByText("signal is aborted", { exact: false })).toHaveCount(0);
+  expect(writes.filter(value => value.path.endsWith("/decision"))).toHaveLength(0);
+});
+
+for (const theme of ["light", "dark"]) for (const width of [390, 1440]) {
+  test(`${theme}-${width}px当前账号密码验证可操作`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.addInitScript(value => localStorage.setItem("sylulive-theme", value), theme);
+    await fixture(page, { recent: true });
+    await page.goto("./connected-apps?user_code=ABCD-1234");
+    await page.getByRole("button", { name: "查看授权请求" }).click();
+    await expect(page.getByLabel("当前账号密码", { exact: true })).toBeFocused();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath(`password-verification-${theme}-${width}.png`), fullPage: true });
+  });
+}
 
 test("草稿读取失败可重试，来源变化禁止发布", async ({ page }) => {
   await fixture(page);

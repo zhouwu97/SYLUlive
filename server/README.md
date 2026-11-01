@@ -15,7 +15,7 @@ server/ 是沈理校园的 Go 后端，负责 App 账号、社区、竞赛、通
 
 `INTEGRATIONS_ENABLED`、`INTEGRATION_PROPOSALS_ENABLED`、`INTEGRATION_OWNER_PUBLISH_ENABLED` 默认全关；后两项依次依赖前项。启用时必须配置 `INTEGRATION_PUBLIC_ORIGIN` 为官网 HTTPS origin（本地开发允许回环 HTTP）；该地址与插件 `server_origin` 保持一致。新增设备请求、授权、凭证摘要、草稿、审计与限流表及内容来源列；迁移需使用原有备份/发布流程，不能先开生产开关再补验收。
 
-官方网页入口 `/web/connected-apps`；授权与发布需10分钟内真实登录。助手授权独立于 App 登录设备；QQ 平台实例和发送者白名单由插件本地检查，不作为后端身份。教务资格、scope、用户状态及内容源版本由后端当前数据复核。正常 App 的发帖/评论仍使用原规则，助手复用核心额度与评论统计事务。
+官方网页入口 `/web/connected-apps`；授权与发布需10分钟内真实登录或当前会话密码验证。`POST /api/auth/reauthenticate` 只校验当前登录用户的密码与预期账号，更新当前刷新会话族的近期认证；不新建登录、不更换Cookie、不延长令牌、不影响其他设备。失败限流和成功审计沿用现有安全设施，密码和令牌不进入日志。助手授权独立于 App 登录设备；QQ 平台实例和发送者白名单由插件本地检查，不作为后端身份。教务资格、scope、用户状态及内容源版本由后端当前数据复核。正常 App 的发帖/评论仍使用原规则，助手复用核心额度与评论统计事务。
 
 ## 本地运行
 

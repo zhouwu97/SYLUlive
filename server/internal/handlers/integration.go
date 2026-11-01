@@ -42,6 +42,7 @@ func (h *IntegrationHandler) Register(r *gin.Engine, jwtSecret string) {
 	protocol := r.Group("/api/oauth")
 	protocol.Use(func(c *gin.Context) { c.Header("Cache-Control", "no-store"); c.Header("Pragma", "no-cache") })
 	protocol.POST("/device_authorization", h.DeviceAuthorization)
+	protocol.POST("/device_authorization/cancel", h.CancelDeviceAuthorization)
 	protocol.POST("/token", h.Token)
 	protocol.POST("/revoke", h.RevokeToken)
 	owner := r.Group("/api/connected-apps", middleware.AuthMiddleware(h.db, jwtSecret))
@@ -186,6 +187,24 @@ func (h *IntegrationHandler) DeviceAuthorization(c *gin.Context) {
 	verification := strings.TrimRight(h.options.PublicOrigin, "/") + "/web/connected-apps"
 	c.JSON(200, gin.H{"device_code": response.DeviceCode, "user_code": response.UserCode, "expires_in": response.ExpiresIn, "interval": response.Interval, "verification_uri": verification, "verification_uri_complete": verification + "?user_code=" + url.QueryEscape(response.UserCode)})
 }
+func (h *IntegrationHandler) CancelDeviceAuthorization(c *gin.Context) {
+	if !h.protocolLimit(c, "revoke", 30) {
+		return
+	}
+	form, err := integrationForm(c, "client_id", "device_code")
+	if err == nil && form.Get("client_id") != services.IntegrationClientID {
+		err = &services.IntegrationError{Code: "invalid_client", Status: 400}
+	}
+	if err == nil {
+		err = h.auth.CancelDevice(c.Request.Context(), form.Get("device_code"))
+	}
+	if err != nil {
+		writeIntegrationError(c, err, true)
+		return
+	}
+	c.Status(http.StatusOK)
+}
+
 func (h *IntegrationHandler) Token(c *gin.Context) {
 	if !h.protocolLimit(c, "token", 120) {
 		return

@@ -165,6 +165,37 @@ async def test_disconnect_failure_does_not_claim_revocation():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [None, "network_unavailable", "device_request_unavailable"])
+async def test_disconnect_cancels_pending_server_request_and_keeps_secret_on_failure(failure):
+    requests = []
+    def respond(request):
+        requests.append(request)
+        if failure == "network_unavailable":
+            raise httpx.ReadTimeout("synthetic")
+        return httpx.Response(410, json={"error":failure}) if failure else httpx.Response(200)
+    client = BusinessClient("https://fixture.invalid", Store(), transport=httpx.MockTransport(respond))
+    client.pending = {"device_code":"sd_original-request", "deadline":0, "next":0}
+    try:
+        with pytest.raises(IntegrationProblem, match="authorization_expired"):
+            await client.poll()
+        with pytest.raises(IntegrationProblem, match="authorization_expired"):
+            await client.begin(str(uuid.uuid4()), "QQ 123456789", False)
+        assert client.pending is not None and not requests
+        if failure:
+            with pytest.raises(IntegrationProblem, match=failure):
+                await client.disconnect()
+            assert client.pending["device_code"] == "sd_original-request"
+        else:
+            await client.disconnect()
+            assert client.pending is None
+        assert requests[0].url.path == "/api/oauth/device_authorization/cancel"
+        assert b"device_code=sd_original-request" in requests[0].content
+        assert "authorization" not in requests[0].headers
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("old_status", [200, 401])
 async def test_old_response_cannot_clear_or_return_data_after_reconnection(old_status):
     started, release = asyncio.Event(), asyncio.Event()

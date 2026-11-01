@@ -15,7 +15,7 @@ pnpm dev
 
 ## AstrBot 授权与草稿确认
 
-个人主页“已授权助手”进入 `/web/connected-apps`，核对设备代码、选择 scope、替换/撤销连接；`/web/connected-apps/actions/:id` 显示不可变草稿并由本人确认。提案权限默认不选，模型不能直接发布。近期登录失效时重新登录后再加载；token refresh 不延长近期认证。帖子来源或授权变化时，页面禁止发布并要求重读。
+个人主页“已授权助手”进入 `/web/connected-apps`，核对设备代码、选择 scope、替换/撤销连接；`/web/connected-apps/actions/:id` 显示不可变草稿并由本人确认。提案权限默认不选，模型不能直接发布。已登录但近期认证过旧时，页内只验证当前 SYLUlive 账号密码，保留设备代码；验证后重读请求／草稿并重新核对，不自动授权或重放发布。真正失去登录会话时才使用完整登录。token refresh 不延长近期认证；密码验证仅更新当前会话，不影响其他设备。帖子来源或授权变化时，页面禁止发布并要求重读。
 
 详见 [插件安装与本地配置](../astrbot_plugin_sylulive/README.md)。本地开发务必设置前述 `SYLULIVE_API_ORIGIN`，插件与 `INTEGRATION_PUBLIC_ORIGIN` 均指向本地网页 origin 5173。未启用后端新集成时，这些页面不会伪装成功。该入口不改变现有 Web/Flutter 校园 AI。
 

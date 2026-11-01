@@ -9,6 +9,12 @@ import (
 
 // 调用者已持有用户行锁。注销、撤销协议和教务换绑与发布按同一锁顺序生效。
 func InvalidateUserIntegrations(tx *gorm.DB, owner uint, now time.Time) error {
+	// 上传副本属于当前教务身份；换绑、注销或撤回协议后不保留旧身份成绩。
+	if tx.Migrator().HasTable(&models.PersonalUploadedSnapshot{}) {
+		if err := tx.Where("user_id = ? AND snapshot_type = ?", owner, "integration_grades").Delete(&models.PersonalUploadedSnapshot{}).Error; err != nil {
+			return err
+		}
+	}
 	if !tx.Migrator().HasTable(&models.IntegrationBinding{}) {
 		return nil
 	}

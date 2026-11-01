@@ -4,6 +4,8 @@ import { useAuth } from "./auth";
 import { ApiError, captureAuthSession, useApi, write } from "./api";
 import { Empty, Head, QueryState } from "./ui";
 import "./connected-apps.css";
+import { integrationScopeLabels as labels } from "./integration-scopes";
+import { IntegrationPersonalSync } from "./integration-personal-sync";
 
 type Binding = {
   binding_id: string;
@@ -46,14 +48,6 @@ type Preview = {
   confirmation_nonce?: string;
   confirmation_expires_at?: string;
 };
-const labels: Record<string, string> = {
-  "profile:read_minimal": "账号编号与昵称",
-  "community:read": "公开帖子与评论、作者昵称、互动统计、公开图片和表情目录",
-  "content:read_own_public": "本人公开帖子",
-  "actions:read_own": "本授权创建的草稿与发布结果",
-  "community:propose": "创建待本人确认的帖子或评论草稿",
-  "checkin:write": "查看本人签到状态，并按本人指令每日签到（不含补签）",
-};
 const errors: Record<string, string> = {
   recent_authentication_required:
     "请重新登录验证本人身份，然后重试。刷新页面或刷新凭证不能代替重新登录。",
@@ -65,6 +59,7 @@ const errors: Record<string, string> = {
   confirmation_expired:
     "确认窗口已过期或已在另一页面打开，请重新加载草稿后确认。",
   binding_conflict: "已有一个有效助手授权，请明确勾选替换旧授权。",
+  installation_conflict: "这份机器人连接已被另一个校园账号授权。请先在原账号撤销连接，不能直接挪用他人的绑定。",
   proposals_disabled: "服务端尚未开放草稿提案，请仅选择读取权限。",
   owner_publish_disabled: "服务端尚未开放正式发布，此草稿尚未发布。",
   section_muted: "当前账号已被该版块禁言。",
@@ -154,7 +149,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
         setConsent(result);
         setSelected(
           result.requested_scopes.filter(
-            (s) => s !== "community:propose" && s !== "checkin:write",
+            (s) => !["community:propose", "checkin:write", "academic:grades:read", "academic:erke:read"].includes(s),
           ),
         );
       }
@@ -217,7 +212,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
     <>
       <Head
         title="已授权助手"
-        subtitle="连接你自己的 AstrBot；一次只保留一个有效助手授权。"
+        subtitle="向 AstrBot 授权本人数据；每个校园账号只保留一个有效助手授权。"
       />
       <section className="panel panel-pad integration-panel">
         <h2>核对连接请求</h2>
@@ -279,8 +274,10 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
             <p>
               获准读取的公开文字、作者昵称、互动统计和图片会交给你部署的
               AstrBot，可能继续发送至你选择的模型、记忆插件或部署者允许的群。SYLUlive
-              无法收回已经外发的数据。本连接不提供站内私信、成绩、课表、学校密码或学校登录会话。
+              无法收回已经外发的数据。本连接不提供站内私信、课表、学校密码或学校登录会话。
             </p>
+            <p>成绩和二课为独立可选权限，默认不勾选。授权后仅通过本人私聊命令返回已同步数据，标明同步时间；不是学校实时查询，不会直接交给群模型。绑定不会自动完成学校登录或数据同步。</p>
+            <p>如果连接共享机器人，QQ、机器人部署者及其安装的其他插件可能保存私聊和返回结果；请确认你信任部署者。SYLUlive 后台管理员不会仅凭管理身份获得他人成绩读取接口。</p>
             <label className="field">
               <span>
                 <input
@@ -331,11 +328,12 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
           </div>
         )}
       </section>
+      <IntegrationPersonalSync />
       <section className="panel panel-pad integration-panel">
         <h2>连接管理</h2>
         <p>
-          App 的手机、电脑或平板登录与助手授权分别管理；QQ
-          号只用于插件本地消息路由。
+          App 的手机、电脑或平板登录与助手授权分别管理。安装名称可能包含插件自报的 QQ
+          号，便于核对请求；名称和安装标识不证明 QQ 归属。
         </p>
         <QueryState query={q}>
           {q.data?.bindings?.length ? (

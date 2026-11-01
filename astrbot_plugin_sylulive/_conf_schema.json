@@ -1,7 +1,9 @@
 {
  "server_origin":{"description":"SYLUlive 官方服务 origin（HTTPS，不含路径）；本地测试允许回环 HTTP","type":"string","default":"https://sylulive.online"},
  "owner_platform_id":{"description":"AstrBot 消息平台实例 ID，必须与本人的私聊来源一致","type":"string","default":""},
- "owner_sender_id":{"description":"仅允许此消息发送者在私聊使用插件；QQ 平台填本人 QQ 号。这是本地路由规则，不是 SYLUlive 身份证明","type":"string","default":""},
+ "owner_sender_id":{"description":"部署者本人QQ号，保留旧绑定与管理员审核入口；多用户模式下不作为普通用户绑定白名单，不证明QQ归属","type":"string","default":""},
+ "allow_multi_user":{"description":"允许本平台各用户在本人私聊独立绑定；凭证按发送者隔离，管理员不能借用他人授权。默认关闭以兼容旧安装","type":"bool","default":false},
+ "allow_personal_queries":{"description":"请求本人成绩和二课的独立读取权限；须官网逐项同意。只通过确定私聊命令返回，不给群模型读取；仅查询已有同步快照，非学校实时登录","type":"bool","default":false},
  "public_read_group_ids":{"description":"按名单开放公开读取的群；也限定私有结果逐条审核后的可分享目标群。不会授予本人资料、绑定、草稿或发布权限","type":"list","default":[]},
  "public_read_all_sessions":{"description":"向本平台实例中AstrBot已接收并唤醒的聊天开放匿名校园查询；公开群和其他人私聊只获公开工具。不开放账号、签到、草稿或私有分享目标，仍遵守AstrBot接收与唤醒设置","type":"bool","default":false},
  "installation_name":{"description":"官网显示的安装名称（由本机提供）","type":"string","default":"我的 AstrBot"},

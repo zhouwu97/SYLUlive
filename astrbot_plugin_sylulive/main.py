@@ -19,6 +19,7 @@ from .client import MAP_PATH, BusinessClient, IntegrationProblem, checked_origin
 from .credential_store import CredentialStore
 from .public_canteen import followup_intent, image_delivery_forbidden, recommendation
 from .public_canteen import summary as canteen_summary
+from .personal import personal_intent
 
 COMMUNITY_PRESENTATION = """[SYLUlive 回复展示规范]
 以下约定仅适用于向用户讲述 SYLUlive 工具结果，不改变你原有的人格、权限或工具参数：
@@ -229,7 +230,7 @@ def read_kinds(path):
     return set()
 
 
-@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.1.12")
+@register("astrbot_plugin_sylulive", "SYLUlive", "按用户授权的校园业务工具", "0.2.0")
 class SYLUlivePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -257,6 +258,8 @@ class SYLUlivePlugin(Star):
                 json.dumps({"installation_id": self.installation}), encoding="utf-8"
             )
         self.client = BusinessClient(self.origin, CredentialStore(identity))
+        from .accounts import Accounts
+        self.accounts = Accounts(self.origin, self.platform, directory)
         from astrbot.api import sp
 
         from .private_review import PrivateReview
@@ -323,7 +326,8 @@ class SYLUlivePlugin(Star):
             bool(self.owner and self.platform)
             and event.is_private_chat()
             and not event.get_group_id()
-            and str(event.get_sender_id()) == self.owner
+            and bool(str(event.get_sender_id() or ""))
+            and (str(event.get_sender_id()) == self.owner or getattr(self, "config", {}).get("allow_multi_user", False) is True)
             and str(event.get_platform_id()) == self.platform
         )
 
@@ -338,6 +342,13 @@ class SYLUlivePlugin(Star):
             and str(event.get_platform_id()) == self.platform
             and group in {str(value).strip() for value in groups if str(value).strip()}
         )
+
+    def account(self, event, *, create=False):
+        if not self.allowed(event):
+            raise IntegrationProblem("private_actor_required")
+        if str(event.get_sender_id()) == self.owner:
+            return self.client, self.installation
+        return self.accounts.get(str(event.get_sender_id()), str(event.message_obj.self_id), create=create)
 
     def open_public_reading(self, event):
         return (
@@ -362,10 +373,15 @@ class SYLUlivePlugin(Star):
         )
 
     def public_only_session(self, event):
-        return self.allowed_reading(event) and not self.allowed(event)
+        # 多用户私聊也不能继承部署者全局知识库或任意跨会话工具。
+        return self.allowed_reading(event) and (
+            not self.allowed(event) or str(event.get_sender_id()) != self.owner
+        )
 
     async def terminate(self):
         await self.client.close()
+        if hasattr(self, "accounts"):
+            await self.accounts.close()
 
     @filter.command("sylu-checkin", alias={"签到"})
     async def daily_checkin(self, event: AstrMessageEvent):
@@ -388,13 +404,19 @@ class SYLUlivePlugin(Star):
             return "签到属于本人账号操作，请绑定本人私聊机器人。群里不能代签或查看私人签到记录。"
         if not self.config.get("allow_checkin", False):
             return "本机尚未启用每日签到，请维护者在插件设置打开 allow_checkin 后由本人授权。"
-        tokens = getattr(self.client, "tokens", None)
+        try:
+            client, _ = self.account(event)
+            if getattr(client, "pending", None):
+                await client.poll()
+        except IntegrationProblem as error:
+            return self.problem(error)
+        tokens = getattr(client, "tokens", None)
         if not tokens:
             return self.problem(IntegrationProblem("connect_first"))
         if "checkin:write" not in tokens.get("scope", "").split():
             return "当前连接没有签到权限，未执行签到。请本人先 /sylu-disconnect，再 /sylu-connect，并在官网明确勾选“每日签到”权限。旧只读授权不会自动扩权。"
         try:
-            body = await self.client.call("POST" if submit else "GET", "/me/checkin")
+            body = await client.call("POST" if submit else "GET", "/me/checkin")
             data = body.get("data", {})
             flag = data.get("already" if submit else "checked_in")
             if not isinstance(flag, bool) or not isinstance(
@@ -435,6 +457,39 @@ class SYLUlivePlugin(Star):
     async def checkin_status(self, event: AstrMessageEvent):
         """只在绑定本人私聊查询今天的签到状态，不执行签到或补签。需要本人单独授权签到权限。"""
         return await self.checkin_result(event, submit=False)
+
+    async def personal_result(self, event, dataset, offset=0):
+        if not self.allowed(event):
+            return "成绩和二课属于个人数据。请本人私聊机器人绑定后查询，不在群里展示，也不接受指定其他用户。"
+        if not self.config.get("allow_personal_queries", False):
+            return "本机尚未开放个人查询。公开帖子仍可直接查看，请维护者检查插件个人查询开关。"
+        if type(offset) is not int or offset < 0:
+            return "分页参数无效，请使用 /sylu-grades 或上一条回复给出的下一页命令。"
+        try:
+            from .personal import format_personal
+            client, _ = self.account(event)
+            if getattr(client, "pending", None):
+                await client.poll()
+            body = await client.call("GET", f"/me/{dataset}", params={"offset": offset, "limit": 20})
+            return format_personal(body, dataset)
+        except IntegrationProblem as error:
+            return self.problem(error)
+
+    @filter.command("sylu-grades", alias={"我的成绩"})
+    async def grades_command(self, event: AstrMessageEvent, offset: int = 0):
+        event.should_call_llm(True)
+        try:
+            yield event.plain_result(await self.personal_result(event, "grades", offset))
+        finally:
+            event.stop_event()
+
+    @filter.command("sylu-erke", alias={"我的二课"})
+    async def erke_command(self, event: AstrMessageEvent):
+        event.should_call_llm(True)
+        try:
+            yield event.plain_result(await self.personal_result(event, "erke"))
+        finally:
+            event.stop_event()
 
     @filter.command("sylu-eat", alias={"吃什么", "今天吃什么"})
     async def eat_command(self, event: AstrMessageEvent):
@@ -478,6 +533,10 @@ class SYLUlivePlugin(Star):
                 yield result
         elif text in {"签到状态", "今天签到了吗"}:
             async for result in self.daily_checkin_status(event):
+                yield result
+        elif dataset := personal_intent(text):
+            command = self.grades_command if dataset == "grades" else self.erke_command
+            async for result in command(event):
                 yield result
         elif text in {"校园地图", "发校园地图", "发一下校园地图"}:
             async for result in self.map_command(event):
@@ -669,30 +728,36 @@ class SYLUlivePlugin(Star):
         if run_context.messages and run_context.messages[-1].role == "assistant":
             run_context.messages[-1].content = [TextPart(text=response.completion_text)]
 
-    @filter.command("sylu-connect", alias={"校园连接"})
+    @filter.command("sylu-connect", alias={"校园连接", "绑定校园"})
     async def connect(self, event: AstrMessageEvent):
         # AstrBot 的参数表示“禁止默认 LLM”；False 会允许命令继续进入模型。
         event.should_call_llm(True)
         try:
             if self.allowed_public_group(event):
                 yield event.plain_result(
-                    "本群可直接查询 SYLUlive 公开帖子和评论；账号连接请维护者私聊机器人发送 /sylu-connect。"
+                    "公开帖子不用绑定。请本人私聊机器人发送 /sylu-connect 获取专属授权链接；链接和代码不在群里展示。"
                 )
                 return
             if not self.allowed(event):
                 yield event.plain_result(
-                    "仅配置的本人可在指定平台私聊连接。请先配置 owner_platform_id 与 owner_sender_id。"
+                    "请在维护者开放的平台用本人私聊连接；多用户模式须启用，不要使用他人的校园账号。"
                 )
                 return
             try:
-                result = await self.client.begin(
-                    self.installation,
-                    str(self.config.get("installation_name", "我的 AstrBot")),
+                client, installation = self.account(event, create=True)
+                name = str(self.config.get("installation_name", "我的 AstrBot"))
+                if self.config.get("allow_multi_user", False):
+                    name = f"QQ {event.get_sender_id()} · {name}"[:80]
+                result = await client.begin(
+                    installation,
+                    name,
                     bool(self.config.get("allow_proposals", False)),
                     checkin=bool(self.config.get("allow_checkin", False)),
+                    personal=bool(self.config.get("allow_personal_queries", False)),
                 )
                 yield event.plain_result(
                     f"仅在你自己的 SYLUlive 账号授权。核对设备代码 {result['user_code']}：\n{result['verification_uri']}\n网页确认后发送：/sylu-status。不要把代码转发给别人。"
+                    + ("\n也可直接私聊问“我的成绩”“我的二课”或“签到”，需本人勾选对应权限；缺少资料时请先在官网“已授权助手”显式同步。" if self.config.get("allow_personal_queries",False) else "")
                 )
             except IntegrationProblem as error:
                 yield event.plain_result(self.problem(error))
@@ -703,7 +768,7 @@ class SYLUlivePlugin(Star):
     async def status(self, event: AstrMessageEvent):
         event.should_call_llm(True)
         try:
-            if self.public_only_session(event):
+            if not self.allowed(event) and self.public_only_session(event):
                 result = json.loads(
                     await self.tool(event, "GET", "/community/sections")
                 )
@@ -720,12 +785,13 @@ class SYLUlivePlugin(Star):
             if not self.allowed(event):
                 return
             try:
-                if self.client.pending:
-                    await self.client.poll()
-                result = await self.client.call("GET", "/binding")
+                client, _ = self.account(event)
+                if client.pending:
+                    await client.poll()
+                result = await client.call("GET", "/binding")
                 storage = (
                     "连接已安全保存在这台设备上。"
-                    if self.client.store.persistent
+                    if client.store.persistent
                     else "当前连接仅临时保存，重启后需要重新授权并替换旧连接。"
                 )
                 nickname = str(result["account"].get("nickname") or "").strip()
@@ -738,19 +804,20 @@ class SYLUlivePlugin(Star):
         finally:
             event.stop_event()
 
-    @filter.command("sylu-disconnect", alias={"校园断开"})
+    @filter.command("sylu-disconnect", alias={"校园断开", "解绑校园"})
     async def disconnect(self, event: AstrMessageEvent):
         event.should_call_llm(True)
         try:
             if self.allowed_public_group(event):
                 yield event.plain_result(
-                    "群内不执行账号解绑。维护者可在私聊断开连接，或在后台移除本群的公开读取权限。"
+                    "群内不执行账号解绑。请本人私聊机器人发送 /sylu-disconnect，仅断开自己的连接。"
                 )
                 return
             if not self.allowed(event):
                 return
             try:
-                await self.client.disconnect()
+                client, _ = self.account(event)
+                await client.disconnect()
                 yield event.plain_result(
                     "本机连接已清除；已有凭证已请求服务端撤销。也可到官网‘已授权助手’检查。"
                 )
@@ -769,6 +836,12 @@ class SYLUlivePlugin(Star):
             "poll_later": "请稍等几秒再查询连接状态。",
             "slow_down": "查询过快，请稍后再试。",
             "already_connected": "已有本机连接，请查询状态或先断开。",
+            "private_actor_required": "这是个人账号操作，请本人私聊机器人使用。",
+            "local_account_limit": "本机连接数量已达上限，请联系维护者处理；未借用其他人的账号。",
+            "local_binding_unavailable": "本机绑定信息暂时无法读取或保存，请联系维护者检查文件权限；未创建替代授权或借用他人连接。",
+            "academic_sync_required": "尚无可查询的数据。请先在 SYLUlive App 或官网同步本人成绩／二课，再回到本私聊查询；绑定不等于已同步学校数据。",
+            "personal_data_disabled": "你已在隐私设置关闭该类数据，机器人不能读取；请本人在官网检查设置。",
+            "personal_data_unavailable": "个人数据暂时不可用，请先在 App 或官网检查和重新同步，未使用其他人的数据。",
             "insufficient_scope": "当前连接没有此项权限，请本人重新连接并在官网明确授权。",
             "network_unavailable": "无法连接 SYLUlive 服务。请检查插件 server_origin、网络及后端是否已启动；本次操作未取得服务端确认。",
             "reconnect_required": "刷新结果不确定或授权失效，请重新连接；需要时在官网替换旧授权。",
@@ -796,7 +869,8 @@ class SYLUlivePlugin(Star):
                     "/api/integrations/v1/public" + path, params=params
                 )
             else:
-                result = await self.client.call(
+                client, _ = self.account(event)
+                result = await client.call(
                     method, path, params=params, payload=payload
                 )
             if method == "GET" and "data" in result:
@@ -1653,7 +1727,10 @@ class SYLUlivePlugin(Star):
         digest = hashlib.sha256(
             json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()
         ).hexdigest()
-        return str(uuid.uuid5(uuid.UUID(self.installation), message + ":" + digest))
+        installation = self.installation
+        if str(event.get_sender_id()) != self.owner and self.allowed(event):
+            _, installation = self.account(event)
+        return str(uuid.uuid5(uuid.UUID(installation), message + ":" + digest))
 
     @filter.llm_tool(name="sylulive_draft_reply")
     async def draft_reply(

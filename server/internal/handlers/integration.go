@@ -49,6 +49,8 @@ func (h *IntegrationHandler) Register(r *gin.Engine, jwtSecret string) {
 	owner.POST("/device-requests/lookup", h.Lookup)
 	owner.POST("/device-requests/:id/decision", h.Decide)
 	owner.POST("/:id/revoke", h.Revoke)
+	owner.POST("/personal-sync/grades", h.UploadGrades)
+	owner.DELETE("/personal-sync/grades", h.DeleteUploadedGrades)
 	owner.GET("/actions/:id", h.ActionPreview)
 	owner.POST("/actions/:id/decision", h.ActionDecision)
 	public := r.Group("/api/integrations/v1/public", func(c *gin.Context) {
@@ -67,6 +69,8 @@ func (h *IntegrationHandler) Register(r *gin.Engine, jwtSecret string) {
 	public.GET("/community/sections", h.PublicSections)
 	api := r.Group("/api/integrations/v1", h.Authenticate)
 	api.GET("/binding", h.Binding)
+	api.GET("/me/grades", h.Personal("grades"))
+	api.GET("/me/erke", h.Personal("erke"))
 	api.GET("/me/checkin", h.CheckIn)
 	api.POST("/me/checkin", h.CheckIn)
 	api.GET("/community/posts", h.Read("community.list_feed", services.IntegrationReadScope))
@@ -78,6 +82,11 @@ func (h *IntegrationHandler) Register(r *gin.Engine, jwtSecret string) {
 	api.GET("/community/sections", h.Sections)
 	api.POST("/actions", h.Propose)
 	api.GET("/actions/:id", h.ActionStatus)
+	admin := r.Group("/api/admin/integrations", middleware.AuthMiddleware(h.db, jwtSecret), middleware.AdminMiddleware())
+	admin.Use(func(c *gin.Context) { c.Header("Cache-Control", "no-store"); c.Header("Pragma", "no-cache") })
+	admin.GET("", h.AdminBindings)
+	admin.GET("/:id/audits", h.AdminAudits)
+	admin.POST("/:id/restrict", h.AdminRestrict)
 }
 
 // CheckIn 只操作令牌所属本人；不提供任意用户签到、补签或日期覆盖入口。

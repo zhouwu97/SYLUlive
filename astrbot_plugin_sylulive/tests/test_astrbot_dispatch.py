@@ -136,6 +136,8 @@ def test_connection_error_does_not_claim_a_publish_was_attempted():
     ("daily_checkin_status", "sylu-checkin-status"),
     ("eat_command", "sylu-eat"), ("eat_command", "吃什么"),
     ("map_command", "sylu-map"), ("map_command", "校园地图"),
+    ("grades_command", "sylu-grades"), ("grades_command", "我的成绩"),
+    ("erke_command", "sylu-erke"), ("erke_command", "我的二课"),
 ])
 def test_english_keywords_match_real_registered_command_filters(handler_name, keyword):
     module = importlib.import_module("astrbot_plugin_sylulive.main")
@@ -189,6 +191,7 @@ async def test_status_uses_nickname_without_database_account_id():
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
     plugin = cls.__new__(cls)
     plugin.owner, plugin.platform = "owner", "synthetic-platform"
+    plugin.installation = "00000000-0000-4000-8000-000000000001"
     plugin.client = BusinessClientFixture(False)
     event = message("owner")
     responses = [result async for result in plugin.status(event)]
@@ -202,6 +205,7 @@ async def test_followup_summary_requires_new_post_and_comment_reads(fresh_reads)
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
     plugin = cls.__new__(cls)
     plugin.owner, plugin.platform = "owner", "synthetic-platform"
+    plugin.installation = "00000000-0000-4000-8000-000000000001"
     class ReaderFixture:
         async def public_call(self, *args, **kwargs):
             return {"data": {"post_id": 811}}
@@ -233,6 +237,7 @@ async def test_explicit_rewrite_can_use_previous_result_without_claiming_a_new_r
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
     plugin = cls.__new__(cls)
     plugin.owner, plugin.platform = "owner", "synthetic-platform"
+    plugin.installation = "00000000-0000-4000-8000-000000000001"
     event = message("owner")
     request = ProviderRequest(prompt="只改写上面的总结，不要重新读取。")
     await plugin.present_community_naturally(event, request)
@@ -247,6 +252,7 @@ async def test_comment_tool_rereads_parent_and_fails_closed(failure):
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
     plugin = cls.__new__(cls)
     plugin.owner, plugin.platform = "owner", "synthetic-platform"
+    plugin.installation = "00000000-0000-4000-8000-000000000001"
     calls = []
 
     class ReaderFixture:

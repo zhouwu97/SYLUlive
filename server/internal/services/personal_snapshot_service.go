@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -124,8 +125,23 @@ func (service *PersonalSnapshotService) LookupErke(ctx context.Context, userID u
 		return academic.SnapshotLookup{}, err
 	}
 	payload := json.RawMessage(snapshot.PayloadJSON)
-	if !json.Valid(payload) || hashPersonalSnapshot(payload) != snapshot.PayloadHash || containsSnapshotSecret(payload) {
+	if !json.Valid(payload) || containsSnapshotSecret(payload) {
 		return academic.SnapshotLookup{Found: true, Corrupted: true}, ErrInvalidPersonalSnapshot
+	}
+	if hashPersonalSnapshot(payload) != snapshot.PayloadHash {
+		// 兼容旧版按结构体原始字节计算的哈希，不放过未知字段或篡改内容。
+		legacy := ErkeSnapshotUpload{SchemaVersion: snapshot.SchemaVersion, FetchedAt: snapshot.FetchedAt}
+		decoder := json.NewDecoder(bytes.NewReader(payload))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&legacy) != nil {
+			return academic.SnapshotLookup{Found: true, Corrupted: true}, ErrInvalidPersonalSnapshot
+		}
+		normalized, _, err := normalizeErkeSnapshotUpload(legacy)
+		digest := sha256.Sum256(normalized)
+		if err != nil || hex.EncodeToString(digest[:]) != snapshot.PayloadHash {
+			return academic.SnapshotLookup{Found: true, Corrupted: true}, ErrInvalidPersonalSnapshot
+		}
+		payload = normalized
 	}
 	isStale := !snapshot.ExpiresAt.After(service.now())
 	status := academic.DataStatusAvailable
@@ -256,6 +272,13 @@ func containsSnapshotSecretValue(value interface{}) bool {
 }
 
 func hashPersonalSnapshot(payload []byte) string {
+	// jsonb会重排对象键并规范数值；最小二课／上传成绩中的数值均有范围限制。
+	var value interface{}
+	if json.Unmarshal(payload, &value) == nil {
+		if normalized, err := json.Marshal(value); err == nil {
+			payload = normalized
+		}
+	}
 	digest := sha256.Sum256(payload)
 	return hex.EncodeToString(digest[:])
 }

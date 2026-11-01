@@ -13,6 +13,8 @@ files = [
     "credential_store.py",
     "private_review.py",
     "public_canteen.py",
+    "accounts.py",
+    "personal.py",
     "metadata.yaml",
     "_conf_schema.json",
     "requirements.txt",

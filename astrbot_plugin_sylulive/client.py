@@ -84,7 +84,7 @@ class BusinessClient:
             raise IntegrationProblem(code)
         return body
 
-    async def begin(self, installation_id, name, proposals, *, checkin=False):
+    async def begin(self, installation_id, name, proposals, *, checkin=False, personal=False):
         async with self.lock:
             if self.pending and self.pending["deadline"] > time.monotonic():
                 raise IntegrationProblem("authorization_pending")
@@ -95,6 +95,8 @@ class BusinessClient:
                 scope += " community:read community:propose"
             if checkin:
                 scope += " checkin:write"
+            if personal:
+                scope += " academic:grades:read academic:erke:read"
             body = await self._request(
                 "POST",
                 "/api/oauth/device_authorization",

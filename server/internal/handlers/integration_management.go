@@ -12,6 +12,9 @@ import (
 )
 
 func (h *IntegrationHandler) UploadGrades(c *gin.Context) {
+	if !h.personalEnabled(c) {
+		return
+	}
 	var input services.IntegrationGradesUpload
 	if decodeStrictJSON(c, &input, 520<<10) != nil {
 		c.AbortWithStatusJSON(422, gin.H{"code": "invalid_personal_upload"})
@@ -34,6 +37,9 @@ func (h *IntegrationHandler) DeleteUploadedGrades(c *gin.Context) {
 
 func (h *IntegrationHandler) Personal(dataset string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if !h.personalEnabled(c) {
+			return
+		}
 		for key := range c.Request.URL.Query() {
 			if key != "offset" && key != "limit" {
 				writeIntegrationError(c, &services.IntegrationError{Code: "invalid_request", Status: 422}, false)
@@ -94,7 +100,15 @@ func (h *IntegrationHandler) AdminBindings(c *gin.Context) {
 		}
 		rows = append(rows, gin.H{"binding_id": binding.ID, "nickname": user.Nickname, "installation_name": binding.InstallationName, "state": binding.State, "scopes": strings.Fields(binding.Scopes), "epoch": binding.Epoch, "created_at": binding.CreatedAt, "revoked_at": binding.RevokedAt})
 	}
-	c.JSON(200, gin.H{"items": rows, "total": total, "page": page, "page_size": 30})
+	c.JSON(200, gin.H{"items": rows, "total": total, "page": page, "page_size": 30, "personal_data_enabled": h.options.PersonalDataEnabled})
+}
+
+func (h *IntegrationHandler) personalEnabled(c *gin.Context) bool {
+	if !h.options.PersonalDataEnabled {
+		writeIntegrationError(c, &services.IntegrationError{Code: "personal_queries_disabled", Status: 403}, false)
+		return false
+	}
+	return true
 }
 
 func (h *IntegrationHandler) AdminAudits(c *gin.Context) {

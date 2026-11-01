@@ -20,6 +20,7 @@ type IntegrationOptions struct {
 	PublicOrigin        string
 	ProposalsEnabled    bool
 	OwnerPublishEnabled bool
+	PersonalDataEnabled bool
 	AfterReplyCommit    func(models.Notification)
 }
 type IntegrationHandler struct {
@@ -293,6 +294,14 @@ func (h *IntegrationHandler) Decide(c *gin.Context) {
 			}
 		}
 	}
+	if input.Allow && !h.options.PersonalDataEnabled {
+		for _, scope := range input.Scopes {
+			if scope == services.IntegrationGradesScope || scope == services.IntegrationErkeScope {
+				writeIntegrationError(c, &services.IntegrationError{Code: "personal_queries_disabled", Status: 403}, false)
+				return
+			}
+		}
+	}
 	result, err := h.auth.DecideConsent(c.Request.Context(), c.GetUint("user_id"), c.Param("id"), input)
 	if err != nil {
 		writeIntegrationError(c, err, false)
@@ -314,7 +323,7 @@ func (h *IntegrationHandler) List(c *gin.Context) {
 		}
 	}
 	c.Header("Cache-Control", "no-store")
-	c.JSON(200, gin.H{"bindings": rows})
+	c.JSON(200, gin.H{"bindings": rows, "personal_data_enabled": h.options.PersonalDataEnabled})
 }
 func (h *IntegrationHandler) Revoke(c *gin.Context) {
 	if err := h.auth.Revoke(c.Request.Context(), c.GetUint("user_id"), c.Param("id")); err != nil {

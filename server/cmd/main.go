@@ -806,7 +806,8 @@ func main() {
 	authHandler := handlers.NewAuthHandlerWithEmailVerificationAndCleanup(db, cfg.JWTSecret, emailVerification, eduCredentialCleanupJobs)
 	if cfg.IntegrationsEnabled {
 		integrationHandler := handlers.NewIntegrationHandler(db, handlers.IntegrationOptions{
-			PublicOrigin: cfg.IntegrationPublicOrigin, ProposalsEnabled: cfg.IntegrationProposalsEnabled, OwnerPublishEnabled: cfg.IntegrationOwnerPublishEnabled,
+			PersonalDataEnabled: cfg.IntegrationPersonalDataEnabled,
+			PublicOrigin:        cfg.IntegrationPublicOrigin, ProposalsEnabled: cfg.IntegrationProposalsEnabled, OwnerPublishEnabled: cfg.IntegrationOwnerPublishEnabled,
 			AfterReplyCommit: func(n models.Notification) {
 				handlers.SendJPushNotification(cfg.JPushAppKey, cfg.JPushMasterSecret, db, n.UserID, n.FromUID, n.RelatedID, n.PostID, n.Content)
 			},

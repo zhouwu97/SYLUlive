@@ -30,7 +30,7 @@ export function makePersonalUpload(snapshot: AcademicSnapshot): Record<string, u
   };
 }
 
-export function IntegrationPersonalSync() {
+export function IntegrationPersonalSync({ enabled }: { enabled?: boolean }) {
   const ui = useUI();
   const [dataset, setDataset] = useState<"grades" | "erke">("grades");
   const [snapshot, setSnapshot] = useState<AcademicSnapshot | null>(null);
@@ -55,7 +55,9 @@ export function IntegrationPersonalSync() {
       else return;
       if (current()) { setSnapshot(null); setConfirmed(false); setMessage(remove ? "该类上传副本已删除。删除成绩上传副本不删除 App 原有教务云快照。" : "已同步最小资料。QQ 查询还需本人绑定并勾选对应读取权限；不会自动给机器人授权。"); }
     } catch (error) {
-      if (current()) setMessage(error instanceof ApiError && error.code === "personal_data_disabled"
+      if (current()) setMessage(error instanceof ApiError && error.code === "SCHOOL_AUTHORITY_RETIRED"
+        ? "服务端已停用二课云资料接口，本次操作未完成。请联系站点维护者处理已有副本，重复点击不会恢复接口。"
+        : error instanceof ApiError && error.code === "personal_data_disabled"
         ? "隐私设置已关闭该类上传，请本人先检查设置。"
         : error instanceof ApiError && error.code === "academic_verification_required"
           ? "当前账号缺少受支持的教务身份核验；本机自报身份不能代替核验。"
@@ -68,12 +70,13 @@ export function IntegrationPersonalSync() {
   }
   return <section className="panel panel-pad integration-panel">
     <h2>供本人 QQ 查询的资料同步</h2>
+    {enabled !== true && <p role="status">{enabled === false ? "服务端尚未开放个人查询" : "尚未确认服务端个人查询状态，请刷新连接列表后重试"}，暂不读取或同步新资料；仍可删除成绩上传副本，公开查询不受影响。</p>}
     <p>学校资料默认留在本机。此处由你主动读取并确认，只上传结构化最小资料，5天后标记过期，副本保留至你删除或覆盖；不上传学校密码、Cookie、原始页面或完整活动记录。只读取一个学期或毕业二课摘要，不代表全部成绩或活动。</p>
     <label className="field">资料类型<select disabled={busy} value={dataset} onChange={e => { setDataset(e.target.value as "grades" | "erke"); setSnapshot(null); setConfirmed(false); setMessage(""); }}><option value="grades">当前学期成绩</option><option value="erke">二课毕业摘要</option></select></label>
-    <button className="btn" disabled={busy} onClick={prepare}>从本机教务助手读取</button>
+    <button className="btn" disabled={busy || !enabled} onClick={prepare}>从本机教务助手读取</button>
     {snapshot && <p>已准备：{dataset === "grades" ? `当前学期 ${Array.isArray(snapshot.data) ? snapshot.data.length : 0} 门课程` : "二课毕业摘要（不含学年及活动明细）"} · {new Date(snapshot.fetchedAt).toLocaleString()}</p>}
     <label><input type="checkbox" checked={confirmed} disabled={busy} onChange={e => setConfirmed(e.target.checked)} />我确认仅操作当前账号的资料，了解云端保存与已授权机器人读取范围</label>
-    <div className="form-actions"><button className="btn primary" disabled={busy || !snapshot || !confirmed} onClick={() => void act(false)}>确认同步最小资料</button><button className="btn" disabled={busy || !confirmed} onClick={() => void act(true)}>删除该类上传副本</button></div>
+    <div className="form-actions"><button className="btn primary" disabled={busy || !enabled || !snapshot || !confirmed} onClick={() => void act(false)}>确认同步最小资料</button><button className="btn" disabled={busy || !confirmed} onClick={() => void act(true)}>删除该类上传副本</button></div>
     {message && <p role="status">{message}</p>}
   </section>;
 }

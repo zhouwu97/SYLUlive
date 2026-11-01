@@ -88,6 +88,7 @@ type Config struct {
 	IntegrationsEnabled                    bool
 	IntegrationProposalsEnabled            bool
 	IntegrationOwnerPublishEnabled         bool
+	IntegrationPersonalDataEnabled         bool
 	IntegrationPublicOrigin                string
 	AIAgentRolloutPercent                  int      // Agent v5 用户灰度比例
 	AIAgentRolloutUserIDs                  []uint   // Agent v5 显式放行用户
@@ -618,6 +619,10 @@ func Load() *Config {
 	integrationEnabled := envBool("INTEGRATIONS_ENABLED", false)
 	integrationProposals := envBool("INTEGRATION_PROPOSALS_ENABLED", false)
 	integrationPublish := envBool("INTEGRATION_OWNER_PUBLISH_ENABLED", false)
+	integrationPersonal := envBool("INTEGRATION_PERSONAL_DATA_ENABLED", false)
+	if err := validateIntegrationPersonalConfig(integrationEnabled, integrationPersonal, schoolAuthorityRetired); err != nil {
+		panic(err)
+	}
 	integrationOrigin := strings.TrimRight(strings.TrimSpace(os.Getenv("INTEGRATION_PUBLIC_ORIGIN")), "/")
 	if err := validateIntegrationConfig(integrationEnabled, integrationProposals, integrationPublish, integrationOrigin, releaseMode); err != nil {
 		panic(err)
@@ -697,6 +702,7 @@ func Load() *Config {
 		IntegrationsEnabled:                    integrationEnabled,
 		IntegrationProposalsEnabled:            integrationProposals,
 		IntegrationOwnerPublishEnabled:         integrationPublish,
+		IntegrationPersonalDataEnabled:         integrationPersonal,
 		IntegrationPublicOrigin:                integrationOrigin,
 		AIAgentRolloutPercent:                  aiAgentRolloutPercent,
 		AIAgentRolloutUserIDs:                  aiAgentRolloutUserIDs,

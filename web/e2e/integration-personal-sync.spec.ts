@@ -1,12 +1,27 @@
 import { test, expect } from "@playwright/test";
 
+test("服务端关闭时不允许本机读取和上传但保留删除入口", async ({page}) => {
+  await page.route('**/api/**', route => {
+    const path=new URL(route.request().url()).pathname;
+    if(path==='/api/user/profile')return route.fulfill({json:{id:7,nickname:'合成用户',role:'user'}});
+    if(path==='/api/connected-apps')return route.fulfill({json:{bindings:[],personal_data_enabled:false}});
+    return route.fulfill({json:{}});
+  });
+  await page.goto('/web/connected-apps');
+  await expect(page.getByText(/服务端尚未开放个人查询/)).toBeVisible();
+  await expect(page.getByRole('button',{name:'从本机教务助手读取'})).toBeDisabled();
+  await expect(page.getByRole('button',{name:'确认同步最小资料'})).toBeDisabled();
+  await page.getByRole('checkbox',{name:/我确认仅操作当前账号/}).check();
+  await expect(page.getByRole('button',{name:'删除该类上传副本'})).toBeEnabled();
+});
+
 for (const dataset of ["grades", "erke"] as const) {
   test(`本人明确确认后才能同步${dataset}最小资料`, async ({ page }) => {
     const writes: { path: string; body: Record<string, unknown> }[] = [];
     await page.route("**/api/**", route => {
       const request = route.request(), path = new URL(request.url()).pathname;
       if (path === "/api/user/profile") return route.fulfill({ json: { id: 7, nickname: "合成同步用户", role: "user" } });
-      if (path === "/api/connected-apps") return route.fulfill({ json: { bindings: [] } });
+      if (path === "/api/connected-apps") return route.fulfill({ json: { bindings: [], personal_data_enabled: true } });
       if (path.includes("personal-sync") || path.includes("personal-snapshots")) {
         writes.push({ path, body: request.postDataJSON() });
         return route.fulfill({ json: { message: "已同步" } });
@@ -44,3 +59,19 @@ for (const dataset of ["grades", "erke"] as const) {
     await expect(page.getByText(/已同步最小资料/)).toBeVisible();
   });
 }
+
+test("二课接口退役时不声称副本已删除", async ({ page }) => {
+  await page.route("**/api/**", route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/user/profile") return route.fulfill({ json: { id: 7, nickname: "合成用户", role: "user" } });
+    if (path === "/api/connected-apps") return route.fulfill({ json: { bindings: [], personal_data_enabled: false } });
+    if (path === "/api/personal-snapshots/erke") return route.fulfill({ status: 410, json: { code: "SCHOOL_AUTHORITY_RETIRED" } });
+    return route.fulfill({ json: {} });
+  });
+  await page.goto("/web/connected-apps");
+  await page.getByRole("combobox", { name: "资料类型" }).selectOption("erke");
+  await page.getByRole("checkbox", { name: /我确认仅操作当前账号/ }).check();
+  await page.getByRole("button", { name: "删除该类上传副本" }).click();
+  await expect(page.getByText(/服务端已停用二课云资料接口，本次操作未完成/)).toBeVisible();
+  await expect(page.getByText(/该类上传副本已删除/)).toHaveCount(0);
+});

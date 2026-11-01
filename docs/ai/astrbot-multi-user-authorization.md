@@ -65,6 +65,8 @@
 
 本机新增`allow_multi_user=false`、`allow_personal_queries=false`。上线显式启用，`allow_checkin`仍须既有开关及本人scope；`public_read_all_sessions`沿部署者选择，社区提案和发布开关不随个人查询开启。
 
+服务端另有`INTEGRATION_PERSONAL_DATA_ENABLED=false`，关闭时拒绝批准新个人scope、本人查询和新成绩上传，仍保留删除上传副本、减权与撤销。后台和授权页读取实际服务状态，读取失败时显示未确认并禁止新读取／上传。该开关要求`INTEGRATIONS_ENABLED=true`且`SCHOOL_AUTHORITY_RETIRED=false`；已有退役部署不能直接开启，须重新评审，不能静默关闭退役开关来恢复旧学校能力。此约束也保证复用的二课最小快照路由与本机身份核对可用，插件开关本身不能放行服务端接口。
+
 ## 研究与复用
 
 参考[XutheringWavesUID临时网页链接与按user_id/bot_id关联](https://github.com/Loping151/XutheringWavesUID/blob/b29863c0284028bc289464e9353ceebfe1311ce1/XutheringWavesUID/wutheringwaves_user/add_token_web.py)，核对提交`b29863c0284028bc289464e9353ceebfe1311ce1`。只借鉴交互和主体隔离模式，不复制其GPL代码或引入游戏登录、Cookie收集、渲染、计分依赖。继续复用已有RFC8628、AstrBot SDK、系统凭据库、Go业务和Web管理页。

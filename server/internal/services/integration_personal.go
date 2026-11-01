@@ -92,12 +92,12 @@ func (s *IntegrationAuthService) ReadPersonal(ctx context.Context, expected mode
 				return integrationError("personal_data_unavailable", 503)
 			}
 			total := len(payload.Grades)
-			end := offset + limit
 			if offset > total {
 				offset = total
 			}
-			if end > total {
-				end = total
+			end := total
+			if limit < total-offset {
+				end = offset + limit
 			}
 			rows := make([]map[string]interface{}, 0, end-offset)
 			for _, row := range payload.Grades[offset:end] {

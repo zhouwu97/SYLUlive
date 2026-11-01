@@ -19,13 +19,14 @@ export function IntegrationManagement() {
   const [state, setState] = useState("active"), [page, setPage] = useState(1);
   const [audit, setAudit] = useState("");
   const [notice, setNotice] = useState("");
-  const q = useApi<{ items: Binding[]; total: number }>(
+  const q = useApi<{ items: Binding[]; total: number; personal_data_enabled?: boolean }>(
     `/api/admin/integrations?state=${encodeURIComponent(state)}&page=${page}`,
   );
   return <section className="integration-management">
     <h2>助手授权管理</h2>
     <p>各用户独立绑定自己的校园账号。这里只管理权限与审计，不提供查看他人成绩、二课正文或凭证的入口。</p>
     <p>安装名称由插件自报，其中的 QQ 号不构成经过服务端核验的 QQ 身份证明。</p>
+    <p>服务端个人查询：{q.isPending || q.error || typeof q.data?.personal_data_enabled !== "boolean" ? "状态未确认" : q.data.personal_data_enabled ? "已开放" : "未开放"}。此处只能管理授权，不能通过用户权限勾选绕过服务端开关。</p>
     {notice && <p role="status">{notice}</p>}
     <div className="integration-toolbar">
       <label>授权状态 <select value={state} onChange={e => { setState(e.target.value); setPage(1); setAudit(""); }}>

@@ -14,7 +14,7 @@ async function fixture(page: Page, options: { role?: string; empty?: boolean; fa
     if (path === "/api/user/profile") return route.fulfill({ json: { id: 900, nickname: "合成管理员", role: options.role || "admin" } });
     if (path === "/api/admin/integrations") {
       if (failed) return route.fulfill({ status: 503, json: { code: "integration_unavailable", message: "服务暂时不可用" } });
-      return route.fulfill({ json: { items: options.empty ? [] : [current], total: options.empty ? 0 : 1 } });
+      return route.fulfill({ json: { items: options.empty ? [] : [current], total: options.empty ? 0 : 1, personal_data_enabled: true } });
     }
     if (path.endsWith("/audits")) return route.fulfill({ json: { items: [{ event: "grades_read", actor_id: 100, reason: "", created_at: "2026-11-01T00:01:00Z" }] } });
     if (path.endsWith("/restrict")) {

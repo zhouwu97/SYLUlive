@@ -108,6 +108,9 @@ func TestIntegrationPersonalPaginationStaleAndAuditRollback(t *testing.T) {
 	result, err := auth.ReadPersonal(context.Background(), b, "grades", 500, 20)
 	require.NoError(t, err)
 	require.Empty(t, result["grades"])
+	result, err = auth.ReadPersonal(context.Background(), b, "grades", int(^uint(0)>>1), 20)
+	require.NoError(t, err)
+	require.Empty(t, result["grades"], "超大分页偏移不能溢出或返回他人资料")
 	now := auth.Now()
 	auth.Now = func() time.Time { return now.Add(48 * time.Hour) }
 	result, err = auth.ReadPersonal(context.Background(), b, "grades", 0, 20)

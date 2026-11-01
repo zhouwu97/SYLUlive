@@ -788,7 +788,13 @@ class SYLUlivePlugin(Star):
                 client, _ = self.account(event)
                 if client.pending:
                     await client.poll()
-                result = await client.call("GET", "/binding")
+                try:
+                    result = await client.call("GET", "/binding")
+                except IntegrationProblem as error:
+                    if error.code == "insufficient_scope" and getattr(client, "tokens", None) and "profile:read_minimal" not in client.tokens.get("scope", "").split():
+                        yield event.plain_result("连接凭证有效；你没有授权昵称读取，可直接使用已批准的功能。查看或撤销范围请到官网“已授权助手”。")
+                        return
+                    raise
                 storage = (
                     "连接已安全保存在这台设备上。"
                     if client.store.persistent
@@ -817,8 +823,11 @@ class SYLUlivePlugin(Star):
                 return
             try:
                 client, _ = self.account(event)
+                pending_only = bool(getattr(client,"pending",None)) and not getattr(client,"tokens",None)
                 await client.disconnect()
                 yield event.plain_result(
+                    "已取消本机待授权请求。如果已在官网批准，请在官网‘已授权助手’撤销那条记录；尚未取得凭证，不能代你声称已撤销官网授权。"
+                    if pending_only else
                     "本机连接已清除；已有凭证已请求服务端撤销。也可到官网‘已授权助手’检查。"
                 )
             except IntegrationProblem as error:
@@ -841,6 +850,7 @@ class SYLUlivePlugin(Star):
             "local_binding_unavailable": "本机绑定信息暂时无法读取或保存，请联系维护者检查文件权限；未创建替代授权或借用他人连接。",
             "academic_sync_required": "尚无可查询的数据。请先在 SYLUlive App 或官网同步本人成绩／二课，再回到本私聊查询；绑定不等于已同步学校数据。",
             "personal_data_disabled": "你已在隐私设置关闭该类数据，机器人不能读取；请本人在官网检查设置。",
+            "personal_queries_disabled": "服务端尚未开放成绩和二课查询，请维护者核对服务开关；公开查询和已有签到不受影响。",
             "personal_data_unavailable": "个人数据暂时不可用，请先在 App 或官网检查和重新同步，未使用其他人的数据。",
             "insufficient_scope": "当前连接没有此项权限，请本人重新连接并在官网明确授权。",
             "network_unavailable": "无法连接 SYLUlive 服务。请检查插件 server_origin、网络及后端是否已启动；本次操作未取得服务端确认。",

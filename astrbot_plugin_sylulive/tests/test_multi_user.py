@@ -160,6 +160,19 @@ def test_private_format_marks_stale_partial_and_pagination():
 
 
 @pytest.mark.asyncio
+async def test_status_accepts_personal_only_scope_without_forcing_profile_permission():
+    from astrbot_plugin_sylulive.client import IntegrationProblem
+    plugin,event,_=fixture(group='',sender='one')
+    plugin.config['allow_multi_user']=True
+    client=SimpleNamespace(pending=None,tokens={'scope':'academic:grades:read'},call=AsyncMock(side_effect=IntegrationProblem('insufficient_scope')))
+    plugin.accounts=SimpleNamespace(get=lambda *args,**kwargs:(client,'own-installation'))
+    replies=[r async for r in plugin.status(event)]
+    text=''.join(p.text for r in replies for p in r.chain if hasattr(p,'text'))
+    assert '凭证有效' in text and '没有授权昵称' in text
+    assert '请本人重新连接' not in text
+
+
+@pytest.mark.asyncio
 async def test_first_query_completes_own_pending_authorization_without_requiring_status_command():
     plugin, event, _ = fixture(group='', sender='one')
     plugin.config.update(allow_multi_user=True, allow_personal_queries=True)

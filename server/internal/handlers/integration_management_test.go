@@ -52,7 +52,7 @@ func TestIntegrationManagementHTTPRoleIsolationRestrictionAndNoPrivateBypass(t *
 		require.NoError(t, err)
 		appTokens[id] = token
 	}
-	h := NewIntegrationHandler(db, IntegrationOptions{})
+	h := NewIntegrationHandler(db, IntegrationOptions{PersonalDataEnabled: true})
 	r := gin.New()
 	h.Register(r, secret)
 	send := func(method, path, token, body string) *httptest.ResponseRecorder {
@@ -89,6 +89,21 @@ func TestIntegrationManagementHTTPRoleIsolationRestrictionAndNoPrivateBypass(t *
 	require.Equal(t, 200, wSync.Code, wSync.Body.String())
 	require.Contains(t, wSync.Body.String(), "本机同步测试课程")
 	require.Contains(t, wSync.Body.String(), `"live_query":false`)
+	h.options.PersonalDataEnabled = false
+	require.Equal(t, 403, send("GET", "/api/integrations/v1/me/grades", tokens.AccessToken, "").Code, "关闭服务开关后旧凭证也不能读取")
+	require.Equal(t, 403, send("POST", "/api/connected-apps/personal-sync/grades", appTokens[61001], string(upload)).Code)
+	blockedDevice, err := h.auth.RequestDevice(context.Background(), uuid.NewString(), "合成停用检查", services.IntegrationGradesScope)
+	require.NoError(t, err)
+	blockedConsent, err := h.auth.LookupConsent(context.Background(), 61002, blockedDevice.UserCode)
+	require.NoError(t, err)
+	blockedDecision, _ := json.Marshal(map[string]interface{}{"allow": true, "scopes": []string{services.IntegrationGradesScope}, "confirmation_nonce": blockedConsent.Nonce})
+	wBlocked := send("POST", "/api/connected-apps/device-requests/"+blockedConsent.ID+"/decision", appTokens[61002], string(blockedDecision))
+	require.Equal(t, 403, wBlocked.Code)
+	require.Contains(t, wBlocked.Body.String(), "personal_queries_disabled")
+	deniedDecision, _ := json.Marshal(map[string]interface{}{"allow": false, "scopes": []string{services.IntegrationGradesScope}, "confirmation_nonce": blockedConsent.Nonce})
+	require.Equal(t, 200, send("POST", "/api/connected-apps/device-requests/"+blockedConsent.ID+"/decision", appTokens[61002], string(deniedDecision)).Code, "关闭个人查询仍应允许本人拒绝待授权请求")
+	require.Equal(t, 204, send("DELETE", "/api/connected-apps/personal-sync/grades", appTokens[61001], "").Code, "关查询仍保留本人删除权")
+	h.options.PersonalDataEnabled = true
 	require.Equal(t, 422, send("GET", "/api/integrations/v1/me/erke?offset=2", tokens.AccessToken, "").Code)
 	w := send("GET", "/api/admin/integrations", appTokens[61002], "")
 	require.Equal(t, 200, w.Code)

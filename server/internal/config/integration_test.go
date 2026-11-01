@@ -18,8 +18,17 @@ func TestIntegrationConfigFailClosed(t *testing.T) {
 	t.Setenv("INTEGRATIONS_ENABLED", "")
 	t.Setenv("INTEGRATION_PROPOSALS_ENABLED", "")
 	t.Setenv("INTEGRATION_OWNER_PUBLISH_ENABLED", "")
+	t.Setenv("INTEGRATION_PERSONAL_DATA_ENABLED", "")
 	c := Load()
 	require.False(t, c.IntegrationsEnabled)
 	require.False(t, c.IntegrationProposalsEnabled)
 	require.False(t, c.IntegrationOwnerPublishEnabled)
+	require.False(t, c.IntegrationPersonalDataEnabled)
+}
+
+func TestIntegrationPersonalConfigRequiresActiveAuthority(t *testing.T) {
+	require.NoError(t, validateIntegrationPersonalConfig(false, false, true))
+	require.NoError(t, validateIntegrationPersonalConfig(true, true, false))
+	require.Error(t, validateIntegrationPersonalConfig(false, true, false))
+	require.Error(t, validateIntegrationPersonalConfig(true, true, true))
 }

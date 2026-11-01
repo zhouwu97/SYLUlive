@@ -61,6 +61,7 @@ const errors: Record<string, string> = {
   binding_conflict: "已有一个有效助手授权，请明确勾选替换旧授权。",
   installation_conflict: "这份机器人连接已被另一个校园账号授权。请先在原账号撤销连接，不能直接挪用他人的绑定。",
   proposals_disabled: "服务端尚未开放草稿提案，请仅选择读取权限。",
+  personal_queries_disabled: "服务端尚未开放成绩和二课查询，当前可只授权其他已开放能力。",
   owner_publish_disabled: "服务端尚未开放正式发布，此草稿尚未发布。",
   section_muted: "当前账号已被该版块禁言。",
   community_rules_required: "请先在校园社区阅读并接受现行社区规则。",
@@ -130,7 +131,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [success, setSuccess] = useState("");
-  const q = useApi<{ bindings: Binding[] }>("/api/connected-apps"),
+  const q = useApi<{ bindings: Binding[]; personal_data_enabled?: boolean }>("/api/connected-apps"),
     guard = useGuard();
   async function lookup() {
     const current = guard();
@@ -259,6 +260,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
                   <input
                     type="checkbox"
                     checked={selected.includes(scope)}
+                    disabled={["academic:grades:read", "academic:erke:read"].includes(scope) && q.data?.personal_data_enabled !== true}
                     onChange={(e) =>
                       setSelected((v) =>
                         e.target.checked
@@ -328,7 +330,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
           </div>
         )}
       </section>
-      <IntegrationPersonalSync />
+      <IntegrationPersonalSync enabled={q.data?.personal_data_enabled} />
       <section className="panel panel-pad integration-panel">
         <h2>连接管理</h2>
         <p>

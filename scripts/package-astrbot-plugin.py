@@ -18,6 +18,7 @@ files = [
     "permissions.py",
     "administration.py",
     "binding_delivery.py",
+    "binding_notifications.py",
     "group_confirmations.py",
     "metadata.yaml",
     "_conf_schema.json",

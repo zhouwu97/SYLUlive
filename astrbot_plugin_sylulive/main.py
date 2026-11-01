@@ -3,6 +3,7 @@ import base64
 import hashlib
 import io
 import json
+import math
 import re
 import secrets
 import time
@@ -230,7 +231,7 @@ def read_kinds(path):
     return set()
 
 
-@register("astrbot_plugin_sylulive", "SYLUlive", "按用户授权的校园业务工具", "0.3.1")
+@register("astrbot_plugin_sylulive", "SYLUlive", "按用户授权的校园业务工具", "0.3.2")
 class SYLUlivePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -262,6 +263,7 @@ class SYLUlivePlugin(Star):
         self.accounts = Accounts(self.origin, self.platform, directory)
         from .group_confirmations import GroupConfirmations
         self.group_confirmations = GroupConfirmations()
+        self._create_binding_notifications()
         from astrbot.api import sp
 
         from .private_review import PrivateReview
@@ -272,6 +274,24 @@ class SYLUlivePlugin(Star):
         from astrbot.core.message.message_event_result import MessageChain
 
         return await self.context.send_message(umo, MessageChain().message(text))
+
+    def _create_binding_notifications(self):
+        from .binding_notifications import BindingNotifications, send_notice
+        async def notify(target, outcome):
+            return await send_notice(self.context, target, outcome)
+        self.binding_notifications = BindingNotifications(notify, lambda target: self.permission(target, "status").allowed)
+
+    def track_binding_result(self, event, client, delivery):
+        from .binding_notifications import BindingTarget
+        if not hasattr(self, "binding_notifications"):
+            self._create_binding_notifications()
+        private_reply = self.config.get("binding_link_delivery", "auto") != "group" and not delivery.used_fallback
+        target = BindingTarget.from_event(event, private_reply=private_reply)
+        if self.binding_notifications.start(client, target):
+            seconds = max(0, math.ceil(client.pending['deadline'] - self.binding_notifications.now()))
+            minutes, seconds = divmod(seconds, 60)
+            return f"剩余授权时间约 {minutes}分{seconds}秒，请在官网完成授权。\n{target.hint}"
+        return "可发送 /sylu-status 查询绑定结果。"
 
     @filter.command("sylu-review")
     async def request_private_review(
@@ -498,6 +518,8 @@ class SYLUlivePlugin(Star):
         )
 
     async def terminate(self):
+        if hasattr(self, "binding_notifications"):
+            await self.binding_notifications.close()
         await self.client.close()
         if hasattr(self, "accounts"):
             await self.accounts.close()
@@ -981,7 +1003,8 @@ class SYLUlivePlugin(Star):
                 async def fallback(source, text):
                     return await self.send_review_message(f"{source.get_platform_id()}:FriendMessage:{source.get_sender_id()}", text)
                 delivery = await deliver_binding_link(event, result, origin=self.origin, delivery=self.config.get("binding_link_delivery", "auto"), send_private=fallback)
-                yield event.plain_result(delivery.group_text)
+                notice = self.track_binding_result(event, client, delivery)
+                yield event.plain_result(delivery.group_text + "\n" + notice)
             except IntegrationProblem as error:
                 yield event.plain_result(self.problem(error))
         finally:
@@ -1063,6 +1086,8 @@ class SYLUlivePlugin(Star):
             try:
                 client, _ = self.subject_account(event, "unbind")
                 await client.disconnect()
+                if hasattr(self, "binding_notifications"):
+                    await self.binding_notifications.stop(client)
                 yield event.plain_result(
                     "你的连接已断开，本次旧绑定链接已取消。需要重新绑定时发送 /sylu-connect；其他人的连接不受影响。"
                 )
@@ -1080,7 +1105,7 @@ class SYLUlivePlugin(Star):
             "permission_denied": "当前会话未获此项功能权限，请查看 /sylu-permissions 或联系本机部署者。",
             "multi_user_disabled": "本机未开放普通用户独立绑定，请部署者在 AstrBot 插件后台开启多用户绑定。",
             "invalid_delivery_policy": "结果投递策略配置无效，请部署者在 AstrBot 插件后台检查。",
-            "authorization_pending": "请在官网确认，再发送 /sylu-status。",
+            "authorization_pending": "官网授权仍在等待，可发送 /sylu-status 查看进度。",
             "authorization_expired": "绑定链接已过期，请先发 /sylu-disconnect 取消旧请求，再发 /sylu-connect 获取新链接。",
             "expired_token": "绑定链接已过期，请先发 /sylu-disconnect，再重新连接。",
             "access_denied": "这次授权已拒绝或取消。请先发 /sylu-disconnect 清理旧请求，需要时再重新连接。",

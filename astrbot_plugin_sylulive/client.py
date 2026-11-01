@@ -141,9 +141,15 @@ class BusinessClient:
         }
         self.store.save(self.tokens)
 
-    async def poll(self):
+    async def poll(self, *, expected=None):
         async with self.lock:
             pending = self.pending
+            if expected is not None and pending is not expected:
+                if pending is None and self.tokens:
+                    return
+                raise IntegrationProblem("authorization_changed")
+            if pending is None and self.tokens:
+                return
             if not pending or pending["deadline"] <= time.monotonic():
                 raise IntegrationProblem("authorization_expired")
             if pending["next"] > time.monotonic():

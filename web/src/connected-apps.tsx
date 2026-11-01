@@ -133,6 +133,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
     [success, setSuccess] = useState("");
   const q = useApi<{ bindings: Binding[]; personal_data_enabled?: boolean }>("/api/connected-apps"),
     guard = useGuard();
+  const personalEnabled = q.error || q.isPending ? undefined : q.data?.personal_data_enabled;
   async function lookup() {
     const current = guard();
     setBusy(true);
@@ -210,7 +211,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
     }
   }
   return (
-    <>
+    <div className="connected-apps-page">
       <Head
         title="已授权助手"
         subtitle="向 AstrBot 授权本人数据；每个校园账号只保留一个有效助手授权。"
@@ -260,7 +261,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
                   <input
                     type="checkbox"
                     checked={selected.includes(scope)}
-                    disabled={["academic:grades:read", "academic:erke:read"].includes(scope) && q.data?.personal_data_enabled !== true}
+                    disabled={busy || (["academic:grades:read", "academic:erke:read"].includes(scope) && !selected.includes(scope) && personalEnabled !== true)}
                     onChange={(e) =>
                       setSelected((v) =>
                         e.target.checked
@@ -273,6 +274,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
                 </span>
               </label>
             ))}
+            {personalEnabled !== true && consent.requested_scopes.some(scope => ["academic:grades:read", "academic:erke:read"].includes(scope)) && <p>个人查询尚未开放或状态未确认，暂不能批准成绩、二课权限；可取消选择，只授权其他已开放能力。</p>}
             <p>
               获准读取的公开文字、作者昵称、互动统计和图片会交给你部署的
               AstrBot，可能继续发送至你选择的模型、记忆插件或部署者允许的群。SYLUlive
@@ -317,6 +319,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
                   busy ||
                   !checked ||
                   !selected.length ||
+                  (personalEnabled !== true && selected.some(scope => ["academic:grades:read", "academic:erke:read"].includes(scope))) ||
                   (!!consent.existing_binding && !replace) ||
                   (selected.includes("community:propose") &&
                     (!selected.includes("community:read") ||
@@ -330,9 +333,9 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
           </div>
         )}
       </section>
-      <IntegrationPersonalSync enabled={q.data?.personal_data_enabled} />
+      <IntegrationPersonalSync enabled={personalEnabled} />
       <section className="panel panel-pad integration-panel">
-        <h2>连接管理</h2>
+        <div className="integration-connections-heading"><h2>连接管理</h2><button className="btn" disabled={busy || q.isFetching} onClick={() => void q.refetch()}>刷新连接列表</button></div>
         <p>
           App 的手机、电脑或平板登录与助手授权分别管理。安装名称可能包含插件自报的 QQ
           号，便于核对请求；名称和安装标识不证明 QQ 归属。
@@ -373,7 +376,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
           )}
         </QueryState>
       </section>
-    </>
+    </div>
   );
 }
 

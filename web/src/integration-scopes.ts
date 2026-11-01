@@ -8,3 +8,14 @@ export const integrationScopeLabels: Record<string, string> = {
   "academic:grades:read": "本账号已同步成绩（私聊，非学校实时查询）",
   "academic:erke:read": "本账号已同步二课摘要（私聊）",
 };
+
+export const integrationScopeTitles: Record<string, string> = {
+  "profile:read_minimal": "账号昵称",
+  "community:read": "公开社区",
+  "content:read_own_public": "本人公开帖子",
+  "actions:read_own": "草稿与发布结果",
+  "community:propose": "创建草稿",
+  "checkin:write": "每日签到",
+  "academic:grades:read": "已同步成绩",
+  "academic:erke:read": "已同步二课",
+};

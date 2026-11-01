@@ -65,9 +65,11 @@ export const useAcademic = () => useContext(Context);
 export function ConnectionForm({
   dataset,
   onData,
+  successMessage = "学校资料已更新",
 }: {
   dataset: AcademicDataset;
   onData: (value: unknown, snapshot: AcademicSnapshot) => string | void;
+  successMessage?: string | null;
 }) {
   const { requireUser } = useAuth(),
     ui = useUI(),
@@ -213,7 +215,7 @@ export function ConnectionForm({
                 return;
               }
               store.setUpdated(snapshot.fetchedAt);
-              ui.notify("学校资料已更新");
+              if (successMessage) ui.notify(successMessage);
               ui.close();
             })
           }
@@ -262,7 +264,7 @@ export function ConnectionForm({
                   return;
                 }
                 store.setUpdated(snapshot.fetchedAt);
-                ui.notify("学校资料已更新");
+                if (successMessage) ui.notify(successMessage);
                 ui.close();
               })
             }

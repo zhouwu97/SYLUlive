@@ -19,6 +19,10 @@ pnpm dev
 
 详见 [插件安装与本地配置](../astrbot_plugin_sylulive/README.md)。本地开发务必设置前述 `SYLULIVE_API_ORIGIN`，插件与 `INTEGRATION_PUBLIC_ORIGIN` 均指向本地网页 origin 5173。未启用后端新集成时，这些页面不会伪装成功。该入口不改变现有 Web/Flutter 校园 AI。
 
+管理中心“助手授权”（`/web/admin?tab=integrations`）按状态展示授权、权限和操作审计。先选择缩减权限或撤销连接，再核对影响、填写原因并确认；修改权限选择会清除旧确认。这里不提供个人成绩正文，也不能替用户增加权限，服务状态以实际接口返回为准。
+
+“已授权助手”的资料同步先读取本机、展示最小预览，再由本人明确确认上传；成绩预览前5门，二课展示毕业总量与缺口，并说明实际同步范围。删除上传副本单独确认，切换资料类型会清空预览和旧确认。状态刷新失败不能沿用缓存的开放状态，具体权限、来源和部署前提见[多用户授权方案](../docs/ai/astrbot-multi-user-authorization.md)。页面验证入口为`integration-management.spec.ts`、`integration-personal-sync.spec.ts`和`connected-apps.spec.ts`，均使用合成数据，不代表真实QQ或学校联调。
+
 ## 扩展安装与本机查询
 
 ```powershell

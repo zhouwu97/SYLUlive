@@ -1018,7 +1018,7 @@ class SYLUlivePlugin(Star):
                     + " SYLUlive 公开读取可用，可查询校园帖子、食堂、地图等公开信息。本人账号操作请查看 /sylu-permissions 的当前权限。"
                     if "sections" in result
                     else result.get(
-                        "message", "公开读取暂不可用，请让维护者私聊检查连接。"
+                        "message", "公开读取暂不可用，请让部署者检查服务连接。"
                     )
                 )
                 yield event.plain_result(text)
@@ -1089,10 +1089,10 @@ class SYLUlivePlugin(Star):
             "poll_later": "请稍等几秒再查询连接状态。",
             "slow_down": "查询过快，请稍后再试。",
             "already_connected": "已有本机连接，请查询状态或先断开。",
-            "private_actor_required": "这是个人账号操作，请本人私聊机器人使用。",
+            "private_actor_required": "这是个人账号操作，请本人在获准会话使用；群内按后台权限和结果投递设置执行。",
             "local_account_limit": "本机连接数量已达上限，请联系维护者处理；未借用其他人的账号。",
             "local_binding_unavailable": "本机绑定信息暂时无法读取或保存，请联系维护者检查文件权限；未创建替代授权或借用他人连接。",
-            "academic_sync_required": "尚无可查询的数据。请先在 SYLUlive App 或官网同步本人成绩／二课，再回到本私聊查询；绑定不等于已同步学校数据。",
+            "academic_sync_required": "尚无可查询的数据。请先在 SYLUlive App 或官网同步本人成绩／二课，再从机器人获准的会话查询；绑定不等于已同步学校数据。",
             "personal_data_disabled": "你已在隐私设置关闭该类数据，机器人不能读取；请本人在官网检查设置。",
             "personal_queries_disabled": "服务端尚未开放成绩和二课查询，请维护者核对服务开关；公开查询和已有签到不受影响。",
             "personal_data_unavailable": "个人数据暂时不可用，请先在 App 或官网检查和重新同步，未使用其他人的数据。",

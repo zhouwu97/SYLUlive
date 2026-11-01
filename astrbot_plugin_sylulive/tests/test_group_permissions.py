@@ -185,6 +185,42 @@ async def test_group_checkin_requires_feature_scope_and_permission_without_owner
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("submit", [True, False])
+@pytest.mark.parametrize("stage", ["poll", "request"])
+@pytest.mark.parametrize("change", ["feature", "rule"])
+async def test_checkin_rechecks_permissions_after_await_without_misreporting_a_submitted_write(submit, stage, change):
+    plugin, event, accounts = group_fixture(rules=[allow_rule("checkin")])
+    own = accounts.clients[(BOT, FIRST)]
+
+    def revoke():
+        if change == "feature": plugin.config["allow_checkin"] = False
+        else: plugin.config["access_rules"].append(allow_rule("checkin", effect="deny"))
+
+    if stage == "poll":
+        own.pending = {"synthetic": True}
+        async def changing_poll():
+            own.pending = None
+            revoke()
+        own.poll = changing_poll
+    else:
+        read = own.call
+        async def changing_call(*args, **kwargs):
+            result = await read(*args, **kwargs)
+            revoke()
+            return result
+        own.call = changing_call
+
+    result = await plugin.checkin_result(event, submit=submit)
+    assert "变化" in result and "连续签到" not in result
+    if stage == "poll":
+        assert "未发起" in result and not own.calls
+    else:
+        assert len(own.calls) == 1 and "未发起" not in result
+        if submit: assert "已经提交" in result and "未执行" not in result
+    assert not plugin.client.calls and not accounts.clients[(BOT, SECOND)].calls
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("dataset", ["grades", "erke"])
 async def test_group_direct_queries_are_isolated_by_real_sender_and_do_not_enter_owner_account(dataset):
     plugin, first, accounts = group_fixture(rules=[allow_rule(dataset)])

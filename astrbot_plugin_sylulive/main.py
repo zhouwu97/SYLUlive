@@ -230,7 +230,7 @@ def read_kinds(path):
     return set()
 
 
-@register("astrbot_plugin_sylulive", "SYLUlive", "按用户授权的校园业务工具", "0.3.0")
+@register("astrbot_plugin_sylulive", "SYLUlive", "按用户授权的校园业务工具", "0.3.1")
 class SYLUlivePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -524,9 +524,23 @@ class SYLUlivePlugin(Star):
         if not self.config.get("allow_checkin", False):
             return "本机尚未启用每日签到，请维护者在插件设置打开 allow_checkin 后由本人授权。"
         try:
+            from .group_confirmations import policy_stamp
             client, _ = self.subject_account(event, "checkin")
+            stamp = policy_stamp(self.config)
+            generation = getattr(client, "generation", 0)
+
+            def access_current():
+                return (
+                    stamp == policy_stamp(self.config)
+                    and generation == getattr(client, "generation", 0)
+                    and self.permission(event, "checkin").allowed
+                    and self.config.get("allow_checkin", False)
+                )
+
             if getattr(client, "pending", None):
                 await client.poll()
+            if not access_current():
+                return "权限或账号连接已变化，本次未发起签到操作或查询，请重新确认。"
         except IntegrationProblem as error:
             return self.problem(error)
         tokens = getattr(client, "tokens", None)
@@ -536,6 +550,12 @@ class SYLUlivePlugin(Star):
             return "当前连接没有签到权限，未执行签到。请本人先 /sylu-disconnect，再 /sylu-connect，并在官网明确勾选“每日签到”权限。旧只读授权不会自动扩权。"
         try:
             body = await client.call("POST" if submit else "GET", "/me/checkin")
+            if not access_current():
+                return (
+                    "本次签到请求已经提交，但权限或账号连接发生变化，未展示返回资料。请到官网核对签到状态，不能将此提示视为未签到。"
+                    if submit
+                    else "权限或账号连接已变化，本次未展示个人查询结果，请重新确认。"
+                )
             data = body.get("data", {})
             flag = data.get("already" if submit else "checked_in")
             if not isinstance(flag, bool) or not isinstance(

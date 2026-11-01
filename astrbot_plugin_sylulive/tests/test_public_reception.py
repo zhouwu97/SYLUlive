@@ -34,11 +34,11 @@ async def test_open_public_reading_for_received_group_and_nonowner_private(
     for path in ("/binding", "/me/checkin", "/me/public-posts", "/actions/synthetic"):
         assert (
             json.loads(await plugin.tool(event, "GET", path))["error"]
-            == "private_owner_only"
+            == "permission_denied"
         )
     assert (
         json.loads(await plugin.tool(event, "POST", "/actions"))["error"]
-        == "private_owner_only"
+        == "permission_denied"
     )
     assert calls == []
 
@@ -153,7 +153,7 @@ async def test_open_public_sessions_still_cannot_use_owner_checkin(group):
     plugin, event, _ = fixture(group=group, sender="other")
     plugin.config.update(public_read_all_sessions=True, allow_checkin=True)
     plugin.client = SimpleNamespace(tokens={"scope": "checkin:write"}, call=AsyncMock())
-    assert "本人" in await plugin.checkin_result(event, submit=True)
+    assert "部署者尚未允许你在当前会话" in await plugin.checkin_result(event, submit=True)
     plugin.client.call.assert_not_awaited()
 
 

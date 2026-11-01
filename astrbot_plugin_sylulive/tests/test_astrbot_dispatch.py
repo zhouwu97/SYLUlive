@@ -35,11 +35,12 @@ class BusinessClientFixture:
 
     def __init__(self, fail):
         self.fail = fail
+        self.disconnect_calls = 0
 
     async def begin(self, *args, **kwargs):
         if self.fail:
             raise IntegrationProblem("network_unavailable")
-        return {"user_code": "SYNTHETIC", "verification_uri": "https://fixture.invalid/authorize"}
+        return {"user_code": "SYNTHETIC", "verification_uri": "https://fixture.invalid/web/connected-apps?user_code=SYNTHETIC"}
 
     async def call(self, *args, **kwargs):
         if self.fail:
@@ -52,6 +53,7 @@ class BusinessClientFixture:
         return await self.call("GET", path.removeprefix("/api/integrations/v1/public"), **kwargs)
 
     async def disconnect(self):
+        self.disconnect_calls += 1
         if self.fail:
             raise IntegrationProblem("network_unavailable")
 
@@ -91,9 +93,14 @@ async def test_business_command_never_falls_through_to_default_agent(monkeypatch
     plugin = cls.__new__(cls)
     plugin.owner = "owner"
     plugin.platform = "synthetic-platform"
+    plugin.origin = "https://fixture.invalid"
     plugin.installation = "synthetic-installation"
     plugin.config = {"public_read_group_ids": ["synthetic-group"]}
     plugin.client = BusinessClientFixture(fail)
+    def empty_account(actor, bot, **kwargs):
+        assert actor == "other" and bot == "synthetic-bot"
+        raise IntegrationProblem("connect_first")
+    plugin.accounts = SimpleNamespace(get=empty_account)
     event = message(sender)
     if sender == "group":
         event.message_obj.type = MessageType.GROUP_MESSAGE
@@ -120,7 +127,9 @@ async def test_business_command_never_falls_through_to_default_agent(monkeypatch
             responses.append("".join(getattr(c, "text", "") for c in result.chain))
     assert stage.agent_sub_stage.calls == 0, "Business command triggered a second model reply"
     assert event.is_stopped(), "Command must terminate propagation after its response"
-    assert len(responses) == (1 if sender in ("owner", "group") or command == "connect" else 0)
+    assert len(responses) == 1, "拒绝也应明确回复权限原因，不能静默落入模型"
+    if sender == "other":
+        assert plugin.client.disconnect_calls == 0, "普通用户解绑不能调用部署者的连接"
 
 
 def test_connection_error_does_not_claim_a_publish_was_attempted():
@@ -160,6 +169,8 @@ async def test_presentation_hook_preserves_context_and_is_scoped(scope):
     plugin = module.SYLUlivePlugin.__new__(module.SYLUlivePlugin)
     plugin.owner = "owner"
     plugin.platform = "synthetic-platform"
+    plugin.config = {}
+    plugin.context = SimpleNamespace(get_config=lambda umo=None: {"admins_id": ["owner"]})
     event = message("other" if scope == "other_sender" else "owner")
     if scope == "other_platform":
         event.platform_meta = PlatformMetadata("aiocqhttp", "synthetic", "another-platform")
@@ -175,6 +186,18 @@ async def test_presentation_hook_preserves_context_and_is_scoped(scope):
         first = request.system_prompt
         await plugin.present_community_naturally(event, request)
         assert request.system_prompt == first
+    elif scope in ("other_sender", "group"):
+        assert request.system_prompt.startswith("原有人格\n")
+        assert module.COMMUNITY_PRESENTATION not in request.system_prompt
+        assert module.COMMUNITY_READING not in request.system_prompt
+        assert request.system_prompt.count("[当前会话本人命令权限]") == 1
+        for command in ("sylu-connect", "sylu-checkin", "sylu-grades", "sylu-erke"):
+            assert f"/{command}当前未开放" in request.system_prompt
+        first = request.system_prompt
+        await plugin.present_community_naturally(event, request)
+        assert request.system_prompt == first
+        assert request.prompt == "总结刚才那篇帖子" and request.contexts == contexts
+        assert request.conversation is None
     else:
         assert request.system_prompt == "原有人格"
 
@@ -205,6 +228,8 @@ async def test_followup_summary_requires_new_post_and_comment_reads(fresh_reads)
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
     plugin = cls.__new__(cls)
     plugin.owner, plugin.platform = "owner", "synthetic-platform"
+    plugin.config = {}
+    plugin.context = SimpleNamespace(get_config=lambda umo=None: {"admins_id": ["owner"]})
     plugin.installation = "00000000-0000-4000-8000-000000000001"
     class ReaderFixture:
         async def public_call(self, *args, **kwargs):
@@ -237,6 +262,8 @@ async def test_explicit_rewrite_can_use_previous_result_without_claiming_a_new_r
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
     plugin = cls.__new__(cls)
     plugin.owner, plugin.platform = "owner", "synthetic-platform"
+    plugin.config = {}
+    plugin.context = SimpleNamespace(get_config=lambda umo=None: {"admins_id": ["owner"]})
     plugin.installation = "00000000-0000-4000-8000-000000000001"
     event = message("owner")
     request = ProviderRequest(prompt="只改写上面的总结，不要重新读取。")

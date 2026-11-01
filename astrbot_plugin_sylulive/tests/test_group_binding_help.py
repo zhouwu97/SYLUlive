@@ -1,4 +1,4 @@
-"""群内发起只向真实发起者私发链接；不以帮助或绑定扩大私人查询权限。"""
+"""群内链接按管理员投递模式返回，绑定不自动扩大私人查询权限。"""
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -21,7 +21,7 @@ def group_fixture(sender="123456789"):
         if actor not in accounts:
             accounts[actor] = SimpleNamespace(
                 pending=None, tokens=None,
-                begin=AsyncMock(return_value={"user_code":f"CODE-{actor}","verification_uri":f"https://fixture.invalid/web/connected-apps?user_code={actor}"}),
+                begin=AsyncMock(return_value={"user_code":f"CODE-{actor}","verification_uri":f"https://fixture.invalid/web/connected-apps?user_code=CODE-{actor}"}),
                 call=AsyncMock(return_value={"account":{"nickname":"never show in group"}}), poll=AsyncMock(),
             )
         return accounts[actor], actor+"-installation"
@@ -39,7 +39,7 @@ async def test_two_group_actors_get_distinct_links_only_in_their_own_private_cha
     _,second,_ = group_fixture("987654321")
     for event in (first,second):
         result = text([row async for row in plugin.connect(event)])
-        assert "已私发" in result and "尚未绑定" not in result
+        assert "已提交私信发送" in result and "尚未绑定" not in result
         assert "https://" not in result and "CODE-" not in result
         assert event.is_stopped()
     targets = [row.args[0] for row in plugin.send_review_message.await_args_list]
@@ -54,12 +54,42 @@ async def test_two_group_actors_get_distinct_links_only_in_their_own_private_cha
 @pytest.mark.parametrize("failure",[False,RuntimeError("transport uncertain")])
 async def test_private_delivery_failure_never_exposes_link_in_group(failure):
     plugin,event,_=group_fixture()
+    plugin.config['binding_link_delivery']='private'
     if failure is False: plugin.send_review_message.return_value=False
     else: plugin.send_review_message.side_effect=failure
     result=text([row async for row in plugin.connect(event)])
-    assert "未能确认" in result and "本次尚未绑定" in result
+    assert "未能确认" in result and "本次请求已创建" in result
+    assert "尚未绑定" not in result
     assert "CODE-" not in result and "https://" not in result
     assert plugin.send_review_message.await_count==1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failure',[False,RuntimeError('transport uncertain')])
+async def test_auto_delivery_recovers_private_failure_with_same_actor_link_in_current_group(failure):
+    plugin,event,accounts=group_fixture()
+    plugin.config['binding_link_delivery']='auto'
+    if failure is False: plugin.send_review_message.return_value=False
+    else: plugin.send_review_message.side_effect=failure
+    result=text([row async for row in plugin.connect(event)])
+    assert '按管理员设置在本群' in result
+    assert 'user_code=CODE-123456789' in result and 'QQ 123456789' in result
+    assert '尚未绑定' not in result and 'transport uncertain' not in result
+    assert list(accounts)==['123456789']
+    assert plugin.send_review_message.await_count==1 and event.is_stopped()
+    plugin.client.begin.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_group_delivery_returns_actor_link_without_trying_any_private_transport():
+    plugin,event,accounts=group_fixture()
+    plugin.config['binding_link_delivery']='group'
+    event.bot=SimpleNamespace(send_private_msg=AsyncMock())
+    result=text([row async for row in plugin.connect(event)])
+    assert 'user_code=CODE-123456789' in result and 'QQ 123456789' in result
+    assert list(accounts)==['123456789']
+    event.bot.send_private_msg.assert_not_awaited()
+    plugin.send_review_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -67,9 +97,10 @@ async def test_qq_temporary_private_delivery_uses_only_real_sender_and_current_g
     plugin,event,_=group_fixture()
     event.bot=SimpleNamespace(send_private_msg=AsyncMock(return_value={"message_id":123}))
     result=text([row async for row in plugin.connect(event)])
-    assert "已私发" in result
+    assert "已提交私信发送" in result
     sent=event.bot.send_private_msg.await_args.kwargs
     assert sent['user_id']==123456789 and sent['group_id']==692905367
+    assert sent['self_id']=='2170194804'
     assert "CODE-123456789" in sent['message'][0]['data']['text']
     plugin.send_review_message.assert_not_awaited()
 
@@ -83,7 +114,7 @@ async def test_group_status_checks_own_server_token_without_publishing_nickname_
     assert "已建立" in result and "never show" not in result
     client.call.assert_awaited_once_with("GET","/binding")
     assert not plugin.allowed(event)
-    assert "不在群里" in await plugin.personal_result(event,'grades')
+    assert "部署者尚未允许你在当前会话" in await plugin.personal_result(event,'grades')
     client.call.side_effect=IntegrationProblem("invalid_token")
     result=text([row async for row in plugin.status(event)])
     assert "已建立" not in result
@@ -94,7 +125,7 @@ async def test_group_binding_requires_explicit_flag_and_does_not_use_quoted_send
     plugin,event,accounts=group_fixture()
     plugin.config['allow_group_binding']=False
     result=text([row async for row in plugin.connect(event)])
-    assert "私聊" in result and not accounts
+    assert "部署者尚未允许你在当前会话" in result and not accounts
     plugin.config['allow_group_binding']=True
     event.message_str='sylu-connect @987654321'
     result=text([row async for row in plugin.connect(event)])

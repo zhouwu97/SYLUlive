@@ -136,8 +136,9 @@ test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身
   await expect(
     page.getByLabel("公开帖子与评论、作者昵称、互动统计、公开图片和表情目录"),
   ).toBeVisible();
-  await expect(page.getByLabel("本账号已同步成绩（私聊，非学校实时查询）")).not.toBeChecked();
-  await expect(page.getByLabel("本账号已同步二课摘要（私聊）")).not.toBeChecked();
+  await expect(page.getByLabel("本账号已同步成绩（本人查询，非学校实时查询）")).not.toBeChecked();
+  await expect(page.getByLabel("本账号已同步二课摘要（本人查询）")).not.toBeChecked();
+  await expect(page.getByText(/群成员、后续群模型与记忆可能保存/)).toBeVisible();
   await expect(page.getByText("本连接不提供站内私信", { exact: false })).toBeVisible();
   await page.screenshot({
     path: test.info().outputPath("consent-public-media.png"),

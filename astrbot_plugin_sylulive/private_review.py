@@ -24,17 +24,15 @@ class PrivateReview:
         return f"{self.plugin.platform}:FriendMessage:{sender}"
 
     def is_admin(self, event):
-        config = self.plugin.context.get_config(umo=event.unified_msg_origin)
-        return str(event.get_sender_id()) in {
-            str(v) for v in config.get("admins_id", [])
-        }
+        from .administration import is_bot_admin
+        return is_bot_admin(self.plugin.context, event)
 
     def authorized(self, event):
         p = self.plugin
         return (
             bool(p.config.get("allow_private_review", False))
-            and str(event.get_platform_id()) == p.platform
-            and (str(event.get_sender_id()) == p.owner or self.is_admin(event))
+            and p.platform_allowed(event)
+            and p.permission(event, "private_review").allowed
         )
 
     def key(self):
@@ -59,9 +57,13 @@ class PrivateReview:
             raise ReviewProblem("私有审核未启用，或你没有本机审核权限。")
         if source == "account":
             # AstrBot 管理员不能继承别人的 SYLUlive 授权。
-            if actor != self.plugin.owner or target:
+            if target:
                 raise ReviewProblem("仅绑定本人可以查看自己的 SYLUlive 账号信息。")
-            result = await self.plugin.client.call("GET", "/binding")
+            try:
+                client, _ = self.plugin.subject_account(event, "private_review")
+            except IntegrationProblem:
+                raise ReviewProblem("请先绑定自己的校园账号；管理员不能借用其他人的授权。") from None
+            result = await client.call("GET", "/binding")
             nickname = str(result.get("account", {}).get("nickname") or "未设置昵称")[
                 :100
             ]

@@ -39,6 +39,9 @@ def setup(sender="owner", admin="owner"):
     plugin.client = SimpleNamespace(
         call=AsyncMock(return_value={"account": {"nickname": "private-account"}})
     )
+    def no_other_binding(*args, **kwargs):
+        raise IntegrationProblem("connect_first")
+    plugin.accounts = SimpleNamespace(get=no_other_binding)
     state = {}
 
     async def get(umo, key, default=None):

@@ -1,4 +1,4 @@
-"""个人结果只经确定命令输出，不送进群或模型上下文。"""
+"""个人结果只经本人确定命令、授权与投递策略输出，不注册为群模型工具。"""
 from datetime import datetime, timezone, timedelta
 import re
 

@@ -66,7 +66,8 @@ async def test_checkin_never_inherits_private_binding_in_group_or_other_sender(
     plugin, event, _ = fixture(group=group, sender=sender, platform=platform)
     plugin.config["allow_checkin"] = True
     plugin.client = SimpleNamespace(tokens={"scope": "checkin:write"}, call=AsyncMock())
-    assert "本人" in await plugin.checkin_result(event, submit=True)
+    expected = "无法确认本条消息的真实来源" if platform == "other-platform" else "部署者尚未允许你在当前会话"
+    assert expected in await plugin.checkin_result(event, submit=True)
     plugin.client.call.assert_not_called()
     assert "sylulive_checkin_status" not in PUBLIC_GROUP_TOOLS
 

@@ -90,13 +90,13 @@ async def test_each_private_actor_connects_with_their_own_link_and_no_owner_cred
     plugin, first, _ = fixture(group="", sender="one")
     _, second, _ = fixture(group="", sender="two")
     plugin.config.update(allow_multi_user=True, allow_personal_queries=True)
-    clients = {key: SimpleNamespace(begin=AsyncMock(return_value={"user_code": key, "verification_uri": f"https://fixture.invalid/web/connected-apps?user_code={key}"})) for key in ("one", "two")}
+    clients = {key: SimpleNamespace(begin=AsyncMock(return_value={"user_code": "CODE-"+key, "verification_uri": f"https://fixture.invalid/web/connected-apps?user_code=CODE-{key}"})) for key in ("one", "two")}
     plugin.accounts = SimpleNamespace(get=lambda sender, bot, **kwargs: (clients[sender], sender + "-installation"))
     plugin.client.begin = AsyncMock(side_effect=AssertionError("owner credentials must not be used"))
     for event in (first, second):
         replies = [r async for r in plugin.connect(event)]
         text = ''.join(p.text for r in replies for p in r.chain if hasattr(p, 'text'))
-        assert f"user_code={event.get_sender_id()}" in text
+        assert f"user_code=CODE-{event.get_sender_id()}" in text
         assert event.is_stopped()
     assert clients['one'].begin.await_args.args[0] == 'one-installation'
     assert clients['two'].begin.await_args.args[0] == 'two-installation'
@@ -141,8 +141,8 @@ async def test_group_and_admin_do_not_inherit_another_users_private_client():
     plugin, event, _ = fixture(sender='owner')
     plugin.config.update(allow_multi_user=True, allow_personal_queries=True, allow_checkin=True)
     plugin.accounts = SimpleNamespace(get=AsyncMock(side_effect=AssertionError('must not access private account')))
-    assert '请本人私聊' in await plugin.personal_result(event,'grades')
-    assert '群里不能代签' in await plugin.checkin_result(event,submit=True)
+    assert '部署者尚未允许你在当前会话' in await plugin.personal_result(event,'grades')
+    assert '部署者尚未允许你在当前会话' in await plugin.checkin_result(event,submit=True)
     plugin.accounts.get.assert_not_called()
 
 

@@ -17,8 +17,12 @@ def fixture(*, group="allowed-group", sender="member", platform="configured-plat
     module = importlib.import_module("astrbot_plugin_sylulive.main")
     plugin = module.SYLUlivePlugin.__new__(module.SYLUlivePlugin)
     plugin.owner, plugin.platform = "owner", "configured-platform"
+    plugin.origin = "https://fixture.invalid"
     plugin.installation = "00000000-0000-4000-8000-000000000001"
     plugin.config = {"public_read_group_ids": ["allowed-group"] if enabled else [], "allow_proposals": True}
+    # 此夹具中的旧owner同时是AstrBot本体管理员；其他用例可显式替换名单测试撤权。
+    from types import SimpleNamespace
+    plugin.context = SimpleNamespace(get_config=lambda **kwargs: {"admins_id": ["owner"]})
     calls = []
 
     class Reader:
@@ -114,14 +118,14 @@ async def test_enabled_group_can_only_read_public_resources(path):
 async def test_group_cannot_inherit_owner_or_write_abilities(method, path):
     plugin, event, calls = fixture(sender="owner")
     result = json.loads(await plugin.tool(event, method, path))
-    assert result["error"] == "private_owner_only" and calls == []
+    assert result["error"] == "permission_denied" and calls == []
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("options", [{"group": "other-group"}, {"platform": "other-platform"}, {"enabled": False}, {"group": "", "sender": "other"}])
 async def test_other_sessions_do_not_gain_public_access(options):
     plugin, event, calls = fixture(**options)
-    assert json.loads(await plugin.tool(event, "GET", "/community/posts"))["error"] == "private_owner_only"
+    assert json.loads(await plugin.tool(event, "GET", "/community/posts"))["error"] == "permission_denied"
     assert calls == []
 
 
@@ -161,4 +165,4 @@ async def test_group_error_does_not_offer_account_authorization_in_group():
 async def test_group_cannot_create_draft_even_when_owner_enabled_proposals():
     plugin, event, calls = fixture(sender="owner")
     result = json.loads(await plugin.draft_reply(event, 811, "synthetic", "不可代发"))
-    assert result["error"] == "private_owner_only" and calls == []
+    assert result["error"] == "permission_denied" and calls == []

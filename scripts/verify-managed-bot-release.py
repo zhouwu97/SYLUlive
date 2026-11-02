@@ -37,7 +37,8 @@ def main():
                 raise ValueError("JSON route contract missing")
             return response.status, json.loads(body)
 
-    code, version = read("/version")
+    # Public Nginx forwards /api/*; the bare /version path can be the website SPA.
+    code, version = read("/api/version")
     if code != 200 or version.get("git_sha") != args.sha:
         raise ValueError("running SHA does not match candidate")
     if version.get("capabilities", {}).get("managed_bot_v1") is not True:

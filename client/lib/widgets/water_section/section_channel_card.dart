@@ -56,12 +56,13 @@ class SectionChannelCard extends StatelessWidget {
     return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceSecondaryDark : AppColors.surfaceSecondaryLight,
+        color: isDark
+            ? AppColors.surfaceSecondaryDark
+            : AppColors.surfaceSecondaryLight,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isDark
-              ? AppColors.borderNormalDark
-              : AppColors.borderNormalLight,
+          color:
+              isDark ? AppColors.borderNormalDark : AppColors.borderNormalLight,
         ),
       ),
       child: Row(
@@ -85,7 +86,9 @@ class SectionChannelCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
-                    color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -93,7 +96,9 @@ class SectionChannelCard extends StatelessWidget {
                   cfg.channelDesc,
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondaryLight,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -114,7 +119,7 @@ class SectionChannelCard extends StatelessWidget {
   Widget _buildNoticeBar(String notice) {
     final isStrict = section.sensitiveLevel == 'strict';
     final color = isStrict ? const Color(0xFFEF4444) : const Color(0xFFF59E0B);
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
       decoration: BoxDecoration(
         color: color.withValues(alpha: isDark ? 0.14 : 0.08),

@@ -248,6 +248,7 @@ class _PostReplyComposerState extends State<PostReplyComposer>
                     top: false,
                     child: AppEmojiPanel(
                       key: const ValueKey('post-reply-emoji-panel'),
+                      embedded: true,
                       onEmojiSelected: (emoji) =>
                           insertAtSelection(controller.textController, emoji),
                       onStickerSelected: controller.selectSticker,
@@ -281,10 +282,10 @@ class _PostReplyComposerState extends State<PostReplyComposer>
         color: widget.embedded ? Colors.transparent : isDark
             ? AppColors.composerSurfaceDark
             : AppColors.composerSurfaceLight,
-        border: widget.embedded && context.watch<ThemeProvider?>()?.frostedGlass == true
-            ? null : Border(
+        border: Border(
           top: BorderSide(
-            color: isDark
+            color: widget.embedded && context.watch<ThemeProvider?>()?.frostedGlass == true
+                ? Colors.transparent : isDark
                 ? AppColors.composerDividerDark
                 : AppColors.composerDividerLight,
             width: 1.0,

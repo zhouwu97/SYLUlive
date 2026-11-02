@@ -1,6 +1,7 @@
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/app_tab_bar_surface.dart';
+import '../widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +11,7 @@ import '../models/campus_article.dart';
 import '../providers/auth_provider.dart';
 import '../repositories/browsing_history_repository.dart';
 import '../theme/app_theme_tokens.dart';
+import '../theme/app_radius.dart';
 import 'campus_article_detail_screen.dart';
 import 'post_detail_screen.dart';
 
@@ -227,8 +229,12 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
             decoration: BoxDecoration(
               color: tokens.surface,
               borderRadius: BorderRadius.zero,
-              border: Border(bottom: BorderSide(color: context.watch<ThemeProvider?>()?.frostedGlass == true
-                  ? Colors.transparent : tokens.divider)),
+              border: Border(
+                  bottom: BorderSide(
+                      color:
+                          context.watch<ThemeProvider?>()?.frostedGlass == true
+                              ? Colors.transparent
+                              : tokens.divider)),
             ),
             child: TabBar(
               controller: _tabController,
@@ -255,17 +261,23 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
 
     if (items.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.history_toggle_off_rounded,
-                size: 64, color: tokens.textDisabled),
-            const SizedBox(height: 16),
-            Text(
-              '暂无浏览记录',
-              style: TextStyle(fontSize: 15, color: tokens.textSecondary),
-            ),
-          ],
+        child: AppCardSurface(
+          decoration: BoxDecoration(
+            color: tokens.surface,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.history_toggle_off_rounded,
+                  size: 64, color: tokens.textSecondary),
+              const SizedBox(height: 16),
+              Text(
+                '暂无浏览记录',
+                style: TextStyle(fontSize: 15, color: tokens.textSecondary),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -278,28 +290,35 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
     }
 
     return ListView.builder(
+      addRepaintBoundaries:
+          context.watch<ThemeProvider?>()?.frostedGlass != true,
       padding: const EdgeInsets.symmetric(vertical: 12),
       itemCount: grouped.keys.length,
       itemBuilder: (context, groupIdx) {
         final dateHeader = grouped.keys.elementAt(groupIdx);
         final groupItems = grouped[dateHeader]!;
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
-              child: Text(
-                dateHeader,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: tokens.textSecondary,
+        return AppCardMaterial(
+          color: tokens.surface,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
+                child: Text(
+                  dateHeader,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: tokens.textSecondary,
+                  ),
                 ),
               ),
-            ),
-            ...groupItems.map((item) => _buildItemTile(item, tokens)),
-          ],
+              ...groupItems.map((item) => _buildItemTile(item, tokens)),
+            ],
+          ),
         );
       },
     );
@@ -324,9 +343,12 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            border:
-                Border(bottom: BorderSide(color: context.watch<ThemeProvider?>()?.frostedGlass == true
-                    ? Colors.transparent : tokens.divider, width: 0.5)),
+            border: Border(
+                bottom: BorderSide(
+                    color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                        ? Colors.transparent
+                        : tokens.divider,
+                    width: 0.5)),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -379,11 +401,15 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
                       children: [
                         if (item.authorSnapshot != null &&
                             item.authorSnapshot!.isNotEmpty) ...[
-                          Text(
-                            item.authorSnapshot!,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: tokens.textSecondary,
+                          Flexible(
+                            child: Text(
+                              item.authorSnapshot!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: tokens.textSecondary,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),

@@ -8,6 +8,7 @@ import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
 import '../widgets/global_background_wrapper.dart';
 import 'post_detail_screen.dart';
+import '../widgets/app_card.dart';
 
 class TeacherRatingScreen extends StatefulWidget {
   const TeacherRatingScreen({super.key});
@@ -248,7 +249,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   }
 
   Widget _buildWarningBanner(bool isDark) {
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(

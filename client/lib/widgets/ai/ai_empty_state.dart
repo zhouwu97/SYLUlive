@@ -45,24 +45,27 @@ class AiPublicEmptyState extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              chatEnabled ? '今天想让 Agent 帮你做什么？' : '基础设施测试中',
-              style: TextStyle(
-                color: colors.onSurface,
-                fontSize: 22,
-                height: 1.25,
-                fontWeight: FontWeight.w700,
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                chatEnabled ? '今天想让 Agent 帮你做什么？' : '基础设施测试中',
+                style: TextStyle(
+                  color: colors.onSurface,
+                  fontSize: 22,
+                  height: 1.25,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              '它会先查学校资料和已授权快照；\n只有数据确实缺失或过期时，才会请求你的手机继续完成。',
-              style: TextStyle(
-                color: colors.onSurfaceVariant,
-                fontSize: 13,
-                height: 1.55,
-              ),
-            ),
+              const SizedBox(height: 10),
+              AppContentSurface.reading(
+                  child: Text(
+                '它会先查学校资料和已授权快照；\n只有数据确实缺失或过期时，才会请求你的手机继续完成。',
+                style: TextStyle(
+                  color: colors.onSurfaceVariant,
+                  fontSize: 13,
+                  height: 1.55,
+                ),
+              )),
+            ]),
             const SizedBox(height: 28),
             Text(
               '常用能力',

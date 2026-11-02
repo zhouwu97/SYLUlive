@@ -413,6 +413,32 @@ FEED-H1 加固：
 
 预览沿用 `_v1_thumb`、`_v1_medium`、`_v1_viewer` 路径与原图回退。普通图片的长边上限仍为 480、1280、2048；长宽比达到 3 的长图改按短边 320、960、1280 和总像素 150 万、500 万、1000 万的双重预算等比缩放，避免长截图文字被固定长边缩成窄条，不放大小图，不为达到固定字节数强行降清晰度。已有 ready 预览和原图保持不变，无需迁移或批量重编码。
 
+## 表情包导入、投稿与审核
+
+本机图片/ZIP 导入不发送文件到服务端。以下接口仅用于用户主动上传分享和审核。
+
+| 方法 | 路径 | 权限与行为 |
+| --- | --- | --- |
+| GET | `/api/emoji/packs` | 公开目录；默认仅原官方包，`include_community=true` 增加已审核的社区包 |
+| GET | `/api/emoji/packs/:id`、`/:id/manifest`、`/:id/assets/:assetId` | 社区包仅 published 可访问；version 必须省略或为 1；资源支持 Range/If-Range |
+| GET | `/api/emoji/submissions` | 当前账号投稿；page 默认 1，limit 默认 20、最大 50；返回 items/total/page/limit，按创建时间和 ID 倒序 |
+| POST | `/api/emoji/submissions` | 登录 + 社区规则确认；multipart 上传；同账号内的 Idempotency-Key 唯一 |
+| GET | `/api/emoji/submissions/:id`、`/:id/assets/:assetId` | 作者或现任管理员预览；其他账号返回 404 |
+| DELETE | `/api/emoji/submissions/:id` | 仅作者撤回，幂等；停止公开访问并回收服务端图片，保留状态记录 |
+| GET | `/api/admin/emoji-packs` | 现任管理员；默认 status=pending；支持 published/rejected/unpublished/withdrawn 及同一分页协议 |
+| GET | `/api/admin/emoji-packs/:id`、`/:id/assets/:assetId` | 现任管理员查看详情和全部内容 |
+| POST | `/api/admin/emoji-packs/:id/review` | JSON `{action: approve\|reject\|unpublish, reason: string}`；仅允许合法状态转换，不能审核自己投稿 |
+
+投稿 multipart 字段：`name`（1–40 个字符）、`description`（可选，最多 300 个字符）、`rights_confirmed=true`、`names`（与图片一一对应的名称 JSON 数组），多张图片共用 `images` 字段。`Idempotency-Key` 为 16–64 位字母、数字、下划线或短横线；重试必须沿用同一键和同一内容，不同内容复用键返回 409。字符按 grapheme 计数，名称/单张名称额外上限 1200 UTF-8 bytes，简介 6000 bytes。
+
+每次最多 100 张；单张 10 MiB；包括 multipart 开销在内的请求体最多 50 MiB，客户端保留开销余量，图片总量最多 49 MiB。每账号最多 5 份待审核、有效投稿图片合计最多 100 MiB。仅接受真实 PNG/JPEG/GIF，静图边长最多 4096，动图边长最多 2048、最多 500 帧且累计逻辑画布最多 32M 像素。服务端检测真实格式并规范化图片，不信任文件名、客户端 Hash/MIME 或资源路径。
+
+审核 `reject` / `unpublish` 必须填写原因；最多 300 个 grapheme，且不超过 500 个 Unicode code points 以兼容管理员日志字段。审核状态变化和管理员日志同事务写入，重复/过期处理返回 409。新表单可重新投稿；已拒绝/撤回的旧请求重试仍返回原记录，不会重新进入待审。
+
+社区目录条目在旧字段外增加 `source=community` 和 `description`，不包含作者 ID。Manifest 使用与 Dart 一致的递归排序紧凑 JSON，不额外转义 HTML 字符；图片名称中的 Unicode 行/段分隔符规范为空格。社区包下载到本机后使用 local 资源身份发送；official 身份仍只授予内嵌官方资源。原内嵌官方包及其 Hash/版本保持不变。下架/撤回的包在目录中消失，详情/Manifest/资源返回 404；下载资源使用 `Cache-Control: no-store`，私有预览为 `private, no-store`。
+
+错误码：400 `emoji_pack_invalid` / `emoji_rights_required`；401 认证失败；403 `admin_required` 或既有社区规则门禁；404 `emoji_pack_not_found`；409 `emoji_pack_conflict`；413 `request_body_too_large` / `emoji_pack_too_large`（请求体超限）；429 `emoji_pack_quota`；503 `emoji_upload_busy` 并附 Retry-After。该上传路径使用业务事务幂等，不经过普通写接口的 1 MiB 幂等响应缓存；其他写接口的大小限制保持不变。未审核图片不写普通 `files` 公开记录，存储与清理见 [运维说明](../docs/ops/emoji-packs.md)。
+
 ## 试卷库
 
 普通接口均需 JWT；普通用户还需完成教务认证，管理员可绕过教务认证。

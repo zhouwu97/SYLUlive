@@ -25,6 +25,7 @@ import 'admin_security_center_screen.dart';
 import '../models/security_event.dart';
 import '../widgets/global_background_wrapper.dart';
 import '../widgets/glass_container.dart';
+import '../features/emoji/presentation/emoji_submissions_screen.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -325,6 +326,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       title: '审核待办',
                       isDark: isDark,
                       children: [
+                        _AdminActionPill(
+                          icon: Icons.emoji_emotions_outlined,
+                          iconColor: Theme.of(context).colorScheme.primary,
+                          title: '表情包审核',
+                          subtitle: '投稿预览、审核与已上架表情管理',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(context,
+                              MaterialPageRoute(builder: (_) =>
+                                  const EmojiSubmissionsScreen(admin: true)))
+                              .then((_) => _loadCounts()),
+                        ),
                         _AdminActionPill(
                           icon: Icons.person_search,
                           iconColor: Colors.indigo,

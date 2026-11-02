@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/theme_provider.dart';
+import '../app_card.dart';
 
 import '../../config/api_constants.dart';
 import '../../features/emoji/application/emoji_recent_manager.dart';
@@ -40,6 +43,9 @@ class AppEmojiPanel extends StatefulWidget {
   final ValueChanged<EmojiFavoriteItem>? onFavoriteUndo;
   final Map<String, String> favoriteImageHeaders;
   final bool enabled;
+
+  /// 评论输入栏已提供连续玻璃底面，内嵌时只绘制面板内容。
+  final bool embedded;
   final EmojiFavoriteService? favoriteService;
   final EmojiRecentManager? recentManager;
   final void Function(String path, EmojiAssetRef asset)? onPackAssetSelected;
@@ -55,6 +61,7 @@ class AppEmojiPanel extends StatefulWidget {
     this.onFavoriteUndo,
     this.favoriteImageHeaders = const <String, String>{},
     this.enabled = true,
+    this.embedded = false,
     this.favoriteService,
     this.recentManager,
     this.onPackAssetSelected,
@@ -556,45 +563,52 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
         isDark ? AppColors.composerSurfaceDark : AppColors.composerSurfaceLight;
     final muted = emojiMuted(context);
 
-    return Material(
-      color: surface,
-      child: Column(
-        children: [
-          _buildPanelHeader(muted),
-          if (_packsError != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              child: EmojiInlineError(
-                  message: _packsError!, onRetry: () => _loadInstalledPacks()),
-            ),
-          Expanded(
-            child: PageView.builder(
-              key: const ValueKey('emoji-page-view'),
-              controller: _pageController,
-              itemCount: _tabCount,
-              onPageChanged: _handlePageChanged,
-              itemBuilder: (context, index) {
-                if (index == _favoriteTabIndex) {
-                  return _buildFavoriteGrid(muted);
-                }
-                if (index == _emojiTabIndex) {
-                  return _buildEmojiGrid();
-                }
-                if (index == _recentTabIndex) return _buildRecentGrid(muted);
-                if (index >= _installedTabStart) {
-                  return _buildInstalledGrid(
-                      _installedPacks[index - _installedTabStart]);
-                }
-                return _buildStickerGrid(
-                  appStickerGroups[index - _stickerTabStartIndex],
-                  muted,
-                );
-              },
-            ),
+    final content = Column(
+      children: [
+        _buildPanelHeader(muted),
+        if (_packsError != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            child: EmojiInlineError(
+                message: _packsError!, onRetry: () => _loadInstalledPacks()),
           ),
-          _buildBottomTabs(theme, isDark, muted),
-        ],
-      ),
+        Expanded(
+          child: PageView.builder(
+            key: const ValueKey('emoji-page-view'),
+            controller: _pageController,
+            itemCount: _tabCount,
+            onPageChanged: _handlePageChanged,
+            itemBuilder: (context, index) {
+              if (index == _favoriteTabIndex) {
+                return _buildFavoriteGrid(muted);
+              }
+              if (index == _emojiTabIndex) {
+                return _buildEmojiGrid();
+              }
+              if (index == _recentTabIndex) return _buildRecentGrid(muted);
+              if (index >= _installedTabStart) {
+                return _buildInstalledGrid(
+                    _installedPacks[index - _installedTabStart]);
+              }
+              return _buildStickerGrid(
+                appStickerGroups[index - _stickerTabStartIndex],
+                muted,
+              );
+            },
+          ),
+        ),
+        _buildBottomTabs(theme, isDark, muted),
+      ],
+    );
+    if (widget.embedded) {
+      return Material(color: Colors.transparent, child: content);
+    }
+    return AppCardMaterial(
+      key: const ValueKey('emoji-panel-surface'),
+      color: surface,
+      borderRadius: BorderRadius.zero,
+      clipBehavior: Clip.hardEdge,
+      child: content,
     );
   }
 
@@ -1009,13 +1023,16 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
   ) {
     final divider =
         isDark ? AppColors.composerDividerDark : AppColors.composerDividerLight;
+    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
     return Container(
       height: 50,
       decoration: BoxDecoration(
-        color: isDark
-            ? AppColors.surfaceSecondaryDark
-            : AppColors.surfaceSecondaryLight,
-        border: Border(top: BorderSide(color: divider)),
+        color: glass
+            ? Colors.transparent
+            : isDark
+                ? AppColors.surfaceSecondaryDark
+                : AppColors.surfaceSecondaryLight,
+        border: Border(top: BorderSide(color: glass ? Colors.transparent : divider)),
       ),
       child: Row(
         children: [

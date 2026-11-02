@@ -5,6 +5,7 @@ import '../config/water_post_taxonomy.dart';
 import '../models/announcement.dart' as model;
 import '../models/water_section.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_radius.dart';
 import 'group_chat_dialog.dart';
 import 'app_card.dart';
 import 'global_background_wrapper.dart';
@@ -69,7 +70,7 @@ class HomeServiceDrawer extends StatelessWidget {
     final isCustomMode = !themeProvider.isCleanBackgroundMode;
 
     final drawerBg =
-        themeProvider.shouldShowCustomBackground && themeProvider.frostedGlass
+        themeProvider.shouldShowCustomBackground
             ? Colors.transparent
             : isDark
                 ? const Color(0xFF151A24)
@@ -124,8 +125,8 @@ class HomeServiceDrawer extends StatelessWidget {
         ),
       ),
     );
-    if (!themeProvider.shouldShowCustomBackground ||
-        !themeProvider.frostedGlass) {
+    // 壁纸由背景模式控制；关闭卡片毛玻璃时仍需绘制侧栏自己的背景。
+    if (!themeProvider.shouldShowCustomBackground) {
       return drawer;
     }
     return SizedBox(
@@ -426,19 +427,11 @@ class HomeServiceDrawer extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        AppCardSurface(
+        Container(
+          key: const ValueKey('drawer-section-grid'),
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
-          decoration: BoxDecoration(
-            color:
-                isDark ? Colors.white.withValues(alpha: 0.045) : Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.07)
-                  : kCleanWarmCardBorderLight,
-            ),
-          ),
+          // 保留原来 1px 边框的占位，去掉分组底面后入口不移动。
+          padding: const EdgeInsets.fromLTRB(11, 13, 11, 13),
           child: waterSectionsLoading
               ? SizedBox(
                   height: 80,
@@ -716,29 +709,23 @@ class _WaterCategoryMiniItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = colorHexToColor(section.colorHex);
-    final glass = context.watch<ThemeProvider>().frostedGlass;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        child: AppCardSurface(
+          key: ValueKey('drawer-section-${section.slug}'),
           height: 74,
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: glass
-                ? Colors.transparent
-                : isDark
-                    ? Colors.white.withValues(alpha: 0.045)
-                    : Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: glass
-                ? null
-                : Border.all(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.07)
-                        : kCleanWarmCardBorderLight,
-                  ),
+            color: isDark ? Colors.white.withValues(alpha: 0.045) : Colors.white,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.07)
+                  : kCleanWarmCardBorderLight,
+            ),
           ),
           child: Row(
             children: [

@@ -418,7 +418,8 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
 
   Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, CampusTheme.pageBackground(context)),
+      backgroundColor:
+          AppPageBackground.color(context, CampusTheme.pageBackground(context)),
       appBar: AppPageAppBar(
         title: const Text('模型设置'),
         actions: [
@@ -435,23 +436,28 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
               children: [
-                Text(
-                  '个人助手模型',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '个人 Skill 仅使用这里配置的第三方模型；校园公益 AI 不能接收个人数据，也不能执行个人 Skill。',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+                Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Text(
+                        '个人助手模型',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      AppContentSurface.reading(child: Text(
+                        '个人 Skill 仅使用这里配置的第三方模型；校园公益 AI 不能接收个人数据，也不能执行个人 Skill。',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      )),
+                    ]),
                 const SizedBox(height: 18),
                 if (!_hasStoredConfig && _hasStoredApiKey) ...[
-                  Text(
+                  AppContentSurface(
+                      child: Text(
                     '检测到残留密钥，请清除后再保存新的模型配置。',
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.error,
                     ),
-                  ),
+                  )),
                   const SizedBox(height: 10),
                   OutlinedButton.icon(
                     onPressed: _saving ? null : _clearResidualApiKey,
@@ -460,62 +466,76 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                   ),
                   const SizedBox(height: 18),
                 ],
-                AppCardSurface(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)), child: TextField(
-                  controller: _endpointController,
-                  keyboardType: TextInputType.url,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  decoration: const InputDecoration(
-                    filled: false,
-                    labelText: 'HTTPS 服务地址',
-                    hintText: 'https://api.example.com/v1',
-                  ),
-                )),
+                AppCardSurface(
+                    decoration:
+                        BoxDecoration(borderRadius: BorderRadius.circular(12)),
+                    child: TextField(
+                      controller: _endpointController,
+                      keyboardType: TextInputType.url,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      decoration: const InputDecoration(
+                        filled: false,
+                        labelText: 'HTTPS 服务地址',
+                        hintText: 'https://api.example.com/v1',
+                      ),
+                    )),
                 const SizedBox(height: 18),
-                AppCardSurface(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)), child: TextField(
-                  controller: _apiKeyController,
-                  obscureText: true,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  decoration: InputDecoration(
-                    filled: false,
-                    labelText: 'API Key',
-                    hintText: _hasStoredApiKey ? '已安全保存，留空则保持不变' : null,
-                  ),
-                )),
+                AppCardSurface(
+                    decoration:
+                        BoxDecoration(borderRadius: BorderRadius.circular(12)),
+                    child: TextField(
+                      controller: _apiKeyController,
+                      obscureText: true,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      decoration: InputDecoration(
+                        filled: false,
+                        labelText: 'API Key',
+                        hintText: _hasStoredApiKey ? '已安全保存，留空则保持不变' : null,
+                      ),
+                    )),
                 const SizedBox(height: 18),
-                AppCardSurface(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)), child: TextField(
-                  controller: _modelController,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  decoration: const InputDecoration(filled: false, labelText: '模型名称'),
-                )),
+                AppCardSurface(
+                    decoration:
+                        BoxDecoration(borderRadius: BorderRadius.circular(12)),
+                    child: TextField(
+                      controller: _modelController,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      decoration: const InputDecoration(
+                          filled: false, labelText: '模型名称'),
+                    )),
                 const SizedBox(height: 18),
-                AppCardSurface(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)), child: DropdownButtonFormField<OpenAIWireApi>(
-                  key: ValueKey(_wireApi),
-                  initialValue: _wireApi,
-                  decoration: const InputDecoration(labelText: '请求协议'),
-                  items: OpenAIWireApi.values
-                      .map(
-                        (wireApi) => DropdownMenuItem(
-                          value: wireApi,
-                          child: Text(wireApi.displayName),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: _saving || _requestBusy
-                      ? null
-                      : (wireApi) {
-                          if (wireApi == null) return;
-                          setState(() {
-                            _wireApi = wireApi;
-                            _error = null;
-                            _probeSuccess = null;
-                          });
-                        },
-                )),
+                AppCardSurface(
+                    decoration:
+                        BoxDecoration(borderRadius: BorderRadius.circular(12)),
+                    child: DropdownButtonFormField<OpenAIWireApi>(
+                      key: ValueKey(_wireApi),
+                      initialValue: _wireApi,
+                      decoration: const InputDecoration(labelText: '请求协议'),
+                      items: OpenAIWireApi.values
+                          .map(
+                            (wireApi) => DropdownMenuItem(
+                              value: wireApi,
+                              child: Text(wireApi.displayName),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: _saving || _requestBusy
+                          ? null
+                          : (wireApi) {
+                              if (wireApi == null) return;
+                              setState(() {
+                                _wireApi = wireApi;
+                                _error = null;
+                                _probeSuccess = null;
+                              });
+                            },
+                    )),
                 const SizedBox(height: 8),
-                Text(
+                AppContentSurface(
+                    child: Text(
                   switch (_wireApi) {
                     OpenAIWireApi.auto =>
                       '自动识别 Claude、DeepSeek 等官方地址；其他服务依次尝试 Responses、Chat Completions 和 Anthropic Messages。',
@@ -527,7 +547,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                       '适用于 Claude 官方 API 和 Anthropic Messages 兼容服务。',
                   },
                   style: Theme.of(context).textTheme.bodySmall,
-                ),
+                )),
                 const SizedBox(height: 20),
                 Row(
                   children: [
@@ -573,21 +593,23 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                 ],
                 if (_error != null) ...[
                   const SizedBox(height: 14),
-                  Text(
+                  AppContentSurface(
+                      child: Text(
                     _error!,
                     style:
                         TextStyle(color: Theme.of(context).colorScheme.error),
-                  ),
+                  )),
                 ],
                 if (_probeSuccess != null) ...[
                   const SizedBox(height: 14),
-                  Text(
+                  AppContentSurface(
+                      child: Text(
                     _probeSuccess!,
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.primary,
                       fontWeight: FontWeight.w600,
                     ),
-                  ),
+                  )),
                 ],
                 const SizedBox(height: 24),
                 FilledButton.icon(

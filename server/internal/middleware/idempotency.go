@@ -108,9 +108,13 @@ func IdempotencyMiddlewareWithJWT(db *gorm.DB, jwtSecret string) gin.HandlerFunc
 
 func idempotencyMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 教务配置和集成草稿由业务事务持久化幂等结果。OAuth/授权页也不能缓存
-		// 凭证或确认 nonce，读取缓存重放必须经过集成当前权限与来源复核。
-		if strings.HasPrefix(c.Request.URL.Path, "/api/academic-account-configs/") || strings.HasPrefix(c.Request.URL.Path, "/api/oauth/") || strings.HasPrefix(c.Request.URL.Path, "/api/integrations/") || strings.HasPrefix(c.Request.URL.Path, "/api/connected-apps") {
+		// 教务配置、集成草稿和表情投稿由业务事务持久化幂等结果。
+		// 授权接口不能缓存凭证或确认 nonce；表情 multipart 使用独立上传上限。
+		if strings.HasPrefix(c.Request.URL.Path, "/api/academic-account-configs/") ||
+			strings.HasPrefix(c.Request.URL.Path, "/api/oauth/") ||
+			strings.HasPrefix(c.Request.URL.Path, "/api/integrations/") ||
+			strings.HasPrefix(c.Request.URL.Path, "/api/connected-apps") ||
+			(c.Request.Method == http.MethodPost && c.Request.URL.Path == "/api/emoji/submissions") {
 			c.Next()
 			return
 		}

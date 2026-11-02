@@ -19,6 +19,7 @@ import '../widgets/rating_detail/rating_report_sheet.dart';
 import '../widgets/rating_detail/rating_bottom_input_bar.dart';
 import '../widgets/rating_detail/rating_input_sheet.dart';
 import 'admin_teacher_governance_screen.dart';
+import '../widgets/app_card.dart';
 
 class TeacherDetailScreen extends StatefulWidget {
   final int teacherId;
@@ -182,7 +183,8 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         Navigator.pop(context, _didChange);
       },
       child: Scaffold(
-        backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
+        backgroundColor:
+            AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
         extendBodyBehindAppBar: false,
         appBar: AppBar(
           systemOverlayStyle: SystemUiOverlayStyle(
@@ -202,7 +204,8 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
             onPressed: () => Navigator.pop(context, _didChange),
           ),
           title: const Text('教师评价'),
-          backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
+          backgroundColor:
+              AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
@@ -297,7 +300,8 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.info_outline, size: 48, color: Colors.orange),
+                        const Icon(Icons.info_outline,
+                            size: 48, color: Colors.orange),
                         const SizedBox(height: 16),
                         Text(
                           '该教师资料已合并至「${teacher.mergedIntoName.isNotEmpty ? teacher.mergedIntoName : '目标教师'}」，但重定向层级过多，已停止跳转。',
@@ -461,13 +465,14 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 20, bottom: 20),
               child: Center(
-                child: Text(
+                child: AppContentSurface(
+                    child: Text(
                   '还没有同学评价',
                   style: TextStyle(
                     fontSize: 13,
                     color: RankingTokens.subColor(isDark),
                   ),
-                ),
+                )),
               ),
             )
           else

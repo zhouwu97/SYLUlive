@@ -72,10 +72,12 @@ class _CompetitionCatalogMappingScreenState
     final conflicts =
         _items.where((item) => item['review_status'] == 'conflict').length;
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
+      backgroundColor:
+          AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
       appBar: AppBar(
         title: const Text('映射审核'),
-        backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
+        backgroundColor: AppPageBackground.color(
+            context, CompetitionUiTokens.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
         actions: [
           if (!widget.package.isActive && widget.activePackageId != null)
@@ -86,41 +88,43 @@ class _CompetitionCatalogMappingScreenState
             ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView.separated(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-                itemCount: _items.length + 1,
-                separatorBuilder: (_, __) => const AppCardDivider(height: 1),
-                itemBuilder: (_, index) {
-                  if (index == 0) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: Text(
-                        '${_items.length} 条映射 · $confirmed 已确认 · $conflicts 冲突',
-                        style: TextStyle(
-                          color: CompetitionUiTokens.subColor(isDark),
-                          fontWeight: FontWeight.w600,
+      body: AppContentSurface(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView.separated(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                    itemCount: _items.length + 1,
+                    separatorBuilder: (_, __) =>
+                        const AppCardDivider(height: 1),
+                    itemBuilder: (_, index) {
+                      if (index == 0) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Text(
+                            '${_items.length} 条映射 · $confirmed 已确认 · $conflicts 冲突',
+                            style: TextStyle(
+                              color: CompetitionUiTokens.subColor(isDark),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        );
+                      }
+                      final item = _items[index - 1];
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text('${item['competition_title'] ?? ''}'),
+                        subtitle: Text(
+                          '${item['competition_id'] ?? ''}\n'
+                          '旧事件 ${item['legacy_event_id'] ?? '-'} · ${item['match_type'] ?? '未映射'}',
                         ),
-                      ),
-                    );
-                  }
-                  final item = _items[index - 1];
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text('${item['competition_title'] ?? ''}'),
-                    subtitle: Text(
-                      '${item['competition_id'] ?? ''}\n'
-                      '旧事件 ${item['legacy_event_id'] ?? '-'} · ${item['match_type'] ?? '未映射'}',
-                    ),
-                    trailing: _statusIcon('${item['review_status'] ?? ''}'),
-                  );
-                },
-              ),
-            ),
+                        trailing: _statusIcon('${item['review_status'] ?? ''}'),
+                      );
+                    },
+                  ),
+                )),
     );
   }
 

@@ -1,5 +1,6 @@
 import '../widgets/app_tab_bar_surface.dart';
 import 'package:flutter/material.dart';
+import '../widgets/app_card.dart';
 import 'package:provider/provider.dart';
 import '../widgets/app_page_background.dart';
 import '../providers/social_provider.dart';
@@ -46,7 +47,8 @@ class _SocialListScreenState extends State<SocialListScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('关注与粉丝'),
-        bottom: AppTabBarSurface(child: TabBar(
+        bottom: AppTabBarSurface(
+            child: TabBar(
           controller: _tabController,
           tabs: const [
             Tab(text: '关注'),
@@ -54,12 +56,17 @@ class _SocialListScreenState extends State<SocialListScreen>
           ],
         )),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _UserList(userId: widget.userId, type: 'following'),
-          _UserList(userId: widget.userId, type: 'followers'),
-        ],
+      body: AppCardMaterial(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.zero,
+        clipBehavior: Clip.antiAlias,
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            _UserList(userId: widget.userId, type: 'following'),
+            _UserList(userId: widget.userId, type: 'followers'),
+          ],
+        ),
       ),
     );
   }

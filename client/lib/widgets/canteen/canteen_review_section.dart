@@ -340,7 +340,8 @@ class _ReviewItemState extends State<_ReviewItem> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedOpacity(
+    return AppContentSurface(
+        child: AnimatedOpacity(
       duration: AppMotion.fast,
       curve: AppMotion.outgoing,
       opacity: _deleting ? 0 : 1,
@@ -362,7 +363,7 @@ class _ReviewItemState extends State<_ReviewItem> {
           onOpenDish: widget.onOpenDish,
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -443,7 +444,8 @@ class _ReviewItemContent extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              Flexible(child: Text(
+              Flexible(
+                  child: Text(
                 _reviewDate(review),
                 textAlign: TextAlign.end,
                 style: TextStyle(

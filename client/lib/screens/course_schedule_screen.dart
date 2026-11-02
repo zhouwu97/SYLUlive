@@ -1023,7 +1023,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final academicWeek = sc.getAcademicWeek(_weekStart);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final titleColor = isDark ? Colors.white : CampusTheme.text;
-    final secondaryColor = CampusTheme.subText;
+    final secondaryColor = appContentSecondaryColor(context, CampusTheme.subText);
 
     return Container(
       color: Colors.transparent,
@@ -1154,7 +1154,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = CampusTheme.primary;
     final titleColor = isDark ? Colors.white : CampusTheme.text;
-    final secondaryColor = CampusTheme.subText;
+    final secondaryColor = appContentSecondaryColor(context, CampusTheme.subText);
 
     return SizedBox(
       height: _weekHeaderHeightOf(context),
@@ -1608,7 +1608,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   ),
                   decoration: BoxDecoration(
                     color: Theme.of(context).brightness == Brightness.dark
-                        ? CampusTheme.darkCard : Colors.white,
+                        ? CampusTheme.darkCard
+                        : Colors.white,
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
@@ -2486,16 +2487,17 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           width: double.infinity,
                           decoration: BoxDecoration(
                             gradient: ctx.watch<ThemeProvider>().frostedGlass
-                                ? null : LinearGradient(
-                              colors: [
-                                const Color(
-                                  0xFF6366F1,
-                                ).withValues(alpha: isDark ? 0.25 : 0.12),
-                                const Color(
-                                  0xFF8B5CF6,
-                                ).withValues(alpha: isDark ? 0.18 : 0.08),
-                              ],
-                            ),
+                                ? null
+                                : LinearGradient(
+                                    colors: [
+                                      const Color(
+                                        0xFF6366F1,
+                                      ).withValues(alpha: isDark ? 0.25 : 0.12),
+                                      const Color(
+                                        0xFF8B5CF6,
+                                      ).withValues(alpha: isDark ? 0.18 : 0.08),
+                                    ],
+                                  ),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
                               color: const Color(

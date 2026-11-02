@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -26,7 +27,7 @@ class _Stripes extends CustomPainter {
 void main() {
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
 
-  testWidgets('去掉玻璃卡片描边后，封面贴合卡片边缘且保留显式内边距', (tester) async {
+  testWidgets('切换毛玻璃不改变封面边缘和显式内边距', (tester) async {
     final theme = ThemeProvider(loadOnStart: false);
     addTearDown(theme.dispose);
     await theme.setBackgroundImage('morenbeijing.jpeg');
@@ -53,7 +54,7 @@ void main() {
     await tester.pumpAndSettle();
     final outer = tester.getRect(find.byKey(surface));
     expect(tester.getRect(find.byKey(cover)),
-        Rect.fromLTWH(outer.left, outer.top, 200, 108));
+        Rect.fromLTWH(outer.left + 2, outer.top + 2, 196, 104));
     await theme.setFrostedGlass(false);
     await tester.pumpAndSettle();
     expect(tester.getRect(find.byKey(cover)),
@@ -153,12 +154,14 @@ void main() {
           }
           // 直边中部也不能绘制额外的白色描边。
           final edge = ((50 + row * 90) * 320 + 61) * 4;
+          final edgeColor = theme.isCleanBackgroundMode && row < 2
+              ? Colors.white : color;
           expect(bytes.getUint8(edge),
-              closeTo(color.r * 255 * alpha + 127.5 * (1 - alpha), 3));
+              closeTo(edgeColor.r * 255 * alpha + 127.5 * (1 - alpha), 3));
         }
       }
 
-      expect(find.byType(BackdropFilter), findsNWidgets(4));
+      expect(activeBackdropFilters(), findsNWidgets(4));
       await checkPixels(.7);
       for (final y in [140.0, 230.0, 320.0]) {
         await tester.tapAt(Offset(160, y));
@@ -173,7 +176,7 @@ void main() {
       await checkPixels(1);
       await theme.setFrostedGlass(false);
       await tester.pumpAndSettle();
-      expect(find.byType(BackdropFilter), findsNothing);
+      expect(activeBackdropFilters(), findsNothing);
       expect(find.byType(Card), findsOneWidget);
       expect(tester.takeException(), isNull);
     });

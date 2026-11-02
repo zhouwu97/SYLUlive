@@ -406,7 +406,7 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
 
   Widget _errorBanner(String message, VoidCallback onRetry) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.only(left: 12),
       decoration: BoxDecoration(

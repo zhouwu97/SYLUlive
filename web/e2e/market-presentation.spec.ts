@@ -148,7 +148,7 @@ test("进入集市导航收成图标，离开与浏览器返回恢复，快速�
   await sidebar.getByRole("link", { name: "校园社区", exact: true }).click();
   await expect.poll(sidebarWidth).toBe(208);
   await sidebar.getByRole("link", { name: "二手集市", exact: true }).click();
-  await sidebar.getByRole("link", { name: "校园工作台", exact: true }).click();
+  await sidebar.getByRole("link", { name: "校园首页", exact: true }).click();
   await expect.poll(sidebarWidth).toBe(208);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await sidebar.getByRole("link", { name: "二手集市", exact: true }).click();
@@ -244,10 +244,17 @@ test("公共外壳一致，收展逐帧没有图标跳位、透明闪屏、网�
       expect(Math.max(...frames.slice(1).map((frame, i) => Math.abs(frame.x - frames[i].x)))).toBeLessThan(80);
     }
     await recordShell(page);
-    await page.getByLabel("主导航").getByRole("link", { name: "校园工作台", exact: true }).click();
+    await page.getByLabel("主导航").getByRole("link", { name: "校园首页", exact: true }).click();
     const expanded = await shellFrames(page);
     expect(expanded.every((frame) => frame.icons.every((top, i) => Math.abs(top - expanded[0].icons[i]) < 1) && frame.bg === frames[0].bg && !frame.overflow)).toBe(true);
-    expect(await page.locator(".today-card").evaluate((el) => ({ image: getComputedStyle(el).backgroundImage, shadow: getComputedStyle(el).boxShadow }))).toEqual({ image: "none", shadow: "none" });
+    const material = await page.locator(".today-card").evaluate((el) => {
+      const style = getComputedStyle(el);
+      return { image: style.backgroundImage, backdrop: style.backdropFilter, shadow: style.boxShadow, contentShadow: getComputedStyle(document.querySelector(".dashboard-feed")!).boxShadow };
+    });
+    expect(material.image).toBe("none");
+    expect(material.backdrop).toBe("none");
+    expect(material.shadow).toBe("none");
+    expect(material.shadow).toBe(material.contentShadow);
   }
 });
 

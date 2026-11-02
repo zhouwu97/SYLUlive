@@ -11,6 +11,7 @@ import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/app_card.dart';
+import '../theme/app_radius.dart';
 
 class CheckInCalendarScreen extends StatefulWidget {
   final DateTime Function()? now;
@@ -660,7 +661,8 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
                           key: const ValueKey('check-in-month-swipe-area'),
                           behavior: HitTestBehavior.opaque,
                           onHorizontalDragEnd: _handleMonthSwipe,
-                          child: Column(
+                          child: AppContentSurface.card(
+                              child: Column(
                             children: [
                               _MonthHeader(
                                 month: _visibleMonth,
@@ -673,7 +675,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
                               const SizedBox(height: 16),
                               _CalendarLegend(theme: theme),
                             ],
-                          ),
+                          )),
                         ),
                       ],
                     ),
@@ -686,10 +688,13 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
       ),
       bottomNavigationBar: SafeArea(
         top: false,
-        child: Container(
+        child: AppCardSurface(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           decoration: BoxDecoration(
             color: theme.colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(AppRadius.lg),
+            ),
             border: Border(
               top: BorderSide(color: theme.colorScheme.outlineVariant),
             ),
@@ -808,7 +813,7 @@ class _CheckInSummary extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1C211E) : const Color(0xFFF5F7F5),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         border: Border.all(
           color: isDark ? const Color(0xFF303630) : const Color(0xFFE3E7E3),
         ),

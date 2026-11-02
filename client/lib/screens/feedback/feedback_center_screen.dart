@@ -437,14 +437,32 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
     );
   }
 
+  Widget _buildStatePanel(int tabIndex, Widget child) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: AppContentSurface.card(
+          key: ValueKey('feedback-state-panel-$tabIndex'),
+          child: SizedBox.expand(
+            child: Center(
+              child: Padding(padding: const EdgeInsets.all(24), child: child),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTabContent(int tabIndex, bool isDark) {
     final loading = _tabLoading[tabIndex] ?? false;
     final error = _tabErrors[tabIndex];
     final tickets = _tabTickets[tabIndex] ?? [];
 
     if (loading && tickets.isEmpty) {
-      return const Center(
-        child: SizedBox(
+      return _buildStatePanel(
+        tabIndex,
+        const SizedBox(
           width: 28,
           height: 28,
           child: CircularProgressIndicator(strokeWidth: 2.5),
@@ -453,12 +471,17 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
     }
 
     if (error != null && tickets.isEmpty) {
-      return Center(
-        child: Column(
+      return _buildStatePanel(
+        tabIndex,
+        Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.wifi_off_rounded,
-                size: 44, color: isDark ? Colors.white38 : Colors.grey[400]),
+            Icon(
+              Icons.wifi_off_rounded,
+              size: 44,
+              color: isDark ? Colors.white38 : Colors.grey[400],
+            ),
             const SizedBox(height: 12),
             Text(
               error,
@@ -478,8 +501,10 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
     }
 
     if (tickets.isEmpty) {
-      return Center(
-        child: Column(
+      return _buildStatePanel(
+        tabIndex,
+        Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
@@ -513,7 +538,7 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
           return false;
         },
         child: ListView.builder(
-                addRepaintBoundaries: false,
+          addRepaintBoundaries: false,
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
@@ -580,9 +605,12 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
               controller: _tabController,
               automaticIndicatorColorAdjustment: false,
               indicator: BoxDecoration(
-                color: (isDark ? const Color(0xFF262C33) : Colors.white).withValues(
-                  alpha: themeProvider.frostedGlass && themeProvider.shouldShowCustomBackground
-                      ? themeProvider.componentOpacity : 1),
+                color: (isDark ? const Color(0xFF262C33) : Colors.white)
+                    .withValues(
+                        alpha: themeProvider.frostedGlass &&
+                                themeProvider.shouldShowCustomBackground
+                            ? themeProvider.componentOpacity
+                            : 1),
                 borderRadius: BorderRadius.circular(AppRadius.md - 2),
                 boxShadow: isDark
                     ? null

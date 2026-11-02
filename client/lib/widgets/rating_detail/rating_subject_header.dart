@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'ranking_tokens.dart';
+import '../app_card.dart';
 
 class RatingSubjectHeader extends StatelessWidget {
   final String title;
@@ -48,9 +49,10 @@ class RatingSubjectHeader extends StatelessWidget {
       ],
     );
 
-    if (!showInitialBadge) return details;
+    if (!showInitialBadge) return AppContentSurface(child: details);
 
-    return Row(
+    return AppContentSurface(
+        child: Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Container(
@@ -75,6 +77,6 @@ class RatingSubjectHeader extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(child: details),
       ],
-    );
+    ));
   }
 }

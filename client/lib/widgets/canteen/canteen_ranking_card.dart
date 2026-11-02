@@ -5,7 +5,7 @@ import '../../theme/app_motion.dart';
 import 'canteen_status_image.dart';
 import 'canteen_theme.dart';
 
-/// 商家排行卡：图片优先，无白色大卡、无 rank badge、无阴影。
+/// 商家排行卡：保留图片优先排版，壁纸模式补底面，不新增边距与阴影。
 /// 排名使用排版数字（01/02/03），图片 104x96 圆角 14，整行底部分割线。
 class CanteenRankingCard extends StatefulWidget {
   final int rank;
@@ -48,7 +48,8 @@ class _CanteenRankingCardState extends State<CanteenRankingCard> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Column(
+    return AppContentSurface(
+        child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         GestureDetector(
@@ -172,7 +173,7 @@ class _CanteenRankingCardState extends State<CanteenRankingCard> {
         ),
         const SizedBox(height: 12),
       ],
-    );
+    ));
   }
 
   Widget _buildCover(bool isDark) {

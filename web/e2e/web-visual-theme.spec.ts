@@ -48,13 +48,19 @@ test("新主题四个主页面在 320–1900px 和深浅色下可读、无重叠
             const picture = img.getBoundingClientRect(), frame = img.parentElement!.getBoundingClientRect();
             return picture.left < frame.left - 1 || picture.right > frame.right + 1 || picture.top < frame.top - 1 || picture.bottom > frame.bottom + 1;
           });
-          const containers = Array.from(document.querySelectorAll<HTMLElement>(".sidebar, .compact-quick .quick, .right-rail .rail-card, .market-card")).filter((el) => el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
+          const containers = Array.from(document.querySelectorAll<HTMLElement>(".right-rail .rail-card, .market-card")).filter((el) => el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
           const unbounded = containers.filter((el) => {
             const style = getComputedStyle(el);
             return style.backgroundColor === "rgba(0, 0, 0, 0)" || style.borderTopStyle === "none" || parseFloat(style.borderTopWidth) < 1;
           }).map((el) => el.className);
           const nav = document.querySelector<HTMLElement>(".sidebar")!;
           const frame = nav.getBoundingClientRect();
+          const navStyle = getComputedStyle(nav);
+          const flatNavigation = navStyle.borderRightStyle === "solid" && parseFloat(navStyle.borderRightWidth) >= 1 && navStyle.borderRadius === "0px" && navStyle.boxShadow === "none";
+          const cardShortcuts = Array.from(document.querySelectorAll<HTMLElement>(".compact-quick .quick")).every((el) => {
+            const style = getComputedStyle(el), icon = getComputedStyle(el.querySelector("i")!);
+            return parseFloat(style.borderTopWidth) >= 1 && style.boxShadow === "none" && el.getBoundingClientRect().height >= 44 && icon.backgroundColor !== "rgba(0, 0, 0, 0)" && icon.boxShadow === "none";
+          });
           const navOutside = innerWidth > 760 && Array.from(nav.querySelectorAll(".nav-item")).some((el) => {
             const item = el.getBoundingClientRect();
             return item.left < frame.left || item.right > frame.right || item.width < 44 || item.height < 44;
@@ -66,11 +72,18 @@ test("新主题四个主页面在 320–1900px 和深浅色下可读、无重叠
               return text.left < button.left || text.right > button.right || text.bottom > button.bottom;
             });
           });
-          return { overflow: document.documentElement.scrollWidth > innerWidth, contrast, unbounded, navOutside, overlap: quickOutside || mediaOutside || cards.some((card) => card.picture > card.title.top || card.title.bottom > card.price) };
+          const headerOutside = Array.from(document.querySelectorAll<HTMLElement>(".topbar button, .topbar .brand")).filter((el) => el.getClientRects().length).some((el) => {
+            const bounds = el.getBoundingClientRect();
+            return bounds.left < -1 || bounds.right > innerWidth + 1;
+          });
+          return { overflow: document.documentElement.scrollWidth > innerWidth, headerOutside, contrast, unbounded, flatNavigation, cardShortcuts, navOutside, overlap: quickOutside || mediaOutside || cards.some((card) => card.picture > card.title.top || card.title.bottom > card.price) };
         });
         expect(result.overflow, `${theme} ${width} ${route}`).toBe(false);
+        expect(result.headerOutside, `${theme} ${width} ${route} header controls fully visible`).toBe(false);
         expect(result.overlap, `${theme} ${width} ${route}`).toBe(false);
         expect(result.unbounded, `${theme} ${width} ${route} visible widget containers`).toEqual([]);
+        expect(result.flatNavigation, `${theme} ${width} ${route} integrated navigation`).toBe(true);
+        expect(result.cardShortcuts, `${theme} ${width} ${route} community shortcut cards and hit areas`).toBe(true);
         expect(result.navOutside, `${theme} ${width} ${route} navigation hit areas`).toBe(false);
         expect(result.contrast.filter((item) => item.ratio < 4.5), `${theme} ${width} ${route} contrast`).toEqual([]);
         if (route === "./" && width <= 760) {
@@ -121,5 +134,22 @@ test("新主题四个主页面在 320–1900px 和深浅色下可读、无重叠
   }
   await page.getByRole("button", { name: "发布闲置", exact: true }).focus();
   expect(await page.locator(".btn.primary").evaluate((el) => getComputedStyle(el).outlineWidth)).toBe("2px");
+  await page.route("**/api/user/profile", (route) => route.fulfill({ status: 401, json: { message: "未登录" } }));
+  await page.route("**/api/refresh", (route) => route.fulfill({ status: 401, json: { message: "未登录" } }));
+  for (const theme of ["light", "dark"]) {
+    await page.addInitScript((value) => localStorage.setItem("sylulive-theme", value), theme);
+    for (const width of [320, 375]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("community");
+      const login = page.getByRole("button", { name: "登录", exact: true });
+      await expect(login).toBeVisible();
+      expect(await login.evaluate((el) => { const bounds = el.getBoundingClientRect(); return bounds.left >= 0 && bounds.right <= innerWidth; }), `${theme} ${width} guest login is not clipped`).toBe(true);
+      await expect(page.locator(".profile-rail-stats")).toHaveCount(0);
+      await login.click();
+      await expect(page.getByRole("dialog", { name: "登录沈理校园", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+    }
+  }
   expect(errors).toEqual([]);
 });

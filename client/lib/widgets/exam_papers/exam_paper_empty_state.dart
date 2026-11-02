@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../app_card.dart';
 
 class ExamPaperEmptyState extends StatelessWidget {
   final IconData icon;
@@ -26,7 +27,8 @@ class ExamPaperEmptyState extends StatelessWidget {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
-        child: Padding(
+        child: AppContentSurface.card(
+            child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -74,7 +76,7 @@ class ExamPaperEmptyState extends StatelessWidget {
               ],
             ],
           ),
-        ),
+        )),
       ),
     );
   }

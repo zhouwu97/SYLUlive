@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'canteen_location_chip.dart';
 import 'canteen_theme.dart';
+import '../app_card.dart';
 
 /// 商家详情头部信息区：图片下方直接铺在页面上，不套外层白色 InfoCard。
 /// 店名 → ★评分 · 人数 → 菜品/实拍统计。
@@ -31,7 +32,8 @@ class CanteenDetailHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Padding(
+    return AppContentSurface(
+        child: Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,6 +125,6 @@ class CanteenDetailHeader extends StatelessWidget {
           ],
         ],
       ),
-    );
+    ));
   }
 }

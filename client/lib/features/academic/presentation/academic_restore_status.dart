@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../../widgets/app_card.dart';
 
 /// 身份尚未确认不能显示空课表，但等待必须有明确的结束和重试入口。
 class AcademicRestoreStatus extends StatefulWidget {
@@ -60,7 +61,8 @@ class _AcademicRestoreStatusState extends State<AcademicRestoreStatus> {
         !_retrying && (widget.error != null || _retryError != null) ||
             _timedOut;
     final colors = Theme.of(context).colorScheme;
-    return Padding(
+    return AppContentSurface.card(
+        child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(failure ? Icons.sync_problem_rounded : Icons.sync_rounded,
@@ -87,6 +89,6 @@ class _AcademicRestoreStatusState extends State<AcademicRestoreStatus> {
               onPressed: _retrying ? null : _retry, child: const Text('重试恢复')),
         ],
       ]),
-    );
+    ));
   }
 }

@@ -100,7 +100,8 @@ class SettingsSliderTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (_displayValueText.isNotEmpty)
+                if (_displayValueText.isNotEmpty) ...[
+                  const SizedBox(width: 8),
                   Text(
                     _displayValueText,
                     style: TextStyle(
@@ -109,6 +110,7 @@ class SettingsSliderTile extends StatelessWidget {
                       color: primaryColor,
                     ),
                   ),
+                ],
               ],
             ),
             const SizedBox(height: 6),

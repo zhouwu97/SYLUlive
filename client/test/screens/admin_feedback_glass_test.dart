@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -142,7 +143,7 @@ void main() {
           find.ancestor(of: tabs, matching: find.byType(AppCardSurface));
       expect(surface, findsOneWidget, reason: '筛选栏必须使用共用玻璃表面');
       expect(
-          find.descendant(of: surface, matching: find.byType(BackdropFilter)),
+          find.descendant(of: surface, matching: activeBackdropFilters()),
           findsOneWidget);
       final material =
           find.ancestor(of: tabs, matching: find.byType(Material)).first;
@@ -178,8 +179,8 @@ void main() {
       await env.theme.setComponentOpacity(.35);
       await tester.pumpAndSettle();
       final filterColor = tester
-          .widgetList<Container>(
-              find.descendant(of: surface, matching: find.byType(Container)))
+          .widgetList<DecoratedBox>(
+              find.descendant(of: surface, matching: find.byType(DecoratedBox)))
           .map((w) => w.decoration)
           .whereType<BoxDecoration>()
           .map((d) => d.color)
@@ -189,7 +190,7 @@ void main() {
       await tester.pumpAndSettle();
       await env.theme.setFrostedGlass(false);
       await tester.pumpAndSettle();
-      expect(find.byType(BackdropFilter), findsNothing);
+      expect(activeBackdropFilters(), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });

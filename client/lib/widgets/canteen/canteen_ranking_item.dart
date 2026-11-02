@@ -34,7 +34,8 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final item = widget.item;
 
-    return Column(
+    return AppContentSurface(
+        child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         GestureDetector(
@@ -193,7 +194,7 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
         ),
         const SizedBox(height: 12),
       ],
-    );
+    ));
   }
 
   Widget _buildCover(bool isDark) {

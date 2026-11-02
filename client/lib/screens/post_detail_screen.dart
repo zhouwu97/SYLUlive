@@ -14,6 +14,7 @@ import '../models/startup_destination.dart';
 import '../services/root_page_state_service.dart';
 import '../utils/app_navigator.dart';
 import '../theme/app_motion.dart';
+import '../theme/app_radius.dart';
 import '../config/api_constants.dart';
 import '../config/market_contact_type.dart';
 import '../config/water_post_taxonomy.dart';
@@ -1102,7 +1103,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final hasPendingAppeal = permissions?.hasPendingAppeal == true;
     final hasEdited = post.revision > 1;
 
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -2373,8 +2374,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     required bool isAdmin,
   }) {
     return AppBar(
-      backgroundColor: context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
-          ? Colors.transparent : isDark ? const Color(0xFF131720) : Colors.white,
+      backgroundColor:
+          context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
+              ? Colors.transparent
+              : isDark
+                  ? const Color(0xFF131720)
+                  : Colors.white,
       surfaceTintColor: Colors.transparent,
       scrolledUnderElevation: 0,
       elevation: 0,
@@ -2838,99 +2843,107 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               children: [
                 Expanded(
                   child: _buildInputDismissRegion(
-                    child: SingleChildScrollView(
-                      controller: _marketScrollController,
-                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 80),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildPostContentDismissWrapper(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildModerationBanner(isDark),
-                                if (p.title.isNotEmpty) ...[
+                    child: AppCardSurface(
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF131720) : Colors.white,
+                        borderRadius: BorderRadius.circular(AppRadius.lg),
+                      ),
+                      child: SingleChildScrollView(
+                        controller: _marketScrollController,
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildPostContentDismissWrapper(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildModerationBanner(isDark),
+                                  if (p.title.isNotEmpty) ...[
+                                    PostContentLinkText(
+                                      text: p.title,
+                                      selectable: true,
+                                      style: TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark
+                                            ? Colors.white
+                                            : Colors.black87,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                  if (p.price > 0) ...[
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
+                                      children: [
+                                        const Text(
+                                          '¥ ',
+                                          style: TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFFFF6B6B),
+                                          ),
+                                        ),
+                                        Text(
+                                          p.price.toStringAsFixed(
+                                            p.price.truncateToDouble() ==
+                                                    p.price
+                                                ? 0
+                                                : 2,
+                                          ),
+                                          style: const TextStyle(
+                                            fontSize: 32,
+                                            fontWeight: FontWeight.w900,
+                                            color: Color(0xFFFF6B6B),
+                                            height: 1.0,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                  ],
+                                  if (p.marketTags.isNotEmpty) ...[
+                                    _buildMarketTagWrap(p.marketTags, isDark),
+                                    const SizedBox(height: 16),
+                                  ],
                                   PostContentLinkText(
-                                    text: p.title,
+                                    text: p.content,
                                     selectable: true,
                                     style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      height: 1.6,
                                       color: isDark
-                                          ? Colors.white
+                                          ? Colors.white70
                                           : Colors.black87,
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
-                                ],
-                                if (p.price > 0) ...[
-                                  Row(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      const Text(
-                                        '¥ ',
-                                        style: TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          color: Color(0xFFFF6B6B),
-                                        ),
-                                      ),
-                                      Text(
-                                        p.price.toStringAsFixed(
-                                          p.price.truncateToDouble() == p.price
-                                              ? 0
-                                              : 2,
-                                        ),
-                                        style: const TextStyle(
-                                          fontSize: 32,
-                                          fontWeight: FontWeight.w900,
-                                          color: Color(0xFFFF6B6B),
-                                          height: 1.0,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-                                ],
-                                if (p.marketTags.isNotEmpty) ...[
-                                  _buildMarketTagWrap(p.marketTags, isDark),
-                                  const SizedBox(height: 16),
-                                ],
-                                PostContentLinkText(
-                                  text: p.content,
-                                  selectable: true,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    height: 1.6,
-                                    color: isDark
-                                        ? Colors.white70
-                                        : Colors.black87,
-                                  ),
-                                ),
-                                const SizedBox(height: 24),
-                                _buildMarketSellerRow(p, isDark),
-                                if (_canUseOwnerMarketActions()) ...[
                                   const SizedBox(height: 24),
-                                  _buildOwnerMarketActions(isDark),
+                                  _buildMarketSellerRow(p, isDark),
+                                  if (_canUseOwnerMarketActions()) ...[
+                                    const SizedBox(height: 24),
+                                    _buildOwnerMarketActions(isDark),
+                                  ],
+                                  const SizedBox(height: 32),
+                                  _buildActionBar(isDark),
                                 ],
-                                const SizedBox(height: 32),
-                                _buildActionBar(isDark),
-                              ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 24),
-                          KeyedSubtree(
-                            key: _commentsSectionKey,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildCommentsHeader(isDark),
-                                const SizedBox(height: 10),
-                                _buildCompactReplies(isDark),
-                              ],
+                            const SizedBox(height: 24),
+                            KeyedSubtree(
+                              key: _commentsSectionKey,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildCommentsHeader(isDark),
+                                  const SizedBox(height: 10),
+                                  _buildCompactReplies(isDark),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -2987,30 +3000,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       children: [
         Expanded(
           child: _buildInputDismissRegion(
-            child: SingleChildScrollView(
+            child: CustomScrollView(
               controller: _marketScrollController,
-              padding: const EdgeInsets.only(bottom: 80),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (p.images.isNotEmpty)
-                    _buildPostContentDismissWrapper(
-                      child: _buildMarketHeroImage(p, isDark),
-                    )
-                  else
-                    SizedBox(
-                      height:
-                          MediaQuery.of(context).padding.top + kToolbarHeight,
-                    ),
-                  Transform.translate(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: p.images.isNotEmpty
+                      ? _buildPostContentDismissWrapper(
+                          child: _buildMarketHeroImage(p, isDark),
+                        )
+                      : SizedBox(
+                          height: MediaQuery.of(context).padding.top +
+                              kToolbarHeight,
+                        ),
+                ),
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Transform.translate(
                     offset: Offset(0, p.images.isNotEmpty ? -24 : 0),
                     child: AppCardSurface(
                       width: double.infinity,
                       decoration: BoxDecoration(
                         color: isDark ? const Color(0xFF131720) : Colors.white,
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(p.images.isNotEmpty ? 24 : 0),
-                        ),
+                        borderRadius: p.images.isNotEmpty
+                            ? const BorderRadius.vertical(
+                                top: Radius.circular(24))
+                            : BorderRadius.circular(AppRadius.lg),
                       ),
                       padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
                       child: Column(
@@ -3106,8 +3120,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -3232,16 +3246,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
 
   Widget _buildWaterDetail(bool isDark) {
     final p = _post!;
-    return SingleChildScrollView(
+    return CustomScrollView(
       key: const ValueKey('post-detail-scroll-view'),
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        children: [
+      slivers: [
+        SliverToBoxAdapter(
           // 白色内容卡片：作者 + 标题 + 正文 + 图片 + 信息 + 操作栏
-          _buildPostContentDismissWrapper(
+          child: _buildPostContentDismissWrapper(
             child: AppCardSurface(
-              color: isDark ? const Color(0xFF131720) : Colors.white,
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF131720) : Colors.white,
+                borderRadius: BorderRadius.circular(AppRadius.lg),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -3262,25 +3278,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               ),
             ),
           ),
-          // 8px 分区
-          Container(
-            height: 8,
-            color: context.watch<ThemeProvider?>()?.frostedGlass == true
-                ? Colors.transparent
-                : isDark
-                    ? const Color(0xFF1A1E28)
-                    : const Color(0xFFF0F0F0),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 8)),
+        // 输入栏已在 Column 中占位；评论底面补齐短内容的剩余视口。
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: AppCardSurface(
+              key: _commentsSectionKey,
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF131720) : Colors.white,
+                borderRadius: BorderRadius.circular(AppRadius.lg),
+              ),
+              child: _buildWaterCommentsSection(isDark),
+            ),
           ),
-          // 白色评论区卡片
-          AppCardSurface(
-            key: _commentsSectionKey,
-            color: isDark ? const Color(0xFF131720) : Colors.white,
-            child: _buildWaterCommentsSection(isDark),
-          ),
-          // 底部留白给固定输入栏
-          const SizedBox(height: 60),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -4398,14 +4413,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
             Icon(
               Icons.chat_bubble_outline,
               size: 36,
-              color: isDark ? Colors.white24 : Colors.grey[300],
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 10),
             Text(
               '还没有评论，来说点什么吧',
               style: TextStyle(
                 fontSize: 13,
-                color: isDark ? Colors.white30 : Colors.grey[400],
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -4448,9 +4463,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: context.watch<ThemeProvider?>()?.frostedGlass == true
-                    ? Colors.transparent : isDark
-                    ? Colors.white.withValues(alpha: 0.03)
-                    : const Color(0xFFF8F9FA),
+                    ? Colors.transparent
+                    : isDark
+                        ? Colors.white.withValues(alpha: 0.03)
+                        : const Color(0xFFF8F9FA),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -4614,7 +4630,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             decoration: BoxDecoration(
               color: context.watch<ThemeProvider?>()?.frostedGlass == true
-                  ? Colors.transparent : isDark ? const Color(0xFF1F222A) : const Color(0xFFF7F8FA),
+                  ? Colors.transparent
+                  : isDark
+                      ? const Color(0xFF1F222A)
+                      : const Color(0xFFF7F8FA),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Column(

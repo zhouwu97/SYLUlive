@@ -22,6 +22,7 @@ func TestValidateEmojiAssetReferenceAcceptsClientKeys(t *testing.T) {
 		{name: "unicode", key: "unicode:😀"},
 		{name: "内置贴图", key: "builtin:test:a", packID: "test", hasPack: true},
 		{name: "私有文件", key: "private:file-12"},
+		{name: "已下载社区包保持本地身份", key: "local:community-00000000-0000-0000-0000-000000000001:image-1", packID: "community-00000000-0000-0000-0000-000000000001", hasPack: true},
 		{name: "私有 URL 身份", key: "private:url-" + strings.Repeat("a", 64)},
 		{
 			name:    "本地随机包",

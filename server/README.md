@@ -77,6 +77,8 @@ go build ./...
 
 ## 接口文档
 
+表情包投稿使用新增的 `community_emoji_packs` / `community_emoji_pack_assets` 表和现有上传卷内的私有 `.emoji-submissions` 目录；启动 AutoMigrate 创建新表，维护任务清理过期孤儿目录。不得把该目录单独暴露为静态文件。配套接口、审核和额度见 [API](API.md#表情包导入投稿与审核)，备份、验证和回退见 [运维说明](../docs/ops/emoji-packs.md)。
+
 - [API 总览与路由状态](./API.md)
 - [仓库部署总入口](../DEPLOY.md)
 - [隐私数据台账](../docs/privacy-data-inventory.md)

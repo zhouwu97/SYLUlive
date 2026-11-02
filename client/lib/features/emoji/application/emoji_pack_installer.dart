@@ -186,7 +186,7 @@ class EmojiPackInstaller {
               throw const FormatException('单张资源过大');
             }
             final bytes = await readAsset(asset);
-            await compute(_validateImage, (asset, bytes));
+            await compute(validateEmojiPackImage, (asset, bytes));
             final file = File('${_staging.path}/${asset.path}');
             await file.parent.create(recursive: true);
             await file.writeAsBytes(bytes, flush: true);
@@ -243,7 +243,7 @@ class EmojiPackInstaller {
       });
 }
 
-void _validateImage((EmojiManifestAsset, Uint8List) input) {
+void validateEmojiPackImage((EmojiManifestAsset, Uint8List) input) {
   final (asset, bytes) = input;
   if (bytes.length != asset.fileSize ||
       bytes.length > EmojiPackLimits.maxSingleAssetBytes ||

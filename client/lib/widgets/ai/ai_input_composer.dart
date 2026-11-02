@@ -204,13 +204,14 @@ class _AiInputComposerState extends State<AiInputComposer> {
               ),
             ),
             if (_inlineError != null || overLimit)
-              Padding(
+              AppContentSurface(
+                  child: Padding(
                 padding: const EdgeInsets.only(top: 6, left: 12),
                 child: Text(
                   _inlineError ?? '最多输入 ${widget.maxCharacters} 个可见字符',
                   style: TextStyle(color: colors.error, fontSize: 11),
                 ),
-              ),
+              )),
           ],
         ),
       ),
@@ -266,7 +267,8 @@ class AiAgentPermissionModeBar extends StatelessWidget {
     };
     final canRetryBridge = bridgeStatus == DeviceBridgeStatus.degraded ||
         bridgeStatus == DeviceBridgeStatus.offline;
-    return Material(
+    return AppContentSurface(
+        child: Material(
       color: Colors.transparent,
       child: SizedBox(
         height: 44,
@@ -342,6 +344,6 @@ class AiAgentPermissionModeBar extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 }

@@ -67,22 +67,24 @@ class CampusServiceGrid extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          '校园服务',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: isDark ? Colors.white : CampusTheme.text,
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(
+            '校园服务',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : CampusTheme.text,
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          '常用校园功能',
-          style: TextStyle(
-            fontSize: 12,
-            color: CampusTheme.subText,
+          const SizedBox(height: 4),
+          const Text(
+            '常用校园功能',
+            style: TextStyle(
+              fontSize: 12,
+              color: CampusTheme.subText,
+            ),
           ),
-        ),
+        ]),
         const SizedBox(height: 12),
         AppCardSurface(
           decoration: BoxDecoration(

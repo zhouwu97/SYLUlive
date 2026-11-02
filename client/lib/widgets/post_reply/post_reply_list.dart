@@ -36,7 +36,6 @@ class PostReplyList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (replies.isEmpty) {
-      final isDark = Theme.of(context).brightness == Brightness.dark;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 32),
         child: Center(
@@ -45,14 +44,14 @@ class PostReplyList extends StatelessWidget {
               Icon(
                 Icons.chat_bubble_outline,
                 size: 36,
-                color: isDark ? Colors.white24 : Colors.grey[300],
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               const SizedBox(height: 10),
               Text(
                 '还没有评论，来说点什么吧',
                 style: TextStyle(
                   fontSize: 13,
-                  color: isDark ? Colors.white30 : Colors.grey[400],
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ],

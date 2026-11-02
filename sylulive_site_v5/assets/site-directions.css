@@ -1,0 +1,7 @@
+/* The main direction combines the clear product layout with restrained campus notes.
+   Keep the earlier journal direction available for comparison without another page. */
+html[data-look="journal"] .hero{background-image:radial-gradient(#719a891a .5px,transparent .5px);background-size:7px 7px}
+html[data-look="journal"] .hero-visual:before{border-radius:3px;inset:50px 20px 10px;transform:rotate(5deg);background:#e2efe6;clip-path:polygon(1% 0,100% 2%,99% 98%,0 100%)}
+html[data-look="journal"] .hero-note{border-radius:2px;background:#fffef9}
+html[data-look="journal"] .hero-note:before{content:"";position:absolute;width:50px;height:15px;background:#a8ceba80;top:-7px;left:25%;transform:rotate(-4deg)}
+html[data-look="journal"] .title-accent:after{border-bottom:0;height:12px;bottom:3px;background:#b7ded080;border-radius:0;transform:rotate(-2deg)}

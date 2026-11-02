@@ -2,30 +2,54 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/theme_provider.dart';
-import '../../theme/app_colors.dart';
-import '../../theme/app_spacing.dart';
-import '../../theme/app_text_styles.dart';
 import '../../widgets/liquid_bottom_nav.dart';
 import '../../widgets/floating_bottom_nav.dart';
-import '../../theme/app_radius.dart';
+import '../../widgets/app_card.dart';
 import '../../widgets/liquid_glass/liquid_glass_qa_screen.dart';
 import '../../widgets/settings/settings_page_scaffold.dart';
 import '../../widgets/settings/settings_section.dart';
 import '../../widgets/settings/settings_slider_tile.dart';
 import '../../widgets/settings/settings_tile.dart';
 import '../../widgets/settings/settings_switch.dart';
+import '../../widgets/settings/settings_effect_option.dart';
+import '../../widgets/settings/settings_effect_preview.dart';
+import '../../theme/app_radius.dart';
 
 /// 全量替换后的底栏设置，仅调节新材质，不再提供旧样式入口。
-class BottomNavigationSettingsScreen extends StatelessWidget {
+class BottomNavigationSettingsScreen extends StatefulWidget {
   const BottomNavigationSettingsScreen({super.key});
+
+  @override
+  State<BottomNavigationSettingsScreen> createState() =>
+      _BottomNavigationSettingsScreenState();
+}
+
+class _BottomNavigationSettingsScreenState
+    extends State<BottomNavigationSettingsScreen> {
+  bool _saveFailed = false;
+  int _saveGeneration = 0;
+
+  Future<void> _saveEffect(Future<bool> Function(ThemeProvider) save) async {
+    final generation = ++_saveGeneration;
+    final saved = await save(context.read<ThemeProvider>());
+    if (mounted && generation == _saveGeneration && _saveFailed != !saved) {
+      setState(() => _saveFailed = !saved);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<ThemeProvider>();
     return SettingsPageScaffold(title: '底部导航栏', children: [
       const _LivePreview(),
-      const Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: Text('首次下载使用时，建议先调低动画强度；不需要液态效果可选择「关」，使用普通悬浮底栏。')),
+      AppCardSurface(
+          margin: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+          ),
+          child: const Text('拖动预览，感受不同速度下的形变。首次使用建议先调低动画强度；'
+              '不需要液态效果可选择「关」，使用普通悬浮底栏。')),
       SettingsSection(title: '玻璃材质', children: [
         SettingsTile(
           icon: Icons.water_drop_outlined,
@@ -38,31 +62,43 @@ class BottomNavigationSettingsScreen extends StatelessWidget {
           ),
         ),
       ]),
-      if (theme.bottomNavPerformanceMode != BottomNavPerformanceMode.off)
-        SettingsSection(title: '动画强度', children: [
-          SettingsSliderTile(
-            icon: Icons.animation_outlined,
-            title: '材质跟随强度',
-            subtitle: '随拖动速度与受力改变拉伸、弯曲和回弹',
-            value: theme.bottomNavAnimationIntensity,
-            min: 0,
-            max: 1,
-            valueLabel: '${(theme.bottomNavAnimationIntensity * 100).round()}%',
-            onChanged: theme.setBottomNavAnimationIntensity,
+      SettingsSection(title: '动画强度', children: [
+        SettingsSliderTile(
+          key: const ValueKey('bottom-nav-intensity'),
+          icon: Icons.animation_outlined,
+          title: '材质跟随强度',
+          subtitle: '调节形变与回弹幅度',
+          value: theme.bottomNavAnimationIntensity,
+          min: 0,
+          max: 1,
+          valueLabel: '${(theme.bottomNavAnimationIntensity * 100).round()}%',
+          onChanged: (value) => _saveEffect(
+              (theme) => theme.setBottomNavAnimationIntensity(value)),
+        ),
+        if (_saveFailed)
+          SettingsTile(
+            icon: Icons.error_outline_rounded,
+            title: '液态效果设置未保存',
+            subtitle: '当前效果仍有效，点击重试保存',
+            onTap: () => _saveEffect((theme) => theme
+                .setBottomNavPerformanceMode(theme.bottomNavPerformanceMode)),
           ),
-        ]),
+      ]),
       SettingsSection(title: '效果预设', children: [
         RadioGroup<BottomNavPerformanceMode>(
           groupValue: theme.bottomNavPerformanceMode,
           onChanged: (mode) {
-            if (mode != null) theme.setBottomNavPerformanceMode(mode);
+            if (mode != null) {
+              _saveEffect((theme) => theme.setBottomNavPerformanceMode(mode));
+            }
           },
           child: Column(children: [
             for (final mode in BottomNavPerformanceMode.values)
               _BottomNavPerformanceOption(
                   mode: mode,
                   selected: theme.bottomNavPerformanceMode == mode,
-                  onTap: () => theme.setBottomNavPerformanceMode(mode)),
+                  onTap: () => _saveEffect(
+                      (theme) => theme.setBottomNavPerformanceMode(mode))),
           ]),
         ),
       ]),
@@ -97,29 +133,14 @@ class _LivePreviewState extends State<_LivePreview> {
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<ThemeProvider>();
-    return ClipRRect(
-        key: const ValueKey('bottom-nav-preview-card'),
-        borderRadius: BorderRadius.circular(AppRadius.sheet),
-        child: SizedBox(
-            height: 190,
-            child: LiquidGlassScene(
-              background: const DecoratedBox(
-                  decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                        Color(0xffb1d5e2),
-                        Color(0xffecd0d7),
-                        Color(0xffdce9fa)
-                      ])),
-                  child: Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Text('液态玻璃底栏\n拖动预览，感受不同速度下的形变'))),
-              overlay: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: theme.bottomNavPerformanceMode ==
-                          BottomNavPerformanceMode.off
+    return SettingsEffectPreview(
+        clipKey: const ValueKey('bottom-nav-preview-card'),
+        child: LiquidGlassScene(
+          background: const SettingsEffectPreviewBackground(title: '液态玻璃底栏'),
+          overlay: Align(
+              alignment: Alignment.bottomCenter,
+              child:
+                  theme.bottomNavPerformanceMode == BottomNavPerformanceMode.off
                       ? FloatingBottomNav(
                           currentIndex: selected,
                           onTap: (index) => setState(() => selected = index))
@@ -131,7 +152,7 @@ class _LivePreviewState extends State<_LivePreview> {
                           blur: theme.bottomNavBlur,
                           tint: theme.bottomNavTint,
                           shaderEnabled: theme.bottomNavShaderEnabled)),
-            )));
+        ));
   }
 }
 
@@ -148,62 +169,18 @@ class _BottomNavPerformanceOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final description = switch (mode) {
       BottomNavPerformanceMode.off => '普通悬浮底栏，关闭液态形变与折射',
       BottomNavPerformanceMode.highPerformance => '保留完整液态玻璃，动画强度降至 35%',
       BottomNavPerformanceMode.highQuality => '完整折射与高光，动画强度拉满至 100%',
       BottomNavPerformanceMode.custom => '保留液态玻璃，自行调整动画强度',
     };
-    return Semantics(
-      button: true,
+    return SettingsEffectOption<BottomNavPerformanceMode>(
+      value: mode,
+      title: mode.label,
+      description: description,
       selected: selected,
-      label: '${mode.label}，$description',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.lg,
-              vertical: AppSpacing.sm,
-            ),
-            child: Row(
-              children: [
-                Radio<BottomNavPerformanceMode>(
-                  value: mode,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    mode.label,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: isDark
-                          ? AppColors.textPrimaryDark
-                          : AppColors.textPrimaryLight,
-                    ),
-                  ),
-                ),
-                Flexible(
-                  flex: 2,
-                  child: Text(
-                    description,
-                    textAlign: TextAlign.end,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.labelMedium.copyWith(
-                      color: isDark
-                          ? AppColors.textSecondaryDark
-                          : AppColors.textSecondaryLight,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      onTap: onTap,
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/screens/check_in_calendar_screen.dart';
+import 'package:shenliyuan/providers/theme_provider.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/theme/app_radius.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
+
+import '../helpers/active_backdrop_filters.dart';
+import '../helpers/golden_test_app.dart';
+import '../helpers/golden_viewport.dart';
+import '../helpers/load_test_fonts.dart';
 
 class _CheckInAdapter implements HttpClientAdapter {
   _CheckInAdapter({this.checkedIn = true});
@@ -14,6 +24,8 @@ class _CheckInAdapter implements HttpClientAdapter {
   bool checkedIn;
   int checkInRequestCount = 0;
   final Map<String, int> calendarRequestCounts = {};
+  bool failCalendar = false;
+  Completer<void>? calendarGate;
 
   @override
   void close({bool force = false}) {}
@@ -56,6 +68,10 @@ class _CheckInAdapter implements HttpClientAdapter {
         (count) => count + 1,
         ifAbsent: () => 1,
       );
+      await calendarGate?.future;
+      if (failCalendar && requestedMonth == '2026-07') {
+        return _jsonResponse({'error': '本地签到记录读取失败'}, statusCode: 500);
+      }
     }
     final body = switch (options.path) {
       '/user/checkin/status' => {
@@ -109,6 +125,101 @@ class _CheckInAdapter implements HttpClientAdapter {
 }
 
 void main() {
+  setUpAll(loadTestFonts);
+  for (final dark in [false, true]) {
+    for (final scale in [1.0, 1.3]) {
+      testWidgets('日历面板统一圆角且材质切换不移位 dark=$dark scale=$scale',
+          (tester) async {
+        await setGoldenViewport(tester, GoldenViewports.phone390x844);
+        AppPreferencesStore.setMockInitialValues({});
+        final appearance = ThemeProvider(loadOnStart: false);
+        addTearDown(appearance.dispose);
+        await appearance.setBackgroundImage('morenbeijing.jpeg');
+        await appearance.setComponentOpacity(.75);
+        final adapter = _CheckInAdapter();
+        final auth = AuthProvider(Dio()..httpClientAdapter = adapter,
+            loadStoredAuth: false);
+        addTearDown(auth.dispose);
+        await tester.pumpWidget(MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: appearance),
+            ChangeNotifierProvider.value(value: auth),
+          ],
+          child: GoldenTestApp(
+            themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+            textScaler: TextScaler.linear(scale),
+            home: CheckInCalendarScreen(now: () => DateTime(2026, 7, 17)),
+          ),
+        ));
+        await tester.pumpAndSettle();
+        final month = find.descendant(
+            of: find.byKey(const ValueKey('check-in-month-swipe-area')),
+            matching: find.byType(AppCardSurface));
+        final summary = find.ancestor(
+            of: find.text('今天已完成签到'), matching: find.byType(AppCardSurface));
+        final footer = find.ancestor(
+            of: find.text('今日已签到'), matching: find.byType(AppCardSurface));
+        final regions = [month, summary, footer];
+        final rects = regions.map(tester.getRect).toList();
+        for (final glass in [false, true, false]) {
+          await appearance.setFrostedGlass(glass);
+          await tester.pumpAndSettle();
+          for (var i = 0; i < regions.length; i++) {
+            expect(tester.getRect(regions[i]), rects[i]);
+            final decoration = tester
+                .widget<AppCardSurface>(regions[i])
+                .decoration! as BoxDecoration;
+            expect(
+                decoration.borderRadius,
+                i == 2
+                    ? const BorderRadius.vertical(
+                        top: Radius.circular(AppRadius.lg))
+                    : BorderRadius.circular(AppRadius.lg));
+          }
+          expect(activeBackdropFilters(), glass ? findsNWidgets(3) : findsNothing);
+          expect(adapter.calendarRequestCounts['2026-07'], 1);
+          expect(adapter.checkInRequestCount, 0);
+          expect(tester.takeException(), isNull);
+        }
+      });
+    }
+  }
+
+  testWidgets('日历加载失败后可在同一圆角面板重试且不触发签到',
+      (tester) async {
+    final gate = Completer<void>();
+    final adapter = _CheckInAdapter()
+      ..failCalendar = true
+      ..calendarGate = gate;
+    final auth = AuthProvider(Dio()..httpClientAdapter = adapter,
+        loadStoredAuth: false);
+    addTearDown(auth.dispose);
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: auth,
+      child: MaterialApp(
+          home: CheckInCalendarScreen(now: () => DateTime(2026, 7, 17))),
+    ));
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('重新加载'), findsOneWidget);
+    final surface = tester.widget<AppCardSurface>(find
+        .ancestor(of: find.text('重新加载'), matching: find.byType(AppCardSurface))
+        .first);
+    expect((surface.decoration! as BoxDecoration).borderRadius,
+        BorderRadius.circular(AppRadius.lg));
+    adapter.failCalendar = false;
+    await tester.ensureVisible(find.text('重新加载'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('重新加载'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CheckInMonthCalendar), findsOneWidget);
+    expect(adapter.calendarRequestCounts['2026-07'], 2);
+    expect(adapter.checkInRequestCount, 0);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('签到月历固定展示六周并标记签到日期', (tester) async {
     final semantics = tester.ensureSemantics();
     final records = {

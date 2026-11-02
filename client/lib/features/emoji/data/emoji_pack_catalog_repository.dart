@@ -9,13 +9,18 @@ class EmojiCatalogEntry {
       required this.version,
       required this.assetCount,
       required this.totalSize,
-      required this.manifestSha256});
+      required this.manifestSha256,
+      this.source = 'official',
+      this.description = ''});
   final String id;
   final String name;
   final int version;
   final int assetCount;
   final int totalSize;
   final String manifestSha256;
+  final String source;
+  final String description;
+  String get sourceLabel => source == 'community' ? '校园分享 · 已审核' : '官方表情';
   factory EmojiCatalogEntry.fromJson(Map<String, dynamic> json) {
     final entry = EmojiCatalogEntry(
         id: json['id'] as String,
@@ -23,7 +28,9 @@ class EmojiCatalogEntry {
         version: json['version'] as int,
         assetCount: json['asset_count'] as int,
         totalSize: json['total_size'] as int,
-        manifestSha256: json['manifest_sha256'] as String);
+        manifestSha256: json['manifest_sha256'] as String,
+        source: json['source'] as String? ?? 'official',
+        description: json['description'] as String? ?? '');
     if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(entry.id) ||
         entry.version < 1 ||
         !RegExp(r'^[a-f0-9]{64}$').hasMatch(entry.manifestSha256)) {
@@ -37,7 +44,9 @@ class EmojiCatalogEntry {
         'version': version,
         'asset_count': assetCount,
         'total_size': totalSize,
-        'manifest_sha256': manifestSha256
+        'manifest_sha256': manifestSha256,
+        'source': source,
+        'description': description,
       };
 }
 
@@ -49,8 +58,9 @@ class EmojiPackCatalogRepository {
   }
   final Dio dio;
   Future<List<EmojiCatalogEntry>> list() async {
-    final response =
-        await dio.get('/emoji/packs', options: Options(followRedirects: false));
+    final response = await dio.get('/emoji/packs',
+        queryParameters: {'include_community': true},
+        options: Options(followRedirects: false));
     return (response.data as List)
         .map((e) =>
             EmojiCatalogEntry.fromJson(Map<String, dynamic>.from(e as Map)))

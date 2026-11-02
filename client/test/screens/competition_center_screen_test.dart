@@ -6,7 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
+import 'package:shenliyuan/providers/theme_provider.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/screens/competition/competition_center_screen.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:shenliyuan/widgets/competition/competition_ui_tokens.dart';
 
 import '../helpers/golden_test_app.dart';
@@ -133,6 +136,70 @@ FutureOr<ResponseBody> _catalogStub(RequestOptions options) {
 }
 
 void main() {
+  group('分类加载失败提示底面', () {
+    setUpAll(loadTestFonts);
+    for (final dark in [false, true]) {
+      for (final scale in [1.0, 1.3]) {
+        testWidgets('可读、原位且仍能重试 dark=$dark scale=$scale', (tester) async {
+          await setGoldenViewport(tester, GoldenViewports.phone390x844);
+          AppPreferencesStore.setMockInitialValues({});
+          final appearance = ThemeProvider(loadOnStart: false);
+          addTearDown(appearance.dispose);
+          await appearance.setBackgroundImage('morenbeijing.jpeg');
+          await appearance.setComponentOpacity(.75);
+          var fail = true;
+          final adapter = _CompetitionAdapter((o) {
+            if (o.path == '/competitions/categories' && fail) {
+              return _json({'error': '分类暂不可用'}, 500);
+            }
+            if (o.path == '/competitions/events') {
+              return _json({'items': [], 'total': 0});
+            }
+            return _catalogStub(o);
+          });
+          final dio = _dio(adapter);
+          addTearDown(() => dio.close(force: true));
+          await tester.pumpWidget(MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: appearance),
+              ChangeNotifierProvider<AuthProvider>(
+                  create: (_) => _TestAuthProvider(dio)),
+            ],
+            child: GoldenTestApp(
+              themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+              textScaler: TextScaler.linear(scale),
+              home: const CompetitionCenterScreen(),
+            ),
+          ));
+          await tester.pumpAndSettle();
+          final error = find.text('分类暂不可用');
+          expect(error, findsOneWidget);
+          expect(
+              find.ancestor(
+                  of: error, matching: find.byType(AppContentSurface)),
+              findsOneWidget);
+          final rect = tester.getRect(error);
+          for (final glass in [true, false]) {
+            await appearance.setFrostedGlass(glass);
+            await tester.pumpAndSettle();
+            expect(tester.getRect(error), rect);
+            expect(tester.takeException(), isNull);
+          }
+          final before = adapter.requests
+              .where((r) => r.path == '/competitions/categories')
+              .length;
+          fail = false;
+          await tester.tap(error);
+          await tester.pumpAndSettle();
+          expect(error, findsNothing);
+          expect(
+              adapter.requests
+                  .where((r) => r.path == '/competitions/categories'),
+              hasLength(before + 1));
+        });
+      }
+    }
+  });
   testWidgets('Pad 竞赛中心限宽且横竖屏切换保留目录', (tester) async {
     tester.view.devicePixelRatio = 1;
     await setGoldenViewport(tester, GoldenViewports.tabletPortrait834x1194);
@@ -303,6 +370,12 @@ void main() {
       });
       await _pump(tester, _dio(adapter), const CompetitionCenterScreen());
       expect(find.text('310 项报名时间待核实，截止提醒尚未覆盖。'), findsOneWidget);
+      expect(
+          find.ancestor(
+              of: find.byKey(const Key('competition-registration-coverage')),
+              matching: find.byType(AppContentSurface)),
+          findsOneWidget,
+          reason: '报名覆盖说明是需要承托的阅读内容');
     });
 
     testWidgets('首页只保留一个竞赛档案组件并使用单行筛选', (tester) async {

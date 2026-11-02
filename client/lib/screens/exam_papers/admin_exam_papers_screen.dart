@@ -2,6 +2,7 @@ import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shenliyuan/widgets/app_tab_bar_surface.dart';
 import 'package:provider/provider.dart';
 
 import '../../widgets/responsive_content.dart';
@@ -212,13 +213,14 @@ class _AdminExamPapersScreenState extends State<AdminExamPapersScreen>
         appBar: AppBar(
           title: const Text('试卷审核与管理'),
           backgroundColor: Colors.transparent,
-          bottom: TabBar(
+          bottom: AppTabBarSurface(
+              child: TabBar(
             controller: _tabController,
             tabs: [
               Tab(text: '待审核 (${_pending.length})'),
               Tab(text: '已发布 (${_published.length})'),
             ],
-          ),
+          )),
         ),
         body: ResponsiveContent.page(
             child: Column(

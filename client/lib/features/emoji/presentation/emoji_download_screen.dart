@@ -171,7 +171,8 @@ class _EmojiDownloadScreenState extends State<EmojiDownloadScreen> {
 
   @override
   Widget build(BuildContext context) => EmojiPageScaffold(
-      title: '官方表情',
+      title: '表情库',
+      bodyHasCardSurfaces: true,
       body: !_current
           ? const EmojiStateView(title: '账号已切换，请返回')
           : RefreshIndicator(
@@ -180,20 +181,27 @@ class _EmojiDownloadScreenState extends State<EmojiDownloadScreen> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 children: [
-                  const EmojiSectionHeader(
-                      title: '添加喜欢的表情', detail: '先预览内容，再下载到本机。'),
-                  if (_error != null)
-                    EmojiInlineError(
-                        message: '官方目录暂不可用，已有表情仍可使用', onRetry: _load),
-                  if (_entries == null && _error == null)
-                    const Padding(
-                        padding: EdgeInsets.all(AppSpacing.xxl),
-                        child: Center(child: CircularProgressIndicator()))
-                  else if (_entries?.isEmpty == true)
-                    const EmojiStateView(title: '暂无可下载的官方表情', detail: '稍后再来看看。')
-                  else
-                    for (final entry in _entries ?? <EmojiCatalogEntry>[])
-                      _tile(entry),
+                  EmojiContentCard(
+                      child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const EmojiSectionHeader(
+                          title: '添加喜欢的表情', detail: '官方表情与审核通过的校园分享，先预览再下载。'),
+                      if (_error != null)
+                        EmojiInlineError(
+                            message: '表情库暂不可用，已有表情仍可使用', onRetry: _load),
+                      if (_entries == null && _error == null)
+                        const Padding(
+                            padding: EdgeInsets.all(AppSpacing.xxl),
+                            child: Center(child: CircularProgressIndicator()))
+                      else if (_entries?.isEmpty == true)
+                        const EmojiStateView(
+                            title: '暂无可下载的表情', detail: '稍后再来看看。')
+                      else
+                        for (final entry in _entries ?? <EmojiCatalogEntry>[])
+                          _tile(entry),
+                    ],
+                  )),
                 ],
               )));
 
@@ -218,7 +226,7 @@ class _EmojiDownloadScreenState extends State<EmojiDownloadScreen> {
       EmojiPackRow(
           name: entry.name,
           detail:
-              '${entry.assetCount} 个表情 · ${emojiBytesLabel(entry.totalSize)}',
+              '${entry.assetCount} 个表情 · ${emojiBytesLabel(entry.totalSize)} · ${entry.sourceLabel}',
           status: status,
           damaged: damaged,
           statusIcon: damaged
@@ -425,13 +433,16 @@ class _EmojiPackPreviewScreenState extends State<EmojiPackPreviewScreen> {
                       name: widget.entry.name,
                       detail:
                           '${widget.entry.assetCount} 个表情 · ${emojiBytesLabel(widget.entry.totalSize)}',
-                      status: '官方表情',
+                      status: widget.entry.sourceLabel,
                       cover: EmojiCover(
                           size: 72,
                           image: _manifest?.assets.isNotEmpty == true
                               ? NetworkImage(_assetUrl(widget.catalog,
                                   widget.entry, _manifest!.assets.first))
                               : null)),
+                  if (widget.entry.description.isNotEmpty)
+                    Padding(padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                        child: Text(widget.entry.description)),
                   Text('版本 ${widget.entry.version}',
                       style: Theme.of(context)
                           .textTheme

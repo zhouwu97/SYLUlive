@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'canteen_theme.dart';
+import '../app_card.dart';
 
-/// 轻量空状态：直接铺在页面背景上，不套白色大卡。
+/// 轻量空状态：保留原有尺寸与留白，壁纸模式补充文字承托底面。
 /// 用于评价区 / 搜索无结果 / 菜品图鉴空态。
 class CanteenEmptyState extends StatelessWidget {
   final String title;
@@ -26,7 +27,8 @@ class CanteenEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
+    return AppContentSurface.card(
+        child: Container(
       constraints: BoxConstraints(minHeight: minHeight),
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -54,7 +56,8 @@ class CanteenEmptyState extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 height: 1.4,
-                color: CanteenTheme.textSecondaryColor(isDark),
+                color: appContentSecondaryColor(
+                    context, CanteenTheme.textSecondaryColor(isDark)),
               ),
             ),
           ],
@@ -64,7 +67,8 @@ class CanteenEmptyState extends StatelessWidget {
               onPressed: onAction,
               style: TextButton.styleFrom(
                 foregroundColor: CanteenTheme.accentStrongColor(isDark),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 minimumSize: const Size(0, 36),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 textStyle: const TextStyle(
@@ -77,6 +81,6 @@ class CanteenEmptyState extends StatelessWidget {
           ],
         ],
       ),
-    );
+    ));
   }
 }

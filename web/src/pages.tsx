@@ -92,7 +92,7 @@ export function Dashboard() {
   return (
     <>
       <Head
-        title="校园工作台"
+        title="校园首页"
         description={new Date().toLocaleDateString("zh-CN", {
           year: "numeric",
           month: "long",
@@ -113,6 +113,18 @@ export function Dashboard() {
           发布内容
         </button>
       </Head>
+      <section className="commons-hero" aria-label="发现校园生活">
+        <div className="commons-hero-copy">
+          <span className="commons-eyebrow">GOOD TO SEE YOU, SYLU</span>
+          <h2>在这里，遇见同频的你。</h2>
+          <p>分享新鲜事，找到学习搭子，让每一次连接都有回响。</p>
+          <button className="btn primary" onClick={() => requireUser() && ui.open("发布内容", <CommunityPostForm />)}>
+            <Icon name="plus" size={18} />分享校园日常
+          </button>
+          <button className="commons-explore" onClick={() => nav("/community")}>去社区逛逛 <span aria-hidden="true">↗</span></button>
+        </div>
+        <div className="commons-hero-art" aria-hidden="true"><span>Hi!</span><small>STUDY / LIVE / CONNECT</small></div>
+      </section>
       <div className="today-card">
         <div className="today-copy">
           <span className="today-label">
@@ -146,25 +158,23 @@ export function Dashboard() {
         </div>
         <div className="quick-grid compact-quick">
           {[
-            ["schedule", "我的课表"],
-            ["grades", "成绩"],
-            ["exams", "考试"],
-            ["competition", "竞赛"],
-            ["canteen", "食堂"],
-            ["ai", "AI 助手"],
-          ].map(([id, name]) => (
+            ["schedule", "我的课表", "下一堂课，心中有数"],
+            ["grades", "成绩", "回看每一步成长"],
+            ["market", "二手集市", "让闲置继续发光"],
+            ["canteen", "食堂", "发现校园好味道"],
+          ].map(([id, name, description]) => (
             <button className="quick" key={id} aria-label={name} onClick={() => nav(`/${id}`)}>
               <i>
                 <Icon name={id} />
               </i>
-              <span className="quick-copy"><b>{name}</b></span>
+              <span className="quick-copy"><b>{name}</b><small>{description}</small></span>
             </button>
           ))}
         </div>
       </div>
       <div className="section">
         <div className="section-head">
-          <h2>校园动态</h2>
+          <h2>校园正在发生</h2>
           <button className="link-btn" onClick={() => nav("/community")}>
             进入社区 →
           </button>

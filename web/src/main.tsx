@@ -21,6 +21,7 @@ import {Profile} from './profile';
 import "./styles.css";
 import "./social-shell.css";
 import "./web-polish.css";
+import "./commons.css";
 import { useWorkspaceMotion } from "./shell-motion";
 import {Admin} from "./admin";
 import { Polls } from "./polls";
@@ -41,7 +42,7 @@ const queryClient = new QueryClient({
 });
 const scrollPositions = new Map<string,number>();
 export const navigation = [
-  ["dashboard", "校园工作台"],
+  ["dashboard", "校园首页"],
   ["community", "校园社区"],
   ["messages", "私信"],
   ["market", "二手集市"],
@@ -107,10 +108,10 @@ function Rail() {
       <div className="rail-card profile-rail-card">
         <div className="profile-rail-head">
           <div className="profile-rail-avatar">{person.avatar || auth.user?.avatar ? <img src={asset(person.avatar || auth.user?.avatar)} alt="" /> : <span>{(person.nickname || auth.user?.nickname || "同").slice(0, 1)}</span>}</div>
-          <div><b>{person.nickname || auth.user?.nickname || "校园同学"}</b><p>{auth.user ? `Lv.${level || 1} · 校园贡献者` : "登录后完善个人主页"}</p></div>
+          <div><b>{auth.user ? person.nickname || auth.user.nickname || "校园同学" : "登录沈理校园"}</b><p>{auth.user ? `Lv.${level || 1} · 校园贡献者` : "同步关注、收藏与校园消息"}</p></div>
         </div>
-        <div className="profile-rail-stats"><span><b>{likes}</b><small>获赞</small></span><span><b>{followers}</b><small>关注者</small></span><span><b>{following}</b><small>关注</small></span></div>
-        <NavLink className="btn full-width" to={auth.user ? "/profile" : "/profile"}>{auth.user ? "查看个人主页" : "登录并完善资料"}</NavLink>
+        {auth.user && <div className="profile-rail-stats"><span><b>{likes}</b><small>获赞</small></span><span><b>{followers}</b><small>关注者</small></span><span><b>{following}</b><small>关注</small></span></div>}
+        {auth.user ? <NavLink className="btn full-width" to="/profile">查看个人主页</NavLink> : <button className="btn primary full-width" onClick={auth.login}>登录并参与讨论</button>}
       </div>
       <div className="rail-card">
         <div className="rail-title">
@@ -229,7 +230,7 @@ function Shell() {
             <div className="brand-mark"><img src="/web/assets/app-icon.png" alt="沈理校园" /></div>
             <div className="brand-copy">
               <b>沈理校园</b>
-              <small>SYLUlive · 校园工作台</small>
+              <small>SYLUlive · 连接校园日常</small>
             </div>
           </div>
           <div className="crumb">
@@ -284,13 +285,13 @@ function Shell() {
         <aside className={`sidebar ${menu ? "open" : ""}`} aria-label="主导航">
           <div className="sidebar-scroll">
             {[
-              [0, 3, "常用"],
-              [3, 8, "学业与校园"],
-              [8, 13, "探索与工具"],
-            ].map(([start, end, label]) => (
+              { label: "在校园 · 交流", ids: ["dashboard", "community", "messages", "market", "polls"] },
+              { label: "去学习 · 成长", ids: ["schedule", "grades", "exams", "competition", "ratings"] },
+              { label: "好生活 · 发现", ids: ["campus", "canteen", "ai"] },
+            ].map(({label, ids}) => (
               <div className="nav-section" key={label}>
                 <div className="nav-label">{label}</div>
-                {navigation.slice(Number(start), Number(end)).map(link)}
+                {ids.map(id => navigation.find(item => item[0] === id)!).map(link)}
               </div>
             ))}
           </div>

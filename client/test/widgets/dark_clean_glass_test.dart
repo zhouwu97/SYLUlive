@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -46,6 +47,7 @@ void main() {
       addTearDown(settings.dispose);
       await settings.setBackgroundImage('morenbeijing.jpeg');
       await settings.setFrostedGlass(true);
+      await settings.setComponentOpacity(.7);
       const colors = [Color(0x146366F1), Color(0x0A8B5CF6)];
       const gradients = <Gradient>[
         LinearGradient(
@@ -87,9 +89,9 @@ void main() {
         await tester.pumpAndSettle();
         for (var i = 0; i < gradients.length; i++) {
           final actual = tester
-              .widgetList<Container>(find.descendant(
+              .widgetList<DecoratedBox>(find.descendant(
                   of: find.byKey(ValueKey('gradient-$i')),
-                  matching: find.byType(Container)))
+                  matching: find.byType(DecoratedBox)))
               .map((w) => w.decoration)
               .whereType<BoxDecoration>()
               .map((d) => d.gradient)
@@ -99,8 +101,10 @@ void main() {
           for (var stop = 0; stop < colors.length; stop++) {
             expect(
                 actual.colors[stop],
-                Color.alphaBlend(colors[stop], base)
-                    .withValues(alpha: opacity));
+                settings.shouldShowCustomBackground
+                    ? Color.alphaBlend(colors[stop], base)
+                        .withValues(alpha: opacity)
+                    : colors[stop]);
           }
           if (actual is LinearGradient) {
             expect(actual.begin, Alignment.topRight);
@@ -115,10 +119,11 @@ void main() {
       await check(.35);
       await settings.setCleanBackgroundMode();
       await check(1);
+      expect(activeBackdropFilters(), findsNothing);
       expect(settings.backgroundImage, 'morenbeijing.jpeg');
       await settings.setFrostedGlass(false);
       await tester.pumpAndSettle();
-      expect(find.byType(BackdropFilter), findsNothing);
+      expect(activeBackdropFilters(), findsNothing);
       expect(tester.takeException(), isNull);
     });
   }
@@ -208,7 +213,7 @@ void main() {
       expect(settings.backgroundImage, 'morenbeijing.jpeg');
       await settings.setFrostedGlass(false);
       await tester.pumpAndSettle();
-      expect(find.byType(BackdropFilter), findsNothing);
+      expect(activeBackdropFilters(), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }

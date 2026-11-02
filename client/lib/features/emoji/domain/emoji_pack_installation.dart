@@ -45,6 +45,10 @@ class EmojiPackInstallation {
   final String name;
   final EmojiPackTrustLevel trustLevel;
   final bool enabled;
+  // 本地导入始终使用 local-UUID；community-UUID 仅由服务端审核目录分配。
+  bool get isCatalogPack =>
+      trustLevel == EmojiPackTrustLevel.serverOfficial ||
+      packId.startsWith('community-') && importSourceSha256 == null;
   final int sortOrder;
   final EmojiPackInstallStatus status;
   final String? error;
@@ -66,7 +70,8 @@ class EmojiPackInstallation {
   bool hasUpdate(int catalogVersion) => catalogVersion > version;
 
   EmojiPackInstallation copyWith(
-          {bool? enabled,
+          {String? name,
+          bool? enabled,
           int? sortOrder,
           EmojiPackInstallStatus? status,
           String? error,
@@ -74,7 +79,7 @@ class EmojiPackInstallation {
       EmojiPackInstallation(
         manifest: manifest,
         manifestSha256: manifestSha256,
-        name: name,
+        name: name ?? this.name,
         trustLevel: trustLevel,
         enabled: enabled ?? this.enabled,
         sortOrder: sortOrder ?? this.sortOrder,
@@ -95,7 +100,8 @@ class EmojiPackInstallation {
         'status': status.name,
         if (error != null) 'error': error,
         if (externalPackId != null) 'external_pack_id': externalPackId,
-        if (importSourceSha256 != null) 'import_source_sha256': importSourceSha256,
+        if (importSourceSha256 != null)
+          'import_source_sha256': importSourceSha256,
         if (previous != null) 'previous': previous!.toJson(),
       };
 

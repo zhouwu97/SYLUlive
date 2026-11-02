@@ -99,8 +99,19 @@ Manifest 使用递归排序键的紧凑 JSON；客户端先验证目录中的 Ma
 | M6 | Recent 一级入口；独立管理页；详情、排序、删除、损坏状态 | 明暗主题、1.3× 字号、空态、切号、管理交互 |
 | M7 | 官方目录、逐资源下载、暂停/恢复、任务持久化、续传、重试、更新和回滚 | 跨实例断点恢复、断网失败、Hash、HTTPS、Range |
 
-默认 `officialPackDownload=true`，`customPackImport=false`，分享与公开发布关闭。官方包复用现有发布资源，未新增商城、广场、私有云同步或社区功能。
+默认 `officialPackDownload=true`、`customPackImport=true`。原生客户端支持图片多选、普通图片 ZIP 和 `.sylupack`，先校验预览再确认安装；公开分享通过投稿审核，不提供私有云同步、商城或对外导出分享。
 
 删除安装只清理本机 Pack 目录；消息仍使用已有 `file_id` / `sticker_id` 展示。服务端通过现有 AutoMigrate 增加消息、回复可选身份列，新接口需要随服务端发布。
 
 本次验证是自动化关键链路回归；仓库私聊开关关闭导致旧客户端私聊端到端测试跳过，不能据此宣称真机发送验收或生产部署完成。本地 Pack 依赖文件系统，当前以原生客户端为交付目标。
+
+## 7. 本地导入与社区投稿
+
+- “表情管理 → 添加”提供相册、文件、表情库和我的投稿入口。预览阶段不写安装目录；确认后只写当前账号的本机目录。普通图片集按内容去重；重复导入复用资源身份，可改名并启用，恢复/版本保护仍由 Installer 负责。
+- Manifest ZIP 继续校验路径、CRC、声明清单、大小、Hash、MIME 与全部图像帧；普通图片 ZIP 自动生成清单，不接受混入的程序等非图片文件，忽略 macOS 元数据。
+- 服务端目录兼容增加 `source=community`、`description`；旧目录不带 source 时仍为 official。社区包 ID 为服务端生成的 `community-<uuid>`，版本固定为不可变 v1，只有审核通过才可通过目录、Manifest 和资源路由访问。社区包安装使用 `localUntrusted` 与 `local:<community-id>:<asset-id>`，不冒领 official 命名空间；审核状态与资源信任分开，UI 按 source 显示“校园分享 · 已审核”。新客户端显式传 `include_community=true` 才收到社区包，旧客户端继续只看到内嵌官方包，避免其把社区资源当作 official 发送而被服务端拒绝。
+- 待审、驳回和下架的预览仅作者/管理员可访问；公开与私有资源均禁止 CDN 缓存，私有预览使用绑定原会话的认证请求。下架或撤回后后续公开请求返回 404；已安装副本不远程删除。
+- 投稿状态为 `pending → published / rejected`、`published → unpublished`，作者可撤回；审核使用事务/条件更新，不能审核自己投稿。投稿的每次表单意图有独立幂等键，同一表单内容的重试复用键；重新打开投稿可发起新的分享。
+- 图片先在服务端限制尺寸、帧数和解码预算，再规范化保存。文件存于现有持久卷的 `.emoji-submissions`，不产生可公开的普通 File 记录。
+
+接口和额度的唯一维护入口见 [服务端 API](../../server/API.md#表情包导入投稿与审核)，发布/回退见 [运维说明](../ops/emoji-packs.md)，本次验证范围见 [验收报告](../reports/2026-11-02-emoji-import-review.md)。

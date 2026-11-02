@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +7,11 @@ import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/feedback/feedback_center_screen.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
+import '../helpers/golden_test_app.dart';
+import '../helpers/golden_viewport.dart';
+import '../helpers/load_test_fonts.dart';
 
 class _MockFeedbackAuthProvider extends ChangeNotifier implements AuthProvider {
   _MockFeedbackAuthProvider({required this.client});
@@ -47,6 +53,72 @@ Map<String, dynamic> _makeTicketJson(int id) {
 }
 
 void main() {
+  setUpAll(loadTestFonts);
+  for (final dark in [false, true]) {
+    for (final scale in [1.0, 1.3]) {
+      testWidgets('反馈加载、失败和空态面板填满可用区域 dark=$dark scale=$scale',
+          (tester) async {
+        await setGoldenViewport(tester, GoldenViewports.phone390x844);
+        final bottomInset = 24 * tester.view.devicePixelRatio;
+        tester.view.padding = FakeViewPadding(bottom: bottomInset);
+        tester.view.viewPadding = FakeViewPadding(bottom: bottomInset);
+        addTearDown(tester.view.resetPadding);
+        addTearDown(tester.view.resetViewPadding);
+        AppPreferencesStore.setMockInitialValues({});
+        final appearance = ThemeProvider(loadOnStart: false);
+        addTearDown(appearance.dispose);
+        await appearance.setBackgroundImage('morenbeijing.jpeg');
+        final gate = Completer<void>();
+        var fail = true;
+        var requests = 0;
+        final dio = Dio();
+        dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) async {
+          requests++;
+          await gate.future;
+          if (fail) {
+            handler.reject(DioException(requestOptions: options));
+          } else {
+            handler.resolve(Response(requestOptions: options, statusCode: 200,
+                data: {'tickets': [], 'total': 0}));
+          }
+        }));
+        await tester.pumpWidget(MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: appearance),
+            ChangeNotifierProvider<AuthProvider>.value(
+                value: _MockFeedbackAuthProvider(client: dio)),
+          ],
+          child: GoldenTestApp(
+            themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+            textScaler: TextScaler.linear(scale),
+            home: const FeedbackCenterScreen(),
+          ),
+        ));
+        await tester.pump();
+        final viewport = tester.getRect(find.byType(TabBarView));
+        final expected = Rect.fromLTWH(viewport.left + 16, viewport.top,
+            viewport.width - 32, viewport.height - 16 - 24);
+        final panel = find.byKey(const ValueKey('feedback-state-panel-0'));
+        expect(tester.getRect(panel), expected);
+        gate.complete();
+        await tester.pumpAndSettle();
+        expect(find.text('重试'), findsOneWidget);
+        expect(tester.getRect(panel), expected);
+        fail = false;
+        await tester.tap(find.text('重试'));
+        await tester.pumpAndSettle();
+        expect(find.text('暂无反馈记录'), findsOneWidget);
+        for (final glass in [true, false]) {
+          await appearance.setFrostedGlass(glass);
+          await tester.pumpAndSettle();
+          expect(tester.getRect(panel), expected);
+        }
+        expect(requests, 2);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
   testWidgets('服务端总数滞后但下一页为空时停止翻页', (tester) async {
     final requestedPages = <int>[];
     final dio = Dio();

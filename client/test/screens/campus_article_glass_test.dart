@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -63,7 +64,7 @@ void main() {
         expect(find.descendant(of: surface, matching: find.text('测试校园文章')),
             findsOneWidget);
         expect(
-            find.descendant(of: surface, matching: find.byType(BackdropFilter)),
+            find.descendant(of: surface, matching: activeBackdropFilters()),
             findsOneWidget);
         expect(
             find.descendant(of: surface, matching: find.byType(AppCardSurface)),
@@ -97,55 +98,68 @@ void main() {
         }
         await theme.setFrostedGlass(false);
         await tester.pumpAndSettle();
-        expect(surface, findsNothing);
-        expect(find.byType(BackdropFilter), findsNothing);
+        expect(surface, findsOneWidget, reason: '关闭毛玻璃后仍需阅读底面承载标题、正文和附件');
+        expect(activeBackdropFilters(), findsNothing);
+        expect(find.descendant(of: surface, matching: find.text('测试校园文章')),
+            findsOneWidget);
+        if (kind == 'attachment') {
+          expect(find.descendant(of: surface, matching: find.text('通知.pdf')),
+              findsOneWidget);
+          expect(
+              find.descendant(
+                  of: surface, matching: find.text('学校附件需要输入验证码，请在浏览器中完成验证。')),
+              findsOneWidget);
+        }
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       });
     }
   }
 
-  testWidgets('加载失败后重试成功仍使用文章毛玻璃', (tester) async {
-    final theme = ThemeProvider(loadOnStart: false);
-    addTearDown(theme.dispose);
-    await theme.setFrostedGlass(true);
-    final first = Completer<void>();
-    var attempts = 0;
-    final interceptor =
-        InterceptorsWrapper(onRequest: (options, handler) async {
-      attempts++;
-      if (attempts == 1) {
-        await first.future;
-        handler.reject(DioException(
-            requestOptions: options, type: DioExceptionType.connectionError));
-      } else {
-        handler
-            .resolve(Response(requestOptions: options, statusCode: 200, data: {
-          'item': {'id': 1, 'title': '恢复后的文章', 'content_text': '恢复正文'},
-        }));
-      }
+  for (final glass in [false, true]) {
+    testWidgets('加载失败后重试仍保留阅读底面 glass=$glass', (tester) async {
+      final theme = ThemeProvider(loadOnStart: false);
+      addTearDown(theme.dispose);
+      await theme.setBackgroundImage('morenbeijing.jpeg');
+      await theme.setFrostedGlass(glass);
+      final first = Completer<void>();
+      var attempts = 0;
+      final interceptor =
+          InterceptorsWrapper(onRequest: (options, handler) async {
+        attempts++;
+        if (attempts == 1) {
+          await first.future;
+          handler.reject(DioException(
+              requestOptions: options, type: DioExceptionType.connectionError));
+        } else {
+          handler.resolve(
+              Response(requestOptions: options, statusCode: 200, data: {
+            'item': {'id': 1, 'title': '恢复后的文章', 'content_text': '恢复正文'},
+          }));
+        }
+      });
+      getSharedDio().interceptors.insert(0, interceptor);
+      addTearDown(() => getSharedDio().interceptors.remove(interceptor));
+      await tester.pumpWidget(ChangeNotifierProvider.value(
+        value: theme,
+        child: const GoldenTestApp(
+            home: CampusArticleDetailScreen(
+                summary: CampusArticleSummary(id: 1))),
+      ));
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.byType(ListView), findsOneWidget);
+      first.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('点击重试'), findsOneWidget);
+      await tester.tap(find.text('点击重试'));
+      await tester.pumpAndSettle();
+      expect(find.text('恢复后的文章'), findsOneWidget);
+      expect(find.byKey(const ValueKey('campus-article-reading-surface')),
+          findsOneWidget);
+      expect(attempts, 2);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
     });
-    getSharedDio().interceptors.insert(0, interceptor);
-    addTearDown(() => getSharedDio().interceptors.remove(interceptor));
-    await tester.pumpWidget(ChangeNotifierProvider.value(
-      value: theme,
-      child: const GoldenTestApp(
-          home:
-              CampusArticleDetailScreen(summary: CampusArticleSummary(id: 1))),
-    ));
-    await tester.pump();
-    expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(find.byType(ListView), findsOneWidget);
-    first.complete();
-    await tester.pumpAndSettle();
-    expect(find.text('点击重试'), findsOneWidget);
-    await tester.tap(find.text('点击重试'));
-    await tester.pumpAndSettle();
-    expect(find.text('恢复后的文章'), findsOneWidget);
-    expect(find.byKey(const ValueKey('campus-article-reading-surface')),
-        findsOneWidget);
-    expect(attempts, 2);
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+  }
 }

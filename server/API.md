@@ -460,6 +460,10 @@ FEED-H1 加固：
 | `POST /api/oauth/revoke` | 所撤凭证 | RFC7009，同属授权一并撤销；不会注销 App 登录 |
 | `POST /api/oauth/device_authorization/cancel` | 本次设备 secret | URLencoded `client_id`、`device_code`；取消未完成请求及其已产生的绑定，无需先领取token。成功空200、重复安全；不可用410、归属并发变化409可重试。不是凭网页user_code或QQ号撤销他人授权 |
 | `GET /api/connected-apps` | App 登录 | 本人的连接列表，不返回凭证 |
+| `GET /api/connected-apps/bot` | App 登录 | 本人的独立 AI 资料、规则、可选公开版块及服务开关；没有机器人时 `bot:null`，并返回 `policy_supported:true` |
+| `POST /api/connected-apps/bot` | 本人且近期认证；单独暂停除外 | 创建或编辑 `name`、本人上传的 `avatar`、`enabled`、`policy`；一个创建者至多一个独立账号 |
+| `GET /api/integrations/v1/bot/policy` | `community:read` scoped Bearer | 当前连接所属机器人的 ID、启用状态和规则，不含创建者私人资料 |
+| `POST /api/integrations/v1/bot/replies` | `community:bot_reply`、读取与提案 scope | 独立机器人身份的受控评论／内置表情；仍需服务开关和本人规则允许，不复用本人逐条确认发布身份 |
 | `POST /api/connected-apps/device-requests/lookup` | App 登录且10分钟内真实登录 | JSON `user_code`，返回待核对范围与一次性确认 nonce |
 | `POST /api/connected-apps/device-requests/:id/decision` | 同上 | `allow`、`scopes`、`confirmation_nonce`；替换还须旧 `replace_binding_id` 与 `expected_epoch` |
 | `POST /api/connected-apps/:id/revoke` | 本人 App 登录 | 立即撤销，无近期登录额外门槛 |
@@ -485,6 +489,14 @@ FEED-H1 加固：
 ```
 
 精确回复需真实目标 ID 和目标 `source_version`；父线程与通知用户由服务器推导，不接受伪造 author、role 或 parent。发帖草稿使用 `kind=post`、有效 `post_type`、`title`（可空）、`content`，不接受评论字段、附件、市场/投票/公告操作。响应是 `action_id`、`state`、`review_uri`、`expires_at`，不表示发布完成。单 owner 每24小时最多30个新草稿、20次正式助手发布，并计入原有发帖/评论额度；发布事务内完成当前权限、来源/版块/禁言、额度、内容、计数、动作状态与审计的一致性更新。统计变化不影响来源版本，内容变化需要重读重建。助手评论与站内回复通知原子提交，按评论与接收人去重，自回复不提醒；精确回复通知目标评论作者。提交后复用现有推送流程，外部投递失败不回滚已提交评论，也不宣称必达。创建/删除/评论治理/恢复按先帖子后评论顺序加锁。已使用旧refresh在摘要保留期内重放仍撤销同一授权，不因旧闲置期限过期而跳过检测。无奖励、无后台队列、无无人确认发布。
+
+### 机器人规则与权限边界
+
+`policy` 包含 `public_read_enabled`、`reply_enabled`、`sticker_enabled`、`allowed_post_types`、`blocked_terms`、`block_links`、`daily_reply_limit`（1–3）、`min_reply_interval_minutes`（30–1440）。服务端限制投诉、新生求助和敏感版块；本人选择只能进一步缩小平台允许范围。新旧连接不能因新建机器人或修改规则自动新增 `community:bot_reply`。关闭自动发言总开关仍可读取和编辑管理资料。
+
+`avatar` 必须是本人拥有或已获上传授权、可公开的有效图片引用，不接受任意远程 URL 或他人的私有文件。新建可设 `enabled:false`；只传 `enabled:false` 为紧急暂停，不因近期认证过期被阻止。结构化公开 `ai_bot` 归属由数据库账号确定，普通用户不能靠昵称伪造。版本与健康接口新增 `capabilities.managed_bot_v1`，仅表明管理接口随集成总开关启用。
+
+自动评论在同一事务复核当前授权、独立身份、来源版本、版块、禁言、规则和额度；同一操作幂等，同帖不重复，按滚动24小时及最短间隔限额。读取在返回前再次核验暂停和范围变化；权限变化返回稳定错误，不返回已读取的旧正文。
 
 ### 集成公开阅读字段与排名
 

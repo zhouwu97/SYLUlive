@@ -28,6 +28,7 @@ const IntegrationActionScope = "actions:read_own"
 const IntegrationCheckInScope = "checkin:write"
 const IntegrationGradesScope = "academic:grades:read"
 const IntegrationErkeScope = "academic:erke:read"
+const IntegrationAutoReplyScope = "community:bot_reply"
 
 type IntegrationError struct {
 	Code   string
@@ -83,7 +84,7 @@ func IntegrationSecretHash(raw string) string {
 	return hex.EncodeToString(v[:])
 }
 func integrationScopes(raw string) (string, error) {
-	allowed := map[string]bool{"profile:read_minimal": true, IntegrationReadScope: true, "content:read_own_public": true, IntegrationProposeScope: true, IntegrationActionScope: true, IntegrationCheckInScope: true, IntegrationGradesScope: true, IntegrationErkeScope: true}
+	allowed := map[string]bool{"profile:read_minimal": true, IntegrationReadScope: true, "content:read_own_public": true, IntegrationProposeScope: true, IntegrationActionScope: true, IntegrationCheckInScope: true, IntegrationGradesScope: true, IntegrationErkeScope: true, IntegrationAutoReplyScope: true}
 	set := map[string]bool{}
 	for _, scope := range strings.Fields(raw) {
 		if !allowed[scope] {
@@ -95,6 +96,9 @@ func integrationScopes(raw string) (string, error) {
 		return "", integrationError("invalid_scope", 400)
 	}
 	if set[IntegrationProposeScope] && (!set[IntegrationReadScope] || !set[IntegrationActionScope]) {
+		return "", integrationError("invalid_scope", 400)
+	}
+	if set[IntegrationAutoReplyScope] && !set[IntegrationProposeScope] {
 		return "", integrationError("invalid_scope", 400)
 	}
 	items := make([]string, 0, len(set))

@@ -1,5 +1,13 @@
 # AstrBot 集成发布入口
 
+## 机器人管理接口的兼容发布
+
+App/Web 管理页共用 `/api/connected-apps/bot`，插件规则读取使用 `/api/integrations/v1/bot/policy`。这些接口不依赖自动评论开关；新增 `INTEGRATION_AUTO_REPLY_ENABLED` 默认关闭。迁移新增 `managed_bots` 及规则列，不代替本人新建账号或追加旧连接 scope。公开归属、头像及规则数据范围见 [隐私台账](../privacy-data-inventory.md)。
+
+以现场运行 SHA 为基准集成，保留个人资料查询、快照上传、设备取消、重新验证和已有授权接口。按 [正式入口](../../DEPLOY.md) 完成不可变候选、备份、CI/安全核验及明确放行后再部署。部署后执行 `python scripts/verify-managed-bot-release.py --origin https://sylulive.online --sha <完整候选SHA>`：同时检查真实 SHA、`managed_bot_v1` 和两个受保护接口的 JSON 401，不能把首页或普通版本请求成功当作新接口已发布。
+
+再由本人在当前 App 验收读取已有资料／明确空状态、新建暂停账号、名字和本人头像、规则保存与重新读取、暂停和撤权；旧接口应继续可用。管理资料正常并不表示 Agent 已自动运行，自动评论另需本人专用授权及独立开关。回退先关闭自动参与，保留新增兼容表和已发布记录，按原备份及回退手册恢复；不覆盖发布后生效的撤权。
+
 业务与安装契约以 [插件 README](../../astrbot_plugin_sylulive/README.md) 为准；生产执行遵循 [DEPLOY.md](../../DEPLOY.md)、[后端](backend.md)、[官网](website.md) 与 [回滚](rollback.md)。不能把本地验证当成生产放行。
 
 ## 首次只读试运行范围

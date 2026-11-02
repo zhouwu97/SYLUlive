@@ -228,12 +228,24 @@ func (s *IntegrationActionService) Preview(ctx context.Context, owner uint, id s
 	return result, err
 }
 func (s *IntegrationActionService) Decide(ctx context.Context, owner uint, id string, d IntegrationActionDecision) (models.IntegrationAction, error) {
+	return s.decide(ctx, owner, id, d, nil)
+}
+func (s *IntegrationActionService) decide(ctx context.Context, owner uint, id string, d IntegrationActionDecision, automatic *models.IntegrationBinding) (models.IntegrationAction, error) {
 	var result models.IntegrationAction
 	var notification *models.Notification
 	err := s.Auth.ownerTx(ctx, owner, func(tx *gorm.DB, user models.User) error {
 		a, p, err := s.load(tx, owner, id)
 		if err != nil {
 			return err
+		}
+		if automatic != nil {
+			current, err := s.activeBinding(tx, user, automatic.ID, automatic.Epoch)
+			if err != nil {
+				return err
+			}
+			if a.BindingID != current.ID || a.BindingEpoch != current.Epoch || a.Kind != "reply" || !IntegrationHasScope(current, IntegrationAutoReplyScope) {
+				return integrationError("insufficient_scope", 403)
+			}
 		}
 		if a.Version != d.Version || a.PayloadHash != d.PayloadHash {
 			return integrationError("draft_changed", 409)
@@ -249,7 +261,7 @@ func (s *IntegrationActionService) Decide(ctx context.Context, owner uint, id st
 		if a.State != "pending" || !a.ExpiresAt.After(s.Auth.Now()) {
 			return integrationError("draft_expired", 409)
 		}
-		if d.Nonce == "" || IntegrationSecretHash(d.Nonce) != a.ConfirmNonceHash || a.ConfirmExpiresAt == nil || !a.ConfirmExpiresAt.After(s.Auth.Now()) {
+		if automatic == nil && (d.Nonce == "" || IntegrationSecretHash(d.Nonce) != a.ConfirmNonceHash || a.ConfirmExpiresAt == nil || !a.ConfirmExpiresAt.After(s.Auth.Now())) {
 			return integrationError("confirmation_expired", 409)
 		}
 		now := s.Auth.Now()
@@ -278,6 +290,14 @@ func (s *IntegrationActionService) Decide(ctx context.Context, owner uint, id st
 				return integrationError("assistant_publish_quota_exceeded", 429)
 			}
 			text := "[助手代发] " + p.Content
+			actor := owner
+			if automatic != nil {
+				actor, err = s.botActor(tx, owner, now, post, p)
+				if err != nil {
+					return err
+				}
+				text = "[AI机器人] " + p.Content
+			}
 			if p.Kind == "post" {
 				created := models.Post{AuthorID: owner, Title: p.Title, Content: text, BoardID: models.BoardShuitie, PostType: p.PostType, ContentKind: models.PostContentKindNormal, Status: models.PostStatusNormal, ContentOrigin: "assistant"}
 				if err := PreparePostPublish(tx, &created, now); err != nil {
@@ -288,7 +308,7 @@ func (s *IntegrationActionService) Decide(ctx context.Context, owner uint, id st
 				}
 				a.PostID = &created.ID
 			} else {
-				reply := models.Reply{AuthorID: owner, PostID: post.ID, Content: text, Status: models.ReplyStatusNormal, ContentOrigin: "assistant"}
+				reply := models.Reply{AuthorID: actor, PostID: post.ID, Content: text, Status: models.ReplyStatusNormal, ContentOrigin: "assistant"}
 				if p.StickerID != "" {
 					if s.ValidSticker == nil || !s.ValidSticker(p.StickerID) {
 						return integrationError("invalid_sticker", 409)
@@ -296,6 +316,9 @@ func (s *IntegrationActionService) Decide(ctx context.Context, owner uint, id st
 					reply.StickerID = &p.StickerID
 					if p.Content == "" {
 						reply.Content = "[助手代发表情]"
+						if automatic != nil {
+							reply.Content = "[AI机器人表情]"
+						}
 					}
 				}
 				if target != nil {
@@ -322,7 +345,7 @@ func (s *IntegrationActionService) Decide(ctx context.Context, owner uint, id st
 				if reply.ReplyToUserID != nil {
 					recipient = *reply.ReplyToUserID
 				}
-				notification, err = CreateReplyNotification(tx, recipient, owner, reply.ID, post.ID, reply.Content)
+				notification, err = CreateReplyNotification(tx, recipient, actor, reply.ID, post.ID, reply.Content)
 				if err != nil {
 					return err
 				}

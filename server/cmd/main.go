@@ -216,6 +216,7 @@ func main() {
 		&models.AcademicIdentityChallenge{},
 		&models.IntegrationDeviceRequest{}, &models.IntegrationBinding{},
 		&models.IntegrationCredential{}, &models.IntegrationAction{},
+		&models.ManagedBot{},
 		&models.IntegrationAudit{}, &models.IntegrationRateBucket{},
 		&models.EmailVerificationChallenge{},
 		&models.EmailVerificationRequest{},
@@ -808,6 +809,7 @@ func main() {
 		integrationHandler := handlers.NewIntegrationHandler(db, handlers.IntegrationOptions{
 			PersonalDataEnabled: cfg.IntegrationPersonalDataEnabled,
 			PublicOrigin:        cfg.IntegrationPublicOrigin, ProposalsEnabled: cfg.IntegrationProposalsEnabled, OwnerPublishEnabled: cfg.IntegrationOwnerPublishEnabled,
+			AutoReplyEnabled: cfg.IntegrationAutoReplyEnabled,
 			AfterReplyCommit: func(n models.Notification) {
 				handlers.SendJPushNotification(cfg.JPushAppKey, cfg.JPushMasterSecret, db, n.UserID, n.FromUID, n.RelatedID, n.PostID, n.Content)
 			},
@@ -1472,6 +1474,7 @@ func main() {
 			"capabilities": gin.H{
 				"teacher_governance_v1": true,
 				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
+				"managed_bot_v1":        cfg.IntegrationsEnabled,
 			},
 			"security": gin.H(securityHealth),
 			"ai": gin.H{
@@ -1498,6 +1501,7 @@ func main() {
 			"capabilities": gin.H{
 				"teacher_governance_v1": true,
 				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
+				"managed_bot_v1":        cfg.IntegrationsEnabled,
 			},
 		})
 	}
@@ -2850,6 +2854,7 @@ func main() {
 			"capabilities": gin.H{
 				"teacher_governance_v1": true,
 				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
+				"managed_bot_v1":        cfg.IntegrationsEnabled,
 			},
 			"version":             "",
 			"min_version":         "",

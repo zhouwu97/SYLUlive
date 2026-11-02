@@ -50,6 +50,27 @@ type IntegrationCredential struct {
 	CreatedAt         time.Time  `json:"-"`
 }
 
+// ManagedBot 无登录凭据/教务身份；一个创建者至多一个，公开时仅展示独立机器人身份。
+type ManagedBot struct {
+	OwnerID    uint      `gorm:"primaryKey" json:"-"`
+	UserID     uint      `gorm:"not null;uniqueIndex" json:"bot_user_id"`
+	Enabled    bool      `gorm:"not null;default:false" json:"enabled"`
+	PolicyJSON string    `gorm:"type:text;not null;default:''" json:"-"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// ManagedBotPolicy 是创建者授予机器人的社区权限上限，不能覆盖平台治理或连接 scope。
+type ManagedBotPolicy struct {
+	PublicReadEnabled       bool     `json:"public_read_enabled"`
+	ReplyEnabled            bool     `json:"reply_enabled"`
+	StickerEnabled          bool     `json:"sticker_enabled"`
+	AllowedPostTypes        []string `json:"allowed_post_types"`
+	BlockedTerms            []string `json:"blocked_terms"`
+	BlockLinks              bool     `json:"block_links"`
+	DailyReplyLimit         int      `json:"daily_reply_limit"`
+	MinReplyIntervalMinutes int      `json:"min_reply_interval_minutes"`
+}
+
 type IntegrationAction struct {
 	ID               string         `gorm:"size:36;primaryKey" json:"action_id"`
 	BindingID        string         `gorm:"size:36;not null;index;uniqueIndex:ux_integration_operation,priority:1" json:"-"`

@@ -89,6 +89,7 @@ type Config struct {
 	IntegrationProposalsEnabled            bool
 	IntegrationOwnerPublishEnabled         bool
 	IntegrationPersonalDataEnabled         bool
+	IntegrationAutoReplyEnabled            bool
 	IntegrationPublicOrigin                string
 	AIAgentRolloutPercent                  int      // Agent v5 用户灰度比例
 	AIAgentRolloutUserIDs                  []uint   // Agent v5 显式放行用户
@@ -623,6 +624,10 @@ func Load() *Config {
 	if err := validateIntegrationPersonalConfig(integrationEnabled, integrationPersonal, schoolAuthorityRetired); err != nil {
 		panic(err)
 	}
+	integrationAutoReply := envBool("INTEGRATION_AUTO_REPLY_ENABLED", false)
+	if integrationAutoReply && (!integrationEnabled || !integrationProposals) {
+		panic("INTEGRATION_AUTO_REPLY_ENABLED requires integrations and proposals")
+	}
 	integrationOrigin := strings.TrimRight(strings.TrimSpace(os.Getenv("INTEGRATION_PUBLIC_ORIGIN")), "/")
 	if err := validateIntegrationConfig(integrationEnabled, integrationProposals, integrationPublish, integrationOrigin, releaseMode); err != nil {
 		panic(err)
@@ -703,6 +708,7 @@ func Load() *Config {
 		IntegrationProposalsEnabled:            integrationProposals,
 		IntegrationOwnerPublishEnabled:         integrationPublish,
 		IntegrationPersonalDataEnabled:         integrationPersonal,
+		IntegrationAutoReplyEnabled:            integrationAutoReply,
 		IntegrationPublicOrigin:                integrationOrigin,
 		AIAgentRolloutPercent:                  aiAgentRolloutPercent,
 		AIAgentRolloutUserIDs:                  aiAgentRolloutUserIDs,

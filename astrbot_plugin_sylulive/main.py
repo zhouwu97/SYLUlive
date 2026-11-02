@@ -24,6 +24,7 @@ from .public_agent import PublicAgent, PublicMemory, persona
 from .creator_memory import CreatorMemory
 from .community_publisher import CommunityPublisher
 from .personal import personal_intent
+from .chat_media import MEME_GUIDANCE, chat_tools, trusted_meme
 
 COMMUNITY_PRESENTATION = """[SYLUlive 回复展示规范]
 以下约定仅适用于向用户讲述 SYLUlive 工具结果，不改变你原有的人格、权限或工具参数：
@@ -234,7 +235,7 @@ def read_kinds(path):
     return set()
 
 
-@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.4.1")
+@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.4.2")
 class SYLUlivePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -276,6 +277,9 @@ class SYLUlivePlugin(Star):
                                         PublicMemory(directory / (identity + ".public-memory.sqlite3")), context=context)
         self.creator_memory = CreatorMemory(directory / (identity + ".creator-memory.sqlite3"), identity)
         self.public_agent.publisher = CommunityPublisher(self.public_agent, self.client)
+        from .permission_console import register_console
+        if callable(getattr(context, "register_web_api", None)):
+            register_console(context, self)
 
     async def initialize(self):
         self.public_agent.task = asyncio.create_task(self.public_agent.run(self.context))
@@ -380,10 +384,11 @@ class SYLUlivePlugin(Star):
             event.stop_event()
 
     async def private_review_decision(self, event, code, allow):
-        if self.public_agent_enabled():
-            return "公开 Agent 模式不开放私有结果分享。"
+        # 本人群内成绩/二课确认与旧会话记录审核是不同能力，先走原群身份校验。
         if isinstance(code, str) and code.startswith("gp_"):
             return await self.group_personal_decision(event, code, allow)
+        if self.public_agent_enabled():
+            return "公开 Agent 模式不开放私有结果分享。"
         from .private_review import ReviewProblem
 
         try:
@@ -441,28 +446,20 @@ class SYLUlivePlugin(Star):
 
     def permission(self, event, action):
         from .permissions import decide, Decision
-        if self.public_agent_enabled():
-            # 明确本人账号命令可进入获准群，仍由下方规则、功能开关和本人 scope 校验。
-            # 群模型的私人查询工具白名单不随命令入口扩展。
-            allowed = (self.allowed_reading(event) if action == "public_read" else
-                       (self.account_private(event) or self.allowed_public_group(event)
-                        or (action == "unbind" and event.is_private_chat() and not event.get_group_id()))
-                       if action in {"bind", "status", "unbind", "checkin"} else False)
-            if not allowed:
-                return Decision(False, "explicit_deny")
         if not self.platform_allowed(event):
             return Decision(False, "invalid_context")
         private = event.is_private_chat() and not event.get_group_id()
         config = getattr(self, "config", {})
         if action == "public_read":
-            default = self.allowed(event) or self.allowed_public_group(event) or self.open_public_reading(event)
+            # 只用原始默认范围，不能经公开工具入口再入权限裁决。
+            default = self.allowed(event) or self.allowed_review_group(event) or self.open_public_reading(event)
         elif action in ("bind", "status", "unbind"):
             default = private and (self.account_private(event) or action == "unbind")
             default = default or (self.binding_group(event) and action in ("bind", "status", "unbind"))
         elif action == "checkin":
             default = self.account_private(event) or self.allowed_review_group(event)
         elif action in ("grades", "erke", "proposals"):
-            default = self.allowed(event)
+            default = self.account_private(event)
         elif action == "private_review":
             default = self.allowed(event) or self.is_bot_admin(event)
         else:
@@ -470,7 +467,7 @@ class SYLUlivePlugin(Star):
         return decide(config, event, action, is_admin=self.is_bot_admin(event), default=bool(default))
 
     def feature_available(self, event, action):
-        if self.public_agent_enabled() and action in {"grades", "erke", "proposals", "private_review"}:
+        if self.public_agent_enabled() and action in {"proposals", "private_review"}:
             return False
         flags = {"checkin": "allow_checkin", "grades": "allow_personal_queries", "erke": "allow_personal_queries", "proposals": "allow_proposals", "private_review": "allow_private_review"}
         if action == "bind":
@@ -589,28 +586,21 @@ class SYLUlivePlugin(Star):
         )
 
     def allowed_public_group(self, event):
-        if self.public_agent_enabled():
-            return self.allowed_review_group(event)
-        return self.allowed_review_group(event) or (
-            self.open_public_reading(event)
-            and bool(event.get_group_id())
-            and not event.is_private_chat()
-        )
+        return bool(event.get_group_id()) and not event.is_private_chat() and self.permission(event, "public_read").allowed
 
     def allowed_reading(self, event):
-        if self.public_agent_enabled():
-            return self.allowed(event) or self.allowed_public_group(event)
         return self.permission(event, "public_read").allowed
 
     def public_only_session(self, event):
         if self.public_agent_enabled():
-            return self.allowed_reading(event)
+            return self.platform_allowed(event)
         # 多用户私聊也不能继承部署者全局知识库或任意跨会话工具。
         return self.platform_allowed(event) and (
             bool(event.get_group_id()) or not self.allowed(event) or not self.is_bot_admin(event)
         )
 
     async def terminate(self):
+        self._console_active = False
         if hasattr(self, "public_agent"):
             await self.public_agent.close()
         if hasattr(self, "binding_notifications"):
@@ -753,17 +743,17 @@ class SYLUlivePlugin(Star):
                 await client.poll()
             if not access_current():
                 return "权限或账号连接已变化，本次未展示个人结果，请重新查询。"
+            if not getattr(client, "tokens", None):
+                raise IntegrationProblem("connect_first")
+            scope = "academic:grades:read" if dataset == "grades" else "academic:erke:read"
+            if scope not in client.tokens.get("scope", "").split():
+                raise IntegrationProblem("insufficient_scope")
             group = bool(event.get_group_id()) and not event.is_private_chat()
             mode = self.config.get("group_personal_delivery", "confirm")
             if group and mode not in ("confirm", "direct", "private"):
                 raise IntegrationProblem("invalid_delivery_policy")
             if group and mode == "confirm" and not confirmed:
                 from .group_confirmations import GroupConfirmations, policy_stamp, ConfirmationProblem
-                if not getattr(client, "tokens", None):
-                    raise IntegrationProblem("connect_first")
-                scope = "academic:grades:read" if dataset == "grades" else "academic:erke:read"
-                if scope not in client.tokens.get("scope", "").split():
-                    raise IntegrationProblem("insufficient_scope")
                 if not hasattr(self, "group_confirmations"):
                     self.group_confirmations = GroupConfirmations()
                 try:
@@ -938,7 +928,8 @@ class SYLUlivePlugin(Star):
         for action, command in (("bind", "/sylu-connect"), ("unbind", "/sylu-disconnect"), ("checkin", "/sylu-checkin"), ("grades", "/sylu-grades"), ("erke", "/sylu-erke")):
             enabled = self.feature_available(event, action)
             commands.append(command + ("已允许" if self.permission(event, action).allowed and enabled else "当前未开放"))
-        req.system_prompt = note(req.system_prompt or "", "[当前会话本人命令权限]", "[当前会话本人命令权限] " + "；".join(commands) + "。以当前规则和实际结果为准，不沿用历史里‘一律仅限私聊’或‘成绩未接入’的旧说法。")
+        command_note = "[当前会话本人命令权限] " + "；".join(commands) + "。这里只说明命令入口，仍须本人授权和服务端校验；以当前规则和实际结果为准，不沿用历史里‘一律仅限私聊’或‘成绩未接入’的旧说法。"
+        req.system_prompt = note(req.system_prompt or "", "[当前会话本人命令权限]", command_note)
         if not self.allowed_reading(event) and not self.public_agent_enabled():
             from astrbot.core.agent.tool import ToolSet
             if req.func_tool is not None:
@@ -971,8 +962,9 @@ class SYLUlivePlugin(Star):
                     req.contexts = list(recent.get("messages", []))
                 event.set_extra("sylulive_group_turn", {"scope": scope, "prompt": req.prompt or ""})
             event.set_extra("sylulive_public_agent_stamp", self.public_agent.stamp())
-            req.func_tool = ToolSet([t for t in (req.func_tool.tools if req.func_tool else [])
-                                     if self.allowed_reading(event) and t.name in {"sylulive_public_memory", "sylulive_posts", "sylulive_get_post", "sylulive_replies", "sylulive_sections"}])
+            public_names = ((PUBLIC_GROUP_TOOLS - {"get_group_message_history"}) | {"sylulive_public_memory"}) if self.allowed_reading(event) else set()
+            req.func_tool = ToolSet(chat_tools(req.func_tool.tools if req.func_tool else [], public_names,
+                memes=self.config.get("community_chat_memes_enabled", False) is True))
             event.set_extra("enable_streaming", False)
         if self.allowed(event) and req.func_tool is not None:
             from astrbot.core.agent.tool import ToolSet
@@ -1002,19 +994,19 @@ class SYLUlivePlugin(Star):
             if req.func_tool is not None:
                 proposal_tools = {"sylulive_draft_reply", "sylulive_draft_post", "sylulive_action_status"} if self.permission(event, "proposals").allowed and self.config.get("allow_proposals", False) else set()
                 # 复制本次工具集，避免影响全局注册表或私聊可用工具。
-                req.func_tool = ToolSet(
-                    [
-                        tool
-                        for tool in req.func_tool.tools
-                        if tool.name in PUBLIC_GROUP_TOOLS | proposal_tools | ({"sylulive_public_memory"} if self.public_agent_enabled() else set())
-                        and (
-                            event.get_group_id()
-                            or tool.name != "get_group_message_history"
-                        )
-                    ]
-                )
+                public_names = PUBLIC_GROUP_TOOLS | proposal_tools | ({"sylulive_public_memory"} if self.public_agent_enabled() else set())
+                if self.public_agent_enabled() or not event.get_group_id():
+                    public_names -= {"get_group_message_history"}
+                if not self.allowed_reading(event):
+                    public_names = set()
+                req.func_tool = ToolSet(chat_tools(req.func_tool.tools, public_names,
+                    memes=self.config.get("community_chat_memes_enabled", False) is True))
         # 只补充获准会话的展示约定，不替换人格，也不删改工具结果中的准确引用。
         system = req.system_prompt or ""
+        # 人格重建 system_prompt 后仍需保留本轮权限，避免模型沿用旧的拒绝说明。
+        system = note(system, "[当前会话本人命令权限]", command_note)
+        if req.func_tool is not None and any(trusted_meme(tool) for tool in req.func_tool.tools):
+            system += "\n" + MEME_GUIDANCE
         if COMMUNITY_PRESENTATION not in system:
             system += "\n\n" + COMMUNITY_PRESENTATION
         if COMMUNITY_READING not in system:
@@ -1032,7 +1024,7 @@ class SYLUlivePlugin(Star):
             getattr(req.conversation, "cid", "") if req.conversation is not None else ""
         )
         event.set_extra("sylulive_conversation_id", conversation_id)
-        if not self.public_agent_enabled():
+        if self.allowed_reading(event):
             await self.prefetch_canteen_followup(event, req, conversation_id)
         # 已定位的跟进阅读在本轮模型请求前完成，避免只改写历史回答。
         recent = getattr(self, "recent_posts", {}).get(
@@ -1172,7 +1164,9 @@ class SYLUlivePlugin(Star):
                     name,
                     bool(self.config.get("allow_proposals", False)),
                     checkin=bool(self.config.get("allow_checkin", False)),
-                    bot_reply=bool(self.config.get("community_auto_comment", False)),
+                    # 后台评论器只使用创建者凭据，普通用户绑定不请求无关的自主评论权限。
+                    bot_reply=bool(self.config.get("community_auto_comment", False))
+                    and str(event.get_sender_id()) == self.owner and self.platform_allowed(event),
                     personal=bool(self.config.get("allow_personal_queries", False)),
                 )
                 from .binding_delivery import deliver_binding_link
@@ -1313,7 +1307,10 @@ class SYLUlivePlugin(Star):
 
     async def tool(self, event, method, path, params=None, payload=None):
         if self.public_agent_enabled():
-            if not self.allowed_reading(event) or method != "GET" or not public_read_path(path):
+            decision = self.permission(event, "public_read")
+            if not decision.allowed:
+                return json.dumps({"error": "permission_denied", "message": decision.reason_text}, ensure_ascii=False)
+            if method != "GET" or not public_read_path(path):
                 return '{"error":"public_scope_refused"}'
             return await self.agent_public_tool(event, path, params)
         action = "public_read" if method == "GET" and public_read_path(path) else ("proposals" if path.startswith("/actions") else "status")

@@ -155,6 +155,7 @@ class PublicAgent:
         self.epoch = 0
         self.next_run = 0
         self.state = "idle"
+        self.last_result = None
         self.publisher = None
         self._browse_scope = None
         self._browse_position = {}
@@ -335,6 +336,8 @@ class PublicAgent:
                     result = await self._browse(context, stamp)
                 self.check(stamp)
                 self.state = result["state"]
+                self.last_result = {"at": time.time(), "state": self.state,
+                                    "read_count": result.get("read_count", 0)}
                 return result
             except asyncio.CancelledError:
                 self.state = "cancelled"
@@ -343,6 +346,8 @@ class PublicAgent:
                 # 不回显异常正文：Provider 和 HTTP 错误可能含凭证/请求内容。
                 self._browse_position = {}
                 self.state = "paused" if self.paused else "error"
+                self.last_result = {"at": time.time(), "state": self.state,
+                                    "error": "public_browse_failed"}
                 return {"state": self.state}
 
     async def _browse(self, context, stamp):

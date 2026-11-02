@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SYLUlive · 权限与运行状态</title>
+  <link rel="stylesheet" href="./app.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+<main>
+  <header class="page-head">
+    <div><span class="eyebrow">SYLUlive 校园助手</span><h1>权限与运行状态</h1><p>看清谁能使用什么，以及还缺哪一步。</p></div>
+    <button id="refresh" type="button" class="secondary">刷新状态</button>
+  </header>
+  <div id="global-error" class="notice error" role="alert" hidden></div>
+  <section aria-label="当前运行状态" class="summary" id="summary" aria-busy="true"><p role="status">正在读取插件状态…</p></section>
+  <p class="notice">本页只做诊断。修改规则请使用 AstrBot 的「插件 → SYLUlive → 配置」；本人校园授权仍由用户在官网完成。</p>
+  <div class="workspace">
+    <section class="panel target">
+      <div class="section-title"><h2>预览一个会话</h2><span class="badge neutral">只读模拟</span></div>
+      <p class="muted">输入真实消息对应的账号与群。预览不会绑定、查询个人资料或发出消息。</p>
+      <form id="preview-form">
+        <label for="platform">QQ 平台实例</label><input id="platform" name="platform" required maxlength="100" pattern="[A-Za-z0-9_.-]+" placeholder="例如 snowluma" autocomplete="off">
+        <label for="bot">机器人 QQ</label><input id="bot" name="bot" required inputmode="numeric" pattern="[1-9][0-9]{4,14}" maxlength="15" placeholder="当前机器人登录的 QQ" autocomplete="off">
+        <label for="sender">发起人 QQ</label><input id="sender" name="sender" required inputmode="numeric" pattern="[1-9][0-9]{4,14}" maxlength="15" placeholder="实际发送命令的人" autocomplete="off">
+        <label for="group">群号 <span class="optional">私聊留空</span></label><input id="group" name="group" inputmode="numeric" pattern="[1-9][0-9]{4,14}" maxlength="15" placeholder="留空预览私聊" autocomplete="off">
+        <label class="check" for="isolated"><input type="checkbox" id="isolated">群会话按成员隔离</label>
+        <p class="hint">与 AstrBot 的会话隔离设置保持一致；管理员名单会按这个会话的配置档判断。</p>
+        <button id="preview-submit" class="primary" type="submit">预览权限</button>
+      </form>
+    </section>
+    <section class="panel results" aria-labelledby="results-heading">
+      <div class="section-title"><h2 id="results-heading">最终判断</h2><span id="result-context" class="muted"></span></div>
+      <p class="muted">入口规则、功能总开关、本人授权和服务端校验分别展示。管理员身份不会代替用户的校园授权。</p>
+      <div id="preview-message" role="status" aria-live="polite" class="empty">填写左侧信息，查看每项功能的允许或拒绝原因。</div>
+      <div id="result-list" aria-busy="false"></div>
+    </section>
+  </div>
+  <footer><p>公开帖子、食堂、图片和地图可按规则匿名查询。成绩、二课和签到只使用发起人自己的账号。</p><p>“本机条件通过”不表示服务端已经批准；本页不会刷新凭据或验证学校密码。</p></footer>
+</main>
+</body>
+</html>

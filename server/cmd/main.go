@@ -2259,6 +2259,7 @@ func main() {
 	studentIdentity.POST("/bind", academicIdentityHandler.BindLocal)
 	studentIdentity.POST("/challenge", identityMutationHandler(academicIdentityHandler.CreateChallenge))
 	studentIdentity.POST("/verify", identityMutationHandler(academicIdentityHandler.Verify))
+	studentIdentity.POST("/verify-session", identityMutationHandler(academicIdentityHandler.VerifySession))
 	studentIdentity.POST("/change/challenge", identityMutationHandler(academicIdentityHandler.CreateChangeChallenge))
 	studentIdentity.POST("/change", identityMutationHandler(academicIdentityHandler.Change))
 	studentIdentity.GET("", academicIdentityHandler.List)

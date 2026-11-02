@@ -591,6 +591,24 @@ class EduCrawler:
 
         return self._parse_student_info_body(resp.text)
 
+    async def verify_session_student_id(self, cookie: str) -> str:
+        """只从当前学校会话取本人学号，不带 su/xh 等客户端可控身份参数。"""
+        if not self.client:
+            raise NetworkError("Client not initialized")
+        if not cookie or len(cookie) > 16384 or any(c in cookie for c in "\r\n\x00"):
+            raise LoginFailedError("学校会话无效", "EDU_IDENTITY_UNVERIFIED")
+        resp = await self.client.get(
+            STUDENT_INFO_URL,
+            params={"gnmkdm": "N100801", "layout": "default"},
+            headers={"Cookie": cookie, "Connection": "close"},
+        )
+        if resp.status_code != 200:
+            raise CookieLapseError("学校会话已失效", "EDU_IDENTITY_UNVERIFIED")
+        actual = self._parse_student_info_body(resp.text).school_verified_student_id
+        if not actual:
+            raise LoginFailedError("学校未返回可核验的学号", "EDU_IDENTITY_UNVERIFIED")
+        return actual
+
     # ============== 课表相关 ==============
 
     async def fetch_courses(

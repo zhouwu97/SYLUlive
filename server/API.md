@@ -124,6 +124,14 @@ AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人�
 
 旧登录、注册和密码找回入口 `/api/login_edu`、`/api/register_with_edu`、`/api/forgot_password` 等已退役并返回 `410`，不应继续接入新客户端。
 
+### 原教务绑定自动核验与补交
+
+`POST /api/student-identity/verify-session` 沿用原绑定入口，没有新增学生绑定入口。需 JWT、有效协议、正常账号和 `X-Expected-App-User`（提供时必须匹配）；原有身份写入开关继续生效。请求仅接受 `provider_id`、`student_id` 和 `school_session: {cookies: ["NAME=value"], session_path_prefix?: "/(S(...))"}`，总大小不超过 24 KiB。配置必须是本人、匹配学号的 active 记录；不接受客户端 verified、网页、资料正文或 URL。
+
+服务端临时使用会话访问固定学校本人资料入口。本科通过带内部服务令牌的 Python `/api/edu/verify_session` 读取，不附带调用方提供的 `su`／学号查询参数；学校页面三个身份字段必须一致。研究生沿用固定学校资料协议。核对学号后事务内重新检查账号、协议、配置版本和90秒有效尝试；然后幂等写入 `school_profile/session-profile-v1` 可信绑定。学校会话、密码、完整学籍资料不落库、不返回、不记录日志。每账号10分钟最多5次、每IP最多20次尝试，超限429并建议600秒后重试。
+
+配置变化或解绑返回409，学校拒绝／身份不一致不授予资格，暂不可用返回503；客户端仅对临时故障退避重试。解绑原子撤销匹配身份、配置及在途尝试。旧 `/student-identity/bind` 仍只是低保证声明，不能作为学生权限依据。
+
 ### Active：已授权二课快照
 
 以下接口均需 JWT。它们只接受手机已解析的结构化二课数据，用于校园 Agent 的后续分析；服务端拒绝密码、Cookie、会话、设备密钥和原始 HTML，客户端传入的哈希不会被信任。

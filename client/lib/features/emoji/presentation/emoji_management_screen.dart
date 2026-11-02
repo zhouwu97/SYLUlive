@@ -12,16 +12,20 @@ import '../../../services/emoji_favorite_service.dart';
 import '../../../theme/app_radius.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/emoji/sticker_catalog.dart';
+import '../../../widgets/app_bottom_sheet.dart';
 import '../application/emoji_pack_installer.dart';
 import '../application/emoji_recent_manager.dart';
 import '../data/emoji_pack_local_store.dart';
 import '../data/emoji_pack_runtime.dart';
-import '../domain/emoji_pack.dart';
 import '../domain/emoji_pack_installation.dart';
 import 'emoji_download_screen.dart';
+import 'emoji_import_screen.dart';
+import 'emoji_submissions_screen.dart';
 import 'emoji_ui.dart';
 
 enum _PackAction { preview, up, down, rollback, remove }
+
+enum _AddAction { images, archive, catalog, submissions }
 
 class EmojiManagementScreen extends StatefulWidget {
   const EmojiManagementScreen(
@@ -234,6 +238,64 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
     }
   }
 
+  Future<void> _add() async {
+    final epoch = _accountEpoch;
+    final action = await showAppModalBottomSheet<_AddAction>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              ListTile(
+                  leading: const Icon(Icons.add_photo_alternate_outlined),
+                  title: const Text('从相册添加'),
+                  subtitle: const Text('多选图片，自动整理成表情包'),
+                  onTap: () => Navigator.pop(context, _AddAction.images)),
+              ListTile(
+                  leading: const Icon(Icons.folder_open_outlined),
+                  title: const Text('导入表情包文件'),
+                  subtitle: const Text('支持图片 ZIP 和 .sylupack'),
+                  onTap: () => Navigator.pop(context, _AddAction.archive)),
+              ListTile(
+                  leading: const Icon(Icons.collections_outlined),
+                  title: const Text('浏览表情库'),
+                  subtitle: const Text('官方表情与审核通过的校园分享'),
+                  onTap: () => Navigator.pop(context, _AddAction.catalog)),
+              ListTile(
+                  leading: const Icon(Icons.cloud_upload_outlined),
+                  title: const Text('我的投稿'),
+                  subtitle: const Text('上传分享、查看审核结果'),
+                  onTap: () => Navigator.pop(context, _AddAction.submissions)),
+            ]))));
+    if (!mounted || !_current(epoch) || action == null || _store == null) {
+      return;
+    }
+    if (action == _AddAction.catalog) return _openDownloads();
+    if (action == _AddAction.submissions) {
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => EmojiSubmissionsScreen(store: _store)));
+      return;
+    }
+    final result = await Navigator.of(context).push<String>(MaterialPageRoute(
+        builder: (_) => EmojiImportScreen(
+            store: _store!,
+            recentManager: _recentManager,
+            initialSource: action == _AddAction.images
+                ? EmojiImportSource.images
+                : EmojiImportSource.archive)));
+    if (!_current(epoch)) return;
+    await _load();
+    if (mounted && _current(epoch) && result != null) {
+      if (widget.returnToPicker) {
+        Navigator.of(context).pop(result);
+      } else {
+        _feedback('表情包已导入，可以在表情面板使用');
+      }
+    }
+  }
+
   Future<void> _openDetail(EmojiPackInstallation pack) async {
     final store = _store;
     if (store == null) return;
@@ -243,7 +305,7 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
               pack: pack,
               store: store,
               recentManager: _recentManager,
-              onRepair: pack.trustLevel == EmojiPackTrustLevel.serverOfficial
+              onRepair: pack.isCatalogPack
                   ? () {
                       if (!_current(epoch)) return;
                       Navigator.of(context).pop();
@@ -350,8 +412,7 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
                   ? null
                   : () => _move(pack, 1),
               icon: const Icon(Icons.arrow_downward, size: 20)),
-        ] else if (damaged &&
-            pack.trustLevel == EmojiPackTrustLevel.serverOfficial)
+        ] else if (damaged && pack.isCatalogPack)
           TextButton(
               onPressed:
                   _busy ? null : () => _openDownloads(packId: pack.packId),
@@ -754,7 +815,7 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
       bodyHasCardSurfaces: true,
       actions: [
         TextButton(
-            onPressed: _store == null || _busy ? null : () => _openDownloads(),
+            onPressed: _store == null || _busy ? null : _add,
             child: const Text('添加'))
       ],
       body: RefreshIndicator(
@@ -814,9 +875,9 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
                         else if (packs?.isEmpty == true)
                           EmojiStateView(
                               title: '暂无已安装的表情包',
-                              detail: '内置表情可直接使用，也可以添加官方表情。',
+                              detail: '从相册、ZIP 文件或表情库添加喜欢的表情。',
                               action: OutlinedButton.icon(
-                                  onPressed: _store == null ? null : () => _openDownloads(),
+                                  onPressed: _store == null ? null : _add,
                                   icon: const Icon(Icons.add),
                                   label: const Text('添加表情包')))
                         else if (packs != null) ...[

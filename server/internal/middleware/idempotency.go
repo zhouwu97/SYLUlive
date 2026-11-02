@@ -108,8 +108,10 @@ func IdempotencyMiddlewareWithJWT(db *gorm.DB, jwtSecret string) gin.HandlerFunc
 
 func idempotencyMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 教务配置由业务事务持久化幂等结果，不能叠加有时限的全局响应缓存。
-		if strings.HasPrefix(c.Request.URL.Path, "/api/academic-account-configs/") {
+		// 教务配置和表情投稿由业务事务持久化幂等结果，不能叠加全局响应缓存。
+		// 表情 multipart 也不能先经过仅供普通写请求使用的 1 MiB 请求体门禁。
+		if strings.HasPrefix(c.Request.URL.Path, "/api/academic-account-configs/") ||
+			(c.Request.Method == http.MethodPost && c.Request.URL.Path == "/api/emoji/submissions") {
 			c.Next()
 			return
 		}

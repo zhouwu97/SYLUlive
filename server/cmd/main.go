@@ -288,6 +288,8 @@ func main() {
 		&models.ImageVariant{},
 		&models.UserEmojiAsset{},
 		&models.UserEmojiFavorite{},
+		&models.CommunityEmojiPack{},
+		&models.CommunityEmojiPackAsset{},
 
 		&models.ExamPaper{},
 
@@ -740,6 +742,7 @@ func main() {
 		1<<20,
 		middleware.BodyLimitRule{Prefix: "/api/upload", Limit: cfg.MaxFileSize + 2<<20},
 		middleware.BodyLimitRule{Prefix: "/api/upload_multiple", Limit: 9*cfg.MaxFileSize + 5<<20},
+		middleware.BodyLimitRule{Prefix: "/api/emoji/submissions", Limit: services.EmojiPackMaxUploadBytes},
 		middleware.BodyLimitRule{Prefix: "/api/exam-papers", Limit: services.ExamPaperMaxRequestBodySize},
 		middleware.BodyLimitRule{Prefix: "/api/admin/ai/knowledge/import", Limit: 9 << 20},
 		middleware.BodyLimitRule{Prefix: "/api/super/app-releases", Limit: cfg.AppReleaseMaxSize + 2<<20},
@@ -2001,11 +2004,8 @@ func main() {
 	}
 
 	// 账号级自定义表情收藏路由。
-	emojiPacks := r.Group("/api/emoji/packs")
-	emojiPacks.GET("", handlers.ListEmojiPacks)
-	emojiPacks.GET("/:id", handlers.GetEmojiPack)
-	emojiPacks.GET("/:id/manifest", handlers.GetEmojiPackManifest)
-	emojiPacks.GET("/:id/assets/:assetId", handlers.GetEmojiPackAsset)
+	emojiPackService := registerEmojiPackRoutes(r, db, cfg.UploadDir, cfg.JWTSecret)
+	go emojiPackService.Maintain(appCtx)
 
 	emojiFavorites := r.Group("/api/emoji/favorites")
 	emojiFavorites.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))

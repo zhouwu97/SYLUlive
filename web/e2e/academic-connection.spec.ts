@@ -29,7 +29,7 @@ test('连接一次即可绑定并读取课表，不重复确认身份', async ({
   await page.getByRole('button',{name:'连接并读取资料'}).click();
   await expect(page.getByRole('button',{name:'连接测试课程 测试教室'})).toBeVisible();
   expect(binding).toEqual({provider_id:'sylu_undergraduate',student_id:'2403000001',verification_method:'local_academic_login'});
-  await page.getByRole('link',{name:'校园工作台',exact:true}).click();
+  await page.getByRole('link',{name:'校园首页',exact:true}).click();
   await expect(page.locator('.today-card h2')).toHaveText('连接测试课程');
   await expect(page.locator('.today-time')).toHaveText('1');
   await expect(page.locator('.today-card')).toContainText('测试教室');

@@ -28,11 +28,11 @@
   --brand-soft: #22483f;
 }
 .social-shell .topbar { background: var(--surface); border-bottom: 1px solid var(--line); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
-.social-shell .topbar-inner { max-width: 1360px; padding-inline: 24px; gap: 24px; }
+.social-shell .topbar-inner { max-width: 1480px; padding-inline: 24px; gap: 24px; }
 .social-shell .topbar .brand { width: 208px; }
 .social-shell .crumb { display: none; }
 .social-shell .search-trigger { max-width: 480px; border-radius: 12px; background: var(--surface-2); border-color: var(--line); color: var(--text-2); }
-.social-shell .frame { max-width: 1360px; padding-inline: 24px; grid-template-columns: var(--sidebar) minmax(0, 1fr); gap: 32px; }
+.social-shell .frame { max-width: 1480px; padding-inline: 24px; grid-template-columns: var(--sidebar) minmax(0, 1fr); gap: 32px; }
 .social-shell .sidebar { position: sticky; top: var(--topbar); bottom: auto; align-self: start; width: var(--sidebar); height: calc(100dvh - var(--topbar)); padding: 16px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
 .social-shell .nav-section { margin-block: 8px 20px; }
 .social-shell .nav-label { color: var(--text-3); padding: 4px 12px 8px; font-weight: 500; letter-spacing: 0; }
@@ -46,7 +46,9 @@
 .social-shell .sidebar-scroll::-webkit-scrollbar { width: 4px; }
 .social-shell .sidebar-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 .social-shell .workspace { padding: 24px 0 40px; background: transparent; }
-.social-shell .workspace-grid { max-width: 1080px; gap: 24px; }
+.social-shell .workspace-grid { max-width: none; gap: 24px; }
+.social-shell .workspace-grid:has(.community-page) { max-width: none; }
+.social-shell .community-page { max-width: none; margin-inline: 0; }
 .social-shell .workspace-grid:not(.no-rail) { grid-template-columns: minmax(0, 1fr) var(--rail); }
 .social-shell .right-rail { display: block; }
 .social-shell .panel, .social-shell .rail-card, .social-shell .market-card { background: var(--surface); border-color: var(--line); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }

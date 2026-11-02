@@ -237,7 +237,7 @@ async def test_browse_uses_native_agent_with_no_private_context_and_hard_tool_bu
         assert kwargs["max_steps"] == 4 and kwargs["stream"] is False
         assert "blocked-secret" not in kwargs["prompt"]
         tools = kwargs["tools"]
-        assert [t.name for t in tools.tools] == ["read_public_post"]
+        assert [t.name for t in tools.tools] == ["read_public_post", "read_public_replies"]
         assert tools.get_tool("binding") is None and tools.get_tool("send_message_to_user") is None
         tool = tools.tools[0]
         assert "error" in json.loads(await tool.handler(kwargs["event"], post_id=2))
@@ -333,7 +333,7 @@ async def test_actual_astrbot_tool_loop_executes_reader_and_returns_to_provider(
         async def text_chat(self, **kwargs):
             self.calls.append(kwargs)
             if len(self.calls) == 1:
-                assert [t.name for t in kwargs["func_tool"].tools] == ["read_public_post"]
+                assert [t.name for t in kwargs["func_tool"].tools] == ["read_public_post", "read_public_replies"]
                 return LLMResponse(role="assistant", tools_call_name=["read_public_post"],
                                    tools_call_args=[{"post_id": 1}], tools_call_ids=["synthetic-call"])
             assert "独立游戏交流会" in str(kwargs["contexts"])

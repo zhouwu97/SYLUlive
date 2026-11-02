@@ -23,6 +23,38 @@ class Store:
         self.value = None
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("revoke", [False, True])
+async def test_bot_upload_is_real_multipart_and_inflight_revoke_cannot_commit_result(revoke):
+    requests = []
+    client = None
+    async def respond(request):
+        requests.append(request)
+        assert request.url.path == "/api/integrations/v1/bot/media"
+        assert request.headers["Authorization"] == "Bearer sa_synthetic"
+        assert "multipart/form-data; boundary=" in request.headers["content-type"]
+        body = await request.aread()
+        assert b'name="file"' in body and b"synthetic-approved-bytes" in body
+        assert b"student_id" not in body and b"password" not in body
+        if revoke:
+            client.clear()
+        return httpx.Response(200, json={"file_id": 71})
+    client = BusinessClient("https://fixture.invalid", Store(), transport=httpx.MockTransport(respond))
+    client._save(tokens())
+    try:
+        operation = client.call("POST", "/bot/media", files={"file": ("approved.png", b"synthetic-approved-bytes", "image/png")})
+        if revoke:
+            with pytest.raises(IntegrationProblem, match="authorization_changed"):
+                await operation
+            assert client.tokens is None
+        else:
+            assert await operation == {"file_id": 71}
+            assert client.tokens["scope"] == "community:read", "upload cannot invent bot scopes"
+        assert len(requests) == 1
+    finally:
+        await client.close()
+
+
 def tokens():
     return {
         "access_token": "sa_synthetic",

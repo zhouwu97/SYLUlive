@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 from .permissions import CAPABILITY_LABELS
 from .permission_policy import PolicyError, save, snapshot, validate
 
-VERSION = "0.4.3"
+VERSION = "0.4.4"
 SCOPES = {"checkin": "checkin:write", "grades": "academic:grades:read",
           "erke": "academic:erke:read", "proposals": "community:propose",
           "private_review": "profile:read_minimal"}

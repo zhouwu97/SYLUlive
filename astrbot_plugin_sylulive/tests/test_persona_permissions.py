@@ -168,6 +168,7 @@ async def test_binding_requests_bot_comment_scope_only_for_creator(sender,reques
     plugin,event,_=enabled(group="",sender=sender)
     plugin.origin="https://fixture.invalid"
     plugin.config["community_auto_comment"]=True
+    plugin.config["community_auto_post"]=True
     plugin.track_binding_result=lambda *args:"合成通知"
     client=SimpleNamespace(begin=AsyncMock(return_value={"user_code":"SYNTHETIC","verification_uri":"https://fixture.invalid/web/connected-apps?user_code=SYNTHETIC"}))
     if sender=="owner":plugin.client=client
@@ -175,3 +176,4 @@ async def test_binding_requests_bot_comment_scope_only_for_creator(sender,reques
     replies=[r async for r in plugin.connect(event)]
     assert replies and client.begin.await_count==1
     assert client.begin.await_args.kwargs["bot_reply"] is request_bot_scope
+    assert client.begin.await_args.kwargs["bot_post"] is request_bot_scope

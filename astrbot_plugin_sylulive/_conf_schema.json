@@ -273,6 +273,11 @@
     "type": "bool",
     "default": false
   },
+  "community_auto_post": {
+    "description": "允许后台以独立 AI 账号自动发帖；需服务端开关、官网启用 AI 账号及本人新授予 community:bot_post。每轮评论/发帖合计最多尝试一次，每24小时最多1帖；配图仅限插件数据目录 approved-public-media 中经管理员审核且有许可的公开素材。结果不明不重发；不会使用私人聊天或任意本地文件",
+    "type": "bool",
+    "default": false
+  },
   "community_memory_mode": {
     "description": "检索模式：vector_rerank 使用 AstrBot 现有向量与重排 Provider（推荐）；lexical 为无需模型的 BM25 离线基线。向量模式缺配置或失败明确报错，不静默降级",
     "type": "string",

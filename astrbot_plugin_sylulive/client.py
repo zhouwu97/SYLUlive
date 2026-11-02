@@ -96,17 +96,19 @@ class BusinessClient:
             raise IntegrationProblem(code)
         return body
 
-    async def begin(self, installation_id, name, proposals, *, checkin=False, bot_reply=False, personal=False):
+    async def begin(self, installation_id, name, proposals, *, checkin=False, bot_reply=False, bot_post=False, personal=False):
         async with self.lock:
             if self.pending:
                 raise IntegrationProblem("authorization_pending" if self.pending["deadline"] > time.monotonic() else "authorization_expired")
             if self.tokens:
                 raise IntegrationProblem("already_connected")
             scope = "profile:read_minimal content:read_own_public actions:read_own"
-            if proposals or bot_reply:
+            if proposals or bot_reply or bot_post:
                 scope += " community:read community:propose"
             if bot_reply:
                 scope += " community:bot_reply"
+            if bot_post:
+                scope += " community:bot_post"
             if checkin:
                 scope += " checkin:write"
             if personal:
@@ -212,7 +214,7 @@ class BusinessClient:
                 raise IntegrationProblem("reconnect_required") from None
             return self.tokens["access_token"]
 
-    async def call(self, method, path, *, params=None, payload=None):
+    async def call(self, method, path, *, params=None, payload=None, files=None):
         generation = self.generation
         access = await self._access()
         if generation != self.generation:
@@ -223,7 +225,7 @@ class BusinessClient:
                 "/api/integrations/v1" + path,
                 headers={"Authorization": "Bearer " + access},
                 params=params,
-                json=payload,
+                **({"files": files} if files is not None else {"json": payload}),
             )
         except IntegrationProblem as error:
             async with self.lock:

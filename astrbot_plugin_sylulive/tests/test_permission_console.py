@@ -96,7 +96,7 @@ async def test_real_native_dashboard_route_requires_login_and_returns_metadata_o
         assert (await h.post(path,json=target|{"scope":"*"})).status_code==422
         assert (await h.post(path,content=b"x"*262145)).status_code==413
         status=await h.get("/api/plug/astrbot_plugin_sylulive/permissions/status")
-        assert status.status_code==200 and status.json()["version"]=="0.4.3"
+        assert status.status_code==200 and status.json()["version"]=="0.4.4"
         assert "runtime" not in status.json() and "persona" not in status.json()
         plugin._console_active=False
         assert (await h.post(path,json=target)).status_code==503

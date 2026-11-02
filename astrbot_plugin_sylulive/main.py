@@ -236,7 +236,7 @@ def read_kinds(path):
     return set()
 
 
-@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.4.3")
+@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.4.4")
 class SYLUlivePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -275,9 +275,10 @@ class SYLUlivePlugin(Star):
 
         self.private_reviews = PrivateReview(self, sp, self.send_review_message)
         self.public_agent = PublicAgent(config, self.client.public_call,
-                                        PublicMemory(directory / (identity + ".public-memory.sqlite3")), context=context)
+                                        PublicMemory(directory / (identity + ".public-memory.sqlite3")), context=context, image_reader=self.client.public_image)
         self.creator_memory = CreatorMemory(directory / (identity + ".creator-memory.sqlite3"), identity)
-        self.public_agent.publisher = CommunityPublisher(self.public_agent, self.client)
+        from .approved_media import ApprovedMedia
+        self.public_agent.publisher = CommunityPublisher(self.public_agent, self.client, media=ApprovedMedia(directory / "approved-public-media"))
         from .permission_console import register_console
         if callable(getattr(context, "register_web_api", None)):
             register_console(context, self)
@@ -315,7 +316,8 @@ class SYLUlivePlugin(Star):
             else:
                 private_mode = '本机加密' if self.creator_memory.persistent else '仅进程内存'
                 comment_mode = '已有专用授权，仍受服务端开关与机器人状态限制' if agent.publisher.authorized() else '尚无专用评论授权或本机未开启'
-                yield event.plain_result(f"公开 Agent：{'启用' if agent.enabled() else '关闭'}；状态 {agent.state}。私聊记忆：{private_mode}；自动评论：{comment_mode}。命令：/sylu-agent browse | pause | resume | forget | forget-private。自动浏览、模型和版块范围请在插件设置配置。")
+                post_mode = '已有专用授权，仍受服务端开关、AI账号及配图审核限制' if agent.publisher.posts_authorized() else '尚无专用发帖授权或本机未开启'
+                yield event.plain_result(f"公开 Agent：{'启用' if agent.enabled() else '关闭'}；状态 {agent.state}。私聊记忆：{private_mode}；自动评论：{comment_mode}；自动发帖：{post_mode}。命令：/sylu-agent browse | pause | resume | forget | forget-private。自动浏览、模型和版块范围请在插件设置配置。")
         finally:
             event.stop_event()
 
@@ -1173,6 +1175,7 @@ class SYLUlivePlugin(Star):
                     # 后台评论器只使用创建者凭据，普通用户绑定不请求无关的自主评论权限。
                     bot_reply=bool(self.config.get("community_auto_comment", False))
                     and str(event.get_sender_id()) == self.owner and self.platform_allowed(event),
+                    bot_post=bool(self.public_agent_enabled() and self.allowed(event) and self.config.get("community_auto_post", False)),
                     personal=bool(self.config.get("allow_personal_queries", False)),
                 )
                 from .binding_delivery import deliver_binding_link
@@ -1317,7 +1320,9 @@ class SYLUlivePlugin(Star):
                 decision = self.permission(event, "public_read")
                 if not decision.allowed:
                     return json.dumps({"error": "permission_denied", "message": decision.reason_text}, ensure_ascii=False)
-                return await self.agent_public_tool(event, path, params)
+                raw = await self.agent_public_tool(event, path, params)
+                self.record_read(event, path, json.loads(raw))
+                return raw
             if not path.startswith("/actions") or not self.feature_available(event, "proposals"):
                 return '{"error":"public_scope_refused"}'
         action = "public_read" if method == "GET" and public_read_path(path) else ("proposals" if path.startswith("/actions") else "status")
@@ -1341,35 +1346,8 @@ class SYLUlivePlugin(Star):
                 result = await client.call(
                     method, path, params=params, payload=payload
                 )
-            if method == "GET" and "data" in result:
-                completed = event.get_extra("sylulive_completed_reads", set())
-                event.set_extra(
-                    "sylulive_completed_reads", completed | read_kinds(path)
-                )
-                if re.fullmatch(r"/community/posts/[1-9]\d*", path) and isinstance(
-                    result["data"], dict
-                ):
-                    post_id = result["data"].get("post_id")
-                    if (
-                        isinstance(post_id, int)
-                        and post_id > 0
-                        and getattr(event, "unified_msg_origin", None)
-                    ):
-                        if not hasattr(self, "recent_posts"):
-                            self.recent_posts = {}
-                        self.recent_posts[
-                            (
-                                event.unified_msg_origin,
-                                event.get_extra("sylulive_conversation_id", ""),
-                            )
-                        ] = {"post_id": post_id, "read_at": time.monotonic()}
-                if read_kinds(path) and getattr(event, "trace", None):
-                    event.trace.record(
-                        "sylulive_read_complete",
-                        path=path,
-                        reader_instance=str(id(self)),
-                        conversation_id=event.get_extra("sylulive_conversation_id", ""),
-                    )
+            if method == "GET":
+                self.record_read(event, path, result)
             return json.dumps(result, ensure_ascii=False)
         except IntegrationProblem as error:
             if method == "GET" and read_kinds(path):
@@ -1379,8 +1357,41 @@ class SYLUlivePlugin(Star):
                 ensure_ascii=False,
             )
 
+    def record_read(self, event, path, result):
+        if not isinstance(result, dict) or "data" not in result or "error" in result:
+            return
+        completed = event.get_extra("sylulive_completed_reads", set())
+        event.set_extra(
+            "sylulive_completed_reads", completed | read_kinds(path)
+        )
+        if re.fullmatch(r"/community/posts/[1-9]\d*", path) and isinstance(
+            result["data"], dict
+        ):
+            post_id = result["data"].get("post_id")
+            if (
+                isinstance(post_id, int)
+                and post_id > 0
+                and getattr(event, "unified_msg_origin", None)
+            ):
+                if not hasattr(self, "recent_posts"):
+                    self.recent_posts = {}
+                self.recent_posts[
+                    (
+                        event.unified_msg_origin,
+                        event.get_extra("sylulive_conversation_id", ""),
+                    )
+                ] = {"post_id": post_id, "read_at": time.monotonic()}
+        if read_kinds(path) and getattr(event, "trace", None):
+            event.trace.record(
+                "sylulive_read_complete",
+                path=path,
+                reader_instance=str(id(self)),
+                conversation_id=event.get_extra("sylulive_conversation_id", ""),
+            )
+
     async def agent_public_tool(self, event, path, params):
-        from .public_agent import BrowsePolicy, project
+        from .public_agent import BrowsePolicy
+        from .community_view import data_object, page_cursor, presentation
 
         agent = self.public_agent
         stamp = agent.stamp()
@@ -1388,23 +1399,60 @@ class SYLUlivePlugin(Star):
             agent.check(stamp)
             policy = BrowsePolicy(self.config)
             if path == "/community/posts":
-                result = await self.client.public_call("/api/integrations/v1/public" + path, params=params)
+                raw = await self.client.public_call("/api/integrations/v1/public" + path, params=params)
                 agent.check(stamp)
-                data = result.get("data", {})
-                result = {"data": {"items": [project(p) for p in data.get("items", []) if policy.permits(p)],
-                                   "next_after_id": data.get("next_after_id", 0), "next_cursor": data.get("next_cursor", "")}}
+                data = data_object(raw)
+                items = data.get("items")
+                cursor = data.get("next_cursor", "")
+                if not isinstance(items, list) or len(items) > 20 or not isinstance(cursor, str) or len(cursor) > 2048:
+                    raise IntegrationProblem("invalid_public_response")
+                result = {"data": {"items": [presentation(p) for p in items if policy.permits(p)],
+                                   "next_after_id": page_cursor(data), "next_cursor": cursor}}
             elif re.fullmatch(r"/community/posts/[1-9]\d*", path):
-                result = {"data": await agent.read_post(int(path.rsplit("/", 1)[1]), stamp)}
+                result = {"data": await agent.read_post(int(path.rsplit("/", 1)[1]), stamp, for_chat=True)}
             elif re.fullmatch(r"/community/posts/[1-9]\d*/replies", path):
                 ident = int(path.split("/")[-2])
-                await agent.read_post(ident, stamp)
+                before = await agent.read_post(ident, stamp)
                 raw = await self.client.public_call("/api/integrations/v1/public" + path, params=params)
-                # 评论返回后再次复核父帖，避免读取期间的隐藏或范围变化。
-                await agent.read_post(ident, stamp)
-                data = raw.get("data", {})
-                result = {"data": {"items": [{k: p[k] for k in ("reply_id", "post_id", "content", "source_version", "truncated") if k in p}
-                                             for p in data.get("items", []) if p.get("status") == "normal" and p.get("post_id") == ident],
-                                   "next_after_id": data.get("next_after_id", 0)}}
+                current = await agent.read_post(ident, stamp)
+                if before["source_version"] != current["source_version"]:
+                    raise IntegrationProblem("source_changed")
+                data = data_object(raw)
+                items = data.get("items")
+                if not isinstance(items, list) or len(items) > 20:
+                    raise IntegrationProblem("invalid_public_response")
+                result = {"data": {"items": [presentation(p, reply=True, post_id=ident) for p in items],
+                                   "next_after_id": page_cursor(data)}}
+            elif re.fullmatch(r"/community/replies/[1-9]\d*/context", path):
+                raw = await self.client.public_call("/api/integrations/v1/public" + path)
+                agent.check(stamp)
+                data = data_object(raw)
+                original = data.get("post")
+                if not policy.permits(original):
+                    raise IntegrationProblem("public_scope_refused")
+                current = await agent.read_post(original["post_id"], stamp, for_chat=True)
+                if current["source_version"] != original.get("source_version"):
+                    raise IntegrationProblem("source_changed")
+                thread = {"post": current}
+                for key in ("reply", "root_reply", "target_reply"):
+                    if key in data:
+                        thread[key] = presentation(data[key], reply=True, post_id=current["post_id"])
+                if thread.get("reply", {}).get("reply_id") != int(path.split("/")[-2]) or thread["reply"]["status"] != "normal":
+                    raise IntegrationProblem("public_scope_refused")
+                result = {"data": thread}
+            elif path == "/community/stickers":
+                raw = await self.client.public_call("/api/integrations/v1/public" + path, params=params)
+                data = data_object(raw)
+                rows = data.get("items")
+                cursor = data.get("next_after_sticker_id", "")
+                if not isinstance(rows, list) or len(rows) > 20 or not isinstance(cursor, str) or len(cursor) > 100:
+                    raise IntegrationProblem("invalid_public_response")
+                items = []
+                for row in rows:
+                    if not isinstance(row, dict) or not isinstance(row.get("sticker_id"), str) or not row["sticker_id"] or len(row["sticker_id"]) > 100 or not isinstance(row.get("label"), str):
+                        raise IntegrationProblem("invalid_public_response")
+                    items.append({"sticker_id": row["sticker_id"], "label": row["label"][:100]})
+                result = {"data": {"items": items, "next_after_sticker_id": cursor}}
             elif path == "/community/sections":
                 raw = await self.client.public_call("/api/integrations/v1/public" + path)
                 agent.check(stamp)
@@ -1413,7 +1461,6 @@ class SYLUlivePlugin(Star):
             else:
                 return '{"error":"public_scope_refused"}'
             agent.check(stamp)
-            event.set_extra("sylulive_completed_reads", event.get_extra("sylulive_completed_reads", set()) | read_kinds(path))
             return json.dumps(result, ensure_ascii=False)
         except IntegrationProblem:
             event.set_extra("sylulive_read_error", "public_read_failed")
@@ -2190,7 +2237,8 @@ class SYLUlivePlugin(Star):
                             )
                         )
                     except Exception:  # noqa: BLE001 - 第三方投递失败可能已经送达，统一止住自动重发。
-                        return '{"error":"image_delivery_uncertain","message":"图片投递结果不确定，本轮不自动重发。"}'
+                        sent[reference] = "unknown"
+                        return '{"error":"image_delivery_uncertain","delivery_state":"unknown","message":"图片投递结果不确定，本轮不自动重发。"}'
                     sent[reference] = "sent"
             if source == "canteen" or (source == "dish" and target):
                 event.set_extra(

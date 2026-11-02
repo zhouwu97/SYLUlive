@@ -104,6 +104,8 @@ async def test_background_comment_tool_is_fresh_scoped_and_requires_new_consent(
     async def reader(path, **kwargs):
         if path.endswith("/posts"):
             return {"data": {"items": [post()]}}
+        if path.endswith("/replies"):
+            return {"data": {"items": [], "next_after_id": 0}}
         if path.endswith("/stickers"):
             return {"data": {"items": [{"sticker_id": "ok"}]}}
         return {"data": post()}
@@ -111,15 +113,17 @@ async def test_background_comment_tool_is_fresh_scoped_and_requires_new_consent(
     client = SimpleNamespace(tokens={"scope": "community:read"}, call=AsyncMock(return_value={"state":"published", "reply_id": 9}))
     agent.publisher = CommunityPublisher(agent, client)
     async def run_without_consent(**kwargs):
-        assert [tool.name for tool in kwargs["tools"].tools] == ["read_public_post"]
+        assert [tool.name for tool in kwargs["tools"].tools] == ["read_public_post", "read_public_replies"]
         assert kwargs["contexts"] == []
     await agent._browse(SimpleNamespace(tool_loop_agent=run_without_consent), agent.stamp())
     client.tokens["scope"] += " community:bot_reply"
     async def run_with_consent(**kwargs):
-        read, comment = kwargs["tools"].tools
+        read, replies, comment = kwargs["tools"].tools
         assert kwargs["contexts"] == [] and "private" not in kwargs["prompt"].lower()
         assert "read_first" in await comment.handler(kwargs["event"],post_id=1,content="你好")
         await read.handler(kwargs["event"],post_id=1)
+        assert "read_first" in await comment.handler(kwargs["event"],post_id=1,content="先看评论")
+        await replies.handler(kwargs["event"],post_id=1)
         assert json.loads(await comment.handler(kwargs["event"],post_id=1,sticker_id="ok"))["state"] == "published"
         assert "quota" in await comment.handler(kwargs["event"],post_id=1,content="再发一遍")
     await agent._browse(SimpleNamespace(tool_loop_agent=run_with_consent), agent.stamp())

@@ -1,14 +1,18 @@
-"""Authenticated AstrBot page: evaluate policy without querying or changing an account."""
+"""AstrBot permission management. No persona settings or campus-account authorization."""
+import asyncio
+import copy
 import hashlib
 import json
 import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .permissions import CAPABILITY_LABELS
+from .permission_policy import PolicyError, save, snapshot, validate
 
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 SCOPES = {"checkin": "checkin:write", "grades": "academic:grades:read",
           "erke": "academic:erke:read", "proposals": "community:propose",
           "private_review": "profile:read_minimal"}
@@ -130,54 +134,85 @@ def build_info():
         return {"version": VERSION, "state": "source_tree", "fingerprint": None, "source_commit": None, "source_dirty": True}
 
 
-def overview(plugin):
-    config = plugin.config
-    agent = getattr(plugin, "public_agent", None)
-    publisher = getattr(agent, "publisher", None)
-    remaining = max(0, int(agent.next_run - agent.clock())) if agent else None
-    return {"build": build_info(), "platform_id": plugin.platform,
-            "defaults": {key: config.get(key) for key in ("allow_multi_user", "allow_checkin", "allow_personal_queries", "allow_proposals", "public_read_all_sessions", "access_default", "group_personal_delivery", "community_chat_memes_enabled")},
-            "rule_count": len(config.get("access_rules", [])) if isinstance(config.get("access_rules", []), list) else None,
-            "runtime": {"persona": "自定义人格" if config.get("community_persona") else "大肥鱼",
-                        "agent_enabled": config.get("community_agent_enabled", False) is True,
-                        "memory_mode": config.get("community_memory_mode", "lexical"),
-                        "auto_browse": config.get("community_auto_browse", False) is True,
-                        "state": getattr(agent, "state", "not_started"), "next_in_seconds": remaining,
-                        "last_result": getattr(agent, "last_result", None),
-                        "comment_configured": config.get("community_auto_comment", False) is True,
-                        "comment_authorized": publisher.authorized() if publisher else False,
-                        "auto_post_available": False},
-            "notice": "配置修改仍使用 AstrBot 原生插件设置。本页没有保存、授权、解绑、查询个人资料或发布按钮。"}
-
-
 def register_console(context, plugin):
     from astrbot.api.web import request
     from starlette.responses import JSONResponse
     plugin._console_active = True
+    lock = asyncio.Lock()
+
+    def access():
+        if not request.username:
+            return JSONResponse({"error": "dashboard_login_required"}, status_code=401)
+        if not plugin._console_active:
+            return JSONResponse({"error": "plugin_inactive"}, status_code=503)
+        return None
 
     async def status():
-        if not request.username:
-            return JSONResponse({"error": "dashboard_login_required"}, status_code=401)
-        if not plugin._console_active:
-            return JSONResponse({"error": "plugin_inactive"}, status_code=503)
-        return JSONResponse(overview(plugin), headers={"Cache-Control": "no-store"})
+        if (error := access()) is not None:
+            return error
+        return JSONResponse({**snapshot(plugin.config), "version": VERSION, "platform_id": plugin.platform},
+                            headers={"Cache-Control": "no-store"})
 
-    async def evaluate():
-        if not request.username:
-            return JSONResponse({"error": "dashboard_login_required"}, status_code=401)
-        if not plugin._console_active:
-            return JSONResponse({"error": "plugin_inactive"}, status_code=503)
+    async def update():
+        if (error := access()) is not None:
+            return error
+        # Browser writes must come through the authenticated same-origin parent
+        # bridge. A CLI caller without Origin must present its dashboard Bearer.
+        origin = request.headers.get("origin")
+        try:
+            parsed = urlsplit(origin or "")
+            same_origin = (parsed.scheme in {"http", "https"} and parsed.netloc.lower() == request.headers.get("host", "").lower()
+                           and not parsed.username and not parsed.password and parsed.path in ("", "/") and not parsed.query and not parsed.fragment)
+        except ValueError:
+            same_origin = False
+        if (origin and not same_origin) or (not origin and not request.headers.get("authorization", "").startswith("Bearer ")):
+            return JSONResponse({"error": "same_origin_required"}, status_code=403)
+        if (request.content_type or "").split(";", 1)[0].strip().lower() != "application/json":
+            return JSONResponse({"error": "json_required"}, status_code=415)
         try:
             length = request.headers.get("content-length", "0")
-            if not length.isdecimal() or int(length) > 2048:
+            if not length.isdecimal() or int(length) > 262144:
+                return JSONResponse({"error": "request_too_large"}, status_code=413)
+            raw = await request.body()
+            if len(raw) > 262144:
+                return JSONResponse({"error": "request_too_large"}, status_code=413)
+            body = json.loads(raw)
+            async with lock:
+                if (error := access()) is not None:
+                    return error
+                result = save(plugin.config, body)
+        except PolicyError as error:
+            return JSONResponse({"error": error.code}, status_code=error.status, headers={"Cache-Control": "no-store"})
+        except (ValueError, TypeError, UnicodeError):
+            return JSONResponse({"error": "invalid_policy"}, status_code=422)
+        return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+    async def evaluate():
+        if (error := access()) is not None:
+            return error
+        try:
+            length = request.headers.get("content-length", "0")
+            if not length.isdecimal() or int(length) > 262144:
                 return JSONResponse({"error": "request_too_large"}, status_code=413)
             data = await request.body()
-            if len(data) > 2048:
+            if len(data) > 262144:
                 return JSONResponse({"error": "request_too_large"}, status_code=413)
-            result = preview(plugin, json.loads(data))
+            body = json.loads(data)
+            if isinstance(body, dict) and set(body) == {"target", "policy"}:
+                # Evaluate an unsaved draft against the same permission functions,
+                # without changing the active plugin or its account clients.
+                draft = copy.copy(plugin)
+                draft.config = {**plugin.config, **validate(body["policy"])}
+                result = preview(draft, body["target"])
+            else:
+                result = preview(plugin, body)
+        except PolicyError as error:
+            return JSONResponse({"error": error.code}, status_code=error.status)
         except (ValueError, TypeError, UnicodeError):
             return JSONResponse({"error": "invalid_target", "message": "请检查平台 ID、机器人 QQ、发起人 QQ、群号与会话隔离设置。"}, status_code=422)
         return JSONResponse(result, headers={"Cache-Control": "no-store"})
 
-    context.register_web_api("/astrbot_plugin_sylulive/permissions/status", status, ["GET"], "只读权限与构建状态")
+    context.register_web_api("/astrbot_plugin_sylulive/permissions/status", status, ["GET"], "权限配置兼容读取")
+    context.register_web_api("/astrbot_plugin_sylulive/permissions/policy", status, ["GET"], "读取权限配置")
+    context.register_web_api("/astrbot_plugin_sylulive/permissions/policy", update, ["POST"], "保存功能入口权限，不授予校园账号scope")
     context.register_web_api("/astrbot_plugin_sylulive/permissions/preview", evaluate, ["POST"], "只读模拟指定会话权限，不执行业务")

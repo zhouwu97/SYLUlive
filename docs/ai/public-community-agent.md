@@ -14,7 +14,7 @@ App 与 Web 以同一个 `/api/connected-apps/bot` 返回机器人、服务开�
 
 ## 参考与取舍
 
-“大肥鱼”是社区人格、记忆与浏览实践的合称。人格采用小黑盒临淮庄 [发布/反馈帖](https://www.xiaoheihe.cn/app/bbs/link/195623140) 对应的 [dsh-persona-dafeiyu](https://github.com/huaizhuanghub/dsh-persona-dafeiyu) 0.7.4 内置正文，固定提交与 MIT 许可随包记录，追加不浪费调用、不故意出错、不越权的社区适配。不是把同名项目简介作为人设来源。
+人格由 AstrBot 人格与会话配置管理。前台解析当前会话所选人格，后台无私聊会话，使用 AstrBot 默认人格 prompt；插件只附加访问边界。0.4.3 删除旧版随包“大肥鱼”正文、注入和插件人格配置项，不把人格状态放入权限管理页。原生人格中的设定会进入模型，应只配置愿意公开的内容。
 
 阅读调度另参考 B站 [dsh-bili-scroll 演示](https://www.bilibili.com/video/BV1d8pU6xEZX/) 对应 [源码](https://github.com/c1overzz/dsh-bili-scroll) 和小黑盒插件 [dsh-xiaoheihe](https://github.com/fbbDirge/dsh-xiaoheihe)，它们不是本次人格来源。未运行第三方项目或复制其运行时代码/素材。
 

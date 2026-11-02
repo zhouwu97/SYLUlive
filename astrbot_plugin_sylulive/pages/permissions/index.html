@@ -1,43 +1,29 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SYLUlive · 权限与运行状态</title>
-  <link rel="stylesheet" href="./app.css">
-  <script src="./app.js" defer></script>
-</head>
-<body>
-<main>
-  <header class="page-head">
-    <div><span class="eyebrow">SYLUlive 校园助手</span><h1>权限与运行状态</h1><p>看清谁能使用什么，以及还缺哪一步。</p></div>
-    <button id="refresh" type="button" class="secondary">刷新状态</button>
-  </header>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SYLUlive · 权限管理</title><link rel="stylesheet" href="./app.css"><script src="./app.js" defer></script></head>
+<body><main>
+  <header class="page-head"><div><p class="eyebrow">SYLUlive / 插件管理</p><h1>权限管理</h1><p class="muted">设置谁可以在哪些会话中使用校园功能。</p></div><div class="save-actions"><span id="save-state" role="status">正在读取…</span><button id="reload" type="button">重新读取</button><button id="discard" type="button" disabled>放弃修改</button><button id="save" type="button" class="primary" disabled>保存更改</button></div></header>
   <div id="global-error" class="notice error" role="alert" hidden></div>
-  <section aria-label="当前运行状态" class="summary" id="summary" aria-busy="true"><p role="status">正在读取插件状态…</p></section>
-  <p class="notice">本页只做诊断。修改规则请使用 AstrBot 的「插件 → SYLUlive → 配置」；本人校园授权仍由用户在官网完成。</p>
-  <div class="workspace">
-    <section class="panel target">
-      <div class="section-title"><h2>预览一个会话</h2><span class="badge neutral">只读模拟</span></div>
-      <p class="muted">输入真实消息对应的账号与群。预览不会绑定、查询个人资料或发出消息。</p>
-      <form id="preview-form">
-        <label for="platform">QQ 平台实例</label><input id="platform" name="platform" required maxlength="100" pattern="[A-Za-z0-9_.-]+" placeholder="例如 snowluma" autocomplete="off">
-        <label for="bot">机器人 QQ</label><input id="bot" name="bot" required inputmode="numeric" pattern="[1-9][0-9]{4,14}" maxlength="15" placeholder="当前机器人登录的 QQ" autocomplete="off">
-        <label for="sender">发起人 QQ</label><input id="sender" name="sender" required inputmode="numeric" pattern="[1-9][0-9]{4,14}" maxlength="15" placeholder="实际发送命令的人" autocomplete="off">
-        <label for="group">群号 <span class="optional">私聊留空</span></label><input id="group" name="group" inputmode="numeric" pattern="[1-9][0-9]{4,14}" maxlength="15" placeholder="留空预览私聊" autocomplete="off">
-        <label class="check" for="isolated"><input type="checkbox" id="isolated">群会话按成员隔离</label>
-        <p class="hint">与 AstrBot 的会话隔离设置保持一致；管理员名单会按这个会话的配置档判断。</p>
-        <button id="preview-submit" class="primary" type="submit">预览权限</button>
-      </form>
-    </section>
-    <section class="panel results" aria-labelledby="results-heading">
-      <div class="section-title"><h2 id="results-heading">最终判断</h2><span id="result-context" class="muted"></span></div>
-      <p class="muted">入口规则、功能总开关、本人授权和服务端校验分别展示。管理员身份不会代替用户的校园授权。</p>
-      <div id="preview-message" role="status" aria-live="polite" class="empty">填写左侧信息，查看每项功能的允许或拒绝原因。</div>
-      <div id="result-list" aria-busy="false"></div>
-    </section>
-  </div>
-  <footer><p>公开帖子、食堂、图片和地图可按规则匿名查询。成绩、二课和签到只使用发起人自己的账号。</p><p>“本机条件通过”不表示服务端已经批准；本页不会刷新凭据或验证学校密码。</p></footer>
+  <nav class="tabs" aria-label="权限管理分区"><button type="button" data-view="rules" aria-pressed="true" aria-controls="rules-panel">权限规则</button><button type="button" data-view="settings" aria-pressed="false" aria-controls="settings-panel">功能与范围</button><button type="button" data-view="check" aria-pressed="false" aria-controls="check-panel">权限检查</button></nav>
+  <fieldset id="policy-editor" disabled>
+  <section id="rules-panel" class="panel">
+    <div class="section-head"><div><h2>用户与群规则 <span id="rule-count" class="count">0</span></h2><p class="muted">明确禁止优先；允许规则不会替用户授权校园账号。</p></div><button id="add-rule" type="button" class="primary">新增规则</button></div>
+    <div class="toolbar"><label class="search" for="search">搜索规则<input id="search" type="search" placeholder="名称、QQ 或群号"></label><label for="effect-filter">规则类型<select id="effect-filter"><option value="all">全部规则</option><option value="allow">仅允许</option><option value="deny">仅禁止</option></select></label></div>
+    <div id="rules-empty" class="empty" hidden>尚无权限规则。可新增规则，或在“功能与范围”设置默认行为。</div>
+    <table id="rule-table"><thead><tr><th>规则名称与功能</th><th>适用对象</th><th>会话与群范围</th><th>效果</th><th>启用</th><th>操作</th></tr></thead><tbody id="rules-body"></tbody></table>
+  </section>
+  <section id="settings-panel" hidden>
+    <div class="settings-grid">
+      <section class="panel"><h2>公开查询</h2><label class="switch-line"><input type="checkbox" data-setting="public_read_all_sessions"><span>向已接收会话开放公开查询<small>帖子、评论、食堂、地图、图片和资讯；仍遵守禁止规则。</small></span></label><label for="default-groups">默认开放群号</label><textarea id="default-groups" data-setting="public_read_group_ids" rows="3" placeholder="每行一个群号，也可用逗号分隔"></textarea><p class="hint">全会话公开查询关闭时，按此名单开放公开查询；也作为群内账号操作的默认范围。</p></section>
+      <section class="panel"><h2>本人账号功能</h2><label class="switch-line"><input type="checkbox" data-setting="allow_multi_user"><span>允许各用户绑定本人账号<small>每人使用自己的链接与授权，管理员不继承他人身份。</small></span></label><label class="switch-line"><input type="checkbox" data-setting="allow_checkin"><span>每日签到<small>仍需本人授权签到权限，不提供代签或补签。</small></span></label><label class="switch-line"><input type="checkbox" data-setting="allow_personal_queries"><span>成绩与二课查询<small>只查询发起人自己的已同步资料。</small></span></label><label class="switch-line"><input type="checkbox" data-setting="allow_proposals"><span>发帖／评论草稿<small>生成草稿，正式发布仍由本人在官网逐次确认。</small></span></label><label class="switch-line"><input type="checkbox" data-setting="allow_private_review"><span>私有结果审核分享<small>继续受来源权限、本人确认和投递范围限制。</small></span></label></section>
+      <section class="panel"><h2>群内操作与投递</h2><label class="switch-line"><input type="checkbox" data-setting="allow_group_binding"><span>默认允许名单群内绑定、状态与解绑<small>指定用户和群的规则可以覆盖默认；所有操作仍只针对本人。</small></span></label><label for="link-delivery">群内绑定链接投递</label><select id="link-delivery" data-setting="binding_link_delivery"><option value="auto">先私发，失败时回原群</option><option value="private">只私发给发起人</option><option value="group">直接回原群并标注发起人</option></select><label for="personal-delivery">群内个人查询结果</label><select id="personal-delivery" data-setting="group_personal_delivery"><option value="confirm">本人逐次确认后回原群</option><option value="private">只私发本人，群里回执</option><option value="direct">本人明确查询后直接回原群</option></select><p class="hint">直接回群不再二次确认；群成员和聊天记录可能保存这些结果。</p></section>
+      <section class="panel"><h2>未匹配规则</h2><label for="access-default">没有命中允许或禁止规则时</label><select id="access-default" data-setting="access_default"><option value="inherit">沿用功能开关与默认范围</option><option value="deny">严格白名单：全部拒绝</option></select><p class="hint">严格白名单下，请为公开查询、本人绑定、状态和解绑等需要的功能配置允许规则。明确禁止始终优先，不按排列顺序覆盖。</p></section>
+    </div>
+  </section>
+  </fieldset>
+  <section id="check-panel" class="panel" hidden><div class="section-head"><div><h2>检查会话权限</h2><p id="check-mode" class="muted">检查已保存的规则，不执行业务操作。</p></div></div><div class="check-layout"><form id="preview-form"><label for="platform">QQ 平台实例</label><input id="platform" required maxlength="100" pattern="[A-Za-z0-9_.-]+" autocomplete="off"><label for="bot">机器人 QQ</label><input id="bot" required inputmode="numeric" pattern="[1-9][0-9]{4,14}" maxlength="15" autocomplete="off"><label for="sender">发起人 QQ</label><input id="sender" required inputmode="numeric" pattern="[1-9][0-9]{4,14}" maxlength="15" autocomplete="off"><label for="group">群号 <span class="optional">私聊留空</span></label><input id="group" inputmode="numeric" pattern="[1-9][0-9]{4,14}" maxlength="15" autocomplete="off"><label class="check"><input type="checkbox" id="isolated">群会话按成员隔离</label><button id="preview-submit" type="submit" class="primary">检查权限</button></form><div><p id="preview-message" role="status" class="empty">填写会话信息，查看每项功能的判断。</p><div id="result-list"></div></div></div></section>
+  <footer>本页只管理消息入口权限。校园账号授权由用户本人在官网完成，管理员不能代用户授权或取得他人账号。</footer>
 </main>
-</body>
-</html>
+<dialog id="rule-dialog" aria-labelledby="rule-title"><form id="rule-form"><div class="dialog-head"><h2 id="rule-title">新增规则</h2><button id="rule-close" type="button" class="icon" aria-label="关闭规则编辑">×</button></div><div id="rule-error" class="notice error" role="alert" hidden></div><label for="rule-name">规则名称</label><input id="rule-name" required maxlength="200" placeholder="例如：允许指定群查询本人资料"><div class="form-grid"><div><label for="rule-effect">规则效果</label><select id="rule-effect"><option value="allow">允许</option><option value="deny">禁止</option></select></div><div><label for="rule-subjects">适用对象</label><select id="rule-subjects"><option value="everyone">所有发起人</option><option value="admins">AstrBot 原生管理员</option><option value="specified_users">指定用户</option></select></div></div><label for="rule-users">限定用户 QQ</label><textarea id="rule-users" rows="2" placeholder="每行一个 QQ；指定用户时必填"></textarea><p class="hint">其他对象类型下也可填写，用于进一步缩小范围。</p><fieldset class="choices"><legend>会话类型</legend><label class="check"><input type="checkbox" id="chat-private" checked>私聊</label><label class="check"><input type="checkbox" id="chat-group" checked>群聊</label></fieldset><label for="rule-groups">限定群号</label><textarea id="rule-groups" rows="2" placeholder="留空表示不额外限定群号"></textarea><p class="hint">填写群号只匹配群聊，不匹配私聊。</p><fieldset class="choices"><legend>受控功能</legend><div id="rule-capabilities" class="capabilities"></div></fieldset><label class="check"><input type="checkbox" id="rule-enabled" checked>启用这条规则</label><div class="dialog-actions"><button id="rule-cancel" type="button">取消</button><button type="submit" class="primary">应用到待保存修改</button></div></form></dialog>
+<dialog id="confirm-dialog" aria-labelledby="confirm-title"><h2 id="confirm-title">确认操作</h2><p id="confirm-message"></p><div class="dialog-actions"><button id="confirm-cancel" type="button">取消</button><button id="confirm-ok" type="button" class="danger">确认</button></div></dialog>
+</body></html>

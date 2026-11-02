@@ -42,6 +42,44 @@ async def test_explicit_public_denial_reaches_actual_read_tool_not_just_preview(
     assert calls == []
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group", ["", "allowed-group"])
+@pytest.mark.parametrize("community", [True, False])
+async def test_proposal_permission_works_independently_of_public_read_and_persona(group, community):
+    from astrbot.api.provider import ProviderRequest
+    from astrbot.core.agent.tool import FunctionTool, ToolSet
+    plugin, event, _ = enabled(group=group)
+    plugin.config.update(community_agent_enabled=community, allow_proposals=True,
+                         access_rules=[rule("proposals"), rule("public_read", "deny")])
+    if community:
+        plugin.public_agent = SimpleNamespace(stamp=lambda: "synthetic-stamp")
+    lookups = []
+    client = SimpleNamespace(call=AsyncMock(return_value={"action_id": "synthetic-action", "state": "pending"}))
+    def get(sender, bot, **kwargs):
+        lookups.append((sender, bot))
+        return client, "00000000-0000-4000-8000-000000000002"
+    plugin.accounts = SimpleNamespace(get=get)
+    request = ProviderRequest(prompt="为我起草一条评论", func_tool=ToolSet([
+        FunctionTool(name=name, description="synthetic", parameters={}) for name in
+        ["sylulive_draft_reply", "sylulive_get_post", "private_memory"]]))
+    await plugin.present_community_naturally(event, request)
+    tools = {t.name for t in request.func_tool.tools}
+    assert "sylulive_draft_reply" in tools and "sylulive_get_post" not in tools
+    if community or group:
+        assert "private_memory" not in tools
+    result = json.loads(await plugin.draft_reply(event, 811, "synthetic-source-version", content="合成草稿，不正式发布"))
+    assert "error" not in result and client.call.await_count == 1
+    assert lookups and all(row == ("member", "synthetic-bot") for row in lookups)
+    client.call.reset_mock()
+    plugin.config["access_rules"].append(rule("proposals", "deny"))
+    assert json.loads(await plugin.draft_reply(event, 811, "synthetic-source-version", content="被禁止的草稿"))["error"] == "permission_denied"
+    client.call.assert_not_called()
+    plugin.config["access_rules"].pop()
+    plugin.config["allow_proposals"] = False
+    assert "error" in json.loads(await plugin.draft_reply(event, 811, "synthetic-source-version", content="功能关闭"))
+    client.call.assert_not_called()
+
+
 @pytest.mark.parametrize("action", ["grades", "erke"])
 def test_explicit_personal_rules_are_not_disabled_by_persona(action):
     plugin, event, _ = enabled()

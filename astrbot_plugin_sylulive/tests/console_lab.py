@@ -1,25 +1,33 @@
 """Loopback-only UI acceptance lab, synthetic users; never included in plugin ZIP."""
+import copy
+import tempfile
 import importlib
 import time
 from pathlib import Path
-from types import SimpleNamespace
+from astrbot.core.config.astrbot_config import AstrBotConfig
 
 import jwt
 import uvicorn
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from astrbot.dashboard.services.auth_service import DASHBOARD_JWT_COOKIE_NAME
+from astrbot_plugin_sylulive.permission_policy import document
 from test_permission_console import console_fixture, native_app
 
 
 def create_lab():
     plugin, _, _ = console_fixture()
-    plugin.config.update(community_auto_browse=True, community_auto_comment=True,
-                         community_memory_mode="lexical")
-    plugin.public_agent = SimpleNamespace(state="completed", clock=time.monotonic,
-        next_run=time.monotonic()+1800, publisher=SimpleNamespace(authorized=lambda: False),
-        last_result={"at":time.time(),"state":"completed","read_count":3})
+    directory = tempfile.TemporaryDirectory(prefix="sylulive-permissions-lab-")
+    baseline = {**document(plugin.config), **copy.deepcopy(plugin.config)}
+    plugin.config = AstrBotConfig(str(Path(directory.name) / "plugin.json"), default_config=copy.deepcopy(baseline))
     app = native_app(plugin)
+    app.state.lab_directory = directory
+
+    @app.post("/lab/reset")
+    async def reset():
+        plugin.config.save_config(copy.deepcopy(baseline))
+        return {"ok": True}
+
     package = Path(importlib.import_module("astrbot_plugin_sylulive.permission_console").__file__).parent
     page = package / "pages/permissions"
     app.mount("/assets", StaticFiles(directory=page))
@@ -43,4 +51,4 @@ def create_lab():
 
 
 if __name__ == "__main__":
-    uvicorn.run(create_lab(), host="127.0.0.1", port=6197, log_level="warning")
+    uvicorn.run(create_lab(), host="127.0.0.1", port=6198, log_level="warning")

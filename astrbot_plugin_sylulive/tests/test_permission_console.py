@@ -94,10 +94,10 @@ async def test_real_native_dashboard_route_requires_login_and_returns_metadata_o
         assert r.status_code==200 and r.headers["cache-control"]=="no-store"
         assert r.json()["grant"]["scopes"]==["academic:grades:read"]
         assert (await h.post(path,json=target|{"scope":"*"})).status_code==422
-        assert (await h.post(path,content=b"x"*2049)).status_code==413
+        assert (await h.post(path,content=b"x"*262145)).status_code==413
         status=await h.get("/api/plug/astrbot_plugin_sylulive/permissions/status")
-        assert status.status_code==200 and status.json()["build"]["version"]=="0.4.2"
-        assert not status.json()["runtime"]["auto_post_available"]
+        assert status.status_code==200 and status.json()["version"]=="0.4.3"
+        assert "runtime" not in status.json() and "persona" not in status.json()
         plugin._console_active=False
         assert (await h.post(path,json=target)).status_code==503
         expired=jwt.encode({"username":"synthetic-admin","exp":time.time()-60},app.state.jwt_secret,algorithm="HS256")

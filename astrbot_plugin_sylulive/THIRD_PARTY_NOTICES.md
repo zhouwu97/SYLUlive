@@ -1,13 +1,13 @@
-# Third-party persona notice
+# Historical third-party notice
 
-The bundled default persona in `persona_dafeiyu.md` adapts `BUNDLED_DAFEIYU` from huaizhuanghub/dsh-persona-dafeiyu.
+Versions before 0.4.3 bundled a persona adapted from `BUNDLED_DAFEIYU` by huaizhuanghub/dsh-persona-dafeiyu. Version 0.4.3 removes that text and its injection; personas are configured exclusively in AstrBot. The historical attribution and license are retained below.
 
 - Source: https://github.com/huaizhuanghub/dsh-persona-dafeiyu/blob/ec706c08727745871996b1f60de83dec18925a76/lib/index.js
 - Upstream version: 0.7.4
 - Community provenance: https://www.xiaoheihe.cn/app/bbs/link/195623140 (临淮庄)
 - Changes: appended SYLUlive public-community constraints; token/food language is fictional flavor, deliberate errors and extra usage are prohibited, real tool evidence and access boundaries take precedence. No upstream runtime code, assets, user data or DSH dependencies are included.
 
-The original persona is redistributed under the following upstream license:
+The removed adaptation was distributed under the following upstream license:
 
 MIT License
 

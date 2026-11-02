@@ -1,10 +1,10 @@
 name: astrbot_plugin_sylulive
 display_name: SYLUlive 授权助手
-desc: 公开校园社区工具；可选独立人格、公开 RAG 与限额自动浏览，沿用 AstrBot 原生 Agent。普通模式草稿仍需官网确认。
-version: v0.4.2
+desc: 校园业务工具与可视化权限管理；人格沿用 AstrBot 配置，账号数据按本人授权隔离，发布须官网确认。
+version: v0.4.3
 author: SYLUlive
 repo: https://github.com/zhouwu97/SYLUlive
 astrbot_version: '>=4.29.3,<5'
 pages:
   - name: permissions
-    title: 权限与运行状态
+    title: 权限管理

@@ -10,5 +10,5 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: [['list'], ['json', { outputFile: resolve(evidence, 'browser.json') }]],
-  use: { baseURL: 'http://127.0.0.1:6197', headless: true, trace: 'retain-on-failure' },
+  use: { baseURL: 'http://127.0.0.1:6198', headless: true, trace: 'retain-on-failure' },
 });

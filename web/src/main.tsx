@@ -21,6 +21,7 @@ import {Profile} from './profile';
 import "./styles.css";
 import "./social-shell.css";
 import "./web-polish.css";
+import "./palettes.css";
 import { useWorkspaceMotion } from "./shell-motion";
 import {Admin} from "./admin";
 import { Polls } from "./polls";
@@ -157,6 +158,9 @@ function Shell() {
   const [dark, setDark] = useState(
     () => localStorage.getItem("sylulive-theme") === "dark",
   );
+  const [palette, setPalette] = useState(
+    () => localStorage.getItem("sylulive-palette") || "",
+  );
   const ui = useUI(),
     auth = useAuth(),
     location = useLocation(),
@@ -169,6 +173,11 @@ function Shell() {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     localStorage.setItem("sylulive-theme", dark ? "dark" : "light");
   }, [dark]);
+  useEffect(() => {
+    if (palette) document.documentElement.dataset.palette = palette;
+    else delete document.documentElement.dataset.palette;
+    localStorage.setItem("sylulive-palette", palette);
+  }, [palette]);
   useEffect(() => {
     setMenu(false);
   }, [location.pathname]);
@@ -249,6 +258,19 @@ function Shell() {
             <kbd>Ctrl K</kbd>
           </button>
           <div className="top-actions">
+            <label className="palette-switch">
+              <select
+                aria-label="配色方案"
+                value={palette}
+                onChange={(event) => setPalette(event.target.value)}
+              >
+                <option value="">当前</option>
+                <option value="lake">湖青</option>
+                <option value="sky">晴空</option>
+                <option value="leaf">新叶</option>
+                <option value="tide">潮色</option>
+              </select>
+            </label>
             <button
               className="icon-btn"
               aria-label="切换主题"

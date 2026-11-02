@@ -16,6 +16,7 @@ import '../../widgets/settings/settings_tile.dart';
 import '../../widgets/app_cached_image.dart';
 import 'widgets/background_picker_sheet.dart';
 import 'bottom_navigation_settings_screen.dart';
+import 'frosted_glass_settings_screen.dart';
 import '../../widgets/app_card.dart';
 
 /// 界面设置二级页
@@ -398,15 +399,6 @@ class AppearanceSettingsScreen extends StatelessWidget {
                   onChanged: themeProvider.setPredictiveBack,
                 ),
               ),
-            SettingsTile(
-              icon: Icons.blur_on_rounded,
-              title: '毛玻璃卡片',
-              subtitle: '控制卡片和弹层的毛玻璃材质；壁纸模糊和液态玻璃底栏单独设置',
-              trailing: SettingsSwitch(
-                value: themeProvider.frostedGlass,
-                onChanged: themeProvider.setFrostedGlass,
-              ),
-            ),
           ],
         ),
 
@@ -440,18 +432,20 @@ class AppearanceSettingsScreen extends StatelessWidget {
               enabled: customBackgroundActive,
               onChanged: (val) => themeProvider.setBackgroundBlur(val),
             ),
-            SettingsSliderTile(
-              icon: Icons.opacity_rounded,
-              title: '组件卡片不透明度',
-              subtitle: customBackgroundActive
-                  ? '调整自定义背景上方卡片的透明程度'
-                  : '仅在“自定义背景”模式下生效',
-              value: themeProvider.componentOpacity,
-              min: 0.1,
-              max: 1.0,
-              valueLabel: '${(themeProvider.componentOpacity * 100).toInt()}%',
-              enabled: customBackgroundActive,
-              onChanged: (val) => themeProvider.setComponentOpacity(val),
+          ],
+        ),
+
+        SettingsSection(
+          title: '卡片',
+          children: [
+            SettingsTile(
+              icon: Icons.tune_rounded,
+              title: '卡片外观',
+              subtitle: '不透明度 ${(themeProvider.componentOpacity * 100).round()}% · '
+                  '${themeProvider.frostedGlass ? themeProvider.frostedGlassPresetLabel : '毛玻璃关闭'}',
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => const FrostedGlassSettingsScreen(),
+              )),
             ),
           ],
         ),
@@ -463,8 +457,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
             SettingsTile(
               icon: Icons.navigation_outlined,
               title: '底部导航栏',
-              subtitle:
-                  '${themeProvider.bottomNavStyle.label} · 动画 ${(themeProvider.bottomNavAnimationIntensity * 100).round()}%',
+              subtitle: _bottomNavSummary(themeProvider),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => const BottomNavigationSettingsScreen(),
@@ -475,6 +468,13 @@ class AppearanceSettingsScreen extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _bottomNavSummary(ThemeProvider theme) {
+    if (theme.bottomNavAnimationIntensity <= 0) return BottomNavStyle.floating.label;
+    final style = BottomNavStyle.liquidGlass.label;
+    final preset = theme.bottomNavPerformanceMode;
+    return preset == BottomNavPerformanceMode.off ? style : '$style · ${preset.label}';
   }
 
   String _fontSizeLabel(AppFontSizePreset preset) {

@@ -11,7 +11,6 @@ import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
 import '../models/browsing_history_item.dart';
 import '../providers/auth_provider.dart';
-import '../providers/theme_provider.dart';
 import '../repositories/browsing_history_repository.dart';
 import '../platform/contracts/external_navigator.dart';
 import '../services/campus_article_service.dart';
@@ -249,7 +248,8 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     final detail = _detail;
 
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, CampusTheme.pageBackground(context)),
+      backgroundColor:
+          AppPageBackground.color(context, CampusTheme.pageBackground(context)),
       appBar: const AppPageAppBar(title: Text('文章详情')),
       body: ResponsiveContent(
           child: SafeArea(
@@ -280,13 +280,23 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
       return _buildLoadingState(isDark);
     }
 
-    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
+    // 标题、正文和附件共用阅读底面，关闭毛玻璃也不直接叠在壁纸上。
     final article = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildHeader(isDark, detail),
         const SizedBox(height: 20),
-        _buildContentSection(isDark, detail, insideGlass: glass),
+        _buildContentSection(isDark, detail),
+        if (detail.attachments.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          _buildAttachmentSection(isDark, detail.attachments),
+        ],
+        const SizedBox(height: 24),
+        _buildSourceLink(isDark, detail.sourceUrl),
+        if (_errorMessage != null) ...[
+          const SizedBox(height: 16),
+          _buildInlineRetry(isDark),
+        ],
       ],
     );
     return ListView(
@@ -299,25 +309,14 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
         MediaQuery.viewPaddingOf(context).bottom + AppSpacing.section,
       ),
       children: [
-        if (glass)
-          AppCardSurface(
-            key: const ValueKey('campus-article-reading-surface'),
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            decoration: _surfaceDecoration(isDark),
-            child: article,
-          )
-        else
-          article,
-        if (detail.attachments.isNotEmpty) ...[
-          const SizedBox(height: 20),
-          _buildAttachmentSection(isDark, detail.attachments),
-        ],
-        const SizedBox(height: 24),
-        _buildSourceLink(isDark, detail.sourceUrl),
-        if (_errorMessage != null) ...[
-          const SizedBox(height: 16),
-          _buildInlineRetry(isDark),
-        ],
+        AppCardSurface(
+          key: const ValueKey('campus-article-reading-surface'),
+          decoration: BoxDecoration(
+            color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+            borderRadius: BorderRadius.zero,
+          ),
+          child: article,
+        ),
       ],
     );
   }
@@ -496,9 +495,8 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
 
   Widget _buildContentSection(
     bool isDark,
-    CampusArticleDetail detail, {
-    bool insideGlass = false,
-  }) {
+    CampusArticleDetail detail,
+  ) {
     final hasAttachments = detail.attachments.isNotEmpty;
 
     // HTML 是正文的权威展示源，优先保留段落、列表、表格、图片和链接语义。
@@ -534,16 +532,10 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
           ),
         ],
       );
-      return insideGlass
-          ? notice
-          : AppCardSurface(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              decoration: _surfaceDecoration(isDark, softGreen: true),
-              child: notice,
-            );
+      return notice;
     }
 
-    // 仅有纯文本正文时直接展示，避免给整篇文章套一张大卡片。
+    // 纯文本沿用同一阅读底面，保留选择和复制能力。
     if (detail.contentText.trim().isNotEmpty) {
       return Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.md),
@@ -582,13 +574,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
         ),
       ],
     );
-    return insideGlass
-        ? notice
-        : AppCardSurface(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            decoration: _surfaceDecoration(isDark),
-            child: notice,
-          );
+    return notice;
   }
 
   // ── 附件区域 ───────────────────────────────────────────────────
@@ -654,9 +640,8 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     const primary = AppColors.brandPrimary;
     final isUrlSafe = attachment.isUrlSafe;
 
-    return AppCardSurface(
+    return Padding(
       padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: _surfaceDecoration(isDark),
       child: Row(
         children: [
           // 扩展名图标

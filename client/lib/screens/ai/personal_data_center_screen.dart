@@ -240,7 +240,8 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
         AccountCacheNamespace.fingerprint(widget.sourceAccountId);
     return Scaffold(
       appBar: AppBar(title: const Text('个人数据保险箱')),
-      body: FutureBuilder<List<_VaultStatus>>(
+      body: AppContentSurface(
+          child: FutureBuilder<List<_VaultStatus>>(
         future: _statuses,
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
@@ -311,7 +312,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
             ],
           );
         },
-      ),
+      )),
     );
   }
 

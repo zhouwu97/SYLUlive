@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -17,7 +18,7 @@ class _FakeAuthProvider extends Fake
 }
 
 void main() {
-  testWidgets('网格封面贴合毛玻璃卡片边缘，关闭时恢复普通描边', (tester) async {
+  testWidgets('网格封面沿用普通卡片描边占位，切换毛玻璃不移动', (tester) async {
     AppPreferencesStore.setMockInitialValues({});
     final theme = ThemeProvider(loadOnStart: false);
     addTearDown(theme.dispose);
@@ -48,15 +49,16 @@ void main() {
     await tester.pumpAndSettle();
     final card = tester.getRect(find.byType(AppCardSurface));
     final cover = tester.getRect(find.byType(AspectRatio));
-    expect(cover.topLeft, card.topLeft);
-    expect(cover.width, card.width);
+    expect(cover.topLeft, card.topLeft + const Offset(1, 1));
+    expect(cover.width, card.width - 2);
     await tester.tap(find.text('测试商品'));
     expect(taps, 1);
     await theme.setFrostedGlass(false);
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(find.byType(AspectRatio)),
         card.topLeft + const Offset(1, 1));
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(tester.getRect(find.byType(AspectRatio)), cover);
+    expect(activeBackdropFilters(), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

@@ -63,7 +63,11 @@ void main() {
     final provider = ThemeProvider();
 
     expect(provider.predictiveBack, isTrue);
-    expect(provider.frostedGlass, isTrue);
+    expect(provider.frostedGlass, isFalse, reason: '简洁模式不能应用已保存的毛玻璃');
     expect(provider.backgroundBlur, 16);
+    final prefs = await AppPreferencesStore.getInstance();
+    expect(prefs.getBool('frosted_glass_enabled'), isTrue);
+    await provider.setBackgroundImage('morenbeijing.jpeg');
+    expect(provider.frostedGlass, isTrue);
   });
 }

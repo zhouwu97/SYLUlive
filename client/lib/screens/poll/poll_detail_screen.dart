@@ -652,7 +652,8 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
       return Scaffold(
         backgroundColor: customBackground ? Colors.transparent : null,
         body: Center(
-          child: Column(
+          child: AppContentSurface(
+              child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(_pollNotFound ? '投票不存在或已删除' : (_pollError ?? '加载投票失败')),
@@ -664,7 +665,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                     label: const Text('重试')),
               ],
             ],
-          ),
+          )),
         ),
       );
     }
@@ -690,17 +691,28 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                   addRepaintBoundaries: false,
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
                   children: [
-                    if (_pollError != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Text(
-                          _pollError!,
-                          style: const TextStyle(color: Colors.red),
-                        ),
+                    AppCardSurface(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.zero,
                       ),
-                    const Text(
-                      '非官方用户投票，结果仅代表参与用户的选择。',
-                      style: TextStyle(fontSize: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (_pollError != null)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                _pollError!,
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            ),
+                          const Text(
+                            '非官方用户投票，结果仅代表参与用户的选择。',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 8),
                     PollPostCard(
@@ -720,97 +732,113 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                               ),
                     ),
                     const AppCardDivider(height: 24),
-                    Text(
-                      '评论 ${post.replyCount}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
+                    AppCardSurface(
+                      key: const ValueKey('poll-comments-surface'),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.zero,
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    if (_repliesLoading && _replies.isEmpty)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(16),
-                          child: CircularProgressIndicator(),
-                        ),
-                      )
-                    else if (_repliesError != null && _replies.isEmpty)
-                      Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Expanded(
-                            child: Text(
-                              _repliesError!,
-                              style: const TextStyle(color: Colors.red),
+                          Text(
+                            '评论 ${post.replyCount}',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                          TextButton(
-                            onPressed: () => _loadReplies(post.id),
-                            child: const Text('重试'),
-                          ),
-                        ],
-                      ),
-                    if (_repliesRefreshError != null && _replies.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Text(
-                          '刷新失败，仍显示上次评论：$_repliesRefreshError',
-                          style: const TextStyle(color: Colors.red),
-                        ),
-                      ),
-                    if ((!_repliesLoading || _replies.isNotEmpty) &&
-                        _repliesError == null) ...[
-                      PostReplyList(
-                        replyKeys: _replyAnchorKeys,
-                        replies: _replies,
-                        onReply: _openReply,
-                        onAuthorTap: widget.onAuthorTap ??
-                            (id) => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => UserHomeScreen(userId: id),
+                          const SizedBox(height: 8),
+                          if (_repliesLoading && _replies.isEmpty)
+                            const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: CircularProgressIndicator(),
+                              ),
+                            )
+                          else if (_repliesError != null && _replies.isEmpty)
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _repliesError!,
+                                    style: const TextStyle(color: Colors.red),
                                   ),
                                 ),
-                        onMore: (reply) => showReportSheet(
-                          context,
-                          targetId: reply.id,
-                          targetType: 'reply',
-                        ),
-                        onLongPress: (reply) => showReportSheet(
-                          context,
-                          targetId: reply.id,
-                          targetType: 'reply',
-                        ),
-                      ),
-                      if (_repliesHasMore ||
-                          _loadingMoreReplies ||
-                          _repliesLoadMoreError != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4, bottom: 12),
-                          child: Center(
-                            child: TextButton.icon(
-                              onPressed: _loadingMoreReplies
-                                  ? null
-                                  : () => _loadReplies(
-                                        post.id,
-                                        loadMore: true,
-                                      ),
-                              icon: _loadingMoreReplies
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.expand_more, size: 18),
-                              label: Text(
-                                _repliesLoadMoreError ?? '加载更多评论',
+                                TextButton(
+                                  onPressed: () => _loadReplies(post.id),
+                                  child: const Text('重试'),
+                                ),
+                              ],
+                            ),
+                          if (_repliesRefreshError != null &&
+                              _replies.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                '刷新失败，仍显示上次评论：$_repliesRefreshError',
+                                style: const TextStyle(color: Colors.red),
                               ),
                             ),
-                          ),
-                        ),
-                    ],
+                          if ((!_repliesLoading || _replies.isNotEmpty) &&
+                              _repliesError == null) ...[
+                            PostReplyList(
+                              replyKeys: _replyAnchorKeys,
+                              replies: _replies,
+                              onReply: _openReply,
+                              onAuthorTap: widget.onAuthorTap ??
+                                  (id) => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              UserHomeScreen(userId: id),
+                                        ),
+                                      ),
+                              onMore: (reply) => showReportSheet(
+                                context,
+                                targetId: reply.id,
+                                targetType: 'reply',
+                              ),
+                              onLongPress: (reply) => showReportSheet(
+                                context,
+                                targetId: reply.id,
+                                targetType: 'reply',
+                              ),
+                            ),
+                            if (_repliesHasMore ||
+                                _loadingMoreReplies ||
+                                _repliesLoadMoreError != null)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.only(top: 4, bottom: 12),
+                                child: Center(
+                                  child: TextButton.icon(
+                                    onPressed: _loadingMoreReplies
+                                        ? null
+                                        : () => _loadReplies(
+                                              post.id,
+                                              loadMore: true,
+                                            ),
+                                    icon: _loadingMoreReplies
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.expand_more,
+                                            size: 18),
+                                    label: Text(
+                                      _repliesLoadMoreError ?? '加载更多评论',
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),

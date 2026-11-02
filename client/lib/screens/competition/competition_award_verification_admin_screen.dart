@@ -103,10 +103,12 @@ class _CompetitionAwardVerificationAdminScreenState
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final totalPages = (_total / _pageSize).ceil().clamp(1, 999999);
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
+      backgroundColor:
+          AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
       appBar: AppBar(
         title: const Text('经历核验'),
-        backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
+        backgroundColor: AppPageBackground.color(
+            context, CompetitionUiTokens.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
       ),
       body: RefreshIndicator(
@@ -435,16 +437,18 @@ class _CompetitionAwardVerificationDetailScreenState
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
+      backgroundColor:
+          AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
       appBar: AppBar(
         title: const Text('核验详情'),
-        backgroundColor: AppPageBackground.color(context, CompetitionUiTokens.pageBg(isDark)),
+        backgroundColor: AppPageBackground.color(
+            context, CompetitionUiTokens.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: Text(_error!))
+              ? Center(child: AppContentSurface(child: Text(_error!)))
               : _content(isDark),
       bottomNavigationBar:
           _award?.verificationStatus == 'pending' ? _actions() : null,
@@ -481,10 +485,12 @@ class _CompetitionAwardVerificationDetailScreenState
         ),
         const SizedBox(height: 16),
         Text('证明材料（${award.evidenceFileIds.length}）',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         ...award.evidenceFileIds.asMap().entries.map(
-              (entry) => ListTile(
+              (entry) => AppContentSurface(
+                  child: ListTile(
                 key: Key('award-evidence-${entry.value}'),
                 onTap: _loadingEvidence.contains(entry.value)
                     ? null
@@ -498,7 +504,7 @@ class _CompetitionAwardVerificationDetailScreenState
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.visibility_outlined),
-              ),
+              )),
             ),
       ],
     );

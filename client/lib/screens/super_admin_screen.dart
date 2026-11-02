@@ -2,6 +2,7 @@ import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shenliyuan/widgets/app_tab_bar_surface.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../widgets/app_page_background.dart';
@@ -182,7 +183,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         title: const Text('超级管理员面板'),
         leading: const BackButton(),
         actions: const [],
-        bottom: TabBar(
+        bottom: AppTabBarSurface(
+            child: TabBar(
           controller: _tabController,
           tabs: const [
             Tab(text: '用户管理'),
@@ -191,7 +193,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             Tab(text: '抽奖管理'),
             Tab(text: '应用版本'),
           ],
-        ),
+        )),
       ),
       body: TabBarView(
         controller: _tabController,
@@ -228,7 +230,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         ),
         Expanded(
           child: _users.isEmpty
-              ? const Center(child: Text('暂无用户'))
+              ? const Center(child: AppContentSurface(child: Text('暂无用户')))
               : ListView.builder(
                   itemCount: _users.length,
                   itemBuilder: (_, i) => _buildUserItem(_users[i]),
@@ -1010,7 +1012,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                 } on DioException catch (e) {
                   final data = e.response?.data;
                   final msg = data is Map
-                      ? ((data['message'] ?? data['error'])?.toString() ?? '发布失败')
+                      ? ((data['message'] ?? data['error'])?.toString() ??
+                          '发布失败')
                       : '发布失败';
                   messenger.showSnackBar(
                     SnackBar(content: Text(msg), backgroundColor: Colors.red),

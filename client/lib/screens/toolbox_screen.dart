@@ -314,7 +314,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                       return ScrollConfiguration(
                         // Android 的边缘拉伸会把列表放入离屏层，隔断壁纸采样。
                         behavior: themeProvider.frostedGlass
-                            ? ScrollConfiguration.of(context).copyWith(overscroll: false)
+                            ? ScrollConfiguration.of(context)
+                                .copyWith(overscroll: false)
                             : ScrollConfiguration.of(context),
                         child: tools,
                       );
@@ -357,9 +358,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
       style: TextStyle(
         fontSize: 16,
         fontWeight: FontWeight.w700,
-        color: useCustomBackground || isDark
-            ? Colors.white
-            : const Color(0xFF1F2937),
+        color: isDark ? Colors.white : const Color(0xFF1F2937),
         shadows: [
           if (useCustomBackground)
             Shadow(
@@ -633,9 +632,8 @@ class _WebsiteDirectoryScreen extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
-                          color: useCustomBackground || isDark
-                              ? Colors.white
-                              : const Color(0xFF1F2937),
+                          color:
+                              isDark ? Colors.white : const Color(0xFF1F2937),
                           shadows: [
                             if (useCustomBackground)
                               Shadow(
@@ -850,130 +848,137 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return AppPageBackground(builder: (context) => Scaffold(
-      backgroundColor: AppPageBackground.color(context,
-          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
-      appBar: AppBar(
-        title: const Text('体测成绩查询'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: Column(
-            children: [
-              GlassContainer(
-                padding: const EdgeInsets.all(16),
-                borderRadius: 16,
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.info_outline,
-                      color: Colors.blue,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        '学号 ${widget.username} 已自动识别，请输入体测密码查询',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: isDark ? Colors.white70 : Colors.black87,
+    return AppPageBackground(
+        builder: (context) => Scaffold(
+              backgroundColor: AppPageBackground.color(context,
+                  isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
+              appBar: AppBar(
+                title: const Text('体测成绩查询'),
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+              ),
+              body: SafeArea(
+                child: SingleChildScrollView(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  child: Column(
+                    children: [
+                      GlassContainer(
+                        padding: const EdgeInsets.all(16),
+                        borderRadius: 16,
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.info_outline,
+                              color: Colors.blue,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                '学号 ${widget.username} 已自动识别，请输入体测密码查询',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color:
+                                      isDark ? Colors.white70 : Colors.black87,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              GlassContainer(
-                padding: const EdgeInsets.all(20),
-                borderRadius: 20,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.fitness_center,
-                          color: Colors.blue,
-                          size: 22,
-                        ),
-                        const SizedBox(width: 10),
-                        const Text(
-                          '体测密码',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '初始密码默认为111111',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white38 : Colors.grey[500],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _pwdCtrl,
-                      onChanged: _onPwdChanged,
-                      obscureText: _obscurePwd,
-                      style: const TextStyle(fontSize: 14),
-                      decoration: InputDecoration(
-                        hintText: '输入体测系统密码',
-                        prefixIcon: const Icon(Icons.lock_outline, size: 18),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscurePwd
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                            size: 18,
-                          ),
-                          onPressed: () =>
-                              setState(() => _obscurePwd = !_obscurePwd),
-                        ),
-                        filled: true,
-                        fillColor: isDark
-                            ? Colors.white.withValues(alpha: 0.05)
-                            : Colors.black.withValues(alpha: 0.03),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
+                      const SizedBox(height: 16),
+                      GlassContainer(
+                        padding: const EdgeInsets.all(20),
+                        borderRadius: 20,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.fitness_center,
+                                  color: Colors.blue,
+                                  size: 22,
+                                ),
+                                const SizedBox(width: 10),
+                                const Text(
+                                  '体测密码',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  '初始密码默认为111111',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: isDark
+                                        ? Colors.white38
+                                        : Colors.grey[500],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: _pwdCtrl,
+                              onChanged: _onPwdChanged,
+                              obscureText: _obscurePwd,
+                              style: const TextStyle(fontSize: 14),
+                              decoration: InputDecoration(
+                                hintText: '输入体测系统密码',
+                                prefixIcon:
+                                    const Icon(Icons.lock_outline, size: 18),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscurePwd
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                    size: 18,
+                                  ),
+                                  onPressed: () => setState(
+                                      () => _obscurePwd = !_obscurePwd),
+                                ),
+                                filled: true,
+                                fillColor: isDark
+                                    ? Colors.white.withValues(alpha: 0.05)
+                                    : Colors.black.withValues(alpha: 0.03),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: _queryManual,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).primaryColor,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Text(
+                            '开始查询',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: _queryManual,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).primaryColor,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: const Text(
-                    '开始查询',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ));
+            ));
   }
 }

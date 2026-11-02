@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
+import '../app_card.dart';
 
 /// Page state for the grade screen.
 enum GradePageState { loading, content, empty, error }
@@ -37,19 +38,25 @@ class GradeEmptyState extends StatelessWidget {
 
   Widget _buildEmpty(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Padding(
+    return AppContentSurface.card(
+        child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 64),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.inbox_outlined, size: 64, color: isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight),
+          Icon(Icons.inbox_outlined,
+              size: 64,
+              color:
+                  isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight),
           const SizedBox(height: 16),
           Text(
             isFilterEmpty ? '该筛选条件下暂无课程' : '当前学期暂无成绩',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+              color: isDark
+                  ? AppColors.textPrimaryDark
+                  : AppColors.textPrimaryLight,
             ),
           ),
           const SizedBox(height: 8),
@@ -57,30 +64,40 @@ class GradeEmptyState extends StatelessWidget {
             isFilterEmpty ? '请尝试切换其他筛选条件' : '本学期可能暂未录入成绩\n请稍后刷新或切换其他学期',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+              color: appContentSecondaryColor(
+                  context,
+                  isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondaryLight),
               fontSize: 14,
             ),
           ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildError(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Padding(
+    return AppContentSurface.card(
+        child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 64),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.cloud_off_outlined, size: 64, color: isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight),
+          Icon(Icons.cloud_off_outlined,
+              size: 64,
+              color:
+                  isDark ? AppColors.iconMutedDark : AppColors.iconMutedLight),
           const SizedBox(height: 16),
           Text(
             '成绩获取失败',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+              color: isDark
+                  ? AppColors.textPrimaryDark
+                  : AppColors.textPrimaryLight,
             ),
           ),
           const SizedBox(height: 8),
@@ -88,7 +105,11 @@ class GradeEmptyState extends StatelessWidget {
             errorMessage ?? '教务登录可能已经过期',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+              color: appContentSecondaryColor(
+                  context,
+                  isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondaryLight),
               fontSize: 14,
             ),
           ),
@@ -101,7 +122,7 @@ class GradeEmptyState extends StatelessWidget {
             ),
         ],
       ),
-    );
+    ));
   }
 }
 
@@ -137,13 +158,16 @@ class _GradeLoadingSkeletonState extends State<_GradeLoadingSkeleton>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final baseColor = isDark ? AppColors.surfaceMutedDark : AppColors.surfaceMutedLight;
-    final highlightColor = isDark ? AppColors.surfaceFocusedDark : AppColors.surfaceFocusedLight;
+    final baseColor =
+        isDark ? AppColors.surfaceMutedDark : AppColors.surfaceMutedLight;
+    final highlightColor =
+        isDark ? AppColors.surfaceFocusedDark : AppColors.surfaceFocusedLight;
 
     return AnimatedBuilder(
       animation: _animation,
       builder: (context, _) {
-        final color = Color.lerp(baseColor, highlightColor, _animation.value) ?? baseColor;
+        final color = Color.lerp(baseColor, highlightColor, _animation.value) ??
+            baseColor;
 
         Widget shimmerBox(double width, double height) {
           return Container(

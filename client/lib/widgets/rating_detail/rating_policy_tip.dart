@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'ranking_tokens.dart';
+import '../app_card.dart';
 
 class RatingPolicyTip extends StatelessWidget {
   final String text;
@@ -28,7 +29,8 @@ class RatingPolicyTip extends StatelessWidget {
         ? RankingTokens.warningColor(isDark)
         : RankingTokens.subColor(isDark);
 
-    return Container(
+    return AppContentSurface(
+        child: Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -58,7 +60,7 @@ class RatingPolicyTip extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ));
   }
 }
 

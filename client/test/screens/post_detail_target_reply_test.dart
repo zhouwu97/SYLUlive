@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -708,7 +709,7 @@ void main() {
       await tester.pumpAndSettle();
       final surface = find.byKey(const ValueKey('reply-thread-surface'));
       expect(surface, findsOneWidget);
-      expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)), findsOneWidget);
+      expect(find.descendant(of: surface, matching: activeBackdropFilters()), findsOneWidget);
       final input = find.descendant(of: surface, matching: find.byType(PostReplyComposer));
       expect(tester.widget<PostReplyComposer>(input).embedded, isTrue);
       await tester.enterText(find.descendant(of: surface,
@@ -716,7 +717,7 @@ void main() {
       await tester.pump();
       await appearance.setFrostedGlass(false);
       await tester.pump();
-      expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)), findsNothing);
+      expect(find.descendant(of: surface, matching: activeBackdropFilters()), findsNothing);
       expect(find.text('保留草稿'), findsOneWidget);
       await appearance.setFrostedGlass(true);
       await appearance.setCleanBackgroundMode();

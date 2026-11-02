@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../providers/auth_provider.dart';
 import '../services/publish_session_scope.dart';
+import 'app_dialog.dart';
+import 'app_card.dart';
 
 /// 安全操作弹层属于打开时的账号；切号或降权后立即隐藏旧资料和操作入口。
 class SecuritySessionGuard extends StatelessWidget {
@@ -47,18 +49,19 @@ class SecuritySessionGuard extends StatelessWidget {
               onPressed: () => Navigator.pop(context),
               child: const Text('关闭'));
           if (dialog) {
-            return AlertDialog(
+            return AppAlertDialog(
                 title: const Text('登录状态或权限已变化'),
                 content: const Text('请关闭后重新打开安全页面。'),
                 actions: [close]);
           }
           return SafeArea(
-              child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    const Text('登录状态或权限已变化，请重新打开安全页面。'),
-                    close,
-                  ])));
+              child: AppContentSurface(
+                  child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        const Text('登录状态或权限已变化，请重新打开安全页面。'),
+                        close,
+                      ]))));
         },
       );
 }

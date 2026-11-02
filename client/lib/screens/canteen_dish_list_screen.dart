@@ -9,6 +9,7 @@ import '../widgets/canteen/canteen_empty_state.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/canteen_status_image.dart';
 import 'canteen_dish_detail_screen.dart';
+import '../widgets/app_card.dart';
 
 /// 商家菜品列表页。
 class CanteenDishListScreen extends StatefulWidget {
@@ -111,7 +112,8 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
+      backgroundColor:
+          AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       appBar: AppBar(
         leading: const BackButton(),
         title: const Text(
@@ -121,7 +123,8 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
+        backgroundColor:
+            AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
         foregroundColor: CanteenTheme.textPrimaryColor(isDark),
       ),
@@ -178,7 +181,8 @@ class _GridDishCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Column(
+      child: AppContentSurface(
+          child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 图片独立圆角，无白色卡片容器 / 边框 / 阴影
@@ -220,7 +224,7 @@ class _GridDishCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 

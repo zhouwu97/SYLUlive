@@ -390,10 +390,10 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                   '按云端配置、可信身份或旧授权去重；本机尚未同步的记录暂不计入。',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.62)
-                        : AppColors.textSecondaryLight,
-                  ),
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.62)
+                            : AppColors.textSecondaryLight,
+                      ),
                 ),
               ),
               if (_statsLoading) ...[
@@ -425,9 +425,10 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
       width: 1,
       height: 34,
       color: context.watch<ThemeProvider?>()?.frostedGlass == true
-          ? Colors.transparent : isDark
-          ? Colors.white.withValues(alpha: 0.1)
-          : AppColors.borderSubtleLight,
+          ? Colors.transparent
+          : isDark
+              ? Colors.white.withValues(alpha: 0.1)
+              : AppColors.borderSubtleLight,
     );
   }
 
@@ -509,7 +510,8 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
     VoidCallback? onPressed,
   }) {
     return Center(
-      child: ConstrainedBox(
+      child: AppContentSurface.card(
+          child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 300),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -560,7 +562,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
             ],
           ],
         ),
-      ),
+      )),
     );
   }
 
@@ -744,7 +746,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         controller: _scrollController,
         thumbVisibility: true,
         child: ListView.builder(
-                addRepaintBoundaries: false,
+          addRepaintBoundaries: false,
           controller: _scrollController,
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           physics: const AlwaysScrollableScrollPhysics(

@@ -353,7 +353,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
             leading: widget.onBack == null
                 ? null
                 : BackButton(onPressed: widget.onBack)),
-        body: Center(child: Text(_errorMessage ?? '用户不存在或加载失败')),
+        body: Center(
+            child:
+                AppContentSurface(child: Text(_errorMessage ?? '用户不存在或加载失败'))),
       );
     }
 
@@ -557,18 +559,17 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                   collapseMode: CollapseMode.parallax,
                   background: Builder(
                     builder: (context) {
-                      final settings = context
-                          .dependOnInheritedWidgetOfExactType<
-                            FlexibleSpaceBarSettings
-                          >()!;
+                      final settings =
+                          context.dependOnInheritedWidgetOfExactType<
+                              FlexibleSpaceBarSettings>()!;
                       // 抵消 FlexibleSpaceBar 的 1/4 视差，仅固定图片与遮罩；
                       // 资料和按钮仍随原有折叠效果移动。
                       final backgroundOffset =
                           (settings.maxExtent - settings.currentExtent).clamp(
-                            0.0,
-                            settings.maxExtent - settings.minExtent,
-                          ) /
-                          4;
+                                0.0,
+                                settings.maxExtent - settings.minExtent,
+                              ) /
+                              4;
                       return Stack(
                         fit: StackFit.expand,
                         children: [
@@ -607,8 +608,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                               children: [
                                 _buildCircleButton(
                                   icon: Icons.arrow_back,
-                                  onTap:
-                                      widget.onBack ??
+                                  onTap: widget.onBack ??
                                       () => Navigator.maybePop(context),
                                 ),
                                 if (!isMe && PrivateChatPolicy.enabled)
@@ -710,7 +710,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
     if (_postsError != null && _posts.isEmpty) {
       return Center(
-        child: Column(
+        child: AppContentSurface(
+            child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(_postsError!, style: const TextStyle(color: Colors.grey)),
@@ -730,16 +731,16 @@ class _UserHomeScreenState extends State<UserHomeScreen>
               child: const Text('重试'),
             ),
           ],
-        ),
+        )),
       );
     }
 
     if (_posts.isEmpty) {
-      return const Center(child: Text('暂无帖子'));
+      return const Center(child: AppContentSurface(child: Text('暂无帖子')));
     }
 
     return ListView.builder(
-                addRepaintBoundaries: false,
+      addRepaintBoundaries: false,
       padding: padding,
       itemCount: _posts.length,
       itemBuilder: (context, index) {
@@ -792,7 +793,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
 
     return ListView.builder(
-                addRepaintBoundaries: false,
+      addRepaintBoundaries: false,
       padding: padding,
       itemCount: _marketPosts.length,
       itemBuilder: (context, index) {
@@ -1505,7 +1506,10 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                   decoration: BoxDecoration(
                     color: context.watch<ThemeProvider?>()?.frostedGlass == true
-                        ? Colors.transparent : isDark ? Colors.grey[800] : Colors.grey[100],
+                        ? Colors.transparent
+                        : isDark
+                            ? Colors.grey[800]
+                            : Colors.grey[100],
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -1535,7 +1539,10 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                   decoration: BoxDecoration(
                     color: context.watch<ThemeProvider?>()?.frostedGlass == true
-                        ? Colors.transparent : isDark ? Colors.grey[800] : Colors.grey[100],
+                        ? Colors.transparent
+                        : isDark
+                            ? Colors.grey[800]
+                            : Colors.grey[100],
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(

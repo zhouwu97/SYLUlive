@@ -83,15 +83,15 @@ class GlassContainer extends StatelessWidget {
                         .toList(growable: false),
               ),
         borderRadius: BorderRadius.circular(borderRadius),
-        border: useFrostedGlass
-            ? null
-            : Border.all(
-                color: borderColor ??
-                    (isDark
-                        ? AppColors.borderNormalDark
-                        : AppColors.borderNormalLight),
-                width: borderWidth,
-              ),
+        border: Border.all(
+          color: useFrostedGlass
+              ? Colors.transparent
+              : borderColor ??
+                  (isDark
+                      ? AppColors.borderNormalDark
+                      : AppColors.borderNormalLight),
+          width: borderWidth,
+        ),
         boxShadow: useFrostedGlass
             ? null
             : [
@@ -153,6 +153,7 @@ class PremiumCard extends StatelessWidget {
       child: AppCardSurface(
         margin: margin,
         decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(borderRadius),
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,

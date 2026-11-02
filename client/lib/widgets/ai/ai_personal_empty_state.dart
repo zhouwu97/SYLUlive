@@ -36,7 +36,9 @@ class AiPersonalEmptyState extends StatelessWidget {
             margin: const EdgeInsets.only(bottom: 24),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: dark ? AppColors.warningSurfaceDark : AppColors.warningSurfaceLight,
+              color: dark
+                  ? AppColors.warningSurfaceDark
+                  : AppColors.warningSurfaceLight,
               borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(color: const Color(0xFFF2DDBD), width: 1),
             ),
@@ -54,13 +56,18 @@ class AiPersonalEmptyState extends StatelessWidget {
                         style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: dark ? colors.onSurface : const Color(0xFF9A3412)),
+                            color: dark
+                                ? colors.onSurface
+                                : const Color(0xFF9A3412)),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         '配置仅保存在本机，可随时更换',
-                        style:
-                            TextStyle(fontSize: 11, color: dark ? colors.onSurfaceVariant : const Color(0xFFC2410C)),
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: dark
+                                ? colors.onSurfaceVariant
+                                : const Color(0xFFC2410C)),
                       ),
                     ],
                   ),
@@ -81,23 +88,26 @@ class AiPersonalEmptyState extends StatelessWidget {
               ],
             ),
           ),
-        Text(
-          '个人助手',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-            color: colors.onSurface,
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(
+            '个人助手',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: colors.onSurface,
+            ),
           ),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          '使用你配置的模型和本机 ToolLoop。\n它和校园 Agent 的服务端 Run、MCP 设备任务是两条不同链路。',
-          style: TextStyle(
-            color: colors.onSurfaceVariant,
-            fontSize: 13,
-            height: 1.55,
-          ),
-        ),
+          const SizedBox(height: 10),
+          AppContentSurface.reading(
+              child: Text(
+            '使用你配置的模型和本机 ToolLoop。\n它和校园 Agent 的服务端 Run、MCP 设备任务是两条不同链路。',
+            style: TextStyle(
+              color: colors.onSurfaceVariant,
+              fontSize: 13,
+              height: 1.55,
+            ),
+          )),
+        ]),
         const SizedBox(height: 28),
         Text(
           '本机能力',

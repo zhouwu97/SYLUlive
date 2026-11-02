@@ -1163,7 +1163,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         if (!didPop) _handleExit();
       },
       child: Scaffold(
-        backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
+        backgroundColor:
+            AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
         appBar: _buildAppBar(isDark),
         bottomNavigationBar: _buildBottomBar(isDark, accent),
         body: SingleChildScrollView(
@@ -1209,7 +1210,8 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     }
 
     return AppBar(
-      backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
+      backgroundColor:
+          AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: true,
@@ -1274,7 +1276,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     required String title,
     required String message,
   }) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: color.withValues(alpha: isDark ? 0.16 : 0.08),

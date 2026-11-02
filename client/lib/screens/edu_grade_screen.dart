@@ -1039,9 +1039,11 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: AppPageBackground.color(context, Theme.of(context).brightness == Brightness.dark
-          ? const Color(0xFF111315)
-          : const Color(0xFFFFFAF4)),
+      backgroundColor: AppPageBackground.color(
+          context,
+          Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFF111315)
+              : const Color(0xFFFFFAF4)),
       endDrawerEnableOpenDragGesture: false,
       drawerScrimColor: Colors.black.withValues(alpha: 0.42),
       endDrawer: GradeManageDrawer(

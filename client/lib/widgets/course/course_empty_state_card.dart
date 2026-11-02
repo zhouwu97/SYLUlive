@@ -173,16 +173,17 @@ class CourseEmptyStateCard extends StatelessWidget {
           const SizedBox(height: 24),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: LayoutBuilder(
+            child: AppContentSurface.reading(child: LayoutBuilder(
               builder: (context, constraints) {
                 // 大字号时四列会把五字标签压成不均匀的多行，改成两列保留完整阅读宽度。
                 final largeText =
                     MediaQuery.textScalerOf(context).scale(1.0) > 1.2;
                 final items = [
-                  _buildFeatureItem(Icons.sync_rounded, '教务导入'),
-                  _buildFeatureItem(Icons.edit_rounded, '自定义课程'),
-                  _buildFeatureItem(Icons.widgets_rounded, '桌面小组件'),
-                  _buildFeatureItem(Icons.notifications_active_rounded, '上课提醒'),
+                  _buildFeatureItem(context, Icons.sync_rounded, '教务导入'),
+                  _buildFeatureItem(context, Icons.edit_rounded, '自定义课程'),
+                  _buildFeatureItem(context, Icons.widgets_rounded, '桌面小组件'),
+                  _buildFeatureItem(
+                      context, Icons.notifications_active_rounded, '上课提醒'),
                 ];
 
                 if (!largeText) {
@@ -203,42 +204,45 @@ class CourseEmptyStateCard extends StatelessWidget {
                       .toList(growable: false),
                 );
               },
-            ),
+            )),
           ),
           const SizedBox(height: 20),
-          const Text(
+          AppContentSurface.reading(
+              child: Text(
             '登录并绑定教务系统后即可解锁以上功能',
             style: TextStyle(
               fontSize: 11,
-              color: CampusTheme.subText,
+              color: appContentSecondaryColor(context, CampusTheme.subText),
             ),
-          ),
+          )),
         ],
         if (type == CourseEmptyStateType.noCache) ...[
           const SizedBox(height: 24),
-          const Text(
+          AppContentSurface.reading(
+              child: Text(
             '1 选择学期  ·  2 预览课程  ·  3 设置开学第一周',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: CampusTheme.subText,
+              color: appContentSecondaryColor(context, CampusTheme.subText),
             ),
-          ),
+          )),
         ],
       ],
     );
   }
 
-  Widget _buildFeatureItem(IconData icon, String label) {
+  Widget _buildFeatureItem(BuildContext context, IconData icon, String label) {
+    final color = appContentSecondaryColor(context, CampusTheme.subText);
     return Column(
       children: [
-        Icon(icon, size: 24, color: CampusTheme.subText),
+        Icon(icon, size: 24, color: color),
         const SizedBox(height: 8),
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12,
-            color: CampusTheme.subText,
+            color: color,
           ),
         ),
       ],

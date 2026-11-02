@@ -9,10 +9,53 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/services/exam_schedule_repository.dart';
 import 'package:shenliyuan/screens/exam_schedule_screen.dart';
 
+import '../helpers/golden_test_app.dart';
+import '../helpers/golden_viewport.dart';
+import '../helpers/load_test_fonts.dart';
+
 void main() {
+  setUpAll(loadTestFonts);
   setUp(() {
     AppPreferencesStore.setMockInitialValues(<String, Object>{});
   });
+
+  for (final dark in [false, true]) {
+    for (final scale in [1.0, 1.3]) {
+      testWidgets('考试空态填满内容区域，材质切换不恢复小浮块 dark=$dark scale=$scale',
+          (tester) async {
+        await setGoldenViewport(tester, GoldenViewports.phone390x844);
+        final bottomInset = 24 * tester.view.devicePixelRatio;
+        tester.view.padding = FakeViewPadding(bottom: bottomInset);
+        tester.view.viewPadding = FakeViewPadding(bottom: bottomInset);
+        addTearDown(tester.view.resetPadding);
+        addTearDown(tester.view.resetViewPadding);
+        final appearance = ThemeProvider(loadOnStart: false);
+        addTearDown(appearance.dispose);
+        await appearance.setBackgroundImage('morenbeijing.jpeg');
+        await tester.pumpWidget(ChangeNotifierProvider.value(
+          value: appearance,
+          child: GoldenTestApp(
+            themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+            textScaler: TextScaler.linear(scale),
+            home: const ExamScheduleScreen(),
+          ),
+        ));
+        await tester.pumpAndSettle();
+        final page = tester.getRect(find.byType(Scaffold));
+        final appBar = tester.getRect(find.byType(AppBar));
+        final expected = Rect.fromLTRB(16, appBar.bottom + 8,
+            page.right - 16, page.bottom - 8 - 24);
+        final panel = find.byKey(const ValueKey('exam-empty-panel'));
+        for (final glass in [true, false]) {
+          await appearance.setFrostedGlass(glass);
+          await tester.pumpAndSettle();
+          expect(tester.getRect(panel), expected);
+          expect(find.text('当前学期暂无考试安排'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        }
+      });
+    }
+  }
 
   testWidgets('窄屏考试页工具栏不会发生横向溢出', (tester) async {
     for (final width in <double>[432, 360]) {

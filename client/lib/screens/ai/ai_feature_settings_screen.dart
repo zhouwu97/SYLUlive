@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/app_card.dart';
 
 import '../../widgets/app_page_background.dart';
 import '../../features/ai_runtime/ai_feature_flags.dart';
@@ -40,25 +41,30 @@ class _AIFeatureSettingsScreenState extends State<AIFeatureSettingsScreen> {
     final values = _values;
     return Scaffold(
       appBar: AppBar(title: const Text('AI 功能开关')),
-      body: values == null
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              children: AIFeatureFlag.values
-                  .map(
-                    (flag) => SwitchListTile(
-                      title: Text(_label(flag)),
-                      subtitle: flag.availableInCurrentRelease
-                          ? null
-                          : const Text('内测阶段暂不开放'),
-                      secondary: Icon(_icon(flag)),
-                      value: values[flag]!,
-                      onChanged: flag.availableInCurrentRelease
-                          ? (enabled) => _set(flag, enabled)
-                          : null,
-                    ),
-                  )
-                  .toList(growable: false),
-            ),
+      body: AppCardMaterial(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.zero,
+        clipBehavior: Clip.antiAlias,
+        child: values == null
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                children: AIFeatureFlag.values
+                    .map(
+                      (flag) => SwitchListTile(
+                        title: Text(_label(flag)),
+                        subtitle: flag.availableInCurrentRelease
+                            ? null
+                            : const Text('内测阶段暂不开放'),
+                        secondary: Icon(_icon(flag)),
+                        value: values[flag]!,
+                        onChanged: flag.availableInCurrentRelease
+                            ? (enabled) => _set(flag, enabled)
+                            : null,
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+      ),
     );
   }
 

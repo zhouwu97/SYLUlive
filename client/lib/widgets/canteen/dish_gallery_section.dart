@@ -240,7 +240,6 @@ class _DishGallerySectionState extends State<DishGallerySection> {
       ),
     );
   }
-
 }
 
 class _DishCard extends StatelessWidget {

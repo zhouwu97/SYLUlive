@@ -254,7 +254,10 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
       width: 1,
       height: 24,
       color: context.watch<ThemeProvider>().frostedGlass
-          ? Colors.transparent : isDark ? Colors.white12 : const Color(0xFFE2EFEA),
+          ? Colors.transparent
+          : isDark
+              ? Colors.white12
+              : const Color(0xFFE2EFEA),
     );
   }
 
@@ -264,28 +267,28 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
       clipBehavior: Clip.antiAlias,
       borderRadius: BorderRadius.circular(AppRadius.sm),
       child: InkWell(
-      onTap: () => _selectTab(tabIndex),
-      borderRadius: BorderRadius.circular(AppRadius.sm),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        child: Column(
-          children: [
-            Text(
-              count,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: color,
+        onTap: () => _selectTab(tabIndex),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          child: Column(
+            children: [
+              Text(
+                count,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ],
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -536,9 +539,12 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
               isScrollable: true,
               tabAlignment: TabAlignment.start,
               indicator: BoxDecoration(
-                color: (isDark ? const Color(0xFF262C33) : Colors.white).withValues(
-                  alpha: themeProvider.frostedGlass && themeProvider.shouldShowCustomBackground
-                      ? themeProvider.componentOpacity : 1),
+                color: (isDark ? const Color(0xFF262C33) : Colors.white)
+                    .withValues(
+                        alpha: themeProvider.frostedGlass &&
+                                themeProvider.shouldShowCustomBackground
+                            ? themeProvider.componentOpacity
+                            : 1),
                 borderRadius: BorderRadius.circular(AppRadius.md - 2),
                 boxShadow: isDark
                     ? null
@@ -575,7 +581,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(_error!),
+                            AppContentSurface(child: Text(_error!)),
                             const SizedBox(height: 12),
                             OutlinedButton(
                               onPressed: _loadTickets,
@@ -600,8 +606,10 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
                               children: const [
                                 SizedBox(height: 180),
                                 Center(
-                                    child: Text('暂无符合条件的工单',
-                                        style: TextStyle(color: Colors.grey))),
+                                    child: AppContentSurface(
+                                        child: Text('暂无符合条件的工单',
+                                            style: TextStyle(
+                                                color: Colors.grey)))),
                               ],
                             ),
                           )

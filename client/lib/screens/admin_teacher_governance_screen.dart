@@ -149,7 +149,9 @@ class _AdminTeacherGovernanceScreenState
     _teacherScrollController.addListener(() {
       if (_teacherScrollController.position.pixels >=
           _teacherScrollController.position.maxScrollExtent - 200) {
-        if (_hasMoreTeachers && !_isLoadingMoreTeachers && !_isLoadingTeachers) {
+        if (_hasMoreTeachers &&
+            !_isLoadingMoreTeachers &&
+            !_isLoadingTeachers) {
           _loadTeachers(loadMore: true);
         }
       }
@@ -322,8 +324,7 @@ class _AdminTeacherGovernanceScreenState
     });
     try {
       final dio = context.read<AuthProvider>().dio;
-      final res =
-          await dio.get('/admin/teacher-governance/duplicate-groups');
+      final res = await dio.get('/admin/teacher-governance/duplicate-groups');
       if (!mounted) return;
       final items = _extractList(res.data, 'groups');
       setState(() {
@@ -337,7 +338,8 @@ class _AdminTeacherGovernanceScreenState
       if (!mounted) return;
       setState(() {
         _isLoadingGroups = false;
-        _groupsError = GovernanceApiErrorMapper.format(e, fallback: '加载疑似重复分组失败');
+        _groupsError =
+            GovernanceApiErrorMapper.format(e, fallback: '加载疑似重复分组失败');
       });
     }
   }
@@ -429,7 +431,8 @@ class _AdminTeacherGovernanceScreenState
         } else {
           _isLoadingTeachers = false;
         }
-        _teachersError = GovernanceApiErrorMapper.format(e, fallback: '加载教师列表失败');
+        _teachersError =
+            GovernanceApiErrorMapper.format(e, fallback: '加载教师列表失败');
       });
     } catch (e) {
       if (!mounted || currentGen != _teacherSearchGen) return;
@@ -439,7 +442,8 @@ class _AdminTeacherGovernanceScreenState
         } else {
           _isLoadingTeachers = false;
         }
-        _teachersError = GovernanceApiErrorMapper.format(e, fallback: '加载教师列表失败');
+        _teachersError =
+            GovernanceApiErrorMapper.format(e, fallback: '加载教师列表失败');
       });
     }
   }
@@ -487,8 +491,7 @@ class _AdminTeacherGovernanceScreenState
       final items = _extractList(res.data, 'aliases');
       final newItems = items
           .whereType<Map<String, dynamic>>()
-          .map((j) =>
-              GovernanceAliasItem.fromJson(j, defaultType: _aliasType))
+          .map((j) => GovernanceAliasItem.fromJson(j, defaultType: _aliasType))
           .toList();
 
       final bool hasMore = res.data is Map && res.data['has_more'] == true;
@@ -519,7 +522,8 @@ class _AdminTeacherGovernanceScreenState
         } else {
           _isLoadingAliases = false;
         }
-        _aliasesError = GovernanceApiErrorMapper.format(e, fallback: '加载别名列表失败');
+        _aliasesError =
+            GovernanceApiErrorMapper.format(e, fallback: '加载别名列表失败');
       });
     } catch (e) {
       if (!mounted || currentGen != _aliasSearchGen) return;
@@ -529,7 +533,8 @@ class _AdminTeacherGovernanceScreenState
         } else {
           _isLoadingAliases = false;
         }
-        _aliasesError = GovernanceApiErrorMapper.format(e, fallback: '加载别名列表失败');
+        _aliasesError =
+            GovernanceApiErrorMapper.format(e, fallback: '加载别名列表失败');
       });
     }
   }
@@ -616,7 +621,8 @@ class _AdminTeacherGovernanceScreenState
         } else {
           _isLoadingRecords = false;
         }
-        _recordsError = GovernanceApiErrorMapper.format(e, fallback: '加载治理记录失败');
+        _recordsError =
+            GovernanceApiErrorMapper.format(e, fallback: '加载治理记录失败');
       });
     }
   }
@@ -696,8 +702,7 @@ class _AdminTeacherGovernanceScreenState
         for (final st in _sourceCourseTeachers) {
           final matchedTarget = _targetCourseTeachers
               .where((tt) =>
-                  tt.name.trim().toLowerCase() ==
-                  st.name.trim().toLowerCase())
+                  tt.name.trim().toLowerCase() == st.name.trim().toLowerCase())
               .firstOrNull;
           if (matchedTarget != null) {
             _courseTeacherPairings[st.id] = matchedTarget.id;
@@ -994,9 +999,8 @@ class _AdminTeacherGovernanceScreenState
                   controller: aliasCtrl,
                   decoration: InputDecoration(
                     labelText: '别名内容 (必填)',
-                    hintText: _aliasType == 'teacher'
-                        ? '如：张三老师'
-                        : '如：高数上、高等数学A1',
+                    hintText:
+                        _aliasType == 'teacher' ? '如：张三老师' : '如：高数上、高等数学A1',
                     border: const OutlineInputBorder(),
                   ),
                 ),
@@ -1206,7 +1210,8 @@ class _AdminTeacherGovernanceScreenState
           centerTitle: true,
           elevation: 0,
           scrolledUnderElevation: 0,
-          backgroundColor: AppPageBackground.color(context, isDark ? AppColors.surfaceSecondaryDark : Colors.white),
+          backgroundColor: AppPageBackground.color(
+              context, isDark ? AppColors.surfaceSecondaryDark : Colors.white),
           title: Text(
             '教师与课程数据治理',
             style: TextStyle(
@@ -1230,7 +1235,8 @@ class _AdminTeacherGovernanceScreenState
           centerTitle: true,
           elevation: 0,
           scrolledUnderElevation: 0,
-          backgroundColor: AppPageBackground.color(context, isDark ? AppColors.surfaceSecondaryDark : Colors.white),
+          backgroundColor: AppPageBackground.color(
+              context, isDark ? AppColors.surfaceSecondaryDark : Colors.white),
           title: Text(
             '教师与课程数据治理',
             style: TextStyle(
@@ -1316,7 +1322,9 @@ class _AdminTeacherGovernanceScreenState
             controller: _tabController,
             isScrollable: true,
             tabAlignment: TabAlignment.start,
-            labelColor: isDark ? Theme.of(context).primaryColor : AppColors.brandPrimary,
+            labelColor: isDark
+                ? Theme.of(context).primaryColor
+                : AppColors.brandPrimary,
             unselectedLabelColor: isDark ? Colors.white60 : Colors.black54,
             indicatorColor: AppColors.brandPrimary,
             indicatorWeight: 3,
@@ -1428,8 +1436,9 @@ class _AdminTeacherGovernanceScreenState
       children: [
         CircleAvatar(
           radius: 10,
-          backgroundColor:
-              isActive || isCompleted ? activeColor : inactiveColor.withValues(alpha: 0.2),
+          backgroundColor: isActive || isCompleted
+              ? activeColor
+              : inactiveColor.withValues(alpha: 0.2),
           child: Text(
             '${stepIndex + 1}',
             style: TextStyle(
@@ -1465,7 +1474,8 @@ class _AdminTeacherGovernanceScreenState
           AppCardSurface(
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
-              color: AppColors.brandPrimary.withValues(alpha: isDark ? 0.15 : 0.08),
+              color: AppColors.brandPrimary
+                  .withValues(alpha: isDark ? 0.15 : 0.08),
               borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(
                 color: AppColors.brandPrimary.withValues(alpha: 0.3),
@@ -1483,7 +1493,8 @@ class _AdminTeacherGovernanceScreenState
                     style: TextStyle(
                       fontSize: 12.5,
                       height: 1.4,
-                      color: isDark ? Colors.white70 : AppColors.textPrimaryLight,
+                      color:
+                          isDark ? Colors.white70 : AppColors.textPrimaryLight,
                     ),
                   ),
                 ),
@@ -1643,8 +1654,8 @@ class _AdminTeacherGovernanceScreenState
                   CircleAvatar(
                     radius: 18,
                     backgroundColor: badgeColor.withValues(alpha: 0.15),
-                    child: Icon(Icons.school_rounded,
-                        size: 20, color: badgeColor),
+                    child:
+                        Icon(Icons.school_rounded, size: 20, color: badgeColor),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -1872,9 +1883,8 @@ class _AdminTeacherGovernanceScreenState
                     '已开启规范回流：原课程名「${_sourceCourse!.name}」将自动登记为目标规范别名，旧课表提评与搜索无缝重定向。',
                     style: TextStyle(
                       fontSize: 12,
-                      color: isDark
-                          ? Colors.white70
-                          : AppColors.textPrimaryLight,
+                      color:
+                          isDark ? Colors.white70 : AppColors.textPrimaryLight,
                       height: 1.4,
                     ),
                   ),
@@ -1898,8 +1908,7 @@ class _AdminTeacherGovernanceScreenState
               ),
               const SizedBox(width: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                 decoration: BoxDecoration(
                   color: AppColors.brandPrimary.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
@@ -1930,7 +1939,8 @@ class _AdminTeacherGovernanceScreenState
               width: double.infinity,
               padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                color:
+                    isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
                 borderRadius: BorderRadius.circular(AppRadius.md),
               ),
               child: const Text(
@@ -1951,7 +1961,9 @@ class _AdminTeacherGovernanceScreenState
                   side: BorderSide(
                     color: isPaired
                         ? AppColors.brandPrimary.withValues(alpha: 0.5)
-                        : (isDark ? Colors.white12 : AppColors.borderNormalLight),
+                        : (isDark
+                            ? Colors.white12
+                            : AppColors.borderNormalLight),
                     width: isPaired ? 1.5 : 1,
                   ),
                 ),
@@ -2377,11 +2389,13 @@ class _AdminTeacherGovernanceScreenState
                   padding: const EdgeInsets.symmetric(vertical: 2),
                   child: Row(
                     children: [
-                      const Icon(Icons.arrow_right, size: 16, color: Colors.grey),
+                      const Icon(Icons.arrow_right,
+                          size: 16, color: Colors.grey),
                       Text('${mt.teacherName} (原 #${mt.teacherId})'),
                       const SizedBox(width: 6),
                       Text('• ${mt.ratingCount} 评价',
-                          style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.grey)),
                     ],
                   ),
                 )),
@@ -2399,7 +2413,9 @@ class _AdminTeacherGovernanceScreenState
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04),
+                      color: isDark
+                          ? Colors.white10
+                          : Colors.black.withValues(alpha: 0.04),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Row(
@@ -2411,7 +2427,8 @@ class _AdminTeacherGovernanceScreenState
                               color: Colors.grey),
                         ),
                         const SizedBox(width: 6),
-                        const Icon(Icons.arrow_forward, size: 12, color: Colors.grey),
+                        const Icon(Icons.arrow_forward,
+                            size: 12, color: Colors.grey),
                         const SizedBox(width: 6),
                         Text(
                           '${ptm.keeperTeacherName} (#${ptm.keeperTeacherId})',
@@ -2633,9 +2650,7 @@ class _AdminTeacherGovernanceScreenState
             padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.md, vertical: 10),
             decoration: BoxDecoration(
-              color: isDark
-                  ? AppColors.surfaceSecondaryDark
-                  : Colors.white,
+              color: isDark ? AppColors.surfaceSecondaryDark : Colors.white,
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.1),
@@ -2740,8 +2755,7 @@ class _AdminTeacherGovernanceScreenState
         ),
       ),
       child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         leading: Checkbox(
           value: isSelected,
           activeColor: AppColors.brandPrimary,
@@ -2776,8 +2790,7 @@ class _AdminTeacherGovernanceScreenState
             if (t.isMerged) ...[
               const SizedBox(width: 6),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                 decoration: BoxDecoration(
                   color: Colors.red.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(4),
@@ -2833,8 +2846,8 @@ class _AdminTeacherGovernanceScreenState
       child: ListView.builder(
         controller: _recordsScrollController,
         padding: const EdgeInsets.all(AppSpacing.md),
-        itemCount:
-            batchKeys.length + (_hasMoreRecords || _isLoadingMoreRecords ? 1 : 0),
+        itemCount: batchKeys.length +
+            (_hasMoreRecords || _isLoadingMoreRecords ? 1 : 0),
         itemBuilder: (ctx, index) {
           if (index == batchKeys.length) {
             return Padding(
@@ -2899,8 +2912,7 @@ class _AdminTeacherGovernanceScreenState
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            color:
-                                isCourseAction ? Colors.blue : Colors.purple,
+                            color: isCourseAction ? Colors.blue : Colors.purple,
                           ),
                         ),
                       ),
@@ -3061,7 +3073,8 @@ class _AdminTeacherGovernanceScreenState
             ),
             onChanged: (val) {
               _aliasSearchDebounce?.cancel();
-              _aliasSearchDebounce = Timer(const Duration(milliseconds: 300), () {
+              _aliasSearchDebounce =
+                  Timer(const Duration(milliseconds: 300), () {
                 setState(() {
                   _aliasSearchQuery = val;
                 });
@@ -3377,8 +3390,7 @@ class _AdminTeacherGovernanceScreenState
                             : '跨课程同名教师。请使用顶部的【课程合并】功能进行统筹治理。',
                         style: TextStyle(
                           fontSize: 12,
-                          color:
-                              isDark ? Colors.amber[200] : Colors.amber[900],
+                          color: isDark ? Colors.amber[200] : Colors.amber[900],
                         ),
                       ),
                     ),
@@ -3425,7 +3437,8 @@ class _AdminTeacherGovernanceScreenState
   Widget _buildEmptyState(
       String title, String subtitle, VoidCallback onRefresh, bool isDark) {
     return Center(
-      child: Padding(
+      child: AppContentSurface.card(
+          child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xxl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -3468,13 +3481,14 @@ class _AdminTeacherGovernanceScreenState
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 
   Widget _buildErrorState(String error, VoidCallback onRetry, bool isDark) {
     return Center(
-      child: Padding(
+      child: AppContentSurface.card(
+          child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xxl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -3495,7 +3509,7 @@ class _AdminTeacherGovernanceScreenState
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 
@@ -3687,7 +3701,8 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
       if (_crossSubjectDecision != CrossSubjectDecision.unselected) {
         final mergeEntity =
             _crossSubjectDecision == CrossSubjectDecision.mergeSubject;
-        if (previousPreview != null && previousPreview.courseMerges.isNotEmpty) {
+        if (previousPreview != null &&
+            previousPreview.courseMerges.isNotEmpty) {
           courseMergesPayload = previousPreview.courseMerges
               .map((cm) => {
                     'loser_subject_id': cm.loserSubjectId,
@@ -3807,12 +3822,13 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
       final dio = context.read<AuthProvider>().dio;
       final mergeEntity =
           _crossSubjectDecision == CrossSubjectDecision.mergeSubject;
-      final courseMergesPayload =
-          (_preview?.courseMerges ?? const []).map((cm) => {
+      final courseMergesPayload = (_preview?.courseMerges ?? const [])
+          .map((cm) => {
                 'loser_subject_id': cm.loserSubjectId,
                 'keeper_subject_id': cm.keeperSubjectId,
                 'merge_subject_entity': mergeEntity,
-              }).toList();
+              })
+          .toList();
 
       final payload = {
         'keeper_id': _keeperId,
@@ -3948,8 +3964,8 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
                       if (val != null && val != _keeperId) {
                         setState(() {
                           _keeperId = val;
-                          final selected = widget.teachers
-                              .firstWhere((t) => t.id == val);
+                          final selected =
+                              widget.teachers.firstWhere((t) => t.id == val);
                           _finalTeacherNameCtrl.text = selected.name;
                         });
                         _fetchPreview();
@@ -4277,9 +4293,8 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
                       '重复归档',
                       '${preview.ratingsSoftDeleted} 条',
                       isDark,
-                      color: preview.ratingsSoftDeleted > 0
-                          ? Colors.orange
-                          : null,
+                      color:
+                          preview.ratingsSoftDeleted > 0 ? Colors.orange : null,
                     ),
                   ),
                   Expanded(
@@ -4338,8 +4353,7 @@ class _TeacherMergeBottomSheetState extends State<_TeacherMergeBottomSheet> {
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          color:
-                              isDark ? Colors.amber[200] : Colors.amber[900],
+                          color: isDark ? Colors.amber[200] : Colors.amber[900],
                         ),
                       ),
                     ),

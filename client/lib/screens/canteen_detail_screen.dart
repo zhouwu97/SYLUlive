@@ -258,7 +258,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           SliverFillRemaining(
             hasScrollBody: false,
             child: Center(
-              child: Padding(
+              child: AppContentSurface.card(
+                  child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -292,7 +293,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     ),
                   ],
                 ),
-              ),
+              )),
             ),
           ),
         ],
@@ -438,7 +439,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         statusBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
+        backgroundColor:
+            AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
         bottomNavigationBar: bottomNavigationBar,
         body: onRefresh == null
             ? scrollView
@@ -524,8 +526,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           if (mounted) {
             final data = error.response?.data;
             final message = data is Map
-                ? (data['message'] ?? data['error'])?.toString() ??
-                    '举报提交失败'
+                ? (data['message'] ?? data['error'])?.toString() ?? '举报提交失败'
                 : '举报提交失败';
             ScaffoldMessenger.of(context)
                 .showSnackBar(SnackBar(content: Text(message)));

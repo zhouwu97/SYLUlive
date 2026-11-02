@@ -1,3 +1,4 @@
+import 'helpers/active_backdrop_filters.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -102,7 +103,7 @@ void main() {
                 tester.getCenter(surface).dy)
             .abs(),
         lessThanOrEqualTo(1));
-    expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)),
+    expect(find.descendant(of: surface, matching: activeBackdropFilters()),
         findsOneWidget);
     await tester.enterText(field, '课表');
     await _pumpFrames(tester);
@@ -113,7 +114,7 @@ void main() {
     expect(tester.widget<TextField>(field).controller!.text, isEmpty);
     await page.themeProvider.setFrostedGlass(false);
     await _pumpFrames(tester);
-    expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)),
+    expect(find.descendant(of: surface, matching: activeBackdropFilters()),
         findsNothing);
     await _disposeFeed(tester, page);
   });

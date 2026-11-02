@@ -685,10 +685,11 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         : '本版 Lv.$levelNumber${levelTitle.isNotEmpty ? ' $levelTitle' : ''}';
 
     return AppCardSurface(
+      key: const ValueKey('water-section-summary-surface'),
       width: double.infinity,
       decoration: BoxDecoration(
         color: accent.withValues(alpha: dark ? 0.10 : 0.08),
-        borderRadius: BorderRadius.zero,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
       ),
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.lg,
@@ -897,7 +898,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     final accent = _sectionColor(section, dark);
     final title = _emptyTitleFor(section);
     final description = _emptyDescriptionFor(section);
-    return Padding(
+    return AppContentSurface(
+        child: Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.lg,
         AppSpacing.xl,
@@ -930,7 +932,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildErrorState(bool dark) {

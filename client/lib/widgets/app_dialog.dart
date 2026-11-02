@@ -3,7 +3,77 @@ import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
 import '../theme/app_radius.dart';
+import '../theme/app_motion.dart';
 import 'app_card.dart';
+
+/// 毛玻璃弹窗的底面、内容和模糊分别过渡，避免整窗 FadeTransition 的黑块。
+Future<T?> showAppDialog<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool barrierDismissible = true,
+}) {
+  final navigator = Navigator.of(context, rootNavigator: true);
+  return navigator.push<T>(_AppDialogRoute<T>(
+    context: context,
+    builder: builder,
+    barrierDismissible: barrierDismissible,
+    barrierColor: DialogTheme.of(context).barrierColor ?? Colors.black54,
+    themes: InheritedTheme.capture(from: context, to: navigator.context),
+    animationStyle: AnimationStyle(
+      duration: AppMotion.duration(context, AppMotion.overlay),
+    ),
+    reverseDuration: AppMotion.duration(context, AppMotion.fast),
+  ));
+}
+
+class _AppDialogRoute<T> extends DialogRoute<T> {
+  _AppDialogRoute({
+    required super.context,
+    required super.builder,
+    required super.barrierDismissible,
+    required super.barrierColor,
+    required super.themes,
+    required super.animationStyle,
+    required this.reverseDuration,
+  });
+
+  final Duration reverseDuration;
+
+  @override
+  Duration get reverseTransitionDuration => reverseDuration;
+
+  @override
+  Widget buildTransitions(BuildContext context, Animation<double> animation,
+      Animation<double> secondaryAnimation, Widget child) {
+    return AnimatedBuilder(
+      animation: animation,
+      child: child,
+      builder: (context, child) {
+        final progress = AppMotion.standard.transform(animation.value);
+        final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
+        final content = _DialogSurfaceTransition(
+          progress: glass ? progress : 1,
+          child: Opacity(opacity: glass ? 1 : progress, child: child),
+        );
+        return Transform.scale(
+          scale: AppMotion.reducedMotion(context) ? 1 : 0.96 + 0.04 * progress,
+          child: content,
+        );
+      },
+    );
+  }
+}
+
+class _DialogSurfaceTransition extends InheritedWidget {
+  const _DialogSurfaceTransition(
+      {required this.progress, required super.child});
+
+  final double progress;
+
+  @override
+  bool updateShouldNotify(_DialogSurfaceTransition oldWidget) =>
+      progress != oldWidget.progress;
+}
 
 /// 保留系统 Dialog 的布局、安全区、键盘避让与语义，只替换弹窗表面。
 class AppDialog extends Dialog {
@@ -26,15 +96,17 @@ class AppDialog extends Dialog {
 
   @override
   Widget build(BuildContext context) {
-    if (context.watch<ThemeProvider?>()?.frostedGlass != true) {
-      return super.build(context);
-    }
+    final settings = context.watch<ThemeProvider?>();
+    final glass = settings?.frostedGlass == true;
+    final transition =
+        context.dependOnInheritedWidgetOfExactType<_DialogSurfaceTransition>();
+    final progress = transition?.progress ?? 1;
     final theme = DialogTheme.of(context);
     final dialogShape = shape ??
         theme.shape ??
         const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(AppRadius.lg)));
-    final glassShape = dialogShape is OutlinedBorder
+    final glassShape = glass && dialogShape is OutlinedBorder
         ? dialogShape.copyWith(side: BorderSide.none)
         : dialogShape;
     return Dialog(
@@ -51,12 +123,26 @@ class AppDialog extends Dialog {
       constraints: constraints,
       semanticsRole: semanticsRole,
       child: AppCardMaterial(
+        surfaceOpacity: glass
+            ? progress *
+                (settings!.shouldShowCustomBackground
+                    ? settings.componentOpacity
+                    : 1)
+            : 1,
+        elevation: glass ? 0 : elevation ?? theme.elevation ?? 6,
+        shadowColor: shadowColor ?? theme.shadowColor,
+        surfaceTintColor: glass
+            ? Colors.transparent
+            : surfaceTintColor ?? theme.surfaceTintColor,
+        blur: 10 * progress,
+        animationDuration:
+            transition == null ? kThemeChangeDuration : Duration.zero,
         color: backgroundColor ??
             theme.backgroundColor ??
             Theme.of(context).colorScheme.surfaceContainerHigh,
         shape: glassShape,
         clipBehavior: Clip.antiAlias,
-        child: child,
+        child: Opacity(opacity: progress, child: child),
       ),
     );
   }
@@ -98,8 +184,7 @@ class AppAlertDialog extends AlertDialog {
   @override
   Widget build(BuildContext context) {
     final built = super.build(context);
-    if (context.watch<ThemeProvider?>()?.frostedGlass != true ||
-        built is! Dialog) {
+    if (built is! Dialog) {
       return built;
     }
     return AppDialog(

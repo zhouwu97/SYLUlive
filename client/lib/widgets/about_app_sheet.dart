@@ -487,7 +487,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
         isDark ? const Color(0x0DFFFFFF) : const Color(0x0D000000);
     const accent = Colors.orange;
 
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (dialogContext) {
         return AppAlertDialog(

@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,8 +9,10 @@ import 'package:shenliyuan/theme/app_theme.dart';
 import 'package:shenliyuan/widgets/app_choice_chip.dart';
 import 'package:shenliyuan/widgets/app_glass_button_style.dart';
 import '../helpers/golden_viewport.dart';
+import '../helpers/load_test_fonts.dart';
 
 void main() {
+  setUpAll(loadTestFonts);
   for (final dark in [false, true]) {
     for (final clean in [false, true]) {
       testWidgets('玻璃筛选、按钮保持实色前景和点击键盘状态 dark=$dark clean=$clean',
@@ -56,15 +59,18 @@ void main() {
         ));
         await tester.pumpAndSettle();
         expect(Theme.of(tester.element(find.text('全部'))).canvasColor,
-            Colors.transparent, reason: 'RawChip 的默认 Material 不能盖住玻璃和选中底色');
+            clean ? (dark ? AppTheme.darkTheme : AppTheme.lightTheme).canvasColor
+                : Colors.transparent,
+            reason: '简洁模式恢复原底色，自定义背景不能被 RawChip 默认 Material 遮住');
         final button = tester.widget<FilledButton>(find.byType(FilledButton));
         final foreground = button.style!.foregroundColor!.resolve({})!;
         expect(foreground.a, 1, reason: '透明度只用于按钮底面');
-        expect(button.style!.backgroundColor!.resolve({}), Colors.transparent);
-        expect(button.style!.backgroundBuilder, isNotNull);
+        expect(button.style!.backgroundColor!.resolve({}),
+            clean ? const Color(0xFF147C72) : Colors.transparent);
+        expect(button.style!.backgroundBuilder, clean ? isNull : isNotNull);
         expect(find.byType(Opacity), findsNothing);
-        final filters = tester.widgetList<BackdropFilter>(find.byType(BackdropFilter));
-        expect(filters, hasLength(2));
+        final filters = tester.widgetList<BackdropFilter>(activeBackdropFilters());
+        expect(filters, hasLength(clean ? 0 : 2));
         expect(filters.every((filter) => filter.blendMode == BlendMode.src), isTrue);
         await tester.tap(find.text('全部'));
         await tester.pumpAndSettle();
@@ -82,7 +88,7 @@ void main() {
         expect(pressed, 2);
         await appearance.setFrostedGlass(false);
         await tester.pumpAndSettle();
-        expect(find.byType(BackdropFilter), findsNothing);
+        expect(activeBackdropFilters(), findsNothing);
         expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed, isNull);
         expect(tester.takeException(), isNull);
       });

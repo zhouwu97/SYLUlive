@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -20,6 +21,7 @@ void main() {
           await appearance.setBackgroundImage('morenbeijing.jpeg');
           if (clean) await appearance.setCleanBackgroundMode();
           await appearance.setFrostedGlass(glass);
+          await appearance.setComponentOpacity(.7);
           int? selected;
           await tester.pumpWidget(ChangeNotifierProvider.value(
             value: appearance,
@@ -52,8 +54,8 @@ void main() {
                   .widget<BottomSheet>(find.byType(BottomSheet))
                   .showDragHandle,
               isTrue);
-          expect(find.byType(BackdropFilter),
-              glass ? findsOneWidget : findsNothing);
+          expect(activeBackdropFilters(),
+              glass && !clean ? findsOneWidget : findsNothing);
           if (glass) {
             final sheet = tester.widget<BottomSheet>(find.byType(BottomSheet));
             expect(sheet.backgroundColor!.a, closeTo(clean ? 1 : .7, .005));

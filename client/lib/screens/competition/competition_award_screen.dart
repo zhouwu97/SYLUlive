@@ -481,7 +481,8 @@ class _AwardEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Padding(
+    return AppContentSurface.card(
+        child: Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -512,6 +513,6 @@ class _AwardEmptyState extends StatelessWidget {
           FilledButton(onPressed: onAction, child: Text(actionLabel)),
         ],
       ),
-    );
+    ));
   }
 }

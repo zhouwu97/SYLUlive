@@ -742,9 +742,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     session.ensure(
         userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
     await ReplyNotificationService(auth.dio,
-        recipientUserId: session.accountId,
-        isCurrentSession: () => session.owns(
-            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch))
+            recipientUserId: session.accountId,
+            isCurrentSession: () => session.owns(
+                userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch))
         .markAllRead(repliesOnly: true, session: session);
     if (!mounted ||
         !session.owns(
@@ -787,7 +787,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       }
       final post = Post.fromJson(response.data as Map<String, dynamic>);
       try {
-        await ReplyNotificationService(authProvider.dio, recipientUserId: accountId, isCurrentSession: () => session.owns(userId: authProvider.user?.id, sessionEpoch: authProvider.accountSessionEpoch))
+        await ReplyNotificationService(authProvider.dio,
+                recipientUserId: accountId,
+                isCurrentSession: () => session.owns(
+                    userId: authProvider.user?.id,
+                    sessionEpoch: authProvider.accountSessionEpoch))
             .markRead(item.id, replyId: item.relatedId, session: session);
         if ((mounted && notificationSession.isCurrent(authProvider))) {
           ReplyNotificationState.instance.markRead(
@@ -815,7 +819,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       }
       if (error.response?.statusCode == 404) {
         try {
-          await ReplyNotificationService(authProvider.dio, recipientUserId: accountId, isCurrentSession: () => session.owns(userId: authProvider.user?.id, sessionEpoch: authProvider.accountSessionEpoch))
+          await ReplyNotificationService(authProvider.dio,
+                  recipientUserId: accountId,
+                  isCurrentSession: () => session.owns(
+                      userId: authProvider.user?.id,
+                      sessionEpoch: authProvider.accountSessionEpoch))
               .markRead(item.id, replyId: item.relatedId, session: session);
           if (!(mounted && notificationSession.isCurrent(authProvider))) {
             return;
@@ -919,7 +927,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Widget _buildFreshnessBanner() {
     final colors = Theme.of(context).colorScheme;
-    return Container(
+    return AppCardSurface(
       key: const ValueKey('feed-freshness-banner-container'),
       decoration: BoxDecoration(
         color: colors.surface,
@@ -1484,7 +1492,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
     return ColoredBox(
       color: context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
-          ? Colors.transparent : isDark ? const Color(0xFF131720) : Colors.white,
+          ? Colors.transparent
+          : isDark
+              ? const Color(0xFF131720)
+              : Colors.white,
       child: content,
     );
   }

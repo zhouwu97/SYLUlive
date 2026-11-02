@@ -985,10 +985,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             padding: const EdgeInsets.only(left: 4, bottom: 10),
             child: Text(
               title,
+              key: ValueKey('profile-section-$title'),
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white54 : Colors.grey[600],
+                color: appContentSecondaryColor(
+                    context, isDark ? Colors.white54 : Colors.grey[600]!),
               ),
             ),
           ),
@@ -1312,45 +1314,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
             }
 
             return AppCardSurface(
-              decoration: BoxDecoration(color: colors.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16))),
+              decoration: BoxDecoration(
+                  color: colors.surface,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(16))),
               child: SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Text(
-                      '启动页面',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: colors.onSurface,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Text(
+                        '启动页面',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: colors.onSurface,
+                        ),
                       ),
                     ),
-                  ),
-                  buildOption(
-                    StartupDestinationMode.home,
-                    '首页',
-                    '每次启动进入校园首页',
-                    Icons.home_rounded,
-                  ),
-                  buildOption(
-                    StartupDestinationMode.timetable,
-                    '课表',
-                    '每次启动直接进入当前课表',
-                    Icons.calendar_today,
-                  ),
-                  buildOption(
-                    StartupDestinationMode.lastPage,
-                    '上次退出页面',
-                    '重新打开 App 时恢复退出前所在页面',
-                    Icons.restore,
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ),
+                    buildOption(
+                      StartupDestinationMode.home,
+                      '首页',
+                      '每次启动进入校园首页',
+                      Icons.home_rounded,
+                    ),
+                    buildOption(
+                      StartupDestinationMode.timetable,
+                      '课表',
+                      '每次启动直接进入当前课表',
+                      Icons.calendar_today,
+                    ),
+                    buildOption(
+                      StartupDestinationMode.lastPage,
+                      '上次退出页面',
+                      '重新打开 App 时恢复退出前所在页面',
+                      Icons.restore,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
               ),
             );
           },

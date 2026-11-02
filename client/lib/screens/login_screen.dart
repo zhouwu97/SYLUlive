@@ -590,24 +590,26 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Text(
-                      '沈理校园',
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w800,
-                        color: text,
+                    Column(children: [
+                      Text(
+                        '沈理校园',
+                        style: TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          color: text,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '校园互助社交平台',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: subText,
+                      const SizedBox(height: 4),
+                      Text(
+                        '校园互助社交平台',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: subText,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
-                    ),
+                    ]),
                     const SizedBox(height: 40),
 
                     // Card

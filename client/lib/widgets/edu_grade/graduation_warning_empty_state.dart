@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../app_card.dart';
 
 class GraduationWarningEmptyState extends StatelessWidget {
   const GraduationWarningEmptyState({super.key});
@@ -7,9 +8,11 @@ class GraduationWarningEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = isDark ? const Color(0xFFFFC46B) : const Color(0xFFB86B00);
-    final secondary = isDark ? Colors.grey.shade400 : const Color(0xFF737A80);
+    final secondary = appContentSecondaryColor(
+        context, isDark ? Colors.grey.shade400 : const Color(0xFF737A80));
 
-    return Padding(
+    return AppContentSurface.card(
+        child: Padding(
       key: const ValueKey('graduation_warning_empty_state'),
       padding: const EdgeInsets.fromLTRB(32, 58, 32, 70),
       child: Column(
@@ -54,6 +57,6 @@ class GraduationWarningEmptyState extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ));
   }
 }

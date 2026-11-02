@@ -6,6 +6,7 @@ import 'package:pdfrx/pdfrx.dart';
 
 import '../../models/exam_paper.dart';
 import '../../services/exam_paper_service.dart';
+import '../../widgets/app_card.dart';
 
 class ExamPaperPreviewScreen extends StatefulWidget {
   final ExamPaper paper;
@@ -93,7 +94,8 @@ class _ExamPaperPreviewScreenState extends State<ExamPaperPreviewScreen> {
   Widget _buildBody() {
     if (_error != null) {
       return Center(
-        child: Padding(
+        child: AppContentSurface(
+            child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -108,19 +110,20 @@ class _ExamPaperPreviewScreenState extends State<ExamPaperPreviewScreen> {
               ),
             ],
           ),
-        ),
+        )),
       );
     }
     if (_loading || _file == null) {
       return const Center(
-        child: Column(
+        child: AppContentSurface(
+            child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             CircularProgressIndicator(),
             SizedBox(height: 14),
             Text('正在准备安全预览…'),
           ],
-        ),
+        )),
       );
     }
     return PdfViewer.file(_file!.path);

@@ -637,12 +637,12 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
           _registrationPendingCount > 0)
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Text(
+          child: AppContentSurface.reading(child: Text(
             '$_registrationPendingCount 项报名时间待核实，截止提醒尚未覆盖。',
             key: const Key('competition-registration-coverage'),
             style: TextStyle(
                 color: CompetitionUiTokens.subColor(isDark), fontSize: 12),
-          ),
+          )),
         ),
       CompetitionProfileCompactCard(
         isLoggedIn: context.watch<AuthProvider>().isLoggedIn,
@@ -765,11 +765,11 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
           if (_categoriesError != null)
             Align(
               alignment: Alignment.centerLeft,
-              child: TextButton.icon(
+              child: AppContentSurface(child: TextButton.icon(
                 onPressed: _loadCategories,
                 icon: const Icon(Icons.refresh_rounded, size: 16),
                 label: Text(_categoriesError!),
-              ),
+              )),
             ),
         ],
       ),
@@ -1043,7 +1043,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         CompetitionUiTokens.pagePadding,
         14,
       ),
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
         decoration: BoxDecoration(
           color: warning

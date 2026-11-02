@@ -690,7 +690,8 @@ class _CompetitionAwardEditorScreenState
 
   Widget _section(String title, bool isDark, Widget child) => Padding(
         padding: const EdgeInsets.only(bottom: 24),
-        child: Column(
+        child: AppContentSurface(
+            child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(title,
@@ -701,7 +702,7 @@ class _CompetitionAwardEditorScreenState
             const SizedBox(height: 10),
             child,
           ],
-        ),
+        )),
       );
 
   TextFormField _textField(

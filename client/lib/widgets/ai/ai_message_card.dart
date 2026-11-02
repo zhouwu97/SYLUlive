@@ -82,47 +82,53 @@ class AiMessageCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              AppCardSurface(
-                width: 25,
-                height: 25,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppColors.brandSurfaceLight,
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
+          AppContentSurface(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 25,
+                      height: 25,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppColors.brandSurfaceLight,
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                      ),
+                      child: const Icon(
+                        Icons.auto_awesome_rounded,
+                        size: 14,
+                        color: AppColors.brandPrimary,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      assistantLabel,
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
-                child: const Icon(
-                  Icons.auto_awesome_rounded,
-                  size: 14,
-                  color: AppColors.brandPrimary,
+                const SizedBox(height: 6),
+                MarkdownBody(
+                  data: citation.content,
+                  selectable: true,
+                  styleSheet: MarkdownStyleSheet(
+                    p: TextStyle(
+                      color: colors.onSurface,
+                      fontSize: 15,
+                      height: 1.64,
+                    ),
+                    listBullet:
+                        TextStyle(color: colors.onSurface, fontSize: 15),
+                    strong: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                assistantLabel,
-                style: const TextStyle(
-                  color: AppColors.textSecondaryLight,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          MarkdownBody(
-            data: citation.content,
-            selectable: true,
-            styleSheet: MarkdownStyleSheet(
-              p: TextStyle(
-                color: colors.onSurface,
-                fontSize: 15,
-                height: 1.64,
-              ),
-              listBullet: TextStyle(color: colors.onSurface, fontSize: 15),
-              strong: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
+              ])),
           for (final draft in message.actionDrafts)
             AiCompetitionPlanDraftCard(
               draft: draft,
@@ -157,7 +163,8 @@ class AiMessageCard extends StatelessWidget {
             ),
           if (message.sourceRecoveryState == AiSourceRecoveryState.failed &&
               citation.hasUnresolvedChunks)
-            Padding(
+            AppContentSurface(
+                child: Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Row(
                 children: [
@@ -178,7 +185,7 @@ class AiMessageCard extends StatelessWidget {
                         onPressed: onRetrySources, child: const Text('重试')),
                 ],
               ),
-            ),
+            )),
         ],
       ),
     );

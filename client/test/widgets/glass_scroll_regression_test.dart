@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -304,7 +305,7 @@ void main() {
         await theme.setFrostedGlass(false);
         await tester.pumpAndSettle();
         expect(find.byType(StretchingOverscrollIndicator), findsOneWidget);
-        expect(find.byType(BackdropFilter), findsNothing);
+        expect(activeBackdropFilters(), findsNothing);
         expect(tester.takeException(), isNull);
       }, variant: TargetPlatformVariant.only(TargetPlatform.android));
     }
@@ -313,6 +314,7 @@ void main() {
   testWidgets('菜单和设置装饰分隔线开关前后保持行高，关闭恢复线条', (tester) async {
     final theme = ThemeProvider(loadOnStart: false);
     addTearDown(theme.dispose);
+    await theme.setBackgroundImage('morenbeijing.jpeg');
     await tester.pumpWidget(ChangeNotifierProvider.value(
       value: theme,
       child: const MaterialApp(

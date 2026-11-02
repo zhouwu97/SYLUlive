@@ -251,7 +251,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
 
   // ── Disclaimer ─────────────────────────────────────────────────────
 
-  Widget _buildDisclaimer(bool isDark) => Container(
+  Widget _buildDisclaimer(bool isDark) => AppCardSurface(
         margin: const EdgeInsets.fromLTRB(16, 6, 16, 0),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
@@ -275,7 +275,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
                 '学科榜按课程聚合。添加授课教师时请选择标准课程名，例如"数据结构""高等数学A1"，避免同一课程被拆散。',
                 style: TextStyle(
                   fontSize: 12,
-                  color: RankingTokens.subColor(isDark),
+                  color: appContentSecondaryColor(context, RankingTokens.subColor(isDark)),
                   height: 1.4,
                 ),
               ),
@@ -350,13 +350,13 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
           }
           if (provider.subjects.isEmpty) {
             return Center(
-              child: Column(
+              child: AppContentSurface(child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     provider.error ?? '暂无学科数据',
                     style:
-                        TextStyle(color: RankingTokens.subColor(isDark)),
+                        TextStyle(color: appContentSecondaryColor(context, RankingTokens.subColor(isDark))),
                   ),
                   if (provider.error != null) ...[
                     const SizedBox(height: 12),
@@ -368,7 +368,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
                     ),
                   ],
                 ],
-              ),
+              )),
             );
           }
 
@@ -380,10 +380,10 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
                   .toList();
           if (subjects.isEmpty) {
             return Center(
-              child: Text(
+              child: AppContentSurface(child: Text(
                 '未找到相关学科',
-                style: TextStyle(color: RankingTokens.subColor(isDark)),
-              ),
+                style: TextStyle(color: appContentSecondaryColor(context, RankingTokens.subColor(isDark))),
+              )),
             );
           }
 
@@ -461,10 +461,10 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
           }
           if (majors.isEmpty) {
             return Center(
-              child: Text(
+              child: AppContentSurface(child: Text(
                 '暂无专业',
-                style: TextStyle(color: RankingTokens.subColor(isDark)),
-              ),
+                style: TextStyle(color: appContentSecondaryColor(context, RankingTokens.subColor(isDark))),
+              )),
             );
           }
 
@@ -632,7 +632,9 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
                         ),
                       ],
                       const SizedBox(height: 8),
-                      Row(
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
                         children: [
                           _buildMetricChip(
                             isDark,
@@ -640,7 +642,6 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
                             average.toStringAsFixed(1),
                             accent,
                           ),
-                          const SizedBox(width: 6),
                           _buildMetricChip(
                             isDark,
                             Icons.rate_review_outlined,
@@ -648,7 +649,6 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
                             accent,
                           ),
                           if (extraLabel.isNotEmpty) ...[
-                            const SizedBox(width: 6),
                             _buildMetricChip(
                               isDark,
                               Icons.layers_outlined,

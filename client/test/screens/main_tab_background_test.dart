@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -16,6 +17,7 @@ import 'package:shenliyuan/screens/market_screen.dart';
 import 'package:shenliyuan/services/ai_assistant_service.dart';
 import 'package:shenliyuan/services/campus_article_service.dart';
 import 'package:shenliyuan/widgets/global_background_wrapper.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
 
 import '../helpers/golden_test_app.dart';
 import '../helpers/golden_viewport.dart';
@@ -217,6 +219,29 @@ void main() {
         expect(customColor, isNot(cleanColor));
         final title = market ? '闲置自行车测试' : '校园通知测试';
         expect(find.text(title), findsOneWidget);
+
+        final captions = market
+            ? ['集市', '校园二手、求购和办事信息', '共 1 条']
+            : ['校园服务', '常用校园功能', '校园资讯', '校园通知与赛事信息'];
+        final captionRects = <String, Rect>{};
+        for (final caption in captions) {
+          final text = find.text(caption);
+          expect(text, findsOneWidget);
+          captionRects[caption] = tester.getRect(text);
+          expect(find.ancestor(of: text, matching: find.byType(AppContentSurface)),
+              findsNothing, reason: '标题和计数不能加矩形底色');
+        }
+
+        await theme.setFrostedGlass(false);
+        await tester.pumpAndSettle();
+        expect(await _capture(tester, capture, '$page-$profile-glass-off'),
+            customColor,
+            reason: '根页面壁纸不能随卡片毛玻璃开关消失');
+        expect(activeBackdropFilters(), findsNothing);
+        expect(find.text(title), findsOneWidget);
+        for (final caption in captions) {
+          expect(tester.getRect(find.text(caption)), captionRects[caption]);
+        }
 
         await theme.setCleanBackgroundMode();
         await tester.pumpAndSettle();

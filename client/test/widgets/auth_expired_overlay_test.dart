@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -36,7 +37,9 @@ void main() {
     AppPreferencesStore.setMockInitialValues({});
   });
 
-  testWidgets('frostedGlass=false 时 AuthExpiredOverlay 无 BackdropFilter 且操作功能完整', (tester) async {
+  testWidgets(
+      'frostedGlass=false 时 AuthExpiredOverlay 无 BackdropFilter 且操作功能完整',
+      (tester) async {
     final theme = await _createProvider();
     expect(theme.frostedGlass, isFalse);
 
@@ -51,7 +54,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(activeBackdropFilters(), findsNothing);
     expect(find.text('登录已过期'), findsOneWidget);
     expect(find.text('请重新登录以继续使用'), findsOneWidget);
     expect(find.text('暂时不管'), findsOneWidget);
@@ -62,28 +65,33 @@ void main() {
     expect(dismissed, isTrue);
   });
 
-  testWidgets('frostedGlass=true 时 AuthExpiredOverlay 包含 BackdropFilter 且操作功能完整', (tester) async {
-    final theme = await _createProvider();
-    await theme.setFrostedGlass(true);
-    expect(theme.frostedGlass, isTrue);
+  for (final clean in [false, true]) {
+    testWidgets('AuthExpiredOverlay 背景材质和操作功能 clean=$clean', (tester) async {
+      final theme = await _createProvider();
+      addTearDown(theme.dispose);
+      await theme.setBackgroundImage('morenbeijing.jpeg');
+      if (clean) await theme.setCleanBackgroundMode();
+      await theme.setFrostedGlass(true);
+      expect(theme.frostedGlass, !clean);
 
-    var relogined = false;
+      var relogined = false;
 
-    await tester.pumpWidget(
-      _buildWrapper(
-        theme,
-        onDismiss: () {},
-        onRelogin: () => relogined = true,
-      ),
-    );
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        _buildWrapper(
+          theme,
+          onDismiss: () {},
+          onRelogin: () => relogined = true,
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byType(BackdropFilter), findsOneWidget);
-    expect(find.text('登录已过期'), findsOneWidget);
-    expect(find.text('重新登录'), findsOneWidget);
+      expect(activeBackdropFilters(), clean ? findsNothing : findsOneWidget);
+      expect(find.text('登录已过期'), findsOneWidget);
+      expect(find.text('重新登录'), findsOneWidget);
 
-    await tester.tap(find.text('重新登录'));
-    await tester.pumpAndSettle();
-    expect(relogined, isTrue);
-  });
+      await tester.tap(find.text('重新登录'));
+      await tester.pumpAndSettle();
+      expect(relogined, isTrue);
+    });
+  }
 }

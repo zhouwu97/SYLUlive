@@ -16,7 +16,11 @@ def test_package_is_reproducible_and_excludes_local_secrets(tmp_path):
     source.mkdir()
     allowed = {
         "main.py", "client.py", "credential_store.py", "metadata.yaml",
-        "_conf_schema.json", "requirements.txt", "README.md", "private_review.py", "public_canteen.py",
+        "_conf_schema.json", "requirements.txt", "README.md", "private_review.py", "public_canteen.py", "public_agent.py",
+        "persona_dafeiyu.md", "THIRD_PARTY_NOTICES.md",
+        "creator_memory.py", "community_publisher.py",
+        "accounts.py", "administration.py", "permissions.py", "binding_delivery.py",
+        "binding_notifications.py", "group_confirmations.py", "personal.py",
     }
     for name in allowed:
         shutil.copyfile(root / source.name / name, source / name)

@@ -1,7 +1,7 @@
 name: astrbot_plugin_sylulive
 display_name: SYLUlive 授权助手
-desc: 读取公开校园社区，为本人创建待官网确认的帖子与评论草稿。不会接管 AstrBot 模型或记忆。
-version: v0.1.11
+desc: 公开校园社区工具；可选独立人格、公开 RAG 与限额自动浏览，沿用 AstrBot 原生 Agent。普通模式草稿仍需官网确认。
+version: v0.4.1
 author: SYLUlive
 repo: https://github.com/zhouwu97/SYLUlive
 astrbot_version: '>=4.23.1,<5'

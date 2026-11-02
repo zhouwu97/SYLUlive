@@ -55,7 +55,8 @@ async def test_checkin_new_scope_opt_in_and_old_tokens_stay_readonly():
 @pytest.mark.parametrize(
     "group,sender,platform",
     [
-        ("allowed-group", "owner", "configured-platform"),
+        ("other-group", "owner", "configured-platform"),
+        ("allowed-group", "member", "configured-platform"),
         ("", "other", "configured-platform"),
         ("", "owner", "other-platform"),
     ],
@@ -66,7 +67,8 @@ async def test_checkin_never_inherits_private_binding_in_group_or_other_sender(
     plugin, event, _ = fixture(group=group, sender=sender, platform=platform)
     plugin.config["allow_checkin"] = True
     plugin.client = SimpleNamespace(tokens={"scope": "checkin:write"}, call=AsyncMock())
-    assert "本人" in await plugin.checkin_result(event, submit=True)
+    result = await plugin.checkin_result(event, submit=True)
+    assert ("尚未授权" if sender == "member" else "本人") in result
     plugin.client.call.assert_not_called()
     assert "sylulive_checkin_status" not in PUBLIC_GROUP_TOOLS
 
@@ -144,7 +146,7 @@ async def test_random_meal_uses_full_real_rankings_without_credentials_and_no_im
     try:
         previous = None
         for _ in range(10):
-            result = json.loads(await plugin.eat_what(event))
+            result = json.loads(await plugin.select_meal(event))
             assert (
                 result["candidate_count"] == 127
                 and result["selection"]["id"] != previous
@@ -179,7 +181,7 @@ async def test_single_candidate_and_unknown_session_boundaries():
             return_value={"items": [{"id": 1, "name": "唯一店", "rank": 1}]}
         )
     )
-    assert json.loads(await plugin.eat_what(event))["selection"]["name"] == "唯一店"
+    assert json.loads(await plugin.select_meal(event))["selection"]["name"] == "唯一店"
     plugin.config["public_read_group_ids"] = []
     assert (
         json.loads(await plugin.eat_what(event))["error"] == "public_session_required"

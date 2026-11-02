@@ -57,7 +57,8 @@ def meal_fixture():
     async def read(path, **kwargs):
         return {"items": [rank]} if path.endswith("rankings") else detail
 
-    plugin.client = SimpleNamespace(public_call=AsyncMock(side_effect=read))
+    plugin.client = SimpleNamespace(public_call=AsyncMock(side_effect=read),
+                                    public_image=AsyncMock(side_effect=IntegrationProblem("image_not_found")))
     return plugin, event, manager
 
 

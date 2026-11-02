@@ -5,6 +5,7 @@ import binascii
 import hashlib
 import json
 import logging
+import os
 import random
 import re
 import ssl
@@ -12,6 +13,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, List, Tuple
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 from bs4 import BeautifulSoup
@@ -49,6 +51,11 @@ def _academic_tls_context() -> ssl.SSLContext:
     context = ssl.create_default_context()
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.set_ciphers(ACADEMIC_TLS_CIPHER)
+    # 学校只发送叶证书；补齐公开中间证书，仍要求链路最终到达系统可信根。
+    context.load_verify_locations(cafile=str(
+        Path(__file__).resolve().parent.parent / "certs" / "TrustAsiaTLSProRSACA2025.pem"
+    ))
+    context.verify_flags &= ~ssl.VERIFY_X509_PARTIAL_CHAIN
     return context
 
 logger = logging.getLogger(__name__)
@@ -141,6 +148,7 @@ class EduCrawler:
     async def __aenter__(self):
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout),
+            proxy=os.getenv("CAMPUS_CRAWLER_PROXY") or None,
             follow_redirects=False,
             verify=_academic_tls_context(),
             headers={

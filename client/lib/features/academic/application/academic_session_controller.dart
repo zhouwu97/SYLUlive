@@ -844,6 +844,36 @@ final class AcademicSessionController extends ChangeNotifier {
   Future<void> persistCurrentSession() =>
       _persistSessionArtifact(_accountGeneration);
 
+  /// 核验由服务器完成，已保存的有效学校会话也可作为候选材料。
+  /// 连接许可、账号作用域和材料有效期均需保持有效。
+  Future<ProviderSessionArtifact?>
+      exportSessionForIdentityVerification() async {
+    await waitForAccountContextReady();
+    final currentIdentity = identity;
+    final generation = contextGeneration;
+    bool current() =>
+        currentIdentity != null &&
+        identity == currentIdentity &&
+        isCurrentContext(
+            generation: generation, appUserId: currentIdentity.appUserId);
+    if (!current() || !await remoteAccessAllowed()) return null;
+    if (!current()) return null;
+    var artifact = await provider?.exportSession();
+    if (!current()) return null;
+    artifact ??=
+        await _sessionArtifactVaultFactory?.call(currentIdentity!).read();
+    if (!current() ||
+        artifact == null ||
+        artifact.artifactVersion != 1 ||
+        !artifact.isRestoreAgeValid ||
+        artifact.createdAt.toUtc().isAfter(DateTime.now().toUtc()) ||
+        artifact.providerId != currentIdentity!.providerId ||
+        artifact.studentId != currentIdentity.studentId) {
+      return null;
+    }
+    return artifact;
+  }
+
   Future<void> selectProviderIdentity(AcademicIdentityKey identity) async {
     if (this.identity == identity) return;
     final router = providerRouter;

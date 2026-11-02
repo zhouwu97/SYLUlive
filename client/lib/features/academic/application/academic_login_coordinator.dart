@@ -79,6 +79,7 @@ final class AcademicLoginCoordinator {
     required this.controller,
     AcademicCredentialStore? credentialStore,
     this.identityClient,
+    this.sessionExporter,
     Future<AppPreferencesStore> Function()? preferencesLoader,
     this.persistencePolicy,
     this.captchaSubmissionPolicy = const AcademicCaptchaSubmissionPolicy(),
@@ -119,12 +120,16 @@ final class AcademicLoginCoordinator {
   final AcademicSessionController controller;
   final AcademicCredentialStore credentialStore;
   final AcademicIdentityClient? identityClient;
+  final Future<ProviderSessionArtifact?> Function()? sessionExporter;
   AcademicIdentityClient? get _identityClient =>
       identityClient ?? controller.providerRouter?.identityClient;
   final Map<AcademicIdentityKey, Future<String?>> _bindingSyncs = {};
   final Set<AcademicIdentityKey> _syncedIdentities = {};
   final Map<AcademicIdentityKey, DateTime> _bindingAttempts = {};
   final Duration bindingRetryDelay;
+  final Map<AcademicIdentityKey, String> _bindingTerminalErrors = {};
+  final Map<AcademicIdentityKey, int> _bindingFailures = {};
+  final Map<AcademicIdentityKey, DateTime> _bindingNotBefore = {};
   Timer? _bindingRetry;
   bool _disposed = false;
 
@@ -140,7 +145,7 @@ final class AcademicLoginCoordinator {
         .bindingSyncState;
   }
 
-  /// 在课表等实际读取成功后补投递本机教务身份声明。
+  /// 在课表等实际读取成功后检查服务器身份，缺失时自动核验补交。
   ///
   /// 登录成功时已经会尝试一次；这里保留一个显式入口，覆盖登录完成后
   /// 网络短暂不可用、应用切后台或协调器尚未完成后台重试的情况。
@@ -441,25 +446,28 @@ final class AcademicLoginCoordinator {
     );
   }
 
-  // 学校会话已经在本机探活；HK 只登记最小绑定声明，不访问学校。
-  //
-  // 返回值是给登录结果的提示文案：null 表示这次没有需要用户处理的事。
-  // 注意「声明已接收」不等于「身份已核验」——这个接口从不接触学校，
-  // 服务端正确实现只回 verified=false / assurance_level=local_declaration。
+  // 原绑定入口完成本机学校登录后，在同一流程内核验并登记学生身份。
+  // 旧 declared/bound 只是投递声明，绝不能据此跳过服务器记录检查。
   Future<String?> _syncLocalBinding({bool force = false}) async {
     final identity = controller.identity;
     final client = _identityClient;
-    if (_disposed || identity == null || client == null) {
-      return null;
-    }
-    final generation = controller.contextGeneration;
+    if (_disposed || identity == null || client == null) return null;
     final running = _bindingSyncs[identity];
     if (running != null) return running;
-    if (!force && _syncedIdentities.contains(identity)) return null;
+    final generation = controller.contextGeneration;
+    bool current() =>
+        !_disposed &&
+        controller.identity == identity &&
+        controller.isCurrentContext(
+            generation: generation, appUserId: identity.appUserId);
+    final terminal = _bindingTerminalErrors[identity];
+    if (terminal != null) return terminal;
+    final next = _bindingNotBefore[identity];
+    if (next != null && DateTime.now().isBefore(next)) return null;
     final last = _bindingAttempts[identity];
     if (!force &&
         last != null &&
-        DateTime.now().difference(last) < const Duration(seconds: 30)) {
+        DateTime.now().difference(last) < bindingRetryDelay) {
       return null;
     }
     _bindingAttempts[identity] = DateTime.now();
@@ -467,74 +475,78 @@ final class AcademicLoginCoordinator {
       try {
         final store =
             AcademicConnectionStore(identity, await _preferencesLoader());
-        bool current() =>
-            !_disposed &&
-            controller.identity == identity &&
-            controller.isCurrentContext(
-                generation: generation, appUserId: identity.appUserId);
-        if (!current()) return null;
-        if (!store.connected) {
-          await store.setBindingSyncState(AcademicBindingSyncState.none);
-          return null;
-        }
-        // 声明已投递过就不重复上报：它不含学校凭据，重复投递只会多一次请求。
-        if (store.bindingDeclared) {
-          _syncedIdentities.add(identity);
-          return null;
-        }
-        // 契约错误已被判定为重试无益，只有重新连接教务（状态归零）才再试。
-        if (store.bindingSyncState == AcademicBindingSyncState.rejected) {
-          return null;
-        }
-        // 已通过本机认证的待同步声明可在学校离线时补发，不再提交学校密码。
-        if (!controller.isAuthenticated &&
-            store.bindingSyncState != AcademicBindingSyncState.pending) {
+        if (!current() || !store.connected || store.cleanupPending) return null;
+        await store.setBindingSyncState(AcademicBindingSyncState.pending);
+        if (!current() || !store.connected) return null;
+        final bindings = await client.listIdentities();
+        if (!current() || !store.connected) return null;
+        if (bindings.any((binding) =>
+            binding.providerId == identity.providerId &&
+            binding.studentId == identity.studentId &&
+            binding.verified)) {
+          await store.setBindingSyncState(AcademicBindingSyncState.verified);
+          if (!current()) return null;
+          if (_syncedIdentities.add(identity)) {
+            await controller.providerRouter?.onIdentityVerified?.call();
+          }
+          _bindingFailures.remove(identity);
+          _bindingNotBefore.remove(identity);
           return null;
         }
         await store.setBindingSyncState(AcademicBindingSyncState.pending);
         if (!current() || !store.connected) return null;
-        final binding = await client.bindLocal(identity);
-        if (!current() || !store.connected) {
-          return null;
+        // 先完成配置对账，冲突或云端解绑不能被旧设备自动覆盖。
+        await controller.providerRouter
+            ?.reconcileAccountConfiguration(requireSuccess: true, force: true);
+        if (!current() || !store.connected) return null;
+        final accounts = controller.providerRouter?.accountStore;
+        final entry = accounts?.entry(identity.providerId);
+        final snapshot = entry?['snapshot'] as Map?;
+        if (snapshot?['state'] != 'active' ||
+            snapshot?['student_id'] != identity.studentId) {
+          return '教务配置已变更，请在原教务绑定入口确认当前账号后重连';
         }
-        // 只有服务端真给出可核验依据时才刷新可信身份投影；本机声明不改变认证状态。
-        if (binding.isSchoolVerified) {
-          await controller.providerRouter?.onIdentityVerified?.call();
-          if (!current() || !store.connected) return null;
+        final artifact = sessionExporter != null
+            ? await sessionExporter!()
+            : await controller.exportSessionForIdentityVerification();
+        if (!current() || !store.connected) return null;
+        if (artifact == null) return '本机学校会话尚未恢复，请在原教务入口重新登录后自动同步';
+        final binding = await client.verifyLocalSession(identity, artifact);
+        if (!current() || !store.connected) return null;
+        if (!binding.isSchoolVerified) {
+          throw const AcademicIdentityApiException(
+              'ACADEMIC_BINDING_CONTRACT_ERROR', '服务器未确认学校身份');
         }
-        await store.setBindingSyncState(AcademicBindingSyncState.declared);
+        await store.setBindingSyncState(AcademicBindingSyncState.verified);
+        if (!current()) return null;
         _syncedIdentities.add(identity);
+        _bindingFailures.remove(identity);
+        _bindingNotBefore.remove(identity);
         _bindingRetry?.cancel();
+        await controller.providerRouter?.onIdentityVerified?.call();
         return null;
       } on AcademicIdentityApiException catch (error) {
-        if (_disposed ||
-            controller.identity != identity ||
-            !controller.isCurrentContext(
-                generation: generation, appUserId: identity.appUserId)) {
-          return null;
-        }
-        if (!error.isRetryable) {
-          // 契约错误 / 账号受限：再发多少次都一样。停下来并留下终态，
-          // 不挂定时器，避免"身份尚未同步"每 30 秒打扰一次。
+        if (!current()) return null;
+        if (!error.isRetryable ||
+            (error.statusCode != null &&
+                error.statusCode! >= 400 &&
+                error.statusCode! < 500 &&
+                error.statusCode != 429)) {
           _bindingRetry?.cancel();
-          try {
-            await AcademicConnectionStore(identity, await _preferencesLoader())
-                .setBindingSyncState(AcademicBindingSyncState.rejected);
-          } catch (_) {
-            // 状态写不进去时至少不再自动重试；下次连接仍会重新尝试。
-          }
-          return '教务已在本机连接，但学生身份声明未被接受，已停止自动重试。'
-              '${error.message}';
+          final message = '教务已在本机连接，但服务器登记未完成，已停止自动重试。${error.message}';
+          _bindingTerminalErrors[identity] = message;
+          await AcademicConnectionStore(identity, await _preferencesLoader())
+              .setBindingSyncState(AcademicBindingSyncState.rejected);
+          return message;
+        }
+        if (error.statusCode == 429) {
+          _bindingNotBefore[identity] =
+              DateTime.now().add(const Duration(minutes: 10));
         }
         _scheduleBindingRetry(identity, generation);
         return '教务已在本机连接，学生身份尚未同步；联网后会重试';
       } catch (_) {
-        if (_disposed ||
-            controller.identity != identity ||
-            !controller.isCurrentContext(
-                generation: generation, appUserId: identity.appUserId)) {
-          return null;
-        }
+        if (!current()) return null;
         _scheduleBindingRetry(identity, generation);
         return '教务已在本机连接，学生身份尚未同步；联网后会重试';
       }
@@ -543,14 +555,27 @@ final class AcademicLoginCoordinator {
     try {
       return await operation;
     } finally {
-      _bindingSyncs.remove(identity);
+      if (identical(_bindingSyncs[identity], operation)) {
+        _bindingSyncs.remove(identity);
+      }
     }
   }
 
   /// 只为**临时故障**安排重试：断网、限流、服务暂不可用会自己变好。
   void _scheduleBindingRetry(AcademicIdentityKey identity, int generation) {
     _bindingRetry?.cancel();
-    _bindingRetry = Timer(bindingRetryDelay, () {
+    final failures = (_bindingFailures[identity] ?? 0) + 1;
+    _bindingFailures[identity] = failures;
+    final multiplier = 1 << (failures - 1).clamp(0, 5);
+    final backoff = Duration(
+        milliseconds:
+            (bindingRetryDelay.inMilliseconds * multiplier).clamp(1, 600000));
+    final planned = DateTime.now().add(backoff);
+    final limited = _bindingNotBefore[identity];
+    final next =
+        limited != null && limited.isAfter(planned) ? limited : planned;
+    _bindingNotBefore[identity] = next;
+    _bindingRetry = Timer(next.difference(DateTime.now()), () {
       if (!_disposed &&
           controller.identity == identity &&
           controller.isCurrentContext(
@@ -595,6 +620,10 @@ final class AcademicLoginCoordinator {
         .where((i) => i.providerId == providerId)
         .firstOrNull;
     _replacedIdentity = previous != next ? previous : null;
+    _bindingTerminalErrors.remove(next);
+    _bindingNotBefore.remove(next);
+    _bindingAttempts.remove(next);
+    _syncedIdentities.remove(next);
     await controller.beginLocalConnection(next);
     return _login(
         appUserId: appUserId,

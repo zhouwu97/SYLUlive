@@ -138,7 +138,7 @@ func (h *AcademicAccountConfigHandler) Mutate(c *gin.Context) {
 
 // FrozenAcademicIdentityMutation 保留历史登录查询，停止服务器接收学校认证材料。
 func FrozenAcademicIdentityMutation(c *gin.Context) {
-	c.JSON(http.StatusGone, gin.H{"code": "ACADEMIC_IDENTITY_FROZEN", "message": "请升级客户端，在本设备连接教务"})
+	c.JSON(http.StatusGone, gin.H{"code": "ACADEMIC_IDENTITY_FROZEN", "message": "服务器暂未开放学生认证；本机连接教务不构成学生认证，请留意公告，无需反复重新绑定"})
 }
 
 // 校验发起时的 App 用户，防止异步队列或浏览器 Cookie 在切号后把旧 Outbox 写给新用户。

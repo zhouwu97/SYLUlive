@@ -467,7 +467,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                         widget.changeIdentity
                             ? '在本机登录新学号成功后更换，并清除旧学号的本机资料。登录失败保留原账号。'
                             : serverBinding
-                                ? '本设备直接登录所选教务系统，密码和学校会话仅在本机使用。云端只同步教务类型和学号，同步失败不影响本机使用。'
+                                ? '本设备直接登录所选教务系统。登录成功后自动同步绑定，服务器仅临时使用学校会话核对本人学号，不保存密码或学校会话；同步失败不影响本机使用。'
                                 : '密码用于学校登录；会话材料仅以加密形式保存在本机，可随时断开或清除。',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
@@ -568,7 +568,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                           subtitle: Text(
                             _usingSavedCredential
                                 ? '学号和密码仅保存在设备系统安全存储中'
-                                : '用于会话过期后自动重连；云端仅同步教务类型和学号',
+                                : '用于会话过期后自动重连；绑定同步不上传本机保存的密码',
                           ),
                           onChanged:
                               isBusy || awaitingCaptcha || _loadingPreferences
@@ -602,7 +602,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                           contentPadding: EdgeInsets.zero,
                           controlAffinity: ListTileControlAffinity.leading,
                           title: const Text('我已阅读并同意教务数据专项授权'),
-                          subtitle: const Text('手机登录教务成功后，仅将学号和教务类型同步到账户；密码与学校会话留在本机。'),
+                          subtitle: const Text('手机登录教务成功后自动登记绑定；缺少服务器记录时自动补交。学校会话仅用于本次核验，服务器只保存学号、教务类型和核验结果。'),
                           onChanged: isBusy || awaitingCaptcha
                               ? null
                               : (value) => setState(

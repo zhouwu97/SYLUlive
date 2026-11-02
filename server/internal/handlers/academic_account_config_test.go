@@ -14,6 +14,19 @@ import (
 	"testing"
 )
 
+func TestFrozenAcademicIdentityDoesNotSuggestRebinding(t *testing.T) {
+	r := gin.New()
+	r.POST("/identity", FrozenAcademicIdentityMutation)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("POST", "/identity", nil))
+	require.Equal(t, 410, w.Code)
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Equal(t, "ACADEMIC_IDENTITY_FROZEN", body["code"])
+	require.Contains(t, body["message"], "本机连接教务不构成学生认证")
+	require.Contains(t, body["message"], "无需反复重新绑定")
+}
+
 func TestAcademicConfigRevisionIsolationAndReplay(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)

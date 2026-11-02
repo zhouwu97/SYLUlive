@@ -10,3 +10,5 @@
 | 图片缓存/APK 临时文件 | 缓存目录 | 临时资源 | 可按缓存策略 | 不影响 | 不影响 | 清理 |
 
 AstrBot 多用户插件在插件数据目录按身份哈希保存随机 installation_id，不存 Token；每位发起人的凭据只放 OS 安全凭据库，无安全后端时仅进程内存。旧 owner 凭据槽不变。绑定结果等待与群披露确认只在内存，重载失效，不保存结果正文；范围和留存见[多用户授权](ai/astrbot-multi-user-authorization.md)及[留存台账](retention-and-backup-inventory.md)。
+
+教务自动绑定进度按 `academic_lifecycle_<identity>_binding_sync` 保存，只表示待同步／已同步／拒绝；历史 declared/bound 标记不能代替服务端权限。学校会话仍只在本机加密保存；自动登记核验时经 HTTPS 临时发送最小 Cookie／必要会话前缀，不在服务端保存。服务端身份缺失时，恢复会话、原入口重连和课表读取均可触发补交。云端解绑、不同学号或当前配置不一致时阻止旧设备恢复身份；旧队列冲突不阻断对相同有效云端学号的独立核验。

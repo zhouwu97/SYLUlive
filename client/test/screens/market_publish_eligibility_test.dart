@@ -3,20 +3,33 @@ import 'package:shenliyuan/screens/publish/market_publish_eligibility.dart';
 
 void main() {
   group('集市发布被拒文案', () {
+    test('旧服务端的毕业用户提示不能继续误导学生身份', () {
+      for (final detail in [
+        '毕业用户仅可发布普通帖子',
+        '毕业生暂不能发布集市帖子',
+        'market_graduated',
+      ]) {
+        final message = marketPublishServerDeniedMessage(detail);
+        expect(message, isNot(contains('毕业')));
+        expect(message, contains('教务绑定同步完成'));
+        expect(message, contains('原教务入口'));
+      }
+    });
+
     test('不能把「未核验」说成「毕业」', () {
       for (final hasLocal in [true, false]) {
         final message =
             marketPublishBlockedMessage(hasLocalAcademicConnection: hasLocal);
         expect(message, isNot(contains('毕业')),
             reason: '缺少学生认证与学历无关，文案不能误导用户去处理毕业状态');
-        expect(message, contains('学生认证'));
+        expect(message, contains('教务绑定同步完成'));
       }
     });
 
     test('说清楚缺的是哪一种可信凭据', () {
       final message =
           marketPublishBlockedMessage(hasLocalAcademicConnection: false);
-      expect(marketPublishRequiredCredential, '服务器学生认证');
+      expect(marketPublishRequiredCredential, '教务绑定同步完成');
       expect(message, contains(marketPublishRequiredCredential));
     });
 
@@ -26,8 +39,8 @@ void main() {
       final none =
           marketPublishBlockedMessage(hasLocalAcademicConnection: false);
       expect(local, isNot(equals(none)));
-      // 已连接的用户需要知道「连接不等于认证」，否则会以为再连一次就能发。
-      expect(local, contains('本机连接不构成学生认证'));
+      expect(local, contains('自动核验补交'));
+      expect(none, contains('登录成功后自动登记'));
       expect(none, isNot(contains('本机已连接教务')));
     });
 
@@ -36,7 +49,7 @@ void main() {
         final message =
             marketPublishBlockedMessage(hasLocalAcademicConnection: hasLocal);
         expect(message, contains('账号安全 - 教务身份与本机连接'));
-        expect(message, contains('无需反复重新绑定'));
+        expect(message, contains('原教务入口'));
       }
     });
 
@@ -48,11 +61,11 @@ void main() {
       // 服务端没给说明时退回本地文案，不能显示空白。
       expect(
         marketPublishServerDeniedMessage(null),
-        contains('学生认证'),
+        contains('教务绑定同步完成'),
       );
       expect(
         marketPublishServerDeniedMessage('   '),
-        contains('学生认证'),
+        contains('教务绑定同步完成'),
       );
     });
   });

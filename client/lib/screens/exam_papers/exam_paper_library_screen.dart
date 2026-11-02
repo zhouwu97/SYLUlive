@@ -13,6 +13,7 @@ import '../../widgets/exam_paper_card.dart';
 import '../../widgets/exam_papers/exam_paper_empty_state.dart';
 import '../../widgets/exam_papers/exam_paper_list_skeleton.dart';
 import '../../widgets/exam_papers/exam_paper_toolbar.dart';
+import '../../features/academic/application/academic_login_coordinator.dart';
 import '../edu_screen.dart';
 import '../login_screen.dart';
 import 'exam_paper_detail_screen.dart';
@@ -24,11 +25,13 @@ typedef ExamPaperServiceFactory = ExamPaperService Function(AuthProvider auth);
 class ExamPaperLibraryScreen extends StatefulWidget {
   final ExamPaperService? service;
   final ExamPaperServiceFactory? serviceFactory;
+  final Future<String?> Function()? synchronizeAcademicBinding;
 
   const ExamPaperLibraryScreen({
     super.key,
     this.service,
     this.serviceFactory,
+    this.synchronizeAcademicBinding,
   });
 
   @override
@@ -52,6 +55,9 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
   int _total = 0;
   int _requestGeneration = 0;
   String? _error;
+  String? _accessCheckScope;
+  String? _accessSyncMessage;
+  bool _checkingAccess = false;
   String _academicYear = '';
   String _semester = '';
   String _examType = '';
@@ -92,6 +98,18 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
     }
     final canAccess = auth.isLoggedIn &&
         (auth.user?.isAdmin == true || auth.user?.studentVerified == true);
+    // 资料刷新会递增 sessionGeneration；资格补交只绑定登录会话代次。
+    final accessScope = '${auth.accountSessionEpoch}:${auth.user?.id}';
+    if (auth.isInitialized &&
+        auth.isLoggedIn &&
+        !canAccess &&
+        _accessCheckScope != accessScope) {
+      _accessCheckScope = accessScope;
+      _checkingAccess = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_checkAccess());
+      });
+    }
     if (canAccess && !_loadScheduled && _items.isEmpty && !_loading) {
       _loadScheduled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -242,6 +260,57 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
     }
   }
 
+  Future<void> _checkAccess() async {
+    final auth = context.read<AuthProvider>();
+    final coordinator = context.read<AcademicLoginCoordinator?>();
+    final scope = '${auth.accountSessionEpoch}:${auth.user?.id}';
+    bool current() =>
+        mounted &&
+        identical(context.read<AuthProvider>(), auth) &&
+        auth.isLoggedIn &&
+        '${auth.accountSessionEpoch}:${auth.user?.id}' == scope;
+    if (!current()) return;
+    setState(() {
+      _checkingAccess = true;
+      _accessSyncMessage = null;
+    });
+    try {
+      await auth.refreshUser();
+      if (!current()) return;
+      if (auth.user?.studentVerified != true && auth.user?.isAdmin != true) {
+        final sync = widget.synchronizeAcademicBinding;
+        if (sync != null) {
+          final message = await sync();
+          if (!current()) return;
+          _accessSyncMessage = message;
+        } else {
+          if (coordinator != null) {
+            final restored = await coordinator.ensureAuthenticated();
+            if (!current()) return;
+            final message = await coordinator.synchronizeIdentityBinding();
+            if (!current()) return;
+            _accessSyncMessage = message;
+            if (_accessSyncMessage == null && !restored.isSuccess) {
+              _accessSyncMessage = restored.message;
+            }
+          }
+        }
+        if (!current()) return;
+        await auth.refreshUser();
+      }
+      if (!current()) return;
+      if ((auth.user?.studentVerified == true || auth.user?.isAdmin == true) &&
+          !_loadScheduled) {
+        _loadScheduled = true;
+        await _load(refresh: true);
+      }
+    } catch (_) {
+      if (current()) _accessSyncMessage = '教务绑定同步暂未完成，请检查网络后重试';
+    } finally {
+      if (current()) setState(() => _checkingAccess = false);
+    }
+  }
+
   Future<void> _openMySubmissions() async {
     final service = _service;
     if (service == null) return;
@@ -356,12 +425,23 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
                     type: ExamPaperAccessGuideType.login,
                     onAction: _openLogin,
                   )
-                : !canAccess
-                    ? ExamPaperAccessGuide(
-                        type: ExamPaperAccessGuideType.eduVerification,
-                        onAction: _openEduVerification,
-                      )
-                    : ResponsiveContent.page(child: _buildLibrary()),
+                : !canAccess && _checkingAccess
+                    ? const Center(
+                        child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 16),
+                            Text('正在同步已有教务绑定…')
+                          ]))
+                    : !canAccess
+                        ? ExamPaperAccessGuide(
+                            type: ExamPaperAccessGuideType.eduVerification,
+                            onAction: _openEduVerification,
+                            detail: _accessSyncMessage,
+                            onRetry: _checkAccess,
+                          )
+                        : ResponsiveContent.page(child: _buildLibrary()),
       ),
     );
   }

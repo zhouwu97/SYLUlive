@@ -80,3 +80,7 @@ go build ./...
 - [API 总览与路由状态](./API.md)
 - [仓库部署总入口](../DEPLOY.md)
 - [隐私数据台账](../docs/privacy-data-inventory.md)
+
+## 教务绑定自动登记
+
+原客户端绑定链路通过 `/api/student-identity/verify-session` 临时使用学校会话核对真实学号，仍受既有身份写入开关约束。配置／本机声明不直接授予资格；最终事务复核配置版本、账号、协议和在途尝试，解绑同时撤销匹配配置。完整契约与失败恢复见 [API 教务章节](API.md#3-教务系统-edu)。需同时部署 Python 内部核验接口，不批量手填可信身份。

@@ -3,11 +3,10 @@ import 'dart:convert';
 import '../../../platform/contracts/preferences_store.dart';
 import '../domain/academic_provider.dart';
 
-/// 本机声明（/student-identity/bind）的投递状态。
+/// 原教务绑定链路的自动同步进度，不能作为业务权限依据。
 ///
 /// 「本机已连接」（connected）、「账号配置已同步」（配置 outbox）、「身份已核验」
-/// （服务端可信绑定）是三件不同的事，这里只描述**声明**投递到哪一步，
-/// 不能拿它当学生认证结论用。
+/// （服务端可信绑定）分别保存；这里的进度不能代替服务端权限结论。
 abstract final class AcademicBindingSyncState {
   /// 尚未投递。
   static const none = 'none';
@@ -17,6 +16,9 @@ abstract final class AcademicBindingSyncState {
 
   /// 服务端已接收声明。它**不构成**服务器可信学生认证。
   static const declared = 'declared';
+
+  /// 服务端已从学校核验并记录；仅作同步进度，权限仍读取服务端身份。
+  static const verified = 'verified';
 
   /// 服务端拒绝或回执不符合契约。不再自动重试——契约错误重试不会变好，
   /// 只会让用户每隔几十秒被提醒一次。重新连接教务会把状态归零并允许再试。
@@ -34,7 +36,8 @@ final class AcademicConnectionStore {
   final AppPreferencesStore preferences;
   String get _prefix => 'academic_lifecycle_${identity.storageId}';
   String get bindingSyncState =>
-      preferences.getString('${_prefix}_binding_sync') ?? AcademicBindingSyncState.none;
+      preferences.getString('${_prefix}_binding_sync') ??
+      AcademicBindingSyncState.none;
 
   /// 声明是否已经投递过（含历史版本的 bound 终态）。
   bool get bindingDeclared {

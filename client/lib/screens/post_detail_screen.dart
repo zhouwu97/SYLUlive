@@ -3232,55 +3232,65 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
 
   Widget _buildWaterDetail(bool isDark) {
     final p = _post!;
-    return SingleChildScrollView(
+    // 评论区与底部输入条是两截。卡片只包住已有评论时，中间会留下透明缝，
+    // 下拉后帖子图片会从缝里露出来。底色铺满剩余视口，并把下拉超出的区域一并补上。
+    final commentColor = isDark ? const Color(0xFF131720) : Colors.white;
+    return CustomScrollView(
       key: const ValueKey('post-detail-scroll-view'),
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        children: [
-          // 白色内容卡片：作者 + 标题 + 正文 + 图片 + 信息 + 操作栏
-          _buildPostContentDismissWrapper(
-            child: AppCardSurface(
-              color: isDark ? const Color(0xFF131720) : Colors.white,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildModerationBanner(isDark),
-                  const SizedBox(height: 12),
-                  _buildWaterAuthorHeader(p, isDark),
-                  if (p.title.isNotEmpty || p.content.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    _buildWaterPostBody(p, isDark),
-                  ],
-                  if (p.images.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    _buildAdaptiveWaterImages(p, isDark),
-                  ],
-                  const SizedBox(height: 6),
-                  _buildWaterActionBar(isDark),
-                ],
+      slivers: [
+        SliverToBoxAdapter(
+          child: Column(
+            children: [
+              // 白色内容卡片：作者 + 标题 + 正文 + 图片 + 信息 + 操作栏
+              _buildPostContentDismissWrapper(
+                child: AppCardSurface(
+                  color: commentColor,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildModerationBanner(isDark),
+                      const SizedBox(height: 12),
+                      _buildWaterAuthorHeader(p, isDark),
+                      if (p.title.isNotEmpty || p.content.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        _buildWaterPostBody(p, isDark),
+                      ],
+                      if (p.images.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        _buildAdaptiveWaterImages(p, isDark),
+                      ],
+                      const SizedBox(height: 6),
+                      _buildWaterActionBar(isDark),
+                    ],
+                  ),
+                ),
               ),
+              // 8px 分区
+              Container(
+                height: 8,
+                color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                    ? Colors.transparent
+                    : isDark
+                        ? const Color(0xFF1A1E28)
+                        : const Color(0xFFF0F0F0),
+              ),
+            ],
+          ),
+        ),
+        SliverFillRemaining(
+          hasScrollBody: false,
+          fillOverscroll: true,
+          child: ColoredBox(
+            color: commentColor,
+            child: AppCardSurface(
+              key: _commentsSectionKey,
+              color: commentColor,
+              child: _buildWaterCommentsSection(isDark),
             ),
           ),
-          // 8px 分区
-          Container(
-            height: 8,
-            color: context.watch<ThemeProvider?>()?.frostedGlass == true
-                ? Colors.transparent
-                : isDark
-                    ? const Color(0xFF1A1E28)
-                    : const Color(0xFFF0F0F0),
-          ),
-          // 白色评论区卡片
-          AppCardSurface(
-            key: _commentsSectionKey,
-            color: isDark ? const Color(0xFF131720) : Colors.white,
-            child: _buildWaterCommentsSection(isDark),
-          ),
-          // 底部留白给固定输入栏
-          const SizedBox(height: 60),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

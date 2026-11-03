@@ -139,7 +139,11 @@ class _PollPostCardState extends State<PollPostCard> {
           : AppColors.surfaceSecondaryLight,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(
-          homeCompact ? AppRadius.md : AppRadius.sm,
+          widget.variant == PollCardVariant.centerFull
+              ? AppRadius.lg
+              : homeCompact
+                  ? AppRadius.md
+                  : AppRadius.sm,
         ),
         side: BorderSide(
           color: (isDark

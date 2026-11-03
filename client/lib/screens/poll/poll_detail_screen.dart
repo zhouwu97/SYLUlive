@@ -11,6 +11,9 @@ import '../../providers/auth_provider.dart';
 import '../../providers/poll_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_spacing.dart';
 import '../../widgets/global_background_wrapper.dart';
 import '../../services/poll_service.dart';
 import '../../services/post_reply_service.dart';
@@ -652,20 +655,24 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
       return Scaffold(
         backgroundColor: customBackground ? Colors.transparent : null,
         body: Center(
-          child: AppContentSurface(
-              child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(_pollNotFound ? '投票不存在或已删除' : (_pollError ?? '加载投票失败')),
-              if (!_pollNotFound) ...[
-                const SizedBox(height: 12),
-                FilledButton.icon(
-                    onPressed: _loadPoll,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('重试')),
-              ],
-            ],
-          )),
+          child: AppContentSurface.card(
+              child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(_pollNotFound
+                          ? '投票不存在或已删除'
+                          : (_pollError ?? '加载投票失败')),
+                      if (!_pollNotFound) ...[
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                            onPressed: _loadPoll,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('重试')),
+                      ],
+                    ],
+                  ))),
         ),
       );
     }
@@ -691,11 +698,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                   addRepaintBoundaries: false,
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
                   children: [
-                    AppCardSurface(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: BorderRadius.zero,
-                      ),
+                    AppContentSurface.reading(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -734,9 +737,12 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                     const AppCardDivider(height: 24),
                     AppCardSurface(
                       key: const ValueKey('poll-comments-surface'),
+                      padding: const EdgeInsets.all(AppSpacing.lg),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: BorderRadius.zero,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? AppColors.surfaceSecondaryDark
+                            : AppColors.surfaceSecondaryLight,
+                        borderRadius: BorderRadius.circular(AppRadius.lg),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -15,6 +15,7 @@ import '../services/root_page_state_service.dart';
 import '../utils/app_navigator.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_radius.dart';
+import '../theme/app_colors.dart';
 import '../config/api_constants.dart';
 import '../config/market_contact_type.dart';
 import '../config/water_post_taxonomy.dart';
@@ -2762,8 +2763,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
         child: AppCardSurface(
           padding: const EdgeInsets.all(28),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF171B24) : Colors.white,
-            borderRadius: BorderRadius.circular(20),
+            color: isDark
+                ? AppColors.surfaceSecondaryDark
+                : AppColors.surfaceSecondaryLight,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -2845,7 +2848,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                   child: _buildInputDismissRegion(
                     child: AppCardSurface(
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF131720) : Colors.white,
+                        color: isDark
+                            ? AppColors.surfaceSecondaryDark
+                            : AppColors.surfaceSecondaryLight,
                         borderRadius: BorderRadius.circular(AppRadius.lg),
                       ),
                       child: SingleChildScrollView(
@@ -3020,7 +3025,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                     child: AppCardSurface(
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF131720) : Colors.white,
+                        color: isDark
+                            ? AppColors.surfaceSecondaryDark
+                            : AppColors.surfaceSecondaryLight,
                         borderRadius: p.images.isNotEmpty
                             ? const BorderRadius.vertical(
                                 top: Radius.circular(24))
@@ -3255,7 +3262,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           child: _buildPostContentDismissWrapper(
             child: AppCardSurface(
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF131720) : Colors.white,
+                color: isDark
+                    ? AppColors.surfaceSecondaryDark
+                    : AppColors.surfaceSecondaryLight,
                 borderRadius: BorderRadius.circular(AppRadius.lg),
               ),
               child: Column(
@@ -3288,7 +3297,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
             child: AppCardSurface(
               key: _commentsSectionKey,
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF131720) : Colors.white,
+                color: isDark
+                    ? AppColors.surfaceSecondaryDark
+                    : AppColors.surfaceSecondaryLight,
                 borderRadius: BorderRadius.circular(AppRadius.lg),
               ),
               child: _buildWaterCommentsSection(isDark),
@@ -3840,8 +3851,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       child: AppCardSurface(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0x99171B24) : const Color(0x0A000000),
-          borderRadius: BorderRadius.circular(18),
+          color: isDark
+              ? AppColors.surfaceSecondaryDark
+              : AppColors.surfaceSecondaryLight,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
         ),
         child: Row(
           children: [

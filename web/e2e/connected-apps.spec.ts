@@ -461,11 +461,13 @@ test("机器人新建头像权限编辑启用暂停完整链路，自动评论�
 
 test("机器人读取有加载反馈，失败可重试且不伪造账号状态", async ({ page }) => {
   await fixture(page);
-  let fail = true, first = true;
+  let fail = true;
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
   await page.route("**/api/connected-apps/bot", async route => {
-    if (first) { first = false; await pending; }
+    // 初始化会话可能取消并重发读取，加载阶段的所有请求均等待同一次明确放行。
+    await pending;
+    if (route.request().failure()) return;
     await route.fulfill(fail ? {status:503,json:{code:"integration_unavailable"}}
       : {json:{bot:null,policy_supported:true,sections:[{slug:"campus_life",name:"校园生活"}],auto_reply_server_enabled:false,auto_reply_authorized:false}});
   });

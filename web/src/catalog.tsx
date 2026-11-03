@@ -193,6 +193,7 @@ export function CatalogDetail({ kind }: { kind: CatalogKind }) {
           : kind === "competition"
             ? "event"
             : "article",
+    ...(kind === "campus" ? ["item"] : []),
     "data",
   );
   const dishes = useApi(

@@ -1,5 +1,17 @@
 import { test, expect, type Page } from "@playwright/test";
 
+test("校园资讯按真实 item 封装进入详情并完整显示正文与官方来源", async ({ page }) => {
+  await fixture(page, true);
+  const article = { id: 600, title: "校园公开通知的完整标题", author_department: "校园服务中心", publish_date: "2026-11-03", content_text: "这是一则学校公开通知的完整正文。", source_url: "https://www.sylu.edu.cn/notice/test.htm" };
+  await page.route("**/api/campus/articles/600", route => route.fulfill({ json: { item: article } }));
+  await page.goto("campus/600");
+  await expect(page.getByRole("heading", { name: article.title, level: 1, exact: true })).toBeVisible();
+  await expect(page.locator("#mainContent")).toContainText(article.content_text);
+  await expect(page.getByRole("link", { name: "查看官方来源", exact: true })).toHaveAttribute("href", article.source_url);
+  await page.getByRole("link", { name: "返回列表", exact: true }).click();
+  await expect(page).toHaveURL(/\/campus$/);
+});
+
 test("经验字段在桌面资料、作者、详情侧栏与手机资料显示同一 App 等级", async ({ page }) => {
   await fixture(page);
   await page.goto("./");

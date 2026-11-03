@@ -6,6 +6,7 @@ import {
   request,
   requestBlob,
   setAuthSession,
+  errorText,
   write,
 } from "./api";
 
@@ -29,6 +30,11 @@ beforeEach(() => {
   // 每个用例从干净世代开始，避免上一个用例的 abort 影响断言。
   beginAuthTransition();
   vi.unstubAllGlobals();
+});
+
+it("取消请求显示可理解的中文提示，不暴露浏览器内部异常", () => {
+  expect(errorText(new DOMException("signal is aborted without reason", "AbortError"))).toBe("请求已取消，请重试。");
+  expect(errorText(new Error("网络连接失败"))).toBe("网络连接失败");
 });
 
 it("多步操作的会话检查覆盖 A → B → A 与退出转换", () => {

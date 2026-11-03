@@ -181,4 +181,5 @@ id_ed25519*
 /client/scripts/fix_*.py
 /client/scripts/modify_center.py
 /client/scripts/refactor*.py
+/dist/astrbot_plugin_sylulive.zip
 /client/scripts/run_center_refactor.py

@@ -32,6 +32,12 @@ type toolArgumentValidator interface {
 	ValidateToolArguments(json.RawMessage) error
 }
 
+// toolCachedResultValidator 可在幂等重放前复核可撤回的公开来源。
+// 幂等审计不能使已经删除或隐藏的社区内容继续进入模型。
+type toolCachedResultValidator interface {
+	ValidateCachedToolResult(context.Context, uint, json.RawMessage, json.RawMessage) error
+}
+
 // ToolWait 表示工具需要在外部操作完成后才能给出结果。
 // ResumeKey 仅保存作业标识，不能包含成绩、凭据或设备缓存内容。
 type ToolWait struct {
@@ -237,6 +243,11 @@ func (r *ToolRegistry) Execute(ctx context.Context, callID, runID string, userID
 			return ToolExecutionResult{}, false, errors.New("tool_call_idempotency_conflict")
 		}
 		if existing.Status == "completed" {
+			if validator, ok := tool.(toolCachedResultValidator); ok {
+				if err := validator.ValidateCachedToolResult(ctx, userID, arguments, json.RawMessage(existing.ResultJSON)); err != nil {
+					return ToolExecutionResult{}, true, err
+				}
+			}
 			return ToolExecutionResult{Result: json.RawMessage(existing.ResultJSON)}, true, nil
 		}
 		return ToolExecutionResult{}, true, errors.New("tool_call_in_progress")

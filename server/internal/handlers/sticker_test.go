@@ -6,10 +6,33 @@ import (
 	"image/gif"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 )
+
+func TestBuiltinStickerCatalogMatchesPublishWhitelist(t *testing.T) {
+	items := ListBuiltinStickers()
+	if len(items) == 0 || len(items) != len(stickerAssets) {
+		t.Fatal("内置表情目录与评论发布白名单不一致")
+	}
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		if !IsValidStickerID(item.ID) || item.Label == "" {
+			t.Fatalf("无效目录条目: %q", item.ID)
+		}
+		ids = append(ids, item.ID)
+	}
+	if !sort.StringsAreSorted(ids) {
+		t.Fatal("目录顺序不稳定")
+	}
+	original := items[0]
+	items[0].ID = "mutated"
+	if ListBuiltinStickers()[0] != original {
+		t.Fatal("调用方修改了共享表情白名单")
+	}
+}
 
 func TestServeStickerUsesCatalogWhitelistAndImmutableCache(t *testing.T) {
 	gin.SetMode(gin.TestMode)

@@ -754,15 +754,19 @@ func (h *AcademicIdentityHandler) hashRequestIP(ip string) string {
 }
 
 func (h *AcademicIdentityHandler) challengeRateLimited(userID uint, ipHash string, now time.Time) (bool, error) {
+	return academicChallengeRateLimited(h.db, userID, ipHash, now)
+}
+
+func academicChallengeRateLimited(db *gorm.DB, userID uint, ipHash string, now time.Time) (bool, error) {
 	cutoff := now.Add(-academicChallengeRateWindow)
 	var userCount, ipCount int64
-	if err := h.db.Model(&models.AcademicIdentityChallenge{}).Where("user_id = ? AND created_at >= ?", userID, cutoff).Count(&userCount).Error; err != nil {
+	if err := db.Model(&models.AcademicIdentityChallenge{}).Where("user_id = ? AND created_at >= ?", userID, cutoff).Count(&userCount).Error; err != nil {
 		return false, err
 	}
 	if userCount >= academicChallengeUserLimit {
 		return true, nil
 	}
-	if err := h.db.Model(&models.AcademicIdentityChallenge{}).Where("request_ip_hash = ? AND created_at >= ?", ipHash, cutoff).Count(&ipCount).Error; err != nil {
+	if err := db.Model(&models.AcademicIdentityChallenge{}).Where("request_ip_hash = ? AND created_at >= ?", ipHash, cutoff).Count(&ipCount).Error; err != nil {
 		return false, err
 	}
 	return ipCount >= academicChallengeIPLimit, nil
@@ -804,6 +808,11 @@ func persistAcademicIdentityBinding(db *gorm.DB, userID uint, providerID, studen
 		return nil
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
+		var integrationOwner models.User
+		if err := tx.Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).Select("id").First(&integrationOwner, userID).Error; err != nil {
+			return err
+		}
+
 		var conflict models.AcademicIdentityBinding
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("provider_id = ? AND student_id = ?", providerID, studentID).First(&conflict).Error
 		if err == nil && conflict.UserID != userID {

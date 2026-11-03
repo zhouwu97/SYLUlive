@@ -6,6 +6,7 @@ import (
 	"gorm.io/gorm/clause"
 	"net/http"
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 	"time"
 )
 
@@ -38,12 +39,12 @@ func (h *AcademicIdentityHandler) Unbind(c *gin.Context) {
 		return
 	}
 	err := h.db.Transaction(func(tx *gorm.DB) error {
-		var bindings []models.AcademicIdentityBinding
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? AND provider_id = ? AND student_id = ?", userID, input.ProviderID, input.StudentID).Find(&bindings).Error; err != nil {
-			return err
-		}
 		var user models.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+			return err
+		}
+		var bindings []models.AcademicIdentityBinding
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? AND provider_id = ? AND student_id = ?", userID, input.ProviderID, input.StudentID).Find(&bindings).Error; err != nil {
 			return err
 		}
 		updates := map[string]interface{}{}
@@ -75,7 +76,19 @@ func (h *AcademicIdentityHandler) Unbind(c *gin.Context) {
 				return err
 			}
 		}
+		if err := services.InvalidateUserIntegrations(tx, userID, time.Now()); err != nil {
+			return err
+		}
 		// 使尚未提交的挑战失效，解绑前的验证码不能再次绑定回来。
+		// 同时撤销云端配置，旧设备的会话补交不能在解绑后重新授予身份。
+		if tx.Migrator().HasTable(&models.AcademicAccountConfig{}) {
+			now := time.Now()
+			if err := tx.Model(&models.AcademicAccountConfig{}).
+				Where("user_id = ? AND provider_id = ? AND student_id = ? AND state = ?", userID, input.ProviderID, input.StudentID, "active").
+				Updates(map[string]interface{}{"state": "deleted", "student_id": "", "revision": gorm.Expr("revision + 1"), "deleted_at": now}).Error; err != nil {
+				return err
+			}
+		}
 		if err := tx.Model(&models.AcademicIdentityChallenge{}).
 			Where("user_id = ? AND provider_id = ? AND student_id = ? AND consumed_at IS NULL", userID, input.ProviderID, input.StudentID).
 			Update("consumed_at", time.Now()).Error; err != nil {

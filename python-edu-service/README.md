@@ -36,6 +36,10 @@ python main.py
 
 公开校园信息同步、竞赛公开信息和探针脚本不应读取个人学校凭据。
 
+`POST /api/edu/verify_session` 仅供 Go 绑定链路使用，要求内部服务令牌且受上述退役开关控制。它临时接收学校 Cookie，向固定本科本人资料入口核对学校返回的三个学号字段，不接受调用方提供学号、目标 URL 或网页。Cookie 用 SecretStr 脱敏，不保存、不写日志；对外绑定契约和限流见后端 API 文档。
+
+本科学校请求沿用 `CAMPUS_CRAWLER_PROXY` 指定的受限校园代理。HTTPS CONNECT 保留对学校的 TLS 校验，代理配置只由运维环境提供。学校漏发的公开中间证书随 `certs/TrustAsiaTLSProRSACA2025.pem` 部署，验证链仍须到达系统可信根，域名校验持续生效。证书来源和指纹见同目录说明。
+
 ## 测试与相关文档
 
 ```bash

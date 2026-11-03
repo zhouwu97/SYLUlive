@@ -700,16 +700,12 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		// 同一事务内复核帖子可写状态：治理可能已在本次检查之后隐藏了帖子，
 		// 不能在帖子已不可回复后仍然写入新回复。这里对帖子行加行锁，让复核结果权威：
 		// 治理对同一行的更新会阻塞到本事务提交，避免"复核通过 -> 治理隐藏 -> 仍提交回复"。
-		status, err := services.LockPostStatusForReply(tx, uint(postID))
-		if err != nil {
-			return err
-		}
-		if status != models.PostStatusNormal {
-			return errPostNotReplyable
-		}
 		txNow := time.Now()
-		if quotaErr := services.CheckReplyPublishQuota(tx, userID.(uint), uint(postID), input.Content, txNow); quotaErr != nil {
-			return quotaErr
+		if err := services.PrepareReplyPublish(tx, &reply, input.Content, txNow); err != nil {
+			if errors.Is(err, services.ErrPostNotReplyable) {
+				return errPostNotReplyable
+			}
+			return err
 		}
 		// 等待锁之后再确定发表时刻，保证额度窗口与 CreatedAt 使用同一时钟基准。
 		reply.CreatedAt = txNow
@@ -719,7 +715,10 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		if err := services.ClaimPublicImageFiles(tx, parsedFileIDs); err != nil {
 			return err
 		}
-		if err := tx.Create(&reply).Error; err != nil {
+		if err := services.InsertReplyWithActivity(tx, &reply); err != nil {
+			if errors.Is(err, services.ErrPostNotReplyable) {
+				return errPostNotReplyable
+			}
 			return err
 		}
 		if len(parsedFileIDs) > 0 {
@@ -728,21 +727,6 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 					return err
 				}
 			}
-		}
-		// 统计更新再次带上 status = normal 并校验影响行数：行锁在 PostgreSQL 上已能挡住治理，
-		// 但在 SQLite（无行锁）等环境下，这里是"帖子在复核之后被隐藏"的最后一道闸门。
-		// 影响 0 行说明帖子已不可回复，回滚整个事务，不能留下挂在隐藏帖子上的回复。
-		result := tx.Model(&models.Post{}).
-			Where("id = ? AND status = ?", postID, models.PostStatusNormal).
-			Updates(map[string]interface{}{
-				"reply_count":      gorm.Expr("reply_count + 1"),
-				"last_activity_at": reply.CreatedAt,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return errPostNotReplyable
 		}
 		return nil
 	})
@@ -925,7 +909,11 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		// 与创建、助手确认及治理保持“先帖子、后评论”的顺序。
+		if _, err := services.LockPostStatusForReply(tx, reply.PostID); err != nil {
+			return err
+		}
 		var rows []models.ReplyImage
 		if err := tx.Select("file_id").Where("reply_id = ?", reply.ID).Find(&rows).Error; err != nil {
 			return err

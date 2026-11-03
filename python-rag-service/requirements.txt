@@ -5,7 +5,7 @@ fastembed==0.9.1
 # Verify existing model outputs before upgrading the inference runtime.
 onnxruntime==1.30.0
 jieba==0.42.1
-pypdf==6.21.2
+pypdf==6.21.4
 python-docx==1.2.0
 beautifulsoup4==4.15.0
 pydantic==2.12.5

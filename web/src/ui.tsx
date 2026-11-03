@@ -324,7 +324,7 @@ export function QueryState({
     );
   if (query.error)
     return (
-      <Empty title="加载未完成" description={query.error.message}>
+      <Empty title="加载未完成" description={errorText(query.error)}>
         <button className="btn" onClick={() => query.refetch()}>
           重试
         </button>

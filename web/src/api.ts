@@ -256,7 +256,9 @@ export function downloadJSON(name: string, value: unknown) {
   setTimeout(() => URL.revokeObjectURL(u), 1000);
 }
 export const errorText = (error: unknown) =>
-  error instanceof Error ? error.message : "操作未完成，请重试";
+  error instanceof Error
+    ? error.name === "AbortError" ? "请求已取消，请重试。" : error.message
+    : "操作未完成，请重试";
 export const time = (s: unknown) =>
   typeof s === "string" && Number.isFinite(Date.parse(s))
     ? new Date(s).toLocaleString("zh-CN", { hour12: false })

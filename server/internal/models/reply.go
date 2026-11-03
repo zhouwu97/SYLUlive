@@ -15,9 +15,10 @@ const (
 
 // Reply 回复模型（支持一层嵌套）
 type Reply struct {
-	ID            uint  `gorm:"primaryKey" json:"id"`
-	PostID        uint  `gorm:"not null;index:idx_replies_post_status_created,priority:1" json:"post_id"`
-	ParentReplyID *uint `gorm:"index" json:"parent_reply_id"` // 空表示顶级回复
+	ContentOrigin string `gorm:"size:20;not null;default:''" json:"content_origin,omitempty"`
+	ID            uint   `gorm:"primaryKey" json:"id"`
+	PostID        uint   `gorm:"not null;index:idx_replies_post_status_created,priority:1" json:"post_id"`
+	ParentReplyID *uint  `gorm:"index" json:"parent_reply_id"` // 空表示顶级回复
 	// ReplyToUserID 精确回复对象（被 @ 的用户）：楼中楼里点击某条子回复时，
 	// 通知必须发给该用户，而不是根评论作者。
 	ReplyToUserID *uint `gorm:"index" json:"reply_to_user_id,omitempty"`

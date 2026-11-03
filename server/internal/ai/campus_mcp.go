@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/academic"
+	"shenliyuan/internal/community"
 	"shenliyuan/internal/models"
 )
 
@@ -67,6 +68,8 @@ type campusMCP struct {
 	personalSnapshots PersonalSnapshotReader
 	deviceJobs        DeviceJobScheduler
 	permissions       PersonalDataPermissionReader
+	communityEnabled  bool
+	communityReader   *community.Reader
 	now               func() time.Time
 }
 
@@ -143,7 +146,7 @@ func NewCampusMCPTools(db *gorm.DB, snapshots AcademicSnapshotReader, personalSn
 			option(mcp)
 		}
 	}
-	return []PureReadTool{
+	tools := []PureReadTool{
 		campusMCPTool{"campus.search_policy", "检索已发布的学校政策、办事规则与知识库资料。", searchSchema(), mcp.searchPolicy},
 		campusMCPTool{"campus.search_service", "检索校园服务办理信息与服务说明。", searchSchema(), mcp.searchService},
 		campusMCPTool{"campus.search_notifications", "检索已发布的教务、创新创业和站内公告。", searchSchema(), mcp.searchNotifications},
@@ -180,6 +183,10 @@ func NewCampusMCPTools(db *gorm.DB, snapshots AcademicSnapshotReader, personalSn
 		campusMCPTool{"personal_calendar.get_day", "读取当前用户指定日期的个人日历事件。", calendarDaySchema(), mcp.getPersonalCalendarDay},
 		campusMCPTool{"personal_calendar.find_free_time", "根据个人日历事件计算可用时间窗口，不写入任何数据。", freeTimeSchema(), mcp.findPersonalFreeTime},
 	}
+	if mcp.communityEnabled {
+		tools = append(tools, mcp.communityReadTools()...)
+	}
+	return tools
 }
 
 func emptySchema() map[string]interface{} {

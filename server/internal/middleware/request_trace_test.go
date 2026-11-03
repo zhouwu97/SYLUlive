@@ -4,10 +4,39 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 )
+
+func TestRequestTraceMiddlewarePreservesOAuthProtocolErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, path := range []string{"/api/oauth/device_authorization", "/api/oauth/token", "/api/oauth/revoke"} {
+		for _, code := range []string{"invalid_client", "authorization_pending", "slow_down", "expired_token", "access_denied"} {
+			t.Run(path+"/"+code, func(t *testing.T) {
+				router := gin.New()
+				router.Use(RequestTraceMiddleware())
+				router.POST(path, func(c *gin.Context) {
+					c.Header("Cache-Control", "no-store")
+					c.JSON(http.StatusBadRequest, gin.H{"error": code})
+				})
+				response := httptest.NewRecorder()
+				router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, strings.NewReader("")))
+				var body map[string]interface{}
+				if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				if response.Code != http.StatusBadRequest || body["error"] != code || len(body) != 1 {
+					t.Fatalf("OAuth error contract rewritten: status=%d body=%s", response.Code, response.Body.String())
+				}
+				if response.Header().Get("X-Request-ID") == "" || response.Header().Get("Cache-Control") != "no-store" {
+					t.Fatal("OAuth response lost trace or no-store header")
+				}
+			})
+		}
+	}
+}
 
 func TestRequestTraceMiddlewareKeepsRequestIDAndNormalizesAPIError(t *testing.T) {
 	gin.SetMode(gin.TestMode)

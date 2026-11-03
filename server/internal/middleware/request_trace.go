@@ -113,7 +113,12 @@ func RequestTraceMiddleware() gin.HandlerFunc {
 		body := captureWriter.body.Bytes()
 		errorCode := c.GetString("error_code")
 		if !captureWriter.passthrough && isAPIError(c, status) {
-			body, errorCode = normalizeAPIError(status, body, requestID)
+			// OAuth 客户端依赖 error 区分等待授权、降速和失效；不能改成普通业务错误。
+			if protocolCode := oauthProtocolErrorCode(c.Request.URL.Path, body); protocolCode != "" {
+				errorCode = protocolCode
+			} else {
+				body, errorCode = normalizeAPIError(status, body, requestID)
+			}
 			c.Set("error_code", errorCode)
 		}
 
@@ -128,6 +133,26 @@ func RequestTraceMiddleware() gin.HandlerFunc {
 		// 会把打错的路径当成成功；交还 gin 完成默认错误响应。
 		logRequest(c, requestID, originalWriter.Status(), time.Since(startedAt), errorCode)
 	}
+}
+
+func isOAuthProtocolPath(path string) bool {
+	switch path {
+	case "/api/oauth/device_authorization", "/api/oauth/token", "/api/oauth/revoke":
+		return true
+	default:
+		return false
+	}
+}
+
+func oauthProtocolErrorCode(path string, body []byte) string {
+	if !isOAuthProtocolPath(path) {
+		return ""
+	}
+	var raw map[string]json.RawMessage
+	if json.Unmarshal(body, &raw) != nil {
+		return ""
+	}
+	return rawString(raw, "error")
 }
 
 func setRequestID(c *gin.Context, requestID string) {

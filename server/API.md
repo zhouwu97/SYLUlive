@@ -16,6 +16,25 @@
 - **内容类型 (Content-Type)**: `application/json` (除文件上传外)
 - **鉴权方式 (Authentication)**: 大部分接口依赖 JWT 进行鉴权，通过 `Authorization: Bearer <token>` 传递。
 
+### 社区页面上下文（只读增量）
+
+现有 `POST /api/ai/runs` 的 `context.context_refs` 增加 `post`、`reply` 两种引用，ID 为十进制字符串。仅在服务端开启 `AI_COMMUNITY_READ_ENABLED` 且相应读取工具已注册时接受；继续使用当前 JWT 身份和现有 AI 额度。
+
+~~~json
+{
+  "client_request_id": "7ad76984-81e7-45fd-b4c8-f5c7319f971b",
+  "message": "请阅读这条讨论，概括大家的意见",
+  "context": {
+    "entrypoint": "post_detail",
+    "context_refs": [{"type": "post", "id": "123"}]
+  }
+}
+~~~
+
+帖子引用在生成前读取当前正文和首批评论；评论引用读取评论及所属帖子、适用的根评论与精确回复目标。更多评论由只读工具分页获取。隐藏、删除、非水帖或投票等范围外来源返回 HTTP 422 / `invalid_agent_context`，与不存在的 ID 一致，不返回私有内容。通过验证后状态改变，预读取仍重新查询；预读取失败沿用现有 Run 失败/不完整结果处理，不根据客户端对象猜测事实。
+
+此接口不创建社区评论，不改变真人浏览统计；不会自动查询私信或上传图片。Flutter 页面入口和审核发布 UI 尚未在该增量中交付。
+
 ---
 
 ## 目录
@@ -49,6 +68,9 @@
 | `POST` | `/api/password/email/reset` | 使用邮箱验证码重置密码 |
 | `POST` | `/api/forgot_password` | 旧教务找回入口，已退役，固定返回 `410` |
 | `POST` | `/api/change_password` | 修改密码 (需 JWT) |
+| `POST` | `/api/auth/reauthenticate` | 验证当前已登录账号密码，补充当前会话的近期认证（需 JWT） |
+
+密码再验证请求为`{"password":"当前SYLUlive密码","expected_user_id":当前页面账号ID}`。预期账号只用于拒绝切号竞态，不能指定认证主体；主体和会话族始终来自现有登录。成功返回`authenticated`、`user_id`、`valid_until`，不返回／更换令牌或Cookie，不延长登录有效期，不批准助手scope。错误密码返回403 `reauthentication_failed`，重复失败返回429 `reauthentication_throttled`；真正失效或撤销的登录返回401，账号不匹配返回409。请求限制4096字节，拒绝额外字段；普通token刷新不会补充近期认证。网页验证成功后重新读取请求／草稿并由本人再次确认，不自动重放写入。
 
 ## 2. 用户与个人中心 (User)
 
@@ -69,6 +91,10 @@
 | `POST`| `/api/user/checkin/makeup` | 使用补签卡补签本月过去的未签到日期 |
 | `GET` | `/api/user/checkin/status` | 获取签到状态 |
 | `GET` | `/api/user/checkin/calendar?month=YYYY-MM` | 获取指定月份的签到记录 |
+
+AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人状态）与 `POST /api/integrations/v1/me/checkin`（本人当日签到），二者需本人明确批准 `checkin:write`。不接受用户编号、日期、补签或经验参数；与 App 共用同日事实、奖励及幂等，撤权与签到串行复核。请求体仅允许空或 `{}`，拒绝额外字段／查询参数；返回日期、连续天数、本次奖励等最小数据，不返回学号或经验总额。
+
+公开工具接口 `GET /api/integrations/v1/public/community/{posts,posts/:id,posts/:id/replies,replies/:id/context,stickers,sections}` 无需账号令牌，仍按固定字段／可见状态过滤、限流且不增加浏览量。原有带授权路径保留兼容；本人资料／签到／草稿不属于该公开命名空间。食堂、校园资讯 `/api/campus/articles`、学校校历 `/api/campus-calendars/current` 沿用既有公开接口。
 | `POST`| `/api/user/:id/follow` | 关注指定用户 |
 | `DELETE`| `/api/user/:id/follow`| 取消关注指定用户 |
 | `GET` | `/api/user/:id/posts` | 获取指定用户发布的帖子 |
@@ -97,6 +123,14 @@
 | `POST` | `/api/erke/scores` | **Migration compatibility**：旧二课读取能力 |
 
 旧登录、注册和密码找回入口 `/api/login_edu`、`/api/register_with_edu`、`/api/forgot_password` 等已退役并返回 `410`，不应继续接入新客户端。
+
+### 原教务绑定自动核验与补交
+
+`POST /api/student-identity/verify-session` 沿用原绑定入口，没有新增学生绑定入口。需 JWT、有效协议、正常账号和 `X-Expected-App-User`（提供时必须匹配）；原有身份写入开关继续生效。请求仅接受 `provider_id`、`student_id` 和 `school_session: {cookies: ["NAME=value"], session_path_prefix?: "/(S(...))"}`，总大小不超过 24 KiB。配置必须是本人、匹配学号的 active 记录；不接受客户端 verified、网页、资料正文或 URL。
+
+服务端临时使用会话访问固定学校本人资料入口。本科通过带内部服务令牌的 Python `/api/edu/verify_session` 读取，不附带调用方提供的 `su`／学号查询参数；学校页面三个身份字段必须一致。研究生沿用固定学校资料协议。核对学号后事务内重新检查账号、协议、配置版本和90秒有效尝试；然后幂等写入 `school_profile/session-profile-v1` 可信绑定。学校会话、密码、完整学籍资料不落库、不返回、不记录日志。每账号10分钟最多5次、每IP最多20次尝试，超限429并建议600秒后重试。
+
+配置变化或解绑返回409，学校拒绝／身份不一致不授予资格，暂不可用返回503；客户端仅对临时故障退避重试。解绑原子撤销匹配身份、配置及在途尝试。旧 `/student-identity/bind` 仍只是低保证声明，不能作为学生权限依据。
 
 ### Active：已授权二课快照
 
@@ -439,3 +473,49 @@ FEED-H1 加固：
 远端上传相关错误码包括：`request_body_too_large`、`invalid_upload_session_request`、`privacy_confirmation_required`、`invalid_file_size`、`file_too_large`、`upload_session_not_found`、`upload_session_expired`、`upload_session_invalid`、`upload_receipt_invalid`、`upload_retry_exhausted`、`upload_unclaimed_quota_exceeded`、`exam_paper_pending_limit_reached`、`duplicate_exam_paper`、`storage_unavailable` 和 `client_upgrade_required`。两个上传会话 JSON 接口的请求体上限均为 64 KiB，超限返回 HTTP `413`。上传 token 只能对应一个上传会话和一个 `expected_size`；首次成功后，同一 token 的重放返回原始回执且不会重复落盘，其他 token 不得消费该会话。独立文件服务对同一会话最多记录 3 次上传失败，第 4 次在读取请求体和占用 PDF 校验槽位前返回 HTTP `429` 与 `upload_retry_exhausted`；失败事实会保留至授权过期后 24 小时，孤立且超过保留期的记录由维护任务清理，避免重启或维护意外重置有效重试限制。每个用户的未认领文件实际字节数和进行中上传预留量合计最多 100 MiB，超限同样在读取请求体前返回 HTTP `429` 与 `upload_unclaimed_quota_exceeded`。文件被认领、移入回收站或作为 7 天未认领文件清理后会持久释放配额。损坏的 `uploading` 或 `completed` 会话状态会按单份 20 MiB 保守计入配额，并由维护任务隔离为 `.corrupt` 文件；隔离文件保留 7 天后清理。`readonly-remote` 模式禁止创建新上传会话和旧 multipart 上传，但允许已创建会话提交回执完成入库。
 
 文件存储维护结果除原有文件、回收站和会话清理计数外，还包含 `upload_failure_records_removed`、`corrupt_upload_session_records_quarantined`、`corrupt_upload_session_records_removed` 和 `upload_session_temp_files_removed`，分别表示过期孤立失败记录、当次隔离的损坏状态、过期隔离状态及崩溃遗留会话临时文件的清理数量。
+
+
+## 个人 AstrBot 集成（默认关闭）
+
+启用与真实联调状态见 [插件 README](../astrbot_plugin_sylulive/README.md)。主模型在人部署的 AstrBot，业务仍由 Go 统一校验。以下 OAuth/集成/连接管理接口绕过全局响应幂等缓存，不能缓存凭证、nonce 或重放旧来源；动作使用业务内 `operation_id`/`action_id`。
+
+| 路径 | 身份 | 用途 |
+| --- | --- | --- |
+| `POST /api/oauth/device_authorization` | 公开客户端 `client_id=sylulive-astrbot` | URLencoded：`installation_id` UUID、自报名称、scope；返回 RFC8628 字段，有效10分钟 |
+| `POST /api/oauth/token` | 设备 secret 或 refresh token | URLencoded；device grant 或 refresh grant。access 10分钟、refresh闲置7天、绝对30天；旧 refresh 重用撤销该授权 |
+| `POST /api/oauth/revoke` | 所撤凭证 | RFC7009，同属授权一并撤销；不会注销 App 登录 |
+| `POST /api/oauth/device_authorization/cancel` | 本次设备 secret | URLencoded `client_id`、`device_code`；取消未完成请求及其已产生的绑定，无需先领取token。成功空200、重复安全；不可用410、归属并发变化409可重试。不是凭网页user_code或QQ号撤销他人授权 |
+| `GET /api/connected-apps` | App 登录 | 本人的连接列表，不返回凭证 |
+| `POST /api/connected-apps/device-requests/lookup` | App 登录且10分钟内真实登录 | JSON `user_code`，返回待核对范围与一次性确认 nonce |
+| `POST /api/connected-apps/device-requests/:id/decision` | 同上 | `allow`、`scopes`、`confirmation_nonce`；替换还须旧 `replace_binding_id` 与 `expected_epoch` |
+| `POST /api/connected-apps/:id/revoke` | 本人 App 登录 | 立即撤销，无近期登录额外门槛 |
+| `GET /api/integrations/v1/binding` | scoped Bearer | `profile:read_minimal`，账号 ID 与昵称、授权范围 |
+| `GET /api/integrations/v1/community/posts` | `community:read` | `query`、`after_id`、`limit`（1至20），最近/搜索公开普通水帖 |
+| `GET /api/integrations/v1/community/posts/:id` | 同上 | 文字详情、`post_id`、`source_version`；`data` 就是帖子 DTO |
+| `GET /api/integrations/v1/community/posts/:id/replies` | 同上 | 评论分页，`after_id` 与 `limit` |
+| `GET /api/integrations/v1/community/replies/:id/context` | 同上 | 线程根和精确目标；删除正文不恢复 |
+| `GET /api/integrations/v1/community/stickers` | 同上 | `query`、`limit`、`after_sticker_id`，内置表情 ID 与标签 |
+| `GET /api/integrations/v1/community/sections` | 同上 | 活跃版块 slug 与标题 |
+| `GET /api/integrations/v1/me/public-posts` | `content:read_own_public` | 服务端从授权推导本人；不接收 owner 参数，仅正常普通社区帖子 |
+| `POST /api/integrations/v1/actions` | `community:propose` | 只创建草稿，不能发布；需开启提案开关 |
+| `GET /api/integrations/v1/actions/:id` | `actions:read_own` | 本授权动作，不能得到发布确认 nonce；来源变更时阻断旧草稿正文 |
+| `GET /api/connected-apps/actions/:id` | 本人 App 登录且近期认证 | 草稿预览与5分钟确认 nonce；本人官网使用 |
+| `POST /api/connected-apps/actions/:id/decision` | 同上 | `allow`、`draft_version`、`payload_hash`、`confirmation_nonce`；发布需独立开关 |
+
+助手凭证不能调用普通 App API，App JWT 也不能调用集成 API。允许的 scope 为 `profile:read_minimal community:read content:read_own_public actions:read_own community:propose` 的子集；提案必须同时批准读取和结果查询。普通教务本地声明不满足可信核验要求；无权限失败返回稳定 `code`，OAuth 错误使用 `error`。所有含授权数据的响应设置 `Cache-Control: no-store`。
+
+评论草稿 JSON：
+
+```json
+{"operation_id":"YOUR_UUID","kind":"reply","post_id":123,"source_version":"刚读取的64位版本摘要","content":"正文","sticker_id":"可选白名单表情","reply_to_reply_id":0,"reply_source_version":""}
+```
+
+精确回复需真实目标 ID 和目标 `source_version`；父线程与通知用户由服务器推导，不接受伪造 author、role 或 parent。发帖草稿使用 `kind=post`、有效 `post_type`、`title`（可空）、`content`，不接受评论字段、附件、市场/投票/公告操作。响应是 `action_id`、`state`、`review_uri`、`expires_at`，不表示发布完成。单 owner 每24小时最多30个新草稿、20次正式助手发布，并计入原有发帖/评论额度；发布事务内完成当前权限、来源/版块/禁言、额度、内容、计数、动作状态与审计的一致性更新。统计变化不影响来源版本，内容变化需要重读重建。助手评论与站内回复通知原子提交，按评论与接收人去重，自回复不提醒；精确回复通知目标评论作者。提交后复用现有推送流程，外部投递失败不回滚已提交评论，也不宣称必达。创建/删除/评论治理/恢复按先帖子后评论顺序加锁。已使用旧refresh在摘要保留期内重放仍撤销同一授权，不因旧闲置期限过期而跳过检测。无奖励、无后台队列、无无人确认发布。
+
+### 集成公开阅读字段与排名
+
+`GET /api/integrations/v1/community/posts` 新增 `sort=newest|likes|replies`（默认 newest）、`cursor`。最新按 ID 倒序用 `next_after_id`；排名按真实计数与 ID 倒序用 `next_cursor`，不与 after_id 混用，游标绑定排序和查询条件。错误组合返回 422，统计变化不保证列表快照。
+
+公开帖子和正常评论新增 `author.nickname`、`like_count`、`images`；帖子含 `reply_count`。图片只包含当前可见内容关联且 public/active 的图片 URL、MIME、尺寸与序号，不返回上传者、存储元数据或私有文件。详情正文上限 10000 字；列表仍为 600 字摘要，评论分页不变。新增展示字段不参与草稿 source_version，统计／改名不使草稿失效。删除评论仍只留墓碑；所有路径保留 scope、当前资格和授权复核，不增加浏览量。
+
+AstrBot 食堂工具直接匿名复用现有 `/api/canteens/rankings`、`/search`、`/:id/dishes`、`/:id/dishes/:dishId`；不新增私有资料、学校登录或私信 scope。

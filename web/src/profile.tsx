@@ -51,6 +51,7 @@ export function Profile() {
     <div className="profile-columns">
       <aside className="panel profile-tools" aria-label="个人工具">
         <h2>资料与设置</h2>
+        <Link className="profile-tool" to="/connected-apps"><span className="profile-tool-icon"><Icon name="admin"/></span><span><b>已授权助手</b><small>管理助手授权与资料同步</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></Link>
         <button className="profile-tool" aria-label="导入与导出校园资料" onClick={() => ui.open('本地资料', <AcademicSettings/>)}><span className="profile-tool-icon"><Icon name="grades"/></span><span><b>校园资料</b><small>导入或导出课表与成绩</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></button>
         <button className="profile-tool" aria-label="隐私与数据管理" onClick={openPrivacy}><span className="profile-tool-icon"><Icon name="admin"/></span><span><b>隐私与数据</b><small>导出数据、管理本地资料</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></button>
       </aside>

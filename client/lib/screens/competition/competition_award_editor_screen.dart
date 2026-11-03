@@ -690,7 +690,7 @@ class _CompetitionAwardEditorScreenState
 
   Widget _section(String title, bool isDark, Widget child) => Padding(
         padding: const EdgeInsets.only(bottom: 24),
-        child: AppContentSurface(
+        child: AppContentSurface.reading(
             child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

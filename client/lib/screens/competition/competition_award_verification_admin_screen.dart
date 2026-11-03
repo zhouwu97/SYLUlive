@@ -448,7 +448,7 @@ class _CompetitionAwardVerificationDetailScreenState
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: AppContentSurface(child: Text(_error!)))
+              ? Center(child: AppContentSurface.reading(child: Text(_error!)))
               : _content(isDark),
       bottomNavigationBar:
           _award?.verificationStatus == 'pending' ? _actions() : null,
@@ -489,7 +489,7 @@ class _CompetitionAwardVerificationDetailScreenState
                     fontSize: 16, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         ...award.evidenceFileIds.asMap().entries.map(
-              (entry) => AppContentSurface(
+              (entry) => AppContentSurface.card(
                   child: ListTile(
                 key: Key('award-evidence-${entry.value}'),
                 onTap: _loadingEvidence.contains(entry.value)

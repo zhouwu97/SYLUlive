@@ -125,7 +125,7 @@ class _MyPollsScreenState extends State<MyPollsScreen>
                                       pollId: post.pollMeta!.id,
                                       initialPost: post)))),
                       if (_scope == 'created')
-                        AppContentSurface(
+                        AppContentSurface.card(
                             child: Row(
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 children: [

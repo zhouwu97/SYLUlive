@@ -110,7 +110,7 @@ class _PollCenterScreenState extends State<PollCenterScreen>
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: Align(
                 alignment: Alignment.centerLeft,
-                child: AppContentSurface(
+                child: AppContentSurface.reading(
                     child: Text('校园投票由用户发起，结果仅代表参与用户的选择。',
                         style: TextStyle(
                             fontSize: 12,
@@ -152,7 +152,7 @@ class _PollCenterScreenState extends State<PollCenterScreen>
                           SizedBox(
                               height: 240,
                               child: Center(
-                                  child: AppContentSurface(
+                                  child: AppContentSurface.reading(
                                       child: Text(state.error!))))
                         ])
                       : NotificationListener<ScrollNotification>(

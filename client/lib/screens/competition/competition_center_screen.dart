@@ -765,7 +765,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
           if (_categoriesError != null)
             Align(
               alignment: Alignment.centerLeft,
-              child: AppContentSurface(child: TextButton.icon(
+              child: AppContentSurface.reading(child: TextButton.icon(
                 onPressed: _loadCategories,
                 icon: const Icon(Icons.refresh_rounded, size: 16),
                 label: Text(_categoriesError!),

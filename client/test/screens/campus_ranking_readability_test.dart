@@ -64,13 +64,26 @@ void main() {
 
         Future<void> checkSurface(Finder text) async {
           expect(text, findsOneWidget);
-          expect(find.ancestor(of: text, matching: find.byType(AppCardSurface)),
-              findsWidgets);
+          final ancestor =
+              find.ancestor(of: text, matching: find.byType(AppCardSurface));
+          final surface = ancestor.evaluate().isNotEmpty
+              ? ancestor.first
+              : find.descendant(
+                  of: find
+                      .ancestor(
+                          of: text, matching: find.byType(AppContentSurface))
+                      .first,
+                  matching: find.byType(AppCardSurface));
+          expect(surface, findsOneWidget);
           final rect = tester.getRect(text);
           for (final glass in [true, false]) {
             await appearance.setFrostedGlass(glass);
             await tester.pumpAndSettle();
             expect(tester.getRect(text), rect);
+            final backing = tester.getRect(surface);
+            expect(backing.contains(rect.topLeft + const Offset(.5, .5)), isTrue);
+            expect(backing.contains(rect.bottomRight - const Offset(.5, .5)),
+                isTrue);
             expect(tester.takeException(), isNull);
           }
         }

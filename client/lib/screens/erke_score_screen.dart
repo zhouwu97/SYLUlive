@@ -631,7 +631,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             ),
           ] else ...[
             const SizedBox(height: 30),
-            AppContentSurface(
+            AppContentSurface.reading(
                 child: Text('提示：系统会自动完成 WebVPN 穿透',
                     textAlign: TextAlign.center,
                     style: TextStyle(

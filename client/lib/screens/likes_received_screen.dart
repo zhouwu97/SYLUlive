@@ -1,3 +1,4 @@
+import '../theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import '../widgets/app_card.dart';
 import 'package:provider/provider.dart';
@@ -111,7 +112,9 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('收到的赞')),
       body: AppCardMaterial(
-        color: Theme.of(context).colorScheme.surface,
+        color: Theme.of(context).brightness == Brightness.dark
+            ? AppColors.surfaceSecondaryDark
+            : AppColors.surfaceSecondaryLight,
         borderRadius: BorderRadius.zero,
         clipBehavior: Clip.antiAlias,
         child: !(_auth?.isLoggedIn ?? false)

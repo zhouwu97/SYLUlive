@@ -230,7 +230,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         ),
         Expanded(
           child: _users.isEmpty
-              ? const Center(child: AppContentSurface(child: Text('暂无用户')))
+              ? const Center(child: AppContentSurface.reading(child: Text('暂无用户')))
               : ListView.builder(
                   itemCount: _users.length,
                   itemBuilder: (_, i) => _buildUserItem(_users[i]),

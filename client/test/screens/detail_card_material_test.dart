@@ -125,6 +125,18 @@ void main() {
           expect((poll.shape! as RoundedRectangleBorder).borderRadius,
               BorderRadius.circular(AppRadius.lg));
           expect(poll.color, base);
+          final paintedCard = tester.getRect(find
+              .descendant(
+                  of: find.byType(PollPostCard), matching: find.byType(Card))
+              .first);
+          expect(rect.top - paintedCard.bottom, 8,
+              reason: '正文与评论之间只有和帖子相同的 8px 间隔，不能叠加卡片外边距');
+          expect(rect.left, 0);
+          expect(rect.right, tester.getSize(find.byType(Scaffold).first).width);
+          expect(paintedCard.left, rect.left);
+          expect(paintedCard.right, rect.right);
+          expect(find.byType(AppCardDivider), findsNothing,
+              reason: '正文与评论之间沿用帖子的纯留白，不绘制分割线');
         }
         await theme.setComponentOpacity(1);
         await tester.pumpAndSettle();

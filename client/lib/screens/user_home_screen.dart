@@ -355,7 +355,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                 : BackButton(onPressed: widget.onBack)),
         body: Center(
             child:
-                AppContentSurface(child: Text(_errorMessage ?? '用户不存在或加载失败'))),
+                AppContentSurface.reading(child: Text(_errorMessage ?? '用户不存在或加载失败'))),
       );
     }
 
@@ -710,7 +710,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
     if (_postsError != null && _posts.isEmpty) {
       return Center(
-        child: AppContentSurface(
+        child: AppContentSurface.reading(
             child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -736,7 +736,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
 
     if (_posts.isEmpty) {
-      return const Center(child: AppContentSurface(child: Text('暂无帖子')));
+      return const Center(child: AppContentSurface.reading(child: Text('暂无帖子')));
     }
 
     return ListView.builder(

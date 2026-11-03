@@ -111,6 +111,7 @@ class AppContentSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final appearance = context.watch<ThemeProvider?>();
     final insideSurface =
+        context.findAncestorWidgetOfExactType<AppContentSurface>() != null ||
         context.findAncestorWidgetOfExactType<AppCardSurface>() != null ||
             context.findAncestorWidgetOfExactType<AppCardMaterial>() != null ||
             context.findAncestorWidgetOfExactType<AppCard>() != null;
@@ -122,6 +123,7 @@ class AppContentSurface extends StatelessWidget {
     if (_reading) {
       // 背景与前景分开绘制：圆角不会裁切首尾文字，开关也不改变内容宽度。
       return Stack(
+        fit: StackFit.passthrough,
         clipBehavior: Clip.none,
         children: [
           Positioned.fill(
@@ -331,7 +333,7 @@ class AppCard extends Card {
             color: glass
                 ? appGlassSurfaceColor(context, surface, alpha)
                 : settings?.shouldShowCustomBackground == true
-                    ? appGlassSurfaceColor(context, fill, alpha)
+                    ? appGlassSurfaceColor(context, surface, alpha)
                     : alpha == 1
                         ? color
                         : fill.withValues(alpha: fill.a * alpha),
@@ -422,10 +424,10 @@ class _AppCardMaterialState extends State<Material> {
           : alpha == 1 || widget.type == MaterialType.transparency
               ? settings?.shouldShowCustomBackground == true &&
                       widget.type != MaterialType.transparency
-                  ? appGlassSurfaceColor(context, plainColor, alpha)
+                  ? appGlassSurfaceColor(context, surface, alpha)
                   : widget.color
               : settings?.shouldShowCustomBackground == true
-                  ? appGlassSurfaceColor(context, plainColor, alpha)
+                  ? appGlassSurfaceColor(context, surface, alpha)
                   : plainColor?.withValues(alpha: plainColor.a * alpha),
       shadowColor: widget.shadowColor,
       surfaceTintColor: glass ? Colors.transparent : widget.surfaceTintColor,

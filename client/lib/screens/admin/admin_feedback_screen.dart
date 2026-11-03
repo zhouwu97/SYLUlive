@@ -581,7 +581,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            AppContentSurface(child: Text(_error!)),
+                            AppContentSurface.reading(child: Text(_error!)),
                             const SizedBox(height: 12),
                             OutlinedButton(
                               onPressed: _loadTickets,
@@ -606,7 +606,7 @@ class _AdminFeedbackScreenState extends State<AdminFeedbackScreen>
                               children: const [
                                 SizedBox(height: 180),
                                 Center(
-                                    child: AppContentSurface(
+                                    child: AppContentSurface.reading(
                                         child: Text('暂无符合条件的工单',
                                             style: TextStyle(
                                                 color: Colors.grey)))),

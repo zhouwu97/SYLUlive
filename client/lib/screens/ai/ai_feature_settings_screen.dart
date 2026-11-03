@@ -1,3 +1,4 @@
+import '../../theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import '../../widgets/app_card.dart';
 
@@ -42,7 +43,9 @@ class _AIFeatureSettingsScreenState extends State<AIFeatureSettingsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('AI 功能开关')),
       body: AppCardMaterial(
-        color: Theme.of(context).colorScheme.surface,
+        color: Theme.of(context).brightness == Brightness.dark
+            ? AppColors.surfaceSecondaryDark
+            : AppColors.surfaceSecondaryLight,
         borderRadius: BorderRadius.zero,
         clipBehavior: Clip.antiAlias,
         child: values == null

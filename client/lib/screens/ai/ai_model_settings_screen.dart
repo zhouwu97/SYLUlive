@@ -451,7 +451,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                     ]),
                 const SizedBox(height: 18),
                 if (!_hasStoredConfig && _hasStoredApiKey) ...[
-                  AppContentSurface(
+                  AppContentSurface.reading(
                       child: Text(
                     '检测到残留密钥，请清除后再保存新的模型配置。',
                     style: TextStyle(
@@ -534,7 +534,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                             },
                     )),
                 const SizedBox(height: 8),
-                AppContentSurface(
+                AppContentSurface.reading(
                     child: Text(
                   switch (_wireApi) {
                     OpenAIWireApi.auto =>
@@ -593,7 +593,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                 ],
                 if (_error != null) ...[
                   const SizedBox(height: 14),
-                  AppContentSurface(
+                  AppContentSurface.reading(
                       child: Text(
                     _error!,
                     style:
@@ -602,7 +602,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                 ],
                 if (_probeSuccess != null) ...[
                   const SizedBox(height: 14),
-                  AppContentSurface(
+                  AppContentSurface.reading(
                       child: Text(
                     _probeSuccess!,
                     style: TextStyle(

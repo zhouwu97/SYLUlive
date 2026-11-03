@@ -898,7 +898,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     final accent = _sectionColor(section, dark);
     final title = _emptyTitleFor(section);
     final description = _emptyDescriptionFor(section);
-    return AppContentSurface(
+    return AppContentSurface.card(
         child: Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.lg,

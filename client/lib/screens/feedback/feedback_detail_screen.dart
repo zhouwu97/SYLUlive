@@ -1789,7 +1789,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      AppContentSurface(child: Text(_error!)),
+                      AppContentSurface.reading(child: Text(_error!)),
                       const SizedBox(height: 12),
                       OutlinedButton(
                         onPressed: _loadDetail,

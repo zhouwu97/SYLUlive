@@ -175,7 +175,7 @@ class _AdminCanteenReviewScreenState extends State<AdminCanteenReviewScreen> {
       body = const Center(child: CircularProgressIndicator());
     } else if (_loadFailed) {
       body = Center(
-        child: AppContentSurface(
+        child: AppContentSurface.reading(
             child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

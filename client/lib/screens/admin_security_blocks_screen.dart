@@ -158,7 +158,7 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
-            AppContentSurface(
+            AppContentSurface.reading(
                 child: Text(
               '校园网、宿舍和运营商出口可能由多人共用。误封时请及时解除。',
               style: Theme.of(context).textTheme.bodyMedium,
@@ -168,7 +168,7 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
               const Center(child: CircularProgressIndicator())
             else if (_error != null)
               Center(
-                child: AppContentSurface(
+                child: AppContentSurface.reading(
                     child: Column(children: [
                   Text(_error!),
                   if (_session != null)
@@ -176,7 +176,7 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
                 ])),
               )
             else if (_blocks.isEmpty)
-              const Center(child: AppContentSurface(child: Text('当前没有生效封禁')))
+              const Center(child: AppContentSurface.reading(child: Text('当前没有生效封禁')))
             else
               for (final block in _blocks)
                 Padding(

@@ -1,5 +1,6 @@
 import '../widgets/app_page_background.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_input_surface.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -94,7 +95,6 @@ class _AppealCreateScreenState extends State<AppealCreateScreen> {
           AppCardSurface(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Theme.of(context).dividerColor),
             ),
@@ -105,22 +105,27 @@ class _AppealCreateScreenState extends State<AppealCreateScreen> {
           const SizedBox(height: 24),
           Text('申诉理由', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          TextField(
-            controller: _reasonController,
-            minLines: 5,
-            maxLines: 8,
-            maxLength: 1000,
-            textInputAction: TextInputAction.newline,
-            decoration: const InputDecoration(
-              hintText: '请说明你认为原处理不准确的原因，可补充事实和证据。',
-              alignLabelWithHint: true,
-              border: OutlineInputBorder(),
+          AppInputSurface(
+            child: TextField(
+              controller: _reasonController,
+              minLines: 5,
+              maxLines: 8,
+              maxLength: 1000,
+              textInputAction: TextInputAction.newline,
+              decoration: const InputDecoration(
+                hintText: '请说明你认为原处理不准确的原因，可补充事实和证据。',
+                alignLabelWithHint: true,
+                border: OutlineInputBorder(),
+                filled: false,
+              ),
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            '提交后将随机邀请符合条件的社区成员陪审。陪审员身份和单票内容不会公开。',
-            style: Theme.of(context).textTheme.bodySmall,
+          AppContentSurface.reading(
+            child: Text(
+              '提交后将随机邀请符合条件的社区成员陪审。陪审员身份和单票内容不会公开。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ),
           const SizedBox(height: 24),
           FilledButton(

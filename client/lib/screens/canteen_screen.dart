@@ -350,7 +350,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
   }
 
   Widget _buildDishSearchResult(bool isDark, CanteenDish dish) {
-    return AppContentSurface(
+    return AppContentSurface.card(
         child: ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       leading: CircleAvatar(

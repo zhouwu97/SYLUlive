@@ -465,7 +465,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 20, bottom: 20),
               child: Center(
-                child: AppContentSurface(
+                child: AppContentSurface.reading(
                     child: Text(
                   '还没有同学评价',
                   style: TextStyle(

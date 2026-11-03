@@ -427,7 +427,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
           title: '账号与安全',
           onRefresh: _reload,
           children: [
-            AppContentSurface(
+            AppContentSurface.card(
                 child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Column(children: [

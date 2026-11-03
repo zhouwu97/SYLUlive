@@ -1,3 +1,4 @@
+import '../theme/app_colors.dart';
 import '../widgets/app_tab_bar_surface.dart';
 import 'package:flutter/material.dart';
 import '../widgets/app_card.dart';
@@ -57,7 +58,9 @@ class _SocialListScreenState extends State<SocialListScreen>
         )),
       ),
       body: AppCardMaterial(
-        color: Theme.of(context).colorScheme.surface,
+        color: Theme.of(context).brightness == Brightness.dark
+            ? AppColors.surfaceSecondaryDark
+            : AppColors.surfaceSecondaryLight,
         borderRadius: BorderRadius.zero,
         clipBehavior: Clip.antiAlias,
         child: TabBarView(

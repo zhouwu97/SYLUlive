@@ -2,6 +2,7 @@ import '../widgets/app_page_background.dart';
 import '../widgets/app_card.dart';
 import 'package:flutter/material.dart';
 import '../models/edu_academic_situation.dart';
+import '../theme/app_radius.dart';
 
 class EduAcademicCourseDetailScreen extends StatelessWidget {
   final EduAcademicCourse course;
@@ -31,10 +32,11 @@ class EduAcademicCourseDetailScreen extends StatelessWidget {
             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
-          Text(
+          AppContentSurface.reading(
+              child: Text(
             '${course.displayStatus} · 有效成绩 ${course.displayGrade}',
             style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-          ),
+          )),
           const SizedBox(height: 18),
           _section(context, [
             _row('最大成绩', course.maxGrade),
@@ -66,8 +68,7 @@ class EduAcademicCourseDetailScreen extends StatelessWidget {
   Widget _section(BuildContext context, List<Widget> children) {
     return AppCardSurface(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         border: Border.all(
           color: Theme.of(context).dividerColor.withValues(alpha: 0.25),
         ),

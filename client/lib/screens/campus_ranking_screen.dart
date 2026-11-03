@@ -350,7 +350,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
           }
           if (provider.subjects.isEmpty) {
             return Center(
-              child: AppContentSurface(child: Column(
+              child: AppContentSurface.reading(child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
@@ -380,7 +380,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
                   .toList();
           if (subjects.isEmpty) {
             return Center(
-              child: AppContentSurface(child: Text(
+              child: AppContentSurface.reading(child: Text(
                 '未找到相关学科',
                 style: TextStyle(color: appContentSecondaryColor(context, RankingTokens.subColor(isDark))),
               )),
@@ -461,7 +461,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
           }
           if (majors.isEmpty) {
             return Center(
-              child: AppContentSurface(child: Text(
+              child: AppContentSurface.reading(child: Text(
                 '暂无专业',
                 style: TextStyle(color: appContentSecondaryColor(context, RankingTokens.subColor(isDark))),
               )),

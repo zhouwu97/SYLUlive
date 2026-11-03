@@ -696,31 +696,36 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                 onRefresh: _reload,
                 child: ListView(
                   addRepaintBoundaries: false,
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                  padding: const EdgeInsets.only(
+                      top: AppSpacing.md, bottom: AppSpacing.lg),
                   children: [
-                    AppContentSurface.reading(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (_pollError != null)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Text(
-                                _pollError!,
-                                style: const TextStyle(color: Colors.red),
+                    Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.lg),
+                        child: AppContentSurface.reading(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (_pollError != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: Text(
+                                    _pollError!,
+                                    style: const TextStyle(color: Colors.red),
+                                  ),
+                                ),
+                              const Text(
+                                '非官方用户投票，结果仅代表参与用户的选择。',
+                                style: TextStyle(fontSize: 12),
                               ),
-                            ),
-                          const Text(
-                            '非官方用户投票，结果仅代表参与用户的选择。',
-                            style: TextStyle(fontSize: 12),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
+                        )),
                     const SizedBox(height: 8),
                     PollPostCard(
                       post: post,
                       variant: PollCardVariant.centerFull,
+                      margin: EdgeInsets.zero,
                       onPostUpdated: (updated) {
                         setState(() {
                           _post = updated;
@@ -734,7 +739,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                                 ),
                               ),
                     ),
-                    const AppCardDivider(height: 24),
+                    const SizedBox(height: AppSpacing.sm),
                     AppCardSurface(
                       key: const ValueKey('poll-comments-surface'),
                       padding: const EdgeInsets.all(AppSpacing.lg),

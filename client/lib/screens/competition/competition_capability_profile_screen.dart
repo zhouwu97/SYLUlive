@@ -482,7 +482,7 @@ class _CompetitionCapabilityProfileScreenState
     ];
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 7),
-      child: AppContentSurface(
+      child: AppContentSurface.reading(
           child: Row(
         children: [
           Expanded(
@@ -523,7 +523,7 @@ class _CompetitionCapabilityProfileScreenState
       ('每周投入', profile.weeklyHours == 0 ? '暂不确定' : '${profile.weeklyHours} 小时'),
       ('长期训练', profile.acceptLongTermTraining ? '可以接受' : '暂不考虑'),
     ];
-    return AppContentSurface(
+    return AppContentSurface.reading(
         child: Column(
       children: values
           .map(
@@ -558,7 +558,7 @@ class _CompetitionCapabilityProfileScreenState
   }
 
   Widget _emptyLine(String text, bool isDark) {
-    return AppContentSurface(
+    return AppContentSurface.reading(
         child: Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Text(

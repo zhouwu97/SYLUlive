@@ -86,7 +86,7 @@ class _MyCanteenContributionsScreenState
                           SizedBox(height: 220),
                           Center(
                               child:
-                                  AppContentSurface(child: Text('还没有菜品或实拍贡献'))),
+                                  AppContentSurface.reading(child: Text('还没有菜品或实拍贡献'))),
                         ],
                       )
                     : ListView.separated(

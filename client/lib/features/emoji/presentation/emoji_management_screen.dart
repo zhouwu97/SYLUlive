@@ -589,7 +589,7 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
     ));
   }
 
-  Widget _managementTabs() => AppContentSurface(
+  Widget _managementTabs() => AppContentSurface.card(
           child: Row(children: [
         for (final favorite in [false, true])
           Padding(

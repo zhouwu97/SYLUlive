@@ -94,7 +94,7 @@ class _ExamPaperPreviewScreenState extends State<ExamPaperPreviewScreen> {
   Widget _buildBody() {
     if (_error != null) {
       return Center(
-        child: AppContentSurface(
+        child: AppContentSurface.card(
             child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -115,7 +115,7 @@ class _ExamPaperPreviewScreenState extends State<ExamPaperPreviewScreen> {
     }
     if (_loading || _file == null) {
       return const Center(
-        child: AppContentSurface(
+        child: AppContentSurface.reading(
             child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

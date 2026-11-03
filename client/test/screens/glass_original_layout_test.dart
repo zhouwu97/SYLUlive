@@ -17,7 +17,7 @@ import '../helpers/golden_test_app.dart';
 import '../helpers/golden_viewport.dart';
 import '../helpers/load_test_fonts.dart';
 
-// 对照材质迁移前的页面内容 inset；仅比较开关前后会漏掉两边同时被挤窄。
+// 对照页面约定的内容 inset；仅比较开关前后会漏掉两边同时被挤窄。
 void main() {
   setUpAll(loadTestFonts);
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
@@ -125,7 +125,7 @@ void main() {
             'likes' => 16.0,
             'document' => 20.0,
             'article' => 16.0,
-            'poll' => 12.0,
+            'poll' => 16.0, // 与帖子详情正文、评论保持统一。
             _ => 0.0,
           };
           expect(rect.left - body.left, inset,
@@ -139,7 +139,7 @@ void main() {
             expect(rect.top - body.top, 16);
           }
           if (scene == 'poll') {
-            expect(tester.getRect(find.text('评论 1')).left - body.left, 12);
+            expect(tester.getRect(find.text('评论 1')).left - body.left, 16);
           }
           original ??= rect;
           expect(rect, original);

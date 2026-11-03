@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../widgets/app_page_background.dart';
 import '../legal/legal_documents.dart';
+import '../theme/app_radius.dart';
+import '../theme/app_spacing.dart';
 import '../widgets/campus/campus_theme.dart';
 
 class LegalDocumentsScreen extends StatelessWidget {
@@ -49,7 +51,7 @@ class LegalDocumentsScreen extends StatelessWidget {
                 AppCardSurface(
                   decoration: BoxDecoration(
                     color: isDark ? CampusTheme.darkCard : CampusTheme.card,
-                    borderRadius: BorderRadius.zero,
+                    borderRadius: BorderRadius.circular(AppRadius.lg),
                   ),
                   child: Column(
                     children: [
@@ -88,9 +90,10 @@ class _DocumentBody extends StatelessWidget {
         children: [
           AppCardSurface(
             key: const ValueKey('legal-document-reading-surface'),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             decoration: BoxDecoration(
               color: isDark ? CampusTheme.darkCard : CampusTheme.card,
-              borderRadius: BorderRadius.zero,
+              borderRadius: BorderRadius.circular(AppRadius.lg),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

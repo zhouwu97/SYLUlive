@@ -219,9 +219,10 @@ test("找回密码沿用验证码接口，清除旧保存密码并回到登录",
   expect(state.writes.find(write => write.path === "/api/password/email/reset")?.data).toMatchObject({ email: account, code: "123456", new_password: "new-synthetic-password" });
 });
 
-test("浏览器重启后保存的密码仍可读取，历史账号去重并限制最近五个", async ({}, info) => {
+test("浏览器重启后保存的密码仍可读取，历史账号去重并限制最近五个", async ({ baseURL }, info) => {
+  if (!baseURL) throw new Error("重启验收需要当前测试配置的 baseURL");
   const directory = info.outputPath("remembered-browser");
-  let context = await chromium.launchPersistentContext(directory, { headless: true, baseURL: "http://127.0.0.1:5173/web/", viewport: { width: 1440, height: 900 } });
+  let context = await chromium.launchPersistentContext(directory, { headless: true, baseURL, viewport: { width: 1440, height: 900 } });
   try {
     let page = await context.newPage(); await fixture(page); await page.goto("./");
     await seed(page, Array.from({ length: 6 }, (_, index) => ({ account: `user-${index}@example.test`, password: "synthetic-record-password" })));
@@ -230,7 +231,7 @@ test("浏览器重启后保存的密码仍可读取，历史账号去重并限�
     expect((await records(page)).length).toBe(5);
     expect((await records(page)).filter((record: any) => record.key === account)).toHaveLength(1);
     await context.close();
-    context = await chromium.launchPersistentContext(directory, { headless: true, baseURL: "http://127.0.0.1:5173/web/", viewport: { width: 1440, height: 900 } });
+    context = await chromium.launchPersistentContext(directory, { headless: true, baseURL, viewport: { width: 1440, height: 900 } });
     page = await context.newPage(); await fixture(page); await page.goto("./");
     const dialog = await openLogin(page);
     await expect(dialog.getByLabel("邮箱或账号")).toHaveValue(account.toUpperCase());

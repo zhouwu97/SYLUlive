@@ -1,4 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { AiBotIdentity } from "./ai-bot-identity";
+import { PublicPosts, isPublicPost } from "./campus-chrome";
+import { ServerAvatar } from "./server-avatar";
+import { userLevel } from "./user-level";
+import { mobilePostTime, useMobile } from "./mobile";
+import { PollCard } from "./polls";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Link,
@@ -75,6 +81,7 @@ export function PostForm({
   market?: boolean;
   post?: Entity;
 }) {
+  const mobile = useMobile();
   const ui = useUI(),
     nav = useNavigate();
   const alive = useRef(true);
@@ -102,7 +109,7 @@ export function PostForm({
           required: true,
           value: post?.post_type,
           options: market
-            ? [
+            ? mobile ? [["sell", "出售"], ["buy", "求购"], ["lost", "寻物"], ["found", "招领"], ["proxy", "办事"]] : [
                 ["marketplace_sell", "出售"],
                 ["marketplace_buy", "求购"],
               ]
@@ -115,10 +122,10 @@ export function PostForm({
           ? [
               {
                 name: "price",
-                label: "价格",
+                label: mobile ? "价格或预算（寻物、招领可留空）" : "价格",
                 type: "number",
                 min: 0,
-                required: true,
+                required: !mobile,
                 value: post?.price,
               },
               {
@@ -162,14 +169,13 @@ export function PostForm({
   );
 }
 function PostAvatar({ author }: { author?: Entity }) {
-  const [failed, setFailed] = useState<string>();
-  const src = asset(author?.avatar);
-  return <span className="post-avatar"><span aria-hidden="true">{(author?.nickname || "同").slice(0, 1)}</span>{src && src !== failed && <img key={src} src={src} alt="" onError={() => setFailed(src)} />}</span>;
+  return <span className="post-avatar"><ServerAvatar src={author?.avatar} name={author?.nickname || "校园同学"} /></span>;
 }
 
 function PostTime({ value }: { value: unknown }) {
+  const mobile = useMobile();
   const valid = typeof value === "string" && Number.isFinite(Date.parse(value));
-  return <time dateTime={valid ? value : undefined} title={time(value)}>{valid ? new Date(value).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : ""}</time>;
+  return <time dateTime={valid ? value : undefined} title={time(value)}>{valid ? mobile ? mobilePostTime(value) : new Date(value).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : ""}</time>;
 }
 
 function PostThumbnail({ post, className }: { post: Entity; className: string }) {
@@ -182,6 +188,7 @@ function PostThumbnail({ post, className }: { post: Entity; className: string })
 
 function PostAuthor({ post }: { post: Entity }) {
   const auth = useAuth(), ui = useUI();
+  const mobile = useMobile();
   const [pending, setPending] = useState(false);
   const lock = useRef(false);
   const [followed, setFollowed] = useState(Boolean(post.author?.is_following || post.is_following));
@@ -190,9 +197,11 @@ function PostAuthor({ post }: { post: Entity }) {
     <div className="author post-author">
       <PostAvatar author={post.author} />
       <div className="author-meta">
-        <div className="author-name-line"><b>{post.author?.nickname || "校园同学"}</b><span className="author-level">Lv.{post.author?.level || post.author_level || 1}</span></div>
+        <div className="author-name-line"><b>{post.author?.nickname || "校园同学"}</b><span className="author-level">Lv.{userLevel(post.author, post.author_level)}</span></div>
+        <AiBotIdentity user={post.author} />
         <span><PostTime value={post.created_at} />{post.author?.followers_count != null ? ` · ${post.author.followers_count} 位关注者` : ""}</span>
       </div>
+      {mobile && <Link className="mobile-post-more" to={`/post/${post.id}`} aria-label="查看帖子详情与操作"><Icon name="more" size={20} /></Link>}
       {auth.user && post.author_id && post.author_id !== auth.user.id && (
         <button className={`author-follow ${followed ? "active" : ""}`} type="button" disabled={pending} aria-pressed={followed} aria-busy={pending} onClick={async () => {
           if (lock.current) return;
@@ -200,7 +209,7 @@ function PostAuthor({ post }: { post: Entity }) {
           setPending(true);
           try { if (await ui.act(() => write(`/api/user/${post.author_id}/follow`, {}, followed ? "DELETE" : "POST"), followed ? "已取消关注" : "已关注")) setFollowed(!followed); }
           finally { lock.current = false; setPending(false); }
-        }}>{followed ? "已关注" : "关注"}</button>
+        }}><span className="follow-control">{!mobile && <Icon name={pending ? "clock" : followed ? "check" : "plus"} size={13} />}<span>{followed ? "已关注" : "关注"}</span></span></button>
       )}
     </div>
   );
@@ -214,6 +223,11 @@ export function PostCard({
   market?: boolean;
 }) {
   const auth = useAuth();
+  const mobile = useMobile();
+  const marketType = post.post_type || post.type;
+  const marketLabel = ({ sell: "出售", buy: "求购", lost: "寻物", found: "招领", proxy: "办事", marketplace_sell: "出售", marketplace_buy: "求购" } as Record<string, string>)[marketType] || "出售";
+  const marketStateLabel = ({ sold: "已售出", closed: "已结束" } as Record<string, string>)[post.status]
+    || (post.status === "normal" && ["sell", "marketplace_sell"].includes(marketType) ? "出售中" : "");
   const location=useLocation();
   const back={from:location.pathname+location.search};
   if (market)
@@ -222,7 +236,7 @@ export function PostCard({
         <div className="market-cover">
           <PostThumbnail key={post.id} post={post} className="market-img" />
           <span className="tag market-status">
-            {post.status === "sold"
+            {mobile ? marketLabel : post.status === "sold"
               ? "已售出"
               : post.post_type === "marketplace_buy"
                 ? "求购"
@@ -231,7 +245,13 @@ export function PostCard({
         </div>
         <div className="market-info">
           <h3>{post.title || post.content}</h3>
-          <div className="market-price-row"><strong className="price"><small>¥</small> {post.price ?? "待议"}</strong>{Number(post.reply_count) > 0 && <span>{post.reply_count} 条讨论</span>}</div>
+          <div className="market-price-row">
+            {mobile && ["lost", "found"].includes(marketType) ? <span className="mobile-market-type">{marketStateLabel || marketLabel}</span> : <>
+              <strong className="price"><small>¥</small> {post.price ?? "待议"}</strong>
+              {mobile && marketStateLabel && <span className="mobile-market-type">{marketStateLabel}</span>}
+            </>}
+            {Number(post.reply_count) > 0 && <span>{post.reply_count} 条讨论</span>}
+          </div>
           <div className="market-meta">
             <span className="market-seller"><PostAvatar author={post.author} /><span>{post.author?.nickname || "校园同学"}</span></span>
             <PostTime value={post.created_at} />
@@ -239,12 +259,14 @@ export function PostCard({
         </div>
       </Link>
     );
+  if (mobile && post.poll_meta) return <PollCard key={`${post.id}:${auth.user?.id}`} post={post} compact />;
   return (
     <article className="feed-card">
       <PostAuthor key={`author:${post.id}:${auth.user?.id}`} post={post} />
-      <Link to={`/post/${post.id}`} state={back}>
+      <Link className="post-summary" to={`/post/${post.id}`} state={back}>
         {post.title && <h3 className="post-title">{post.title}</h3>}
-        {post.content && <p className={`post-body ${post.title ? "" : "post-text-only"}`}>{post.content.slice(0, 220)}</p>}
+        {post.content && <p className={`post-body ${post.title ? "" : "post-text-only"}`}>{post.content.slice(0, 220)}{post.content.length > 220 && "…"}</p>}
+        {post.content?.length > 220 && <span className="post-read-more">查看全文 <span aria-hidden="true">→</span></span>}
       </Link>
       <MediaGallery items={post.images} title={post.title || "帖子图片"} />
       <PostActions key={`actions:${post.id}:${auth.user?.id}`} post={post} from={back.from} />
@@ -252,6 +274,7 @@ export function PostCard({
   );
 }
 export function Community({ market = false }: { market?: boolean }) {
+  const mobile = useMobile();
   const ui = useUI(),
     auth = useAuth();
   const [params, setParams] = useSearchParams();
@@ -268,19 +291,27 @@ export function Community({ market = false }: { market?: boolean }) {
       type: params.get("type"),
       q: params.get("q"),
       status: params.get("available") === "1" ? "normal" : undefined,
+      capabilities: mobile && !market ? "poll_v1" : undefined,
     }),
   );
   const posts = rows(q.data, "posts");
+  const publicPosts = !market && !personal && page === 1
+    ? [...new Map([...rows(q.data, "pinned_posts"), ...posts].filter(isPublicPost).map(post => [post.id, post])).values()]
+    : [];
   function filter(k: string, v: string) {
     const next = new URLSearchParams(params);
     next.set(k, v);
     next.set("page", "1");
     setParams(next);
   }
+  if (mobile && personal && !auth.loading && !auth.user) {
+    return <div className="community-page"><Empty title={sort === 'bookmarks' ? '登录后查看我的收藏' : '登录后查看我的发布'} description="登录沈理校园后，继续查看个人内容。"><button className="btn primary" onClick={auth.login}>登录</button></Empty></div>;
+  }
   return (
     <div className={market ? "market-page" : "community-page"}>
       <Head
-        title={market ? "二手集市" : "校园社区"}
+        title={market ? mobile ? "集市" : "二手集市" : "校园社区"}
+        description={mobile && market ? "校园二手、求购和办事信息" : undefined}
       >
         <button
           className="btn primary"
@@ -362,10 +393,11 @@ export function Community({ market = false }: { market?: boolean }) {
           </select>
         )}
       </div>
-      {market && <div className="market-results-head"><div role="group" aria-label="闲置分类" className="market-types">{[["", "全部闲置"], ["marketplace_sell", "出售"], ["marketplace_buy", "求购"]].map(([value, label]) => <button type="button" key={value} aria-pressed={(params.get("type") || "") === value} onClick={() => filter("type", value)}>{label}</button>)}</div>{q.data && !q.error && <span>本页 {posts.length} 件</span>}</div>}
+      {market && <div className="market-results-head"><div role="group" aria-label="闲置分类" className="market-types">{(mobile ? [["", "全部"], ["sell", "出售"], ["buy", "求购"], ["lost", "寻物"], ["found", "招领"], ["proxy", "办事"]] : [["", "全部闲置"], ["marketplace_sell", "出售"], ["marketplace_buy", "求购"]]).map(([value, label]) => <button type="button" key={value} aria-pressed={(params.get("type") || "") === value} onClick={() => filter("type", value)}>{label}</button>)}</div>{q.data && !q.error && <span>本页 {posts.length} 件</span>}</div>}
       <QueryState query={q}>
+        {!market && !personal && page === 1 && <PublicPosts posts={publicPosts} />}
         <div className={market ? "market-grid" : "panel community-feed"}>
-          {posts.map((post) => (
+          {posts.filter(post => !publicPosts.some(item => item.id === post.id)).map((post) => (
             <PostCard key={post.id} post={post} market={market} />
           ))}
         </div>
@@ -383,22 +415,25 @@ export function Community({ market = false }: { market?: boolean }) {
     </div>
   );
 }
-export function PostDetail() {
+export function PostDetail({ poll = false }: { poll?: boolean }) {
+  const mobile = useMobile();
   const location=useLocation(),navigate=useNavigate();
   const commentRef = useRef<HTMLElement>(null);
   const [commentSort, setCommentSort] = useState("hot");
-  const { id } = useParams(),
+  const { id: routeId } = useParams(),
     ui = useUI(),
     auth = useAuth();
-  const q = useApi(`/api/posts/${id}`);
+  const q = useApi(poll ? `/api/polls/${routeId}` : `/api/posts/${routeId}`);
+  const p = entity(q.data, "post");
+  const id = p.id ? String(p.id) : poll ? "" : routeId;
   const comments = useInfiniteQuery({
     queryKey: ["api", "post-replies", id, auth.user?.id, commentSort],
     initialPageParam: "",
+    enabled: !!id,
     queryFn: ({ pageParam, signal }) => request<Entity>(query(`/api/posts/${id}/replies`, { limit: 30, cursor: pageParam, sort: commentSort }), { signal }),
     getNextPageParam: (lastPage) => lastPage.next_cursor || undefined,
     retry: retryInterruptedRead,
   });
-  const p = entity(q.data, "post");
   const replies = uniqueReplies(comments.data?.pages.flatMap((page) => rows(page, "replies")) || []);
   const replyIds = new Set(replies.map((reply) => Number(reply.id)));
   const roots = replies.filter((reply) => !reply.parent_reply_id || !replyIds.has(Number(reply.parent_reply_id)));
@@ -415,33 +450,8 @@ export function PostDetail() {
     if (!auth.requireUser()) return;
     ui.open(reply ? `回复 ${reply.author?.nickname || "校园同学"}` : "发表评论", <ReplyComposer postId={Number(id)} parentReplyId={reply ? Number(reply.parent_reply_id || reply.id) : undefined} replyToReplyId={reply?.parent_reply_id ? Number(reply.id) : undefined} replyToUserId={reply?.parent_reply_id ? Number(reply.author_id) : undefined} onSent={ui.close} />);
   }
-  return (
-    <div className="post-detail-page">
-      <header className="page-head post-detail-head">
-        <div className="page-title post-detail-heading">
-          <Link to={p.board_id === 2 ? "/market" : "/community"}><Icon name={p.board_id === 2 ? "market" : "community"} size={17} /><span>{p.board_id === 2 ? "二手集市" : "校园社区"}</span></Link>
-          <span aria-hidden="true" className="post-detail-separator">/</span>
-          <h1>帖子详情</h1>
-        </div>
-        <button className="btn post-back" onClick={()=>location.state?.from?navigate(-1):navigate(p.board_id===2?'/market':'/community')}><Icon name="arrow" size={17} />返回列表</button>
-      </header>
-      <QueryState query={q}>
-        <div className="post-detail-layout">
-        <div className="post-detail-main">
-        <article className="panel post-full">
-          {p.title && <h1>{p.title}</h1>}
-          <PostAuthor key={`author:${p.id}:${auth.user?.id}`} post={p} />
-          {p.board_id === 2 && <div className="post-market-summary"><strong className="post-market-price"><small>¥</small> {p.price ?? "待议"}</strong><span>{p.status === "sold" ? "已售出" : "交易中"}</span></div>}
-          <div className="post-body details-text">{p.content}</div>
-          <MediaGallery items={p.images} title={p.title || "帖子图片"} className="post-detail-gallery" maxVisible={9} />
-          {p.board_id === 2 && (
-            <div className="info-box">
-              <p>
-                {p.contact_type}：{p.contact || "请通过评论联系"}
-              </p>
-            </div>
-          )}
-          <PostActions key={`actions:${p.id}:${auth.user?.id}`} post={p} onComment={focusComments} more={<PostMore>
+  const moreActions = (
+    <PostMore>
             {p.images?.[0] && (
               <button type="button" onClick={async () => { if (!auth.requireUser()) return; const path = mediaURL(p.images[0], "origin"); if (!path) return; await ui.act(() => favoritePublicImage(path), "图片已收藏为表情"); }}>
                 收藏首图为表情
@@ -533,11 +543,46 @@ export function PostDetail() {
                 删除
               </button>
             )}
-          </PostMore>} />
+          </PostMore>
+  );
+  return (
+    <div className="post-detail-page">
+      {mobile ? <header className="mobile-header mobile-detail-header page-head post-detail-head">
+        <button className="mobile-icon-button" aria-label="返回上一页" onClick={() => location.state?.from ? navigate(-1) : navigate(p.board_id === 2 ? '/market' : '/community')}><Icon name="arrow" size={24} /></button>
+        <h1>{p.poll_meta ? "投票详情" : p.board_id === 2 ? "闲置详情" : "帖子详情"}</h1>
+        {q.data && !q.error ? moreActions : <span className="mobile-icon-button" />}
+      </header> : <header className="page-head post-detail-head">
+        <div className="page-title post-detail-heading">
+          <Link to={p.board_id === 2 ? "/market" : "/community"}><Icon name={p.board_id === 2 ? "market" : "community"} size={17} /><span>{p.board_id === 2 ? "二手集市" : "校园社区"}</span></Link>
+          <span aria-hidden="true" className="post-detail-separator">/</span>
+          <h1>帖子详情</h1>
+        </div>
+        <button className="btn post-back" onClick={()=>location.state?.from?navigate(-1):navigate(p.board_id===2?'/market':'/community')}><Icon name="arrow" size={17} />返回列表</button>
+      </header>}
+      {mobile && p.poll_meta && <p className="mobile-poll-notice">非官方用户投票，结果仅代表参与用户的选择。</p>}
+      <QueryState query={q}>
+        <div className="post-detail-layout">
+        <div className="post-detail-main">
+        <article className="panel post-full">
+          {(mobile || poll) && p.poll_meta ? <PollCard key={`${p.id}:${auth.user?.id}`} post={p} /> : <>
+          {p.title && <h1>{p.title}</h1>}
+          <PostAuthor key={`author:${p.id}:${auth.user?.id}`} post={p} />
+          {p.board_id === 2 && <div className="post-market-summary"><strong className="post-market-price"><small>¥</small> {p.price ?? "待议"}</strong><span>{p.status === "sold" ? "已售出" : "交易中"}</span></div>}
+          <div className="post-body details-text">{p.content}</div>
+          <MediaGallery items={p.images} title={p.title || "帖子图片"} className="post-detail-gallery" maxVisible={9} variant="detail" />
+          {p.board_id === 2 && (
+            <div className="info-box">
+              <p>
+                {p.contact_type}：{p.contact || "请通过评论联系"}
+              </p>
+            </div>
+          )}
+          </>}
+          <PostActions key={`actions:${p.id}:${auth.user?.id}`} post={p} onComment={focusComments} more={mobile ? undefined : moreActions} />
         </article>
         <section className="panel post-comments section" id="post-comments" ref={commentRef} tabIndex={-1} aria-label="评论区">
           <div className="post-comments-head"><h2>全部评论 <span>{comments.data?.pages[0]?.total ?? p.reply_count ?? 0}</span></h2><select aria-label="评论排序" value={commentSort} onChange={(event) => setCommentSort(event.target.value)}><option value="hot">热门</option><option value="latest">最新</option></select></div>
-          <div className="post-comment-prompt"><PostAvatar author={auth.user || undefined} /><button type="button" className="post-comment-start" onClick={() => replyTo()}><span>{auth.user ? "说说你的想法，一起聊聊…" : "登录后参与讨论…"}</span><Icon name="community" size={19} /></button></div>
+          <div className="post-comment-prompt">{mobile ? <button className="mobile-icon-button" aria-label="添加图片或表情回复" onClick={() => replyTo()}><Icon name="plus" size={24} /></button> : <PostAvatar author={auth.user || undefined} />}<button type="button" className="post-comment-start" onClick={() => replyTo()}><span>{auth.user ? mobile ? "写下你的想法…" : "说说你的想法，一起聊聊…" : "登录后参与讨论…"}</span><Icon name="community" size={19} /></button></div>
           <QueryState query={{ ...comments, error: comments.data ? null : comments.error }}>
             {!replies.length && <Empty title="还没有评论" description="分享你的想法，开启这段讨论。" />}
             {roots.map((reply) => <CommentThread key={`${reply.id}:${auth.user?.id}`} postId={Number(id)} reply={reply} preview={replies.filter((child) => Number(child.parent_reply_id) === Number(reply.id))} onReply={replyTo} />)}
@@ -566,7 +611,7 @@ function PostDetailRail({ post, replyCount, onComment }: { post: Entity; replyCo
   return <aside className="post-detail-rail" aria-label="帖子相关信息">
     <section className="rail-card post-context-author">
       <h2>关于作者</h2>
-      <div className="post-context-person"><PostAvatar author={post.author} /><div><b>{post.author?.nickname || "校园同学"}</b><span>Lv.{post.author?.level || post.author_level || 1}{post.author?.followers_count != null ? ` · ${post.author.followers_count} 位关注者` : ""}</span></div></div>
+      <div className="post-context-person"><PostAvatar author={post.author} /><div><b>{post.author?.nickname || "校园同学"}</b><span>Lv.{userLevel(post.author, post.author_level)}{post.author?.followers_count != null ? ` · ${post.author.followers_count} 位关注者` : ""}</span></div></div>
       <p className="post-context-time">发布于 <PostTime value={post.created_at} /></p>
       <dl className="post-context-stats"><div><dt>本帖点赞</dt><dd>{post.like_count || 0}</dd></div><div><dt>本帖评论</dt><dd>{replyCount}</dd></div></dl>
       <button type="button" className="btn full-width post-context-comment" onClick={onComment}><Icon name="community" size={17} />查看评论</button>
@@ -611,6 +656,7 @@ function CommentRow({ reply, onReply }: { reply: Entity; onReply: (reply: Entity
     <PostAvatar author={reply.author || reply.user} />
     <div className="post-comment-main">
       <div className="post-comment-author"><b>{reply.author?.nickname || reply.user?.nickname || "校园同学"}</b></div>
+      <AiBotIdentity user={reply.author || reply.user} />
       {deleted ? <p className="post-comment-deleted">该评论已删除</p> : <>
         {reply.content && reply.content !== "[表情]" && <p className="details-text">{reply.content}</p>}
         {reply.sticker_id && <StickerRenderer stickerId={reply.sticker_id} assetKey={reply.asset_key} packId={reply.pack_id} />}

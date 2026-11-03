@@ -1,17 +1,43 @@
-import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { entity, rows, time, useApi, write, type Entity } from "./api";
-import { Empty, Form, Head, QueryState, Tabs, useUI } from "./ui";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { captureAuthSession, entity, errorText, query, rows, time, useApi, write, type Entity } from "./api";
+import { Empty, Form, Icon, QueryState, Tabs, useUI } from "./ui";
 import { useAuth } from "./auth";
+import { ServerAvatar } from "./server-avatar";
+import { MediaGallery } from "./media";
+import { mobilePostTime, useMobile } from "./mobile";
+import "./polls.css";
+
+const teamStatuses: Record<string, string> = {
+  recruiting: "招募中",
+  full: "已满员",
+  closed: "已关闭",
+  expired: "已截止",
+};
 export function Polls() {
   const [params, setParams] = useSearchParams();
   const team = params.get("tab") === "team",
     ui = useUI(),
     auth = useAuth();
-  const q = useApi(team ? "/api/team/recruitments" : "/api/polls");
+  const sort = params.get("sort") || "recommend";
+  const category = params.get("category") || "all";
+  const q = useApi(team ? "/api/team/recruitments" : query("/api/polls", { sort, category }));
+  const items = rows(q.data, "recruitments");
+  function filter(name: string, value: string) {
+    setParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.set(name, value);
+      return next;
+    });
+  }
   return (
-    <>
-      <Head title="投票 · 组队" description="一起做选择，寻找志同道合的队友">
+    <div className="polls-page">
+      <header className="participation-intro">
+        <div className="participation-intro-copy">
+          <h1>投票 · 组队</h1>
+          <p>一起做选择，寻找志同道合的队友</p>
+        </div>
         <button
           className="btn primary"
           onClick={() =>
@@ -22,9 +48,10 @@ export function Polls() {
             )
           }
         >
-          ＋ {team ? "发布组队" : "创建投票"}
+          <Icon name="plus" size={18} />{team ? "发布组队" : "创建投票"}
         </button>
-      </Head>
+      </header>
+      <div className="participation-toolbar">
       <Tabs
         tabs={[
           ["polls", "校园投票"],
@@ -33,94 +60,183 @@ export function Polls() {
         value={team ? "team" : "polls"}
         onChange={(tab) => setParams({ tab })}
       />
-      <QueryState query={q}>
-        <div className="two-col">
-          {rows(q.data, "recruitments").map((p) =>
-            team ? (
-              <div className="panel panel-pad" key={p.id}>
-                <span className="tag">{p.status}</span>
-                <h3>{p.title}</h3>
-                <p>{p.description}</p>
-                <p className="muted">还需 {p.remaining_count} 人</p>
-                <button
-                  className="btn"
-                  onClick={() => ui.open(p.title, <TeamDetail id={p.id} />)}
-                >
-                  查看组队
-                </button>
-              </div>
-            ) : (
-              <PollCard key={p.id} post={p} />
-            ),
-          )}
+        {!q.isPending && !q.error && <span className="participation-count">本页 <b>{items.length}</b> {team ? "个招募" : "场投票"}</span>}
+      </div>
+      {!team && <section className="poll-filters" aria-label="筛选校园投票">
+        <p>校园投票由用户发起，结果仅代表参与用户的选择。</p>
+        <Tabs tabs={[["recommend", "推荐"], ["latest", "最新"], ["ending", "即将结束"]]} value={sort} onChange={value => filter("sort", value)} />
+        <div className="poll-categories" aria-label="投票分类">
+          {[["all", "全部"], ["campus_life", "校园生活"], ["study", "学习"], ["activity", "活动"], ["other", "其他"]].map(([value, label]) => <button key={value} aria-pressed={category === value} onClick={() => filter("category", value)}>{label}</button>)}
         </div>
-        {!rows(q.data, "recruitments").length && <Empty />}
+      </section>}
+      <QueryState query={q}>
+        <div key={auth.user?.id ?? "guest"}>
+          {team ? <div className="participation-grid">{items.map((p) => (
+              <article className="panel team-card" key={p.id}>
+                <div className="participation-heading">
+                <div className="participation-card-head">
+                  <span className={`participation-status ${(p.effective_status || p.status) === "recruiting" ? "is-active" : ""}`}>
+                    {teamStatuses[p.effective_status || p.status] || "状态待确认"}
+                  </span>
+                  <Icon name="community" size={18} />
+                </div>
+                <h3>{p.title}</h3>
+                <p className="participation-description">{p.description}</p>
+                </div>
+                {p.roles?.length > 0 && (
+                  <div className="team-roles">
+                    {p.roles.map((role: string, index: number) => <span key={index}>{role}</span>)}
+                  </div>
+                )}
+                <div className="participation-footer">
+                  <div className="participation-meta">
+                    <span>{p.remaining_count != null ? `还需 ${p.remaining_count} 人` : "查看招募详情"}</span>
+                    {p.deadline && <span>截止 {time(p.deadline)}</span>}
+                  </div>
+                  <button className="btn" onClick={() => ui.open(p.title, <TeamDetail id={p.id} />)}>
+                    查看组队
+                  </button>
+                </div>
+              </article>
+            ))}</div> : <div className="poll-feed">{items.map(post => <PollCard key={post.id} post={post} />)}</div>}
+        </div>
+        {!items.length && (
+          <Empty
+            title={team ? "还没有组队招募" : "还没有校园投票"}
+            description={team ? "发布你的计划，找到一起学习、参赛或运动的伙伴。" : "发起一个问题，听听同学们的想法。"}
+          />
+        )}
       </QueryState>
-    </>
+    </div>
   );
 }
-function PollCard({ post }: { post: Entity }) {
-  const ui = useUI(),
-    auth = useAuth();
+export function PollCard({ post, compact = false }: { post: Entity; compact?: boolean }) {
+  const ui = useUI(), auth = useAuth(), qc = useQueryClient();
+  const mobile = useMobile();
+  const location = useLocation();
   const poll = post.poll_meta || {};
-  const [chosen, setChosen] = useState<number[]>([]);
+  const authorName = post.author?.nickname || "匿名用户";
+  const options: Entity[] = poll.options || [];
+  const savedChoices = options.filter(option => option.is_chosen).map(option => option.id as number);
+  const [draft, setDraft] = useState<number[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const visibleOptions = compact && !expanded ? options.slice(0, 3) : options;
+  const submitting = useRef(false), mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const chosen = draft ?? savedChoices;
+  const active = poll.effective_status === "active";
+  const multiple = poll.selection_mode === "multiple";
+  const maxChoices = multiple ? Math.max(1, Number(poll.max_choices) || options.length) : 1;
+  const editable = active && !!auth.user && !!(poll.can_vote || poll.can_change);
+  const resultsVisible = poll.results_visible !== false && poll.can_view_result !== false;
+  const unchanged = poll.has_voted && chosen.length === savedChoices.length && chosen.every(id => savedChoices.includes(id));
+  const hintId = `poll-hint-${post.id}`;
+  const titleId = `poll-title-${post.id}`;
+  const hiddenResultHint = ({
+    after_vote: "投票后可查看结果",
+    after_end: "投票结束后公开结果",
+    private: "投票结果不公开",
+  } as Record<string, string>)[poll.results_visibility] || "结果暂不可见";
+
+  async function vote() {
+    if (submitting.current || !editable || !chosen.length || !auth.requireUser()) return;
+    const isCurrent = captureAuthSession();
+    const canUpdate = () => mounted.current && isCurrent();
+    submitting.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      await write(`/api/polls/${poll.id ?? post.id}/ballot`, { option_ids: chosen }, "PUT");
+      if (!canUpdate()) return;
+      await qc.invalidateQueries({ queryKey: ["api"] });
+      if (!canUpdate()) return;
+      setDraft(null);
+      ui.notify("投票结果已更新");
+    } catch (err) {
+      if (canUpdate()) setError(errorText(err));
+    } finally {
+      submitting.current = false;
+      if (canUpdate()) setBusy(false);
+    }
+  }
+
   return (
-    <div className="panel panel-pad">
-      <span className="tag brand">
-        {poll.effective_status === "active" ? "进行中" : "已结束"}
-      </span>
-      <h3>{post.title}</h3>
-      <p className="muted">{post.content}</p>
-      {(poll.options || []).map((o: Entity) => (
-        <label
-          className={`poll-option ${o.is_chosen ? "voted" : ""}`}
-          key={o.id}
-        >
-          <input
-            type={poll.selection_mode === "multiple" ? "checkbox" : "radio"}
-            name={`poll-${post.id}`}
-            disabled={!poll.can_vote && !poll.can_change}
-            checked={chosen.includes(o.id)}
-            onChange={(e) =>
-              setChosen(
-                poll.selection_mode === "multiple"
-                  ? e.target.checked
-                    ? [...chosen, o.id]
-                    : chosen.filter((id) => id !== o.id)
-                  : [o.id],
-              )
-            }
-          />
-          {o.text}
-          <span className="muted">
-            {o.vote_count !== undefined ? ` ${o.vote_count} 票` : ""}
-          </span>
-        </label>
-      ))}
-      <div className="inline-actions">
-        <button
-          className="btn primary"
-          disabled={!chosen.length || (!poll.can_vote && !poll.can_change)}
-          onClick={() =>
-            auth.requireUser() &&
-            ui.act(
-              () =>
-                write(
-                  `/api/polls/${post.id}/ballot`,
-                  { option_ids: chosen },
-                  "PUT",
-                ),
-              "投票结果已更新",
-            )
-          }
-        >
-          {poll.has_voted ? "修改选择" : "投票"}
-        </button>
-        <span className="muted">
-          {poll.participant_count || 0} 人参与 · {time(poll.ends_at)}
-        </span>
+    <article className={`panel poll-card ${compact ? "mobile-feed-poll" : ""} ${active ? "poll-card-active" : "poll-card-closed"}`} aria-labelledby={titleId} aria-busy={busy}>
+      <div className="participation-heading">
+        <div className="poll-author">
+          <span className="poll-avatar"><ServerAvatar src={post.author?.avatar} name={authorName} /></span>
+          <div className="poll-author-copy"><b>{authorName}</b>{post.created_at && <time dateTime={post.created_at} title={time(post.created_at)}>{compact || mobile ? mobilePostTime(post.created_at) : time(post.created_at)}</time>}</div>
+          <span className="poll-type-label">校园投票</span>
+        </div>
+      <h3 id={titleId}>{compact ? <Link to={poll.id ? `/polls/${poll.id}` : `/post/${post.id}`} state={{ from: location.pathname + location.search }}>{post.title}</Link> : post.title}</h3>
+      {post.content && <p className="participation-description">{post.content}</p>}
       </div>
-    </div>
+      <MediaGallery items={post.images} title={post.title} className="poll-media" maxVisible={9} />
+      <p className="poll-selection-rule">{multiple ? `多选 · 最多选 ${maxChoices} 项` : "单选 · 选择 1 项"}</p>
+      <fieldset className="poll-choices" aria-describedby={hintId}>
+        <legend className="sr-only">{post.title}的选项</legend>
+        {visibleOptions.map(option => {
+          const selected = chosen.includes(option.id);
+          const showCount = resultsVisible && typeof option.vote_count === "number";
+          const ratio = typeof option.ratio === "number"
+            ? option.ratio
+            : (poll.participant_count > 0 ? option.vote_count / poll.participant_count : 0);
+          const percent = Math.round(Math.min(1, Math.max(0, ratio || 0)) * 100);
+          const disabled = !editable || busy || (multiple && !selected && chosen.length >= maxChoices);
+          return (
+            <label
+              className={`poll-choice ${selected ? "is-selected" : ""} ${disabled ? "is-disabled" : ""}`}
+              key={option.id}
+              style={{ "--poll-result": `${showCount ? percent : 0}%` } as CSSProperties}
+            >
+              <input
+                type={multiple ? "checkbox" : "radio"}
+                name={`poll-${post.id}`}
+                aria-label={option.text}
+                disabled={disabled}
+                checked={selected}
+                onChange={event => {
+                  setError("");
+                  const selection = event.target.checked
+                    ? [...chosen, option.id]
+                    : chosen.filter(id => id !== option.id);
+                  setDraft(multiple ? selection : [option.id]);
+                }}
+              />
+              <span className="poll-choice-text">
+                {option.text}{option.is_chosen && <small>已投</small>}
+              </span>
+              {showCount && (
+                <span className="poll-result" title={`${option.vote_count} 票`}><b>{percent}%</b></span>
+              )}
+            </label>
+          );
+        })}
+      </fieldset>
+      {visibleOptions.length < options.length && <button className="mobile-more-options" onClick={() => setExpanded(true)}>还有 {options.length - visibleOptions.length} 个选项 <span aria-hidden="true">›</span></button>}
+      <p className="poll-hint" id={hintId}>
+        {!resultsVisible ? hiddenResultHint : multiple ? "占比按参与人数计算，每人可选择多项" : "占比按参与人数计算"}
+        {editable && multiple && ` · 已选 ${chosen.length}/${maxChoices} 项`}
+      </p>
+      {error && <p className="poll-error" role="alert">{error}，可保留当前选择重试。</p>}
+      <div className="poll-submit">
+        {active && !auth.user ? (
+          <button className="btn" disabled={auth.loading} onClick={auth.login}>登录参与</button>
+        ) : editable ? (
+          <button className="btn primary" disabled={busy || !chosen.length || unchanged} onClick={vote}>
+            {busy ? "提交中…" : error ? "重试投票" : unchanged ? "已提交选择" : !chosen.length ? multiple ? "选择后提交" : "选择一项后投票" : poll.has_voted ? "确认修改" : "提交选择"}
+          </button>
+        ) : (
+          <button className="btn" disabled>{poll.has_voted ? "已提交，不可修改" : active ? "暂不可投票" : "投票已结束"}</button>
+        )}
+      </div>
+      <div className="poll-footnote"><span>{poll.participant_count ?? 0} 人参与</span>{poll.ends_at && <span><Icon name="schedule" size={14} />{active ? <>截止 <time dateTime={poll.ends_at}>{time(poll.ends_at)}</time></> : "已结束"}</span>}</div>
+    </article>
   );
 }
 function PollForm() {
@@ -257,7 +373,7 @@ function TeamDetail({ id }: { id: number }) {
   return (
     <QueryState query={q}>
       <p className="details-text">{d.description}</p>
-      <p>状态：{d.effective_status || d.status}</p>
+      <p>状态 · {teamStatuses[d.effective_status || d.status] || "状态待确认"}</p>
       {d.can_apply && (
         <Form
           fields={[

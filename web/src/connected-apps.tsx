@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "./auth";
-import { ApiError, captureAuthSession, useApi, write } from "./api";
-import { Empty, Head, QueryState } from "./ui";
+import { ApiError, asset, captureAuthSession, upload, useApi, write } from "./api";
+import { Empty, Head, Icon, QueryState } from "./ui";
 import "./connected-apps.css";
+import { IntegrationPersonalSync } from "./integration-personal-sync";
 
 type Binding = {
   binding_id: string;
@@ -47,12 +49,16 @@ type Preview = {
   confirmation_expires_at?: string;
 };
 const labels: Record<string, string> = {
+  "community:bot_post": "以独立AI机器人自动发帖及上传已审核公开配图：每24小时最多1帖，无需逐条确认，不代表本人发言",
+  "academic:grades:read": "读取本人主动同步的成绩（非学校实时查询）",
+  "academic:erke:read": "读取本人主动同步的二课摘要（非完整活动记录）",
   "profile:read_minimal": "账号编号与昵称",
   "community:read": "公开帖子与评论、作者昵称、互动统计、公开图片和表情目录",
   "content:read_own_public": "本人公开帖子",
   "actions:read_own": "本授权创建的草稿与发布结果",
   "community:propose": "创建待本人确认的帖子或评论草稿",
   "checkin:write": "查看本人签到状态，并按本人指令每日签到（不含补签）",
+  "community:bot_reply": "以本人管理的独立AI机器人自动评论/发表情：每24小时最多3条、间隔30分钟、同帖不重复；不再逐条确认，不代表本人发言",
 };
 const errors: Record<string, string> = {
   recent_authentication_required:
@@ -70,6 +76,16 @@ const errors: Record<string, string> = {
   section_muted: "当前账号已被该版块禁言。",
   community_rules_required: "请先在校园社区阅读并接受现行社区规则。",
   invalid_token: "授权已失效，请在 AstrBot 重新连接。",
+  bot_reply_disabled: "服务端尚未开放机器人自动评论，可先管理机器人。",
+  bot_disabled: "机器人已暂停，请先启用后再重试。",
+  invalid_bot_name: "请输入1–24个字符的机器人名称。",
+  invalid_bot_avatar: "头像不可用，请重新选择并上传自己的图片。",
+  invalid_bot_policy: "权限或发言规则不符合要求，请检查板块、屏蔽词与参与频率。",
+  bot_policy_denied: "这项操作已被机器人的社区权限或发言规则禁止。",
+  bot_post_disabled: "服务端尚未开放机器人自动发帖，请先保持只读。",
+  bot_permission_denied: "机器人当前未获准执行这项操作，请本人检查社区权限。",
+  account_unavailable: "当前账号不可用，请检查账号状态。",
+  integration_unavailable: "服务暂时不可用，请稍后重试。",
 };
 function explain(error: unknown) {
   return error instanceof ApiError
@@ -106,7 +122,7 @@ function SignIn() {
 function Problem({ message }: { message: string }) {
   const auth = useAuth();
   return message ? (
-    <div role="alert">
+    <div className="integration-feedback integration-feedback--error" role="alert">
       <p>{message}</p>
       {message.includes("重新登录") && (
         <button className="btn" onClick={auth.login}>
@@ -117,15 +133,313 @@ function Problem({ message }: { message: string }) {
   ) : null;
 }
 
+function IntegrationFrame({ title, subtitle, action, children }: {
+  title: string;
+  subtitle?: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="integration-workspace">
+      <Head title={title} subtitle={subtitle}>{action}</Head>
+      {children}
+    </div>
+  );
+}
+
+type BotPolicy = {
+  post_enabled: boolean;
+  image_enabled: boolean;
+  public_read_enabled: boolean;
+  reply_enabled: boolean;
+  sticker_enabled: boolean;
+  allowed_post_types: string[];
+  blocked_terms: string[];
+  block_links: boolean;
+  daily_reply_limit: number;
+  min_reply_interval_minutes: number;
+};
+type ManagedBot = {
+  bot_user_id: number;
+  name: string;
+  avatar: string;
+  enabled: boolean;
+  owner: { id: number; nickname: string };
+  policy: BotPolicy;
+};
+type BotStatus = {
+  bot: ManagedBot | null;
+  policy_supported?: boolean;
+  sections?: { slug: string; name: string }[];
+  auto_reply_server_enabled: boolean;
+  auto_reply_authorized: boolean;
+  auto_post_server_enabled?: boolean;
+  auto_post_authorized?: boolean;
+  runtime_supported?: boolean;
+  runtime?: BotRuntime;
+};
+type BotRuntime = {
+  state: string;
+  error_code?: string;
+  last_seen_at?: string;
+  last_read_at?: string;
+  next_run_at?: string;
+  last_action?: { kind: string; completed_at: string; post_id?: number; reply_id?: number };
+};
+const runtimeLabels: Record<string, string> = {
+  not_created: "尚未创建", paused: "已暂停", read_disabled: "公开浏览未开放",
+  scope_required: "缺少本人公开浏览授权", offline: "执行端离线或尚未连接", syncing: "正在同步新权限",
+  idle: "等待下一轮", waiting: "排队中", loading: "正在浏览", completed: "本轮已完成",
+  empty: "暂无符合条件的帖子", error: "执行失败", disabled: "执行端未开启自动浏览", cooldown: "等待下次执行",
+};
+function BotRuntimePanel({ initial, supported, enabled }: { initial?: BotRuntime; supported: boolean; enabled: boolean }) {
+  const q = useApi<{runtime: BotRuntime}>(supported ? "/api/connected-apps/bot/runtime" : null);
+  const refetch = useRef(q.refetch);
+  refetch.current = q.refetch;
+  useEffect(() => {
+    if (!supported) return;
+    void refetch.current();
+    const timer = window.setInterval(() => { if (!document.hidden) void refetch.current(); }, 30000);
+    return () => window.clearInterval(timer);
+  }, [supported, initial]);
+  const runtime = q.data?.runtime || initial;
+  let state = runtime?.state || "unknown";
+  if (!enabled) state = "paused";
+  if (runtime?.last_seen_at && Date.now() - Date.parse(runtime.last_seen_at) > 120000 && !["paused", "read_disabled", "scope_required", "not_created"].includes(state)) state = "offline";
+  const verified = supported && !q.isError && !q.isFetching;
+  function date(value?: string) {
+    const time = value ? new Date(value) : null;
+    return time && Number.isFinite(time.getTime()) ? time.toLocaleString("zh-CN", {month:"numeric", day:"numeric", hour:"2-digit", minute:"2-digit"}) : "暂无记录";
+  }
+  return <section className="bot-policy-section" aria-label="后台运行状态">
+    <h3>后台运行</h3>
+    <p role="status">{!supported ? "服务端尚未提供运行状态" : !verified ? "运行状态尚未核验" : runtimeLabels[state] || "运行状态尚未核验"}</p>
+    {verified && <>
+      <dl className="bot-conditions">
+        <div><dt>最近浏览</dt><dd>{date(runtime?.last_read_at)}</dd></div>
+        <div><dt>最近发言</dt><dd>{runtime?.last_action ? `${runtime.last_action.kind === "post" ? "帖子" : "评论"} · ${date(runtime.last_action.completed_at)}` : "暂无成功记录"}</dd></div>
+      </dl>
+      {runtime?.next_run_at && !["offline", "paused", "read_disabled", "scope_required", "disabled", "syncing"].includes(state) && <p className="integration-hint">下次计划：{date(runtime.next_run_at)}</p>}
+      {state === "error" && <p className="integration-hint">{runtime?.error_code === "provider_required" ? "执行端尚未配置浏览模型，请联系部署者。" : "本轮未完成，执行端将按间隔重新检查。"}</p>}
+    </>}
+    {supported && <button className="btn" type="button" disabled={q.isFetching} onClick={() => void q.refetch()}>{q.isFetching ? "正在核验运行状态…" : "刷新运行状态"}</button>}
+    <p className="integration-hint">状态来自执行端心跳；超过两分钟未收到心跳会显示离线。最近发言以服务端成功记录为准。</p>
+  </section>;
+}
+const initialBotPolicy = (): BotPolicy => ({
+  public_read_enabled: true, reply_enabled: false, sticker_enabled: false, post_enabled: false, image_enabled: false,
+  allowed_post_types: ["campus_life", "course_study"], blocked_terms: [],
+  block_links: true, daily_reply_limit: 3, min_reply_interval_minutes: 30,
+});
+function botAvatar(value: string) {
+  const source = asset(value);
+  if (!source) return undefined;
+  const url = new URL(source, location.origin);
+  return url.origin === location.origin && url.pathname.startsWith("/uploads/") ? source : undefined;
+}
+function botProblem(error: unknown) {
+  return error instanceof ApiError && error.status === 404
+    ? "当前服务端尚未支持机器人管理，请升级服务后重试。账号和权限尚未创建。"
+    : explain(error);
+}
+function BotPanel() {
+  const auth = useAuth(), q = useApi<BotStatus>("/api/connected-apps/bot");
+  const guard = useGuard(), picker = useRef<HTMLInputElement>(null), pending = useRef(false), dirty = useRef(false);
+  const [name, setName] = useState("大肥鱼"), [avatar, setAvatar] = useState("");
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  const [policy, setPolicy] = useState<BotPolicy>(initialBotPolicy);
+  const [terms, setTerms] = useState("");
+  const [busy, setBusy] = useState(false), [uploading, setUploading] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [message, setMessage] = useState(""), [notice, setNotice] = useState("");
+  useEffect(() => {
+    const bot = q.data?.bot;
+    if (!q.data || dirty.current) return;
+    setName(bot?.name || "大肥鱼");
+    setAvatar(bot?.avatar || "");
+    setAvatarFailed(false);
+    setPolicy({...initialBotPolicy(),...bot?.policy});
+    setTerms((bot?.policy?.blocked_terms || []).join("\n"));
+    setPaused(false);
+  }, [q.data]);
+  function edited() { dirty.current = true; setNotice(""); }
+  function changePolicy<K extends keyof BotPolicy>(key: K, value: BotPolicy[K]) {
+    setPolicy(previous => ({ ...previous, [key]: value }));
+    edited();
+  }
+  async function chooseAvatar(file: File | undefined) {
+    if (!file || pending.current) return;
+    if (!["image/png", "image/jpeg", "image/gif"].includes(file.type) || file.size > 10 * 1024 * 1024) {
+      setMessage("请选择不超过 10 MiB 的 JPG、PNG 或 GIF 图片。"); return;
+    }
+    const current = guard();
+    pending.current = true; setUploading(true); setMessage(""); setNotice("");
+    let preview = "";
+    try {
+      preview = URL.createObjectURL(file);
+      const image = new Image();
+      image.src = preview;
+      await image.decode();
+      if (!image.naturalWidth || !image.naturalHeight) throw new Error("invalid_image");
+      if (!current()) return;
+      const source = await upload(file);
+      if (current()) {
+        if (!botAvatar(source)) throw new Error("invalid_avatar_url");
+        setAvatar(source); setAvatarFailed(false);
+        dirty.current = true;
+        setNotice("头像已上传，保存机器人资料后会公开显示。");
+      }
+    } catch (error) {
+      if (current()) setMessage(error instanceof ApiError ? explain(error) : "头像未能上传，请检查图片后重新选择。原头像仍保留。");
+    } finally {
+      if (preview) URL.revokeObjectURL(preview);
+      if (current()) { pending.current = false; setUploading(false); }
+    }
+  }
+  async function save(enabled: boolean, pause = false) {
+    if (pending.current) return;
+    const current = guard(), existed = !!q.data?.bot;
+    const blocked = terms.split(/[\n，,]/).map(term => term.trim()).filter(Boolean);
+    if (!pause && (blocked.length > 20 || blocked.some(term => Array.from(term).length > 24))) {
+      setMessage("屏蔽词最多 20 个，每个最多 24 个字符。"); return;
+    }
+    pending.current = true; setBusy(true); setMessage(""); setNotice("");
+    try {
+      await write("/api/connected-apps/bot", pause ? { enabled: false } : {
+        name: name.trim(), avatar, enabled, policy: { ...policy, blocked_terms: blocked },
+      });
+      if (current()) {
+        // 暂停只改变运行开关，保留尚未保存的资料与规则草稿。
+        if (pause && q.data?.bot) {
+          setPaused(true);
+          setNotice("机器人已暂停，不再接受新的自动发布。未保存的修改仍保留。");
+        } else {
+          dirty.current = false;
+          await q.refetch();
+          if (current()) setNotice(!existed ? "机器人已新建并暂停。核对权限后，可单独启用。" : enabled ? "资料与权限已保存，机器人已启用。" : "资料与权限已保存，机器人仍为暂停状态。");
+        }
+      }
+    } catch (error) {
+      if (current()) setMessage(botProblem(error));
+    } finally {
+      if (current()) { pending.current = false; setBusy(false); }
+    }
+  }
+  const bot = q.data?.bot ? { ...q.data.bot, enabled: !paused && q.data.bot.enabled } : null;
+  const supported = q.data?.policy_supported === true;
+  const locked = busy || uploading, editable = supported && !locked;
+  const valid = !!name.trim() && Number.isInteger(policy.min_reply_interval_minutes) && policy.min_reply_interval_minutes >= 30 && policy.min_reply_interval_minutes <= 1440;
+  const sections = q.data?.sections || [];
+  return (
+    <section className="panel panel-pad integration-panel bot-panel" aria-busy={busy || uploading}>
+      <header className="integration-section-head">
+        <Icon name="ai" size={26} />
+        <div><p className="integration-eyebrow">一个账号，一位独立 AI</p><h2>我的 AI 机器人</h2></div>
+      </header>
+      <p className="integration-description">在这里新建机器人、编辑头像和名字，并设置它在软件社区能做什么。它使用独立账号，公开标记为你的 AI，没有平台管理权。</p>
+      {q.error ? <div className="integration-feedback integration-feedback--error" role="alert">
+        <p>{botProblem(q.error)}</p><button className="btn" onClick={() => void q.refetch()}>重试读取机器人状态</button>
+      </div> : <QueryState query={q}>
+        <div className="bot-identity">
+          <div className="bot-avatar" aria-label="机器人头像预览">
+            {botAvatar(avatar) && !avatarFailed ? <img src={botAvatar(avatar)} alt="机器人头像" onError={() => setAvatarFailed(true)} /> : <Icon name="ai" size={32} />}
+          </div>
+          <div>
+            <p className="bot-account-state" data-state={bot?.enabled ? "enabled" : "idle"}>
+              <Icon name={bot?.enabled ? "check" : "clock"} size={18} />
+              {bot ? `机器人 #${bot.bot_user_id} · ${bot.enabled ? "已启用" : "已暂停"}` : "尚未创建机器人"}
+            </p>
+            <p className="bot-owner">{bot?.owner?.nickname || auth.user?.nickname} 的 AI<span>公开归属标识</span></p>
+          </div>
+        </div>
+        {!supported && <p className="integration-feedback integration-feedback--error" role="alert">服务端尚未支持头像与社区权限管理，请升级服务后使用。现有机器人仍可暂停。</p>}
+        <form onSubmit={event => { event.preventDefault(); void save(bot?.enabled || false); }}>
+          <fieldset disabled={!editable} className="bot-form-fields">
+            <legend className="bot-form-heading">{bot ? "机器人资料" : "新建机器人"}</legend>
+            <label className="field">机器人名称<input value={name} maxLength={24} onChange={e => { setName(e.target.value); edited(); }} aria-describedby="bot-name-hint" required /></label>
+            <p id="bot-name-hint" className="integration-hint">1–24 个字符。名字和头像会公开显示；机器人与创建者使用不同账号。</p>
+            <div className="bot-avatar-actions">
+              <input ref={picker} type="file" hidden accept="image/jpeg,image/png,image/gif" aria-label="上传机器人头像" onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; void chooseAvatar(file); }} />
+              <button type="button" className="btn" onClick={() => picker.current?.click()}>{uploading ? "头像上传中…" : avatar ? "更换头像" : "选择头像"}</button>
+              {avatar && <button type="button" className="btn" onClick={() => { setAvatar(""); setAvatarFailed(false); edited(); }}>移除头像</button>}
+            </div>
+            {avatarFailed && <p className="integration-feedback integration-feedback--error" role="alert">头像加载失败，请重新上传或移除头像。</p>}
+            <p className="integration-hint">支持 JPG、PNG、GIF，最大 10 MiB。请选择可公开展示的图片。</p>
+            {!bot && <div className="bot-create-actions"><button className="btn primary" disabled={!editable || !valid}>{busy ? "正在保存…" : "新建机器人"}</button><p className="integration-hint">创建后默认暂停。核对下方权限与发言规则，再单独启用。</p></div>}
+            <section className="bot-policy-section" aria-labelledby="bot-permission-heading">
+              <h3 id="bot-permission-heading">社区权限</h3>
+              <label className="bot-check"><input type="checkbox" checked={policy.public_read_enabled} onChange={event => {
+                const checked = event.target.checked;
+                changePolicy("public_read_enabled", checked);
+              }} /><span><strong>浏览公开社区</strong><small>仅访问下方允许板块。关闭后停止所有浏览和自动发言，下方选择仍保留。</small></span></label>
+              <label className="bot-check"><input type="checkbox" checked={policy.reply_enabled} disabled={!policy.public_read_enabled} onChange={event => changePolicy("reply_enabled", event.target.checked)} /><span><strong>自动文字评论</strong><small>使用机器人账号发言，无需逐条确认；默认关闭。</small></span></label>
+              <label className="bot-check"><input type="checkbox" checked={policy.sticker_enabled} disabled={!policy.public_read_enabled} onChange={event => changePolicy("sticker_enabled", event.target.checked)} /><span><strong>发表内置表情</strong><small>仅可使用平台表情目录，不能上传任意图片评论。</small></span></label>
+              <label className="bot-check"><input type="checkbox" checked={policy.post_enabled} disabled={!policy.public_read_enabled} onChange={event => changePolicy("post_enabled", event.target.checked)} /><span><strong>自动发布帖子</strong><small>默认关闭，需另行授予发帖权限；每24小时最多1帖。</small></span></label>
+              <label className="bot-check"><input type="checkbox" checked={policy.image_enabled} disabled={!policy.public_read_enabled || !policy.post_enabled} onChange={event => changePolicy("image_enabled", event.target.checked)} /><span><strong>使用已审核公开配图</strong><small>只用于机器人帖子，不从私人聊天自动收集表情或图片。</small></span></label>
+              <h4>允许访问的板块</h4>
+              <p className="integration-hint">未选中的板块禁止访问与发言；只允许公开内容，不提供私信、个人账号或后台访问。</p>
+              <div className="bot-section-options">
+                {sections.map(section => <label className="bot-check" key={section.slug}><input type="checkbox" checked={policy.allowed_post_types.includes(section.slug)} disabled={!policy.public_read_enabled} onChange={event => changePolicy("allowed_post_types", event.target.checked ? [...policy.allowed_post_types, section.slug] : policy.allowed_post_types.filter(slug => slug !== section.slug))} /><span>{section.name}</span></label>)}
+              </div>
+              {!sections.length && <p className="integration-hint">当前没有可选的公开板块。机器人无法访问未被允许的板块。</p>}
+            </section>
+            <section className="bot-policy-section" aria-labelledby="bot-speech-heading">
+              <h3 id="bot-speech-heading">发言规则</h3>
+              <label className="field">屏蔽词<textarea aria-label="屏蔽词" value={terms} onChange={event => { setTerms(event.target.value); edited(); }} maxLength={520} rows={3} placeholder="每行一个，最多 20 个" aria-describedby="bot-terms-hint" /></label>
+              <p id="bot-terms-hint" className="integration-hint">命中任一屏蔽词的帖子和评论会被服务端阻止。每个词最多 24 个字符，平台社区规则同时适用。</p>
+              <label className="bot-check"><input type="checkbox" checked={policy.block_links} onChange={event => changePolicy("block_links", event.target.checked)} /><span><strong>禁止在帖子和评论中发送链接</strong><small>阻止网址引流；关闭后仍须遵守平台规则。</small></span></label>
+              <div className="bot-frequency">
+                <label className="field">每 24 小时最多评论数<select value={policy.daily_reply_limit} onChange={event => changePolicy("daily_reply_limit", Number(event.target.value))}>{[1, 2, 3].map(value => <option key={value} value={value}>{value} 条</option>)}</select></label>
+                <label className="field">评论间隔（分钟）<input type="number" min={30} max={1440} step={1} value={policy.min_reply_interval_minutes} onChange={event => changePolicy("min_reply_interval_minutes", Number(event.target.value))} required /></label>
+              </div>
+              <p className="integration-hint">文字和表情合计计数，每条最多 300 字，同一帖子不重复参与。可设置更低频率；平台上限为 3 条／24 小时、至少间隔 30 分钟。</p>
+            </section>
+          </fieldset>
+          {bot && <div className="form-actions bot-save-actions">
+            <button className="btn primary" disabled={!editable || !valid}>{busy ? "正在保存…" : "保存资料与权限"}</button>
+            {bot && !bot.enabled && <button type="button" className="btn" disabled={!editable || !valid} onClick={() => void save(true)}>保存并启用</button>}
+            {bot?.enabled && <button type="button" className="btn" disabled={locked} onClick={() => void save(false, true)}>暂停机器人</button>}
+            {bot && !supported && !bot.enabled && <p className="integration-hint">请先升级服务端，再编辑或启用机器人。</p>}
+          </div>}
+        </form>
+        {bot && <BotRuntimePanel initial={q.data?.runtime} supported={q.data?.runtime_supported === true} enabled={bot.enabled} />}
+        <section className="bot-policy-section" aria-labelledby="bot-conditions-heading">
+          <h3 id="bot-conditions-heading">自动参与条件</h3>
+          <dl className="bot-conditions">
+            <div><dt>自动评论服务</dt><dd className="integration-state" data-ready={q.data?.auto_reply_server_enabled}><Icon name={q.data?.auto_reply_server_enabled ? "check" : "clock"} size={16} />{q.data?.auto_reply_server_enabled ? "已开放" : "暂未开放"}</dd></div>
+            <div><dt>助手评论授权</dt><dd className="integration-state" data-ready={q.data?.auto_reply_authorized}><Icon name={q.data?.auto_reply_authorized ? "check" : "clock"} size={16} />{q.data?.auto_reply_authorized ? "已授权" : "尚未授权"}</dd></div>
+            <div><dt>自动发帖服务</dt><dd>{q.data?.auto_post_server_enabled ? "已开放" : "暂未开放"}</dd></div>
+            <div><dt>助手发帖授权</dt><dd>{q.data?.auto_post_authorized ? "已授权" : "尚未授权"}</dd></div>
+          </dl>
+          <p className="integration-hint">机器人权限和助手授权共同生效。请在连接请求中单独勾选自动评论权限，并在 AstrBot 开启自动浏览。启用账号不代表后台已在运行。</p>
+        </section>
+      </QueryState>}
+      <Problem message={message} />
+      {notice && <p className="integration-feedback integration-feedback--success" role="status">{notice}</p>}
+      <div className="bot-policy-section">
+        <h3>记忆与隐私</h3>
+        <ul className="bot-privacy">
+          <li><Icon name="community" size={19} /><div><strong>群聊</strong><p>群聊只保留短期上下文，不写长期记忆。</p></div></li>
+          <li><Icon name="admin" size={19} /><div><strong>创建者私聊</strong><p>创建者私聊记忆仅用于本人私聊，在 AstrBot 本机加密保存。</p></div></li>
+          <li><Icon name="campus" size={19} /><div><strong>公开社区</strong><p>公开社区阅读单独记忆；自动评论无法读取私人记忆、账号资料或登录态。</p></div></li>
+        </ul>
+        <p className="integration-hint">清除记忆与选择模型仍在你部署的 AstrBot 管理。暂停、板块权限与发言规则由服务端执行。</p>
+      </div>
+    </section>
+  );
+}
+
+
 export function ConnectedApps() {
   const auth = useAuth();
-  return auth.user ? (
-    <ConnectionPanel key={auth.user.id} nickname={auth.user.nickname} />
-  ) : (
-    <SignIn />
+  return (
+    <IntegrationFrame title="已授权助手" subtitle="管理你的独立 AI 机器人，核对连接与参与权限。">
+      {auth.user ? <div className="integration-grid"><BotPanel key={`bot-${auth.user.id}`} /><div className="integration-connections"><ConnectionPanel key={auth.user.id} nickname={auth.user.nickname} /></div></div> : <SignIn />}
+    </IntegrationFrame>
   );
 }
 function ConnectionPanel({ nickname }: { nickname: string }) {
+  const queryClient = useQueryClient();
   const [params] = useSearchParams(),
     [code, setCode] = useState(params.get("user_code") || ""),
     [consent, setConsent] = useState<Consent | null>(null),
@@ -135,7 +449,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [success, setSuccess] = useState("");
-  const q = useApi<{ bindings: Binding[] }>("/api/connected-apps"),
+  const q = useApi<{ bindings: Binding[]; personal_data_enabled?: boolean }>("/api/connected-apps"),
     guard = useGuard();
   async function lookup() {
     const current = guard();
@@ -154,7 +468,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
         setConsent(result);
         setSelected(
           result.requested_scopes.filter(
-            (s) => s !== "community:propose" && s !== "checkin:write",
+            (s) => !["community:propose", "checkin:write", "community:bot_reply", "community:bot_post", "academic:grades:read", "academic:erke:read"].includes(s),
           ),
         );
       }
@@ -166,6 +480,9 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
   }
   async function decide(allow: boolean) {
     if (!consent) return;
+    if (allow && (q.error || q.isFetching || q.data?.personal_data_enabled !== true) && selected.some(s => s === "academic:grades:read" || s === "academic:erke:read")) {
+      setMessage("个人查询尚未开放或状态未确认，请先重新检查服务状态，或取消选择成绩、二课权限。"); return;
+    }
     const current = guard();
     setBusy(true);
     setMessage("");
@@ -190,6 +507,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
             : "已拒绝本次授权。",
         );
         await q.refetch();
+        await queryClient.invalidateQueries({ queryKey: ["api", "/api/connected-apps/bot"] });
       }
     } catch (e) {
       if (current()) setMessage(explain(e));
@@ -206,6 +524,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
       if (current()) {
         setSuccess("已撤销该助手授权，旧凭证及待发布草稿不能继续使用。");
         await q.refetch();
+        await queryClient.invalidateQueries({ queryKey: ["api", "/api/connected-apps/bot"] });
       }
     } catch (e) {
       if (current()) setMessage(explain(e));
@@ -215,12 +534,8 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
   }
   return (
     <>
-      <Head
-        title="已授权助手"
-        subtitle="连接你自己的 AstrBot；一次只保留一个有效助手授权。"
-      />
       <section className="panel panel-pad integration-panel">
-        <h2>核对连接请求</h2>
+        <header className="integration-section-head"><Icon name="monitor" size={22} /><h2>核对连接请求</h2></header>
         <p>
           当前账号：{nickname}。只为自己刚刚在 AstrBot
           发起的请求授权。不要替他人输入设备代码。
@@ -249,7 +564,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
           </button>
         </form>
         <Problem message={message} />
-        {success && <p role="status">{success}</p>}
+        {success && <p className="integration-feedback integration-feedback--success" role="status">{success}</p>}
         {consent && (
           <div>
             <h3>授权给 {consent.installation_name}</h3>
@@ -279,7 +594,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
             <p>
               获准读取的公开文字、作者昵称、互动统计和图片会交给你部署的
               AstrBot，可能继续发送至你选择的模型、记忆插件或部署者允许的群。SYLUlive
-              无法收回已经外发的数据。本连接不提供站内私信、成绩、课表、学校密码或学校登录会话。
+              无法收回已经外发的数据。成绩与二课仅在本人同步并另行勾选后供本人查询；本连接不提供站内私信、课表、学校密码或学校登录会话。
             </p>
             <label className="field">
               <span>
@@ -318,10 +633,13 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
                   busy ||
                   !checked ||
                   !selected.length ||
+                  ((selected.includes("community:bot_post") || selected.includes("community:bot_reply")) && !selected.includes("community:propose")) ||
+                  (selected.some(s => s === "academic:grades:read" || s === "academic:erke:read") && (q.isFetching || q.data?.personal_data_enabled !== true)) ||
                   (!!consent.existing_binding && !replace) ||
                   (selected.includes("community:propose") &&
                     (!selected.includes("community:read") ||
-                      !selected.includes("actions:read_own")))
+                      !selected.includes("actions:read_own"))) ||
+                  (selected.includes("community:bot_reply") && !selected.includes("community:propose"))
                 }
                 onClick={() => void decide(true)}
               >
@@ -332,7 +650,8 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
         )}
       </section>
       <section className="panel panel-pad integration-panel">
-        <h2>连接管理</h2>
+        <header className="integration-section-head"><Icon name="admin" size={22} /><h2>连接管理</h2></header>
+        <button className="btn" disabled={q.isFetching} onClick={() => void q.refetch()}>{q.isFetching ? "正在刷新连接列表…" : "刷新连接列表"}</button>
         <p>
           App 的手机、电脑或平板登录与助手授权分别管理；QQ
           号只用于插件本地消息路由。
@@ -373,6 +692,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
           )}
         </QueryState>
       </section>
+      <IntegrationPersonalSync enabled={q.error || q.isFetching ? undefined : q.data?.personal_data_enabled} refreshing={q.isFetching} onRefresh={() => void q.refetch()} />
     </>
   );
 }
@@ -380,14 +700,10 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
 export function ConnectedAction() {
   const auth = useAuth(),
     { id } = useParams();
-  return auth.user && id ? (
-    <ActionPanel
-      key={`${auth.user.id}:${id}`}
-      id={id}
-      nickname={auth.user.nickname}
-    />
-  ) : (
-    <SignIn />
+  return (
+    <IntegrationFrame title="确认助手草稿" action={<Link className="btn" to="/connected-apps">连接管理</Link>}>
+      {auth.user && id ? <ActionPanel key={`${auth.user.id}:${id}`} id={id} nickname={auth.user.nickname} /> : <SignIn />}
+    </IntegrationFrame>
   );
 }
 function ActionPanel({ id, nickname }: { id: string; nickname: string }) {
@@ -428,11 +744,6 @@ function ActionPanel({ id, nickname }: { id: string; nickname: string }) {
   }
   return (
     <>
-      <Head title="确认助手草稿">
-        <Link className="btn" to="/connected-apps">
-          连接管理
-        </Link>
-      </Head>
       <section className="panel panel-pad integration-panel">
         <p>
           发布账号：{nickname}

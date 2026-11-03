@@ -1,6 +1,7 @@
 import {test, expect} from '@playwright/test';
 
 test('连接一次即可绑定并读取课表，不重复确认身份', async ({page}) => {
+  await page.route('**/api/**',route=>route.fulfill({json:{items:[]}}));
   await page.route('**/api/user/profile', route => route.fulfill({json:{id:7,nickname:'测试用户',role:'user'}}));
   let binding: unknown;
   await page.route('**/api/student-identity/bind', route => {
@@ -23,22 +24,23 @@ test('连接一次即可绑定并读取课表，不重复确认身份', async ({
   await expect(page.getByRole('button',{name:'我的账号'})).toBeVisible();
   await expect(page.locator('.today-card')).toContainText('课表尚未连接');
   await expect(page.locator('.today-time')).toHaveCount(0);
-  await page.getByRole('button',{name:'连接教务助手',exact:true}).click();
+  await page.locator('.today-card').getByRole('link',{name:/连接教务助手/}).click();
   await expect(page).toHaveURL(/schedule/);
   await page.getByRole('button',{name:'连接教务助手 / 刷新'}).click();
   await page.getByRole('button',{name:'连接并读取资料'}).click();
   await expect(page.getByRole('button',{name:'连接测试课程 测试教室'})).toBeVisible();
   expect(binding).toEqual({provider_id:'sylu_undergraduate',student_id:'2403000001',verification_method:'local_academic_login'});
-  await page.getByRole('link',{name:'校园首页',exact:true}).click();
+  await page.getByRole('navigation',{name:'快捷导航'}).getByRole('link',{name:'首页',exact:true}).click();
   await expect(page.locator('.today-card h2')).toHaveText('连接测试课程');
   await expect(page.locator('.today-time')).toHaveText('1');
   await expect(page.locator('.today-card')).toContainText('测试教室');
   await page.setViewportSize({width:375,height:812});
-  await page.getByRole('button',{name:'查看今日课表',exact:true}).click();
+  await page.getByRole('navigation',{name:'底部导航'}).getByRole('link',{name:'课表',exact:true}).click();
   await expect(page).toHaveURL(/schedule/);
 });
 
 test('缺少扩展时快速失败并恢复按钮', async ({page}) => {
+  await page.route('**/api/**',route=>route.fulfill({json:{items:[]}}));
   await page.route('**/api/user/profile', route => route.fulfill({json:{id:7,nickname:'测试用户',role:'user'}}));
   await page.goto('schedule');
   await expect(page.getByRole('button',{name:'我的账号'})).toBeVisible();

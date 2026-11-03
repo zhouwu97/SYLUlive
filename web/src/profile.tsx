@@ -1,10 +1,14 @@
 import {useId,useState,type KeyboardEvent} from 'react';
-import {Link} from 'react-router-dom';
+import {Link,useSearchParams} from 'react-router-dom';
 import {useAuth} from './auth';
 import {useAcademic, AcademicSettings} from './academic';
 import {asset,rows,upload,useApi,write,type Entity} from './api';
 import {Empty,Form,Head,Icon,QueryState,useUI} from './ui';
 import {PostCard} from './community';
+import {useMobile} from './mobile';
+import {ServerAvatar} from './server-avatar';
+import {userLevel} from './user-level';
+import {forgetSavedPasswords} from './login-history';
 const profileTabs: [string, string][] = [["posts", "我的帖子"], ["market", "我的闲置"], ["bookmarks", "我的收藏"], ["evaluations", "课程评价"], ["following", "关注"], ["followers", "粉丝"]];
 const profileEmpty: Record<string, {title: string; description: string; to: string; action: string}> = {
   posts: {title: '还没有发布帖子', description: '分享校园日常，发布的内容会出现在这里。', to: '/community', action: '去校园社区'},
@@ -16,6 +20,55 @@ const profileEmpty: Record<string, {title: string; description: string; to: stri
 };
 
 export function Profile() {
+  return useMobile() ? <MobileProfile /> : <DesktopProfile />;
+}
+function MobileProfile() {
+  const auth = useAuth(), ui = useUI();
+  const store = useAcademic();
+  const [params, setParams] = useSearchParams();
+  const view = params.get('view') || '';
+  const posts = useApi(auth.user ? `/api/user/${auth.user.id}/posts?page=1&limit=1` : null);
+  if (auth.loading) return <div className="loading-state" role="status">正在加载个人资料…</div>;
+  if (!auth.user) return <div className="mobile-profile"><h1>我</h1><section className="mobile-profile-guest"><span className="mobile-profile-avatar"><ServerAvatar name="同学" /></span><h2>欢迎来到沈理校园</h2><p>登录后记录校园日常，管理发布与收藏。</p><button className="btn primary" onClick={auth.login}>登录</button></section><Link className="mobile-service-row" to="/feedback"><Icon name="feedback" /><b>反馈与帮助</b><span aria-hidden="true">›</span></Link></div>;
+  const user = auth.user;
+  if (profileTabs.some(([value]) => value === view)) return <div className="mobile-profile-content"><header className="mobile-page-heading"><button className="mobile-icon-button" aria-label="返回我的主页" onClick={() => setParams({})}><Icon name="arrow" /></button><h1>{profileTabs.find(([value]) => value === view)?.[1]}</h1></header><MyContent key={`${user.id}:${view}`} tab={view} userId={user.id}/></div>;
+  type Item = { icon: string; label: string; description: string; to?: string; action?: () => void };
+  const groups: { title: string; items: Item[] }[] = [
+    ...(['admin', 'super_admin'].includes(user.role) ? [{ title: '管理员', items: [{ icon: 'admin', label: '管理中心', description: '处理反馈、举报与社区治理', to: '/admin' }] }] : []),
+    { title: '社区参与', items: [
+      { icon: 'file', label: '我的内容', description: '查看发布的帖子与闲置', to: '/profile?view=posts' },
+      { icon: 'market', label: '我的闲置', description: '查看个人集市记录', to: '/profile?view=market' },
+      { icon: 'bookmark', label: '我的收藏', description: '整理收藏的校园内容', to: '/profile?view=bookmarks' },
+      { icon: 'messages', label: '私信', description: '与同学联系', to: '/messages' },
+    ] },
+    { title: '教务', items: [
+      { icon: 'grades', label: '教务', description: '成绩、学分与本机校园资料', to: '/grades' },
+      { icon: 'ratings', label: '课程评价', description: '查看我的评价记录', to: '/profile?view=evaluations' },
+      { icon: 'schedule', label: '课表', description: '查看课程与学期安排', to: '/schedule' },
+      { icon: 'file', label: '校园资料', description: '导入或导出课表与成绩', action: () => ui.open('本地资料', <AcademicSettings />) },
+      { icon: 'toolbox', label: '工具箱', description: '常用校园工具', to: '/toolbox' },
+    ] },
+    { title: '设置与帮助', items: [
+      { icon: 'bell', label: '通知', description: '互动回复与系统消息', to: '/notifications' },
+      { icon: 'ai', label: '已授权助手', description: '管理机器人与外部助手授权', to: '/connected-apps' },
+      { icon: 'admin', label: '账号安全', description: '查看绑定信息与修改密码', action: () => ui.open('账号安全', <Security />) },
+      { icon: 'admin', label: '隐私与数据', description: '导出数据、管理本地资料', action: () => ui.open('隐私与数据', <><a className="btn" href="/api/user/privacy/export" target="_blank" rel="noreferrer">导出服务器个人数据</a><button className="btn" onClick={() => { store.setData(previous => ({ ...previous, courses: [], grades: [], exams: [], overrides: {} })); store.setUpdated(''); ui.notify('当前页面的校园资料已清除'); ui.close(); }}>清除当前页面校园资料</button><p><Link to="/feedback" onClick={ui.close}>提交数据更正或删除请求</Link></p></>) },
+      { icon: 'feedback', label: '反馈与工单', description: '提交问题或查看处理进度', to: '/feedback' },
+      { icon: 'profile', label: '编辑资料', description: '昵称、头像与背景', action: () => ui.open('编辑资料', <EditProfile user={user} />) },
+    ] },
+  ];
+  return <div className="mobile-profile">
+    <button className="mobile-profile-identity" aria-label="编辑资料与图片" onClick={() => ui.open('编辑资料', <EditProfile user={user} />)}><span className="mobile-profile-avatar"><ServerAvatar src={user.avatar} name={user.nickname} /></span><span><b>{user.nickname || '校园同学'}</b><span className="mobile-profile-badges"><small>Lv.{userLevel(user)}</small>{user.credit_score != null && <small>诚信 {user.credit_score}%</small>}</span></span><span aria-hidden="true">›</span></button>
+    <section className="mobile-profile-stats" aria-label="我的统计"><Link to="/profile?view=posts"><b>{posts.data?.total ?? (posts.isPending ? '…' : '—')}</b><span>我的内容</span></Link><Link to="/profile?view=following"><b>{user.following_count ?? '—'}</b><span>关注的人</span></Link><Link to="/profile?view=followers"><b>{user.followers_count ?? '—'}</b><span>关注我的</span></Link></section>
+    {posts.error && <button className="link-btn" onClick={() => posts.refetch()}>内容数量加载失败，点击重试</button>}
+    {groups.map(group => <section className="mobile-profile-group" key={group.title}><h2>{group.title}</h2><div>{group.items.map(item => {
+      const content = <><i><Icon name={item.icon} size={24}/></i><span><b>{item.label}</b><small>{item.description}</small></span><span aria-hidden="true">›</span></>;
+      return item.to ? <Link className="mobile-service-row" key={item.label} to={item.to}>{content}</Link> : <button className="mobile-service-row" key={item.label} onClick={item.action}>{content}</button>;
+    })}</div></section>)}
+    <button className="btn mobile-logout" onClick={auth.logout}>退出登录</button>
+  </div>;
+}
+function DesktopProfile() {
   const auth = useAuth(), ui = useUI(), store = useAcademic();
   const [tab, setTab] = useState('posts');
   const contentId = useId();
@@ -107,4 +160,4 @@ function MyContent({tab,userId}:{tab:string;userId:number}){
   if (!q.isPending && !q.error && !items.length) return <Empty title={empty.title} description={empty.description}><Link className="btn profile-empty-action" to={empty.to}>{empty.action}<span aria-hidden="true">→</span></Link></Empty>;
   return <QueryState query={q}><div className={`profile-feed ${people||tab==='evaluations'?'panel':''}`}>{items.map(x=>people?<div className="list-row" key={x.id}><img className="avatar" src={asset(x.avatar)} alt=""/><div className="list-main"><b>{x.nickname}</b></div>{tab==='following'&&<button className="btn" onClick={()=>void ui.act(()=>write(`/api/user/${x.id}/follow`,{},'DELETE'),'已取消关注')}>取消关注</button>}</div>:tab==='evaluations'?<div className="list-row" key={x.id}><div className="list-main"><b>{x.subject_name||x.course_name||'课程评价'}</b><p>{x.status} · {x.comment||x.content}</p></div></div>:<PostCard key={x.id} post={x.post||x}/>)}</div></QueryState>;
 }
-function Security(){const q=useApi('/api/user/account-security'),ui=useUI();return <QueryState query={q}><p>绑定邮箱：{q.data?.email_masked||q.data?.email||'未绑定'}</p><Form fields={[{name:'old_password',label:'当前密码',type:'password',required:true},{name:'new_password',label:'新密码（8–32 位）',type:'password',required:true}]} submit="修改密码" onSubmit={async values=>{await write('/api/change_password',values);ui.notify('密码已修改，请按服务器状态重新登录');ui.close()}}/></QueryState>}
+function Security(){const q=useApi('/api/user/account-security'),ui=useUI(),auth=useAuth();return <QueryState query={q}><p>绑定邮箱：{q.data?.email_masked||q.data?.email||'未绑定'}</p><Form fields={[{name:'old_password',label:'当前密码',type:'password',required:true},{name:'new_password',label:'新密码（8–32 位）',type:'password',required:true,autoComplete:'new-password'}]} submit="修改密码" onSubmit={async values=>{const userId=auth.user?.id;await write('/api/change_password',values);let message='密码已修改，请按服务器状态重新登录';if(userId)try{await forgetSavedPasswords({userId})}catch{message='密码已修改，本机旧密码未能清理，请移除对应记录'}ui.notify(message);ui.close()}}/></QueryState>}

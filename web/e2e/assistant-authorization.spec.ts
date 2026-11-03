@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
 
 async function openConnectionDialog(page: import('@playwright/test').Page) {
+  await page.route('**/api/**',route=>route.fulfill({json:{items:[]}}));
   await page.route('**/api/user/profile', route => route.fulfill({json:{id:7,nickname:'测试用户',role:'user'}}));
   await page.route('**/assistant/assistant.json', route => route.fulfill({status:404,body:'not found'}));
   await page.goto('schedule?week=1');
@@ -92,4 +93,76 @@ test('学校对该学期没有排课时保留本机课表', async ({page}) => {
   await page.getByRole('button',{name:'连接并读取资料'}).click();
   await expect(page.locator('.dialog-form [role="status"]')).toContainText('已保留本机原有资料');
   await expect(course).toHaveCount(1);
+});
+
+test('打开旧版助手后仍复检学校授权，不必关闭重开弹窗', async ({page}) => {
+  await page.addInitScript(() => {
+    let granted = false;
+    window.addEventListener('message', event => {
+      const r = event.data;
+      if (r?.direction !== 'request') return;
+      if (r.operation === 'hello') return window.postMessage({...r,direction:'response',ok:true,result:{version:1,authorized:{undergraduate:granted}}},location.origin);
+      if (r.operation === 'connect') {
+        setTimeout(()=>{granted=true},500);
+        return window.postMessage({...r,direction:'response',ok:true,result:{state:'awaiting_login'}},location.origin);
+      }
+    });
+  });
+  await openConnectionDialog(page);
+  await page.getByRole('button',{name:'打开助手完成授权'}).click();
+  await expect(page.getByText('本机助手还未获准访问这所学校的教务系统')).toHaveCount(0,{timeout:8000});
+  await expect(page.getByRole('button',{name:'学校未登录？打开登录页'})).toBeVisible();
+});
+
+test('本站 access 会话过期时先由网页刷新，再交给助手读取', async ({page}) => {
+  let expired = false, refreshed = 0;
+  await page.route('**/api/**',route=>route.fulfill({json:{items:[]}}));
+  await page.route('**/api/user/profile', route => route.fulfill({status:expired?401:200,json:expired?{error:'expired'}:{id:7,nickname:'测试用户',role:'user'}}));
+  await page.route('**/api/refresh', route => {refreshed++;expired=false;return route.fulfill({json:{ok:true}})});
+  await page.route('**/api/student-identity/bind', route => route.fulfill({json:{ok:true}}));
+  await page.addInitScript(() => {
+    window.addEventListener('message', event => {
+      const r=event.data;if(r?.direction!=='request')return;
+      const result=r.operation==='hello'?{version:1}:r.operation==='session'?{appUserId:7,provider:'undergraduate',studentId:'2099000001',epoch:'fresh'}:{fetchedAt:new Date().toISOString(),data:[]};
+      window.postMessage({...r,direction:'response',ok:true,result},location.origin);
+    });
+  });
+  await page.goto('grades');
+  await expect(page.getByRole('button',{name:'我的账号'})).toBeVisible();
+  await page.getByRole('button',{name:'更新本地资料'}).click();
+  expired=true;
+  await page.getByRole('button',{name:'连接并读取资料',exact:true}).click();
+  await expect(page.locator('.dialog-form')).toHaveCount(0);
+  expect(refreshed).toBe(1);
+});
+
+test('等待学校登录时本站会话过期，刷新后继续同一个登录任务', async ({page}) => {
+  let expired=false,refreshes=0,connects=0;
+  await page.route('**/api/**',route=>route.fulfill({json:{items:[]}}));
+  const trace:string[]=[];
+  await page.exposeFunction('__expireSiteSession',()=>{trace.push('connect');expired=true;connects++});
+  await page.route('**/api/user/profile',route=>{trace.push(`profile:${expired?401:200}`);return route.fulfill({status:expired?401:200,json:expired?{error:'expired'}:{id:7,nickname:'测试用户',role:'user'}})});
+  await page.route('**/api/refresh',route=>{trace.push('refresh');refreshes++;expired=false;return route.fulfill({json:{ok:true}})});
+  await page.route('**/api/student-identity/bind',route=>route.fulfill({json:{ok:true}}));
+  await page.addInitScript(()=>{
+    let ready=false,failed=false;
+    window.addEventListener('message',async event=>{
+      const r=event.data;if(r?.direction!=='request')return;
+      const reply=(result:unknown)=>window.postMessage({...r,direction:'response',ok:true,result},location.origin);
+      if(r.operation==='hello')return reply({version:1,automaticLogin:true});
+      if(r.operation==='session'&&!ready)return window.postMessage({...r,direction:'response',ok:false,error:{code:'school_login_required',message:'学校登录已过期'}},location.origin);
+      if(r.operation==='connect') {await (window as any).__expireSiteSession();return reply({flowId:'same-flow',state:'awaiting_login'})}
+      if(r.operation==='loginStatus') {
+        if(!failed){failed=true;return window.postMessage({...r,direction:'response',ok:false,error:{code:'site_login_required',message:'本站会话过期'}},location.origin)}
+        ready=true;return reply({flowId:'same-flow',state:'ready'});
+      }
+      if(r.operation==='session')return reply({appUserId:7,provider:'undergraduate',studentId:'2099000001',epoch:'fresh'});
+      reply({fetchedAt:new Date().toISOString(),data:[]});
+    });
+  });
+  await page.goto('grades');await expect(page.getByRole('button',{name:'我的账号'})).toBeVisible();
+  await page.getByRole('button',{name:'更新本地资料'}).click();
+  await page.getByRole('button',{name:'连接并读取资料',exact:true}).click();
+  await expect(page.locator('.dialog-form')).toHaveCount(0);
+  expect(refreshes,trace.join(' → ')).toBe(1);expect(connects).toBe(1);
 });

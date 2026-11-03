@@ -202,3 +202,5 @@
 @media (prefers-reduced-motion: reduce) {
   .post-interaction, .post-author .author-follow { transition: none; }
 }
+
+.ai-bot-identity { display: block; max-width: 100%; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }

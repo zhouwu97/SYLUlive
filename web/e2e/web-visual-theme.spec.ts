@@ -17,11 +17,12 @@ async function visualFixture(page: Page) {
   return errors;
 }
 
-test("新主题四个主页面在 320–1900px 和深浅色下可读、无重叠，保留键盘焦点", async ({ page }) => {
-  const errors = await visualFixture(page);
-  for (const theme of ["light", "dark"]) {
-    await page.addInitScript((theme) => localStorage.setItem("sylulive-theme", theme), theme);
-    for (const width of [320, 375, 414, 768, 1132, 1280, 1440, 1900]) {
+for (const theme of ["light", "dark"]) {
+  for (const width of [320, 375, 414, 768, 1132, 1280, 1440, 1900]) {
+    // 每个主题和尺寸独立隔离，保留全部断言，避免 64 次导航共用一次超时。
+    test(`新主题四个主页面可读、无重叠，保留键盘焦点 ${theme} ${width}px`, async ({ page }) => {
+      const errors = await visualFixture(page);
+      await page.addInitScript(value => localStorage.setItem("sylulive-theme", value), theme);
       await page.setViewportSize({ width, height: width === 1280 ? 800 : 1000 });
       for (const route of ["./", "community", "post/675", "market"]) {
         await page.goto(route);
@@ -56,12 +57,12 @@ test("新主题四个主页面在 320–1900px 和深浅色下可读、无重叠
           const nav = document.querySelector<HTMLElement>(".sidebar")!;
           const frame = nav.getBoundingClientRect();
           const navStyle = getComputedStyle(nav);
-          const flatNavigation = navStyle.borderRightStyle === "solid" && parseFloat(navStyle.borderRightWidth) >= 1 && navStyle.borderRadius === "0px" && navStyle.boxShadow === "none";
+          const flatNavigation = parseFloat(navStyle.borderRightWidth) === 0 && navStyle.borderRadius === "0px" && navStyle.boxShadow === "none";
           const cardShortcuts = Array.from(document.querySelectorAll<HTMLElement>(".compact-quick .quick")).every((el) => {
             const style = getComputedStyle(el), icon = getComputedStyle(el.querySelector("i")!);
             return parseFloat(style.borderTopWidth) >= 1 && style.boxShadow === "none" && el.getBoundingClientRect().height >= 44 && icon.backgroundColor !== "rgba(0, 0, 0, 0)" && icon.boxShadow === "none";
           });
-          const navOutside = innerWidth > 760 && Array.from(nav.querySelectorAll(".nav-item")).some((el) => {
+          const navOutside = innerWidth > 760 && Array.from(nav.querySelectorAll(".nav-item")).filter(el => !el.closest("details:not([open])") && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden").some((el) => {
             const item = el.getBoundingClientRect();
             return item.left < frame.left || item.right > frame.right || item.width < 44 || item.height < 44;
           });
@@ -87,8 +88,11 @@ test("新主题四个主页面在 320–1900px 和深浅色下可读、无重叠
         expect(result.navOutside, `${theme} ${width} ${route} navigation hit areas`).toBe(false);
         expect(result.contrast.filter((item) => item.ratio < 4.5), `${theme} ${width} ${route} contrast`).toEqual([]);
         if (route === "./" && width <= 760) {
-          const schedule = await page.locator(".today-card").evaluate((el) => ({ text: el.querySelector(".today-copy")!.getBoundingClientRect().bottom, action: el.querySelector(".btn")!.getBoundingClientRect().top }));
-          expect(schedule.action, `${theme} ${width} schedule action below complete status text`).toBeGreaterThanOrEqual(schedule.text);
+          await expect(page.getByRole("searchbox", { name: "搜索帖子" }).or(page.getByRole("textbox", { name: "搜索帖子" }))).toBeVisible();
+          const publish = page.getByRole("button", { name: "发布校园内容", exact: true });
+          const dock = page.getByRole("navigation", { name: "底部导航" });
+          const publishBounds = await publish.boundingBox(), dockBounds = await dock.boundingBox();
+          expect(publishBounds!.y + publishBounds!.height, `${theme} ${width} publish stays above navigation`).toBeLessThan(dockBounds!.y);
         }
         if (width === 1280 && ["./", "market"].includes(route)) {
           const aboveFold = await page.locator(route === "market" ? ".market-page > .page-head, .market-page > .filter-row" : ".today-card").evaluateAll((elements) => elements.every((el) => el.getBoundingClientRect().bottom <= innerHeight));
@@ -130,20 +134,25 @@ test("新主题四个主页面在 320–1900px 和深浅色下可读、无重叠
         await expect(dialog).toHaveCount(0);
         await expect(publish).toBeFocused();
       }
-    }
+      await page.getByRole("button", { name: "发布闲置", exact: true }).focus();
+      expect(await page.getByRole("button", { name: "发布闲置", exact: true }).evaluate(el => getComputedStyle(el).outlineWidth)).toBe("2px");
+      expect(errors).toEqual([]);
+    });
   }
-  await page.getByRole("button", { name: "发布闲置", exact: true }).focus();
-  expect(await page.locator(".btn.primary").evaluate((el) => getComputedStyle(el).outlineWidth)).toBe("2px");
-  await page.route("**/api/user/profile", (route) => route.fulfill({ status: 401, json: { message: "未登录" } }));
-  await page.route("**/api/refresh", (route) => route.fulfill({ status: 401, json: { message: "未登录" } }));
+}
+
+test("游客在窄屏深浅主题下可完整访问登录入口", async ({ page }) => {
+  const errors = await visualFixture(page);
+  await page.route("**/api/user/profile", route => route.fulfill({ status: 401, json: { message: "未登录" } }));
+  await page.route("**/api/refresh", route => route.fulfill({ status: 401, json: { message: "未登录" } }));
   for (const theme of ["light", "dark"]) {
-    await page.addInitScript((value) => localStorage.setItem("sylulive-theme", value), theme);
+    await page.addInitScript(value => localStorage.setItem("sylulive-theme", value), theme);
     for (const width of [320, 375]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("community");
       const login = page.getByRole("button", { name: "登录", exact: true });
       await expect(login).toBeVisible();
-      expect(await login.evaluate((el) => { const bounds = el.getBoundingClientRect(); return bounds.left >= 0 && bounds.right <= innerWidth; }), `${theme} ${width} guest login is not clipped`).toBe(true);
+      expect(await login.evaluate(el => { const bounds = el.getBoundingClientRect(); return bounds.left >= 0 && bounds.right <= innerWidth; }), `${theme} ${width} guest login is not clipped`).toBe(true);
       await expect(page.locator(".profile-rail-stats")).toHaveCount(0);
       await login.click();
       await expect(page.getByRole("dialog", { name: "登录沈理校园", exact: true })).toBeVisible();

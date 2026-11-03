@@ -76,7 +76,7 @@ export function PostActions({
     if (locked.current) return;
     locked.current = true;
     setPending("share");
-    const url = `${window.location.origin}/web/post/${post.id}`;
+    const url = `${window.location.origin}/web/${post.poll_meta?.id ? `polls/${post.poll_meta.id}` : `post/${post.id}`}`;
     try {
       await navigator.clipboard.writeText(url);
       ui.notify("帖子链接已复制");

@@ -5,6 +5,7 @@ export interface User extends Entity {
   nickname: string;
   role: string;
   avatar?: string;
+  exp?: number;
 }
 export class ApiError extends Error {
   constructor(
@@ -255,8 +256,10 @@ export function downloadJSON(name: string, value: unknown) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(u), 1000);
 }
+export const isNetworkError = (error: unknown) =>
+  error instanceof Error && error.name === "TypeError" && /^(Failed to fetch|Load failed|Network request failed|NetworkError when attempting to fetch resource\.?)$/i.test(error.message);
 export const errorText = (error: unknown) =>
-  error instanceof Error ? error.message : "操作未完成，请重试";
+  isNetworkError(error) ? "暂时无法连接服务器，请检查网络后重试。" : error instanceof Error ? error.message : "操作未完成，请重试";
 export const time = (s: unknown) =>
   typeof s === "string" && Number.isFinite(Date.parse(s))
     ? new Date(s).toLocaleString("zh-CN", { hour12: false })

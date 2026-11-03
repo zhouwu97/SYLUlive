@@ -2,6 +2,7 @@
 
 | 存储项 | 位置 | 内容 | 退出登录 | 关闭推送 | 解除教务 | 注销 |
 |---|---|---|---|---|---|---|
+| Web 本站账号历史及可选密码 | 浏览器 IndexedDB `sylulive-login` 的 `accounts`；`settings` 仅保存变更版本计数 | 按登录勾选项保留最近 5 个成功登录账号、昵称、账号 ID、可选邮箱和使用时间；密码额外选择后保存 AES-GCM 密文、随机 IV 与不可导出 CryptoKey，绑定 origin 与账号；不保存 Token | 保留此前已选择的记录；取消保存或面板移除会删除相应记录／密码 | 不影响 | 不影响，与学校密码分开 | 服务端注销不远程删除浏览器数据；在登录面板移除、清空，或清除站点数据并刷新；密码变更成功清理匹配到的旧密码；密文与密钥同记录删除，不进入服务端备份 |
 | 认证 Token/用户 JSON | Secure Storage/SharedPreferences | 登录凭据和资料 | 清除 | 保留 | 保留 | 清除 |
 | 教务密码 | Secure Storage | 教务认证凭据 | 保留 | 保留 | 清除 | 清除 |
 | JPush Alias/RID 状态 | SharedPreferences/SDK | 推送标识与状态机 | 清 Alias/Token | 删除 Alias、停止轮询 | 不影响 | 清除 |

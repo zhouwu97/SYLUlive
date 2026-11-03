@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -37,8 +38,13 @@ func (h *IntegrationHandler) BotStatus(c *gin.Context) {
 		return
 	}
 	authorized := false
+	postAuthorized := false
 	for _, binding := range bindings {
+		if h.auth.CheckBinding(c.Request.Context(), binding) != nil {
+			continue
+		}
 		authorized = authorized || services.IntegrationHasScope(binding, services.IntegrationAutoReplyScope)
+		postAuthorized = postAuthorized || services.IntegrationHasScope(binding, services.IntegrationAutoPostScope)
 	}
 	var sections []models.WaterSection
 	if err := h.db.Select("slug", "title", "status", "sensitive_level").Where("status = ?", "active").Order("sort_order ASC, id ASC").Limit(100).Find(&sections).Error; err != nil {
@@ -56,7 +62,12 @@ func (h *IntegrationHandler) BotStatus(c *gin.Context) {
 		writeIntegrationError(c, err, false)
 		return
 	}
-	c.JSON(200, gin.H{"bot": bot, "policy_supported": true, "sections": choices, "auto_reply_server_enabled": h.options.AutoReplyEnabled, "auto_reply_authorized": authorized})
+	runtime, err := h.actions().BotRuntimeStatus(c.Request.Context(), owner)
+	if err != nil {
+		writeIntegrationError(c, err, false)
+		return
+	}
+	c.JSON(200, gin.H{"bot": bot, "runtime_supported": true, "runtime": runtime, "policy_supported": true, "sections": choices, "auto_reply_server_enabled": h.options.AutoReplyEnabled, "auto_reply_authorized": authorized, "auto_post_server_enabled": h.options.AutoPostEnabled, "auto_post_authorized": postAuthorized})
 }
 
 func (h *IntegrationHandler) ManageBot(c *gin.Context) {
@@ -101,7 +112,7 @@ func (h *IntegrationHandler) BotPolicy(c *gin.Context) {
 	var bot models.ManagedBot
 	err := h.db.Where("owner_id = ?", b.OwnerID).Take(&bot).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(200, gin.H{"bot": nil})
+		c.JSON(200, gin.H{"bot": nil, "runtime_supported": true})
 		return
 	}
 	if err != nil {
@@ -112,7 +123,38 @@ func (h *IntegrationHandler) BotPolicy(c *gin.Context) {
 		writeIntegrationError(c, err, false)
 		return
 	}
-	c.JSON(200, gin.H{"bot": gin.H{"bot_user_id": bot.UserID, "enabled": bot.Enabled, "policy": services.ManagedBotPolicy(bot)}, "auto_reply_server_enabled": h.options.AutoReplyEnabled, "auto_reply_authorized": services.IntegrationHasScope(b, services.IntegrationAutoReplyScope)})
+	c.JSON(200, gin.H{"runtime_supported": true, "binding": gin.H{"binding_id": b.ID, "epoch": b.Epoch}, "bot": gin.H{"bot_user_id": bot.UserID, "revision": bot.Revision, "enabled": bot.Enabled, "policy": services.ManagedBotPolicy(bot)}, "auto_reply_server_enabled": h.options.AutoReplyEnabled, "auto_reply_authorized": services.IntegrationHasScope(b, services.IntegrationAutoReplyScope), "auto_post_server_enabled": h.options.AutoPostEnabled, "auto_post_authorized": services.IntegrationHasScope(b, services.IntegrationAutoPostScope)})
+}
+
+func (h *IntegrationHandler) BotRuntimeHeartbeat(c *gin.Context) {
+	var input services.BotRuntimeHeartbeat
+	if len(c.Request.URL.Query()) != 0 || decodeStrictJSON(c, &input, 2048) != nil {
+		writeIntegrationError(c, &services.IntegrationError{Code: "invalid_bot_runtime", Status: 422}, false)
+		return
+	}
+	binding := c.MustGet("integration_binding").(models.IntegrationBinding)
+	if err := h.auth.AllowRequest(c.Request.Context(), "bot_runtime", binding.ID, 12, time.Minute); err != nil {
+		writeIntegrationError(c, err, false)
+		return
+	}
+	if err := h.actions().RecordBotRuntime(c.Request.Context(), binding, input); err != nil {
+		writeIntegrationError(c, err, false)
+		return
+	}
+	c.JSON(200, gin.H{"accepted": true, "lease_seconds": int(services.BotRuntimeLease.Seconds())})
+}
+
+func (h *IntegrationHandler) BotRuntimeStatus(c *gin.Context) {
+	if len(c.Request.URL.Query()) != 0 {
+		writeIntegrationError(c, &services.IntegrationError{Code: "invalid_request", Status: 422}, false)
+		return
+	}
+	runtime, err := h.actions().BotRuntimeStatus(c.Request.Context(), c.GetUint("user_id"))
+	if err != nil {
+		writeIntegrationError(c, err, false)
+		return
+	}
+	c.JSON(200, gin.H{"runtime": runtime})
 }
 
 func (h *IntegrationHandler) AutoReply(c *gin.Context) {

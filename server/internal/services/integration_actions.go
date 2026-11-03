@@ -9,22 +9,32 @@ import (
 	"gorm.io/gorm/clause"
 	"shenliyuan/internal/community"
 	"shenliyuan/internal/models"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
 )
 
+type IntegrationPostSource struct {
+	PostID  uint   `json:"post_id"`
+	Version string `json:"source_version"`
+}
+
 type IntegrationProposal struct {
-	OperationID        string `json:"operation_id"`
-	Kind               string `json:"kind"`
-	Title              string `json:"title,omitempty"`
-	Content            string `json:"content"`
-	PostType           string `json:"post_type,omitempty"`
-	PostID             uint   `json:"post_id,omitempty"`
-	SourceVersion      string `json:"source_version,omitempty"`
-	ReplyToReplyID     uint   `json:"reply_to_reply_id,omitempty"`
-	ReplySourceVersion string `json:"reply_source_version,omitempty"`
-	StickerID          string `json:"sticker_id,omitempty"`
+	RuntimeSessionID   string                  `json:"runtime_session_id,omitempty"`
+	BotRevision        uint64                  `json:"bot_revision,omitempty"`
+	ImageFileIDs       []uint                  `json:"image_file_ids,omitempty"`
+	Sources            []IntegrationPostSource `json:"sources,omitempty"`
+	OperationID        string                  `json:"operation_id"`
+	Kind               string                  `json:"kind"`
+	Title              string                  `json:"title,omitempty"`
+	Content            string                  `json:"content"`
+	PostType           string                  `json:"post_type,omitempty"`
+	PostID             uint                    `json:"post_id,omitempty"`
+	SourceVersion      string                  `json:"source_version,omitempty"`
+	ReplyToReplyID     uint                    `json:"reply_to_reply_id,omitempty"`
+	ReplySourceVersion string                  `json:"reply_source_version,omitempty"`
+	StickerID          string                  `json:"sticker_id,omitempty"`
 }
 type IntegrationActionDecision struct {
 	Allow       bool   `json:"allow"`
@@ -45,6 +55,11 @@ type IntegrationActionService struct {
 
 func (s *IntegrationActionService) checkSource(tx *gorm.DB, p IntegrationProposal) (models.Post, *models.Reply, error) {
 	if p.Kind == "post" {
+		for _, source := range p.Sources {
+			if _, _, err := s.checkSource(tx, IntegrationProposal{Kind: "reply", PostID: source.PostID, SourceVersion: source.Version}); err != nil {
+				return models.Post{}, nil, err
+			}
+		}
 		return models.Post{}, nil, nil
 	}
 	var post models.Post
@@ -75,6 +90,11 @@ func (s *IntegrationActionService) checkSource(tx *gorm.DB, p IntegrationProposa
 }
 
 func (s *IntegrationActionService) normalize(p *IntegrationProposal) error {
+	if p.RuntimeSessionID != "" || p.BotRevision != 0 {
+		if _, err := uuid.Parse(p.RuntimeSessionID); err != nil || p.BotRevision == 0 {
+			return integrationError("invalid_proposal", 422)
+		}
+	}
 	operation, err := uuid.Parse(p.OperationID)
 	if err != nil {
 		return integrationError("invalid_operation_id", 422)
@@ -87,12 +107,34 @@ func (s *IntegrationActionService) normalize(p *IntegrationProposal) error {
 	if strings.ContainsRune(p.Content, 0) || strings.ContainsRune(p.Title, 0) {
 		return integrationError("invalid_content", 422)
 	}
+	if len(p.ImageFileIDs) > 3 || len(p.Sources) > 3 {
+		return integrationError("invalid_proposal", 422)
+	}
+	seen := map[uint]bool{}
+	for _, id := range p.ImageFileIDs {
+		if id == 0 || seen[id] {
+			return integrationError("invalid_proposal", 422)
+		}
+		seen[id] = true
+	}
+	seen = map[uint]bool{}
+	for _, source := range p.Sources {
+		if source.PostID == 0 || len(source.Version) != 64 || seen[source.PostID] {
+			return integrationError("invalid_proposal", 422)
+		}
+		seen[source.PostID] = true
+	}
+	// Multiple owners may reference the same posts; acquire source locks in one order.
+	sort.Slice(p.Sources, func(i, j int) bool { return p.Sources[i].PostID < p.Sources[j].PostID })
 	switch p.Kind {
 	case "post":
 		if p.PostID != 0 || p.SourceVersion != "" || p.ReplyToReplyID != 0 || p.ReplySourceVersion != "" || p.StickerID != "" || p.PostType == "" || len(p.PostType) > 64 || p.Content == "" || utf8.RuneCountInString(p.Content) > 9900 || utf8.RuneCountInString(p.Title) > 120 {
 			return integrationError("invalid_proposal", 422)
 		}
 	case "reply":
+		if len(p.ImageFileIDs) != 0 || len(p.Sources) != 0 {
+			return integrationError("invalid_proposal", 422)
+		}
 		if p.PostType != "" || p.Title != "" || p.PostID == 0 || len(p.SourceVersion) != 64 || utf8.RuneCountInString(p.Content) > 4900 || (p.Content == "" && p.StickerID == "") || (p.ReplyToReplyID > 0 && len(p.ReplySourceVersion) != 64) || (p.ReplyToReplyID == 0 && p.ReplySourceVersion != "") {
 			return integrationError("invalid_proposal", 422)
 		}
@@ -243,9 +285,16 @@ func (s *IntegrationActionService) decide(ctx context.Context, owner uint, id st
 			if err != nil {
 				return err
 			}
-			if a.BindingID != current.ID || a.BindingEpoch != current.Epoch || a.Kind != "reply" || !IntegrationHasScope(current, IntegrationAutoReplyScope) {
+			required := IntegrationAutoReplyScope
+			if a.Kind == "post" {
+				required = IntegrationAutoPostScope
+			}
+			if a.BindingID != current.ID || a.BindingEpoch != current.Epoch || (a.Kind != "reply" && a.Kind != "post") || !IntegrationHasScope(current, required) {
 				return integrationError("insufficient_scope", 403)
 			}
+		}
+		if automatic == nil && (len(p.ImageFileIDs) > 0 || len(p.Sources) > 0 || p.RuntimeSessionID != "" || p.BotRevision != 0) {
+			return integrationError("bot_publication_requires_bot_route", 403)
 		}
 		if a.Version != d.Version || a.PayloadHash != d.PayloadHash {
 			return integrationError("draft_changed", 409)
@@ -292,19 +341,43 @@ func (s *IntegrationActionService) decide(ctx context.Context, owner uint, id st
 			text := "[助手代发] " + p.Content
 			actor := owner
 			if automatic != nil {
-				actor, err = s.botActor(tx, owner, now, post, p)
+				if err := s.checkBotRuntime(tx, *automatic, p, now); err != nil {
+					return err
+				}
+				if p.Kind == "post" {
+					actor, err = s.botPostActor(tx, owner, now, p)
+				} else {
+					actor, err = s.botActor(tx, owner, now, post, p)
+				}
 				if err != nil {
 					return err
 				}
 				text = "[AI机器人] " + p.Content
 			}
 			if p.Kind == "post" {
-				created := models.Post{AuthorID: owner, Title: p.Title, Content: text, BoardID: models.BoardShuitie, PostType: p.PostType, ContentKind: models.PostContentKindNormal, Status: models.PostStatusNormal, ContentOrigin: "assistant"}
+				created := models.Post{AuthorID: actor, Title: p.Title, Content: text, BoardID: models.BoardShuitie, PostType: p.PostType, ContentKind: models.PostContentKindNormal, Status: models.PostStatusNormal, ContentOrigin: "assistant"}
 				if err := PreparePostPublish(tx, &created, now); err != nil {
+					return err
+				}
+				// 自动帖子只用机器人自己上传/获授的图片，即使他人的图片公开也不能偷用。
+				if automatic != nil {
+					if err := s.checkBotImages(tx, actor, p.ImageFileIDs); err != nil {
+						return err
+					}
+				}
+				if _, err := ValidateImageFileIDs(tx, p.ImageFileIDs, 3, actor); err != nil {
+					return integrationError("invalid_image_reference", 422)
+				}
+				if err := ClaimPublicImageFiles(tx, p.ImageFileIDs); err != nil {
 					return err
 				}
 				if err := tx.Create(&created).Error; err != nil {
 					return err
+				}
+				for i, fileID := range p.ImageFileIDs {
+					if err := tx.Create(&models.PostImage{PostID: created.ID, FileID: fileID, SortOrder: i}).Error; err != nil {
+						return err
+					}
 				}
 				a.PostID = &created.ID
 			} else {

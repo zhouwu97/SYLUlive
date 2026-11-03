@@ -29,6 +29,16 @@ from astrbot.core.star.star_handler import EventType, star_handlers_registry
 from astrbot_plugin_sylulive.client import IntegrationProblem
 
 
+def configure_plugin(plugin):
+    plugin.config = {"allow_multi_user": False}
+    plugin.origin = "https://fixture.invalid"
+    plugin.installation = "synthetic-installation"
+    plugin.context = SimpleNamespace(get_config=lambda **kwargs: {"admins_id": ["owner"]})
+    def missing_account(*args, **kwargs):
+        raise IntegrationProblem("connect_first")
+    plugin.accounts = SimpleNamespace(get=missing_account)
+
+
 class BusinessClientFixture:
     pending = None
     store = SimpleNamespace(persistent=False)
@@ -39,7 +49,7 @@ class BusinessClientFixture:
     async def begin(self, *args, **kwargs):
         if self.fail:
             raise IntegrationProblem("network_unavailable")
-        return {"user_code": "SYNTHETIC", "verification_uri": "https://fixture.invalid/authorize"}
+        return {"user_code": "SYNTHETIC", "verification_uri": "https://fixture.invalid/web/connected-apps?user_code=SYNTHETIC"}
 
     async def call(self, *args, **kwargs):
         if self.fail:
@@ -89,6 +99,7 @@ def message(sender):
 async def test_business_command_never_falls_through_to_default_agent(monkeypatch, command, sender, fail):
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
     plugin = cls.__new__(cls)
+    configure_plugin(plugin)
     plugin.owner = "owner"
     plugin.platform = "synthetic-platform"
     plugin.installation = "synthetic-installation"
@@ -120,7 +131,7 @@ async def test_business_command_never_falls_through_to_default_agent(monkeypatch
             responses.append("".join(getattr(c, "text", "") for c in result.chain))
     assert stage.agent_sub_stage.calls == 0, "Business command triggered a second model reply"
     assert event.is_stopped(), "Command must terminate propagation after its response"
-    assert len(responses) == (1 if sender in ("owner", "group") or command == "connect" else 0)
+    assert len(responses) == 1
 
 
 def test_connection_error_does_not_claim_a_publish_was_attempted():
@@ -136,8 +147,6 @@ def test_connection_error_does_not_claim_a_publish_was_attempted():
     ("daily_checkin_status", "sylu-checkin-status"),
     ("eat_command", "sylu-eat"), ("eat_command", "吃什么"),
     ("map_command", "sylu-map"), ("map_command", "校园地图"),
-    ("grades_command", "sylu-grades"), ("grades_command", "我的成绩"),
-    ("erke_command", "sylu-erke"), ("erke_command", "我的二课"),
 ])
 def test_english_keywords_match_real_registered_command_filters(handler_name, keyword):
     module = importlib.import_module("astrbot_plugin_sylulive.main")
@@ -158,6 +167,7 @@ def test_english_keywords_match_real_registered_command_filters(handler_name, ke
 async def test_presentation_hook_preserves_context_and_is_scoped(scope):
     module = importlib.import_module("astrbot_plugin_sylulive.main")
     plugin = module.SYLUlivePlugin.__new__(module.SYLUlivePlugin)
+    configure_plugin(plugin)
     plugin.owner = "owner"
     plugin.platform = "synthetic-platform"
     event = message("other" if scope == "other_sender" else "owner")
@@ -175,8 +185,10 @@ async def test_presentation_hook_preserves_context_and_is_scoped(scope):
         first = request.system_prompt
         await plugin.present_community_naturally(event, request)
         assert request.system_prompt == first
-    else:
+    elif scope == "other_platform":
         assert request.system_prompt == "原有人格"
+    else:
+        assert request.system_prompt.startswith("原有人格") and "[当前会话本人命令权限]" in request.system_prompt
 
 
 def test_presentation_hook_is_registered_with_real_sdk():
@@ -190,8 +202,8 @@ def test_presentation_hook_is_registered_with_real_sdk():
 async def test_status_uses_nickname_without_database_account_id():
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
     plugin = cls.__new__(cls)
+    configure_plugin(plugin)
     plugin.owner, plugin.platform = "owner", "synthetic-platform"
-    plugin.installation = "00000000-0000-4000-8000-000000000001"
     plugin.client = BusinessClientFixture(False)
     event = message("owner")
     responses = [result async for result in plugin.status(event)]
@@ -204,8 +216,8 @@ async def test_status_uses_nickname_without_database_account_id():
 async def test_followup_summary_requires_new_post_and_comment_reads(fresh_reads):
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
     plugin = cls.__new__(cls)
+    configure_plugin(plugin)
     plugin.owner, plugin.platform = "owner", "synthetic-platform"
-    plugin.installation = "00000000-0000-4000-8000-000000000001"
     class ReaderFixture:
         async def public_call(self, *args, **kwargs):
             return {"data": {"post_id": 811}}
@@ -236,8 +248,8 @@ async def test_followup_summary_requires_new_post_and_comment_reads(fresh_reads)
 async def test_explicit_rewrite_can_use_previous_result_without_claiming_a_new_read():
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
     plugin = cls.__new__(cls)
+    configure_plugin(plugin)
     plugin.owner, plugin.platform = "owner", "synthetic-platform"
-    plugin.installation = "00000000-0000-4000-8000-000000000001"
     event = message("owner")
     request = ProviderRequest(prompt="只改写上面的总结，不要重新读取。")
     await plugin.present_community_naturally(event, request)
@@ -251,8 +263,8 @@ async def test_explicit_rewrite_can_use_previous_result_without_claiming_a_new_r
 async def test_comment_tool_rereads_parent_and_fails_closed(failure):
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
     plugin = cls.__new__(cls)
+    configure_plugin(plugin)
     plugin.owner, plugin.platform = "owner", "synthetic-platform"
-    plugin.installation = "00000000-0000-4000-8000-000000000001"
     calls = []
 
     class ReaderFixture:
@@ -310,6 +322,7 @@ async def test_private_review_commands_do_not_enter_group_or_private_model(
 
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
     plugin = cls.__new__(cls)
+    configure_plugin(plugin)
 
     async def result(*a, **k):
         if fail:

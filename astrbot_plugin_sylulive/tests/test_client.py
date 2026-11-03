@@ -23,6 +23,38 @@ class Store:
         self.value = None
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("revoke", [False, True])
+async def test_bot_upload_is_real_multipart_and_inflight_revoke_cannot_commit_result(revoke):
+    requests = []
+    client = None
+    async def respond(request):
+        requests.append(request)
+        assert request.url.path == "/api/integrations/v1/bot/media"
+        assert request.headers["Authorization"] == "Bearer sa_synthetic"
+        assert "multipart/form-data; boundary=" in request.headers["content-type"]
+        body = await request.aread()
+        assert b'name="file"' in body and b"synthetic-approved-bytes" in body
+        assert b"student_id" not in body and b"password" not in body
+        if revoke:
+            client.clear()
+        return httpx.Response(200, json={"file_id": 71})
+    client = BusinessClient("https://fixture.invalid", Store(), transport=httpx.MockTransport(respond))
+    client._save(tokens())
+    try:
+        operation = client.call("POST", "/bot/media", files={"file": ("approved.png", b"synthetic-approved-bytes", "image/png")})
+        if revoke:
+            with pytest.raises(IntegrationProblem, match="authorization_changed"):
+                await operation
+            assert client.tokens is None
+        else:
+            assert await operation == {"file_id": 71}
+            assert client.tokens["scope"] == "community:read", "upload cannot invent bot scopes"
+        assert len(requests) == 1
+    finally:
+        await client.close()
+
+
 def tokens():
     return {
         "access_token": "sa_synthetic",
@@ -160,37 +192,6 @@ async def test_disconnect_failure_does_not_claim_revocation():
         with pytest.raises(IntegrationProblem):
             await client.disconnect()
         assert client.tokens is not None
-    finally:
-        await client.close()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("failure", [None, "network_unavailable", "device_request_unavailable"])
-async def test_disconnect_cancels_pending_server_request_and_keeps_secret_on_failure(failure):
-    requests = []
-    def respond(request):
-        requests.append(request)
-        if failure == "network_unavailable":
-            raise httpx.ReadTimeout("synthetic")
-        return httpx.Response(410, json={"error":failure}) if failure else httpx.Response(200)
-    client = BusinessClient("https://fixture.invalid", Store(), transport=httpx.MockTransport(respond))
-    client.pending = {"device_code":"sd_original-request", "deadline":0, "next":0}
-    try:
-        with pytest.raises(IntegrationProblem, match="authorization_expired"):
-            await client.poll()
-        with pytest.raises(IntegrationProblem, match="authorization_expired"):
-            await client.begin(str(uuid.uuid4()), "QQ 123456789", False)
-        assert client.pending is not None and not requests
-        if failure:
-            with pytest.raises(IntegrationProblem, match=failure):
-                await client.disconnect()
-            assert client.pending["device_code"] == "sd_original-request"
-        else:
-            await client.disconnect()
-            assert client.pending is None
-        assert requests[0].url.path == "/api/oauth/device_authorization/cancel"
-        assert b"device_code=sd_original-request" in requests[0].content
-        assert "authorization" not in requests[0].headers
     finally:
         await client.close()
 

@@ -33,7 +33,7 @@ def test_tool_definitions_match_documented_astrbot_schema():
             for t in params.values()
         )
         assert not ({"token", "owner_id", "role", "password", "approve"} & expected)
-    assert len(tools) == 20
+    assert len(tools) == 21
 
 
 def test_owner_and_group_boundary_and_same_message_operation(monkeypatch):
@@ -64,7 +64,8 @@ def test_owner_and_group_boundary_and_same_message_operation(monkeypatch):
         ("astrbot.api.star", stars),
     ]:
         monkeypatch.setitem(sys.modules, name, module)
-    sys.modules.pop("astrbot_plugin_sylulive.main", None)
+    # Restore the real SDK module after this offline double; later hooks must not retain TextPart=object.
+    monkeypatch.delitem(sys.modules, "astrbot_plugin_sylulive.main", raising=False)
     plugin = importlib.import_module(
         "astrbot_plugin_sylulive.main"
     ).SYLUlivePlugin.__new__(

@@ -28,7 +28,7 @@ func TestManagedBotHTTPCreatePausedEditRecentPauseAndReadPolicy(t *testing.T) {
 	const owner = 92234
 	const secret = "synthetic-bot-policy-secret"
 	t.Cleanup(func() { _ = pool.Close(); middleware.InvalidateTokenVersionCache(owner) })
-	require.NoError(t, db.AutoMigrate(&models.User{}, &models.RefreshToken{}, &models.UserLegalConsent{}, &models.AcademicIdentityBinding{}, &models.ManagedBot{}, &models.IntegrationBinding{}, &models.IntegrationCredential{}, &models.IntegrationRateBucket{}, &models.WaterSection{}, &models.Post{}, &models.Reply{}, &models.PostImage{}, &models.ReplyImage{}, &models.File{}))
+	require.NoError(t, db.AutoMigrate(&models.User{}, &models.RefreshToken{}, &models.UserLegalConsent{}, &models.AcademicIdentityBinding{}, &models.ManagedBot{}, &models.IntegrationBinding{}, &models.IntegrationCredential{}, &models.IntegrationAction{}, &models.IntegrationRateBucket{}, &models.WaterSection{}, &models.Post{}, &models.Reply{}, &models.PostImage{}, &models.ReplyImage{}, &models.File{}))
 	require.NoError(t, db.Create(&models.User{ID: owner, Nickname: "公开创建者", AccountStatus: "active", PasswordHash: "synthetic"}).Error)
 	academic := models.AcademicIdentityBinding{UserID: owner, ProviderID: models.AcademicProviderUndergraduate, StudentID: "synthetic-bot-owner", BindingVersion: 1, VerifiedAt: time.Now(), VerificationMethod: models.AcademicVerificationMethodSchoolProfile, VerificationVersion: "v1"}
 	require.NoError(t, db.Create(&academic).Error)
@@ -150,4 +150,17 @@ func TestManagedBotHTTPCreatePausedEditRecentPauseAndReadPolicy(t *testing.T) {
 	// An ordinary anonymous public visitor is not a bot principal and remains unaffected.
 	w = send("GET", fmt.Sprintf("/api/integrations/v1/public/community/posts/%d", ids[1]), "", nil)
 	require.Equal(t, 200, w.Code, w.Body.String())
+	require.NoError(t, db.First(&bot, "owner_id = ?", owner).Error)
+	report := map[string]interface{}{"session_id": uuid.NewString(), "sequence": 1, "revision": bot.Revision, "state": "paused"}
+	report["owner_id"] = owner + 1
+	w = send("POST", "/api/integrations/v1/bot/runtime", token, report)
+	require.Equal(t, 422, w.Code, w.Body.String())
+	delete(report, "owner_id")
+	w = send("POST", "/api/integrations/v1/bot/runtime", token, report)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	w = send("GET", "/api/connected-apps/bot/runtime", jwt, nil)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"state":"paused"`)
+	require.NotContains(t, w.Body.String(), "session_id")
+	require.NotContains(t, w.Body.String(), "binding_id")
 }

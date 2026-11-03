@@ -159,6 +159,7 @@ func (s *IntegrationActionService) UpdateManagedBot(ctx context.Context, owner u
 				return err
 			}
 			bot.Enabled = false
+			bot.Revision++
 			return tx.Save(&bot).Error
 		}
 		if _, err := s.Auth.eligible(tx, user, nil); err != nil {
@@ -226,6 +227,7 @@ func (s *IntegrationActionService) UpdateManagedBot(ctx context.Context, owner u
 			return err
 		}
 		bot.PolicyJSON = string(raw)
+		bot.Revision++
 		return tx.Save(&bot).Error
 	})
 	return bot, err

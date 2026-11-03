@@ -77,8 +77,8 @@ func ValidateOptions(input Request) error {
 }
 
 type PublicAuthor struct {
-	Nickname string                    `json:"nickname"`
-	AIBot    *models.PublicBotIdentity `json:"ai_bot,omitempty"`
+	Nickname string `json:"nickname"`
+	AIBot *models.PublicBotIdentity `json:"ai_bot,omitempty"`
 }
 type PublicImage struct {
 	Index    int    `json:"index"`

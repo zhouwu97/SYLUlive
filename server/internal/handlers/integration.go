@@ -20,15 +20,17 @@ type IntegrationOptions struct {
 	PublicOrigin        string
 	ProposalsEnabled    bool
 	OwnerPublishEnabled bool
-	PersonalDataEnabled bool
 	AutoReplyEnabled    bool
+	AutoPostEnabled     bool
+	PersonalDataEnabled bool
 	AfterReplyCommit    func(models.Notification)
 }
 type IntegrationHandler struct {
-	db      *gorm.DB
-	auth    *services.IntegrationAuthService
-	reader  *community.Reader
-	options IntegrationOptions
+	db          *gorm.DB
+	auth        *services.IntegrationAuthService
+	reader      *community.Reader
+	options     IntegrationOptions
+	botUploader *UploadHandler
 }
 
 func NewIntegrationHandler(db *gorm.DB, options IntegrationOptions) *IntegrationHandler {
@@ -57,6 +59,7 @@ func (h *IntegrationHandler) Register(r *gin.Engine, jwtSecret string) {
 	owner.GET("/actions/:id", h.ActionPreview)
 	owner.POST("/actions/:id/decision", h.ActionDecision)
 	owner.GET("/bot", h.BotStatus)
+	owner.GET("/bot/runtime", h.BotRuntimeStatus)
 	owner.POST("/bot", h.ManageBot)
 	public := r.Group("/api/integrations/v1/public", func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
@@ -87,7 +90,11 @@ func (h *IntegrationHandler) Register(r *gin.Engine, jwtSecret string) {
 	api.GET("/community/sections", h.Sections)
 	api.POST("/actions", h.Propose)
 	api.POST("/bot/replies", h.AutoReply)
+	api.POST("/bot/posts", h.AutoPost)
+	api.POST("/bot/media", h.BotUpload)
+	api.GET("/bot/capabilities", h.BotCapabilities)
 	api.GET("/bot/policy", h.BotPolicy)
+	api.POST("/bot/runtime", h.BotRuntimeHeartbeat)
 	api.GET("/actions/:id", h.ActionStatus)
 	admin := r.Group("/api/admin/integrations", middleware.AuthMiddleware(h.db, jwtSecret), middleware.AdminMiddleware())
 	admin.Use(func(c *gin.Context) { c.Header("Cache-Control", "no-store"); c.Header("Pragma", "no-cache") })
@@ -311,6 +318,10 @@ func (h *IntegrationHandler) Decide(c *gin.Context) {
 		return
 	}
 	for _, scope := range input.Scopes {
+		if input.Allow && scope == services.IntegrationAutoPostScope && !h.options.AutoPostEnabled {
+			writeIntegrationError(c, &services.IntegrationError{Code: "bot_post_disabled", Status: 403}, false)
+			return
+		}
 		if scope == services.IntegrationAutoReplyScope && !h.options.AutoReplyEnabled {
 			writeIntegrationError(c, &services.IntegrationError{Code: "bot_reply_disabled", Status: 403}, false)
 			return

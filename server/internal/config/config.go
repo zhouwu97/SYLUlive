@@ -90,6 +90,7 @@ type Config struct {
 	IntegrationOwnerPublishEnabled         bool
 	IntegrationPersonalDataEnabled         bool
 	IntegrationAutoReplyEnabled            bool
+	IntegrationAutoPostEnabled             bool
 	IntegrationPublicOrigin                string
 	AIAgentRolloutPercent                  int      // Agent v5 用户灰度比例
 	AIAgentRolloutUserIDs                  []uint   // Agent v5 显式放行用户
@@ -625,6 +626,10 @@ func Load() *Config {
 		panic(err)
 	}
 	integrationAutoReply := envBool("INTEGRATION_AUTO_REPLY_ENABLED", false)
+	integrationAutoPost := envBool("INTEGRATION_AUTO_POST_ENABLED", false)
+	if integrationAutoPost && (!integrationEnabled || !integrationProposals) {
+		panic("INTEGRATION_AUTO_POST_ENABLED requires integrations and proposals")
+	}
 	if integrationAutoReply && (!integrationEnabled || !integrationProposals) {
 		panic("INTEGRATION_AUTO_REPLY_ENABLED requires integrations and proposals")
 	}
@@ -709,6 +714,7 @@ func Load() *Config {
 		IntegrationOwnerPublishEnabled:         integrationPublish,
 		IntegrationPersonalDataEnabled:         integrationPersonal,
 		IntegrationAutoReplyEnabled:            integrationAutoReply,
+		IntegrationAutoPostEnabled:             integrationAutoPost,
 		IntegrationPublicOrigin:                integrationOrigin,
 		AIAgentRolloutPercent:                  aiAgentRolloutPercent,
 		AIAgentRolloutUserIDs:                  aiAgentRolloutUserIDs,

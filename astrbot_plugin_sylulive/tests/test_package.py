@@ -1,5 +1,7 @@
 """校验可安装 ZIP 的允许表和跨检出时间的可复现性。"""
 import os
+import json
+import hashlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -16,9 +18,17 @@ def test_package_is_reproducible_and_excludes_local_secrets(tmp_path):
     source.mkdir()
     allowed = {
         "main.py", "client.py", "credential_store.py", "metadata.yaml",
-        "_conf_schema.json", "requirements.txt", "README.md", "private_review.py", "public_canteen.py", "accounts.py", "personal.py",
+        "_conf_schema.json", "requirements.txt", "README.md", "private_review.py", "public_canteen.py", "public_agent.py",
+        "astrbot_persona.py", "permission_policy.py", "THIRD_PARTY_NOTICES.md",
+        "creator_memory.py", "community_publisher.py", "managed_bot_access.py", "bot_runtime.py",
+        "community_view.py", "approved_media.py",
+        "accounts.py", "administration.py", "permissions.py", "binding_delivery.py",
+        "binding_notifications.py", "group_confirmations.py", "personal.py",
+        "chat_media.py", "permission_console.py", "pages/permissions/index.html",
+        "pages/permissions/app.css", "pages/permissions/app.js",
     }
     for name in allowed:
+        (source / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / source.name / name, source / name)
     for name in (".env", "token.json", "local-access.json", "cache.pyc"):
         (source / name).write_text("synthetic-local-secret", encoding="utf-8")
@@ -34,7 +44,10 @@ def test_package_is_reproducible_and_excludes_local_secrets(tmp_path):
         os.utime(source / name, (1800000000, 1800000000))
     assert package() == first
     with ZipFile(tmp_path / "dist" / "astrbot_plugin_sylulive.zip") as archive:
-        assert set(archive.namelist()) == allowed
+        assert set(archive.namelist()) == allowed | {"build.json"}
+        manifest = json.loads(archive.read("build.json"))
+        assert manifest["version"] == "0.5.0" and manifest["source_dirty"] is True
+        assert manifest["files"] == {name: hashlib.sha256(archive.read(name)).hexdigest() for name in allowed}
         assert archive.testzip() is None
         for name in allowed:
             assert archive.read(name) == (source / name).read_bytes()

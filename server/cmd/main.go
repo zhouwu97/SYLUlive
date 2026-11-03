@@ -744,6 +744,7 @@ func main() {
 		1<<20,
 		middleware.BodyLimitRule{Prefix: "/api/upload", Limit: cfg.MaxFileSize + 2<<20},
 		middleware.BodyLimitRule{Prefix: "/api/upload_multiple", Limit: 9*cfg.MaxFileSize + 5<<20},
+		middleware.BodyLimitRule{Prefix: "/api/integrations/v1/bot/media", Limit: (4 << 20) + (64 << 10)},
 		middleware.BodyLimitRule{Prefix: "/api/exam-papers", Limit: services.ExamPaperMaxRequestBodySize},
 		middleware.BodyLimitRule{Prefix: "/api/admin/ai/knowledge/import", Limit: 9 << 20},
 		middleware.BodyLimitRule{Prefix: "/api/super/app-releases", Limit: cfg.AppReleaseMaxSize + 2<<20},
@@ -805,11 +806,13 @@ func main() {
 		log.Println("个人教务能力已退役，跳过教务客户端初始化")
 	}
 	authHandler := handlers.NewAuthHandlerWithEmailVerificationAndCleanup(db, cfg.JWTSecret, emailVerification, eduCredentialCleanupJobs)
+	var integrationHandler *handlers.IntegrationHandler
 	if cfg.IntegrationsEnabled {
-		integrationHandler := handlers.NewIntegrationHandler(db, handlers.IntegrationOptions{
+		integrationHandler = handlers.NewIntegrationHandler(db, handlers.IntegrationOptions{
 			PersonalDataEnabled: cfg.IntegrationPersonalDataEnabled,
 			PublicOrigin:        cfg.IntegrationPublicOrigin, ProposalsEnabled: cfg.IntegrationProposalsEnabled, OwnerPublishEnabled: cfg.IntegrationOwnerPublishEnabled,
 			AutoReplyEnabled: cfg.IntegrationAutoReplyEnabled,
+			AutoPostEnabled:  cfg.IntegrationAutoPostEnabled,
 			AfterReplyCommit: func(n models.Notification) {
 				handlers.SendJPushNotification(cfg.JPushAppKey, cfg.JPushMasterSecret, db, n.UserID, n.FromUID, n.RelatedID, n.PostID, n.Content)
 			},
@@ -892,6 +895,9 @@ func main() {
 	invitationHandler := handlers.NewInvitationHandler(db, cfg.JWTSecret)
 
 	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
+	if integrationHandler != nil {
+		integrationHandler.SetBotUploader(uploadHandler)
+	}
 	uploadProtectionConfig := services.UploadProtectionConfig{
 		PerMinuteCountLimit:   cfg.UploadPerMinuteCountLimit,
 		HourlyBytesLimit:      cfg.UploadHourlyBytesLimit,
@@ -1472,9 +1478,10 @@ func main() {
 			"build_time":  BuildTime,
 			"api_version": APIVersion,
 			"capabilities": gin.H{
-				"teacher_governance_v1": true,
-				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
-				"managed_bot_v1":        cfg.IntegrationsEnabled,
+				"teacher_governance_v1":  true,
+				"device_bridge_v1":       !cfg.SchoolDeviceCapabilityCut,
+				"managed_bot_v1":         cfg.IntegrationsEnabled,
+				"managed_bot_runtime_v1": cfg.IntegrationsEnabled,
 			},
 			"security": gin.H(securityHealth),
 			"ai": gin.H{
@@ -1499,9 +1506,10 @@ func main() {
 			"build_time":  BuildTime,
 			"api_version": APIVersion,
 			"capabilities": gin.H{
-				"teacher_governance_v1": true,
-				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
-				"managed_bot_v1":        cfg.IntegrationsEnabled,
+				"teacher_governance_v1":  true,
+				"device_bridge_v1":       !cfg.SchoolDeviceCapabilityCut,
+				"managed_bot_v1":         cfg.IntegrationsEnabled,
+				"managed_bot_runtime_v1": cfg.IntegrationsEnabled,
 			},
 		})
 	}
@@ -2852,9 +2860,10 @@ func main() {
 			"build_time":  BuildTime,
 			"api_version": APIVersion,
 			"capabilities": gin.H{
-				"teacher_governance_v1": true,
-				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
-				"managed_bot_v1":        cfg.IntegrationsEnabled,
+				"teacher_governance_v1":  true,
+				"device_bridge_v1":       !cfg.SchoolDeviceCapabilityCut,
+				"managed_bot_v1":         cfg.IntegrationsEnabled,
+				"managed_bot_runtime_v1": cfg.IntegrationsEnabled,
 			},
 			"version":             "",
 			"min_version":         "",

@@ -11,6 +11,8 @@ const consent = {
     "community:read",
     "actions:read_own",
     "community:propose",
+    "community:bot_reply",
+    "community:bot_post",
     "checkin:write",
     "academic:grades:read",
     "academic:erke:read",
@@ -70,6 +72,8 @@ async function fixture(
       });
     if (path === "/api/connected-apps")
       return route.fulfill({ json: { bindings: [] } });
+    if (path === "/api/connected-apps/bot")
+      return route.fulfill({ json: { bot: null, policy_supported: true, sections: [{ slug: "campus_life", name: "校园生活" }], auto_post_server_enabled: true, auto_post_authorized: false } });
     if (path.endsWith("/lookup"))
       return route.fulfill(
         options.recent
@@ -119,6 +123,35 @@ async function fixture(
   });
   return writes;
 }
+
+test("机器人自主评论和发帖权限默认不勾选", async ({ page }) => {
+  await fixture(page);
+  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.getByRole("button", { name: "查看授权请求" }).click();
+  await expect(page.getByLabel("允许独立 AI 机器人自主评论", { exact: true })).not.toBeChecked();
+  await expect(page.getByLabel("允许独立 AI 机器人自主发帖", { exact: true })).not.toBeChecked();
+});
+
+test("机器人操作补充密码验证后保留草稿且不自动重放创建", async ({ page }) => {
+  await fixture(page);
+  let posts = 0;
+  await page.route("**/api/connected-apps/bot", route => {
+    if (route.request().method() === "POST") {
+      posts++;
+      return route.fulfill({ status: 403, json: { code: "recent_authentication_required" } });
+    }
+    return route.fulfill({ json: { bot: null, policy_supported: true, sections: [{ slug: "campus_life", name: "校园生活" }], auto_post_server_enabled: true, auto_post_authorized: false } });
+  });
+  await page.route("**/api/auth/reauthenticate", route => route.fulfill({ json: { authenticated: true, user_id: 991 } }));
+  await page.goto("./connected-apps");
+  await page.getByRole("textbox", { name: "机器人名称", exact: true }).fill("合成机器人草稿");
+  await page.getByRole("button", { name: "新建机器人", exact: true }).click();
+  await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
+  await page.getByRole("button", { name: "验证并继续", exact: true }).click();
+  await expect(page.getByText("验证完成，请重新核对机器人资料和权限后保存或启用。")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "机器人名称", exact: true })).toHaveValue("合成机器人草稿");
+  expect(posts).toBe(1);
+});
 
 test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身份或用户ID", async ({
   page,

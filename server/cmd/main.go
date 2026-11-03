@@ -2647,6 +2647,8 @@ func main() {
 		canteenAdmin.DELETE("/:id", canteenHandler.DeleteCanteen)
 
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
+		canteenAdmin.GET("/:id/display-tags", canteenHandler.GetDisplayTags)
+		canteenAdmin.PUT("/:id/display-tags", canteenHandler.UpdateDisplayTags)
 
 		// 菜品实拍管理与事后治理
 		canteenAdmin.GET("/dish-photos/:photoId", canteenDishPhotoAdminHandler.AdminGetDishPhotoDetail)

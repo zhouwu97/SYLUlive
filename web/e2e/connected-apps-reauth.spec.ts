@@ -124,6 +124,27 @@ async function fixture(
   return writes;
 }
 
+test("首次读取真实延迟下等待会话就绪，不需手动重试机器人或连接", async ({ page }) => {
+  const writes = await fixture(page);
+  await page.route("**/api/connected-apps/bot", async route => {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    if (route.request().failure()) return;
+    await route.fulfill({ json: { bot: null, policy_supported: true,
+      sections: [{ slug: "campus_life", name: "校园生活" }], auto_post_server_enabled: true, auto_post_authorized: false } });
+  });
+  await page.route("**/api/connected-apps", async route => {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    if (route.request().failure()) return;
+    await route.fulfill({ json: { bindings: [], personal_data_enabled: true } });
+  });
+  await page.goto("./connected-apps");
+  await expect(page.getByRole("button", { name: "新建机器人", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "暂无助手授权", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "重试读取机器人状态", exact: true })).toHaveCount(0);
+  await expect(page.getByText("signal is aborted without reason", { exact: true })).toHaveCount(0);
+  expect(writes).toHaveLength(0);
+});
+
 test("机器人自主评论和发帖权限默认不勾选", async ({ page }) => {
   await fixture(page);
   await page.goto("./connected-apps?user_code=ABCD-1234");

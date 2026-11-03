@@ -22,16 +22,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const raw = entity(q.data, "user", "data");
   const user = raw.id ? (raw as User) : null;
   const [reloading, setReloading] = useState(false);
+  const [sessionUserId, setSessionUserId] = useState<number | null | undefined>(undefined);
   const reloadSequence = useRef(0), reloadInProgress = useRef(false);
   useEffect(() => {
-    if (!reloadInProgress.current) setAuthSession(user?.id ?? null);
-  }, [user?.id, reloading]);
+    const next = user?.id ?? null;
+    if (reloadInProgress.current || q.isPending || sessionUserId === next) return;
+    // 先建立请求世代，再公开账号，避免生产构建首次挂载的子请求被本次初始化取消。
+    const reads = { queryKey: ["api"], predicate: (query: { queryKey: readonly unknown[] }) => query.queryKey[1] !== "/api/user/profile" };
+    const cancelled = qc.cancelQueries(reads);
+    setAuthSession(next);
+    setSessionUserId(next);
+    void cancelled.then(() => qc.invalidateQueries(reads));
+  }, [user?.id, reloading, q.isPending, sessionUserId, qc]);
   useEffect(() => {
     const channel = new BroadcastChannel('sylulive-auth');
     channel.onmessage = async () => {
       const sequence = ++reloadSequence.current;
       reloadInProgress.current = true;
       setReloading(true);
+      setSessionUserId(undefined);
       beginAuthTransition();
       setAuthSession(null);
       qc.clear();
@@ -62,8 +71,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
-        user: reloading ? null : user,
-        loading: reloading || q.isPending,
+        user: reloading || sessionUserId !== (user?.id ?? null) ? null : user,
+        loading: reloading || q.isPending || sessionUserId !== (user?.id ?? null),
         login,
         logout,
         requireUser: () => {

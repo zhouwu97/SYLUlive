@@ -6,6 +6,7 @@ import { ApiError, asset, captureAuthSession, upload, useApi, write } from "./ap
 import { Empty, Head, Icon, QueryState } from "./ui";
 import "./connected-apps.css";
 import { IntegrationPersonalSync } from "./integration-personal-sync";
+import { PasswordReauthentication } from "./reauthenticate";
 
 type Binding = {
   binding_id: string;
@@ -62,7 +63,7 @@ const labels: Record<string, string> = {
 };
 const errors: Record<string, string> = {
   recent_authentication_required:
-    "请重新登录验证本人身份，然后重试。刷新页面或刷新凭证不能代替重新登录。",
+    "继续前请验证当前账号的密码。验证成功后可继续本次操作，无需重新登录。",
   academic_verification_required:
     "当前账号尚无符合要求的教务核验。请在账号设置完成受支持的身份核验；本地自报资料不能用于此授权。",
   source_changed: "原帖或回复内容已变化，请让助手重新读取并生成草稿。",
@@ -70,6 +71,8 @@ const errors: Record<string, string> = {
   draft_expired: "草稿已过期，请让助手重新生成。",
   confirmation_expired:
     "确认窗口已过期或已在另一页面打开，请重新加载草稿后确认。",
+  installation_conflict: "这份机器人连接已被另一个校园账号授权。请先在原账号撤销连接，不能直接挪用他人的绑定。",
+  personal_queries_disabled: "服务端尚未开放成绩和二课查询，当前可只授权其他已开放能力。",
   binding_conflict: "已有一个有效助手授权，请明确勾选替换旧授权。",
   proposals_disabled: "服务端尚未开放草稿提案，请仅选择读取权限。",
   owner_publish_disabled: "服务端尚未开放正式发布，此草稿尚未发布。",
@@ -119,16 +122,11 @@ function SignIn() {
     </Empty>
   );
 }
-function Problem({ message }: { message: string }) {
-  const auth = useAuth();
+function Problem({ message, onVerified }: { message: string; onVerified?: () => Promise<unknown> }) {
   return message ? (
     <div className="integration-feedback integration-feedback--error" role="alert">
       <p>{message}</p>
-      {message.includes("重新登录") && (
-        <button className="btn" onClick={auth.login}>
-          重新登录验证
-        </button>
-      )}
+      {message === errors.recent_authentication_required && onVerified && <PasswordReauthentication onVerified={onVerified} />}
     </div>
   ) : null;
 }
@@ -411,10 +409,17 @@ function BotPanel() {
             <div><dt>自动发帖服务</dt><dd>{q.data?.auto_post_server_enabled ? "已开放" : "暂未开放"}</dd></div>
             <div><dt>助手发帖授权</dt><dd>{q.data?.auto_post_authorized ? "已授权" : "尚未授权"}</dd></div>
           </dl>
-          <p className="integration-hint">机器人权限和助手授权共同生效。请在连接请求中单独勾选自动评论权限，并在 AstrBot 开启自动浏览。启用账号不代表后台已在运行。</p>
+          <p className="integration-hint">机器人权限和助手授权共同生效。请按需单独勾选自主评论、发帖权限，并在 AstrBot 开启自动浏览。启用账号后可在上方核对实际运行状态。</p>
         </section>
       </QueryState>}
-      <Problem message={message} />
+      <Problem message={message} onVerified={async () => {
+        const current = guard();
+        await q.refetch();
+        if (current()) {
+          setMessage("");
+          setNotice("验证完成，请重新核对机器人资料和权限后保存或启用。");
+        }
+      }} />
       {notice && <p className="integration-feedback integration-feedback--success" role="status">{notice}</p>}
       <div className="bot-policy-section">
         <h3>记忆与隐私</h3>
@@ -563,7 +568,11 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
             查看授权请求
           </button>
         </form>
-        <Problem message={message} />
+        <Problem message={message} onVerified={async () => {
+          setMessage("");
+          if (code.trim()) await lookup();
+          else await q.refetch();
+        }} />
         {success && <p className="integration-feedback integration-feedback--success" role="status">{success}</p>}
         {consent && (
           <div>
@@ -594,8 +603,10 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
             <p>
               获准读取的公开文字、作者昵称、互动统计和图片会交给你部署的
               AstrBot，可能继续发送至你选择的模型、记忆插件或部署者允许的群。SYLUlive
-              无法收回已经外发的数据。成绩与二课仅在本人同步并另行勾选后供本人查询；本连接不提供站内私信、课表、学校密码或学校登录会话。
+              无法收回已经外发的数据。本连接不提供站内私信、课表、学校密码或学校登录会话。
             </p>
+            <p>成绩和二课为独立可选权限，默认不勾选。授权后按本人明确命令返回已同步数据，标明同步时间，不是学校实时查询。允许的用户、群及结果投递由机器人后台配置；在群内查询并确认展示，或在已配置直接展示的群明确查询，会向该群公开本人结果，群成员、后续群模型与记忆可能保存。绑定不会自动完成学校登录或数据同步。</p>
+            <p>如果连接共享机器人，QQ、机器人部署者及其安装的其他插件可能保存私聊和返回结果；请确认你信任部署者。SYLUlive 后台管理员不会仅凭管理身份获得他人成绩读取接口。</p>
             <label className="field">
               <span>
                 <input
@@ -653,8 +664,8 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
         <header className="integration-section-head"><Icon name="admin" size={22} /><h2>连接管理</h2></header>
         <button className="btn" disabled={q.isFetching} onClick={() => void q.refetch()}>{q.isFetching ? "正在刷新连接列表…" : "刷新连接列表"}</button>
         <p>
-          App 的手机、电脑或平板登录与助手授权分别管理；QQ
-          号只用于插件本地消息路由。
+          App 的手机、电脑或平板登录与助手授权分别管理。安装名称可能包含插件自报的 QQ
+          号，便于核对请求；名称和安装标识不证明 QQ 归属。
         </p>
         <QueryState query={q}>
           {q.data?.bindings?.length ? (
@@ -751,7 +762,7 @@ function ActionPanel({ id, nickname }: { id: string; nickname: string }) {
         </p>
         {q.error ? (
           <>
-            <Problem message={explain(q.error)} />
+            <Problem message={explain(q.error)} onVerified={async () => { setChecked(false); await q.refetch(); }} />
             <button className="btn" onClick={() => void q.refetch()}>
               重新加载
             </button>
@@ -877,7 +888,7 @@ function ActionPanel({ id, nickname }: { id: string; nickname: string }) {
             )}
           </QueryState>
         )}
-        <Problem message={message} />
+        <Problem message={message} onVerified={async () => { setChecked(false); setMessage(""); await q.refetch(); }} />
         {message && (
           <button
             className="btn"

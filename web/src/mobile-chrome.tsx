@@ -34,7 +34,7 @@ export function MobileHeader({ menu, onMenu }: { menu: boolean; onMenu: () => vo
     {home ? <Tabs tabs={[["time", "最新"], ["all", "综合"], ["featured", "精华"], ["following", "关注"]]} value={params.get("sort") || "all"} onChange={sort => {
       if (sort === "following" && !auth.requireUser()) return;
       setParams({ sort });
-    }} /> : <b className="mobile-header-title">{titles[location.pathname.split("/")[1]] || "沈理校园"}</b>}
+    }} /> : <b className="mobile-header-title" role="heading" aria-level={1}>{titles[location.pathname.split("/")[1]] || "沈理校园"}</b>}
     {!home && !auth.user ? <button className="mobile-icon-button" onClick={auth.login}>登录</button> : <Link className="mobile-icon-button" to="/messages" aria-label="私信消息"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 4h16v13H8l-4 4V4Z" /></svg></Link>}
   </header>;
 }

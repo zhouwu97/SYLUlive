@@ -310,15 +310,15 @@ test("正式发布必须本人核对，重复点击只发送一次确认并展�
   });
 });
 
-test("过旧登录给出重新登录入口，不发送授权确认", async ({ page }) => {
+test("过旧登录给出当前账号密码验证，不发送授权确认", async ({ page }) => {
   const writes = await fixture(page, { recent: true });
   await page.goto("./connected-apps?user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求" }).click();
   await expect(page.getByRole("alert")).toContainText(
-    "刷新页面或刷新凭证不能代替重新登录",
+    "继续前请验证当前账号的密码",
   );
   await expect(
-    page.getByRole("button", { name: "重新登录验证" }),
+    page.getByRole("button", { name: "验证并继续" }),
   ).toBeVisible();
   expect(writes.filter((x) => x.path.endsWith("/decision"))).toHaveLength(0);
 });

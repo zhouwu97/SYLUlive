@@ -129,7 +129,19 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
     [success, setSuccess] = useState("");
   const q = useApi<{ bindings: Binding[]; personal_data_enabled?: boolean }>("/api/connected-apps"),
     guard = useGuard();
-  const personalEnabled = q.error || q.isPending ? undefined : q.data?.personal_data_enabled;
+  const personalEnabled = q.error || q.isFetching ? undefined : q.data?.personal_data_enabled;
+  const lookupHint = busy ? "正在处理当前请求，请等待结果后再操作。"
+    : !code.trim() ? "请先在 AstrBot 私聊发送 /sylu-connect，取得设备代码后填写到这里，再查看授权请求。"
+      : "设备代码已填写，可以查看请求；请先核对它来自你自己的 AstrBot 私聊。";
+  const consentHint = busy ? "正在处理当前授权，请等待结果，暂不能重复提交。"
+    : !selected.length ? "请至少选择一项你愿意授予的权限。"
+      : personalEnabled !== true && selected.some(scope => ["academic:grades:read", "academic:erke:read"].includes(scope))
+        ? "个人查询尚未开放或状态未确认，请取消成绩、二课权限，或重新检查服务状态后再授权。"
+        : !checked ? "请先核对设备代码与账号，再勾选「我已核对设备代码与当前账号」。"
+          : consent?.existing_binding && !replace ? "当前账号已有助手连接。确认要换成这个助手时，请勾选撤销并替换已有授权。"
+            : selected.includes("community:propose") && (!selected.includes("community:read") || !selected.includes("actions:read_own"))
+              ? "创建草稿还需要公开内容读取与本人动作记录权限，请补选这两项，或取消创建草稿。"
+              : "核对已完成，可以授权此助手。";
   async function lookup() {
     const current = guard();
     setBusy(true);
@@ -234,10 +246,12 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
                 setConsent(null);
               }}
               autoComplete="off"
+              aria-describedby="integration-code-hint"
               required
             />
           </label>
-          <button className="btn" disabled={busy || !code.trim()}>
+          <p id="integration-code-hint" className="control-hint" role="status">{lookupHint}</p>
+          <button className="btn" disabled={busy || !code.trim()} aria-describedby="integration-code-hint">
             查看授权请求
           </button>
         </form>
@@ -325,15 +339,17 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
                     (!selected.includes("community:read") ||
                       !selected.includes("actions:read_own")))
                 }
+                aria-describedby="integration-consent-hint"
                 onClick={() => void decide(true)}
               >
                 {busy ? "正在处理…" : "授权此助手"}
               </button>
             </div>
+            <p id="integration-consent-hint" className="control-hint" role="status">{consentHint}</p>
           </div>
         )}
       </section>
-      <IntegrationPersonalSync enabled={personalEnabled} />
+      <IntegrationPersonalSync enabled={personalEnabled} refreshing={q.isFetching} onRefresh={() => void q.refetch()} />
       <section className="panel panel-pad integration-panel">
         <div className="integration-connections-heading"><h2>连接管理</h2><button className="btn" disabled={busy || q.isFetching} onClick={() => void q.refetch()}>刷新连接列表</button></div>
         <p>
@@ -406,6 +422,11 @@ function ActionPanel({ id, nickname }: { id: string; nickname: string }) {
     guard = useGuard();
   const action = result || q.data?.action,
     payload = action?.payload;
+  const publishHint = busy ? "正在提交决定，请等待结果，暂不能重复发布。"
+    : payload?.sticker_id && stickerState === "error" ? "表情未能加载，暂不能发布。请先点「重新加载表情」，看清图片后再确认。"
+      : payload?.sticker_id && stickerState !== "ready" ? "表情正在加载，看清图片后才能发布，请稍候。"
+        : !checked ? "请先核对全文、回复目标和发布账号，再勾选确认项，发布按钮才会可用。"
+          : "核对已完成，可以确认并发布这份草稿。";
   async function decide(allow: boolean) {
     if (!q.data) return;
     const snapshot = q.data,
@@ -531,6 +552,7 @@ function ActionPanel({ id, nickname }: { id: string; nickname: string }) {
                           type="checkbox"
                           checked={checked}
                           disabled={busy}
+                          aria-describedby="integration-publish-hint"
                           onChange={(e) => setChecked(e.target.checked)}
                         />
                         我已核对全文、回复目标和发布账号
@@ -551,11 +573,13 @@ function ActionPanel({ id, nickname }: { id: string; nickname: string }) {
                           !checked ||
                           (!!payload?.sticker_id && stickerState !== "ready")
                         }
+                        aria-describedby="integration-publish-hint"
                         onClick={() => void decide(true)}
                       >
                         {busy ? "正在提交…" : "确认并发布"}
                       </button>
                     </div>
+                    <p id="integration-publish-hint" className="control-hint" role="status">{publishHint}</p>
                   </>
                 )}
                 {action.state === "published" && action.post_id && (

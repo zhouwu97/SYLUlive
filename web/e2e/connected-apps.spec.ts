@@ -132,6 +132,10 @@ test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身
     page.getByRole("heading", { name: "暂无助手授权" }),
   ).toBeVisible();
   expect(writes).toHaveLength(0);
+  await page.getByRole('textbox',{name:'设备代码'}).fill('');
+  await expect(page.getByRole('button',{name:'查看授权请求'})).toBeDisabled();
+  await expect(page.getByRole('button',{name:'查看授权请求'})).toHaveAccessibleDescription(/AstrBot 私聊发送 \/sylu-connect/);
+  await page.getByRole('textbox',{name:'设备代码'}).fill('ABCD-1234');
   await page.getByRole("button", { name: "查看授权请求" }).click();
   await expect(
     page.getByLabel("公开帖子与评论、作者昵称、互动统计、公开图片和表情目录"),
@@ -147,6 +151,7 @@ test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身
   await expect(writeScope).not.toBeChecked();
   await expect(page.getByLabel("查看本人签到状态，并按本人指令每日签到（不含补签）")).not.toBeChecked();
   await expect(page.getByRole("button", { name: "授权此助手" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "授权此助手" })).toHaveAccessibleDescription(/请先核对设备代码与账号/);
   await page.getByLabel("我已核对设备代码与当前账号，并了解外发范围").check();
   await page.getByRole("button", { name: "授权此助手" }).click();
   await expect(
@@ -210,6 +215,7 @@ test("正式发布必须本人核对，重复点击只发送一次确认并展�
   await page.goto("./connected-apps/actions/action-one");
   await expect(page.getByText(action.payload.content)).toBeVisible();
   await expect(page.getByRole("button", { name: "确认并发布" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "确认并发布" })).toHaveAccessibleDescription(/请先核对全文/);
   await page.getByLabel("我已核对全文、回复目标和发布账号").check();
   await page.getByRole("button", { name: "确认并发布" }).click();
   await expect(page.getByRole("button", { name: "正在提交…" })).toBeDisabled();
@@ -442,6 +448,7 @@ test("表情加载失败时阻止确认发布，可重试恢复实际图片", as
     page.getByText("表情未能加载，请重试并核对后再发布。"),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "确认并发布" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "确认并发布" })).toHaveAccessibleDescription(/先点「重新加载表情」/);
   imageFails = false;
   await page.getByRole("button", { name: "重新加载表情" }).click();
   await expect(page.getByRole("button", { name: "确认并发布" })).toBeEnabled();

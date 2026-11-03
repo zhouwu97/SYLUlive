@@ -22,4 +22,14 @@ describe("个人资料最小同步", () => {
     expect(() => makePersonalUpload({ ...base, data: {} })).toThrow();
     expect(() => makePersonalUpload({ ...base, dataset: "physical" })).toThrow();
   });
+  it("分类缺口与合计按学校百分位精度同步，不暴露浮点减法尾差", () => {
+    const payload = makePersonalUpload({ ...base, provider: "erke", dataset: "erke", data: {
+      earned: 100, required: 100, categories: [
+        { name: "合成分类 A", earned: 0.1, required: 0.3 },
+        { name: "合成分类 B", earned: 0.1, required: 0.2 },
+      ],
+    } });
+    expect(payload.graduation).toEqual({ earned_total: 100, required_total: 100, graduation_gap: 0.3,
+      unmet_categories: [{ name: "合成分类 A", gap: 0.2 }, { name: "合成分类 B", gap: 0.1 }] });
+  });
 });

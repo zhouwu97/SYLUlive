@@ -62,6 +62,11 @@
 .sync-notice { padding: 12px 16px; background: var(--color-paper-2); border-left: 3px solid var(--color-accent); font-size: 14px; line-height: 1.7; }
 .sync-notice.is-error { border-color: var(--color-error); color: var(--color-error); }
 .sync-notice.is-success { border-color: var(--color-success); }
+.sync-notice > p + p, .sync-notice > button { margin-top: 8px; }
+.control-hint, .sync-control-hint { color: var(--color-ink-2); font-size: 14px; line-height: 1.7; }
+.integration-panel .control-hint { margin-block: 8px 12px; }
+.sync-control-hint { border-left: 2px solid var(--color-rule); padding-left: 12px; }
+.sync-confirm:has(input:disabled) { cursor: not-allowed; }
 .sync-details { border-top: 1px solid var(--color-rule-soft); padding-top: 4px; font-size: 14px; }
 .sync-details summary { cursor: pointer; min-height: 44px; padding-block: 10px; width: fit-content; }
 .sync-details p { margin: 4px 0 12px; color: var(--color-ink-2); line-height: 1.7; }

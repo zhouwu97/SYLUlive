@@ -12,6 +12,8 @@ test("服务端关闭时不允许本机读取和上传但保留删除入口", as
   await expect(page.getByRole('button',{name:'从本机教务助手读取'})).toBeDisabled();
   await expect(page.getByRole('button',{name:'确认同步最小资料'})).toBeDisabled();
   await expect(page.getByRole('checkbox',{name:/我确认仅操作当前账号/})).toBeDisabled();
+  await expect(page.getByRole('button',{name:'从本机教务助手读取'})).toHaveAccessibleDescription(/当前服务尚未开放个人查询/);
+  await expect(page.getByRole('button',{name:'重新检查服务状态'})).toBeEnabled();
   await page.getByText('删除云端上传副本', {exact:true}).click();
   await page.getByRole('checkbox',{name:'确认删除当前选择的上传副本'}).check();
   await expect(page.getByRole('button',{name:'删除该类上传副本'})).toBeEnabled();
@@ -48,6 +50,8 @@ for (const dataset of ["grades", "erke"] as const) {
     await page.getByRole("combobox", { name: "资料类型" }).selectOption(dataset);
     const confirm = page.getByRole("button", { name: "确认同步最小资料" });
     await expect(confirm).toBeDisabled();
+    await expect(confirm).toHaveAccessibleDescription(/请先点「从本机教务助手读取」/);
+    await expect(page.getByRole('checkbox',{name:/我确认仅操作当前账号/})).toHaveAccessibleDescription(/有了资料预览后/);
     await page.getByRole("button", { name: "从本机教务助手读取" }).click();
     await page.getByRole("button", { name: "连接并读取资料" }).click();
     await expect(page.getByText("资料已在本机准备，尚未上传。")).toBeVisible();
@@ -61,12 +65,20 @@ for (const dataset of ["grades", "erke"] as const) {
     await page.screenshot({ path: test.info().outputPath(`sync-${dataset}-preview.png`), fullPage: true });
     expect(writes).toHaveLength(0);
     await expect(confirm).toBeDisabled();
+    await expect(confirm).toHaveAccessibleDescription(/请先核对上方预览/);
     await page.getByRole("checkbox", { name: /我确认仅操作当前账号的资料/ }).check();
     await confirm.click();
     await expect.poll(() => writes.length).toBe(1);
     expect(JSON.stringify(writes)).not.toMatch(/do-not-upload|password|cookie|学校内部字段/);
     expect(writes[0].path).toBe(dataset === "grades" ? "/api/connected-apps/personal-sync/grades" : "/api/personal-snapshots/erke");
     await expect(page.getByText(/已同步最小资料/)).toBeVisible();
+    await expect(page.getByText('本次上传已完成，待同步预览已清空。')).toBeVisible();
+    await expect(confirm).toBeDisabled();
+    await expect(confirm).toHaveAccessibleDescription(/本次已同步，确认项已重置/);
+    await expect(page.getByRole('checkbox',{name:/我确认仅操作当前账号/})).toBeDisabled();
+    const completed = page.getByRole('region',{name:'个人资料同步',exact:true});
+    await completed.evaluate(node => node.scrollIntoView({block:'center'}));
+    await completed.screenshot({path:test.info().outputPath(`sync-${dataset}-completed.png`)});
   });
 }
 
@@ -118,7 +130,7 @@ async function syncFixture(page: Page, options: { stale?: boolean; holdWrite?: b
       window.postMessage({ ...request, direction: "response", ok: true, result: results[request.operation] }, location.origin);
     });
   }, !!options.stale);
-  return { writes, release, failList: () => { listFailed = true; }, succeed: () => { writeFailed = false; } };
+  return { writes, release, failList: () => { listFailed = true; }, restoreList: () => { listFailed = false; }, succeed: () => { writeFailed = false; } };
 }
 async function prepareGrades(page: Page) {
   await page.getByRole("button", { name: "从本机教务助手读取" }).click();
@@ -153,6 +165,10 @@ test("刷新失败不能沿用缓存的开放状态", async ({ page }) => {
   await expect(page.getByRole("button", { name: "从本机教务助手读取" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "确认同步最小资料" })).toBeDisabled();
   expect(control.writes).toHaveLength(0);
+  control.restoreList();
+  await page.getByRole('button',{name:'重新检查服务状态'}).click();
+  await expect(page.getByRole('button',{name:'从本机教务助手读取'})).toBeEnabled();
+  await expect(page.getByRole('button',{name:'确认同步最小资料'})).toHaveAccessibleDescription(/请先点「从本机教务助手读取」/);
 });
 
 test("同步不会重复提交，失败保留预览并允许本人重试", async ({ page }) => {
@@ -163,6 +179,8 @@ test("同步不会重复提交，失败保留预览并允许本人重试", async
     await page.getByRole("checkbox", { name: /我确认仅操作当前账号/ }).check();
     await page.getByRole("button", { name: "确认同步最小资料" }).evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
     await expect(page.getByRole("button", { name: "正在同步…" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "正在同步…" })).toHaveAccessibleDescription(/正在同步，请等待结果/);
+    await expect(page.getByRole('combobox',{name:'资料类型'})).toHaveAccessibleDescription(/暂时锁定/);
     await expect.poll(() => control.writes.length).toBe(1);
   } finally { control.release(); }
   await expect(page.getByRole("alert").filter({ hasText: /操作未完成/ })).toBeVisible();
@@ -183,9 +201,11 @@ test("同步确认不代替删除确认，切换类型后重新核对删除", as
   await page.getByText("删除云端上传副本", { exact: true }).click();
   const remove = page.getByRole("button", { name: "删除该类上传副本" });
   await expect(remove).toBeDisabled();
+  await expect(remove).toHaveAccessibleDescription(/请先核对资料类型，再勾选删除确认/);
   const confirm = page.getByRole("checkbox", { name: "确认删除当前选择的上传副本" });
   await confirm.check();
   await expect(remove).toBeEnabled();
+  await expect(remove).toHaveAccessibleDescription(/已确认删除当前类型/);
   await page.getByRole("combobox", { name: "资料类型" }).selectOption("erke");
   await expect(confirm).not.toBeChecked();
   await expect(remove).toBeDisabled();

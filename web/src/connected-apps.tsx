@@ -456,6 +456,17 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
     [success, setSuccess] = useState("");
   const q = useApi<{ bindings: Binding[]; personal_data_enabled?: boolean }>("/api/connected-apps"),
     guard = useGuard();
+  const personalSelected = selected.some(scope => scope === "academic:grades:read" || scope === "academic:erke:read");
+  const personalBlocked = personalSelected && (!!q.error || q.isFetching || q.data?.personal_data_enabled !== true);
+  const authorizationProblems: string[] = [];
+  if (!checked) authorizationProblems.push("请先核对设备代码与当前账号，并勾选外发范围确认。");
+  if (!selected.length) authorizationProblems.push("请至少选择一项本次请求的权限。");
+  if ((selected.includes("community:bot_post") || selected.includes("community:bot_reply")) && !selected.includes("community:propose"))
+    authorizationProblems.push("自主评论或发帖还需要单独勾选「创建待本人确认的帖子或评论草稿」。");
+  if (selected.includes("community:propose") && (!selected.includes("community:read") || !selected.includes("actions:read_own")))
+    authorizationProblems.push("创建草稿还需要勾选「公开帖子与评论」及「本授权创建的草稿与发布结果」。");
+  if (personalBlocked) authorizationProblems.push("成绩或二课的服务状态尚未确认，或服务未开放。请重新检查授权条件；也可取消成绩、二课权限，仅授权其他功能。");
+  if (consent?.existing_binding && !replace) authorizationProblems.push("已有有效连接，请核对并勾选替换旧授权。");
   async function lookup() {
     const current = guard();
     setBusy(true);
@@ -600,6 +611,7 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
                 </span>
               </label>
             ))}
+            {!consent.requested_scopes.includes("community:bot_post") && !consent.requested_scopes.includes("community:bot_reply") && <p className="integration-hint">这份连接请求未申请机器人自主评论或发帖。需要自动参与时，请在 QQ 与机器人的一对一私聊重新发起连接；群内个人查询链接不包含这些权限。</p>}
             <p>
               获准读取的公开文字、作者昵称、互动统计和图片会交给你部署的
               AstrBot，可能继续发送至你选择的模型、记忆插件或部署者允许的群。SYLUlive
@@ -630,6 +642,11 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
                 </span>
               </label>
             )}
+            {authorizationProblems.length > 0 && <div id="integration-consent-requirements" className="integration-hint" role="status">
+              <p>授权前还需完成：</p>
+              <ul>{authorizationProblems.map(problem => <li key={problem}>{problem}</li>)}</ul>
+              {personalBlocked && <button className="btn" type="button" disabled={busy || q.isFetching} onClick={() => void q.refetch()}>{q.isFetching ? "正在检查授权条件…" : "重新检查授权条件"}</button>}
+            </div>}
             <div className="form-actions">
               <button
                 className="btn"
@@ -640,18 +657,8 @@ function ConnectionPanel({ nickname }: { nickname: string }) {
               </button>
               <button
                 className="btn primary"
-                disabled={
-                  busy ||
-                  !checked ||
-                  !selected.length ||
-                  ((selected.includes("community:bot_post") || selected.includes("community:bot_reply")) && !selected.includes("community:propose")) ||
-                  (selected.some(s => s === "academic:grades:read" || s === "academic:erke:read") && (q.isFetching || q.data?.personal_data_enabled !== true)) ||
-                  (!!consent.existing_binding && !replace) ||
-                  (selected.includes("community:propose") &&
-                    (!selected.includes("community:read") ||
-                      !selected.includes("actions:read_own"))) ||
-                  (selected.includes("community:bot_reply") && !selected.includes("community:propose"))
-                }
+                disabled={busy || authorizationProblems.length > 0}
+                aria-describedby={authorizationProblems.length ? "integration-consent-requirements" : undefined}
                 onClick={() => void decide(true)}
               >
                 {busy ? "正在处理…" : "授权此助手"}

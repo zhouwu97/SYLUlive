@@ -145,6 +145,37 @@ test("首次读取真实延迟下等待会话就绪，不需手动重试机器�
   expect(writes).toHaveLength(0);
 });
 
+test("个人查询状态读取失败说明授权阻塞原因，重试保留已选权限和核对项", async ({ page }) => {
+  const writes = await fixture(page);
+  let available = false;
+  await page.route("**/api/connected-apps", route => route.fulfill(available
+    ? { json: { bindings: [], personal_data_enabled: true } }
+    : { status: 503, json: { code: "integration_unavailable" } }));
+  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
+  const grades = page.getByLabel("读取本人主动同步的成绩（非学校实时查询）", { exact: true });
+  const reviewed = page.getByLabel("我已核对设备代码与当前账号，并了解外发范围", { exact: true });
+  await grades.check(); await reviewed.check();
+  const grant = page.getByRole("button", { name: "授权此助手", exact: true });
+  await expect(grant).toBeDisabled();
+  await expect(grant).toHaveAttribute("aria-describedby", "integration-consent-requirements");
+  await expect(page.getByText("成绩或二课的服务状态尚未确认", { exact: false })).toBeVisible();
+  available = true;
+  await page.getByRole("button", { name: "重新检查授权条件", exact: true }).click();
+  await expect(grant).toBeEnabled();
+  await expect(grades).toBeChecked(); await expect(reviewed).toBeChecked();
+  expect(writes.filter(value => value.path.endsWith("/decision"))).toHaveLength(0);
+});
+
+test("个人查询连接明确说明未申请自主发帖权限", async ({ page }) => {
+  await fixture(page);
+  await page.route("**/api/connected-apps/device-requests/lookup", route => route.fulfill({ json: {
+    ...consent, requested_scopes: ["profile:read_minimal", "actions:read_own"] } }));
+  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
+  await expect(page.getByText("这份连接请求未申请机器人自主评论或发帖", { exact: false })).toBeVisible();
+});
+
 test("机器人自主评论和发帖权限默认不勾选", async ({ page }) => {
   await fixture(page);
   await page.goto("./connected-apps?user_code=ABCD-1234");

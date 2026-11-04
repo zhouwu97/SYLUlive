@@ -113,6 +113,7 @@ function Shell() {
     navigate = useNavigate();
   const active = location.pathname.split("/")[1] || "dashboard";
   const mobile = useMobile();
+  const standaloneProfile = active === "profile" && !mobile;
   const workspace = useWorkspaceMotion(location.pathname, navigationMotion);
   const unread = useApi(auth.user ? '/api/user/notifications/unread-count' : null);
   const messageUnread = useApi(auth.user ? '/api/messages/unread_count' : null);
@@ -169,7 +170,7 @@ function Shell() {
     </NavLink>
   );
   return (
-    <div data-mobile-page={active} className={`app-shell social-shell ${active === "market" ? "market-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
+    <div data-mobile-page={active} className={`app-shell social-shell ${active === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
       <a className="skip-link" href="#mainContent">
         跳到主要内容
       </a>
@@ -248,7 +249,7 @@ function Shell() {
           aria-label="收起导航"
           onClick={() => setMenu(false)}
         />
-        <aside className={`sidebar ${menu ? "open" : ""}`} aria-label="主导航">
+        {!standaloneProfile && <aside className={`sidebar ${menu ? "open" : ""}`} aria-label="主导航">
           <div className="sidebar-scroll">
             {mobile && <div className="mobile-drawer-title"><b>校园服务</b><button className="mobile-icon-button" aria-label="切换主题" onClick={() => setDark(!dark)}><Icon name={dark ? "sun" : "moon"} /></button></div>}
             <ProfileSummary />
@@ -283,7 +284,7 @@ function Shell() {
           </div>
           </div>
           <div className="sidebar-footer">沈理校园 · Web</div>
-        </aside>
+        </aside>}
         <main className="workspace" id="mainContent" ref={workspace}>
           <div className={`workspace-grid ${["dashboard","community","polls"].includes(active)?"":"no-rail"}`}>
             <div className="main-pane">

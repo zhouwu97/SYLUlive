@@ -76,6 +76,12 @@ function DesktopProfile() {
   if (!auth.user) return <div className="profile-page"><Head title="我的主页" description="记录校园日常，整理个人资料。"/><Empty title="登录后查看个人主页" description="你的发布、收藏和校园资料，在这里集中整理。"><button className="btn primary" onClick={auth.login}>登录</button></Empty></div>;
   const user = auth.user, nickname = user.nickname || '校园同学';
   const avatar = asset(user.avatar), cover = asset(user.background);
+  function openContent(value: string) {
+    setTab(value);
+    const region = document.getElementById(contentId);
+    region?.closest('.profile-content')?.scrollIntoView({block: 'start', behavior: 'instant'});
+    region?.focus({preventScroll: true});
+  }
   function openPrivacy() {
     ui.open('隐私与本地数据', <><p>校园资料默认仅保留在当前页面会话。扩展中启用的缓存和提醒可在课表连接及提醒设置内清除。</p><a className="btn" href="/api/user/privacy/export" target="_blank" rel="noreferrer">导出服务器个人数据</a><button className="btn" onClick={() => {store.setData(s => ({...s, courses: [], grades: [], exams: [], overrides: {}}));store.setUpdated('');ui.notify('当前页面的校园资料已清除');ui.close()}}>清除当前页面校园资料</button><p><Link to="/feedback" onClick={ui.close}>提交数据更正或删除请求</Link></p></>);
   }
@@ -84,30 +90,31 @@ function DesktopProfile() {
       <button className="btn" onClick={() => ui.open('账号安全', <Security/>)}><Icon name="admin" size={16}/>账号安全</button>
       <button className="btn profile-logout" onClick={auth.logout}>退出登录</button>
     </Head>
+    <div className="profile-layout">
+    <div className="profile-overview">
     <section className="panel profile-card" aria-label="个人资料">
-      <div className="profile-cover-wrap"><ProfilePhoto key={`${user.id}:${cover}`} src={cover} cover/></div>
+      <div className="profile-identity">
+        <div className="profile-avatar"><ProfilePhoto key={`${user.id}:${avatar}`} src={avatar} name={nickname}/></div>
+        <div className="profile-name"><div className="profile-name-heading"><h2 title={nickname}>{nickname}</h2><span className="profile-level" aria-label={`等级 ${userLevel(user)}`}>Lv.{userLevel(user)}</span></div><span className="profile-account">账号 #{user.id}</span></div>
+      </div>
+      <div className="profile-cover-wrap">{cover ? <ProfilePhoto key={`${user.id}:${cover}`} src={cover} cover/> : <div className="profile-cover-empty"><Icon name="campus" size={32}/><p>用一张照片，记录校园里的自己。</p><button className="btn" onClick={() => ui.open('编辑资料', <EditProfile user={user}/>)}><Icon name="plus" size={16}/>添加主页封面</button></div>}</div>
       <div className="profile-card-body">
-        <div className="profile-identity-row">
-          <div className="profile-identity">
-            <div className="profile-avatar"><ProfilePhoto key={`${user.id}:${avatar}`} src={avatar} name={nickname}/></div>
-            <div className="profile-name"><h2>{nickname}</h2><span className="profile-account">账号 #{user.id}</span>
-              {(typeof user.following_count === 'number' || typeof user.followers_count === 'number') && <div className="profile-social" aria-label="关注与粉丝">
-                {typeof user.following_count === 'number' && <button onClick={() => setTab('following')}><b>{user.following_count}</b><span>关注</span></button>}
-                {typeof user.followers_count === 'number' && <button onClick={() => setTab('followers')}><b>{user.followers_count}</b><span>粉丝</span></button>}
-              </div>}
-            </div>
-          </div>
-          <button className="btn primary profile-edit" aria-label="编辑资料与图片" onClick={() => ui.open('编辑资料', <EditProfile user={user}/>)}><Icon name="profile" size={16}/>编辑资料</button>
-        </div>
+        {user.bio && <p className="profile-description">{user.bio}</p>}
+        {(typeof user.total_likes_received === 'number' || typeof user.following_count === 'number' || typeof user.followers_count === 'number') && <div className="profile-social" aria-label="个人互动统计">
+          {typeof user.total_likes_received === 'number' && <span className="profile-likes"><b>{user.total_likes_received}</b><span>获赞</span></span>}
+          {typeof user.following_count === 'number' && <button onClick={() => openContent('following')}><b>{user.following_count}</b><span>关注</span></button>}
+          {typeof user.followers_count === 'number' && <button onClick={() => openContent('followers')}><b>{user.followers_count}</b><span>粉丝</span></button>}
+        </div>}
+        <button className="btn primary profile-edit" aria-label="编辑资料与图片" onClick={() => ui.open('编辑资料', <EditProfile user={user}/>)}><Icon name="profile" size={16}/>编辑资料</button>
       </div>
     </section>
-    <div className="profile-columns">
       <aside className="panel profile-tools" aria-label="个人工具">
         <h2>资料与设置</h2>
         <Link className="profile-tool" to="/connected-apps"><span className="profile-tool-icon"><Icon name="ai"/></span><span><b>已授权助手</b><small>管理机器人与外部助手授权</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></Link>
         <button className="profile-tool" aria-label="导入与导出校园资料" onClick={() => ui.open('本地资料', <AcademicSettings/>)}><span className="profile-tool-icon"><Icon name="grades"/></span><span><b>校园资料</b><small>导入或导出课表与成绩</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></button>
         <button className="profile-tool" aria-label="隐私与数据管理" onClick={openPrivacy}><span className="profile-tool-icon"><Icon name="admin"/></span><span><b>隐私与数据</b><small>导出数据、管理本地资料</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></button>
       </aside>
+    </div>
       <div className="profile-content"><div className="profile-content-tabs"><ProfileTabs value={tab} onChange={setTab} contentId={contentId}/></div>
       <section id={contentId} className="profile-content-region" role="tabpanel" aria-labelledby={`${contentId}-${tab}`} tabIndex={0}><MyContent key={tab} tab={tab} userId={user.id}/></section></div>
     </div>
@@ -136,13 +143,14 @@ function ProfileTabs({value, onChange, contentId}: {value: string; onChange: (va
 
 function ProfilePhoto({src, name = '', cover = false}: {src?: string; name?: string; cover?: boolean}) {
   const ui = useUI();
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState(false), [loaded, setLoaded] = useState(false);
   const label = cover ? '完整封面' : '头像';
   const fallback = <span className="profile-avatar-fallback" role="img" aria-label={`${name}的头像`}>{Array.from(name)[0] || '同'}</span>;
   if (!src) return cover ? null : fallback;
   return <button type="button" className="profile-photo-button" aria-label={failed ? `${label}加载失败，点击重试` : `查看${label}`} title={failed ? '图片加载失败，点击重试' : `查看${label}`} onClick={() => failed ? setFailed(false) : ui.open(cover ? '个人封面' : '头像', <ProfileImagePreview src={src} label={label}/>)}>
-    {failed ? cover ? <span className="profile-photo-error">封面加载失败 · 点击重试</span> : fallback : <img src={src} alt={cover ? '个人封面' : `${name}的头像`} onError={() => setFailed(true)}/>}
-    {cover && !failed && <span className="profile-photo-hint"><Icon name="search" size={14}/>查看完整封面</span>}
+    {failed ? cover ? <span className="profile-photo-error">封面加载失败 · 点击重试</span> : fallback : <img src={src} alt={cover ? '个人封面' : `${name}的头像`} onLoad={() => setLoaded(true)} onError={() => setFailed(true)}/>}
+    {cover && !failed && !loaded && <span className="profile-photo-loading" role="status">正在加载封面…</span>}
+    {cover && !failed && loaded && <span className="profile-photo-hint"><Icon name="search" size={14}/>查看完整封面</span>}
   </button>;
 }
 

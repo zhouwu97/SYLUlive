@@ -19,6 +19,10 @@
 .social-shell .frame { max-width: 1416px; padding-inline: 20px; gap: 26px; }
 .social-shell .workspace { padding-top: 30px; }
 .social-shell .workspace-grid { gap: 26px; }
+/* 个人主页保留顶栏，内容独立居中，不预留全站侧栏轨道。 */
+.social-shell.profile-shell .frame { max-width: 1322px; grid-template-columns: minmax(0, 1fr); }
+.social-shell.profile-shell .workspace { grid-column: 1; }
+.social-shell.profile-shell .workspace-grid.no-rail .main-pane { max-width: none; }
 .social-shell .sidebar { margin: 0; padding: 30px 0 0; border: 0; background: var(--bg); }
 .social-shell .nav-section { margin-block: 18px; }
 .social-shell .nav-label { padding: 4px 8px 10px; font-size: 12px; font-weight: 600; letter-spacing: 0; }

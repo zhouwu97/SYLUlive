@@ -259,6 +259,7 @@ FEED-H1 加固：
 | `GET` | `/api/canteens/:id?review_sort=best\|latest&review_filter=all\|with_image\|high\|low` | 公开获取食堂详情及评价；登录时附带个人评价/投票状态 |
 | `POST` | `/api/canteens/:id/rate` | 评价食堂（需登录并绑定教务） |
 | `PUT` | `/api/canteens/ratings/:ratingId/vote` | 给食堂评价点赞/点踩/取消投票，不能给自己的评价投票 |
+| `GET` / `PUT` | `/api/canteens/:id/display-tags` | 管理员读取或保存位置及排行展示标签。PUT 必须提供 `location_area`、`location_floor` 和 `tags`；`tags: null` 恢复评价自动汇总，数组按顺序指定最多三个既有评价标签，空数组表示不展示。修改不改变原始评价或评分。 |
 | `PUT` | `/api/canteens/:id/image` | (管理员) 修改食堂封面图片 |
 | `POST` | `/api/canteens` | (需登录) 提交新食堂，进入待审核；`verified=false` 不公开，管理员收到站内通知。请求体 `{"name", "image", "location_area", "location_floor"}`；`location_area` 可选值 `一食堂`/`二食堂`，`location_floor` 可选值 `一楼`/`二楼`（旧客户端可省略） |
 | `GET` | `/api/canteens/pending` | (管理员) 待审核食堂列表（含 `creator_name` 提交人昵称与 `location_area`/`location_floor` 位置标签） |

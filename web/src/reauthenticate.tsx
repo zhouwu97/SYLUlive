@@ -62,6 +62,7 @@ export function PasswordReauthentication({ onVerified, onCancel }: {
         value={password} onChange={event => setPassword(event.target.value)} disabled={busy} autoFocus />
     </label>
     <p className="muted">请输入 SYLUlive 账号密码，不是学校教务密码。</p>
+    <p className="muted">验证后 30 分钟内，当前登录会话的助手授权与机器人管理可连续操作，无需反复输入。权限选择会保留，批准仍需你确认。</p>
     {error && <p role="alert">{error}</p>}
     <div className="form-actions">
       <button className="btn primary" disabled={busy || !password}>{busy ? "正在验证…" : "验证并继续"}</button>

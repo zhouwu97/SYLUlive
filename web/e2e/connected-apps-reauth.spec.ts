@@ -322,6 +322,40 @@ test("过期设备代码说明恢复入口且不会提交授权", async ({ page 
   expect(writes.filter(value => value.path.endsWith("/decision"))).toHaveLength(0);
 });
 
+test("批准前验证一次密码后保留权限选择，重新核对才能提交且不会自动授权", async ({ page }) => {
+  await fixture(page);
+  let verified = false, decisions = 0, verifications = 0, lookups = 0;
+  await page.route("**/api/connected-apps/device-requests/lookup", route => {
+    lookups++;
+    return route.fulfill({ json: { ...consent, confirmation_nonce: `nonce-${lookups}` } });
+  });
+  await page.route("**/api/connected-apps/device-requests/request-one/decision", route => {
+    decisions++;
+    return route.fulfill(verified ? { json: { binding: { binding_id: "bound" } } } : { status: 403, json: { code: "recent_authentication_required" } });
+  });
+  await page.route("**/api/auth/reauthenticate", route => { verifications++; verified = true; return route.fulfill({ json: { authenticated: true, user_id: 991 } }); });
+  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
+  await expect(page.getByRole("form", { name: "验证当前账号身份" })).toHaveCount(0);
+  await page.getByRole("button", { name: "选择自动评论和发帖所需权限", exact: true }).click();
+  await page.getByLabel("我已核对设备代码与当前账号，并了解外发范围").check();
+  await page.getByRole("button", { name: "授权此助手", exact: true }).click();
+  await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
+  await page.getByRole("button", { name: "验证并继续", exact: true }).click();
+  await expect(page.getByRole("form", { name: "验证当前账号身份" })).toHaveCount(0);
+  await expect(page.getByLabel(/以独立AI机器人自动发帖/)).toBeChecked();
+  await expect(page.getByLabel(/以本人管理的独立AI机器人自动评论/)).toBeChecked();
+  await expect(page.getByLabel("创建待本人确认的帖子或评论草稿", { exact: true })).toBeChecked();
+  await expect(page.getByLabel("读取本人主动同步的成绩（非学校实时查询）", { exact: true })).not.toBeChecked();
+  await expect(page.getByLabel("我已核对设备代码与当前账号，并了解外发范围")).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "授权此助手", exact: true })).toBeDisabled();
+  expect(decisions).toBe(1); expect(verifications).toBe(1); expect(lookups).toBe(2);
+  await page.getByLabel("我已核对设备代码与当前账号，并了解外发范围").check();
+  await page.getByRole("button", { name: "授权此助手", exact: true }).click();
+  await expect(page.getByText("已授权。返回 AstrBot，等待插件完成连接。", { exact: true })).toBeVisible();
+  expect(decisions).toBe(2); expect(verifications).toBe(1);
+});
+
 test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身份或用户ID", async ({
   page,
 }) => {

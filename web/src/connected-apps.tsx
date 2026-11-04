@@ -500,7 +500,9 @@ function ConnectionPanel({ nickname, view, onBot }: { nickname: string; view: As
     authorizationProblems.push("创建草稿还需要勾选「公开帖子与评论」及「本授权创建的草稿与发布结果」。");
   if (personalBlocked) authorizationProblems.push("成绩或二课的服务状态尚未确认，或服务未开放。请重新检查授权条件；也可取消成绩、二课权限，仅授权其他功能。");
   if (consent?.existing_binding && !replace) authorizationProblems.push("已有有效连接，请核对并勾选替换旧授权。");
-  async function lookup() {
+  async function lookup(preserveSelection = false) {
+    const previous = preserveSelection ? consent : null;
+    const previousSelection = selected;
     const sessionCurrent = guard(), version = ++lookupVersion.current;
     const current = () => sessionCurrent() && version === lookupVersion.current;
     setBusy(true);
@@ -516,8 +518,10 @@ function ConnectionPanel({ nickname, view, onBot }: { nickname: string; view: As
       );
       if (current()) {
         setConsent(result);
-        setSelected(
-          result.requested_scopes.filter(
+        const sameRequest = previous && previous.consent_id === result.consent_id && previous.installation_id === result.installation_id && previous.user_code === result.user_code;
+        setSelected(sameRequest
+          ? previousSelection.filter(scope => result.requested_scopes.includes(scope))
+          : result.requested_scopes.filter(
             (s) => !["community:propose", "checkin:write", "community:bot_reply", "community:bot_post", "academic:grades:read", "academic:erke:read"].includes(s),
           ),
         );
@@ -623,7 +627,7 @@ function ConnectionPanel({ nickname, view, onBot }: { nickname: string; view: As
         </form>
         {view === "connection" && <Problem message={message} onCancel={() => { setMessage(""); setSuccess("已取消密码验证。设备代码已保留，本次连接授权未提交。"); }} onVerified={async () => {
           setMessage("");
-          if (code.trim()) await lookup();
+          if (code.trim()) await lookup(true);
           else await q.refetch();
         }} />}
         {success && <p className="integration-feedback integration-feedback--success" role="status">{success}</p>}

@@ -85,7 +85,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('确认删除'),
@@ -129,7 +129,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
     final provider = context.read<TeacherProvider>();
     final messenger = ScaffoldMessenger.of(context);
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('删除评价'),
@@ -273,7 +273,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
             final teacher = detail.teacher;
             if (teacher == null) {
               return Center(
-                child: Column(
+                child: AppContentSurface.reading(child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(detail.errorMessage ?? '教师信息加载失败'),
@@ -288,7 +288,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                       child: const Text('重新加载'),
                     ),
                   ],
-                ),
+                )),
               );
             }
 

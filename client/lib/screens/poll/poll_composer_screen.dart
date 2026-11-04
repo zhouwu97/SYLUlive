@@ -316,7 +316,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
   }
 
   void _preview() {
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: Text(_titleController.text.trim().isEmpty

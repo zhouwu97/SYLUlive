@@ -120,7 +120,7 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
     final userId = auth.user?.id.toString();
     final epoch = auth.accountSessionEpoch;
     final tokens = AppThemeTokens.of(context);
-    final confirm = await showDialog<bool>(
+    final confirm = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         backgroundColor: tokens.surface,

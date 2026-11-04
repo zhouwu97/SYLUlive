@@ -527,7 +527,7 @@ class _EmojiPackPreviewScreenState extends State<EmojiPackPreviewScreen> {
     return DecoratedBox(
       decoration: BoxDecoration(
           color: emojiSurface(context),
-          border: Border(top: BorderSide(color: emojiBorder(context)))),
+          border: Border(top: BorderSide(color: appCardDividerColor(context, emojiBorder(context))))),
       child: SafeArea(
           top: false,
           child: Padding(

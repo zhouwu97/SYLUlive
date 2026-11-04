@@ -97,10 +97,10 @@ class MessageProvider extends ChangeNotifier {
   }
 
   /// 页面启动/停止 fallback polling 时上报，供测试与诊断使用。
+  /// 这是页面生命周期的诊断标志，不触发界面重建；dispose 时通知会撞上树锁。
   void setFallbackPollingActive(bool active) {
     if (_fallbackPollingActive == active) return;
     _fallbackPollingActive = active;
-    notifyListeners();
   }
 
   MessageProvider(this._dio, {bool enableRealtime = true})

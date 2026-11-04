@@ -42,6 +42,8 @@ class CourseEvaluationProvider extends ChangeNotifier {
       : _service = dio != null ? CourseEvaluationService(dio) : null;
 
   List<CourseEvaluationSubmission> get mine => _mine;
+  int? _mineTotal;
+  int get mineTotal => _mineTotal ?? _mine.length;
   bool get isLoadingMine => _isLoadingMine;
   bool get isLoadingMoreMine => _isLoadingMoreMine;
   bool get mineHasMore => _mineHasMore;
@@ -72,6 +74,7 @@ class CourseEvaluationProvider extends ChangeNotifier {
     _resolveErrors.clear();
     _submissionIndex.clear();
     _mine = const [];
+    _mineTotal = null;
     _mineCursor = '';
     _mineHasMore = false;
     _isLoadingMine = false;
@@ -143,7 +146,8 @@ class CourseEvaluationProvider extends ChangeNotifier {
 
   void _indexSubmission(CourseEvaluationSubmission submission) {
     _submissionIndex[submission.id] = submission;
-    final index = _mine.indexWhere((item) => item.id == submission.id);
+    final index =
+        _mine.indexWhere((item) => item.recordKey == submission.recordKey);
     if (index >= 0) {
       final next = List<CourseEvaluationSubmission>.from(_mine);
       next[index] = submission;
@@ -154,8 +158,11 @@ class CourseEvaluationProvider extends ChangeNotifier {
   /// 按 ID 查找提交记录。跨模块（通知深链、我的内容定位）使用同一份索引。
   CourseEvaluationSubmission? submissionById(int id) =>
       _submissionIndex[id] ??
-      (_mine.where((item) => item.id == id).isNotEmpty
-          ? _mine.firstWhere((item) => item.id == id)
+      (_mine
+              .where((item) => item.id == id)
+              .isNotEmpty
+          ? _mine.firstWhere(
+              (item) => item.id == id)
           : null);
 
   /// 提交新评价。
@@ -189,8 +196,9 @@ class CourseEvaluationProvider extends ChangeNotifier {
       _resolveCache.clear();
       _resolveErrors.clear();
       _indexSubmission(submission);
-      if (!_mine.any((item) => item.id == submission.id)) {
+      if (!_mine.any((item) => item.recordKey == submission.recordKey)) {
         _mine = [submission, ..._mine];
+        if (_mineTotal != null) _mineTotal = _mineTotal! + 1;
       }
       notifyListeners();
       return submission;
@@ -269,6 +277,7 @@ class CourseEvaluationProvider extends ChangeNotifier {
       );
       if (_isStale(generation)) return;
       _mine = page.items;
+      _mineTotal = page.total;
       _mineCursor = page.nextCursor;
       _mineHasMore = page.hasMore;
       _isLoadingMine = false;
@@ -302,16 +311,22 @@ class CourseEvaluationProvider extends ChangeNotifier {
       if (_isStale(generation)) return;
       _isLoadingMoreMine = false;
       _mine = [..._mine, ...page.items];
+      _mineTotal = page.total ?? _mineTotal;
       _mineCursor = page.nextCursor;
       _mineHasMore = page.hasMore;
       for (final item in page.items) {
         _submissionIndex[item.id] = item;
       }
       notifyListeners();
-    } catch (_) {
+    } catch (error) {
       if (_isStale(generation)) return;
       _isLoadingMoreMine = false;
       notifyListeners();
+      if (error is CourseEvaluationException &&
+          error.code == CourseEvaluationErrorCodes.invalidInput) {
+        // 服务端升级后旧游标可能失效，重新读取首批而不是困在旧分页上。
+        await loadMine(refresh: true);
+      }
     }
   }
 
@@ -330,7 +345,8 @@ class CourseEvaluationProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final page = await service.listPending(
-        cursor: refresh ? null : (_pendingCursor.isEmpty ? null : _pendingCursor),
+        cursor:
+            refresh ? null : (_pendingCursor.isEmpty ? null : _pendingCursor),
       );
       if (_isStale(generation)) return;
       _pending = page.items;

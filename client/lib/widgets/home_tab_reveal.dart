@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import 'package:flutter/material.dart';
 
 class HomeTabRevealScope extends InheritedWidget {
@@ -73,9 +74,9 @@ class HomeTabRevealItem extends StatelessWidget {
       child: child,
       builder: (context, child) {
         final t = revealCurve.transform(scope.animation.value.clamp(0.0, 1.0));
-        final fadedChild = Opacity(
+        final fadedChild = AppSurfaceOpacity(
           opacity: initialOpacity + (1 - initialOpacity) * t,
-          child: child,
+          child: child!,
         );
         if (MediaQuery.disableAnimationsOf(context)) return fadedChild;
         return Transform.translate(

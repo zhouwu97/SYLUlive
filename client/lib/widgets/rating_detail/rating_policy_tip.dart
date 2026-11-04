@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'ranking_tokens.dart';
 import '../app_card.dart';
+import '../../theme/app_radius.dart';
 
 class RatingPolicyTip extends StatelessWidget {
   final String text;
@@ -29,38 +30,39 @@ class RatingPolicyTip extends StatelessWidget {
         ? RankingTokens.warningColor(isDark)
         : RankingTokens.subColor(isDark);
 
-    return AppContentSurface(
-        child: Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(10),
-        border: isWarning
-            ? Border.all(
-                color:
-                    RankingTokens.warningColor(isDark).withValues(alpha: 0.18),
-              )
-            : null,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(iconData, size: 14, color: iconColor),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                fontSize: 11,
-                height: 1.35,
-                color: RankingTokens.subColor(isDark),
-              ),
-            ),
+    return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: AppCardSurface(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: isWarning
+                ? Border.all(
+                    color: RankingTokens.warningColor(isDark)
+                        .withValues(alpha: 0.18),
+                  )
+                : null,
           ),
-        ],
-      ),
-    ));
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(iconData, size: 14, color: iconColor),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  text,
+                  style: TextStyle(
+                    fontSize: 11,
+                    height: 1.35,
+                    color: appContentSecondaryColor(
+                        context, RankingTokens.subColor(isDark)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ));
   }
 }
 

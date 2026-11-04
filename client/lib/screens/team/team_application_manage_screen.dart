@@ -60,7 +60,7 @@ class _TeamApplicationManageScreenState
           borderSide:
               BorderSide(color: TeamUiTokens.accent(isDark), width: 1.5)),
     );
-    final reply = await showDialog<String>(
+    final reply = await showAppDialog<String>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: Text(accepted ? '通过申请' : '拒绝申请'),
@@ -106,7 +106,7 @@ class _TeamApplicationManageScreenState
   }
 
   Future<void> _remove(WaterTeamApplication app) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
           context: context,
           builder: (dialogContext) => AppAlertDialog(
             title: const Text('移除成员'),
@@ -208,7 +208,7 @@ class _TeamApplicationManageScreenState
                           Icon(Icons.wifi_off_rounded,
                               size: 34, color: TeamUiTokens.subtitle(isDark)),
                           const SizedBox(height: 12),
-                          Center(child: Text(loadError)),
+                          Center(child: AppContentSurface.reading(child: Text(loadError))),
                           Center(
                             child: TextButton(
                               onPressed: _load,
@@ -218,7 +218,7 @@ class _TeamApplicationManageScreenState
                         ],
                       )
                     : apps.isEmpty
-                        ? Container(
+                        ? AppContentSurface.card(child: Container(
                             alignment: Alignment.center,
                             padding: const EdgeInsets.symmetric(horizontal: 24),
                             child: Column(
@@ -242,7 +242,7 @@ class _TeamApplicationManageScreenState
                                           fontWeight: FontWeight.w700,
                                           color: TeamUiTokens.title(isDark))),
                                 ]),
-                          )
+                          ))
                         : ListView.separated(
                             padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                             itemCount: apps.length,

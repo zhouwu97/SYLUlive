@@ -923,7 +923,7 @@ class _CompetitionEventPickerScreenState
       );
     }
     if (_events.isEmpty) {
-      return const Center(child: Text('没有找到匹配的目录赛事'));
+      return const Center(child: AppContentSurface.reading(child: Text('没有找到匹配的目录赛事')));
     }
     return ListView(
       controller: _scrollController,

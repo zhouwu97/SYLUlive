@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import '../widgets/app_card.dart';
 import 'dart:async';
@@ -1169,7 +1170,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             curve: AppMotion.incoming,
             reverseCurve: AppMotion.outgoing,
           );
-          return FadeTransition(
+          return AppSurfaceFadeTransition(
             opacity: curved,
             child: SlideTransition(
               position: Tween<Offset>(
@@ -1284,7 +1285,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             parent: animation,
             curve: Curves.easeOutCubic,
           )),
-          child: FadeTransition(
+          child: AppSurfaceFadeTransition(
             opacity: animation,
             child: child,
           ),
@@ -1405,9 +1406,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               decoration: BoxDecoration(
                 border: Border(
                   right: BorderSide(
-                    color: isDark
+                    color: appCardDividerColor(context, isDark
                         ? Colors.white10
-                        : Colors.black.withValues(alpha: 0.05),
+                        : Colors.black.withValues(alpha: 0.05)),
                     width: _useSplitLayout ? 1 : 0,
                   ),
                 ),
@@ -1693,7 +1694,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Future<void> _confirmDeletePost(Post post) async {
     if (!mounted) return;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: const Text('删除帖子'),
@@ -2210,7 +2211,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final border =
         isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
     return Center(
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(24),
         margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
         decoration: BoxDecoration(
@@ -2270,7 +2271,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final border =
         isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
     return Center(
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(24),
         margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
         decoration: BoxDecoration(
@@ -2734,7 +2735,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 switchInCurve: Curves.easeOut,
                 switchOutCurve: Curves.easeIn,
                 transitionBuilder: (child, animation) {
-                  return FadeTransition(
+                  return AppSurfaceFadeTransition(
                     opacity: animation,
                     child: SlideTransition(
                       position: Tween<Offset>(
@@ -2843,7 +2844,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final border =
         isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
     return Center(
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(AppSpacing.xxl),
         margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
         decoration: BoxDecoration(
@@ -2912,7 +2913,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       );
     }
 
-    return Container(
+    return AppCardSurface(
       key: const ValueKey('feed-skeleton-card'),
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       padding: const EdgeInsets.all(AppSpacing.md),

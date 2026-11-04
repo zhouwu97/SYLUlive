@@ -16,6 +16,7 @@ class PostReplyList extends StatelessWidget {
     super.key,
     required this.replies,
     required this.onReply,
+    this.onOpenThread,
     this.onAuthorTap,
     this.onMore,
     this.onLongPress,
@@ -26,6 +27,7 @@ class PostReplyList extends StatelessWidget {
 
   final List<Reply> replies;
   final ValueChanged<Reply> onReply;
+  final void Function(Reply parentReply, Reply? targetReply)? onOpenThread;
   final ValueChanged<int>? onAuthorTap;
   final ValueChanged<Reply>? onMore;
   final ValueChanged<Reply>? onLongPress;
@@ -85,10 +87,15 @@ class PostReplyList extends StatelessWidget {
             onLike: onLike == null ? null : () => onLike!(reply),
             likePending: isLikePending?.call(reply.id) ?? false,
           ),
-          if (childrenByParent[reply.id]?.isNotEmpty == true)
+          if (childrenByParent[reply.id]?.isNotEmpty == true ||
+              (onOpenThread != null && reply.childReplyCount > 0))
             _ChildReplySummary(
-              replies: childrenByParent[reply.id]!,
+              replies: childrenByParent[reply.id] ?? const [],
+              total: reply.childReplyCount,
               onReply: onReply,
+              onOpenThread: onOpenThread == null
+                  ? null
+                  : (target) => onOpenThread!(reply, target),
             ),
           const SizedBox(height: 16),
         ],
@@ -440,25 +447,31 @@ class _ReplyLikeButton extends StatelessWidget {
 class _ChildReplySummary extends StatelessWidget {
   const _ChildReplySummary({
     required this.replies,
+    required this.total,
     required this.onReply,
+    this.onOpenThread,
   });
 
   final List<Reply> replies;
+  final int total;
   final ValueChanged<Reply> onReply;
+  final ValueChanged<Reply?>? onOpenThread;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final visibleReplies = replies.take(2);
+    final totalReplies = total > replies.length ? total : replies.length;
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(left: 46, top: 4),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: context.watch<ThemeProvider?>()?.frostedGlass == true
-            ? Colors.transparent : isDark
-            ? Colors.white.withValues(alpha: 0.03)
-            : const Color(0xFFF8F9FA),
+            ? Colors.transparent
+            : isDark
+                ? Colors.white.withValues(alpha: 0.03)
+                : const Color(0xFFF8F9FA),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -467,8 +480,14 @@ class _ChildReplySummary extends StatelessWidget {
           for (final reply in visibleReplies)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => onReply(reply),
-              child: Padding(
+              onTap: onOpenThread == null
+                  ? () => onReply(reply)
+                  : () => onOpenThread!(reply),
+              child: Container(
+                constraints: onOpenThread == null
+                    ? null
+                    : const BoxConstraints(minHeight: 44),
+                alignment: Alignment.centerLeft,
                 padding: const EdgeInsets.symmetric(vertical: 3),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -505,9 +524,20 @@ class _ChildReplySummary extends StatelessWidget {
                 ),
               ),
             ),
-          if (replies.length > 2)
+          if (onOpenThread != null)
+            TextButton(
+              onPressed: () => onOpenThread!(null),
+              style: TextButton.styleFrom(
+                minimumSize: const Size(44, 44),
+                visualDensity: VisualDensity.standard,
+                padding: EdgeInsets.zero,
+                alignment: Alignment.centerLeft,
+              ),
+              child: Text('共 $totalReplies 条回复'),
+            )
+          else if (totalReplies > 2)
             Text(
-              '共 ${replies.length} 条回复',
+              '共 $totalReplies 条回复',
               style: const TextStyle(
                 fontSize: 12,
                 color: Color(0xFF6B8EFF),

@@ -19,8 +19,10 @@ class RatingBottomInputBar extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = accentOverride ??
         (isDark ? const Color(0xFF80C4FC) : const Color(0xFF76C4FF));
+    final actionForeground =
+        accent.computeLuminance() > .179 ? Colors.black : Colors.white;
 
-    return Container(
+    return AppCardSurface(
       padding: EdgeInsets.only(
         left: 16,
         right: 16,
@@ -42,7 +44,7 @@ class RatingBottomInputBar extends StatelessWidget {
             child: GestureDetector(
               onTap: onTap,
               behavior: HitTestBehavior.opaque,
-              child: AppCardSurface(
+              child: Container(
                 height: 40,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
@@ -53,15 +55,17 @@ class RatingBottomInputBar extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    Text(
+                    Expanded(
+                        child: Text(
                       '✎ $hintText',
                       style: TextStyle(
                         fontSize: 13,
-                        color: RankingTokens.subColor(isDark),
+                        color: appContentSecondaryColor(
+                            context, RankingTokens.subColor(isDark)),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                    ),
+                    )),
                   ],
                 ),
               ),
@@ -78,12 +82,12 @@ class RatingBottomInputBar extends StatelessWidget {
                 color: accent,
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Text(
+              child: Text(
                 '写评价',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: actionForeground,
                 ),
               ),
             ),

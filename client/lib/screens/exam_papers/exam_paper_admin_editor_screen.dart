@@ -123,7 +123,7 @@ class _ExamPaperAdminEditorScreenState
   }
 
   Future<bool?> _confirm(String content) {
-    return showDialog<bool>(
+    return showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: const Text('请确认'),
@@ -204,6 +204,7 @@ class _ExamPaperAdminEditorScreenState
                           (value?.trim().isEmpty ?? true) ? '课程名不能为空' : null,
                     ),
                     DropdownButtonFormField<String>(
+                      isExpanded: true,
                       initialValue: _year,
                       decoration: const InputDecoration(labelText: '学年'),
                       items: _years
@@ -219,6 +220,7 @@ class _ExamPaperAdminEditorScreenState
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
+                            isExpanded: true,
                             initialValue: _semester,
                             decoration: const InputDecoration(labelText: '学期'),
                             items: ExamPaperMetadata.semesterLabels.entries
@@ -239,6 +241,7 @@ class _ExamPaperAdminEditorScreenState
                         const SizedBox(width: 12),
                         Expanded(
                           child: DropdownButtonFormField<String>(
+                            isExpanded: true,
                             initialValue: _examType,
                             decoration:
                                 const InputDecoration(labelText: '考试类型'),

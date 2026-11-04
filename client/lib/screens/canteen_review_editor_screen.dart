@@ -513,7 +513,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
   ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final remoteUpdated = _baseRatingUpdatedAt;
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogCtx) => AppAlertDialog(
@@ -1014,7 +1014,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
           _baseRatingUpdatedAt = result.remoteUpdatedAt;
         }
         final isDark = Theme.of(context).brightness == Brightness.dark;
-        final resolveAction = await showDialog<String>(
+        final resolveAction = await showAppDialog<String>(
           context: context,
           builder: (dialogCtx) => AppAlertDialog(
             backgroundColor: CanteenTheme.surfaceBg(isDark),

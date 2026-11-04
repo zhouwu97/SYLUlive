@@ -106,7 +106,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
     final appearance = _appearances[kind]!;
     final controller = TextEditingController(text: appearance.title);
     final dialogTheme = CampusTheme.withBrandAccent(Theme.of(context));
-    final title = await showDialog<String>(
+    final title = await showAppDialog<String>(
       context: context,
       builder: (dialogContext) => Theme(
         data: dialogTheme,

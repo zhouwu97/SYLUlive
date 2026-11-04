@@ -271,7 +271,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
     required String confirmText,
   }) async {
     final controller = TextEditingController();
-    return showDialog<String>(
+    return showAppDialog<String>(
       context: context,
       useRootNavigator: false,
       builder: (ctx) => AppAlertDialog(

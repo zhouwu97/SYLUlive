@@ -159,7 +159,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
 
     final isOfficial = isSafeCampusUri(uri);
     if (!isOfficial) {
-      final shouldOpen = await showDialog<bool>(
+      final shouldOpen = await showAppDialog<bool>(
             context: context,
             builder: (dialogContext) => AppAlertDialog(
               title: const Text('打开外部链接？'),

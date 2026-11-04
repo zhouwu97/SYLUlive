@@ -76,14 +76,14 @@ class _MyTeamApplicationsScreenState extends State<MyTeamApplicationsScreen> {
                         if (apps.isEmpty && provider.myApplicationsError == null)
                           const Padding(
                               padding: EdgeInsets.only(top: 160),
-                              child: Center(child: Text('还没有组队申请'))),
+                              child: Center(child: AppContentSurface.reading(child: Text('还没有组队申请')))),
                       ])),
     );
   }
 
   Widget _buildErrorView(WaterTeamProvider provider) {
     return Center(
-      child: Padding(
+      child: AppContentSurface.card(child: Padding(
         padding: const EdgeInsets.all(40),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -101,7 +101,7 @@ class _MyTeamApplicationsScreenState extends State<MyTeamApplicationsScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

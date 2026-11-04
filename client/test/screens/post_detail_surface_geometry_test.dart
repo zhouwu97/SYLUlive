@@ -123,20 +123,33 @@ void main() {
                 .ancestor(of: empty, matching: find.byType(AppCardSurface))
                 .first;
             final rect = tester.getRect(surface);
-            if (scene == 'post') {
+            if (scene == 'post' || scene == 'market-detail') {
               final card = tester.widget<AppCardSurface>(surface);
               expect((card.decoration! as BoxDecoration).borderRadius,
                   BorderRadius.circular(AppRadius.lg));
             }
             final composer = tester.getRect(find.byType(PostReplyComposer));
-            expect(composer.top - rect.bottom, inInclusiveRange(0, 24),
-                reason: '输入栏已经独立占位，正文末尾不能再重复预留高度');
+            expect(
+                composer.top - rect.bottom, scene == 'market-detail' ? 0 : 16,
+                reason: '正文卡片必须填到输入栏，不能因图片覆盖平移留下 24px 壁纸空带');
+            if (scene == 'post') {
+              final label = find.text('评论 0').first;
+              final action = tester.widget<Container>(find
+                  .ancestor(of: label, matching: find.byType(Container))
+                  .first);
+              final border =
+                  (action.decoration! as BoxDecoration).border! as Border;
+              expect(border.top.color.a, glass ? 0 : greaterThan(0));
+              expect(border.bottom.color.a, glass ? 0 : greaterThan(0));
+            }
             if (before != null) expect(rect, before);
             before = rect;
             expect(tester.takeException(), isNull);
           }
           await tester.pumpWidget(const SizedBox.shrink());
-          if (profile.endsWith('images')) await flushMockPublicImageTimers(tester);
+          if (profile.endsWith('images')) {
+            await flushMockPublicImageTimers(tester);
+          }
         });
       }
     }

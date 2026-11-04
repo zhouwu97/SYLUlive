@@ -54,7 +54,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
     final provider = context.read<MajorProvider>();
     final messenger = ScaffoldMessenger.of(context);
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('删除评价'),
@@ -94,7 +94,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
 
-    final confirm = await showDialog<bool>(
+    final confirm = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('删除专业'),

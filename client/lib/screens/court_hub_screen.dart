@@ -200,7 +200,7 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
         : escalation == 'insufficient_jury'
             ? '暂无足够合格陪审员，案件由独立管理员复核。'
             : '社区评议未达到法定人数，以上票数仅作评议记录；最终由独立管理员复核。';
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: Text('案件 #${appeal['id']} · 已结案'),

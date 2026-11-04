@@ -1,4 +1,5 @@
 import 'package:shenliyuan/widgets/app_dialog.dart';
+import 'package:shenliyuan/widgets/app_input_surface.dart';
 import '../../widgets/app_card.dart';
 import 'dart:async';
 
@@ -351,7 +352,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
   }
 
   Future<void> _deleteConfiguration() async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: const Text('删除模型配置？'),
@@ -466,9 +467,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                   ),
                   const SizedBox(height: 18),
                 ],
-                AppCardSurface(
-                    decoration:
-                        BoxDecoration(borderRadius: BorderRadius.circular(12)),
+                AppInputSurface(
                     child: TextField(
                       controller: _endpointController,
                       keyboardType: TextInputType.url,
@@ -481,9 +480,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                       ),
                     )),
                 const SizedBox(height: 18),
-                AppCardSurface(
-                    decoration:
-                        BoxDecoration(borderRadius: BorderRadius.circular(12)),
+                AppInputSurface(
                     child: TextField(
                       controller: _apiKeyController,
                       obscureText: true,
@@ -496,9 +493,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                       ),
                     )),
                 const SizedBox(height: 18),
-                AppCardSurface(
-                    decoration:
-                        BoxDecoration(borderRadius: BorderRadius.circular(12)),
+                AppInputSurface(
                     child: TextField(
                       controller: _modelController,
                       autocorrect: false,
@@ -507,13 +502,11 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                           filled: false, labelText: '模型名称'),
                     )),
                 const SizedBox(height: 18),
-                AppCardSurface(
-                    decoration:
-                        BoxDecoration(borderRadius: BorderRadius.circular(12)),
+                AppInputSurface(
                     child: DropdownButtonFormField<OpenAIWireApi>(
                       key: ValueKey(_wireApi),
                       initialValue: _wireApi,
-                      decoration: const InputDecoration(labelText: '请求协议'),
+                      decoration: const InputDecoration(filled: false, labelText: '请求协议'),
                       items: OpenAIWireApi.values
                           .map(
                             (wireApi) => DropdownMenuItem(

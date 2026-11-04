@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
 import 'dart:async';
 
@@ -888,7 +889,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     String? result;
     try {
-      result = await showDialog<String>(
+      result = await showAppDialog<String>(
         context: context,
         barrierDismissible: false,
         builder: (ctx) => Dialog(
@@ -1220,7 +1221,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     bool? readAll;
     try {
-      readAll = await showDialog<bool>(
+      readAll = await showAppDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder: (ctx) => StatefulBuilder(

@@ -32,7 +32,7 @@ class CanteenDetailHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return AppContentSurface(
+    return AppContentSurface.card(
         child: Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Column(
@@ -82,7 +82,7 @@ class CanteenDetailHeader extends StatelessWidget {
               '该店当前已下架，历史评价仅供参考',
               style: TextStyle(
                 fontSize: 12,
-                color: CanteenTheme.textSecondaryColor(isDark),
+                color: appContentSecondaryColor(context, CanteenTheme.textSecondaryColor(isDark)),
               ),
             ),
           ],
@@ -108,7 +108,7 @@ class CanteenDetailHeader extends StatelessWidget {
                 '$ratingCount 人评价',
                 style: TextStyle(
                   fontSize: 14,
-                  color: CanteenTheme.textSecondaryColor(isDark),
+                  color: appContentSecondaryColor(context, CanteenTheme.textSecondaryColor(isDark)),
                 ),
               ),
             ],
@@ -119,7 +119,7 @@ class CanteenDetailHeader extends StatelessWidget {
               '$dishCount 道菜 · $dishWithPhotoCount 道有实拍 · $dishPhotoCount 张同学实拍',
               style: TextStyle(
                 fontSize: 13,
-                color: CanteenTheme.textTertiaryColor(isDark),
+                color: appContentSecondaryColor(context, CanteenTheme.textTertiaryColor(isDark)),
               ),
             ),
           ],

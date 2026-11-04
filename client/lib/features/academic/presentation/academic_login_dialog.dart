@@ -41,7 +41,7 @@ final class AcademicLoginDialog extends StatefulWidget {
     bool changeIdentity = false,
     bool addIdentity = false,
   }) {
-    return showDialog<bool>(
+    return showAppDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (_) => AcademicLoginDialog(

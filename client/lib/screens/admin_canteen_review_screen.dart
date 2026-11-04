@@ -111,7 +111,7 @@ class _AdminCanteenReviewScreenState extends State<AdminCanteenReviewScreen> {
     if (id == 0) return;
     final name = (item['name'] ?? '').toString();
 
-    final reason = await showDialog<String>(
+    final reason = await showAppDialog<String>(
       context: context,
       builder: (ctx) {
         final controller = TextEditingController();

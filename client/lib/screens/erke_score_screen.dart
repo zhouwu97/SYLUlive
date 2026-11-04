@@ -17,6 +17,7 @@ import '../features/academic/application/academic_session_controller.dart';
 import '../theme/app_colors.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/erke_snapshot_upload_dialog.dart';
+import '../widgets/erke_query_progress.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import '../widgets/app_card.dart';
 import '../widgets/global_background_wrapper.dart';
@@ -279,7 +280,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       AppFeedback.showSnackBar(context, '请先登录', isError: true);
       return;
     }
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: const Text('删除已上传二课快照？'),
@@ -593,41 +594,11 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           ),
           if (_isLoading) ...[
             const SizedBox(height: 16),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
+            ErkeQueryProgress(
               decoration: _softCardDecoration(isDark),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('查询进度',
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Color(0xFF147C72)),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _loadingMessage.isNotEmpty
-                              ? _loadingMessage
-                              : '系统正在自动完成 WebVPN 穿透',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: isDark ? Colors.white70 : Colors.black87,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+              message: _loadingMessage.isNotEmpty
+                  ? _loadingMessage
+                  : '系统正在自动完成 WebVPN 穿透',
             ),
           ] else ...[
             const SizedBox(height: 30),

@@ -55,7 +55,7 @@ class _AdminWaterIconReviewScreenState
   Future<void> _handleReview(
       WaterSectionIconReview review, bool isApprove) async {
     final reasonController = TextEditingController();
-    final bool? confirm = await showDialog<bool>(
+    final bool? confirm = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: Text(isApprove ? '同意更换头像' : '拒绝更换头像'),
@@ -144,7 +144,7 @@ class _AdminWaterIconReviewScreenState
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _reviews.isEmpty
-              ? const Center(child: Text('暂无数据'))
+              ? const Center(child: AppContentSurface.reading(child: Text('暂无数据')))
               : ListView.separated(
                   padding: const EdgeInsets.all(16),
                   itemCount: _reviews.length,

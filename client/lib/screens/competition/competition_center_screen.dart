@@ -1716,7 +1716,10 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
   String _rawValue(String key) => '${_eventRaw[key] ?? ''}'.trim();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final event = _event;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = CompetitionUiTokens.pageBg(isDark);
@@ -1753,11 +1756,11 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                 )
               : event == null
                   ? Center(
-                      child: Text(
+                      child: AppContentSurface.reading(child: Text(
                         '比赛不存在',
                         style: TextStyle(
                             color: CompetitionUiTokens.subColor(isDark)),
-                      ),
+                      )),
                     )
                   : ListView(
                       padding: const EdgeInsets.all(16),
@@ -2449,7 +2452,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
 
   Future<void> _deleteItem(Map<String, dynamic> item) async {
     final dio = context.read<AuthProvider>().dio;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: const Text('删除比赛'),
@@ -2503,7 +2506,10 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = CompetitionUiTokens.pageBg(isDark);
     final titleColor = CompetitionUiTokens.titleColor(isDark);
@@ -2891,7 +2897,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
     final isDelete = action == 'delete';
     final dio = context.read<AuthProvider>().dio;
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => CompetitionBatchConfirmDialog(
         title: '确认批量$actionLabel',
@@ -3220,7 +3226,10 @@ class _CompetitionCalendarItemEditorScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = CompetitionUiTokens.pageBg(isDark);
     final titleColor = CompetitionUiTokens.titleColor(isDark);
@@ -3279,44 +3288,7 @@ class _CompetitionCalendarItemEditorScreenState
                 const SizedBox(height: 12),
                 _input(_competitionLevelController, '比赛级别', isDark: isDark),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        initialValue: _recommendation,
-                        decoration: _inputDecoration('推荐程度', isDark),
-                        items: const [
-                          DropdownMenuItem(value: 'S', child: Text('S 强烈推荐')),
-                          DropdownMenuItem(value: 'A', child: Text('A 推荐')),
-                          DropdownMenuItem(value: 'B', child: Text('B 可参加')),
-                          DropdownMenuItem(value: 'C', child: Text('C 兴趣')),
-                        ],
-                        onChanged: (value) =>
-                            setState(() => _recommendation = value ?? 'A'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        initialValue: _recognition,
-                        decoration: _inputDecoration('学校认定', isDark),
-                        items: const [
-                          DropdownMenuItem(
-                              value: 'recognized', child: Text('已认定')),
-                          DropdownMenuItem(
-                            value: 'not_recognized',
-                            child: Text('未认定'),
-                          ),
-                          DropdownMenuItem(
-                              value: 'pending', child: Text('待确认')),
-                          DropdownMenuItem(value: 'unknown', child: Text('未知')),
-                        ],
-                        onChanged: (value) =>
-                            setState(() => _recognition = value ?? 'pending'),
-                      ),
-                    ),
-                  ],
-                ),
+                _recommendationFields(isDark),
               ],
               isDark),
           _buildFormGroup(
@@ -3373,6 +3345,66 @@ class _CompetitionCalendarItemEditorScreenState
           ),
         ),
       ),
+    );
+  }
+
+  Widget _recommendationFields(bool isDark) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final painter = TextPainter(
+          text: TextSpan(
+            text: 'S 强烈推荐',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout();
+        // 选项文字、箭头与输入框内边距必须能同时放下，否则整项换行。
+        final minimumWidth = painter.width + 24 + 28;
+        painter.dispose();
+        final halfWidth = (constraints.maxWidth - 10) / 2;
+        final fieldWidth = halfWidth >= minimumWidth
+            ? halfWidth
+            : constraints.maxWidth;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 12,
+          children: [
+            SizedBox(
+              width: fieldWidth,
+              child: DropdownButtonFormField<String>(
+                isExpanded: true,
+                initialValue: _recommendation,
+                decoration: _inputDecoration('推荐程度', isDark),
+                items: const [
+                  DropdownMenuItem(value: 'S', child: Text('S 强烈推荐')),
+                  DropdownMenuItem(value: 'A', child: Text('A 推荐')),
+                  DropdownMenuItem(value: 'B', child: Text('B 可参加')),
+                  DropdownMenuItem(value: 'C', child: Text('C 兴趣')),
+                ],
+                onChanged: (value) =>
+                    setState(() => _recommendation = value ?? 'A'),
+              ),
+            ),
+            SizedBox(
+              width: fieldWidth,
+              child: DropdownButtonFormField<String>(
+                isExpanded: true,
+                initialValue: _recognition,
+                decoration: _inputDecoration('学校认定', isDark),
+                items: const [
+                  DropdownMenuItem(value: 'recognized', child: Text('已认定')),
+                  DropdownMenuItem(value: 'not_recognized', child: Text('未认定')),
+                  DropdownMenuItem(value: 'pending', child: Text('待确认')),
+                  DropdownMenuItem(value: 'unknown', child: Text('未知')),
+                ],
+                onChanged: (value) =>
+                    setState(() => _recognition = value ?? 'pending'),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -3606,7 +3638,10 @@ class _CompetitionShareImportScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final items = (_preview?['items'] as List?) ?? [];
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(

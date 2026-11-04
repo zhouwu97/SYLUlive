@@ -7,6 +7,9 @@ import 'package:shenliyuan/providers/canteen_provider.dart';
 import 'package:shenliyuan/widgets/canteen/dish_gallery_section.dart';
 
 import '../../helpers/mock_public_image_http.dart';
+import '../../helpers/golden_test_app.dart';
+import '../../helpers/golden_viewport.dart';
+import '../../helpers/load_test_fonts.dart';
 
 CanteenDish _dish(
   int id,
@@ -47,6 +50,37 @@ Widget _wrap(
 }
 
 void main() {
+  setUpAll(loadTestFonts);
+  testWidgets('菜品卡内容随真实字体缩放增高，保留实拍和统计', (tester) async {
+    await setGoldenViewport(tester, GoldenViewports.phone360x800);
+    await tester.runAsync(() => installMockPublicImageHttp());
+    addTearDown(uninstallMockPublicImageHttp);
+    for (final scale in [1.0, 1.3, 1.5]) {
+      await tester.pumpWidget(ChangeNotifierProvider(
+        create: (_) => CanteenProvider(Dio()),
+        child: GoldenTestApp(
+          textScaler: TextScaler.linear(scale),
+          home: Scaffold(
+              body: SingleChildScrollView(
+                  child: DishGallerySection(
+            canteenId: 1,
+            canteenName: '本地验收',
+            initialDishes: [
+              _dish(1, '校园招牌盖饭', coverImage: '/uploads/ok.jpg', photoCount: 123)
+            ],
+          ))),
+        ),
+      ));
+      await tester.pump();
+      expect(find.text('校园招牌盖饭'), findsOneWidget);
+      expect(find.text('123 张实拍'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+    await flushMockPublicImageTimers(tester);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('无实拍地址的菜品不渲染卡片，有图菜品保留', (tester) async {
     await tester.pumpWidget(_wrap([
       _dish(1, '麻辣拌', coverImage: '/uploads/a.jpg'),

@@ -178,7 +178,7 @@ class _PostContentLinkTextState extends State<PostContentLinkText> {
   }
 
   Future<void> _confirmOpen(Uri uri) async {
-    final shouldOpen = await showDialog<bool>(
+    final shouldOpen = await showAppDialog<bool>(
           context: context,
           builder: (dialogContext) => AppAlertDialog(
             title: const Text('打开网页？'),

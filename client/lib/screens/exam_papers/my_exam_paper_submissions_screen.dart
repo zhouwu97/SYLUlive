@@ -131,7 +131,7 @@ class _MyExamPaperSubmissionsScreenState
   }
 
   Future<void> _withdraw(ExamPaper paper) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: const Text('撤回投稿'),
@@ -163,7 +163,7 @@ class _MyExamPaperSubmissionsScreenState
     if (_deleting.contains(paper.id)) return;
     setState(() => _deleting.add(paper.id));
     try {
-      final confirmed = await showDialog<bool>(
+      final confirmed = await showAppDialog<bool>(
         context: context,
         builder: (context) => AppAlertDialog(
           title: const Text('永久删除投稿'),

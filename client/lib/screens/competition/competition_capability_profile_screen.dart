@@ -235,7 +235,7 @@ class _CompetitionCapabilityProfileScreenState
     return Container(
       decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+          top: BorderSide(color: appCardDividerColor(context, CompetitionUiTokens.borderColor(isDark))),
         ),
       ),
       child: _accessError != null && _aiAccess == null

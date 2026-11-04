@@ -144,7 +144,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 // 选项
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
+                  child: Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
                     children: [
                       _optionChip('目录', _includeToc, (v) {
                         setState(() {
@@ -152,21 +154,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                           _convert();
                         });
                       }),
-                      const SizedBox(width: 4),
                       _optionChip('统计', _includeStats, (v) {
                         setState(() {
                           _includeStats = v;
                           _convert();
                         });
                       }),
-                      const SizedBox(width: 4),
                       _optionChip('标答案', _markCorrect, (v) {
                         setState(() {
                           _markCorrect = v;
                           _convert();
                         });
                       }),
-                      const SizedBox(width: 4),
                       _optionChip('按章节', _groupByChapter, (v) {
                         setState(() {
                           _groupByChapter = v;

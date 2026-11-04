@@ -97,7 +97,7 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
     if (_busy || session == null || !_owns(session)) return;
     setState(() => _busy = true);
     try {
-      final confirmed = await showDialog<bool>(
+      final confirmed = await showAppDialog<bool>(
         context: context,
         builder: (dialogContext) => SecuritySessionGuard(
             auth: context.read<AuthProvider>(),

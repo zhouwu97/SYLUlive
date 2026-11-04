@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
 import 'dart:async';
 import '../widgets/app_page_background.dart';
@@ -282,8 +283,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         // 捕获局部变量防止异步期间 _lastUserId 变化
         final capturedUserId = currentUserId;
         final capturedContext = sessionContext;
-        eduProvider.setUserId(currentUserId);
         Future<void> initFlow() async {
+          eduProvider.setUserId(capturedUserId);
           await eduProvider.ensureStatusLoaded();
           if (!mounted ||
               _lastUserId != capturedUserId ||
@@ -1333,7 +1334,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       curve: AppMotion.incoming,
       reverseCurve: AppMotion.outgoing,
     );
-    return FadeTransition(
+    return AppSurfaceFadeTransition(
       opacity: curved,
       child: SlideTransition(
         position: Tween<Offset>(

@@ -212,7 +212,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
 
   Widget _buildErrorView(bool isDark) {
     return Center(
-      child: Padding(
+      child: AppContentSurface.card(child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -242,7 +242,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 
@@ -1028,7 +1028,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
 
   void _confirmTagStatus(WaterSection section, WaterSectionTag tag) {
     final willEnable = !tag.isEnabled;
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: Text(willEnable ? '恢复标签' : '归档标签'),
@@ -1308,7 +1308,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   }
 
   void _confirmRevoke(WaterSectionModerator mod) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('罢免版主'),
@@ -1467,7 +1467,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   }
 
   void _confirmUnmute(WaterSectionMute mute) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('解除禁言'),
@@ -1660,7 +1660,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
 
   Future<void> _confirmRestorePost(WaterModerationLog log) async {
     final reasonController = TextEditingController(text: '恢复误删帖子');
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('恢复帖子'),

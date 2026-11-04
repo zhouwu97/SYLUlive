@@ -57,7 +57,7 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
   }
 
   Future<void> _clearLogs() async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: const Text('清空诊断记录'),

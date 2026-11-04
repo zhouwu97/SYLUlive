@@ -324,7 +324,7 @@ class _PhysicalPercentileReportScreenState
 
   Widget _buildErrorState(bool isDark) {
     return Center(
-      child: Padding(
+      child: AppContentSurface.card(child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -360,13 +360,13 @@ class _PhysicalPercentileReportScreenState
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 
   Widget _buildEmptyState(bool isDark) {
     return Center(
-      child: Padding(
+      child: AppContentSurface.card(child: Padding(
         padding: const EdgeInsets.all(32),
         child: Text(
           '当前成绩里没有可用于对比的体测项目',
@@ -378,7 +378,7 @@ class _PhysicalPercentileReportScreenState
                 : AppColors.textSecondaryLight,
           ),
         ),
-      ),
+      )),
     );
   }
 }

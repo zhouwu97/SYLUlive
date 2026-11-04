@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
+import 'opacity_safe_backdrop_filter.dart';
 
 /// 卡片和弹层的毛玻璃门控，与壁纸模糊和液态底栏设置相互独立。
 class FrostedGlass extends StatelessWidget {
@@ -31,7 +32,7 @@ class FrostedGlass extends StatelessWidget {
     );
     final useFrostedGlass = appearance.$1;
     final strength = appearance.$2;
-    return BackdropFilter(
+    return OpacitySafeBackdropFilter(
       // 开关与 0% 都只禁用渲染层，不重建页面、滚动、焦点或异步内容。
       enabled: useFrostedGlass && strength > 0 && sigmaX > 0 && sigmaY > 0,
       filter: ImageFilter.blur(

@@ -9,7 +9,7 @@ Future<bool> confirmAcademicUnbind(BuildContext context) async {
   final session = context.read<AcademicSessionController>();
   final identity = session.identity;
   if (identity == null) return false;
-  final confirmed = await showDialog<bool>(
+  final confirmed = await showAppDialog<bool>(
     context: context,
     builder: (dialogContext) => AppAlertDialog(
       title: Text('解绑${identity.providerId.displayName}？'),

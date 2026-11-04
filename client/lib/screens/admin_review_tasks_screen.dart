@@ -399,7 +399,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       _PendingPostRectification item, bool approve) async {
     final decision = approve ? 'approve' : 'reject';
     final reasonController = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: Text(approve ? '通过整改复审' : '驳回整改复审'),
@@ -604,7 +604,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       _PendingCourseEvaluation evaluation) {
     final controller = TextEditingController();
     String? errorText;
-    return showDialog<String>(
+    return showAppDialog<String>(
       context: context,
       useRootNavigator: false,
       builder: (ctx) => StatefulBuilder(
@@ -764,7 +764,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
 
   Future<void> _mergeTeacherInto(
       int pendingId, int keeperId, String keeperName) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('确认合并到已有教师'),
@@ -1028,7 +1028,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     final name = (canteen['name'] ?? '').toString();
     final messenger = ScaffoldMessenger.of(context);
 
-    final reason = await showDialog<String>(
+    final reason = await showAppDialog<String>(
       context: context,
       useRootNavigator: false,
       builder: (ctx) {
@@ -1095,7 +1095,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     required String confirmText,
   }) async {
     final controller = TextEditingController();
-    return showDialog<String>(
+    return showAppDialog<String>(
       context: context,
       useRootNavigator: false,
       builder: (ctx) => AppAlertDialog(
@@ -1140,7 +1140,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       body = const Center(child: CircularProgressIndicator());
     } else if (_fatalError != null) {
       body = Center(
-        child: Column(
+        child: AppContentSurface.reading(child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(_fatalError!),
@@ -1150,7 +1150,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
               child: const Text('重新加载'),
             ),
           ],
-        ),
+        )),
       );
     } else {
       body = Column(
@@ -1678,7 +1678,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         ? '整改前后对比 (举报快照 → $submittedVersionText)'
         : '整改前后对比 ($moderatedVersionText → $submittedVersionText)';
 
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: Row(

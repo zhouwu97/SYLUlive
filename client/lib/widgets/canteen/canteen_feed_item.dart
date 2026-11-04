@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import 'package:flutter/material.dart';
 import '../../config/api_constants.dart';
 import '../../models/canteen_home.dart';
@@ -39,7 +40,7 @@ class _CanteenFeedItemCardState extends State<CanteenFeedItemCard> {
       onTapCancel: () => setState(() => _pressed = false),
       onTap: widget.onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedOpacity(
+      child: AppSurfaceAnimatedOpacity(
         opacity: _pressed ? 0.94 : 1.0,
         duration: AppMotion.micro,
         curve: AppMotion.standard,

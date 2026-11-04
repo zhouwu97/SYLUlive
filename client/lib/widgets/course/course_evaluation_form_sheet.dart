@@ -90,6 +90,14 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
     final resolve = widget.resolveResult;
 
     _subjects = resolve?.courseSubjects ?? const [];
+    if (_subjects.isEmpty && submission?.courseSubjectId != null) {
+      _subjects = [
+        CourseSubjectCandidate(
+          id: submission!.courseSubjectId!,
+          name: submission.subjectDisplayName,
+        ),
+      ];
+    }
     _star = submission?.star ?? 0;
     _teacherNameController = TextEditingController(
       text: submission?.teacherName.isNotEmpty == true
@@ -619,7 +627,7 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
           maxLines: 4,
           maxLength: kCourseEvaluationCommentMaxLength,
           decoration: const InputDecoration(
-            hintText: '授课风格、考核方式、内容难度等（最多 200 字）',
+            hintText: '授课风格、考核方式、内容难度等（最多 $kCourseEvaluationCommentMaxLength 字）',
             border: OutlineInputBorder(),
             isDense: true,
           ),

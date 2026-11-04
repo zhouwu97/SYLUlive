@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../providers/theme_provider.dart';
 import '../theme/app_radius.dart';
+import '../theme/app_motion.dart';
 import 'app_card.dart';
+import 'app_surface_transition.dart';
 
 /// 菜单路由保留原条目、键盘操作和返回值，仅用一层共用玻璃承载菜单。
 class AppPopupMenuButton<T> extends StatelessWidget {
@@ -85,6 +87,8 @@ class AppPopupMenuButton<T> extends StatelessWidget {
       shadowColor: glass ? Colors.transparent : shadowColor,
       shape: glass ? glassShape : shape,
       clipBehavior: glass ? Clip.antiAlias : Clip.none,
+      // 系统菜单同时淡入整窗和条目；滤镜由下方表面自行过渡。
+      popUpAnimationStyle: glass ? AnimationStyle.noAnimation : null,
       menuPadding: glass ? EdgeInsets.zero : menuPadding,
       itemBuilder: (menuContext) {
         final entries = itemBuilder(menuContext);
@@ -128,9 +132,31 @@ class _GlassMenuGroup<T> extends PopupMenuEntry<T> {
   State<_GlassMenuGroup<T>> createState() => _GlassMenuGroupState<T>();
 }
 
-class _GlassMenuGroupState<T> extends State<_GlassMenuGroup<T>> {
+class _GlassMenuGroupState<T> extends State<_GlassMenuGroup<T>>
+    with SingleTickerProviderStateMixin {
+  late final _controller = AnimationController(
+    vsync: this,
+    duration: AppMotion.overlay,
+  )..forward();
+  late final _opacity =
+      _controller.drive(CurveTween(curve: AppMotion.standard));
+
   @override
-  Widget build(BuildContext context) => AppCardMaterial(
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _controller.duration = AppMotion.duration(context, AppMotion.overlay);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AppSurfaceFadeTransition(
+      opacity: _opacity,
+      child: AppCardMaterial(
         color: widget.color,
         shape: widget.shape,
         clipBehavior: Clip.antiAlias,
@@ -144,5 +170,5 @@ class _GlassMenuGroupState<T> extends State<_GlassMenuGroup<T>> {
                       : entry)
                   .toList(growable: false),
             )),
-      );
+      ));
 }

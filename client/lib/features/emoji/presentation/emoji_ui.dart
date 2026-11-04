@@ -456,7 +456,7 @@ Future<void> showEmojiPreview(BuildContext context, EmojiPreviewItem item,
               child: const Text('关闭'))
         ],
       );
-  await showDialog<void>(
+  await showAppDialog<void>(
       context: context,
       builder: (dialogContext) =>
           StatefulBuilder(builder: (context, setPreviewState) {

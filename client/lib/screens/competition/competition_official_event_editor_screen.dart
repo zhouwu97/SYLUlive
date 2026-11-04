@@ -583,7 +583,7 @@ class _CompetitionOfficialEventEditorScreenState
           decoration: BoxDecoration(
             color: bg,
             border: Border(
-              top: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+              top: BorderSide(color: appCardDividerColor(context, CompetitionUiTokens.borderColor(isDark))),
             ),
           ),
           child: Row(

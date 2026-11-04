@@ -1,3 +1,4 @@
+import '../widgets/app_card.dart';
 import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'dart:async';
@@ -1450,9 +1451,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         color: _chatSurfaceColor(isDark),
         border: Border(
           bottom: BorderSide(
-            color: isDark
+            color: appCardDividerColor(context, isDark
                 ? AppColors.composerDividerDark
-                : AppColors.composerDividerLight,
+                : AppColors.composerDividerLight),
           ),
         ),
       ),

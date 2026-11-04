@@ -320,7 +320,7 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
     final store = _store;
     final epoch = _accountEpoch;
     if (store == null) return;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
         context: context,
         builder: (context) => AnimatedBuilder(
             animation: _recentManager,
@@ -720,11 +720,14 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
             padding: const EdgeInsets.fromLTRB(
                 AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
             sliver: SliverToBoxAdapter(
-                child: EmojiContentCard(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                   _managementTabs(),
+                  const SizedBox(height: AppSpacing.md),
+                  EmojiContentCard(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
                   EmojiSectionHeader(
                       title: '我的收藏',
                       detail: items == null ? null : '${items.length} 个收藏',
@@ -757,7 +760,8 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
                                 icon: const Icon(
                                     Icons.add_photo_alternate_outlined),
                                 label: const Text('添加图片'))),
-                ])))),
+                ])),
+                ]))),
         if (items?.isNotEmpty == true)
           SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),

@@ -72,7 +72,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final isCanteenTarget = _isCanteenGovernanceTarget(targetType);
     String? confirmedReasonCode;
 
-    final action = await showDialog<String>(
+    final action = await showAppDialog<String>(
       context: context,
       builder: (ctx) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -253,7 +253,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-              ? Center(child: Text(_errorMessage!))
+              ? Center(child: AppContentSurface.reading(child: Text(_errorMessage!)))
               : _buildReportsContent(isDark),
     );
   }
@@ -261,8 +261,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Widget _buildReportsContent(bool isDark) {
     if (_reportsForbidden) {
       return Center(
-        child: Text('当前账号暂无举报处理权限',
-            style: TextStyle(color: isDark ? Colors.white : Colors.black)),
+        child: AppContentSurface.reading(child: Text('当前账号暂无举报处理权限',
+            style: TextStyle(color: isDark ? Colors.white : Colors.black))),
       );
     }
     final pending = _reports.where((r) => r['status'] == 'pending').toList();
@@ -282,8 +282,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           ],
           if (pending.isEmpty)
             const Center(
-                child: Padding(
-                    padding: EdgeInsets.all(32), child: Text('暂无待处理举报'))),
+                child: AppContentSurface.card(child: Padding(
+                    padding: EdgeInsets.all(32), child: Text('暂无待处理举报')))),
           if (handled.isNotEmpty) ...[
             const SizedBox(height: 16),
             _buildSectionHeader(

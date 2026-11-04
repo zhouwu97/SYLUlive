@@ -1,3 +1,4 @@
+import '../widgets/app_page_background.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -60,7 +61,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   Future<void> _addTeacher() async {
     final nameCtrl = TextEditingController();
     final deptCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -130,7 +131,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
 
   Future<void> _rateTeacher(dynamic teacher) async {
     final commentCtrl = TextEditingController();
-    final rating = await showDialog<String>(
+    final rating = await showAppDialog<String>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -176,7 +177,10 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(

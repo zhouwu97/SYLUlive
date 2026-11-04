@@ -109,6 +109,15 @@ void main() {
                     of: find.byKey(const ValueKey('publish-section-surface')),
                     matching: activeBackdropFilters()),
                 clean ? findsNothing : findsOneWidget);
+            final fields = find.byType(TextFormField);
+            final titleSurface = find.ancestor(
+                of: fields.first, matching: find.byType(AppCardSurface));
+            final bodySurface = find.ancestor(
+                of: fields.at(1), matching: find.byType(AppCardSurface));
+            expect(titleSurface, findsOneWidget);
+            expect(bodySurface, findsOneWidget);
+            expect(titleSurface.evaluate().single, bodySurface.evaluate().single,
+                reason: '标题和正文共用连续底面，避免相邻底面重叠');
           }
 
           final input = page == 'poll'
@@ -116,9 +125,24 @@ void main() {
               : find.byType(TextFormField).first;
           await tester.enterText(input, '保留发布草稿');
           await tester.pump();
+          Rect? waterContentRect;
+          if (page == 'water') {
+            final content = find.byType(TextFormField).at(1);
+            await tester.enterText(content, '正文输入在切换材质后仍保留焦点和草稿。');
+            await tester.pumpAndSettle();
+            waterContentRect = tester.getRect(content);
+          }
           await appearance.setFrostedGlass(false);
           await tester.pumpAndSettle();
           expect(find.text('保留发布草稿'), findsOneWidget);
+          if (page == 'water') {
+            expect(find.text('正文输入在切换材质后仍保留焦点和草稿。'), findsOneWidget);
+            expect(tester.getRect(find.byType(TextFormField).at(1)), waterContentRect);
+            final editable = tester.widget<EditableText>(
+                find.descendant(of: find.byType(TextFormField).at(1),
+                    matching: find.byType(EditableText)));
+            expect(editable.focusNode.hasFocus, isTrue);
+          }
           expect(
               find.descendant(
                   of: bottom, matching: activeBackdropFilters()),

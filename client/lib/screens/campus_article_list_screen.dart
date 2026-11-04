@@ -623,13 +623,13 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Center(
-          child: Text(
+          child: AppContentSurface.reading(child: Text(
             '没有更多了',
             style: TextStyle(
               fontSize: 12.5,
               color: isDark ? Colors.white30 : CampusTheme.subText,
             ),
-          ),
+          )),
         ),
       );
     }

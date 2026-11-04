@@ -164,7 +164,7 @@ class _CourtScreenState extends State<CourtScreen> {
   }) async {
     final controller = TextEditingController();
     final scheme = Theme.of(context).colorScheme;
-    final result = await showDialog<String>(
+    final result = await showAppDialog<String>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) {
@@ -270,7 +270,7 @@ class _CourtScreenState extends State<CourtScreen> {
                       icon: const Icon(Icons.refresh),
                       label: Text(_error!)))
               : appeal == null
-                  ? const Center(child: Text('申诉不存在'))
+                  ? const Center(child: AppContentSurface.reading(child: Text('申诉不存在')))
                   : _content(appeal),
     );
   }
@@ -423,7 +423,7 @@ class _RoleHint extends StatelessWidget {
   const _RoleHint({required this.text});
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => AppCardSurface(
         width: double.infinity,
         margin: const EdgeInsets.only(top: 10),
         padding: const EdgeInsets.all(12),
@@ -576,7 +576,7 @@ class _EvidenceSection extends StatelessWidget {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(title, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
-          Text(content),
+          AppContentSurface.reading(child: Text(content)),
         ]),
       );
 }

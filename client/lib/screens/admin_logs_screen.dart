@@ -57,7 +57,7 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-              ? Center(child: Text(_errorMessage!))
+              ? Center(child: AppContentSurface.reading(child: Text(_errorMessage!)))
               : _buildLogsContent(isDark),
     );
   }
@@ -65,10 +65,10 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
   Widget _buildLogsContent(bool isDark) {
     if (_logs.isEmpty) {
       return Center(
-        child: Text(
+        child: AppContentSurface.reading(child: Text(
           '暂无操作日志',
           style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600]),
-        ),
+        )),
       );
     }
     return RefreshIndicator(

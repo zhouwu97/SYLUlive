@@ -104,7 +104,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
 
     if (!context.mounted) return;
 
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(

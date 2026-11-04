@@ -46,10 +46,12 @@ void main() {
                 ),
                 FilledButton(
                   focusNode: focus,
-                  style: appGlassButtonStyle(context, FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF147C72),
-                    foregroundColor: Colors.white,
-                  )),
+                  style: appGlassButtonStyle(
+                      context,
+                      FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF147C72),
+                        foregroundColor: Colors.white,
+                      )),
                   onPressed: enabled ? () => pressed++ : null,
                   child: const Text('保存'),
                 ),
@@ -58,8 +60,10 @@ void main() {
           ),
         ));
         await tester.pumpAndSettle();
-        expect(Theme.of(tester.element(find.text('全部'))).canvasColor,
-            clean ? (dark ? AppTheme.darkTheme : AppTheme.lightTheme).canvasColor
+        expect(
+            Theme.of(tester.element(find.text('全部'))).canvasColor,
+            clean
+                ? (dark ? AppTheme.darkTheme : AppTheme.lightTheme).canvasColor
                 : Colors.transparent,
             reason: '简洁模式恢复原底色，自定义背景不能被 RawChip 默认 Material 遮住');
         final button = tester.widget<FilledButton>(find.byType(FilledButton));
@@ -68,10 +72,17 @@ void main() {
         expect(button.style!.backgroundColor!.resolve({}),
             clean ? const Color(0xFF147C72) : Colors.transparent);
         expect(button.style!.backgroundBuilder, clean ? isNull : isNotNull);
-        expect(find.byType(Opacity), findsNothing);
-        final filters = tester.widgetList<BackdropFilter>(activeBackdropFilters());
+        expect(
+            tester
+                .widgetList<Opacity>(find.byType(Opacity))
+                .every((opacity) => opacity.opacity == 1),
+            isTrue,
+            reason: '静止状态只调整底面透明度，前景保持清晰');
+        final filters =
+            tester.widgetList<BackdropFilter>(activeBackdropFilters());
         expect(filters, hasLength(clean ? 0 : 2));
-        expect(filters.every((filter) => filter.blendMode == BlendMode.src), isTrue);
+        expect(filters.every((filter) => filter.blendMode == BlendMode.src),
+            isTrue);
         await tester.tap(find.text('全部'));
         await tester.pumpAndSettle();
         expect(selected, false);
@@ -89,7 +100,8 @@ void main() {
         await appearance.setFrostedGlass(false);
         await tester.pumpAndSettle();
         expect(activeBackdropFilters(), findsNothing);
-        expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed, isNull);
+        expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+            isNull);
         expect(tester.takeException(), isNull);
       });
     }

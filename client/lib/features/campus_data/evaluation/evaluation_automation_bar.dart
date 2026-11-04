@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'evaluation_automation_models.dart';
@@ -57,7 +58,7 @@ class EvaluationAutomationBar extends StatelessWidget {
           color: isDark ? Colors.grey[900] : Colors.white,
           border: Border(
             top: BorderSide(
-              color: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+              color: appCardDividerColor(context, isDark ? Colors.grey[800]! : Colors.grey[300]!),
             ),
           ),
         ),
@@ -155,7 +156,7 @@ class EvaluationAutomationBar extends StatelessWidget {
           color: isDark ? Colors.grey[900] : Colors.white,
           border: Border(
             top: BorderSide(
-              color: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+              color: appCardDividerColor(context, isDark ? Colors.grey[800]! : Colors.grey[300]!),
             ),
           ),
         ),
@@ -241,7 +242,7 @@ class EvaluationAutomationBar extends StatelessWidget {
   }
 
   Future<bool?> _showConfirmDialog(BuildContext context, bool isDark) {
-    return showDialog<bool>(
+    return showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('自动批量处理'),
@@ -265,7 +266,7 @@ class EvaluationAutomationBar extends StatelessWidget {
   }
 
   Future<bool?> _showSubmitConfirmDialog(BuildContext context, bool isDark) {
-    return showDialog<bool>(
+    return showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Row(

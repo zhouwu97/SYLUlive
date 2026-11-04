@@ -163,7 +163,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
     final casController = TextEditingController();
     final erkeController = TextEditingController();
     try {
-      return await showDialog<PersonalErkeCredentials>(
+      return await showAppDialog<PersonalErkeCredentials>(
         context: context,
         builder: (dialogContext) => AppAlertDialog(
           title: const Text('更新二课数据'),
@@ -348,7 +348,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
   }
 
   Future<void> _confirm(String title, Future<void> Function() action) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: Text(title),

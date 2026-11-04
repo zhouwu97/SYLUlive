@@ -108,7 +108,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
   Future<void> _withdrawConsent() async {
     if (_revoking) return;
     var password = '';
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: const Text('撤销全部同意'),
@@ -173,7 +173,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
   Future<void> _showCancelAccountDialog() async {
     final passwordController = TextEditingController();
     final auth = context.read<AuthProvider>();
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: const Text('注销账号'),
@@ -732,7 +732,10 @@ class _PersonalDataScreenState extends State<_PersonalDataScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final account = widget.data['account'] is Map
         ? Map<String, dynamic>.from(widget.data['account'] as Map)
         : const <String, dynamic>{};

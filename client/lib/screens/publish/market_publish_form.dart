@@ -119,7 +119,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     if (_isLoading) {
       // 发布进行中，返回等于取消这次发布。必须让用户明确选择，
       // 不能因为 [_hasDraft] 被判成 false 就无声离开、让旧流程继续提交。
-      final confirmed = await showDialog<bool>(
+      final confirmed = await showAppDialog<bool>(
         context: context,
         builder: (_) => AppAlertDialog(
           title: const Text('取消本次发布？'),
@@ -148,7 +148,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (_) => AppAlertDialog(
         title: const Text('放弃编辑？'),

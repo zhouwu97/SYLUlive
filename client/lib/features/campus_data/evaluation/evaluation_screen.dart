@@ -107,7 +107,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('一键填写'),
@@ -134,7 +134,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
   }
 
   Future<void> _handleClearCookies() async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('清除登录状态'),
@@ -686,7 +686,7 @@ class DiagnosticsDialog {
   const DiagnosticsDialog._();
 
   static void show(BuildContext context, String message) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Row(

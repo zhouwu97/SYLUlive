@@ -217,7 +217,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     setState(() => _actionBusy = true);
     var enteredNote = '';
     try {
-      final note = await showDialog<String>(
+      final note = await showAppDialog<String>(
         context: context,
         builder: (dialogContext) => SecuritySessionGuard(
             auth: context.read<AuthProvider>(),
@@ -414,7 +414,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     var globalConfirmed = false;
     var reason = securityEventTitle(event);
     try {
-      final confirmed = await showDialog<bool>(
+      final confirmed = await showAppDialog<bool>(
         context: context,
         builder: (dialogContext) => SecuritySessionGuard(
             auth: context.read<AuthProvider>(),

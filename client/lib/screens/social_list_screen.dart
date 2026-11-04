@@ -236,10 +236,10 @@ class _UserListState extends State<_UserList> {
           slivers: [
             SliverFillRemaining(
               child: Center(
-                child: Text(
+                child: AppContentSurface.reading(child: Text(
                   widget.type == 'following' ? '暂无关注' : '暂无粉丝',
                   style: const TextStyle(color: Colors.grey),
-                ),
+                )),
               ),
             ),
           ],
@@ -304,7 +304,7 @@ class _UserListState extends State<_UserList> {
           SizedBox(
             height: 260,
             child: Center(
-              child: Column(
+              child: AppContentSurface.card(child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(Icons.cloud_off, color: Colors.grey, size: 42),
@@ -317,7 +317,7 @@ class _UserListState extends State<_UserList> {
                     child: const Text('重试'),
                   ),
                 ],
-              ),
+              )),
             ),
           ),
         ],

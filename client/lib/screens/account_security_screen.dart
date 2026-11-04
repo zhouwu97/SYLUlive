@@ -107,7 +107,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     final formKey = GlobalKey<FormState>();
     final emailKey = GlobalKey<FormFieldState<String>>();
     try {
-      await showDialog<void>(
+      await showAppDialog<void>(
         context: context,
         barrierDismissible: false,
         builder: (_) => SecuritySessionGuard(
@@ -240,7 +240,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     var submitting = false;
     final formKey = GlobalKey<FormState>();
     try {
-      await showDialog<void>(
+      await showAppDialog<void>(
         context: context,
         barrierDismissible: false,
         builder: (_) => SecuritySessionGuard(
@@ -327,7 +327,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     var submitting = false;
     final formKey = GlobalKey<FormState>();
     try {
-      await showDialog<void>(
+      await showAppDialog<void>(
         context: context,
         barrierDismissible: false,
         builder: (_) => SecuritySessionGuard(

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:flutter/material.dart';
 
@@ -34,7 +35,7 @@ class TeamRecruitmentCard extends StatelessWidget {
     final visibleRoles = recruitment.roles.take(3).toList(growable: false);
     final extraRoleCount = recruitment.roles.length - visibleRoles.length;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Opacity(
+    return AppSurfaceOpacity(
       opacity: isInactive ? 0.62 : 1,
       child: AppCard(
         margin: EdgeInsets.zero,

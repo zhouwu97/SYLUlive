@@ -48,7 +48,7 @@ func (s *CourseEvaluationService) ApproveWithOptions(adminID, submissionID uint,
 		// 幂等：同一 revision 已发布时直接返回，不重复写评价与通知。
 		if submission.Status == models.CourseEvaluationStatusPublished {
 			if submission.Revision == revision {
-				view, err = s.toSubmissionView(submission)
+				view, err = (&CourseEvaluationService{db: tx}).toSubmissionView(submission)
 				return err
 			}
 			return courseEvalErr(CodeCourseEvaluationRevisionConflict, "该评价已更新，请刷新后重试", nil)

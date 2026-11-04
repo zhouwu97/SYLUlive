@@ -18,16 +18,17 @@ const (
 	CourseEvaluationStatusSuperseded = "superseded"
 )
 
-// 课程评价来源。目前只允许从正式教务课表发起。
+// 评价来源仅用于溯源，两个入口共用同一主记录。
 const (
-	CourseEvaluationSourceSchedule = "schedule"
+	CourseEvaluationSourceSchedule      = "schedule"
+	CourseEvaluationSourceLegacyTeacher = "legacy_teacher"
 )
 
 // 课程名与教师名的长度上限。
 const (
 	CourseSubjectNameMaxLength      = 100
 	TeacherNameMaxLength            = 50
-	CourseEvaluationCommentMaxRunes = 200
+	CourseEvaluationCommentMaxRunes = 500
 )
 
 // CourseSubject 标准学科实体。课程评价只依附于标准学科，
@@ -84,7 +85,7 @@ const (
 	CourseSubjectMatchContains CourseSubjectMatchKind = "contains"
 )
 
-// CourseEvaluationSubmission 一次课程评价提交申请。
+// CourseEvaluationSubmission 评价的唯一可编辑主记录，包含提交和审核状态。
 // 同一用户在同一学科下通过 dedup_key 保证只有一条进行中的申请。
 type CourseEvaluationSubmission struct {
 	ID       uint   `gorm:"primaryKey" json:"id"`

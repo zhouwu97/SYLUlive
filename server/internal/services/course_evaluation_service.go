@@ -153,6 +153,7 @@ type SubmissionView struct {
 	Revision            int       `json:"revision"`
 	ReviewReason        string    `json:"review_reason,omitempty"`
 	TeacherRatingID     *uint     `json:"teacher_rating_id,omitempty"`
+	TeacherRatingStatus string    `json:"teacher_rating_status,omitempty"`
 	ProposedCourseName  string    `json:"proposed_course_name,omitempty"`
 	ProposedTeacherName string    `json:"proposed_teacher_name,omitempty"`
 	CreatedAt           time.Time `json:"created_at"`
@@ -721,7 +722,7 @@ func (s *CourseEvaluationService) applySubmission(tx *gorm.DB, submission *model
 		submission.TeacherRatingID = &rating.ID
 	}
 
-	return s.toSubmissionView(submission)
+	return (&CourseEvaluationService{db: tx}).toSubmissionView(submission)
 }
 
 // resolveCanonicalCourseSubject 递归解引用 MergedIntoID 直至活动学科实体。
@@ -1037,6 +1038,14 @@ func (s *CourseEvaluationService) toSubmissionView(sub *models.CourseEvaluationS
 		ProposedTeacherName: sub.ProposedTeacherName,
 		CreatedAt:           sub.CreatedAt,
 		UpdatedAt:           sub.UpdatedAt,
+	}
+	if sub.TeacherRatingID != nil {
+		var projection models.TeacherRating
+		if err := s.db.Select("id", "status").Where("id = ? AND user_id = ?", *sub.TeacherRatingID, sub.UserID).
+			Find(&projection).Error; err != nil {
+			return nil, courseEvalErr(CodeCourseEvaluationSubjectUnavailable, "读取评价发布状态失败", err)
+		}
+		view.TeacherRatingStatus = projection.Status
 	}
 	if sub.CourseSubjectID == nil || *sub.CourseSubjectID == 0 {
 		view.WillCreateSubject = true

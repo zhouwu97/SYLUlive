@@ -400,6 +400,15 @@ func (h *CourseEvaluationHandler) ListMine(c *gin.Context) {
 		return
 	}
 	limit, cursor := parseCourseEvaluationPage(c)
+	if c.Query("include_teacher_ratings") == "true" {
+		page, err := h.service.ListAcademicContent(userID, limit, cursor, c.Query("include_content_counts") == "true")
+		if err != nil {
+			respondCourseEvaluationError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, page)
+		return
+	}
 	page, err := h.service.ListMine(userID, limit, cursor)
 	if err != nil {
 		respondCourseEvaluationError(c, err)

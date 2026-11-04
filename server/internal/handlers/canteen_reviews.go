@@ -418,25 +418,27 @@ func (h *CanteenHandler) DeleteReview(c *gin.Context) {
 			if err := tx.First(&dish, dishID).Error; err != nil {
 				continue
 			}
-			if dish.Status != models.DishStatusPending {
+			// 只撤回本人创建、且仍处于可见生命周期的菜品；其他作者的菜品、
+			// 已驳回/已合并的菜品保留原状态和原因，避免把治理结果一起覆盖。
+			if dish.CreatedBy != review.UserID {
 				continue
 			}
-			var evidence int64
-			if err := tx.Model(&models.CanteenDishPhoto{}).
-				Where("dish_id = ? AND status IN ?", dish.ID, []string{models.DishPhotoStatusPending, models.DishPhotoStatusApproved}).Count(&evidence).Error; err != nil {
+			if dish.Status != models.DishStatusPending && dish.Status != models.DishStatusActive {
+				continue
+			}
+			// 关联、实拍、菜品评分或旧版推荐只要还有一条有效证据，就说明这道菜
+			// 已脱离本次评价独立存在，不能随评价删除。
+			evidence, err := canteenDishLiveEvidenceCount(tx, dish.ID, true)
+			if err != nil {
 				return err
 			}
-			var otherRelations int64
-			if err := tx.Model(&models.CanteenReviewEventDish{}).
-				Where("dish_id = ?", dish.ID).Count(&otherRelations).Error; err != nil {
-				return err
+			if evidence > 0 {
+				continue
 			}
-			if evidence == 0 && otherRelations == 0 {
-				if err := tx.Model(&models.CanteenDish{}).Where("id = ?", dish.ID).Updates(map[string]interface{}{
-					"status": models.DishStatusArchived, "reject_reason": "唯一评价证据已删除",
-				}).Error; err != nil {
-					return err
-				}
+			if err := tx.Model(&models.CanteenDish{}).Where("id = ?", dish.ID).Updates(map[string]interface{}{
+				"status": models.DishStatusArchived, "reject_reason": "唯一评价证据已删除",
+			}).Error; err != nil {
+				return err
 			}
 		}
 		return services.ReconcileFilePublicAccess(tx, oldImageFileIDs...)
@@ -1289,8 +1291,9 @@ func (h *CanteenHandler) GetMyCanteenReviews(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// GetMyCanteenContributions 返回用户提交的 pending/approved/rejected 菜品与实拍，
+// GetMyCanteenContributions 返回用户提交且仍然有效的菜品与实拍，
 // 让投稿不会在评价发布后失去追踪入口。
+// 评价被删除后归档的实拍、只剩孤立菜品的记录不再返回，避免已删除内容继续显示。
 // GET /api/user/canteen-contributions
 func (h *CanteenHandler) GetMyCanteenContributions(c *gin.Context) {
 	userID, ok := authenticatedUserID(c)
@@ -1321,10 +1324,26 @@ func (h *CanteenHandler) GetMyCanteenContributions(c *gin.Context) {
 	seen := make(map[string]struct{})
 	seenDishContributions := make(map[uint]struct{}, len(dishes))
 	for _, dish := range dishes {
-		seenDishContributions[dish.DishID] = struct{}{}
+		if dish.DishStatus == models.DishStatusArchived {
+			continue
+		}
 		var photos []models.CanteenDishPhoto
-		_ = h.db.Where("dish_id = ? AND user_id = ?", dish.DishID, userID).Order("created_at DESC, id DESC").Find(&photos).Error
+		_ = h.db.Where("dish_id = ? AND user_id = ? AND status <> ?", dish.DishID, userID, models.DishPhotoStatusArchived).
+			Order("created_at DESC, id DESC").Find(&photos).Error
 		if len(photos) == 0 {
+			if dish.DishStatus == models.DishStatusActive {
+				// 评价删除后只剩孤立菜品的记录不再是有效贡献；仍被其他评价、
+				// 实拍或菜品评分引用的菜品继续展示。
+				evidence, err := canteenDishLiveEvidenceCount(h.db, dish.DishID, false)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "获取食堂贡献失败"})
+					return
+				}
+				if evidence == 0 {
+					continue
+				}
+			}
+			seenDishContributions[dish.DishID] = struct{}{}
 			item := map[string]interface{}{
 				"type": "dish", "dish_id": dish.DishID, "dish_name": dish.DishName,
 				"canteen_id": dish.CanteenID, "canteen_name": dish.CanteenName,
@@ -1337,6 +1356,7 @@ func (h *CanteenHandler) GetMyCanteenContributions(c *gin.Context) {
 			items = append(items, item)
 			continue
 		}
+		seenDishContributions[dish.DishID] = struct{}{}
 		for _, photo := range photos {
 			key := fmt.Sprintf("%d:%d", dish.DishID, photo.ID)
 			seen[key] = struct{}{}
@@ -1354,7 +1374,8 @@ func (h *CanteenHandler) GetMyCanteenContributions(c *gin.Context) {
 	}
 	// 用户也可以给已有 active 菜补图，此时菜品不是 created_by 本人，只返回其图片贡献。
 	var photos []models.CanteenDishPhoto
-	_ = h.db.Where("user_id = ?", userID).Order("created_at DESC, id DESC").Find(&photos).Error
+	_ = h.db.Where("user_id = ? AND status <> ?", userID, models.DishPhotoStatusArchived).
+		Order("created_at DESC, id DESC").Find(&photos).Error
 	for _, photo := range photos {
 		key := fmt.Sprintf("%d:%d", photo.DishID, photo.ID)
 		if _, exists := seen[key]; exists {
@@ -1362,6 +1383,9 @@ func (h *CanteenHandler) GetMyCanteenContributions(c *gin.Context) {
 		}
 		var dish models.CanteenDish
 		if h.db.First(&dish, photo.DishID).Error != nil {
+			continue
+		}
+		if dish.Status == models.DishStatusArchived {
 			continue
 		}
 		var canteen models.Canteen
@@ -1399,7 +1423,7 @@ func (h *CanteenHandler) GetMyCanteenContributions(c *gin.Context) {
 			Joins("JOIN canteens c ON c.id = d.canteen_id").
 			Joins("LEFT JOIN canteen_dishes merged_target ON merged_target.id = d.merged_into_dish_id").
 			Select("r.dish_id, d.canteen_id, c.name AS canteen_name, d.name AS dish_name, d.status AS dish_status, d.reject_reason AS dish_reason, d.merged_into_dish_id, merged_target.name AS merged_into_dish_name, e.created_at AS submitted_at").
-			Where("e.user_id = ? AND e.status = ? AND d.status <> ?", userID, models.ReviewEventStatusActive, models.DishStatusActive).
+			Where("e.user_id = ? AND e.status = ? AND d.status <> ? AND d.status <> ?", userID, models.ReviewEventStatusActive, models.DishStatusActive, models.DishStatusArchived).
 			Order("e.created_at DESC, r.id DESC").Find(&reviewDishes).Error; err == nil {
 			for _, dish := range reviewDishes {
 				if _, exists := seenDishContributions[dish.DishID]; exists {
@@ -1421,6 +1445,60 @@ func (h *CanteenHandler) GetMyCanteenContributions(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+// canteenDishLiveEvidenceCount 统计菜品仍被多少条有效记录支撑：有效评价关联、
+// 实拍、有效菜品评分和旧版评价推荐。评价删除后只剩孤立菜品时这些计数都为 0，
+// 该菜品既不再算作用户仍持有的贡献，也应在删除事务里一并撤回。
+// includePendingPhotos 供删除路径使用：尚未审核的历史实拍同样是用户提交的证据。
+func canteenDishLiveEvidenceCount(db *gorm.DB, dishID uint, includePendingPhotos bool) (int64, error) {
+	if dishID == 0 {
+		return 0, nil
+	}
+	var total int64
+	if db.Migrator().HasTable(&models.CanteenReviewEventDish{}) {
+		var count int64
+		if err := db.Table("canteen_review_event_dishes AS r").
+			Joins("JOIN canteen_review_events AS e ON e.id = r.review_event_id").
+			Where("r.dish_id = ? AND e.status = ?", dishID, models.ReviewEventStatusActive).
+			Count(&count).Error; err != nil {
+			return 0, err
+		}
+		total += count
+	}
+	if db.Migrator().HasTable(&models.CanteenDishPhoto{}) {
+		var count int64
+		query := db.Model(&models.CanteenDishPhoto{}).Where("dish_id = ?", dishID)
+		if includePendingPhotos {
+			query = query.Where("status IN ?", []string{models.DishPhotoStatusPending, models.DishPhotoStatusApproved})
+		} else {
+			query = query.Where("status = ?", models.DishPhotoStatusApproved)
+		}
+		if err := query.Count(&count).Error; err != nil {
+			return 0, err
+		}
+		total += count
+	}
+	if db.Migrator().HasTable(&models.CanteenDishReviewEvent{}) {
+		var count int64
+		if err := db.Model(&models.CanteenDishReviewEvent{}).
+			Where("dish_id = ? AND status = ?", dishID, models.ReviewEventStatusActive).
+			Count(&count).Error; err != nil {
+			return 0, err
+		}
+		total += count
+	}
+	if db.Migrator().HasTable(&models.CanteenRatingDishRecommendation{}) && db.Migrator().HasTable(&models.CanteenRating{}) {
+		var count int64
+		if err := db.Table("canteen_rating_dish_recommendations AS rec").
+			Joins("JOIN canteen_ratings AS cr ON cr.id = rec.rating_id").
+			Where("rec.dish_id = ? AND cr.status <> ?", dishID, models.ReviewEventStatusDeleted).
+			Count(&count).Error; err != nil {
+			return 0, err
+		}
+		total += count
+	}
+	return total, nil
 }
 
 func encodeMyCanteenReviewCursor(cursor myCanteenReviewCursor) string {

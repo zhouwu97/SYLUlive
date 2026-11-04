@@ -1076,3 +1076,189 @@ func containsString(body []byte, value string) bool {
 	}
 	return false
 }
+
+func TestDeleteReviewWithdrawsDishLeftWithoutOtherEvidence(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	created := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
+		`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"新发现的菜","dishes":[{"dish_name":"荔枝鸡腿肉藤双拼饭"}]}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", created.Code, created.Body.String())
+	}
+	var dish models.CanteenDish
+	if err := h.db.Where("canteen_id = ? AND normalized_name = ?", canteen.ID, "荔枝鸡腿肉藤双拼饭").First(&dish).Error; err != nil {
+		t.Fatalf("dish missing: %v", err)
+	}
+	var event models.CanteenReviewEvent
+	if err := h.db.Where("canteen_id = ? AND user_id = ?", canteen.ID, user.ID).First(&event).Error; err != nil {
+		t.Fatalf("review event missing: %v", err)
+	}
+	before := performCanteenRequest(t, h.GetMyCanteenContributions, http.MethodGet,
+		"/api/user/canteen-contributions", nil, user.ID, "")
+	if before.Code != http.StatusOK || !strings.Contains(before.Body.String(), dish.Name) {
+		t.Fatalf("contributions before delete status=%d body=%s", before.Code, before.Body.String())
+	}
+
+	deleted := performCanteenRequest(t, h.DeleteReview, http.MethodDelete,
+		"/api/canteens/reviews/"+itoaForTest(event.ID), mapParams("reviewId", itoaForTest(event.ID)), user.ID, "")
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", deleted.Code, deleted.Body.String())
+	}
+
+	var refreshed models.CanteenDish
+	if err := h.db.First(&refreshed, dish.ID).Error; err != nil {
+		t.Fatalf("dish reload failed: %v", err)
+	}
+	if refreshed.Status != models.DishStatusArchived || refreshed.RejectReason != "唯一评价证据已删除" {
+		t.Fatalf("dish after delete status=%s reason=%q", refreshed.Status, refreshed.RejectReason)
+	}
+
+	after := performCanteenRequest(t, h.GetMyCanteenContributions, http.MethodGet,
+		"/api/user/canteen-contributions", nil, user.ID, "")
+	if after.Code != http.StatusOK {
+		t.Fatalf("contributions after delete status=%d body=%s", after.Code, after.Body.String())
+	}
+	if strings.Contains(after.Body.String(), dish.Name) {
+		t.Fatalf("deleted review dish still listed: %s", after.Body.String())
+	}
+}
+
+func TestDeleteReviewKeepsDishReferencedByAnotherActiveReview(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	created := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
+		`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"我先发现的菜","dishes":[{"dish_name":"铁板豆腐"}]}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", created.Code, created.Body.String())
+	}
+	var dish models.CanteenDish
+	if err := h.db.Where("canteen_id = ? AND normalized_name = ?", canteen.ID, "铁板豆腐").First(&dish).Error; err != nil {
+		t.Fatalf("dish missing: %v", err)
+	}
+	var event models.CanteenReviewEvent
+	if err := h.db.Where("canteen_id = ? AND user_id = ?", canteen.ID, user.ID).First(&event).Error; err != nil {
+		t.Fatalf("review event missing: %v", err)
+	}
+
+	other := models.User{ID: 91, StudentID: "student-91", PasswordHash: "test", Nickname: "另一位同学"}
+	if err := h.db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	seedVerifiedStudent(t, h.db, other)
+	second := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), other.ID,
+		fmt.Sprintf(`{"taste_score":4,"value_score":4,"queue_score":3,"hygiene_score":4,"service_score":4,"comment":"同款菜","dishes":[{"dish_id":%d}]}`, dish.ID))
+	if second.Code != http.StatusCreated {
+		t.Fatalf("second review status=%d body=%s", second.Code, second.Body.String())
+	}
+
+	deleted := performCanteenRequest(t, h.DeleteReview, http.MethodDelete,
+		"/api/canteens/reviews/"+itoaForTest(event.ID), mapParams("reviewId", itoaForTest(event.ID)), user.ID, "")
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", deleted.Code, deleted.Body.String())
+	}
+
+	var refreshed models.CanteenDish
+	if err := h.db.First(&refreshed, dish.ID).Error; err != nil {
+		t.Fatalf("dish reload failed: %v", err)
+	}
+	if refreshed.Status != models.DishStatusActive {
+		t.Fatalf("dish with other review evidence was withdrawn: %+v", refreshed)
+	}
+	contributions := performCanteenRequest(t, h.GetMyCanteenContributions, http.MethodGet,
+		"/api/user/canteen-contributions", nil, user.ID, "")
+	if contributions.Code != http.StatusOK || !strings.Contains(contributions.Body.String(), dish.Name) {
+		t.Fatalf("dish with live evidence missing: status=%d body=%s", contributions.Code, contributions.Body.String())
+	}
+}
+
+func TestMyCanteenContributionsHideArchivedPhotoEvidence(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	file := createTestFile(t, h.db, 902, user.ID, models.FileAccessPrivate)
+	dish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "猪排饭", NormalizedName: "猪排饭",
+		Status: models.DishStatusActive, CreatedBy: user.ID,
+	}
+	if err := h.db.Create(&dish).Error; err != nil {
+		t.Fatal(err)
+	}
+	photo := models.CanteenDishPhoto{
+		DishID: dish.ID, FileID: file.ID, UserID: user.ID,
+		Status: models.DishPhotoStatusArchived, RejectReason: "评价已删除",
+	}
+	if err := h.db.Create(&photo).Error; err != nil {
+		t.Fatal(err)
+	}
+	contributions := performCanteenRequest(t, h.GetMyCanteenContributions, http.MethodGet,
+		"/api/user/canteen-contributions", nil, user.ID, "")
+	if contributions.Code != http.StatusOK {
+		t.Fatalf("contributions status=%d body=%s", contributions.Code, contributions.Body.String())
+	}
+	if strings.Contains(contributions.Body.String(), "dish_photo") || strings.Contains(contributions.Body.String(), dish.Name) {
+		t.Fatalf("archived evidence still listed: %s", contributions.Body.String())
+	}
+}
+
+func TestMyCanteenContributionsHideOrphanActiveDish(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	dish := models.CanteenDish{
+		CanteenID: canteen.ID, Name: "孤立菜品", NormalizedName: "孤立菜品",
+		Status: models.DishStatusActive, CreatedBy: user.ID,
+	}
+	if err := h.db.Create(&dish).Error; err != nil {
+		t.Fatal(err)
+	}
+	contributions := performCanteenRequest(t, h.GetMyCanteenContributions, http.MethodGet,
+		"/api/user/canteen-contributions", nil, user.ID, "")
+	if contributions.Code != http.StatusOK {
+		t.Fatalf("contributions status=%d body=%s", contributions.Code, contributions.Body.String())
+	}
+	if strings.Contains(contributions.Body.String(), dish.Name) {
+		t.Fatalf("orphan dish still listed: %s", contributions.Body.String())
+	}
+}
+
+func TestMyCanteenContributionsClearAfterDeletingReview(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	first := createTestFile(t, h.db, 921, user.ID, models.FileAccessPrivate)
+	second := createTestFile(t, h.db, 922, user.ID, models.FileAccessPrivate)
+	created := performCanteenRequest(t, h.CreateReview, http.MethodPost,
+		"/api/canteens/88/reviews", mapParams("id", "88"), user.ID,
+		fmt.Sprintf(`{"taste_score":5,"value_score":4,"queue_score":4,"hygiene_score":4,"service_score":4,"comment":"猪排饭","dishes":[{"dish_name":"猪排饭","photo_file_ids":[%d,%d]}]}`, first.ID, second.ID))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", created.Code, created.Body.String())
+	}
+	var dish models.CanteenDish
+	if err := h.db.Where("canteen_id = ? AND normalized_name = ?", canteen.ID, "猪排饭").First(&dish).Error; err != nil {
+		t.Fatalf("dish missing: %v", err)
+	}
+	var event models.CanteenReviewEvent
+	if err := h.db.Where("canteen_id = ? AND user_id = ?", canteen.ID, user.ID).First(&event).Error; err != nil {
+		t.Fatalf("review event missing: %v", err)
+	}
+	// 模拟历史未审核实拍（当前流程直接进入 approved），删除评价时它们应随评价归档。
+	if err := h.db.Model(&models.CanteenDishPhoto{}).Where("dish_id = ?", dish.ID).
+		Update("status", models.DishPhotoStatusPending).Error; err != nil {
+		t.Fatal(err)
+	}
+	before := performCanteenRequest(t, h.GetMyCanteenContributions, http.MethodGet,
+		"/api/user/canteen-contributions", nil, user.ID, "")
+	if before.Code != http.StatusOK || strings.Count(before.Body.String(), "dish_photo") != 2 {
+		t.Fatalf("contributions before delete status=%d body=%s", before.Code, before.Body.String())
+	}
+
+	deleted := performCanteenRequest(t, h.DeleteReview, http.MethodDelete,
+		"/api/canteens/reviews/"+itoaForTest(event.ID), mapParams("reviewId", itoaForTest(event.ID)), user.ID, "")
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", deleted.Code, deleted.Body.String())
+	}
+
+	after := performCanteenRequest(t, h.GetMyCanteenContributions, http.MethodGet,
+		"/api/user/canteen-contributions", nil, user.ID, "")
+	if after.Code != http.StatusOK {
+		t.Fatalf("contributions after delete status=%d body=%s", after.Code, after.Body.String())
+	}
+	if strings.Contains(after.Body.String(), dish.Name) || strings.Contains(after.Body.String(), "dish_photo") {
+		t.Fatalf("deleted review leftovers still listed: %s", after.Body.String())
+	}
+}

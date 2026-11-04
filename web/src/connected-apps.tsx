@@ -454,17 +454,18 @@ function BotPanel({ active, onConnect }: { active: boolean; onConnect: () => voi
 
 
 function ConnectionStatus({ query: q, nickname, onManage }: { query: ConnectionsQuery; nickname: string; onManage: () => void }) {
-  const active = q.data?.bindings?.filter(binding => binding.state === "active") || [];
+  const known = !q.error && Array.isArray(q.data?.bindings);
+  const active = Array.isArray(q.data?.bindings) ? q.data.bindings.filter(binding => binding.state === "active") : [];
   return <section className="connection-status" aria-label="当前连接状态" aria-live="polite" aria-busy={q.isFetching}>
     <Icon name="monitor" size={22} />
     <div>
-      <strong>{q.isPending ? "正在核对连接状态…" : q.error ? "连接状态未确认" : active.length ? "已连接 AstrBot" : "当前没有有效连接"}</strong>
-      {q.isPending ? <p>正在读取当前账号的授权，不需要输入连接码。</p> : q.error
+      <strong>{q.isPending ? "正在核对连接状态…" : !known ? "连接状态未确认" : q.isFetching ? "正在更新连接状态…" : active.length ? "已连接 AstrBot" : "当前没有有效连接"}</strong>
+      {q.isPending ? <p>正在读取当前账号的授权，不需要输入连接码。</p> : !known
         ? <p>读取失败不能判断为未绑定。请先重试，不要重复生成连接或撤销已有授权。</p>
         : active.length ? <><p>{nickname} 已授权给 {active.map(binding => binding.installation_name).join("、")}。无需再填连接码。</p><p>后台是否正在执行，请查看「机器人设置与运行」中的启用状态与心跳。</p></>
         : <p>先在 AstrBot 发起本人的连接请求，再回到这里核对；已有机器人资料会保留。</p>}
     </div>
-    {q.error ? <button className="btn" type="button" disabled={q.isFetching} onClick={() => void q.refetch()}>重试读取连接状态</button>
+    {!known && !q.isPending ? <button className="btn" type="button" disabled={q.isFetching} onClick={() => void q.refetch()}>重试读取连接状态</button>
       : <button className="btn" type="button" disabled={q.isPending} onClick={onManage}>{active.length ? "管理连接" : "开始连接"}</button>}
   </section>;
 }
@@ -473,12 +474,13 @@ function CurrentConnections({ query: q, nickname, busy, disconnect, confirmed, o
   query: ConnectionsQuery; nickname: string; busy: boolean; disconnect: Binding | null; confirmed: boolean;
   onDisconnect: (binding: Binding) => void; onCancelDisconnect: () => void; onConfirmed: (value: boolean) => void; onRevoke: (id: string) => void;
 }) {
-  const bindings = q.data?.bindings || [], active = bindings.filter(binding => binding.state === "active"), history = bindings.filter(binding => binding.state !== "active");
+  const known = !q.error && Array.isArray(q.data?.bindings);
+  const bindings = Array.isArray(q.data?.bindings) ? q.data.bindings : [], active = bindings.filter(binding => binding.state === "active"), history = bindings.filter(binding => binding.state !== "active");
   return <>
-    <header className="integration-connections-heading"><h2>{q.isPending || q.error ? "连接管理" : active.length ? "当前有效连接" : "当前没有有效连接"}</h2>
+    <header className="integration-connections-heading"><h2>{q.isPending || !known ? "连接管理" : active.length ? "当前有效连接" : "当前没有有效连接"}</h2>
       <button className="btn" type="button" disabled={q.isFetching} onClick={() => void q.refetch()}>{q.isFetching ? "正在刷新连接列表…" : "刷新连接列表"}</button>
     </header>
-    {q.isPending ? <p role="status">正在读取连接，请稍候…</p> : q.error
+    {q.isPending ? <p role="status">正在读取连接，请稍候…</p> : !known
       ? <p className="integration-hint">连接状态尚未核验；可点击「刷新连接列表」重试，现有授权不会因此被撤销。</p>
       : <>
         {q.isFetching && <p className="integration-hint" role="status">正在更新连接状态，下面保留上次读取的结果…</p>}
@@ -683,7 +685,32 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide }: { nicknam
         await queryClient.invalidateQueries({ queryKey: ["api", "/api/connected-apps/bot"] });
       }
     } catch (e) {
-      if (current()) setMessage(explain(e));
+      if (current()) {
+        setSuccess(""); setDisconnectConfirmed(false);
+        setMessage("断开请求未取得确定结果，正在只读核对连接状态；不会自动重试断开。");
+        try {
+          // 写入回包丢失不代表失败；只读核对一次，不能据缓存重发撤销。
+          const verified = await q.refetch();
+          if (!current()) return;
+          if (verified.error || !Array.isArray(verified.data?.bindings)) {
+            setMessage("断开结果未确认：暂时无法读取最新连接状态。请重试读取状态，未自动重复断开操作。");
+            return;
+          }
+          const binding = verified.data.bindings.find(item => item.binding_id === id);
+          if (binding?.state === "revoked") {
+            setDisconnect(null); setMessage("");
+            setSuccess("已确认这条连接已断开。原请求的回包未到达，但最新授权记录已撤销；机器人资料和已发布内容会保留。");
+            await queryClient.invalidateQueries({ queryKey: ["api", "/api/connected-apps/bot"] });
+          } else if (binding?.state === "active") {
+            setDisconnect(binding);
+            setMessage(`${explain(e)} 已核实这条连接仍然有效，尚未断开。确认项已重置；核对后可重新操作，本次没有自动重试。`);
+          } else {
+            setMessage("断开结果未确认：最新记录中未能核对到这条有效或已撤销的授权。请检查连接列表，未自动重复断开操作。");
+          }
+        } catch {
+          if (current()) setMessage("断开结果未确认：暂时无法读取最新连接状态。请重试读取状态，未自动重复断开操作。");
+        }
+      }
     } finally {
       if (current()) setBusy(false);
     }

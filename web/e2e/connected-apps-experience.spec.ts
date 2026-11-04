@@ -2,16 +2,16 @@ import { test, expect, type Page } from "@playwright/test";
 
 const active = { binding_id: "binding-one", installation_name: "本机 AstrBot · 示例平台", installation_id: "install-one", state: "active", scopes: "profile:read_minimal community:read actions:read_own community:propose community:bot_reply community:bot_post", epoch: 1 };
 async function fixture(page: Page, options: { connected?: boolean; fail?: boolean } = {}) {
-  let connected = options.connected !== false, fail = !!options.fail;
+  let connected = options.connected !== false, fail = !!options.fail, currentRevoked = false, reads = 0;
   const writes: string[] = [];
   await page.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() !== "GET") writes.push(path);
     if (path === "/api/user/profile") return route.fulfill({ json: { id: 991, nickname: "示例创建者", role: "user" } });
-    if (path === "/api/connected-apps") return fail
+    if (path === "/api/connected-apps") { reads++; return fail
       ? route.fulfill({ status: 503, json: { code: "integration_unavailable" } })
-      : route.fulfill({ json: { bindings: [...(connected ? [active] : []), { ...active, binding_id: "old-one", installation_name: "历史执行端", state: "revoked" }], personal_data_enabled: false } });
-    if (path === "/api/connected-apps/binding-one/revoke") { connected = false; return route.fulfill({ json: { revoked: true } }); }
+      : route.fulfill({ json: { bindings: [...(connected ? [active] : currentRevoked ? [{ ...active, state: "revoked" }] : []), { ...active, binding_id: "old-one", installation_name: "历史执行端", state: "revoked" }], personal_data_enabled: false } }); }
+    if (path === "/api/connected-apps/binding-one/revoke") { connected = false; currentRevoked = true; return route.fulfill({ json: { revoked: true } }); }
     if (path === "/api/connected-apps/device-requests/lookup") return route.fulfill({ json: {
       consent_id: "request-one", installation_name: active.installation_name, installation_id: active.installation_id,
       user_code: "ABCD-1234", requested_scopes: ["profile:read_minimal", "community:read", "actions:read_own"],
@@ -21,7 +21,7 @@ async function fixture(page: Page, options: { connected?: boolean; fail?: boolea
     if (path === "/api/connected-apps/bot") return route.fulfill({ json: { bot: null, policy_supported: true, sections: [], auto_reply_server_enabled: true, auto_reply_authorized: connected, auto_post_server_enabled: true, auto_post_authorized: connected } });
     return route.fulfill({ status: 404, json: { code: "fixture_resource_unavailable" } });
   });
-  return { writes, recover: () => { fail = false; }, setFailed: (value: boolean) => { fail = value; } };
+  return { writes, recover: () => { fail = false; }, setFailed: (value: boolean) => { fail = value; }, serverDisconnected: () => { connected = false; currentRevoked = true; }, readCount: () => reads };
 }
 
 test("已连接时先给明确状态，不要求重复填代码，历史连接默认收起", async ({ page }) => {
@@ -199,8 +199,48 @@ test("断开失败保留连接并允许核实，不显示已经断开", async ({
   await expect(page.getByRole("alert")).toContainText("服务暂时不可用");
   await expect(page.getByRole("region", { name: "当前连接状态" })).toContainText("已连接 AstrBot");
   await expect(confirm).toBeVisible();
+  await expect(confirm.getByRole("checkbox", { name: "我确认断开这条连接", exact: true })).not.toBeChecked();
   expect(attempts).toBe(1);
 });
+
+for (const result of ["response_lost_but_revoked", "failed_still_active", "readback_failed"] as const) {
+  test(`断开结果只读核实一次且不重试写入 ${result}`, async ({ page }) => {
+    const state = await fixture(page);
+    let attempts = 0;
+    await page.route("**/api/connected-apps/binding-one/revoke", route => {
+      attempts++;
+      if (result === "response_lost_but_revoked") state.serverDisconnected();
+      if (result === "readback_failed") state.setFailed(true);
+      return result === "failed_still_active"
+        ? route.fulfill({ status: 503, json: { code: "integration_unavailable" } })
+        : route.abort("failed");
+    });
+    await page.goto("./connected-apps");
+    const status = page.getByRole("region", { name: "当前连接状态" });
+    await status.getByRole("button", { name: "管理连接", exact: true }).click();
+    await page.getByRole("button", { name: "断开此连接", exact: true }).click();
+    const confirm = page.getByRole("group", { name: "确认断开连接" });
+    await confirm.getByRole("checkbox", { name: "我确认断开这条连接", exact: true }).check();
+    const beforeReads = state.readCount();
+    await confirm.getByRole("button", { name: "确认断开连接", exact: true }).click();
+    await expect.poll(state.readCount).toBe(beforeReads + 1);
+    expect(attempts).toBe(1);
+    if (result === "response_lost_but_revoked") {
+      await expect(page.getByRole("status").filter({ hasText: "已确认这条连接已断开" })).toBeVisible();
+      await expect(status).toContainText("当前没有有效连接");
+      await expect(page.getByRole("group", { name: "确认断开连接" })).toHaveCount(0);
+    } else if (result === "failed_still_active") {
+      await expect(page.getByRole("alert")).toContainText("已核实这条连接仍然有效，尚未断开");
+      await expect(status).toContainText("已连接 AstrBot");
+      await expect(confirm.getByRole("checkbox", { name: "我确认断开这条连接", exact: true })).not.toBeChecked();
+      await expect(confirm.getByRole("button", { name: "确认断开连接", exact: true })).toBeDisabled();
+    } else {
+      await expect(status).toContainText("连接状态未确认");
+      await expect(status).not.toContainText("已连接 AstrBot");
+      await expect(page.getByRole("alert")).toContainText("断开结果未确认");
+    }
+  });
+}
 
 test("教程未登录也可阅读，不要求先绑定", async ({ page }) => {
   const { writes } = await fixture(page);

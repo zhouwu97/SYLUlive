@@ -139,6 +139,7 @@ test("首次读取真实延迟下等待会话就绪，不需手动重试机器�
   });
   await page.goto("./connected-apps");
   await expect(page.getByRole("button", { name: "新建机器人", exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "助手管理分区" }).getByRole("button", { name: "连接 AstrBot", exact: true }).click();
   await expect(page.getByRole("heading", { name: "暂无助手授权", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "重试读取机器人状态", exact: true })).toHaveCount(0);
   await expect(page.getByText("signal is aborted without reason", { exact: true })).toHaveCount(0);
@@ -203,6 +204,122 @@ test("机器人操作补充密码验证后保留草稿且不自动重放创建",
   await expect(page.getByText("验证完成，请重新核对机器人资料和权限后保存或启用。")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "机器人名称", exact: true })).toHaveValue("合成机器人草稿");
   expect(posts).toBe(1);
+});
+
+test("取消机器人密码验证会关闭表单，保留资料并允许重新操作", async ({ page }) => {
+  await fixture(page);
+  let attempts = 0;
+  await page.route("**/api/connected-apps/bot", route => {
+    if (route.request().method() === "POST") {
+      attempts++;
+      return route.fulfill({ status: 403, json: { code: "recent_authentication_required" } });
+    }
+    return route.fulfill({ json: { bot: null, policy_supported: true, sections: [], auto_post_authorized: false } });
+  });
+  await page.goto("./connected-apps");
+  await page.getByLabel("机器人名称", { exact: true }).fill("保留我的机器人草稿");
+  await page.getByRole("button", { name: "新建机器人", exact: true }).click();
+  await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
+  await page.getByRole("button", { name: "取消验证", exact: true }).click();
+  await expect(page.getByRole("form", { name: "验证当前账号身份" })).toHaveCount(0);
+  await expect(page.getByLabel("机器人名称", { exact: true })).toHaveValue("保留我的机器人草稿");
+  expect(attempts).toBe(1);
+  await page.getByRole("button", { name: "新建机器人", exact: true }).click();
+  await expect(page.getByLabel("当前账号密码", { exact: true })).toHaveValue("");
+  expect(attempts).toBe(2);
+});
+
+test("取消连接密码验证中止在途请求且不会继续授权，设备代码保留", async ({ page }) => {
+  const writes = await fixture(page, { recent: true });
+  let pending = false, release!: () => void;
+  await page.route("**/api/auth/reauthenticate", async route => {
+    pending = true;
+    await new Promise<void>(resolve => { release = resolve; });
+    await route.fulfill({ json: { authenticated: true, user_id: 991 } }).catch(() => {});
+  });
+  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
+  await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
+  await page.getByRole("button", { name: "验证并继续", exact: true }).click();
+  await expect.poll(() => pending).toBe(true);
+  await page.getByRole("button", { name: "取消验证", exact: true }).click();
+  release();
+  await expect(page.getByRole("form", { name: "验证当前账号身份" })).toHaveCount(0);
+  await expect(page.getByLabel("设备代码", { exact: true })).toHaveValue("ABCD-1234");
+  await expect(page.getByRole("button", { name: "授权此助手", exact: true })).toHaveCount(0);
+  expect(writes.filter(value => value.path.endsWith("/lookup"))).toHaveLength(1);
+  expect(writes.filter(value => value.path.endsWith("/decision"))).toHaveLength(0);
+});
+
+test("自动参与权限可成组选择，仍需核对确认，且不会连带开启个人查询", async ({ page }) => {
+  const writes = await fixture(page);
+  await page.goto("./connected-apps?user_code=ABCD-1234");
+  const navigation = page.getByRole("navigation", { name: "助手管理分区" });
+  await expect(navigation.getByRole("button", { name: "连接 AstrBot", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("机器人名称", { exact: true })).toBeHidden();
+  await expect(page.getByRole("button", { name: "从本机教务助手读取", exact: true })).toBeHidden();
+  await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
+  await expect(page.getByRole("group", { name: "机器人自动参与", exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "可选：本人查询与签到", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "选择自动评论和发帖所需权限", exact: true }).click();
+  for (const name of ["创建待本人确认的帖子或评论草稿", /以本人管理的独立AI机器人自动评论/, /以独立AI机器人自动发帖/])
+    await expect(page.getByLabel(name, { exact: typeof name === "string" })).toBeChecked();
+  for (const name of ["读取本人主动同步的成绩（非学校实时查询）", "读取本人主动同步的二课摘要（非完整活动记录）", "查看本人签到状态，并按本人指令每日签到（不含补签）"])
+    await expect(page.getByLabel(name, { exact: true })).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "授权此助手", exact: true })).toBeDisabled();
+  expect(writes.filter(value => value.path.endsWith("/decision"))).toHaveLength(0);
+  await page.getByLabel("我已核对设备代码与当前账号，并了解外发范围").check();
+  await page.getByRole("button", { name: "授权此助手", exact: true }).click();
+  await expect(page.getByRole("button", { name: "去启用机器人并检查运行", exact: true })).toBeVisible();
+  const scopes = writes.find(value => value.path.endsWith("/decision"))!.body.scopes as string[];
+  expect(scopes).toEqual(expect.arrayContaining(["community:read", "actions:read_own", "community:propose", "community:bot_reply", "community:bot_post"]));
+  expect(scopes.some(scope => scope.startsWith("academic:") || scope === "checkin:write")).toBe(false);
+});
+
+test("切换管理分区保留机器人草稿、设备代码和勾选，个人资料单独展示", async ({ page }) => {
+  await fixture(page);
+  await page.goto("./connected-apps?user_code=ABCD-1234");
+  const navigation = page.getByRole("navigation", { name: "助手管理分区" });
+  await navigation.getByRole("button", { name: "机器人设置与运行", exact: true }).click();
+  await page.getByLabel("机器人名称", { exact: true }).fill("切换后仍保留");
+  await page.getByRole("button", { name: "下一步：连接 AstrBot", exact: true }).click();
+  await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
+  await page.getByRole("button", { name: "选择自动评论和发帖所需权限", exact: true }).click();
+  await navigation.getByRole("button", { name: "个人资料同步", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "供本人 QQ 查询的资料同步", exact: true })).toBeVisible();
+  await expect(page.getByLabel("设备代码", { exact: true })).toBeHidden();
+  await navigation.getByRole("button", { name: "机器人设置与运行", exact: true }).click();
+  await expect(page.getByLabel("机器人名称", { exact: true })).toHaveValue("切换后仍保留");
+  await navigation.getByRole("button", { name: "连接 AstrBot", exact: true }).click();
+  await expect(page.getByLabel("设备代码", { exact: true })).toHaveValue("ABCD-1234");
+  await expect(page.getByLabel(/以独立AI机器人自动发帖/)).toBeChecked();
+});
+
+test("更换设备代码后旧请求返回不能恢复旧授权表单", async ({ page }) => {
+  await fixture(page);
+  let release!: () => void;
+  await page.route("**/api/connected-apps/device-requests/lookup", async route => {
+    await new Promise<void>(resolve => { release = resolve; });
+    await route.fulfill({ json: consent });
+  });
+  await page.goto("./connected-apps?user_code=ABCD-1234");
+  const started = page.waitForRequest("**/api/connected-apps/device-requests/lookup");
+  await page.getByRole("button", { name: "查看授权请求", exact: true }).click(); await started;
+  await page.getByLabel("设备代码", { exact: true }).fill("EFGH-5678");
+  release();
+  await expect(page.getByLabel("设备代码", { exact: true })).toHaveValue("EFGH-5678");
+  await expect(page.getByRole("button", { name: "授权此助手", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "查看授权请求", exact: true })).toBeEnabled();
+});
+
+test("过期设备代码说明恢复入口且不会提交授权", async ({ page }) => {
+  const writes = await fixture(page);
+  await page.route("**/api/connected-apps/device-requests/lookup", route => route.fulfill({ status: 410, json: { code: "device_request_expired" } }));
+  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("这份连接请求已过期");
+  await expect(page.getByRole("alert")).toContainText("/sylu-connect 获取新代码");
+  expect(writes.filter(value => value.path.endsWith("/decision"))).toHaveLength(0);
 });
 
 test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身份或用户ID", async ({
@@ -369,7 +486,8 @@ test("验证取消后迟到响应不会自动继续，期间不会重复提交",
   await expect.poll(() => requests).toBe(1);
   await page.getByRole("button", { name: "取消验证", exact: true }).click();
   resolve();
-  await expect(page.getByLabel("当前账号密码", { exact: true })).toHaveValue("");
+  await expect(page.getByRole("form", { name: "验证当前账号身份" })).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: "已取消密码验证。设备代码已保留" })).toBeVisible();
   await expect(page.getByText("signal is aborted", { exact: false })).toHaveCount(0);
   expect(lookups).toBe(1);
   expect(requests).toBe(1);

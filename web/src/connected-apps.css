@@ -24,6 +24,21 @@
 .integration-workspace input[type="checkbox"] { accent-color: var(--integration-accent); }
 .integration-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(300px, 1fr); align-items: start; gap: 24px; }
 .integration-connections { display: grid; gap: 24px; min-width: 0; }
+.integration-workspace [hidden] { display: none !important; }
+.integration-guide { margin-bottom: 20px; padding: 20px 24px; border: 1px solid var(--integration-border); border-radius: var(--radius-card); background: var(--integration-solid); }
+.integration-guide h2 { margin: 0 0 16px; font-size: 18px; }
+.integration-guide ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; padding: 0; margin: 0; list-style: none; }
+.integration-guide li { display: grid; gap: 6px; line-height: 1.6; }
+.integration-guide li span, .integration-guide > p, .integration-data-hint { color: var(--integration-muted); font-size: 14px; line-height: 1.75; }
+.integration-guide > p { margin: 16px 0 0; }
+.integration-views { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+.social-shell .integration-workspace .integration-views .btn[aria-pressed="true"] { border-color: var(--integration-accent); color: var(--integration-accent); background: var(--integration-soft); }
+.integration-scope-group { min-width: 0; margin: 20px 0; padding: 16px; border: 1px solid var(--integration-border); border-radius: 12px; }
+.integration-scope-group legend { padding-inline: 6px; font-size: 16px; font-weight: 600; }
+.integration-scope-group > .integration-hint { margin: 0 0 16px; }
+.integration-scope-group > div > .integration-hint { margin: -4px 0 16px 32px; }
+.integration-scope-shortcut { margin-top: 20px; }
+.integration-data-hint { margin: 0 0 16px; }
 .social-shell .integration-workspace .integration-panel {
   min-width: 0;
   padding: 24px;
@@ -103,6 +118,9 @@
 .integration-panel .integration-sticker { width: 88px; height: 88px; object-fit: contain; display: block; }
 @media (max-width: 1120px) { .integration-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) {
+  .integration-guide { padding: 20px 16px; }
+  .integration-guide ol { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .integration-views .btn { flex: 1 1 auto; }
   .integration-workspace { padding: 0; }
   .social-shell .integration-workspace .integration-panel { padding: 20px 16px; }
   .integration-workspace .page-head { flex-direction: column; margin-bottom: 20px; }

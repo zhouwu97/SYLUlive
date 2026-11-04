@@ -2,7 +2,10 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, captureAuthSession, entity, errorText, request } from "./api";
 import { useAuth } from "./auth";
 
-export function PasswordReauthentication({ onVerified }: { onVerified: () => Promise<unknown> }) {
+export function PasswordReauthentication({ onVerified, onCancel }: {
+  onVerified: () => Promise<unknown>;
+  onCancel: () => void;
+}) {
   const auth = useAuth(),
     [password, setPassword] = useState(""),
     [busy, setBusy] = useState(false),
@@ -18,6 +21,7 @@ export function PasswordReauthentication({ onVerified }: { onVerified: () => Pro
     active.current?.abort();
     active.current = null;
     setPassword(""); setError(""); setBusy(false);
+    onCancel();
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -52,9 +56,9 @@ export function PasswordReauthentication({ onVerified }: { onVerified: () => Pro
     }
   }
   return <form className="reauthentication-form" onSubmit={submit} aria-label="验证当前账号身份">
-    <p>验证账号：<strong>{auth.user?.nickname}</strong>。仅验证本次操作，无需退出账号。</p>
+    <p>验证账号：<strong>{auth.user?.nickname}</strong>。这一步只确认身份，不会授予权限或启动机器人。</p>
     <label className="field">当前账号密码
-      <input type="password" autoComplete="current-password" required maxLength={128}
+      <input type="password" name="password" autoComplete="current-password" required maxLength={128}
         value={password} onChange={event => setPassword(event.target.value)} disabled={busy} autoFocus />
     </label>
     <p className="muted">请输入 SYLUlive 账号密码，不是学校教务密码。</p>

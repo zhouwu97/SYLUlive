@@ -8,6 +8,7 @@ test("服务端关闭时不允许本机读取和上传但保留删除入口", as
     return route.fulfill({json:{}});
   });
   await page.goto('/web/connected-apps');
+  await page.getByRole('navigation', { name: '助手管理分区' }).getByRole('button', { name: '个人资料同步', exact: true }).click();
   await expect(page.getByText(/服务端尚未开放个人查询/)).toBeVisible();
   await expect(page.getByRole('button',{name:'从本机教务助手读取'})).toBeDisabled();
   await expect(page.getByRole('button',{name:'确认同步最小资料'})).toBeDisabled();
@@ -47,6 +48,7 @@ for (const dataset of ["grades", "erke"] as const) {
       });
     });
     await page.goto("/web/connected-apps");
+  await page.getByRole("navigation", { name: "助手管理分区" }).getByRole("button", { name: "个人资料同步", exact: true }).click();
     await page.getByRole("combobox", { name: "资料类型" }).selectOption(dataset);
     const confirm = page.getByRole("button", { name: "确认同步最小资料" });
     await expect(confirm).toBeDisabled();
@@ -91,6 +93,7 @@ test("二课接口退役时不声称副本已删除", async ({ page }) => {
     return route.fulfill({ json: {} });
   });
   await page.goto("/web/connected-apps");
+  await page.getByRole("navigation", { name: "助手管理分区" }).getByRole("button", { name: "个人资料同步", exact: true }).click();
   await page.getByRole("combobox", { name: "资料类型" }).selectOption("erke");
   await page.getByText('删除云端上传副本', {exact:true}).click();
   await page.getByRole("checkbox", { name: "确认删除当前选择的上传副本" }).check();
@@ -141,6 +144,7 @@ async function prepareGrades(page: Page) {
 test("预览限定范围且标出过期资料，换资料类型不沿用旧确认", async ({ page }) => {
   const control = await syncFixture(page, { stale: true });
   await page.goto("/web/connected-apps");
+  await page.getByRole("navigation", { name: "助手管理分区" }).getByRole("button", { name: "个人资料同步", exact: true }).click();
   await prepareGrades(page);
   const preview = page.getByRole("region", { name: "待同步资料预览" });
   await expect(preview.getByRole("row")).toHaveCount(6);
@@ -158,9 +162,10 @@ test("预览限定范围且标出过期资料，换资料类型不沿用旧确�
 test("刷新失败不能沿用缓存的开放状态", async ({ page }) => {
   const control = await syncFixture(page);
   await page.goto("/web/connected-apps");
+  await page.getByRole("navigation", { name: "助手管理分区" }).getByRole("button", { name: "个人资料同步", exact: true }).click();
   await expect(page.getByRole("button", { name: "从本机教务助手读取" })).toBeEnabled();
   control.failList();
-  await page.getByRole("button", { name: "刷新连接列表" }).click();
+  await page.getByRole("button", { name: "刷新个人查询状态" }).click();
   await expect(page.getByText(/尚未确认服务端个人查询状态/)).toBeVisible();
   await expect(page.getByRole("button", { name: "从本机教务助手读取" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "确认同步最小资料" })).toBeDisabled();
@@ -175,6 +180,7 @@ test("同步不会重复提交，失败保留预览并允许本人重试", async
   const control = await syncFixture(page, { holdWrite: true, failWrite: true });
   try {
     await page.goto("/web/connected-apps");
+  await page.getByRole("navigation", { name: "助手管理分区" }).getByRole("button", { name: "个人资料同步", exact: true }).click();
     await prepareGrades(page);
     await page.getByRole("checkbox", { name: /我确认仅操作当前账号/ }).check();
     await page.getByRole("button", { name: "确认同步最小资料" }).evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
@@ -196,6 +202,7 @@ test("同步不会重复提交，失败保留预览并允许本人重试", async
 test("同步确认不代替删除确认，切换类型后重新核对删除", async ({ page }) => {
   const control = await syncFixture(page);
   await page.goto("/web/connected-apps");
+  await page.getByRole("navigation", { name: "助手管理分区" }).getByRole("button", { name: "个人资料同步", exact: true }).click();
   await prepareGrades(page);
   await page.getByRole("checkbox", { name: /我确认仅操作当前账号/ }).check();
   await page.getByText("删除云端上传副本", { exact: true }).click();
@@ -218,6 +225,7 @@ for (const width of [390, 1440]) for (const theme of ["light", "dark"]) {
     await page.addInitScript(theme => localStorage.setItem("sylulive-theme", theme), theme);
     await syncFixture(page);
     await page.goto("/web/connected-apps");
+  await page.getByRole("navigation", { name: "助手管理分区" }).getByRole("button", { name: "个人资料同步", exact: true }).click();
     await prepareGrades(page);
     await page.getByText("删除云端上传副本", { exact: true }).click();
     await expect(page.getByRole("checkbox", { name: "确认删除当前选择的上传副本" })).toBeVisible();

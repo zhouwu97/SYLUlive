@@ -386,6 +386,7 @@ function BotPanel({ active, onConnect }: { active: boolean; onConnect: () => voi
               <label className="bot-check"><input type="checkbox" checked={policy.sticker_enabled} disabled={!policy.public_read_enabled} onChange={event => changePolicy("sticker_enabled", event.target.checked)} /><span><strong>发表内置表情</strong><small>仅可使用平台表情目录，不能上传任意图片评论。</small></span></label>
               <label className="bot-check"><input type="checkbox" checked={policy.post_enabled} disabled={!policy.public_read_enabled} onChange={event => changePolicy("post_enabled", event.target.checked)} /><span><strong>自动发布帖子</strong><small>默认关闭，需另行授予发帖权限；每24小时最多1帖。</small></span></label>
               <label className="bot-check"><input type="checkbox" checked={policy.image_enabled} disabled={!policy.public_read_enabled || !policy.post_enabled} onChange={event => changePolicy("image_enabled", event.target.checked)} /><span><strong>使用已审核公开配图</strong><small>只用于机器人帖子，不从私人聊天自动收集表情或图片。</small></span></label>
+              {policy.image_enabled && policy.block_links && <p className="integration-hint" role="status">已审核配图会附上来源署名链接。当前「禁止发送链接」已开启，机器人会先发文字；如需配图，请在下方发言规则中允许链接。</p>}
               <h4>允许访问的板块</h4>
               <p className="integration-hint">未选中的板块禁止访问与发言；只允许公开内容，不提供私信、个人账号或后台访问。</p>
               <div className="bot-section-options">

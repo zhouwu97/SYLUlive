@@ -54,6 +54,7 @@ test('自动发帖和配图默认关闭，独立保存并授权，不继承评�
   await expect(post).not.toBeChecked();await expect(image).not.toBeChecked();await expect(image).toBeDisabled();
   await page.getByRole('button',{name:'新建机器人',exact:true}).click();
   await post.check();await image.check();
+  await expect(page.getByText('已审核配图会附上来源署名链接。',{exact:false})).toBeVisible();
   await page.getByRole('button',{name:'保存资料与权限',exact:true}).click();
   await expect.poll(()=>writes.filter(w=>w.path.endsWith('/bot')).length).toBe(2);
   expect(writes.filter(w=>w.path.endsWith('/bot')).at(-1)!.body.policy).toMatchObject({post_enabled:true,image_enabled:true,reply_enabled:false,sticker_enabled:false});

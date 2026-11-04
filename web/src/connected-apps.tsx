@@ -7,6 +7,8 @@ import { Empty, Head, Icon, QueryState } from "./ui";
 import "./connected-apps.css";
 import { IntegrationPersonalSync } from "./integration-personal-sync";
 import { PasswordReauthentication } from "./reauthenticate";
+import { AstrBotConnectionGuide } from "./astrbot-connection-guide";
+import { integrationScopeTitles } from "./integration-scopes";
 
 type Binding = {
   binding_id: string;
@@ -16,6 +18,8 @@ type Binding = {
   scopes: string;
   epoch: number;
 };
+type ConnectionsResult = { bindings: Binding[]; personal_data_enabled?: boolean };
+type ConnectionsQuery = ReturnType<typeof useApi<ConnectionsResult>>;
 type Consent = {
   consent_id: string;
   installation_name: string;
@@ -59,7 +63,7 @@ const labels: Record<string, string> = {
   "actions:read_own": "本授权创建的草稿与发布结果",
   "community:propose": "创建待本人确认的帖子或评论草稿",
   "checkin:write": "查看本人签到状态，并按本人指令每日签到（不含补签）",
-  "community:bot_reply": "以本人管理的独立AI机器人自动评论/发表情：每24小时最多3条、间隔30分钟、同帖不重复；不再逐条确认，不代表本人发言",
+  "community:bot_reply": "以本人管理的独立AI机器人自动评论/发表情：每24小时最多3条、间隔30分钟、不重复回复同一目标；不再逐条确认，不代表本人发言",
 };
 const scopeGroups = [
   { title: "公开浏览与连接", hint: "用于识别当前账号、阅读公开内容和查看本连接的结果。只选这些权限时，机器人不会自动发言。", scopes: ["profile:read_minimal", "community:read", "content:read_own_public", "actions:read_own"] },
@@ -68,7 +72,7 @@ const scopeGroups = [
 ];
 const botScopeDependencies = ["community:read", "actions:read_own", "community:propose"];
 const errors: Record<string, string> = {
-  invalid_user_code: "设备代码无效，请核对后重试，或在 AstrBot 重新发送 /sylu-connect 获取新代码。",
+  invalid_user_code: "连接码无效，请核对后重试，或在 AstrBot 重新发送 /sylu-connect 获取新代码。",
   device_request_expired: "这份连接请求已过期。请在 AstrBot 重新发送 /sylu-connect 获取新代码，机器人设置和已有授权不受影响。",
   recent_authentication_required:
     "继续前请验证当前账号的密码。验证成功后可继续本次操作，无需重新登录。",
@@ -403,7 +407,7 @@ function BotPanel({ active, onConnect }: { active: boolean; onConnect: () => voi
                 <label className="field">每 24 小时最多评论数<select value={policy.daily_reply_limit} onChange={event => changePolicy("daily_reply_limit", Number(event.target.value))}>{[1, 2, 3].map(value => <option key={value} value={value}>{value} 条</option>)}</select></label>
                 <label className="field">评论间隔（分钟）<input type="number" min={30} max={1440} step={1} value={policy.min_reply_interval_minutes} onChange={event => changePolicy("min_reply_interval_minutes", Number(event.target.value))} required /></label>
               </div>
-              <p className="integration-hint">文字和表情合计计数，每条最多 300 字，同一帖子不重复参与。可设置更低频率；平台上限为 3 条／24 小时、至少间隔 30 分钟。</p>
+              <p className="integration-hint">文字、表情和具体评论回复合计计数，每条最多 300 字；顶层评论同帖一次，具体评论按目标去重，不回复自己或其他 AI。可设置更低频率；平台上限为 3 条／24 小时、至少间隔 30 分钟。</p>
             </section>
           </fieldset>
           {bot && <div className="form-actions bot-save-actions">
@@ -449,37 +453,108 @@ function BotPanel({ active, onConnect }: { active: boolean; onConnect: () => voi
 }
 
 
+function ConnectionStatus({ query: q, nickname, onManage }: { query: ConnectionsQuery; nickname: string; onManage: () => void }) {
+  const active = q.data?.bindings?.filter(binding => binding.state === "active") || [];
+  return <section className="connection-status" aria-label="当前连接状态" aria-live="polite" aria-busy={q.isFetching}>
+    <Icon name="monitor" size={22} />
+    <div>
+      <strong>{q.isPending ? "正在核对连接状态…" : q.error ? "连接状态未确认" : active.length ? "已连接 AstrBot" : "当前没有有效连接"}</strong>
+      {q.isPending ? <p>正在读取当前账号的授权，不需要输入连接码。</p> : q.error
+        ? <p>读取失败不能判断为未绑定。请先重试，不要重复生成连接或撤销已有授权。</p>
+        : active.length ? <><p>{nickname} 已授权给 {active.map(binding => binding.installation_name).join("、")}。无需再填连接码。</p><p>后台是否正在执行，请查看「机器人设置与运行」中的启用状态与心跳。</p></>
+        : <p>先在 AstrBot 发起本人的连接请求，再回到这里核对；已有机器人资料会保留。</p>}
+    </div>
+    {q.error ? <button className="btn" type="button" disabled={q.isFetching} onClick={() => void q.refetch()}>重试读取连接状态</button>
+      : <button className="btn" type="button" disabled={q.isPending} onClick={onManage}>{active.length ? "管理连接" : "开始连接"}</button>}
+  </section>;
+}
+
+function CurrentConnections({ query: q, nickname, busy, disconnect, confirmed, onDisconnect, onCancelDisconnect, onConfirmed, onRevoke }: {
+  query: ConnectionsQuery; nickname: string; busy: boolean; disconnect: Binding | null; confirmed: boolean;
+  onDisconnect: (binding: Binding) => void; onCancelDisconnect: () => void; onConfirmed: (value: boolean) => void; onRevoke: (id: string) => void;
+}) {
+  const bindings = q.data?.bindings || [], active = bindings.filter(binding => binding.state === "active"), history = bindings.filter(binding => binding.state !== "active");
+  return <>
+    <header className="integration-connections-heading"><h2>{q.isPending || q.error ? "连接管理" : active.length ? "当前有效连接" : "当前没有有效连接"}</h2>
+      <button className="btn" type="button" disabled={q.isFetching} onClick={() => void q.refetch()}>{q.isFetching ? "正在刷新连接列表…" : "刷新连接列表"}</button>
+    </header>
+    {q.isPending ? <p role="status">正在读取连接，请稍候…</p> : q.error
+      ? <p className="integration-hint">连接状态尚未核验；可点击「刷新连接列表」重试，现有授权不会因此被撤销。</p>
+      : <>
+        {q.isFetching && <p className="integration-hint" role="status">正在更新连接状态，下面保留上次读取的结果…</p>}
+        {active.length ? active.map(binding => <article className="current-astrbot-connection" key={binding.binding_id}>
+          <div className="connection-installation-heading"><h3>{binding.installation_name}</h3><span className="connection-state-label">已连接</span></div>
+          <p>校园账号：<strong>{nickname}</strong>。此授权已生效，无需再次输入连接码。</p>
+          <ul className="connection-permission-tags" aria-label="当前连接已批准权限">{binding.scopes.split(" ").filter(Boolean).map(scope => <li key={scope}>{integrationScopeTitles[scope] || scope}</li>)}</ul>
+          {(!binding.scopes.split(" ").includes("community:bot_reply") || !binding.scopes.split(" ").includes("community:bot_post")) && <p className="integration-hint">此连接尚未批准{!binding.scopes.split(" ").includes("community:bot_reply") ? "机器人自主评论" : ""}{!binding.scopes.split(" ").includes("community:bot_reply") && !binding.scopes.split(" ").includes("community:bot_post") ? "、" : ""}{!binding.scopes.split(" ").includes("community:bot_post") ? "机器人自主发帖" : ""}。需要这些功能时，从原聊天重新发起请求，在官网核对并替换旧授权；原连接不会自动增加权限。</p>}
+          <details className="connection-permission-details"><summary>查看完整权限与执行端信息</summary>
+            <ul>{binding.scopes.split(" ").filter(Boolean).map(scope => <li key={scope}>{labels[scope] || scope}</li>)}</ul>
+            <p className="integration-hint">安装标识：{binding.installation_id}。安装名称和标识由插件自报，不证明 QQ 归属；App 登录设备另行管理。</p>
+          </details>
+          <p className="integration-hint">这条连接允许 AstrBot 执行已批准的功能。机器人还需启用、满足规则并收到执行端心跳，才会按计划运行。</p>
+          {disconnect?.binding_id === binding.binding_id ? <div className="connection-disconnect" role="group" aria-label="确认断开连接">
+            <h4>断开「{binding.installation_name}」？</h4>
+            <p>这会撤销该执行端的全部已批准权限，旧凭证和待发布草稿将失效。机器人资料、已发布内容和其他人的连接会保留。需要再次使用时，在 AstrBot 重新发起连接并授权。</p>
+            <label className="bot-check"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => onConfirmed(event.target.checked)} /><span>我确认断开这条连接</span></label>
+            <div className="form-actions"><button className="btn danger" type="button" disabled={busy || q.isFetching || !confirmed} onClick={() => onRevoke(binding.binding_id)}>{busy ? "正在断开…" : "确认断开连接"}</button><button className="btn" type="button" disabled={busy} onClick={onCancelDisconnect}>保持连接</button></div>
+          </div> : <button className="btn" type="button" disabled={busy || q.isFetching} onClick={() => onDisconnect(binding)}>断开此连接</button>}
+        </article>) : <p className="integration-description">当前账号没有有效的 AstrBot 授权。下方历史记录不代表仍在连接；在原聊天取得新请求后，可点击「连接新的 AstrBot」。</p>}
+        {history.length > 0 && <details className="connection-history"><summary>历史连接（{history.length}）</summary>
+          <p className="integration-hint">这里只保留旧授权记录，不会继续执行，也不需要再次撤销。</p>
+          {history.map(binding => <div className="connection-history-row" key={binding.binding_id}><strong>{binding.installation_name}</strong><span>{binding.state === "revoked" ? "已撤销 · 已断开" : "授权已失效 · 需重新连接"}</span></div>)}
+        </details>}
+      </>}
+  </>;
+}
+
 export function ConnectedApps() {
   const auth = useAuth();
+  const [params] = useSearchParams();
   return (
     <IntegrationFrame title="已授权助手" subtitle="管理你的独立 AI 机器人，核对连接与参与权限。">
-      {auth.user ? <AssistantWorkspace key={auth.user.id} nickname={auth.user.nickname} /> : <SignIn />}
+      {auth.user ? <AssistantWorkspace key={auth.user.id} nickname={auth.user.nickname} /> : params.get("guide") === "astrbot"
+        ? <AstrBotConnectionGuide onConnect={auth.login} onBot={auth.login} />
+        : <><SignIn /><Link className="btn" to="/connected-apps?guide=astrbot">查看 AstrBot 接入教程</Link></>}
     </IntegrationFrame>
   );
 }
-type AssistantView = "bot" | "connection" | "data";
+type AssistantView = "bot" | "connection" | "data" | "guide";
 function AssistantWorkspace({ nickname }: { nickname: string }) {
   const [params] = useSearchParams();
-  const [view, setView] = useState<AssistantView>(params.get("user_code") ? "connection" : "bot");
+  const [view, setView] = useState<AssistantView>(params.get("user_code") ? "connection" : params.get("guide") === "astrbot" ? "guide" : "bot");
+  const urlCode = params.get("user_code") || "", urlGuide = params.get("guide") || "";
+  const previousEntry = useRef({ code: urlCode, guide: urlGuide });
+  useEffect(() => {
+    if (urlCode && previousEntry.current.code !== urlCode) setView("connection");
+    else if (!urlCode && urlGuide === "astrbot" && previousEntry.current.guide !== urlGuide) setView("guide");
+    previousEntry.current = { code: urlCode, guide: urlGuide };
+  }, [urlCode, urlGuide]);
+  const connections = useApi<ConnectionsResult>("/api/connected-apps");
   return <>
     <p className="integration-current-account">当前账号：{nickname}。机器人设置和连接授权都只作用于这个账号。</p>
+    <ConnectionStatus query={connections} nickname={nickname} onManage={() => setView("connection")} />
     <section className="integration-guide" aria-label="机器人启用步骤">
       <h2>让机器人自动参与社区</h2>
-      <ol><li><strong>1. 设置机器人</strong><span>选择允许的板块、评论、发帖与配图。</span></li><li><strong>2. 连接 AstrBot</strong><span>核对设备代码，批准执行端所需的权限。</span></li><li><strong>3. 启用并检查</strong><span>回到机器人设置启用，查看浏览与发言记录。</span></li></ol>
+      <ol><li><strong>1. 设置机器人</strong><span>选择允许的板块、评论、发帖与配图。</span></li><li><strong>2. 连接 AstrBot</strong><span>首次连接用短期连接码；已有有效连接无需再填。</span></li><li><strong>3. 启用并检查</strong><span>回到机器人设置启用，查看浏览与发言记录。</span></li></ol>
       <p>密码验证只确认操作人；授权不会自动启用机器人。成绩、二课和签到都是可选功能，自动发帖不需要它们。</p>
     </section>
     <nav className="integration-views" aria-label="助手管理分区">
-      {([["bot", "机器人设置与运行"], ["connection", "连接 AstrBot"], ["data", "个人资料同步"]] as const).map(([key, title]) => <button key={key} className="btn" type="button" aria-pressed={view === key} aria-controls={`assistant-${key}`} onClick={() => setView(key)}>{title}</button>)}
+      {([["bot", "机器人设置与运行"], ["connection", "连接 AstrBot"], ["data", "个人资料同步"], ["guide", "接入教程"]] as const).map(([key, title]) => <button key={key} className="btn" type="button" aria-pressed={view === key} aria-controls={`assistant-${key}`} onClick={() => setView(key)}>{title}</button>)}
     </nav>
     <div id="assistant-bot" hidden={view !== "bot"}><BotPanel active={view === "bot"} onConnect={() => setView("connection")} /></div>
-    <ConnectionPanel nickname={nickname} view={view} onBot={() => setView("bot")} />
+    <ConnectionPanel nickname={nickname} view={view} query={connections} onBot={() => setView("bot")} onGuide={() => setView("guide")} />
+    <div id="assistant-guide" hidden={view !== "guide"}><AstrBotConnectionGuide onConnect={() => setView("connection")} onBot={() => setView("bot")} /></div>
   </>;
 }
-function ConnectionPanel({ nickname, view, onBot }: { nickname: string; view: AssistantView; onBot: () => void }) {
+function ConnectionPanel({ nickname, view, query: q, onBot, onGuide }: { nickname: string; view: AssistantView; query: ConnectionsQuery; onBot: () => void; onGuide: () => void }) {
   const queryClient = useQueryClient();
   const lookupVersion = useRef(0);
-  const [params] = useSearchParams(),
+  const consumedUrlCode = useRef("");
+  const [params, setParams] = useSearchParams(),
     [code, setCode] = useState(params.get("user_code") || ""),
+    [requestOpen, setRequestOpen] = useState(!!params.get("user_code")),
+    [disconnect, setDisconnect] = useState<Binding | null>(null),
+    [disconnectConfirmed, setDisconnectConfirmed] = useState(false),
     [consent, setConsent] = useState<Consent | null>(null),
     [selected, setSelected] = useState<string[]>([]),
     [checked, setChecked] = useState(false),
@@ -487,13 +562,23 @@ function ConnectionPanel({ nickname, view, onBot }: { nickname: string; view: As
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [success, setSuccess] = useState("");
-  const q = useApi<{ bindings: Binding[]; personal_data_enabled?: boolean }>("/api/connected-apps"),
-    guard = useGuard();
+  const guard = useGuard();
+  const urlCode = params.get("user_code") || "";
+  const previousUrlCode = useRef(urlCode);
+  useEffect(() => {
+    const previous = previousUrlCode.current;
+    if (previous === urlCode) return;
+    previousUrlCode.current = urlCode;
+    if (!urlCode && consumedUrlCode.current === previous) { consumedUrlCode.current = ""; return; }
+    lookupVersion.current++;
+    setCode(urlCode); setConsent(null); setSelected([]); setChecked(false); setReplace(false);
+    setMessage(""); setSuccess(""); setBusy(false); setRequestOpen(!!urlCode);
+  }, [urlCode]);
   const personalSelected = selected.some(scope => scope === "academic:grades:read" || scope === "academic:erke:read");
   const personalBlocked = personalSelected && (!!q.error || q.isFetching || q.data?.personal_data_enabled !== true);
   const canSelectBotScopes = !!consent && [...botScopeDependencies, "community:bot_reply", "community:bot_post"].every(scope => consent.requested_scopes.includes(scope));
   const authorizationProblems: string[] = [];
-  if (!checked) authorizationProblems.push("请先核对设备代码与当前账号，并勾选外发范围确认。");
+  if (!checked) authorizationProblems.push("请先核对连接码与当前账号，并勾选外发范围确认。");
   if (!selected.length) authorizationProblems.push("请至少选择一项本次请求的权限。");
   if ((selected.includes("community:bot_post") || selected.includes("community:bot_reply")) && !selected.includes("community:propose"))
     authorizationProblems.push("自主评论或发帖还需要单独勾选「创建待本人确认的帖子或评论草稿」。");
@@ -542,7 +627,8 @@ function ConnectionPanel({ nickname, view, onBot }: { nickname: string; view: As
     if (allow && (q.error || q.isFetching || q.data?.personal_data_enabled !== true) && selected.some(s => s === "academic:grades:read" || s === "academic:erke:read")) {
       setMessage("个人查询尚未开放或状态未确认，请先重新检查服务状态，或取消选择成绩、二课权限。"); return;
     }
-    const current = guard();
+    const sessionCurrent = guard(), version = lookupVersion.current;
+    const current = () => sessionCurrent() && version === lookupVersion.current;
     setBusy(true);
     setMessage("");
     try {
@@ -560,6 +646,16 @@ function ConnectionPanel({ nickname, view, onBot }: { nickname: string; view: As
       );
       if (current()) {
         setConsent(null);
+        setRequestOpen(false);
+        if (allow) {
+          setCode(""); setSelected([]); setChecked(false); setReplace(false);
+          if (params.has("user_code")) {
+            consumedUrlCode.current = params.get("user_code") || "";
+            const next = new URLSearchParams(params);
+            next.delete("user_code");
+            setParams(next, { replace: true });
+          }
+        }
         setSuccess(
           allow
             ? "已授权。返回 AstrBot，等待插件完成连接。"
@@ -581,7 +677,8 @@ function ConnectionPanel({ nickname, view, onBot }: { nickname: string; view: As
     try {
       await write(`/api/connected-apps/${encodeURIComponent(id)}/revoke`);
       if (current()) {
-        setSuccess("已撤销该助手授权，旧凭证及待发布草稿不能继续使用。");
+        setDisconnect(null); setDisconnectConfirmed(false);
+        setSuccess("已断开这条连接。旧凭证及待发布草稿已失效；机器人资料、已发布内容和其他人的连接会保留。");
         await q.refetch();
         await queryClient.invalidateQueries({ queryKey: ["api", "/api/connected-apps/bot"] });
       }
@@ -594,12 +691,35 @@ function ConnectionPanel({ nickname, view, onBot }: { nickname: string; view: As
   return (
     <>
       <div id="assistant-connection" hidden={view !== "connection"} className="integration-connections">
-      <section className="panel panel-pad integration-panel">
+      <section className="panel panel-pad integration-panel" aria-label="AstrBot 连接管理">
+        <CurrentConnections query={q} nickname={nickname} busy={busy} disconnect={disconnect} confirmed={disconnectConfirmed}
+          onDisconnect={binding => { setDisconnect(binding); setDisconnectConfirmed(false); setMessage(""); }}
+          onCancelDisconnect={() => { setDisconnect(null); setDisconnectConfirmed(false); }}
+          onConfirmed={setDisconnectConfirmed} onRevoke={id => void revoke(id)} />
+        {view === "connection" && <Problem message={message} onCancel={() => { setMessage(""); setSuccess("已取消密码验证。连接码已保留，本次连接授权未提交。"); }} onVerified={async () => {
+          setMessage("");
+          if (code.trim()) await lookup(true);
+          else await q.refetch();
+        }} />}
+        {success && <p className="integration-feedback integration-feedback--success" role="status">{success}</p>}
+        {success.startsWith("已授权。") && <button className="btn primary" type="button" onClick={onBot}>去启用机器人并检查运行</button>}
+        {success.startsWith("已授权。") && <p className="integration-hint">网站授权已生效。回到原聊天发送 /sylu-status 核对执行端是否取得授权；连接码无需重复填写。</p>}
+        <div className="connection-next-actions">
+          <button className="btn" type="button" disabled={busy} aria-expanded={requestOpen} aria-controls="new-astrbot-connection"
+            onClick={() => { if (requestOpen) { lookupVersion.current++; setConsent(null); setBusy(false); } setRequestOpen(!requestOpen); }}>
+            {requestOpen ? "收起新连接表单" : "连接新的 AstrBot"}
+          </button>
+          <button className="btn" type="button" onClick={onGuide}>查看接入教程</button>
+          <p className="integration-hint">保留现有连接时不用重新绑定。更换执行端或补充权限时，从 AstrBot 发起新请求，再在这里核对。</p>
+        </div>
+      </section>
+      {requestOpen && <section id="new-astrbot-connection" className="panel panel-pad integration-panel">
         <header className="integration-section-head"><Icon name="monitor" size={22} /><h2>核对连接请求</h2></header>
+        <p className="integration-hint">先在原聊天发送 <code>/sylu-connect</code>，使用机器人本次给出的官网链接或代码。它是一次性的短期核对码（旧称设备代码），不是电脑编号、登录密码或绑定状态。</p>
         <p className="integration-description">这一步把 AstrBot 连接到你管理的机器人。自动发帖请选择「机器人自动参与」中的相应权限；个人资料查询可以不选。</p>
         <p>
           授权账号：{nickname}。只为自己刚刚在 AstrBot
-          发起的请求授权。不要替他人输入设备代码。
+          发起的请求授权。不要替他人输入连接码。
         </p>
         <form
           onSubmit={(e) => {
@@ -608,7 +728,7 @@ function ConnectionPanel({ nickname, view, onBot }: { nickname: string; view: As
           }}
         >
           <label className="field">
-            设备代码
+            一次性连接码
             <input
               value={code}
               maxLength={16}
@@ -626,13 +746,6 @@ function ConnectionPanel({ nickname, view, onBot }: { nickname: string; view: As
             查看授权请求
           </button>
         </form>
-        {view === "connection" && <Problem message={message} onCancel={() => { setMessage(""); setSuccess("已取消密码验证。设备代码已保留，本次连接授权未提交。"); }} onVerified={async () => {
-          setMessage("");
-          if (code.trim()) await lookup(true);
-          else await q.refetch();
-        }} />}
-        {success && <p className="integration-feedback integration-feedback--success" role="status">{success}</p>}
-        {success.startsWith("已授权。") && <button className="btn primary" type="button" onClick={onBot}>去启用机器人并检查运行</button>}
         {consent && (
           <div>
             <h3>授权给 {consent.installation_name}</h3>
@@ -682,7 +795,7 @@ function ConnectionPanel({ nickname, view, onBot }: { nickname: string; view: As
                   checked={checked}
                   onChange={(e) => setChecked(e.target.checked)}
                 />
-                我已核对设备代码与当前账号，并了解外发范围
+                我已核对连接码与当前账号，并了解外发范围
               </span>
             </label>
             {consent.existing_binding && (
@@ -722,50 +835,7 @@ function ConnectionPanel({ nickname, view, onBot }: { nickname: string; view: As
             </div>
           </div>
         )}
-      </section>
-      <section className="panel panel-pad integration-panel">
-        <header className="integration-section-head"><Icon name="admin" size={22} /><h2>连接管理</h2></header>
-        <button className="btn" disabled={q.isFetching} onClick={() => void q.refetch()}>{q.isFetching ? "正在刷新连接列表…" : "刷新连接列表"}</button>
-        <p>
-          App 的手机、电脑或平板登录与助手授权分别管理。安装名称可能包含插件自报的 QQ
-          号，便于核对请求；名称和安装标识不证明 QQ 归属。
-        </p>
-        <QueryState query={q}>
-          {q.data?.bindings?.length ? (
-            q.data.bindings.map((b) => (
-              <div className="list-row" key={b.binding_id}>
-                <div className="list-main">
-                  <b>{b.installation_name}</b>
-                  <p>
-                    {b.state === "active"
-                      ? "有效"
-                      : b.state === "revoked"
-                        ? "已撤销"
-                        : "资格已变化，需重新连接"}
-                  </p>
-                  <p>
-                    {b.scopes
-                      .split(" ")
-                      .map((s) => labels[s] || s)
-                      .join("；")}
-                  </p>
-                </div>
-                {b.state !== "revoked" && (
-                  <button
-                    className="btn"
-                    disabled={busy}
-                    onClick={() => void revoke(b.binding_id)}
-                  >
-                    撤销授权
-                  </button>
-                )}
-              </div>
-            ))
-          ) : (
-            <Empty title="暂无助手授权" />
-          )}
-        </QueryState>
-      </section>
+      </section>}
       </div>
       <div id="assistant-data" hidden={view !== "data"}>
         <p className="integration-data-hint">这里供本人 QQ 查询使用，和机器人自动发帖分开。仅需自动参与社区时，无需同步成绩或二课。</p>

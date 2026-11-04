@@ -62,7 +62,7 @@ test('自动发帖和配图默认关闭，独立保存并授权，不继承评�
   await page.getByRole('button',{name:'查看授权请求',exact:true}).click();
   const grant=page.getByRole('checkbox',{name:/以独立AI机器人自动发帖/});
   await expect(grant).not.toBeChecked();await grant.check();
-  await page.getByRole('checkbox',{name:/我已核对设备代码与当前账号/}).check();
+  await page.getByRole('checkbox',{name:/我已核对连接码与当前账号/}).check();
   await expect(page.getByRole('button',{name:'授权此助手',exact:true})).toBeDisabled();
   await page.getByRole('checkbox',{name:'创建待本人确认的帖子或评论草稿',exact:true}).check();
   await page.getByRole('button',{name:'授权此助手',exact:true}).click();
@@ -216,7 +216,7 @@ test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身
     page.getByRole("heading", { name: "已授权助手", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "暂无助手授权" }),
+    page.getByRole("heading", { name: "当前没有有效连接" }),
   ).toBeVisible();
   expect(writes).toHaveLength(0);
   await page.getByRole("button", { name: "查看授权请求" }).click();
@@ -233,7 +233,7 @@ test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身
   await expect(page.getByLabel(/以本人管理的独立AI机器人自动评论/)).not.toBeChecked();
   await expect(page.getByLabel("查看本人签到状态，并按本人指令每日签到（不含补签）")).not.toBeChecked();
   await expect(page.getByRole("button", { name: "授权此助手" })).toBeDisabled();
-  await page.getByLabel("我已核对设备代码与当前账号，并了解外发范围").check();
+  await page.getByLabel("我已核对连接码与当前账号，并了解外发范围").check();
   await page.getByRole("button", { name: "授权此助手" }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "已授权。" }),
@@ -455,7 +455,7 @@ test("机器人新建头像权限编辑启用暂停完整链路，自动评论�
   await expect(page.getByText("群聊只保留短期上下文，不写长期记忆。", {exact: true})).toBeVisible();
   await page.getByRole("button", { name: "下一步：连接 AstrBot", exact: true }).click();
   await page.getByRole("button", {name: "查看授权请求"}).click();
-  await page.getByLabel("我已核对设备代码与当前账号，并了解外发范围").check();
+  await page.getByLabel("我已核对连接码与当前账号，并了解外发范围").check();
   await page.getByLabel(/以本人管理的独立AI机器人自动评论/).check();
   await expect(page.getByRole("button", {name:"授权此助手"})).toBeDisabled();
   await page.getByLabel("创建待本人确认的帖子或评论草稿").check();
@@ -583,7 +583,7 @@ test("设备授权刷新实际条件时保留未保存的机器人草稿", async
   await page.getByLabel("屏蔽词", { exact: true }).fill("不公开资料");
   await page.getByRole("button", { name: "下一步：连接 AstrBot", exact: true }).click();
   await page.getByRole("button", { name: "查看授权请求" }).click();
-  await page.getByLabel("我已核对设备代码与当前账号，并了解外发范围").check();
+  await page.getByLabel("我已核对连接码与当前账号，并了解外发范围").check();
   await page.getByRole("button", { name: "授权此助手" }).click();
   await expect(page.getByRole("status").filter({ hasText: "已授权。" })).toBeVisible();
   await page.getByRole("button", { name: "去启用机器人并检查运行", exact: true }).click();

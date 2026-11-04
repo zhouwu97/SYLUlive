@@ -5,6 +5,7 @@ import {useAcademic, AcademicSettings} from './academic';
 import {asset,rows,upload,useApi,write,type Entity} from './api';
 import {Empty,Form,Head,Icon,QueryState,useUI} from './ui';
 import {PostCard} from './community';
+import {AiBotIdentity} from './ai-bot-identity';
 import {useMobile} from './mobile';
 import {ServerAvatar} from './server-avatar';
 import {userLevel} from './user-level';
@@ -90,7 +91,7 @@ function DesktopProfile() {
         <div className="profile-identity-row">
           <div className="profile-identity">
             <div className="profile-avatar"><ProfilePhoto key={`${user.id}:${avatar}`} src={avatar} name={nickname}/></div>
-            <div className="profile-name"><h2>{nickname}</h2><span className="profile-account">账号 #{user.id}</span>
+            <div className="profile-name"><h2>{nickname}</h2><AiBotIdentity user={user}/><span className="profile-account">账号 #{user.id}</span>
               {(typeof user.following_count === 'number' || typeof user.followers_count === 'number') && <div className="profile-social" aria-label="关注与粉丝">
                 {typeof user.following_count === 'number' && <button onClick={() => setTab('following')}><b>{user.following_count}</b><span>关注</span></button>}
                 {typeof user.followers_count === 'number' && <button onClick={() => setTab('followers')}><b>{user.followers_count}</b><span>粉丝</span></button>}
@@ -158,6 +159,6 @@ function MyContent({tab,userId}:{tab:string;userId:number}){
   const ui=useUI();const path=tab==='bookmarks'?'/api/user/bookmarks':tab==='evaluations'?'/api/user/course-evaluations':`/api/user/${userId}/${tab==='market'?'market-posts':tab}`;const q=useApi(path);const people=['following','followers'].includes(tab);
   const items=rows(q.data,'users','following','followers'), empty=profileEmpty[tab] || profileEmpty.posts;
   if (!q.isPending && !q.error && !items.length) return <Empty title={empty.title} description={empty.description}><Link className="btn profile-empty-action" to={empty.to}>{empty.action}<span aria-hidden="true">→</span></Link></Empty>;
-  return <QueryState query={q}><div className={`profile-feed ${people||tab==='evaluations'?'panel':''}`}>{items.map(x=>people?<div className="list-row" key={x.id}><img className="avatar" src={asset(x.avatar)} alt=""/><div className="list-main"><b>{x.nickname}</b></div>{tab==='following'&&<button className="btn" onClick={()=>void ui.act(()=>write(`/api/user/${x.id}/follow`,{},'DELETE'),'已取消关注')}>取消关注</button>}</div>:tab==='evaluations'?<div className="list-row" key={x.id}><div className="list-main"><b>{x.subject_name||x.course_name||'课程评价'}</b><p>{x.status} · {x.comment||x.content}</p></div></div>:<PostCard key={x.id} post={x.post||x}/>)}</div></QueryState>;
+  return <QueryState query={q}><div className={`profile-feed ${people||tab==='evaluations'?'panel':''}`}>{items.map(x=>people?<div className="list-row" key={x.id}><img className="avatar" src={asset(x.avatar)} alt=""/><div className="list-main"><b>{x.nickname}</b><AiBotIdentity user={x}/></div>{tab==='following'&&<button className="btn" onClick={()=>void ui.act(()=>write(`/api/user/${x.id}/follow`,{},'DELETE'),'已取消关注')}>取消关注</button>}</div>:tab==='evaluations'?<div className="list-row" key={x.id}><div className="list-main"><b>{x.subject_name||x.course_name||'课程评价'}</b><p>{x.status} · {x.comment||x.content}</p></div></div>:<PostCard key={x.id} post={x.post||x}/>)}</div></QueryState>;
 }
 function Security(){const q=useApi('/api/user/account-security'),ui=useUI(),auth=useAuth();return <QueryState query={q}><p>绑定邮箱：{q.data?.email_masked||q.data?.email||'未绑定'}</p><Form fields={[{name:'old_password',label:'当前密码',type:'password',required:true},{name:'new_password',label:'新密码（8–32 位）',type:'password',required:true,autoComplete:'new-password'}]} submit="修改密码" onSubmit={async values=>{const userId=auth.user?.id;await write('/api/change_password',values);let message='密码已修改，请按服务器状态重新登录';if(userId)try{await forgetSavedPasswords({userId})}catch{message='密码已修改，本机旧密码未能清理，请移除对应记录'}ui.notify(message);ui.close()}}/></QueryState>}

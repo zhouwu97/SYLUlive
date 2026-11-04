@@ -32,6 +32,42 @@
 .integration-guide li span, .integration-guide > p, .integration-data-hint { color: var(--integration-muted); font-size: 14px; line-height: 1.75; }
 .integration-guide > p { margin: 16px 0 0; }
 .integration-views { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+.connection-status { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: start; gap: 14px; margin: 0 0 20px; padding: 18px 20px; border: 1px solid var(--integration-border); border-radius: var(--radius-card); background: var(--integration-solid); }
+.connection-status > .svg-icon { color: var(--integration-accent); margin-top: 2px; }
+.connection-status strong { font-size: 16px; }
+.connection-status p { margin: 6px 0 0; color: var(--integration-muted); font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.integration-connections-heading h2 { margin: 0; font-size: 20px; }
+.current-astrbot-connection { min-width: 0; padding-block: 20px; }
+.current-astrbot-connection + .current-astrbot-connection { border-top: 1px solid var(--integration-border); }
+.connection-installation-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.connection-installation-heading h3 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+.connection-state-label { display: inline-flex; align-items: center; flex: none; padding: 4px 9px; border: 1px solid var(--integration-border); border-radius: 20px; font-size: 13px; color: var(--color-success); }
+.connection-permission-tags { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; padding: 0; }
+.connection-permission-tags li { padding: 5px 9px; border-radius: var(--radius-control); background: var(--integration-soft); color: var(--color-ink); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.connection-permission-details summary, .connection-history summary, .astrbot-guide-deployment > summary { cursor: pointer; min-height: 44px; padding-block: 10px; font-size: 14px; }
+.connection-permission-details ul { padding-left: 20px; margin: 0; font-size: 14px; line-height: 1.8; }
+.connection-permission-details summary:focus-visible, .connection-history summary:focus-visible, .astrbot-guide-deployment > summary:focus-visible { outline: 2px solid var(--integration-accent); outline-offset: 3px; border-radius: var(--radius-control); }
+.connection-history { border-top: 1px solid var(--integration-border); margin-top: 8px; padding-top: 8px; }
+.connection-history-row { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; padding: 14px 0; border-bottom: 1px solid var(--integration-border); font-size: 14px; }
+.connection-history-row:last-child { border-bottom: 0; }
+.connection-history-row span { color: var(--integration-muted); }
+.connection-next-actions { display: flex; flex-wrap: wrap; gap: 12px; padding-top: 20px; border-top: 1px solid var(--integration-border); }
+.connection-next-actions > p { flex-basis: 100%; }
+.connection-disconnect { margin-top: 16px; padding: 16px; border: 1px solid var(--integration-border); border-radius: var(--radius-control); }
+.connection-disconnect h4 { margin: 0; font-size: 15px; }
+.connection-disconnect p { font-size: 14px; }
+.connection-disconnect .btn.danger { color: var(--color-error); border-color: currentColor; }
+.astrbot-guide :is(h3, h4) { font-size: 16px; margin: 20px 0 12px; }
+.astrbot-guide-steps { padding-left: 24px; margin: 0; }
+.astrbot-guide-steps li { padding: 8px 0 12px 4px; font-size: 14px; line-height: 1.8; }
+.astrbot-guide-steps p { margin: 6px 0 0; color: var(--color-ink-2); }
+.astrbot-guide code { font-size: .94em; overflow-wrap: anywhere; }
+.astrbot-guide-deployment { margin-top: 24px; padding-block: 8px; border-block: 1px solid var(--integration-border); }
+.astrbot-guide-deployment > summary { font-size: 16px; font-weight: 600; }
+.astrbot-guide-diagnostics dl { margin: 0; }
+.astrbot-guide-diagnostics dl > div { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr); gap: 16px; padding-block: 14px; border-bottom: 1px solid var(--integration-border); font-size: 14px; line-height: 1.8; }
+.astrbot-guide-diagnostics dt { font-weight: 600; }
+.astrbot-guide-diagnostics dd { margin: 0; color: var(--color-ink-2); }
 .social-shell .integration-workspace .integration-views .btn[aria-pressed="true"] { border-color: var(--integration-accent); color: var(--integration-accent); background: var(--integration-soft); }
 .integration-scope-group { min-width: 0; margin: 20px 0; padding: 16px; border: 1px solid var(--integration-border); border-radius: 12px; }
 .integration-scope-group legend { padding-inline: 6px; font-size: 16px; font-weight: 600; }
@@ -118,6 +154,10 @@
 .integration-panel .integration-sticker { width: 88px; height: 88px; object-fit: contain; display: block; }
 @media (max-width: 1120px) { .integration-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) {
+  .connection-status { grid-template-columns: 22px minmax(0, 1fr); padding: 16px; }
+  .connection-status > .btn { grid-column: 2; justify-self: start; }
+  .connection-history-row { display: grid; }
+  .astrbot-guide-diagnostics dl > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .integration-guide { padding: 20px 16px; }
   .integration-guide ol { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .integration-views .btn { flex: 1 1 auto; }

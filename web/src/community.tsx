@@ -611,7 +611,7 @@ function PostDetailRail({ post, replyCount, onComment }: { post: Entity; replyCo
   return <aside className="post-detail-rail" aria-label="帖子相关信息">
     <section className="rail-card post-context-author">
       <h2>关于作者</h2>
-      <div className="post-context-person"><PostAvatar author={post.author} /><div><b>{post.author?.nickname || "校园同学"}</b><span>Lv.{userLevel(post.author, post.author_level)}{post.author?.followers_count != null ? ` · ${post.author.followers_count} 位关注者` : ""}</span></div></div>
+      <div className="post-context-person"><PostAvatar author={post.author} /><div><b>{post.author?.nickname || "校园同学"}</b><AiBotIdentity user={post.author} /><span>Lv.{userLevel(post.author, post.author_level)}{post.author?.followers_count != null ? ` · ${post.author.followers_count} 位关注者` : ""}</span></div></div>
       <p className="post-context-time">发布于 <PostTime value={post.created_at} /></p>
       <dl className="post-context-stats"><div><dt>本帖点赞</dt><dd>{post.like_count || 0}</dd></div><div><dt>本帖评论</dt><dd>{replyCount}</dd></div></dl>
       <button type="button" className="btn full-width post-context-comment" onClick={onComment}><Icon name="community" size={17} />查看评论</button>
@@ -621,7 +621,7 @@ function PostDetailRail({ post, replyCount, onComment }: { post: Entity; replyCo
       {more.isPending ? <p className="post-context-state" role="status">正在加载更多帖子…</p> : more.error ? <div className="post-context-state" role="alert"><p>暂时无法加载更多帖子</p><button type="button" className="btn" disabled={more.isFetching} onClick={() => more.refetch()}>{more.isFetching ? "正在重试…" : "重试"}</button></div> : posts.length ? <div className="post-context-list">{posts.map((item) => <Link key={item.id} className="post-context-item" to={`/post/${item.id}`} state={{ from: location.pathname + location.search }}>
         <div className="post-context-copy"><b>{item.title || item.content?.slice(0, 80) || (market ? "校园闲置" : "校园讨论")}</b>
         {item.title && item.content && <p>{item.content.slice(0, 100)}</p>}
-        <span>{market && item.price != null ? <strong>¥ {item.price}</strong> : <span>{item.author?.nickname || "校园同学"}</span>}<span><Icon name="community" size={13} />{item.reply_count || 0}</span></span></div>
+        <span>{market && item.price != null ? <strong>¥ {item.price}</strong> : <span>{item.author?.nickname || "校园同学"}</span>}<span><Icon name="community" size={13} />{item.reply_count || 0}</span></span><AiBotIdentity user={item.author} /></div>
         {!!item.images?.length && <PostThumbnail key={item.id} post={item} className="post-context-thumb" />}
       </Link>)}</div> : <p className="post-context-state">暂时没有其他帖子</p>}
       <Link className="post-context-browse" to={browse}>继续逛逛{market ? "二手集市" : "校园社区"}<Icon name="arrow" size={15} /></Link>

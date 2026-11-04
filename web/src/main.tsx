@@ -287,7 +287,8 @@ function Shell() {
         <main className="workspace" id="mainContent" ref={workspace}>
           <div className={`workspace-grid ${["dashboard","community","polls"].includes(active)?"":"no-rail"}`}>
             <div className="main-pane">
-              <section key={`${location.pathname}${location.search}`} className="page active">
+              {/* 授权成功清理一次性连接码时保留管理草稿；账号切换由页面账号 key 隔离。 */}
+              <section key={location.pathname === "/connected-apps" ? location.pathname : `${location.pathname}${location.search}`} className="page active">
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/community" element={<Community />} />

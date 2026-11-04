@@ -8,15 +8,53 @@ for (const dark of [false, true]) {
     Object.assign(state.post.author, { ai_bot: { owner_id: 3, owner_nickname: '校园创建者' } });
     state.root.author.nickname = '[AI] 模仿昵称';
     await page.goto('post/675');
-    await expect(page.locator('.post-author .ai-bot-identity')).toHaveText('AI · 校园创建者 的 AI');
+    await expect(page.locator('.post-author .ai-bot-system-badge')).toHaveText('AI机器人');
+    await expect(page.locator('.post-author .ai-bot-creator')).toHaveText('由校园创建者创建');
+    await expect(page.locator('.post-context-author .ai-bot-system-badge')).toHaveText('AI机器人');
     await expect(page.locator('.post-comment').first()).toContainText('[AI] 模仿昵称');
     await expect(page.locator('.post-comment').first().locator('.ai-bot-identity')).toHaveCount(0);
     Object.assign(state.root.author, { ai_bot: { owner_id: 3, owner_nickname: '校园创建者' } });
     await page.reload();
-    await expect(page.locator('.post-comment').first().locator('.ai-bot-identity')).toHaveText('AI · 校园创建者 的 AI');
+    await expect(page.locator('.post-comment').first().locator('.ai-bot-creator')).toHaveText('由校园创建者创建');
     await page.locator('.post-comment').first().evaluate(element => element.scrollIntoView({block:'center'}));
-    await expect(page.locator('.post-comment').first().locator('.ai-bot-identity')).toHaveText('AI · 校园创建者 的 AI');
-    await page.screenshot({ path: `E:/AI/xynewui/scratch/bot-management-20261102/web-community-ai-${dark ? 'dark' : 'light'}.png`, fullPage: true });
+    await expect(page.locator('.post-comment').first().locator('.ai-bot-system-badge')).toHaveText('AI机器人');
+    await page.screenshot({ path: `E:/AI/xynewui/scratch/bot-identity-20261104/web-community-ai-${dark ? 'dark' : 'light'}.png`, fullPage: true });
+    expect(state.errors).toEqual([]);
+  });
+}
+
+test('桌面作者侧栏与公开关注列表保留系统AI身份', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const state = await setup(page);
+  const bot = { id: 7, nickname: '只改昵称也保留系统归属', ai_bot: { owner_id: 3, owner_nickname: '校园创建者' } };
+  Object.assign(state.post.author, bot);
+  await page.goto('post/675');
+  await expect(page.locator('.post-context-author .ai-bot-system-badge')).toBeVisible();
+  await expect(page.locator('.post-context-author .ai-bot-creator')).toHaveText('由校园创建者创建');
+  await page.screenshot({ path: 'E:/AI/xynewui/scratch/bot-identity-20261104/web-desktop-ai.png', fullPage: true });
+  await page.route('**/api/user/3/following', route => route.fulfill({ json: { users: [bot, { id: 8, nickname: '[AI] 仅是普通昵称' }] } }));
+  await page.goto('profile');
+  await page.getByRole('tab', { name: '关注', exact: true }).click();
+  await expect(page.locator('.profile-feed .ai-bot-system-badge')).toHaveCount(1);
+  await expect(page.locator('.profile-feed')).toContainText('[AI] 仅是普通昵称');
+  expect(state.errors).toEqual([]);
+});
+
+for (const dark of [false, true]) {
+  test(`系统AI身份在楼中楼及长创建者归属可辨认，dark=${dark}`, async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 900 });
+    if (dark) await page.addInitScript(() => localStorage.setItem('sylulive-theme', 'dark'));
+    const state = await setup(page);
+    const owner = '校园创建者'.repeat(12);
+    Object.assign(state.post.author, { ai_bot: { owner_id: 3, owner_nickname: owner } });
+    Object.assign(state.children[0].author, { nickname: '鱼', ai_bot: { owner_id: 3, owner_nickname: '校园创建者' } });
+    Object.assign(state.children[1].author, { nickname: '未知创建者的鱼', ai_bot: {} });
+    await page.goto('post/675');
+    await expect(page.locator('.post-author').getByRole('img', { name: `系统AI机器人，由${owner}创建` })).toBeVisible();
+    await expect(page.getByRole('article', { name: '鱼的评论', exact: true }).locator('.ai-bot-system-badge')).toHaveText('AI机器人');
+    await expect(page.getByRole('article', { name: '未知创建者的鱼的评论', exact: true }).locator('.ai-bot-creator')).toHaveText('创建者未公开');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `E:/AI/xynewui/scratch/bot-identity-20261104/web-threaded-ai-${dark ? 'dark' : 'light'}.png`, fullPage: true });
     expect(state.errors).toEqual([]);
   });
 }
@@ -488,6 +526,7 @@ test("详情失败仍可返回，闲置详情使用集市上下文，窄屏侧�
   await expect(page.getByText("帖子加载失败", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "返回列表", exact: true })).toBeVisible();
   await expect(page.locator(".post-detail-rail")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "重试", exact: true })).toBeVisible();
   state.postFail = false; await page.getByRole("button", { name: "重试", exact: true }).click();
   await expect(page.locator(".post-full h1")).toHaveText("社区展示测试");
   Object.assign(state.post, { board_id: 2, price: 88, contact: "", contact_type: "微信" });

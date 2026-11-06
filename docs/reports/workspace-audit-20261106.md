@@ -46,8 +46,8 @@ Windows；Flutter 3.41.8/Dart 3.11.5；Python 3.12、真实 AstrBot 4.29.3 SDK�
 | Go 竞态 | services/handlers 的 `^TestIntegration` 在 `-race -count=1` 下通过，`go-race.txt` |
 | PostgreSQL | tagged models、handlers 通过；services 首轮有一项并发超时，原断言单测和整组 services 后续通过，见下文 |
 | 真实服务启动与收藏持久化 | 新 PostgreSQL 集群、真实二进制启动/重启、建表、鉴权、幂等收藏、列表持久化和幂等删除通过，集群自动停止，`bookmark-startup.json` |
-| Web → Go → Python → AstrBot | 推送前 11 步通过，真实 HTTP/原生 SDK 工具循环，合成 Provider，`cross-runtime-first.txt`；推送后必须重新执行 |
-| Flutter → Go 表情链路 | 真实 TLS 路由、SQLite 与上传卷，导入→创作者申请/审核→不可变发布→下载→面板→评论上传提交→下架通过，`emoji-chain-first.txt`；推送后必须重新执行 |
+| Web → Go → Python → AstrBot | 推送前、推送后 11 步均通过，真实 HTTP/原生 SDK 工具循环，合成 Provider，`cross-runtime-first.txt`、`cross-runtime-post-push.txt` |
+| Flutter → Go 表情链路 | 推送前、推送后均通过；真实 TLS 路由、SQLite 与上传卷，导入→创作者申请/审核→不可变发布→下载→面板→评论上传提交→下架，`emoji-chain-first.txt`、`emoji-chain-post-push.txt` |
 
 ## 首次失败和处理
 
@@ -75,3 +75,12 @@ Windows；Flutter 3.41.8/Dart 3.11.5；Python 3.12、真实 AstrBot 4.29.3 SDK�
 未执行生产 QQ 收发、付费模型、真实学校凭据登录、生产迁移/部署、Android/iOS 真机和 Linux canonical Golden。Web/Go/Python/AstrBot 与 Flutter/Go 的链路使用真实运行时及本地合成数据，不能等同生产验收。原目录快照后的六个文件变化仍需其所属任务完成审核。
 
 逐文件扫描未发现本轮新增的私钥、GitHub token、API key 模式或超过 10MiB 的新增文件；构建物、测试库、截图和日志保留在 ignored 目录，不随源码提交。推送前仍执行暂存差异和空白检查。
+
+## 推送后验收
+
+首次推送提交 `380a68ae6fad03f31adc54e363637e202d87f91f`；`git ls-remote` 确认远端同名分支指向该 SHA。服务端与插件、Flutter、Web、支持工具分别形成 4 个中文提交。本节是其后的纯文档补交，不改变已验证业务代码。
+
+- `go test -p 1 ./internal/handlers -run '^TestIntegrationWebAstrBotCrossRuntime$' -count=1 -v`：25.06 秒通过；Web 授权、显式权限与启用、成绩/二课同步、Python HTTP 回读、原生 SDK 私聊与自主工具循环、两账号运行/暂停隔离、跨用户拒绝、并发 refresh、撤权和设备取消全部通过。`production_requests=0`、`qq_sends=0`。
+- `scripts/verify-emoji-chain.ps1`：Flutter 集成用例及真实 Go fixture 通过；评论图片实际上传并提交，产生 `emoji-chain-post-push/` 的日志与截图。
+- 重新打包插件并核验 `build.json`：版本 0.5.7、`source_dirty=false`、源码提交与已推送 SHA 一致；33 个打包文件的 ZIP/manifest/工作区 SHA-256 全部一致，包含上下文与独立运行模块。包与证据保留本机，不提交 ZIP。
+- 本轮专用 PostgreSQL 已停止；独立 Vite 和权限实验页在最后核验后关闭。原目录 5173 服务与现有机器人不由本任务重启或停止。

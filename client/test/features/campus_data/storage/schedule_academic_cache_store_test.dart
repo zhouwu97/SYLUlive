@@ -8,6 +8,8 @@ import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models
 import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dart';
 import 'package:shenliyuan/features/academic/storage/academic_persistence_gate.dart';
 import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
+import 'package:shenliyuan/features/academic/storage/academic_connection_store.dart';
+import 'package:shenliyuan/features/academic/storage/local_academic_account_store.dart';
 
 import '../../../helpers/personal_snapshot_test_fakes.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -36,6 +38,82 @@ void main() {
       fileBackend: files,
       randomBytes: random.call,
     );
+  }
+
+  for (final provider in AcademicProviderId.values) {
+    for (final state in [
+      'reconnected',
+      'disabled',
+      'cleanup',
+      'legacy-off',
+      'new'
+    ]) {
+      test('${provider.value} $state：课表、存档与成绩共用当前连接许可', () async {
+        final preferences = await AppPreferencesStore.getInstance();
+        final identity = AcademicIdentityKey(
+            appUserId: 'app-user-a',
+            providerId: provider,
+            studentId: '20240001');
+        final local =
+            LocalAcademicAccountStore(identity.appUserId, preferences);
+        final connection = AcademicConnectionStore(identity, preferences);
+        if (state != 'legacy-off' && state != 'new') {
+          await local.commitIdentity(identity);
+          await connection.setConnected(state != 'disabled');
+        }
+        if (state == 'cleanup') await connection.setCleanupPending(true);
+        if (state != 'new') {
+          await preferences.setBool(
+              'academic_lifecycle_${identity.storageId}_connected',
+              state != 'reconnected' && state != 'legacy-off');
+        }
+        final allowed = state == 'reconnected' || state == 'new';
+        AesGcmAccountScopedSnapshotStore vault() =>
+            AesGcmAccountScopedSnapshotStore(
+                appUserId: identity.appUserId,
+                identityNamespace: identity.storageId,
+                secureStore: secureStore,
+                fileBackend: files,
+                randomBytes: random.call);
+        ScheduleCacheStore schedule() => ScheduleCacheStore(
+            appUserId: identity.appUserId,
+            sourceAccountId: identity.studentId,
+            identityNamespace: identity.storageId,
+            snapshotStore: vault());
+        AcademicCacheStore academic() => AcademicCacheStore(
+            appUserId: identity.appUserId,
+            sourceAccountId: identity.studentId,
+            identityNamespace: identity.storageId,
+            snapshotStore: vault());
+        await schedule().writeCourses(
+            year: '2026', semester: 3, courses: [_coursePayload(name: '重连课程')]);
+        await academic().writeGrades(year: '2026', semester: 3, grades: [
+          {'name': '合成成绩', 'score': 90}
+        ]);
+        final archive = ScheduleArchiveSnapshot(
+            id: 'archive',
+            name: '重连存档',
+            createdAt: DateTime(2026),
+            courseCount: 1,
+            courses: [_coursePayload(name: '重连课程')]);
+        if (allowed) {
+          await schedule()
+              .saveArchive(year: '2026', semester: 3, archive: archive);
+          final restored = await schedule().readTerm(year: '2026', semester: 3);
+          expect(restored?.courses.single['name'], '重连课程');
+          expect(restored?.archives.single.name, '重连存档');
+          expect(await academic().readSnapshot(), isNotNull);
+        } else {
+          await expectLater(
+              () => schedule()
+                  .saveArchive(year: '2026', semester: 3, archive: archive),
+              throwsA(isA<PersonalSnapshotStoreException>()));
+          expect(await schedule().readSnapshot(), isNull);
+          expect(await academic().readSnapshot(), isNull);
+          expect(files.values, isEmpty);
+        }
+      });
+    }
   }
 
   test('课表按 App 用户和来源账号隔离，密文不含课程明文', () async {

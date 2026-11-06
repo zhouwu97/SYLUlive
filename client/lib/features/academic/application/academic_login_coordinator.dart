@@ -575,14 +575,25 @@ final class AcademicLoginCoordinator {
     final next =
         limited != null && limited.isAfter(planned) ? limited : planned;
     _bindingNotBefore[identity] = next;
-    _bindingRetry = Timer(next.difference(DateTime.now()), () {
-      if (!_disposed &&
-          controller.identity == identity &&
-          controller.isCurrentContext(
+    void retryWhenDue() {
+      if (_disposed ||
+          controller.identity != identity ||
+          !controller.isCurrentContext(
               generation: generation, appUserId: identity.appUserId)) {
-        unawaited(_syncLocalBinding(force: true));
+        return;
       }
-    });
+      // Timer 以毫秒调度，可能早于微秒精度的截止时间唤醒。
+      // 提前返回必须重新排队，否则 _bindingNotBefore 会吞掉唯一一次后台重试。
+      final remaining = next.difference(DateTime.now());
+      if (remaining > Duration.zero) {
+        _bindingRetry =
+            Timer(remaining + const Duration(milliseconds: 1), retryWhenDue);
+        return;
+      }
+      unawaited(_syncLocalBinding(force: true));
+    }
+
+    _bindingRetry = Timer(next.difference(DateTime.now()), retryWhenDue);
   }
 
   Future<AcademicLoginOutcome> _beginLocalLogin({
@@ -1067,6 +1078,9 @@ final class AcademicLoginCoordinator {
       }
     }
     if (!current()) return changed;
+    // 重新通过学校登录后允许再次登记，避免旧的配置冲突或拒绝永久阻断恢复。
+    // 限流截止时间仍保留，不能借重新登录绕过服务器冷却。
+    if (identity != null) _bindingTerminalErrors.remove(identity);
     final bindingWarning = await _syncLocalBinding(force: true);
     if (!current()) return changed;
     return AcademicLoginOutcome(

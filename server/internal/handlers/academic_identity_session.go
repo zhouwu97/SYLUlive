@@ -195,7 +195,7 @@ func (h *AcademicIdentityHandler) VerifySession(c *gin.Context) {
 	h.writeVerifiedBinding(c, userID, input.ProviderID, input.StudentID)
 }
 
-func (undergraduateAcademicIdentityProvider) VerifySchoolSession(_ context.Context, studentID string, proof academicSessionProof) (AcademicVerifiedProfile, error) {
+func (undergraduateAcademicIdentityProvider) VerifySchoolSession(ctx context.Context, studentID string, proof academicSessionProof) (AcademicVerifiedProfile, error) {
 	cookies, err := sessionProofCookies(proof, models.AcademicProviderUndergraduate)
 	if err != nil {
 		return AcademicVerifiedProfile{}, err
@@ -204,7 +204,7 @@ func (undergraduateAcademicIdentityProvider) VerifySchoolSession(_ context.Conte
 	for _, cookie := range cookies {
 		parts = append(parts, cookie.Name+"="+cookie.Value)
 	}
-	response, err := pythonEduRequest(http.MethodPost, "/api/edu/verify_session", nil, map[string]string{"cookie": strings.Join(parts, "; ")})
+	response, err := pythonEduRequestWithContext(ctx, http.MethodPost, "/api/edu/verify_session", nil, map[string]string{"cookie": strings.Join(parts, "; ")})
 	if err != nil {
 		return AcademicVerifiedProfile{}, ErrAcademicProviderUnavailable
 	}

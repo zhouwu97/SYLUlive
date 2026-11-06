@@ -6,6 +6,7 @@ import 'personal_snapshot_models.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 import '../../academic/storage/academic_persistence_gate.dart';
+import '../../academic/storage/academic_connection_store.dart';
 
 /// 已验证来源账号的单学期课表快照。
 ///
@@ -501,10 +502,12 @@ class ScheduleCacheStore {
     final preferences = AppPreferencesStore.maybeInstance;
     if (namespace != null &&
         preferences != null &&
-        (preferences.getBool('academic_lifecycle_${namespace}_connected') ==
-                false ||
-            preferences.getBool('academic_lifecycle_${namespace}_cleanup') ==
-                true)) {
+        AcademicConnectionStore.blocksSnapshotWrite(
+          preferences: preferences,
+          appUserId: appUserId,
+          studentId: sourceAccountId,
+          identityNamespace: namespace,
+        )) {
       throw const PersonalSnapshotStoreException('账号本地数据正在清理，课表存档未写入');
     }
     return _mutateTerm(
@@ -728,10 +731,12 @@ class ScheduleCacheStore {
     final preferences = AppPreferencesStore.maybeInstance;
     if (namespace != null &&
         preferences != null &&
-        (preferences.getBool('academic_lifecycle_${namespace}_connected') ==
-                false ||
-            preferences.getBool('academic_lifecycle_${namespace}_cleanup') ==
-                true)) {
+        AcademicConnectionStore.blocksSnapshotWrite(
+          preferences: preferences,
+          appUserId: appUserId,
+          studentId: sourceAccountId,
+          identityNamespace: namespace,
+        )) {
       return;
     }
     await _snapshotStore.write(

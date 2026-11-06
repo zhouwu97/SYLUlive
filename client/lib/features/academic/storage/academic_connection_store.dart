@@ -69,6 +69,31 @@ final class AcademicConnectionStore {
       _local['student_id'] == identity.studentId ||
       preferences.getBool('${_prefix}_connected') != null;
 
+  /// 快照写入沿用当前连接许可，不能被升级前遗留的开关覆盖。
+  /// 未初始化的存储保留原有首次写入行为；清理日志始终优先。
+  static bool blocksSnapshotWrite({
+    required AppPreferencesStore preferences,
+    required String appUserId,
+    required String studentId,
+    required String identityNamespace,
+  }) {
+    for (final provider in AcademicProviderId.values) {
+      final identity = AcademicIdentityKey(
+        appUserId: appUserId,
+        providerId: provider,
+        studentId: studentId,
+      );
+      if (identity.storageId != identityNamespace) continue;
+      final connection = AcademicConnectionStore(identity, preferences);
+      return connection.cleanupPending ||
+          (connection.initialized && !connection.connected);
+    }
+    // 非教务身份命名空间仍遵守已有的生命周期保护，不猜测其归属。
+    final prefix = 'academic_lifecycle_$identityNamespace';
+    return preferences.getBool('${prefix}_cleanup') == true ||
+        preferences.getBool('${prefix}_connected') == false;
+  }
+
   Future<void> setConnected(bool value) async {
     if (!value) await setBindingSyncState('none');
     if (_local['student_id'] == identity.studentId) {

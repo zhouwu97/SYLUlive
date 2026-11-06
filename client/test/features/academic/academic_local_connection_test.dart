@@ -378,6 +378,69 @@ void main() {
     });
   }
 
+  for (final provider in AcademicProviderId.values) {
+    test('重试计时器提前唤醒仍会补交身份：${provider.value}', () async {
+      final h = await setup();
+      var calls = 0;
+      var wokeEarly = false;
+      final api = Dio();
+      addTearDown(() => api.close(force: true));
+      api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+        calls++;
+        if (calls == 1) {
+          handler.reject(DioException(
+              requestOptions: r, type: DioExceptionType.connectionError));
+        } else {
+          handler.resolve(Response(
+              requestOptions: r,
+              statusCode: 200,
+              data:
+                  r.method == 'GET' ? {'identities': []} : receipt(provider)));
+        }
+      }));
+      configurationApi(h);
+      final coordinator = AcademicLoginCoordinator(
+        controller: h.session,
+        identityClient: AcademicIdentityClient(api),
+        sessionExporter: () => proof(h),
+        credentialStore: h.credentials,
+        silentCaptcha: false,
+        preferencesLoader: () async => h.preferences,
+        bindingRetryDelay: const Duration(milliseconds: 100),
+      );
+      addTearDown(coordinator.dispose);
+      await runZoned(() async {
+        var result = await coordinator.login(
+            studentId: 'A',
+            password: 'fixture',
+            providerId: provider,
+            saveCredentials: true,
+            saveAcademicData: false);
+        if (result.needsCaptcha) {
+          result = await coordinator.continueLoginWithCaptcha(code: '1234');
+        }
+        expect(result.isSuccess, true);
+        await Future.doWhile(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+          return await coordinator.bindingSyncState() != 'verified';
+        }).timeout(const Duration(seconds: 2));
+      }, zoneSpecification: ZoneSpecification(
+          createTimer: (self, parent, zone, duration, callback) {
+        // 模拟 VM 毫秒粒度导致的提前唤醒，只改变首个后台重试计时器。
+        if (!wokeEarly &&
+            duration > const Duration(milliseconds: 50) &&
+            duration <= const Duration(milliseconds: 100)) {
+          wokeEarly = true;
+          return parent.createTimer(zone, Duration.zero, callback);
+        }
+        return parent.createTimer(zone, duration, callback);
+      }));
+      expect(wokeEarly, true);
+      expect(calls, 3);
+      expect(h.session.isAuthenticated, true);
+    });
+  }
+
   test('重启后缺少学校会话时只查询记录，不伪造补交', () async {
     final h = await setup();
     final offline = Dio();
@@ -455,6 +518,46 @@ void main() {
     expect(calls, 2);
   });
 
+  test('身份登记被拒后手动重新连接可重新核验，不沿用旧错误', () async {
+    final h = await setup();
+    final api = Dio();
+    addTearDown(() => api.close(force: true));
+    var rejected = true;
+    var verifications = 0;
+    api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+      if (r.method == 'GET') {
+        handler.resolve(Response(
+            requestOptions: r, statusCode: 200, data: {'identities': []}));
+        return;
+      }
+      verifications++;
+      handler.resolve(Response(
+          requestOptions: r,
+          statusCode: rejected ? 409 : 200,
+          data: rejected
+              ? {'code': 'ACADEMIC_BINDING_CHANGED'}
+              : receipt(AcademicProviderId.syluUndergraduate)));
+    }));
+    final coordinator = withIdentity(h, api);
+    addTearDown(coordinator.dispose);
+    Future<AcademicLoginOutcome> reconnect() => coordinator.login(
+        studentId: 'A',
+        password: 'fixture',
+        providerId: AcademicProviderId.syluUndergraduate,
+        saveCredentials: true,
+        saveAcademicData: false);
+    expect((await reconnect()).isSuccess, true);
+    expect(await coordinator.bindingSyncState(), 'rejected');
+    expect(verifications, 1);
+
+    rejected = false;
+    final result = await reconnect();
+    expect(result.isSuccess, true);
+    expect(result.message ?? '', isNot(contains('已停止自动重试')));
+    expect(verifications, 2);
+    expect(await coordinator.bindingSyncState(), 'verified');
+  });
+
   test('账号受限时同样停止自动重试', () async {
     final h = await setup();
     final api = Dio();
@@ -483,6 +586,52 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 80));
     expect(calls, 1);
     expect(await coordinator.bindingSyncState(), 'rejected');
+  });
+
+  test('限流计时器提前唤醒时继续等待，不绕过十分钟冷却', () async {
+    final h = await setup();
+    final api = Dio();
+    addTearDown(() => api.close(force: true));
+    var calls = 0;
+    final callbacks = <void Function()>[];
+    final delays = <Duration>[];
+    api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+      calls++;
+      handler.resolve(Response(
+          requestOptions: r, statusCode: 429, data: {'code': 'RATE_LIMITED'}));
+    }));
+    final coordinator = AcademicLoginCoordinator(
+      controller: h.session,
+      identityClient: AcademicIdentityClient(api),
+      credentialStore: h.credentials,
+      preferencesLoader: () async => h.preferences,
+    );
+    addTearDown(coordinator.dispose);
+    await runZoned(() async {
+      final result = await coordinator.login(
+          studentId: 'A',
+          password: 'fixture',
+          providerId: AcademicProviderId.syluUndergraduate,
+          saveCredentials: true,
+          saveAcademicData: false);
+      expect(result.isSuccess, true);
+      expect(calls, 1);
+      expect(callbacks, hasLength(1));
+      callbacks.removeAt(0)();
+      expect(callbacks, hasLength(1));
+      expect(delays, hasLength(2));
+      expect(delays.every((delay) => delay > const Duration(minutes: 9)), true);
+      expect(await coordinator.bindingSyncState(), 'pending');
+      expect(calls, 1);
+    }, zoneSpecification: ZoneSpecification(
+        createTimer: (self, parent, zone, duration, callback) {
+      if (duration > const Duration(minutes: 1)) {
+        delays.add(duration);
+        callbacks.add(callback);
+        return parent.createTimer(zone, Duration.zero, () {});
+      }
+      return parent.createTimer(zone, duration, callback);
+    }));
   });
 
   for (final action in ['disconnect', 'switch-user', 'dispose']) {

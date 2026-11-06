@@ -23,7 +23,7 @@ func TestHomeLatestFeedCursorTraversesBeyondFiveHundredWithStableTieBreaker(t *t
 	}
 	if err := db.AutoMigrate(
 		&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
-		&models.User{}, &models.File{}, &models.Post{}, &models.PostImage{}, &models.Like{},
+		&models.User{}, &models.File{}, &models.Post{}, &models.PostImage{}, &models.Like{}, &models.Reply{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}

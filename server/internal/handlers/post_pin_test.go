@@ -30,6 +30,7 @@ func newPostPinTestDB(t *testing.T) (*gorm.DB, models.User) {
 		&models.Post{},
 		&models.PostImage{},
 		&models.Like{},
+		&models.Reply{},
 		&models.Poll{},
 		&models.PollOption{},
 		&models.PollBallot{},

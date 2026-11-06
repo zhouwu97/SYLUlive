@@ -79,7 +79,6 @@ func toFloat(v driver.Value) (float64, bool) {
 // performLikeRequest 请求 POST/DELETE /api/replies/:id/like。
 func performLikeRequest(t *testing.T, db *gorm.DB, replyID uint, like bool, userID uint) *httptest.ResponseRecorder {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
 	method := http.MethodDelete

@@ -350,7 +350,9 @@ FEED-H1 加固：
 | `GET` | `/api/user/notifications/unread_count`| 获取未读系统通知和互动红点数 |
 | `POST`| `/api/user/notifications/read` | 标记所有通知为已读 |
 | `POST`| `/api/notifications/read-selected` | 以当前登录用户为接收者。支持 `{"ids":[通知ID]}`（最多100个），或成功打开目标回复后发送 `{"post_id":帖子ID,"reply_id":回复ID}`；只消费匹配的回复通知 |
-| `GET` | `/api/user/likes/received` | 当前用户的帖子、评论收到的历史点赞；`limit` 默认30、最大50，`cursor` 为上一页返回的点赞ID。响应 `{items,has_more,next_cursor}`，每项含 `id,user_id,nickname,avatar,target_type,target_id,post_id,post_title,created_at`；过滤自赞、取消的赞、已删除/受限内容和注销账号 |
+| `GET` | `/api/user/likes/received` | 当前用户的帖子、评论收到的有效点赞；`limit` 默认30、最大50，`cursor` 为上一页返回的点赞ID。响应 `{items,has_more,next_cursor}`，每项含 `id,user_id,nickname,avatar,target_type,target_id,post_id,post_title,created_at`；过滤自赞、取消的赞、已删除/受限内容和注销账号 |
+
+用户资料的 `total_likes_received` 与此明细采用同一有效点赞查询：统计他人对本人公开帖子（`normal/sold/closed`）及这些帖子下本人正常评论的现存点赞，每个“点赞人 + 内容类型 + 内容 ID”计一次。同一人赞三条不同内容计 3 次。整帖删除或治理隐藏时，其下各评论作者的获赞也不再计入；恢复公开后仍存在的有效赞重新计入。自赞、已撤回的赞、已删除评论以及点赞账号非 `active`（兼容空状态）的记录不计。本人资料、会话刷新、公开资料及关联作者加载均从事实投影，不直接展示数据库兼容列的历史数值；无有效记录时返回 `0`。分页协议和字段类型不变。
 
 通知已读接口在原有响应上附加 `read_receipt`：`recipient_user_id` 表示接收账号，单条/目标回复读取返回实际归属该账号的 `ids` 和 `reply_ids`，全部已读返回 `all_before_id`。全部已读只处理该水位之前的通知，新产生的通知保持未读。旧客户端可忽略此附加字段。Android 用回执清理系统通知并阻止延迟重放；新回复推送附带 `notification_id`，使用 `reply_notifications_v1` 高优先级渠道，仍遵从用户的系统通知权限。
 | `POST` | `/api/notifications/replies/read` | 将当前账号全部回复通知标为已读，包含未加载分页；不影响其他类型通知。旧服务端无此路径返回 `404`，客户端保留提醒且提示重试，不降级为全部通知已读 |

@@ -3,6 +3,8 @@ package models
 import (
 	"encoding/json"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // Role 用户角色
@@ -88,8 +90,9 @@ type User struct {
 	IsFollowing      bool   `gorm:"-" json:"is_following"`             // 当前登录者是否关注了此用户
 
 	// 社交统计聚合字段
-	FollowersCount     int `gorm:"default:0;index" json:"followers_count"`
-	FollowingCount     int `gorm:"default:0;index" json:"following_count"`
+	FollowersCount int `gorm:"default:0;index" json:"followers_count"`
+	FollowingCount int `gorm:"default:0;index" json:"following_count"`
+	// 兼容列保留旧增量写入；AfterFind 按有效点赞事实投影，不作为展示权威。
 	TotalLikesReceived int `gorm:"default:0;index" json:"total_likes_received"`
 }
 
@@ -107,6 +110,11 @@ type PublicUserResponse struct {
 	FollowingCount       int    `json:"following_count"`
 	TotalLikesReceived   int    `json:"total_likes_received"`
 	IsFollowing          bool   `json:"is_following"`
+}
+
+// AfterFind 批量填充有效获赞，数据库历史聚合值不作为展示依据。
+func (u *User) AfterFind(tx *gorm.DB) error {
+	return fillReceivedLikesAfterFind(tx)
 }
 
 // PublicUser 将数据库用户转换为安全的公开资料。

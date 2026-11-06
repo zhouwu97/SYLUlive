@@ -230,7 +230,9 @@ final class AcademicSessionProbeResult {
   final String? confirmedStudentId;
 }
 
-/// Provider 持有的敏感会话材料，仅允许进入本机加密保险箱，不得写日志或上传 AI。
+/// Provider 持有的敏感会话材料，持久化仅允许进入本机加密保险箱。
+/// 身份补交只临时发送最小 Cookie/会话前缀供服务器向固定学校入口核验，
+/// 不得写日志、上传 AI 或在服务端持久化。
 final class ProviderSessionArtifact {
   const ProviderSessionArtifact({
     required this.providerId,

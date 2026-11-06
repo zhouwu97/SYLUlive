@@ -33,6 +33,12 @@ class _FakeAuthProvider extends Fake
       );
 
   User? currentUser;
+  Future<void> Function()? onRefresh;
+
+  @override
+  Future<void> refreshUser() async {
+    await onRefresh?.call();
+  }
 
   /// 模拟切换账号：新用户 + 新的会话代次。
   void switchAccount({int id = 2}) {
@@ -600,5 +606,69 @@ void main() {
 
     expect(postProvider.createPostCalls, 0);
     expect(postProvider.updatePostCalls, 0);
+  });
+
+  testWidgets('缓存未认证但服务端已核验时刷新资格后可发布', (tester) async {
+    final auth = _FakeAuthProvider(user: User(
+      id: 1, studentId: '', nickname: '旧缓存', avatar: '',
+      createdAt: DateTime(2026, 1, 1),
+    ));
+    auth.onRefresh = () async {
+      auth.currentUser = _FakeAuthProvider._verifiedUser(1);
+    };
+    final posts = _FakePostProvider();
+    await tester.pumpWidget(_buildMarketForm(postProvider: posts, auth: auth));
+    await tester.pumpAndSettle();
+    await fillRequiredMarketFields(tester);
+    await addLocalImage(tester);
+    await tester.tap(find.text('发布出售').last);
+    await tester.pumpAndSettle();
+    expect(posts.createPostCalls, 1);
+  });
+
+  testWidgets('资格刷新期间切号不以新账号发布', (tester) async {
+    final pending = Completer<void>();
+    final auth = _FakeAuthProvider(user: User(
+      id: 1, studentId: '', nickname: '旧缓存', avatar: '',
+      createdAt: DateTime(2026, 1, 1),
+    ))..onRefresh = () => pending.future;
+    final posts = _FakePostProvider();
+    await tester.pumpWidget(_buildMarketForm(postProvider: posts, auth: auth));
+    await tester.pumpAndSettle();
+    await fillRequiredMarketFields(tester);
+    await addLocalImage(tester);
+    await tester.tap(find.text('发布出售').last);
+    await tester.pump();
+    auth.switchAccount();
+    pending.complete();
+    await tester.pumpAndSettle();
+    expect(posts.createPostCalls, 0);
+  });
+
+  testWidgets('资格刷新期间取消发布后迟到响应不能继续提交', (tester) async {
+    final pending = Completer<void>();
+    final auth = _FakeAuthProvider(user: User(
+      id: 1, studentId: '', nickname: '旧缓存', avatar: '',
+      createdAt: DateTime(2026, 1, 1),
+    ));
+    auth.onRefresh = () async {
+      await pending.future;
+      auth.currentUser = _FakeAuthProvider._verifiedUser(1);
+    };
+    final posts = _FakePostProvider();
+    await tester.pumpWidget(_buildMarketForm(postProvider: posts, auth: auth));
+    await tester.pumpAndSettle();
+    await fillRequiredMarketFields(tester);
+    await addLocalImage(tester);
+    await tester.tap(find.text('发布出售').last);
+    await tester.pump();
+    await tester.tap(find.byType(BackButton));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('取消发布'));
+    await tester.pump();
+    pending.complete();
+    await tester.pumpAndSettle();
+    expect(posts.createPostCalls, 0);
   });
 }

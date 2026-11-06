@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,6 +58,62 @@ func sessionFixture(t *testing.T) (*AcademicIdentityHandler, *gorm.DB, *sessionF
 }
 
 const sessionBody = `{"provider_id":"sylu_graduate","student_id":"G20260001","school_session":{"cookies":["SID=transient-secret; Path=/"],"session_path_prefix":"/(S(abc))"}}`
+
+func TestUndergraduateSessionProofDoesNotSendCancelledCredentials(t *testing.T) {
+	var calls atomic.Int32
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"school_verified_student_id":"20260001"}`))
+	}))
+	defer remote.Close()
+	previous := EduServiceConfig
+	t.Cleanup(func() { EduServiceConfig = previous })
+	EduServiceConfig.BaseURL = remote.URL
+	EduServiceConfig.Token = "synthetic-internal-token"
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := (undergraduateAcademicIdentityProvider{}).VerifySchoolSession(ctx, "20260001", academicSessionProof{Cookies: []string{"SID=transient-secret"}})
+	require.Error(t, err)
+	require.Zero(t, calls.Load(), "已取消的学校会话核验不能再向远端发送凭据")
+}
+
+func TestUndergraduateSessionProofCancelsInFlightRequest(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer remote.Close()
+	defer close(release)
+	previous := EduServiceConfig
+	t.Cleanup(func() { EduServiceConfig = previous })
+	EduServiceConfig.BaseURL = remote.URL
+	EduServiceConfig.Token = "synthetic-internal-token"
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := (undergraduateAcademicIdentityProvider{}).VerifySchoolSession(ctx, "20260001", academicSessionProof{Cookies: []string{"SID=transient-secret"}})
+		result <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("核验请求未到达隔离服务")
+	}
+	cancel()
+	select {
+	case err := <-result:
+		require.Error(t, err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("取消后核验仍在等待远端响应")
+	}
+}
 
 func TestSessionBindingOnlyAcceptsFreshSchoolIdentity(t *testing.T) {
 	_, db, p, user, request := sessionFixture(t)

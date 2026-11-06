@@ -1436,8 +1436,21 @@ class MyApp extends StatelessWidget {
             ),
           ]),
         ),
+        // 教务服务的延迟回调使用创建时的 context，登录状态必须先注册。
+        ChangeNotifierProvider(
+          create: (_) => AuthProvider(
+            dio,
+            onForbiddenRecovery: _handleForbiddenRecovery,
+            onCommunityRulesRequired: () async {
+              final context = appNavigatorKey.currentContext;
+              if (context == null || !context.mounted) return false;
+              return showRequiredCommunityRulesDialog(context);
+            },
+          ),
+        ),
         Provider<AcademicIdentityClient>(
-          create: (_) => AcademicIdentityClient(dio),
+          create: (context) => AcademicIdentityClient(dio,
+              sessionEpoch: () => context.read<AuthProvider>().accountSessionEpoch),
         ),
         Provider<AcademicRepository>(
           create: (context) {
@@ -1462,17 +1475,6 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider.value(value: appUpdateCoordinator),
-        ChangeNotifierProvider(
-          create: (_) => AuthProvider(
-            dio,
-            onForbiddenRecovery: _handleForbiddenRecovery,
-            onCommunityRulesRequired: () async {
-              final context = appNavigatorKey.currentContext;
-              if (context == null || !context.mounted) return false;
-              return showRequiredCommunityRulesDialog(context);
-            },
-          ),
-        ),
         ChangeNotifierProxyProvider<AuthProvider, AcademicSessionController>(
           create: (context) => AcademicSessionController(
             repository: context.read<AcademicRepository>(),

@@ -53,7 +53,7 @@ func TestListBookmarksOrderingEnvelopeAndIsolation(t *testing.T) {
 	// 收藏表与 hydrate 链路涉及的旁路表（水帖版块、点赞）一并迁移，
 	// 与 GetList 系测试保持同等的真实度。
 	require.NoError(t, db.AutoMigrate(
-		&models.PostBookmark{}, &models.Like{},
+		&models.PostBookmark{}, &models.Like{}, &models.Reply{},
 		&models.WaterSection{}, &models.WaterSectionFollow{}, &models.WaterTeamRecruitment{},
 	))
 	h := NewPostHandler(db, "", "")

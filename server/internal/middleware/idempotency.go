@@ -108,8 +108,8 @@ func IdempotencyMiddlewareWithJWT(db *gorm.DB, jwtSecret string) gin.HandlerFunc
 
 func idempotencyMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 教务配置、表情投稿及集成动作各自处理幂等；授权相关响应不能被全局缓存重放。
-		// 表情 multipart 不能经过普通幂等请求的 1 MiB 请求体门禁。
+		// 教务配置、授权与集成动作、表情投稿各自处理幂等；授权响应不能缓存凭证或确认 nonce 后重放。
+		// 表情 multipart 不走普通幂等请求的 1 MiB 请求体门禁，使用独立上传上限。
 		if strings.HasPrefix(c.Request.URL.Path, "/api/academic-account-configs/") ||
 			strings.HasPrefix(c.Request.URL.Path, "/api/oauth/") ||
 			strings.HasPrefix(c.Request.URL.Path, "/api/integrations/") ||

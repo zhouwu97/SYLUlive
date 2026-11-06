@@ -196,6 +196,7 @@ func newMarketTagsTestDB(t *testing.T) *gorm.DB {
 		&models.AcademicIdentityBinding{},
 		&models.ExpLog{},
 		&models.Like{},
+		&models.Reply{},
 		&models.File{},
 		&models.FileUploadGrant{},
 		&models.ImageVariant{},

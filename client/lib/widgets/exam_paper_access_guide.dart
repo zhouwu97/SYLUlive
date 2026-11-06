@@ -6,11 +6,15 @@ enum ExamPaperAccessGuideType { login, eduVerification }
 class ExamPaperAccessGuide extends StatelessWidget {
   final ExamPaperAccessGuideType type;
   final VoidCallback onAction;
+  final String? detail;
+  final VoidCallback? onRetry;
 
   const ExamPaperAccessGuide({
     super.key,
     required this.type,
     required this.onAction,
+    this.detail,
+    this.onRetry,
   });
 
   @override
@@ -62,9 +66,10 @@ class ExamPaperAccessGuide extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  isLogin
-                      ? '登录后可浏览、预览、下载并投稿历年试卷。'
-                      : '为保护校内资料，仅完成教务认证的普通用户可以访问；管理员不受此限制。',
+                  detail ??
+                      (isLogin
+                          ? '登录后可浏览、预览、下载并投稿历年试卷。'
+                          : '为保护校内资料，仅完成教务认证的普通用户可以访问；管理员不受此限制。'),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -77,6 +82,8 @@ class ExamPaperAccessGuide extends StatelessWidget {
                   icon: Icon(isLogin ? Icons.login : Icons.school_outlined),
                   label: Text(isLogin ? '去登录' : '去认证'),
                 ),
+                if (onRetry != null)
+                  TextButton(onPressed: onRetry, child: const Text('重试同步')),
               ],
             ),
           ),

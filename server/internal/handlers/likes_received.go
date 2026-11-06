@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"time"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -42,13 +44,8 @@ func (h *LikeHandler) GetReceivedLikes(c *gin.Context) {
 		CreatedAt  time.Time `json:"created_at"`
 	}
 	items := make([]item, 0)
-	query := h.db.Table("likes AS l").
-		Joins("JOIN users AS u ON u.id = l.user_id").
-		Joins("LEFT JOIN replies AS r ON l.target_type = 'reply' AND r.id = l.target_id").
-		Joins("JOIN posts AS p ON (l.target_type = 'post' AND p.id = l.target_id) OR (l.target_type = 'reply' AND p.id = r.post_id)").
-		Where("p.status IN ? AND ((l.target_type = 'post' AND p.author_id = ?) OR (l.target_type = 'reply' AND r.author_id = ? AND r.status = ?))", publicPostStatuses, uid, uid, "normal").
-		Where("l.user_id <> ? AND (u.account_status = ? OR u.account_status = '')", uid, "active").
-		Select("l.id, l.user_id, u.nickname, u.avatar, l.target_type, l.target_id, p.id AS post_id, p.title AS post_title, l.created_at")
+	query := models.EffectiveReceivedLikes(h.db.WithContext(c.Request.Context()), []uint{uid}).
+		Select("l.id, l.user_id, u.nickname, u.avatar, l.target_type, l.target_id, l.post_id, l.post_title, l.created_at")
 	if cursor > 0 {
 		query = query.Where("l.id < ?", cursor)
 	}

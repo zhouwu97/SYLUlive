@@ -22,7 +22,7 @@ func TestCommunityRulesConsentAllowsRepeatedLikesAndSurvivesLegalRenewal(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.Post{}, &models.Like{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.Post{}, &models.Reply{}, &models.Like{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := models.EnsureIdempotencySchema(db); err != nil {

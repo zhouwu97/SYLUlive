@@ -57,10 +57,8 @@ def meal_fixture():
     async def read(path, **kwargs):
         return {"items": [rank]} if path.endswith("rankings") else detail
 
-    plugin.client = SimpleNamespace(
-        public_call=AsyncMock(side_effect=read),
-        public_image=AsyncMock(side_effect=IntegrationProblem("network_unavailable")),
-    )
+    plugin.client = SimpleNamespace(public_call=AsyncMock(side_effect=read),
+                                    public_image=AsyncMock(side_effect=IntegrationProblem("image_not_found")))
     return plugin, event, manager
 
 
@@ -82,7 +80,7 @@ async def test_random_command_shows_location_and_real_review_without_rank_noise(
 @pytest.mark.asyncio
 async def test_food_photo_followup_carries_target_instead_of_old_map_history():
     plugin, event, _ = meal_fixture()
-    await plugin.select_meal(event)
+    await plugin.eat_what(event)
     _, follow, _ = fixture()
     request = ProviderRequest(
         prompt="有图片吗？给我看看",
@@ -120,7 +118,7 @@ async def test_public_canteen_tool_sanitizes_optional_personal_fields():
 @pytest.mark.parametrize("change", ["actor", "group", "cid", "expired", "topic"])
 async def test_recent_meal_does_not_cross_actor_group_reset_ttl_or_topic(change):
     plugin, event, _ = meal_fixture()
-    await plugin.select_meal(event)
+    await plugin.eat_what(event)
     _, follow, _ = fixture(sender="someone-else" if change == "actor" else "member")
     if change == "group":
         follow.unified_msg_origin = "configured-platform:GroupMessage:another-group"
@@ -161,7 +159,7 @@ def test_explicit_other_topic_is_not_treated_as_recent_food(prompt):
 async def test_first_meal_creates_native_conversation_without_writing_fake_history():
     plugin, event, manager = meal_fixture()
     manager.get_curr_conversation_id.return_value = None
-    await plugin.select_meal(event)
+    await plugin.eat_what(event)
     manager.new_conversation.assert_awaited_once_with(event.unified_msg_origin)
     assert next(iter(plugin.recent_canteens))[2] == "meal-conversation"
 
@@ -169,7 +167,7 @@ async def test_first_meal_creates_native_conversation_without_writing_fake_histo
 @pytest.mark.asyncio
 async def test_followup_filters_map_and_cannot_call_different_food_source():
     plugin, event, _ = meal_fixture()
-    await plugin.select_meal(event)
+    await plugin.eat_what(event)
     req = ProviderRequest(
         prompt="这家评价怎么样",
         conversation=SimpleNamespace(
@@ -213,7 +211,7 @@ async def test_photo_followup_reads_real_bytes_sends_current_chat_once_and_gives
     from PIL import Image
 
     plugin, event, _ = meal_fixture()
-    await plugin.select_meal(event)
+    await plugin.eat_what(event)
     raw = io.BytesIO()
     Image.new("RGB", (80, 60), "red").save(raw, format="PNG")
     plugin.client.public_image = AsyncMock(return_value=raw.getvalue())
@@ -259,7 +257,7 @@ async def test_missing_changed_or_uncertain_food_photo_cannot_claim_success(fail
     from PIL import Image
 
     plugin, event, _ = meal_fixture()
-    await plugin.select_meal(event)
+    await plugin.eat_what(event)
     original = plugin.client.public_call.side_effect
     reads = 0
 
@@ -385,7 +383,7 @@ async def test_meal_reference_survives_real_native_sqlite_conversation_creation(
     plugin, event, _ = meal_fixture()
     plugin.context.conversation_manager = manager
     try:
-        await plugin.select_meal(event)
+        await plugin.eat_what(event)
         cid = await manager.get_curr_conversation_id(event.unified_msg_origin)
         conversation = await manager.get_conversation(event.unified_msg_origin, cid)
         assert (
@@ -412,7 +410,7 @@ async def test_meal_reference_survives_real_native_sqlite_conversation_creation(
 @pytest.mark.asyncio
 async def test_direct_map_command_clears_recent_food_reference():
     plugin, event, _ = meal_fixture()
-    await plugin.select_meal(event)
+    await plugin.eat_what(event)
     plugin.campus_map = AsyncMock(return_value='{"error":"synthetic"}')
     assert [r async for r in plugin.map_command(event)]
     _, follow, _ = fixture()

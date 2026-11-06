@@ -63,11 +63,17 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
   );
   if (!auth.user)
     return (
-      <Empty title="登录后查看工单">
-        <button className="btn primary" onClick={auth.login}>
-          登录
-        </button>
-      </Empty>
+      <>
+        <Head
+          title={admin ? "工单管理" : "反馈与工单"}
+          description="提交问题、补充信息，查看处理进展"
+        />
+        <Empty icon="lock" title="登录后查看工单" description="登录后可提交问题并跟进处理进展。">
+          <button className="btn primary" onClick={auth.login}>
+            登录
+          </button>
+        </Empty>
+      </>
     );
   return (
     <>
@@ -438,7 +444,7 @@ export function Notifications() {
         onChange={(unread) => setParams({ unread })}
       />
       {!auth.user ? (
-        <Empty title="登录后查看通知">
+        <Empty icon="lock" title="登录后查看通知">
           <button className="btn primary" onClick={auth.login}>
             登录
           </button>

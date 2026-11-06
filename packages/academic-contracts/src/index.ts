@@ -66,6 +66,7 @@ export interface AcademicSnapshot {
 export type BridgeOperation =
   | "hello"
   | "connect"
+  | "loginStatus"
   | "confirm"
   | "session"
   | "query"
@@ -137,7 +138,21 @@ export interface HelloResult {
   capabilities: AcademicCapabilities[];
   connections?: AssistantConnection[];
   authorized?: Partial<Record<AcademicProvider, boolean>>;
+  automaticLogin?: boolean;
 }
+export interface AssistantLoginFlow {
+  flowId: string;
+  state: "awaiting_login" | "ready" | "cancelled";
+  phase?: AssistantLoginPhase;
+}
+export const assistantLoginMessages = {
+  awaiting_permission: "请在助手页授予学校访问权限；完成后会自动继续。",
+  awaiting_input: "请在助手页输入学校账号与密码，选择是否在本机保存，再开始登录。",
+  logging_in: "正在学校页面登录；验证码请在学校页完成，登录信息可在助手页修改重试。",
+  verification_required: "请在学校页面完成验证或手动登录，成功后会自动返回并读取资料。",
+  retry_required: "登录尚未完成，请在助手页修改信息后重试；原资料已保留。",
+} as const;
+export type AssistantLoginPhase = keyof typeof assistantLoginMessages;
 export const capabilities: AcademicCapabilities[] = [
   {
     provider: "undergraduate",
@@ -150,6 +165,7 @@ export const capabilities: AcademicCapabilities[] = [
 const operations: BridgeOperation[] = [
   "hello",
   "connect",
+  "loginStatus",
   "confirm",
   "session",
   "query",

@@ -57,7 +57,7 @@ export function Messages() {
 
   return <>
     <Head title="私信" description="和同学分享图片、表情与校园日常" />
-    {!auth.user ? <Empty title="登录后查看私信" description="私信内容只会在账号之间传递" /> : !list.length ? <Empty title="还没有会话" description="从同学主页发起一条消息后，会话会出现在这里" /> : <div className="chat-layout messages-shell">
+    {!auth.user ? <Empty icon="lock" title="登录后查看私信" description="私信内容只会在账号之间传递"><button className="btn primary" onClick={auth.login}>登录</button></Empty> : !list.length ? <Empty title="还没有会话" description="从同学主页发起一条消息后，会话会出现在这里" /> : <div className="chat-layout messages-shell">
       <aside className="chat-list">
         {list.map((conversation) => {
           const itemPeer = conversationPeer(conversation, auth.user?.id);

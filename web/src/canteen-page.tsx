@@ -12,7 +12,7 @@ export function CanteenPage(){
   function change(key:string,value:string){const next=new URLSearchParams(params);next.set(key,value);if(key!=='page')next.delete('page');setParams(next)}
   return <><Head title="食堂与菜品" description="食堂评分、菜品、排行与贡献"><button className="btn" onClick={()=>auth.requireUser()&&ui.open('我的点评',<MyReviews/>)}>我的点评</button><button className="btn primary" onClick={()=>change('tab','stores')}>＋ 写点评</button></Head>
     <Tabs tabs={[["home","食堂主页"],["stores","店铺菜品"],["ranking","食堂排行"],["mine","我的贡献"]]} value={tab} onChange={v=>change('tab',v)}/>
-    {tab==='mine'?(auth.user?<CanteenContributions/>:<Empty title="登录后查看自己的贡献"><button className="btn" onClick={auth.login}>登录</button></Empty>):<>
+    {tab==='mine'?(auth.user?<CanteenContributions/>:<Empty icon="lock" title="登录后查看自己的贡献"><button className="btn" onClick={auth.login}>登录</button></Empty>):<>
       {tab==='stores'&&<form className="filter-row" onSubmit={e=>{e.preventDefault();change('q',String(new FormData(e.currentTarget).get('q')||''))}}><input name="q" aria-label="搜索食堂" defaultValue={params.get('q')||''} placeholder="搜索食堂或店铺"/><button className="btn">搜索</button></form>}
       {tab==='ranking'&&<div className="filter-row"><label>排行方式 <select value={params.get('sort')||'composite'} onChange={e=>change('sort',e.target.value)}><option value="composite">综合排行</option><option value="rating">评分</option><option value="review_count">点评数量</option></select></label><span className="muted">按服务端真实统计排序</span></div>}
       <QueryState query={q}>{tab==='home'?<>

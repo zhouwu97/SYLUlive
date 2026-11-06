@@ -1,12 +1,17 @@
 import { useAcademic } from "./academic";
+import { PublicPosts, isPublicPost } from "./campus-chrome";
+import { ServerAvatar } from "./server-avatar";
+import { useMobile } from "./mobile";
+import { MobileHome } from "./mobile-home";
+import { useDesktopHomeFeed } from "./desktop-home-feed";
 import { PaperLibrary } from './papers';
 import { teachingWeek, mergeCourses } from "@sylulive/academic-contracts";
 import {
   PostCard as CommunityPostCard,
   PostForm as CommunityPostForm,
 } from "./community";
-import { useMemo, useState } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   useApi,
   rows,
@@ -17,6 +22,7 @@ import {
   asset,
   downloadJSON,
   errorText,
+  ApiError,
   type Entity,
 } from "./api";
 import { useAuth } from "./auth";
@@ -72,124 +78,71 @@ function useRows(path: string | null, ...keys: string[]) {
   const q = useApi<Entity>(path);
   return { ...q, items: rows(q.data, ...keys) };
 }
+// 首页常用入口：与侧栏、顶栏互补的六个高频功能。
+const HOME_QUICK = [["schedule", "课表"], ["grades", "成绩"], ["exams", "考试"], ["canteen", "食堂"], ["competition", "竞赛"], ["toolbox", "工具箱"]] as const;
+function dayLabel(termStart?: string) {
+  const now = new Date(), weekday = `周${"日一二三四五六"[now.getDay()]}`;
+  const week = termStart ? teachingWeek(termStart, now) : 0;
+  return week > 0 && week <= 30 ? `第 ${week} 周 · ${weekday}` : `${now.getMonth() + 1}月${now.getDate()}日 · ${weekday}`;
+}
 export function Dashboard() {
-  const nav = useNavigate(),
-    ui = useUI();
-  const posts = useRows("/api/posts?page=1&limit=5&sort=time", "posts");
-  const { requireUser } = useAuth();
+  return useMobile() ? <MobileHome /> : <DesktopDashboard />;
+}
+function DesktopDashboard() {
+  const nav = useNavigate(), ui = useUI(), auth = useAuth();
+  const [params, setParams] = useSearchParams();
+  const sort = params.get("sort") || "all";
+  const posts = useDesktopHomeFeed(sort);
+  const loadMore = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const target = loadMore.current;
+    if (!target || !posts.hasNextPage || posts.isFetching || posts.error) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) void posts.fetchNextPage();
+    }, { rootMargin: "0px 0px 320px 0px" });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [posts.hasNextPage, posts.isFetching, posts.error, posts.fetchNextPage]);
   const academic = useAcademic();
-  const hasSchedule = !!academic.updated || academic.data.courses.length > 0;
-  const week = academic.data.termStart
-    ? teachingWeek(academic.data.termStart)
-    : null;
-  const today = mergeCourses(
-    academic.data.courses,
-    academic.data.overrides,
-  ).filter(
-    (c) =>
-      c.day === (new Date().getDay() || 7) && (!week || c.weeks.includes(week)),
-  );
-  return (
-    <>
-      <Head
-        title="校园首页"
-        description={new Date().toLocaleDateString("zh-CN", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-          weekday: "long",
-        })}
-      >
-        <button className="btn" onClick={() => nav("/schedule")}>
-          查看课表
-        </button>
-        <button
-          className="btn primary"
-          onClick={() =>
-            requireUser() && ui.open("发布内容", <CommunityPostForm />)
-          }
-        >
-          <Icon name="plus" />
-          发布内容
-        </button>
-      </Head>
-      <section className="commons-hero" aria-label="发现校园生活">
-        <div className="commons-hero-copy">
-          <span className="commons-eyebrow">GOOD TO SEE YOU, SYLU</span>
-          <h2>在这里，遇见同频的你。</h2>
-          <p>分享新鲜事，找到学习搭子，让每一次连接都有回响。</p>
-          <button className="btn primary" onClick={() => requireUser() && ui.open("发布内容", <CommunityPostForm />)}>
-            <Icon name="plus" size={18} />分享校园日常
-          </button>
-          <button className="commons-explore" onClick={() => nav("/community")}>去社区逛逛 <span aria-hidden="true">↗</span></button>
-        </div>
-        <div className="commons-hero-art" aria-hidden="true"><span>Hi!</span><small>STUDY / LIVE / CONNECT</small></div>
-      </section>
-      <div className="today-card">
-        <div className="today-copy">
-          <span className="today-label">
-            <Icon name="schedule" size={16} />
-            {week ? `今日课表 · 第 ${week} 周` : "今日课表"}
-          </span>
-          <h2>
-            {today[0]?.name ||
-              (hasSchedule ? "今天没有课程" : "课表尚未连接")}
-          </h2>
-          <p>
-            {today[0]
-              ? `${today[0].room} · ${today[0].teacher} · 第 ${today[0].periods.join("、")} 节`
-              : hasSchedule ? "可查看本周课表或添加个人课程。" : "连接教务助手后显示今日课程。"}
-          </p>
-        </div>
-        {hasSchedule && <div className="today-side">
-          <div className="today-time">{today.length}</div>
-          <span className="muted">今日课程</span>
-        </div>}
-        <button className="btn" onClick={() => nav("/schedule")}>
-          {hasSchedule ? "查看今日课表" : "连接教务助手"}
-        </button>
+  const hour = new Date().getHours();
+  const greeting = hour < 6 ? "夜深了" : hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好";
+  const pages = posts.data?.pages || [];
+  const items = [...new Map(pages.flatMap(page => rows(page, "posts")).map(post => [post.id, post])).values()];
+  const publicPosts = rows(pages[0], "pinned_posts").filter(isPublicPost);
+  const pinned = [...new Map([...publicPosts, ...items.filter(isPublicPost)].map(post => [post.id, post])).values()];
+  const feed = items.filter(post => !pinned.some(item => item.id === post.id));
+  const expired = posts.error instanceof ApiError && posts.error.code === "feed_session_expired";
+  const publish = () => auth.requireUser() && ui.open("发布内容", <CommunityPostForm />);
+  return <div className="campus-home">
+    <section className="home-hero" aria-label="今日">
+      <div className="home-hero-top">
+        <div><h1>{greeting}，{auth.user?.nickname || "同学"}。</h1><p>看看同学们的新鲜事，也分享你的校园日常。</p></div>
+        <Link className="home-week" to="/campus" aria-label={`${dayLabel(academic.data.termStart)}，打开校园日历`}><Icon name="schedule" size={14} />{dayLabel(academic.data.termStart)}</Link>
       </div>
-      <div className="section quick-section">
-        <div className="section-head">
-          <h2>常用功能</h2>
-          <button className="link-btn" onClick={() => nav("/toolbox")}>
-            全部工具 →
-          </button>
-        </div>
-        <div className="quick-grid compact-quick">
-          {[
-            ["schedule", "我的课表", "下一堂课，心中有数"],
-            ["grades", "成绩", "回看每一步成长"],
-            ["market", "二手集市", "让闲置继续发光"],
-            ["canteen", "食堂", "发现校园好味道"],
-          ].map(([id, name, description]) => (
-            <button className="quick" key={id} aria-label={name} onClick={() => nav(`/${id}`)}>
-              <i>
-                <Icon name={id} />
-              </i>
-              <span className="quick-copy"><b>{name}</b><small>{description}</small></span>
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="section">
-        <div className="section-head">
-          <h2>校园正在发生</h2>
-          <button className="link-btn" onClick={() => nav("/community")}>
-            进入社区 →
-          </button>
-        </div>
-        <div className="panel dashboard-feed">
-          <QueryState query={posts}>
-            {posts.items.map((post) => (
-              <CommunityPostCard post={post} key={post.id} />
-            ))}
-            {!posts.items.length && <Empty />}
-          </QueryState>
-        </div>
-      </div>
-    </>
-  );
+      <nav className="home-quick" aria-label="常用入口">
+        {HOME_QUICK.map(([id, label]) => <Link key={id} to={`/${id}`}><span className={`home-quick-icon tone-${id}`}><Icon name={id} size={20} /></span>{label}</Link>)}
+      </nav>
+    </section>
+    <section className="campus-composer" aria-label="分享校园日常">
+      <div className="composer-row"><span className="composer-avatar"><ServerAvatar key={auth.user?.id} src={auth.user?.avatar} name={auth.user?.nickname || "沈理校园"} /></span><button className="composer-trigger" aria-label="分享校园日常" onClick={publish}><span>今天在校园里遇见了什么？</span></button>
+        <div className="composer-tools"><button onClick={publish}><Icon name="file" size={17} />图文</button><button onClick={() => nav("/polls")}><Icon name="polls" size={17} />投票</button><button onClick={() => nav("/polls?tab=team")}><Icon name="community" size={17} />组队</button></div></div>
+    </section>
+    <div className="home-feed-heading"><h2>校园动态</h2><Tabs tabs={[["all", "推荐"], ["time", "最新"], ["following", "关注"], ["hot", "热门"]]} value={sort} onChange={value => setParams({ sort: value })} /><Link className="home-feed-more" to="/community">全部动态 <span aria-hidden="true">→</span></Link></div>
+    <div className="dashboard-feed">
+      {sort === "following" && !auth.loading && !auth.user ? <Empty icon="lock" title="登录后查看关注动态" description="关注同学，看看他们的校园日常。"><button className="btn primary" onClick={auth.login}>登录</button></Empty> : <QueryState query={{ isPending: posts.isPending, error: posts.data ? null : posts.error, refetch: posts.refetch }}>
+        {pinned.length > 0 && <PublicPosts posts={pinned} />}
+        {feed.map(post => <CommunityPostCard post={post} key={post.id} />)}
+        {!feed.length && <Empty title="暂时没有新的校园动态" description="分享一段校园日常，开启讨论。" />}
+      </QueryState>}
+    </div>
+    <div ref={loadMore} className="dashboard-feed-end">
+      {posts.data && (posts.isFetchNextPageError ? <><p role="alert">{expired ? "信息流已更新，请刷新后继续浏览。" : "后续内容加载失败，已读帖子已保留。"}</p><button className="btn" onClick={() => expired ? posts.refetch() : posts.fetchNextPage()}>{expired ? "刷新动态" : "重试加载"}</button></>
+        : posts.isRefetchError ? <><p role="alert">刷新未完成，已读帖子已保留。</p><button className="btn" onClick={() => posts.refetch()}>重新刷新</button></>
+          : posts.hasNextPage ? <button className="btn" disabled={posts.isFetching} onClick={() => posts.fetchNextPage()}>{posts.isFetching ? "正在加载…" : "加载更多"}</button>
+            : feed.length > 0 && <span>已经看完啦</span>)}
+    </div>
+    <Link className="browse-community" to="/community">继续逛逛校园圈 <span aria-hidden="true">→</span></Link>
+  </div>;
 }
 
 export function Exams() {

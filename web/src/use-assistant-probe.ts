@@ -146,8 +146,9 @@ export function useAssistantProbe({
       },
       markReady: () => {
         if (!alive) return;
-        polling = false;
-        clearTimeout(timer);
+        // 主操作的 hello 成功只说明助手在线，不能取消仍待授予的学校权限复检。
+        polling = watchProvider !== undefined;
+        schedule();
         setState("ready");
       },
       setPaused: (value: boolean) => {

@@ -123,14 +123,14 @@ export async function schoolRequest(
     provider === "erke" && !/utf-8/i.test(contentType) ? "gbk" : "utf-8",
   ).decode(buffer);
 }
-function vpnPath(path: string) {
+export function vpnPath(path: string, host = "xg.sylu.edu.cn", scheme = "http") {
   const key = CryptoJS.enc.Utf8.parse("wrdvpnisthebest!");
-  const encrypted = CryptoJS.AES.encrypt("xg.sylu.edu.cn", key, {
+  const encrypted = CryptoJS.AES.encrypt(host, key, {
     iv: key,
     mode: CryptoJS.mode.CFB,
     padding: CryptoJS.pad.NoPadding,
   }).ciphertext.toString();
-  return "/http/" + key.toString() + encrypted + path;
+  return "/" + scheme + "/" + key.toString() + encrypted + path;
 }
 export async function identity(
   provider: AcademicProvider,
@@ -171,19 +171,26 @@ export async function identity(
   }
   const html = await schoolRequest(
     provider,
-    vpnPath("/SyluTW/Sys/SystemForm/FinishExam/StuFinishStudentScore.aspx"),
+    vpnPath("/SyluTW/Sys/SystemForm/top.aspx"),
     undefined,
     signal,
   );
   const d = schoolDocument(html);
-  const text = d.body?.textContent || "";
-  const m = text.match(/学号\s*[：:]?\s*(\d{8,20})/);
-  if (!m)
+  // 成绩页没有学号；顶部栏才包含当前登录账号，且不必读取完整个人资料。
+  // 只接受带退出入口和唯一账号的页面，不能把登录表单或任意数字当作身份。
+  const loggedIn = [...d.querySelectorAll("a[href]")].some((a) =>
+    /(?:^|\/)ExitWindows\.aspx(?:[?#]|$)/i.test(a.getAttribute("href") || ""),
+  );
+  const accounts = [...d.querySelectorAll("div,span")]
+    .filter((el) => el.children.length === 0)
+    .map((el) => (el.textContent || "").trim())
+    .filter((value) => /^\d{8,20}$/.test(value));
+  if (!loggedIn || accounts.length !== 1)
     throw new BridgeFailure(
       "school_login_required",
       "二课身份未确认，请在 WebVPN 中进入二课系统并完成登录",
     );
-  return { studentId: m[1], displayName: "" };
+  return { studentId: accounts[0], displayName: "" };
 }
 export async function fetchDataset(
   provider: AcademicProvider,

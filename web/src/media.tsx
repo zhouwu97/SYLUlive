@@ -49,7 +49,9 @@ export function mediaURL(item: MediaItem | Entity | undefined, variant: "thumb" 
 
 export function normalizeMedia(value: unknown): MediaItem {
   const item = (value && typeof value === "object" ? value : {}) as MediaItem;
-  return item;
+  const dimension = (input: unknown) => typeof input === "number" && Number.isFinite(input) && input > 0 ? input : undefined;
+  // 帖子接口的宽高位于 file；先建立尺寸，避免等图片加载后才撑开外框。
+  return { ...item, width: dimension(item.width) ?? dimension(item.file?.width), height: dimension(item.height) ?? dimension(item.file?.height) };
 }
 
 export async function uploadImageFiles(files: File[]): Promise<number[]> {
@@ -98,6 +100,7 @@ function MediaLightbox({ items, initial, close, title }: { items: MediaItem[]; i
   const [index, setIndex] = useState(initial);
   const item = items[index] || items[0];
   const src = mediaURL(item, "viewer") || mediaURL(item, "origin");
+  const original = mediaURL(item, "origin");
   const previous = useCallback(() => setIndex((value) => (value - 1 + items.length) % items.length), [items.length]);
   const next = useCallback(() => setIndex((value) => (value + 1) % items.length), [items.length]);
 
@@ -115,11 +118,11 @@ function MediaLightbox({ items, initial, close, title }: { items: MediaItem[]; i
     <div className="media-lightbox" aria-label={`${title}，第 ${index + 1} 张，共 ${items.length} 张`}>
       <div className="media-lightbox-toolbar">
         <span>{index + 1} / {items.length}</span>
-        {src && <a className="link-btn" href={src} target="_blank" rel="noreferrer">打开原图</a>}
+        {original && <a className="link-btn" href={original} target="_blank" rel="noreferrer">打开原图</a>}
       </div>
       <div className="media-lightbox-stage">
         <button type="button" className="media-lightbox-nav prev" onClick={previous} aria-label="上一张">‹</button>
-        {src ? <img src={src} alt={`${title}第 ${index + 1} 张`} /> : <span className="media-state">图片暂不可用</span>}
+        {src ? <LightboxImage key={src} src={src} alt={`${title}第 ${index + 1} 张`} /> : <span className="media-state">图片暂不可用</span>}
         <button type="button" className="media-lightbox-nav next" onClick={next} aria-label="下一张">›</button>
       </div>
       {items.length > 1 && (
@@ -136,22 +139,34 @@ function MediaLightbox({ items, initial, close, title }: { items: MediaItem[]; i
   );
 }
 
-export function MediaGallery({ items, title = "图片", className = "", maxVisible = 3 }: { items?: unknown[]; title?: string; className?: string; maxVisible?: number }) {
+function LightboxImage({ src, alt }: { src: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  return failed ? <div className="media-state" role="alert"><span>图片加载失败</span><button className="btn" onClick={() => setFailed(false)}>重试</button></div> : <img src={src} alt={alt} onError={() => setFailed(true)} />;
+}
+
+function MediaTile({ item, src, title, index, extra, onOpen }: { item: MediaItem; src: string; title: string; index: number; extra: number; onOpen: () => void }) {
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const [long, setLong] = useState(Number(item.height) / Number(item.width) > 2.2);
+  return <button type="button" className={`media-tile ${long ? "media-tile--long" : ""}`} onClick={() => failed ? (setFailed(false), setRetry(value => value + 1)) : onOpen()} aria-label={`${title}第 ${index + 1} 张`}>
+    {!failed ? <img key={retry} src={src} alt={`${title}第 ${index + 1} 张`} loading="lazy" decoding="async" width={item.width || undefined} height={item.height || undefined} onLoad={event => setLong(event.currentTarget.naturalHeight / event.currentTarget.naturalWidth > 2.2)} onError={() => setFailed(true)} /> : <span className="media-state">图片加载失败 · 点击重试</span>}
+    {long && !failed && <span className="media-long-label">长图 · 点击查看</span>}
+    {extra > 0 && <span className="media-more">+{extra}</span>}
+  </button>;
+}
+
+export function MediaGallery({ items, title = "图片", className = "", maxVisible = 3, variant = "preview" }: { items?: unknown[]; title?: string; className?: string; maxVisible?: number; variant?: "preview" | "detail" }) {
   const ui = useUI();
   const media = useMemo(() => (items || []).map(normalizeMedia).filter((item) => mediaURL(item, "origin")), [items]);
-  const [failed, setFailed] = useState<Record<number, boolean>>({});
-  const [retry, setRetry] = useState<Record<number, number>>({});
   if (!media.length) return null;
   const visible = media.slice(0, maxVisible);
   const open = (index: number) => ui.open("图片预览", <MediaLightbox items={media} initial={index} close={ui.close} title={title} />);
-  return <div className={`media-gallery media-gallery-${Math.min(visible.length, 3)} ${className}`}>
+  return <div className={`media-gallery media-gallery-${Math.min(visible.length, 3)} media-gallery-${variant} ${className}`}>
     {visible.map((item, index) => {
-      const src = mediaURL(item, "thumb") || mediaURL(item, "origin");
+      // 缩略图可能已经裁切；阅读区优先使用服务端等比 medium，详情使用 viewer。
+      const src = (variant === "detail" ? asset(item.viewer_url) : undefined) || asset(item.medium_url) || mediaURL(item, "origin") || mediaURL(item, "thumb");
       const extra = media.length - visible.length;
-      return <button type="button" className="media-tile" key={item.id || item.file_id || index} onClick={() => failed[index] ? (setFailed((state) => ({ ...state, [index]: false })), setRetry((state) => ({ ...state, [index]: (state[index] || 0) + 1 }))) : open(index)} aria-label={`${title}第 ${index + 1} 张`}>
-        {src && !failed[index] ? <img key={retry[index] || 0} src={src} alt={`${title}第 ${index + 1} 张`} loading="lazy" decoding="async" width={item.width || undefined} height={item.height || undefined} onError={() => setFailed((state) => ({ ...state, [index]: true }))} /> : <span className="media-state">图片加载失败 · 点击重试</span>}
-        {extra > 0 && index === visible.length - 1 && <span className="media-more">+{extra}</span>}
-      </button>;
+      return src ? <MediaTile key={`${item.id || item.file_id || index}:${src}`} item={item} src={src} title={title} index={index} extra={index === visible.length - 1 ? extra : 0} onOpen={() => open(index)} /> : null;
     })}
   </div>;
 }

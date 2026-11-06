@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useLayoutEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   BrowserRouter,
+  Link,
   NavLink,
   Route,
   Routes,
@@ -10,8 +11,10 @@ import {
 } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./auth";
-import { Icon, UIProvider, useUI, DialogOutlet } from "./ui";
-import { asset, entity, useApi, rows } from "./api";
+import { Empty, Icon, UIProvider, useUI, DialogOutlet } from "./ui";
+import { useApi } from "./api";
+import { CampusRail, ProfileSummary, SidebarBoards } from "./campus-chrome";
+import { ServerAvatar } from "./server-avatar";
 import {
   Dashboard,
   Exams,
@@ -21,7 +24,6 @@ import {Profile} from './profile';
 import "./styles.css";
 import "./social-shell.css";
 import "./web-polish.css";
-import "./commons.css";
 import { useWorkspaceMotion } from "./shell-motion";
 import {Admin} from "./admin";
 import { Polls } from "./polls";
@@ -31,10 +33,15 @@ import {Campus} from './campus';
 import { Catalog, CatalogDetail, type CatalogKind } from "./catalog";
 import { AiPage } from "./ai";
 import { Feedback, TicketDetail, Notifications } from "./feedback";
-import { Community, PostDetail } from "./community";
+import { Community, PostDetail, PostForm } from "./community";
 import { AcademicProvider, Schedule, Grades } from "./academic";
 import { ConnectedApps, ConnectedAction } from "./connected-apps";
 import { Messages } from "./messages";
+import "./commons.css";
+import { useMobile } from "./mobile";
+import { MobileHeader, MobileNavigation } from "./mobile-chrome";
+import "./mobile-app.css";
+import "./auth.css";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { staleTime: 15000, refetchOnWindowFocus: false },
@@ -64,6 +71,7 @@ function Search() {
   const [value, setValue] = useState("");
   const navigate = useNavigate();
   const ui = useUI();
+  const matches = navigation.filter(([, name]) => name.toLowerCase().includes(value.trim().toLowerCase()));
   return (
     <>
       <input
@@ -75,9 +83,7 @@ function Search() {
         onChange={(e) => setValue(e.target.value)}
       />
       <div className="palette-results">
-        {navigation
-          .filter(([, name]) => name.includes(value))
-          .map(([id, name]) => (
+        {matches.map(([id, name]) => (
             <button
               className="palette-result"
               key={id}
@@ -91,65 +97,8 @@ function Search() {
             </button>
           ))}
       </div>
+      {!matches.length && <div role="status"><Empty title="没有找到相关功能" description="试试课表、集市或校园，也可以清空搜索查看全部入口。"><button className="btn" onClick={() => setValue("")}>清空搜索</button></Empty></div>}
     </>
-  );
-}
-function Rail() {
-  const boards = useApi("/api/water/sections");
-  const auth = useAuth();
-  const profile = useApi(auth.user ? "/api/user/profile" : null);
-  const person = entity(profile.data, "user", "data");
-  const level = Number(person.level || 0);
-  const likes = Number(person.total_likes_received || person.like_count || 0);
-  const followers = Number(person.followers_count || person.follower_count || 0);
-  const following = Number(person.following_count || person.following || 0);
-  return (
-    <aside className="right-rail">
-      <div className="rail-card profile-rail-card">
-        <div className="profile-rail-head">
-          <div className="profile-rail-avatar">{person.avatar || auth.user?.avatar ? <img src={asset(person.avatar || auth.user?.avatar)} alt="" /> : <span>{(person.nickname || auth.user?.nickname || "同").slice(0, 1)}</span>}</div>
-          <div><b>{auth.user ? person.nickname || auth.user.nickname || "校园同学" : "登录沈理校园"}</b><p>{auth.user ? `Lv.${level || 1} · 校园贡献者` : "同步关注、收藏与校园消息"}</p></div>
-        </div>
-        {auth.user && <div className="profile-rail-stats"><span><b>{likes}</b><small>获赞</small></span><span><b>{followers}</b><small>关注者</small></span><span><b>{following}</b><small>关注</small></span></div>}
-        {auth.user ? <NavLink className="btn full-width" to="/profile">查看个人主页</NavLink> : <button className="btn primary full-width" onClick={auth.login}>登录并参与讨论</button>}
-      </div>
-      <div className="rail-card">
-        <div className="rail-title">
-          <b>社区分区</b>
-          <NavLink className="tiny" to="/community">
-            全部
-          </NavLink>
-        </div>
-        <div className="rail-body rail-list">
-          {rows(boards.data, "sections")
-            .slice(0, 4)
-            .map((b, i) => (
-              <NavLink
-                to={`/community?type=${b.slug}`}
-                className="rail-item"
-                key={b.id}
-              >
-                <div className="rail-index">
-                  {String(i + 1).padStart(2, "0")}
-                </div>
-                <div>
-                  <b>{b.title || b.name}</b>
-                  <p>{b.description || "进入分区"}</p>
-                </div>
-              </NavLink>
-            ))}
-          {boards.error && <p className="tiny muted">暂时无法读取分区</p>}
-        </div>
-      </div>
-      <div className="rail-card">
-        <div className="rail-title">
-          <b>校园服务</b>
-        </div>
-        <div className="rail-body">
-          <NavLink to="/campus">查看学校公告与服务</NavLink>
-        </div>
-      </div>
-    </aside>
   );
 }
 function Shell() {
@@ -163,6 +112,8 @@ function Shell() {
     location = useLocation(),
     navigate = useNavigate();
   const active = location.pathname.split("/")[1] || "dashboard";
+  const mobile = useMobile();
+  const standaloneProfile = active === "profile" && !mobile;
   const workspace = useWorkspaceMotion(location.pathname, navigationMotion);
   const unread = useApi(auth.user ? '/api/user/notifications/unread-count' : null);
   const messageUnread = useApi(auth.user ? '/api/messages/unread_count' : null);
@@ -174,10 +125,17 @@ function Shell() {
     setMenu(false);
   }, [location.pathname]);
   useLayoutEffect(()=>{
-    const main=document.getElementById('mainContent');
-    const frame=requestAnimationFrame(()=>main?.scrollTo(0,scrollPositions.get(location.key)||0));
-    return ()=>{cancelAnimationFrame(frame);if(main)scrollPositions.set(location.key,main.scrollTop)};
-  },[location.key]);
+    const position=scrollPositions.get(location.key)||0;
+    const saveScroll=()=>scrollPositions.set(location.key,window.scrollY);
+    window.addEventListener('scroll',saveScroll,{passive:true});
+    const frame=requestAnimationFrame(()=>{
+      window.scrollTo(0,position);
+    });
+    return ()=>{
+      cancelAnimationFrame(frame);
+      window.removeEventListener('scroll',saveScroll);
+    };
+  },[location.key,mobile]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -212,7 +170,7 @@ function Shell() {
     </NavLink>
   );
   return (
-    <div className={`app-shell social-shell ${active === "market" ? "market-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
+    <div data-mobile-page={active} className={`app-shell social-shell ${active === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
       <a className="skip-link" href="#mainContent">
         跳到主要内容
       </a>
@@ -227,12 +185,15 @@ function Shell() {
             <Icon name="menu" />
           </button>
           <div className="brand">
-            <div className="brand-mark"><img src="/web/assets/app-icon.png" alt="沈理校园" /></div>
+            <div className="brand-mark"><ServerAvatar src="/web/assets/app-icon.png" name="沈理校园" /></div>
             <div className="brand-copy">
               <b>沈理校园</b>
               <small>SYLUlive · 连接校园日常</small>
             </div>
           </div>
+          <nav className="desktop-top-nav" aria-label="快捷导航">
+            {[["/", "首页"], ["/community", "校园圈"], ["/market", "集市"], ["/schedule", "学习"], ["/campus", "发现"]].map(([to, label]) => <NavLink key={to} to={to} end={to === "/"}>{label}</NavLink>)}
+          </nav>
           <div className="crumb">
             <span>校园</span>
             <span>›</span>
@@ -246,7 +207,7 @@ function Shell() {
             <span>
               <Icon name="search" />
             </span>
-            <span className="search-label">搜索功能…</span>
+            <span className="search-label">搜索校园功能</span>
             <kbd>Ctrl K</kbd>
           </button>
           <div className="top-actions">
@@ -265,16 +226,22 @@ function Shell() {
               <Icon name="bell" />
               {Number(unread.data?.unread_count||unread.data?.count)>0&&<span className="notification-count">{unread.data?.unread_count||unread.data?.count}</span>}
             </button>
+            <button className="icon-btn header-messages" aria-label="私信消息" onClick={() => navigate("/messages")}>
+              <Icon name="messages" />
+              {Number(messageUnread.data?.unread_count || messageUnread.data?.count) > 0 && <span className="notification-count">{messageUnread.data?.unread_count || messageUnread.data?.count}</span>}
+            </button>
+            <button className="btn primary header-publish" aria-label="发布校园内容" onClick={() => auth.requireUser() && ui.open("发布内容", <PostForm />)}><Icon name="plus" size={16} />发布</button>
             <button
               className={auth.user ? 'avatar' : 'btn primary login-button'}
               aria-label={auth.user ? "我的账号" : "登录"}
               onClick={() => (auth.user ? navigate("/profile") : auth.login())}
             >
-              {auth.user ? (auth.user.avatar ? <img src={asset(auth.user.avatar)} alt="" /> : auth.user.nickname?.slice(0, 2)) : "登录"}
+              {auth.user ? <ServerAvatar key={auth.user.id} src={auth.user.avatar} name={auth.user.nickname || "校园同学"} /> : "登录"}
             </button>
           </div>
         </div>
       </header>
+      {mobile && <MobileHeader menu={menu} onMenu={() => setMenu(!menu)} />}
       <div className="frame">
         <button
           className="nav-mask"
@@ -282,19 +249,29 @@ function Shell() {
           aria-label="收起导航"
           onClick={() => setMenu(false)}
         />
-        <aside className={`sidebar ${menu ? "open" : ""}`} aria-label="主导航">
+        {!standaloneProfile && <aside className={`sidebar ${menu ? "open" : ""}`} aria-label="主导航">
           <div className="sidebar-scroll">
+            {mobile && <div className="mobile-drawer-title"><b>校园服务</b><button className="mobile-icon-button" aria-label="切换主题" onClick={() => setDark(!dark)}><Icon name={dark ? "sun" : "moon"} /></button></div>}
+            <ProfileSummary />
+            {mobile && !auth.user && <button className="btn primary mobile-drawer-login" onClick={auth.login}>登录</button>}
             {[
-              { label: "在校园 · 交流", ids: ["dashboard", "community", "messages", "market", "polls"] },
-              { label: "去学习 · 成长", ids: ["schedule", "grades", "exams", "competition", "ratings"] },
-              { label: "好生活 · 发现", ids: ["campus", "canteen", "ai"] },
+              { label: "社区", ids: ["dashboard", "community", "market", "schedule", "polls"] },
+              { label: "我的", ids: ["messages"] },
             ].map(({label, ids}) => (
               <div className="nav-section" key={label}>
                 <div className="nav-label">{label}</div>
                 {ids.map(id => navigation.find(item => item[0] === id)!).map(link)}
               </div>
             ))}
-          </div>
+            <div className="personal-feed-links">
+              <Link className={`nav-item ${active === "community" && location.search.includes("sort=bookmarks") ? "active" : ""}`} to="/community?sort=bookmarks"><span className="nav-icon"><Icon name="bookmark" /></span><span className="nav-text">我的收藏</span></Link>
+              <Link className={`nav-item ${active === "community" && location.search.includes("sort=mine") ? "active" : ""}`} to="/community?sort=mine"><span className="nav-icon"><Icon name="file" /></span><span className="nav-text">我的帖子</span></Link>
+            </div>
+            <SidebarBoards />
+            <details className="sidebar-more">
+              <summary>学习与校园服务 <Icon name="chevron" size={14} /></summary>
+              {["grades", "exams", "competition", "ratings", "campus", "canteen", "ai"].map(id => navigation.find(item => item[0] === id)!).map(link)}
+            </details>
           <div className="nav-section sidebar-account">
             {navigation
               .slice(13)
@@ -305,18 +282,21 @@ function Shell() {
               )
               .map(link)}
           </div>
+          </div>
           <div className="sidebar-footer">沈理校园 · Web</div>
-        </aside>
+        </aside>}
         <main className="workspace" id="mainContent" ref={workspace}>
-          <div className={`workspace-grid ${["dashboard","community"].includes(active)?"":"no-rail"}`}>
+          <div className={`workspace-grid ${["dashboard","community","polls"].includes(active)?"":"no-rail"}`}>
             <div className="main-pane">
-              <section key={`${location.pathname}${location.search}`} className="page active">
+              {/* 授权成功清理一次性连接码时保留管理草稿；账号切换由页面账号 key 隔离。 */}
+              <section key={location.pathname === "/connected-apps" ? location.pathname : `${location.pathname}${location.search}`} className="page active">
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/community" element={<Community />} />
                   <Route path="/market" element={<Community market />} />
                   <Route path="/messages" element={<Messages />} />
                   <Route path="/post/:id" element={<PostDetail />} />
+                  <Route path="/polls/:id" element={<PostDetail poll />} />
                   <Route path="/schedule" element={<Schedule />} />
                   <Route path="/grades" element={<Grades />} />
                   <Route path="/exams" element={<Exams />} />
@@ -366,12 +346,13 @@ function Shell() {
                 </Routes>
               </section>
             </div>
-            {["dashboard", "community"].includes(
+            {["dashboard", "community", "polls"].includes(
               active,
-            ) && <Rail />}
+            ) && <CampusRail />}
           </div>
         </main>
       </div>
+      {mobile && <MobileNavigation />}
     </div>
   );
 }
@@ -381,7 +362,7 @@ createRoot(document.getElementById("root")!).render(
       <UIProvider>
         <AuthProvider>
           <AcademicProvider>
-            <BrowserRouter basename="/web">
+            <BrowserRouter basename="/web/">
               <Shell />
               <DialogOutlet />
             </BrowserRouter>

@@ -21,7 +21,11 @@ test('工具箱在宽屏三列、窄屏单列，切换主题不破坏布局',asy
     const cards=page.locator('.three-col > section');await expect(cards).toHaveCount(6);
     const points=await cards.evaluateAll(es=>es.slice(0,2).map(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y}}));
     if(width>=1040)expect(Math.abs(points[0].y-points[1].y)).toBeLessThan(2);else expect(points[1].y).toBeGreaterThan(points[0].y);
-    await page.getByRole('button',{name:'切换主题'}).click();await expect(page.locator('html')).toHaveAttribute('data-theme',/dark|light/);
+    if(width<=760){
+      await page.goto('./');await page.getByRole('button',{name:'打开导航'}).click();
+      await page.getByRole('button',{name:'切换主题'}).click();await page.keyboard.press('Escape');await page.goto('toolbox');
+    }else await page.getByRole('button',{name:'切换主题'}).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme',/dark|light/);
   }
 });
 test('保存竞赛偏好使用服务端字段并更新回读',async({page})=>{

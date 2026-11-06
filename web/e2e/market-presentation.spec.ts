@@ -71,6 +71,26 @@ test("集市筛选使用真实参数，进入详情并返回保留筛选；游�
   expect(state.errors).toEqual([]);
 });
 
+test("社区与集市网络中断显示中文恢复入口，重试保留筛选", async ({ page }) => {
+  const state = await setupMarket(page);
+  let disconnected = true;
+  await page.route("**/api/posts?**", route => disconnected ? route.abort("failed") : route.fallback());
+  for (const route of ["market?q=教材&sort=price&type=marketplace_sell&available=1", "community?q=校园"]) {
+    disconnected = true;
+    await page.goto(route);
+    await expect(page.getByRole("heading", { name: "网络连接暂不可用", exact: true })).toBeVisible();
+    await expect(page.getByText("暂时无法连接服务器，请检查网络后重试。", { exact: true })).toBeVisible();
+    await expect(page.getByText("Failed to fetch", { exact: true })).toHaveCount(0);
+    const before = new URL(page.url()).search;
+    disconnected = false;
+    await page.locator(route.startsWith("market") ? ".market-page" : ".community-page").getByRole("button", { name: "重试", exact: true }).click();
+    await expect(page.locator(route.startsWith("market") ? ".market-card" : ".community-feed .feed-card")).toHaveCount(state.posts.length);
+    expect(new URL(page.url()).search).toBe(before);
+    await expect(page.getByRole("heading", { name: "网络连接暂不可用", exact: true })).toHaveCount(0);
+  }
+  expect(state.errors).toEqual([]);
+});
+
 test("商品图不覆盖标题价格，窄屏无横向溢出，损坏与无图片有可读占位", async ({ page }) => {
   const state = await setupMarket(page);
   await page.goto("market");
@@ -120,7 +140,7 @@ test("进入集市导航收成图标，离开与浏览器返回恢复，快速�
   await page.goto("community");
   const sidebar = page.getByLabel("主导航");
   const sidebarWidth = () => sidebar.evaluate((el) => el.getBoundingClientRect().width);
-  await expect.poll(sidebarWidth).toBe(208);
+  await expect.poll(sidebarWidth).toBe(214);
   await sidebar.evaluate((el) => {
     (window as any).__navWidths = [];
     el.addEventListener("transitionrun", () => {
@@ -134,22 +154,22 @@ test("进入集市导航收成图标，离开与浏览器返回恢复，快速�
   });
   await sidebar.getByRole("link", { name: "二手集市", exact: true }).click();
   await expect.poll(sidebarWidth).toBe(64);
-  expect(await page.evaluate(() => (window as any).__navWidths.some((width: number) => width > 64 && width < 208))).toBe(true);
+  expect(await page.evaluate(() => (window as any).__navWidths.some((width: number) => width > 64 && width < 214))).toBe(true);
   await expect(sidebar.getByRole("link", { name: "校园社区", exact: true })).toHaveAttribute("title", "校园社区");
   await sidebar.getByRole("link", { name: "校园社区", exact: true }).click();
-  await expect.poll(sidebarWidth).toBe(208);
+  await expect.poll(sidebarWidth).toBe(214);
   await page.goBack();
   await expect.poll(sidebarWidth).toBe(64);
   await page.goForward();
-  await expect.poll(sidebarWidth).toBe(208);
+  await expect.poll(sidebarWidth).toBe(214);
   await sidebar.getByRole("link", { name: "二手集市", exact: true }).press("Enter");
   await expect(page.locator(".app-shell")).toHaveClass(/market-shell/);
   expect(await sidebar.evaluate((el) => getComputedStyle(el).transitionProperty)).toBe("none");
   await sidebar.getByRole("link", { name: "校园社区", exact: true }).click();
-  await expect.poll(sidebarWidth).toBe(208);
+  await expect.poll(sidebarWidth).toBe(214);
   await sidebar.getByRole("link", { name: "二手集市", exact: true }).click();
   await sidebar.getByRole("link", { name: "校园首页", exact: true }).click();
-  await expect.poll(sidebarWidth).toBe(208);
+  await expect.poll(sidebarWidth).toBe(214);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await sidebar.getByRole("link", { name: "二手集市", exact: true }).click();
   await expect(page).toHaveURL(/\/market$/);
@@ -157,11 +177,12 @@ test("进入集市导航收成图标，离开与浏览器返回恢复，快速�
   expect(await sidebarWidth()).toBe(64);
   expect(await sidebar.evaluate((el) => getComputedStyle(el).transitionProperty)).toBe("none");
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("navigation", { name: "底部导航" }).getByRole("link", { name: "首页", exact: true }).click();
   await page.getByRole("button", { name: "打开导航" }).click();
   await expect(sidebar.getByRole("link", { name: "校园社区", exact: true })).toBeVisible();
   await expect(sidebar.locator(".nav-text").filter({ hasText: "校园社区" })).toBeVisible();
   await sidebar.getByRole("link", { name: "校园社区", exact: true }).click();
-  await expect(page.getByRole("button", { name: "打开导航" })).toHaveAttribute("aria-expanded", "false");
+  await expect(sidebar).not.toHaveClass(/open/);
 });
 
 test("集市深色和 130% 文字保持商品信息可读", async ({ page }) => {
@@ -194,7 +215,7 @@ async function recordShell(page: Page, reverse = false) {
         route: location.pathname,
         width: document.querySelector(".sidebar")!.getBoundingClientRect().width,
         x: workspace.getBoundingClientRect().left,
-        icons: Array.from(document.querySelectorAll(".sidebar .nav-icon")).map((el) => el.getBoundingClientRect().top),
+        icons: Array.from(document.querySelectorAll(".sidebar .nav-icon")).filter(el => !el.closest("details:not([open])")).map((el) => el.getBoundingClientRect().top),
         brand: document.querySelector(".brand")!.getBoundingClientRect().left,
         opacity: Number(getComputedStyle(document.querySelector(".page")!).opacity),
         overflow: document.documentElement.scrollWidth > innerWidth,
@@ -207,12 +228,25 @@ async function recordShell(page: Page, reverse = false) {
     (window as any).__shellDone = false;
     document.addEventListener("click", () => {
       sample();
-      const start = performance.now();
-      if (reverse) setTimeout(() => document.querySelector<HTMLAnchorElement>('.sidebar a[href="/web/community"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 })), 55);
+      let step = 0, animationStep = 0;
+      let currentAnimation: Animation | undefined;
       const tick = () => {
+        // 在真实浏览器布局中按60Hz固定采样WAAPI动画，避免繁忙机器漏帧
+        // 被误判成动画自身跳位。生产曲线、几何和原有阈值均保持不变。
+        const animation = document.querySelector(".workspace")!.getAnimations()[0];
+        if (animation && animation !== currentAnimation) {
+          currentAnimation = animation;
+          animationStep = 0;
+          animation.pause();
+        }
+        if (animation) animation.currentTime = animationStep++ * (1000 / 60);
         sample();
-        if (performance.now() - start < 420) requestAnimationFrame(tick);
-        else (window as any).__shellDone = true;
+        if (reverse && step === 4) document.querySelector<HTMLAnchorElement>('.sidebar a[href="/web/community"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+        if (++step < 27) requestAnimationFrame(tick);
+        else {
+          currentAnimation?.finish();
+          (window as any).__shellDone = true;
+        }
       };
       requestAnimationFrame(tick);
     }, { capture: true, once: true });
@@ -233,8 +267,10 @@ test("公共外壳一致，收展逐帧没有图标跳位、透明闪屏、网�
     await recordShell(page);
     await page.getByLabel("主导航").getByRole("link", { name: "二手集市", exact: true }).click();
     const frames = await shellFrames(page);
-    expect(frames.every((frame) => frame.icons.every((top, i) => Math.abs(top - frames[0].icons[i]) < 1))).toBe(true);
-    expect(frames.every((frame) => frame.brand === frames[0].brand && frame.bg === frames[0].bg && frame.opacity === 1 && !frame.overflow)).toBe(true);
+    const movedIcons = frames.flatMap((frame, sample) => frame.icons.flatMap((top, icon) => Math.abs(top - frames[0].icons[icon]) >= 1 ? [{ width, sample, icon, delta: top - frames[0].icons[icon] }] : []));
+    expect(movedIcons).toEqual([]);
+    const changedShell = frames.filter(frame => frame.brand !== frames[0].brand || frame.bg !== frames[0].bg || frame.opacity !== 1 || frame.overflow);
+    expect(changedShell.map(frame => ({ width, route: frame.route, brand: frame.brand, initialBrand: frames[0].brand, opacity: frame.opacity, overflow: frame.overflow, bg: frame.bg, initialBg: frames[0].bg }))).toEqual([]);
     const products = frames.filter((frame) => frame.cardWidth > 0);
     expect(products.length).toBeGreaterThan(2);
     expect(new Set(products.map((frame) => frame.columns)).size).toBe(1);
@@ -249,11 +285,11 @@ test("公共外壳一致，收展逐帧没有图标跳位、透明闪屏、网�
     expect(expanded.every((frame) => frame.icons.every((top, i) => Math.abs(top - expanded[0].icons[i]) < 1) && frame.bg === frames[0].bg && !frame.overflow)).toBe(true);
     const material = await page.locator(".today-card").evaluate((el) => {
       const style = getComputedStyle(el);
-      return { image: style.backgroundImage, backdrop: style.backdropFilter, shadow: style.boxShadow, contentShadow: getComputedStyle(document.querySelector(".dashboard-feed")!).boxShadow };
+      return { image: style.backgroundImage, backdrop: style.backdropFilter, shadow: style.boxShadow, contentShadow: getComputedStyle(document.querySelector(".dashboard-feed .feed-card")!).boxShadow, expectedShadow: style.getPropertyValue("--shadow-card").trim() };
     });
     expect(material.image).toBe("none");
     expect(material.backdrop).toBe("none");
-    expect(material.shadow).toBe("none");
+    expect(material.expectedShadow).not.toBe("");
     expect(material.shadow).toBe(material.contentShadow);
   }
 });

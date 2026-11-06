@@ -15,12 +15,16 @@ import {
   type BridgeErrorCode,
   type BridgeRequest,
   type BridgeResponse,
+  assistantLoginMessages,
+  type AssistantLoginPhase,
 } from "@sylulive/academic-contracts";
 import { identity, fetchDataset, origins } from "./school";
 import { store, clearPrefix } from "./storage";
 import { installReminders, removeSchedule, removeOriginSchedules, type ReminderConfig } from './reminders';
 import { installSelfHealingInjection } from './inject';
 import { pickHelloConnections } from "./hello";
+import { assertFlowOwner, cancelLoginFlows, readLoginFlow, writeLoginFlow, isAssistantTab, loginFlowTtl, type LoginFlow } from "./login-flow";
+import { credentialScope, clearCredentials, saveCredentials, type SchoolCredentials } from "./credentials";
 installReminders();
 installSelfHealingInjection();
 type Connection = AcademicConnection & { origin: string; confirmed: boolean };
@@ -34,6 +38,7 @@ const controllers = new Map<
   { controller: AbortController; key: string }
 >();
 const keyLocks = new Map<string, Promise<unknown>>();
+const cancelledRequests = new Set<string>();
 const siteOrigins = new Set(
   chrome.runtime
     .getManifest()
@@ -124,6 +129,7 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
       version: PROTOCOL_VERSION,
       extensionVersion: chrome.runtime.getManifest().version,
       capabilities,
+      automaticLogin: true,
       connections: pickHelloConnections(stored, origin),
       authorized: Object.fromEntries(
         providers.map((x, i) => [x, granted[i] === true]),
@@ -131,7 +137,25 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
     };
   }
   if (request.operation === "cancel") {
-    controllers.get(`${tabId}:${p.requestId}`)?.controller.abort();
+    if (typeof p.requestId === "string" && p.requestId.length <= 80) {
+      controllers.get(`${tabId}:${p.requestId}`)?.controller.abort();
+      const requestKey = `${tabId}:${p.requestId}`;
+      cancelledRequests.add(requestKey);
+      setTimeout(() => cancelledRequests.delete(requestKey), 60_000);
+    }
+    // connect 可能已在网页取消前返回、但其响应尚未送达。任务也按原请求 ID
+    // 失效，避免关闭弹窗那一瞬间仍留下可自动填写密码的旧助手任务。
+    const stored = await chrome.storage.session.get(null);
+    for (const [id, value] of Object.entries(stored)) {
+      if (!id.startsWith("login-flow:")) continue;
+      const flow = value as LoginFlow;
+      if (flow.origin !== origin || flow.returnTabId !== tabId ||
+          !((typeof p.requestId === "string" && flow.requestId === p.requestId) || flow.flowId === p.flowId)) continue;
+      await withKeyLock(connectionKey(origin, flow.provider), async () => {
+        const latest = (await chrome.storage.session.get(id))[id] as LoginFlow | undefined;
+        if (latest) await writeLoginFlow({ ...latest, state: "cancelled" });
+      });
+    }
     return { cancelled: true };
   }
   if (request.operation === 'window' || request.operation === 'reminders') {
@@ -156,7 +180,25 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
   const provider = p.provider,
     key = connectionKey(origin, provider);
   if (request.operation === "disconnect") {
-    await revoke(key);
+    if (p.localOnly === true) {
+      if (!Number.isSafeInteger(p.appUserId) || Number(p.appUserId) < 1) fail("invalid_argument", "本机退出账号无效");
+      const owner = Number(p.appUserId);
+      // 站点 logout 已撤销 Cookie，此处只取消本人本机任务和资料，不再请求账号
+      // 接口，也不删除本人曾明确保存的自动登录凭据。
+      await withKeyLock(key, async () => {
+        await cancelLoginFlows(origin, provider, owner);
+        const current = await get(key);
+        if (current?.appUserId === owner) await revokeUnlocked(key);
+      });
+      await removeSchedule(origin, owner);
+      return { disconnected: true };
+    }
+    const owner = await account(origin);
+    await withKeyLock(key, async () => {
+      await cancelLoginFlows(origin, provider);
+      await clearCredentials(credentialScope(origin, owner, provider));
+      await revokeUnlocked(key);
+    });
     // 本地手动课表也可以启用提醒，没有学校连接时同样清理。
     await removeOriginSchedules(origin);
     return { disconnected: true };
@@ -165,11 +207,47 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
   const old = await get(key);
   if (old && old.appUserId !== appUserId) await revoke(key);
   if (request.operation === "connect") {
+    const requestKey = `${tabId}:${request.id}`;
+    if (cancelledRequests.has(requestKey)) fail("connection_stale", "登录任务已取消");
+    if (provider === "physical") {
+      await chrome.tabs.create({ url: chrome.runtime.getURL(`assistant.html?provider=${provider}`) });
+      return { state: "awaiting_login" };
+    }
     await revoke(key, false);
-    await chrome.tabs.create({
-      url: chrome.runtime.getURL(`assistant.html?provider=${provider}`),
+    return withKeyLock(key, async () => {
+      await cancelLoginFlows(origin, provider);
+      const flow: LoginFlow = {
+        flowId: crypto.randomUUID(), state: "awaiting_login", origin, appUserId,
+        provider, returnTabId: tabId, expiresAt: Date.now() + loginFlowTtl,
+        requestId: request.id,
+      };
+      await writeLoginFlow(flow);
+      const tab = await chrome.tabs.create({ url: "about:blank" });
+      // 先绑定标签 ID 再载入助手页，避免初始化消息抢先于会话写入。
+      await writeLoginFlow({ ...flow, assistantTabId: tab.id });
+      await chrome.tabs.update(tab.id!, { url: chrome.runtime.getURL(`assistant.html?provider=${provider}&flow=${flow.flowId}`) });
+      if (cancelledRequests.has(requestKey)) {
+        await writeLoginFlow({ ...flow, assistantTabId: tab.id, state: "cancelled" });
+        fail("connection_stale", "登录任务已取消");
+      }
+      return { state: "awaiting_login", flowId: flow.flowId };
     });
-    return { state: "awaiting_login" };
+  }
+  if (request.operation === "loginStatus") {
+    const flow = await readLoginFlow(p.flowId, true);
+    assertFlowOwner(flow, origin, appUserId, tabId, provider);
+    if (flow.expiresAt < Date.now()) fail("connection_stale", "登录任务已过期，请重新连接");
+    if (flow.state === "cancelled") return { flowId: flow.flowId, state: "cancelled" };
+    const expectedAssistantUrl = chrome.runtime.getURL(`assistant.html?provider=${provider}&flow=${flow.flowId}`);
+    const assistantExists = flow.assistantTabId !== undefined && await chrome.tabs.get(flow.assistantTabId).then(tab => isAssistantTab(flow, tab, expectedAssistantUrl), () => false);
+    if (p.cancel === true || (flow.state === "awaiting_login" && !assistantExists)) {
+      await withKeyLock(key, async () => {
+        const latest = await readLoginFlow(flow.flowId);
+        await writeLoginFlow({ ...latest, state: "cancelled" });
+      });
+      return { flowId: flow.flowId, state: "cancelled" };
+    }
+    return { flowId: flow.flowId, state: flow.state, phase: flow.phase };
   }
   if (
     !(await chrome.permissions.contains({
@@ -338,6 +416,70 @@ async function handle(request: BridgeRequest, origin: string, tabId: number) {
   fail("unsupported_query", "此功能尚未启用");
 }
 chrome.runtime.onMessage.addListener((message: unknown, sender, reply) => {
+  if (message && typeof message === "object" && (message as { kind?: string }).kind === "assistant-login") {
+    if (!sender.url || sender.frameId !== 0 || sender.tab?.id === undefined) return false;
+    const url = new URL(sender.url);
+    const assistantUrl = new URL(chrome.runtime.getURL("assistant.html"));
+    if (url.protocol !== assistantUrl.protocol || url.host !== assistantUrl.host || url.pathname !== assistantUrl.pathname) return false;
+    const input = message as { flowId?: unknown; action?: unknown; studentId?: unknown; credentials?: SchoolCredentials; phase?: AssistantLoginPhase };
+    void (async () => {
+      const flow = await readLoginFlow(input.flowId, input.action === "forget");
+      if (flow.assistantTabId !== sender.tab!.id || url.searchParams.get("flow") !== flow.flowId)
+        fail("connection_stale", "登录任务不属于当前助手页");
+      if (input.action === "heartbeat" || input.action === "abandon") {
+        await withKeyLock(connectionKey(flow.origin, flow.provider), async () => {
+          const latest = await readLoginFlow(flow.flowId);
+          if (latest.state === "awaiting_login") await writeLoginFlow({ ...latest,
+            ...(input.action === "abandon" ? {state: "cancelled" as const} : {lastSeen: Date.now()}) });
+        });
+        return { origin: flow.origin, appUserId: flow.appUserId, provider: flow.provider };
+      }
+      if ((await account(flow.origin)) !== flow.appUserId)
+        fail("connection_stale", "沈理校园账号已改变，请返回网站重新连接");
+      const returnTab = await chrome.tabs.get(flow.returnTabId);
+      if (!returnTab.url || new URL(returnTab.url).origin !== flow.origin)
+        fail("connection_stale", "连接页面已关闭或离开本站");
+      if (input.action === "forget") {
+        await withKeyLock(connectionKey(flow.origin, flow.provider), async () => {
+          await cancelLoginFlows(flow.origin, flow.provider, flow.appUserId);
+          await clearCredentials(credentialScope(flow.origin, flow.appUserId, flow.provider));
+        });
+      } else if (input.action === "cancel") {
+        await withKeyLock(connectionKey(flow.origin, flow.provider), async () => {
+          const latest = await readLoginFlow(flow.flowId);
+          await writeLoginFlow({ ...latest, state: "cancelled" });
+        });
+      } else if (input.action === "progress") {
+        if (!input.phase || !Object.hasOwn(assistantLoginMessages, input.phase)) fail("invalid_argument", "登录进度无效");
+        await withKeyLock(connectionKey(flow.origin, flow.provider), async () => {
+          const latest = await readLoginFlow(flow.flowId);
+          if (latest.state === "awaiting_login") await writeLoginFlow({ ...latest, phase: input.phase });
+        });
+      } else if (input.action === "complete") {
+        const current = await identity(flow.provider);
+        if (typeof input.studentId !== "string" || current.studentId !== input.studentId)
+          fail("identity_changed", "学校账号发生变化，请重新连接");
+        await withKeyLock(connectionKey(flow.origin, flow.provider), async () => {
+          if ((await account(flow.origin)) !== flow.appUserId)
+            fail("connection_stale", "沈理校园账号已改变，请重新连接");
+          const latest = await readLoginFlow(flow.flowId);
+          if (input.credentials) {
+            const c = input.credentials;
+            if (!["undergraduate", "erke"].includes(flow.provider) || c.account !== current.studentId ||
+                typeof c.password !== "string" || !c.password || c.password.length > 1024 ||
+                (flow.provider === "erke" && (typeof c.vpnPassword !== "string" || !c.vpnPassword || c.vpnPassword.length > 1024)))
+              fail("invalid_argument", "保存凭据与本次学校身份不匹配");
+            await saveCredentials(credentialScope(flow.origin, flow.appUserId, flow.provider), c);
+          }
+          await writeLoginFlow({ ...latest, state: "ready" });
+        });
+        await chrome.tabs.update(flow.returnTabId, { active: true });
+        await chrome.windows.update(returnTab.windowId, { focused: true });
+      } else if (input.action !== "context") fail("invalid_argument", "登录操作无效");
+      return { origin: flow.origin, appUserId: flow.appUserId, provider: flow.provider };
+    })().then(result => reply({ ok: true, result })).catch(error => reply({ ok: false, code: error instanceof BridgeFailure ? error.code : "failed", message: error instanceof Error ? error.message : "连接失败" }));
+    return true;
+  }
   if (
     !isBridgeRequest(message) ||
     sender.frameId !== 0 ||

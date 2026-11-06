@@ -1,49 +1,42 @@
+// 24px 圆角图标体系。淡填充只用于功能图标，操作状态由控件自身表达。
 export const paths: Record<string, string> = {
-  dashboard:
-    '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/>',
-  community:
-    '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 10 10 0 0 1-4-.8L3 21l1.5-4.5A8.5 8.5 0 1 1 21 11.5Z"/><path d="M8 9h8M8 13h5"/>',
-  market:
-    '<path d="M3 8h18l-2-5H5zM4 8v12h16V8M9 20v-7h6v7"/><path d="M8 3v5m8-5v5"/>',
-  schedule:
-    '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18M8 15h2m4 0h2m-8 3h2"/>',
-  grades: '<path d="M6 3h9l4 4v14H6zM15 3v5h4M9 16v2m3-6v6m3-4v4"/>',
-  exams:
-    '<rect x="4" y="4" width="16" height="17" rx="2"/><path d="M9 3h6v3H9zM8 11l2 2 4-4M8 17h8"/>',
-  campus:
-    '<path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/>',
-  canteen:
-    '<path d="M4 3v6a3 3 0 0 0 6 0V3M7 3v19M20 3c-5 1-5 10-1 10h1V3Zm0 10v9"/>',
-  competition:
-    '<path d="M8 3h8v6a4 4 0 0 1-8 0zM8 5H4v3a4 4 0 0 0 4 4m8-7h4v3a4 4 0 0 1-4 4M12 13v6M8 21h8m-6-2h4"/>',
-  ratings:
-    '<path d="m12 3 2.8 5.8 6.4.9-4.6 4.5 1.1 6.3L12 17.5l-5.7 3 1.1-6.3L2.8 9.7l6.4-.9Z"/>',
-  polls: '<path d="M4 21h16M6 17V9h3v8zm5 0V3h3v14zm5 0v-5h3v5z"/>',
-  ai: '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5ZM20 2v4m-2-2h4"/>',
-  toolbox:
-    '<rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V3h8v4M3 12h18M10 10v4h4v-4"/>',
-  feedback:
-    '<path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2ZM12 7v4m0 3h.01"/>',
-  profile:
-    '<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>',
-  admin: '<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12l3 3 5-6"/>',
-  search: '<circle cx="10" cy="10" r="6.5"/><path d="m15 15 6 6"/>',
-  bell: '<path d="M18 8a6 6 0 0 0-12 0c0 8-3 8-3 10h18c0-2-3-2-3-10M9 21h6"/>',
-  moon: '<path d="M20 15.5A9 9 0 0 1 8.5 4 9 9 0 1 0 20 15.5Z"/>',
-  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
-  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
-  plus: '<path d="M12 4v16M4 12h16"/>',
-  heart:
-    '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>',
-  bookmark: '<path d="M6 3h12v18l-6-4-6 4z"/>',
-  share: '<path d="M14 3h7v7m0-7L10 14M10 5H4v15h15v-6"/>',
-  more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
-  chevron: '<path d="m6 9 6 6 6-6"/>',
-  arrow: '<path d="M19 12H5m6-6-6 6 6 6"/>',
-  file: '<path d="M5 3h9l5 5v13H5zM14 3v6h5M9 13h6m-6 4h6"/>',
-  check: '<path d="m5 12 4 4L20 5"/>',
-  monitor:
-    '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/>',
-  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10h.01"/>',
-  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
+  dashboard: '<path data-tone d="M5 10v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-9l-7-6z"/><path d="m3 11 7.6-7a2 2 0 0 1 2.8 0L21 11M5 10v9a2 2 0 0 0 2 2h3v-6h4v6h3a2 2 0 0 0 2-2v-9"/>',
+  community: '<path data-tone d="M3 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8l-5 3z"/><path d="M3 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8l-5 3V5ZM8 7h4m-4 4h6M9 18h7l5 3V10a2 2 0 0 0-2-2"/>',
+  messages: '<rect data-tone x="3" y="5" width="18" height="14" rx="4"/><rect x="3" y="5" width="18" height="14" rx="4"/><path d="m4 7 6.3 5a2.8 2.8 0 0 0 3.4 0L20 7"/>',
+  market: '<path data-tone d="M4 10v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9z"/><path d="M4 10v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9M3 8l2-5h14l2 5v1a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0V8ZM9 21v-6h6v6M9 3v5m6-5v5"/>',
+  schedule: '<path data-tone d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4m8-4v4M3 10h18M7.5 14h1m3 0h1m3 0h1m-9 3h1m3 0h1"/>',
+  grades: '<rect data-tone x="3" y="3" width="18" height="18" rx="4"/><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M7 16v-4m5 4V7m5 9v-6"/>',
+  exams: '<rect data-tone x="5" y="5" width="14" height="16" rx="3"/><path d="M8 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1"/><rect x="8" y="3" width="8" height="4" rx="2"/><path d="m8 12 1.5 1.5L12 11m2 2h2m-8 4h8"/>',
+  campus: '<path data-tone d="M6 8h12v13H6z"/><path d="m3 8 9-5 9 5M6 8v13m12-13v13M3 21h18M10 21v-5h4v5M9 11h.01M15 11h.01"/>',
+  canteen: '<path data-tone d="M4 8h6v4H4zM17 3v11h3V6a3 3 0 0 0-3-3Z"/><path d="M4 3v6a3 3 0 0 0 6 0V3M7 3v18M17 21V3a3 3 0 0 1 3 3v8h-3"/>',
+  competition: '<path data-tone d="M7 3h10v6a5 5 0 0 1-10 0z"/><path d="M7 3h10v6a5 5 0 0 1-10 0V3ZM7 5H4v3a4 4 0 0 0 4 4m9-7h3v3a4 4 0 0 1-4 4M12 14v4M8 21v-1a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1H8Z"/>',
+  ratings: '<path data-tone d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z"/><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"/>',
+  polls: '<path data-tone d="M3 13h18v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M6 10 3 13v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6l-3-3M3 13h18M8 13V3h8v10M10 7l1.5 1.5L14 6"/>',
+  ai: '<path data-tone d="m10 4 2.5 5.5L18 12l-5.5 2.5L10 20l-2.5-5.5L2 12l5.5-2.5z"/><path d="m10 4 2.5 5.5L18 12l-5.5 2.5L10 20l-2.5-5.5L2 12l5.5-2.5L10 4ZM19 2v6m-3-3h6M20 17v4m-2-2h4"/>',
+  toolbox: '<rect data-tone x="3" y="3" width="7" height="7" rx="2"/><rect data-tone x="14" y="14" width="7" height="7" rx="2"/><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
+  feedback: '<path data-tone d="M4 4h16v12H9l-5 4z"/><path d="M7 3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H9l-5 4V6a3 3 0 0 1 3-3ZM8 7h8m-8 4h5"/>',
+  profile: '<circle data-tone cx="12" cy="8" r="4"/><path data-tone d="M5 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2z"/><circle cx="12" cy="8" r="4"/><path d="M5 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2"/>',
+  admin: '<path data-tone d="m12 3 8 3v6c0 4-5 8-8 9-3-1-8-5-8-9V6z"/><path d="m12 3 8 3v6c0 4-5 8-8 9-3-1-8-5-8-9V6l8-3ZM8.5 12l2.5 2.5 4.5-5"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>',
+  bell: '<path data-tone d="M6 10a6 6 0 0 1 12 0v4l2 3H4l2-3z"/><path d="M6 10a6 6 0 0 1 12 0v4l2 3H4l2-3v-4ZM10 21h4M12 2v2"/>',
+  moon: '<path data-tone d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z"/><path d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z"/>',
+  sun: '<circle data-tone cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4m11.2 11.2L19 19M5 19l1.4-1.4M17.6 6.4 19 5"/>',
+  menu: '<path d="M4 6h16M4 12h12M4 18h16"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  heart: '<path d="M20 5.5a5 5 0 0 0-7 0l-1 1-1-1a5 5 0 0 0-7 7L12 21l8-8.5a5 5 0 0 0 0-7Z"/>',
+  bookmark: '<path d="M7 3h10a1 1 0 0 1 1 1v17l-6-4-6 4V4a1 1 0 0 1 1-1Z"/>',
+  share: '<path d="M12 15V3m-4 4 4-4 4 4M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>',
+  more: '<g fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></g>',
+  chevron: '<path d="m7 10 5 5 5-5"/>',
+  arrow: '<path d="M20 12H4m6-6-6 6 6 6"/>',
+  file: '<path data-tone d="M6 3h8l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 1-2Z"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Zm0 0v5h5M9 12h6m-6 4h4"/>',
+  check: '<path d="m5 12 4.5 4.5L19 7"/>',
+  monitor: '<rect data-tone x="3" y="4" width="18" height="13" rx="3"/><rect x="3" y="4" width="18" height="13" rx="3"/><path d="M8 21h8m-4-4v4"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><circle cx="12" cy="7.5" r=".7" fill="currentColor" stroke="none"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 6.5V12l3.5 2"/>',
+  trending: '<path data-tone d="M12 2c0 4 8 7 8 12a8 8 0 1 1-16 0c0-4 3-6 4-7 0 3 2 4 3 4-1-4 1-7 1-9Z"/><path d="M12 2c0 4 8 7 8 12a8 8 0 1 1-16 0c0-4 3-6 4-7 0 3 2 4 3 4-1-4 1-7 1-9Z"/>',
+  close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.5"/>',
+  "eye-off": '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12ZM3 3l18 18"/><circle cx="12" cy="12" r="2.5"/>',
 };

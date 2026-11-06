@@ -19,6 +19,8 @@ pnpm dev
 
 详见 [插件安装与本地配置](../astrbot_plugin_sylulive/README.md)。本地开发务必设置前述 `SYLULIVE_API_ORIGIN`，插件与 `INTEGRATION_PUBLIC_ORIGIN` 均指向本地网页 origin 5173。未启用后端新集成时，这些页面不会伪装成功。该入口不改变现有 Web/Flutter 校园 AI。
 
+页面上方「打开 AstrBot 插件管理」直接进入部署者的插件权限页，默认本机6185端口，可修改后台 origin；不保存地址、不携带本站凭据，也不代替 AstrBot 登录。消息规则在该后台配置；账号授权仍在本站「核对连接请求」完成。旧连接显示缺失的自动参与 scope，补授权重新取得连接码并明确替换，不先撤销旧连接；评论／发帖及个人查询／签到均不默认批准。只批准读取时提示权限不足；满足基础 scope 与评论或发帖授权后，才说明 App 启用账号和 AstrBot 执行端检查步骤。
+
 ## 扩展安装与本机查询
 
 ```powershell

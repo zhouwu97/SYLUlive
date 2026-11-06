@@ -28,6 +28,7 @@ files = [
     "community_view.py",
     "approved_media.py",
     "chat_media.py",
+    "chat_context.py",
     "permission_console.py",
     "pages/permissions/index.html",
     "pages/permissions/app.css",
@@ -50,7 +51,7 @@ try:
     dirty = bool(subprocess.run(["git", "status", "--porcelain", "--", "astrbot_plugin_sylulive", "scripts/package-astrbot-plugin.py"], cwd=root, capture_output=True, text=True, check=True, timeout=5).stdout.strip())
 except (OSError, subprocess.SubprocessError):
     revision, dirty = None, True
-manifest = {"version": "0.4.4", "source_commit": revision, "source_dirty": dirty,
+manifest = {"version": "0.4.5", "source_commit": revision, "source_dirty": dirty,
             "files": {name: hashlib.sha256(data).hexdigest() for name, data in contents.items()}}
 contents["build.json"] = (json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode()
 with ZipFile(output, "w", compression=ZIP_DEFLATED, compresslevel=9) as archive:

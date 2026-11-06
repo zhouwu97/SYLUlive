@@ -24,7 +24,7 @@ def test_package_is_reproducible_and_excludes_local_secrets(tmp_path):
         "community_view.py", "approved_media.py",
         "accounts.py", "administration.py", "permissions.py", "binding_delivery.py",
         "binding_notifications.py", "group_confirmations.py", "personal.py",
-        "chat_media.py", "permission_console.py", "pages/permissions/index.html",
+        "chat_media.py", "chat_context.py", "permission_console.py", "pages/permissions/index.html",
         "pages/permissions/app.css", "pages/permissions/app.js",
     }
     for name in allowed:
@@ -46,7 +46,7 @@ def test_package_is_reproducible_and_excludes_local_secrets(tmp_path):
     with ZipFile(tmp_path / "dist" / "astrbot_plugin_sylulive.zip") as archive:
         assert set(archive.namelist()) == allowed | {"build.json"}
         manifest = json.loads(archive.read("build.json"))
-        assert manifest["version"] == "0.4.4" and manifest["source_dirty"] is True
+        assert manifest["version"] == "0.4.5" and manifest["source_dirty"] is True
         assert manifest["files"] == {name: hashlib.sha256(archive.read(name)).hexdigest() for name in allowed}
         assert archive.testzip() is None
         for name in allowed:

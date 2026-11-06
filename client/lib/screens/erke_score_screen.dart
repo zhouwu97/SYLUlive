@@ -1,29 +1,39 @@
+import 'dart:async';
+
 import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import '../widgets/app_popup_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/publish_session_scope.dart';
+import '../features/ai_device_bridge/device_credential_store.dart';
 import '../services/webvpn_service.dart';
 import '../features/campus_data/erke/erke_repository.dart';
 import '../features/campus_data/erke/erke_models.dart';
 import '../features/campus_data/storage/erke_cache_store.dart';
 import '../features/personal_data_sync/personal_data_sync_coordinator.dart';
 import '../features/personal_data_sync/erke_snapshot_upload.dart';
-import '../features/personal_data_sync/personal_data_sync_models.dart';
 import '../features/personal_data_sync/personal_data_sync_result.dart';
 import '../providers/edu_provider.dart';
 import '../features/academic/application/academic_session_controller.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_radius.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/erke_snapshot_upload_dialog.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_page_app_bar.dart';
 import '../widgets/global_background_wrapper.dart';
 import '../providers/theme_provider.dart';
 
 class ErkeScoreScreen extends StatefulWidget {
-  const ErkeScoreScreen({super.key});
+  const ErkeScoreScreen(
+      {super.key, this.credentialStore, this.createRepository});
+
+  final DeviceCredentialStore? credentialStore;
+  final ErkeRepository Function(
+      String appUserId, String studentId, WebVpnService vpn)? createRepository;
 
   @override
   State<ErkeScoreScreen> createState() => _ErkeScoreScreenState();
@@ -34,9 +44,17 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   final _erkePwdCtrl = TextEditingController();
   final _studentIdCtrl = TextEditingController();
 
-  final WebVpnService _vpn = WebVpnService();
-  late ErkeCacheStore _cache;
-  late ErkeRepository _repo;
+  WebVpnService _vpn = WebVpnService();
+  late final DeviceCredentialStore _credentials =
+      widget.credentialStore ?? DeviceCredentialStore();
+  DeviceErkeCredentials? _sessionCredentials;
+  bool _rememberPasswords = true;
+  bool _initializing = true;
+  bool _restoringCredentials = true;
+  String? _refreshError;
+  Timer? _messageTimer;
+  ErkeRepository? _repository;
+  ErkeRepository get _repo => _repository!;
   String _repositoryNamespace = '';
 
   bool _isLoading = false;
@@ -59,52 +77,101 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   ];
 
   @override
-  void initState() {
-    super.initState();
-    final user = context.read<AuthProvider>().user;
-    final academic = context.read<AcademicSessionController?>();
-    final edu = context.read<EduProvider?>();
-    final boundStudentId = (academic?.identity?.studentId ??
-            academic?.studentId ??
-            edu?.studentId ??
-            '')
-        .trim();
-    final sourceAccountId =
-        boundStudentId.isNotEmpty ? boundStudentId : (user?.studentId ?? '');
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = Provider.of<AuthProvider>(context);
+    final academic = Provider.of<AcademicSessionController?>(context);
+    final edu = Provider.of<EduProvider?>(context);
+    final sourceAccountId = [
+          academic?.identity?.studentId,
+          academic?.studentId,
+          edu?.studentId,
+          auth.user?.studentId
+        ]
+            .whereType<String>()
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .firstOrNull ??
+        '';
     _bindRepository(
-      appUserId: user?.id.toString() ?? '',
+      appUserId: auth.isLoggedIn ? auth.user?.id.toString() ?? '' : '',
       sourceAccountId: sourceAccountId,
+      accountSessionEpoch: auth.accountSessionEpoch,
     );
-    if (user != null) {
-      _studentIdCtrl.text = sourceAccountId;
-    }
-    _clearLegacySavedPasswords();
-    _loadCache();
   }
 
-  // ==================================================================
-  //  缓存
-  // ==================================================================
-
-  void _bindRepository({
-    required String appUserId,
-    required String sourceAccountId,
-  }) {
-    final namespace = '$appUserId|$sourceAccountId';
+  void _bindRepository(
+      {required String appUserId,
+      required String sourceAccountId,
+      required int accountSessionEpoch}) {
+    final namespace = '$appUserId|$sourceAccountId|$accountSessionEpoch';
     if (_repositoryNamespace == namespace) return;
+    if (_repositoryNamespace.isNotEmpty) {
+      _repository?.resetLiveSession();
+      _vpn.dispose();
+      _vpn = WebVpnService();
+    }
+    _stopMessageRotation();
     _repositoryNamespace = namespace;
-    _cache = ErkeCacheStore(
-      appUserId: appUserId,
-      sourceAccountId: sourceAccountId,
-    );
-    _repo = ErkeRepository(vpnService: _vpn, cacheStore: _cache);
+    _studentIdCtrl.text = sourceAccountId;
+    _casPwdCtrl.clear();
+    _erkePwdCtrl.clear();
+    _sessionCredentials = null;
+    _forceShowLogin = false;
+    _isLoading = false;
+    _switchingYear = false;
+    _initializing = true;
+    _restoringCredentials = true;
+    _refreshError = null;
+    if (appUserId.isEmpty || sourceAccountId.isEmpty) {
+      _repository = null;
+      _initializing = false;
+      _restoringCredentials = false;
+      return;
+    }
+    final auth = context.read<AuthProvider>();
+    _repository = widget.createRepository
+            ?.call(appUserId, sourceAccountId, _vpn) ??
+        ErkeRepository(
+            isCurrent: () =>
+                mounted &&
+                auth.isLoggedIn &&
+                auth.user?.id.toString() == appUserId &&
+                auth.accountSessionEpoch == accountSessionEpoch &&
+                _repositoryNamespace == namespace,
+            vpnService: _vpn,
+            cacheStore: ErkeCacheStore(
+                appUserId: appUserId, sourceAccountId: sourceAccountId));
+    unawaited(_initialize(_repo, namespace, appUserId, sourceAccountId));
   }
 
-  Future<void> _loadCache() async {
+  Future<void> _initialize(ErkeRepository repo, String namespace,
+      String appUserId, String studentId) async {
+    bool current() =>
+        mounted &&
+        identical(repo, _repository) &&
+        _repositoryNamespace == namespace;
+    await _clearLegacySavedPasswords();
     try {
-      await _repo.loadCache();
-      if (mounted) setState(() {});
-    } catch (_) {}
+      if (appUserId.isNotEmpty && studentId.isNotEmpty) {
+        await repo.loadCache();
+        if (!current()) return;
+        if (repo.hasCachedData) setState(() => _initializing = false);
+        final saved = await _credentials.readErke(studentId);
+        if (!current()) return;
+        _sessionCredentials = saved;
+      }
+    } catch (_) {
+      if (current()) _refreshError = '本机安全存储暂不可用，请稍后重试';
+    }
+    if (!current()) return;
+    setState(() {
+      _initializing = false;
+      _restoringCredentials = false;
+    });
+    if (_sessionCredentials != null) {
+      unawaited(_queryScores(background: true));
+    }
   }
 
   Future<void> _clearLegacySavedPasswords() async {
@@ -120,6 +187,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     _casPwdCtrl.dispose();
     _erkePwdCtrl.dispose();
     _studentIdCtrl.dispose();
+    _stopMessageRotation();
+    _repository?.resetLiveSession();
     _vpn.dispose();
     super.dispose();
   }
@@ -128,145 +197,184 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   //  查询
   // ==================================================================
 
-  Future<void> _queryScores() async {
+  Future<void> _queryScores({bool background = false}) async {
+    if (_isLoading ||
+        _initializing ||
+        _restoringCredentials ||
+        _switchingYear) {
+      return;
+    }
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
-      AppFeedback.showSnackBar(context, '请先在「我的」页面登录后再查询', isError: true);
+      if (!background) {
+        AppFeedback.showSnackBar(context, '请先在「我的」页面登录后再查询', isError: true);
+      }
       return;
     }
-
-    final casPwd = _casPwdCtrl.text;
-    final erkePwd = _erkePwdCtrl.text;
     final studentId = _studentIdCtrl.text.trim();
-
-    if (casPwd.isEmpty || erkePwd.isEmpty || studentId.isEmpty) {
-      AppFeedback.showSnackBar(context, '请填写完整信息');
+    // Auth 通知到新一帧重绑定之间，旧页面的回调也不能使用新账号发起更新。
+    if (_repository == null ||
+        _repositoryNamespace !=
+            '${auth.user?.id}|$studentId|${auth.accountSessionEpoch}') {
       return;
     }
-
-    _bindRepository(
-      appUserId: auth.user!.id.toString(),
-      sourceAccountId: studentId,
-    );
-
+    final input = DeviceErkeCredentials(
+        casPassword: _casPwdCtrl.text, erkePassword: _erkePwdCtrl.text);
+    final credentials = input.isComplete
+        ? input
+        : _forceShowLogin
+            ? null
+            : _sessionCredentials;
+    if (credentials == null || studentId.isEmpty) {
+      if (!background) {
+        setState(() {
+          _forceShowLogin = true;
+          _refreshError = '请填写统一认证密码和二课密码';
+        });
+      }
+      return;
+    }
+    final repo = _repo;
+    final namespace = _repositoryNamespace;
+    final appUserId = auth.user!.id;
+    final session = PublishSessionScope(
+        accountId: appUserId, accountSessionEpoch: auth.accountSessionEpoch);
+    bool current() =>
+        mounted &&
+        identical(repo, _repository) &&
+        namespace == _repositoryNamespace &&
+        auth.isLoggedIn &&
+        session.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
     setState(() {
       _isLoading = true;
+      _refreshError = null;
       _loadingMessage = _loadingMessages.first;
     });
     _startMessageRotation();
-
     try {
-      _updateMessage('正在通过统一认证…');
-      final syncResult = await PersonalDataSyncCoordinator(
-        academicGateway: EduProviderPersonalAcademicSyncGateway(
-          context.read<EduProvider>(),
-        ),
-        erkeGateway: ErkeRepositoryPersonalSyncGateway(
-          repository: _repo,
-          requestCredentials: () async => PersonalErkeCredentials(
+      final gateway = ErkeRepositoryPersonalSyncGateway(
+        repository: repo,
+        requestCredentials: () async => PersonalErkeCredentials(
             studentId: studentId,
-            casPassword: casPwd,
-            erkePassword: erkePwd,
-          ),
-          snapshotUploader: ErkeSnapshotUploadGateway(auth.dio),
-          uploadPolicyStore: PreferenceErkeSnapshotUploadPolicyStore(
-            appUserId: auth.user!.id.toString(),
-          ),
-          requestUploadPolicy: _requestErkeSnapshotUploadPolicy,
-        ),
-      ).sync(
-        datasets: const <PersonalSyncDataset>{PersonalSyncDataset.erke},
-        trigger: PersonalSyncTrigger.erkePage,
+            casPassword: credentials.casPassword,
+            erkePassword: credentials.erkePassword),
+        snapshotUploader: ErkeSnapshotUploadGateway(auth.dio, session: session),
+        uploadPolicyStore: PreferenceErkeSnapshotUploadPolicyStore(
+            appUserId: auth.user!.id.toString()),
+        requestUploadPolicy: background
+            ? null
+            : () async {
+                if (!mounted || !current()) {
+                  return ErkeSnapshotUploadPolicy.askEveryUpdate;
+                }
+                return await _requestErkeSnapshotUploadPolicy();
+              },
+        isCurrent: current,
       );
-      if (!mounted) return;
-      final item = syncResult.items[PersonalSyncDataset.erke];
-
-      if (item?.status != PersonalSyncItemStatus.success) {
-        final message = item?.message ?? _repo.fetchError ?? '更新失败';
-        AppFeedback.showSnackBar(context, '查询失败：$message', isError: true);
-        _forceShowLogin = false; // 保留旧缓存展示
-        if (mounted) setState(() {});
-        return;
+      final item = await gateway.syncErke();
+      if (!mounted || !current()) return;
+      // 认证成功与成绩拉取成功分别处理，避免某个数据页失败后再次索要密码。
+      if (repo.credentialsVerified) {
+        _sessionCredentials = credentials;
+        if (_rememberPasswords && input.isComplete) {
+          try {
+            await _credentials.writeErke(studentId, credentials);
+          } catch (_) {
+            if (current()) _refreshError = '本次验证已完成，但密码未能安全保存，请稍后重试';
+          }
+        } else if (input.isComplete) {
+          await _credentials.deleteErke(studentId);
+        }
+        if (!current()) return;
+        _casPwdCtrl.clear();
+        _erkePwdCtrl.clear();
       }
-
-      _forceShowLogin = false;
-      if (mounted) setState(() {});
-      if (item?.isPartial == true ||
-          (item?.message != null && item!.message!.contains('失败'))) {
-        AppFeedback.warning(
-          '二课数据已更新；${item?.message}',
-          context: context,
-        );
+      if (!mounted || !current()) return;
+      if (item.status != PersonalSyncItemStatus.success) {
+        _refreshError = item.message ?? repo.fetchError ?? '更新失败，请重试';
+        // 只有 CAS 明确拒绝凭据时才要求修改密码，上游通用错误不删保存的凭据。
+        if (repo.failureCategory ==
+            ErkeFetchFailureCategory.credentialInvalid) {
+          _sessionCredentials = null;
+          _forceShowLogin = true;
+        }
+        if (!background) {
+          AppFeedback.showSnackBar(context, _refreshError!, isError: true);
+        }
       } else {
-        AppFeedback.success(
-          '二课数据已更新${item?.message == null ? '' : '；${item!.message}'}',
-          context: context,
-        );
+        _forceShowLogin = false;
+        if (item.isPartial) _refreshError = item.message;
+        if (!background) {
+          if (item.isPartial) {
+            AppFeedback.warning(item.message ?? '部分数据更新失败，可重试',
+                context: context);
+          } else {
+            AppFeedback.success(
+                '二课数据已更新${item.message == null ? '' : '；${item.message}'}',
+                context: context);
+          }
+        }
       }
-    } catch (e) {
-      final rawError = (_repo.fetchError?.trim().isNotEmpty == true)
-          ? _repo.fetchError!
-          : '网络请求异常';
-      debugPrint('[Erke] 查询阶段失败: ${e.runtimeType}');
-      if (!mounted) return;
-
-      AppFeedback.showSnackBar(
-        context,
-        '查询失败：$rawError',
-        isError: true,
-      );
+    } catch (error) {
+      if (!current()) return;
+      _refreshError = '二课更新未完成，已有数据已保留，请重试';
+      debugPrint('[Erke] update failed type=${error.runtimeType}');
     } finally {
-      _stopMessageRotation();
-      if (mounted) setState(() => _isLoading = false);
+      if (current()) {
+        _stopMessageRotation();
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   bool _switchingYear = false;
 
   Future<void> _switchYear(String targetYear) async {
-    if (_switchingYear) return;
-    if (!_repo.hasLiveSession) {
-      AppFeedback.showSnackBar(context, '会话已过期，请重新登录', isError: true);
-      return;
-    }
-    _switchingYear = true;
+    if (_switchingYear || _isLoading) return;
+    final repo = _repo;
+    final namespace = _repositoryNamespace;
+    bool current() =>
+        mounted &&
+        identical(repo, _repository) &&
+        namespace == _repositoryNamespace;
+    setState(() => _switchingYear = true);
     try {
-      await _repo.fetchYearlySummary(targetYear);
-      if (_repo.yearlyError != null && mounted) {
-        AppFeedback.showSnackBar(context, _repo.yearlyError!, isError: true);
+      await repo.fetchYearlySummary(targetYear);
+      if (!current()) return;
+      if (repo.yearlyError != null && !repo.hasLiveSession) {
+        _switchingYear = false;
+        await _queryScores();
+        if (!current() || _forceShowLogin || !repo.hasLiveSession) return;
+        _switchingYear = true;
+        await repo.fetchYearlySummary(targetYear);
       }
-      if (mounted) setState(() {});
-    } catch (e) {
-      if (mounted) {
-        AppFeedback.showSnackBar(
-          context,
-          '切换学年失败：${_repo.yearlyError ?? e.toString()}',
-          isError: true,
-        );
+      if (mounted && current() && repo.yearlyError != null) {
+        AppFeedback.showSnackBar(context, repo.yearlyError!, isError: true);
       }
     } finally {
-      _switchingYear = false;
-      if (mounted) setState(() {});
+      if (current()) setState(() => _switchingYear = false);
     }
   }
 
   void _startMessageRotation() {
-    Future.doWhile(() async {
-      await Future.delayed(const Duration(seconds: 4));
-      if (!_isLoading || !mounted) return false;
-      final curIdx = _loadingMessages.indexOf(_loadingMessage);
-      if (curIdx >= 0 && curIdx < _loadingMessages.length - 1) {
-        setState(() => _loadingMessage = _loadingMessages[curIdx + 1]);
+    _stopMessageRotation();
+    _messageTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_isLoading) {
+        _stopMessageRotation();
+        return;
       }
-      return _isLoading;
+      final index = _loadingMessages.indexOf(_loadingMessage);
+      if (index < _loadingMessages.length - 1) {
+        setState(() => _loadingMessage = _loadingMessages[index + 1]);
+      }
     });
   }
 
-  void _updateMessage(String msg) {
-    if (mounted) setState(() => _loadingMessage = msg);
+  void _stopMessageRotation() {
+    _messageTimer?.cancel();
+    _messageTimer = null;
   }
-
-  void _stopMessageRotation() {}
 
   Future<ErkeSnapshotUploadPolicy> _requestErkeSnapshotUploadPolicy() async {
     final policy = await showErkeSnapshotUploadDialog(context);
@@ -279,6 +387,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       AppFeedback.showSnackBar(context, '请先登录', isError: true);
       return;
     }
+    final session = PublishSessionScope(
+        accountId: auth.user!.id,
+        accountSessionEpoch: auth.accountSessionEpoch);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
@@ -296,9 +407,15 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true ||
+        !mounted ||
+        !auth.isLoggedIn ||
+        !session.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch)) {
+      return;
+    }
     try {
-      await ErkeSnapshotUploadGateway(auth.dio).delete();
+      await ErkeSnapshotUploadGateway(auth.dio, session: session).delete();
       if (mounted) AppFeedback.showSnackBar(context, '已删除服务端二课快照');
     } on ErkeSnapshotUploadException catch (error) {
       if (mounted) {
@@ -352,7 +469,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   BoxDecoration _softCardDecoration(bool isDark) {
     return BoxDecoration(
       color: _cardBg(isDark),
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(AppRadius.lg),
       border: Border.all(color: _border(isDark)),
       boxShadow: isDark
           ? null
@@ -379,30 +496,31 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           : isDark
               ? const Color(0xFF111315)
               : const Color(0xFFFFFAF4),
-      appBar: AppBar(
-        title:
-            const Text('二课成绩查询', style: TextStyle(fontWeight: FontWeight.bold)),
-        centerTitle: true,
-        backgroundColor: customBackground
-            ? Colors.transparent
-            : isDark
-                ? const Color(0xFF111315)
-                : const Color(0xFFFFFAF4),
-        surfaceTintColor: Colors.transparent,
-        scrolledUnderElevation: 0,
-        elevation: 0,
+      appBar: AppPageAppBar(
+        title: const Text('二课成绩查询'),
         actions: [
-          if (_repo.hasCachedData)
+          if (_repository?.hasCachedData == true)
             AppPopupMenuButton<String>(
               onSelected: (value) async {
+                if (_isLoading || _switchingYear) return;
                 if (value == 'relogin') {
-                  // 保留缓存，只重置在线会话
-                  _repo.resetLiveSession();
-                  _forceShowLogin = true;
-                  setState(() {});
+                  await _queryScores();
+                } else if (value == 'edit_credentials') {
+                  setState(() => _forceShowLogin = true);
+                } else if (value == 'forget_credentials') {
+                  final repo = _repo;
+                  await _credentials.deleteErke(_studentIdCtrl.text.trim());
+                  if (!mounted || !identical(repo, _repository)) return;
+                  setState(() {
+                    _sessionCredentials = null;
+                    _casPwdCtrl.clear();
+                    _erkePwdCtrl.clear();
+                  });
+                  if (context.mounted) {
+                    AppFeedback.showSnackBar(context, '已清除本机保存的二课密码');
+                  }
                 } else if (value == 'clear_cache') {
                   await _repo.clearCachedData();
-                  _forceShowLogin = true;
                   if (context.mounted) {
                     AppFeedback.showSnackBar(context, '本地缓存已清除');
                     setState(() {});
@@ -417,6 +535,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   child: Text('更新二课数据'),
                 ),
                 const PopupMenuItem(
+                    value: 'edit_credentials', child: Text('修改登录密码')),
+                const PopupMenuItem(
+                    value: 'forget_credentials', child: Text('清除已保存密码')),
+                const PopupMenuItem(
                     value: 'clear_cache', child: Text('清除本地缓存')),
                 const PopupMenuItem(
                   value: 'delete_uploaded_snapshot',
@@ -427,9 +549,17 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         ],
       ),
       body: SafeArea(
-        child: (_repo.hasCachedData && !_forceShowLogin)
-            ? _buildDataView(isDark)
-            : _buildLoginForm(),
+        child: _repository == null
+            ? const Center(
+                child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('请先在「我的」页面登录并绑定学号后查询二课成绩',
+                        textAlign: TextAlign.center)))
+            : _initializing
+                ? const Center(child: CircularProgressIndicator())
+                : (_repo.hasCachedData && !_forceShowLogin)
+                    ? _buildDataView(isDark)
+                    : _buildLoginForm(),
       ),
     );
     return backgroundSettings == null
@@ -468,7 +598,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    '学号 $studentId 已自动识别，请完成双重密码验证',
+                    _sessionCredentials != null && !_forceShowLogin
+                        ? '学号 $studentId，已读取本机保存的密码，可直接更新'
+                        : '学号 $studentId，请验证一次以便后续自动更新',
                     style: TextStyle(
                       fontSize: 13,
                       color: isDark ? Colors.white70 : const Color(0xFF147C72),
@@ -480,92 +612,128 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          AppCardSurface(
-            padding: const EdgeInsets.all(20),
-            decoration: _softCardDecoration(isDark),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('验证信息',
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black87)),
-                const SizedBox(height: 20),
-                Row(children: [
-                  const Text('1 统一认证密码',
-                      style:
-                          TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                  Text('VPN 穿透专用',
+          if (_sessionCredentials == null || _forceShowLogin)
+            AppCardSurface(
+              padding: const EdgeInsets.all(20),
+              decoration: _softCardDecoration(isDark),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('验证信息',
                       style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? Colors.white54 : Colors.grey[500])),
-                ]),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _casPwdCtrl,
-                  obscureText: _obscureCas,
-                  style: const TextStyle(fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText: '输入统一身份认证密码',
-                    prefixIcon: const Icon(Icons.lock_outline, size: 18),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                          _obscureCas ? Icons.visibility_off : Icons.visibility,
-                          size: 18),
-                      onPressed: () =>
-                          setState(() => _obscureCas = !_obscureCas),
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black87)),
+                  const SizedBox(height: 20),
+                  Row(children: [
+                    const Text('1 统一认证密码',
+                        style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    Text('VPN 穿透专用',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white54 : Colors.grey[500])),
+                  ]),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _casPwdCtrl,
+                    enabled: !_isLoading,
+                    obscureText: _obscureCas,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: '输入统一身份认证密码',
+                      prefixIcon: const Icon(Icons.lock_outline, size: 18),
+                      suffixIcon: IconButton(
+                        tooltip: _obscureCas ? '显示统一认证密码' : '隐藏统一认证密码',
+                        icon: Icon(
+                            _obscureCas
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            size: 18),
+                        onPressed: () =>
+                            setState(() => _obscureCas = !_obscureCas),
+                      ),
+                      filled: true,
+                      fillColor: isDark
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : const Color(0xFFF5F7F8),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none),
                     ),
-                    filled: true,
-                    fillColor: isDark
-                        ? Colors.white.withValues(alpha: 0.05)
-                        : const Color(0xFFF5F7F8),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none),
                   ),
-                ),
-                const SizedBox(height: 24),
-                Row(children: [
-                  const Text('2 二课查询密码',
-                      style:
-                          TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                  Text('系统登录专用',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? Colors.white54 : Colors.grey[500])),
-                ]),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _erkePwdCtrl,
-                  obscureText: _obscureErke,
-                  style: const TextStyle(fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText: '输入二课平台登录密码',
-                    prefixIcon: const Icon(Icons.vpn_key_outlined, size: 18),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                          _obscureErke
-                              ? Icons.visibility_off
-                              : Icons.visibility,
-                          size: 18),
-                      onPressed: () =>
-                          setState(() => _obscureErke = !_obscureErke),
+                  const SizedBox(height: 24),
+                  Row(children: [
+                    const Text('2 二课查询密码',
+                        style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    Text('系统登录专用',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white54 : Colors.grey[500])),
+                  ]),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _erkePwdCtrl,
+                    enabled: !_isLoading,
+                    obscureText: _obscureErke,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: '输入二课平台登录密码',
+                      prefixIcon: const Icon(Icons.vpn_key_outlined, size: 18),
+                      suffixIcon: IconButton(
+                        tooltip: _obscureErke ? '显示二课密码' : '隐藏二课密码',
+                        icon: Icon(
+                            _obscureErke
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            size: 18),
+                        onPressed: () =>
+                            setState(() => _obscureErke = !_obscureErke),
+                      ),
+                      filled: true,
+                      fillColor: isDark
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : const Color(0xFFF5F7F8),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none),
                     ),
-                    filled: true,
-                    fillColor: isDark
-                        ? Colors.white.withValues(alpha: 0.05)
-                        : const Color(0xFFF5F7F8),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          if (_sessionCredentials == null || _forceShowLogin)
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('在本机安全保存密码，用于自动更新'),
+              value: _rememberPasswords,
+              onChanged: _isLoading
+                  ? null
+                  : (value) =>
+                      setState(() => _rememberPasswords = value ?? true),
+              controlAffinity: ListTileControlAffinity.leading,
+            ),
+          if (_sessionCredentials != null && !_forceShowLogin)
+            TextButton(
+                onPressed: _isLoading
+                    ? null
+                    : () => setState(() => _forceShowLogin = true),
+                child: const Text('修改登录密码')),
+          if (_refreshError != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(_refreshError!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ),
+          if (_repo.hasCachedData && _forceShowLogin)
+            TextButton(
+                onPressed: _isLoading
+                    ? null
+                    : () => setState(() => _forceShowLogin = false),
+                child: const Text('返回已有成绩')),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -593,7 +761,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           ),
           if (_isLoading) ...[
             const SizedBox(height: 16),
-            Container(
+            AppCardSurface(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: _softCardDecoration(isDark),
@@ -650,13 +818,37 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Widget _buildDataView(bool isDark) {
     return Column(
       children: [
-        // 模式切换
+        if (_isLoading) const LinearProgressIndicator(),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Row(children: [
+            Expanded(
+                child: Text(
+                    _restoringCredentials
+                        ? '正在读取本机安全凭据…'
+                        : _isLoading
+                            ? _loadingMessage
+                            : _refreshError ??
+                                (_repo.fetchedAt == null
+                                    ? '已显示本机缓存'
+                                    : '更新于 ${_repo.fetchedAt!.toLocal().toString().substring(0, 16)}'),
+                    style: Theme.of(context).textTheme.bodySmall)),
+            TextButton(
+                onPressed: _isLoading || _switchingYear || _restoringCredentials
+                    ? null
+                    : _queryScores,
+                child: Text(_refreshError == null ? '更新' : '重试')),
+          ]),
+        ),
         _buildModeSwitcher(isDark),
         // 内容区
         Expanded(
-          child: _selectedMode == 0
-              ? _buildGraduationView(isDark)
-              : _buildYearlyView(isDark),
+          child: RefreshIndicator(
+            onRefresh: _queryScores,
+            child: _selectedMode == 0
+                ? _buildGraduationView(isDark)
+                : _buildYearlyView(isDark),
+          ),
         ),
       ],
     );
@@ -717,6 +909,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     if (grad == null) return _buildNeedsRelogin(isDark, '毕业要求');
 
     return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -762,15 +955,16 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         children: [
           Row(
             children: [
-              Text(
+              Expanded(
+                  child: Text(
                 '毕业要求完成度',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                   color: _text(isDark),
                 ),
-              ),
-              const Spacer(),
+              )),
+              const SizedBox(width: 8),
               Text(
                 '${percentage.toStringAsFixed(1)}%',
                 style: TextStyle(
@@ -798,7 +992,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           ),
           const SizedBox(height: 12),
           // 差距信息
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
             children: [
               if (grad.graduationGap > 0) ...[
                 _infoTag(
@@ -806,14 +1002,12 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   _warning(isDark),
                   bg: _warningSoft(isDark),
                 ),
-                const SizedBox(width: 12),
               ] else ...[
                 _infoTag(
                   '已达标 ✓',
                   _success(isDark),
                   bg: _successSoft(isDark),
                 ),
-                const SizedBox(width: 12),
               ],
               if (grad.unmetCount > 0)
                 _infoTag(
@@ -987,6 +1181,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     if (yr == null) return _buildNeedsRelogin(isDark, '学年要求');
 
     return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1052,9 +1247,11 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 items: yr.availableYears.map((y) {
                   return DropdownMenuItem(value: y, child: Text('$y 学年'));
                 }).toList(),
-                onChanged: (v) {
-                  if (v != null && v != yr.year) _switchYear(v);
-                },
+                onChanged: _isLoading || _switchingYear
+                    ? null
+                    : (v) {
+                        if (v != null && v != yr.year) _switchYear(v);
+                      },
               ),
             ),
           ),
@@ -1153,13 +1350,14 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               bg: _successSoft(isDark),
             ),
           const SizedBox(height: 8),
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
             children: [
               Text(
                 '本学年实际获得 ${_formatScore(yr.yearEarnedTotal)}',
                 style: TextStyle(fontSize: 13, color: _subText(isDark)),
               ),
-              const Spacer(),
               Text(
                 '累计总分 ${_formatScore(yr.cumulativeTotal)}',
                 style: TextStyle(fontSize: 13, color: _subText(isDark)),
@@ -1268,7 +1466,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   // ==================================================================
 
   Widget _buildActivitySection(bool isDark, {String? year}) {
-    final acts = _repo.activities;
+    final acts = year == null
+        ? _repo.activities
+        : _repo.activitiesByYear[year] ?? const <ErkeActivity>[];
     final title = year != null ? '$year 学年活动' : '全部活动';
 
     // 收集分类用于筛选
@@ -1508,7 +1708,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              '检测到旧版二课缓存',
+              '$mode暂未获取',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -1517,7 +1717,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              '需要重新验证账号以获取$mode和学年要求。\n已有活动记录已保留，不会丢失。',
+              '点击更新补全$mode，已有数据将继续保留。',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
@@ -1554,7 +1754,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                         ],
                       )
                     : const Text(
-                        '重新登录并补全数据',
+                        '更新并补全数据',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,

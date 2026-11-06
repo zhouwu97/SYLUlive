@@ -11,6 +11,7 @@ import 'package:shenliyuan/features/emoji/application/emoji_pack_importer.dart';
 import 'package:shenliyuan/features/emoji/application/emoji_pack_installer.dart';
 import 'package:shenliyuan/features/emoji/data/emoji_pack_local_store.dart';
 import 'package:shenliyuan/features/emoji/presentation/emoji_submissions_screen.dart';
+import 'package:shenliyuan/features/emoji/presentation/emoji_creator_screen.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
@@ -77,6 +78,8 @@ class _Api {
   bool fail = false, empty = false;
   int failureStatus = 503;
   String status = 'pending';
+  String creatorStatus = 'active';
+  Future<Map<String, dynamic>>? creatorResponse;
   Future<Object> Function(RequestOptions)? respond;
   _Api() {
     dio.interceptors
@@ -92,7 +95,29 @@ class _Api {
         return;
       }
       final Object data;
-      if (respond != null) {
+      if (options.path == '/emoji/creator') {
+        if (options.method == 'POST') creatorStatus = 'pending';
+        data = creatorResponse != null
+            ? await creatorResponse!
+            : {
+                'status': creatorStatus,
+                'user_id': 3,
+                'version': creatorStatus == 'none' ? 0 : 1,
+                'description': creatorStatus == 'none' ? '' : '校园日常原创表情'
+              };
+      } else if (options.path == '/admin/emoji-creators') {
+        data = {
+          'items': [
+            {
+              'status': 'pending',
+              'user_id': 1,
+              'version': 1,
+              'description': '校园日常原创表情'
+            }
+          ],
+          'total': 1
+        };
+      } else if (respond != null) {
         data = await respond!(options);
       } else if (options.path.contains('/assets/')) {
         data = _imageBytes;
@@ -146,11 +171,8 @@ Future<GlobalKey> _mount(WidgetTester tester, _Api api, Widget screen,
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
     await tester.pump(const Duration(milliseconds: 20));
   }
-  await tester.runAsync(() async {
-    for (final image in tester.widgetList<Image>(find.byType(Image)).toList()) {
-      await precacheImage(image.image, key.currentContext!);
-    }
-  });
+  await settleEmojiQAImages(tester, key.currentContext!,
+      tester.widgetList<Image>(find.byType(Image)).map((image) => image.image));
   await tester.pump();
   return key;
 }
@@ -167,10 +189,16 @@ void main() {
         .buffer
         .asUint8List();
     _imageBytes = content;
-    final file = await File('${root.path}/开心.png').writeAsBytes(content);
+    final files = <File>[];
+    for (final sticker in appStickerGroups.first.items.take(4)) {
+      files.add(await File('${root.path}/${sticker.label}.png').writeAsBytes(
+          (await rootBundle.load(sticker.thumbnailAsset))
+              .buffer
+              .asUint8List()));
+    }
     final importer = EmojiPackImporter(EmojiPackInstaller(store));
     final pack = await importer
-        .installPrepared(await importer.prepareImages([file]), name: '校园日常');
+        .installPrepared(await importer.prepareImages(files), name: '校园日常');
     // 使用实际图片字节预热缩略图，避免 Windows native FileImage mmap 持有临时目录。
     final codec = await ui.instantiateImageCodec(content);
     final frame = await codec.getNextFrame();
@@ -292,6 +320,118 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final profile in ['light', 'dark', 'large', 'stress']) {
+    testWidgets('创作中心真实渲染与权限入口 $profile', (tester) async {
+      final api = _Api();
+      final key = await _mount(tester, api, EmojiCreatorScreen(store: store),
+          profile: profile);
+      await waitForEmojiWork(tester);
+      expect(find.text('创作者权限已开通'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '制作表情包'), findsOneWidget);
+      await captureEmojiQA(tester, key, 'creator-center-$profile');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+    testWidgets('制作编辑与上架预览真实渲染 $profile', (tester) async {
+      final api = _Api();
+      final key = await _mount(
+          tester, api, EmojiSubmissionUploadScreen(store: store),
+          profile: profile);
+      await waitForEmojiWork(tester);
+      await tester.tap(find.text('校园日常'));
+      await tester.pump();
+      await waitForEmojiWork(tester);
+      final label = find.byKey(const ValueKey('emoji-label-image-1'));
+      await tester.scrollUntilVisible(label, 180,
+          scrollable: find.byType(Scrollable).first);
+      await tester.enterText(label, '收到');
+      if (profile == 'stress') {
+        tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+        addTearDown(tester.view.resetViewInsets);
+        await tester.pump();
+        await tester.ensureVisible(label);
+        await captureEmojiQA(tester, key, 'creator-keyboard-stress');
+        expect(tester.takeException(), isNull);
+        tester.view.resetViewInsets();
+        await tester.pump();
+      }
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      await captureEmojiQA(tester, key, 'creator-editor-$profile');
+      await tester.tap(find.text('预览上架效果'));
+      await tester.pumpAndSettle();
+      expect(find.text('本机草稿 · 尚未上架 · 审核通过后免费下载'), findsOneWidget);
+      expect(find.text('免费下载并添加'), findsNothing);
+      await captureEmojiQA(tester, key, 'creator-preview-$profile');
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byTooltip('返回'));
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView).last, const Offset(0, 700));
+      await tester.pump();
+      await waitForEmojiWork(tester);
+      expect(find.text('本机草稿已保存 · 尚未公开'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+  testWidgets('创作者申请失败可重试，确认规则后申请仍需审核', (tester) async {
+    final api = _Api()
+      ..creatorStatus = 'none'
+      ..fail = true;
+    await _mount(tester, api, EmojiCreatorScreen(store: store));
+    expect(find.text('网络暂不可用'), findsOneWidget);
+    api.fail = false;
+    await tester.tap(find.text('重试'));
+    await tester.pump();
+    await waitForEmojiWork(tester);
+    expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, '提交创作者申请'))
+            .onPressed,
+        isNull);
+    await tester.enterText(find.byType(TextField), '准备制作校园日常表情，使用自己的原创素材。');
+    await tester.ensureVisible(find.byType(CheckboxListTile));
+    await tester.tap(find.byType(CheckboxListTile));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('提交创作者申请'));
+    await tester.tap(find.text('提交创作者申请'));
+    await tester.pumpAndSettle();
+    expect(find.text('申请待审核'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, '制作表情包'), findsNothing);
+    final requests =
+        api.requests.where((request) => request.method == 'POST').toList();
+    expect(requests, hasLength(1));
+    expect(requests.single.path, '/emoji/creator');
+    expect(requests.single.data, containsPair('rights_confirmed', true));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+  testWidgets('创作者旧请求在切换会话后不能显示权限或提交资料', (tester) async {
+    final hold = Completer<Map<String, dynamic>>();
+    final api = _Api()..creatorResponse = hold.future;
+    await _mount(tester, api, EmojiCreatorScreen(store: store));
+    api.auth.change(id: 3);
+    await tester.pump();
+    hold.complete({'status': 'active', 'user_id': 3, 'version': 1});
+    await tester.pumpAndSettle();
+    expect(find.text('账号或权限已变化，请返回重新打开'), findsOneWidget);
+    expect(find.text('制作表情包'), findsNothing);
+    expect(api.requests.where((request) => request.method == 'POST'), isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+  testWidgets('创作者审核弹窗撤权后隐藏申请且不发送审批', (tester) async {
+    final api = _Api();
+    await _mount(tester, api, const EmojiCreatorReviewScreen());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开通权限'));
+    await tester.pumpAndSettle();
+    expect(find.text('开通后可提交作品，每个表情包仍需单独审核。'), findsOneWidget);
+    api.auth.change(id: 3, role: 'user');
+    await tester.pumpAndSettle();
+    expect(find.text('开通后可提交作品，每个表情包仍需单独审核。'), findsNothing);
+    expect(api.requests.where((request) => request.method == 'POST'), isEmpty);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
   testWidgets('上传确认公开授权后提交；重复点击仅产生一次请求', (tester) async {
     final api = _Api();
     await _mount(
@@ -311,11 +451,23 @@ void main() {
     await tester.pump();
     await waitForEmojiWork(tester);
     await tester.tap(find.text('校园日常'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await waitForEmojiWork(tester);
     final submit = find.widgetWithText(FilledButton, '提交审核');
     expect(tester.widget<FilledButton>(submit).onPressed, isNull);
-    await tester.ensureVisible(find.byType(CheckboxListTile));
-    await tester.tap(find.byType(CheckboxListTile));
+    final label = find.byKey(const ValueKey('emoji-label-image-1'));
+    await tester.scrollUntilVisible(label, 200,
+        scrollable: find.byType(Scrollable).first);
+    await tester.enterText(label, '收到');
+    await tester.pump();
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.byType(CheckboxListTile), 200,
+        scrollable: find.byType(Scrollable).first);
+    await tester.ensureVisible(find.byType(Checkbox));
+    await tester.pumpAndSettle();
+    expect(find.byType(Checkbox).hitTestable(), findsOneWidget);
+    await tester.tap(find.byType(Checkbox));
     await tester.pumpAndSettle();
     expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
 
@@ -341,6 +493,10 @@ void main() {
         (requests.single.data as FormData).fields,
         contains(predicate<MapEntry<String, String>>((entry) =>
             entry.key == 'rights_confirmed' && entry.value == 'true')));
+    expect(
+        Map<String, String>.fromEntries(
+            (requests.single.data as FormData).fields)['names'],
+        '["收到","粘","认真","抱"]');
     hold.complete(_item());
     await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 100)));

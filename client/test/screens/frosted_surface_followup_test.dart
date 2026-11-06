@@ -24,6 +24,11 @@ import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/theme/app_radius.dart';
 import 'package:shenliyuan/screens/erke_score_screen.dart';
+import 'package:shenliyuan/features/ai_device_bridge/device_credential_store.dart';
+import 'package:shenliyuan/features/campus_data/erke/erke_repository.dart';
+import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
+import 'package:shenliyuan/features/campus_data/storage/erke_cache_store.dart';
+import 'package:shenliyuan/platform/contracts/secure_store.dart';
 import 'package:shenliyuan/screens/market_screen.dart';
 import 'package:shenliyuan/screens/poll/poll_detail_screen.dart';
 import 'package:shenliyuan/screens/post_detail_screen.dart';
@@ -38,6 +43,7 @@ import 'package:shenliyuan/widgets/home_service_drawer.dart';
 import '../helpers/golden_test_app.dart';
 import '../helpers/golden_viewport.dart';
 import '../helpers/load_test_fonts.dart';
+import '../helpers/personal_snapshot_test_fakes.dart';
 
 class _FixtureAuth extends AuthProvider {
   _FixtureAuth(super.dio) : super(loadStoredAuth: false);
@@ -268,7 +274,21 @@ void main() {
         final screen = switch (page) {
           'market' => const GlobalBackgroundWrapper(child: MarketScreen()),
           'drawer' => Scaffold(body: _drawer(() => toolboxTaps++)),
-          'erke' => const ErkeScoreScreen(),
+          'erke' => ErkeScoreScreen(
+              credentialStore: DeviceCredentialStore(secretStore: MemorySecretStore()),
+              createRepository: (user, student, vpn) => ErkeRepository(
+                vpnService: vpn,
+                cacheStore: ErkeCacheStore(
+                  appUserId: user,
+                  sourceAccountId: student,
+                  snapshotStore: AesGcmAccountScopedSnapshotStore(
+                    appUserId: user,
+                    secureStore: MemoryPersonalSnapshotSecureStore(),
+                    fileBackend: MemoryPersonalSnapshotFileBackend(),
+                  ),
+                ),
+              ),
+            ),
           'poll' => const PollDetailScreen(pollId: 1),
           'admin-members' => const AdminMembersScreen(),
           'admin-feedback' => const AdminFeedbackScreen(),
@@ -352,7 +372,7 @@ void main() {
           expect(find.byType(TextField), findsNWidgets(2));
           await tester.tap(find.text('更新二课数据'));
           await tester.pumpAndSettle();
-          expect(find.text('请填写完整信息'), findsOneWidget);
+          expect(find.text('请填写统一认证密码和二课密码'), findsOneWidget);
         } else if (page == 'poll') {
           final divider = find.byType(AppCardDivider);
           expect(divider, findsOneWidget);

@@ -49,7 +49,7 @@ void main() {
     courseProvider = CourseScheduleProvider(dio);
   });
 
-  testWidgets('主设置页展示 6 个主要入口，不直接展示修改密码与保活开关', (tester) async {
+  testWidgets('主设置页保留常用入口与机器人管理，不平铺敏感操作', (tester) async {
     await tester.pumpWidget(
       _buildTestApp(
         auth: authProvider,
@@ -60,12 +60,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 6 个一级入口
+    // 常用入口保持可达；列表按真实滚动构建下方内容。
     expect(find.text('界面设置'), findsOneWidget);
     expect(find.text('通知与后台'), findsOneWidget);
     expect(find.text('账号与安全'), findsOneWidget);
     expect(find.text('隐私与数据'), findsOneWidget);
+    expect(find.text('我的 AI 机器人'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('诊断与反馈'), 200,
+        scrollable: find.byType(Scrollable).first);
     expect(find.text('诊断与反馈'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('关于沈理校园'), 200,
+        scrollable: find.byType(Scrollable).first);
     expect(find.text('关于沈理校园'), findsOneWidget);
 
     // 首页不直接平铺过往重复入口

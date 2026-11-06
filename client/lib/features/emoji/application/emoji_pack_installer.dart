@@ -11,6 +11,7 @@ import '../domain/emoji_pack.dart';
 import '../domain/emoji_pack_installation.dart';
 import '../domain/emoji_pack_limits.dart';
 import '../domain/emoji_pack_manifest.dart';
+import 'emoji_thumbnail.dart';
 
 class EmojiPackInstaller {
   EmojiPackInstaller(this.store, {this.checkpoint});
@@ -90,8 +91,7 @@ class EmojiPackInstaller {
         jsonDecode(utf8.decode(manifestBytes)) as Map));
     if (manifest.packId != packId ||
         manifest.version != previous.version ||
-        sha256.convert(manifestBytes).toString() !=
-            previous.manifestSha256) {
+        sha256.convert(manifestBytes).toString() != previous.manifestSha256) {
       throw StateError('上一版内容身份校验失败，请重新下载官方版本');
     }
     for (final asset in manifest.assets) {
@@ -105,6 +105,9 @@ class EmojiPackInstaller {
     return install(
         manifest: manifest,
         name: current.name,
+        coverAssetId: previous.coverAssetId ?? manifest.assets.first.id,
+        iconAssetId: previous.iconAssetId ?? manifest.assets.first.id,
+        authorName: previous.authorName ?? current.authorName,
         trustLevel: current.trustLevel,
         readAsset: (asset) =>
             File('${directory.path}/${asset.path}').readAsBytes());
@@ -118,6 +121,9 @@ class EmojiPackInstaller {
     String? expectedManifestSha256,
     String? externalPackId,
     String? importSourceSha256,
+    String? coverAssetId,
+    String? iconAssetId,
+    String? authorName,
   }) =>
       store.exclusive(() async {
         await _recover();
@@ -178,7 +184,11 @@ class EmojiPackInstaller {
             enabled: old?.enabled ?? true,
             sortOrder: old?.sortOrder ?? (index['packs'] as Map).length,
             externalPackId: externalPackId ?? old?.externalPackId,
-            importSourceSha256: importSourceSha256 ?? old?.importSourceSha256);
+            importSourceSha256: importSourceSha256 ?? old?.importSourceSha256,
+            personalTags: old?.personalTags ?? const [],
+            coverAssetId: coverAssetId ?? old?.coverAssetId,
+            iconAssetId: iconAssetId ?? old?.iconAssetId,
+            authorName: authorName ?? old?.authorName ?? '');
         await _staging.create(recursive: true);
         try {
           for (final asset in manifest.assets) {
@@ -210,6 +220,19 @@ class EmojiPackInstaller {
           await _staging.rename(destination.path);
           await checkpoint?.call('beforeIndex');
           final persisted = await store.commit(installation);
+          for (final asset in manifest.assets) {
+            try {
+              final thumbnail = store.thumbnailFile(persisted, asset);
+              final bytes =
+                  await File('${destination.path}/${asset.path}').readAsBytes();
+              await thumbnail.parent.create(recursive: true);
+              await thumbnail.writeAsBytes(
+                  await compute(buildEmojiThumbnail, (bytes, 256)),
+                  flush: true);
+            } catch (_) {
+              debugPrint('表情缩略图缓存未生成，预览时将从发送图恢复');
+            }
+          }
           await checkpoint?.call('afterIndex');
           if (await _backup.exists()) await _backup.delete(recursive: true);
           await _journal.delete();
@@ -224,6 +247,16 @@ class EmojiPackInstaller {
             if (entity is Directory &&
                 !keep.contains(path.basename(entity.path))) {
               await entity.delete(recursive: true);
+            }
+          }
+          final previews = Directory(
+              '${store.root.path}/previews/${store.directoryKey(persisted.packId)}');
+          if (await previews.exists()) {
+            await for (final entity in previews.list()) {
+              if (entity is Directory &&
+                  !keep.contains(path.basename(entity.path))) {
+                await entity.delete(recursive: true);
+              }
             }
           }
           return persisted;

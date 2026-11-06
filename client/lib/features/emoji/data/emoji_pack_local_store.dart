@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 
 import '../domain/emoji_pack_installation.dart';
+import '../domain/emoji_creation_draft.dart';
+import '../domain/emoji_pack_manifest.dart';
 
 /// 所有索引变更使用同一队列，保留备份以恢复 Windows 替换文件的中间状态。
 class EmojiPackLocalStore {
@@ -23,6 +25,66 @@ class EmojiPackLocalStore {
       sha256.convert(utf8.encode(packId)).toString();
   Directory versionDirectory(String packId, int version) =>
       Directory('${root.path}/packs/${directoryKey(packId)}/$version');
+
+  File thumbnailFile(EmojiPackInstallation pack, EmojiManifestAsset asset) => File(
+      '${root.path}/previews/${directoryKey(pack.packId)}/${pack.version}/${asset.sha256.toLowerCase()}.png');
+
+  Future<EmojiCreationDraft?> loadDraft(String key) => exclusive(() async {
+        final index = await readIndex();
+        final value = (index['creation_drafts'] as Map?)?[key];
+        if (value is! Map) return null;
+        try {
+          return EmojiCreationDraft.fromJson(Map<String, dynamic>.from(value));
+        } catch (error) {
+          if (error is! FormatException && error is! TypeError) {
+            rethrow;
+          }
+          (index.putIfAbsent(
+                  'creation_drafts_corrupt', () => <String, dynamic>{})
+              as Map)[key] = value;
+          (index['creation_drafts'] as Map).remove(key);
+          await writeIndex(index);
+          return null;
+        }
+      });
+  Future<void> saveDraft(EmojiCreationDraft draft) {
+    final snapshot = jsonDecode(jsonEncode(draft.toJson()));
+    return exclusive(() async {
+      final index = await readIndex();
+      final source = (index['packs'] as Map)[draft.sourcePackId];
+      if (source is! Map ||
+          source['manifest_sha256'] != draft.sourceManifestHash ||
+          (source['manifest'] as Map?)?['version'] != draft.sourceVersion) {
+        throw StateError('素材已删除或版本已变化，请重新选择素材。');
+      }
+      (index.putIfAbsent('creation_drafts', () => <String, dynamic>{})
+          as Map)[draft.key] = snapshot;
+      await writeIndex(index);
+    });
+  }
+
+  Future<void> removeDraft(String key) => exclusive(() async {
+        final index = await readIndex();
+        (index['creation_drafts'] as Map?)?.remove(key);
+        await writeIndex(index);
+      });
+  Future<void> setPersonalTags(String packId, List<String> tags) =>
+      exclusive(() async {
+        final values = tags
+            .map((tag) => tag.trim())
+            .where((tag) => tag.isNotEmpty)
+            .toSet()
+            .toList();
+        if (values.length > 5 || values.any((tag) => tag.runes.length > 24)) {
+          throw const FormatException('个人标签最多 5 个，每个不超过 24 个字符');
+        }
+        final index = await readIndex();
+        final packs = index['packs'] as Map;
+        final pack = EmojiPackInstallation.fromJson(
+            Map<String, dynamic>.from(packs[packId] as Map));
+        packs[packId] = pack.copyWith(personalTags: values).toJson();
+        await writeIndex(index);
+      });
 
   Future<Map<String, dynamic>> readIndex() async {
     if (await _index.exists()) {
@@ -146,7 +208,11 @@ class EmojiPackLocalStore {
             installation.status == EmojiPackInstallStatus.installed &&
             old.status == EmojiPackInstallStatus.installed
         ? EmojiPackVersionRef(
-            version: old.version, manifestSha256: old.manifestSha256)
+            version: old.version,
+            manifestSha256: old.manifestSha256,
+            coverAssetId: old.coverAssetId,
+            iconAssetId: old.iconAssetId,
+            authorName: old.authorName)
         : null;
     final persisted =
         installation.copyWith(previous: promoted ?? old?.previous);
@@ -194,6 +260,10 @@ class EmojiPackLocalStore {
         final root = await readIndex();
         (root['packs'] as Map).remove(packId);
         (root['downloads'] as Map?)?.remove(packId);
+        (root['creation_drafts'] as Map?)?.removeWhere(
+            (key, value) => value is Map && value['source_pack_id'] == packId);
+        (root['creation_drafts_corrupt'] as Map?)?.removeWhere(
+            (key, value) => key is String && key.startsWith('$packId:'));
         (root['tombstones'] as Map)[packId] =
             DateTime.now().toUtc().toIso8601String();
         await writeIndex(root);
@@ -201,5 +271,8 @@ class EmojiPackLocalStore {
         final directory =
             Directory('${this.root.path}/packs/${directoryKey(packId)}');
         if (await directory.exists()) await directory.delete(recursive: true);
+        final previews =
+            Directory('${this.root.path}/previews/${directoryKey(packId)}');
+        if (await previews.exists()) await previews.delete(recursive: true);
       });
 }

@@ -2,6 +2,7 @@ import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../widgets/ai_bot_identity.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -3280,17 +3281,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           ),
         ),
         const SliverToBoxAdapter(child: SizedBox(height: 8)),
-        // 输入栏已在 Column 中占位；评论底面补齐短内容的剩余视口。
+        // 输入栏独立占位，评论材质延伸到接缝及过滚区域；底部留白放在材质内。
+        // 沿用共享透明度和圆角，不能在外层叠实色底板遮住壁纸。
         SliverFillRemaining(
           hasScrollBody: false,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: AppCardSurface(
-              key: _commentsSectionKey,
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF131720) : Colors.white,
-                borderRadius: BorderRadius.circular(AppRadius.lg),
-              ),
+          fillOverscroll: true,
+          child: AppCardSurface(
+            key: _commentsSectionKey,
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF131720) : Colors.white,
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 16),
               child: _buildWaterCommentsSection(isDark),
             ),
           ),
@@ -3363,6 +3366,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                     ],
                   ),
                   const SizedBox(height: 4),
+                  AiBotIdentity(user: p.author),
                   Text(
                     '${_formatTime(p.createdAt)} · 诚信${p.author?.creditScore ?? 100}%',
                     style: TextStyle(
@@ -3893,6 +3897,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                       ],
                     ],
                   ),
+                  AiBotIdentity(user: p.author),
                   const SizedBox(height: 4),
                   Row(
                     children: [
@@ -5138,6 +5143,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                   ],
                 ),
                 const SizedBox(height: 4),
+                AiBotIdentity(user: r.author),
                 _buildReplyContent(r, isDark, onTextTap: onReply),
                 const SizedBox(height: 12),
                 Row(

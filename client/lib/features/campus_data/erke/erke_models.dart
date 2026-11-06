@@ -244,6 +244,7 @@ class ErkeSnapshot {
   final List<ErkeActivity> activities;
   final Map<String, List<ErkeActivity>> activitiesByYear;
   final DateTime? fetchedAt;
+  final bool isPartial;
 
   const ErkeSnapshot({
     this.graduation,
@@ -252,6 +253,7 @@ class ErkeSnapshot {
     this.activities = const [],
     this.activitiesByYear = const {},
     this.fetchedAt,
+    this.isPartial = false,
   });
 
   factory ErkeSnapshot.fromJson(Map<String, dynamic> json) {
@@ -290,6 +292,7 @@ class ErkeSnapshot {
       yearlyByYear: yearlyMap,
       activities: acts,
       activitiesByYear: actsByYear,
+      isPartial: json['isPartial'] == true,
       fetchedAt: json['fetchedAt'] != null
           ? DateTime.tryParse(json['fetchedAt'] as String)
           : null,
@@ -304,6 +307,7 @@ class ErkeSnapshot {
         'activitiesByYear': activitiesByYear
             .map((k, v) => MapEntry(k, v.map((a) => a.toJson()).toList())),
         if (fetchedAt != null) 'fetchedAt': fetchedAt!.toIso8601String(),
+        'isPartial': isPartial,
       };
 
   /// 从旧缓存迁移：旧格式只有 summary (List<Map>) 和 scores (List<Map>)

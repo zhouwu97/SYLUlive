@@ -14,13 +14,34 @@ import '../data/emoji_pack_local_store.dart';
 import '../domain/emoji_pack_installation.dart';
 import '../domain/emoji_pack_manifest.dart';
 import 'emoji_ui.dart';
+import 'official_emoji_previews.dart';
+
+ImageProvider _catalogThumbnail(EmojiPackCatalogRepository catalog,
+    EmojiCatalogEntry entry, EmojiManifestAsset asset) {
+  final preview = entry.source == 'official'
+      ? officialEmojiPreviewForAsset(entry.id, asset)
+      : null;
+  if (preview != null) return AssetImage(preview);
+  return NetworkImage(_assetUrl(catalog, entry, asset, thumbnail: true));
+}
 
 String _assetUrl(EmojiPackCatalogRepository catalog, EmojiCatalogEntry entry,
-    EmojiManifestAsset asset) {
+    EmojiManifestAsset asset,
+    {bool thumbnail = false}) {
   final base = catalog.dio.options.baseUrl;
   return Uri.parse(base.endsWith('/') ? base : '$base/')
       .resolve(
           'emoji/packs/${Uri.encodeComponent(entry.id)}/assets/${Uri.encodeComponent(asset.id)}')
+      .replace(queryParameters: {
+    'version': '${entry.version}',
+    if (thumbnail && entry.mediaVersion > 0) 'variant': 'thumbnail'
+  }).toString();
+}
+
+String _coverUrl(EmojiPackCatalogRepository catalog, EmojiCatalogEntry entry) {
+  final base = catalog.dio.options.baseUrl;
+  return Uri.parse(base.endsWith('/') ? base : '$base/')
+      .resolve('emoji/packs/${Uri.encodeComponent(entry.id)}/cover')
       .replace(queryParameters: {'version': '${entry.version}'}).toString();
 }
 
@@ -171,7 +192,7 @@ class _EmojiDownloadScreenState extends State<EmojiDownloadScreen> {
 
   @override
   Widget build(BuildContext context) => EmojiPageScaffold(
-      title: '表情库',
+      title: '表情商城',
       bodyHasCardSurfaces: true,
       body: !_current
           ? const EmojiStateView(title: '账号已切换，请返回')
@@ -186,10 +207,10 @@ class _EmojiDownloadScreenState extends State<EmojiDownloadScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const EmojiSectionHeader(
-                          title: '添加喜欢的表情', detail: '官方表情与审核通过的校园分享，先预览再下载。'),
+                          title: '添加喜欢的表情', detail: '官方表情与创作者作品，全部免费，先预览再下载。'),
                       if (_error != null)
                         EmojiInlineError(
-                            message: '表情库暂不可用，已有表情仍可使用', onRetry: _load),
+                            message: '表情商城暂不可用，已有表情仍可使用', onRetry: _load),
                       if (_entries == null && _error == null)
                         const Padding(
                             padding: EdgeInsets.all(AppSpacing.xxl),
@@ -226,7 +247,7 @@ class _EmojiDownloadScreenState extends State<EmojiDownloadScreen> {
       EmojiPackRow(
           name: entry.name,
           detail:
-              '${entry.assetCount} 个表情 · ${emojiBytesLabel(entry.totalSize)} · ${entry.sourceLabel}',
+              '${entry.assetCount} 个表情 · ${emojiBytesLabel(entry.totalSize)} · ${entry.sourceLabel}${entry.authorName.isEmpty ? '' : '\n${entry.authorName}'}',
           status: status,
           damaged: damaged,
           statusIcon: damaged
@@ -240,6 +261,37 @@ class _EmojiDownloadScreenState extends State<EmojiDownloadScreen> {
               entry: entry),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => unawaited(_openPreview(entry))),
+      if (entry.previewAssetIds.isNotEmpty)
+        Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+            child: Row(children: [
+              for (final id in entry.previewAssetIds.take(4))
+                Expanded(
+                    child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xs),
+                  child: InkWell(
+                    onTap: () => unawaited(_openPreview(entry)),
+                    child: Image.network(
+                      Uri.parse(
+                              '${_catalog.dio.options.baseUrl}/emoji/packs/${Uri.encodeComponent(entry.id)}/assets/${Uri.encodeComponent(id)}')
+                          .replace(queryParameters: {
+                        'version': '${entry.version}',
+                        'variant': 'thumbnail'
+                      }).toString(),
+                      height: 64,
+                      fit: BoxFit.contain,
+                      semanticLabel: '${entry.name}预览',
+                      errorBuilder: (_, __, ___) => const SizedBox(
+                          height: 64, child: Icon(Icons.broken_image_outlined)),
+                    ),
+                  ),
+                )),
+            ])),
+      if (entry.tags.isNotEmpty)
+        Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: Text(entry.tags.join(' · '),
+                style: Theme.of(context).textTheme.bodySmall)),
       if (downloading || installing)
         Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -282,7 +334,9 @@ class _CatalogCoverState extends State<_CatalogCover> {
   @override
   void initState() {
     super.initState();
-    _manifest = widget.catalog.manifest(widget.entry, _token);
+    if (widget.entry.mediaVersion == 0) {
+      _manifest = widget.catalog.manifest(widget.entry, _token);
+    }
   }
 
   @override
@@ -292,17 +346,20 @@ class _CatalogCoverState extends State<_CatalogCover> {
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<EmojiPackManifest>(
-      future: _manifest,
-      builder: (context, snapshot) {
-        final assets = snapshot.data?.assets;
-        return EmojiCover(
-            label: '${widget.entry.name}封面',
-            image: assets?.isNotEmpty == true
-                ? NetworkImage(
-                    _assetUrl(widget.catalog, widget.entry, assets!.first))
-                : null);
-      });
+  Widget build(BuildContext context) => widget.entry.mediaVersion > 0
+      ? EmojiCover(
+          label: '${widget.entry.name}封面',
+          image: NetworkImage(_coverUrl(widget.catalog, widget.entry)))
+      : FutureBuilder<EmojiPackManifest>(
+          future: _manifest,
+          builder: (context, snapshot) {
+            final assets = snapshot.data?.assets;
+            return EmojiCover(
+                label: '${widget.entry.name}封面',
+                image: assets?.isNotEmpty == true
+                    ? _catalogThumbnail(widget.catalog, widget.entry, assets!.first)
+                    : null);
+          });
 }
 
 class EmojiPackPreviewScreen extends StatefulWidget {
@@ -436,13 +493,22 @@ class _EmojiPackPreviewScreenState extends State<EmojiPackPreviewScreen> {
                       status: widget.entry.sourceLabel,
                       cover: EmojiCover(
                           size: 72,
-                          image: _manifest?.assets.isNotEmpty == true
-                              ? NetworkImage(_assetUrl(widget.catalog,
-                                  widget.entry, _manifest!.assets.first))
-                              : null)),
+                          image: widget.entry.mediaVersion > 0
+                              ? NetworkImage(
+                                  _coverUrl(widget.catalog, widget.entry))
+                              : _manifest?.assets.isNotEmpty == true
+                                  ? _catalogThumbnail(widget.catalog,
+                                      widget.entry, _manifest!.assets.first)
+                                  : null)),
                   if (widget.entry.description.isNotEmpty)
-                    Padding(padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                    Padding(
+                        padding:
+                            const EdgeInsets.symmetric(vertical: AppSpacing.sm),
                         child: Text(widget.entry.description)),
+                  if (widget.entry.authorName.isNotEmpty)
+                    Text('创作者：${widget.entry.authorName}'),
+                  if (widget.entry.tags.isNotEmpty)
+                    Text(widget.entry.tags.join(' · ')),
                   Text('版本 ${widget.entry.version}',
                       style: Theme.of(context)
                           .textTheme
@@ -471,7 +537,9 @@ class _EmojiPackPreviewScreenState extends State<EmojiPackPreviewScreen> {
                             EmojiPreviewItem(
                                 id: asset.id,
                                 name: asset.name,
-                                image: NetworkImage(_assetUrl(
+                                image: _catalogThumbnail(
+                                    widget.catalog, widget.entry, asset),
+                                previewImage: NetworkImage(_assetUrl(
                                     widget.catalog, widget.entry, asset)),
                                 animated: asset.animated)
                         ],
@@ -518,7 +586,7 @@ class _EmojiPackPreviewScreenState extends State<EmojiPackPreviewScreen> {
                         : damaged
                             ? '重新下载并修复'
                             : installedVersion == null
-                                ? '下载并安装'
+                                ? '免费下载并添加'
                                 : '更新到 v${widget.entry.version}';
     final disabled = _using ||
         installing ||

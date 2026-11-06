@@ -217,6 +217,7 @@ class DeviceToolWorker {
       );
     }
 
+    if (!await context.isCurrent()) return;
     final automation = context.createAutomationGateway?.call();
     final gateway = automation == null ? context.createGateway() : null;
     try {

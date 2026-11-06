@@ -312,6 +312,7 @@ class PostMediaView extends StatelessWidget {
           (originalSizeBytes > 0 &&
               originalSizeBytes < imageOriginalAutoLoadThresholdBytes),
       allowStaticAnimatedPreview: true,
+      autoPlayAnimatedGif: true,
     );
   }
 
@@ -335,6 +336,27 @@ class PostMediaView extends StatelessWidget {
         selection.url != thumbUrl &&
         selection.variant != ImageResourceVariant.thumb &&
         selection.variant != ImageResourceVariant.unavailable;
+
+    final isGifOrigin = selection.variant == ImageResourceVariant.origin &&
+        (image.file?.mimeType.toLowerCase() == 'image/gif' ||
+            originUrl.toLowerCase().split('?').first.endsWith('.gif'));
+    if (isGifOrigin) {
+      final fallback = showThumbUnderlay
+          ? _networkImage(
+              selection: ImageResourceSelection(
+                  variant: ImageResourceVariant.thumb,
+                  url: thumbUrl,
+                  shouldResize: true),
+              target: _thumbDecodeTarget(target),
+              fit: fit,
+              alignment: alignment,
+              access: access)
+          : null;
+      // 透明动图加载成功后不能继续叠在静态预览上，否则会出现重影。
+      return _networkImage(
+          selection: selection, target: target, fit: fit, alignment: alignment,
+          access: access, fallback: fallback);
+    }
 
     final primary = _networkImage(
       selection: selection,
@@ -389,6 +411,7 @@ class PostMediaView extends StatelessWidget {
     Alignment alignment = Alignment.center,
     Color? placeholderColor,
     bool showErrorIcon = true,
+    Widget? fallback,
     PostMediaAccess access = const PostMediaAccess.public(),
   }) {
     if (selection.url.isEmpty) {
@@ -409,10 +432,11 @@ class PostMediaView extends StatelessWidget {
       alignment: alignment,
       memCacheWidth: selection.shouldResize ? target.width : null,
       memCacheHeight: selection.shouldResize ? target.height : null,
-      placeholder: (_, __) => Container(
+      placeholder: (_, __) => fallback ?? Container(
         color: placeholderColor ?? Colors.grey[200],
       ),
       errorWidget: (_, __, ___) {
+        if (fallback != null) return fallback;
         return Container(
           color: placeholderColor ?? Colors.grey[200],
           alignment: Alignment.center,

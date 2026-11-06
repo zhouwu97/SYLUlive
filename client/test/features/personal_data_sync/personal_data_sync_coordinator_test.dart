@@ -6,6 +6,29 @@ import 'package:shenliyuan/features/personal_data_sync/personal_data_sync_progre
 import 'package:shenliyuan/features/personal_data_sync/personal_data_sync_result.dart';
 
 void main() {
+  test('会话变化后不继续后续教务和二课阶段', () async {
+    var current = true;
+    final calls = <String>[];
+    final coordinator = PersonalDataSyncCoordinator(
+        academicGateway: _FakeAcademicGateway(calls),
+        erkeGateway: _FakeErkeGateway(calls),
+        isCurrent: () => current);
+    final result = await coordinator.sync(
+        datasets: {
+          PersonalSyncDataset.schedule,
+          PersonalSyncDataset.grades,
+          PersonalSyncDataset.erke
+        },
+        trigger: PersonalSyncTrigger.vault,
+        onProgress: (progress) {
+          if (!progress.isRunning) current = false;
+        });
+    expect(calls, ['schedule']);
+    expect(result.items[PersonalSyncDataset.grades]!.status,
+        PersonalSyncItemStatus.skipped);
+    expect(result.items[PersonalSyncDataset.erke]!.status,
+        PersonalSyncItemStatus.skipped);
+  });
   test('同步按教务后二课的顺序运行，单项失败不会回滚其他项', () async {
     final calls = <String>[];
     final progress = <PersonalSyncProgress>[];

@@ -195,6 +195,9 @@ class EmojiPackDownloadManager extends ChangeNotifier {
       await EmojiPackInstaller(store).install(
           manifest: manifest,
           name: entry.name,
+          coverAssetId: entry.coverAssetId,
+          iconAssetId: entry.iconAssetId,
+          authorName: entry.authorName,
           trustLevel: entry.source == 'community'
               ? EmojiPackTrustLevel.localUntrusted
               : EmojiPackTrustLevel.serverOfficial,

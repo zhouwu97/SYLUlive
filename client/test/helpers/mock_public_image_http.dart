@@ -15,7 +15,7 @@ import 'package:shenliyuan/utils/post_image_cache.dart';
 /// 路由规则：
 /// - `/uploads/` 下 path 含 `missing` → 404（模拟脏记录：数据库有记录但文件丢失）
 /// - `/uploads/` 下 path 含 `flaky` → 500（模拟瞬时故障：服务端暂时不可用）
-/// - 其余 `/uploads/` → 200 + 1x1 透明 PNG
+/// - 其余 `/uploads/` → 200 + imageBytes；缺省为 1x1 透明 PNG
 /// - 传入 [apiHandler] 时，非 `/uploads/` 请求转交该处理器（复用 Dio FakeAdapter
 ///   的接口 mock，否则 Dio 请求会落进图片 mock）
 ///
@@ -27,13 +27,20 @@ typedef MockApiHandler = Future<ResponseBody> Function(RequestOptions options);
 Directory? _tempRoot;
 MockApiHandler? _apiHandler;
 int Function(Uri)? _imageStatus;
+List<int>? _imageBytes;
+String _imageContentType = 'image/png';
 PathProviderPlatform? _previousPathProvider;
 
 Future<void> installMockPublicImageHttp(
-    {MockApiHandler? apiHandler, int Function(Uri)? imageStatus}) async {
+    {MockApiHandler? apiHandler,
+    int Function(Uri)? imageStatus,
+    List<int>? imageBytes,
+    String imageContentType = 'image/png'}) async {
   PostImageCache.resetInstance();
   _apiHandler = apiHandler;
   _imageStatus = imageStatus;
+  _imageBytes = imageBytes;
+  _imageContentType = imageContentType;
   _tempRoot = await Directory.systemTemp.createTemp('mock_public_image');
   final tmpDir =
       await Directory('${_tempRoot!.path}/tmp').create(recursive: true);
@@ -58,6 +65,8 @@ void uninstallMockPublicImageHttp() {
   }
   _apiHandler = null;
   _imageStatus = null;
+  _imageBytes = null;
+  _imageContentType = 'image/png';
   final root = _tempRoot;
   _tempRoot = null;
   root?.delete(recursive: true).ignore();
@@ -192,8 +201,8 @@ class _MockImageHttpRequest extends Fake implements HttpClientRequest {
           ? _MockImageHttpResponse(404, const [], contentType: 'image/jpeg')
           : path.contains('flaky')
               ? _MockImageHttpResponse(500, const [], contentType: 'image/jpeg')
-              : _MockImageHttpResponse(200, _transparentImage,
-                  contentType: 'image/png');
+              : _MockImageHttpResponse(200, _imageBytes ?? _transparentImage,
+                  contentType: _imageContentType);
     }
     final apiHandler = _apiHandler;
     if (apiHandler != null) {

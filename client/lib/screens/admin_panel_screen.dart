@@ -26,6 +26,7 @@ import '../models/security_event.dart';
 import '../widgets/global_background_wrapper.dart';
 import '../widgets/glass_container.dart';
 import '../features/emoji/presentation/emoji_submissions_screen.dart';
+import '../features/emoji/presentation/emoji_creator_screen.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -332,9 +333,23 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           title: '表情包审核',
                           subtitle: '投稿预览、审核与已上架表情管理',
                           isDark: isDark,
-                          onTap: () => Navigator.push(context,
-                              MaterialPageRoute(builder: (_) =>
-                                  const EmojiSubmissionsScreen(admin: true)))
+                          onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const EmojiSubmissionsScreen(
+                                      admin: true))).then((_) => _loadCounts()),
+                        ),
+                        _AdminActionPill(
+                          icon: Icons.verified_user_outlined,
+                          iconColor: Theme.of(context).colorScheme.primary,
+                          title: '表情创作者审核',
+                          subtitle: '申请开通、驳回与暂停创作权限',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const EmojiCreatorReviewScreen()))
                               .then((_) => _loadCounts()),
                         ),
                         _AdminActionPill(

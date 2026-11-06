@@ -78,8 +78,9 @@ class ReplyImageMedia extends StatelessWidget {
 
   static ImageResourceSelection resourceForReplyImage(
     ReplyImage image,
-    ImageDecodeTarget target,
-  ) {
+    ImageDecodeTarget target, {
+    bool autoPlayAnimatedGif = true,
+  }) {
     final originUrl = ApiConstants.fullUrl(image.resolvedOriginUrl);
     final mimeType = image.file?.mimeType.toLowerCase() ?? '';
     final isAnimatedGif = mimeType == 'image/gif' ||
@@ -100,6 +101,7 @@ class ReplyImageMedia extends StatelessWidget {
           (originalSizeBytes > 0 &&
               originalSizeBytes < imageOriginalAutoLoadThresholdBytes),
       allowStaticAnimatedPreview: true,
+      autoPlayAnimatedGif: autoPlayAnimatedGif,
     );
   }
 
@@ -166,8 +168,13 @@ class ReplyImageMedia extends StatelessWidget {
     required ImageDecodeTarget target,
     required double width,
     required double height,
+    bool autoPlayAnimatedGif = true,
   }) {
-    final selection = resourceForReplyImage(image, target);
+    final selection = resourceForReplyImage(image, target,
+        autoPlayAnimatedGif: autoPlayAnimatedGif);
+    final fallback = autoPlayAnimatedGif
+        ? resourceForReplyImage(image, target, autoPlayAnimatedGif: false)
+        : selection;
     if (selection.url.isEmpty) {
       return SizedBox(
         width: width,
@@ -189,11 +196,20 @@ class ReplyImageMedia extends StatelessWidget {
         height: height,
         child: const ColoredBox(color: Color(0xFFEDEEF0)),
       ),
-      errorWidget: (_, __, ___) => SizedBox(
-        width: width,
-        height: height,
-        child: const Icon(Icons.broken_image_outlined),
-      ),
+      errorWidget: (_, __, ___) =>
+          fallback.url.isNotEmpty && fallback.url != selection.url
+              ? _networkImage(
+                  image: image,
+                  target: target,
+                  width: width,
+                  height: height,
+                  autoPlayAnimatedGif: false,
+                )
+              : SizedBox(
+                  width: width,
+                  height: height,
+                  child: const Icon(Icons.broken_image_outlined),
+                ),
     );
   }
 

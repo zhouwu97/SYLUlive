@@ -225,7 +225,11 @@ class _EmojiImportScreenState extends State<EmojiImportScreen> {
                         EmojiPreviewItem(
                             id: asset.id,
                             name: asset.name,
-                            image: MemoryImage(prepared.contents[asset.path]!),
+                            image: MemoryImage(
+                                prepared.thumbnails[asset.path] ??
+                                    prepared.contents[asset.path]!),
+                            previewImage:
+                                MemoryImage(prepared.contents[asset.path]!),
                             animated: asset.animated),
                     ],
                     onSelected: (item) => showEmojiPreview(context, item,

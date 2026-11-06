@@ -42,7 +42,7 @@ class EmojiSubmissionImage extends ImageProvider<EmojiSubmissionImage> {
         throw StateError('预览图片无效或过大');
       }
       if (token.isCancelled) throw token.cancelError!;
-      return decode(
+      return await decode(
           await ui.ImmutableBuffer.fromUint8List(Uint8List.fromList(bytes)));
     } catch (_) {
       scheduleMicrotask(() => PaintingBinding.instance.imageCache.evict(key));

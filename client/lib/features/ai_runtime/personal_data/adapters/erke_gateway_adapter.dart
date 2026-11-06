@@ -73,7 +73,8 @@ class ErkeGatewayAdapter {
     PersonalSnapshot snapshot,
     ErkeOverview overview,
   ) {
-    final stale = snapshot.isStale;
+    final partial = snapshot.payload['isPartial'] == true;
+    final stale = snapshot.isStale || partial;
     return GatewayResult<ErkeOverview>(
       data: overview,
       status: stale ? GatewayStatus.stale : GatewayStatus.available,
@@ -81,7 +82,11 @@ class ErkeGatewayAdapter {
       fetchedAt: snapshot.fetchedAt,
       expiresAt: snapshot.expiresAt,
       isStale: stale,
-      warnings: stale ? const <String>['二课数据已过期，建议先同步'] : const <String>[],
+      warnings: partial
+          ? const <String>['二课包含未更新数据，请完整同步后使用']
+          : stale
+              ? const <String>['二课数据已过期，建议先同步']
+              : const <String>[],
     );
   }
 }

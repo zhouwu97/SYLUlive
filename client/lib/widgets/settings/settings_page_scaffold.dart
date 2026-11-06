@@ -11,12 +11,16 @@ class SettingsPageScaffold extends StatelessWidget {
   final List<Widget>? actions;
   final Future<void> Function()? onRefresh;
 
+  /// 按需承托亮壁纸上的标题；默认仍使用原有顶栏背景。
+  final Widget? appBarBackground;
+
   const SettingsPageScaffold({
     super.key,
     required this.title,
     required this.children,
     this.actions,
     this.onRefresh,
+    this.appBarBackground,
   });
 
   @override
@@ -58,6 +62,7 @@ class SettingsPageScaffold extends StatelessWidget {
     final page = Scaffold(
       backgroundColor: pageBg,
       appBar: AppBar(
+        flexibleSpace: appBarBackground,
         title: Text(
           title,
           style: TextStyle(

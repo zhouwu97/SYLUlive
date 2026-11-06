@@ -16,6 +16,7 @@ import '../widgets/settings/settings_section.dart';
 import '../widgets/settings/settings_status_badge.dart';
 import '../widgets/settings/settings_tile.dart';
 import 'account_security_screen.dart';
+import 'managed_bot_screen.dart';
 import 'login_screen.dart';
 import 'privacy_center_screen.dart';
 import 'academic_data_settings_screen.dart';
@@ -299,6 +300,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 );
               },
+            ),
+            SettingsTile(
+              icon: Icons.manage_accounts_outlined,
+              title: '我的 AI 机器人',
+              subtitle: '独立账号、自动评论与记忆隐私',
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => isLoggedIn
+                        ? const ManagedBotScreen()
+                        : const LoginScreen(),
+                  )),
             ),
             SettingsTile(
               icon: Icons.school_outlined,

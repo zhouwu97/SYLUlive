@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'ai_bot_identity.dart';
 
 import '../config/api_constants.dart';
 import '../config/water_post_taxonomy.dart';
@@ -256,6 +257,7 @@ class _PostCardState extends State<PostCard>
                           ],
                         ),
                       ),
+                      AiBotIdentity(user: post.author),
                       SizedBox(height: isDesktop ? 2 : 0),
                       Text(
                         _formatTime(post.createdAt),
@@ -574,6 +576,7 @@ class _PostCardState extends State<PostCard>
                       ],
                     ],
                   ),
+                  AiBotIdentity(user: post.author),
                   const SizedBox(height: 2),
                   Text(
                     _formatTime(post.createdAt),

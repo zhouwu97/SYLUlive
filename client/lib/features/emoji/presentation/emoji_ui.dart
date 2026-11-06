@@ -331,10 +331,12 @@ class EmojiPreviewItem {
       {required this.id,
       required this.name,
       required this.image,
+      this.previewImage,
       this.animated = false});
   final String id;
   final String name;
   final ImageProvider image;
+  final ImageProvider? previewImage;
   final bool animated;
 }
 
@@ -428,7 +430,7 @@ Future<void> showEmojiPreview(BuildContext context, EmojiPreviewItem item,
           height: MediaQuery.sizeOf(context).height * .36,
           child: Image(
               key: ValueKey(attempt),
-              image: item.image,
+              image: item.previewImage ?? item.image,
               fit: BoxFit.contain,
               loadingBuilder: (_, child, progress) => progress == null
                   ? child
@@ -438,7 +440,7 @@ Future<void> showEmojiPreview(BuildContext context, EmojiPreviewItem item,
                   icon: Icons.broken_image_outlined,
                   action: TextButton(
                       onPressed: () async {
-                        await item.image.evict();
+                        await (item.previewImage ?? item.image).evict();
                         if (context.mounted && isCurrent?.call() != false) {
                           invalidatePreview?.call(() => attempt++);
                         }

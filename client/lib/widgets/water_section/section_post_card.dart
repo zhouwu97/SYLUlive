@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ai_bot_identity.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -188,6 +189,7 @@ class SectionPostCard extends StatelessWidget {
                     ],
                   ],
                 ),
+                AiBotIdentity(user: author),
                 Text(
                   _formatTime(post.createdAt),
                   style: AppTextStyles.feedTime.copyWith(

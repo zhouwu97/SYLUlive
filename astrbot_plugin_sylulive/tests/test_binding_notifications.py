@@ -94,3 +94,22 @@ async def test_ambiguous_private_delivery_never_falls_back_to_group():
     assert await send_notice(None, target, "success") is False
     bot.send_private_msg.assert_awaited_once()
     bot.send_group_msg.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_manual_upgrade_claim_while_watcher_waits_notifies_same_request_once():
+    clock, client = Clock(), Client("success")
+    notify, target = AsyncMock(return_value=True), object()
+    pending = client.pending
+    async def claim_while_sleeping(seconds):
+        clock.value += seconds
+        client.generation += 1
+        pending["completed_generation"] = client.generation
+        client.pending, client.tokens = None, {"scope": "community:read"}
+    notifications = BindingNotifications(notify, lambda _: True,
+        now=clock.now, sleep=claim_while_sleeping)
+    assert notifications.start(client, target)
+    await notifications.tasks[client]
+    notify.assert_awaited_once_with(target, "success")
+    assert client.calls == 0
+    await notifications.close()

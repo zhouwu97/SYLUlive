@@ -47,7 +47,7 @@ func newEmojiPackRoutesFixture(t *testing.T) *emojiPackRouteFixture {
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	for i := 0; i < 2; i++ {
-		require.NoError(t, db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.AdminLog{}, &models.CommunityEmojiPack{}, &models.CommunityEmojiPackAsset{}))
+		require.NoError(t, db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.AdminLog{}, &models.CommunityEmojiPack{}, &models.CommunityEmojiPackAsset{}, &models.EmojiCreator{}))
 	}
 	middleware.InvalidateTokenVersionCache(0)
 	middleware.SetLegalConsentEnforcement(middleware.LegalConsentEnforcementOff)
@@ -61,6 +61,7 @@ func newEmojiPackRoutesFixture(t *testing.T) *emojiPackRouteFixture {
 	f.router.Use(middleware.IdempotencyMiddlewareWithJWT(db, "emoji-test-secret"))
 	for id, role := range map[uint]models.Role{1: models.RoleUser, 2: models.RoleUser, 3: models.RoleAdmin} {
 		require.NoError(t, db.Create(&models.User{ID: id, PasswordHash: "fixture", Role: role, Nickname: fmt.Sprintf("user-%d", id)}).Error)
+		require.NoError(t, db.Create(&models.EmojiCreator{UserID: id, Description: "隔离测试创作者", Status: models.EmojiCreatorActive, Version: 1}).Error)
 		f.tokens[id], err = middleware.GenerateToken(id, string(role), 0, "emoji-test-secret")
 		require.NoError(t, err)
 	}

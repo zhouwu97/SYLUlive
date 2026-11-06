@@ -98,6 +98,28 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 	require.Equal(t, 401, send("GET", "/ordinary-app", tokens.AccessToken, "", "").Code)
 	require.Equal(t, 401, send("GET", "/api/integrations/v1/binding", jwt, "", "").Code)
 	require.Equal(t, 401, send("GET", "/api/integrations/v1/binding", tokens.RefreshToken, "", "").Code)
+	// 托管机器人只能由本人 App 会话管理，旧助手授权不能自动获得发布权限。
+	require.NoError(t, db.AutoMigrate(&models.ManagedBot{}))
+	require.Equal(t, 401, send("GET", "/api/connected-apps/bot", tokens.AccessToken, "", "").Code)
+	w = send("GET", "/api/connected-apps/bot", jwt, "", "")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"bot":null`)
+	require.Contains(t, w.Body.String(), `"auto_reply_authorized":false`)
+	w = postJSON("/api/connected-apps/bot", jwt, map[string]interface{}{"name": "鱼", "enabled": true, "owner_id": recipient})
+	require.Equal(t, 422, w.Code, w.Body.String())
+	w = postJSON("/api/connected-apps/bot", jwt, map[string]interface{}{"name": "鱼", "enabled": true})
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.NotContains(t, w.Body.String(), "owner_id")
+	w = send("GET", "/api/connected-apps/bot", jwt, "", "")
+	require.Contains(t, w.Body.String(), `"name":"鱼"`)
+	w = postJSON("/api/integrations/v1/bot/replies", tokens.AccessToken, map[string]string{})
+	require.Equal(t, 403, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), "bot_reply_disabled")
+	h.options.AutoReplyEnabled = true
+	w = postJSON("/api/integrations/v1/bot/replies", tokens.AccessToken, map[string]string{})
+	require.Equal(t, 403, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), "insufficient_scope")
+	h.options.AutoReplyEnabled = false
 	// 外部编号必须在转换为 uint 前受当前平台位宽约束，不能截断后命中其他对象。
 	for _, path := range []string{
 		"/api/integrations/v1/community/posts/18446744073709551616",
@@ -215,8 +237,13 @@ func TestIntegrationHTTPAuthorizationReadDraftPublishRevoke(t *testing.T) {
 	require.True(t, standardToken.Valid())
 	require.True(t, strings.HasPrefix(standardToken.AccessToken, "sa_"))
 	// 登录时间不随 JWT/刷新延长；旧登录不能批准新的连接。
-	require.NoError(t, db.Model(&models.RefreshToken{}).Where("user_id = ?", owner).Update("authenticated_at", time.Now().Add(-11*time.Minute)).Error)
-	w = postJSON("/api/connected-apps/device-requests/lookup", jwt, map[string]string{"user_code": device["user_code"].(string)})
+	require.NoError(t, db.Model(&models.RefreshToken{}).Where("user_id = ?", owner).Update("authenticated_at", time.Now().Add(-31*time.Minute)).Error)
+	newDevice, err := h.auth.RequestDevice(context.Background(), uuid.NewString(), "过期会话核对", "profile:read_minimal")
+	require.NoError(t, err)
+	w = postJSON("/api/connected-apps/device-requests/lookup", jwt, map[string]string{"user_code": newDevice.UserCode})
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &consent))
+	w = postJSON("/api/connected-apps/device-requests/"+consent.ID+"/decision", jwt, services.IntegrationConsentDecision{Allow: true, Scopes: consent.RequestedScopes, Nonce: consent.Nonce})
 	require.Equal(t, 403, w.Code)
 	require.Contains(t, w.Body.String(), "recent_authentication_required")
 }

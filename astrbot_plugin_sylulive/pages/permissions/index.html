@@ -3,6 +3,7 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SYLUlive · 权限管理</title><link rel="stylesheet" href="./app.css"><script src="./app.js" defer></script></head>
 <body><main>
   <header class="page-head"><div><p class="eyebrow">SYLUlive / 插件管理</p><h1>权限管理</h1><p class="muted">设置谁可以在哪些会话中使用校园功能。</p></div><div class="save-actions"><span id="save-state" role="status">正在读取…</span><button id="reload" type="button">重新读取</button><button id="discard" type="button" disabled>放弃修改</button><button id="save" type="button" class="primary" disabled>保存更改</button></div></header>
+  <p class="guide-row"><a id="connection-guide" target="_blank" rel="noopener noreferrer" hidden>接入 AstrBot 教程</a><span>网站连接和机器人启用与本页规则分别管理。</span></p>
   <div id="global-error" class="notice error" role="alert" hidden></div>
   <nav class="tabs" aria-label="权限管理分区"><button type="button" data-view="rules" aria-pressed="true" aria-controls="rules-panel">权限规则</button><button type="button" data-view="settings" aria-pressed="false" aria-controls="settings-panel">功能与范围</button><button type="button" data-view="check" aria-pressed="false" aria-controls="check-panel">权限检查</button></nav>
   <fieldset id="policy-editor" disabled>

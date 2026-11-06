@@ -13,8 +13,8 @@ from .client import IntegrationProblem
 
 MESSAGES = {
     "success": "你的 SYLUlive 绑定成功！现在可以使用本人已授权的功能。\n查看连接：/sylu-status\n使用帮助：/sylu-help",
-    "timeout": "本次 SYLUlive 绑定等待已超时，未能确认绑定成功。\n重新绑定：先发 /sylu-disconnect 取消旧请求，再发 /sylu-connect 获取新链接。",
-    "denied": "这次绑定未完成：官网授权已拒绝或取消。\n如需重试，先发 /sylu-disconnect 清理旧请求，再发 /sylu-connect。",
+    "timeout": "本次 SYLUlive 绑定等待已超时，未能确认绑定成功。\n请发 /sylu-connect 取消旧请求并获取新链接，无需先解绑。",
+    "denied": "这次绑定未完成：官网授权已拒绝或取消，未增加权限。\n如需重试，请发 /sylu-connect，无需先解绑。",
     "unavailable": "暂时无法确认这次 SYLUlive 绑定结果，请发 /sylu-status 核实。\n如需重试，先发 /sylu-disconnect，再重新绑定。",
 }
 
@@ -142,7 +142,14 @@ class BindingNotifications:
 
     async def _watch(self, client, pending, generation, target):
         retry_at = 0
-        while not self.closed and getattr(client, "generation", 0) == generation:
+        while not self.closed:
+            current = getattr(client, "generation", 0)
+            if current != generation:
+                # 本人命令可能先领取补充授权；只有这一个请求确认的完成代次可通知。
+                completed = pending.get("completed_generation")
+                if type(completed) is int and current == completed and client.pending is None and client.tokens:
+                    await self._finish(client, pending, current, target, "success")
+                return
             if client.pending is not pending:
                 if client.pending is None and client.tokens:
                     await self._finish(client, pending, generation, target, "success")
@@ -156,7 +163,12 @@ class BindingNotifications:
                 continue
             try:
                 # 锁内再核对请求对象，旧任务不得轮询解绑后新发起的请求。
-                await client.poll(expected=pending)
+                completed_generation = await client.poll(expected=pending)
+                if client.pending is None and client.tokens:
+                    # 领取新授权会作废旧在途操作；通知绑定到本次领取返回的代次。
+                    current = completed_generation if type(completed_generation) is int else generation
+                    await self._finish(client, pending, current, target, "success")
+                    return
             except IntegrationProblem as error:
                 if getattr(client, "generation", 0) != generation:
                     return

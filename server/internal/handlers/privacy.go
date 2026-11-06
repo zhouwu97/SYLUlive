@@ -174,6 +174,14 @@ func (h *PrivacyHandler) personalDataPayload(userID uint, includeRequests bool) 
 		}
 	}
 	if includeRequests {
+		if h.db.Migrator().HasTable(&models.EmojiCreator{}) {
+			var creator models.EmojiCreator
+			if err := h.db.First(&creator, "user_id = ?", userID).Error; err == nil {
+				payload["emoji_creator_application"] = creator
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
+		}
 		if h.db.Migrator().HasTable(&models.CommunityEmojiPack{}) {
 			packs := []models.CommunityEmojiPack{}
 			if err := h.db.Omit("manifest", "request_key", "content_hash").Where("user_id = ?", userID).Order("created_at DESC").Find(&packs).Error; err != nil {

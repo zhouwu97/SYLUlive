@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	// ImageVariantRecipeVersion 用于在调整缩放或编码配方时隔离新旧文件。
-	ImageVariantRecipeVersion = 1
+	// JPEG/PNG 维持 v1；GIF 独立使用 v2，避免重建所有其他图片。
+	ImageVariantRecipeVersion = models.ImageVariantRecipeVersion
 	ImageVariantThumb         = "thumb"
 	ImageVariantMedium        = "medium"
 	ImageVariantViewer        = "viewer"
@@ -44,7 +44,7 @@ func ImageVariantPath(filePath, mimeType, variant string) (string, bool) {
 	if base == "" {
 		return "", false
 	}
-	return fmt.Sprintf("%s_v%d_%s%s", base, ImageVariantRecipeVersion, variant, extension), true
+	return fmt.Sprintf("%s_v%d_%s%s", base, models.ImageVariantRecipeVersionForMime(mimeType), variant, extension), true
 }
 
 // ReadyPublicImageVariantPath 只返回数据库已标记 ready 的公开图片变体。
@@ -75,7 +75,7 @@ func ReadyPublicImageVariantPath(db *gorm.DB, publicPath, variant string) (strin
 		"file_id = ? AND variant = ? AND recipe_version = ? AND status = ?",
 		file.ID,
 		variant,
-		ImageVariantRecipeVersion,
+		models.ImageVariantRecipeVersionForMime(file.MimeType),
 		models.ImageVariantStatusReady,
 	).First(&imageVariant).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -96,28 +96,27 @@ func imageVariantExtension(mimeType string) (string, bool) {
 	case "image/png":
 		return ".png", true
 	case "image/gif":
-		// GIF 变体只保存静态首帧，统一以 JPEG 输出；原图路径仍保留 .gif。
-		return ".jpg", true
+		// 静态预览使用 PNG，以保留 GIF 的透明区域。
+		return ".png", true
 	default:
 		return "", false
 	}
 }
 
-// imageVariantOutputMimeType 返回变体文件的真实 MIME。动态 GIF 的预览是
-// JPEG 首帧，避免客户端在拿到静态预览时继续按动画 GIF 解码。
+// imageVariantOutputMimeType 返回变体文件的真实 MIME。GIF 预览是静态 PNG。
 func imageVariantOutputMimeType(sourceMimeType string) (string, bool) {
 	switch sourceMimeType {
 	case "image/jpeg", "image/png":
 		return sourceMimeType, true
 	case "image/gif":
-		return "image/jpeg", true
+		return "image/png", true
 	default:
 		return "", false
 	}
 }
 
 // CreatePublicImageVariantTasks 在公开权限已经写入的同一事务中创建变体任务。
-// GIF 原图保持动态内容，同时为 Feed/详情和查看器生成静态首帧预览任务。
+// GIF 原图保持动态内容，同时为 Feed/详情和查看器生成静态预览任务。
 func CreatePublicImageVariantTasks(tx *gorm.DB, fileIDs []uint) error {
 	if len(fileIDs) == 0 {
 		return nil
@@ -127,6 +126,7 @@ func CreatePublicImageVariantTasks(tx *gorm.DB, fileIDs []uint) error {
 		return err
 	}
 	for _, file := range files {
+		recipeVersion := models.ImageVariantRecipeVersionForMime(file.MimeType)
 		outputMimeType, ok := imageVariantOutputMimeType(file.MimeType)
 		if !ok {
 			continue
@@ -145,7 +145,7 @@ func CreatePublicImageVariantTasks(tx *gorm.DB, fileIDs []uint) error {
 			record := models.ImageVariant{
 				FileID:        file.ID,
 				Variant:       variant,
-				RecipeVersion: ImageVariantRecipeVersion,
+				RecipeVersion: recipeVersion,
 				Status:        models.ImageVariantStatusPending,
 				Path:          variantPath,
 				MimeType:      outputMimeType,
@@ -155,30 +155,34 @@ func CreatePublicImageVariantTasks(tx *gorm.DB, fileIDs []uint) error {
 				"file_id = ? AND variant = ? AND recipe_version = ?",
 				file.ID,
 				variant,
-				ImageVariantRecipeVersion,
+				recipeVersion,
 			).Find(&existing)
 			if query.Error != nil {
 				return query.Error
 			}
 			if query.RowsAffected > 0 {
-				// 旧版本曾把 GIF 记录为 unsupported 并使用 .gif 变体路径。
-				// 现在 GIF 变体是 JPEG 静态首帧，启动回填时需要把这类旧记录
-				// 重新排回 pending；ready 或 failed 记录仍保持幂等，不强制重跑。
+				// 旧 worker 不认识 GIF v2 的 PNG MIME；若回滚时误领任务并耗尽
+				// 重试，恢复新版后只重排这种特定错误，保留其他失败供排查。
+				oldWorkerFailure := existing.Status == models.ImageVariantStatusFailed &&
+					existing.NextAttemptAt == nil && existing.LastError == "原图/变体 MIME 与任务不一致"
 				if file.MimeType == "image/gif" &&
 					(existing.Status == models.ImageVariantStatusUnsupported ||
-						existing.Path != record.Path || existing.MimeType != record.MimeType) {
-					if err := tx.Model(&existing).Updates(map[string]interface{}{
-						"status":          models.ImageVariantStatusPending,
-						"path":            record.Path,
-						"mime_type":       record.MimeType,
-						"width":           0,
-						"height":          0,
-						"size":            0,
-						"attempts":        0,
-						"next_attempt_at": nil,
-						"started_at":      nil,
-						"last_error":      "",
-					}).Error; err != nil {
+						existing.Path != record.Path || existing.MimeType != record.MimeType || oldWorkerFailure) {
+					// 并发重排或 worker 领取后不能覆盖已变化的任务状态。
+					if err := tx.Model(&models.ImageVariant{}).
+						Where("id = ? AND status = ? AND attempts = ?", existing.ID, existing.Status, existing.Attempts).
+						Updates(map[string]interface{}{
+							"status":          models.ImageVariantStatusPending,
+							"path":            record.Path,
+							"mime_type":       record.MimeType,
+							"width":           0,
+							"height":          0,
+							"size":            0,
+							"attempts":        0,
+							"next_attempt_at": nil,
+							"started_at":      nil,
+							"last_error":      "",
+						}).Error; err != nil {
 						return err
 					}
 				}

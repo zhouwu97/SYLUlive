@@ -20,15 +20,16 @@ type Sticker struct {
 }
 
 type Request struct {
-	InternalOwnerID uint   `json:"-"` // 仅由已验证的服务端上下文设置。
-	PostID          uint   `json:"post_id"`
-	ReplyID         uint   `json:"reply_id"`
-	AfterID         uint   `json:"after_id"`
-	Limit           int    `json:"limit"`
-	Query           string `json:"query"`
-	AfterStickerID  string `json:"after_sticker_id"`
-	Sort            string `json:"sort"`
-	Cursor          string `json:"cursor"`
+	InternalOwnerID          uint     `json:"-"` // 仅由已验证的服务端上下文设置。
+	InternalAllowedPostTypes []string `json:"-"` // nil 为普通公开读取；空列表为无版块权限。
+	PostID                   uint     `json:"post_id"`
+	ReplyID                  uint     `json:"reply_id"`
+	AfterID                  uint     `json:"after_id"`
+	Limit                    int      `json:"limit"`
+	Query                    string   `json:"query"`
+	AfterStickerID           string   `json:"after_sticker_id"`
+	Sort                     string   `json:"sort"`
+	Cursor                   string   `json:"cursor"`
 }
 
 type Reader struct {
@@ -77,6 +78,7 @@ func ValidateOptions(input Request) error {
 
 type PublicAuthor struct {
 	Nickname string `json:"nickname"`
+	AIBot *models.PublicBotIdentity `json:"ai_bot,omitempty"`
 }
 type PublicImage struct {
 	Index    int    `json:"index"`
@@ -93,6 +95,20 @@ func VisiblePosts(db *gorm.DB) *gorm.DB {
 func ReadPostModel(ctx context.Context, db *gorm.DB, id uint) (models.Post, error) {
 	var post models.Post
 	err := VisiblePosts(db.WithContext(ctx)).Select(communityPostColumns).Where("id = ?", id).Take(&post).Error
+	return post, err
+}
+
+func requestPosts(db *gorm.DB, input Request) *gorm.DB {
+	query := VisiblePosts(db)
+	if input.InternalAllowedPostTypes != nil {
+		query = query.Where("post_type IN ?", input.InternalAllowedPostTypes)
+	}
+	return query
+}
+
+func requestPost(ctx context.Context, db *gorm.DB, id uint, input Request) (models.Post, error) {
+	var post models.Post
+	err := requestPosts(db.WithContext(ctx), input).Select(communityPostColumns).Where("id = ?", id).Take(&post).Error
 	return post, err
 }
 
@@ -163,7 +179,7 @@ func publicAuthors(db *gorm.DB, ids []uint) (map[uint]*PublicAuthor, error) {
 		if name == "" {
 			name = "未知用户"
 		}
-		result[user.ID] = &PublicAuthor{Nickname: name}
+		result[user.ID] = &PublicAuthor{Nickname: name, AIBot: user.AIBot}
 	}
 	return result, nil
 }
@@ -283,7 +299,7 @@ func (reader *Reader) Read(ctx context.Context, name string, input Request) (int
 		if err := ValidateOptions(input); err != nil {
 			return nil, err
 		}
-		query := VisiblePosts(db).Select(communityPostColumns)
+		query := requestPosts(db, input).Select(communityPostColumns)
 		if input.InternalOwnerID != 0 {
 			query = query.Where("author_id = ?", input.InternalOwnerID)
 		}
@@ -301,7 +317,7 @@ func (reader *Reader) Read(ctx context.Context, name string, input Request) (int
 		if input.Sort == "replies" {
 			column = "reply_count"
 		}
-		scope := contentVersion([]interface{}{input.Query, input.InternalOwnerID})
+		scope := contentVersion([]interface{}{input.Query, input.InternalOwnerID, input.InternalAllowedPostTypes})
 		if ranked {
 			order = column + " DESC, id DESC"
 			if input.Cursor != "" {
@@ -346,7 +362,7 @@ func (reader *Reader) Read(ctx context.Context, name string, input Request) (int
 		}
 		return map[string]interface{}{"items": items, "next_after_id": next, "next_cursor": nextCursor, "sort": mode}, nil
 	case "community.get_post":
-		post, err := ReadPostModel(ctx, db, input.PostID)
+		post, err := requestPost(ctx, db, input.PostID, input)
 		if err != nil {
 			return nil, err
 		}
@@ -360,12 +376,12 @@ func (reader *Reader) Read(ctx context.Context, name string, input Request) (int
 		var replies []models.Reply
 		err := db.Model(&models.Reply{}).Select(communityReplyColumns).
 			Where("post_id = ? AND status = ? AND id > ?", input.PostID, models.ReplyStatusNormal, input.AfterID).
-			Where("post_id IN (?)", VisiblePosts(db).Select("id")).
+			Where("post_id IN (?)", requestPosts(db, input).Select("id")).
 			Order("id ASC").Limit(input.Limit + 1).Find(&replies).Error
 		if err != nil {
 			return nil, err
 		}
-		if _, err := ReadPostModel(ctx, db, input.PostID); err != nil {
+		if _, err := requestPost(ctx, db, input.PostID, input); err != nil {
 			return nil, err
 		}
 		more := len(replies) > input.Limit
@@ -386,7 +402,7 @@ func (reader *Reader) Read(ctx context.Context, name string, input Request) (int
 		if err := db.Select(communityReplyColumns).Where("id = ? AND status = ?", input.ReplyID, models.ReplyStatusNormal).Take(&reply).Error; err != nil {
 			return nil, err
 		}
-		post, err := ReadPostModel(ctx, db, reply.PostID)
+		post, err := requestPost(ctx, db, reply.PostID, input)
 		if err != nil {
 			return nil, err
 		}

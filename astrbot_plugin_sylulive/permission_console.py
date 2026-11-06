@@ -9,10 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .client import checked_origin
 from .permissions import CAPABILITY_LABELS
 from .permission_policy import PolicyError, save, snapshot, validate
 
-VERSION = "0.4.5"
+VERSION = "0.5.7"
 SCOPES = {"checkin": "checkin:write", "grades": "academic:grades:read",
           "erke": "academic:erke:read", "proposals": "community:propose",
           "private_review": "profile:read_minimal"}
@@ -150,8 +151,22 @@ def register_console(context, plugin):
     async def status():
         if (error := access()) is not None:
             return error
-        return JSONResponse({**snapshot(plugin.config), "version": VERSION, "platform_id": plugin.platform},
+        try:
+            origin = plugin.config.get("server_origin", "https://sylulive.online")
+            if not isinstance(origin, str):
+                raise ValueError("invalid origin")
+            guide = checked_origin(origin) + "/web/connected-apps?guide=astrbot"
+        except (TypeError, ValueError):
+            guide = None
+        return JSONResponse({**snapshot(plugin.config), "version": VERSION, "platform_id": plugin.platform, "guide_url": guide},
                             headers={"Cache-Control": "no-store"})
+
+    async def runtime_health():
+        if (error := access()) is not None:
+            return error
+        manager = getattr(plugin, "bot_runtimes", None)
+        data = manager.health() if manager else {"manager_alive": False}
+        return JSONResponse(data, headers={"Cache-Control": "no-store"})
 
     async def update():
         if (error := access()) is not None:
@@ -216,3 +231,4 @@ def register_console(context, plugin):
     context.register_web_api("/astrbot_plugin_sylulive/permissions/policy", status, ["GET"], "读取权限配置")
     context.register_web_api("/astrbot_plugin_sylulive/permissions/policy", update, ["POST"], "保存功能入口权限，不授予校园账号scope")
     context.register_web_api("/astrbot_plugin_sylulive/permissions/preview", evaluate, ["POST"], "只读模拟指定会话权限，不执行业务")
+    context.register_web_api("/astrbot_plugin_sylulive/runtime/health", runtime_health, ["GET"], "已登录后台读取任务存活元数据，不执行模型或发布")

@@ -259,7 +259,7 @@ func TestImageVariantWorkerPreservesTransparentPNG(t *testing.T) {
 	}
 }
 
-func TestImageVariantWorkerGeneratesStaticJPEGPreviewForGIF(t *testing.T) {
+func TestImageVariantWorkerGeneratesStaticPNGPreviewForGIF(t *testing.T) {
 	db := newImageVariantTestDB(t)
 	uploadDir := t.TempDir()
 	file := createPublicVariantFile(t, db, uploadDir, "motion.gif", "image/gif")
@@ -291,14 +291,14 @@ func TestImageVariantWorkerGeneratesStaticJPEGPreviewForGIF(t *testing.T) {
 		t.Fatal(err)
 	}
 	var pending []models.ImageVariant
-	if err := db.Where("file_id = ?", file.ID).Find(&pending).Error; err != nil {
+	if err := db.Where("file_id = ? AND recipe_version = ?", file.ID, models.ImageVariantGIFRecipeVersion).Find(&pending).Error; err != nil {
 		t.Fatal(err)
 	}
 	if len(pending) != 2 {
 		t.Fatalf("GIF 应创建 thumb/medium 两个静态预览任务，实际 %d", len(pending))
 	}
 	for _, variant := range pending {
-		if variant.Status != models.ImageVariantStatusPending || variant.MimeType != "image/jpeg" || !strings.HasSuffix(variant.Path, ".jpg") {
+		if variant.Status != models.ImageVariantStatusPending || variant.MimeType != "image/png" || !strings.HasSuffix(variant.Path, ".png") {
 			t.Fatalf("GIF 静态预览任务错误: %+v", variant)
 		}
 	}
@@ -311,18 +311,18 @@ func TestImageVariantWorkerGeneratesStaticJPEGPreviewForGIF(t *testing.T) {
 		}
 	}
 	var variants []models.ImageVariant
-	if err := db.Where("file_id = ?", file.ID).Find(&variants).Error; err != nil {
+	if err := db.Where("file_id = ? AND recipe_version = ?", file.ID, models.ImageVariantGIFRecipeVersion).Find(&variants).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, variant := range variants {
-		if variant.Status != models.ImageVariantStatusReady || variant.MimeType != "image/jpeg" {
+		if variant.Status != models.ImageVariantStatusReady || variant.MimeType != "image/png" {
 			t.Fatalf("GIF 静态预览状态=%q mime=%q", variant.Status, variant.MimeType)
 		}
 		config, format := readImageConfig(
 			t,
 			filepath.Join(uploadDir, strings.TrimPrefix(variant.Path, "/uploads/")),
 		)
-		if format != "jpeg" || config.Width != 32 || config.Height != 32 {
+		if format != "png" || config.Width != 32 || config.Height != 32 {
 			t.Fatalf("GIF 静态预览格式或尺寸错误: format=%s size=%dx%d", format, config.Width, config.Height)
 		}
 	}

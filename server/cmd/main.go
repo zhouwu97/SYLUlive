@@ -216,6 +216,7 @@ func main() {
 		&models.AcademicIdentityChallenge{},
 		&models.IntegrationDeviceRequest{}, &models.IntegrationBinding{},
 		&models.IntegrationCredential{}, &models.IntegrationAction{},
+		&models.ManagedBot{},
 		&models.IntegrationAudit{}, &models.IntegrationRateBucket{},
 		&models.EmailVerificationChallenge{},
 		&models.EmailVerificationRequest{},
@@ -243,6 +244,7 @@ func main() {
 		&models.DeviceToolJob{},
 
 		&models.Post{},
+		&models.PostBookmark{},
 		&models.Topic{},
 		&models.PostTopic{},
 		&models.Poll{},
@@ -293,6 +295,7 @@ func main() {
 		&models.UserEmojiFavorite{},
 		&models.CommunityEmojiPack{},
 		&models.CommunityEmojiPackAsset{},
+		&models.EmojiCreator{},
 
 		&models.ExamPaper{},
 
@@ -807,9 +810,13 @@ func main() {
 		log.Println("个人教务能力已退役，跳过教务客户端初始化")
 	}
 	authHandler := handlers.NewAuthHandlerWithEmailVerificationAndCleanup(db, cfg.JWTSecret, emailVerification, eduCredentialCleanupJobs)
+	var integrationHandler *handlers.IntegrationHandler
 	if cfg.IntegrationsEnabled {
-		integrationHandler := handlers.NewIntegrationHandler(db, handlers.IntegrationOptions{
+		integrationHandler = handlers.NewIntegrationHandler(db, handlers.IntegrationOptions{
 			PublicOrigin: cfg.IntegrationPublicOrigin, ProposalsEnabled: cfg.IntegrationProposalsEnabled, OwnerPublishEnabled: cfg.IntegrationOwnerPublishEnabled,
+			AutoReplyEnabled:    cfg.IntegrationAutoReplyEnabled,
+			AutoPostEnabled:     cfg.IntegrationAutoPostEnabled,
+			PersonalDataEnabled: cfg.IntegrationPersonalDataEnabled,
 			AfterReplyCommit: func(n models.Notification) {
 				handlers.SendJPushNotification(cfg.JPushAppKey, cfg.JPushMasterSecret, db, n.UserID, n.FromUID, n.RelatedID, n.PostID, n.Content)
 			},
@@ -892,6 +899,9 @@ func main() {
 	invitationHandler := handlers.NewInvitationHandler(db, cfg.JWTSecret)
 
 	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
+	if integrationHandler != nil {
+		integrationHandler.SetBotUploader(uploadHandler)
+	}
 	uploadProtectionConfig := services.UploadProtectionConfig{
 		PerMinuteCountLimit:   cfg.UploadPerMinuteCountLimit,
 		HourlyBytesLimit:      cfg.UploadHourlyBytesLimit,
@@ -1381,8 +1391,8 @@ func main() {
 	// 启动后台定时任务
 
 	// 图片管线开关直接影响生产资源链路，启动时打印实际取值便于部署核对。
-	log.Printf("[IMAGE_PIPELINE] worker=%t accel_redirect=%s upload_dir=%s workers=1 recipe=v%d",
-		cfg.ImageVariantWorkerEnabled, os.Getenv("UPLOAD_USE_ACCEL_REDIRECT"), cfg.UploadDir, services.ImageVariantRecipeVersion)
+	log.Printf("[IMAGE_PIPELINE] worker=%t accel_redirect=%s upload_dir=%s workers=1 recipe=v%d gif_recipe=v%d",
+		cfg.ImageVariantWorkerEnabled, os.Getenv("UPLOAD_USE_ACCEL_REDIRECT"), cfg.UploadDir, services.ImageVariantRecipeVersion, models.ImageVariantGIFRecipeVersion)
 	if cfg.ImageVariantWorkerEnabled {
 		services.StartImageVariantWorkers(appCtx, db, cfg.UploadDir, 1)
 	}
@@ -1568,6 +1578,7 @@ func main() {
 		auth.POST("/register/email", authHandler.RegisterWithEmail)
 
 		auth.POST("/login", authHandler.Login)
+		auth.POST("/auth/reauthenticate", middleware.AuthMiddleware(db, cfg.JWTSecret), authHandler.Reauthenticate)
 		auth.POST("/refresh", authHandler.Refresh)
 		auth.POST("/auth/refresh", authHandler.Refresh)
 

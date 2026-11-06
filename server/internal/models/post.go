@@ -184,8 +184,9 @@ func (image PostImage) MarshalJSON() ([]byte, error) {
 		VariantStatus map[string]string `json:"variant_status"`
 	}
 	variantStatus := make(map[string]string, len(image.Variants))
+	recipeVersion := ImageVariantRecipeVersionForMime(image.File.MimeType)
 	for _, variant := range image.Variants {
-		if variant.RecipeVersion != 1 || (variant.Variant != "thumb" && variant.Variant != "medium" && variant.Variant != "viewer") {
+		if variant.RecipeVersion != recipeVersion || (variant.Variant != "thumb" && variant.Variant != "medium" && variant.Variant != "viewer") {
 			continue
 		}
 		variantStatus[variant.Variant] = string(variant.Status)
@@ -193,17 +194,17 @@ func (image PostImage) MarshalJSON() ([]byte, error) {
 	return json.Marshal(postImageJSON{
 		ID: image.ID, PostID: image.PostID, FileID: image.FileID,
 		SortOrder: image.SortOrder, File: image.File,
-		ThumbURL:      postImageVariantURL(image.File.Path, image.Variants, "thumb"),
-		MediumURL:     postImageVariantURL(image.File.Path, image.Variants, "medium"),
-		ViewerURL:     postImageVariantURL(image.File.Path, image.Variants, "viewer"),
+		ThumbURL:      postImageVariantURL(image.File.Path, image.Variants, "thumb", recipeVersion),
+		MediumURL:     postImageVariantURL(image.File.Path, image.Variants, "medium", recipeVersion),
+		ViewerURL:     postImageVariantURL(image.File.Path, image.Variants, "viewer", recipeVersion),
 		OriginURL:     image.File.Path,
 		VariantStatus: variantStatus,
 	})
 }
 
-func postImageVariantURL(originURL string, variants []ImageVariant, variantName string) string {
+func postImageVariantURL(originURL string, variants []ImageVariant, variantName string, recipeVersion int) string {
 	for _, variant := range variants {
-		if variant.Variant == variantName && variant.RecipeVersion == 1 &&
+		if variant.Variant == variantName && variant.RecipeVersion == recipeVersion &&
 			variant.Status == ImageVariantStatusReady && variant.Path != "" {
 			return variant.Path
 		}

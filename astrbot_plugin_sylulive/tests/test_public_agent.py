@@ -24,6 +24,19 @@ def config(**changes):
 
 
 @pytest.mark.asyncio
+async def test_native_agent_error_response_is_not_a_completed_browse(tmp_path):
+    reader = AsyncMock(return_value={"data": {"items": [post()], "next_after_id": 0}})
+    context = SimpleNamespace(tool_loop_agent=AsyncMock(return_value=SimpleNamespace(role="err")))
+    agent = PublicAgent(config(), reader, PublicMemory(tmp_path / "provider-error.db"))
+    try:
+        result = await agent.browse(context)
+        assert result["state"] == "error"
+        assert agent.last_result["state"] == "error"
+    finally:
+        await agent.close()
+
+
+@pytest.mark.asyncio
 async def test_browse_scans_past_excluded_first_page_with_bounded_requests(tmp_path):
     calls = []
 

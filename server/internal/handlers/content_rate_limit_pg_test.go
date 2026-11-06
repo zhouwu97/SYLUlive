@@ -183,7 +183,6 @@ func installQuotaStartBarrier(db *gorm.DB) error {
 
 func createPostViaHandler(t *testing.T, h *PostHandler, userID uint, seed string, barrier *quotaStartBarrier) *httptest.ResponseRecorder {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	form := url.Values{}

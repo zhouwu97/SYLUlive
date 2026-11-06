@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$SourceRoot = "C:\Users\haha\Desktop\表情包",
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot)
 )
@@ -15,48 +15,14 @@ $groupDefinitions = @(
         Name = "明风·日常"
         Metadata = $null
         Dynamic = $false
-        # 该包没有 jtmp 元数据，名称与顺序按源包详情页恢复。
-        Order = @(
-            "aad70d8d064f9eb79286c1393490716c",
-            "d0deb840abc781f414c7ad6824407964",
-            "1c704494bbb89fce27681425cffbe6fa",
-            "36286e5249dbbd659981ca530e21c047",
-            "0eeed98ece4e89243db9dea7ccd796fd",
-            "4535efdfbdc938e7c225528e8915285b",
-            "d0ccdc6d8c3e941529e797b4d8d5ef85",
-            "5d9aa5f7f3b304bf7cffa81cdde8901c",
-            "6d65948c4146fc8a669b9bb10f3832e6",
-            "d931ab4696e4003b744092c1acd3b6c8",
-            "2d094a6c0e1ac32d31a65286eb141a57",
-            "bf4fdc61f3162854bd1e8f80114f0624",
-            "6608d1dacfcde27f87f7d3852330d0fb",
-            "986e5bd2a4b13d23b32416c046ecb068",
-            "f824b5b93951ea809e59bab466114f71",
-            "f05144bf668463d3f2742765d6f8da14"
-        )
-        Labels = @{
-            "aad70d8d064f9eb79286c1393490716c" = "亲亲"
-            "d0deb840abc781f414c7ad6824407964" = "粘"
-            "1c704494bbb89fce27681425cffbe6fa" = "认真"
-            "36286e5249dbbd659981ca530e21c047" = "抱"
-            "0eeed98ece4e89243db9dea7ccd796fd" = "敢这么说话"
-            "4535efdfbdc938e7c225528e8915285b" = "花花"
-            "d0ccdc6d8c3e941529e797b4d8d5ef85" = "看手机"
-            "5d9aa5f7f3b304bf7cffa81cdde8901c" = "长条"
-            "6d65948c4146fc8a669b9bb10f3832e6" = "捏"
-            "d931ab4696e4003b744092c1acd3b6c8" = "拍照"
-            "2d094a6c0e1ac32d31a65286eb141a57" = "阿巴"
-            "bf4fdc61f3162854bd1e8f80114f0624" = "猫"
-            "6608d1dacfcde27f87f7d3852330d0fb" = "叹气"
-            "986e5bd2a4b13d23b32416c046ecb068" = "苦露西"
-            "f824b5b93951ea809e59bab466114f71" = "辛苦了"
-            "f05144bf668463d3f2742765d6f8da14" = "疑惑"
-        }
     },
-    @{ Folder = "mingfengfneg2"; Id = "mingfeng-ovo"; Name = "明风 OvO"; Metadata = "237834.jtmp"; Dynamic = $true; Order = $null; Labels = $null },
-    @{ Folder = "mingfengfneg3"; Id = "mingfengfeng"; Name = "明风风"; Metadata = "234400.jtmp"; Dynamic = $false; Order = $null; Labels = $null },
-    @{ Folder = "mingfengfneg4"; Id = "mingfeng"; Name = "明风"; Metadata = "234044.jtmp"; Dynamic = $false; Order = $null; Labels = $null }
+    @{ Folder = "mingfengfneg2"; Id = "mingfeng-ovo"; Name = "明风 OvO"; Metadata = "237834.jtmp"; Dynamic = $true },
+    @{ Folder = "mingfengfneg3"; Id = "mingfengfeng"; Name = "明风风"; Metadata = "234400.jtmp"; Dynamic = $false },
+    @{ Folder = "mingfengfneg4"; Id = "mingfeng"; Name = "明风"; Metadata = "234044.jtmp"; Dynamic = $false }
 )
+
+# 名称与顺序按 QQ 源清单记录；第一组原始 jtmp 不在用户提供的图片目录中。
+$sourceLabels = Get-Content -LiteralPath (Join-Path $PSScriptRoot "sticker-labels.json") -Raw -Encoding UTF8 | ConvertFrom-Json
 
 $ghfHeader = [byte[]](0x47, 0x48, 0x46, 0x39, 0x39, 0x60)
 $gifHeader = [byte[]](0x47, 0x49, 0x46, 0x38, 0x39, 0x61)
@@ -181,6 +147,23 @@ $serverRoot = Join-Path $ProjectRoot "server\internal\handlers\sticker_assets"
 $clientCatalogPath = Join-Path $ProjectRoot "client\lib\widgets\emoji\sticker_catalog.dart"
 New-Item -ItemType Directory -Force -Path $clientRoot, $serverRoot | Out-Null
 
+# 保留已登记的发布身份；内容变化必须单独提升版本并更新摘要。
+$publishedGroups = @{}
+$publishedCatalogPath = Join-Path $serverRoot "catalog.json"
+if (Test-Path -LiteralPath $publishedCatalogPath -PathType Leaf) {
+    $publishedCatalog = Get-Content -LiteralPath $publishedCatalogPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach ($group in $publishedCatalog) {
+        if ($group.version -and $group.content_sha256) {
+            $publishedGroups[[string]$group.id] = $group
+        }
+    }
+}
+foreach ($definition in $groupDefinitions) {
+    if (-not $publishedGroups.ContainsKey([string]$definition.Id)) {
+        throw "缺少官方表情包发布身份，请先登记 version 和 content_sha256：$($definition.Id)"
+    }
+}
+
 $catalog = [System.Collections.Generic.List[object]]::new()
 
 foreach ($definition in $groupDefinitions) {
@@ -192,34 +175,39 @@ foreach ($definition in $groupDefinitions) {
     $clientGroup = Join-Path $clientRoot $definition.Id
     New-Item -ItemType Directory -Force -Path $clientGroup | Out-Null
 
-    $labels = @{}
-    if ($definition.Labels) {
-        foreach ($id in $definition.Labels.Keys) {
-            $labels[[string]$id] = [string]$definition.Labels[$id]
-        }
+    $sourceGroupLabels = $sourceLabels.($definition.Id)
+    $sourceItems = @($sourceGroupLabels.items)
+    if ($null -eq $sourceGroupLabels -or $sourceItems.Count -ne 16) {
+        throw "缺少完整的表情 ID/名称对应关系：$($definition.Id)"
     }
+    $labels = @{}
     $orderedIds = [System.Collections.Generic.List[string]]::new()
-    if ($definition.Order) {
-        foreach ($id in $definition.Order) {
-            $orderedIds.Add([string]$id)
+    foreach ($item in $sourceItems) {
+        $id = [string]$item.id
+        $name = [string]$item.name
+        if (-not $id -or -not $name -or $labels.ContainsKey($id)) {
+            throw "表情 ID/名称无效或重复：$($definition.Id) / $id"
         }
-    } elseif ($definition.Metadata) {
+        $orderedIds.Add($id)
+        $labels[$id] = $name
+    }
+    if ($definition.Metadata) {
         $metadataPath = Join-Path $sourceGroup $definition.Metadata
         $metadata = Get-Content -LiteralPath $metadataPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        foreach ($image in $metadata.imgs) {
-            $orderedIds.Add([string]$image.id)
-            $labels[[string]$image.id] = [string]$image.name
+        $metadataItems = @($metadata.imgs)
+        if ([string]$metadata.id -ne [string]$sourceGroupLabels.source_pack_id -or $metadataItems.Count -ne $sourceItems.Count) {
+            throw "源表情包清单与已核对的 ID/名称数量不一致：$metadataPath"
         }
-    } else {
-        Get-ChildItem -LiteralPath $sourceGroup -Filter "*_thu.png" |
-            Sort-Object Name |
-            ForEach-Object { $orderedIds.Add(($_.BaseName -replace "_thu$", "")) }
+        for ($index = 0; $index -lt $sourceItems.Count; $index++) {
+            if ([string]$metadataItems[$index].id -ne [string]$sourceItems[$index].id -or
+                [string]$metadataItems[$index].name -cne [string]$sourceItems[$index].name) {
+                throw "源表情包清单与已核对的 ID/名称不一致：$metadataPath / $index"
+            }
+        }
     }
 
     $items = [System.Collections.Generic.List[object]]::new()
-    $position = 0
     foreach ($id in $orderedIds) {
-        $position++
         $thumbnailSource = Join-Path $sourceGroup "${id}_thu.png"
         if (-not (Test-Path -LiteralPath $thumbnailSource -PathType Leaf)) {
             throw "缺少缩略图：$thumbnailSource"
@@ -249,7 +237,7 @@ foreach ($definition in $groupDefinitions) {
             $mimeType = "image/png"
         }
 
-        $label = if ($labels.ContainsKey($id)) { $labels[$id] } else { "表情 $position" }
+        $label = $labels[$id]
         $items.Add([ordered]@{
             id = $id
             label = $label
@@ -262,7 +250,14 @@ foreach ($definition in $groupDefinitions) {
     if ($items.Count -ne 16) {
         throw "表情分组 $($definition.Name) 应为 16 个，实际为 $($items.Count) 个"
     }
-    $catalog.Add([ordered]@{ id = $definition.Id; name = $definition.Name; items = $items })
+    $published = $publishedGroups[[string]$definition.Id]
+    $catalog.Add([ordered]@{
+        id = $definition.Id
+        name = $definition.Name
+        version = $published.version
+        content_sha256 = $published.content_sha256
+        items = $items
+    })
 }
 
 $catalogJson = $catalog | ConvertTo-Json -Depth 8

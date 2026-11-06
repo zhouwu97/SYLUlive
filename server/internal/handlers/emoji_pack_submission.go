@@ -36,6 +36,10 @@ func (h *EmojiPackSubmissionHandler) Submit(c *gin.Context) {
 		c.JSON(401, gin.H{"error": "请先登录"})
 		return
 	}
+	if err := h.service.RequireCreator(c.Request.Context(), c.GetUint("user_id")); err != nil {
+		emojiPackError(c, err)
+		return
+	}
 	select {
 	case h.uploadSlots <- struct{}{}:
 		defer func() { <-h.uploadSlots }()
@@ -70,6 +74,28 @@ func (h *EmojiPackSubmissionHandler) Submit(c *gin.Context) {
 		return
 	}
 	images := make([]services.EmojiPackUploadImage, 0, len(files))
+	options := services.EmojiPackSubmissionOptions{FamilyID: c.PostForm("pack_id")}
+	if raw := c.PostForm("cover_index"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil {
+			emojiPackError(c, services.ErrEmojiPackInvalid)
+			return
+		}
+		options.CoverIndex = value
+	}
+	options.IconIndex = options.CoverIndex
+	if raw := c.PostForm("icon_index"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil {
+			emojiPackError(c, services.ErrEmojiPackInvalid)
+			return
+		}
+		options.IconIndex = value
+	}
+	if raw := c.PostForm("tags"); raw != "" && json.Unmarshal([]byte(raw), &options.Tags) != nil {
+		emojiPackError(c, services.ErrEmojiPackInvalid)
+		return
+	}
 	for index, header := range files {
 		if header.Size > services.EmojiMaxCompressedBytes {
 			c.JSON(413, gin.H{"error": "单张表情不能超过 10 MB"})
@@ -88,7 +114,7 @@ func (h *EmojiPackSubmissionHandler) Submit(c *gin.Context) {
 		}
 		images = append(images, services.EmojiPackUploadImage{Name: names[index], Bytes: data})
 	}
-	pack, err := h.service.Submit(c.Request.Context(), c.GetUint("user_id"), c.GetHeader("Idempotency-Key"), c.PostForm("name"), c.PostForm("description"), images)
+	pack, err := h.service.Submit(c.Request.Context(), c.GetUint("user_id"), c.GetHeader("Idempotency-Key"), c.PostForm("name"), c.PostForm("description"), images, options)
 	if err != nil {
 		emojiPackError(c, err)
 		return
@@ -109,6 +135,8 @@ func emojiPackError(c *gin.Context, err error) {
 		c.JSON(429, gin.H{"error": err.Error(), "code": "emoji_pack_quota"})
 	case errors.Is(err, services.ErrEmojiPackForbidden):
 		c.JSON(403, gin.H{"error": err.Error(), "code": "admin_required"})
+	case errors.Is(err, services.ErrEmojiCreatorRequired):
+		c.JSON(403, gin.H{"error": err.Error(), "code": "emoji_creator_required"})
 	default:
 		c.JSON(500, gin.H{"error": "表情包操作失败，请重试", "code": "emoji_pack_failed"})
 	}
@@ -134,7 +162,7 @@ func (h *EmojiPackSubmissionHandler) list(c *gin.Context, admin bool) {
 		status = models.EmojiPackPending
 	}
 	if status != "" {
-		if status != models.EmojiPackPending && status != models.EmojiPackPublished && status != models.EmojiPackRejected && status != models.EmojiPackUnpublished && status != models.EmojiPackWithdrawn {
+		if status != models.EmojiPackPending && status != models.EmojiPackPublished && status != models.EmojiPackRejected && status != models.EmojiPackUnpublished && status != models.EmojiPackWithdrawn && status != models.EmojiPackSuperseded {
 			emojiPackError(c, services.ErrEmojiPackInvalid)
 			return
 		}
@@ -229,6 +257,19 @@ func (h *EmojiPackSubmissionHandler) ServePrivateAsset(c *gin.Context) {
 }
 
 func (h *EmojiPackSubmissionHandler) serveAsset(c *gin.Context, id string, private bool) {
+	if c.Query("variant") != "" {
+		if c.Query("variant") != "thumbnail" {
+			emojiPackError(c, gorm.ErrRecordNotFound)
+			return
+		}
+		var pack models.CommunityEmojiPack
+		if err := h.service.DB.WithContext(c.Request.Context()).First(&pack, "id = ?", id).Error; err != nil {
+			emojiPackError(c, err)
+			return
+		}
+		h.servePreview(c, pack, c.Param("assetId"), "thumbnail", private)
+		return
+	}
 	file, asset, err := h.service.OpenAsset(c.Request.Context(), id, c.Param("assetId"))
 	if err != nil {
 		emojiPackError(c, gorm.ErrRecordNotFound)
@@ -246,7 +287,12 @@ func (h *EmojiPackSubmissionHandler) serveAsset(c *gin.Context, id string, priva
 }
 
 func communityEmojiCatalogEntry(pack models.CommunityEmojiPack) gin.H {
-	return gin.H{"id": pack.ID, "name": pack.Name, "description": pack.Description, "version": 1, "source": "community", "asset_count": pack.AssetCount, "total_size": pack.TotalSize, "manifest_sha256": pack.ManifestSHA256}
+	previews := make([]string, 0, 4)
+	for i := 1; i <= pack.AssetCount && i <= 4; i++ {
+		previews = append(previews, fmt.Sprintf("image-%d", i))
+	}
+	return gin.H{"id": pack.CatalogID(), "name": pack.Name, "description": pack.Description, "version": pack.Version, "source": "community", "asset_count": pack.AssetCount, "total_size": pack.TotalSize, "manifest_sha256": pack.ManifestSHA256,
+		"cover_asset_id": pack.CoverAssetID, "icon_asset_id": pack.IconAssetID, "author_name": pack.AuthorName, "tags": pack.Tags, "media_version": 1, "preview_asset_ids": previews}
 }
 
 func (h *EmojiPackSubmissionHandler) ListCatalog(c *gin.Context) {
@@ -261,7 +307,7 @@ func (h *EmojiPackSubmissionHandler) ListCatalog(c *gin.Context) {
 		return
 	}
 	packs := []models.CommunityEmojiPack{}
-	if err := h.service.DB.WithContext(c.Request.Context()).Select("id", "name", "description", "asset_count", "total_size", "manifest_sha256").Where("status = ?", models.EmojiPackPublished).Order("created_at DESC, id DESC").Find(&packs).Error; err != nil {
+	if err := h.service.DB.WithContext(c.Request.Context()).Omit("manifest", "request_key", "content_hash").Where("status = ?", models.EmojiPackPublished).Order("created_at DESC, id DESC").Find(&packs).Error; err != nil {
 		emojiPackError(c, err)
 		return
 	}
@@ -273,12 +319,75 @@ func (h *EmojiPackSubmissionHandler) ListCatalog(c *gin.Context) {
 }
 
 func (h *EmojiPackSubmissionHandler) publicPack(c *gin.Context) (*models.CommunityEmojiPack, error) {
-	if v := c.Query("version"); v != "" && v != "1" {
+	var pack models.CommunityEmojiPack
+	id := c.Param("id")
+	query := h.service.DB.WithContext(c.Request.Context())
+	if err := query.Where("(id = ? OR family_id = ?) AND status = ?", id, id, models.EmojiPackPublished).First(&pack).Error; err != nil {
+		return nil, err
+	}
+	if pack.CatalogID() != id {
 		return nil, gorm.ErrRecordNotFound
 	}
-	var pack models.CommunityEmojiPack
-	err := h.service.DB.WithContext(c.Request.Context()).Where("id = ? AND status = ?", c.Param("id"), models.EmojiPackPublished).First(&pack).Error
-	return &pack, err
+	if raw := c.Query("version"); raw != "" {
+		version, err := strconv.Atoi(raw)
+		if err != nil || version < 1 {
+			return nil, gorm.ErrRecordNotFound
+		}
+		if version != pack.Version {
+			var previous models.CommunityEmojiPack
+			if err := query.Where("(id = ? OR family_id = ?) AND version = ? AND status = ?", id, id, version, models.EmojiPackSuperseded).First(&previous).Error; err != nil {
+				return nil, err
+			}
+			pack = previous
+		}
+	}
+	return &pack, nil
+}
+
+func (h *EmojiPackSubmissionHandler) servePreview(c *gin.Context, pack models.CommunityEmojiPack, assetID, variant string, private bool) {
+	data, err := h.service.OpenPreview(c.Request.Context(), pack, assetID, variant)
+	if err != nil {
+		emojiPackError(c, gorm.ErrRecordNotFound)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	if private {
+		c.Header("Cache-Control", "private, no-store")
+	}
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Data(200, "image/png", data)
+}
+
+func (h *EmojiPackSubmissionHandler) ServePublicCover(c *gin.Context) {
+	pack, err := h.publicPack(c)
+	if err != nil {
+		emojiPackError(c, err)
+		return
+	}
+	variant := c.DefaultQuery("variant", "cover")
+	if variant != "cover" && variant != "icon" {
+		emojiPackError(c, gorm.ErrRecordNotFound)
+		return
+	}
+	h.servePreview(c, *pack, "", variant, false)
+}
+
+func (h *EmojiPackSubmissionHandler) ServePrivateCover(c *gin.Context) {
+	pack, err := h.privatePack(c)
+	if err != nil {
+		emojiPackError(c, err)
+		return
+	}
+	if pack.Status == models.EmojiPackWithdrawn {
+		emojiPackError(c, gorm.ErrRecordNotFound)
+		return
+	}
+	variant := c.DefaultQuery("variant", "cover")
+	if variant != "cover" && variant != "icon" {
+		emojiPackError(c, gorm.ErrRecordNotFound)
+		return
+	}
+	h.servePreview(c, *pack, "", variant, true)
 }
 
 func (h *EmojiPackSubmissionHandler) GetCatalogPack(c *gin.Context) {

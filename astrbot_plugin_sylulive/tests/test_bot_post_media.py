@@ -38,6 +38,40 @@ def library(tmp_path):
     return root, row, data
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blocked", [True, False])
+async def test_link_policy_controls_attributed_media_before_model_selection(tmp_path, blocked):
+    agent = PublicAgent(config(community_auto_post=True), AsyncMock(), PublicMemory(tmp_path / "public.db"))
+    client = SimpleNamespace(tokens={"scope": "community:bot_post"}, call=AsyncMock(return_value={"auto_post": True, "media_upload": True}))
+    publisher = CommunityPublisher(agent, client)
+    publisher.controls = {"auto_post_server_enabled": True, "auto_post_authorized": True, "bot": {"policy": {"post_enabled": True, "block_links": blocked}}}
+    try:
+        result = await publisher.post_capabilities()
+        assert result["auto_post"] is True
+        assert result["media_upload"] is not blocked
+        assert publisher.db.execute("SELECT count(*) FROM post_outbox").fetchone()[0] == 0
+    finally:
+        agent.memory.close()
+
+
+@pytest.mark.asyncio
+async def test_blocked_attribution_does_not_upload_or_reserve_daily_post(tmp_path):
+    root, row, _ = library(tmp_path)
+    reader = AsyncMock(return_value={"data": post()})
+    agent = PublicAgent(config(community_auto_post=True), reader, PublicMemory(tmp_path / "public.db"))
+    client = SimpleNamespace(tokens={"scope": "community:bot_post"}, call=AsyncMock())
+    publisher = CommunityPublisher(agent, client, media=ApprovedMedia(root))
+    publisher.controls = {"auto_post_server_enabled": True, "auto_post_authorized": True, "bot": {"policy": {"post_enabled": True, "block_links": True}}}
+    try:
+        with pytest.raises(IntegrationProblem, match="bot_media_attribution_links_blocked"):
+            await publisher.publish_post("校园讨论", "公开正文", "campus", {1: "v1"}, [row["id"]], agent.stamp())
+        client.call.assert_not_awaited()
+        reader.assert_not_awaited()
+        assert publisher.db.execute("SELECT count(*) FROM post_outbox").fetchone()[0] == 0
+    finally:
+        agent.memory.close()
+
+
 def test_approved_catalog_never_reads_unreviewed_private_or_changed_files(tmp_path):
     root, row, data = library(tmp_path)
     media = ApprovedMedia(root)

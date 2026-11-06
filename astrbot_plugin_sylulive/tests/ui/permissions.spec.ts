@@ -12,6 +12,26 @@ async function open(page: Page) {
   await expect(page.locator('#save-state')).toHaveText('已保存');
 }
 
+test('部署者可找到网站接入教程且不把配置权限当账号授权', async ({ page }) => {
+  await open(page);
+  const guide = page.getByRole('link', { name: '接入 AstrBot 教程', exact: true });
+  await expect(guide).toBeVisible();
+  await expect(guide).toHaveAttribute('href', 'https://sylulive.online/web/connected-apps?guide=astrbot');
+  await expect(guide).toHaveAttribute('rel', 'noopener noreferrer');
+  await expect(page.getByText('网站连接和机器人启用与本页规则分别管理。', { exact: true })).toBeVisible();
+});
+
+test('教程入口拒绝异常目标且保留正常配置读取', async ({ page }) => {
+  await page.route(policyRoute, async route => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({ response, json: { ...data, guide_url: 'javascript:alert(1)' } });
+  });
+  await open(page);
+  await expect(page.getByRole('link', { name: '接入 AstrBot 教程', exact: true })).toHaveCount(0);
+  await expect(page.locator('#policy-editor')).toBeEnabled();
+});
+
 async function newRule(page: Page, name = '限制指定用户公开查询') {
   await page.getByRole('button', { name: '新增规则', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '新增规则', exact: true });

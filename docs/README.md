@@ -1,6 +1,6 @@
 # SYLUlive 文档中心
 
-这里是仓库文档的导航入口。根目录 README 只介绍产品和最短的开发路径，部署、隐私、设计和专项方案在本目录维护。
+这里是仓库文档的导航入口。根目录 README 只介绍产品和最短的开发路径，部署、隐私、功能契约和专项方案在本目录维护。
 
 ## 使用者与贡献者
 
@@ -28,13 +28,11 @@
 - [竞赛推荐算法契约](./plans/competition-recommendation-algorithm-plan.md)
 - [架构决策记录](./design/adr/)
 
-## 设计
+## 前端功能与验证
 
-- [设计文档导航](./design/README.md)
-- [设计系统](./design/DESIGN_SYSTEM.md)
-- [动效规范](./design/MOTION.md)
-- [无障碍规范](./design/ACCESSIBILITY.md)
-- [设计 QA](./design/DESIGN_QA.md)
+- [功能契约与决策记录](./design/README.md)
+- [UI、无障碍与真实渲染验证](../DEVELOPMENT_STANDARD.md#42-flutter-与客户端)
+- [Golden 基线维护](../client/test/goldens/README.md)
 
 ## AI、知识库与教务协议
 

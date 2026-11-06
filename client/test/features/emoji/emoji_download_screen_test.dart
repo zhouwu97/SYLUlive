@@ -1,4 +1,7 @@
 import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:flutter/services.dart';
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +14,10 @@ import 'package:shenliyuan/features/emoji/domain/emoji_pack.dart';
 import 'package:shenliyuan/features/emoji/domain/emoji_pack_installation.dart';
 import 'package:shenliyuan/features/emoji/domain/emoji_pack_manifest.dart';
 import 'package:shenliyuan/features/emoji/presentation/emoji_download_screen.dart';
+import 'package:shenliyuan/features/emoji/presentation/emoji_ui.dart';
+import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
+import 'package:shenliyuan/features/emoji/application/emoji_pack_installer.dart';
+import '../../helpers/emoji_flow_qa.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import '../../helpers/golden_test_app.dart';
 import '../../helpers/golden_viewport.dart';
@@ -52,6 +59,14 @@ class _Catalog extends EmojiPackCatalogRepository {
   }
 }
 
+class _PreviewCatalog extends _Catalog {
+  _PreviewCatalog(this.previewManifest);
+  final EmojiPackManifest previewManifest;
+  @override
+  Future<EmojiPackManifest> manifest(EmojiCatalogEntry entry, CancelToken token) async =>
+      previewManifest;
+}
+
 class _Manager extends EmojiPackDownloadManager {
   _Manager(super.store, super.catalog, {super.flags});
   int starts = 0;
@@ -70,6 +85,93 @@ class _Manager extends EmojiPackDownloadManager {
 }
 
 void main() {
+  setUpAll(loadEmojiQAFonts);
+  for (final official in [true, false]) {
+    testWidgets('商城按资源身份选择动图预览 official=$official', (tester) async {
+      const asset = EmojiManifestAsset(
+          id: '4093d7cdb944076e0a8e4e06be2e2776',
+          path: 'assets/4093d7cdb944076e0a8e4e06be2e2776.gif', name: '撒',
+          sha256: '7b9c938279d0f9ddc716cf6e458dfe2ccf92aead43a1277f842db6dc2502794a',
+          mimeType: 'image/gif', fileSize: 634590, animated: true);
+      const manifest = EmojiPackManifest(schemaVersion: 1, packId: 'mingfeng-ovo',
+          version: 2026072901, totalSize: 634590, assets: [asset]);
+      final item = EmojiCatalogEntry(id: manifest.packId, name: '明风 OvO',
+          version: manifest.version, assetCount: 1, totalSize: manifest.totalSize,
+          manifestSha256: 'test', source: official ? 'official' : 'community');
+      final catalog = _PreviewCatalog(manifest);
+      final manager = _Manager(_Store(), catalog);
+      await tester.pumpWidget(GoldenTestApp(home: EmojiPackPreviewScreen(
+          entry: item, catalog: catalog, manager: manager)));
+      await tester.pumpAndSettle();
+      final grid = tester.widget<EmojiPreviewGrid>(find.byType(EmojiPreviewGrid));
+      expect(grid.items.single.name, '撒');
+      expect(grid.items.single.previewImage, isA<NetworkImage>());
+      if (official) {
+        expect((grid.items.single.image as AssetImage).assetName,
+            'assets/images/stickers/mingfeng-ovo/${asset.id}.png');
+      } else {
+        expect(grid.items.single.image, isA<NetworkImage>());
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+  for (final profile in ['light', 'dark', 'large', 'stress']) {
+    testWidgets('免费商城封面、作者与静态预览真实渲染 $profile', (tester) async {
+      await setGoldenViewport(tester, GoldenViewports.phone360x800);
+      late Directory root;
+      late _CommunityCatalog catalog;
+      await tester.runAsync(() async {
+        root = await Directory.systemTemp.createTemp('emoji-store-render-');
+        catalog = await _CommunityCatalog.create();
+        final source = appStickerGroups.first.items.take(4).toList();
+        for (var i = 0; i < source.length; i++) {
+          final bytes = (await rootBundle.load(source[i].thumbnailAsset))
+              .buffer
+              .asUint8List();
+          final urls = [
+            'https://example.test/api/emoji/packs/${_CommunityCatalog.id}/assets/image-${i + 1}?version=1&variant=thumbnail',
+            'https://example.test/api/emoji/packs/${_CommunityCatalog.id}/assets/image-${i + 1}?version=1',
+            if (i == 0)
+              'https://example.test/api/emoji/packs/${_CommunityCatalog.id}/cover?version=1',
+          ];
+          for (final url in urls) {
+            final codec = await ui.instantiateImageCodec(bytes);
+            final frame = await codec.getNextFrame();
+            codec.dispose();
+            PaintingBinding.instance.imageCache.putIfAbsent(
+                NetworkImage(url),
+                () => OneFrameImageStreamCompleter(
+                    Future.value(ImageInfo(image: frame.image))));
+          }
+        }
+      });
+      addTearDown(() => root.delete(recursive: true));
+      final key = GlobalKey();
+      await tester.pumpWidget(RepaintBoundary(
+          key: key,
+          child: GoldenTestApp(
+              themeMode: profile == 'dark' ? ThemeMode.dark : ThemeMode.light,
+              textScaler: TextScaler.linear(profile == 'stress'
+                  ? 1.5
+                  : profile == 'large'
+                      ? 1.3
+                      : 1),
+              home: EmojiDownloadScreen(
+                  store: EmojiPackLocalStore(root), repository: catalog))));
+      await waitForEmojiWork(tester);
+      expect(find.text('表情商城'), findsOneWidget);
+      expect(find.textContaining('测试创作者'), findsOneWidget);
+      await captureEmojiQA(tester, key, 'store-$profile');
+      await tester.tap(find.text('校园反应'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(FilledButton, '免费下载并添加'), findsOneWidget);
+      await captureEmojiQA(tester, key, 'store-detail-$profile');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
+    });
+  }
   testWidgets('同版本损坏包不被旧 installed 任务遮蔽；修复后停用状态保留并能启用返回', (tester) async {
     final store = _Store(), catalog = _Catalog();
     store.items = [
@@ -194,4 +296,53 @@ void main() {
         greaterThanOrEqualTo(44));
     await setGoldenViewport(tester, GoldenViewports.phone360x800);
   });
+}
+
+class _CommunityCatalog extends EmojiPackCatalogRepository {
+  _CommunityCatalog(this.data)
+      : super(Dio(BaseOptions(baseUrl: 'https://example.test/api')));
+  static const id = 'community-00000000-0000-0000-0000-000000000001';
+  final EmojiPackManifest data;
+  static Future<_CommunityCatalog> create() async {
+    final assets = <EmojiManifestAsset>[];
+    for (final sticker in appStickerGroups.first.items.take(4)) {
+      final bytes =
+          (await rootBundle.load(sticker.thumbnailAsset)).buffer.asUint8List();
+      final id = 'image-${assets.length + 1}';
+      assets.add(EmojiManifestAsset(
+          id: id,
+          path: 'assets/$id.png',
+          name: sticker.label,
+          sha256: sha256.convert(bytes).toString(),
+          mimeType: 'image/png',
+          fileSize: bytes.length));
+    }
+    return _CommunityCatalog(EmojiPackManifest(
+        schemaVersion: 1,
+        packId: id,
+        version: 1,
+        totalSize: assets.fold(0, (sum, asset) => sum + asset.fileSize),
+        assets: assets));
+  }
+
+  late final item = EmojiCatalogEntry(
+      id: id,
+      name: '校园反应',
+      version: 1,
+      assetCount: 4,
+      totalSize: data.totalSize,
+      manifestSha256: EmojiPackInstaller.manifestHash(data),
+      source: 'community',
+      authorName: '测试创作者',
+      tags: const ['日常', '校园'],
+      mediaVersion: 1,
+      coverAssetId: 'image-1',
+      iconAssetId: 'image-1',
+      previewAssetIds: const ['image-1', 'image-2', 'image-3', 'image-4']);
+  @override
+  Future<List<EmojiCatalogEntry>> list() async => [item];
+  @override
+  Future<EmojiPackManifest> manifest(
+          EmojiCatalogEntry entry, CancelToken token) async =>
+      data;
 }

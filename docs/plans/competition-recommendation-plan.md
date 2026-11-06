@@ -467,9 +467,9 @@ match_score DESC
 
 ## 5. 前端展示与交互改动
 
-> 约束：`AGENTS.md` 规定 `client/` 下的 UI/设计/交互/动效改动必须先读并遵循
-> `skills/sylulive-design-engineering/SKILL.md`，并以 `docs/design/DESIGN_SYSTEM.md`、
-> `MOTION.md`、`ACCESSIBILITY.md`、`DESIGN_QA.md` 为契约；不得静默覆盖 `docs/design/adr/`。
+> 前端改动按 `DEVELOPMENT_STANDARD.md` 验证状态、无障碍与真实渲染，
+> 并先检查当前主题、共享组件和已有测试；具体设计以本次任务要求为准。
+> 不得静默覆盖 `docs/design/adr/` 中仍有效的业务与权限决策。
 
 | 编号 | 文件 | 改动 |
 |---|---|---|
@@ -477,11 +477,11 @@ match_score DESC
 | F2 | 同上 `:327-335` | 对 404 / 503 做显式降级：提示「匹配服务暂不可用」并提供「切到全部」按钮，禁止静默空列表 |
 | F3 | 同上 `_buildCandidateNotice` `:893-940` | 拆成三态：未就绪 / 已就绪有结果（显示「根据计算机类专业方向筛出 N 项」）/ 已就绪 0 结果（显示「未找到匹配，试试放宽偏好」+ 直达偏好页） |
 | F4 | 同上 `:389` + 后端 | 停止客户端推断 `_hasMore`，改用服务端 `has_more` 字段（修正 P2-9） |
-| F5 | `widgets/competition/competition_student_event_card.dart` | 新增匹配度徽标 + 命中依据短文案（例：`计算机类 · 专业直接相关`）；徽标**不得仅靠颜色区分**，需带文字/图标（ACCESSIBILITY） |
+| F5 | `widgets/competition/competition_student_event_card.dart` | 新增匹配度徽标 + 命中依据短文案（例：`计算机类 · 专业直接相关`）；徽标**不得仅靠颜色区分**，需带文字/图标 |
 | F6 | `widgets/competition/competition_match_reason_sheet.dart` | ① 补齐 6 个恒为「尚未确认」的维度（依赖后端补算）；② 新增「匹配明细」区块渲染 `score_breakdown`；③ 把「匹配度」与「赛事价值（人工评级）」明确分区，并保留现有免责声明 |
 | F7 | `screens/competition/competition_preference_screen.dart` | 方向/技能 chips 与后端受控枚举对齐（去掉「后端不校验」的现状）；新增「系统推断的专业方向（可修改）」区块，落地用户纠错 |
 | F8 | `screens/competition/competition_my_hub_screen.dart:317-330` | 「匹配候选 N 项」口径与「适合我」一致；0 项时给引导而非仅显示 0 |
-| F9 | `widgets/competition/competition_ui_tokens.dart` | 新增匹配度徽标的语义色 token（沿用既有 token 体系，避免硬编码色值；不得触碰 ADR-001 品牌色语义） |
+| F9 | `widgets/competition/competition_ui_tokens.dart` | 新增匹配度徽标的语义色 token（沿用既有 token 体系，避免硬编码色值；限于匹配度展示，不改全局主题） |
 | F10 | 全局 | 埋点：`fit_tab_exposure`、`candidate_impression`、`match_reason_open`、`candidate_click`、`calendar_add`，字段含 `algorithm_version` / `match_score` / `match_tier` / `match_basis` / `position` |
 | F11 | `config/beta_release_policy.dart:10` | `competitionCandidateMatching` 已为 true，保持；阶段 2 的排序能力如需灰度，另开独立开关，不复用该常量 |
 
@@ -842,7 +842,7 @@ match_score DESC
 | 受控词表 | `client/lib/models/competition_preference.dart:61-88` |
 | 治理手册（需修订） | `docs/competition-catalog-v2-runbook.md:9,141` |
 | 覆盖率审计脚本（新增） | `tools/competition_catalog/`（沿用既有离线校验习惯，见 §10.3） |
-| 设计契约（前端改动前置） | `skills/sylulive-design-engineering/SKILL.md`、`docs/design/*` |
+| 前端验证与功能契约 | `DEVELOPMENT_STANDARD.md`、`docs/design/README.md` |
 
 ---
 

@@ -52,9 +52,9 @@ func TestPostImageMarshalJSONUsesReadyStaticGIFPreview(t *testing.T) {
 		FileID: 9,
 		File:   File{Path: "/uploads/ab/hash.gif", MimeType: "image/gif"},
 		Variants: []ImageVariant{{
-			FileID: 9, Variant: "thumb", RecipeVersion: 1,
+			FileID: 9, Variant: "thumb", RecipeVersion: ImageVariantGIFRecipeVersion,
 			Status: ImageVariantStatusReady,
-			Path:   "/uploads/ab/hash_v1_thumb.jpg", MimeType: "image/jpeg",
+			Path:   "/uploads/ab/hash_v2_thumb.png", MimeType: "image/png",
 		}},
 	})
 	if err != nil {
@@ -64,9 +64,38 @@ func TestPostImageMarshalJSONUsesReadyStaticGIFPreview(t *testing.T) {
 	if err := json.Unmarshal(payload, &value); err != nil {
 		t.Fatal(err)
 	}
-	if value["thumb_url"] != "/uploads/ab/hash_v1_thumb.jpg" ||
+	if value["thumb_url"] != "/uploads/ab/hash_v2_thumb.png" ||
 		value["origin_url"] != "/uploads/ab/hash.gif" {
 		t.Fatalf("GIF 静态预览与原图 URL 错误: %s", payload)
+	}
+}
+
+func TestGIFImageJSONIgnoresOldJPEGWhileCurrentPreviewIsPending(t *testing.T) {
+	file := File{Path: "/uploads/ab/hash.gif", MimeType: "image/gif"}
+	variants := []ImageVariant{
+		{Variant: "thumb", RecipeVersion: ImageVariantGIFRecipeVersion, Status: ImageVariantStatusPending, Path: "/uploads/ab/hash_v2_thumb.png"},
+		{Variant: "thumb", RecipeVersion: ImageVariantRecipeVersion, Status: ImageVariantStatusReady, Path: "/uploads/ab/hash_v1_thumb.jpg"},
+	}
+	for name, value := range map[string]any{
+		"post":  PostImage{File: file, Variants: variants},
+		"reply": ReplyImage{File: file, Variants: variants},
+	} {
+		t.Run(name, func(t *testing.T) {
+			payload, err := json.Marshal(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var result struct {
+				ThumbURL string            `json:"thumb_url"`
+				Status   map[string]string `json:"variant_status"`
+			}
+			if err := json.Unmarshal(payload, &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.ThumbURL != file.Path || result.Status["thumb"] != "pending" {
+				t.Fatalf("不能暴露旧黑底变体: %s", payload)
+			}
+		})
 	}
 }
 

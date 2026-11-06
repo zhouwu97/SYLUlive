@@ -109,7 +109,7 @@ async def test_device_flow_and_no_secret_returned():
         result = await client.begin(str(uuid.uuid4()), "测试安装", False)
         assert "sd_private" not in str(result)
         with pytest.raises(IntegrationProblem, match="poll_later"):
-            await client.poll()
+            await client.poll(wait=False)
         client.pending["next"] = 0
         await client.poll()
         assert client.pending is None and store.value["refresh_token"] == "sr_synthetic"

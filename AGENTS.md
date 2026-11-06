@@ -6,13 +6,8 @@
 
 涉及 client/ 下的 Flutter UI、设计、交互或动效时：
 
-- 阅读并遵守 skills/sylulive-design-engineering/SKILL.md。
-- 设计权威文件为：
-  - docs/design/DESIGN_SYSTEM.md
-  - docs/design/MOTION.md
-  - docs/design/ACCESSIBILITY.md
-  - docs/design/DESIGN_QA.md
-- 不得静默绕过 docs/design/adr/ 中已接受的 ADR。
+- 先检查当前主题、共享组件、相邻页面和相关测试；具体设计按本次任务要求执行。
+- docs/design/ 仅保留功能契约和决策记录，不再作为全局视觉规范；不得静默绕过其中仍有效的业务与权限 ADR。
 - 必须验证 loading、empty、error、retry、权限、异步竞态和真实渲染状态；具体门禁按 DEVELOPMENT_STANDARD.md 执行。
 
 ## 其他模块

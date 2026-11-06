@@ -4,6 +4,7 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 import hashlib
 import json
+import re
 import subprocess
 
 root = Path(__file__).resolve().parents[1]
@@ -23,11 +24,15 @@ files = [
     "private_review.py",
     "public_canteen.py",
     "public_agent.py",
+    "public_activity.py",
+    "managed_bot_access.py",
+    "bot_runtime.py",
     "creator_memory.py",
     "community_publisher.py",
     "community_view.py",
     "approved_media.py",
     "chat_media.py",
+    "chat_context.py",
     "permission_console.py",
     "pages/permissions/index.html",
     "pages/permissions/app.css",
@@ -50,7 +55,8 @@ try:
     dirty = bool(subprocess.run(["git", "status", "--porcelain", "--", "astrbot_plugin_sylulive", "scripts/package-astrbot-plugin.py"], cwd=root, capture_output=True, text=True, check=True, timeout=5).stdout.strip())
 except (OSError, subprocess.SubprocessError):
     revision, dirty = None, True
-manifest = {"version": "0.4.4", "source_commit": revision, "source_dirty": dirty,
+version = re.search(r'^version:\s*v?([^\s]+)', contents['metadata.yaml'].decode(), re.MULTILINE).group(1)
+manifest = {"version": version, "source_commit": revision, "source_dirty": dirty,
             "files": {name: hashlib.sha256(data).hexdigest() for name, data in contents.items()}}
 contents["build.json"] = (json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode()
 with ZipFile(output, "w", compression=ZIP_DEFLATED, compresslevel=9) as archive:

@@ -8,6 +8,8 @@ import 'package:dio/dio.dart';
 import '../../../services/publish_session_scope.dart';
 import '../domain/emoji_pack_installation.dart';
 import '../domain/emoji_local_id.dart';
+import '../domain/emoji_creation_draft.dart';
+import '../domain/emoji_creator.dart';
 import 'emoji_pack_local_store.dart';
 
 String emojiSubmissionStatus(String status) => switch (status) {
@@ -16,6 +18,7 @@ String emojiSubmissionStatus(String status) => switch (status) {
       'rejected' => '已驳回',
       'unpublished' => '已下架',
       'withdrawn' => '已撤回',
+      'superseded' => '历史版本',
       _ => '状态未知',
     };
 
@@ -29,10 +32,19 @@ class EmojiSubmission {
       required this.totalSize,
       this.description = '',
       this.reviewReason = '',
+      this.packId,
+      this.version = 1,
+      this.coverAssetId,
+      this.iconAssetId,
+      this.tags = const [],
       this.assets = const []});
   final String id, name, status, description, reviewReason;
   final int userId, assetCount, totalSize;
   final List<EmojiSubmissionAsset> assets;
+  final String? packId, coverAssetId, iconAssetId;
+  final int version;
+  final List<String> tags;
+  String get catalogId => packId?.isNotEmpty == true ? packId! : id;
   factory EmojiSubmission.fromJson(Map<String, dynamic> json) =>
       EmojiSubmission(
           id: json['id'] as String,
@@ -43,6 +55,11 @@ class EmojiSubmission {
           totalSize: json['total_size'] as int,
           description: json['description'] as String? ?? '',
           reviewReason: json['review_reason'] as String? ?? '',
+          packId: json['pack_id'] as String?,
+          version: json['version'] as int? ?? 1,
+          coverAssetId: json['cover_asset_id'] as String?,
+          iconAssetId: json['icon_asset_id'] as String?,
+          tags: List<String>.from(json['tags'] as List? ?? []),
           assets: (json['assets'] as List? ?? [])
               .map((asset) => EmojiSubmissionAsset.fromJson(
                   Map<String, dynamic>.from(asset as Map)))
@@ -77,6 +94,55 @@ class EmojiSubmissionRepository {
   Options _options(PublishSessionScope session) =>
       Options(extra: session.requestExtra, followRedirects: false);
 
+  Future<EmojiCreator> creator(
+      {required PublishSessionScope session,
+      required CancelToken token}) async {
+    final response = await dio.get('/emoji/creator',
+        cancelToken: token, options: _options(session));
+    return EmojiCreator.fromJson(
+        Map<String, dynamic>.from(response.data as Map));
+  }
+
+  Future<EmojiCreator> applyCreator(String description, int version,
+      {required PublishSessionScope session,
+      required CancelToken token}) async {
+    final response = await dio.post('/emoji/creator',
+        data: {
+          'description': description.trim(),
+          'version': version,
+          'rights_confirmed': true
+        },
+        cancelToken: token,
+        options: _options(session));
+    return EmojiCreator.fromJson(
+        Map<String, dynamic>.from(response.data as Map));
+  }
+
+  Future<EmojiCreatorPage> creators(String status, int page,
+      {required PublishSessionScope session,
+      required CancelToken token}) async {
+    final response = await dio.get('/admin/emoji-creators',
+        queryParameters: {'status': status, 'page': page},
+        cancelToken: token,
+        options: _options(session));
+    final data = Map<String, dynamic>.from(response.data as Map);
+    return EmojiCreatorPage(
+        (data['items'] as List)
+            .map((item) =>
+                EmojiCreator.fromJson(Map<String, dynamic>.from(item as Map)))
+            .toList(),
+        data['total'] as int);
+  }
+
+  Future<void> reviewCreator(EmojiCreator creator, String action, String reason,
+      {required PublishSessionScope session,
+      required CancelToken token}) async {
+    await dio.post('/admin/emoji-creators/${creator.userId}/review',
+        data: {'action': action, 'reason': reason, 'version': creator.version},
+        cancelToken: token,
+        options: _options(session));
+  }
+
   Future<EmojiSubmissionPage> list(
       {required PublishSessionScope session,
       required CancelToken token,
@@ -110,8 +176,9 @@ class EmojiSubmissionRepository {
         Map<String, dynamic>.from(response.data as Map));
   }
 
-  String assetUrl(String id, String assetId, {bool admin = false}) =>
-      '${dio.options.baseUrl}${_base(admin)}/${Uri.encodeComponent(id)}/assets/${Uri.encodeComponent(assetId)}';
+  String assetUrl(String id, String assetId,
+          {bool admin = false, bool thumbnail = false}) =>
+      '${dio.options.baseUrl}${_base(admin)}/${Uri.encodeComponent(id)}/assets/${Uri.encodeComponent(assetId)}${thumbnail ? '?variant=thumbnail' : ''}';
 
   Future<void> review(String id, String action, String reason,
       {required PublishSessionScope session,
@@ -136,12 +203,24 @@ class EmojiSubmissionRepository {
       required String description,
       required PublishSessionScope session,
       required CancelToken token,
+      EmojiCreationDraft? draft,
       void Function(int, int)? onProgress}) async {
     if (pack.manifest.assets.isEmpty ||
         pack.manifest.assets.length > 100 ||
         pack.totalSize > 49 * 1024 * 1024) {
       throw StateError('每次投稿最多 100 张、合计 49 MB；单张不能超过 10 MB。');
     }
+    if (draft != null &&
+        (draft.sourcePackId != pack.packId ||
+            draft.sourceVersion != pack.version ||
+            draft.sourceManifestHash != pack.manifestSha256)) {
+      throw StateError('素材版本已变化，请重新选择并检查草稿');
+    }
+    final coverIndex = pack.manifest.assets
+        .indexWhere((asset) => asset.id == draft?.coverAssetId);
+    final iconIndex = pack.manifest.assets
+        .indexWhere((asset) => asset.id == draft?.iconAssetId);
+    final tags = draft?.tags ?? const <String>[];
     final names = <String>[], images = <MapEntry<String, MultipartFile>>[];
     final directory = store.versionDirectory(pack.packId, pack.version);
     for (final asset in pack.manifest.assets) {
@@ -156,7 +235,11 @@ class EmojiSubmissionRepository {
               asset.sha256.toLowerCase()) {
         throw StateError('本机表情文件已损坏，请重新导入或下载后投稿。');
       }
-      names.add(asset.name.characters.take(40).toString());
+      final label = (draft?.names[asset.id] ?? asset.name).trim();
+      if (label.isEmpty || label.characters.length > 40) {
+        throw StateError('请为每张表情填写 1–40 个字符的对应文字');
+      }
+      names.add(label);
       images.add(MapEntry(
           'images',
           await MultipartFile.fromFile(file.path,
@@ -165,10 +248,14 @@ class EmojiSubmissionRepository {
     if (token.isCancelled) throw token.cancelError!;
     final key = sha256
         .convert(utf8.encode(jsonEncode([
-          _submissionAttempt,
+          draft?.attemptId ?? _submissionAttempt,
           name.trim(),
           description.trim(),
           names,
+          draft?.revisionOf,
+          coverIndex,
+          iconIndex,
+          tags,
           pack.manifest.assets.map((asset) => asset.sha256).toList()
         ])))
         .toString();
@@ -176,7 +263,11 @@ class EmojiSubmissionRepository {
       'name': name.trim(),
       'description': description.trim(),
       'rights_confirmed': 'true',
-      'names': jsonEncode(names)
+      'names': jsonEncode(names),
+      'cover_index': coverIndex < 0 ? 0 : coverIndex,
+      'icon_index': iconIndex < 0 ? 0 : iconIndex,
+      'tags': jsonEncode(tags),
+      if (draft?.revisionOf != null) 'pack_id': draft!.revisionOf,
     })
       ..files.addAll(images);
     final response = await dio.post('/emoji/submissions',

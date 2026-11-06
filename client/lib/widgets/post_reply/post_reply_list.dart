@@ -6,6 +6,7 @@ import '../../providers/theme_provider.dart';
 import '../../config/api_constants.dart';
 import '../../models/reply.dart';
 import '../../models/user.dart';
+import '../ai_bot_identity.dart';
 import '../cached_avatar.dart';
 import '../emoji/sticker_catalog.dart';
 import '../post_content_link_text.dart';
@@ -176,6 +177,7 @@ class PostReplyItem extends StatelessWidget {
                     ),
                   ],
                 ),
+                AiBotIdentity(user: reply.author),
                 const SizedBox(height: 4),
                 _ReplyContent(
                   reply: reply,
@@ -473,6 +475,7 @@ class _ChildReplySummary extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    AiBotIdentity(user: reply.author),
                     Text.rich(
                       TextSpan(
                         children: [

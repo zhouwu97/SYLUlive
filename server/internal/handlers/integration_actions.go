@@ -41,9 +41,6 @@ func (h *IntegrationHandler) ActionStatus(c *gin.Context) {
 	c.JSON(200, result)
 }
 func (h *IntegrationHandler) ActionPreview(c *gin.Context) {
-	if !h.recent(c) {
-		return
-	}
 	result, err := h.actions().Preview(c.Request.Context(), c.GetUint("user_id"), c.Param("id"), nil)
 	if err != nil {
 		writeIntegrationError(c, err, false)
@@ -53,12 +50,12 @@ func (h *IntegrationHandler) ActionPreview(c *gin.Context) {
 	c.JSON(200, result)
 }
 func (h *IntegrationHandler) ActionDecision(c *gin.Context) {
-	if !h.recent(c) {
-		return
-	}
 	var d services.IntegrationActionDecision
 	if decodeStrictJSON(c, &d, 4096) != nil {
 		writeIntegrationError(c, &services.IntegrationError{Code: "invalid_request", Status: 422}, false)
+		return
+	}
+	if d.Allow && !h.recent(c) {
 		return
 	}
 	if d.Allow && !h.options.OwnerPublishEnabled {

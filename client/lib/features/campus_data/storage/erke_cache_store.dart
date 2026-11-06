@@ -1,12 +1,10 @@
 import 'dart:convert';
 
-
 import '../erke/erke_models.dart';
 import 'account_cache_namespace.dart';
 import 'account_scoped_snapshot_store.dart';
 import 'personal_snapshot_models.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
-
 
 /// 二课数据缓存，仅允许访问当前 App 用户与来源账号的命名空间。
 ///
@@ -109,7 +107,10 @@ class ErkeCacheStore {
       sourceSystem: 'erke',
       sourceAccountId: sourceAccountId,
       fetchedAt: snapshot.fetchedAt ?? DateTime.now(),
-      expiresAt: DateTime.now().toUtc().add(const Duration(days: 7)),
+      expiresAt: (snapshot.fetchedAt ??
+              DateTime.fromMillisecondsSinceEpoch(0, isUtc: true))
+          .toUtc()
+          .add(const Duration(days: 7)),
       payload: snapshot.toJson(),
     );
     final prefs = await AppPreferencesStore.getInstance();
@@ -133,7 +134,9 @@ class ErkeCacheStore {
           ...?snapshot?.activitiesByYear,
           yearly.year: yearActivities,
         },
-        fetchedAt: DateTime.now(),
+        fetchedAt: snapshot?.fetchedAt ??
+            DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+        isPartial: true,
       ),
     );
   }
@@ -147,7 +150,9 @@ class ErkeCacheStore {
         yearlyByYear: snapshot?.yearlyByYear ?? const {},
         activities: activities,
         activitiesByYear: snapshot?.activitiesByYear ?? const {},
-        fetchedAt: DateTime.now(),
+        fetchedAt: snapshot?.fetchedAt ??
+            DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+        isPartial: true,
       ),
     );
   }

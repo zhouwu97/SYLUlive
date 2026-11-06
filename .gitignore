@@ -183,3 +183,6 @@ id_ed25519*
 /client/scripts/refactor*.py
 /dist/astrbot_plugin_sylulive.zip
 /client/scripts/run_center_refactor.py
+
+# AstrBot 在仓库根目录启动时生成的本机配置与运行数据。
+/data/

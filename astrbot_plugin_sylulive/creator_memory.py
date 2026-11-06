@@ -68,11 +68,15 @@ class CreatorMemory:
             return []
         self.prune()
         query_terms = terms(query)
+        if not query_terms:
+            return []
         ranked = []
         for raw, in self.db.execute("SELECT body FROM turns ORDER BY created DESC"):
             try:
                 value = json.loads(self.cipher.decrypt(raw))
             except (InvalidToken, ValueError, TypeError):
+                continue
+            if not isinstance(value, dict) or not all(isinstance(value.get(key), str) for key in ("user", "assistant")):
                 continue
             matches = sum((terms(value["user"] + " " + value["assistant"]) & query_terms).values())
             if matches:

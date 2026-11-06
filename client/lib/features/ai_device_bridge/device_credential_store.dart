@@ -33,19 +33,30 @@ class DeviceCredentialStore {
 
   Future<DeviceErkeCredentials?> readErke(String sourceAccountId) async {
     if (sourceAccountId.trim().isEmpty) return null;
-    final raw = await _secretStore.read(_erkeKey(sourceAccountId));
+    String? raw;
+    try {
+      raw = await _secretStore.read(_erkeKey(sourceAccountId));
+    } catch (error) {
+      if (classifySecretStoreFailure(error) ==
+          SecretStoreFailureKind.corruptedCiphertext) {
+        await deleteErke(sourceAccountId);
+        return null;
+      }
+      throw StateError('本机安全存储暂不可用');
+    }
     if (raw == null || raw.isEmpty) return null;
     try {
       final value = jsonDecode(raw);
-      if (value is! Map) return null;
+      if (value is! Map) throw const FormatException('凭据格式错误');
       final credentials = DeviceErkeCredentials(
         casPassword: value['cas_password']?.toString() ?? '',
         erkePassword: value['erke_password']?.toString() ?? '',
       );
-      return credentials.isComplete ? credentials : null;
+      if (!credentials.isComplete) throw const FormatException('凭据字段为空');
+      return credentials;
     } catch (_) {
-      await deleteErke(sourceAccountId);
-      return null;
+      // 格式异常可能可恢复；不能把存储故障当作密码缺失并隐式删除。
+      throw StateError('本机二课凭据无法读取');
     }
   }
 

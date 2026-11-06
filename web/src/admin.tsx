@@ -12,7 +12,7 @@ const queues:Record<string,[string,string]>={
 };
 export function Admin(){
   const auth=useAuth(); const [params,setParams]=useSearchParams();const tab=params.get('tab')||'feedback';
-  if(!auth.user)return <Empty title="登录后访问管理中心"><button className="btn primary" onClick={auth.login}>登录</button></Empty>;
+  if(!auth.user)return <Empty icon="lock" title="登录后访问管理中心"><button className="btn primary" onClick={auth.login}>登录</button></Empty>;
   if(!['admin','super_admin'].includes(auth.user.role))return <Empty title="当前账号没有管理权限"/>;
   const tabs:[string,string][]=[["feedback","工单"],...Object.entries(queues).filter(([id])=>id!=='awards'||auth.user?.role==='super_admin').map(([id,[name]])=>[id,name] as [string,string]),...managementTabs.filter(([id])=>!['users','releases','logs'].includes(id)||auth.user?.role==='super_admin')];
   return <><Head title="管理中心" description="审核结果和权限以服务器响应为准"/><Tabs value={tab} tabs={tabs} onChange={tab=>setParams({tab})}/>{tab==='feedback'?<Feedback admin/>:queues[tab]?<Queue kind={tab}/>:managementTabs.some(([id])=>id===tab)?<Management kind={tab}/>:<Empty title="管理模块不存在"/>}</>;

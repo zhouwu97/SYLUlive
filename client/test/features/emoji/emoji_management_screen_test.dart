@@ -3,6 +3,9 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as image;
+import 'package:shenliyuan/features/emoji/application/emoji_pack_importer.dart';
+import 'package:shenliyuan/features/emoji/application/emoji_pack_installer.dart';
 import 'package:shenliyuan/features/emoji/data/emoji_pack_local_store.dart';
 import 'package:shenliyuan/features/emoji/domain/emoji_pack.dart';
 import 'package:shenliyuan/features/emoji/domain/emoji_pack_installation.dart';
@@ -15,6 +18,7 @@ import 'package:shenliyuan/services/emoji_favorite_repository.dart';
 import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
 import '../../helpers/golden_viewport.dart';
 import '../../helpers/golden_test_app.dart';
+import '../../helpers/emoji_flow_qa.dart';
 
 class _SyncFavorites extends EmojiFavoriteRepository {
   _SyncFavorites() : super(Dio());
@@ -60,6 +64,77 @@ class _MemoryPackStore extends EmojiPackLocalStore {
 }
 
 void main() {
+  testWidgets('管理搜索可用逐张对应文字找到表情包', (tester) async {
+    late Directory root;
+    final store = (await tester.runAsync(() async {
+      root = await Directory.systemTemp.createTemp('emoji-management-search-');
+      final store = EmojiPackLocalStore(Directory('${root.path}/store'));
+      final file = await File('${root.path}/收到联调.png')
+          .writeAsBytes(image.encodePng(image.Image(width: 2, height: 2)));
+      final importer = EmojiPackImporter(EmojiPackInstaller(store));
+      await importer.installPrepared(await importer.prepareImages([file]),
+          name: '测试表情包');
+      return store;
+    }))!;
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
+      await root.delete(recursive: true);
+    });
+    final prefs = MemoryPreferencesStore();
+    await tester.pumpWidget(GoldenTestApp(
+        home: EmojiManagementScreen(
+            store: store,
+            favoriteService:
+                EmojiFavoriteService(preferencesLoader: () async => prefs))));
+    await waitForEmojiWork(tester);
+    final search = find.byKey(const ValueKey('emoji-pack-search'));
+    await tester.enterText(search, '收到');
+    await tester.pumpAndSettle();
+    expect(find.text('测试表情包'), findsOneWidget);
+    await tester.enterText(search, '不存在');
+    await tester.pumpAndSettle();
+    expect(find.text('测试表情包'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('个人标签弹窗切换账号后隐藏旧输入且不能保存', (tester) async {
+    final prefs = MemoryPreferencesStore();
+    final recent = EmojiRecentManager(preferencesLoader: () async => prefs)
+      ..switchUser('A');
+    final store = _MemoryPackStore();
+    store.items = [
+      store.items.single.copyWith(personalTags: ['A的个人分类'])
+    ];
+    await tester.pumpWidget(GoldenTestApp(
+        home: EmojiManagementScreen(
+            store: store,
+            recentManager: recent,
+            favoriteService:
+                EmojiFavoriteService(preferencesLoader: () async => prefs))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('测试表情包更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('个人标签'));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<TextFormField>(find.byType(TextFormField))
+            .controller!
+            .text,
+        'A的个人分类');
+    recent.switchUser('B');
+    await tester.pumpAndSettle();
+    expect(find.byType(TextFormField), findsNothing);
+    expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, '保存'))
+            .onPressed,
+        isNull);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    recent.dispose();
+  });
   testWidgets('收藏选择移除与撤销保留真实条目', (tester) async {
     final prefs = MemoryPreferencesStore();
     final service = EmojiFavoriteService(preferencesLoader: () async => prefs);

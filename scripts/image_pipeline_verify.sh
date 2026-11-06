@@ -13,7 +13,7 @@
 #
 # 可选环境变量：
 #   VARIANT_WAIT_SECONDS  变体最长等待秒数（默认 120，每 5s 轮询；0 表示只查一次）
-#   FAILED_MAX            image_variants.status='failed' 允许上限（默认 0）
+#   FAILED_MAX            当前配方 image_variants.status='failed' 允许上限（默认 0）
 #   PSQL_CMD              覆盖默认 docker compose psql，例如
 #                         PSQL_CMD="psql -h 127.0.0.1 -U postgres -d shenliyuan"
 #
@@ -35,6 +35,8 @@ POLL_INTERVAL=5
 failures=0
 DB_OK=1
 DB_OUT=""
+# 只统计当前 worker 能处理的配方，历史 GIF v1 记录保留供回滚审计。
+CURRENT_RECIPE="((f.mime_type = 'image/gif' AND v.recipe_version = 2) OR (f.mime_type <> 'image/gif' AND v.recipe_version = 1))"
 
 pass() { printf 'PASS  %s\n' "$1"; }
 fail() { printf 'FAIL  %s\n' "$1"; failures=$((failures + 1)); }
@@ -95,7 +97,7 @@ db_scalar() {
 
 echo "== 0. pending 基线与数据库连通性 =="
 pending0=""
-if db_scalar "SELECT count(*) FROM image_variants WHERE status = 'pending'"; then
+if db_scalar "SELECT count(*) FROM image_variants v JOIN files f ON f.id = v.file_id WHERE v.status = 'pending' AND $CURRENT_RECIPE"; then
   pending0="$DB_OUT"
   info "数据库可用，pending 基线=${pending0}"
 else
@@ -119,8 +121,11 @@ esac
 
 echo
 echo "== 2. 变体档位：thumb/medium 必须在 ${VARIANT_WAIT_SECONDS}s 内就绪 =="
-for variant in _v1_thumb _v1_medium; do
-  variant_url="${PUBLIC_URL%.*}${variant}.${PUBLIC_URL##*.}"
+for variant in thumb medium; do
+  case "$PUBLIC_URL" in
+    *.[gG][iI][fF]) variant_url="${PUBLIC_URL%.*}_v2_${variant}.png" ;;
+    *) variant_url="${PUBLIC_URL%.*}_v1_${variant}.${PUBLIC_URL##*.}" ;;
+  esac
   if wait_for_200 "$variant_url"; then
     pass "变体就绪 ${variant}"
   else
@@ -175,13 +180,13 @@ else
   ready=""
   unsupported=""
   missing=""
-  db_scalar "SELECT count(*) FROM image_variants WHERE status = 'pending'" && pending1="$DB_OUT"
-  db_scalar "SELECT count(*) FROM image_variants WHERE status = 'failed'" && failed="$DB_OUT"
-  db_scalar "SELECT count(*) FROM image_variants WHERE status = 'ready'" && ready="$DB_OUT"
-  db_scalar "SELECT count(*) FROM image_variants WHERE status = 'unsupported'" && unsupported="$DB_OUT"
+  db_scalar "SELECT count(*) FROM image_variants v JOIN files f ON f.id = v.file_id WHERE v.status = 'pending' AND $CURRENT_RECIPE" && pending1="$DB_OUT"
+  db_scalar "SELECT count(*) FROM image_variants v JOIN files f ON f.id = v.file_id WHERE v.status = 'failed' AND $CURRENT_RECIPE" && failed="$DB_OUT"
+  db_scalar "SELECT count(*) FROM image_variants v JOIN files f ON f.id = v.file_id WHERE v.status = 'ready' AND $CURRENT_RECIPE" && ready="$DB_OUT"
+  db_scalar "SELECT count(*) FROM image_variants v JOIN files f ON f.id = v.file_id WHERE v.status = 'unsupported' AND $CURRENT_RECIPE" && unsupported="$DB_OUT"
   db_scalar "SELECT count(*) FROM files f
       WHERE f.access_scope = 'public' AND f.mime_type LIKE 'image/%'
-        AND NOT EXISTS (SELECT 1 FROM image_variants v WHERE v.file_id = f.id)" && missing="$DB_OUT"
+        AND NOT EXISTS (SELECT 1 FROM image_variants v WHERE v.file_id = f.id AND $CURRENT_RECIPE)" && missing="$DB_OUT"
   if [ "$DB_OK" -ne 1 ]; then
     fail "数据库统计执行失败"
   else

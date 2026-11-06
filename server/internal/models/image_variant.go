@@ -13,6 +13,20 @@ const (
 	ImageVariantStatusUnsupported ImageVariantStatus = "unsupported"
 )
 
+const (
+	ImageVariantRecipeVersion    = 1
+	ImageVariantGIFRecipeVersion = 2
+)
+
+// ImageVariantRecipeVersionForMime keeps unchanged JPEG/PNG variants in v1,
+// while GIF previews use a new URL and retain their transparency in v2.
+func ImageVariantRecipeVersionForMime(mimeType string) int {
+	if mimeType == "image/gif" {
+		return ImageVariantGIFRecipeVersion
+	}
+	return ImageVariantRecipeVersion
+}
+
 // ImageVariant 保存可公开读取图片的版本化静态变体及其生成状态。
 // 同一文件、变体名称与配方版本只能有一条记录，避免重复生成和旧配方互相覆盖。
 type ImageVariant struct {

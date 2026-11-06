@@ -93,6 +93,19 @@
         if (stamp !== loadEpoch)
             return;
         accept(r);
+        const guide = $("connection-guide");
+        guide.hidden = true;
+        guide.removeAttribute("href");
+        if (typeof r.guide_url === "string") {
+            try {
+                const url = new URL(r.guide_url);
+                const secure = url.protocol === "https:" || (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname));
+                if (secure && !url.username && !url.password && url.pathname === "/web/connected-apps" && url.search === "?guide=astrbot" && !url.hash) {
+                    guide.href = url.href;
+                    guide.hidden = false;
+                }
+            } catch (_) { /* Invalid configuration must not become a navigation target. */ }
+        }
         if (!$("platform").value)
             $("platform").value = r.platform_id || "";
     }

@@ -60,9 +60,9 @@ func NewPostHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string, security
 	return &PostHandler{db: db, jpushAppKey: jpushAppKey, jpushMasterSecret: jpushMasterSecret, security: securityService}
 }
 
-// withPostImageVariants 以一条关联查询加载 v1 状态，避免 JSON 序列化逐图访问数据库。
+// withPostImageVariants 一次加载支持的配方，序列化时再按原图 MIME 选择。
 func withPostImageVariants(db *gorm.DB) *gorm.DB {
-	return db.Preload("Images.Variants", "recipe_version = ?", services.ImageVariantRecipeVersion)
+	return db.Preload("Images.Variants", "recipe_version IN ?", []int{models.ImageVariantRecipeVersion, models.ImageVariantGIFRecipeVersion})
 }
 
 // Snapshot 帖子快照

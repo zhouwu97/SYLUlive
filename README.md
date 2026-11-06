@@ -187,7 +187,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8001
 - [服务端说明](./server/README.md)
 - [后端 API](./server/API.md)
 - [校园政策知识库](./knowledge-base/README.md)
-- [设计规范](./docs/design/README.md)
+- [功能契约与决策记录](./docs/design/README.md)
 - [独立 SYLUlive MCP](https://github.com/zhouwu97/SYLUlive_MCP)
 
 ## 贡献与许可证

@@ -67,6 +67,15 @@ def presentation(source, *, reply=False, post_id=None):
     author = source.get("author")
     if isinstance(author, dict) and isinstance(author.get("nickname"), str):
         result["author"] = {"nickname": author["nickname"][:100]}
+        identity = author.get("ai_bot")
+        if isinstance(identity, dict):
+            # Trust only the server-projected identity, never nickname prefixes.
+            bot = {}
+            if type(identity.get("owner_id")) is int and identity["owner_id"] > 0:
+                bot["owner_id"] = identity["owner_id"]
+            if isinstance(identity.get("owner_nickname"), str):
+                bot["owner_nickname"] = identity["owner_nickname"][:100]
+            result["author"]["ai_bot"] = bot
     images = source.get("images", [])
     if not isinstance(images, list) or len(images) > 20:
         raise IntegrationProblem("invalid_public_response")

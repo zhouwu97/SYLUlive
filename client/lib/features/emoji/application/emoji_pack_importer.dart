@@ -16,6 +16,7 @@ import '../domain/emoji_pack_installation.dart';
 import '../domain/emoji_pack_limits.dart';
 import '../domain/emoji_pack_manifest.dart';
 import 'emoji_pack_installer.dart';
+import 'emoji_thumbnail.dart';
 
 /// 预览只持有已校验内容，用户确认之前不写安装目录。
 class PreparedEmojiPack {
@@ -24,12 +25,14 @@ class PreparedEmojiPack {
       required this.name,
       required this.contents,
       required this.sourceSha256,
+      this.thumbnails = const {},
       this.externalPackId});
   final EmojiPackManifest manifest;
   final String name;
   final Map<String, Uint8List> contents;
   final String sourceSha256;
   final String? externalPackId;
+  final Map<String, Uint8List> thumbnails;
 }
 
 class EmojiPackImporter {
@@ -54,12 +57,8 @@ class EmojiPackImporter {
     if (await file.length() > EmojiPackLimits.maxArchiveBytes) {
       throw const FormatException('压缩包过大');
     }
-    final bytes = await file.readAsBytes();
-    if (bytes.length > EmojiPackLimits.maxArchiveBytes) {
-      throw const FormatException('压缩包过大');
-    }
-    return compute(_prepareArchive,
-        (bytes, path.basenameWithoutExtension(file.path), extension));
+    return compute(_prepareArchiveFile,
+        (file.path, path.basenameWithoutExtension(file.path), extension));
   }
 
   Future<PreparedEmojiPack> prepareImages(List<File> files) async {
@@ -67,14 +66,40 @@ class EmojiPackImporter {
     if (files.isEmpty || files.length > EmojiPackLimits.maxAssetCount) {
       throw const FormatException('请选择 1–500 张图片');
     }
+    return compute(_prepareImageFiles, files.map((file) => file.path).toList());
+  }
+
+  static Uint8List _readBounded(File file, int limit) {
+    final handle = file.openSync();
+    try {
+      final bytes = handle.readSync(min(limit + 1, handle.lengthSync()));
+      if (bytes.length > limit || handle.lengthSync() > limit) {
+        throw const FormatException('文件大小超出限制');
+      }
+      return bytes;
+    } finally {
+      handle.closeSync();
+    }
+  }
+
+  static PreparedEmojiPack _prepareArchiveFile((String, String, String) input) {
+    final (file, name, extension) = input;
+    return _prepareArchive((
+      _readBounded(File(file), EmojiPackLimits.maxArchiveBytes),
+      name,
+      extension
+    ));
+  }
+
+  static PreparedEmojiPack _prepareImageFiles(List<String> files) {
     var total = 0;
     final contents = <String, Uint8List>{};
     for (var i = 0; i < files.length; i++) {
-      final file = files[i];
-      if (await file.length() > EmojiPackLimits.maxSingleAssetBytes) {
+      final file = File(files[i]);
+      if (file.lengthSync() > EmojiPackLimits.maxSingleAssetBytes) {
         throw const FormatException('单张图片不能超过 15 MB');
       }
-      final bytes = await file.readAsBytes();
+      final bytes = _readBounded(file, EmojiPackLimits.maxSingleAssetBytes);
       total += bytes.length;
       if (bytes.length > EmojiPackLimits.maxSingleAssetBytes ||
           total > EmojiPackLimits.maxExpandedBytes) {
@@ -82,7 +107,7 @@ class EmojiPackImporter {
       }
       contents['$i/${path.basename(file.path)}'] = bytes;
     }
-    return compute(_prepareLooseImages, contents);
+    return _prepareLooseImages(contents);
   }
 
   Future<EmojiPackInstallation> installPrepared(PreparedEmojiPack prepared,
@@ -207,6 +232,10 @@ class EmojiPackImporter {
         manifest: source,
         name: raw['name']?.toString() ?? fileName,
         contents: contents,
+        thumbnails: {
+          for (final asset in source.assets)
+            asset.path: buildEmojiThumbnail((contents[asset.path]!, 256))
+        },
         sourceSha256: sha256.convert(bytes).toString(),
         externalPackId: source.packId);
   }
@@ -273,6 +302,10 @@ class EmojiPackImporter {
             assets: assets),
         name: name,
         contents: contents,
+        thumbnails: {
+          for (final asset in assets)
+            asset.path: buildEmojiThumbnail((contents[asset.path]!, 256))
+        },
         sourceSha256: digest);
   }
 

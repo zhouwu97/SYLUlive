@@ -114,5 +114,23 @@ void main() {
       );
       expect(image.cacheKey!.contains('jwt-token-abc'), isFalse);
     });
+
+    testWidgets('治理帖 GIF 自动播放时仍使用鉴权和账号隔离缓存', (tester) async {
+      final file = FileItem(id: 1, hash: 'test', path: '/uploads/motion.gif',
+          size: 634590, mimeType: 'image/gif');
+      final image = PostImage(id: 1, postId: 1, fileId: 1, file: file,
+          originUrl: file.path, thumbUrl: '/uploads/thumb.png',
+          variantStatus: const {'thumb': 'ready'});
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: SizedBox(
+          width: 360, child: PostMediaView(images: [image],
+          access: const PostMediaAccess.authorized(token: 'jwt-token-abc', accountId: 42))))));
+      final origin = tester.widgetList<CachedNetworkImage>(find.byType(CachedNetworkImage))
+          .singleWhere((item) => item.imageUrl.endsWith('/uploads/motion.gif'));
+      expect(origin.httpHeaders, {'Authorization': 'Bearer jwt-token-abc'});
+      expect(origin.cacheManager, same(GovernedPostImageCache.instance.manager));
+      expect(origin.cacheKey, GovernedPostImageCache.cacheKeyFor(origin.imageUrl, accountId: 42));
+      expect(origin.memCacheWidth, isNull);
+      expect(origin.memCacheHeight, isNull);
+    });
   });
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"image"
+	"image/color"
 	"image/color/palette"
 	"image/gif"
 	"image/png"
@@ -17,6 +18,32 @@ import (
 	"gorm.io/gorm"
 	"shenliyuan/internal/models"
 )
+
+func TestEmojiPackGIFPreservesOffsetFramesAndAnimation(t *testing.T) {
+	colors := color.Palette{color.Transparent, color.RGBA{255, 0, 0, 255}, color.RGBA{0, 0, 255, 255}}
+	first := image.NewPaletted(image.Rect(0, 0, 4, 4), colors)
+	for y := 0; y < 4; y++ {
+		for x := 0; x < 4; x++ {
+			first.SetColorIndex(x, y, 1)
+		}
+	}
+	second := image.NewPaletted(image.Rect(2, 2, 3, 3), colors)
+	second.SetColorIndex(2, 2, 2)
+	var encoded bytes.Buffer
+	require.NoError(t, gif.EncodeAll(&encoded, &gif.GIF{Image: []*image.Paletted{first, second}, Delay: []int{5, 8}, Disposal: []byte{gif.DisposalNone, gif.DisposalNone}, LoopCount: 2}))
+	normalized, err := ValidateEmojiPackImage(encoded.Bytes())
+	require.NoError(t, err)
+	result, err := gif.DecodeAll(bytes.NewReader(normalized.Bytes))
+	require.NoError(t, err)
+	require.Equal(t, []int{5, 8}, result.Delay)
+	require.Equal(t, 2, result.LoopCount)
+	require.Equal(t, image.Rect(0, 0, 4, 4), result.Image[1].Bounds())
+	red, _, _, alpha := result.Image[1].At(0, 0).RGBA()
+	require.Greater(t, red, uint32(60000))
+	require.Equal(t, uint32(65535), alpha)
+	_, _, blue, _ := result.Image[1].At(2, 2).RGBA()
+	require.Greater(t, blue, uint32(60000))
+}
 
 func TestEmojiPackImagePreflightLimitsAndCorruption(t *testing.T) {
 	var large bytes.Buffer

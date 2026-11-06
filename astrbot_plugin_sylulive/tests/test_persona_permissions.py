@@ -177,3 +177,21 @@ async def test_binding_requests_bot_comment_scope_only_for_creator(sender,reques
     assert replies and client.begin.await_count==1
     assert client.begin.await_args.kwargs["bot_reply"] is request_bot_scope
     assert client.begin.await_args.kwargs["bot_post"] is request_bot_scope
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group,multi,expected", [("", True, True), ("", False, False), ("allowed", True, False)])
+async def test_multiuser_autonomy_requests_only_personal_opt_in_scopes(group,multi,expected):
+    plugin,event,_=enabled(group=group,sender="member")
+    plugin.origin="https://fixture.invalid"
+    plugin.config.update(community_multi_user_runtime_enabled=multi, community_auto_comment=True,
+                         community_auto_post=True, allow_group_binding=True)
+    plugin.track_binding_result=lambda *args:"合成通知"
+    client=SimpleNamespace(begin=AsyncMock(return_value={"user_code":"SYNTHETIC","verification_uri":"https://fixture.invalid/web/connected-apps?user_code=SYNTHETIC"}))
+    plugin.accounts=SimpleNamespace(get=lambda *a,**k:(client,"synthetic"))
+    replies=[r async for r in plugin.connect(event)]
+    if client.begin.await_count:
+        for key in ("community_read", "bot_reply", "bot_post"):
+            assert client.begin.await_args.kwargs[key] is expected
+    else:
+        assert not expected and replies

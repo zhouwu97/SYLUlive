@@ -479,7 +479,7 @@ func (s *PollService) Get(pollID, viewerID uint) (models.Post, error) {
 
 func (s *PollService) GetByPostID(postID, viewerID uint) (models.Post, error) {
 	var post models.Post
-	if err := s.db.Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).First(&post, postID).Error; err != nil {
+	if err := s.db.Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version IN ?", []int{models.ImageVariantRecipeVersion, models.ImageVariantGIFRecipeVersion}).First(&post, postID).Error; err != nil {
 		return models.Post{}, newPollError(PollCodeNotFound, "投票不存在")
 	}
 	if post.ContentKind != models.PostContentKindPoll || !isPublicPollPostStatus(post.Status) {
@@ -555,7 +555,7 @@ func (s *PollService) List(input PollListInput, viewerID uint) (PollListResult, 
 		} else {
 			poolQuery = poolQuery.Order("posts.created_at DESC, posts.id DESC")
 		}
-		if err := poolQuery.Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).Limit(pollRecommendPoolSize).Find(&posts).Error; err != nil {
+		if err := poolQuery.Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version IN ?", []int{models.ImageVariantRecipeVersion, models.ImageVariantGIFRecipeVersion}).Limit(pollRecommendPoolSize).Find(&posts).Error; err != nil {
 			return PollListResult{}, err
 		}
 		result.PoolSize = pollRecommendPoolSize
@@ -645,7 +645,7 @@ func (s *PollService) List(input PollListInput, viewerID uint) (PollListResult, 
 			// 没有游标时保留 offset 路径，兼容还在用 page 翻页的旧客户端。
 			query = query.Offset((input.Page - 1) * input.Limit)
 		}
-		if err := query.Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version = ?", ImageVariantRecipeVersion).Order(order).Limit(input.Limit + 1).Find(&posts).Error; err != nil {
+		if err := query.Preload("Author").Preload("Images").Preload("Images.File").Preload("Images.Variants", "recipe_version IN ?", []int{models.ImageVariantRecipeVersion, models.ImageVariantGIFRecipeVersion}).Order(order).Limit(input.Limit + 1).Find(&posts).Error; err != nil {
 			return PollListResult{}, err
 		}
 		// 多取一条判断还有没有下一页：比用 total 反推更准，

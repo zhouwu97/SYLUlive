@@ -82,6 +82,29 @@ def test_preview_does_not_create_installations_or_clients(tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("origin,expected", [
+    ("https://campus.example", "https://campus.example/web/connected-apps?guide=astrbot"),
+    ("http://127.0.0.1:5189", "http://127.0.0.1:5189/web/connected-apps?guide=astrbot"),
+    ("https://user:secret@campus.example", None),
+    ("http://campus.example", None),
+    ("https://campus.example/?token=not-for-guides", None),
+    (None, None),
+    (37, None),
+])
+async def test_console_guide_uses_validated_origin_without_credentials_or_grant(origin, expected):
+    plugin, _, client = console_fixture()
+    plugin.config["server_origin"] = origin
+    app = native_app(plugin)
+    token = jwt.encode({"username": "synthetic-admin", "exp": time.time()+60}, app.state.jwt_secret, algorithm="HS256")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as h:
+        r = await h.get("/api/plug/astrbot_plugin_sylulive/permissions/policy", headers={"Authorization": "Bearer "+token})
+        assert r.status_code == 200
+        assert r.json()["guide_url"] == expected
+        assert "SYNTHETIC-ACCESS" not in r.text
+    client.call.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_real_native_dashboard_route_requires_login_and_returns_metadata_only():
     plugin,target,client = console_fixture();app=native_app(plugin)
     path="/api/plug/astrbot_plugin_sylulive/permissions/preview"
@@ -96,13 +119,31 @@ async def test_real_native_dashboard_route_requires_login_and_returns_metadata_o
         assert (await h.post(path,json=target|{"scope":"*"})).status_code==422
         assert (await h.post(path,content=b"x"*262145)).status_code==413
         status=await h.get("/api/plug/astrbot_plugin_sylulive/permissions/status")
-        assert status.status_code==200 and status.json()["version"]=="0.4.4"
+        assert status.status_code==200 and status.json()["version"]=="0.5.0"
         assert "runtime" not in status.json() and "persona" not in status.json()
         plugin._console_active=False
         assert (await h.post(path,json=target)).status_code==503
         expired=jwt.encode({"username":"synthetic-admin","exp":time.time()-60},app.state.jwt_secret,algorithm="HS256")
         assert (await h.post(path,json=target,headers={"Authorization":"Bearer "+expired})).status_code==401
     client.call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_runtime_health_requires_native_login_and_never_calls_business_services():
+    plugin, _, client = console_fixture()
+    plugin.bot_runtimes = SimpleNamespace(health=lambda: {"manager_alive": True, "workers": 1, "failed_workers": 0})
+    app = native_app(plugin)
+    path = "/api/plug/astrbot_plugin_sylulive/runtime/health"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as h:
+        assert (await h.get(path)).status_code == 401
+        token = jwt.encode({"username": "synthetic-admin", "exp": time.time()+60}, app.state.jwt_secret, algorithm="HS256")
+        response = await h.get(path, headers={"Authorization": "Bearer " + token})
+        assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
+        assert response.json() == {"manager_alive": True, "workers": 1, "failed_workers": 0}
+        plugin._console_active = False
+        assert (await h.get(path, headers={"Authorization": "Bearer " + token})).status_code == 503
+    client.call.assert_not_called()
+    plugin.client.call.assert_not_called()
 
 
 def test_native_auth_rejects_scoped_page_asset_token_on_console_api():

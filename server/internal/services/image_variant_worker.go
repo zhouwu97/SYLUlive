@@ -125,6 +125,10 @@ func (worker *ImageVariantWorker) claimNext(ctx context.Context) (models.ImageVa
 			models.ImageVariantStatusPending,
 			models.ImageVariantStatusFailed,
 			now,
+		).Where(`EXISTS (SELECT 1 FROM files WHERE files.id = image_variants.file_id AND
+			((files.mime_type = ? AND image_variants.recipe_version = ?) OR
+			 (files.mime_type <> ? AND image_variants.recipe_version = ?)))`,
+			"image/gif", models.ImageVariantGIFRecipeVersion, "image/gif", models.ImageVariantRecipeVersion,
 		).Order("created_at ASC, id ASC")
 		if tx.Dialector.Name() == "postgres" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
@@ -194,7 +198,7 @@ func (worker *ImageVariantWorker) generate(job models.ImageVariant) error {
 		return fmt.Errorf("原图/变体 MIME 与任务不一致")
 	}
 	expectedPath, ok := ImageVariantPath(file.Path, file.MimeType, job.Variant)
-	if !ok || expectedPath != job.Path || job.RecipeVersion != ImageVariantRecipeVersion {
+	if !ok || expectedPath != job.Path || job.RecipeVersion != models.ImageVariantRecipeVersionForMime(file.MimeType) {
 		return fmt.Errorf("变体任务配方无效")
 	}
 	maxDimension, quality, ok := imageVariantRecipe(job.Variant)
@@ -235,13 +239,31 @@ func (worker *ImageVariantWorker) generate(job models.ImageVariant) error {
 	if err != nil {
 		return fmt.Errorf("解码原图失败: %w", err)
 	}
+	if file.MimeType == "image/gif" {
+		decoded = representativeGIFFrame(source, decoded, config.Width, config.Height)
+	}
 	bounds := decoded.Bounds()
 	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
 		return fmt.Errorf("原图尺寸无效")
 	}
-	targetWidth, targetHeight := imageVariantSize(bounds.Dx(), bounds.Dy(), maxDimension, job.Variant)
+	canvasWidth, canvasHeight := bounds.Dx(), bounds.Dy()
+	if file.MimeType == "image/gif" {
+		canvasWidth, canvasHeight = config.Width, config.Height
+	}
+	targetWidth, targetHeight := imageVariantSize(canvasWidth, canvasHeight, maxDimension, job.Variant)
 	resized := image.NewNRGBA(image.Rect(0, 0, targetWidth, targetHeight))
-	xdraw.CatmullRom.Scale(resized, resized.Bounds(), decoded, bounds, xdraw.Over, nil)
+	destination := resized.Bounds()
+	if file.MimeType == "image/gif" {
+		bounds = bounds.Intersect(image.Rect(0, 0, canvasWidth, canvasHeight))
+		destination = image.Rect(
+			bounds.Min.X*targetWidth/canvasWidth, bounds.Min.Y*targetHeight/canvasHeight,
+			(bounds.Max.X*targetWidth+canvasWidth-1)/canvasWidth,
+			(bounds.Max.Y*targetHeight+canvasHeight-1)/canvasHeight,
+		)
+	}
+	if !bounds.Empty() && !destination.Empty() {
+		xdraw.CatmullRom.Scale(resized, destination, decoded, bounds, xdraw.Over, nil)
+	}
 
 	destinationPath, err := ResolveUploadPath(worker.uploadDir, job.Path)
 	if err != nil {

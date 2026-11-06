@@ -2,6 +2,7 @@ import 'package:shenliyuan/widgets/app_glass_button_style.dart';
 import '../widgets/app_tab_bar_surface.dart';
 import '../widgets/app_card.dart';
 import 'package:flutter/material.dart';
+import '../widgets/ai_bot_identity.dart';
 import 'package:shenliyuan/utils/post_image_cache.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -982,6 +983,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           ],
         ),
 
+        AiBotIdentity(
+          user: user,
+          style: const TextStyle(color: Colors.white, fontSize: 12),
+        ),
         // 第三行：性别和公开用户 ID
         const SizedBox(height: 8),
         Row(

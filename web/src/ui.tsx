@@ -10,13 +10,15 @@ import {
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { paths } from "./icons";
-import { ApiError, write, errorText, type Entity } from "./api";
-export function Icon({ name, size = 20 }: { name: string; size?: number }) {
+import { ApiError, write, errorText, isNetworkError, type Entity } from "./api";
+export function Icon({ name, size }: { name: string; size?: number }) {
   return (
     <svg
       className="svg-icon"
-      width={size}
-      height={size}
+      data-icon={name}
+      style={size === undefined ? undefined : { width: size, height: size }}
+      width={size ?? 20}
+      height={size ?? 20}
       viewBox="0 0 24 24"
       aria-hidden="true"
       dangerouslySetInnerHTML={{ __html: paths[name] || paths.dashboard }}
@@ -90,9 +92,7 @@ export function Modal({
     const previous = document.activeElement as HTMLElement;
     const old = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    ref.current
-      ?.querySelector<HTMLElement>("input,button,textarea,select")
-      ?.focus();
+    (ref.current?.querySelector<HTMLElement>("[data-autofocus]") || ref.current?.querySelector<HTMLElement>("input,button,textarea,select"))?.focus();
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -138,7 +138,7 @@ export function Modal({
         <div className="modal-head">
           <b id={titleId}>{title}</b>
           <button className="icon-btn" aria-label="关闭" onClick={close}>
-            ×
+            <Icon name="close" size={18} />
           </button>
         </div>
         <div className="modal-body">{children}</div>
@@ -159,6 +159,7 @@ export interface Field {
   help?: string;
   multiple?: boolean;
   accept?: string;
+  autoComplete?: string;
 }
 export function Form({
   fields,
@@ -239,7 +240,7 @@ export function Form({
               multiple={f.multiple}
               accept={f.accept}
               autoComplete={
-                f.type === "password" ? "current-password" : undefined
+                f.autoComplete ?? (f.type === "password" ? "current-password" : undefined)
               }
             />
           )}{" "}
@@ -289,18 +290,20 @@ export function Head({
 }
 export function Empty({
   title = "暂无内容",
+  icon = "search",
   description,
   text,
   children,
 }: {
   title?: string;
+  icon?: string;
   description?: string;
   text?: string;
   children?: ReactNode;
 }) {
   return (
     <div className="empty-state">
-      <Icon name="search" />
+      <Icon name={icon} />
       <h3>{text || title}</h3>
       {description && <p>{description}</p>}
       {children}
@@ -324,7 +327,7 @@ export function QueryState({
     );
   if (query.error)
     return (
-      <Empty title="加载未完成" description={query.error.message}>
+      <Empty icon="info" title={isNetworkError(query.error) ? "网络连接暂不可用" : "加载未完成"} description={errorText(query.error)}>
         <button className="btn" onClick={() => query.refetch()}>
           重试
         </button>
@@ -347,12 +350,26 @@ export function Tabs({
   const list = tabs || items?.map((x) => [x, x] as [string, string]) || [];
   return (
     <div className="tabs" role="tablist">
-      {list.map(([v, l]) => (
+      {list.map(([v, l], index) => (
         <button
           key={v}
           className={`tab ${v === value ? "active" : ""}`}
           role="tab"
           aria-selected={v === value}
+          tabIndex={v === value || (!list.some(([id]) => id === value) && index === 0) ? 0 : -1}
+          onKeyDown={event => {
+            let next = index;
+            switch (event.key) {
+              case "ArrowRight": next = (index + 1) % list.length; break;
+              case "ArrowLeft": next = (index - 1 + list.length) % list.length; break;
+              case "Home": next = 0; break;
+              case "End": next = list.length - 1; break;
+              default: return;
+            }
+            event.preventDefault();
+            event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+            onChange(list[next][0]);
+          }}
           onClick={() => onChange(v)}
         >
           {l}

@@ -156,6 +156,22 @@ void main() {
       expect(selection.shouldResize, isTrue);
     });
 
+    test('开启自动播放时 GIF 选择原图且不缩放动画', () {
+      final selection = selectImageResource(
+        target: const ImageDecodeTarget(width: 190, height: 190),
+        thumbUrl: thumb,
+        mediumUrl: medium,
+        originUrl: '/uploads/motion.gif',
+        isAnimatedGif: true,
+        allowStaticAnimatedPreview: true,
+        allowOriginFallback: false,
+        autoPlayAnimatedGif: true,
+      );
+      expect(selection.variant, ImageResourceVariant.origin);
+      expect(selection.url, '/uploads/motion.gif');
+      expect(selection.shouldResize, isFalse);
+    });
+
     test('大图变体 pending/failed 时返回不可用，不把 origin 当预览', () {
       final selection = selectImageResource(
         target: const ImageDecodeTarget(width: 480, height: 320),

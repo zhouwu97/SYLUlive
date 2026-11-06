@@ -49,6 +49,8 @@
 .emoji-picker button:disabled { cursor: default; opacity: .55; }
 @media (max-width: 420px) {
   .emoji-picker.sticker-picker { padding: var(--space-md); }
+  .emoji-tabs[aria-label="管理栏目"] { flex-wrap: wrap; overflow: visible; }
+  .emoji-tabs[aria-label="管理栏目"] button { white-space: normal; }
   .emoji-picker .emoji-grid { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); }
   .emoji-pack-row { gap: var(--space-sm); }
 }

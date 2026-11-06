@@ -20,6 +20,9 @@ class User {
   final bool legalConsentsActive;
   final bool legalConsentsRequired;
   final bool pushEnabled;
+  final bool isAiBot;
+  final int? botOwnerId;
+  final String botOwnerNickname;
 
   // 账号身份与找回能力，仅在本人响应中由服务端返回。
   final bool studentVerified;
@@ -65,6 +68,9 @@ class User {
     this.legalConsentsActive = true,
     this.legalConsentsRequired = false,
     this.pushEnabled = false,
+    this.isAiBot = false,
+    this.botOwnerId,
+    this.botOwnerNickname = '',
     this.studentVerified = false,
     this.emailMasked = '',
     this.emailBound = false,
@@ -85,6 +91,9 @@ class User {
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
+    final bot = json['ai_bot'] is Map ? json['ai_bot'] as Map : null;
+    final ownerId = bot?['owner_id'];
+    final ownerNickname = bot?['owner_nickname'];
     return User(
       id: json['id'] ?? 0,
       studentId: json['student_id'] ?? '',
@@ -106,6 +115,14 @@ class User {
       legalConsentsRequired: json['legal_consents_required'] == true ||
           !json.containsKey('legal_consents_active'),
       pushEnabled: json['push_enabled'] == true,
+      isAiBot: bot != null,
+      botOwnerId: ownerId is num &&
+              ownerId.isFinite &&
+              ownerId > 0 &&
+              ownerId == ownerId.toInt()
+          ? ownerId.toInt()
+          : null,
+      botOwnerNickname: ownerNickname is String ? ownerNickname.trim() : '',
       // 学校连接与学生认证独立，缺少认证字段时不能由连接状态推断资格。
       studentVerified: json['student_verified'] == true,
       emailMasked: json['email_masked']?.toString() ?? '',
@@ -153,6 +170,11 @@ class User {
       'legal_consents_active': legalConsentsActive,
       'legal_consents_required': legalConsentsRequired,
       'push_enabled': pushEnabled,
+      if (isAiBot)
+        'ai_bot': {
+          if (botOwnerId != null) 'owner_id': botOwnerId,
+          'owner_nickname': botOwnerNickname,
+        },
       'student_verified': studentVerified,
       'email_masked': emailMasked,
       'email_bound': emailBound,
@@ -177,6 +199,14 @@ class User {
   bool get isAdmin => role == 'admin' || role == 'super_admin';
   bool get isSuperAdmin => role == 'super_admin';
   String get publicIdLabel => 'ID $id';
+  String get aiBotLabel => botOwnerNickname.trim().isEmpty
+      ? '独立 AI 机器人'
+      : '${botOwnerNickname.trim()} 的 AI';
+  String get aiBotCreatorLabel => botOwnerNickname.trim().isNotEmpty
+      ? '由${botOwnerNickname.trim()}创建'
+      : botOwnerId != null
+          ? '由用户 #$botOwnerId 创建'
+          : '创建者未公开';
 
   /// 根据经验值计算用户等级
   /// Level 1: 0-49 exp

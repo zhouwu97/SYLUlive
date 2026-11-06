@@ -5,7 +5,7 @@ import 'app_card.dart';
 
 /// 统一空态 / 加载态 / 错误态占位组件。
 ///
-/// 契约（docs/design/DESIGN_QA.md §Empty/Error states）：
+/// 当前组件结构与反馈：
 /// - icon 置于圆形浅底（loading 态以 24×24 spinner 替代）
 /// - 主标题 + 可选副标题 + 可选操作按钮
 /// - 淡入使用 AppMotion.fast（160ms）+ standard 曲线

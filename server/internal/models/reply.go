@@ -92,8 +92,9 @@ func (image ReplyImage) MarshalJSON() ([]byte, error) {
 	}
 	statuses := make(map[string]string, len(image.Variants))
 	thumbURL, mediumURL, viewerURL := image.File.Path, image.File.Path, image.File.Path
+	recipeVersion := ImageVariantRecipeVersionForMime(image.File.MimeType)
 	for _, variant := range image.Variants {
-		if variant.RecipeVersion != 1 || (variant.Variant != "thumb" && variant.Variant != "medium" && variant.Variant != "viewer") {
+		if variant.RecipeVersion != recipeVersion || (variant.Variant != "thumb" && variant.Variant != "medium" && variant.Variant != "viewer") {
 			continue
 		}
 		statuses[variant.Variant] = string(variant.Status)

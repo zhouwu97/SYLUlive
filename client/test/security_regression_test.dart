@@ -15,7 +15,7 @@ void main() {
     expect(crawler, isNot(contains('/https/\$keyHex')));
   });
 
-  test('二课页面只清理历史密码且不再持久化凭据', () {
+  test('二课页面清理历史明文密码，凭据仅接入系统安全存储', () {
     final source =
         File('lib/screens/erke_score_screen.dart').readAsStringSync();
 
@@ -24,8 +24,7 @@ void main() {
     expect(source, isNot(contains("setString('erke_cas_pwd'")));
     expect(source, isNot(contains("setString('erke_erke_pwd'")));
     expect(source, isNot(contains('prefs.clear()')));
-    expect(source, contains('final casPwd = _casPwdCtrl.text;'));
-    expect(source, contains('final erkePwd = _erkePwdCtrl.text;'));
+    expect(source, contains('DeviceCredentialStore'));
     expect(source, isNot(contains('_realCasPwd')));
     expect(source, isNot(contains('_realErkePwd')));
   });

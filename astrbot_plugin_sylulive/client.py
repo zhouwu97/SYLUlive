@@ -96,15 +96,22 @@ class BusinessClient:
             raise IntegrationProblem(code)
         return body
 
-    async def begin(self, installation_id, name, proposals, *, checkin=False, bot_reply=False, bot_post=False, personal=False):
+    async def begin(self, installation_id, name, proposals, *, checkin=False, bot_reply=False, bot_post=False, personal=False, community_read=False):
         async with self.lock:
             if self.pending:
-                raise IntegrationProblem("authorization_pending" if self.pending["deadline"] > time.monotonic() else "authorization_expired")
-            if self.tokens:
-                raise IntegrationProblem("already_connected")
+                if self.pending["deadline"] <= time.monotonic() or self.pending.get("terminal"):
+                    # 本人重新发起时只撤销旧设备请求；失败保留秘密和原连接供安全重试。
+                    await self._request("POST", "/api/oauth/device_authorization/cancel",
+                        data={"client_id": CLIENT_ID, "device_code": self.pending["device_code"]})
+                    self.pending = None
+                    self.generation += 1
+                else:
+                    raise IntegrationProblem("authorization_pending" if self.pending["deadline"] > time.monotonic() else "authorization_expired")
             scope = "profile:read_minimal content:read_own_public actions:read_own"
             if proposals or bot_reply or bot_post:
                 scope += " community:read community:propose"
+            elif community_read:
+                scope += " community:read"
             if bot_reply:
                 scope += " community:bot_reply"
             if bot_post:
@@ -113,6 +120,10 @@ class BusinessClient:
                 scope += " checkin:write"
             if personal:
                 scope += " academic:grades:read academic:erke:read"
+            upgrading = self.tokens is not None
+            # 所有功能都按实际 scope 比较，签到／教务权限也可由本人补充申请。
+            if upgrading and set(scope.split()).issubset(set(self.tokens.get("scope", "").split())):
+                raise IntegrationProblem("already_connected")
             body = await self._request(
                 "POST",
                 "/api/oauth/device_authorization",
@@ -136,8 +147,11 @@ class BusinessClient:
                     "deadline": time.monotonic() + min(int(body["expires_in"]), 600),
                     "interval": max(int(body["interval"]), 5),
                     "next": time.monotonic() + max(int(body["interval"]), 5),
+                    "upgrade": upgrading,
                 }
-                return {"user_code": body["user_code"], "verification_uri": uri}
+                if upgrading:
+                    self.generation += 1
+                return {"user_code": body["user_code"], "verification_uri": uri, "upgrade": upgrading}
             except (KeyError, TypeError, ValueError):
                 raise IntegrationProblem("invalid_response") from None
 
@@ -157,20 +171,37 @@ class BusinessClient:
         }
         self.store.save(self.tokens)
 
-    async def poll(self, *, expected=None):
+    async def poll(self, *, expected=None, wait=True):
+        # 用户命令可等待下一次合法查询，不要求本人反复发送状态/签到命令。
+        pending = self.pending if expected is None else expected
+        generation = self.generation
+        while True:
+            if wait and pending is not None and self.pending is pending:
+                delay = min(pending["next"], pending["deadline"]) - time.monotonic()
+                if delay > 0:
+                    await asyncio.sleep(delay)
+            try:
+                completed = await self._poll_once(expected=pending)
+                if self.generation != generation and (pending is None or pending.get("completed_generation") != self.generation):
+                    raise IntegrationProblem("authorization_changed")
+                return completed
+            except IntegrationProblem as error:
+                if not wait or error.code != "poll_later":
+                    raise
+
+    async def _poll_once(self, *, expected=None):
         async with self.lock:
             pending = self.pending
             if expected is not None and pending is not expected:
                 if pending is None and self.tokens:
-                    return
+                    return self.generation
                 raise IntegrationProblem("authorization_changed")
             if pending is None and self.tokens:
-                return
+                return self.generation
             if not pending or pending["deadline"] <= time.monotonic():
                 raise IntegrationProblem("authorization_expired")
             if pending["next"] > time.monotonic():
                 raise IntegrationProblem("poll_later")
-            pending["next"] = time.monotonic() + pending["interval"]
             try:
                 body = await self._request(
                     "POST",
@@ -184,14 +215,27 @@ class BusinessClient:
             except IntegrationProblem as error:
                 if error.code == "slow_down":
                     pending["interval"] += 5
-                    pending["next"] = time.monotonic() + pending["interval"]
+                if error.code in ("access_denied", "expired_token", "authorization_expired"):
+                    pending["terminal"] = True
                 # 终止状态仍保留设备秘密，供本人明确解绑时撤销已批准／不确定的请求。
                 raise
+            finally:
+                # 从响应结束计时，避免网络往返/服务端排队被误算进轮询间隔，触发累积 slow_down。
+                pending["next"] = time.monotonic() + pending["interval"]
+            if self.pending is not pending:
+                raise IntegrationProblem("authorization_changed")
             self._save(body)
             self.pending = None
+            if pending.get("upgrade"):
+                self.generation += 1
+            pending["completed_generation"] = self.generation
+            return self.generation
 
     async def _access(self):
         async with self.lock:
+            if self.pending and self.pending.get("upgrade") and not self.pending.get("terminal"):
+                # 官网可能已替换旧授权但尚未领到新凭据，不能用旧401清掉待领取的请求。
+                raise IntegrationProblem("authorization_pending")
             if not self.tokens:
                 raise IntegrationProblem("connect_first")
             if self.tokens["expires_at"] > time.time() + 30:

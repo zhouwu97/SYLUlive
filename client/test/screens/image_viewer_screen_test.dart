@@ -596,7 +596,7 @@ void main() {
         originalSizeBytes: imageOriginalAutoLoadThresholdBytes,
         isAnimatedGif: true,
       ),
-      isFalse,
+      isTrue,
     );
   });
 
@@ -695,7 +695,7 @@ void main() {
         isNot(contains('https://example.test/article-origin.jpg')));
   });
 
-  testWidgets('大 GIF 使用静态首帧预览，不能进入查看器就自动加载动画原图', (tester) async {
+  testWidgets('大 GIF 进入查看器后自动加载动画原图', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: ImageViewerScreen(
@@ -714,18 +714,12 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byKey(const ValueKey('viewer-original-image-0')), findsNothing);
-    expect(find.text('查看原图 2.0 MB'), findsOneWidget);
-    final urls = tester
-        .widgetList<Image>(find.byType(Image))
-        .map((image) => image.image)
-        .whereType<ResizeImage>()
-        .map((image) => image.imageProvider)
-        .whereType<CachedNetworkImageProvider>()
-        .map((provider) => provider.url)
-        .toList();
-    expect(urls, contains('https://example.test/motion-medium.jpg'));
-    expect(urls, isNot(contains('https://example.test/motion.gif')));
+    expect(find.byKey(const ValueKey('viewer-original-image-0')), findsOneWidget);
+    expect(find.text('查看原图 2.0 MB'), findsNothing);
+    final original = tester.widget<Image>(
+        find.byKey(const ValueKey('viewer-original-image-0')));
+    expect((original.image as CachedNetworkImageProvider).url,
+        'https://example.test/motion.gif');
   });
 
   testWidgets('查看原图下载进度显示在按钮上，取消后可重试并完成', (tester) async {

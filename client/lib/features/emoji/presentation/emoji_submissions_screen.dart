@@ -1,88 +1,18 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
-import '../../../providers/auth_provider.dart';
-import '../../../services/publish_session_scope.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/app_choice_chip.dart';
 import '../../../widgets/app_dialog.dart';
 import '../../../widgets/security_session_guard.dart';
 import '../data/emoji_pack_local_store.dart';
 import '../data/emoji_submission_repository.dart';
-import '../domain/emoji_pack.dart';
-import '../domain/emoji_pack_installation.dart';
 import 'emoji_ui.dart';
+import 'emoji_session_state.dart';
+import 'emoji_creation_editor_screen.dart';
 import 'emoji_submission_image.dart';
-
-/// 会话失效后页面不可重新认领，连同正在展示的大图和确认弹窗一起隐藏旧数据。
-abstract class _EmojiSubmissionState<T extends StatefulWidget>
-    extends State<T> {
-  AuthProvider? auth;
-  PublishSessionScope? session;
-  EmojiSubmissionRepository? repository;
-  CancelToken token = CancelToken();
-  bool invalidated = false;
-  bool get requireAdmin => false;
-  bool get current =>
-      mounted &&
-      !invalidated &&
-      auth != null &&
-      session != null &&
-      SecuritySessionGuard.owns(auth!, session!, requireAdmin: requireAdmin);
-  @override
-  void initState() {
-    super.initState();
-    auth = context.read<AuthProvider?>();
-    final user = auth?.user;
-    if (auth?.isLoggedIn == true && user != null) {
-      session = PublishSessionScope(
-          accountId: user.id, accountSessionEpoch: auth!.accountSessionEpoch);
-      repository = EmojiSubmissionRepository(auth!.dio);
-    }
-    auth?.addListener(_sessionChanged);
-  }
-
-  void _sessionChanged() {
-    if (current || invalidated) return;
-    invalidated = true;
-    token.cancel('账号或权限已变化');
-    if (mounted) setState(() {});
-  }
-
-  String failureMessage(Object error) {
-    if (error is DioException &&
-        (error.response?.statusCode == 401 ||
-            requireAdmin && error.response?.statusCode == 403)) {
-      invalidated = true;
-      token.cancel('账号或权限已失效');
-    }
-    return emojiSubmissionError(error);
-  }
-
-  CancelToken nextRequest() {
-    token.cancel('请求已替换');
-    return token = CancelToken();
-  }
-
-  Widget get permissionState => EmojiStateView(
-      icon: Icons.lock_outline,
-      title: invalidated
-          ? '账号或权限已变化，请返回重新打开'
-          : requireAdmin
-              ? '需要管理员权限'
-              : '请登录后重新打开我的投稿');
-
-  @override
-  void dispose() {
-    token.cancel('页面已关闭');
-    auth?.removeListener(_sessionChanged);
-    super.dispose();
-  }
-}
 
 class EmojiSubmissionsScreen extends StatefulWidget {
   const EmojiSubmissionsScreen({super.key, this.store, this.admin = false});
@@ -93,7 +23,7 @@ class EmojiSubmissionsScreen extends StatefulWidget {
 }
 
 class _EmojiSubmissionsScreenState
-    extends _EmojiSubmissionState<EmojiSubmissionsScreen> {
+    extends EmojiSessionState<EmojiSubmissionsScreen> {
   @override
   bool get requireAdmin => widget.admin;
   List<EmojiSubmission>? _items;
@@ -142,24 +72,31 @@ class _EmojiSubmissionsScreenState
 
   Future<void> _open(EmojiSubmission item) async {
     await Navigator.of(context).push(MaterialPageRoute<void>(
-        builder: (_) =>
-            EmojiSubmissionDetailScreen(id: item.id, admin: widget.admin)));
+        builder: (_) => SecuritySessionGuard(
+            auth: auth!,
+            session: session!,
+            requireAdmin: widget.admin,
+            child: EmojiSubmissionDetailScreen(
+                id: item.id, admin: widget.admin, store: widget.store))));
     if (current) await _load();
   }
 
   Future<void> _upload() async {
     if (!current || widget.store == null) return;
     await Navigator.of(context).push(MaterialPageRoute<void>(
-        builder: (_) => EmojiSubmissionUploadScreen(store: widget.store!)));
+        builder: (_) => SecuritySessionGuard(
+            auth: auth!,
+            session: session!,
+            child: EmojiSubmissionUploadScreen(store: widget.store!))));
     if (current) await _load();
   }
 
   @override
   Widget build(BuildContext context) => EmojiPageScaffold(
-      title: widget.admin ? '表情包审核' : '我的投稿',
+      title: widget.admin ? '表情包审核' : '我的作品',
       actions: [
         if (!widget.admin && current && widget.store != null)
-          TextButton(onPressed: _upload, child: const Text('上传'))
+          TextButton(onPressed: _upload, child: const Text('制作'))
       ],
       body: !current
           ? permissionState
@@ -184,7 +121,8 @@ class _EmojiSubmissionsScreenState
                             'pending',
                             'published',
                             'rejected',
-                            'unpublished'
+                            'unpublished',
+                            'superseded'
                           ])
                             _chip(status, emojiSubmissionStatus(status)),
                         ]),
@@ -213,7 +151,7 @@ class _EmojiSubmissionsScreenState
                               vertical: AppSpacing.sm),
                           title: Text(item.name),
                           subtitle: Text(
-                              '${emojiSubmissionStatus(item.status)} · ${item.assetCount} 个表情'
+                              '${emojiSubmissionStatus(item.status)} · v${item.version} · ${item.assetCount} 个表情'
                               '${item.reviewReason.isEmpty ? '' : '\n${item.reviewReason}'}'),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () => _open(item)),
@@ -236,194 +174,14 @@ class _EmojiSubmissionsScreenState
       });
 }
 
-class EmojiSubmissionUploadScreen extends StatefulWidget {
-  const EmojiSubmissionUploadScreen({super.key, required this.store});
+class EmojiSubmissionUploadScreen extends StatelessWidget {
+  const EmojiSubmissionUploadScreen(
+      {super.key, required this.store, this.revisionOf});
   final EmojiPackLocalStore store;
+  final String? revisionOf;
   @override
-  State<EmojiSubmissionUploadScreen> createState() =>
-      _EmojiSubmissionUploadScreenState();
-}
-
-class _EmojiSubmissionUploadScreenState
-    extends _EmojiSubmissionState<EmojiSubmissionUploadScreen> {
-  List<EmojiPackInstallation>? _packs;
-  EmojiPackInstallation? _selected;
-  final _name = TextEditingController(), _description = TextEditingController();
-  bool _rights = false, _uploading = false;
-  double? _progress;
-  String? _error;
-  @override
-  void initState() {
-    super.initState();
-    if (current) unawaited(_load());
-  }
-
-  Future<void> _load() async {
-    setState(() => _error = null);
-    try {
-      final packs = await widget.store.load();
-      if (current) {
-        setState(() => _packs = packs
-            .where((pack) =>
-                pack.trustLevel == EmojiPackTrustLevel.localUntrusted &&
-                !pack.isCatalogPack &&
-                pack.status == EmojiPackInstallStatus.installed)
-            .toList());
-      }
-    } catch (error) {
-      if (current) setState(() => _error = '读取本机表情包失败，请重试。');
-    }
-  }
-
-  Future<void> _submit() async {
-    if (!current ||
-        _uploading ||
-        !_rights ||
-        _selected == null ||
-        _name.text.trim().isEmpty) {
-      return;
-    }
-    final request = nextRequest();
-    setState(() {
-      _uploading = true;
-      _progress = null;
-      _error = null;
-    });
-    try {
-      await repository!.submit(
-          pack: _selected!,
-          store: widget.store,
-          name: _name.text,
-          description: _description.text,
-          session: session!,
-          token: request,
-          onProgress: (sent, total) {
-            if (current && !request.isCancelled) {
-              setState(() => _progress = total > 0 ? sent / total : null);
-            }
-          });
-      if (mounted && current && !request.isCancelled) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('已提交，审核结果可在我的投稿查看')));
-        Navigator.of(context).pop();
-      }
-    } catch (error) {
-      if (current && !request.isCancelled) {
-        setState(() => _error = failureMessage(error));
-      }
-    } finally {
-      if (current && !request.isCancelled) setState(() => _uploading = false);
-    }
-  }
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _description.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => EmojiPageScaffold(
-      title: '上传表情包',
-      formLayout: true,
-      body: !current
-          ? permissionState
-          : ListView(padding: const EdgeInsets.all(AppSpacing.lg), children: [
-              const EmojiSectionHeader(
-                  title: '选择本机表情包',
-                  detail: '每次最多 100 张、合计 49 MB，单张不超过 10 MB；最多 5 份待审核。'),
-              if (_packs == null && _error == null)
-                const LinearProgressIndicator(),
-              if (_packs?.isEmpty == true)
-                const EmojiStateView(
-                    title: '还没有可投稿的表情包', detail: '返回表情管理，从相册或文件导入后再来分享。'),
-              for (final pack in _packs ?? <EmojiPackInstallation>[])
-                ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: EmojiCover(
-                        image: pack.manifest.assets.isEmpty
-                            ? null
-                            : FileImage(File(
-                                '${widget.store.versionDirectory(pack.packId, pack.version).path}/${pack.manifest.assets.first.path}'))),
-                    title: Text(pack.name),
-                    subtitle: Text(
-                        '${pack.manifest.assets.length} 个 · ${emojiBytesLabel(pack.totalSize)}'),
-                    selected: _selected?.packId == pack.packId,
-                    trailing: Icon(_selected?.packId == pack.packId
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_off),
-                    onTap: _uploading
-                        ? null
-                        : () => setState(() {
-                              _selected = pack;
-                              _name.text =
-                                  pack.name.characters.take(40).toString();
-                            })),
-              if (_selected != null) ...[
-                const SizedBox(height: AppSpacing.lg),
-                TextField(
-                    controller: _name,
-                    enabled: !_uploading,
-                    maxLength: 40,
-                    onChanged: (_) => setState(() {}),
-                    decoration: const InputDecoration(
-                        labelText: '公开名称', border: OutlineInputBorder())),
-                const SizedBox(height: AppSpacing.md),
-                TextField(
-                    controller: _description,
-                    enabled: !_uploading,
-                    maxLength: 300,
-                    minLines: 2,
-                    maxLines: 4,
-                    decoration: const InputDecoration(
-                        labelText: '简介（选填）',
-                        hintText: '介绍内容、作者或授权来源',
-                        border: OutlineInputBorder())),
-                CheckboxListTile(
-                    value: _rights,
-                    contentPadding: EdgeInsets.zero,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    onChanged: _uploading
-                        ? null
-                        : (value) => setState(() => _rights = value == true),
-                    title: const Text('我有权公开分享这些表情'),
-                    subtitle:
-                        const Text('内容不含他人隐私、违规信息或未经授权的作品；审核通过后所有用户可下载。')),
-              ],
-              if (_error != null)
-                EmojiInlineError(
-                    message: _error!,
-                    onRetry: _uploading
-                        ? null
-                        : _packs == null
-                            ? _load
-                            : _submit),
-              if (_uploading)
-                Semantics(
-                    liveRegion: true,
-                    child: Column(children: [
-                      LinearProgressIndicator(value: _progress),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(_progress == 1 ? '图片已传输，正在提交审核…' : '正在上传，请稍候…'),
-                    ])),
-            ]),
-      bottomNavigationBar: !current
-          ? null
-          : SafeArea(
-              top: false,
-              child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
-                  child: FilledButton(
-                      onPressed: _uploading ||
-                              !_rights ||
-                              _selected == null ||
-                              _name.text.trim().isEmpty
-                          ? null
-                          : _submit,
-                      style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(48)),
-                      child: Text(_uploading ? '提交中…' : '提交审核')))));
+  Widget build(BuildContext context) =>
+      EmojiCreationEditorScreen(store: store, revisionOf: revisionOf);
 }
 
 class _EmojiReviewDialog extends StatefulWidget {
@@ -499,16 +257,17 @@ class _EmojiReviewDialogState extends State<_EmojiReviewDialog> {
 
 class EmojiSubmissionDetailScreen extends StatefulWidget {
   const EmojiSubmissionDetailScreen(
-      {super.key, required this.id, this.admin = false});
+      {super.key, required this.id, this.admin = false, this.store});
   final String id;
   final bool admin;
+  final EmojiPackLocalStore? store;
   @override
   State<EmojiSubmissionDetailScreen> createState() =>
       _EmojiSubmissionDetailScreenState();
 }
 
 class _EmojiSubmissionDetailScreenState
-    extends _EmojiSubmissionState<EmojiSubmissionDetailScreen> {
+    extends EmojiSessionState<EmojiSubmissionDetailScreen> {
   @override
   bool get requireAdmin => widget.admin;
   EmojiSubmission? _item;
@@ -595,6 +354,8 @@ class _EmojiSubmissionDetailScreenState
                       title: item.name,
                       detail:
                           '${emojiSubmissionStatus(item.status)} · ${item.assetCount} 个 · ${emojiBytesLabel(item.totalSize)}'),
+                  Text(
+                      '版本 ${item.version}${item.tags.isEmpty ? '' : ' · ${item.tags.join(' · ')}'}'),
                   if (widget.admin) Text('投稿人 ID：${item.userId}'),
                   if (item.description.isNotEmpty) Text(item.description),
                   if (item.reviewReason.isNotEmpty)
@@ -615,6 +376,12 @@ class _EmojiSubmissionDetailScreenState
                                 name: asset.name,
                                 animated: asset.animated,
                                 image: EmojiSubmissionImage(
+                                    dio: auth!.dio,
+                                    session: session!,
+                                    token: token,
+                                    url: repository!.assetUrl(item.id, asset.id,
+                                        admin: widget.admin, thumbnail: true)),
+                                previewImage: EmojiSubmissionImage(
                                     dio: auth!.dio,
                                     session: session!,
                                     token: token,
@@ -660,6 +427,29 @@ class _EmojiSubmissionDetailScreenState
                                 onPressed:
                                     _busy ? null : () => _act('withdraw'),
                                 child: const Text('撤回投稿')),
+                          if (!widget.admin &&
+                              widget.store != null &&
+                              !['pending', 'withdrawn', 'superseded']
+                                  .contains(item.status))
+                            OutlinedButton(
+                                onPressed: _busy
+                                    ? null
+                                    : () async {
+                                        if (!current) return;
+                                        await Navigator.of(context).push(
+                                            MaterialPageRoute<void>(
+                                                builder: (_) => SecuritySessionGuard(
+                                                    auth: auth!,
+                                                    session: session!,
+                                                    child:
+                                                        EmojiSubmissionUploadScreen(
+                                                            store:
+                                                                widget.store!,
+                                                            revisionOf: item
+                                                                .catalogId))));
+                                        if (current) await _load();
+                                      },
+                                child: const Text('制作新版本')),
                         ]))));
   }
 }

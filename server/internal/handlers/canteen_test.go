@@ -82,7 +82,6 @@ func performCanteenRequest(
 	body string,
 ) *httptest.ResponseRecorder {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
 	context.Request = httptest.NewRequest(method, path, strings.NewReader(body))

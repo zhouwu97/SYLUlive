@@ -64,7 +64,7 @@
   .auth-input-action:hover, .auth-history-choice:hover, .auth-history-remove:hover { background: var(--surface-2); color: var(--brand-strong); }
 }
 .auth-input-action:focus-visible, .auth-history-choice:focus-visible, .auth-history-remove:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
-@media (max-width: 760px) {
+@media (max-width: 600px) {
   .overlay:has(.auth-panel, .auth-email-panel) { padding: 0; align-items: stretch; }
   .modal:has(.auth-panel, .auth-email-panel) { width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }
   .modal:has(.auth-panel, .auth-email-panel) .modal-head { padding: max(12px, env(safe-area-inset-top)) 18px 12px; }

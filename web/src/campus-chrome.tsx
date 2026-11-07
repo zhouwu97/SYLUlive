@@ -13,6 +13,8 @@ export function ProfileSummary() {
   const person = entity(profile.data, "user", "data");
   const name = person.nickname || auth.user?.nickname || "校园同学";
   return <section className="profile-rail-card" aria-label="校园个人资料">
+    {/* 侧栏只保留品牌渐变装饰，个人封面只在个人主页展示 */}
+    <div className="profile-rail-cover" aria-hidden="true" />
     <div className="profile-rail-head">
       <div className="profile-rail-avatar"><ServerAvatar src={person.avatar || auth.user?.avatar} name={auth.user ? name : "沈理校园"} /></div>
       <div><b>{auth.loading ? "正在读取账号…" : auth.user ? name : "欢迎来到沈理校园"}</b><p>{auth.user ? <><span className="profile-level">Lv.{userLevel(person)}</span><span className="profile-meta-separator"> · </span><span className="profile-role">校园观察员</span></> : "连接校园里的每一天"}</p></div>

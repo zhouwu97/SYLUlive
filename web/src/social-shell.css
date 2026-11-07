@@ -88,7 +88,7 @@
   .social-shell .workspace-grid:not(.no-rail) { grid-template-columns: minmax(0, 1fr); }
   .social-shell .right-rail { display: none; }
 }
-@media (min-width: 761px) and (max-width: 860px) {
+@media (min-width: 601px) and (max-width: 860px) {
   .social-shell { --sidebar: 64px; }
   .social-shell .frame { gap: 20px; padding-inline: 16px; }
   .social-shell .sidebar .nav-icon { transform: translateX(8px); }
@@ -96,7 +96,7 @@
   .social-shell .topbar .brand { width: auto; }
 }
 /* 导航行与分组的高度不变，收展过程中图标不会纵向跳位。 */
-@media (min-width: 761px) {
+@media (min-width: 601px) {
   .social-shell .sidebar { transition: width 220ms cubic-bezier(.23, 1, .32, 1); }
   .social-shell .sidebar .nav-icon { transition: transform 220ms cubic-bezier(.23, 1, .32, 1); }
   .app-shell .sidebar .nav-text,
@@ -110,7 +110,7 @@
   .market-shell .nav-unread { position: absolute; top: 3px; right: 3px; padding: 1px 3px; min-width: 14px; font-size: 10px; }
   .market-shell .workspace-grid { max-width: none; }
 }
-@media (min-width: 761px) and (max-width: 1040px) {
+@media (min-width: 601px) and (max-width: 1040px) {
   .social-shell .sidebar .nav-text,
   .social-shell .sidebar .nav-label,
   .social-shell .sidebar-footer { display: block; }
@@ -124,7 +124,7 @@
 .navigation-instant .sidebar, .navigation-instant .sidebar .nav-icon,
 .navigation-instant .sidebar .nav-text, .navigation-instant .sidebar .nav-label,
 .navigation-instant .sidebar-footer { transition: none; }
-@media (max-width: 760px) {
+@media (max-width: 600px) {
   .social-shell { --sidebar: 0px; }
   .social-shell .frame { display: block; padding-inline: 0; }
   .social-shell .topbar-inner { padding-inline: 12px; gap: 8px; }

@@ -525,6 +525,19 @@ function DesktopSchedule() {
   const weekend = params.get("weekend") !== "0";
   const all = mergeCourses(store.data.courses, store.data.overrides);
   const courses = all.filter((c) => c.weeks.includes(week));
+  const openConnect = () =>
+    ui.open(
+      "更新学校课表",
+      <ConnectionForm
+        dataset="courses"
+        onData={(value) => {
+          const note = keepEmptyResult(value, store.data.courses);
+          if (note) return note;
+          store.setData((s) => ({ ...s, courses: value as Course[] }));
+        }}
+      />,
+    );
+  const todayIndex = (new Date().getDay() || 7) - 1;
   return (
     <>
       <Head
@@ -556,22 +569,7 @@ function DesktopSchedule() {
             ? `学校数据更新于 ${new Date(store.updated).toLocaleString("zh-CN")}`
             : "未读取学校课表"}
         </span>
-        <button
-          className="link-btn"
-          onClick={() =>
-            ui.open(
-              "更新学校课表",
-              <ConnectionForm
-                dataset="courses"
-                onData={(value) => {
-                  const note = keepEmptyResult(value, store.data.courses);
-                  if (note) return note;
-                  store.setData((s) => ({ ...s, courses: value as Course[] }));
-                }}
-              />,
-            )
-          }
-        >
+        <button className="link-btn" onClick={openConnect}>
           连接教务助手 / 刷新
         </button>
       </div>
@@ -618,17 +616,28 @@ function DesktopSchedule() {
         </label>
       </div>
       <div className="schedule-scroll" tabIndex={0}>
+        {!store.data.courses.length && (
+          <div className="schedule-empty-hint">
+            <Icon name="schedule" size={22} />
+            <b>还没有课表</b>
+            <p>连接教务助手自动读取本学期课表，也可以手动添加课程。</p>
+            <div className="empty-actions">
+              <button className="btn primary" onClick={openConnect}>连接教务助手</button>
+              <button className="btn" onClick={() => ui.open("添加课程", <CourseForm />)}>手动添加</button>
+            </div>
+          </div>
+        )}
         <div
           className="schedule"
           style={{
-            gridTemplateColumns: `65px repeat(${weekend ? 7 : 5},minmax(104px,1fr))`,
+            gridTemplateColumns: `86px repeat(${weekend ? 7 : 5},minmax(104px,1fr))`,
           }}
         >
           <div className="sch-head">节次</div>
           {["一", "二", "三", "四", "五", "六", "日"]
             .slice(0, weekend ? 7 : 5)
-            .map((d) => (
-              <div className="sch-head" key={d}>
+            .map((d, index) => (
+              <div className={`sch-head ${index === todayIndex ? "today" : ""}`} key={d}>
                 周{d}
               </div>
             ))}
@@ -636,6 +645,7 @@ function DesktopSchedule() {
             <Row
               key={period}
               period={period}
+              today={todayIndex}
               days={weekend ? 7 : 5}
               courses={courses}
               onEdit={(c) =>
@@ -731,22 +741,26 @@ function ReminderSettings() {
     <button className="btn" onClick={() => {if(requireUser()) void ui.act(() => bridge('reminders',{enabled:false}),'已关闭提醒并清除保存的提醒课表');}}>关闭提醒并清除提醒数据</button>
   </div>;
 }
+// 与 App 课表页一致的大节作息，键为大节起始小节。
+const PERIOD_TIMES: Record<number, string> = { 1: "08:00–09:40", 3: "10:00–11:40", 5: "13:00–14:40", 7: "14:50–16:30", 9: "16:40–18:20", 11: "19:30–21:10" };
 function Row({
   period,
+  today,
   days,
   courses,
   onEdit,
 }: {
   period: number;
+  today?: number;
   days: number;
   courses: Course[];
   onEdit: (c: Course) => void;
 }) {
   return (
     <>
-      <div className="sch-time">第 {period}–{period+1} 节</div>
+      <div className="sch-time">第 {period}–{period+1} 节{PERIOD_TIMES[period] && <small>{PERIOD_TIMES[period]}</small>}</div>
       {Array.from({ length: days }, (_, i) => (
-        <div className="sch-cell" key={i}>
+        <div className={`sch-cell ${i === today ? "is-today" : ""}`} key={i}>
           {courses
             .filter((c) => c.day === i + 1 && c.periods.some(p=>p===period||p===period+1))
             .map((c) => (

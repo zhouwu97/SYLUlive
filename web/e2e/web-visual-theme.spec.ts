@@ -62,7 +62,7 @@ for (const theme of ["light", "dark"]) {
             const style = getComputedStyle(el), icon = getComputedStyle(el.querySelector("i")!);
             return parseFloat(style.borderTopWidth) >= 1 && style.boxShadow === "none" && el.getBoundingClientRect().height >= 44 && icon.backgroundColor !== "rgba(0, 0, 0, 0)" && icon.boxShadow === "none";
           });
-          const navOutside = innerWidth > 760 && Array.from(nav.querySelectorAll(".nav-item")).filter(el => !el.closest("details:not([open])") && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden").some((el) => {
+          const navOutside = innerWidth > 600 && Array.from(nav.querySelectorAll(".nav-item")).filter(el => !el.closest("details:not([open])") && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden").some((el) => {
             const item = el.getBoundingClientRect();
             return item.left < frame.left || item.right > frame.right || item.width < 44 || item.height < 44;
           });
@@ -87,7 +87,7 @@ for (const theme of ["light", "dark"]) {
         expect(result.cardShortcuts, `${theme} ${width} ${route} community shortcut cards and hit areas`).toBe(true);
         expect(result.navOutside, `${theme} ${width} ${route} navigation hit areas`).toBe(false);
         expect(result.contrast.filter((item) => item.ratio < 4.5), `${theme} ${width} ${route} contrast`).toEqual([]);
-        if (route === "./" && width <= 760) {
+        if (route === "./" && width <= 600) {
           await expect(page.getByRole("searchbox", { name: "搜索帖子" }).or(page.getByRole("textbox", { name: "搜索帖子" }))).toBeVisible();
           const publish = page.getByRole("button", { name: "发布校园内容", exact: true });
           const dock = page.getByRole("navigation", { name: "底部导航" });

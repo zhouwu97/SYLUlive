@@ -88,7 +88,9 @@ test("桌面首页滚到底继续快照分页，失败重试保留原帖并合�
   expect(next.searchParams.get("session_id")).toBe("desktop-snapshot");
   expect(next.searchParams.get("offset")).toBe("20");
   expect(next.searchParams.get("capabilities")).toContain("feed_pagination_meta_v1");
-  expect(calls.some(url => url.searchParams.has("feed_version"))).toBe(false);
+  // 与 App 一致走新版首页信息流，并声明投票能力，投票作为帖子混排
+  expect(calls.every(url => url.searchParams.get("feed_version") === "3")).toBe(true);
+  expect(next.searchParams.get("capabilities")).toContain("poll_v1");
   expect(errors).toEqual([]);
 });
 
@@ -348,7 +350,8 @@ test("长标题与宽窗口保留参考侧栏比例，资料、数量和热榜�
     });
     expect(layout.profileWidth).toBe(214);
     expect(layout.profileHeight).toBeGreaterThanOrEqual(190);
-    expect(layout.profileHeight).toBeLessThanOrEqual(210);
+    // 资料卡以美观的留白为准，只限制不要无限增高
+    expect(layout.profileHeight).toBeLessThanOrEqual(330);
     expect(layout.profileInside).toBe(true);
     expect(layout.railWidth).toBe(296);
     expect(layout.cards[0]).toBe(322);
@@ -458,8 +461,8 @@ test("帖子独立边界、内容对齐、图片比例和全文入口在深浅�
         }));
         for (const card of geometry) {
           expect(card.border).toBe("1px");
-          expect(card.radius).toBe(width <= 760 && route === "./" ? "12px" : "16px");
-          expect(card.gap).toBeGreaterThanOrEqual(width <= 760 && route === "./" ? 6 : 16);
+          expect(card.radius).toBe(width <= 600 && route === "./" ? "12px" : "16px");
+          expect(card.gap).toBeGreaterThanOrEqual(width <= 600 && route === "./" ? 6 : 16);
           expect(card.aligned && card.mediaFits && card.readMoreFits && card.actionsFit).toBe(true);
         }
         await expect(cards.first().getByText("查看全文", { exact: false })).toBeVisible();

@@ -1,6 +1,6 @@
 # 沈理校园 Web 与教务助手
 
-React + TypeScript + Vite，复用 Go API；Web 当前视觉实现入口为 [tokens.css](tokens.css)、`src/commons.css` 与共享组件，具体设计按本次任务要求执行，验证流程见 [开发与交付规范](../DEVELOPMENT_STANDARD.md)。桌面现有实现沿用 v3.2 亮蓝品牌与三栏结构，通过组件外框、内部细分隔线和任务分组建立层次，首页与社区使用独立描边帖子卡片，公共帖子沿用服务端置顶数据。760px 以内的手机 Web 对照实际 Android App，由 `src/mobile-app.css` 与手机组件实现暖白／青绿配色、五项底栏及各主入口。历史结构参考保留在 `web/reference/prototype-v3.html`。当前产物用于开发联调，发布状态以实际验收记录为准。
+React + TypeScript + Vite，复用 Go API；Web 当前视觉实现入口为 [tokens.css](tokens.css)、`src/commons.css` 与共享组件，具体设计按本次任务要求执行，验证流程见 [开发与交付规范](../DEVELOPMENT_STANDARD.md)。桌面现有实现沿用 v3.2 亮蓝品牌与三栏结构，通过组件外框、内部细分隔线和任务分组建立层次，首页与社区使用独立描边帖子卡片，公共帖子沿用服务端置顶数据。600px 以内的手机 Web 对照实际 Android App（601–860px 为窄桌面布局，侧栏收为图标），由 `src/mobile-app.css` 与手机组件实现暖白／青绿配色、五项底栏及各主入口。历史结构参考保留在 `web/reference/prototype-v3.html`。当前产物用于开发联调，发布状态以实际验收记录为准。
 
 ## 运行
 

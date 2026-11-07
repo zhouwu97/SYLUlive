@@ -80,6 +80,13 @@
 .integration-scope-group legend { padding-inline: 6px; font-size: 16px; font-weight: 600; }
 .integration-scope-group > .integration-hint { margin: 0 0 16px; }
 .integration-scope-group > div > .integration-hint { margin: -4px 0 16px 32px; }
+/* 复选框与说明同行：勾选框固定在左列，长说明在右列换行，提示与文字左对齐。 */
+.integration-scope-group .field:has(> input[type="checkbox"]) { grid-template-columns: 20px minmax(0, 1fr); align-items: start; column-gap: 12px; padding: 10px 0; min-height: 44px; font-size: 14px; font-weight: 400; line-height: 1.7; cursor: pointer; }
+.integration-scope-group .field:has(> input[type="checkbox"]:disabled) { cursor: default; color: var(--integration-muted); }
+.integration-scope-group .field > input[type="checkbox"] { margin-top: 4px; }
+.connection-scope-editor > .integration-hint { margin-top: 4px; }
+.connection-scope-editor .integration-scope-group:first-of-type { margin-top: 16px; }
+.connection-card-actions { margin-top: 12px; }
 .integration-scope-shortcut { margin-top: 20px; }
 .integration-data-hint { margin: 0 0 16px; }
 .social-shell .integration-workspace .integration-panel {

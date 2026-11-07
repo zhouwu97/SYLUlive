@@ -165,7 +165,7 @@
   .post-detail-layout { grid-template-columns: minmax(0, 1fr); }
   .post-detail-rail { display: none; }
 }
-@media (max-width: 760px) {
+@media (max-width: 600px) {
   .post-detail-page .page-head { display: flex; flex-direction: row; align-items: center; gap: 12px; }
   .post-detail-page .page-title { min-width: 0; }
   .post-detail-page .post-detail-heading h1 { font-size: 13px; }

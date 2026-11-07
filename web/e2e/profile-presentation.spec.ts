@@ -13,10 +13,11 @@ async function setup(page: Page, user: Record<string, unknown> | null = person) 
   });
   await page.route('**/uploads/profile-portrait.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: portrait }));
 }
+// 头部同时有模糊铺底图（aria-hidden，alt 为空），只按可访问名称取完整封面。
 
-test('个人主页独立两栏居中，竖封面与资料在左，内容从右侧顶部开始', async ({ page }) => {
+test('个人主页头部整图展示封面，资料与操作同行，工具与内容在下方居中排布', async ({ page }) => {
   await setup(page);
-  for (const width of [1920, 1440, 1040, 800, 761]) {
+  for (const width of [1920, 1440, 1040, 800, 680, 601]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto('profile');
     await expect(page.getByRole('heading', { name: '纯合子', exact: true })).toBeVisible();
@@ -32,21 +33,30 @@ test('个人主页独立两栏居中，竖封面与资料在左，内容从右�
     expect(bounds!.width / bounds!.height).toBeCloseTo(360 / 640, 2);
     expect(bounds!.height).toBeLessThanOrEqual(520);
     const card = await page.locator('.profile-card').boundingBox();
+    const coverBox = await page.locator('.profile-cover-wrap').boundingBox();
     const body = await page.locator('.profile-card-body').boundingBox();
-    const identity = await page.locator('.profile-identity').boundingBox();
+    const avatar = await page.locator('.profile-avatar').boundingBox();
     const layout = await page.locator('.profile-layout').boundingBox();
     const content = await page.locator('.profile-content').boundingBox();
     const tools = await page.locator('.profile-tools').boundingBox();
-    expect(body!.y).toBeGreaterThanOrEqual(bounds!.y + bounds!.height - 1);
-    expect(identity!.y + identity!.height).toBeLessThanOrEqual(bounds!.y + 1);
-    expect(content!.x).toBeGreaterThan(card!.x + card!.width);
-    expect(Math.abs(content!.y - card!.y)).toBeLessThan(2);
+    // 封面整图居中显示在头部，不裁切；头像压住封面下沿
+    expect(bounds!.y).toBeGreaterThanOrEqual(coverBox!.y - 1);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(coverBox!.y + coverBox!.height + 1);
+    expect(body!.y).toBeGreaterThanOrEqual(coverBox!.y + coverBox!.height - 1);
+    expect(avatar!.y).toBeLessThan(coverBox!.y + coverBox!.height);
+    expect(avatar!.y + avatar!.height).toBeGreaterThan(coverBox!.y + coverBox!.height);
+    // 头部卡片在上，工具与内容在下方
     expect(tools!.y).toBeGreaterThan(card!.y + card!.height);
-    expect(Math.abs(tools!.x - card!.x)).toBeLessThan(2);
+    expect(content!.y).toBeGreaterThan(card!.y + card!.height);
+    expect(Math.abs(card!.x - layout!.x)).toBeLessThan(2);
+    if (width > 940) {
+      expect(content!.x).toBeGreaterThan(tools!.x + tools!.width);
+      expect(Math.abs(content!.y - tools!.y)).toBeLessThan(2);
+    } else expect(content!.y).toBeGreaterThan(tools!.y + tools!.height);
     expect(Math.abs(layout!.x - (width - layout!.x - layout!.width))).toBeLessThan(20);
     expect(await page.locator('.profile-content-tabs .tabs').evaluate(tabs => tabs.scrollWidth <= tabs.clientWidth)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    if ([1440, 761].includes(width)) await page.screenshot({ path: `.codex-captures/profile/refined-${width}.png`, fullPage: true });
+    if ([1440, 601].includes(width)) await page.screenshot({ path: `.codex-captures/profile/refined-${width}.png`, fullPage: true });
   }
   await page.getByRole('button', { name: '查看完整封面', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '个人封面', exact: true })).toBeVisible();
@@ -88,7 +98,8 @@ test('没有封面和统计时不编造数据，长名字深色下不溢出，�
   await expect(page.locator('.profile-social')).toHaveCount(0);
   await expect(page.getByLabel('等级 2', { exact: true })).toBeVisible();
   const identity = await page.locator('.profile-identity').boundingBox();
-  expect(identity!.height).toBeLessThan(160);
+  // 窄桌面下操作按钮换到第二行；长名字最多两行，头部不随名字无限变高
+  expect(identity!.height).toBeLessThan(220);
   await expect(page.locator('.profile-name h2')).toHaveAttribute('title', '很长的校园昵称'.repeat(8));
   await expect(page.getByText('内容暂时不可用', { exact: true })).toBeVisible();
   fail = false;

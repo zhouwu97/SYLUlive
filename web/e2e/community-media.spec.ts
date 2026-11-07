@@ -86,7 +86,7 @@ test("双图保持既定外框，长图展示顶部内容，预览与原图保�
   await expect(page.locator(".post-detail-gallery .media-tile img").first()).toHaveJSProperty("complete", true);
   await page.locator(".post-detail-gallery img").evaluateAll(async images => { await Promise.all(images.map(img => (img as HTMLImageElement).decode())); });
   const detail = await page.locator(".post-detail-gallery .media-tile").first().evaluate(el => ({ height: el.getBoundingClientRect().height, fit: getComputedStyle(el.querySelector("img")!).objectFit, position: getComputedStyle(el.querySelector("img")!).objectPosition }));
-  expect(detail.height).toBe(250);
+  expect(detail.height).toBe(300);
   expect(detail.fit).toBe("cover");
   expect(detail.position).toBe("50% 0%");
   await page.screenshot({ path: ".codex-captures/desktop-ratio-fix/post-media-detail.png" });
@@ -102,10 +102,10 @@ test("长图元数据与异步加载不会撑高图片组件", async ({ page }) 
   const first = page.locator(".post-detail-gallery .media-tile").first();
   await expect(page.locator(".profile-rail-card")).toContainText("资源测试同学");
   await expect(first).toBeVisible();
-  await expect(first).toHaveCSS("height", "250px");
+  await expect(first).toHaveCSS("height", "300px");
   release();
   await first.locator("img").evaluate(async (img: HTMLImageElement) => { await img.decode(); });
-  expect(await first.evaluate(el => el.getBoundingClientRect().height)).toBe(250);
+  expect(await first.evaluate(el => el.getBoundingClientRect().height)).toBe(300);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await first.evaluate(el => el.getBoundingClientRect().height)).toBe(200);
 });

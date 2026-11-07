@@ -1,5 +1,5 @@
 /* 手机 Web 对照 Android App。所有覆盖限制在与外壳一致的手机断点。 */
-@media (max-width: 760px) {
+@media (max-width: 600px) {
   :root {
     --color-paper: #fffaf4;
     --color-surface: #ffffff;

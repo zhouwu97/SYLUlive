@@ -1,0 +1,3061 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#eef0f3">
+<meta name="description" content="沈理校园雾蓝公共客厅：低饱和灰蓝配色下的校园社区网页视觉预览，包含动态、问答、食堂测评、失物招领与校园服务。">
+<title>沈理校园 · 雾蓝公共客厅</title>
+<style>
+  :root{
+    --paper:#f2eee5;
+    --paper-deep:#e9e1d2;
+    --surface:#fffcf6;
+    --surface-muted:#f7f1e6;
+    --surface-deep:#eee6d8;
+    --ink:#1d221d;
+    --ink-soft:#3d443b;
+    --muted:#666d62;
+    --faint:#8a8e82;
+    --line:#ddd4c3;
+    --line-soft:#ebe4d7;
+    --accent:#c24a32;
+    --accent-deep:#9e3420;
+    --accent-soft:#f5ddd4;
+    --forest:#213027;
+    --forest-2:#2c4033;
+    --green:#46624d;
+    --green-soft:#e7eee4;
+    --gold:#a97a2e;
+    --gold-soft:#f2e7d1;
+    --blue:#4e6978;
+    --blue-soft:#e6eef1;
+    --serif:"Noto Serif SC","Source Han Serif SC","Songti SC",STSong,SimSun,serif;
+    --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    --mono:"Cascadia Mono","JetBrains Mono","SFMono-Regular",Consolas,monospace;
+    --r-sm:4px;
+    --r-md:8px;
+    --r-lg:12px;
+    --shadow:0 18px 50px rgba(29,34,29,.12);
+    --ease:cubic-bezier(.2,.8,.2,1);
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font:14.5px/1.7 var(--sans);
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    z-index:1000;
+    pointer-events:none;
+    opacity:.025;
+    background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.88' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.85'/%3E%3C/svg%3E");
+  }
+  ::selection{background:var(--accent);color:#fff8ec}
+  a{color:inherit;text-decoration:none}
+  button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+  input,textarea{font:inherit;color:inherit}
+  img{display:block;max-width:100%}
+  svg{display:block}
+  [hidden]{display:none!important}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  .icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .icon--sm{width:15px;height:15px}
+  .icon--lg{width:22px;height:22px}
+  .skip-link{
+    position:fixed;top:8px;left:8px;z-index:2000;transform:translateY(-160%);
+    background:var(--ink);color:var(--paper);padding:8px 12px;border-radius:4px;font-size:12px;
+    transition:transform .16s var(--ease);
+  }
+  .skip-link:focus{transform:none}
+  .shell{width:min(1320px,calc(100% - 56px));margin-inline:auto}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    color:var(--accent-deep);font-size:10px;font-weight:700;line-height:1.3;
+    letter-spacing:.16em;text-transform:uppercase;
+  }
+  .eyebrow::before{content:"";width:18px;height:1px;background:currentColor;opacity:.8}
+  .eyebrow--plain::before{display:none}
+  .muted{color:var(--muted)}
+  .divider-dot{width:3px;height:3px;border-radius:50%;background:var(--faint);flex:none}
+  .is-hidden{display:none!important}
+  #notice,#top,#main-feed,#feed{scroll-margin-top:92px}
+  .image-broken{position:relative;min-height:150px;background:var(--surface-muted)}
+  .image-broken::after{
+    content:"图片暂时没有加载出来";
+    position:absolute;inset:0;display:grid;place-items:center;
+    color:var(--faint);font-size:10px;letter-spacing:.04em;
+  }
+
+  /* utility bar */
+  .utility-bar{background:var(--forest);color:#e8e2d4;font-size:11px;letter-spacing:.025em}
+  .utility-inner{min-height:34px;display:flex;align-items:center;gap:18px}
+  .utility-date{display:flex;align-items:center;gap:8px;white-space:nowrap;color:#d8d1c1}
+  .live-dot{
+    width:6px;height:6px;border-radius:50%;background:#a9c49c;
+    box-shadow:0 0 0 3px rgba(169,196,156,.12);
+  }
+  .utility-alert{
+    display:flex;align-items:center;gap:8px;min-width:0;color:#f0e9da;
+    margin-inline:auto;transition:color .16s;
+  }
+  .utility-alert:hover{color:#fff}
+  .utility-alert .alert-label{
+    flex:none;color:#e2ad91;border:1px solid rgba(226,173,145,.42);
+    padding:1px 5px;border-radius:2px;font-size:9px;letter-spacing:.08em;
+  }
+  .utility-alert .alert-copy{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .utility-links{display:flex;align-items:center;gap:14px;white-space:nowrap;color:#b9b4a7}
+  .utility-links a{transition:color .16s}
+  .utility-links a:hover{color:#fff}
+
+  /* header */
+  .site-header{
+    position:sticky;top:0;z-index:80;
+    background:rgba(242,238,229,.94);
+    border-bottom:1px solid var(--line);
+    backdrop-filter:blur(14px);
+    transition:box-shadow .2s var(--ease),background .2s;
+  }
+  .site-header.is-scrolled{box-shadow:0 10px 30px rgba(29,34,29,.06);background:rgba(242,238,229,.98)}
+  .header-inner{height:74px;display:flex;align-items:center;gap:26px}
+  .brand{display:flex;align-items:center;gap:11px;flex:none}
+  .brand-seal{
+    width:41px;height:41px;display:grid;place-items:center;flex:none;
+    color:#fff8ea;background:var(--accent);border-radius:6px;
+    font:700 25px/1 var(--serif);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.24),3px 3px 0 rgba(33,48,39,.1);
+    transition:transform .2s var(--ease),background .2s;
+  }
+  .brand:hover .brand-seal{transform:rotate(-3deg) translateY(-1px);background:var(--accent-deep)}
+  .brand-text{display:flex;flex-direction:column;line-height:1}
+  .brand-text strong{font:700 20px/1.25 var(--serif);letter-spacing:.07em}
+  .brand-text small{margin-top:5px;color:var(--muted);font:500 8px/1 var(--sans);letter-spacing:.2em}
+  .main-nav{display:flex;align-items:center;gap:0;height:74px}
+  .main-nav a{
+    position:relative;display:flex;align-items:center;height:74px;padding:0 13px;
+    color:var(--ink-soft);font-size:13.5px;font-weight:500;white-space:nowrap;
+    transition:color .16s;
+  }
+  .main-nav a::after{
+    content:"";position:absolute;left:13px;right:13px;bottom:17px;height:2px;
+    background:var(--accent);transform:scaleX(0);transform-origin:left;
+    transition:transform .2s var(--ease);
+  }
+  .main-nav a:hover{color:var(--accent-deep)}
+  .main-nav a.is-active{color:var(--ink);font-weight:700}
+  .main-nav a.is-active::after{transform:scaleX(1)}
+  .nav-new{
+    margin-left:5px;color:var(--accent);font-size:8.5px;font-weight:700;
+    border:1px solid rgba(194,74,50,.4);border-radius:2px;padding:0 3px;line-height:1.5;
+  }
+  .header-actions{display:flex;align-items:center;gap:7px;margin-left:auto;min-width:0}
+  .header-search{
+    width:238px;height:38px;display:flex;align-items:center;gap:8px;flex:none;
+    padding:0 9px 0 11px;color:var(--muted);background:var(--paper-deep);
+    border:1px solid transparent;border-radius:7px;
+    transition:background .16s,border-color .16s,box-shadow .16s;
+  }
+  .header-search:focus-within{
+    background:var(--surface);border-color:var(--accent);
+    box-shadow:0 0 0 3px var(--accent-soft);
+  }
+  .header-search input{
+    width:100%;min-width:0;border:0;outline:0;background:transparent;
+    font-size:12px;color:var(--ink);
+  }
+  .header-search input::placeholder{color:#8b8f83}
+  .header-search kbd{
+    flex:none;padding:2px 4px;border:1px solid var(--line);border-radius:3px;
+    color:var(--faint);font:9px/1 var(--mono);
+  }
+  .icon-button{
+    position:relative;width:37px;height:37px;display:grid;place-items:center;flex:none;
+    color:var(--ink-soft);border-radius:7px;transition:background .16s,color .16s;
+  }
+  .icon-button:hover{background:var(--paper-deep);color:var(--ink)}
+  .icon-button .dot{
+    position:absolute;top:8px;right:8px;width:6px;height:6px;border-radius:50%;
+    background:var(--accent);box-shadow:0 0 0 2px var(--paper);
+  }
+  .icon-button .count{
+    position:absolute;top:2px;right:1px;min-width:15px;height:15px;padding:0 4px;
+    display:grid;place-items:center;background:var(--accent);color:#fff8ea;
+    border-radius:999px;font:700 9px/1 var(--sans);
+    box-shadow:0 0 0 2px var(--paper);
+  }
+  .btn{
+    height:38px;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    padding:0 14px;border-radius:6px;font-size:12.5px;font-weight:700;
+    white-space:nowrap;transition:background .16s,color .16s,border-color .16s,transform .16s;
+  }
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{background:var(--accent);color:#fff8ec;box-shadow:0 1px 0 rgba(120,39,22,.15)}
+  .btn-primary:hover{background:var(--accent-deep)}
+  .btn-secondary{background:var(--surface);border:1px solid var(--line);color:var(--ink-soft)}
+  .btn-secondary:hover{border-color:var(--faint);color:var(--ink)}
+  .user-avatar-button{
+    width:37px;height:37px;display:grid;place-items:center;margin-left:2px;border-radius:50%;
+    transition:box-shadow .16s;
+  }
+  .user-avatar-button:hover{box-shadow:0 0 0 3px var(--paper-deep)}
+  .menu-toggle{display:none}
+  .popover-wrap{position:relative}
+  .popover{
+    position:absolute;top:calc(100% + 10px);right:0;width:348px;z-index:120;
+    background:var(--surface);border:1px solid var(--line);border-radius:9px;
+    box-shadow:var(--shadow);overflow:hidden;
+    animation:pop-in .16s var(--ease);
+  }
+  @keyframes pop-in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+  .popover-head{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:13px 15px;border-bottom:1px solid var(--line-soft);
+  }
+  .popover-head strong{font:700 14px/1.3 var(--serif)}
+  .popover-head button{color:var(--accent-deep);font-size:10.5px}
+  .popover-head button:hover{text-decoration:underline}
+  .notice-item{display:flex;gap:10px;padding:13px 15px;border-bottom:1px solid var(--line-soft)}
+  .notice-item:last-of-type{border-bottom:0}
+  .notice-item .notice-copy{min-width:0}
+  .notice-item p{margin:0 0 3px;color:var(--ink-soft);font-size:12px;line-height:1.6}
+  .notice-item p b{color:var(--ink)}
+  .notice-item time{color:var(--faint);font-size:10px}
+  .popover-foot{padding:10px 15px;text-align:center;background:var(--surface-muted)}
+  .popover-foot a{color:var(--accent-deep);font-size:11px;font-weight:600}
+
+  /* layout */
+  .page-grid{
+    display:grid;grid-template-columns:212px minmax(0,1fr) 300px;
+    gap:28px;align-items:start;padding-block:26px 18px;
+  }
+  .left-rail,.right-rail{
+    position:static;align-self:start;
+  }
+  .right-rail{display:flex;flex-direction:column;gap:14px}
+  .right-rail>*{flex:0 0 auto}
+  @media (min-width:1121px) and (min-height:1120px){
+    .left-rail,.right-rail{
+      position:sticky;top:96px;
+      max-height:calc(100vh - 112px);overflow:auto;
+      scrollbar-width:none;
+    }
+    .left-rail::-webkit-scrollbar,.right-rail::-webkit-scrollbar{display:none}
+  }
+
+  /* avatars */
+  .avatar{
+    position:relative;display:grid;place-items:center;flex:none;overflow:hidden;
+    width:38px;height:38px;border-radius:50%;
+    color:#fff8ec;background:#8f6f55;
+    font:700 16px/1 var(--serif);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);
+  }
+  .avatar::before{
+    content:"";position:absolute;inset:-16px;
+    background:radial-gradient(circle at 68% 20%,rgba(255,255,255,.2),transparent 34%),
+               repeating-linear-gradient(125deg,transparent 0 10px,rgba(255,255,255,.075) 10px 11px);
+    pointer-events:none;
+  }
+  .avatar>span{position:relative;z-index:1}
+  .avatar--chun{background:#a94935}
+  .avatar--xue{background:#526f7c}
+  .avatar--guide{background:#a87a31}
+  .avatar--due{background:#4e674e}
+  .avatar--lin{background:#6d7250}
+  .avatar--lost{background:#7b5a42}
+  .avatar--run{background:#3f6470}
+  .avatar--market{background:#7f503e}
+  .avatar--sm{width:29px;height:29px;font-size:12px}
+  .avatar--md{width:43px;height:43px;font-size:18px}
+  .avatar--lg{width:51px;height:51px;font-size:21px}
+  .avatar--current{background:var(--accent)}
+  .avatar-ring{box-shadow:0 0 0 3px var(--surface),0 0 0 4px var(--accent-soft)}
+
+  /* left rail */
+  .profile-mini{padding:6px 2px 18px;border-bottom:1px solid var(--line)}
+  .profile-row{display:flex;align-items:center;gap:11px}
+  .profile-row strong{display:block;font:700 15px/1.35 var(--serif);letter-spacing:.02em}
+  .profile-level{display:flex;align-items:center;gap:5px;margin-top:4px;color:var(--muted);font-size:10px}
+  .level-dot{width:4px;height:4px;background:var(--gold);border-radius:50%}
+  .profile-bio{margin:13px 0 12px;color:var(--muted);font-size:12px;line-height:1.7}
+  .profile-stats{display:flex;align-items:center;gap:0}
+  .profile-stats a{min-width:0;padding-right:15px;margin-right:15px;border-right:1px solid var(--line)}
+  .profile-stats a:last-child{padding-right:0;margin-right:0;border-right:0}
+  .profile-stats b{display:block;font:700 16px/1.2 var(--serif);font-variant-numeric:tabular-nums}
+  .profile-stats span{display:block;margin-top:2px;color:var(--faint);font-size:9.5px}
+  .profile-home{display:inline-flex;align-items:center;gap:5px;margin-top:14px;color:var(--accent-deep);font-size:11px;font-weight:600}
+  .profile-home .icon{transition:transform .16s}
+  .profile-home:hover .icon{transform:translateX(3px)}
+  .rail-label{margin:23px 0 8px;color:var(--faint);font-size:9.5px;font-weight:700;letter-spacing:.16em}
+  .rail-nav{display:flex;flex-direction:column;gap:2px}
+  .rail-link{
+    position:relative;display:flex;align-items:center;gap:10px;height:37px;padding:0 9px;
+    border-radius:6px;color:var(--ink-soft);font-size:13px;transition:background .16s,color .16s;
+  }
+  .rail-link .icon{width:17px;height:17px;color:var(--muted);transition:color .16s}
+  .rail-link:hover{background:rgba(255,252,246,.7);color:var(--ink)}
+  .rail-link:hover .icon{color:var(--ink-soft)}
+  .rail-link.is-active{background:var(--surface);color:var(--accent-deep);font-weight:700;box-shadow:inset 2px 0 0 var(--accent)}
+  .rail-link.is-active .icon{color:var(--accent)}
+  .rail-link .count{margin-left:auto;color:var(--faint);font:10px/1 var(--mono)}
+  .rail-link .nav-pill{
+    margin-left:auto;padding:1px 5px;background:var(--accent-soft);color:var(--accent-deep);
+    border-radius:3px;font:700 8.5px/1.6 var(--sans);letter-spacing:.03em;
+  }
+  .rail-split{height:1px;background:var(--line);margin:15px 0 5px}
+  .board-section{margin-top:20px;border-top:1px solid var(--line);padding-top:15px}
+  .section-mini-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+  .section-mini-head strong{font:700 11.5px/1.3 var(--sans);letter-spacing:.02em}
+  .section-mini-head a{color:var(--faint);font-size:10px}
+  .section-mini-head a:hover{color:var(--accent-deep)}
+  .board-list{display:flex;flex-direction:column;gap:1px}
+  .board-link{display:flex;align-items:center;gap:8px;height:31px;padding:0 2px;font-size:12px;color:var(--ink-soft)}
+  .board-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);flex:none}
+  .board-link:nth-child(2) .board-dot{background:var(--gold)}
+  .board-link:nth-child(3) .board-dot{background:var(--green)}
+  .board-link:nth-child(4) .board-dot{background:var(--blue)}
+  .board-link:nth-child(5) .board-dot{background:#8b6a56}
+  .board-link span:nth-child(2){transition:color .16s}
+  .board-link:hover span:nth-child(2){color:var(--accent-deep)}
+  .board-link .board-count{margin-left:auto;color:var(--faint);font:10px/1 var(--mono)}
+  .rail-note{
+    margin-top:20px;padding:14px 13px;border:1px dashed var(--line);
+    border-radius:6px;background:rgba(255,252,246,.36);
+  }
+  .rail-note .note-title{display:flex;align-items:center;gap:6px;color:var(--ink);font-size:10.5px;font-weight:700}
+  .rail-note p{margin:6px 0 8px;color:var(--muted);font-size:11px;line-height:1.7}
+  .rail-note a{color:var(--accent-deep);font-size:10px;font-weight:600}
+  .rail-note a:hover{text-decoration:underline}
+
+  /* feed masthead */
+  .feed{min-width:0}
+  .feed-masthead{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;padding:2px 0 19px}
+  .feed-masthead h1{margin:5px 0 5px;font:700 33px/1.3 var(--serif);letter-spacing:-.015em}
+  .feed-masthead p{margin:0;color:var(--muted);font-size:13px}
+  .feed-masthead p b{color:var(--ink);font-weight:700}
+  .feed-masthead p a{color:var(--accent-deep);font-weight:600;border-bottom:1px solid rgba(158,52,32,.25)}
+  .feed-masthead p a:hover{border-bottom-color:var(--accent-deep)}
+  .calendar-link{display:inline-flex;align-items:center;gap:5px;flex:none;color:var(--ink-soft);font-size:11px;font-weight:600;padding-bottom:2px}
+  .calendar-link:hover{color:var(--accent-deep)}
+  .calendar-link .icon{width:14px;height:14px}
+
+  /* campus brief */
+  .campus-brief{
+    display:grid;grid-template-columns:76px repeat(3,minmax(0,1fr));
+    border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+    margin-bottom:18px;min-height:58px;
+  }
+  .brief-lead{display:flex;flex-direction:column;justify-content:center;border-right:1px solid var(--line);padding-right:8px}
+  .brief-lead span{color:var(--accent-deep);font:700 9px/1.2 var(--sans);letter-spacing:.12em}
+  .brief-lead strong{margin-top:4px;font:700 13px/1.3 var(--serif)}
+  .brief-item{display:flex;align-items:center;gap:9px;min-width:0;padding:9px 12px;transition:background .16s}
+  .brief-item:hover{background:rgba(255,252,246,.55)}
+  .brief-time{color:var(--accent-deep);font:700 9.5px/1.25 var(--mono);white-space:nowrap;letter-spacing:-.02em}
+  .brief-copy{min-width:0;display:flex;flex-direction:column;line-height:1.35}
+  .brief-copy b{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .brief-copy small{color:var(--muted);font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+
+  /* composer */
+  .composer-card{
+    background:var(--surface);border:1px solid var(--line);border-radius:9px;
+    padding:16px 17px 12px;margin-bottom:18px;
+    box-shadow:0 1px 0 rgba(29,34,29,.025);
+  }
+  .composer-row{display:flex;align-items:center;gap:11px}
+  .composer-trigger{
+    flex:1;min-width:0;text-align:left;padding:10px 2px;border-bottom:1px dashed var(--line);
+    color:var(--muted);font-size:13.5px;transition:color .16s,border-color .16s;
+  }
+  .composer-trigger:hover{color:var(--accent-deep);border-bottom-color:var(--accent)}
+  .composer-bottom{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;padding-left:49px}
+  .composer-tools{display:flex;align-items:center;gap:2px}
+  .composer-tool{
+    display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 8px;border-radius:5px;
+    color:var(--muted);font-size:10.5px;transition:background .16s,color .16s;
+  }
+  .composer-tool:hover{background:var(--surface-muted);color:var(--accent-deep)}
+  .composer-tool .icon{width:14px;height:14px}
+  .composer-note{color:var(--faint);font-size:9px;white-space:nowrap}
+  .composer-note a{color:var(--muted);text-decoration:underline;text-underline-offset:2px}
+  .composer-note a:hover{color:var(--accent-deep)}
+
+  /* tabs */
+  .feed-toolbar{
+    position:sticky;top:74px;z-index:40;
+    display:flex;align-items:flex-end;justify-content:space-between;gap:14px;
+    margin:0 0 13px;padding-top:8px;background:var(--paper);
+    border-bottom:1px solid var(--line);
+  }
+  .feed-tabs{display:flex;align-items:center;gap:23px;min-width:0;overflow-x:auto;scrollbar-width:none}
+  .feed-tabs::-webkit-scrollbar{display:none}
+  .feed-tab{
+    position:relative;height:39px;padding:0 1px;flex:none;
+    color:var(--muted);font-size:12.5px;transition:color .16s;
+  }
+  .feed-tab::after{
+    content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;
+    background:var(--accent);transform:scaleX(0);transform-origin:left;
+    transition:transform .2s var(--ease);
+  }
+  .feed-tab:hover{color:var(--ink)}
+  .feed-tab.is-active{color:var(--ink);font-weight:700}
+  .feed-tab.is-active::after{transform:scaleX(1)}
+  .feed-filter{display:inline-flex;align-items:center;gap:5px;height:39px;color:var(--faint);font-size:10.5px;flex:none}
+  .feed-filter:hover{color:var(--ink-soft)}
+  .feed-filter .icon{width:14px;height:14px}
+  .search-state{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    margin-bottom:12px;padding:8px 11px;background:var(--surface-muted);
+    border:1px solid var(--line-soft);border-radius:5px;color:var(--muted);font-size:11px;
+  }
+  .search-state button{color:var(--accent-deep);font-size:10.5px;font-weight:600}
+
+  /* pinned notice */
+  .pinned-notice{
+    display:flex;align-items:flex-start;gap:11px;padding:13px 15px;margin-bottom:14px;
+    background:#fbf1e7;border:1px solid #e7cabb;border-left:3px solid var(--accent);
+    border-radius:5px;
+  }
+  .pinned-icon{
+    width:27px;height:27px;display:grid;place-items:center;flex:none;
+    color:var(--accent-deep);background:rgba(255,252,246,.62);border-radius:50%;
+  }
+  .pinned-icon .icon{width:14px;height:14px}
+  .pinned-copy{min-width:0;flex:1}
+  .pinned-meta{display:flex;align-items:center;gap:7px;color:var(--accent-deep);font-size:9px;font-weight:700;letter-spacing:.04em}
+  .pinned-meta .official-mark{
+    padding:0 4px;border:1px solid rgba(158,52,32,.38);border-radius:2px;
+    font-size:8.5px;line-height:1.6;
+  }
+  .pinned-copy h2{margin:4px 0 3px;font:700 15px/1.45 var(--serif)}
+  .pinned-copy p{margin:0;color:#6d6357;font-size:11.5px;line-height:1.65}
+  .pinned-link{
+    flex:none;align-self:center;color:var(--accent-deep);font-size:10.5px;font-weight:600;
+    border-bottom:1px solid rgba(158,52,32,.3);padding-bottom:1px;
+  }
+  .pinned-link:hover{border-bottom-color:var(--accent-deep)}
+
+  /* posts */
+  .post{
+    background:var(--surface);border:1px solid var(--line);border-radius:9px;
+    padding:18px 20px 12px;margin-bottom:14px;
+    transition:border-color .18s,box-shadow .18s;
+    animation:post-in .38s var(--ease) both;
+  }
+  .post:hover{border-color:#d1c6b4;box-shadow:0 2px 0 rgba(29,34,29,.02)}
+  .post--new{border-color:#d9aa99;box-shadow:0 0 0 3px rgba(194,74,50,.08)}
+  @keyframes post-in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+  .post-head{display:flex;align-items:flex-start;gap:10px}
+  .post-byline{min-width:0;flex:1;padding-top:1px}
+  .post-name-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px;line-height:1.35}
+  .post-author{font-size:13px;font-weight:700;color:var(--ink)}
+  .post-author:hover{color:var(--accent-deep)}
+  .role-badge{
+    display:inline-flex;align-items:center;height:17px;padding:0 4px;
+    border:1px solid rgba(70,98,77,.32);border-radius:2px;
+    color:var(--green);font-size:9px;font-weight:600;line-height:1;letter-spacing:.02em;
+  }
+  .role-badge--official{color:var(--accent-deep);border-color:rgba(194,74,50,.32)}
+  .role-badge--gold{color:var(--gold);border-color:rgba(169,122,46,.36)}
+  .post-time{color:var(--faint);font-size:10px;font-weight:400;white-space:nowrap}
+  .post-meta{display:flex;align-items:center;gap:6px;margin-top:3px;color:var(--faint);font-size:10px}
+  .post-head-actions{display:flex;align-items:center;gap:4px;flex:none;margin-left:auto}
+  .follow-button{
+    height:27px;padding:0 9px;border:1px solid var(--line);border-radius:4px;
+    color:var(--ink-soft);font-size:10px;font-weight:600;transition:all .16s;
+  }
+  .follow-button:hover{border-color:var(--accent);color:var(--accent-deep);background:var(--accent-soft)}
+  .follow-button.is-following{border-color:var(--accent-soft);background:var(--accent-soft);color:var(--accent-deep)}
+  .post-more{width:27px;height:27px;display:grid;place-items:center;color:var(--faint);border-radius:4px}
+  .post-more:hover{background:var(--surface-muted);color:var(--ink-soft)}
+  .post-more .icon{width:16px;height:16px}
+  .post-body{padding-left:48px}
+  .post-topics{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-bottom:5px}
+  .post-topic{color:var(--accent-deep);font-size:10px;font-weight:600;letter-spacing:.01em}
+  .post-topic:hover{text-decoration:underline;text-underline-offset:2px}
+  .post-title{margin:0 0 7px;font:700 22px/1.48 var(--serif);letter-spacing:-.01em}
+  .post-text{color:#363d35;font-size:14px;line-height:1.88;letter-spacing:.01em}
+  .post-text p{margin:0 0 7px}
+  .post-text p:last-child{margin-bottom:0}
+  .post-text strong{font-weight:700;color:var(--ink)}
+  .post-text a{color:var(--accent-deep);border-bottom:1px solid rgba(158,52,32,.24)}
+  .pull-quote{
+    margin:13px 0 14px;padding:11px 15px;border-left:2px solid var(--accent);
+    background:var(--surface-muted);border-radius:0 5px 5px 0;
+    color:var(--ink);font:500 15.5px/1.8 var(--serif);
+  }
+  .post-media{margin:14px 0 3px;border:1px solid var(--line-soft);border-radius:7px;overflow:hidden;background:var(--surface-muted)}
+  .post-media img{width:100%;height:265px;object-fit:cover;object-position:center 56%;filter:saturate(.9) contrast(.98) sepia(.03) brightness(1.02);transition:transform .5s var(--ease)}
+  .post-media:hover img{transform:scale(1.012)}
+  .post-media figcaption{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;color:var(--muted);font-size:9.5px;line-height:1.4;background:var(--surface)}
+  .post-media figcaption span:last-child{color:var(--faint);font-size:8.5px}
+  .post-actions{display:flex;align-items:center;gap:5px;margin:13px 0 0;padding-top:9px;border-top:1px solid var(--line-soft)}
+  .post-action{
+    display:inline-flex;align-items:center;justify-content:center;gap:5px;height:30px;padding:0 9px;
+    border-radius:5px;color:var(--muted);font-size:11px;transition:background .16s,color .16s;
+  }
+  .post-action:hover{background:var(--surface-muted);color:var(--ink)}
+  .post-action .icon{width:16px;height:16px}
+  .post-action .action-count{font-variant-numeric:tabular-nums}
+  .post-action--like.is-liked{color:var(--accent);background:rgba(194,74,50,.08)}
+  .post-action--like.is-liked .icon{fill:currentColor;animation:heart-pop .3s var(--ease)}
+  .post-action--save{margin-left:auto}
+  .post-action--save.is-saved{color:var(--gold);background:rgba(169,122,46,.1)}
+  .post-action--save.is-saved .icon{fill:currentColor}
+  .save-label{white-space:nowrap}
+  @keyframes heart-pop{0%{transform:scale(.82)}55%{transform:scale(1.2)}100%{transform:scale(1)}}
+  .post-comments{margin-top:3px}
+  .post-comment{
+    display:flex;align-items:flex-start;gap:8px;padding:8px 9px;margin-top:5px;
+    background:var(--surface-muted);border-radius:5px;color:var(--ink-soft);
+    font-size:11.5px;line-height:1.72;
+  }
+  .post-comment .avatar{width:23px;height:23px;font-size:9px;margin-top:1px}
+  .comment-body{min-width:0}
+  .comment-body b{color:var(--accent-deep);font-weight:700;margin-right:4px}
+  .comment-body .comment-time{margin-left:6px;color:var(--faint);font-size:8.5px}
+  .comment-more{
+    display:inline-flex;align-items:center;gap:4px;margin:7px 0 0 37px;
+    color:var(--accent-deep);font-size:9.5px;font-weight:600;
+  }
+  .comment-more:hover{text-decoration:underline}
+  .comment-form{
+    display:flex;align-items:center;gap:5px;margin-top:7px;padding:3px 3px 3px 10px;
+    background:var(--surface-muted);border:1px solid var(--line-soft);border-radius:5px;
+  }
+  .comment-form input{flex:1;min-width:0;border:0;outline:0;background:transparent;font-size:10.5px;height:29px}
+  .comment-form input::placeholder{color:var(--faint)}
+  .comment-form button{
+    height:27px;padding:0 9px;border-radius:4px;background:var(--ink);color:var(--paper);
+    font-size:9.5px;font-weight:700;
+  }
+  .comment-form button:hover{background:var(--accent-deep)}
+  .post-comment.is-new{animation:comment-in .25s var(--ease)}
+  @keyframes comment-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+  /* poll */
+  .poll{margin:13px 0 4px;display:flex;flex-direction:column;gap:6px}
+  .poll-option{
+    position:relative;display:flex;align-items:center;gap:9px;width:100%;height:40px;
+    padding:0 11px;overflow:hidden;text-align:left;background:var(--surface);
+    border:1px solid var(--line);border-radius:5px;transition:border-color .16s,background .16s;
+  }
+  .poll-option:hover{border-color:#cbbca8}
+  .poll-fill{
+    position:absolute;left:0;top:0;bottom:0;z-index:0;width:0;
+    background:var(--surface-muted);transition:width .55s var(--ease),background .16s;
+  }
+  .poll-option:hover .poll-fill{background:var(--accent-soft)}
+  .poll-option.is-selected{border-color:var(--accent);background:#fff9f4}
+  .poll-option.is-selected .poll-fill{background:var(--accent-soft)}
+  .poll-label,.poll-pct{position:relative;z-index:1}
+  .poll-label{display:flex;align-items:center;gap:6px;min-width:0;font-size:11.5px;font-weight:600;color:var(--ink-soft)}
+  .poll-label small{color:var(--faint);font-size:9px;font-weight:400}
+  .poll-pct{margin-left:auto;color:var(--muted);font:10px/1 var(--mono);font-variant-numeric:tabular-nums}
+  .poll-option.is-selected .poll-label,.poll-option.is-selected .poll-pct{color:var(--accent-deep)}
+  .poll-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px;color:var(--faint);font-size:9px}
+  .poll-foot .poll-state{color:var(--green);font-weight:600}
+  .poll[data-voted="true"] .poll-option{cursor:default}
+  .poll[data-voted="true"] .poll-option:hover{border-color:var(--line)}
+  .poll[data-voted="true"] .poll-option:hover .poll-fill{background:var(--surface-muted)}
+  .poll[data-voted="true"] .poll-option.is-selected:hover .poll-fill{background:var(--accent-soft)}
+
+  /* photo grid */
+  .photo-grid{
+    display:grid;grid-template-columns:1.45fr 1fr;grid-template-rows:1fr 1fr;gap:4px;
+    height:330px;margin:14px 0 4px;border-radius:7px;overflow:hidden;background:var(--paper-deep);
+  }
+  .photo-grid button{position:relative;overflow:hidden;padding:0;background:var(--paper-deep);min-height:0}
+  .photo-grid button:first-child{grid-row:1/3}
+  .photo-grid img{width:100%;height:100%;object-fit:cover;filter:saturate(.84) contrast(.97) sepia(.04);transition:transform .55s var(--ease),filter .3s}
+  .photo-grid button:hover img{transform:scale(1.035);filter:saturate(.94) contrast(1)}
+  .photo-loc{
+    position:absolute;left:8px;bottom:8px;z-index:1;padding:2px 5px;
+    color:#fff8eb;background:rgba(24,30,25,.5);backdrop-filter:blur(4px);
+    border-radius:2px;font-size:8.5px;line-height:1.5;letter-spacing:.02em;
+  }
+  .photo-credit{display:flex;align-items:center;justify-content:space-between;color:var(--faint);font-size:9px;margin-top:4px}
+
+  /* answer */
+  .answer-preview{
+    margin-top:12px;padding:11px 13px;background:var(--surface-muted);
+    border-left:2px solid var(--green);border-radius:0 5px 5px 0;
+  }
+  .answer-label{display:flex;align-items:center;gap:5px;color:var(--green);font-size:8.5px;font-weight:700;letter-spacing:.04em}
+  .answer-label .icon{width:12px;height:12px}
+  .answer-text{margin:5px 0 0;color:var(--ink-soft);font-size:11.5px;line-height:1.75}
+  .answer-text b{color:var(--ink);font-weight:700;margin-right:4px}
+  .answer-meta{display:flex;align-items:center;gap:12px;margin-top:7px;color:var(--faint);font-size:8.5px}
+  .also-ask{display:inline-flex;align-items:center;gap:4px;color:var(--green);font-weight:600;font-size:9px}
+  .also-ask:hover{text-decoration:underline}
+  .also-ask.is-done{color:var(--faint)}
+
+  /* lost post */
+  .post--lost{position:relative;overflow:hidden;background:#fdf7ec}
+  .post--lost .post-more{display:none}
+  .post--lost .post-body{padding-right:56px}
+  .lost-stamp{
+    position:absolute;top:20px;right:21px;transform:rotate(5deg);
+    padding:3px 6px;border:1.5px solid rgba(194,74,50,.5);border-radius:2px;
+    color:var(--accent);font:700 13px/1.2 var(--serif);letter-spacing:.1em;opacity:.9;
+  }
+  .lost-detail{
+    display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:10px;padding-top:9px;
+    border-top:1px dashed var(--line);color:var(--muted);font-size:9.5px;
+  }
+  .lost-detail span{display:inline-flex;align-items:center;gap:4px}
+  .lost-detail .icon{width:12px;height:12px;color:var(--faint)}
+  .verified{color:var(--green);font-weight:600}
+
+  /* market mini */
+  .market-inline{margin:13px 0 3px;border:1px solid var(--line-soft);border-radius:6px;overflow:hidden;background:#fffaf1}
+  .market-inline-head{display:flex;align-items:center;justify-content:space-between;padding:8px 11px;border-bottom:1px solid var(--line-soft)}
+  .market-inline-head strong{font-size:10.5px;font-weight:700;color:var(--gold)}
+  .market-inline-head span{color:var(--faint);font-size:8.5px}
+  .market-inline-body{display:flex;align-items:center;gap:10px;padding:10px 11px}
+  .market-thumb{width:50px;height:50px;border-radius:4px;background:linear-gradient(135deg,#ddceb6,#b9a58a);display:grid;place-items:center;color:#fff;flex:none}
+  .market-thumb .icon{width:20px;height:20px;opacity:.8}
+  .market-info{min-width:0;flex:1}
+  .market-info b{display:block;font-size:10.5px;line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .market-info span{display:block;margin-top:2px;color:var(--faint);font-size:8.5px}
+  .market-price{font:700 14px/1.2 var(--serif);color:var(--accent-deep)}
+  .market-price small{font-size:8px;margin-right:1px}
+
+  /* no results */
+  .no-results{
+    padding:48px 24px;text-align:center;background:var(--surface);
+    border:1px dashed var(--line);border-radius:9px;margin-bottom:16px;
+  }
+  .no-results .empty-mark{width:44px;height:44px;display:grid;place-items:center;margin:0 auto 10px;border:1px solid var(--line);border-radius:50%;color:var(--faint)}
+  .no-results h2{margin:0 0 5px;font:700 17px/1.4 var(--serif)}
+  .no-results p{margin:0 0 13px;color:var(--muted);font-size:11px}
+  .no-results button{color:var(--accent-deep);font-size:11px;font-weight:700;text-decoration:underline;text-underline-offset:3px}
+
+  /* load more */
+  .load-more{
+    width:100%;height:42px;margin:2px 0 18px;border:1px solid var(--line);
+    border-radius:6px;background:transparent;color:var(--muted);font-size:11px;
+    display:flex;align-items:center;justify-content:center;gap:6px;transition:all .16s;
+  }
+  .load-more:hover{background:var(--surface);border-color:#cbbcA8;color:var(--ink)}
+  .load-more .icon{width:14px;height:14px}
+
+  /* right rail cards */
+  .weather-card{
+    position:relative;overflow:hidden;padding:17px 18px 15px;border-radius:9px;
+    background:var(--forest);color:#f4eddd;border:1px solid #1a261f;
+  }
+  .weather-card::before{
+    content:"";position:absolute;right:-52px;top:-58px;width:176px;height:176px;
+    border:1px solid rgba(244,237,221,.11);border-radius:50%;
+    box-shadow:0 0 0 26px rgba(244,237,221,.025),0 0 0 52px rgba(244,237,221,.018);
+  }
+  .weather-head{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between}
+  .weather-head>span:first-child{font-size:9.5px;font-weight:700;letter-spacing:.16em;color:#d9d2c1}
+  .weather-updated{color:#9da99b;font:9px/1 var(--mono);letter-spacing:.02em}
+  .weather-main{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;margin:10px 0 2px}
+  .weather-temp{font:500 52px/1 var(--serif);letter-spacing:-.05em;font-variant-numeric:tabular-nums}
+  .weather-temp sup{position:relative;top:-20px;font-size:19px;letter-spacing:0;color:#d9c7a9;margin-left:1px}
+  .weather-art{color:#d7b26f}
+  .weather-art .icon{width:57px;height:57px;stroke-width:1.1}
+  .weather-condition{display:flex;align-items:center;gap:8px;font-size:11px;color:#e9e1d0}
+  .weather-condition .divider-dot{background:rgba(233,225,208,.38)}
+  .weather-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:12px;padding-top:10px;border-top:1px solid rgba(244,237,221,.14)}
+  .weather-stats div{padding-left:9px;border-left:1px solid rgba(244,237,221,.12)}
+  .weather-stats div:first-child{padding-left:0;border-left:0}
+  .weather-stats b{display:block;font:700 11.5px/1.2 var(--mono);color:#f2ead9}
+  .weather-stats span{display:block;margin-top:2px;font-size:9px;color:#99a698}
+  .weather-tip{
+    position:relative;z-index:1;display:flex;align-items:flex-start;gap:6px;
+    margin:12px 0 0;padding-top:10px;border-top:1px solid rgba(244,237,221,.14);
+    color:#c9c3b3;font-size:10px;line-height:1.65;
+  }
+  .weather-tip .icon{width:12px;height:12px;color:#d7b26f;margin-top:2px}
+  .rail-card{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:15px 16px 13px}
+  .rail-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+  .rail-card-head h2{margin:0;font:700 14.5px/1.4 var(--serif);letter-spacing:.02em}
+  .rail-card-head a,.rail-card-head button{color:var(--faint);font-size:9.5px;font-weight:600}
+  .rail-card-head a:hover,.rail-card-head button:hover{color:var(--accent-deep)}
+  .event-list{list-style:none;margin:0;padding:0}
+  .event-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-top:1px solid var(--line-soft)}
+  .event-item:first-child{border-top:0;padding-top:2px}
+  .event-date{width:31px;flex:none;color:var(--accent-deep);font:700 9.5px/1.4 var(--mono);letter-spacing:-.03em;padding-top:1px}
+  .event-copy{min-width:0;flex:1}
+  .event-copy b{display:block;font-size:11.5px;font-weight:700;line-height:1.45}
+  .event-copy span{display:block;margin-top:2px;color:var(--faint);font-size:9.5px;line-height:1.45}
+  .event-kind{flex:none;font-size:8px;color:var(--green);border:1px solid rgba(70,98,77,.24);border-radius:2px;padding:0 3px;line-height:1.6;margin-top:1px}
+  .hot-list{list-style:none;margin:0;padding:0}
+  .hot-item{display:flex;align-items:flex-start;gap:9px;padding:7px 0;border-top:1px solid var(--line-soft)}
+  .hot-item:first-child{border-top:0;padding-top:1px}
+  .hot-rank{width:17px;flex:none;color:var(--faint);font:500 10px/1.5 var(--mono);font-variant-numeric:tabular-nums}
+  .hot-item:nth-child(1) .hot-rank{color:var(--accent);font-weight:700}
+  .hot-item:nth-child(2) .hot-rank{color:var(--gold)}
+  .hot-link{min-width:0;flex:1;font-size:11.5px;line-height:1.55;color:var(--ink-soft);transition:color .16s}
+  .hot-link:hover{color:var(--accent-deep)}
+  .hot-heat{flex:none;color:var(--faint);font:9px/1.6 var(--mono)}
+  .lost-mini{display:flex;align-items:center;gap:9px;padding:3px 0 2px}
+  .lost-mini-icon{width:32px;height:32px;display:grid;place-items:center;flex:none;background:var(--gold-soft);color:var(--gold);border-radius:5px}
+  .lost-mini-icon .icon{width:16px;height:16px}
+  .lost-mini-copy{min-width:0;flex:1}
+  .lost-mini-copy b{display:block;font-size:11px;line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lost-mini-copy span{display:block;margin-top:2px;color:var(--faint);font-size:9px}
+  .lost-mini-arrow{color:var(--faint)}
+  .lost-mini-arrow .icon{width:14px;height:14px}
+  .service-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 7px;margin-top:3px}
+  .service-link{
+    display:flex;align-items:center;gap:7px;min-width:0;height:31px;padding:0 5px;
+    border-radius:4px;color:var(--ink-soft);font-size:10.5px;transition:background .16s,color .16s;
+  }
+  .service-link .icon{width:14px;height:14px;color:var(--faint);transition:color .16s}
+  .service-link:hover{background:var(--surface-muted);color:var(--accent-deep)}
+  .service-link:hover .icon{color:var(--accent)}
+  .community-pulse{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 3px;color:var(--faint);font-size:9px}
+  .community-pulse span{display:inline-flex;align-items:center;gap:5px}
+  .community-pulse .live-dot{width:5px;height:5px;background:var(--green);box-shadow:none}
+  .rail-footer{display:flex;flex-wrap:wrap;gap:3px 10px;padding:0 3px;color:var(--faint);font-size:8.5px;line-height:1.7}
+  .rail-footer a:hover{color:var(--accent-deep)}
+
+  /* footer */
+  .site-footer{
+    grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:20px;
+    margin-top:8px;padding:18px 0 22px;border-top:1px solid var(--line);
+    color:var(--faint);font-size:9px;
+  }
+  .footer-brand{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:10px;font-weight:600}
+  .footer-brand .seal-mini{width:20px;height:20px;display:grid;place-items:center;background:var(--accent);color:#fff8ec;border-radius:3px;font:700 12px/1 var(--serif)}
+  .footer-links{display:flex;align-items:center;gap:13px}
+  .footer-links a:hover{color:var(--accent-deep)}
+  .footer-note{color:var(--faint)}
+
+  /* mobile tabbar */
+  .mobile-tabbar{display:none}
+
+  /* compose dialog */
+  dialog{border:0;padding:0;color:var(--ink)}
+  .compose-dialog{
+    width:min(598px,calc(100vw - 30px));max-height:calc(100dvh - 36px);
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;
+    box-shadow:var(--shadow);overflow:auto;
+  }
+  .compose-dialog::backdrop,.mobile-menu::backdrop{background:rgba(23,30,24,.46);backdrop-filter:blur(3px)}
+  .dialog-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px 13px;border-bottom:1px solid var(--line-soft)}
+  .dialog-head h2{margin:0;font:700 19px/1.4 var(--serif)}
+  .dialog-close{width:32px;height:32px;display:grid;place-items:center;border-radius:5px;color:var(--muted)}
+  .dialog-close:hover{background:var(--surface-muted);color:var(--ink)}
+  .dialog-close .icon{width:18px;height:18px}
+  .compose-body{padding:16px 20px 4px}
+  .compose-author{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .compose-author strong{display:block;font-size:12px;line-height:1.4}
+  .compose-author div>span{display:block;color:var(--faint);font-size:9px}
+  .compose-textarea{
+    width:100%;min-height:130px;padding:8px 0;border:0;outline:0;resize:vertical;
+    background:transparent;color:var(--ink);font-size:14px;line-height:1.8;
+  }
+  .compose-textarea::placeholder{color:#9b9f93}
+  .compose-error{min-height:18px;color:var(--accent-deep);font-size:10px}
+  .compose-topics{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:9px 0 10px;border-top:1px dashed var(--line)}
+  .compose-topics-label{color:var(--faint);font-size:9px;margin-right:2px}
+  .topic-chip{
+    padding:3px 7px;border:1px solid var(--line);border-radius:3px;
+    color:var(--muted);font-size:9.5px;transition:all .16s;
+  }
+  .topic-chip:hover{border-color:var(--accent);color:var(--accent-deep)}
+  .topic-chip.is-picked{background:var(--accent-soft);border-color:rgba(194,74,50,.28);color:var(--accent-deep);font-weight:600}
+  .compose-attachments{display:flex;align-items:center;gap:8px;padding:4px 0 12px}
+  .attach-button{
+    display:inline-flex;align-items:center;gap:5px;height:29px;padding:0 8px;
+    border:1px solid var(--line);border-radius:4px;color:var(--muted);font-size:9.5px;
+  }
+  .attach-button:hover{border-color:var(--accent);color:var(--accent-deep)}
+  .attach-button .icon{width:14px;height:14px}
+  .attach-note{color:var(--faint);font-size:8.5px}
+  .image-preview{position:relative;margin:0 0 12px;border:1px solid var(--line-soft);border-radius:5px;overflow:hidden}
+  .image-preview img{width:100%;max-height:180px;object-fit:cover}
+  .image-remove{position:absolute;top:6px;right:6px;width:24px;height:24px;display:grid;place-items:center;background:rgba(24,30,25,.62);color:#fff;border-radius:50%}
+  .image-remove .icon{width:13px;height:13px}
+  .compose-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px 16px;border-top:1px solid var(--line-soft)}
+  .compose-visibility{display:flex;align-items:center;gap:6px;color:var(--faint);font-size:9.5px}
+  .compose-visibility .icon{width:13px;height:13px}
+  .compose-foot-right{display:flex;align-items:center;gap:13px}
+  .anonymous-toggle{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:9.5px;cursor:pointer}
+  .anonymous-toggle input{accent-color:var(--accent);width:13px;height:13px;margin:0}
+  .char-count{color:var(--faint);font:9px/1 var(--mono)}
+  .publish-button{height:33px;padding:0 16px;border-radius:5px;background:var(--accent);color:#fff8ec;font-size:10.5px;font-weight:700}
+  .publish-button:hover{background:var(--accent-deep)}
+
+  /* mobile menu */
+  .mobile-menu{
+    width:min(340px,88vw);height:100dvh;max-height:100dvh;margin:0 auto 0 0;
+    background:var(--paper);border:0;border-right:1px solid var(--line);padding:0;
+  }
+  .mobile-menu-inner{min-height:100%;padding:18px 18px 30px;display:flex;flex-direction:column;overflow-y:auto}
+  .mobile-menu-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+  .mobile-menu-close{width:33px;height:33px;display:grid;place-items:center;border-radius:5px;color:var(--muted)}
+  .mobile-menu-close:hover{background:var(--paper-deep)}
+  .mobile-menu-profile{display:flex;align-items:center;gap:11px;padding-bottom:19px;border-bottom:1px solid var(--line)}
+  .mobile-menu-profile strong{display:block;font:700 16px/1.4 var(--serif)}
+  .mobile-menu-profile div>span{display:block;color:var(--muted);font-size:10px;margin-top:3px}
+  .mobile-search{
+    display:flex;align-items:center;gap:7px;height:40px;margin-top:16px;padding:0 5px 0 10px;
+    background:var(--surface);border:1px solid var(--line);border-radius:6px;color:var(--muted);
+  }
+  .mobile-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .mobile-search input{flex:1;min-width:0;height:36px;border:0;outline:0;background:transparent;font-size:12px}
+  .mobile-search input::placeholder{color:var(--faint)}
+  .mobile-search button{height:29px;padding:0 9px;border-radius:4px;background:var(--ink);color:var(--paper);font-size:9.5px;font-weight:700}
+  .mobile-search button:hover{background:var(--accent-deep)}
+  .mobile-menu-nav{margin-top:20px;display:flex;flex-direction:column;gap:3px}
+  .mobile-menu-nav a{display:flex;align-items:center;gap:11px;height:44px;padding:0 10px;border-radius:6px;font-size:13px}
+  .mobile-menu-nav a:hover,.mobile-menu-nav a.is-active{background:var(--surface);color:var(--accent-deep)}
+  .mobile-menu-nav .icon{width:18px;height:18px;color:var(--muted)}
+  .mobile-menu-nav a.is-active .icon{color:var(--accent)}
+  .mobile-service-block{margin-top:18px;padding-top:15px;border-top:1px solid var(--line)}
+  .mobile-service-block>span{display:block;color:var(--faint);font-size:9.5px;font-weight:700;letter-spacing:.12em;margin-bottom:8px}
+  .mobile-service-block div{display:flex;flex-wrap:wrap;gap:6px}
+  .mobile-service-block a{padding:5px 9px;background:var(--surface);border:1px solid var(--line);border-radius:4px;color:var(--ink-soft);font-size:10.5px}
+  .mobile-service-block a:hover{border-color:var(--accent);color:var(--accent-deep)}
+  .mobile-menu-note{margin-top:auto;padding-top:24px;color:var(--faint);font-size:9.5px;line-height:1.75;border-top:1px solid var(--line)}
+
+  /* toast */
+  .toast{
+    position:fixed;left:50%;bottom:28px;z-index:200;transform:translate(-50%,14px);
+    max-width:calc(100vw - 32px);padding:9px 15px;border-radius:5px;
+    background:var(--forest);color:#f6efdf;box-shadow:0 8px 30px rgba(23,30,24,.2);
+    font-size:11px;line-height:1.5;text-align:center;pointer-events:none;
+    opacity:0;transition:opacity .2s var(--ease),transform .2s var(--ease);
+  }
+  .toast.is-visible{opacity:1;transform:translate(-50%,0)}
+  .toast.is-error{background:var(--accent-deep)}
+
+  /* responsive */
+  @media (max-width:1240px){
+    .page-grid{grid-template-columns:196px minmax(0,1fr) 278px;gap:22px}
+    .header-inner{gap:18px}
+    .main-nav a{padding:0 10px}
+    .main-nav a::after{left:10px;right:10px}
+    .header-search{width:200px}
+    .post-title{font-size:20px}
+    .post-media img{height:245px}
+  }
+  @media (max-width:1180px){
+    .page-grid{grid-template-columns:192px minmax(0,1fr);gap:24px}
+    .right-rail{display:none}
+    .header-search{width:190px}
+    .main-nav a{font-size:12.5px;padding:0 8px}
+    .main-nav a::after{left:8px;right:8px}
+    .feed-masthead h1{font-size:31px}
+  }
+  @media (max-width:940px){
+    .shell{width:min(1320px,calc(100% - 36px))}
+    .page-grid{grid-template-columns:minmax(0,1fr);padding-top:20px}
+    .left-rail{display:none}
+    .main-nav{display:none}
+    .menu-toggle{display:grid}
+    .header-search{width:220px}
+    .utility-links{display:none}
+    .utility-alert{margin-left:auto}
+    .site-footer{margin-top:4px}
+    .feed-masthead h1{font-size:34px}
+  }
+  @media (max-width:720px){
+    .shell{width:calc(100% - 28px)}
+    .utility-inner{gap:10px}
+    .utility-date span:last-child{display:none}
+    .utility-links{display:none}
+    .utility-alert{margin-left:auto;justify-content:flex-end}
+    .utility-alert .alert-label{display:none}
+    .utility-alert .alert-copy{max-width:52vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .header-inner{height:62px;gap:12px}
+    .brand-seal{width:34px;height:34px;font-size:21px;border-radius:5px}
+    .brand-text strong{font-size:17px}
+    .brand-text small{font-size:7px;margin-top:3px}
+    .header-search{display:none}
+    .header-actions{gap:2px}
+    .header-actions .icon-button{width:34px;height:34px}
+    .header-actions .btn-primary{display:none}
+    .user-avatar-button{width:34px;height:34px}
+    .user-avatar-button .avatar{width:31px;height:31px;font-size:13px}
+    .main-nav{display:none}
+    .site-header{backdrop-filter:blur(10px)}
+    .feed-masthead{padding-top:0;padding-bottom:14px}
+    .feed-masthead h1{font-size:29px;margin-top:4px}
+    .feed-masthead p{font-size:11px;max-width:85%}
+    .calendar-link{display:none}
+    .campus-brief{grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible}
+    .brief-lead{display:none}
+    .brief-item{padding:8px 8px;border-left:1px solid var(--line)}
+    .brief-item:first-of-type{border-left:0}
+    .brief-time{font-size:8.5px}
+    .brief-copy b{font-size:10.5px}
+    .brief-copy small{font-size:8.5px}
+    .composer-card{padding:14px 13px 10px}
+    .composer-bottom{padding-left:0}
+    .composer-note{display:none}
+    .composer-tools{gap:0}
+    .feed-toolbar{top:62px;margin-bottom:11px}
+    .feed-tabs{gap:20px}
+    .feed-tab{font-size:12px}
+    .pinned-notice{padding:11px 12px;gap:8px}
+    .pinned-copy h2{font-size:13px}
+    .pinned-copy p{font-size:10px}
+    .pinned-link{display:none}
+    .post{padding:15px 14px 10px;border-radius:8px}
+    .post-body{padding-left:0;margin-top:10px}
+    .post-title{font-size:19px}
+    .post-text{font-size:13px;line-height:1.85}
+    .post-media img{height:210px}
+    .post-media figcaption{font-size:8.5px}
+    .post-actions{gap:0;justify-content:space-between}
+    .post-action{padding:0 7px;font-size:9.5px}
+    .post-action--save{margin-left:0}
+    .post-comment{font-size:10.3px}
+    .photo-grid{height:260px}
+    .post--lost .post-body{padding-right:0}
+    .lost-stamp{top:16px;right:14px;font-size:11px}
+    .post--lost .post-title{padding-right:47px}
+    .site-footer{flex-direction:column;align-items:flex-start;gap:8px}
+    .footer-links{flex-wrap:wrap;gap:10px}
+    .mobile-tabbar{
+      display:grid;position:fixed;left:0;right:0;bottom:0;z-index:70;
+      grid-template-columns:repeat(5,1fr);height:62px;
+      padding-bottom:env(safe-area-inset-bottom);
+      background:rgba(255,252,246,.97);border-top:1px solid var(--line);
+      box-shadow:0 -8px 28px rgba(29,34,29,.05);backdrop-filter:blur(14px);
+    }
+    .tabbar-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--faint);font-size:8.5px}
+    .tabbar-item .icon{width:19px;height:19px}
+    .tabbar-item.is-active{color:var(--accent-deep);font-weight:700}
+    .tabbar-compose{position:relative}
+    .tabbar-compose .compose-circle{
+      width:43px;height:43px;display:grid;place-items:center;margin-top:-18px;
+      background:var(--accent);color:#fff8ec;border-radius:50%;
+      box-shadow:0 3px 0 var(--accent-deep),0 8px 18px rgba(194,74,50,.2);
+    }
+    .tabbar-compose .compose-circle .icon{width:21px;height:21px}
+    .tabbar-compose span{font-size:8.5px;color:var(--ink-soft)}
+    .tabbar-compose:hover .compose-circle{background:var(--accent-deep)}
+    body{padding-bottom:70px}
+    .toast{bottom:78px}
+    .popover{position:fixed;top:98px;left:14px;right:14px;width:auto}
+  }
+  @media (max-width:520px){
+    .feed-masthead h1{font-size:26px}
+    .feed-masthead p{max-width:100%;line-height:1.6}
+    .campus-brief{grid-template-columns:1fr;border-bottom:0}
+    .brief-item{border-left:0;border-top:1px solid var(--line-soft);padding:8px 2px}
+    .brief-item:first-of-type{border-top:0}
+    .brief-copy{flex-direction:row;align-items:baseline;gap:7px}
+    .brief-copy small{margin-top:0}
+    .composer-tool{padding:0 5px;font-size:9.5px}
+    .composer-tool .icon{width:13px;height:13px}
+    .feed-tab{gap:0}
+    .feed-filter{font-size:0;gap:0}
+    .feed-filter .icon{width:16px;height:16px}
+    .post-title{font-size:18px}
+    .post-media img{height:185px}
+    .photo-grid{grid-template-columns:1fr 1fr;grid-template-rows:auto auto;height:auto}
+    .photo-grid button{height:126px}
+    .photo-grid button:first-child{grid-column:1/-1;grid-row:auto;height:200px}
+    .photo-grid button:not(:first-child){display:block}
+    .poll-label small{display:none}
+    .poll-option{height:38px}
+    .post-action .action-count{font-size:9px}
+    .post-action--share span{display:none}
+    .compose-dialog{width:calc(100vw - 18px);max-height:calc(100dvh - 18px)}
+    .compose-body{padding:14px 15px 2px}
+    .dialog-head{padding:14px 15px 11px}
+    .compose-foot{padding:10px 15px 13px}
+    .compose-visibility{display:none}
+    .compose-foot-right{margin-left:auto;gap:9px}
+    .compose-textarea{min-height:112px}
+    .anonymous-toggle{font-size:9px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+    *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  }
+</style>
+<style>
+  /* COMMON ROOM — 低饱和、轻对比的校园公共客厅版本。 */
+  body.calm{
+    --paper:#f0f1eb;
+    --paper-deep:#e6e9e1;
+    --surface:#fbfbf7;
+    --surface-muted:#f2f3ed;
+    --surface-deep:#e8ebe3;
+    --ink:#252b26;
+    --ink-soft:#4a534c;
+    --muted:#70786f;
+    --faint:#8b938a;
+    --line:#d8ddd4;
+    --line-soft:#e7eae3;
+    --accent:#506754;
+    --accent-deep:#3b5041;
+    --accent-soft:#e2e9df;
+    --forest:#35483b;
+    --forest-2:#435747;
+    --green:#6d806c;
+    --green-soft:#e8eee5;
+    --gold:#a2845c;
+    --gold-soft:#f1ebe0;
+    --blue:#6c7f8b;
+    --blue-soft:#e9eef1;
+    --coral:#9f6d57;
+    --serif:"Noto Serif SC","Source Han Serif SC","Songti SC",STSong,SimSun,serif;
+    --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    --shadow:0 18px 44px rgba(47,56,48,.08);
+    background-color:var(--paper);
+    color:var(--ink);
+  }
+  body.calm ::selection{background:#cbd8c8;color:#263128}
+  body.calm .shell{width:min(1320px,calc(100% - 56px))}
+  body.calm .utility-bar{background:#e3e8df;color:#455147;border-bottom:1px solid #d3dad0}
+  body.calm .utility-date{color:#5d685e}
+  body.calm .utility-alert{color:#3d4d41}
+  body.calm .utility-alert:hover{color:#263128}
+  body.calm .utility-alert .alert-label{color:#5e725f;border-color:rgba(94,114,95,.32)}
+  body.calm .utility-links{color:#79837a}
+  body.calm .utility-links a:hover{color:#2f3d33}
+  body.calm .utility-bar .live-dot{background:#71886f;box-shadow:0 0 0 3px rgba(113,136,111,.13)}
+  body.calm .site-header{background:rgba(247,247,242,.95);border-bottom-color:var(--line)}
+  body.calm .site-header.is-scrolled{background:rgba(247,247,242,.99);box-shadow:0 10px 30px rgba(52,63,53,.06)}
+  body.calm .brand-seal{
+    color:#f7f4ea;background:#405346;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),3px 3px 0 rgba(64,83,70,.12);
+  }
+  body.calm .brand:hover .brand-seal{background:#35483b}
+  body.calm .brand-text strong{font-weight:700;color:var(--ink);letter-spacing:.05em}
+  body.calm .brand-text small{color:#8a9589;letter-spacing:.16em}
+  body.calm .main-nav a{color:#5f6a60}
+  body.calm .main-nav a:hover{color:var(--ink)}
+  body.calm .main-nav a.is-active{color:var(--ink)}
+  body.calm .main-nav a::after{background:#a2845c}
+  body.calm .nav-new{color:#956b53;border-color:rgba(149,107,83,.32);background:transparent}
+  body.calm .header-search{background:#eceee7;border-color:transparent;color:#7d867d}
+  body.calm .header-search:focus-within{background:#fffdf8;border-color:#9eae9b;box-shadow:0 0 0 3px rgba(158,174,155,.15)}
+  body.calm .header-search input{color:var(--ink)}
+  body.calm .header-search input::placeholder{color:#8d968c}
+  body.calm .header-search kbd{color:#8e978d;border-color:#d5dbd1}
+  body.calm .icon-button{color:#5f6b61}
+  body.calm .icon-button:hover{background:#eceee7;color:var(--ink)}
+  body.calm .icon-button .dot{background:#a4775d;box-shadow:0 0 0 2px #f7f7f2}
+  body.calm .icon-button .count{background:#405346;color:#f8f5ec;box-shadow:0 0 0 2px #f7f7f2}
+  body.calm .btn-primary{background:#405346;color:#f8f5ec;box-shadow:none}
+  body.calm .btn-primary:hover{background:#35483b}
+  body.calm .user-avatar-button:hover{box-shadow:0 0 0 3px #e5e9e1}
+  body.calm .avatar{color:#f8f5ec;box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
+  body.calm .avatar--chun{background:#9d7058}
+  body.calm .avatar--xue{background:#687d88}
+  body.calm .avatar--guide{background:#a4885f}
+  body.calm .avatar--due{background:#617560}
+  body.calm .avatar--lin{background:#7b795f}
+  body.calm .avatar--lost{background:#9b6855}
+  body.calm .avatar--run{background:#5f7780}
+  body.calm .avatar--market{background:#8d6b54}
+  body.calm .avatar--current{background:#9d7058}
+  body.calm .avatar::before{opacity:.5}
+
+  body.calm .page-grid{grid-template-columns:232px minmax(0,1fr) 300px;gap:26px}
+  body.calm .left-rail{
+    padding:17px 14px;
+    background:#e4eae1;border:1px solid #d3dbd0;border-radius:16px;
+    box-shadow:0 14px 34px rgba(52,64,54,.05);
+  }
+  body.calm .profile-mini{border-bottom-color:#ccd6c9;padding:2px 2px 18px}
+  body.calm .profile-row strong{color:#263128}
+  body.calm .profile-level{color:#758175}
+  body.calm .profile-bio{color:#6a756a}
+  body.calm .profile-stats a{border-right-color:#ccd6c9}
+  body.calm .profile-stats b{color:#2b352e}
+  body.calm .profile-stats span{color:#7c877b}
+  body.calm .profile-home{color:#4e6655}
+  body.calm .profile-home:hover{color:#2f4538}
+  body.calm .rail-label{color:#7f8b7e}
+  body.calm .rail-link{color:#475349;border-radius:7px}
+  body.calm .rail-link .icon{color:#748173}
+  body.calm .rail-link:hover{background:rgba(255,255,255,.56);color:#263128}
+  body.calm .rail-link.is-active{
+    background:#3f5345;color:#f8f5ec;box-shadow:inset 2px 0 0 #b4c3af;
+  }
+  body.calm .rail-link.is-active .icon{color:#dce6d8}
+  body.calm .rail-link .count{color:#899488}
+  body.calm .rail-link.is-active .count{color:#c2cfbd}
+  body.calm .rail-link .nav-pill{background:#f0e7db;color:#956b53}
+  body.calm .rail-split{background:#cbd5c8}
+  body.calm .section-mini-head strong{color:#3f4c42}
+  body.calm .section-mini-head a{color:#8a958a}
+  body.calm .board-section{border-top-color:#ccd6c9}
+  body.calm .board-link{color:#4e5a50}
+  body.calm .board-link:hover span:nth-child(2){color:#395141}
+  body.calm .board-dot{background:#7f927d}
+  body.calm .board-link:nth-child(2) .board-dot{background:#a4885f}
+  body.calm .board-link:nth-child(3) .board-dot{background:#6d806c}
+  body.calm .board-link:nth-child(4) .board-dot{background:#6c7f8b}
+  body.calm .board-link:nth-child(5) .board-dot{background:#9d7058}
+  body.calm .board-link .board-count{color:#7f8b7e}
+  body.calm .rail-note{background:rgba(255,255,255,.4);border-color:#c9d3c6}
+  body.calm .rail-note .note-title{color:#3d4c41}
+  body.calm .rail-note p{color:#6a756a}
+  body.calm .rail-note a{color:#4e6655}
+
+  body.calm .feed-masthead h1{font-size:36px;line-height:1.3;letter-spacing:-.02em}
+  body.calm .eyebrow{color:#8b7259;letter-spacing:.13em}
+  body.calm .eyebrow::before{background:#a4885f;opacity:.6}
+  body.calm .feed-masthead p{color:#717a71;font-size:13px}
+  body.calm .feed-masthead p b{color:#354238}
+  body.calm .feed-masthead p a{color:#4f6755;border-bottom-color:rgba(79,103,85,.24)}
+  body.calm .calendar-link{color:#667267}
+  body.calm .calendar-link:hover{color:#3d5343}
+
+  body.calm .campus-brief{
+    background:#f9f9f4;border:1px solid var(--line);border-radius:9px;
+    min-height:60px;margin-bottom:16px;overflow:hidden;
+  }
+  body.calm .brief-lead{border-right-color:var(--line);padding-right:10px}
+  body.calm .brief-lead span{color:#9a7b5d}
+  body.calm .brief-lead strong{color:#39463c}
+  body.calm .brief-item:hover{background:#f2f4ed}
+  body.calm .brief-time{color:#8b6f55}
+  body.calm .brief-copy b{color:#354238}
+  body.calm .brief-copy small{color:#7b857b}
+
+  body.calm .composer-card{
+    background:#fcfcf8;border-color:#dce1d8;border-radius:11px;
+    box-shadow:0 8px 24px rgba(52,64,54,.04);
+  }
+  body.calm .composer-trigger{color:#7c867c;border-bottom-color:#d7ddd2}
+  body.calm .composer-trigger:hover{color:#3e5545;border-bottom-color:#8c9e8a}
+  body.calm .composer-tool{color:#788378}
+  body.calm .composer-tool:hover{background:#eef1e9;color:#405744}
+  body.calm .composer-note{color:#9aa298}
+  body.calm .composer-note a{color:#758176}
+  body.calm .feed-toolbar{background:rgba(240,241,235,.95);border-bottom-color:#d6ddd3}
+  body.calm .feed-tab{color:#7b857b}
+  body.calm .feed-tab:hover{color:#354238}
+  body.calm .feed-tab.is-active{color:#2e3c32}
+  body.calm .feed-tab::after{background:#9d7058}
+  body.calm .feed-filter{color:#8a9489}
+  body.calm .feed-filter:hover{color:#46564a}
+  body.calm .search-state{background:#f7f8f2;border-color:#dde3d9;color:#788378}
+  body.calm .search-state button{color:#4e6655}
+
+  body.calm .pinned-notice{
+    background:#e9efe6;border-color:#d2ddce;border-left-color:#81957e;
+    border-radius:6px;
+  }
+  body.calm .pinned-icon{background:rgba(255,255,255,.5);color:#526b55}
+  body.calm .pinned-meta{color:#607762}
+  body.calm .pinned-meta .official-mark{color:#526b55;border-color:rgba(82,107,85,.32)}
+  body.calm .pinned-copy h2{color:#2d3a30}
+  body.calm .pinned-copy p{color:#697469}
+  body.calm .pinned-link{color:#4e6655;border-bottom-color:rgba(78,102,85,.28)}
+  body.calm .pinned-link:hover{border-bottom-color:#4e6655}
+
+  body.calm .post{
+    background:#fcfcf8;border-color:#dce1d8;border-radius:12px;
+    padding:19px 20px 12px;box-shadow:0 6px 20px rgba(52,64,54,.035);
+  }
+  body.calm .post:hover{border-color:#cbd5c8;box-shadow:0 8px 24px rgba(52,64,54,.055)}
+  body.calm .post--new{border-color:#aebfa9;box-shadow:0 0 0 3px rgba(129,149,126,.1)}
+  body.calm .post-author{color:#303c33}
+  body.calm .post-author:hover{color:#4e6655}
+  body.calm .post-time,body.calm .post-meta{color:#808a80}
+  body.calm .follow-button{border-color:#d5dcd2;color:#536055;background:transparent}
+  body.calm .follow-button:hover{background:#e9eee6;border-color:#a9b9a5;color:#3e5545}
+  body.calm .follow-button.is-following{background:#e8eee5;border-color:#cbd8c7;color:#4e6655}
+  body.calm .role-badge{color:#637664;border-color:rgba(99,118,100,.3)}
+  body.calm .role-badge--official{color:#8e6953;border-color:rgba(142,105,83,.3)}
+  body.calm .role-badge--gold{color:#92744c;border-color:rgba(146,116,76,.3)}
+  body.calm .post-topics .post-topic{color:#8b6f55}
+  body.calm .post-title{color:#28332b;font-weight:700;letter-spacing:-.005em}
+  body.calm .post-text{color:#4b554d}
+  body.calm .post-text strong{color:#28332b}
+  body.calm .post-text a{color:#4e6655;border-bottom-color:rgba(78,102,85,.22)}
+  body.calm .pull-quote{
+    background:#e8ede5;border-left:2px solid #7f947e;color:#334137;
+    font-family:var(--serif);font-weight:500;
+  }
+  body.calm .post-media{border-color:#e0e4dc;border-radius:7px;background:#f2f3ed}
+  body.calm .post-media img{filter:saturate(.76) contrast(.96) sepia(.035) brightness(1.01)}
+  body.calm .post-media figcaption{background:#fbfbf7;color:#808a80}
+  body.calm .post-media figcaption span:last-child{color:#9aa298}
+  body.calm .post-actions{border-top-color:#e7eae3}
+  body.calm .post-action{color:#7e887e}
+  body.calm .post-action:hover{background:#f0f2eb;color:#3c4c40}
+  body.calm .post-action--like.is-liked{color:#9d7058;background:#f3e9e2}
+  body.calm .post-action--save.is-saved{color:#92744c;background:#f3ede3}
+  body.calm .post-comment{background:#f3f4ee;color:#59635a}
+  body.calm .comment-body b{color:#4e6655}
+  body.calm .comment-more{color:#4e6655}
+  body.calm .comment-form{background:#f3f4ee;border-color:#e0e4dc}
+  body.calm .comment-form button{background:#405346;color:#f8f5ec}
+
+  body.calm .poll-option{background:#fbfbf7;border-color:#dce1d8}
+  body.calm .poll-option:hover{border-color:#c2cebf}
+  body.calm .poll-fill{background:#ecf0e8}
+  body.calm .poll-option:hover .poll-fill{background:#e4ebe1}
+  body.calm .poll-option.is-selected{border-color:#83967f;background:#f9faf4}
+  body.calm .poll-option.is-selected .poll-fill{background:#dfe9db}
+  body.calm .poll-label{color:#465148}
+  body.calm .poll-label small{color:#8d968c}
+  body.calm .poll-pct{color:#7b857b}
+  body.calm .poll-option.is-selected .poll-label,
+  body.calm .poll-option.is-selected .poll-pct{color:#3d5543}
+  body.calm .poll-foot{color:#8b948a}
+
+  body.calm .photo-grid{background:#e8ebe3;border-color:#e0e4dc}
+  body.calm .photo-grid button{background:#e8ebe3}
+  body.calm .photo-grid img{filter:saturate(.76) contrast(.96) sepia(.03)}
+  body.calm .photo-loc{background:rgba(45,58,48,.58);color:#f8f5ec}
+  body.calm .photo-credit{color:#8a948a}
+  body.calm .answer-preview{background:#edf1f3;border-left-color:#8497a2}
+  body.calm .answer-label{color:#637985}
+  body.calm .answer-text{color:#4b565e}
+  body.calm .answer-text b{color:#2f3a40}
+  body.calm .answer-meta{color:#8a948a}
+  body.calm .also-ask{color:#637985}
+  body.calm .post--lost{background:#faf3ee;border-color:#e5d8cd}
+  body.calm .lost-stamp{color:#916750;border-color:rgba(145,103,80,.5)}
+  body.calm .lost-detail{color:#8a7f75;border-top-color:#e6d9ce}
+  body.calm .verified{color:#657b64}
+  body.calm .market-inline{background:#f7f7f0;border-color:#e0e4dc}
+  body.calm .market-inline-head{border-color:#e7eae3}
+  body.calm .market-inline-head strong{color:#8b6f55}
+  body.calm .market-thumb{background:#e7e4d8;color:#7d877f}
+  body.calm .market-info b{color:#39463c}
+  body.calm .market-info span{color:#8b948a}
+  body.calm .market-price{color:#8b6f55}
+
+  body.calm .right-rail{gap:12px}
+  body.calm .weather-card{
+    background:#dfe8db;color:#2e3d32;border:1px solid #ccd9c6;border-radius:12px;
+    padding:15px 18px 13px;
+    box-shadow:0 10px 30px rgba(57,69,58,.06);
+  }
+  body.calm .weather-card::before{
+    border-color:rgba(46,61,50,.12);
+    box-shadow:0 0 0 26px rgba(46,61,50,.025),0 0 0 52px rgba(46,61,50,.018);
+  }
+  body.calm .weather-head>span:first-child{color:#465c4b}
+  body.calm .weather-updated{color:#7d8b7d}
+  body.calm .weather-temp{color:#2f4436}
+  body.calm .weather-temp sup{color:#6c7d6c}
+  body.calm .weather-art{color:#4e6653}
+  body.calm .weather-condition{color:#4b5f4e}
+  body.calm .weather-condition .divider-dot{background:rgba(46,61,50,.3)}
+  body.calm .weather-stats{border-top-color:rgba(46,61,50,.14)}
+  body.calm .weather-stats div{border-left-color:rgba(46,61,50,.14)}
+  body.calm .weather-stats b{color:#34483a}
+  body.calm .weather-stats span{color:#71816f}
+  body.calm .weather-tip{color:#66765f;border-top-color:rgba(46,61,50,.14)}
+  body.calm .weather-tip .icon{color:#647b65}
+
+  body.calm .rail-card{background:#fbfbf7;border-color:#dce1d8;border-radius:12px}
+  body.calm .rail-card-head h2{color:#344037}
+  body.calm .rail-card-head a,body.calm .rail-card-head button{color:#8a9489}
+  body.calm .event-item{border-top-color:#e8ebe4}
+  body.calm .event-date{color:#8b6f55}
+  body.calm .event-copy b{color:#3b473d}
+  body.calm .event-copy span{color:#7f897f}
+  body.calm .event-kind{color:#637663;border-color:rgba(99,118,100,.24)}
+  body.calm .hot-item{border-top-color:#e8ebe4}
+  body.calm .hot-rank{color:#9aa298}
+  body.calm .hot-item:nth-child(1) .hot-rank{color:#8b6f55}
+  body.calm .hot-item:nth-child(2) .hot-rank{color:#92744c}
+  body.calm .hot-link{color:#4c584e}
+  body.calm .hot-link:hover{color:#3e5545}
+  body.calm .hot-heat{color:#8b948a}
+  body.calm .lost-mini-icon{background:#f0e9de;color:#92744c}
+  body.calm .lost-mini-copy b{color:#3b473d}
+  body.calm .lost-mini-copy span{color:#8a948a}
+  body.calm .lost-mini-arrow{color:#9aa298}
+  body.calm .service-link{color:#4e5a50}
+  body.calm .service-link:hover{background:#eff2eb;color:#3e5545}
+  body.calm .service-link .icon{color:#8a958a}
+  body.calm .community-pulse{color:#8a948a}
+  body.calm .community-pulse .live-dot{background:#71886f;box-shadow:none}
+  body.calm .rail-footer{color:#969d95}
+  body.calm .rail-footer a:hover{color:#4e6655}
+
+  body.calm .site-footer{border-top-color:#d8ddd4;color:#969d95}
+  body.calm .footer-brand{color:#70786f}
+  body.calm .footer-brand .seal-mini{background:#405346;color:#f8f5ec}
+  body.calm .footer-links a:hover{color:#4e6655}
+
+  body.calm .mobile-tabbar{
+    background:rgba(251,251,247,.97);border-top-color:#d8ddd4;
+    box-shadow:0 -8px 28px rgba(52,64,54,.05);
+  }
+  body.calm .tabbar-item{color:#8a948a}
+  body.calm .tabbar-item.is-active{color:#3e5545}
+  body.calm .tabbar-compose .compose-circle{
+    background:#405346;color:#f8f5ec;
+    box-shadow:0 3px 0 #2f3f33,0 8px 18px rgba(64,83,70,.18);
+  }
+  body.calm .tabbar-compose span{color:#4e5a50}
+  body.calm .tabbar-compose:hover .compose-circle{background:#35483b}
+  body.calm .toast{background:#35483b;color:#f8f5ec}
+  body.calm .toast.is-error{background:#8e5e4b;color:#fbf4ee}
+  body.calm .popover{background:#fcfcf8;border-color:#dce1d8}
+  body.calm .popover-foot{background:#f3f4ee}
+  body.calm .popover-foot a{color:#4e6655}
+  body.calm .mobile-menu{background:#f3f4ee;border-right-color:#d8ddd4}
+  body.calm .mobile-search{background:#fbfbf7;border-color:#dce1d8}
+  body.calm .mobile-search button{background:#405346;color:#f8f5ec}
+  body.calm .mobile-menu-nav a:hover,body.calm .mobile-menu-nav a.is-active{background:#fbfbf7;color:#3e5545}
+  body.calm .mobile-service-block a{background:#fbfbf7;border-color:#dce1d8;color:#4e5a50}
+  body.calm .compose-dialog{background:#fcfcf8;border-color:#dce1d8}
+  body.calm .dialog-head{border-bottom-color:#e7eae3}
+  body.calm .compose-textarea::placeholder{color:#8d968c}
+  body.calm .topic-chip{background:#fbfbf7;border-color:#dce1d8;color:#657165}
+  body.calm .topic-chip.is-picked{background:#e7eee4;border-color:#c8d6c4;color:#3e5545}
+  body.calm .attach-button{border-color:#dce1d8;color:#657165}
+  body.calm .compose-foot{border-top-color:#e7eae3}
+  body.calm .publish-button{background:#405346;color:#f8f5ec}
+  body.calm .publish-button:hover{background:#35483b}
+  body.calm .no-results{background:#fbfbf7;border-color:#dce1d8}
+  body.calm .no-results button{color:#4e6655}
+  body.calm .load-more{border-color:#d8ddd4;color:#7e887e}
+  body.calm .load-more:hover{background:#fbfbf7;border-color:#b5c4b1;color:#3e5545}
+
+  @media (max-width:1260px){
+    body.calm .page-grid{grid-template-columns:232px minmax(0,1fr);gap:24px}
+    body.calm .right-rail{display:none}
+  }
+  @media (max-width:940px){
+    body.calm .shell{width:calc(100% - 36px)}
+    body.calm .page-grid{grid-template-columns:minmax(0,1fr);gap:0}
+    body.calm .left-rail{display:none}
+    body.calm .feed-masthead h1{font-size:34px}
+  }
+  @media (max-width:720px){
+    body.calm .shell{width:calc(100% - 28px)}
+    body.calm .feed-masthead h1{font-size:29px}
+    body.calm .campus-brief{grid-template-columns:repeat(3,minmax(0,1fr))}
+    body.calm .brief-lead{display:none}
+    body.calm .brief-item{padding:9px 8px}
+    body.calm .post{padding:15px 14px 10px}
+    body.calm .post-title{font-size:19px}
+    body.calm .post-media img{height:210px}
+    body.calm .post-media{border-radius:6px}
+    body.calm .post-action{padding:0 7px}
+  }
+  @media (max-width:520px){
+    body.calm .feed-masthead h1{font-size:26px}
+    body.calm .campus-brief{grid-template-columns:1fr}
+    body.calm .brief-item{border-left:0;border-top:1px solid var(--line)}
+    body.calm .brief-item:first-of-type{border-top:0}
+    body.calm .post-media img{height:185px}
+    body.calm .post-title{font-size:18px}
+  }
+</style>
+<style>
+  /* 雾蓝版：只替换公共客厅的色相，保留原有结构与密度。 */
+  body.slate{
+    --paper:#eef0f3;
+    --paper-deep:#e4e8ed;
+    --surface:#fbfcfd;
+    --surface-muted:#f1f3f6;
+    --surface-deep:#e6eaef;
+    --ink:#272c32;
+    --ink-soft:#4b535c;
+    --muted:#727b85;
+    --faint:#8b939d;
+    --line:#d7dce3;
+    --line-soft:#e8ecf0;
+    --accent:#536b7d;
+    --accent-deep:#3d5060;
+    --accent-soft:#e2e9ef;
+    --forest:#34444f;
+    --forest-2:#41515d;
+    --green:#6d8091;
+    --green-soft:#e7edf2;
+    --gold:#a2845c;
+    --gold-soft:#f1ebe0;
+    --blue:#6c7f8b;
+    --blue-soft:#e9eef1;
+    --coral:#9f6d57;
+    background-color:var(--paper);
+    color:var(--ink);
+  }
+  body.slate ::selection{background:#cbd7e2;color:#26323b}
+  body.slate .utility-bar{background:#e2e7ed;color:#45515d;border-bottom-color:#d2d9e1}
+  body.slate .utility-date{color:#5c6671}
+  body.slate .utility-alert{color:#3c4c59}
+  body.slate .utility-alert:hover{color:#26313a}
+  body.slate .utility-alert .alert-label{color:#5c6f80;border-color:rgba(92,111,128,.32)}
+  body.slate .utility-links{color:#78838d}
+  body.slate .utility-links a:hover{color:#2f3a44}
+  body.slate .utility-bar .live-dot{background:#71889a;box-shadow:0 0 0 3px rgba(113,136,154,.13)}
+  body.slate .site-header{background:rgba(248,249,251,.95);border-bottom-color:var(--line)}
+  body.slate .site-header.is-scrolled{background:rgba(248,249,251,.99);box-shadow:0 10px 30px rgba(57,68,80,.06)}
+  body.slate .brand-seal{color:#f7f9fb;background:#3b4d5b;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),3px 3px 0 rgba(59,77,91,.12)}
+  body.slate .brand:hover .brand-seal{background:#34444f}
+  body.slate .brand-text small{color:#89939e}
+  body.slate .main-nav a{color:#5d6670}
+  body.slate .main-nav a:hover,body.slate .main-nav a.is-active{color:var(--ink)}
+  body.slate .main-nav a::after{background:#a2845c}
+  body.slate .nav-new{color:#956b53;border-color:rgba(149,107,83,.32)}
+  body.slate .header-search{background:#eaedf1;color:#7d8791}
+  body.slate .header-search:focus-within{background:#fff;border-color:#9eacba;box-shadow:0 0 0 3px rgba(158,172,186,.15)}
+  body.slate .header-search kbd{color:#8a939d;border-color:#d4dae1}
+  body.slate .icon-button{color:#5f6a74}
+  body.slate .icon-button:hover{background:#eaedf1;color:var(--ink)}
+  body.slate .icon-button .dot{background:#a4775d;box-shadow:0 0 0 2px #f8f9fb}
+  body.slate .icon-button .count{background:#3b4d5b;color:#f8fafc;box-shadow:0 0 0 2px #f8f9fb}
+  body.slate .btn-primary,body.slate .publish-button,body.slate .comment-form button,body.slate .mobile-search button,body.slate .tabbar-compose .compose-circle{background:#3d5060;color:#f8fafc}
+  body.slate .btn-primary:hover,body.slate .publish-button:hover,body.slate .tabbar-compose:hover .compose-circle{background:#34444f}
+  body.slate .user-avatar-button:hover{box-shadow:0 0 0 3px #e5eaf0}
+  body.slate .avatar--chun,body.slate .avatar--current{background:#99705b}
+  body.slate .avatar--due{background:#627587}
+  body.slate .avatar--lin{background:#777d88}
+  body.slate .avatar--run{background:#627b88}
+
+  body.slate .left-rail{background:#e3e9ef;border-color:#d2dbe3;box-shadow:0 14px 34px rgba(57,70,82,.05)}
+  body.slate .profile-mini{border-bottom-color:#cbd5de}
+  body.slate .profile-level,body.slate .profile-bio{color:#6a737e}
+  body.slate .profile-stats a{border-right-color:#cbd5de}
+  body.slate .profile-stats b{color:#29333b}
+  body.slate .profile-stats span{color:#7c8792}
+  body.slate .profile-home{color:#4e6477}
+  body.slate .profile-home:hover{color:#2e4050}
+  body.slate .rail-label{color:#7e8994}
+  body.slate .rail-link{color:#47525d}
+  body.slate .rail-link .icon{color:#73808d}
+  body.slate .rail-link:hover{background:rgba(255,255,255,.56);color:#26313a}
+  body.slate .rail-link.is-active{background:#3c4e5d;color:#f8fafc;box-shadow:inset 2px 0 0 #b4c1cd}
+  body.slate .rail-link.is-active .icon{color:#dce5ee}
+  body.slate .rail-link .count{color:#7e8994}
+  body.slate .rail-link.is-active .count{color:#c2cedb}
+  body.slate .rail-link .nav-pill{background:#f0e7db;color:#956b53}
+  body.slate .rail-split{background:#cbd4de}
+  body.slate .section-mini-head strong{color:#3f4b56}
+  body.slate .section-mini-head a{color:#88939d}
+  body.slate .board-section{border-top-color:#cbd5de}
+  body.slate .board-link{color:#4e5964}
+  body.slate .board-link:hover span:nth-child(2){color:#3c5364}
+  body.slate .board-dot{background:#7f8e9d}
+  body.slate .board-link:nth-child(2) .board-dot{background:#a4885f}
+  body.slate .board-link:nth-child(3) .board-dot{background:#6d8091}
+  body.slate .board-link:nth-child(4) .board-dot{background:#6c7f8b}
+  body.slate .board-link:nth-child(5) .board-dot{background:#99705b}
+  body.slate .board-link .board-count{color:#7e8994}
+  body.slate .rail-note{background:rgba(255,255,255,.42);border-color:#c9d3de}
+  body.slate .rail-note .note-title{color:#3d4b57}
+  body.slate .rail-note p{color:#69737e}
+  body.slate .rail-note a{color:#4e6477}
+
+  body.slate .feed-masthead p{color:#6f7881}
+  body.slate .feed-masthead p b{color:#33404c}
+  body.slate .feed-masthead p a{color:#52697a;border-bottom-color:rgba(82,105,122,.24)}
+  body.slate .calendar-link{color:#65707a}
+  body.slate .calendar-link:hover{color:#3c5364}
+  body.slate .campus-brief{background:#f9fafc;border-color:var(--line)}
+  body.slate .brief-lead{border-right-color:var(--line)}
+  body.slate .brief-lead strong{color:#394650}
+  body.slate .brief-item:hover{background:#f0f3f6}
+  body.slate .brief-copy b{color:#33404c}
+  body.slate .brief-copy small{color:#7a848e}
+  body.slate .composer-card{background:#fbfcfd;border-color:#dbe0e6;box-shadow:0 8px 24px rgba(57,70,82,.04)}
+  body.slate .composer-trigger{color:#7b858f;border-bottom-color:#d6dce3}
+  body.slate .composer-trigger:hover{color:#405363;border-bottom-color:#8c9baa}
+  body.slate .composer-tool{color:#77828c}
+  body.slate .composer-tool:hover{background:#edf1f5;color:#405363}
+  body.slate .composer-note{color:#99a1aa}
+  body.slate .composer-note a{color:#747f89}
+  body.slate .feed-toolbar{background:rgba(238,240,243,.95);border-bottom-color:#d5dbe2}
+  body.slate .feed-tab{color:#7a848e}
+  body.slate .feed-tab:hover{color:#33404c}
+  body.slate .feed-tab.is-active{color:#2e3a45}
+  body.slate .feed-filter{color:#88929c}
+  body.slate .feed-filter:hover{color:#475663}
+  body.slate .search-state{background:#f6f8fa;border-color:#dce2e8;color:#77828c}
+  body.slate .search-state button{color:#4e6477}
+
+  body.slate .pinned-notice{background:#e8eef3;border-color:#d1dce4;border-left-color:#8195a4}
+  body.slate .pinned-icon{color:#526b7c}
+  body.slate .pinned-meta{color:#60768a}
+  body.slate .pinned-meta .official-mark{color:#526b7c;border-color:rgba(82,107,124,.32)}
+  body.slate .pinned-copy h2{color:#2d3944}
+  body.slate .pinned-copy p{color:#68737e}
+  body.slate .pinned-link{color:#4e6477;border-bottom-color:rgba(78,100,119,.28)}
+  body.slate .post{background:#fbfcfd;border-color:#dbe0e6;box-shadow:0 6px 20px rgba(57,70,82,.035)}
+  body.slate .post:hover{border-color:#cad4de;box-shadow:0 8px 24px rgba(57,70,82,.055)}
+  body.slate .post--new{border-color:#aebfcc;box-shadow:0 0 0 3px rgba(129,149,164,.1)}
+  body.slate .post-author{color:#303c47}
+  body.slate .post-author:hover{color:#4e6477}
+  body.slate .post-time,body.slate .post-meta{color:#808a94}
+  body.slate .follow-button{border-color:#d5dbe2;color:#525f6b}
+  body.slate .follow-button:hover{background:#e8eef3;border-color:#a9b8c4;color:#405363}
+  body.slate .follow-button.is-following{background:#e7edf2;border-color:#cbd8e2;color:#4e6477}
+  body.slate .role-badge{color:#637684;border-color:rgba(99,118,132,.3)}
+  body.slate .role-badge--official{color:#8e6953;border-color:rgba(142,105,83,.3)}
+  body.slate .role-badge--gold{color:#92744c;border-color:rgba(146,116,76,.3)}
+  body.slate .post-title{color:#28343f}
+  body.slate .post-text{color:#4a5460}
+  body.slate .post-text strong{color:#28343f}
+  body.slate .post-text a{color:#52697a;border-bottom-color:rgba(82,105,122,.22)}
+  body.slate .pull-quote{background:#e7edf2;border-left-color:#7f93a2;color:#33404b}
+  body.slate .post-media{border-color:#dfe4e9;background:#f1f3f6}
+  body.slate .post-media figcaption{background:#fbfcfd;color:#7f8993}
+  body.slate .post-actions{border-top-color:#e6ebf0}
+  body.slate .post-action{color:#7d8791}
+  body.slate .post-action:hover{background:#eff2f6;color:#3d4d5a}
+  body.slate .post-comment{background:#f2f4f7;color:#59636e}
+  body.slate .comment-body b,body.slate .comment-more{color:#4e6477}
+  body.slate .comment-form{background:#f2f4f7;border-color:#dfe4e9}
+  body.slate .comment-form button{background:#3d5060}
+  body.slate .poll-option{background:#fbfcfd;border-color:#dbe0e6}
+  body.slate .poll-option:hover{border-color:#c1cedc}
+  body.slate .poll-fill{background:#ebf0f5}
+  body.slate .poll-option:hover .poll-fill{background:#e3eaf1}
+  body.slate .poll-option.is-selected{border-color:#8396a6;background:#f8fafc}
+  body.slate .poll-option.is-selected .poll-fill{background:#dfe8f1}
+  body.slate .poll-label{color:#46515c}
+  body.slate .poll-foot{color:#8a939d}
+  body.slate .photo-grid{background:#e7ebef;border-color:#dfe4e9}
+  body.slate .photo-grid button{background:#e7ebef}
+  body.slate .answer-preview{background:#edf1f3;border-left-color:#8497a2}
+  body.slate .answer-label{color:#637985}
+  body.slate .answer-text{color:#4b565e}
+  body.slate .answer-text b{color:#2f3a40}
+  body.slate .answer-meta{color:#8a939d}
+  body.slate .also-ask{color:#637985}
+  body.slate .post--lost{background:#faf4ef;border-color:#e5d8ce}
+  body.slate .verified{color:#637b8b}
+  body.slate .market-inline{background:#f6f8fa;border-color:#dfe4e9}
+  body.slate .market-inline-head{border-color:#e6ebf0}
+  body.slate .market-info b{color:#394650}
+  body.slate .market-info span{color:#8a939d}
+  body.slate .weather-card{background:#dfe7ee;border-color:#ccd9e2;box-shadow:0 10px 30px rgba(60,75,88,.06)}
+  body.slate .weather-card::before{border-color:rgba(46,61,74,.12);box-shadow:0 0 0 26px rgba(46,61,74,.025),0 0 0 52px rgba(46,61,74,.018)}
+  body.slate .weather-head>span:first-child{color:#465c6c}
+  body.slate .weather-updated{color:#7c8a97}
+  body.slate .weather-temp{color:#2f4453}
+  body.slate .weather-temp sup{color:#6c7d8d}
+  body.slate .weather-art{color:#4e6677}
+  body.slate .weather-condition{color:#4b5f6e}
+  body.slate .weather-stats{border-top-color:rgba(46,61,74,.14)}
+  body.slate .weather-stats div{border-left-color:rgba(46,61,74,.14)}
+  body.slate .weather-stats b{color:#344856}
+  body.slate .weather-stats span{color:#71818f}
+  body.slate .weather-tip{color:#667685;border-top-color:rgba(46,61,74,.14)}
+  body.slate .weather-tip .icon{color:#647b8b}
+  body.slate .rail-card{background:#fbfcfd;border-color:#dbe0e6}
+  body.slate .rail-card-head h2{color:#34404b}
+  body.slate .rail-card-head a,body.slate .rail-card-head button{color:#88939d}
+  body.slate .event-item,body.slate .hot-item{border-top-color:#e7ebf0}
+  body.slate .event-copy b{color:#3b4752}
+  body.slate .event-copy span{color:#7e8892}
+  body.slate .event-kind{color:#637684;border-color:rgba(99,118,132,.24)}
+  body.slate .hot-rank{color:#99a1aa}
+  body.slate .hot-link{color:#4c5863}
+  body.slate .hot-link:hover{color:#405363}
+  body.slate .hot-heat{color:#8a939d}
+  body.slate .lost-mini-icon{background:#f0e9de;color:#92744c}
+  body.slate .lost-mini-copy b{color:#3b4752}
+  body.slate .lost-mini-copy span{color:#8a939d}
+  body.slate .service-link{color:#4e5964}
+  body.slate .service-link:hover{background:#eef2f6;color:#405363}
+  body.slate .service-link .icon{color:#88939d}
+  body.slate .community-pulse{color:#8a939d}
+  body.slate .community-pulse .live-dot{background:#71889a}
+  body.slate .rail-footer{color:#8b939d}
+  body.slate .rail-footer a:hover{color:#4e6477}
+  body.slate .site-footer{border-top-color:#d7dce3;color:#8b939d}
+  body.slate .footer-brand{color:#727b85}
+  body.slate .footer-brand .seal-mini{background:#3b4d5b;color:#f8fafc}
+  body.slate .footer-links a:hover{color:#4e6477}
+  body.slate .mobile-tabbar{background:rgba(251,252,253,.97);border-top-color:#d7dce3}
+  body.slate .tabbar-item{color:#8a939d}
+  body.slate .tabbar-item.is-active{color:#3d5060}
+  body.slate .tabbar-compose span{color:#4e5964}
+  body.slate .toast{background:#3b4d5b;color:#f8fafc}
+  body.slate .mobile-menu{background:#f1f3f6;border-right-color:#d7dce3}
+  body.slate .mobile-search{background:#fbfcfd;border-color:#dbe0e6}
+  body.slate .mobile-menu-nav a:hover,body.slate .mobile-menu-nav a.is-active{background:#fbfcfd;color:#3d5060}
+  body.slate .mobile-service-block a{background:#fbfcfd;border-color:#dbe0e6;color:#4e5964}
+  body.slate .compose-dialog{background:#fbfcfd;border-color:#dbe0e6}
+  body.slate .dialog-head{border-bottom-color:#e7ebf0}
+  body.slate .topic-chip{background:#fbfcfd;border-color:#dbe0e6;color:#65707a}
+  body.slate .topic-chip.is-picked{background:#e6eef4;border-color:#c8d7e2;color:#405363}
+  body.slate .attach-button{border-color:#dbe0e6;color:#65707a}
+  body.slate .compose-foot{border-top-color:#e7ebf0}
+  body.slate .no-results{background:#fbfcfd;border-color:#dbe0e6}
+  body.slate .no-results button{color:#4e6477}
+  body.slate .load-more{border-color:#d7dce3;color:#7d8791}
+  body.slate .load-more:hover{background:#fbfcfd;border-color:#b5c4d0;color:#3d5060}
+</style>
+</head>
+<body class="calm slate">
+<a class="skip-link" href="#main-feed">跳到主要内容</a>
+
+<div class="utility-bar">
+  <div class="shell utility-inner">
+    <div class="utility-date">
+      <span class="live-dot" aria-hidden="true"></span>
+      <span>沈阳 · 8°C 多云</span>
+      <span class="divider-dot" aria-hidden="true"></span>
+      <span>2026 年 10 月 31 日 · 周六</span>
+    </div>
+    <a class="utility-alert" href="#notice">
+      <span class="alert-label">社区公告</span>
+      <span class="alert-copy">今晚 23:00–23:30 校园网维护，选课与成绩查询可能短暂不可用</span>
+      <svg class="icon icon--sm" aria-hidden="true"><use href="#i-arrow-up-right"></use></svg>
+    </a>
+    <div class="utility-links" aria-label="常用校内入口">
+      <a href="#academic" data-preview="教务系统">教务系统</a>
+      <a href="#library" data-preview="图书馆">图书馆</a>
+      <a href="#mail" data-preview="校园邮箱">校园邮箱</a>
+    </div>
+  </div>
+</div>
+
+<header class="site-header" id="site-header">
+  <div class="shell header-inner">
+    <a class="brand" href="#top" aria-label="沈理校园首页">
+      <span class="brand-seal" aria-hidden="true">沈</span>
+      <span class="brand-text">
+        <strong>沈理校园</strong>
+        <small>SYLU COMMONS</small>
+      </span>
+    </a>
+
+    <nav class="main-nav" aria-label="主导航">
+      <a class="is-active" href="#top" aria-current="page">首页</a>
+      <a href="#feed" data-preview="校园圈">校园圈</a>
+      <a href="#market" data-preview="二手集市">集市<span class="nav-new">新</span></a>
+      <a href="#study" data-preview="学习互助">学习</a>
+      <a href="#discover" data-preview="发现">发现</a>
+    </nav>
+
+    <div class="header-actions">
+      <label class="header-search" for="global-search">
+        <svg class="icon icon--sm" aria-hidden="true"><use href="#i-search"></use></svg>
+        <input id="global-search" type="search" placeholder="搜同学、帖子或话题" autocomplete="off" aria-label="搜索同学、帖子或话题">
+        <kbd>Ctrl K</kbd>
+      </label>
+
+      <div class="popover-wrap">
+        <button class="icon-button" id="notify-button" aria-label="通知" aria-expanded="false" aria-controls="notify-popover">
+          <svg class="icon" aria-hidden="true"><use href="#i-bell"></use></svg>
+          <span class="dot" aria-hidden="true"></span>
+        </button>
+        <div class="popover" id="notify-popover" hidden>
+          <div class="popover-head">
+            <strong>新通知</strong>
+            <button type="button" id="mark-all-read">全部已读</button>
+          </div>
+          <div class="notice-item">
+            <span class="avatar avatar--lin avatar--sm" aria-hidden="true"><span>林</span></span>
+            <div class="notice-copy">
+              <p><b>林深见鹿</b> 评论了你的帖子：<br>“同问，图书馆四楼到底哪边有插座……”</p>
+              <time>3 分钟前</time>
+            </div>
+          </div>
+          <div class="notice-item">
+            <span class="avatar avatar--lost avatar--sm" aria-hidden="true"><span>服</span></span>
+            <div class="notice-copy">
+              <p><b>校园服务中心</b> 发布了《11 月 1 日供暖试水通知》</p>
+              <time>1 小时前</time>
+            </div>
+          </div>
+          <div class="notice-item">
+            <span class="avatar avatar--xue avatar--sm" aria-hidden="true"><span>雪</span></span>
+            <div class="notice-copy">
+              <p><b>雪织儿</b> 关注了你</p>
+              <time>2 小时前</time>
+            </div>
+          </div>
+          <div class="popover-foot"><a href="#notifications" data-preview="通知中心">查看全部通知</a></div>
+        </div>
+      </div>
+
+      <button class="icon-button" aria-label="私信，2 条未读" data-preview="私信">
+        <svg class="icon" aria-hidden="true"><use href="#i-message"></use></svg>
+        <span class="count" aria-hidden="true">2</span>
+      </button>
+
+      <button class="btn btn-primary" data-compose>
+        <svg class="icon icon--sm" aria-hidden="true"><use href="#i-plus"></use></svg>
+        发布
+      </button>
+
+      <button class="user-avatar-button" aria-label="打开个人菜单，纯合子" data-preview="个人菜单">
+        <span class="avatar avatar--chun avatar--md avatar--current" aria-hidden="true"><span>纯</span></span>
+      </button>
+
+      <button class="icon-button menu-toggle" id="menu-toggle" aria-label="打开导航菜单" aria-expanded="false">
+        <svg class="icon" aria-hidden="true"><use href="#i-menu"></use></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="shell page-grid" id="top">
+  <aside class="left-rail" aria-label="社区导航">
+    <section class="profile-mini">
+      <div class="profile-row">
+        <span class="avatar avatar--chun avatar--lg" aria-hidden="true"><span>纯</span></span>
+        <div>
+          <strong>纯合子</strong>
+          <div class="profile-level"><span class="level-dot" aria-hidden="true"></span>Lv.6 · 校园观察员</div>
+        </div>
+      </div>
+      <p class="profile-bio">把普通日子记得认真一点。</p>
+      <div class="profile-stats">
+        <a href="#profile" data-preview="获赞记录"><b>1,248</b><span>获赞</span></a>
+        <a href="#followers" data-preview="关注者"><b>326</b><span>关注者</span></a>
+        <a href="#following" data-preview="关注列表"><b>84</b><span>关注</span></a>
+      </div>
+      <a class="profile-home" href="#profile" data-preview="我的主页">进入我的主页 <svg class="icon icon--sm" aria-hidden="true"><use href="#i-arrow-right"></use></svg></a>
+    </section>
+
+    <p class="rail-label">逛社区</p>
+    <nav class="rail-nav" aria-label="社区板块">
+      <a class="rail-link is-active" href="#feed" aria-current="page">
+        <svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg>首页动态<span class="count" id="home-feed-count">128</span>
+      </a>
+      <a class="rail-link" href="#community" data-preview="校园圈">
+        <svg class="icon" aria-hidden="true"><use href="#i-compass"></use></svg>校园圈
+      </a>
+      <a class="rail-link" href="#market" data-preview="二手集市">
+        <svg class="icon" aria-hidden="true"><use href="#i-store"></use></svg>二手集市<span class="nav-pill">新</span>
+      </a>
+      <a class="rail-link" href="#study" data-preview="学习互助">
+        <svg class="icon" aria-hidden="true"><use href="#i-book"></use></svg>学习互助
+      </a>
+      <a class="rail-link" href="#events" data-preview="活动广场">
+        <svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg>活动广场
+      </a>
+    </nav>
+
+    <div class="rail-split" aria-hidden="true"></div>
+    <p class="rail-label">我的</p>
+    <nav class="rail-nav" aria-label="我的社区">
+      <a class="rail-link" href="#saved" data-preview="我的收藏">
+        <svg class="icon" aria-hidden="true"><use href="#i-bookmark"></use></svg>我的收藏
+      </a>
+      <a class="rail-link" href="#my-posts" data-preview="我的帖子">
+        <svg class="icon" aria-hidden="true"><use href="#i-edit"></use></svg>我的帖子
+      </a>
+      <a class="rail-link" href="#messages" data-preview="私信">
+        <svg class="icon" aria-hidden="true"><use href="#i-message"></use></svg>私信<span class="count">2</span>
+      </a>
+    </nav>
+
+    <section class="board-section" aria-labelledby="board-heading">
+      <div class="section-mini-head">
+        <strong id="board-heading">热门板块</strong>
+        <a href="#boards" data-preview="全部板块">全部</a>
+      </div>
+      <div class="board-list">
+        <a class="board-link" href="#lost" data-preview="失物招领"><span class="board-dot" aria-hidden="true"></span><span>失物招领</span><span class="board-count">24</span></a>
+        <a class="board-link" href="#canteen" data-preview="食堂测评"><span class="board-dot" aria-hidden="true"></span><span>食堂测评</span><span class="board-count">18</span></a>
+        <a class="board-link" href="#postgrad" data-preview="考研上岸"><span class="board-dot" aria-hidden="true"></span><span>考研上岸</span><span class="board-count">56</span></a>
+        <a class="board-link" href="#market" data-preview="二手数码"><span class="board-dot" aria-hidden="true"></span><span>二手数码</span><span class="board-count">31</span></a>
+        <a class="board-link" href="#clubs" data-preview="社团招新"><span class="board-dot" aria-hidden="true"></span><span>社团招新</span><span class="board-count">12</span></a>
+      </div>
+    </section>
+
+    <div class="rail-note">
+      <div class="note-title"><svg class="icon icon--sm" aria-hidden="true"><use href="#i-shield"></use></svg>社区公约</div>
+      <p>真实、友善、有边界。匿名不是免责牌，求助之前也先搜一搜。</p>
+      <a href="#rules" data-preview="社区公约">读一遍，再发帖 →</a>
+    </div>
+  </aside>
+
+  <main class="feed" id="main-feed">
+    <header class="feed-masthead">
+      <div>
+        <div class="eyebrow">COMMON ROOM · 2026.10.31</div>
+        <h1>晚上好，纯合子。</h1>
+        <p>不着急回宿舍。今晚校园里有 <b id="new-post-count">128</b> 条新动态，慢慢看。</p>
+      </div>
+      <a class="calendar-link" href="#calendar" data-preview="校园日历">
+        <svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg>校园日历
+      </a>
+    </header>
+
+    <section class="campus-brief" aria-label="今日校园速报">
+      <div class="brief-lead"><span>今天</span><strong>校园速报</strong></div>
+      <a class="brief-item" href="#notice">
+        <span class="brief-time">明天 08:00</span>
+        <span class="brief-copy"><b>供暖试水</b><small>各宿舍楼 · 留人检查阀门</small></span>
+      </a>
+      <a class="brief-item" href="#events" data-preview="活动详情">
+        <span class="brief-time">今天 18:30</span>
+        <span class="brief-copy"><b>琴湖夜跑</b><small>西门雕像集合 · 42 人已报名</small></span>
+      </a>
+      <a class="brief-item" href="#library" data-preview="图书馆开放时间">
+        <span class="brief-time">今天 23:00</span>
+        <span class="brief-copy"><b>图书馆闭馆</b><small>期中周延长 30 分钟</small></span>
+      </a>
+    </section>
+
+    <section class="composer-card" aria-label="发布动态">
+      <div class="composer-row">
+        <span class="avatar avatar--chun avatar--current" aria-hidden="true"><span>纯</span></span>
+        <button class="composer-trigger" data-compose>今天在校园里遇见什么？</button>
+      </div>
+      <div class="composer-bottom">
+        <div class="composer-tools">
+          <button class="composer-tool" data-compose data-mode="image"><svg class="icon" aria-hidden="true"><use href="#i-image"></use></svg>图文</button>
+          <button class="composer-tool" data-compose data-mode="question"><svg class="icon" aria-hidden="true"><use href="#i-help"></use></svg>提问</button>
+          <button class="composer-tool" data-compose data-mode="topic"><svg class="icon" aria-hidden="true"><use href="#i-hash"></use></svg>话题</button>
+        </div>
+        <span class="composer-note">发帖即代表同意 <a href="#rules" data-preview="社区公约">社区公约</a></span>
+      </div>
+    </section>
+
+    <nav class="feed-toolbar" aria-label="动态筛选">
+      <div class="feed-tabs" role="tablist" aria-label="动态分类">
+        <button class="feed-tab is-active" role="tab" aria-selected="true" data-filter="recommend">推荐</button>
+        <button class="feed-tab" role="tab" aria-selected="false" data-filter="latest">最新</button>
+        <button class="feed-tab" role="tab" aria-selected="false" data-filter="following">关注</button>
+        <button class="feed-tab" role="tab" aria-selected="false" data-filter="question">问答</button>
+      </div>
+      <button class="feed-filter" type="button" data-preview="筛选">
+        <svg class="icon" aria-hidden="true"><use href="#i-sliders"></use></svg>筛选
+      </button>
+    </nav>
+
+    <div class="search-state" id="search-state" hidden>
+      <span>正在搜索 “<b id="search-query"></b>” · <span id="search-count">0</span> 条结果</span>
+      <button type="button" id="clear-search">清除搜索</button>
+    </div>
+
+    <aside class="pinned-notice" id="notice" aria-label="校园官方置顶">
+      <span class="pinned-icon" aria-hidden="true"><svg class="icon"><use href="#i-pin"></use></svg></span>
+      <div class="pinned-copy">
+        <div class="pinned-meta"><span class="official-mark">官方</span>校园服务中心 · 置顶</div>
+        <h2>关于 11 月 1 日供暖试水的通知</h2>
+        <p>试水期间请宿舍留人，检查暖气阀门与管道接口；发现渗漏请先关闭阀门，再联系本楼值班室。</p>
+      </div>
+      <a class="pinned-link" href="#notice-detail" data-preview="通知详情">看详情</a>
+    </aside>
+
+    <div id="post-list">
+      <article class="post" data-type="story" data-following="true" data-order="100" data-search="沈理 生存指南 新生 主楼 琴湖 食堂 毕业">
+        <header class="post-head">
+          <a class="avatar avatar--chun avatar--md" href="#profile" aria-hidden="true" tabindex="-1"><span>纯</span></a>
+          <div class="post-byline">
+            <div class="post-name-row">
+              <a class="post-author" href="#profile" data-preview="纯合子的主页">纯合子</a>
+              <span class="role-badge">Lv.6 校园观察员</span>
+              <span class="post-time">2 小时前</span>
+            </div>
+            <div class="post-meta"><span>发布于 校园圈</span><span class="divider-dot" aria-hidden="true"></span><span>沈阳</span></div>
+          </div>
+          <div class="post-head-actions">
+            <button class="post-more" aria-label="更多操作" data-preview="帖子操作"><svg class="icon" aria-hidden="true"><use href="#i-more"></use></svg></button>
+          </div>
+        </header>
+        <div class="post-body">
+          <div class="post-topics"><a class="post-topic" href="#tag-shenli" data-preview="话题">#沈理生存指南</a><a class="post-topic" href="#tag-new" data-preview="话题">#写给新生</a></div>
+          <h2 class="post-title">下次有人说沈理烂，就这样说回去</h2>
+          <div class="post-text">
+            <p>在沈理待久了，你会发现这所学校很擅长把浪漫藏在不太体面的细节里：主楼前的风永远比天气预报大两级，琴湖的鸭子比早八的人准时，冬天教室的暖气总要迟到十分钟。</p>
+            <p>但它也有自己的好。图书馆四楼靠窗能看见一整排银杏；二食堂三楼的阿姨会记得你少放辣；晚上十点从实验楼出来，整条路只剩你和路灯，安静得像学校偷偷给你留的。</p>
+          </div>
+          <blockquote class="pull-quote">沈理不是一眼惊艳的学校。它更像一件穿旧了的冲锋衣——不好看，但挡风。</blockquote>
+          <figure class="post-media">
+            <img src="assets/campus-spring.jpg" alt="春天的主楼前，花树开得正好" loading="lazy">
+            <figcaption><span>主楼前 · 相册里的春天</span><span>摄影 / 纯合子</span></figcaption>
+          </figure>
+          <div class="post-text"><p>所以别问沈理值不值得。你在这里认真生活过，它就值得。</p></div>
+        </div>
+        <footer class="post-actions">
+          <button class="post-action post-action--like" data-like aria-pressed="false" aria-label="点赞">
+            <svg class="icon" aria-hidden="true"><use href="#i-heart"></use></svg><span class="action-count">138</span>
+          </button>
+          <button class="post-action" data-comment aria-label="评论">
+            <svg class="icon" aria-hidden="true"><use href="#i-comment"></use></svg><span class="action-count">42</span>
+          </button>
+          <button class="post-action post-action--save" data-save aria-pressed="false" aria-label="收藏">
+            <svg class="icon" aria-hidden="true"><use href="#i-bookmark"></use></svg><span class="save-label">收藏</span>
+          </button>
+          <button class="post-action post-action--share" data-share>
+            <svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg><span>分享</span>
+          </button>
+        </footer>
+        <div class="post-comments">
+          <div class="post-comment">
+            <span class="avatar avatar--lin avatar--sm" aria-hidden="true"><span>林</span></span>
+            <div class="comment-body"><b>林深见鹿</b>毕业第五年，最想念的还是冬天从图书馆出来那股冷风，和门口五块钱一个的烤地瓜。<span class="comment-time">1 小时前</span></div>
+          </div>
+          <button class="comment-more" data-comment>查看全部 42 条讨论 <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"></use></svg></button>
+          <form class="comment-form" hidden>
+            <input type="text" maxlength="160" placeholder="说点什么…" aria-label="评论内容">
+            <button type="submit">发送</button>
+          </form>
+        </div>
+      </article>
+
+      <article class="post" data-type="poll" data-following="false" data-order="90" data-search="二食堂 翻新 窗口 麻辣拌 铁板饭 轻食 外卖 食堂测评">
+        <header class="post-head">
+          <a class="avatar avatar--guide avatar--md" href="#canteen" aria-hidden="true" tabindex="-1"><span>干</span></a>
+          <div class="post-byline">
+            <div class="post-name-row">
+              <a class="post-author" href="#canteen" data-preview="沈理干饭指南">沈理干饭指南</a>
+              <span class="role-badge role-badge--gold">校园测评员</span>
+              <span class="post-time">4 小时前</span>
+            </div>
+            <div class="post-meta"><span>发布于 食堂测评</span><span class="divider-dot" aria-hidden="true"></span><span>二食堂</span></div>
+          </div>
+          <div class="post-head-actions">
+            <button class="follow-button" data-follow>关注</button>
+            <button class="post-more" aria-label="更多操作" data-preview="帖子操作"><svg class="icon" aria-hidden="true"><use href="#i-more"></use></svg></button>
+          </div>
+        </header>
+        <div class="post-body">
+          <div class="post-topics"><a class="post-topic" href="#tag-canteen" data-preview="话题">#食堂测评</a><a class="post-topic" href="#tag-new-window" data-preview="话题">#二食堂</a></div>
+          <h2 class="post-title">二食堂一楼翻新后，你的本命窗口还在吗？</h2>
+          <div class="post-text"><p>中午去转了一圈，窗口换了一半，价格牌也重做了。先不急着下结论，想看看大家最近都在吃什么。</p></div>
+          <div class="poll" data-total="323">
+            <button class="poll-option" type="button" data-poll-option data-votes="136">
+              <span class="poll-fill" style="width:42.1%"></span>
+              <span class="poll-label">麻辣拌 <small>还是原来的配方</small></span>
+              <span class="poll-pct">42%</span>
+            </button>
+            <button class="poll-option" type="button" data-poll-option data-votes="100">
+              <span class="poll-fill" style="width:31%"></span>
+              <span class="poll-label">铁板煎肉饭 <small>队伍最长</small></span>
+              <span class="poll-pct">31%</span>
+            </button>
+            <button class="poll-option" type="button" data-poll-option data-votes="55">
+              <span class="poll-fill" style="width:17%"></span>
+              <span class="poll-label">自选轻食 <small>拍照好看</small></span>
+              <span class="poll-pct">17%</span>
+            </button>
+            <button class="poll-option" type="button" data-poll-option data-votes="32">
+              <span class="poll-fill" style="width:9.9%"></span>
+              <span class="poll-label">我已经投奔外卖 <small>不解释</small></span>
+              <span class="poll-pct">10%</span>
+            </button>
+            <div class="poll-foot"><span><span class="poll-total">323</span> 人参与 · 还剩 2 天</span><span class="poll-state">投一票，看看群众的眼睛</span></div>
+          </div>
+        </div>
+        <footer class="post-actions">
+          <button class="post-action post-action--like" data-like aria-pressed="false" aria-label="点赞">
+            <svg class="icon" aria-hidden="true"><use href="#i-heart"></use></svg><span class="action-count">64</span>
+          </button>
+          <button class="post-action" data-comment aria-label="评论">
+            <svg class="icon" aria-hidden="true"><use href="#i-comment"></use></svg><span class="action-count">87</span>
+          </button>
+          <button class="post-action post-action--save" data-save aria-pressed="false" aria-label="收藏">
+            <svg class="icon" aria-hidden="true"><use href="#i-bookmark"></use></svg><span class="save-label">收藏</span>
+          </button>
+          <button class="post-action post-action--share" data-share>
+            <svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg><span>分享</span>
+          </button>
+        </footer>
+        <div class="post-comments">
+          <button class="comment-more" data-comment>查看全部 87 条讨论 <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"></use></svg></button>
+          <form class="comment-form" hidden>
+            <input type="text" maxlength="160" placeholder="说说你的本命窗口…" aria-label="评论内容">
+            <button type="submit">发送</button>
+          </form>
+        </div>
+      </article>
+
+      <article class="post" data-type="photo" data-following="true" data-order="80" data-search="琴湖 秋天 银杏 图书馆 摄影 校园随拍">
+        <header class="post-head">
+          <a class="avatar avatar--xue avatar--md" href="#profile" aria-hidden="true" tabindex="-1"><span>雪</span></a>
+          <div class="post-byline">
+            <div class="post-name-row">
+              <a class="post-author" href="#profile" data-preview="雪织儿的主页">雪织儿</a>
+              <span class="role-badge">Lv.4 摄影爱好者</span>
+              <span class="post-time">今天 17:42</span>
+            </div>
+            <div class="post-meta"><span>发布于 校园随拍</span><span class="divider-dot" aria-hidden="true"></span><span>琴湖</span></div>
+          </div>
+          <div class="post-head-actions">
+            <button class="follow-button" data-follow>关注</button>
+            <button class="post-more" aria-label="更多操作" data-preview="帖子操作"><svg class="icon" aria-hidden="true"><use href="#i-more"></use></svg></button>
+          </div>
+        </header>
+        <div class="post-body">
+          <div class="post-topics"><a class="post-topic" href="#tag-autumn" data-preview="话题">#沈理秋天</a><a class="post-topic" href="#tag-photo" data-preview="话题">#校园随拍</a></div>
+          <h2 class="post-title">把沈理的秋天装进相机里</h2>
+          <div class="post-text"><p>午休从琴湖绕了一圈，风把银杏吹得满地都是。回图书馆的路上没忍住，拍了三张。给今天没出门的人看看。</p></div>
+          <figure class="photo-grid" aria-label="沈理秋日校园照片">
+            <button type="button" data-preview="查看大图" aria-label="查看琴湖秋色大图">
+              <img src="assets/autumn-1.jpg" alt="琴湖边的秋日树林与湖面倒影" loading="lazy">
+              <span class="photo-loc">琴湖西岸</span>
+            </button>
+            <button type="button" data-preview="查看大图" aria-label="查看银杏叶大图">
+              <img src="assets/autumn-2.jpg" alt="挂在绳子上的渐变色秋叶" loading="lazy">
+              <span class="photo-loc">捡回来的叶子</span>
+            </button>
+            <button type="button" data-preview="查看大图" aria-label="查看图书馆大图">
+              <img src="assets/library.jpg" alt="图书馆书架" loading="lazy">
+              <span class="photo-loc">图书馆四楼</span>
+            </button>
+          </figure>
+          <div class="photo-credit"><span>今天的光，值得记下来。</span><span>3 张照片</span></div>
+        </div>
+        <footer class="post-actions">
+          <button class="post-action post-action--like" data-like aria-pressed="false" aria-label="点赞">
+            <svg class="icon" aria-hidden="true"><use href="#i-heart"></use></svg><span class="action-count">206</span>
+          </button>
+          <button class="post-action" data-comment aria-label="评论">
+            <svg class="icon" aria-hidden="true"><use href="#i-comment"></use></svg><span class="action-count">28</span>
+          </button>
+          <button class="post-action post-action--save" data-save aria-pressed="false" aria-label="收藏">
+            <svg class="icon" aria-hidden="true"><use href="#i-bookmark"></use></svg><span class="save-label">收藏</span>
+          </button>
+          <button class="post-action post-action--share" data-share>
+            <svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg><span>分享</span>
+          </button>
+        </footer>
+        <div class="post-comments">
+          <div class="post-comment">
+            <span class="avatar avatar--due avatar--sm" aria-hidden="true"><span>阿</span></span>
+            <div class="comment-body"><b>阿 May</b>第三张是四楼靠窗！我上周就在那儿坐了一下午。<span class="comment-time">今天 17:56</span></div>
+          </div>
+          <button class="comment-more" data-comment>查看全部 28 条讨论 <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"></use></svg></button>
+          <form class="comment-form" hidden>
+            <input type="text" maxlength="160" placeholder="留下一句关于秋天的记忆…" aria-label="评论内容">
+            <button type="submit">发送</button>
+          </form>
+        </div>
+      </article>
+
+      <article class="post" data-type="question" data-following="true" data-order="70" data-search="图书馆 四楼 插座 自习 期中 求助 东侧 第三排">
+        <header class="post-head">
+          <a class="avatar avatar--due avatar--md" href="#profile" aria-hidden="true" tabindex="-1"><span>赶</span></a>
+          <div class="post-byline">
+            <div class="post-name-row">
+              <a class="post-author" href="#profile" data-preview="今天也在赶 due 的主页">今天也在赶 due</a>
+              <span class="role-badge">Lv.3 计算机学院</span>
+              <span class="post-time">今天 15:08</span>
+            </div>
+            <div class="post-meta"><span>发布于 学习互助</span><span class="divider-dot" aria-hidden="true"></span><span>求助</span></div>
+          </div>
+          <div class="post-head-actions">
+            <button class="follow-button" data-follow>关注</button>
+            <button class="post-more" aria-label="更多操作" data-preview="帖子操作"><svg class="icon" aria-hidden="true"><use href="#i-more"></use></svg></button>
+          </div>
+        </header>
+        <div class="post-body">
+          <div class="post-topics"><a class="post-topic" href="#tag-ask" data-preview="话题">#沈理求助</a><a class="post-topic" href="#tag-library" data-preview="话题">#图书馆生存</a></div>
+          <h2 class="post-title">图书馆四楼靠窗的插座，到底在哪一侧？</h2>
+          <div class="post-text"><p>绕了两圈只找到两个，感觉大家都默认知道，只有我不知道。救救期中人。</p></div>
+          <div class="answer-preview">
+            <div class="answer-label"><svg class="icon" aria-hidden="true"><use href="#i-spark"></use></svg>高赞回答 · 图书馆常驻民</div>
+            <p class="answer-text"><b>东侧第三排桌子下面，蹲下去才能看见。</b>西侧那排是装饰，别问我怎么知道的。</p>
+            <div class="answer-meta"><span>赞 48</span><span>12 个回答</span><button class="also-ask" data-also-ask>我也想知道 <span>36</span></button></div>
+          </div>
+        </div>
+        <footer class="post-actions">
+          <button class="post-action post-action--like" data-like aria-pressed="false" aria-label="点赞">
+            <svg class="icon" aria-hidden="true"><use href="#i-heart"></use></svg><span class="action-count">18</span>
+          </button>
+          <button class="post-action" data-comment aria-label="回答">
+            <svg class="icon" aria-hidden="true"><use href="#i-comment"></use></svg><span class="action-count">12</span>
+          </button>
+          <button class="post-action post-action--save" data-save aria-pressed="false" aria-label="收藏">
+            <svg class="icon" aria-hidden="true"><use href="#i-bookmark"></use></svg><span class="save-label">收藏</span>
+          </button>
+          <button class="post-action post-action--share" data-share>
+            <svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg><span>分享</span>
+          </button>
+        </footer>
+        <div class="post-comments">
+          <button class="comment-more" data-comment>查看 12 个回答 <svg class="icon" aria-hidden="true"><use href="#i-arrow-right"></use></svg></button>
+          <form class="comment-form" hidden>
+            <input type="text" maxlength="160" placeholder="写一个靠谱的回答…" aria-label="回答内容">
+            <button type="submit">发送</button>
+          </form>
+        </div>
+      </article>
+
+      <article class="post post--lost" data-type="lost" data-following="false" data-order="60" data-search="失物招领 校园卡 尾号0421 综合楼 B区 203 蓝色卡套">
+        <span class="lost-stamp" aria-hidden="true">招领</span>
+        <header class="post-head">
+          <a class="avatar avatar--lost avatar--md" href="#lost" aria-hidden="true" tabindex="-1"><span>服</span></a>
+          <div class="post-byline">
+            <div class="post-name-row">
+              <a class="post-author" href="#lost" data-preview="校园服务中心">校园服务中心</a>
+              <span class="role-badge role-badge--official">官方</span>
+              <span class="post-time">30 分钟前</span>
+            </div>
+            <div class="post-meta"><span>发布于 失物招领</span><span class="divider-dot" aria-hidden="true"></span><span>综合楼 B 区</span></div>
+          </div>
+          <div class="post-head-actions">
+            <button class="post-more" aria-label="更多操作" data-preview="帖子操作"><svg class="icon" aria-hidden="true"><use href="#i-more"></use></svg></button>
+          </div>
+        </header>
+        <div class="post-body">
+          <h2 class="post-title">捡到一张校园卡，尾号 0421</h2>
+          <div class="post-text"><p>今天 15:20 在综合楼 B 区 203 门口捡到，卡面是蓝色卡套。失主看到请私信我，或者直接到一楼值班室认领。</p></div>
+          <div class="lost-detail">
+            <span><svg class="icon" aria-hidden="true"><use href="#i-map-pin"></use></svg>综合楼 B 区 203</span>
+            <span><svg class="icon" aria-hidden="true"><use href="#i-clock"></use></svg>今天 15:20</span>
+            <span class="verified"><svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg>信息已核验</span>
+          </div>
+        </div>
+        <footer class="post-actions">
+          <button class="post-action post-action--like" data-like aria-pressed="false" aria-label="点赞">
+            <svg class="icon" aria-hidden="true"><use href="#i-heart"></use></svg><span class="action-count">9</span>
+          </button>
+          <button class="post-action" data-comment aria-label="评论">
+            <svg class="icon" aria-hidden="true"><use href="#i-comment"></use></svg><span class="action-count">3</span>
+          </button>
+          <button class="post-action post-action--save" data-save aria-pressed="false" aria-label="收藏">
+            <svg class="icon" aria-hidden="true"><use href="#i-bookmark"></use></svg><span class="save-label">收藏</span>
+          </button>
+          <button class="post-action post-action--share" data-share>
+            <svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg><span>分享</span>
+          </button>
+        </footer>
+        <div class="post-comments">
+          <form class="comment-form" hidden>
+            <input type="text" maxlength="160" placeholder="补充线索…" aria-label="评论内容">
+            <button type="submit">发送</button>
+          </form>
+        </div>
+      </article>
+    </div>
+
+    <div id="more-posts" hidden>
+      <article class="post" data-type="activity" data-following="false" data-order="50" data-search="琴湖夜跑 搭子 西门 配速 630 豆浆">
+        <header class="post-head">
+          <span class="avatar avatar--run avatar--md" aria-hidden="true"><span>跑</span></span>
+          <div class="post-byline">
+            <div class="post-name-row">
+              <span class="post-author">跑不动但爱跑</span>
+              <span class="role-badge">Lv.2 材冶学院</span>
+              <span class="post-time">今天 14:20</span>
+            </div>
+            <div class="post-meta"><span>发布于 活动广场</span><span class="divider-dot" aria-hidden="true"></span><span>约搭子</span></div>
+          </div>
+          <div class="post-head-actions">
+            <button class="follow-button" data-follow>关注</button>
+            <button class="post-more" aria-label="更多操作" data-preview="帖子操作"><svg class="icon" aria-hidden="true"><use href="#i-more"></use></svg></button>
+          </div>
+        </header>
+        <div class="post-body">
+          <div class="post-topics"><a class="post-topic" href="#tag-run" data-preview="话题">#琴湖夜跑</a><a class="post-topic" href="#tag-partner" data-preview="话题">#找搭子</a></div>
+          <h2 class="post-title">周四晚琴湖夜跑，6'30'' 配速，来两个搭子</h2>
+          <div class="post-text"><p>19:10 西门雕像集合，跑两圈，结束去二食堂喝豆浆。不卷配速，能坚持跑完就行。下雨自动取消。</p></div>
+          <div class="market-inline">
+            <div class="market-inline-head"><strong>活动报名 · 12 / 20</strong><span>还剩 8 个位置</span></div>
+            <div class="market-inline-body">
+              <span class="market-thumb" aria-hidden="true"><svg class="icon"><use href="#i-run"></use></svg></span>
+              <div class="market-info"><b>琴湖夜跑 · 第 03 期</b><span>周四 19:10 · 西门雕像 · 免费</span></div>
+              <button class="follow-button" data-preview="活动报名">报名</button>
+            </div>
+          </div>
+        </div>
+        <footer class="post-actions">
+          <button class="post-action post-action--like" data-like aria-pressed="false" aria-label="点赞">
+            <svg class="icon" aria-hidden="true"><use href="#i-heart"></use></svg><span class="action-count">21</span>
+          </button>
+          <button class="post-action" data-comment aria-label="评论">
+            <svg class="icon" aria-hidden="true"><use href="#i-comment"></use></svg><span class="action-count">6</span>
+          </button>
+          <button class="post-action post-action--save" data-save aria-pressed="false" aria-label="收藏">
+            <svg class="icon" aria-hidden="true"><use href="#i-bookmark"></use></svg><span class="save-label">收藏</span>
+          </button>
+          <button class="post-action post-action--share" data-share>
+            <svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg><span>分享</span>
+          </button>
+        </footer>
+        <div class="post-comments">
+          <form class="comment-form" hidden>
+            <input type="text" maxlength="160" placeholder="留个言，或者直接来…" aria-label="评论内容">
+            <button type="submit">发送</button>
+          </form>
+        </div>
+      </article>
+
+      <article class="post" data-type="market" data-following="false" data-order="40" data-search="毕业 出 绘图桌 台灯 二手 集市 120 自提">
+        <header class="post-head">
+          <span class="avatar avatar--market avatar--md" aria-hidden="true"><span>出</span></span>
+          <div class="post-byline">
+            <div class="post-name-row">
+              <span class="post-author">老学长清仓</span>
+              <span class="role-badge">Lv.1 机械学院</span>
+              <span class="post-time">今天 12:06</span>
+            </div>
+            <div class="post-meta"><span>发布于 二手集市</span><span class="divider-dot" aria-hidden="true"></span><span>自提</span></div>
+          </div>
+          <div class="post-head-actions">
+            <button class="follow-button" data-follow>关注</button>
+            <button class="post-more" aria-label="更多操作" data-preview="帖子操作"><svg class="icon" aria-hidden="true"><use href="#i-more"></use></svg></button>
+          </div>
+        </header>
+        <div class="post-body">
+          <div class="post-topics"><a class="post-topic" href="#tag-market" data-preview="话题">#沈理集市</a><a class="post-topic" href="#tag-grad" data-preview="话题">#毕业清仓</a></div>
+          <h2 class="post-title">毕业出：绘图桌 + 护眼台灯，打包 120</h2>
+          <div class="post-text"><p>桌子 90×60，无明显划痕；台灯是小米的，都还能用。毕业急出，南门自提，爽快可小刀。</p></div>
+          <div class="market-inline">
+            <div class="market-inline-head"><strong>闲置详情</strong><span>9 成新 · 支持自提</span></div>
+            <div class="market-inline-body">
+              <span class="market-thumb" aria-hidden="true"><svg class="icon"><use href="#i-box"></use></svg></span>
+              <div class="market-info"><b>绘图桌 + 护眼台灯</b><span>南门 · 今天可看货</span></div>
+              <span class="market-price"><small>¥</small>120</span>
+            </div>
+          </div>
+        </div>
+        <footer class="post-actions">
+          <button class="post-action post-action--like" data-like aria-pressed="false" aria-label="点赞">
+            <svg class="icon" aria-hidden="true"><use href="#i-heart"></use></svg><span class="action-count">7</span>
+          </button>
+          <button class="post-action" data-comment aria-label="评论">
+            <svg class="icon" aria-hidden="true"><use href="#i-comment"></use></svg><span class="action-count">4</span>
+          </button>
+          <button class="post-action post-action--save" data-save aria-pressed="false" aria-label="收藏">
+            <svg class="icon" aria-hidden="true"><use href="#i-bookmark"></use></svg><span class="save-label">收藏</span>
+          </button>
+          <button class="post-action post-action--share" data-share>
+            <svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg><span>分享</span>
+          </button>
+        </footer>
+        <div class="post-comments">
+          <form class="comment-form" hidden>
+            <input type="text" maxlength="160" placeholder="问问成色或价格…" aria-label="评论内容">
+            <button type="submit">发送</button>
+          </form>
+        </div>
+      </article>
+    </div>
+
+    <div class="no-results" id="no-results" hidden>
+      <span class="empty-mark" aria-hidden="true"><svg class="icon icon--lg"><use href="#i-search"></use></svg></span>
+      <h2>没有找到相关动态</h2>
+      <p>换一个关键词，或者去校园圈随便逛逛。</p>
+      <button type="button" id="reset-search">清除搜索条件</button>
+    </div>
+
+    <button class="load-more" id="load-more" type="button">
+      加载更多校园动态
+      <svg class="icon" aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+    </button>
+  </main>
+
+  <aside class="right-rail" aria-label="校园信息">
+    <section class="weather-card" aria-label="今日天气">
+      <div class="weather-head"><span>今日沈理</span><span class="weather-updated">17:40 更新</span></div>
+      <div class="weather-main">
+        <div class="weather-temp">8<sup>°</sup></div>
+        <div class="weather-art" aria-hidden="true"><svg class="icon"><use href="#i-cloud-sun"></use></svg></div>
+      </div>
+      <div class="weather-condition"><span>多云转晴</span><span class="divider-dot" aria-hidden="true"></span><span>西北风 3 级</span></div>
+      <div class="weather-stats">
+        <div><b>16:51</b><span>日落</span></div>
+        <div><b>46%</b><span>湿度</span></div>
+        <div><b>优</b><span>空气质量</span></div>
+      </div>
+      <p class="weather-tip"><svg class="icon" aria-hidden="true"><use href="#i-wind"></use></svg>琴湖边的风比预报大一级，晚上出门记得加件外套。</p>
+    </section>
+
+    <section class="rail-card" aria-labelledby="events-heading">
+      <div class="rail-card-head"><h2 id="events-heading">正在发生</h2><a href="#calendar" data-preview="校园日历">全部</a></div>
+      <ul class="event-list">
+        <li class="event-item">
+          <span class="event-date">11.01</span>
+          <div class="event-copy"><b>供暖试水</b><span>08:00 · 各宿舍楼，留人检查阀门</span></div>
+          <span class="event-kind">提醒</span>
+        </li>
+        <li class="event-item">
+          <span class="event-date">11.03</span>
+          <div class="event-copy"><b>社团纳新宣讲</b><span>18:30 · 综合楼 101</span></div>
+          <span class="event-kind">活动</span>
+        </li>
+        <li class="event-item">
+          <span class="event-date">11.05</span>
+          <div class="event-copy"><b>秋季双选会</b><span>14:00 · 文体中心</span></div>
+          <span class="event-kind">就业</span>
+        </li>
+        <li class="event-item">
+          <span class="event-date">11.07</span>
+          <div class="event-copy"><b>校园歌手赛初赛</b><span>19:00 · 大学生活动中心</span></div>
+          <span class="event-kind">文艺</span>
+        </li>
+      </ul>
+    </section>
+
+    <section class="rail-card" aria-labelledby="hot-heading">
+      <div class="rail-card-head"><h2 id="hot-heading">校园热榜</h2><button type="button" id="refresh-hot">换一批</button></div>
+      <ol class="hot-list" id="hot-list">
+        <li class="hot-item"><span class="hot-rank">01</span><a class="hot-link" href="#hot-1" data-preview="热榜话题">图书馆四楼插座到底在哪一侧？</a><span class="hot-heat">3.2k</span></li>
+        <li class="hot-item"><span class="hot-rank">02</span><a class="hot-link" href="#hot-2" data-preview="热榜话题">二食堂翻新，本命窗口没了</a><span class="hot-heat">2.8k</span></li>
+        <li class="hot-item"><span class="hot-rank">03</span><a class="hot-link" href="#hot-3" data-preview="热榜话题">供暖前，宿舍最冷的是哪一栋</a><span class="hot-heat">2.1k</span></li>
+        <li class="hot-item"><span class="hot-rank">04</span><a class="hot-link" href="#hot-4" data-preview="热榜话题">沈理秋天的十个瞬间</a><span class="hot-heat">1.7k</span></li>
+        <li class="hot-item"><span class="hot-rank">05</span><a class="hot-link" href="#hot-5" data-preview="热榜话题">求推荐：学校附近修自行车</a><span class="hot-heat">1.1k</span></li>
+      </ol>
+    </section>
+
+    <section class="rail-card" aria-labelledby="lost-heading">
+      <div class="rail-card-head"><h2 id="lost-heading">失物招领</h2><a href="#lost" data-preview="失物招领">更多</a></div>
+      <a class="lost-mini" href="#lost-card" data-preview="校园卡招领">
+        <span class="lost-mini-icon" aria-hidden="true"><svg class="icon"><use href="#i-card"></use></svg></span>
+        <span class="lost-mini-copy"><b>校园卡 · 尾号 0421</b><span>综合楼 B 区 · 15:20</span></span>
+        <span class="lost-mini-arrow" aria-hidden="true"><svg class="icon"><use href="#i-arrow-right"></use></svg></span>
+      </a>
+    </section>
+
+    <section class="rail-card" aria-labelledby="service-heading">
+      <div class="rail-card-head"><h2 id="service-heading">校园服务</h2><a href="#services" data-preview="全部服务">全部</a></div>
+      <div class="service-grid">
+        <a class="service-link" href="#timetable" data-preview="我的课表"><svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg>我的课表</a>
+        <a class="service-link" href="#grades" data-preview="成绩查询"><svg class="icon" aria-hidden="true"><use href="#i-chart"></use></svg>成绩查询</a>
+        <a class="service-link" href="#exams" data-preview="考试安排"><svg class="icon" aria-hidden="true"><use href="#i-edit"></use></svg>考试安排</a>
+        <a class="service-link" href="#competition" data-preview="竞赛中心"><svg class="icon" aria-hidden="true"><use href="#i-trophy"></use></svg>竞赛中心</a>
+        <a class="service-link" href="#canteen" data-preview="食堂菜单"><svg class="icon" aria-hidden="true"><use href="#i-bowl"></use></svg>食堂菜单</a>
+        <a class="service-link" href="#ai" data-preview="AI 助手"><svg class="icon" aria-hidden="true"><use href="#i-spark"></use></svg>AI 助手</a>
+      </div>
+    </section>
+
+    <div class="community-pulse">
+      <span><i class="live-dot" aria-hidden="true"></i>1,284 人在线</span>
+      <span>今日新增 42 条</span>
+    </div>
+    <footer class="rail-footer">
+      <a href="#rules" data-preview="社区公约">社区公约</a>
+      <a href="#about" data-preview="关于我们">关于</a>
+      <a href="#privacy" data-preview="隐私说明">隐私</a>
+      <a href="#feedback" data-preview="意见反馈">反馈</a>
+    </footer>
+  </aside>
+
+  <footer class="site-footer">
+    <div class="footer-brand"><span class="seal-mini" aria-hidden="true">沈</span>沈理校园 · SYLUlive</div>
+    <div class="footer-links">
+      <a href="#about" data-preview="关于我们">关于社区</a>
+      <a href="#rules" data-preview="社区公约">社区公约</a>
+      <a href="#privacy" data-preview="隐私说明">隐私说明</a>
+      <a href="#feedback" data-preview="意见反馈">意见反馈</a>
+    </div>
+    <div class="footer-note">非学校官方站点 · 雾蓝公共客厅视觉预览</div>
+  </footer>
+</div>
+
+<nav class="mobile-tabbar" aria-label="移动端导航">
+  <a class="tabbar-item is-active" href="#top" aria-current="page">
+    <svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg><span>首页</span>
+  </a>
+  <a class="tabbar-item" href="#community" data-preview="校园圈">
+    <svg class="icon" aria-hidden="true"><use href="#i-compass"></use></svg><span>发现</span>
+  </a>
+  <button class="tabbar-item tabbar-compose" data-compose aria-label="发布动态">
+    <span class="compose-circle"><svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg></span><span>发布</span>
+  </button>
+  <a class="tabbar-item" href="#messages" data-preview="私信">
+    <svg class="icon" aria-hidden="true"><use href="#i-message"></use></svg><span>消息</span>
+  </a>
+  <a class="tabbar-item" href="#profile" data-preview="我的主页">
+    <svg class="icon" aria-hidden="true"><use href="#i-user"></use></svg><span>我的</span>
+  </a>
+</nav>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<dialog class="compose-dialog" id="compose-dialog" aria-labelledby="compose-title">
+  <div class="dialog-head">
+    <h2 id="compose-title">发布到校园圈</h2>
+    <button class="dialog-close" type="button" id="compose-close" aria-label="关闭发布窗口"><svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg></button>
+  </div>
+  <form id="compose-form">
+    <div class="compose-body">
+      <div class="compose-author">
+        <span class="avatar avatar--chun avatar--current" aria-hidden="true"><span>纯</span></span>
+        <div><strong>纯合子</strong><span>公开 · 所有人可见</span></div>
+        <span class="char-count" id="char-count">0 / 1000</span>
+      </div>
+      <textarea class="compose-textarea" id="compose-text" maxlength="1000" placeholder="今天在校园里遇见什么？写具体一点，大家更容易接上话。" aria-label="动态内容" required></textarea>
+      <div class="compose-error" id="compose-error" role="alert"></div>
+      <div class="compose-topics">
+        <span class="compose-topics-label">添加话题</span>
+        <button class="topic-chip" type="button" data-topic="#校园随拍">#校园随拍</button>
+        <button class="topic-chip" type="button" data-topic="#沈理求助">#沈理求助</button>
+        <button class="topic-chip" type="button" data-topic="#食堂测评">#食堂测评</button>
+        <button class="topic-chip" type="button" data-topic="#失物招领">#失物招领</button>
+      </div>
+      <div class="compose-attachments">
+        <button class="attach-button" type="button" id="attach-image"><svg class="icon" aria-hidden="true"><use href="#i-image"></use></svg>添加图片</button>
+        <span class="attach-note">演示版支持本地预览，不会上传</span>
+        <input type="file" id="image-input" accept="image/*" aria-label="选择待发布图片" hidden>
+      </div>
+      <figure class="image-preview" id="image-preview" hidden>
+        <img alt="待发布图片预览" id="preview-img">
+        <button class="image-remove" type="button" id="remove-image" aria-label="移除图片"><svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg></button>
+      </figure>
+    </div>
+    <div class="compose-foot">
+      <span class="compose-visibility"><svg class="icon" aria-hidden="true"><use href="#i-globe"></use></svg>校园圈 · 公开可见</span>
+      <div class="compose-foot-right">
+        <label class="anonymous-toggle"><input type="checkbox" id="anonymous" aria-label="匿名发布">匿名发布</label>
+        <button class="publish-button" type="submit">发布</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="mobile-menu" id="mobile-menu" aria-labelledby="mobile-menu-title">
+  <div class="mobile-menu-inner">
+    <div class="mobile-menu-head">
+      <div class="brand" id="mobile-menu-title">
+        <span class="brand-seal" aria-hidden="true">沈</span>
+        <span class="brand-text"><strong>沈理校园</strong><small>SYLU COMMONS</small></span>
+      </div>
+      <button class="mobile-menu-close" type="button" id="mobile-menu-close" aria-label="关闭导航"><svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg></button>
+    </div>
+    <div class="mobile-menu-profile">
+      <span class="avatar avatar--chun avatar--lg" aria-hidden="true"><span>纯</span></span>
+      <div><strong>纯合子</strong><span>Lv.6 · 校园观察员</span></div>
+    </div>
+    <form class="mobile-search" id="mobile-search-form" role="search">
+      <svg class="icon icon--sm" aria-hidden="true"><use href="#i-search"></use></svg>
+      <input id="mobile-search-input" type="search" placeholder="搜同学、帖子或话题" autocomplete="off" aria-label="搜索同学、帖子或话题">
+      <button type="submit">搜索</button>
+    </form>
+    <nav class="mobile-menu-nav" aria-label="移动端主菜单">
+      <a class="is-active" href="#top"><svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg>首页动态</a>
+      <a href="#community" data-preview="校园圈"><svg class="icon" aria-hidden="true"><use href="#i-compass"></use></svg>校园圈</a>
+      <a href="#market" data-preview="二手集市"><svg class="icon" aria-hidden="true"><use href="#i-store"></use></svg>二手集市</a>
+      <a href="#study" data-preview="学习互助"><svg class="icon" aria-hidden="true"><use href="#i-book"></use></svg>学习互助</a>
+      <a href="#events" data-preview="活动广场"><svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg>活动广场</a>
+      <a href="#saved" data-preview="我的收藏"><svg class="icon" aria-hidden="true"><use href="#i-bookmark"></use></svg>我的收藏</a>
+      <a href="#messages" data-preview="私信"><svg class="icon" aria-hidden="true"><use href="#i-message"></use></svg>私信</a>
+    </nav>
+    <div class="mobile-service-block">
+      <span>校园服务</span>
+      <div>
+        <a href="#timetable" data-preview="我的课表">课表</a>
+        <a href="#grades" data-preview="成绩查询">成绩</a>
+        <a href="#canteen" data-preview="食堂菜单">食堂</a>
+        <a href="#ai" data-preview="AI 助手">AI 助手</a>
+      </div>
+    </div>
+    <div class="mobile-service-block mobile-board-block">
+      <span>热门板块</span>
+      <div>
+        <a href="#lost" data-preview="失物招领">失物招领</a>
+        <a href="#canteen" data-preview="食堂测评">食堂测评</a>
+        <a href="#postgrad" data-preview="考研上岸">考研上岸</a>
+        <a href="#market" data-preview="二手数码">二手数码</a>
+      </div>
+    </div>
+    <div class="mobile-menu-note">沈理校园是非官方学生社区。<br>发言前请先看一眼社区公约。</div>
+  </div>
+</dialog>
+
+<svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z"/></symbol>
+    <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="m15.6 8.4-2.2 5-5 2.2 2.2-5z"/></symbol>
+    <symbol id="i-store" viewBox="0 0 24 24"><path d="M4 9h16v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM3 9l2-5h14l2 5M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 2-1"/><path d="M9 20v-5h6v5"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 5.5v16M8 7h8M8 11h6"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2"/><path d="M8 3v4M16 3v4M3.5 9.5h17M8 13h2M14 13h2M8 17h2M14 17h2"/></symbol>
+    <symbol id="i-message" viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 1-8 8 8.5 8.5 0 0 1-3.4-.7L4 20l1.2-4.4A8 8 0 1 1 20 11.5Z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M20.8 5.8a5.2 5.2 0 0 0-7.4 0L12 7.2l-1.4-1.4a5.2 5.2 0 1 0-7.4 7.4L12 22l8.8-8.8a5.2 5.2 0 0 0 0-7.4Z"/></symbol>
+    <symbol id="i-comment" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 9.3 9.3 0 0 1-3.7-.8L4 21l1.4-4.3A8.5 8.5 0 1 1 21 11.5Z"/></symbol>
+    <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 3.5h12a1 1 0 0 1 1 1V21l-7-4.4L5 21V4.5a1 1 0 0 1 1-1Z"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5.5" r="2.8"/><circle cx="6" cy="12" r="2.8"/><circle cx="18" cy="18.5" r="2.8"/><path d="m8.5 10.7 7-3.8M8.5 13.3l7 3.8"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M4 12h16M14 6l6 6-6 6"/></symbol>
+    <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2"/><circle cx="9" cy="9.5" r="1.5"/><path d="m4 18 5-5 4 4 3-3 4 4"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 1 1 4.2 1.8c-.9.7-1.8 1.2-1.8 2.7M12 17.2h.01"/></symbol>
+    <symbol id="i-hash" viewBox="0 0 24 24"><path d="M10 4 8 20M16 4l-2 16M4 9h16M3 15h16"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="m12 17 5 4-1.5-6L20 9l-6-1-2-6-2 6-6 1 4.5 6L6 21z"/></symbol>
+    <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 22c4 0 6.5-2.6 6.5-6.2 0-2.7-1.4-5-3.2-6.8-.3 1.2-1 2-1.9 2.4.2-2.3-.7-4.6-2.6-6.4.1 2.3-1.2 4.3-2.6 5.8C7 12.1 6 13.8 6 15.8 6 19.4 8.5 22 12 22Z"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M16 5.5a3 3 0 0 1 0 5.8M17.5 14.3A5.5 5.5 0 0 1 21 20"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h7M15 6h5M4 12h3M11 12h9M4 18h9M17 18h3"/><circle cx="13" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="18" r="2"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-cloud-sun" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M9 2v1.5M3.5 8H2M4.5 3.5l1 1M13.5 3.5l-1 1"/><path d="M7.5 18.5H18a3.5 3.5 0 0 0 .4-7 5.2 5.2 0 0 0-10-1.6 3.7 3.7 0 0 0-.9 8.6Z"/></symbol>
+    <symbol id="i-wind" viewBox="0 0 24 24"><path d="M3 8h11.5a2.5 2.5 0 1 0-2.5-2.5M3 12h15a2.5 2.5 0 1 1-2.5 2.5M3 16h8a2 2 0 1 1-2 2"/></symbol>
+    <symbol id="i-map-pin" viewBox="0 0 24 24"><path d="M20 10c0 5.5-8 11-8 11S4 15.5 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.7"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.5l3.5 2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m4.5 12.5 5 5 10-11"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 20 6v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="m8.5 12 2.3 2.3 4.7-5"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+    <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 5H4v2a4 4 0 0 0 4 4M16 5h4v2a4 4 0 0 1-4 4M12 13v5M8 21h8M9 18h6"/></symbol>
+    <symbol id="i-bowl" viewBox="0 0 24 24"><path d="M4 11h16a8 8 0 0 1-16 0ZM7 7c0-1 1-2 1-3M11 7c0-1 1-2 1-3M15 7c0-1 1-2 1-3M3 21h18"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L20 8l-4-4L4 16zM13.5 6.5l4 4"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 3 3.5 6 3.5 9s-1 6-3.5 9c-2.5-3-3.5-6-3.5-9S9.5 6 12 3Z"/></symbol>
+    <symbol id="i-card" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M7 14h4"/></symbol>
+    <symbol id="i-run" viewBox="0 0 24 24"><circle cx="15" cy="4.5" r="2"/><path d="m9 21 2.5-5-2-3 3.5-3 3 3 3 1M8 13l-3 3M11.5 10 8 8M14 15l3 2 1 4"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9zM4 7.5l8 4.5 8-4.5M12 12v9"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m21 3-7.5 18-3.2-7.3L3 10.5zM10.3 13.7 21 3"/></symbol>
+  </defs>
+</svg>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+  const toast = $('#toast');
+  let toastTimer;
+  const showToast = (message, error = false) => {
+    clearTimeout(toastTimer);
+    toast.textContent = message;
+    toast.classList.toggle('is-error', error);
+    toast.classList.add('is-visible');
+    toastTimer = setTimeout(() => toast.classList.remove('is-visible'), 2600);
+  };
+
+  // 页面滚动时给吸顶头部加一点层次，避免和内容糊在一起。
+  const header = $('#site-header');
+  const onScroll = () => header.classList.toggle('is-scrolled', window.scrollY > 8);
+  window.addEventListener('scroll', onScroll, {passive: true});
+  onScroll();
+
+  const previewCopy = {
+    default: '这是视觉预览，正式版会接入对应页面。'
+  };
+  document.addEventListener('click', (event) => {
+    const target = event.target.closest('[data-preview]');
+    if (!target) return;
+    event.preventDefault();
+    const label = target.getAttribute('data-preview') || '这个入口';
+    showToast(previewCopy.default.replace('对应页面', `「${label}」`));
+  });
+
+  // 通知浮层
+  const notifyButton = $('#notify-button');
+  const notifyPopover = $('#notify-popover');
+  const setNotifyOpen = (open) => {
+    notifyPopover.hidden = !open;
+    notifyButton.setAttribute('aria-expanded', String(open));
+  };
+  notifyButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setNotifyOpen(notifyPopover.hidden);
+  });
+  document.addEventListener('click', (event) => {
+    if (!notifyPopover.hidden && !event.target.closest('#notify-popover') && !event.target.closest('#notify-button')) {
+      setNotifyOpen(false);
+    }
+  });
+  $('#mark-all-read').addEventListener('click', () => {
+    notifyPopover.hidden = true;
+    notifyButton.setAttribute('aria-expanded', 'false');
+    const dot = notifyButton.querySelector('.dot');
+    if (dot) dot.remove();
+    showToast('通知已全部标记为已读');
+  });
+
+  // 移动端抽屉
+  const menuToggle = $('#menu-toggle');
+  const mobileMenu = $('#mobile-menu');
+  const openMenu = () => {
+    if (typeof mobileMenu.showModal === 'function') mobileMenu.showModal();
+    else mobileMenu.setAttribute('open', '');
+    menuToggle.setAttribute('aria-expanded', 'true');
+  };
+  const closeMenu = () => {
+    if (mobileMenu.open) mobileMenu.close();
+    menuToggle.setAttribute('aria-expanded', 'false');
+  };
+  menuToggle.addEventListener('click', openMenu);
+  $('#mobile-menu-close').addEventListener('click', closeMenu);
+  mobileMenu.addEventListener('click', (event) => {
+    if (event.target === mobileMenu) closeMenu();
+    if (event.target.closest('a')) closeMenu();
+  });
+
+  // 搜索
+  const searchInput = $('#global-search');
+  const searchState = $('#search-state');
+  const searchQuery = $('#search-query');
+  const searchCount = $('#search-count');
+  const clearSearchButton = $('#clear-search');
+  const noResults = $('#no-results');
+  let currentFilter = 'recommend';
+  let searchTerm = '';
+  const posts = $$('#post-list > .post, #more-posts > .post');
+  const postList = $('#post-list');
+  const morePosts = $('#more-posts');
+  const originalOrder = new Map(posts.map((post, index) => [post, index]));
+
+  const visiblePosts = () => posts.filter((post) => !post.hidden && !post.closest('#more-posts[hidden]'));
+
+  const applyFilters = () => {
+    const query = searchTerm.trim().toLowerCase();
+    let matching = 0;
+    posts.forEach((post) => {
+      const inMore = post.parentElement === morePosts;
+      if (inMore && morePosts.hidden) {
+        post.hidden = true;
+        return;
+      }
+      const haystack = (post.dataset.search || '') + ' ' + post.textContent;
+      const matchesQuery = !query || haystack.toLowerCase().includes(query);
+      const type = post.dataset.type;
+      const matchesFilter =
+        currentFilter === 'recommend' ||
+        currentFilter === 'latest' ||
+        (currentFilter === 'following' && post.dataset.following === 'true') ||
+        (currentFilter === 'question' && type === 'question');
+      post.hidden = !(matchesQuery && matchesFilter);
+      if (!post.hidden) matching += 1;
+    });
+
+    if (currentFilter === 'latest') {
+      posts
+        .slice()
+        .sort((a, b) => Number(b.dataset.order) - Number(a.dataset.order))
+        .forEach((post) => (post.parentElement === postList ? postList.appendChild(post) : morePosts.appendChild(post)));
+    } else if (!query) {
+      posts
+        .slice()
+        .sort((a, b) => originalOrder.get(a) - originalOrder.get(b))
+        .forEach((post) => (post.parentElement === postList ? postList.appendChild(post) : morePosts.appendChild(post)));
+    }
+
+    const hasQuery = Boolean(query);
+    searchState.hidden = !hasQuery;
+    if (hasQuery) {
+      searchQuery.textContent = searchTerm.trim();
+      searchCount.textContent = String(matching);
+    }
+    noResults.hidden = matching > 0;
+    $('#load-more').hidden = matching === 0 || !morePosts.hidden || currentFilter === 'question';
+  };
+
+  const runSearch = () => {
+    searchTerm = searchInput.value;
+    applyFilters();
+  };
+  searchInput.addEventListener('input', runSearch);
+  searchInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      searchInput.value = '';
+      searchTerm = '';
+      applyFilters();
+      searchInput.blur();
+    }
+  });
+  const clearSearch = () => {
+    searchInput.value = '';
+    searchTerm = '';
+    applyFilters();
+    searchInput.focus();
+  };
+  clearSearchButton.addEventListener('click', clearSearch);
+  $('#reset-search').addEventListener('click', clearSearch);
+  $('#mobile-search-input').addEventListener('input', (event) => {
+    event.target.setCustomValidity('');
+  });
+  $('#mobile-search-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const mobileSearchInput = $('#mobile-search-input');
+    const value = mobileSearchInput.value.trim();
+    if (!value) {
+      mobileSearchInput.setCustomValidity('输入一个关键词，再搜搜看');
+      mobileSearchInput.reportValidity();
+      mobileSearchInput.focus();
+      return;
+    }
+    mobileSearchInput.setCustomValidity('');
+    searchInput.value = value;
+    searchTerm = value;
+    currentFilter = 'recommend';
+    $$('.feed-tab').forEach((tab) => {
+      const active = tab.dataset.filter === 'recommend';
+      tab.classList.toggle('is-active', active);
+      tab.setAttribute('aria-selected', String(active));
+    });
+    applyFilters();
+    closeMenu();
+    setTimeout(() => {
+      $('#search-state').scrollIntoView({behavior: 'smooth', block: 'center'});
+      const found = Number($('#search-count').textContent || '0');
+      showToast(found > 0 ? `已筛选出与“${value}”相关的动态` : '没有找到相关动态，换个词试试', found === 0);
+    }, 160);
+  });
+  document.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    }
+    if (event.key === 'Escape') {
+      setNotifyOpen(false);
+      if (mobileMenu.open) closeMenu();
+    }
+  });
+
+  // 分类 tab
+  $$('.feed-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      currentFilter = tab.dataset.filter;
+      $$('.feed-tab').forEach((item) => {
+        const active = item === tab;
+        item.classList.toggle('is-active', active);
+        item.setAttribute('aria-selected', String(active));
+      });
+      applyFilters();
+    });
+  });
+
+  // 加载更多
+  $('#load-more').addEventListener('click', () => {
+    morePosts.hidden = false;
+    $('#load-more').hidden = true;
+    applyFilters();
+    showToast('又翻到两页校园日常');
+  });
+
+  // 点赞、收藏、关注、分享
+  document.addEventListener('click', async (event) => {
+    const like = event.target.closest('[data-like]');
+    if (like) {
+      const count = like.querySelector('.action-count');
+      const liked = like.classList.toggle('is-liked');
+      like.setAttribute('aria-pressed', String(liked));
+      if (count) count.textContent = String(Number(count.textContent) + (liked ? 1 : -1));
+      if (liked) showToast('已点赞，这条动态会被更多人看到');
+      return;
+    }
+
+    const save = event.target.closest('[data-save]');
+    if (save) {
+      const saved = save.classList.toggle('is-saved');
+      save.setAttribute('aria-pressed', String(saved));
+      const label = save.querySelector('.save-label');
+      if (label) label.textContent = saved ? '已收藏' : '收藏';
+      showToast(saved ? '已收藏到「我的收藏」' : '已取消收藏');
+      return;
+    }
+
+    const follow = event.target.closest('[data-follow]');
+    if (follow) {
+      const following = follow.classList.toggle('is-following');
+      follow.textContent = following ? '已关注' : '关注';
+      const post = follow.closest('.post');
+      if (post) post.dataset.following = String(following);
+      showToast(following ? '已关注，后续动态会出现在「关注」里' : '已取消关注');
+      if (currentFilter === 'following') applyFilters();
+      return;
+    }
+
+    const share = event.target.closest('[data-share]');
+    if (share) {
+      const post = share.closest('.post');
+      const title = post?.querySelector('.post-title')?.textContent?.trim() || '沈理校园';
+      const text = `${title} — 沈理校园社区`;
+      try {
+        if (navigator.share) {
+          await navigator.share({title: '沈理校园', text, url: location.href});
+        } else if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(`${text} ${location.href}`);
+          showToast('链接已复制，去分享给同学吧');
+        } else {
+          throw new Error('clipboard unavailable');
+        }
+      } catch (error) {
+        const helper = document.createElement('textarea');
+        helper.value = `${text} ${location.href}`;
+        helper.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+        document.body.appendChild(helper);
+        helper.select();
+        try { document.execCommand('copy'); showToast('链接已复制，去分享给同学吧'); }
+        catch { showToast('分享链接已准备好'); }
+        helper.remove();
+      }
+      return;
+    }
+
+    const alsoAsk = event.target.closest('[data-also-ask]');
+    if (alsoAsk && !alsoAsk.classList.contains('is-done')) {
+      const count = alsoAsk.querySelector('span');
+      alsoAsk.classList.add('is-done');
+      if (count) count.textContent = String(Number(count.textContent) + 1);
+      showToast('已同问，有回答时会通知你');
+    }
+  });
+
+  // 评论：点开后直接写，不把用户送去另一个页面。
+  document.addEventListener('click', (event) => {
+    const commentTrigger = event.target.closest('[data-comment]');
+    if (!commentTrigger) return;
+    const post = commentTrigger.closest('.post');
+    if (!post) return;
+    const form = post.querySelector('.comment-form');
+    if (!form) return;
+    form.hidden = false;
+    const input = form.querySelector('input');
+    input.focus();
+    form.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  });
+  document.addEventListener('submit', (event) => {
+    const form = event.target.closest('.comment-form');
+    if (!form) return;
+    event.preventDefault();
+    const input = form.querySelector('input');
+    const value = input.value.trim();
+    if (!value) {
+      showToast('写点什么再发送吧', true);
+      input.focus();
+      return;
+    }
+    const post = form.closest('.post');
+    const comments = post.querySelector('.post-comments');
+    const comment = document.createElement('div');
+    comment.className = 'post-comment is-new';
+    comment.innerHTML = `<span class="avatar avatar--chun avatar--sm" aria-hidden="true"><span>纯</span></span><div class="comment-body"><b>纯合子</b>${escapeHtml(value)}<span class="comment-time">刚刚</span></div>`;
+    comments.insertBefore(comment, form);
+    const actionCount = post.querySelector('[data-comment] .action-count');
+    if (actionCount) actionCount.textContent = String(Number(actionCount.textContent) + 1);
+    input.value = '';
+    form.hidden = true;
+    showToast('评论已发布');
+  });
+
+  const escapeHtml = (value) => value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  }[character]));
+
+  // 投票
+  document.addEventListener('click', (event) => {
+    const option = event.target.closest('[data-poll-option]');
+    if (!option) return;
+    const poll = option.closest('.poll');
+    if (!poll || poll.dataset.voted === 'true') return;
+    const options = $$('[data-poll-option]', poll);
+    const totalBefore = Number(poll.dataset.total || 0);
+    const total = totalBefore + 1;
+    poll.dataset.total = String(total);
+    poll.dataset.voted = 'true';
+    options.forEach((item) => {
+      item.classList.toggle('is-selected', item === option);
+      if (item === option) item.dataset.votes = String(Number(item.dataset.votes) + 1);
+      const votes = Number(item.dataset.votes);
+      const pct = Math.round((votes / total) * 100);
+      const fill = item.querySelector('.poll-fill');
+      const label = item.querySelector('.poll-pct');
+      if (fill) fill.style.width = `${(votes / total) * 100}%`;
+      if (label) label.textContent = `${pct}%`;
+      item.disabled = true;
+      item.setAttribute('aria-pressed', String(item === option));
+    });
+    const totalLabel = poll.querySelector('.poll-total');
+    const state = poll.querySelector('.poll-state');
+    if (totalLabel) totalLabel.textContent = String(total);
+    if (state) {
+      state.textContent = '已投票 · 谢谢参与';
+      state.style.color = 'var(--accent-deep)';
+    }
+    showToast('投票已记录');
+  });
+
+  // 热榜换一批
+  const hotSets = [
+    [
+      ['图书馆四楼插座到底在哪一侧？', '3.2k'],
+      ['二食堂翻新，本命窗口没了', '2.8k'],
+      ['供暖前，宿舍最冷的是哪一栋', '2.1k'],
+      ['沈理秋天的十个瞬间', '1.7k'],
+      ['求推荐：学校附近修自行车', '1.1k']
+    ],
+    [
+      ['期中周，图书馆几点就没座了', '3.0k'],
+      ['琴湖的鸭子今天又被喂了什么', '2.4k'],
+      ['求一个能早起占座的搭子', '1.9k'],
+      ['校医院拔智齿体验分享', '1.5k'],
+      ['南门哪家烤冷面还开着', '980']
+    ]
+  ];
+  let hotSetIndex = 0;
+  $('#refresh-hot').addEventListener('click', () => {
+    hotSetIndex = (hotSetIndex + 1) % hotSets.length;
+    const list = $('#hot-list');
+    list.innerHTML = hotSets[hotSetIndex].map(([title, heat], index) => `
+      <li class="hot-item">
+        <span class="hot-rank">${String(index + 1).padStart(2, '0')}</span>
+        <a class="hot-link" href="#hot-${index + 1}" data-preview="热榜话题">${title}</a>
+        <span class="hot-heat">${heat}</span>
+      </li>`).join('');
+    list.animate([{opacity: .35}, {opacity: 1}], {duration: 260, easing: 'ease-out'});
+  });
+
+  // 发布
+  const composeDialog = $('#compose-dialog');
+  const composeForm = $('#compose-form');
+  const composeText = $('#compose-text');
+  const composeError = $('#compose-error');
+  const charCount = $('#char-count');
+  const imageInput = $('#image-input');
+  const imagePreview = $('#image-preview');
+  const previewImg = $('#preview-img');
+  let sharedImage = '';
+  let pickedTopics = [];
+  let currentMode = 'story';
+  const modes = {
+    story: {title: '发布到校园圈', placeholder: '今天在校园里遇见什么？写具体一点，大家更容易接上话。'},
+    image: {title: '分享一张此刻的沈理', placeholder: '图里是什么？在哪里拍的？加一句说明，故事就出来了。'},
+    question: {title: '向校园圈提个问题', placeholder: '把问题说清楚：在哪儿、什么时候、你已经试过什么。懂的同学会来。'},
+    topic: {title: '发起一个话题', placeholder: '最近校园里有什么值得聊聊的？先写下你的观察。'}
+  };
+  const openCompose = (mode = 'story') => {
+    currentMode = mode;
+    const config = modes[mode] || modes.story;
+    $('#compose-title').textContent = config.title;
+    composeText.placeholder = config.placeholder;
+    composeText.value = '';
+    composeError.textContent = '';
+    charCount.textContent = '0 / 1000';
+    pickedTopics = [];
+    $$('.topic-chip').forEach((chip) => chip.classList.remove('is-picked'));
+    sharedImage = '';
+    imageInput.value = '';
+    imagePreview.hidden = true;
+    previewImg.removeAttribute('src');
+    $('#anonymous').checked = false;
+    if (typeof composeDialog.showModal === 'function') composeDialog.showModal();
+    else composeDialog.setAttribute('open', '');
+    setTimeout(() => composeText.focus(), 50);
+    if (mode === 'question') {
+      const helpTopic = $(`.topic-chip[data-topic="#沈理求助"]`);
+      if (helpTopic) helpTopic.click();
+    }
+    if (mode === 'image') {
+      const photoTopic = $(`.topic-chip[data-topic="#校园随拍"]`);
+      if (photoTopic) photoTopic.click();
+    }
+  };
+  $$('[data-compose]').forEach((button) => {
+    button.addEventListener('click', () => openCompose(button.dataset.mode || 'story'));
+  });
+  $('#compose-close').addEventListener('click', () => composeDialog.close());
+  composeDialog.addEventListener('click', (event) => {
+    if (event.target === composeDialog) composeDialog.close();
+  });
+  composeText.addEventListener('input', () => {
+    charCount.textContent = `${composeText.value.length} / 1000`;
+    if (composeError.textContent) composeError.textContent = '';
+  });
+  $$('.topic-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const topic = chip.dataset.topic;
+      chip.classList.toggle('is-picked');
+      if (chip.classList.contains('is-picked')) pickedTopics.push(topic);
+      else pickedTopics = pickedTopics.filter((item) => item !== topic);
+    });
+  });
+  $('#attach-image').addEventListener('click', () => imageInput.click());
+  imageInput.addEventListener('change', () => {
+    const file = imageInput.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      composeError.textContent = '请选择图片文件。';
+      return;
+    }
+    if (file.size > 6 * 1024 * 1024) {
+      composeError.textContent = '图片请控制在 6MB 以内。';
+      return;
+    }
+    const reader = new FileReader();
+    reader.addEventListener('load', () => {
+      sharedImage = String(reader.result || '');
+      previewImg.src = sharedImage;
+      imagePreview.hidden = false;
+    });
+    reader.readAsDataURL(file);
+  });
+  $('#remove-image').addEventListener('click', () => {
+    sharedImage = '';
+    imageInput.value = '';
+    previewImg.removeAttribute('src');
+    imagePreview.hidden = true;
+  });
+  composeForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const value = composeText.value.trim();
+    if (value.length < 2) {
+      composeError.textContent = '先写点什么吧，至少两个字符。';
+      composeText.focus();
+      return;
+    }
+    const anonymous = $('#anonymous').checked;
+    const author = anonymous ? '匿名同学' : '纯合子';
+    const avatarClass = anonymous ? 'avatar--lost' : 'avatar--chun';
+    const initial = anonymous ? '匿' : '纯';
+    const topics = pickedTopics.length ? pickedTopics : ['#校园随拍'];
+    const article = document.createElement('article');
+    article.className = 'post post--new';
+    article.dataset.type = currentMode === 'question' ? 'question' : 'story';
+    article.dataset.following = 'true';
+    article.dataset.order = String(Date.now());
+    article.dataset.search = value;
+    article.innerHTML = `
+      <header class="post-head">
+        <span class="avatar ${avatarClass} avatar--md" aria-hidden="true"><span>${initial}</span></span>
+        <div class="post-byline">
+          <div class="post-name-row"><span class="post-author">${author}</span><span class="role-badge">刚刚发布</span><span class="post-time">刚刚</span></div>
+          <div class="post-meta"><span>发布于 校园圈</span><span class="divider-dot" aria-hidden="true"></span><span>网页</span></div>
+        </div>
+        <div class="post-head-actions"><button class="post-more" aria-label="更多操作" data-preview="帖子操作"><svg class="icon" aria-hidden="true"><use href="#i-more"></use></svg></button></div>
+      </header>
+      <div class="post-body">
+        <div class="post-topics">${topics.map((topic) => `<a class="post-topic" href="#new-topic" data-preview="话题">${escapeHtml(topic)}</a>`).join('')}</div>
+        <div class="post-text"><p>${escapeHtml(value).replace(/\n/g, '<br>')}</p></div>
+        ${sharedImage ? `<figure class="post-media"><img src="${sharedImage}" alt="刚刚发布的图片"><figcaption><span>刚刚 · 来自网页</span><span>图片预览</span></figcaption></figure>` : ''}
+      </div>
+      <footer class="post-actions">
+        <button class="post-action post-action--like" data-like aria-pressed="false" aria-label="点赞"><svg class="icon" aria-hidden="true"><use href="#i-heart"></use></svg><span class="action-count">0</span></button>
+        <button class="post-action" data-comment aria-label="评论"><svg class="icon" aria-hidden="true"><use href="#i-comment"></use></svg><span class="action-count">0</span></button>
+        <button class="post-action post-action--save" data-save aria-pressed="false" aria-label="收藏"><svg class="icon" aria-hidden="true"><use href="#i-bookmark"></use></svg><span class="save-label">收藏</span></button>
+        <button class="post-action post-action--share" data-share><svg class="icon" aria-hidden="true"><use href="#i-share"></use></svg><span>分享</span></button>
+      </footer>
+      <div class="post-comments"><form class="comment-form" hidden><input type="text" maxlength="160" placeholder="说点什么…" aria-label="评论内容"><button type="submit">发送</button></form></div>`;
+    postList.insertBefore(article, postList.firstChild);
+    posts.unshift(article);
+    originalOrder.set(article, -1);
+    composeDialog.close();
+    currentFilter = 'recommend';
+    searchTerm = '';
+    searchInput.value = '';
+    $$('.feed-tab').forEach((tab) => {
+      const active = tab.dataset.filter === 'recommend';
+      tab.classList.toggle('is-active', active);
+      tab.setAttribute('aria-selected', String(active));
+    });
+    applyFilters();
+    article.scrollIntoView({behavior: 'smooth', block: 'center'});
+    const count = $('#new-post-count');
+    if (count) count.textContent = String(Number(count.textContent) + 1);
+    const railCount = $('#home-feed-count');
+    if (railCount) railCount.textContent = String(Number(railCount.textContent) + 1);
+    showToast('发布成功，已经出现在校园圈顶部');
+  });
+
+  // 首次渲染时应用一次筛选，保证隐藏的加载更多内容不参与计数。
+  applyFilters();
+
+  // 关键图片加载失败时给出可理解的替代，而不是一块空白。
+  $$('img').forEach((image) => {
+    image.addEventListener('error', () => {
+      image.style.display = 'none';
+      const holder = image.closest('figure, .photo-grid button');
+      if (holder) holder.classList.add('image-broken');
+    });
+  });
+})();
+</script>
+</body>
+</html>

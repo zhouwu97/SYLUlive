@@ -215,6 +215,19 @@ function PostAuthor({ post }: { post: Entity }) {
   );
 }
 
+function detailOrigin(path: string): { label: string; icon: string } {
+  const [pathname, search = ""] = path.split("?");
+  const section = pathname.split("/")[1] || "dashboard";
+  const sort = new URLSearchParams(search).get("sort");
+  if (section === "dashboard") return { label: "校园首页", icon: "dashboard" };
+  if (section === "polls") return { label: "投票 · 组队", icon: "polls" };
+  if (section === "market") return { label: "二手集市", icon: "market" };
+  if (section === "community" && sort === "bookmarks") return { label: "我的收藏", icon: "bookmark" };
+  if (section === "community" && sort === "mine") return { label: "我的帖子", icon: "file" };
+  if (section === "community") return { label: "校园社区", icon: "community" };
+  if (section === "profile") return { label: "个人主页", icon: "profile" };
+  return { label: "上一页", icon: "arrow" };
+}
 export function PostCard({
   post,
   market = false,
@@ -259,7 +272,7 @@ export function PostCard({
         </div>
       </Link>
     );
-  if (mobile && post.poll_meta) return <PollCard key={`${post.id}:${auth.user?.id}`} post={post} compact />;
+  if (post.poll_meta) return <PollCard key={`${post.id}:${auth.user?.id}`} post={post} compact />;
   return (
     <article className="feed-card">
       <PostAuthor key={`author:${post.id}:${auth.user?.id}`} post={post} />
@@ -291,7 +304,7 @@ export function Community({ market = false }: { market?: boolean }) {
       type: params.get("type"),
       q: params.get("q"),
       status: params.get("available") === "1" ? "normal" : undefined,
-      capabilities: mobile && !market ? "poll_v1" : undefined,
+      capabilities: !market ? "poll_v1" : undefined,
     }),
   );
   const posts = rows(q.data, "posts");
@@ -311,7 +324,7 @@ export function Community({ market = false }: { market?: boolean }) {
     <div className={market ? "market-page" : "community-page"}>
       <Head
         title={market ? mobile ? "集市" : "二手集市" : "校园社区"}
-        description={mobile && market ? "校园二手、求购和办事信息" : undefined}
+        description={market ? "校园二手、求购和办事信息" : undefined}
       >
         <button
           className="btn primary"
@@ -545,19 +558,25 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
             )}
           </PostMore>
   );
+  // 返回目标跟随入口：从首页、投票列表、收藏等进入时回到原页（保留滚动位置），直接打开时按内容类型兜底。
+  const from = typeof location.state?.from === "string" ? location.state.from as string : "";
+  const isPoll = poll || !!p.poll_meta;
+  const fallback = isPoll ? "/polls" : p.board_id === 2 ? "/market" : "/community";
+  const origin = detailOrigin(from || fallback);
+  const goBack = () => from ? navigate(-1) : navigate(fallback);
   return (
     <div className="post-detail-page">
       {mobile ? <header className="mobile-header mobile-detail-header page-head post-detail-head">
-        <button className="mobile-icon-button" aria-label="返回上一页" onClick={() => location.state?.from ? navigate(-1) : navigate(p.board_id === 2 ? '/market' : '/community')}><Icon name="arrow" size={24} /></button>
+        <button className="mobile-icon-button" aria-label="返回上一页" onClick={goBack}><Icon name="arrow" size={24} /></button>
         <h1>{p.poll_meta ? "投票详情" : p.board_id === 2 ? "闲置详情" : "帖子详情"}</h1>
         {q.data && !q.error ? moreActions : <span className="mobile-icon-button" />}
       </header> : <header className="page-head post-detail-head">
         <div className="page-title post-detail-heading">
-          <Link to={p.board_id === 2 ? "/market" : "/community"}><Icon name={p.board_id === 2 ? "market" : "community"} size={17} /><span>{p.board_id === 2 ? "二手集市" : "校园社区"}</span></Link>
+          <Link to={from || fallback} onClick={(event) => { if (!from) return; event.preventDefault(); goBack(); }}><Icon name={origin.icon} size={17} /><span>{origin.label}</span></Link>
           <span aria-hidden="true" className="post-detail-separator">/</span>
-          <h1>帖子详情</h1>
+          <h1>{isPoll ? "投票详情" : p.board_id === 2 ? "闲置详情" : "帖子详情"}</h1>
         </div>
-        <button className="btn post-back" onClick={()=>location.state?.from?navigate(-1):navigate(p.board_id===2?'/market':'/community')}><Icon name="arrow" size={17} />返回列表</button>
+        <button className="btn post-back" onClick={goBack}><Icon name="arrow" size={17} />返回列表</button>
       </header>}
       {mobile && p.poll_meta && <p className="mobile-poll-notice">非官方用户投票，结果仅代表参与用户的选择。</p>}
       <QueryState query={q}>

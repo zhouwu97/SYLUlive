@@ -1585,7 +1585,7 @@ svg {
     grid-template-columns: 1fr;
   }
 }
-@media (max-width: 760px) {
+@media (max-width: 600px) {
   :root {
     --sidebar: 0px;
   }
@@ -4379,7 +4379,7 @@ select:focus-visible,
     display: none;
   }
 }
-@media (max-width: 1040px) and (min-width: 761px) {
+@media (max-width: 1040px) and (min-width: 601px) {
   :root {
     --sidebar: 72px;
   }
@@ -4466,7 +4466,7 @@ select:focus-visible,
     grid-template-columns: 170px minmax(0, 1fr);
   }
 }
-@media (max-width: 760px) {
+@media (max-width: 600px) {
   :root {
     --sidebar: 0px;
     --topbar: 60px;

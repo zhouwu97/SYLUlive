@@ -22,7 +22,7 @@ test('课表编辑、冲突校验和 URL 周次',async({page})=>{
 test('主要路由和移动端导航无运行时错误',async({page})=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  for(const route of ['','community','market','schedule','grades','exams','campus','canteen','competition','ratings','polls','ai','toolbox','feedback','profile','notifications','admin','post/1']){await page.goto(route||'./');await expect(page.locator('#mainContent')).toBeVisible()}
- await page.setViewportSize({width:760,height:900});await page.goto('./');
+ await page.setViewportSize({width:600,height:900});await page.goto('./');
  await page.getByRole('button',{name:'打开导航'}).click();const drawer=page.getByLabel('主导航');await expect(drawer.getByRole('link',{name:'课表',exact:true})).toBeInViewport();
  await drawer.getByRole('link',{name:'课表',exact:true}).click();await expect(page).toHaveURL(/schedule/);
  expect(errors).toEqual([]);

@@ -74,7 +74,7 @@ export function Catalog({ kind }: { kind: CatalogKind }) {
         />
       )}
       <form
-        className="filter-row"
+        className="filter-row catalog-search"
         onSubmit={(e) => {
           e.preventDefault();
           const next = new URLSearchParams(params);

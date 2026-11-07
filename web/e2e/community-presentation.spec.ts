@@ -249,7 +249,7 @@ test("评论入口定位讨论区，返回保留列表筛选；更多操作支�
   await expect(page.getByRole("button", { name: "删除", exact: true })).toHaveCount(0);
   await page.locator(".post-more summary").press("Escape");
   await expect(page.locator(".post-more")).not.toHaveAttribute("open");
-  await page.getByRole("button", { name: page.viewportSize()!.width < 760 ? "返回上一页" : "返回列表", exact: true }).click();
+  await page.getByRole("button", { name: page.viewportSize()!.width <= 600 ? "返回上一页" : "返回列表", exact: true }).click();
   await expect(page).toHaveURL((url) => url.pathname.endsWith("/community") && url.searchParams.get("sort") === "time" && url.searchParams.get("q") === "校园");
   expect(state.errors).toEqual([]);
 });
@@ -340,7 +340,7 @@ test("桌面与手机互动栏不溢出，点击区域足够，图片失败能�
     expect(geometry.every((item) => item.inside && item.height >= 44)).toBe(true);
     expect(await page.locator("#mainContent").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
     expect(await page.locator(".post-detail-main").evaluate((element) => element.getBoundingClientRect().width)).toBeLessThanOrEqual(860);
-    if (width <= 760) {
+    if (width <= 600) {
       await page.goto("./");
       await page.getByRole("button", { name: "打开导航", exact: true }).click();
       await page.getByRole("button", { name: "切换主题", exact: true }).click();
@@ -351,7 +351,7 @@ test("桌面与手机互动栏不溢出，点击区域足够，图片失败能�
     }
     await page.getByRole("button", { name: "评论 7", exact: true }).click();
     await expect(page.getByRole("region", { name: "评论区" })).toBeFocused();
-    expect(await page.locator(".post-comments-head").evaluate((element) => element.getBoundingClientRect().top >= document.querySelector(innerWidth <= 760 ? ".mobile-header" : ".topbar")!.getBoundingClientRect().bottom)).toBe(true);
+    expect(await page.locator(".post-comments-head").evaluate((element) => element.getBoundingClientRect().top >= document.querySelector(innerWidth <= 600 ? ".mobile-header" : ".topbar")!.getBoundingClientRect().bottom)).toBe(true);
   }
   expect(state.errors).toEqual([]);
 });
@@ -540,7 +540,7 @@ test("详情失败仍可返回，闲置详情使用集市上下文，窄屏侧�
     await page.setViewportSize({ width, height: 1000 });
     await expect(page.locator(".post-detail-rail")).toBeHidden();
     expect(await page.locator("#mainContent").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
-    await expect(page.getByRole("button", { name: width <= 760 ? "返回上一页" : "返回列表", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: width <= 600 ? "返回上一页" : "返回列表", exact: true })).toBeVisible();
   }
   expect(state.writes).toEqual([]); expect(state.errors).toEqual([]);
 });

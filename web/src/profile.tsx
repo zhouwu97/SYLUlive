@@ -86,36 +86,44 @@ function DesktopProfile() {
   function openPrivacy() {
     ui.open('隐私与本地数据', <><p>校园资料默认仅保留在当前页面会话。扩展中启用的缓存和提醒可在课表连接及提醒设置内清除。</p><a className="btn" href="/api/user/privacy/export" target="_blank" rel="noreferrer">导出服务器个人数据</a><button className="btn" onClick={() => {store.setData(s => ({...s, courses: [], grades: [], exams: [], overrides: {}}));store.setUpdated('');ui.notify('当前页面的校园资料已清除');ui.close()}}>清除当前页面校园资料</button><p><Link to="/feedback" onClick={ui.close}>提交数据更正或删除请求</Link></p></>);
   }
+  const stats = typeof user.total_likes_received === 'number' || typeof user.following_count === 'number' || typeof user.followers_count === 'number';
   return <div className="profile-page">
-    <Head title="我的主页" description="记录校园日常，整理个人资料。">
-      <button className="btn" onClick={() => ui.open('账号安全', <Security/>)}><Icon name="admin" size={16}/>账号安全</button>
-      <button className="btn profile-logout" onClick={auth.logout}>退出登录</button>
-    </Head>
-    <div className="profile-layout">
-    <div className="profile-overview">
+    <h1 className="sr-only">我的主页</h1>
+    {/* 主页头部：封面整图展示（同图模糊铺底补足留白），头像压在封面下沿，资料与操作同一行 */}
     <section className="panel profile-card" aria-label="个人资料">
-      <div className="profile-identity">
-        <div className="profile-avatar"><ProfilePhoto key={`${user.id}:${avatar}`} src={avatar} name={nickname}/></div>
-        <div className="profile-name"><div className="profile-name-heading"><h2 title={nickname}>{nickname}</h2><span className="profile-level" aria-label={`等级 ${userLevel(user)}`}>Lv.{userLevel(user)}</span></div><AiBotIdentity user={user}/><span className="profile-account">账号 #{user.id}</span></div>
+      <div className={`profile-cover-wrap${cover ? '' : ' is-empty'}`}>
+        {cover ? <>
+          <img className="profile-cover-backdrop" src={cover} alt="" aria-hidden="true"/>
+          <ProfilePhoto key={`${user.id}:${cover}`} src={cover} cover/>
+        </> : <div className="profile-cover-empty"><p>用一张照片，记录校园里的自己。</p><button className="btn" onClick={() => ui.open('编辑资料', <EditProfile user={user}/>)}><Icon name="plus" size={16}/>添加主页封面</button></div>}
       </div>
-      <div className="profile-cover-wrap">{cover ? <ProfilePhoto key={`${user.id}:${cover}`} src={cover} cover/> : <div className="profile-cover-empty"><Icon name="campus" size={32}/><p>用一张照片，记录校园里的自己。</p><button className="btn" onClick={() => ui.open('编辑资料', <EditProfile user={user}/>)}><Icon name="plus" size={16}/>添加主页封面</button></div>}</div>
       <div className="profile-card-body">
-        {user.bio && <p className="profile-description">{user.bio}</p>}
-        {(typeof user.total_likes_received === 'number' || typeof user.following_count === 'number' || typeof user.followers_count === 'number') && <div className="profile-social" aria-label="个人互动统计">
-          {typeof user.total_likes_received === 'number' && <span className="profile-likes"><b>{user.total_likes_received}</b><span>获赞</span></span>}
-          {typeof user.following_count === 'number' && <button onClick={() => openContent('following')}><b>{user.following_count}</b><span>关注</span></button>}
-          {typeof user.followers_count === 'number' && <button onClick={() => openContent('followers')}><b>{user.followers_count}</b><span>粉丝</span></button>}
+        <div className="profile-identity">
+          <div className="profile-avatar"><ProfilePhoto key={`${user.id}:${avatar}`} src={avatar} name={nickname}/></div>
+          <div className="profile-name"><div className="profile-name-heading"><h2 title={nickname}>{nickname}</h2><span className="profile-level" aria-label={`等级 ${userLevel(user)}`}>Lv.{userLevel(user)}</span></div><AiBotIdentity user={user}/><span className="profile-account">账号 #{user.id}</span></div>
+          <div className="profile-actions">
+            <button className="btn primary profile-edit" aria-label="编辑资料与图片" onClick={() => ui.open('编辑资料', <EditProfile user={user}/>)}><Icon name="profile" size={16}/>编辑资料</button>
+            <button className="btn" onClick={() => ui.open('账号安全', <Security/>)}><Icon name="admin" size={16}/>账号安全</button>
+            <button className="btn profile-logout" onClick={auth.logout}>退出登录</button>
+          </div>
+        </div>
+        {(user.bio || stats) && <div className="profile-summary">
+          {user.bio && <p className="profile-description">{user.bio}</p>}
+          {stats && <div className="profile-social" aria-label="个人互动统计">
+            {typeof user.total_likes_received === 'number' && <span className="profile-likes"><b>{user.total_likes_received}</b><span>获赞</span></span>}
+            {typeof user.following_count === 'number' && <button onClick={() => openContent('following')}><b>{user.following_count}</b><span>关注</span></button>}
+            {typeof user.followers_count === 'number' && <button onClick={() => openContent('followers')}><b>{user.followers_count}</b><span>粉丝</span></button>}
+          </div>}
         </div>}
-        <button className="btn primary profile-edit" aria-label="编辑资料与图片" onClick={() => ui.open('编辑资料', <EditProfile user={user}/>)}><Icon name="profile" size={16}/>编辑资料</button>
       </div>
     </section>
+    <div className="profile-layout">
       <aside className="panel profile-tools" aria-label="个人工具">
         <h2>资料与设置</h2>
         <Link className="profile-tool" to="/connected-apps"><span className="profile-tool-icon"><Icon name="ai"/></span><span><b>已授权助手</b><small>管理机器人与外部助手授权</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></Link>
         <button className="profile-tool" aria-label="导入与导出校园资料" onClick={() => ui.open('本地资料', <AcademicSettings/>)}><span className="profile-tool-icon"><Icon name="grades"/></span><span><b>校园资料</b><small>导入或导出课表与成绩</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></button>
         <button className="profile-tool" aria-label="隐私与数据管理" onClick={openPrivacy}><span className="profile-tool-icon"><Icon name="admin"/></span><span><b>隐私与数据</b><small>导出数据、管理本地资料</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></button>
       </aside>
-    </div>
       <div className="profile-content"><div className="profile-content-tabs"><ProfileTabs value={tab} onChange={setTab} contentId={contentId}/></div>
       <section id={contentId} className="profile-content-region" role="tabpanel" aria-labelledby={`${contentId}-${tab}`} tabIndex={0}><MyContent key={tab} tab={tab} userId={user.id}/></section></div>
     </div>

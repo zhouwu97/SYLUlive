@@ -87,6 +87,12 @@ const scopeGroups = [
   { title: "可选：本人查询与签到", hint: "自动浏览、评论和发帖都不需要这些权限。仅在你要通过 QQ 查询本人已同步资料或签到时选择，默认不勾选。", scopes: ["academic:grades:read", "academic:erke:read", "checkin:write"] },
 ];
 const botScopeDependencies = ["community:read", "actions:read_own", "community:propose"];
+// 按分组顺序展示已批准权限，避免服务端字母序把成绩、二课排在最前面。
+const scopeOrder = scopeGroups.flatMap(group => group.scopes);
+function orderedScopes(raw: string) {
+  const rank = (scope: string) => { const index = scopeOrder.indexOf(scope); return index < 0 ? scopeOrder.length : index; };
+  return raw.split(/\s+/).filter(Boolean).sort((a, b) => rank(a) - rank(b));
+}
 const botParticipationScopes = [...botScopeDependencies, "community:bot_reply", "community:bot_post"];
 function missingBotScopes(binding: Binding) {
   const scopes = new Set(binding.scopes.split(/\s+/));
@@ -562,7 +568,7 @@ function CurrentConnections({ query: q, nickname, busy, disconnect, confirmed, o
         {active.length ? active.map(binding => <article className="current-astrbot-connection" key={binding.binding_id}>
           <div className="connection-installation-heading"><h3>{binding.installation_name}</h3><span className="connection-state-label">已连接</span></div>
           <p>校园账号：<strong>{nickname}</strong>。{missingBotScopes(binding).length ? "现有授权已生效，已批准的功能可继续使用；需要自动参与时可直接在这里补充权限。" : "此授权已生效，无需再次输入连接码。"}</p>
-          <ul className="connection-permission-tags" aria-label="当前连接已批准权限">{binding.scopes.split(" ").filter(Boolean).map(scope => <li key={scope}>{integrationScopeTitles[scope] || scope}</li>)}</ul>
+          <ul className="connection-permission-tags" aria-label="当前连接已批准权限">{orderedScopes(binding.scopes).map(scope => <li key={scope}>{integrationScopeTitles[scope] || scope}</li>)}</ul>
           {editing?.id === binding.binding_id ? <ScopeEditor editing={editing} busy={busy || q.isFetching} unavailable={unavailableScopes(q.data)}
             onChange={onEditChange} onSave={onSaveScopes} onCancel={onCancelEdit} />
             : <>
@@ -572,10 +578,9 @@ function CurrentConnections({ query: q, nickname, busy, disconnect, confirmed, o
                 <button className="btn primary" type="button" disabled={busy || q.isFetching} onClick={() => onEdit(binding, true)}>补充机器人授权</button>
                 <p className="integration-hint">直接在这里勾选并保存即可，连接和 AstrBot 凭证保持不变，无需重新连接或发送 <code>/sylu-connect</code>。</p>
               </div>}
-              <button className="btn" type="button" disabled={busy || q.isFetching} onClick={() => onEdit(binding, false)}>修改权限</button>
             </>}
           <details className="connection-permission-details"><summary>查看完整权限与执行端信息</summary>
-            <ul>{binding.scopes.split(" ").filter(Boolean).map(scope => <li key={scope}>{labels[scope] || scope}</li>)}</ul>
+            <ul>{orderedScopes(binding.scopes).map(scope => <li key={scope}>{labels[scope] || scope}</li>)}</ul>
             <p className="integration-hint">安装标识：{binding.installation_id}。安装名称和标识由插件自报，不证明 QQ 归属；App 登录设备另行管理。</p>
           </details>
           <p className="integration-hint">这条连接允许 AstrBot 执行已批准的功能。机器人还需启用、满足规则并收到执行端心跳，才会按计划运行。</p>
@@ -584,7 +589,10 @@ function CurrentConnections({ query: q, nickname, busy, disconnect, confirmed, o
             <p>这会撤销该执行端的全部已批准权限，旧凭证和待发布草稿将失效。机器人资料、已发布内容和其他人的连接会保留。需要再次使用时，在 AstrBot 重新发起连接并授权。</p>
             <label className="bot-check"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => onConfirmed(event.target.checked)} /><span>我确认断开这条连接</span></label>
             <div className="form-actions"><button className="btn danger" type="button" disabled={busy || q.isFetching || !confirmed} onClick={() => onRevoke(binding.binding_id)}>{busy ? "正在断开…" : "确认断开连接"}</button><button className="btn" type="button" disabled={busy} onClick={onCancelDisconnect}>保持连接</button></div>
-          </div> : <button className="btn" type="button" disabled={busy || q.isFetching} onClick={() => onDisconnect(binding)}>断开此连接</button>}
+          </div> : editing?.id !== binding.binding_id && <div className="form-actions connection-card-actions">
+            <button className="btn" type="button" disabled={busy || q.isFetching} onClick={() => onEdit(binding, false)}>修改权限</button>
+            <button className="btn" type="button" disabled={busy || q.isFetching} onClick={() => onDisconnect(binding)}>断开此连接</button>
+          </div>}
         </article>) : <p className="integration-description">当前账号没有有效的 AstrBot 授权。下方历史记录不代表仍在连接；在原聊天取得新请求后，可点击「连接新的 AstrBot」。</p>}
         {history.length > 0 && <details className="connection-history"><summary>历史连接（{history.length}）</summary>
           <p className="integration-hint">这里只保留旧授权记录，不会继续执行，也不需要再次撤销。</p>

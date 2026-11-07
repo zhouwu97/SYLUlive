@@ -213,13 +213,13 @@ html, body { overflow-x: clip; color: var(--text); background: var(--bg); font-f
 }
 /* 按下仅改变填充，保持内容和导航几何稳定。 */
 .social-shell .compact-quick .quick:active { background: var(--surface-3); }
-@media (min-width: 761px) {
+@media (min-width: 601px) {
   .social-shell .sidebar { top: var(--topbar); height: calc(100dvh - var(--topbar)); }
 }
 @media (prefers-reduced-motion: reduce) {
   :is(.social-shell, .modal) .btn, .social-shell .market-card, .social-shell .compact-quick .quick, .social-shell .community-feed .feed-card { transition: none; }
 }
-@media (max-width: 760px) {
+@media (max-width: 600px) {
   .social-shell .sidebar { border-radius: 0; }
   .modal { max-height: calc(100dvh - 32px); }
   .modal .modal-head { padding-inline: var(--space-lg); }

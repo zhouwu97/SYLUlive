@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { captureAuthSession, entity, errorText, query, rows, time, useApi, write, type Entity } from "./api";
 import { Empty, Form, Icon, QueryState, Tabs, useUI } from "./ui";
 import { useAuth } from "./auth";
@@ -98,7 +98,7 @@ export function Polls() {
                   </button>
                 </div>
               </article>
-            ))}</div> : <div className="poll-feed">{items.map(post => <PollCard key={post.id} post={post} />)}</div>}
+            ))}</div> : <div className="poll-feed">{items.map(post => <PollCard key={post.id} post={post} linked />)}</div>}
         </div>
         {!items.length && (
           <Empty
@@ -110,10 +110,11 @@ export function Polls() {
     </div>
   );
 }
-export function PollCard({ post, compact = false }: { post: Entity; compact?: boolean }) {
+// 列表卡片（首页信息流、投票列表）需要进入详情；详情页内复用时不再自链接。
+export function PollCard({ post, compact = false, linked = compact }: { post: Entity; compact?: boolean; linked?: boolean }) {
   const ui = useUI(), auth = useAuth(), qc = useQueryClient();
   const mobile = useMobile();
-  const location = useLocation();
+  const location = useLocation(), navigate = useNavigate();
   const poll = post.poll_meta || {};
   const authorName = post.author?.nickname || "匿名用户";
   const options: Entity[] = poll.options || [];
@@ -135,6 +136,15 @@ export function PollCard({ post, compact = false }: { post: Entity; compact?: bo
   const editable = active && !!auth.user && !!(poll.can_vote || poll.can_change);
   const resultsVisible = poll.results_visible !== false && poll.can_view_result !== false;
   const unchanged = poll.has_voted && chosen.length === savedChoices.length && chosen.every(id => savedChoices.includes(id));
+  const detailPath = poll.id ? `/polls/${poll.id}` : `/post/${post.id}`;
+  const detailState = { from: location.pathname + location.search };
+  // 与普通帖子卡片一致：点卡片空白处进入详情；选项、按钮、图片等交互区保持原行为。
+  function openDetail(event: MouseEvent<HTMLElement>) {
+    if (!linked || event.defaultPrevented || event.button !== 0) return;
+    if ((event.target as Element).closest("a, button, input, label, select, textarea, fieldset, .poll-media, [role='button']")) return;
+    if (window.getSelection()?.toString()) return;
+    navigate(detailPath, { state: detailState });
+  }
   const hintId = `poll-hint-${post.id}`;
   const titleId = `poll-title-${post.id}`;
   const hiddenResultHint = ({
@@ -166,14 +176,14 @@ export function PollCard({ post, compact = false }: { post: Entity; compact?: bo
   }
 
   return (
-    <article className={`panel poll-card ${compact ? "mobile-feed-poll" : ""} ${active ? "poll-card-active" : "poll-card-closed"}`} aria-labelledby={titleId} aria-busy={busy}>
+    <article className={`panel poll-card ${compact ? "mobile-feed-poll" : ""} ${linked ? "poll-card-linked" : ""} ${active ? "poll-card-active" : "poll-card-closed"}`} aria-labelledby={titleId} aria-busy={busy} onClick={openDetail}>
       <div className="participation-heading">
         <div className="poll-author">
           <span className="poll-avatar"><ServerAvatar src={post.author?.avatar} name={authorName} /></span>
           <div className="poll-author-copy"><b>{authorName}</b>{post.created_at && <time dateTime={post.created_at} title={time(post.created_at)}>{compact || mobile ? mobilePostTime(post.created_at) : time(post.created_at)}</time>}</div>
           <span className="poll-type-label">校园投票</span>
         </div>
-      <h3 id={titleId}>{compact ? <Link to={poll.id ? `/polls/${poll.id}` : `/post/${post.id}`} state={{ from: location.pathname + location.search }}>{post.title}</Link> : post.title}</h3>
+      <h3 id={titleId}>{linked ? <Link to={detailPath} state={detailState}>{post.title}</Link> : post.title}</h3>
       {post.content && <p className="participation-description">{post.content}</p>}
       </div>
       <MediaGallery items={post.images} title={post.title} className="poll-media" maxVisible={9} />

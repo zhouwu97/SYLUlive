@@ -15,13 +15,14 @@ test('原型主要页签和右栏范围恢复',async({page})=>{
   await page.goto('campus');await expect(page.locator('.quick-grid .quick')).toHaveCount(4);await expect(page.locator('.right-rail')).toHaveCount(0);
   await page.goto('market');await expect(page.locator('.right-rail')).toHaveCount(0);
 });
-test('工具箱在宽屏三列、窄屏单列，切换主题不破坏布局',async({page})=>{
-  for(const width of [1920,1440,1040,760]){
+test('工具箱在宽屏多列、窄屏单列，切换主题不破坏布局',async({page})=>{
+  for(const width of [1920,1440,1040,600,360]){
     await page.setViewportSize({width,height:1000});await page.goto('toolbox');
-    const cards=page.locator('.three-col > section');await expect(cards).toHaveCount(6);
+    const cards=page.locator('.tool-grid').first().locator('.tool-tile');await expect(cards).toHaveCount(5);
     const points=await cards.evaluateAll(es=>es.slice(0,2).map(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y}}));
-    if(width>=1040)expect(Math.abs(points[0].y-points[1].y)).toBeLessThan(2);else expect(points[1].y).toBeGreaterThan(points[0].y);
-    if(width<=760){
+    // 与 App 断点一致：内容区不足 380px 时单列，其余多列
+    if(width>=600)expect(Math.abs(points[0].y-points[1].y)).toBeLessThan(2);else expect(points[1].y).toBeGreaterThan(points[0].y);
+    if(width<=600){
       await page.goto('./');await page.getByRole('button',{name:'打开导航'}).click();
       await page.getByRole('button',{name:'切换主题'}).click();await page.keyboard.press('Escape');await page.goto('toolbox');
     }else await page.getByRole('button',{name:'切换主题'}).click();

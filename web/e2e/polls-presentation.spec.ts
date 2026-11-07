@@ -259,3 +259,31 @@ for (const theme of ["light", "dark"]) {
     expect(errors).toEqual([]);
   });
 }
+
+test("投票卡片可进入详情，返回按入口回到投票列表", async ({ page }) => {
+  const { posts, errors } = await fixture(page);
+  await page.route(/\/api\/polls\/\d+$/, route => {
+    const id = Number(new URL(route.request().url()).pathname.split("/").pop());
+    const post = posts.find(item => item.poll_meta.id === id);
+    return post ? route.fulfill({ json: post }) : route.fulfill({ status: 404, json: { message: "投票不存在" } });
+  });
+  await page.goto("polls");
+  const card = page.locator(".poll-feed .poll-card").nth(1);
+  // 点选项只改选择，不跳转。
+  await card.locator(".poll-choice").nth(1).click();
+  await expect(page).toHaveURL(/\/web\/polls$/);
+  await card.locator(".participation-description").click();
+  await expect(page).toHaveURL(/\/web\/polls\/10902$/);
+  const heading = page.locator(".post-detail-heading");
+  await expect(heading.getByRole("link", { name: "投票 · 组队" })).toBeVisible();
+  await expect(heading.getByRole("heading", { name: "投票详情" })).toBeVisible();
+  await expect(page.locator(".post-full .poll-card h3 a")).toHaveCount(0);
+  await page.getByRole("button", { name: "返回列表", exact: true }).click();
+  await expect(page).toHaveURL(/\/web\/polls$/);
+  // 直接打开详情时没有来源，兜底回投票列表而不是社区。
+  await page.goto("polls/10901");
+  await expect(heading.getByRole("link", { name: "投票 · 组队" })).toHaveAttribute("href", "/web/polls");
+  await page.getByRole("button", { name: "返回列表", exact: true }).click();
+  await expect(page).toHaveURL(/\/web\/polls$/);
+  expect(errors).toEqual([]);
+});

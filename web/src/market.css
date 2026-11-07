@@ -38,7 +38,7 @@
   .market-types button:hover { background: var(--surface-2); }
   .market-types button[aria-pressed="true"]:hover { background: var(--brand-soft); }
 }
-@media (max-width: 760px) {
+@media (max-width: 600px) {
   .market-page .filter-row { padding: 12px; gap: 8px; margin-bottom: 12px; }
   .market-page .filter-row form { flex-basis: 100%; }
   .market-page .filter-row select { flex: 1; min-width: 0; max-width: none; }

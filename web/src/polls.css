@@ -24,6 +24,9 @@
 .poll-type-label { flex-shrink: 0; padding: 5px 9px; border-radius: 6px; color: var(--brand-strong); background: var(--brand-soft); font-size: 12px; font-weight: 600; }
 .participation-heading { margin: 0 0 14px; }
 .poll-card h3 { margin: 0 0 8px; font-size: 20px; line-height: 1.5; font-weight: 650; overflow-wrap: anywhere; }
+.poll-card-linked .participation-heading { cursor: pointer; }
+.poll-card-linked h3 a { color: inherit; text-decoration: none; }
+.poll-card-linked h3 a:hover { color: var(--brand-strong); }
 .participation-description { margin: 0; color: var(--text-2); font-size: 14px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
 .poll-media { margin-block: 14px; }
 .poll-feed .poll-media .media-tile { min-height: 0; height: 220px; border-radius: 10px; }
@@ -66,7 +69,7 @@
 .participation-meta { display: grid; gap: 5px; color: var(--text-3); font-size: 12px; }
 @media (hover: hover) and (pointer: fine) { .poll-choice:not(.is-disabled):hover { border-color: var(--brand-strong); } }
 @media (max-width: 1100px) { .participation-grid { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 760px) {
+@media (max-width: 600px) {
   .participation-intro { gap: 14px; flex-wrap: wrap; padding-bottom: 20px; }
   .participation-intro h1 { font-size: 24px; }
   .social-shell .poll-feed > .poll-card { padding: 16px; }

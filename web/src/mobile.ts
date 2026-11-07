@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { AcademicTerm } from "@sylulive/academic-contracts";
 
-const phoneQuery = "(max-width: 760px)";
+const phoneQuery = "(max-width: 600px)";
 function subscribe(listener: () => void) {
   const media = window.matchMedia(phoneQuery);
   media.addEventListener("change", listener);

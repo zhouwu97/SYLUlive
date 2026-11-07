@@ -8,14 +8,16 @@ for (const theme of ["light", "dark"]) {
     await page.route("**/api/user/profile", route => route.fulfill({ json: { id: 991, nickname: "图标验收同学", role: "user" } }));
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("toolbox");
-    await expect(page.locator(".tool-card")).toHaveCount(6);
+    // 分组与 App 工具箱一致：常用工具 5、校园与娱乐 2、更多工具 4
+    await expect(page.getByRole("heading", { level: 2 })).toHaveText(["常用工具", "校园与娱乐", "更多工具"]);
+    await expect(page.locator(".tool-tile")).toHaveCount(11);
     await expect(page.locator(".tool-icon .svg-icon").first()).toHaveCSS("width", "24px");
     await expect(page.locator(".nav-icon .svg-icon").first()).toHaveCSS("width", "20px");
     await expect(page.locator(".tool-icon [data-tone]").first()).toHaveCSS("fill-opacity", "0.14");
     await page.screenshot({ path: `.codex-captures/icons-ui/toolbox-${theme}.png` });
 
-    const gpa = page.locator(".tool-card").filter({ has: page.getByRole("heading", { name: "GPA 计算", exact: true }) });
-    await gpa.getByRole("button", { name: "打开", exact: true }).click();
+    const gpa = page.locator(".tool-tile").filter({ hasText: "GPA 计算" });
+    await gpa.click();
     const dialog = page.getByRole("dialog", { name: "GPA 计算", exact: true });
     await expect(dialog.locator('[data-icon="close"]')).toHaveCSS("width", "18px");
     await dialog.getByRole("textbox").fill("3,4\n2,3");
@@ -25,12 +27,14 @@ for (const theme of ["light", "dark"]) {
     await dialog.getByRole("button", { name: "计算", exact: true }).click();
     await expect(dialog).toContainText("请输入有效学分和 0–5 的绩点");
     await page.keyboard.press("Escape");
-    await expect(gpa.getByRole("button", { name: "打开", exact: true })).toBeFocused();
-    const free = page.locator(".tool-card").filter({ has: page.getByRole("heading", { name: "空闲时间", exact: true }) });
-    await free.getByRole("button", { name: "上移", exact: true }).click();
-    await expect(page.locator(".tool-card").first()).toContainText("空闲时间");
-    await page.reload();
-    await expect(page.locator(".tool-card").first()).toContainText("空闲时间");
+    await expect(gpa).toBeFocused();
+    // 网站大全与 App 同一份 10 个站点，新标签页打开
+    await page.locator(".tool-tile").filter({ hasText: "网站大全" }).click();
+    const sites = page.getByRole("dialog", { name: "网站大全", exact: true });
+    await expect(sites.locator(".site-link")).toHaveCount(10);
+    await expect(sites.getByRole("link", { name: /教务处/ })).toHaveAttribute("target", "_blank");
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".tool-tile").filter({ hasText: "试卷库" })).toHaveAttribute("href", /exams\?tab=papers$/);
   });
 }
 

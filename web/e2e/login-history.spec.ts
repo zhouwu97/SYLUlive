@@ -27,7 +27,7 @@ async function fixture(page: Page) {
 }
 
 async function openLogin(page: Page) {
-  await page.getByRole("button", { name: page.viewportSize()!.width <= 760 ? "发布校园内容" : "登录", exact: true }).click();
+  await page.getByRole("button", { name: page.viewportSize()!.width <= 600 ? "发布校园内容" : "登录", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "登录沈理校园", exact: true });
   await expect(dialog.getByLabel("邮箱或账号")).toBeVisible();
   await expect(dialog).toHaveCSS("opacity", "1");

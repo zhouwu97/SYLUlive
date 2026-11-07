@@ -51,9 +51,24 @@
   --text-lg: 20px;
   --text-xl: 26px;
   --text-display: 26px;
+  /* 以下语义令牌的全局取值等于组件里原先写死的值，手机端（≤600px）因此保持原样；桌面在下方媒体块里取新值。 */
+  --text-tiny: 11px;
+  --text-caption: 13px;
+  --text-reading: 16px;
+  --text-hero: 30px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-strong: 650;
+  --weight-heavy: 750;
+  --radius-xs: 6px;
+  --radius-sm: 8px;
   --radius-control: 12px;
   --radius-card: 16px;
   --radius-thumb: 10px;
+  --radius-pill: 999px;
+  --color-avatar: #5778d2;
   --ease-out: cubic-bezier(.23, 1, .32, 1);
   --ease-in: cubic-bezier(.7, 0, .84, 0);
   --ease-in-out: cubic-bezier(.65, 0, .35, 1);
@@ -130,6 +145,11 @@
     --radius-control: 10px;
     --radius-card: 16px;
     --radius-thumb: 10px;
+    /* 字重只用 400 / 500 / 600 / 700；旧的 650、750 在桌面归并到 600、700。 */
+    --weight-strong: 600;
+    --weight-heavy: 700;
+    /* 默认头像底色跟随主题色。 */
+    --color-avatar: var(--color-accent-fill);
   }
   :root[data-theme="dark"] {
     --color-paper: #0e1014;

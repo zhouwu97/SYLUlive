@@ -50,6 +50,7 @@
   --shadow-2:0 1px 2px rgba(20,24,33,.04),0 8px 24px -12px rgba(20,24,33,.12);
   --shadow-pop:0 18px 48px -12px rgba(20,24,33,.22),0 2px 6px rgba(20,24,33,.06);
   --ease:cubic-bezier(.22,1,.36,1);
+  --spring:cubic-bezier(.34,1.32,.64,1);
   --top:60px;
   --side:220px;
   --rail:316px;
@@ -187,6 +188,12 @@ kbd{font:500 11px/1 var(--font-num);padding:3px 6px;border-radius:5px;border:1px
 .seg button:hover{color:var(--ink)}
 .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 [data-theme="dark"] .seg button[aria-pressed="true"]{background:var(--line-2)}
+/* 有滑块时，选中底色交给滑块，按钮本身透明 */
+.seg{position:relative}
+.seg.has-ind button{position:relative;z-index:1}
+.seg.has-ind button[aria-pressed="true"]{background:transparent;box-shadow:none}
+.seg .ind{top:0;border-radius:8px;background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.08),0 2px 8px -4px rgba(0,0,0,.12)}
+[data-theme="dark"] .seg .ind{background:var(--line-2)}
 
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
@@ -195,9 +202,11 @@ kbd{font:500 11px/1 var(--font-num);padding:3px 6px;border-radius:5px;border:1px
 }
 .tabs button:hover{color:var(--ink)}
 .tabs button[aria-selected="true"]{color:var(--ink);font-weight:600}
-.tabs button[aria-selected="true"]::after{
-  content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:2px;border-radius:2px;background:var(--accent);
+.tabs{position:relative}
+.tabs:not(.has-ind) button[aria-selected="true"]::after{
+  content:"";position:absolute;left:12px;right:12px;bottom:0;height:2px;border-radius:2px;background:var(--accent);
 }
+.tabs .ind{bottom:0;height:2px;border-radius:2px;background:var(--accent)}
 
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--shadow-1)}
 
@@ -225,8 +234,19 @@ kbd{font:500 11px/1 var(--font-num);padding:3px 6px;border-radius:5px;border:1px
 .topbar.is-scrolled{border-bottom-color:var(--line)}
 .topbar-in{
   max-width:1360px;height:100%;margin:0 auto;padding:0 24px;
-  display:grid;grid-template-columns:var(--side) minmax(0,1fr) auto;gap:28px;align-items:center;
+  display:grid;grid-template-columns:var(--side) auto minmax(0,1fr) auto;gap:20px;align-items:center;
 }
+/* 顶栏主导航：当前页用一块会滑动的浅色胶囊标出 */
+.top-nav{position:relative;display:flex;gap:2px;padding:4px;border-radius:12px;margin-left:8px}
+.top-nav a{
+  position:relative;z-index:1;display:inline-flex;align-items:center;height:34px;padding:0 14px;border-radius:9px;
+  font-size:var(--t-14);font-weight:500;color:var(--muted);white-space:nowrap;transition:color .2s;
+}
+.top-nav a:hover{color:var(--ink)}
+.top-nav a[aria-current="page"]{color:var(--accent-text);font-weight:600}
+.ind{position:absolute;left:0;pointer-events:none;will-change:transform,width}
+.ind.ready{transition:transform .5s var(--spring),width .5s var(--spring),height .45s var(--spring)}
+.top-nav .ind{top:4px;bottom:4px;border-radius:9px;background:var(--accent-soft)}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:var(--t-17);letter-spacing:.01em}
 .brand-mark{
   width:32px;height:32px;border-radius:9px;overflow:hidden;flex:none;
@@ -235,7 +255,13 @@ kbd{font:500 11px/1 var(--font-num);padding:3px 6px;border-radius:5px;border:1px
 }
 .brand-mark img{width:100%;height:100%;object-fit:cover}
 .brand small{display:block;font-size:11px;font-weight:500;color:var(--muted);letter-spacing:.04em;margin-top:-2px}
-.top-search{max-width:520px;width:100%;background:var(--surface);border-color:var(--line)}
+.top-search{justify-self:end;max-width:360px;width:100%;background:var(--surface);border-color:var(--line)}
+.theme-ic{position:relative;width:20px;height:20px}
+.theme-ic .i{position:absolute;inset:0;transition:transform .5s var(--spring),opacity .3s}
+.theme-ic .moon{opacity:1}
+.theme-ic .sun{opacity:0;transform:rotate(-90deg) scale(.5)}
+[data-theme="dark"] .theme-ic .moon{opacity:0;transform:rotate(90deg) scale(.5)}
+[data-theme="dark"] .theme-ic .sun{opacity:1;transform:none}
 .top-actions{display:flex;align-items:center;gap:4px}
 .top-actions .btn{margin-left:8px}
 .top-actions .sep{width:1px;height:20px;background:var(--line-2);margin:0 6px}
@@ -244,37 +270,91 @@ kbd{font:500 11px/1 var(--font-num);padding:3px 6px;border-radius:5px;border:1px
 /* =========================================================
    5. Shell layout
    ========================================================= */
+/* 三列始终保持同样的轨道数，侧栏收起、右栏隐藏都只改轨道宽度，才能平滑过渡 */
 .shell{
+  --side-w:var(--side);--rail-w:var(--rail);
   position:relative;z-index:1;
   max-width:1360px;margin:0 auto;padding:0 24px;
-  display:grid;grid-template-columns:var(--side) minmax(0,1fr) var(--rail);gap:28px;
+  display:grid;grid-template-columns:var(--side-w) minmax(0,1fr) var(--rail-w);
+  transition:grid-template-columns .55s var(--ease);
 }
-body.no-rail .shell{grid-template-columns:var(--side) minmax(0,1fr)}
-body.no-rail .rail{display:none}
+.main{margin:0 28px;transition:margin .55s var(--ease)}
+.rail{transition:opacity .3s,transform .55s var(--ease),visibility .3s}
+body.no-rail .shell{--rail-w:0px}
+body.no-rail .main{margin-right:0}
+body.no-rail .rail{opacity:0;visibility:hidden;transform:translateX(32px)}
+body.side-collapsed .shell{--side-w:64px}
 
 /* Sidebar */
 .sidebar{
-  position:sticky;top:var(--top);align-self:start;
-  height:calc(100vh - var(--top));padding:20px 0 76px;
-  display:flex;flex-direction:column;gap:2px;overflow-y:auto;scrollbar-width:none;
+  position:sticky;top:var(--top);align-self:start;min-width:0;
+  height:calc(100vh - var(--top));padding:16px 0 76px;
+  display:flex;flex-direction:column;gap:2px;overflow-x:hidden;overflow-y:auto;scrollbar-width:none;
 }
 .sidebar::-webkit-scrollbar{display:none}
+/* 条目带 overflow:hidden 时最小高度会变 0，纵向 flex 里必须禁止收缩，否则会被压扁 */
+.sidebar > *{flex-shrink:0}
+.side-ind{right:0;top:0;height:40px;border-radius:var(--r-sm);background:var(--accent-soft);z-index:0}
 .nav-item{
-  display:flex;align-items:center;gap:12px;height:42px;padding:0 12px;border-radius:var(--r-sm);
-  font-size:var(--t-15);font-weight:500;color:var(--ink-2);
-  transition:background .15s,color .15s;
+  position:relative;z-index:1;display:flex;align-items:center;gap:12px;height:40px;padding:0 0 0 12px;border-radius:var(--r-sm);
+  font-size:var(--t-15);font-weight:500;color:var(--ink-2);white-space:nowrap;overflow:hidden;
+  transition:background .15s,color .2s,padding .55s var(--ease),opacity .25s,transform .3s var(--ease);
 }
-.nav-item:hover{background:color-mix(in oklab,var(--ink) 5%,transparent);color:var(--ink)}
-.nav-item[aria-current="page"]{background:var(--accent-soft);color:var(--accent-text);font-weight:600}
+.nav-item > .i,.nav-item > .board-ic{transition:transform .35s var(--spring)}
+.nav-item:hover > .i,.nav-item:hover > .board-ic{transform:scale(1.08)}
+.nav-item:hover{background:color-mix(in oklab,var(--ink) 4%,transparent);color:var(--ink)}
+.nav-item[aria-current="page"]{color:var(--accent-text);font-weight:600}
+.nav-item[aria-current="page"]:hover{background:transparent}
+.nav-text{flex:1;min-width:0;transition:opacity .25s}
 .nav-item .badge{
-  margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:999px;
+  margin:0 10px 0 auto;min-width:20px;height:20px;padding:0 6px;border-radius:999px;
   background:var(--like);color:#fff;font:600 11px/20px var(--font-num);text-align:center;
+  transition:all .45s var(--ease);
 }
-.nav-item .count{margin-left:auto;font-size:var(--t-12);color:var(--faint)}
-.nav-label{padding:18px 12px 6px;font-size:var(--t-12);font-weight:600;color:var(--faint);letter-spacing:.06em}
-.zone-dot{width:8px;height:8px;margin:0 6px;border-radius:50%;background:hsl(var(--h) 65% 55%);flex:none}
+.nav-item .count{margin:0 12px 0 auto;font:500 var(--t-12)/1 var(--font-num);color:var(--faint);transition:opacity .25s}
+.nav-label{padding:16px 12px 6px;font-size:var(--t-12);font-weight:600;color:var(--faint);letter-spacing:.06em;white-space:nowrap;transition:opacity .25s}
+.board-ic{
+  --h:220;display:grid;place-items:center;width:24px;height:24px;margin-left:-2px;border-radius:7px;flex:none;
+  background:hsl(var(--h) 72% 94%);color:hsl(var(--h) 50% 38%);
+}
+[data-theme="dark"] .board-ic{background:hsl(var(--h) 30% 20%);color:hsl(var(--h) 65% 76%)}
+.board-ic .i{width:14px;height:14px}
 .nav-item.compact{height:36px;font-size:var(--t-14)}
-.side-foot{margin-top:auto;padding-top:16px}
+.side-ind.compact{height:38px}
+
+/* 可折叠分组：grid 行高 0fr→1fr 过渡，比 details 的瞬间展开更柔和 */
+.group-toggle{
+  display:flex;align-items:center;gap:12px;width:100%;height:40px;padding:0 0 0 12px;margin-top:8px;border-radius:var(--r-sm);
+  font-size:var(--t-14);font-weight:500;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-align:left;
+  transition:background .15s,color .2s,padding .55s var(--ease);
+}
+.group-toggle:hover{background:color-mix(in oklab,var(--ink) 4%,transparent);color:var(--ink)}
+.group-toggle .chev{width:16px;height:16px;margin:0 12px 0 auto;color:var(--faint);transition:transform .4s var(--spring),opacity .25s}
+.group[data-open="true"] .chev{transform:rotate(90deg)}
+.group-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .42s var(--ease)}
+.group[data-open="true"] .group-body{grid-template-rows:1fr}
+.group-body > div{min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:2px;padding-left:0}
+.group-body .nav-item{opacity:0;transform:translateY(-6px)}
+.group[data-open="true"] .group-body .nav-item{opacity:1;transform:none;transition-delay:calc(var(--i,0) * 28ms)}
+.side-sep{flex:none;height:1px;margin:12px 12px 4px;background:var(--line)}
+.side-foot{margin-top:auto;padding-top:16px;transition:opacity .25s,visibility .25s}
+.side-bottom{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 0 0 12px;font-size:var(--t-12);color:var(--faint);white-space:nowrap}
+.side-bottom span{transition:opacity .25s}
+.side-toggle .i{transition:transform .5s var(--spring)}
+
+/* 收起成图标栏（集市页默认收起，其他页可手动收起；601–860px 窄桌面始终收起） */
+body.side-collapsed :is(.nav-item,.group-toggle){padding-left:22px}
+body.side-collapsed :is(.nav-text,.nav-label,.nav-item .count,.group-toggle .chev,.side-bottom span){opacity:0}
+body.side-collapsed .nav-item .badge{position:absolute;top:7px;left:35px;min-width:9px;width:9px;height:9px;padding:0;margin:0;font-size:0;box-shadow:0 0 0 2px var(--bg)}
+body.side-collapsed .side-foot{opacity:0;visibility:hidden}
+body.side-collapsed .side-toggle .i{transform:scaleX(-1)}
+body.side-collapsed .side-bottom{padding-left:0;justify-content:center}
+.tip{
+  position:fixed;z-index:95;padding:6px 10px;border-radius:8px;background:var(--ink);color:var(--surface);
+  font-size:var(--t-13);font-weight:500;white-space:nowrap;pointer-events:none;
+  opacity:0;transform:translateX(-6px);transition:opacity .15s,transform .25s var(--ease);
+}
+.tip.show{opacity:1;transform:none}
 .login-card{
   padding:16px;border-radius:var(--r-md);border:1px solid var(--line);
   background:linear-gradient(160deg,var(--accent-soft),var(--surface) 70%);
@@ -360,6 +440,9 @@ body.no-rail .rail{display:none}
    7. Post card
    ========================================================= */
 .feed{display:grid;gap:12px}
+/* 切换页面时卡片依次浮现（只错开前几张，长列表不拖慢） */
+.feed > .post,.goods > .good,.services > .service{animation:rise .55s var(--ease) both;animation-delay:calc(var(--i,0) * 55ms)}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}}
 .post{padding:18px 20px 8px;transition:border-color .2s}
 .post:hover{border-color:var(--line-2)}
 .post-head{display:flex;align-items:center;gap:12px}
@@ -410,7 +493,8 @@ body.no-rail .rail{display:none}
   min-height:40px;padding:8px 12px;border-radius:8px;background:var(--surface);border:1px solid var(--line);
   font-size:var(--t-14);
 }
-.poll-bar{position:absolute;inset:0 auto 0 0;background:var(--surface-3);transform-origin:left;animation:grow .9s var(--ease) both}
+.poll-bar{position:absolute;inset:0 auto 0 0;background:var(--surface-3);transform-origin:left;transform:scaleX(0);transition:transform 1.1s var(--ease) calc(var(--j,0) * 90ms)}
+.poll.in .poll-bar{transform:none}
 .poll-opt.is-lead .poll-bar{background:var(--accent-soft-2)}
 .poll-opt.is-lead{border-color:color-mix(in oklab,var(--accent) 28%,var(--line))}
 .poll-label{position:relative;flex:1;color:var(--ink-2)}
@@ -611,28 +695,48 @@ body.no-rail .rail{display:none}
 /* Mobile tab bar */
 .tabbar{display:none}
 
+/* 轻提示：设计稿未覆盖的页面 */
+.toast{
+  position:fixed;left:50%;bottom:28px;z-index:96;display:flex;align-items:center;gap:8px;
+  padding:10px 16px;border-radius:12px;background:var(--ink);color:var(--surface);font-size:var(--t-14);font-weight:500;
+  box-shadow:var(--shadow-pop);pointer-events:none;
+  opacity:0;transform:translate(-50%,12px) scale(.96);transition:opacity .2s,transform .4s var(--spring);
+}
+.toast.show{opacity:1;transform:translate(-50%,0) scale(1)}
+
+/* 切换深浅色：从点击处圆形展开（View Transitions） */
+::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
+
 /* =========================================================
    13. Responsive
    ========================================================= */
 @media (max-width:1240px){
-  :root{--rail:288px;--side:200px}
-  .shell,.topbar-in{gap:24px}
+  :root{--rail:288px;--side:208px}
+  .main{margin:0 24px}
   .services{grid-template-columns:repeat(2,1fr)}
 }
 @media (max-width:1100px){
-  .shell{grid-template-columns:var(--side) minmax(0,1fr)}
+  .shell{--rail-w:0px}
+  .main{margin-right:0}
   .rail{display:none}
   .today{grid-template-columns:1fr}
   .two-col{grid-template-columns:1fr}
 }
-@media (max-width:960px) and (min-width:761px){
-  :root{--side:64px}
-  .brand-text,.nav-item span,.nav-label,.nav-item .count,.nav-item .badge,.side-foot,.zone-nav{display:none}
-  .nav-item{justify-content:center;padding:0}
-  .topbar-in{grid-template-columns:var(--side) minmax(0,1fr) auto}
+@media (max-width:1020px) and (min-width:601px){
+  .top-search{display:none}
+  .top-search-btn{display:inline-grid}
 }
-@media (max-width:760px){
+/* 窄桌面：与真实站点一致，601–860px 侧栏固定为 64px 图标栏（JS 同步加 side-collapsed） */
+@media (max-width:860px) and (min-width:601px){
+  :root{--side:64px}
+  .brand-text{display:none}
+  .main{margin-left:20px}
+  .side-toggle{display:none}
+}
+@media (max-width:600px){
   :root{--top:54px}
+  .top-nav{display:none}
+  .main{margin:0}
   body{padding-bottom:calc(68px + env(safe-area-inset-bottom))}
   .topbar-in{grid-template-columns:1fr auto;gap:12px;padding:0 16px}
   .top-search,.top-actions .btn,.top-actions .sep,.top-theme{display:none}
@@ -735,6 +839,12 @@ body.no-rail .rail{display:none}
     <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
     <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-building" viewBox="0 0 24 24"><path d="M4 21V8l8-4.5L20 8v13"/><path d="M3 21h18M9 21v-5h6v5M8 11h.01M12 11h.01M16 11h.01"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.5 2.6 5.3 5.9.9-4.25 4.1 1 5.8L12 16.8l-5.25 2.8 1-5.8L3.5 9.7l5.9-.9z"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.3a2.6 2.6 0 0 1 5 .9c0 1.7-2.5 2.3-2.5 3.8M12 17.2h.01"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3.5 8.5 4.5L12 12.5 3.5 8z"/><path d="m3.5 12 8.5 4.5 8.5-4.5M3.5 16l8.5 4.5 8.5-4.5"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15M15.5 10l-2 2 2 2"/></symbol>
     <symbol id="i-feedback" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 0 1-12.4 7.6L3.5 21l1.4-4.4A8.5 8.5 0 1 1 20.5 12z"/><path d="M8.5 10.5h7M8.5 14h4"/></symbol>
   </defs>
 </svg>
@@ -749,6 +859,13 @@ body.no-rail .rail{display:none}
       <span class="brand-mark"><img src="../public/assets/app-icon.png" alt="" onerror="this.remove()">沈</span>
       <span class="brand-text">沈理校园<small>SYLUlive</small></span>
     </a>
+    <nav class="top-nav" id="topNav" aria-label="快捷导航">
+      <a href="#home" data-nav="home">首页</a>
+      <a href="#community" data-nav="community">校园圈</a>
+      <a href="#market" data-nav="market">集市</a>
+      <a href="#study" data-nav="study">学习</a>
+      <a href="#discover" data-nav="discover">发现</a>
+    </nav>
     <label class="field top-search" for="globalSearch">
       <svg class="i sm"><use href="#i-search"/></svg>
       <input id="globalSearch" type="search" placeholder="搜索帖子、同学、闲置或校园服务" autocomplete="off">
@@ -756,6 +873,7 @@ body.no-rail .rail{display:none}
     </label>
     <div class="top-actions">
       <button class="icon-btn top-search-btn" aria-label="搜索"><svg class="i"><use href="#i-search"/></svg></button>
+      <button class="icon-btn" id="modeBtn" aria-label="切换深浅色"><span class="theme-ic"><svg class="i moon"><use href="#i-moon"/></svg><svg class="i sun"><use href="#i-sun"/></svg></span></button>
       <button class="icon-btn top-theme" id="themeBtn" aria-label="外观与主题色" aria-haspopup="dialog" aria-expanded="false"><svg class="i"><use href="#i-palette"/></svg></button>
       <button class="icon-btn" aria-label="通知"><svg class="i"><use href="#i-bell"/></svg><span class="dot only-in"></span></button>
       <button class="icon-btn" aria-label="私信"><svg class="i"><use href="#i-mail"/></svg></button>
@@ -768,26 +886,46 @@ body.no-rail .rail{display:none}
 </header>
 
 <div class="shell">
-  <!-- ============ Sidebar：唯一的主导航 ============ -->
+  <!-- ============ Sidebar：与真实站点同一套入口；顶栏放五个主分区 ============ -->
   <nav class="sidebar" aria-label="主导航">
-    <a class="nav-item" href="#home" data-nav="home"><svg class="i"><use href="#i-home"/></svg><span>首页</span></a>
-    <a class="nav-item" href="#community" data-nav="community"><svg class="i"><use href="#i-users"/></svg><span>校园圈</span></a>
-    <a class="nav-item" href="#market" data-nav="market"><svg class="i"><use href="#i-store"/></svg><span>二手集市</span></a>
-    <a class="nav-item" href="#study" data-nav="study"><svg class="i"><use href="#i-book"/></svg><span>学习</span></a>
-    <a class="nav-item" href="#discover" data-nav="discover"><svg class="i"><use href="#i-compass"/></svg><span>校园服务</span></a>
+    <span class="ind side-ind" aria-hidden="true"></span>
+
+    <div class="nav-label">社区</div>
+    <a class="nav-item" href="#home" data-nav="home" data-key="home"><svg class="i"><use href="#i-home"/></svg><span class="nav-text">校园首页</span></a>
+    <a class="nav-item" href="#community" data-nav="community" data-key="community"><svg class="i"><use href="#i-users"/></svg><span class="nav-text">校园社区</span></a>
+    <a class="nav-item" href="#market" data-nav="market" data-key="market"><svg class="i"><use href="#i-store"/></svg><span class="nav-text">二手集市</span></a>
+    <a class="nav-item" href="#study" data-nav="study" data-key="study"><svg class="i"><use href="#i-calendar"/></svg><span class="nav-text">课表</span></a>
+    <a class="nav-item" href="#community" data-nav="community" data-key="polls" data-filter="投票"><svg class="i"><use href="#i-poll"/></svg><span class="nav-text">投票 · 组队</span></a>
 
     <div class="nav-label">我的</div>
-    <a class="nav-item" href="#home"><svg class="i"><use href="#i-mail"/></svg><span>私信</span><em class="badge only-in">2</em></a>
-    <a class="nav-item" href="#home"><svg class="i"><use href="#i-bookmark"/></svg><span>我的收藏</span></a>
-    <a class="nav-item" href="#home"><svg class="i"><use href="#i-file"/></svg><span>我的帖子</span></a>
+    <a class="nav-item" href="#home" data-soon><svg class="i"><use href="#i-mail"/></svg><span class="nav-text">私信</span><em class="badge only-in">2</em></a>
+    <a class="nav-item" href="#community" data-nav="community" data-key="saved" data-tab="收藏"><svg class="i"><use href="#i-bookmark"/></svg><span class="nav-text">我的收藏</span></a>
+    <a class="nav-item" href="#community" data-nav="community" data-key="mine" data-tab="我的发布"><svg class="i"><use href="#i-file"/></svg><span class="nav-text">我的帖子</span></a>
+    <a class="nav-item" href="#home" data-soon><svg class="i"><use href="#i-user"/></svg><span class="nav-text">我的主页</span></a>
 
-    <div class="zone-nav">
-      <div class="nav-label">热门分区</div>
-      <a class="nav-item compact" href="#community" data-tag="学习交流"><i class="zone-dot" style="--h:220"></i><span>学习交流</span><em class="count num">128</em></a>
-      <a class="nav-item compact" href="#community" data-tag="生活吐槽"><i class="zone-dot" style="--h:20"></i><span>生活吐槽</span><em class="count num">96</em></a>
-      <a class="nav-item compact" href="#community" data-tag="失物招领"><i class="zone-dot" style="--h:150"></i><span>失物招领</span><em class="count num">41</em></a>
-      <a class="nav-item compact" href="#community" data-tag="求助组队"><i class="zone-dot" style="--h:280"></i><span>求助组队</span><em class="count num">37</em></a>
+    <div class="nav-label">校园板块</div>
+    <a class="nav-item compact" href="#community" data-nav="community" data-key="board-新生求助" data-filter="新生求助"><span class="board-ic" style="--h:150"><svg class="i"><use href="#i-help"/></svg></span><span class="nav-text">新生求助</span><em class="count">27</em></a>
+    <a class="nav-item compact" href="#community" data-nav="community" data-key="board-课程学习" data-filter="课程学习"><span class="board-ic" style="--h:222"><svg class="i"><use href="#i-file"/></svg></span><span class="nav-text">课程学习</span><em class="count">4</em></a>
+    <a class="nav-item compact" href="#community" data-nav="community" data-key="board-比赛竞赛" data-filter="比赛竞赛"><span class="board-ic" style="--h:268"><svg class="i"><use href="#i-trophy"/></svg></span><span class="nav-text">比赛竞赛</span><em class="count">6</em></a>
+    <a class="nav-item compact" href="#community" data-nav="community" data-key="board-校园生活" data-filter="校园生活"><span class="board-ic" style="--h:36"><svg class="i"><use href="#i-building"/></svg></span><span class="nav-text">校园生活</span><em class="count">502</em></a>
+    <a class="nav-item compact" href="#community" data-nav="community" data-key="board-吐槽树洞" data-filter="吐槽树洞"><span class="board-ic" style="--h:340"><svg class="i"><use href="#i-message"/></svg></span><span class="nav-text">吐槽树洞</span><em class="count">10</em></a>
+
+    <div class="group" id="studyGroup" data-open="false">
+      <button class="group-toggle" aria-expanded="false" aria-controls="studyGroupBody"><svg class="i"><use href="#i-layers"/></svg><span class="nav-text">学习与校园服务</span><svg class="i chev"><use href="#i-chev"/></svg></button>
+      <div class="group-body" id="studyGroupBody"><div inert>
+        <a class="nav-item compact" href="#study" data-nav="study" data-key="grades" style="--i:0"><svg class="i"><use href="#i-chart"/></svg><span class="nav-text">成绩与学业</span></a>
+        <a class="nav-item compact" href="#study" data-nav="study" data-key="exams" style="--i:1"><svg class="i"><use href="#i-exam"/></svg><span class="nav-text">考试 · 试卷库</span></a>
+        <a class="nav-item compact" href="#home" data-soon style="--i:2"><svg class="i"><use href="#i-trophy"/></svg><span class="nav-text">竞赛中心</span></a>
+        <a class="nav-item compact" href="#home" data-soon style="--i:3"><svg class="i"><use href="#i-star"/></svg><span class="nav-text">教师 · 专业评价</span></a>
+        <a class="nav-item compact" href="#discover" data-nav="discover" data-key="discover" style="--i:4"><svg class="i"><use href="#i-compass"/></svg><span class="nav-text">校园服务</span></a>
+        <a class="nav-item compact" href="#home" data-soon style="--i:5"><svg class="i"><use href="#i-food"/></svg><span class="nav-text">食堂与菜品</span></a>
+        <a class="nav-item compact" href="#home" data-soon style="--i:6"><svg class="i"><use href="#i-spark"/></svg><span class="nav-text">AI 校园助手</span></a>
+      </div></div>
     </div>
+
+    <div class="side-sep"></div>
+    <a class="nav-item" href="#home" data-soon><svg class="i"><use href="#i-grid"/></svg><span class="nav-text">工具箱</span></a>
+    <a class="nav-item" href="#home" data-soon><svg class="i"><use href="#i-feedback"/></svg><span class="nav-text">反馈与工单</span></a>
 
     <div class="side-foot">
       <div class="login-card only-out">
@@ -800,6 +938,10 @@ body.no-rail .rail{display:none}
         <div><b>周同学</b><span>计算机学院 · 大二</span></div>
         <button class="icon-btn sm" aria-label="设置"><svg class="i sm"><use href="#i-settings"/></svg></button>
       </div>
+    </div>
+    <div class="side-bottom">
+      <span>沈理校园 · Web</span>
+      <button class="icon-btn sm side-toggle" id="sideToggle" aria-label="收起侧栏" aria-pressed="false"><svg class="i sm"><use href="#i-panel"/></svg></button>
     </div>
   </nav>
 
@@ -883,11 +1025,11 @@ body.no-rail .rail{display:none}
       </div>
       <div class="seg" id="tagFilter" role="group" aria-label="分区筛选" style="margin-bottom:14px;flex-wrap:wrap">
         <button aria-pressed="true" data-tag="">全部</button>
-        <button aria-pressed="false" data-tag="学习交流">学习交流</button>
-        <button aria-pressed="false" data-tag="生活吐槽">生活吐槽</button>
-        <button aria-pressed="false" data-tag="失物招领">失物招领</button>
-        <button aria-pressed="false" data-tag="求助组队">求助组队</button>
-        <button aria-pressed="false" data-tag="校园指南">校园指南</button>
+        <button aria-pressed="false" data-tag="新生求助">新生求助</button>
+        <button aria-pressed="false" data-tag="课程学习">课程学习</button>
+        <button aria-pressed="false" data-tag="比赛竞赛">比赛竞赛</button>
+        <button aria-pressed="false" data-tag="校园生活">校园生活</button>
+        <button aria-pressed="false" data-tag="吐槽树洞">吐槽树洞</button>
         <button aria-pressed="false" data-tag="投票">投票</button>
       </div>
       <div class="feed" id="communityFeed"></div>
@@ -1100,28 +1242,28 @@ body.no-rail .rail{display:none}
 
   /* ---------------- 示例内容（取自当前站点公开动态，用于还原真实密度） ---------------- */
   const posts = [
-    { author: '冬马和纱', lv: 2, time: '11/6 23:34', tag: '生活吐槽', title: '停电停水大学',
+    { author: '冬马和纱', lv: 2, time: '11/6 23:34', tag: '吐槽树洞', title: '停电停水大学',
       text: '停个电停个水你们就叫苦连天，你们的兵工精神到哪去了？🤣🤣🤣', likes: 2, comments: 4 },
-    { author: '我爱学习', lv: 5, time: '4 天前', tag: '投票', title: '网页端 UI 投票', text: '希望网页端 UI 怎么设计',
+    { author: '我爱学习', lv: 5, time: '4 天前', tag: '校园生活', title: '网页端 UI 投票', text: '希望网页端 UI 怎么设计',
       poll: { kind: '多选 · 最多 2 项', n: 24, note: '投票已结束 · 占比按参与人数计算', more: 1,
         opts: [{ t: '淡色分区渐变（可以自选颜色）', p: 96 }, { t: '直接淡色打底，没有渐变', p: 4 }, { t: '整体淡色渐变', p: 4 }] },
       likes: 18, comments: 11 },
-    { author: 'Cx330', lv: 1, time: '11/6 15:08', tag: '学习交流', title: '微积分听不懂。。。',
+    { author: 'Cx330', lv: 1, time: '11/6 15:08', tag: '课程学习', title: '微积分听不懂。。。',
       text: '补药期中考试啊啊啊啊啊啊 ๐·°(৹˃ᗝ˂৹)°·๐', img: 'assets/library.jpg', alt: '图书馆自习区', likes: 4, comments: 4 },
-    { author: '莫璃', lv: 4, time: '11/6 15:50', tag: '校园指南', title: '沈理工新生充电费指南', guide: true, likes: 5, comments: 1 },
-    { author: '雪织儿', lv: 6, time: '11/6 07:11', tag: '生活吐槽', title: '爽爽', text: '早操结束真是惬意啊',
+    { author: '莫璃', lv: 4, time: '11/6 15:50', tag: '新生求助', title: '沈理工新生充电费指南', guide: true, likes: 5, comments: 1 },
+    { author: '雪织儿', lv: 6, time: '11/6 07:11', tag: '校园生活', title: '爽爽', text: '早操结束真是惬意啊',
       grid: ['assets/campus-spring.jpg', 'assets/autumn-2.jpg'], likes: 8, comments: 2 },
-    { author: '初涵酱', lv: 3, time: '11/4 23:42', tag: '学习交流', long: true,
+    { author: '初涵酱', lv: 3, time: '11/4 23:42', tag: '吐槽树洞', long: true,
       text: '真看力竭了\n计协那边一群卷狗在屠榜，然后我自己连环境都没配\n算协呢还有不到两个月就要截止了，我一道题还没做\n电协呢已经欠了两周的任务了\n高数呢第二节课开始就听不懂了\n大外呢过四级也有点难\n我感觉我马上就快要完蛋了',
       likes: 5, comments: 9 },
-    { author: '闽越王', lv: 3, time: '10/26', tag: '投票', title: '你们更喜欢怎么美化 sylulive',
+    { author: '闽越王', lv: 3, time: '10/26', tag: '校园生活', title: '你们更喜欢怎么美化 sylulive',
       poll: { kind: '单选', n: 26, note: '投票已结束', opts: [{ t: '建一个主题市场，选择美化包全局替换', p: 81 }, { t: '扩展美化选项，高度自定义', p: 19 }] },
       likes: 9, comments: 6 },
-    { author: '小黄不是狗', lv: 4, time: '10/27 19:03', tag: '失物招领', title: '寻物（帮同学找）',
+    { author: '小黄不是狗', lv: 4, time: '10/27 19:03', tag: '校园生活', title: '寻物（帮同学找）',
       text: '丢了一个华为耳机盒（浅蓝色，盒中还有一只左耳），今晚 6 点 30 左右在 A115 下课后发现丢了，有发现的帮忙联系一下我', likes: 2, comments: 2 },
-    { author: '我爱学习', lv: 5, time: '10/29 20:04', tag: '求助组队', title: '快来帮我 ʚ♡⃛ɞ',
+    { author: '我爱学习', lv: 5, time: '10/29 20:04', tag: '比赛竞赛', title: '快来帮我 ʚ♡⃛ɞ',
       text: '有没有大佬带我编程教我打蓝桥啊（最好是周哥）', likes: 7, comments: 8 },
-    { author: '🍉', lv: 1, time: '10/26 17:31', tag: '求助组队', text: '本人大二，想打电赛，只会一点 stm32，应该怎么办啊', likes: 4, comments: 3 },
+    { author: '🍉', lv: 1, time: '10/26 17:31', tag: '比赛竞赛', text: '本人大二，想打电赛，只会一点 stm32，应该怎么办啊', likes: 4, comments: 3 },
   ];
 
   const guideHTML = `<div class="guide"><ol>
@@ -1133,8 +1275,8 @@ body.no-rail .rail{display:none}
     const max = Math.max(...q.opts.map(o => o.p));
     return `<div class="poll">
       <div class="poll-head"><span class="chip chip-accent">${icon('poll')}${q.kind}</span><span class="poll-state">${q.n} 人参与</span></div>
-      <ul class="poll-list">${q.opts.map(o => `<li class="poll-opt ${o.p === max ? 'is-lead' : ''}">
-        <span class="poll-bar" style="width:${o.p}%"></span><span class="poll-label">${o.t}</span><span class="poll-pct">${o.p}%</span></li>`).join('')}</ul>
+      <ul class="poll-list">${q.opts.map((o, j) => `<li class="poll-opt ${o.p === max ? 'is-lead' : ''}">
+        <span class="poll-bar" style="width:${o.p}%;--j:${j}"></span><span class="poll-label">${o.t}</span><span class="poll-pct">${o.p}%</span></li>`).join('')}</ul>
       ${q.more ? `<button class="link-btn">还有 ${q.more} 个选项${icon('chev')}</button>` : ''}
       <p class="poll-foot">${q.note}</p></div>`;
   };
@@ -1163,13 +1305,26 @@ body.no-rail .rail{display:none}
       </footer></article>`;
   };
 
+  /* 入场错开：只给前 7 个子元素递增延迟 */
+  const stagger = (wrap, sel) => $$(sel, wrap).forEach((el, i) => el.style.setProperty('--i', Math.min(i, 6)));
+  /* 投票条滚动到视口时才增长 */
+  const io = 'IntersectionObserver' in window
+    ? new IntersectionObserver((es) => es.forEach((en) => { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } }), { threshold: .35 })
+    : null;
+  const observePolls = (wrap) => $$('.poll', wrap).forEach((p) => (io ? io.observe(p) : p.classList.add('in')));
+
   $('#homeFeed').innerHTML = posts.slice(0, 6).map(postHTML).join('');
+  stagger($('#homeFeed'), '.post'); observePolls($('#homeFeed'));
+  /* 「投票」按帖子类型筛选，其余按校园板块筛选 */
   const renderCommunity = (tag = '') => {
-    const list = tag ? posts.filter(p => p.tag === tag) : posts;
-    $('#communityFeed').innerHTML = list.length ? list.map(postHTML).join('')
-      : `<div class="empty card"><b>这个分区还没有内容</b><p>换个分区看看，或者发布第一条动态。</p></div>`;
+    const list = !tag ? posts : tag === '投票' ? posts.filter(p => p.poll) : posts.filter(p => p.tag === tag);
+    const feed = $('#communityFeed');
+    feed.innerHTML = list.length ? list.map(postHTML).join('')
+      : `<div class="empty card"><b>这个板块还没有内容</b><p>换个板块看看，或者发布第一条动态。</p></div>`;
+    stagger(feed, '.post'); observePolls(feed);
   };
   renderCommunity();
+  stagger(document, '.services > .service');
 
   /* ---------------- 右栏 ---------------- */
   const notices = [
@@ -1210,6 +1365,7 @@ body.no-rail .rail{display:none}
       <div class="good-body"><h3 class="good-title">${g.t}</h3>${priceHTML(g)}
       <div class="good-foot">${avatar(g.who, 'xs')}<span class="name">${g.who}</span>${g.c ? `${icon('message', 'sm')}<span class="num">${g.c}</span>` : ''}<span class="num">${g.time}</span></div></div></a>`).join('');
     $('#goodsCount').textContent = `共 ${list.length} 件`;
+    stagger($('#goods'), '.good');
   };
   renderGoods();
   $('#miniGoods').innerHTML = goods.slice(0, 2).map(g => `<a href="#market">${thumbHTML(g, false)}<b>${g.t}</b>${priceHTML(g)}</a>`).join('');
@@ -1254,38 +1410,184 @@ body.no-rail .rail{display:none}
   };
   renderTimetable();
 
-  /* ---------------- 路由与分区色 ---------------- */
+  /* ---------------- 滑动指示器（顶栏、侧栏、标签、分段控件共用） ---------------- */
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const currentOf = (wrap) => wrap.classList.contains('sidebar')
+    ? wrap.querySelector('.nav-item[aria-current="page"]')
+    : wrap.querySelector(':scope > [aria-current="page"], :scope > [aria-selected="true"], :scope > [aria-pressed="true"]');
+  const modeOf = (wrap) => wrap.classList.contains('sidebar') ? 'y' : wrap.classList.contains('seg') ? 'xy' : 'x';
+  const placeInd = (wrap, instant = false) => {
+    if (!wrap) return;
+    let ind = wrap.querySelector(':scope > .ind');
+    if (!ind) {
+      ind = document.createElement('span');
+      ind.className = 'ind'; ind.setAttribute('aria-hidden', 'true');
+      wrap.prepend(ind); wrap.classList.add('has-ind');
+    }
+    const cur = currentOf(wrap);
+    const box = wrap.getBoundingClientRect();
+    if (!cur || !box.width) { ind.style.opacity = '0'; return; }
+    const r = cur.getBoundingClientRect();
+    if (instant) ind.classList.remove('ready');
+    const x = r.left - box.left - wrap.clientLeft + wrap.scrollLeft;
+    const y = r.top - box.top - wrap.clientTop + wrap.scrollTop;
+    const mode = modeOf(wrap);
+    ind.style.opacity = '';
+    if (mode === 'y') { ind.style.transform = `translateY(${y}px)`; ind.style.height = `${r.height}px`; }
+    else if (mode === 'xy') { ind.style.transform = `translate(${x}px, ${y}px)`; ind.style.width = `${r.width}px`; ind.style.height = `${r.height}px`; }
+    else { ind.style.transform = `translateX(${x}px)`; ind.style.width = `${r.width}px`; }
+    if (!ind.classList.contains('ready')) requestAnimationFrame(() => requestAnimationFrame(() => ind.classList.add('ready')));
+  };
+  const indWraps = () => [$('#topNav'), $('.sidebar'), ...$$('.tabs'), ...$$('.seg')];
+  const placeAll = (instant) => indWraps().forEach((w) => placeInd(w, instant));
+  /* 布局在过渡中（侧栏收起、分组展开）时逐帧跟随 */
+  const follow = (wrap, ms = 600) => {
+    const end = performance.now() + ms;
+    const tick = () => { placeInd(wrap); if (performance.now() < end) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  };
+  if ('ResizeObserver' in window) {
+    const ro = new ResizeObserver((es) => es.forEach((en) => placeInd(en.target, true)));
+    indWraps().forEach((w) => w && ro.observe(w));
+  }
+
+  /* ---------------- 轻提示 ---------------- */
+  const toastEl = document.createElement('div');
+  toastEl.className = 'toast'; toastEl.setAttribute('role', 'status');
+  body.append(toastEl);
+  let toastTimer;
+  const toast = (msg) => {
+    toastEl.textContent = msg; toastEl.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200);
+  };
+
+  /* ---------------- 路由、分区色与侧栏 ---------------- */
   const VIEWS = ['home', 'community', 'market', 'study', 'discover'];
   const ZONES = { home: null, community: '#4f6bed', market: '#e0782f', study: '#12968a', discover: '#7a5bd8' };
   const RAIL = new Set(['home', 'community']);
   let settings = { mode: 'light', accent: '#3d63f0', wash: 'section' };
+  let currentKey = '';
+  const sidebar = $('.sidebar');
+  const group = $('#studyGroup');
 
   const applyZone = () => {
     const z = settings.wash === 'section' ? ZONES[body.dataset.view] : null;
     if (z) root.style.setProperty('--zone', z); else root.style.removeProperty('--zone');
   };
 
+  /* 侧栏收起：集市页默认收成图标栏（保留真实站点的做法），其他页按用户偏好；601–860px 始终收起 */
+  const narrowMQ = window.matchMedia('(min-width:601px) and (max-width:860px)');
+  const SIDE_KEY = 'sylu.redesign.sidebar';
+  let sidePref = false, marketExpanded = false;
+  try { sidePref = localStorage.getItem(SIDE_KEY) === 'collapsed'; } catch (e) {}
+  const applyCollapse = () => {
+    const collapsed = narrowMQ.matches || (body.dataset.view === 'market' ? !marketExpanded : sidePref);
+    const changed = body.classList.contains('side-collapsed') !== collapsed;
+    body.classList.toggle('side-collapsed', collapsed);
+    if (!collapsed) $('.tip')?.classList.remove('show');
+    const t = $('#sideToggle');
+    t.setAttribute('aria-pressed', collapsed); t.setAttribute('aria-label', collapsed ? '展开侧栏' : '收起侧栏');
+    if (changed) follow(sidebar);
+  };
+  narrowMQ.addEventListener?.('change', applyCollapse);
+  $('#sideToggle').addEventListener('click', () => {
+    if (body.dataset.view === 'market') marketExpanded = !marketExpanded;
+    else { sidePref = !sidePref; try { localStorage.setItem(SIDE_KEY, sidePref ? 'collapsed' : 'expanded'); } catch (e) {} }
+    applyCollapse();
+  });
+
+  const setGroup = (open) => {
+    group.dataset.open = open;
+    $('.group-toggle', group).setAttribute('aria-expanded', open);
+    $('.group-body > div', group).inert = !open;
+    follow(sidebar, 520);
+  };
+  $('.group-toggle', group).addEventListener('click', () => setGroup(group.dataset.open !== 'true'));
+
   const setView = (v, scroll = true) => {
     if (!VIEWS.includes(v)) v = 'home';
+    const viewChanged = body.dataset.view !== v;
+    if (viewChanged && v !== 'market') marketExpanded = false;
     body.dataset.view = v;
+    if (!currentKey || $(`.sidebar .nav-item[data-key="${currentKey}"]`)?.dataset.nav !== v) currentKey = v;
     $$('.view').forEach(s => { s.hidden = s.dataset.view !== v; });
-    $$('[data-nav]').forEach(a => {
+    $$('.top-nav [data-nav], .tabbar [data-nav]').forEach(a => {
       if (a.dataset.nav === v) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
+    $$('.sidebar .nav-item[data-key]').forEach(a => {
+      if (a.dataset.key === currentKey) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+    const cur = $('.sidebar .nav-item[aria-current="page"]');
+    if (cur && group.contains(cur) && group.dataset.open !== 'true') setGroup(true);
     body.classList.toggle('no-rail', !RAIL.has(v));
     applyZone();
-    if (scroll) window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+    applyCollapse();
+    if (scroll && viewChanged) window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+    placeInd($('#topNav'));
+    placeInd(sidebar);
+    // 新显示的页面里，标签与分段控件的滑块直接就位，不从 0 滑入
+    $$(`.view[data-view="${v}"] :is(.tabs, .seg)`).forEach((w) => placeInd(w, true));
   };
-  window.addEventListener('hashchange', () => setView(location.hash.slice(1)));
+
+  /* 侧栏条目：同一页面下的不同入口（板块、投票、收藏、我的帖子）用 key 区分 */
+  const pressSeg = (seg, btn) => {
+    $$('button', seg).forEach(b => b.setAttribute('aria-pressed', b === btn));
+    placeInd(seg);
+  };
+  const go = (item) => {
+    const v = item.dataset.nav;
+    currentKey = item.dataset.key || v;
+    if (location.hash.slice(1) !== v) history.pushState(null, '', `#${v}`);
+    setView(v);
+    if (v === 'community') {
+      const filter = item.dataset.filter || '';
+      pressSeg($('#tagFilter'), $(`#tagFilter button[data-tag="${filter}"]`));
+      renderCommunity(filter);
+      const tabs = $('.view[data-view="community"] .tabs');
+      const tab = $$('[role="tab"]', tabs).find(t => t.textContent === (item.dataset.tab || '推荐'));
+      $$('[role="tab"]', tabs).forEach(t => t.setAttribute('aria-selected', t === tab));
+      placeInd(tabs);
+    }
+  };
+  sidebar.addEventListener('click', (e) => {
+    const item = e.target.closest('.nav-item');
+    if (!item) return;
+    $('.tip')?.classList.remove('show');
+    if ('soon' in item.dataset) {
+      e.preventDefault();
+      toast(`「${$('.nav-text', item).textContent}」不在本次设计稿范围内`);
+      return;
+    }
+    if (item.dataset.nav) { e.preventDefault(); go(item); }
+  });
+  window.addEventListener('hashchange', () => { currentKey = ''; setView(location.hash.slice(1)); });
+  window.addEventListener('popstate', () => { currentKey = ''; setView(location.hash.slice(1)); });
   setView(location.hash.slice(1), false);
 
-  /* ---------------- 主题 ---------------- */
+  /* 收起时悬停显示名称 */
+  const tip = document.createElement('div');
+  tip.className = 'tip'; tip.setAttribute('aria-hidden', 'true');
+  body.append(tip);
+  sidebar.addEventListener('mouseover', (e) => {
+    const item = e.target.closest('.nav-item, .group-toggle');
+    if (!item || !body.classList.contains('side-collapsed')) return;
+    const r = item.getBoundingClientRect();
+    tip.textContent = $('.nav-text', item).textContent;
+    tip.style.left = `${r.right + 10}px`;
+    tip.style.top = `${r.top + r.height / 2 - 15}px`;
+    tip.classList.add('show');
+  });
+  sidebar.addEventListener('mouseleave', () => tip.classList.remove('show'));
+  sidebar.addEventListener('mouseout', (e) => { if (!e.relatedTarget || !e.relatedTarget.closest?.('.nav-item, .group-toggle')) tip.classList.remove('show'); });
+  sidebar.addEventListener('scroll', () => tip.classList.remove('show'), { passive: true });
+
+  /* ---------------- 主题：深浅色从点击处圆形展开 ---------------- */
   const KEY = 'sylu.redesign.appearance';
   try { Object.assign(settings, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
   const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  const isDark = () => settings.mode === 'dark' || (settings.mode === 'system' && mq.matches);
   const applyTheme = () => {
-    const dark = settings.mode === 'dark' || (settings.mode === 'system' && mq.matches);
-    root.dataset.theme = dark ? 'dark' : 'light';
+    root.dataset.theme = isDark() ? 'dark' : 'light';
     root.style.setProperty('--accent', settings.accent);
     body.dataset.wash = settings.wash;
     applyZone();
@@ -1293,17 +1595,37 @@ body.no-rail .rail{display:none}
     $$('#washSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.wash === settings.wash));
     $$('#swatches .swatch[data-c]').forEach(b => b.setAttribute('aria-pressed', b.dataset.c === settings.accent));
     $('#customColor').value = settings.accent;
+    $('#modeBtn').setAttribute('aria-label', isDark() ? '切换到浅色' : '切换到深色');
+    placeInd($('#modeSeg')); placeInd($('#washSeg'));
     try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch (e) {}
+  };
+  const reveal = (from, change) => {
+    const wasDark = isDark();
+    if (!document.startViewTransition || reduced.matches) { change(); applyTheme(); return; }
+    change();
+    if (isDark() === wasDark) { applyTheme(); return; }
+    const r = from.getBoundingClientRect();
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    const t = document.startViewTransition(applyTheme);
+    t.ready.then(() => root.animate(
+      { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+      { duration: 620, easing: 'cubic-bezier(.22,1,.36,1)', pseudoElement: '::view-transition-new(root)' },
+    )).catch(() => {});
   };
   mq.addEventListener?.('change', () => settings.mode === 'system' && applyTheme());
   applyTheme();
+  $('#modeBtn').addEventListener('click', (e) => reveal(e.currentTarget, () => { settings.mode = isDark() ? 'light' : 'dark'; }));
 
   const pop = $('#themePop'), themeBtn = $('#themeBtn');
-  const togglePop = (open = pop.hidden) => { pop.hidden = !open; themeBtn.setAttribute('aria-expanded', open); if (open) pop.querySelector('button[aria-pressed="true"]')?.focus(); };
+  const togglePop = (open = pop.hidden) => {
+    pop.hidden = !open; themeBtn.setAttribute('aria-expanded', open);
+    if (open) { $$('.seg', pop).forEach((w) => placeInd(w, true)); pop.querySelector('button[aria-pressed="true"]')?.focus(); }
+  };
   themeBtn.addEventListener('click', (e) => { e.stopPropagation(); togglePop(); });
   $('#themeClose').addEventListener('click', () => { togglePop(false); themeBtn.focus(); });
-  document.addEventListener('click', (e) => { if (!pop.hidden && !pop.contains(e.target)) togglePop(false); });
-  $('#modeSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { settings.mode = b.dataset.mode; applyTheme(); } });
+  document.addEventListener('click', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('#modeBtn')) togglePop(false); });
+  $('#modeSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) reveal(b, () => { settings.mode = b.dataset.mode; }); });
   $('#washSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { settings.wash = b.dataset.wash; applyTheme(); } });
   $('#swatches').addEventListener('click', (e) => { const b = e.target.closest('.swatch[data-c]'); if (b) { settings.accent = b.dataset.c; applyTheme(); } });
   $('#customColor').addEventListener('input', (e) => { settings.accent = e.target.value; applyTheme(); });
@@ -1326,19 +1648,20 @@ body.no-rail .rail{display:none}
       return;
     }
     const tab = e.target.closest('[role="tab"]');
-    if (tab) { $$('[role="tab"]', tab.parentNode).forEach(t => t.setAttribute('aria-selected', t === tab)); return; }
+    if (tab) { $$('[role="tab"]', tab.parentNode).forEach(t => t.setAttribute('aria-selected', t === tab)); placeInd(tab.parentNode); return; }
     const seg = e.target.closest('.seg:not(#modeSeg):not(#washSeg) button');
     if (seg) {
-      $$('button', seg.parentNode).forEach(b => b.setAttribute('aria-pressed', b === seg));
+      pressSeg(seg.parentNode, seg);
       const g = seg.parentNode.id;
       if (g === 'goodsType') renderGoods(seg.dataset.type);
-      if (g === 'tagFilter') renderCommunity(seg.dataset.tag);
+      if (g === 'tagFilter') {
+        renderCommunity(seg.dataset.tag);
+        const item = seg.dataset.tag && $(`.sidebar .nav-item[data-filter="${seg.dataset.tag}"]`);
+        currentKey = item ? item.dataset.key : 'community';
+        setView('community', false);
+      }
       if (g === 'authSeg') setAuth(seg.dataset.auth);
       return;
-    }
-    const zoneLink = e.target.closest('.nav-item[data-tag]');
-    if (zoneLink) {
-      setTimeout(() => { const b = $(`#tagFilter button[data-tag="${zoneLink.dataset.tag}"]`); b && b.click(); }, 0);
     }
     if (e.target.closest('.js-login')) setAuth('in');
   });
@@ -1346,7 +1669,9 @@ body.no-rail .rail{display:none}
   const setAuth = (s) => {
     body.dataset.auth = s;
     $$('#authSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.auth === s));
+    placeInd($('#authSeg'));
     renderTimetable();
+    follow(sidebar, 300);
   };
 
   document.addEventListener('keydown', (e) => {
@@ -1356,6 +1681,9 @@ body.no-rail .rail{display:none}
   const topbar = $('#topbar');
   const onScroll = () => topbar.classList.toggle('is-scrolled', window.scrollY > 4);
   window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
+  window.addEventListener('resize', () => placeAll(true));
+  document.fonts?.ready.then(() => placeAll(true));
+  placeAll(true);
 })();
 </script>
 </body>

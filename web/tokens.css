@@ -87,6 +87,68 @@
   --color-error: oklch(77% .12 25);
   --color-success: oklch(77% .1 155);
 }
+/* 桌面 Web 设计令牌（2026-11 桌面重构稿，预览稿为本地文件、不入库）。
+   只在 601px 以上生效：手机 Web 对照 Android App，由 mobile-app.css 独立维护，
+   而它只覆盖颜色，字体、字号、圆角和阴影若写在上面的全局块里会漏到手机端。
+   页面底色与白卡分层：--color-paper 是页面底，卡片、小组件和功能区统一用 --color-surface。
+   浅色强调色的柔和底色由 --color-accent-fill 推导，后续主题色只需改 fill / accent 两个值。
+   文字对比度：muted 在 paper-3 上 ≥ 4.6:1；accent 在 accent-soft 上 ≥ 5:1；白字在 accent-fill 上 ≥ 4.9:1。 */
+@media (min-width: 601px) {
+  :root {
+    --color-paper: #f4f5f8;
+    --color-surface: #ffffff;
+    --color-paper-2: #f7f8fa;
+    --color-paper-3: #eef0f4;
+    --color-ink: #171a21;
+    --color-ink-2: #3b414d;
+    --color-muted: #646c7a;
+    --color-rule: #e3e6ec;
+    --color-rule-soft: #eef0f4;
+    --color-accent: #3358e0;
+    --color-accent-fill: #3d63f0;
+    --color-accent-hover: #3354d4;
+    --color-accent-border: color-mix(in oklab, var(--color-accent-fill) 24%, var(--color-surface));
+    --color-accent-soft: color-mix(in oklab, var(--color-accent-fill) 9%, var(--color-surface));
+    --color-accent-soft-2: color-mix(in oklab, var(--color-accent-fill) 17%, var(--color-surface));
+    --color-feature: var(--color-surface);
+    --color-widget: var(--color-surface);
+    --color-navigation: var(--color-paper);
+    --shadow-card: 0 1px 2px rgb(20 24 33 / .04);
+    --shadow-hover: 0 1px 2px rgb(20 24 33 / .04), 0 8px 24px -12px rgb(20 24 33 / .14);
+    --font-display: "Segoe UI Variable Display", "Segoe UI", "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+    --font-body: "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+    --font-outlier: "Segoe UI Variable Display", "Segoe UI", "SF Pro Display", system-ui, sans-serif;
+    /* 字号 8 档：12 / 13 / 14 / 15 / 17 / 20 / 24 / 30；正文 15，界面 14，元信息 12。 */
+    --text-xs: 12px;
+    --text-sm: 14px;
+    --text-base: 15px;
+    --text-md: 17px;
+    --text-lg: 20px;
+    --text-xl: 24px;
+    --text-display: 24px;
+    /* 圆角：控件 10、缩略图 10、卡片 16（桌面卡片 16px 由 desktop-reference e2e 约束）。 */
+    --radius-control: 10px;
+    --radius-card: 16px;
+    --radius-thumb: 10px;
+  }
+  :root[data-theme="dark"] {
+    --color-paper: #0e1014;
+    --color-surface: #16191f;
+    --color-paper-2: #1b1f26;
+    --color-paper-3: #232832;
+    --color-ink: #eceef3;
+    --color-ink-2: #c8cdd7;
+    --color-muted: #9aa2b1;
+    --color-rule: #2c323d;
+    --color-rule-soft: #232832;
+    --color-accent: #a6bfff;
+    --color-accent-border: #3d5288;
+    --color-accent-soft: color-mix(in oklab, var(--color-accent-fill) 16%, var(--color-surface));
+    --color-accent-soft-2: color-mix(in oklab, var(--color-accent-fill) 26%, var(--color-surface));
+    --shadow-card: none;
+    --shadow-hover: none;
+  }
+}
 /* 映射现有组件语义，正文和弹窗使用同一套颜色。 */
 :root, [data-theme="dark"], .social-shell, [data-theme="dark"] .social-shell {
   --bg: var(--color-paper);

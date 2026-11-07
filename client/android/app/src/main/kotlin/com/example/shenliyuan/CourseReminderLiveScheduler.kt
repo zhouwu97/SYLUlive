@@ -275,7 +275,7 @@ object CourseReminderLiveScheduler {
         }
 
         builder
-            .setSmallIcon(context.applicationInfo.icon)
+            .setSmallIcon(R.drawable.ic_notification_course_reminder)
             .setContentTitle(reminder.title)
             .setContentText(reminder.body)
             .setTicker(reminder.ticker)

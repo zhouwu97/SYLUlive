@@ -157,7 +157,7 @@
         <service
             android:name=".KeepAliveTileService"
             android:label="沈理保活"
-            android:icon="@mipmap/ic_launcher"
+            android:icon="@drawable/ic_qs_keep_alive"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">
             <intent-filter>

@@ -1,5 +1,6 @@
 import { StrictMode, useEffect, useLayoutEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
 import {
   BrowserRouter,
   Link,
@@ -42,6 +43,9 @@ import { useMobile } from "./mobile";
 import { MobileHeader, MobileNavigation } from "./mobile-chrome";
 import "./mobile-app.css";
 import "./auth.css";
+import "./desktop-refresh.css";
+import { AppearanceButton, applyAppearance, readAppearance } from "./appearance";
+import { mountCollapsedTooltips, mountSlidingIndicator, revealTheme } from "./desktop-motion";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { staleTime: 15000, refetchOnWindowFocus: false },
@@ -101,6 +105,9 @@ function Search() {
     </>
   );
 }
+// 分区渐变的颜色归属：与顶栏五个主分区一致
+const zones: Record<string, string> = { dashboard: "home", community: "community", polls: "community", messages: "community", market: "market", schedule: "study", grades: "study", exams: "study", competition: "study", ratings: "study", campus: "discover", canteen: "discover", toolbox: "discover", ai: "discover" };
+const zoneOf = (active: string) => zones[active] || "home";
 function Shell() {
   const [menu, setMenu] = useState(false);
   const [navigationMotion, setNavigationMotion] = useState(true);
@@ -124,6 +131,26 @@ function Shell() {
   useEffect(() => {
     setMenu(false);
   }, [location.pathname]);
+  useEffect(() => applyAppearance(readAppearance()), []);
+  // 桌面导航动效：顶栏与侧栏选中块滑动、收起侧栏的名称提示（手机端对照 App，不挂载）
+  useEffect(() => {
+    if (mobile) return;
+    const cleanups: (() => void)[] = [];
+    const top = document.querySelector<HTMLElement>(".desktop-top-nav");
+    if (top) cleanups.push(mountSlidingIndicator(top, "a.active"));
+    const scroll = document.querySelector<HTMLElement>(".sidebar .sidebar-scroll");
+    if (scroll) cleanups.push(mountSlidingIndicator(scroll, ".nav-item.active"));
+    const sidebar = document.querySelector<HTMLElement>(".sidebar");
+    if (sidebar) cleanups.push(mountCollapsedTooltips(sidebar));
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, [mobile, standaloneProfile]);
+  const toggleTheme = (from: Element | null) => {
+    const next = !dark;
+    revealTheme(from, () => {
+      document.documentElement.dataset.theme = next ? "dark" : "light";
+      flushSync(() => setDark(next));
+    });
+  };
   useLayoutEffect(()=>{
     const position=scrollPositions.get(location.key)||0;
     const saveScroll=()=>scrollPositions.set(location.key,window.scrollY);
@@ -170,7 +197,7 @@ function Shell() {
     </NavLink>
   );
   return (
-    <div data-mobile-page={active} className={`app-shell social-shell ${active === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
+    <div data-mobile-page={active} data-zone={zoneOf(active)} className={`app-shell social-shell ${active === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
       <a className="skip-link" href="#mainContent">
         跳到主要内容
       </a>
@@ -214,10 +241,11 @@ function Shell() {
             <button
               className="icon-btn"
               aria-label="切换主题"
-              onClick={() => setDark(!dark)}
+              onClick={(event) => toggleTheme(event.currentTarget)}
             >
               <Icon name={dark ? "sun" : "moon"} />
             </button>
+            {!mobile && <AppearanceButton />}
             <button
               className="icon-btn"
               aria-label="通知中心"

@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { paths } from "./icons";
+import { useSlidingIndicator } from "./desktop-motion";
 import { ApiError, write, errorText, isNetworkError, type Entity } from "./api";
 export function Icon({ name, size }: { name: string; size?: number }) {
   return (
@@ -348,8 +349,10 @@ export function Tabs({
   onChange: (s: string) => void;
 }) {
   const list = tabs || items?.map((x) => [x, x] as [string, string]) || [];
+  // 桌面端选中标签由一块滑动的指示器标出（下划线或胶囊，样式见 desktop-refresh.css）
+  const tablist = useSlidingIndicator<HTMLDivElement>(".tab.active");
   return (
-    <div className="tabs" role="tablist">
+    <div className="tabs" role="tablist" ref={tablist}>
       {list.map(([v, l], index) => (
         <button
           key={v}

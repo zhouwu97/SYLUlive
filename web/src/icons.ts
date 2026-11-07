@@ -21,6 +21,7 @@ export const paths: Record<string, string> = {
   bell: '<path data-tone d="M6 10a6 6 0 0 1 12 0v4l2 3H4l2-3z"/><path d="M6 10a6 6 0 0 1 12 0v4l2 3H4l2-3v-4ZM10 21h4M12 2v2"/>',
   moon: '<path data-tone d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z"/><path d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z"/>',
   sun: '<circle data-tone cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4m11.2 11.2L19 19M5 19l1.4-1.4M17.6 6.4 19 5"/>',
+  palette: '<path data-tone d="M12 3a9 9 0 0 0 0 18c1 0 1.7-.8 1.7-1.7 0-.5-.2-.9-.5-1.2a1.7 1.7 0 0 1 1.3-2.9H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3Z"/><path d="M12 3a9 9 0 0 0 0 18c1 0 1.7-.8 1.7-1.7 0-.5-.2-.9-.5-1.2a1.7 1.7 0 0 1 1.3-2.9H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3Z"/><circle cx="7.5" cy="11.5" r="1"/><circle cx="10" cy="7.5" r="1"/><circle cx="15" cy="7.5" r="1"/>',
   menu: '<path d="M4 6h16M4 12h12M4 18h16"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   heart: '<path d="M20 5.5a5 5 0 0 0-7 0l-1 1-1-1a5 5 0 0 0-7 7L12 21l8-8.5a5 5 0 0 0 0-7Z"/>',

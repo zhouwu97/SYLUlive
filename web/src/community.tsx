@@ -4,6 +4,7 @@ import { PublicPosts, isPublicPost } from "./campus-chrome";
 import { ServerAvatar } from "./server-avatar";
 import { userLevel } from "./user-level";
 import { mobilePostTime, useMobile } from "./mobile";
+import { useSlidingIndicator } from "./desktop-motion";
 import { PollCard } from "./polls";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -260,7 +261,7 @@ export function PostCard({
           <h3>{post.title || post.content}</h3>
           <div className="market-price-row">
             {mobile && ["lost", "found"].includes(marketType) ? <span className="mobile-market-type">{marketStateLabel || marketLabel}</span> : <>
-              <strong className="price"><small>¥</small> {post.price ?? "待议"}</strong>
+              {!mobile && post.price === 0 ? <strong className="price is-free">免费送</strong> : <strong className="price"><small>¥</small> {post.price ?? "待议"}</strong>}
               {mobile && marketStateLabel && <span className="mobile-market-type">{marketStateLabel}</span>}
             </>}
             {Number(post.reply_count) > 0 && <span>{post.reply_count} 条讨论</span>}
@@ -291,6 +292,7 @@ export function Community({ market = false }: { market?: boolean }) {
   const ui = useUI(),
     auth = useAuth();
   const [params, setParams] = useSearchParams();
+  const marketTypes = useSlidingIndicator<HTMLDivElement>("button[aria-pressed=\"true\"]");
   const page = Number(params.get("page")) || 1,
     sort = params.get("sort") || (market ? "time" : "all");
   const personal=sort==='mine'||sort==='bookmarks';
@@ -406,7 +408,7 @@ export function Community({ market = false }: { market?: boolean }) {
           </select>
         )}
       </div>
-      {market && <div className="market-results-head"><div role="group" aria-label="闲置分类" className="market-types">{(mobile ? [["", "全部"], ["sell", "出售"], ["buy", "求购"], ["lost", "寻物"], ["found", "招领"], ["proxy", "办事"]] : [["", "全部闲置"], ["marketplace_sell", "出售"], ["marketplace_buy", "求购"]]).map(([value, label]) => <button type="button" key={value} aria-pressed={(params.get("type") || "") === value} onClick={() => filter("type", value)}>{label}</button>)}</div>{q.data && !q.error && <span>本页 {posts.length} 件</span>}</div>}
+      {market && <div className="market-results-head"><div role="group" aria-label="闲置分类" className="market-types" ref={marketTypes}>{(mobile ? [["", "全部"], ["sell", "出售"], ["buy", "求购"], ["lost", "寻物"], ["found", "招领"], ["proxy", "办事"]] : [["", "全部闲置"], ["marketplace_sell", "出售"], ["marketplace_buy", "求购"]]).map(([value, label]) => <button type="button" key={value} aria-pressed={(params.get("type") || "") === value} onClick={() => filter("type", value)}>{label}</button>)}</div>{q.data && !q.error && <span>本页 {posts.length} 件</span>}</div>}
       <QueryState query={q}>
         {!market && !personal && page === 1 && publicPosts.length > 0 && <PublicPosts posts={publicPosts} />}
         <div className={market ? "market-grid" : "panel community-feed"}>
@@ -586,7 +588,7 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
           {(mobile || poll) && p.poll_meta ? <PollCard key={`${p.id}:${auth.user?.id}`} post={p} /> : <>
           {p.title && <h1>{p.title}</h1>}
           <PostAuthor key={`author:${p.id}:${auth.user?.id}`} post={p} />
-          {p.board_id === 2 && <div className="post-market-summary"><strong className="post-market-price"><small>¥</small> {p.price ?? "待议"}</strong><span>{p.status === "sold" ? "已售出" : "交易中"}</span></div>}
+          {p.board_id === 2 && <div className="post-market-summary">{!mobile && p.price === 0 ? <strong className="post-market-price is-free">免费送</strong> : <strong className="post-market-price"><small>¥</small> {p.price ?? "待议"}</strong>}<span>{p.status === "sold" ? "已售出" : "交易中"}</span></div>}
           <div className="post-body details-text">{p.content}</div>
           <MediaGallery items={p.images} title={p.title || "帖子图片"} className="post-detail-gallery" maxVisible={9} variant="detail" />
           {p.board_id === 2 && (

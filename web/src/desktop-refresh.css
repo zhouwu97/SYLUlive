@@ -1,0 +1,264 @@
+/* 桌面网页重构（≥601px）：外观设置、分区渐变与导航动效。
+ * 手机网页（≤600px）对照 Android App，由 mobile-app.css 独立维护，本文件不写任何手机规则。
+ * 布局尺寸（侧栏 214px、右栏 296px、卡片高度）由 desktop-reference e2e 约束，这里只改视觉与动效。 */
+
+/* 用户主题色：appearance.tsx 只在 :root 写 --user-accent，桌面在这里换算出整套强调色。 */
+@media (min-width: 601px) {
+  :root[data-accent="custom"] {
+    --color-accent-fill: var(--user-accent);
+    --color-accent: color-mix(in oklab, var(--user-accent) 84%, #000);
+    --color-accent-hover: color-mix(in oklab, var(--user-accent) 88%, #000);
+    --color-focus: var(--color-accent);
+  }
+  :root[data-accent="custom"][data-theme="dark"] {
+    --color-accent: color-mix(in oklab, var(--user-accent) 55%, #fff);
+    --color-accent-border: color-mix(in oklab, var(--user-accent) 45%, var(--color-surface));
+  }
+
+  /* 分区渐变：页面顶部一段淡色光晕，随滚动离开视线，不压在正文上 */
+  .app-shell { --zone: var(--color-accent-fill); position: relative; isolation: isolate; }
+  .app-shell[data-zone="community"] { --zone: #4f6bed; }
+  .app-shell[data-zone="market"] { --zone: #e0782f; }
+  .app-shell[data-zone="study"] { --zone: #12968a; }
+  .app-shell[data-zone="discover"] { --zone: #7a5bd8; }
+  :root[data-wash="accent"] .app-shell { --zone: var(--color-accent-fill); }
+  .app-shell::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    z-index: -1;
+    height: 520px;
+    pointer-events: none;
+    background:
+      radial-gradient(52% 100% at 18% 0%, color-mix(in oklab, var(--zone) 15%, transparent), transparent 72%),
+      radial-gradient(42% 90% at 86% 0%, color-mix(in oklab, var(--zone) 10%, transparent), transparent 70%),
+      linear-gradient(to bottom, color-mix(in oklab, var(--zone) 5%, transparent), transparent);
+    transition: opacity .4s var(--ease-out);
+  }
+  :root[data-theme="dark"] .app-shell::before { opacity: .7; }
+  :root[data-wash="plain"] .app-shell::before { opacity: 0; }
+
+  /* 顶栏半透明，让渐变透上来；滚动后的内容在毛玻璃下依然可读 */
+  .social-shell .topbar {
+    background: color-mix(in oklab, var(--bg) 78%, transparent);
+    border-bottom-color: color-mix(in oklab, var(--line) 70%, transparent);
+    -webkit-backdrop-filter: saturate(1.6) blur(16px);
+    backdrop-filter: saturate(1.6) blur(16px);
+  }
+
+  /* ---------- 滑动选中块 ---------- */
+  .has-nav-ind { position: relative; }
+  .nav-ind {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    border-radius: var(--radius-control);
+    background: var(--brand-soft);
+    will-change: transform, width, height;
+  }
+  .nav-ind.is-ready {
+    transition:
+      transform .46s cubic-bezier(.34, 1.3, .64, 1),
+      width .46s cubic-bezier(.34, 1.3, .64, 1),
+      height .36s cubic-bezier(.34, 1.3, .64, 1),
+      opacity .2s;
+  }
+  /* 顶栏胶囊与原来的 ::before 同形：上下各内缩 14px */
+  .desktop-top-nav > .nav-ind { border-radius: 0; background: transparent; }
+  .desktop-top-nav > .nav-ind::before {
+    content: "";
+    position: absolute;
+    inset: 14px 0;
+    border-radius: var(--radius-control);
+    background: var(--brand-soft);
+  }
+  .desktop-top-nav.has-nav-ind a.active::before { background: transparent; }
+  .sidebar-scroll.has-nav-ind .nav-item.active { background: transparent; }
+  .market-shell .sidebar-scroll.has-nav-ind .nav-item.active .nav-icon { background: transparent; }
+  /* 同时匹配多个 active 时只有滑块所在的那一项保持选中色 */
+  .sidebar-scroll.has-nav-ind .nav-item.active:not([data-ind-current]) { color: var(--text-2); font-weight: var(--weight-regular); }
+
+  /* 页面标签栏与分段控件：子项必须是定位元素，才会画在滑块上面 */
+  .social-shell :is(.tabs, .market-types).has-nav-ind > :not(.nav-ind) { position: relative; }
+  /* 下划线式（默认 .tabs、校园社区）：滑动的是底部 2px 线 */
+  .social-shell .tabs.has-nav-ind > .nav-ind { border-radius: 0; background: transparent; }
+  .social-shell .tabs.has-nav-ind > .nav-ind::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--color-accent-fill);
+  }
+  .social-shell .community-page .tabs.has-nav-ind > .nav-ind::after { inset: auto 12px 0; background: var(--brand); }
+  .social-shell .tabs.has-nav-ind .tab.active { box-shadow: none; }
+  .social-shell .community-page .tabs.has-nav-ind .tab.active::after { display: none; }
+  /* 胶囊式（首页动态排序、投票筛选、集市分类）：滑动的是浅色底块 */
+  .social-shell :is(.home-feed-heading .tabs, .poll-filters .tabs, .market-types).has-nav-ind > .nav-ind { border-radius: var(--radius-sm); background: var(--brand-soft); }
+  .social-shell :is(.home-feed-heading .tabs, .poll-filters .tabs).has-nav-ind > .nav-ind::after { display: none; }
+  .social-shell :is(.home-feed-heading .tabs, .poll-filters .tabs).has-nav-ind .tab.active,
+  .social-shell .market-page .market-types.has-nav-ind button[aria-pressed="true"] { background: transparent; }
+
+  /* ---------- 收起侧栏的名称提示 ---------- */
+  .nav-tip {
+    position: fixed;
+    z-index: 120;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--text);
+    color: var(--surface);
+    font-size: var(--text-caption);
+    font-weight: var(--weight-medium);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-6px, -50%);
+    transition: opacity .15s, transform .25s var(--ease-out);
+  }
+  .nav-tip.is-shown { opacity: 1; transform: translate(0, -50%); }
+
+  /* ---------- 「学习与校园服务」展开 ---------- */
+  .social-shell .sidebar-more { interpolate-size: allow-keywords; }
+  .social-shell .sidebar-more::details-content {
+    block-size: 0;
+    overflow: clip;
+    transition: block-size .38s var(--ease-out), content-visibility .38s allow-discrete;
+  }
+  .social-shell .sidebar-more[open]::details-content { block-size: auto; }
+  .social-shell .sidebar-more summary .svg-icon { transition: transform .4s cubic-bezier(.34, 1.3, .64, 1); }
+  .social-shell .sidebar-more[open] .nav-item { animation: nav-drop .32s var(--ease-out) both; }
+  .social-shell .sidebar-more[open] .nav-item:nth-of-type(2) { animation-delay: 30ms; }
+  .social-shell .sidebar-more[open] .nav-item:nth-of-type(3) { animation-delay: 60ms; }
+  .social-shell .sidebar-more[open] .nav-item:nth-of-type(4) { animation-delay: 90ms; }
+  .social-shell .sidebar-more[open] .nav-item:nth-of-type(5) { animation-delay: 120ms; }
+  .social-shell .sidebar-more[open] .nav-item:nth-of-type(n + 6) { animation-delay: 150ms; }
+
+  /* ---------- 卡片入场：只做淡入，不改位置（e2e 会测量卡片几何） ---------- */
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) > .feed-card,
+  .social-shell .market-card { animation: card-in .42s var(--ease-out) both; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) > .feed-card:nth-child(2),
+  .social-shell .market-card:nth-child(2) { animation-delay: 40ms; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) > .feed-card:nth-child(3),
+  .social-shell .market-card:nth-child(3) { animation-delay: 80ms; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) > .feed-card:nth-child(4),
+  .social-shell .market-card:nth-child(4) { animation-delay: 120ms; }
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) > .feed-card:nth-child(n + 5),
+  .social-shell .market-card:nth-child(n + 5) { animation-delay: 160ms; }
+
+  /* ---------- 外观设置面板 ---------- */
+  .appearance { position: relative; display: flex; }
+  .appearance-panel {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    z-index: 90;
+    width: 300px;
+    padding: 14px 16px 16px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 18px 48px -12px rgb(20 24 33 / .22), 0 2px 6px rgb(20 24 33 / .06);
+    animation: panel-in .22s var(--ease-out) both;
+    transform-origin: top right;
+  }
+  .appearance-head { display: flex; align-items: center; justify-content: space-between; }
+  .appearance-head b { font-size: var(--text-base); font-weight: var(--weight-semibold); }
+  .appearance-head .icon-btn { width: 32px; height: 32px; min-height: 32px; }
+  .appearance-label { margin: 14px 0 8px; color: var(--text-3); font-size: var(--text-xs); font-weight: var(--weight-semibold); }
+  .appearance-swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+  .appearance-swatch {
+    position: relative;
+    width: 30px;
+    height: 30px;
+    min-height: 30px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--swatch);
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / .08);
+    cursor: pointer;
+    transition: transform .2s cubic-bezier(.34, 1.3, .64, 1), box-shadow .2s;
+  }
+  .appearance-swatch:hover { transform: scale(1.1); }
+  .appearance-swatch[aria-pressed="true"], .appearance-custom.is-custom { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--swatch); }
+  .appearance-custom { overflow: hidden; background: conic-gradient(#f43f5e, #f59e0b, #22c55e, #06b6d4, #6366f1, #d946ef, #f43f5e); }
+  .appearance-custom.is-custom { background: var(--swatch); }
+  .appearance-custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+  .appearance-custom:focus-within { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+  .appearance-washes { display: flex; gap: 2px; padding: 3px; border-radius: var(--radius-control); background: var(--surface-2); }
+  .appearance-washes button {
+    flex: 1;
+    min-height: 32px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-3);
+    font-size: var(--text-caption);
+    cursor: pointer;
+    transition: background .2s, color .2s;
+  }
+  .appearance-washes button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: var(--weight-semibold); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+  :root[data-theme="dark"] .appearance-washes button[aria-pressed="true"] { background: var(--surface-3); }
+  .appearance-hint { margin: 12px 0 0; padding: 10px 12px; border-radius: var(--radius-control); background: var(--surface-2); color: var(--text-3); font-size: var(--text-xs); line-height: 1.6; }
+}
+
+/* 深浅色切换的圆形展开：关闭默认交叉淡化，由 desktop-motion.ts 驱动裁剪动画 */
+::view-transition-old(root),
+::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+
+@media (max-width: 600px) {
+  .appearance, .nav-ind, .nav-tip { display: none; }
+}
+
+@keyframes nav-drop { from { opacity: 0; transform: translateY(-6px); } }
+@keyframes card-in { from { opacity: 0; } }
+@keyframes panel-in { from { opacity: 0; transform: translateY(-6px) scale(.97); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-ind.is-ready, .nav-tip, .appearance-swatch, .app-shell::before { transition: none; }
+  .social-shell .sidebar-more::details-content { transition: none; }
+  .social-shell .sidebar-more[open] .nav-item,
+  .social-shell :is(.dashboard-feed, .community-feed, .profile-feed) > .feed-card,
+  .social-shell .market-card,
+  .appearance-panel { animation: none; }
+}
+
+/* 集市：价格为 0 显示「免费送」（仅桌面渲染，见 community.tsx） */
+@media (min-width: 601px) {
+  .social-shell :is(.price, .post-market-price).is-free { color: var(--color-success); font-weight: var(--weight-semibold); }
+  .social-shell .price.is-free { font-size: var(--text-base); }
+}
+
+/* 投票结果条：注册 --poll-result 后可以对它做动画，结果条从 0 增长到实际比例，投票后的变化也会过渡。
+ * 只改渐变停靠点，不改任何元素尺寸。inherits 保持与未注册时一致（伪元素继承选项上的取值）。 */
+@property --poll-result {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 0%;
+}
+@media (min-width: 601px) and (prefers-reduced-motion: no-preference) {
+  .social-shell .poll-choice::before {
+    animation: poll-grow .9s cubic-bezier(.22, 1, .36, 1) both;
+    transition: --poll-result .6s cubic-bezier(.22, 1, .36, 1);
+  }
+  .social-shell .poll-choice:nth-child(2)::before { animation-delay: 70ms; }
+  .social-shell .poll-choice:nth-child(3)::before { animation-delay: 140ms; }
+  .social-shell .poll-choice:nth-child(n + 4)::before { animation-delay: 210ms; }
+}
+@keyframes poll-grow { from { --poll-result: 0%; } }
+
+/* 自定义主题色可能很浅（如黄色）：用 OKLCH 限制亮度，保证白字按钮与强调色文字的对比度仍不低于 4.5:1。 */
+@supports (color: oklch(from red l c h)) {
+  @media (min-width: 601px) {
+    :root[data-accent="custom"] {
+      --color-accent-fill: oklch(from var(--user-accent) min(l, .55) c h);
+      --color-accent: oklch(from var(--user-accent) min(l, .5) c h);
+      --color-accent-hover: oklch(from var(--user-accent) min(l, .48) c h);
+    }
+    :root[data-accent="custom"][data-theme="dark"] {
+      --color-accent: oklch(from var(--user-accent) max(l, .8) min(c, .14) h);
+    }
+  }
+}

@@ -42,7 +42,8 @@ Uri? astrBotConnectionGuideUri(String apiBase, {Uri? pageUri}) {
       path: '/web/connected-apps', queryParameters: const {'guide': 'astrbot'});
 }
 
-/// 原生设备授权使用与网页相同的请求、nonce 与独立 scope，不扩大旧连接。
+/// 原生设备授权使用与网页相同的请求、nonce 与独立 scope；已有连接的权限由本人原地增减，
+/// 不重建连接，也不让 AstrBot 自动扩权。
 class ManagedBotConnectionsScreen extends StatefulWidget {
   const ManagedBotConnectionsScreen({super.key});
   @override
@@ -73,16 +74,28 @@ class _ManagedBotConnectionsScreenState
     'academic:erke:read'
   };
   static const _personal = {'academic:grades:read', 'academic:erke:read'};
+  static const _botParticipation = {
+    'community:read',
+    'actions:read_own',
+    'community:propose',
+    'community:bot_reply',
+    'community:bot_post'
+  };
   String _scopeDisplayLabel(String scope) => _labels[scope] ?? scope;
   final _code = TextEditingController();
   PublishSessionScope? _session;
   Map<String, dynamic>? _consent;
   List<Map<String, dynamic>> _bindings = [];
   final _selected = <String>{};
+  final _editSelected = <String>{};
+  String? _editingId;
+  int _editEpoch = 0;
   bool _loading = false, _busy = false, _checked = false, _replace = false;
   bool _connectionsLoaded = false, _requestExpanded = false;
   bool _openingGuide = false;
   bool? _personalEnabled;
+  // 站点功能开关；旧服务端未下发时为空，不预判，交由服务端校验。
+  final _featureEnabled = <String, bool>{};
   String? _error, _notice;
   String? _connectionError, _guideError;
   int _generation = 0;
@@ -111,6 +124,8 @@ class _ManagedBotConnectionsScreenState
     _connectionsLoaded = _requestExpanded = _openingGuide = false;
     _connectionError = _guideError = null;
     _selected.clear();
+    _editSelected.clear();
+    _editingId = null;
     _checked = _replace = _busy = false;
     _error = _notice = null;
     _session = auth.isLoggedIn && auth.user != null
@@ -138,7 +153,9 @@ class _ManagedBotConnectionsScreenState
       'bot_post_disabled' => '服务端尚未开放机器人自动发帖，请先只授权读取或稍后重试。',
       'personal_queries_disabled' => '服务端尚未开放个人查询，请先取消选择成绩、二课权限。',
       'proposals_disabled' => '服务端尚未开放提案，请先只选择读取权限。',
-      'binding_conflict' => '已有连接，请明确勾选替换后再授权。',
+      'binding_conflict' => '已有连接或连接状态已变化，请刷新后重新核对；替换新执行端时需明确勾选替换。',
+      'binding_unavailable' => '未找到这条连接，请刷新连接列表。',
+      'invalid_scope' => '所选权限组合无效，请检查依赖项后重试。',
       'confirmation_expired' => '本次核对已过期，请在 AstrBot 重新获取一次性连接码。',
       'invalid_user_code' ||
       'expired_token' =>
@@ -188,7 +205,26 @@ class _ManagedBotConnectionsScreenState
         _personalEnabled = data['personal_data_enabled'] is bool
             ? data['personal_data_enabled'] as bool
             : null;
+        _featureEnabled.clear();
+        for (final entry in const {
+          'community:propose': 'proposals_enabled',
+          'community:bot_reply': 'auto_reply_enabled',
+          'community:bot_post': 'auto_post_enabled',
+        }.entries) {
+          final value = data[entry.value];
+          if (value is bool) _featureEnabled[entry.key] = value;
+        }
         _bindings = bindings;
+        // 连接已断开或被替换时关闭编辑区，避免沿用旧版本号保存。
+        final editing = _editingId;
+        if (editing != null &&
+            !bindings.any((binding) =>
+                binding['binding_id'] == editing &&
+                binding['state'] == 'active' &&
+                ((binding['epoch'] as num?)?.toInt() ?? 0) == _editEpoch)) {
+          _editingId = null;
+          _editSelected.clear();
+        }
         _connectionsLoaded = true;
       });
     } catch (e) {
@@ -242,15 +278,152 @@ class _ManagedBotConnectionsScreenState
     }
   }
 
+  /// 与服务端 integrationScopes 的依赖规则一致。
+  static bool _validScopes(Set<String> scopes) =>
+      scopes.isNotEmpty &&
+      (!scopes.contains('community:propose') ||
+          scopes.containsAll({'community:read', 'actions:read_own'})) &&
+      (!scopes.contains('community:bot_reply') ||
+          scopes.contains('community:propose')) &&
+      (!scopes.contains('community:bot_post') ||
+          scopes.contains('community:propose'));
+
   bool get _validSelection =>
-      _selected.isNotEmpty &&
-      (!_selected.any(_personal.contains) || _personalEnabled == true) &&
-      (!_selected.contains('community:propose') ||
-          _selected.containsAll({'community:read', 'actions:read_own'})) &&
-      (!_selected.contains('community:bot_reply') ||
-          _selected.contains('community:propose')) &&
-      (!_selected.contains('community:bot_post') ||
-          _selected.contains('community:propose'));
+      _validScopes(_selected) &&
+      (!_selected.any(_personal.contains) || _personalEnabled == true);
+
+  /// 站点未开放、且本连接尚未持有的权限不能新增。
+  bool _scopeUnavailable(String scope) =>
+      (_personal.contains(scope) && _personalEnabled != true) ||
+      _featureEnabled[scope] == false;
+
+  Set<String> _bindingScopes(Map<String, dynamic> binding) =>
+      (binding['scopes'] as String? ?? '')
+          .split(' ')
+          .where((scope) => scope.isNotEmpty)
+          .toSet();
+
+  void _startEdit(Map<String, dynamic> binding, {bool addBot = false}) {
+    if (_busy) return;
+    setState(() {
+      _editingId = binding['binding_id'] as String;
+      _editEpoch = (binding['epoch'] as num?)?.toInt() ?? 0;
+      // 补充机器人授权只预选站点已开放的自动参与权限，不顺带勾选成绩、二课或签到。
+      _editSelected
+        ..clear()
+        ..addAll(_bindingScopes(binding))
+        ..addAll(addBot
+            ? _botParticipation.where((scope) => !_scopeUnavailable(scope))
+            : const <String>[]);
+      _error = _notice = null;
+    });
+  }
+
+  Future<void> _saveScopes() async {
+    final session = _session, id = _editingId;
+    if (session == null || id == null || !_owns(session) || _busy) return;
+    if (!_validScopes(_editSelected)) return;
+    final generation = _generation;
+    setState(() {
+      _busy = true;
+      _error = _notice = null;
+    });
+    try {
+      await context.read<AuthProvider>().dio.post(
+          '/connected-apps/${Uri.encodeComponent(id)}/scopes',
+          data: {
+            'scopes': _editSelected.toList(),
+            'expected_epoch': _editEpoch
+          },
+          options: Options(extra: session.requestExtra));
+      if (!_owns(session) || generation != _generation) return;
+      setState(() {
+        _editingId = null;
+        _editSelected.clear();
+        _notice = '权限已更新并立即生效。连接与 AstrBot 凭证保持不变，无需重新连接。';
+      });
+      await _load();
+    } catch (e) {
+      if (_owns(session) && generation == _generation) {
+        final problem = _problem(e);
+        setState(() => _error = problem);
+        final data = e is DioException ? e.response?.data : null;
+        final code = data is Map ? data['code'] : null;
+        if (code == 'binding_conflict' || code == 'binding_unavailable') {
+          // 连接已变化：刷新后编辑区随之关闭；刷新会清空提示，完成后恢复本次原因。
+          setState(() => _busy = false);
+          await _load();
+          if (_owns(session) && generation == _generation) {
+            setState(() => _error ??= problem);
+          }
+        }
+      }
+    } finally {
+      if (_owns(session) && generation == _generation) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  Widget _scopeEditor(TextTheme text) {
+    final valid = _validScopes(_editSelected);
+    return Column(
+        key: const ValueKey('bot-scope-editor'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: AppSpacing.sm),
+          Text('修改权限', style: text.titleSmall),
+          const Text('保存后立即生效，连接与 AstrBot 凭证保持不变，无需重新连接。收回「创建草稿」时，尚未确认的草稿会失效。'),
+          for (final scope in _labels.keys)
+            CheckboxListTile(
+                key: ValueKey('bot-edit-scope-$scope'),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: Text(_labels[scope]!),
+                subtitle: _scopeUnavailable(scope)
+                    ? Text(_editSelected.contains(scope)
+                        ? '站点已关闭此功能，可保留或收回，收回后不能再新增'
+                        : '站点尚未开放此功能，暂不能新增')
+                    : null,
+                value: _editSelected.contains(scope),
+                onChanged: _busy ||
+                        (_scopeUnavailable(scope) &&
+                            !_editSelected.contains(scope))
+                    ? null
+                    : (value) => setState(() {
+                          if (value == true) {
+                            _editSelected.add(scope);
+                          } else {
+                            _editSelected.remove(scope);
+                          }
+                        })),
+          if (!valid)
+            Text(
+                _editSelected.isEmpty
+                    ? '请至少保留一项权限；不再需要时请改用「断开连接」。'
+                    : '自动评论和发帖需同时选择公开读取、草稿结果与创建草稿权限。',
+                style: text.bodyMedium
+                    ?.copyWith(color: Theme.of(context).colorScheme.error)),
+          Wrap(spacing: AppSpacing.md, runSpacing: AppSpacing.sm, children: [
+            TextButton(
+                onPressed: _busy
+                    ? null
+                    : () => setState(() {
+                          _editingId = null;
+                          _editSelected.clear();
+                        }),
+                child: const Text('取消修改')),
+            FilledButton(
+                key: const ValueKey('bot-save-scopes'),
+                onPressed: _busy || !valid ? null : _saveScopes,
+                style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.standard,
+                    minimumSize: const Size(44, 48),
+                    textStyle: text.labelLarge),
+                child: Text(_busy ? '正在保存…' : '保存权限')),
+          ]),
+        ]);
+  }
 
   Future<void> _decide(bool allow) async {
     final session = _session, consent = _consent;
@@ -461,6 +634,28 @@ class _ManagedBotConnectionsScreenState
                     .join('；'))
               ],
             ),
+            if (_editingId == binding['binding_id'])
+              _scopeEditor(text)
+            else ...[
+              if (!_bindingScopes(binding).containsAll(_botParticipation)) ...[
+                const Text('自动参与权限尚未齐全，可直接在这里补充，无需重新连接或发送 /sylu-connect。'),
+                FilledButton.icon(
+                    key: const ValueKey('bot-supplement-scopes'),
+                    onPressed:
+                        _busy ? null : () => _startEdit(binding, addBot: true),
+                    style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.standard,
+                        minimumSize: const Size(44, 48),
+                        textStyle: text.labelLarge),
+                    icon: const Icon(Icons.add_moderator_outlined),
+                    label: const Text('补充机器人授权')),
+              ],
+              TextButton.icon(
+                  key: const ValueKey('bot-edit-scopes'),
+                  onPressed: _busy ? null : () => _startEdit(binding),
+                  icon: const Icon(Icons.tune),
+                  label: const Text('修改权限')),
+            ],
             TextButton.icon(
                 onPressed: _busy ? null : () => _revoke(binding),
                 icon: const Icon(Icons.link_off),
@@ -481,7 +676,7 @@ class _ManagedBotConnectionsScreenState
           label: Text(active.isEmpty ? '开始连接 AstrBot' : '连接新的 AstrBot'),
         ),
         const SizedBox(height: AppSpacing.sm),
-        const Text('增加或调整授权范围时才需新的连接申请；不会自动扩展旧连接。'),
+        const Text('增减授权范围直接点「修改权限」，无需重新连接；只有更换执行端时才需新的连接申请。'),
       ],
     ));
   }

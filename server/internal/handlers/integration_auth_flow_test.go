@@ -122,3 +122,39 @@ func TestIntegrationOldSessionCanPreviewAndRejectButCannotPublishDraft(t *testin
 	require.Equal(t, 200, w.Code, w.Body.String())
 	require.Contains(t, w.Body.String(), `"state":"rejected"`)
 }
+
+func TestIntegrationScopeEditListsTogglesAndBlocksOnlyNewDisabledScopes(t *testing.T) {
+	f, h := integrationAuthFlowFixture(t)
+	now := time.Now().Truncate(time.Millisecond)
+	h.auth.Now = func() time.Time { return now }
+	require.NoError(t, f.db.Model(&models.RefreshToken{}).Where("token_family = ?", f.family).Update("authenticated_at", now.Add(-time.Minute)).Error)
+	consent := flowConsent(t, f, h)
+	decision, _ := json.Marshal(services.IntegrationConsentDecision{Allow: true, Nonce: consent.Nonce, Scopes: consent.RequestedScopes})
+	w := integrationFlowRequest(t, f, "POST", "/api/connected-apps/device-requests/"+consent.ID+"/decision", string(decision))
+	require.Equal(t, 200, w.Code, w.Body.String())
+
+	w = integrationFlowRequest(t, f, "GET", "/api/connected-apps", "")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	var list struct {
+		Bindings         []models.IntegrationBinding `json:"bindings"`
+		ProposalsEnabled *bool                       `json:"proposals_enabled"`
+		AutoReplyEnabled *bool                       `json:"auto_reply_enabled"`
+		AutoPostEnabled  *bool                       `json:"auto_post_enabled"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &list))
+	require.True(t, *list.ProposalsEnabled)
+	require.False(t, *list.AutoReplyEnabled)
+	require.False(t, *list.AutoPostEnabled)
+	binding := list.Bindings[0]
+	path := "/api/connected-apps/" + binding.ID + "/scopes"
+
+	body, _ := json.Marshal(services.IntegrationScopeUpdate{Scopes: append(strings.Fields(binding.Scopes), services.IntegrationAutoPostScope), ExpectedEpoch: binding.Epoch})
+	w = integrationFlowRequest(t, f, "POST", path, string(body))
+	require.Equal(t, 403, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), "bot_post_disabled")
+
+	body, _ = json.Marshal(services.IntegrationScopeUpdate{Scopes: []string{"community:read", "actions:read_own"}, ExpectedEpoch: binding.Epoch})
+	w = integrationFlowRequest(t, f, "POST", path, string(body))
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"scopes":"actions:read_own community:read"`)
+}

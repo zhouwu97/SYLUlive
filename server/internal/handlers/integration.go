@@ -54,6 +54,7 @@ func (h *IntegrationHandler) Register(r *gin.Engine, jwtSecret string) {
 	owner.POST("/device-requests/lookup", h.Lookup)
 	owner.POST("/device-requests/:id/decision", h.Decide)
 	owner.POST("/:id/revoke", h.Revoke)
+	owner.POST("/:id/scopes", h.UpdateScopes)
 	owner.POST("/personal-sync/grades", h.UploadGrades)
 	owner.DELETE("/personal-sync/grades", h.DeleteUploadedGrades)
 	owner.GET("/actions/:id", h.ActionPreview)
@@ -360,7 +361,57 @@ func (h *IntegrationHandler) List(c *gin.Context) {
 		}
 	}
 	c.Header("Cache-Control", "no-store")
-	c.JSON(200, gin.H{"bindings": rows, "personal_data_enabled": h.options.PersonalDataEnabled})
+	// 站点开关随列表下发，供修改权限时置灰未开放项；最终仍由 UpdateScopes/Decide 校验。
+	c.JSON(200, gin.H{"bindings": rows, "personal_data_enabled": h.options.PersonalDataEnabled,
+		"proposals_enabled": h.options.ProposalsEnabled, "auto_reply_enabled": h.options.AutoReplyEnabled, "auto_post_enabled": h.options.AutoPostEnabled})
+}
+// UpdateScopes 本人直接增减当前连接的权限；只对新增 scope 校验站点开关，
+// 站点关闭某功能后仍允许用户收回或保留既有权限，不会因此卡住其他调整。
+func (h *IntegrationHandler) UpdateScopes(c *gin.Context) {
+	var input services.IntegrationScopeUpdate
+	if decodeStrictJSON(c, &input, 4096) != nil {
+		writeIntegrationError(c, &services.IntegrationError{Code: "invalid_request", Status: 422}, false)
+		return
+	}
+	if !h.recent(c) {
+		return
+	}
+	current := map[string]bool{}
+	if rows, err := h.auth.ListBindings(c.Request.Context(), c.GetUint("user_id")); err == nil {
+		for _, row := range rows {
+			if row.ID == c.Param("id") {
+				for _, scope := range strings.Fields(row.Scopes) {
+					current[scope] = true
+				}
+			}
+		}
+	}
+	for _, scope := range input.Scopes {
+		if current[scope] {
+			continue
+		}
+		code := ""
+		switch {
+		case scope == services.IntegrationAutoPostScope && !h.options.AutoPostEnabled:
+			code = "bot_post_disabled"
+		case scope == services.IntegrationAutoReplyScope && !h.options.AutoReplyEnabled:
+			code = "bot_reply_disabled"
+		case scope == services.IntegrationProposeScope && !h.options.ProposalsEnabled:
+			code = "proposals_disabled"
+		case (scope == services.IntegrationGradesScope || scope == services.IntegrationErkeScope) && !h.options.PersonalDataEnabled:
+			code = "personal_queries_disabled"
+		}
+		if code != "" {
+			writeIntegrationError(c, &services.IntegrationError{Code: code, Status: 403}, false)
+			return
+		}
+	}
+	result, err := h.auth.UpdateScopes(c.Request.Context(), c.GetUint("user_id"), c.Param("id"), input)
+	if err != nil {
+		writeIntegrationError(c, err, false)
+		return
+	}
+	c.JSON(200, gin.H{"binding": result})
 }
 func (h *IntegrationHandler) Revoke(c *gin.Context) {
 	if err := h.auth.Revoke(c.Request.Context(), c.GetUint("user_id"), c.Param("id")); err != nil {

@@ -1093,7 +1093,7 @@ class _ManagedBotScreenState extends State<ManagedBotScreen> {
       if (supported && verified) ...[
         if (state == 'scope_required')
           const Text(
-              '绑定只建立连接，后台浏览还需要你批准「公开社区浏览」；已有的「本人公开帖子」是另一项权限，不能代替它。在原聊天发送 /sylu-connect 获取补充授权链接，勾选公开浏览并确认替换原连接；无需先解绑，也不需要成绩、二课或签到权限。'),
+              '绑定只建立连接，后台浏览还需要你批准「公开社区浏览」；已有的「本人公开帖子」是另一项权限，不能代替它。在「AstrBot 连接与授权」的当前连接点「修改权限」，勾选公开浏览并保存即可；无需重新连接，也不需要成绩、二课或签到权限。'),
         const SizedBox(height: AppSpacing.sm),
         Text('最近浏览：${date(runtime['last_read_at'])}',
             style: Theme.of(context).textTheme.bodySmall),

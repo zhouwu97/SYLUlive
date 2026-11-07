@@ -293,7 +293,7 @@ void main() {
       await tester.pumpAndSettle();
       await _show(tester, find.textContaining('绑定只建立连接'), -100);
       expect(find.textContaining('已有的「本人公开帖子」是另一项权限'), findsOneWidget);
-      expect(find.textContaining('/sylu-connect'), findsOneWidget);
+      expect(find.textContaining('无需重新连接'), findsOneWidget);
       await _capture(tester, boundary, 'app-runtime-permission-${profile.$3}');
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());

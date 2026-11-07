@@ -697,7 +697,15 @@ class SYLUlivePlugin(Star):
         if not tokens:
             return self.problem(IntegrationProblem("connect_first"))
         if "checkin:write" not in tokens.get("scope", "").split():
-            return "当前连接没有签到权限，未执行签到。请本人发送 /sylu-connect 更新授权，在官网明确勾选“每日签到”并确认替换原连接；无需先解绑。旧只读授权不会自动扩权。"
+            try:
+                # 官网可原地增减权限，本地 scope 缺项时先核对一次最新授权。
+                granted = await client.refresh_scope()
+            except IntegrationProblem as error:
+                return self.problem(error)
+            if not access_current():
+                return "权限或账号连接已变化，本次未发起签到操作或查询，请重新确认。"
+            if "checkin:write" not in granted.split():
+                return "当前连接没有签到权限，未执行签到。请本人在官网「已授权助手 → 连接 AstrBot」的当前连接里点「修改权限」，勾选“每日签到”并保存；无需重新连接。"
         try:
             body = await client.call("POST" if submit else "GET", "/me/checkin")
             if not access_current():
@@ -734,7 +742,7 @@ class SYLUlivePlugin(Star):
         except IntegrationProblem as error:
             if error.code == "insufficient_scope":
                 return (
-                    "当前授权没有每日签到权限，请本人重新连接并在官网勾选；未执行签到。"
+                    "当前授权没有每日签到权限，请本人在官网当前连接里点「修改权限」勾选后保存；未执行签到。"
                 )
             return (
                 "未能确认本次签到状态。"
@@ -782,7 +790,12 @@ class SYLUlivePlugin(Star):
                 raise IntegrationProblem("connect_first")
             scope = "academic:grades:read" if dataset == "grades" else "academic:erke:read"
             if scope not in client.tokens.get("scope", "").split():
-                raise IntegrationProblem("insufficient_scope")
+                # 官网可原地增减权限，本地 scope 缺项时先核对一次最新授权。
+                granted = await client.refresh_scope()
+                if not access_current():
+                    return "权限或账号连接已变化，本次未展示个人结果，请重新查询。"
+                if scope not in granted.split():
+                    raise IntegrationProblem("insufficient_scope")
             group = bool(event.get_group_id()) and not event.is_private_chat()
             mode = self.config.get("group_personal_delivery", "confirm")
             if group and mode not in ("confirm", "direct", "private"):
@@ -1448,7 +1461,7 @@ class SYLUlivePlugin(Star):
             "personal_data_disabled": "你已在隐私设置关闭该类数据，机器人不能读取；请本人在官网检查设置。",
             "personal_queries_disabled": "服务端尚未开放成绩和二课查询，请维护者核对服务开关；公开查询和已有签到不受影响。",
             "personal_data_unavailable": "个人数据暂时不可用，请先在 App 或官网检查和重新同步，未使用其他人的数据。",
-            "insufficient_scope": "当前连接没有此项权限，请本人重新连接并在官网明确授权。",
+            "insufficient_scope": "当前连接没有此项权限。请本人在官网当前连接里点「修改权限」勾选后保存，无需重新连接。",
             "network_unavailable": "无法连接 SYLUlive 服务。请检查插件 server_origin、网络及后端是否已启动；本次操作未取得服务端确认。",
             "reconnect_required": "刷新结果不确定或授权失效，请重新连接；需要时在官网替换旧授权。",
         }

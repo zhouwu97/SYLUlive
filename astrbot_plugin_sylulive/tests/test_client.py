@@ -348,3 +348,24 @@ async def test_current_authorization_errors_still_clear_only_when_required(
         assert (store.value is None) == clears
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_refresh_scope_reads_permissions_changed_on_website_without_reconnect():
+    async def respond(request):
+        assert request.url.path.endswith("/token")
+        return httpx.Response(
+            200,
+            json={**tokens(), "access_token": "sa_widened", "refresh_token": "sr_widened", "scope": "checkin:write community:read"},
+        )
+
+    store = Store()
+    client = BusinessClient("https://fixture.invalid", store, transport=httpx.MockTransport(respond))
+    try:
+        client._save(tokens())
+        generation = client.generation
+        assert "checkin:write" in (await client.refresh_scope()).split()
+        assert client.generation == generation, "原地改权限不能被当成换绑"
+        assert store.value["scope"] == "checkin:write community:read"
+    finally:
+        await client.close()

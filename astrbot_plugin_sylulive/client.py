@@ -258,6 +258,14 @@ class BusinessClient:
                 raise IntegrationProblem("reconnect_required") from None
             return self.tokens["access_token"]
 
+    async def refresh_scope(self):
+        # 官网可原地修改连接权限而不换凭证；本地缓存的 scope 缺项时先轮换一次取得最新范围。
+        async with self.lock:
+            if self.tokens:
+                self.tokens["expires_at"] = 0
+        await self._access()
+        return (self.tokens or {}).get("scope", "")
+
     async def call(self, method, path, *, params=None, payload=None, files=None):
         generation = self.generation
         access = await self._access()

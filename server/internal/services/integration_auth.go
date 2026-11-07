@@ -358,6 +358,51 @@ func (s *IntegrationAuthService) DecideConsent(ctx context.Context, owner uint, 
 	return result, err
 }
 
+type IntegrationScopeUpdate struct {
+	Scopes        []string `json:"scopes"`
+	ExpectedEpoch uint     `json:"expected_epoch"`
+}
+
+// UpdateScopes 由本人在官网直接调整当前连接的权限，不重建连接：
+// epoch 与令牌保持不变，执行端下次请求即按新 scope 鉴权，令牌轮换时同步新的 scope 字段。
+// 收回「创建草稿」时作废未确认草稿，避免旧授权下生成的内容在权限收回后仍待确认。
+func (s *IntegrationAuthService) UpdateScopes(ctx context.Context, owner uint, id string, input IntegrationScopeUpdate) (models.IntegrationBinding, error) {
+	var result models.IntegrationBinding
+	err := s.ownerTx(ctx, owner, func(tx *gorm.DB, user models.User) error {
+		var b models.IntegrationBinding
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND owner_id = ?", id, owner).Take(&b).Error; err != nil {
+			return integrationError("binding_unavailable", 404)
+		}
+		if b.State != "active" || b.Epoch != input.ExpectedEpoch {
+			return integrationError("binding_conflict", 409)
+		}
+		if err := s.bindingValid(tx, b, user); err != nil {
+			return err
+		}
+		scopes, err := integrationScopes(strings.Join(input.Scopes, " "))
+		if err != nil {
+			return err
+		}
+		if scopes == b.Scopes {
+			result = b
+			return nil
+		}
+		hadPropose := IntegrationHasScope(b, IntegrationProposeScope)
+		if err = tx.Model(&b).Update("scopes", scopes).Error; err != nil {
+			return err
+		}
+		b.Scopes = scopes
+		if hadPropose && !IntegrationHasScope(b, IntegrationProposeScope) {
+			if err = tx.Model(&models.IntegrationAction{}).Where("binding_id = ? AND state = ?", b.ID, "pending").Updates(map[string]interface{}{"state": "invalidated", "confirm_nonce_hash": "", "confirm_expires_at": nil, "payload": "{}"}).Error; err != nil {
+				return err
+			}
+		}
+		result = b
+		return tx.Create(&models.IntegrationAudit{OwnerID: owner, BindingID: b.ID, Event: "scopes_updated", CreatedAt: s.Now()}).Error
+	})
+	return result, err
+}
+
 func (s *IntegrationAuthService) revokeTx(tx *gorm.DB, b models.IntegrationBinding) error {
 	now := s.Now()
 	if err := tx.Model(&b).Updates(map[string]interface{}{"state": "revoked", "epoch": b.Epoch + 1, "revoked_at": now}).Error; err != nil {

@@ -241,3 +241,5 @@
   .sync-steps { gap: 16px; }
   .integration-sync .sync-submit { justify-self: stretch; }
 }
+.connection-scope-editor { margin-block: 16px; padding-block: 16px; border-block: 1px solid var(--integration-border); }
+.connection-scope-editor h4 { margin: 0; font-size: 15px; }

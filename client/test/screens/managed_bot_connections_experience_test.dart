@@ -209,6 +209,211 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('缺权限时原地补充授权，不重新连接也不连带个人查询', (tester) async {
+    final auth =
+        _Auth(Dio(BaseOptions(baseUrl: 'https://fixture.invalid/api')));
+    addTearDown(auth.dispose);
+    final writes = <RequestOptions>[];
+    var scopes = 'profile:read_minimal content:read_own_public checkin:write';
+    auth.dio.interceptors
+        .add(InterceptorsWrapper(onRequest: (request, handler) {
+      if (request.method != 'GET') {
+        writes.add(request);
+        scopes = ((request.data as Map)['scopes'] as List).join(' ');
+      }
+      handler.resolve(Response(requestOptions: request, data: {
+        'bindings': [
+          {..._binding(), 'scopes': scopes, 'epoch': 3}
+        ],
+        'personal_data_enabled': false
+      }));
+    }));
+    final key = await _pump(tester, auth);
+    await tester.pumpAndSettle();
+    final supplement = find.byKey(const ValueKey('bot-supplement-scopes'));
+    await _show(tester, supplement);
+    await tester.tap(supplement);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('bot-scope-editor')), findsOneWidget);
+    expect(find.byKey(const ValueKey('bot-device-code')), findsNothing);
+    expect(
+        tester
+            .widget<CheckboxListTile>(
+                find.byKey(const ValueKey('bot-edit-scope-community:bot_post')))
+            .value,
+        isTrue);
+    expect(
+        tester
+            .widget<CheckboxListTile>(find
+                .byKey(const ValueKey('bot-edit-scope-academic:grades:read')))
+            .value,
+        isFalse);
+    await _capture(tester, key, 'scope-editor-light');
+    expect(writes, isEmpty);
+    final save = find.byKey(const ValueKey('bot-save-scopes'));
+    await _show(tester, save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(writes.single.path, '/connected-apps/active/scopes');
+    expect(writes.single.extra['expectedAuthUserId'], 7);
+    final body = writes.single.data as Map;
+    expect(body['expected_epoch'], 3);
+    expect(
+        (body['scopes'] as List).toSet(),
+        containsAll(<String>[
+          'community:read',
+          'actions:read_own',
+          'community:propose',
+          'community:bot_reply',
+          'community:bot_post',
+          'checkin:write'
+        ]));
+    expect((body['scopes'] as List).any((s) => '$s'.startsWith('academic:')),
+        isFalse);
+    expect(find.textContaining('无需重新连接'), findsWidgets);
+    expect(find.byKey(const ValueKey('bot-scope-editor')), findsNothing);
+    expect(find.byKey(const ValueKey('bot-supplement-scopes')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('修改权限依赖不满足时不能保存，失败保留所选', (tester) async {
+    final auth =
+        _Auth(Dio(BaseOptions(baseUrl: 'https://fixture.invalid/api')));
+    addTearDown(auth.dispose);
+    final writes = <RequestOptions>[];
+    auth.dio.interceptors
+        .add(InterceptorsWrapper(onRequest: (request, handler) {
+      if (request.method != 'GET') {
+        writes.add(request);
+        handler.reject(DioException(
+            requestOptions: request,
+            response: Response(
+                requestOptions: request,
+                statusCode: 409,
+                data: {'code': 'binding_conflict'})));
+        return;
+      }
+      handler.resolve(Response(requestOptions: request, data: {
+        'bindings': [
+          {..._binding(), 'epoch': 1}
+        ]
+      }));
+    }));
+    await _pump(tester, auth);
+    await tester.pumpAndSettle();
+    final edit = find.byKey(const ValueKey('bot-edit-scopes'));
+    await _show(tester, edit);
+    await tester.tap(edit);
+    await tester.pumpAndSettle();
+    final propose =
+        find.byKey(const ValueKey('bot-edit-scope-community:propose'));
+    await _show(tester, propose);
+    await tester.tap(propose);
+    await tester.pumpAndSettle();
+    final save = find.byKey(const ValueKey('bot-save-scopes'));
+    await _show(tester, save);
+    expect(tester.widget<FilledButton>(save).onPressed, isNull);
+    await _show(tester, propose, -180);
+    await tester.tap(propose);
+    await tester.pumpAndSettle();
+    final post =
+        find.byKey(const ValueKey('bot-edit-scope-community:bot_post'));
+    await _show(tester, post);
+    await tester.tap(post);
+    await tester.pumpAndSettle();
+    await _show(tester, save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(writes, hasLength(1));
+    expect((writes.single.data as Map)['scopes'],
+        isNot(contains('community:bot_post')));
+    expect(find.textContaining('连接状态已变化'), findsOneWidget);
+    expect(find.byKey(const ValueKey('bot-scope-editor')), findsOneWidget);
+    expect(tester.widget<CheckboxListTile>(post).value, isFalse);
+    expect(find.text('已连接 AstrBot'), findsOneWidget);
+  });
+
+  testWidgets('站点未开放的权限置灰且不预选', (tester) async {
+    final auth =
+        _Auth(Dio(BaseOptions(baseUrl: 'https://fixture.invalid/api')));
+    addTearDown(auth.dispose);
+    final writes = <RequestOptions>[];
+    auth.dio.interceptors
+        .add(InterceptorsWrapper(onRequest: (request, handler) {
+      if (request.method != 'GET') writes.add(request);
+      handler.resolve(Response(requestOptions: request, data: {
+        'bindings': [
+          {
+            ..._binding(),
+            'scopes': 'profile:read_minimal content:read_own_public',
+            'epoch': 1
+          }
+        ],
+        'personal_data_enabled': false,
+        'proposals_enabled': true,
+        'auto_reply_enabled': true,
+        'auto_post_enabled': false,
+      }));
+    }));
+    await _pump(tester, auth);
+    await tester.pumpAndSettle();
+    final supplement = find.byKey(const ValueKey('bot-supplement-scopes'));
+    await _show(tester, supplement);
+    await tester.tap(supplement);
+    await tester.pumpAndSettle();
+    final post =
+        find.byKey(const ValueKey('bot-edit-scope-community:bot_post'));
+    await _show(tester, post);
+    expect(tester.widget<CheckboxListTile>(post).value, isFalse);
+    expect(tester.widget<CheckboxListTile>(post).onChanged, isNull);
+    expect(find.text('站点尚未开放此功能，暂不能新增'), findsWidgets);
+    final save = find.byKey(const ValueKey('bot-save-scopes'));
+    await _show(tester, save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    final scopes = (writes.single.data as Map)['scopes'] as List;
+    expect(scopes, contains('community:bot_reply'));
+    expect(scopes, isNot(contains('community:bot_post')));
+  });
+
+  testWidgets('连接已断开时保存失败会刷新并关闭编辑区', (tester) async {
+    final auth =
+        _Auth(Dio(BaseOptions(baseUrl: 'https://fixture.invalid/api')));
+    addTearDown(auth.dispose);
+    var revoked = false;
+    auth.dio.interceptors
+        .add(InterceptorsWrapper(onRequest: (request, handler) {
+      if (request.method != 'GET') {
+        revoked = true;
+        handler.reject(DioException(
+            requestOptions: request,
+            response: Response(
+                requestOptions: request,
+                statusCode: 409,
+                data: {'code': 'binding_conflict'})));
+        return;
+      }
+      handler.resolve(Response(requestOptions: request, data: {
+        'bindings': [
+          {..._binding(state: revoked ? 'revoked' : 'active'), 'epoch': 1}
+        ]
+      }));
+    }));
+    await _pump(tester, auth);
+    await tester.pumpAndSettle();
+    final edit = find.byKey(const ValueKey('bot-edit-scopes'));
+    await _show(tester, edit);
+    await tester.tap(edit);
+    await tester.pumpAndSettle();
+    final save = find.byKey(const ValueKey('bot-save-scopes'));
+    await _show(tester, save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('bot-scope-editor')), findsNothing);
+    expect(find.text('尚未连接 AstrBot'), findsOneWidget);
+    expect(find.textContaining('连接状态已变化'), findsOneWidget);
+  });
+
   testWidgets('断开说明影响，可以取消；确认后只撤销当前连接', (tester) async {
     final auth =
         _Auth(Dio(BaseOptions(baseUrl: 'https://fixture.invalid/api')));

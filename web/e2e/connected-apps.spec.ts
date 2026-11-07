@@ -44,7 +44,7 @@ for (const [theme, width] of [["light", 375], ["dark", 1440]] as const) {
     mode = "scope_required";
     await runtime.getByRole("button", {name:"刷新运行状态", exact:true}).click();
     await expect(runtime.getByText("AstrBot 尚未获得公开社区读取权限", {exact:true})).toBeVisible();
-    await expect(runtime.getByText("绑定只建立连接", {exact:false})).toContainText("/sylu-connect");
+    await expect(runtime.getByText("绑定只建立连接", {exact:false})).toContainText("无需重新连接");
     await runtime.screenshot({path:test.info().outputPath(`runtime-permission-${theme}.png`)});
     await runtime.getByRole("button", {name:"查看连接与补充授权", exact:true}).click();
     await expect(page.getByRole("region", {name:"AstrBot 连接管理",exact:true})).toBeVisible();

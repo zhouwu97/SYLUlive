@@ -516,7 +516,8 @@
   /* 右栏：今日课表、校园日历、集市新上架、热榜序号。 */
   .social-shell .right-rail .rail-card.today-card { display: block; }
   .social-shell .today-card .rail-title { margin-bottom: 4px; }
-  .social-shell .today-card h2 { margin: 6px 0 2px; font-size: var(--text-md); }
+  /* 今日课表标题保持 18px：右栏卡片高度由 desktop-reference e2e 精确约束（322px），不随 --text-md 的 17px 变化。 */
+  .social-shell .today-card h2 { margin: 6px 0 2px; font-size: 18px; }
   .social-shell .today-card .today-side { margin: 8px 0 12px; }
   .today-slots { display: grid; gap: 6px; margin: 12px 0; padding: 0; list-style: none; }
   .today-slots li { display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; min-height: 36px; padding: 0 10px; border: 1px dashed var(--line); border-radius: var(--radius-control); color: var(--text-3); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }

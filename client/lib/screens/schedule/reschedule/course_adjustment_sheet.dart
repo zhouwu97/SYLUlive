@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/app_card.dart';
 import '../../../models/schedule/schedule_override.dart';
 import '../../../providers/course_schedule_provider.dart';
 import '../../../models/schedule/meeting.dart';
@@ -189,7 +190,12 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
   Widget build(BuildContext context) {
     if (_baseMeeting == null) {
       return SafeArea(
-        child: Padding(
+        child: AppCardSurface(
+          surfaceOpacity: 1,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
           padding: const EdgeInsets.all(24),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Text('无法定位该课程的教务原始安排，请先重新同步课表后再调整。'),

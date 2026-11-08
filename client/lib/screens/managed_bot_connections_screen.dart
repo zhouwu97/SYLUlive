@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../platform/contracts/external_navigator.dart';
 
 import '../providers/auth_provider.dart';
 import '../services/publish_session_scope.dart';
@@ -563,7 +563,7 @@ class _ManagedBotConnectionsScreenState
       _guideError = null;
     });
     try {
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final opened = await ExternalNavigator.current().open(uri);
       if (mounted && generation == _generation && !opened) {
         setState(() => _guideError = '未能打开接入教程，请重试。连接状态没有改变。');
       }

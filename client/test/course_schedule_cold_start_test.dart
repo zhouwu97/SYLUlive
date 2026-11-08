@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:shenliyuan/features/academic/application/academic_session_controller.dart';
 import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
@@ -7,6 +9,7 @@ import 'package:shenliyuan/widgets/app_card.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -24,9 +27,12 @@ import 'package:shenliyuan/services/app_update_coordinator.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 import 'helpers/personal_snapshot_test_fakes.dart';
+import 'helpers/load_test_fonts.dart';
+import 'package:shenliyuan/theme/app_theme.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(loadTestFonts);
 
   test('空课程只有在 ready 且完成初始化后才进入 empty', () {
     ScheduleViewState resolve({
@@ -132,6 +138,9 @@ void main() {
     final messageProvider = _TestMessageProvider();
     final themeProvider = ThemeProvider(loadOnStart: false);
     final updateCoordinator = _TestUpdateCoordinator();
+    final boundary = GlobalKey();
+    final brightness = ValueNotifier(ThemeMode.light);
+    addTearDown(brightness.dispose);
 
     final widget = MultiProvider(
       providers: [
@@ -155,8 +164,16 @@ void main() {
           value: updateCoordinator,
         ),
       ],
-      child: const MaterialApp(
-        home: HomeScreen(initialTab: 2),
+      child: ValueListenableBuilder<ThemeMode>(
+        valueListenable: brightness,
+        builder: (_, mode, child) => MaterialApp(
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: mode,
+          home: child,
+        ),
+        child: RepaintBoundary(
+            key: boundary, child: const HomeScreen(initialTab: 2)),
       ),
     );
 
@@ -198,11 +215,90 @@ void main() {
 
     expect(find.text('还没有课表'), findsNothing);
     expect(find.text('线性代数'), findsOneWidget);
-    expect(find.ancestor(of: find.byType(CourseActionMenu),
-        matching: find.byType(AppContentSurface)), findsNothing,
+    final courseSurface = find
+        .ancestor(of: find.text('线性代数'), matching: find.byType(AppCardSurface))
+        .first;
+    final paintedCourse = find
+        .descendant(
+            of: courseSurface,
+            matching: find.byWidgetPredicate((w) =>
+                w is DecoratedBox &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).color != null))
+        .first;
+    expect(
+        (tester.widget<DecoratedBox>(paintedCourse).decoration as BoxDecoration)
+            .color!
+            .a,
+        closeTo(0.55, 0.005),
+        reason: '课程块的独立透明度只能应用一次，不能从 55% 降成 30%');
+    for (final mode in [ThemeMode.light, ThemeMode.dark]) {
+      brightness.value = mode;
+      for (final background in ['clean', 'custom', 'glass']) {
+        if (background == 'clean') {
+          await themeProvider.setCleanBackgroundMode();
+        } else {
+          await themeProvider.setBackgroundImage('morenbeijing.jpeg');
+          await themeProvider.trySetCustomBackgroundMode();
+          await themeProvider.setFrostedGlass(background == 'glass');
+        }
+        await themeProvider.setComponentOpacity(0.3);
+        for (var i = 0; i < 12; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        final painted = (tester.widget<DecoratedBox>(paintedCourse).decoration
+                as BoxDecoration)
+            .color!;
+        expect(painted.a, closeTo(0.55, 0.005),
+            reason: '课表独立透明度不受全局透明度、毛玻璃或深浅主题影响');
+        expect(painted.withValues(alpha: 1),
+            getCourseColor('线性代数').withValues(alpha: 1));
+        for (final entry in [('后期课程', 0.2), ('2门课程冲突', 0.9)]) {
+          final card = find
+              .ancestor(
+                  of: find.text(entry.$1),
+                  matching: find.byType(AppCardSurface))
+              .first;
+          final decoration = tester
+              .widget<DecoratedBox>(find
+                  .descendant(of: card, matching: find.byType(DecoratedBox))
+                  .first)
+              .decoration as BoxDecoration;
+          expect(decoration.color!.a, closeTo(entry.$2, 0.005),
+              reason: '非本周课程和冲突课程也只能应用一次透明度');
+        }
+        final directory = Platform.environment['SCHEDULE_RENDER_EVIDENCE'];
+        if (directory != null) {
+          await tester.runAsync(() async {
+            final render = boundary.currentContext!.findRenderObject()!
+                as RenderRepaintBoundary;
+            final image = await render.toImage(pixelRatio: 1);
+            try {
+              final png =
+                  await image.toByteData(format: ui.ImageByteFormat.png);
+              await Directory(directory).create(recursive: true);
+              await File('$directory/${mode.name}-$background.png')
+                  .writeAsBytes(png!.buffer.asUint8List());
+            } finally {
+              image.dispose();
+            }
+          });
+        }
+      }
+    }
+    brightness.value = ThemeMode.light;
+    await themeProvider.setCleanBackgroundMode();
+    await tester.pump(const Duration(seconds: 1));
+    expect(
+        find.ancestor(
+            of: find.byType(CourseActionMenu),
+            matching: find.byType(AppContentSurface)),
+        findsNothing,
         reason: '课表标题和操作栏融入背景');
-    expect(find.ancestor(of: find.text('一'),
-        matching: find.byType(AppContentSurface)), findsNothing,
+    expect(
+        find.ancestor(
+            of: find.text('一'), matching: find.byType(AppContentSurface)),
+        findsNothing,
         reason: '日历列标题不应形成整块白色底板');
     expect(
       tester
@@ -401,6 +497,21 @@ class _DelayedCourseScheduleProvider extends CourseScheduleProvider {
         'week_day': 1,
         'weeks': [1],
       },
+      {
+        'name': '后期课程',
+        'time': 1,
+        'end_time': 2,
+        'week_day': 3,
+        'weeks': [2],
+      },
+      for (final name in ['冲突课程甲', '冲突课程乙'])
+        {
+          'name': name,
+          'time': 1,
+          'end_time': 2,
+          'week_day': 2,
+          'weeks': [1],
+        },
     ]);
     await setSemesterStart(DateTime.now());
     return count > 0;

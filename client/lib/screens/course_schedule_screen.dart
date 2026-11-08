@@ -4141,7 +4141,6 @@ $classFilterRule
     int wn,
     double slotHeight,
   ) {
-    final glass = context.watch<ThemeProvider>().frostedGlass;
     final first = courses.first;
     final minStart =
         courses.map((c) => c.startSection).reduce((a, b) => a < b ? a : b);
@@ -4167,7 +4166,7 @@ $classFilterRule
           padding: EdgeInsets.all(paddingVal),
           clipBehavior: Clip.hardEdge,
           decoration: BoxDecoration(
-            color: const Color(0xFFE65100).withValues(alpha: glass ? 1 : 0.90),
+            color: const Color(0xFFE65100),
             borderRadius: BorderRadius.circular(6.0),
             border: Border.all(
               color: Colors.white.withValues(alpha: 0.6),
@@ -4326,7 +4325,6 @@ $classFilterRule
     int? wn,
     double slotHeight,
   ) {
-    final glass = context.watch<ThemeProvider>().frostedGlass;
     final cardOpacity = isActive ? _scheduleCardOpacity : 0.2;
     final top = (c.startSection - 1) * slotHeight;
     final h = c.span * slotHeight - 2;
@@ -4339,7 +4337,9 @@ $classFilterRule
       isActive: isActive,
       courseCode: c.courseCode,
       location: c.location,
-    ).withValues(alpha: glass ? 1 : cardOpacity);
+    ).withValues(alpha: 1);
+
+    // 独立透明度由 AppCardSurface 应用；底色再次设 alpha 会使简洁模式变成平方。
 
     // 根据可用宽度动态放大字体和内边距，解决大屏下太空的问题
     final double scale = (exactW / 45.0).clamp(1.0, 1.35);

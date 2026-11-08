@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/user.dart';
+import 'package:shenliyuan/platform/contracts/external_navigator.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/screens/managed_bot_connections_screen.dart';
 
@@ -32,6 +33,15 @@ class _Auth extends AuthProvider {
     id++;
     epoch++;
     notifyListeners();
+  }
+}
+
+class _GuideNavigator implements ExternalNavigator {
+  final calls = <String>[];
+  @override
+  Future<bool> open(Uri uri) async {
+    calls.add(uri.toString());
+    return calls.length > 1;
   }
 }
 
@@ -532,15 +542,11 @@ void main() {
     final auth =
         _Auth(Dio(BaseOptions(baseUrl: 'https://fixture.invalid/api')));
     addTearDown(auth.dispose);
-    final calls = <String>[];
-    const channel = MethodChannel('plugins.flutter.io/url_launcher');
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,
-        (call) async {
-      calls.add((call.arguments as Map)['url'] as String);
-      return calls.length > 1;
-    });
-    addTearDown(() => tester.binding.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, null));
+    final navigator = _GuideNavigator();
+    final calls = navigator.calls;
+    final previous = ExternalNavigator.current();
+    ExternalNavigator.register(navigator);
+    addTearDown(() => ExternalNavigator.register(previous));
     final writes = <RequestOptions>[];
     auth.dio.interceptors
         .add(InterceptorsWrapper(onRequest: (request, handler) {

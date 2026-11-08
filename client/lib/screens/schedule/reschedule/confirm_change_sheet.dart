@@ -82,6 +82,7 @@ class ConfirmChangeSheet extends StatelessWidget {
     return SafeArea(
       top: false,
       child: AppCardSurface(
+        surfaceOpacity: 1,
         padding: EdgeInsets.fromLTRB(
             20, 16, 20, 24 + MediaQuery.viewInsetsOf(context).bottom),
         decoration: BoxDecoration(

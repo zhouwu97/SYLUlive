@@ -154,6 +154,7 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
     return SafeArea(
       top: false,
       child: AppCardSurface(
+        surfaceOpacity: 1,
         padding: EdgeInsets.only(
           left: 20,
           right: 20,

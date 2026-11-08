@@ -17,6 +17,7 @@ import 'package:shenliyuan/models/schedule/course.dart';
 import 'package:shenliyuan/models/schedule/meeting.dart';
 import 'package:shenliyuan/models/schedule/course_source.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
 
 class _TestAuthProvider extends AuthProvider {
   _TestAuthProvider() : super(Dio(), loadStoredAuth: false);
@@ -81,9 +82,17 @@ void main() {
           ),
         ]);
 
+      final appearance = ThemeProvider(loadOnStart: false);
+      addTearDown(appearance.dispose);
+      await appearance.setBackgroundImage('morenbeijing.jpeg');
+      await appearance.trySetCustomBackgroundMode();
+      await appearance.setFrostedGlass(true);
+      await appearance.setComponentOpacity(0);
+
       await tester.pumpWidget(
         MultiProvider(
           providers: [
+            ChangeNotifierProvider<ThemeProvider>.value(value: appearance),
             ChangeNotifierProvider<CourseScheduleProvider>.value(
                 value: provider),
             ChangeNotifierProvider<AuthProvider>(
@@ -104,6 +113,25 @@ void main() {
       );
 
       // 验证课程名称与教务来源
+      await tester.pumpAndSettle();
+      final surface = find
+          .ancestor(
+              of: find.text('数字图像处理'), matching: find.byType(AppCardSurface))
+          .first;
+      final painted = find
+          .descendant(
+              of: surface,
+              matching: find.byWidgetPredicate((w) =>
+                  w is DecoratedBox &&
+                  w.decoration is BoxDecoration &&
+                  (w.decoration as BoxDecoration).color != null))
+          .first;
+      expect(
+          (tester.widget<DecoratedBox>(painted).decoration as BoxDecoration)
+              .color!
+              .a,
+          1,
+          reason: '课程详情不能因背景透明度为零而透出底下的课程文字');
       expect(find.text('数字图像处理'), findsOneWidget);
       expect(find.text('教务课表'), findsOneWidget);
 

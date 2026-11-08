@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:shenliyuan/providers/theme_provider.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:shenliyuan/models/schedule/course.dart';
 import 'package:shenliyuan/models/schedule/course_source.dart';
 import 'package:shenliyuan/models/schedule/meeting.dart';
@@ -21,6 +24,9 @@ class _ControlledPreferences extends MemoryPreferencesStore {
   int writes = 0;
   @override
   Future<bool> setString(String key, String value) async {
+    if (!key.startsWith('schedule_overrides_v1_')) {
+      return super.setString(key, value);
+    }
     writes++;
     final gate = pending;
     if (gate != null && !await gate.future) return false;
@@ -59,6 +65,12 @@ Future<CourseScheduleProvider> _open(WidgetTester tester,
   await setGoldenViewport(tester, GoldenViewports.phone360x800);
   final provider = CourseScheduleProvider();
   addTearDown(provider.dispose);
+  final appearance = ThemeProvider(loadOnStart: false);
+  addTearDown(appearance.dispose);
+  await appearance.setBackgroundImage('morenbeijing.jpeg');
+  await appearance.trySetCustomBackgroundMode();
+  await appearance.setComponentOpacity(0.1);
+  await appearance.setFrostedGlass(false);
   provider.setBaseScheduleForTesting([
     Course(
       courseKey: 'course',
@@ -76,24 +88,41 @@ Future<CourseScheduleProvider> _open(WidgetTester tester,
       ],
     )
   ]);
-  await tester.pumpWidget(RepaintBoundary(
-      key: const ValueKey('qa'),
-      child: GoldenTestApp(
-        themeMode: mode,
-        textScaler: TextScaler.linear(scale),
-        home: Scaffold(
-            body: Builder(
-                builder: (context) => Center(
-                    child: FilledButton(
-                        onPressed: () => CourseAdjustmentSheet.show(context,
-                            course: _course,
-                            provider: provider,
-                            currentAcademicWeek: 9),
-                        child: const Text('调整'))))),
-      )));
+  await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: appearance,
+      child: RepaintBoundary(
+          key: const ValueKey('qa'),
+          child: GoldenTestApp(
+            themeMode: mode,
+            textScaler: TextScaler.linear(scale),
+            home: Scaffold(
+                body: Builder(
+                    builder: (context) => Center(
+                        child: FilledButton(
+                            onPressed: () => CourseAdjustmentSheet.show(context,
+                                course: _course,
+                                provider: provider,
+                                currentAcademicWeek: 9),
+                            child: const Text('调整'))))),
+          ))));
   await tester.tap(find.text('调整'));
   await tester.pumpAndSettle();
+  _expectOpaqueSheet(tester);
   return provider;
+}
+
+void _expectOpaqueSheet(WidgetTester tester) {
+  final surface = find
+      .descendant(
+          of: find.byType(CourseAdjustmentSheet),
+          matching: find.byType(AppCardSurface))
+      .first;
+  final paint = tester
+      .widget<DecoratedBox>(find
+          .descendant(of: surface, matching: find.byType(DecoratedBox))
+          .first)
+      .decoration as BoxDecoration;
+  expect(paint.color!.a, 1, reason: '调课每一步都必须遮住底层详情和课表文字');
 }
 
 Future<void> _toConfirmation(WidgetTester tester, {String? captureName}) async {
@@ -102,6 +131,7 @@ Future<void> _toConfirmation(WidgetTester tester, {String? captureName}) async {
   await tester.ensureVisible(find.text('下一步：选择目标时间'));
   await tester.tap(find.text('下一步：选择目标时间'));
   await tester.pumpAndSettle();
+  _expectOpaqueSheet(tester);
   await tester.tap(find.byKey(const ValueKey('reschedule-target-week')));
   await tester.pumpAndSettle();
   await tester.tap(find.text('第 8 周').last);
@@ -111,6 +141,7 @@ Future<void> _toConfirmation(WidgetTester tester, {String? captureName}) async {
   if (captureName != null) await _capture(tester, '$captureName-target');
   await tester.tap(find.text('下一步：冲突检查与确认'));
   await tester.pumpAndSettle();
+  _expectOpaqueSheet(tester);
 }
 
 void main() {

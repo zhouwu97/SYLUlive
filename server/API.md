@@ -233,6 +233,12 @@ FEED-H1 加固：
 
 提供教师避雷榜、专业榜、食堂榜的评价体系。
 
+课表入口和教师详情入口共用 `course_evaluation_submissions` 评价主记录。`source` 仅表达来源，历史回填为 `legacy_teacher`，所有记录使用真实主记录 ID、`revision` 与同一 PATCH 编辑流程。`teacher_ratings` 是兼容公开评价 ID、投票、举报与榜单的派生展示；正文和评分由同一事务同步，不独立接收用户写入。历史数据须先完成[统一迁移](../docs/ops/academic-evaluation-unification.md)，未完成时增强列表拒绝返回缺项的成功结果。
+
+`include_teacher_ratings=true` 保留为兼容能力参数，响应含 `includes_teacher_ratings`、`total`，但不再拼接两个表的评价。分页只按主记录创建时间和 ID 排序；旧混合来源游标失效时重新读取首页。公开评价 ID 只出现在 `teacher_rating_id` 中，不能作为主记录 PATCH 的 ID。两个入口正文上限统一为 500 个 Unicode 字符，迁移保留原文、评分、时间及治理状态。
+
+`include_content_counts=true` 随合并列表返回 `content_counts={posts,market,evaluations,count}`，仅统计当前认证用户可管理的三个页签：普通帖子、全部集市历史、统一主记录中的学科评价。本人受限内容保留，已删除内容按原列表规则排除。客户端不得指定其他用户或以管理员身份扩大此读取范围；公共 `/user/:id/posts/count` 的可见性保持原样。GET 本身只读，历史关联仅由显式迁移命令处理。
+
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/teachers` | 获取教师榜单列表 |
@@ -240,6 +246,7 @@ FEED-H1 加固：
 | `POST` | `/api/teachers/:id/rate` | 兼容入口：转入课程评价状态机 |
 | `DELETE` | `/api/teachers/rating/:id` | 删除自己的教师评价 |
 | `POST` | `/api/course-evaluations` | 创建课程评价（重复目标返回 409） |
+| `GET` | `/api/user/course-evaluations` | 当前用户的评价记录；支持 `limit` / `cursor`。显式传 `include_teacher_ratings=true` 返回统一评价主记录及总数；加 `include_content_counts=true` 返回三个内容页签的汇总 |
 | `PATCH` | `/api/user/course-evaluations/:id` | 更新课程评价（必须携带当前 `revision`） |
 | `GET` | `/api/majors` | 获取专业评价列表 |
 | `GET` | `/api/majors/:id` | 获取专业详情及评价 |
@@ -249,6 +256,7 @@ FEED-H1 加固：
 | `GET` | `/api/canteens/:id?review_sort=best\|latest&review_filter=all\|with_image\|high\|low` | 公开获取食堂详情及评价；登录时附带个人评价/投票状态 |
 | `POST` | `/api/canteens/:id/rate` | 评价食堂（需登录并绑定教务） |
 | `PUT` | `/api/canteens/ratings/:ratingId/vote` | 给食堂评价点赞/点踩/取消投票，不能给自己的评价投票 |
+| `GET` / `PUT` | `/api/canteens/:id/display-tags` | 管理员读取或保存位置及排行展示标签。PUT 必须提供 `location_area`、`location_floor` 和 `tags`；`tags: null` 恢复评价自动汇总，数组按顺序指定最多三个既有评价标签，空数组表示不展示。修改不改变原始评价或评分。 |
 | `PUT` | `/api/canteens/:id/image` | (管理员) 修改食堂封面图片 |
 | `POST` | `/api/canteens` | (需登录) 提交新食堂，进入待审核；`verified=false` 不公开，管理员收到站内通知。请求体 `{"name", "image", "location_area", "location_floor"}`；`location_area` 可选值 `一食堂`/`二食堂`，`location_floor` 可选值 `一楼`/`二楼`（旧客户端可省略） |
 | `GET` | `/api/canteens/pending` | (管理员) 待审核食堂列表（含 `creator_name` 提交人昵称与 `location_area`/`location_floor` 位置标签） |

@@ -139,7 +139,7 @@ class CompetitionCatalogPackageDetailScreen extends StatelessWidget {
       if (!context.mounted) return;
       final data = Map<String, dynamic>.from(response.data as Map);
       int count(String key) => ((data[key] as List?) ?? const []).length;
-      await showDialog<void>(
+      await showAppDialog<void>(
         context: context,
         builder: (dialogContext) => AppAlertDialog(
           title: const Text('目录差异'),

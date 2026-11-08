@@ -25,7 +25,7 @@ class ScamReportPlaceholder extends StatelessWidget {
               ).textTheme.headlineSmall?.copyWith(color: Colors.grey[600]),
             ),
             const SizedBox(height: 8),
-            AppContentSurface(
+            AppContentSurface.reading(
                 child: Text(
               '骗子曝光功能正在开发中\n敬请期待',
               textAlign: TextAlign.center,

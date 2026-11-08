@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 import '../widgets/app_page_background.dart';
 import '../platform/contracts/external_navigator.dart';
 import '../widgets/app_card.dart';
@@ -33,7 +35,8 @@ class _BlogScreenState extends State<BlogScreen> {
 
   Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, Colors.transparent), // 使用全局默认背景
+      backgroundColor:
+          AppPageBackground.color(context, Colors.transparent), // 使用全局默认背景
       appBar: _buildAppBar(),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
@@ -80,20 +83,25 @@ class _BlogScreenState extends State<BlogScreen> {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: AppPageBackground.color(context, const Color(0xCC0B1121)),
+      backgroundColor:
+          AppPageBackground.color(context, const Color(0xCC0B1121)),
       elevation: 0,
       automaticallyImplyLeading: false,
-      title: const Row(
+      title: Row(
         children: [
-          Icon(Icons.terminal, color: Color(0xFF22C55E), size: 22),
-          SizedBox(width: 10),
+          const Icon(Icons.terminal, color: Color(0xFF22C55E), size: 22),
+          const SizedBox(width: 10),
           Text(
             '博客',
             style: TextStyle(
               fontFamily: 'monospace',
               fontWeight: FontWeight.w700,
               fontSize: 18,
-              color: Color(0xFFE2E8F0),
+              color:
+                  context.watch<ThemeProvider?>()?.shouldShowCustomBackground ==
+                          true
+                      ? Theme.of(context).colorScheme.onSurface
+                      : const Color(0xFFE2E8F0),
               letterSpacing: 1.5,
             ),
           ),
@@ -119,7 +127,7 @@ class _BlogScreenState extends State<BlogScreen> {
         date: '2026-04-28',
       ),
       child: AppCardSurface(
-        height: 200,
+        constraints: const BoxConstraints(minHeight: 200),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           gradient: const LinearGradient(
@@ -140,6 +148,7 @@ class _BlogScreenState extends State<BlogScreen> {
           ],
         ),
         child: Stack(
+          fit: StackFit.passthrough,
           children: [
             // 装饰代码片段
             Positioned(
@@ -162,6 +171,7 @@ class _BlogScreenState extends State<BlogScreen> {
             Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -212,7 +222,7 @@ class _BlogScreenState extends State<BlogScreen> {
                       Text(
                         'Provider、Riverpod、Bloc、GetX — 四种方案的深入分析',
                         style: TextStyle(
-                          color: const Color(0xFF94A3B8),
+                          color: const Color(0xFFE2E8F0),
                           fontSize: 13,
                           fontFamily: 'monospace',
                           height: 1.4,
@@ -247,7 +257,7 @@ class _BlogScreenState extends State<BlogScreen> {
       child: AppCardSurface(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: const Color(0xFF1E293B).withValues(alpha: 0.7),
+          color: const Color(0xFF1E293B),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
         ),
@@ -272,7 +282,7 @@ class _BlogScreenState extends State<BlogScreen> {
                       child: Text(
                         t,
                         style: const TextStyle(
-                          color: Color(0xFF94A3B8),
+                          color: Color(0xFFE2E8F0),
                           fontSize: 10,
                           fontFamily: 'monospace',
                         ),
@@ -298,7 +308,7 @@ class _BlogScreenState extends State<BlogScreen> {
             Text(
               excerpt,
               style: TextStyle(
-                color: const Color(0xFF64748B),
+                color: const Color(0xFFE2E8F0),
                 fontSize: 13,
                 fontFamily: 'monospace',
                 height: 1.5,
@@ -313,7 +323,7 @@ class _BlogScreenState extends State<BlogScreen> {
                 Text(
                   date,
                   style: const TextStyle(
-                    color: Color(0xFF475569),
+                    color: Color(0xFFCBD5E1),
                     fontSize: 11,
                     fontFamily: 'monospace',
                   ),
@@ -321,7 +331,7 @@ class _BlogScreenState extends State<BlogScreen> {
                 const Spacer(),
                 const Icon(
                   Icons.arrow_forward,
-                  color: Color(0xFF475569),
+                  color: Color(0xFFCBD5E1),
                   size: 16,
                 ),
               ],
@@ -410,116 +420,141 @@ class _ArticleReaderState extends State<_ArticleReader> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, const Color(0xFF0B1121)),
+      backgroundColor:
+          AppPageBackground.color(context, const Color(0xFF0B1121)),
       appBar: AppBar(
-        backgroundColor: AppPageBackground.color(context, const Color(0xCC0B1121)),
+        backgroundColor:
+            AppPageBackground.color(context, const Color(0xCC0B1121)),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF94A3B8)),
+          icon: Icon(Icons.arrow_back,
+              color:
+                  context.watch<ThemeProvider?>()?.shouldShowCustomBackground ==
+                          true
+                      ? Theme.of(context).colorScheme.onSurface
+                      : const Color(0xFFCBD5E1)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           widget.title,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'monospace',
             fontWeight: FontWeight.w600,
             fontSize: 16,
-            color: Color(0xFFE2E8F0),
+            color:
+                context.watch<ThemeProvider?>()?.shouldShowCustomBackground ==
+                        true
+                    ? Theme.of(context).colorScheme.onSurface
+                    : const Color(0xFFE2E8F0),
           ),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.share, color: Color(0xFF64748B), size: 20),
+            icon: Icon(Icons.share,
+                color: context
+                            .watch<ThemeProvider?>()
+                            ?.shouldShowCustomBackground ==
+                        true
+                    ? Theme.of(context).colorScheme.onSurface
+                    : const Color(0xFFCBD5E1),
+                size: 20),
             onPressed: () => _showDevSnackBar(context),
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          Positioned.fill(child: CustomPaint(painter: _DotGridPainter())),
-          ListView(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+      body: AppCardSurface(
+          decoration: BoxDecoration(
+            color: const Color(0xFF0B1121),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Stack(
             children: [
-              // 标签
-              Row(
+              Positioned.fill(child: CustomPaint(painter: _DotGridPainter())),
+              ListView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
                 children: [
-                  ...widget.tags.map(
-                    (t) => Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF22C55E).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          t,
-                          style: const TextStyle(
-                            color: Color(0xFF22C55E),
-                            fontSize: 10,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
+                  // 标签和日期在大字号下可以分行，避免挤出阅读区域。
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    spacing: 12,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: widget.tags
+                            .map((t) => Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF86EFAC)
+                                        .withValues(alpha: .1),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(t,
+                                      style: const TextStyle(
+                                        color: Color(0xFF86EFAC),
+                                        fontSize: 10,
+                                        fontFamily: 'monospace',
+                                      )),
+                                ))
+                            .toList(),
                       ),
+                      Text(widget.date,
+                          style: const TextStyle(
+                            color: Color(0xFFCBD5E1),
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                          )),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    widget.title,
+                    style: const TextStyle(
+                      color: Color(0xFFF1F5F9),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'monospace',
+                      height: 1.3,
                     ),
                   ),
-                  const Spacer(),
-                  Text(
-                    widget.date,
-                    style: const TextStyle(
-                      color: Color(0xFF475569),
-                      fontSize: 11,
+                  const SizedBox(height: 8),
+                  const Text(
+                    '作者: 沈理校园 · 阅读 5 min',
+                    style: TextStyle(
+                      color: Color(0xFFCBD5E1),
+                      fontSize: 12,
                       fontFamily: 'monospace',
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Text(
-                widget.title,
-                style: const TextStyle(
-                  color: Color(0xFFF1F5F9),
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: 'monospace',
-                  height: 1.3,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                '作者: 沈理校园 · 阅读 5 min',
-                style: TextStyle(
-                  color: Color(0xFF64748B),
-                  fontSize: 12,
-                  fontFamily: 'monospace',
-                ),
-              ),
-              const SizedBox(height: 24),
-              AppCardDivider(color: Colors.white.withValues(alpha: 0.06)),
-              const SizedBox(height: 20),
-              _buildRichContent(widget.content),
-              const SizedBox(height: 14),
-              // ---- 紧凑评论区 ----
-              _buildComments(),
-              const SizedBox(height: 20),
-              // 互动栏
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildActionChip(Icons.thumb_up_outlined, '赞'),
-                  _buildActionChip(Icons.bookmark_outline, '收藏'),
-                  _buildActionChip(Icons.share, '分享'),
+                  const SizedBox(height: 24),
+                  AppCardDivider(color: Colors.white.withValues(alpha: 0.06)),
+                  const SizedBox(height: 20),
+                  _buildRichContent(widget.content),
+                  const SizedBox(height: 14),
+                  // ---- 紧凑评论区 ----
+                  _buildComments(),
+                  const SizedBox(height: 20),
+                  // 互动栏
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _buildActionChip(Icons.thumb_up_outlined, '赞'),
+                      _buildActionChip(Icons.bookmark_outline, '收藏'),
+                      _buildActionChip(Icons.share, '分享'),
+                    ],
+                  ),
                 ],
               ),
             ],
-          ),
-        ],
-      ),
+          )),
     );
   }
 
@@ -533,14 +568,14 @@ class _ArticleReaderState extends State<_ArticleReader> {
           children: [
             const Icon(
               Icons.chat_bubble_outline,
-              color: Color(0xFF475569),
+              color: Color(0xFFCBD5E1),
               size: 15,
             ),
             const SizedBox(width: 6),
             Text(
               '评论 ${_comments.length}',
               style: const TextStyle(
-                color: Color(0xFF64748B),
+                color: Color(0xFFCBD5E1),
                 fontSize: 12,
                 fontFamily: 'monospace',
                 fontWeight: FontWeight.w600,
@@ -573,7 +608,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
                   decoration: const InputDecoration(
                     hintText: '写下你的问题或想法...',
                     hintStyle: TextStyle(
-                      color: Color(0xFF475569),
+                      color: Color(0xFFCBD5E1),
                       fontSize: 12,
                       fontFamily: 'monospace',
                     ),
@@ -589,7 +624,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
                 onTap: _addComment,
                 child: const Icon(
                   Icons.send_rounded,
-                  color: Color(0xFF22C55E),
+                  color: Color(0xFF86EFAC),
                   size: 20,
                 ),
               ),
@@ -610,14 +645,14 @@ class _ArticleReaderState extends State<_ArticleReader> {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: const Color(0xFF22C55E).withValues(alpha: 0.12),
+              color: const Color(0xFF86EFAC).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             alignment: Alignment.center,
             child: Text(
               comment.author[0].toUpperCase(),
               style: const TextStyle(
-                color: Color(0xFF22C55E),
+                color: Color(0xFF86EFAC),
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
                 fontFamily: 'monospace',
@@ -644,7 +679,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
                     Text(
                       comment.time,
                       style: const TextStyle(
-                        color: Color(0xFF475569),
+                        color: Color(0xFFCBD5E1),
                         fontSize: 10,
                         fontFamily: 'monospace',
                       ),
@@ -655,7 +690,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
                 Text(
                   comment.text,
                   style: const TextStyle(
-                    color: Color(0xFF94A3B8),
+                    color: Color(0xFFCBD5E1),
                     fontSize: 13,
                     fontFamily: 'monospace',
                     height: 1.45,
@@ -672,12 +707,12 @@ class _ArticleReaderState extends State<_ArticleReader> {
   Widget _buildActionChip(IconData icon, String label) {
     return Row(
       children: [
-        Icon(icon, color: const Color(0xFF64748B), size: 18),
+        Icon(icon, color: const Color(0xFFCBD5E1), size: 18),
         const SizedBox(width: 6),
         Text(
           label,
           style: const TextStyle(
-            color: Color(0xFF64748B),
+            color: Color(0xFFCBD5E1),
             fontSize: 13,
             fontFamily: 'monospace',
           ),
@@ -739,7 +774,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
           TextSpan(
             text: '  $line\n',
             style: const TextStyle(
-              color: Color(0xFF22C55E),
+              color: Color(0xFF86EFAC),
               fontSize: 13,
               fontFamily: 'monospace',
               backgroundColor: Color(0x111E293B),
@@ -773,7 +808,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
             TextSpan(
               text: url,
               style: const TextStyle(
-                color: Color(0xFF22C55E),
+                color: Color(0xFF86EFAC),
                 fontSize: 15,
                 fontFamily: 'monospace',
                 decoration: TextDecoration.underline,
@@ -822,7 +857,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
         fontFamily: 'monospace',
         height: 1.7,
       ),
-      cursorColor: const Color(0xFF22C55E),
+      cursorColor: const Color(0xFF86EFAC),
     );
   }
 }

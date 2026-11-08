@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -179,7 +181,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     if (_session == null) {
       return Scaffold(
           appBar: AppBar(title: const Text('管理员面板')),
-          body: const Center(child: Text('需要管理员权限，请返回')));
+          body: const Center(child: AppContentSurface.reading(child: Text('需要管理员权限，请返回'))));
     }
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bottomSafe = MediaQuery.of(context).padding.bottom;
@@ -510,7 +512,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                   reverseCurve: Curves.easeIn,
                                 );
 
-                                return FadeTransition(
+                                return AppSurfaceFadeTransition(
                                   opacity: animation,
                                   child: ScaleTransition(
                                     scale: Tween<double>(

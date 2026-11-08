@@ -436,7 +436,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     final scope = _captureWriteScope(auth);
     if (scope == null) return;
     final reasonController = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('重新打开工单'),
@@ -603,7 +603,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       {'value': 'closed', 'label': '已关闭'},
     ];
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AppAlertDialog(
@@ -706,7 +706,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       {'key': 'other', 'label': '其他信息'},
     ];
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AppAlertDialog(
@@ -824,7 +824,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       return;
     }
     if (!_ownsWriteScope(auth, scope)) return;
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AppAlertDialog(
@@ -1789,7 +1789,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      AppContentSurface(child: Text(_error!)),
+                      AppContentSurface.reading(child: Text(_error!)),
                       const SizedBox(height: 12),
                       OutlinedButton(
                         onPressed: _loadDetail,

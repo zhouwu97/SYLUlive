@@ -146,7 +146,7 @@ class _AiHistorySheetState extends State<AiHistorySheet> {
                                       }
                                     },
                                     onDelete: () async {
-                                      final confirmed = await showDialog<bool>(
+                                      final confirmed = await showAppDialog<bool>(
                                         context: context,
                                         builder: (dialogContext) => AppAlertDialog(
                                           title: const Text('删除会话？'),

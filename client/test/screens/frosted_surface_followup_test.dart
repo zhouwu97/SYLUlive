@@ -38,6 +38,7 @@ import 'package:shenliyuan/screens/notifications_screen.dart';
 import 'package:shenliyuan/screens/court_hub_screen.dart';
 import 'package:shenliyuan/services/poll_service.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
+import 'package:shenliyuan/widgets/poll/poll_post_card.dart';
 import 'package:shenliyuan/widgets/global_background_wrapper.dart';
 import 'package:shenliyuan/widgets/home_service_drawer.dart';
 import '../helpers/golden_test_app.dart';
@@ -374,9 +375,15 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.text('请填写统一认证密码和二课密码'), findsOneWidget);
         } else if (page == 'poll') {
-          final divider = find.byType(AppCardDivider);
-          expect(divider, findsOneWidget);
-          expect(find.descendant(of: divider, matching: find.byType(DecoratedBox)), findsNothing);
+          expect(find.byType(AppCardDivider), findsNothing);
+          final card = tester.getRect(find.descendant(
+              of: find.byType(PollPostCard), matching: find.byType(Card)).first);
+          final comments = tester.getRect(find.ancestor(
+              of: find.textContaining('评论 '),
+              matching: find.byType(AppCardSurface)).first);
+          expect(comments.top - card.bottom, 8);
+          expect(comments.left, card.left);
+          expect(comments.right, card.right);
           expect(find.text('选项一'), findsOneWidget);
           expect(
               tester

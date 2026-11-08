@@ -31,7 +31,7 @@ class UpdateChecker {
     final info = coordinator.info;
     if (info == null || info.updateType == AppUpdateType.none) {
       // 手动检查可能来自模态面板，根级弹窗才能显示在面板上方。
-      await showDialog<void>(
+      await showAppDialog<void>(
         context: context,
         useRootNavigator: true,
         builder: (dialogContext) => AppAlertDialog(
@@ -62,7 +62,7 @@ class UpdateChecker {
     AppUpdateCoordinator coordinator,
     AppUpdateInfo info,
   ) async {
-    final install = await showDialog<bool>(
+    final install = await showAppDialog<bool>(
       context: context,
       builder: (_) => AppAlertDialog(
         title: Text('沈理校园 ${info.latestVersionName} 已准备好'),
@@ -86,7 +86,7 @@ class UpdateChecker {
     AppUpdateInfo info,
     NativeUpdateDownloadStatus status,
   ) async {
-    final useCurrentNetwork = await showDialog<bool>(
+    final useCurrentNetwork = await showAppDialog<bool>(
       context: context,
       builder: (_) => AppAlertDialog(
         title: Text('沈理校园 ${info.latestVersionName} 正在后台下载'),
@@ -117,7 +117,7 @@ class UpdateChecker {
     AppUpdateCoordinator coordinator,
     AppUpdateInfo info,
   ) async {
-    final download = await showDialog<bool>(
+    final download = await showAppDialog<bool>(
       context: context,
       builder: (_) => AppAlertDialog(
         title: Text('发现新版本 ${info.latestVersionName}'),

@@ -13,7 +13,7 @@ class FlutterToolPermissionPrompt implements ToolPermissionPrompt {
 
   @override
   Future<ToolPermissionDecision> request(ToolPermissionPreview preview) async {
-    final result = await showDialog<ToolPermissionDecision>(
+    final result = await showAppDialog<ToolPermissionDecision>(
       context: context,
       barrierDismissible: false,
       builder: (_) => ToolPermissionDialog(preview: preview),

@@ -87,7 +87,8 @@ class CourseEvaluationException implements Exception {
 
   const CourseEvaluationException(this.code, this.message);
 
-  bool get isRevisionConflict => code == CourseEvaluationErrorCodes.revisionConflict;
+  bool get isRevisionConflict =>
+      code == CourseEvaluationErrorCodes.revisionConflict;
   bool get isCandidateRequired =>
       code == CourseEvaluationErrorCodes.candidateRequired;
   bool get isForbidden => code == CourseEvaluationErrorCodes.forbidden;
@@ -328,6 +329,7 @@ class CourseEvaluationSubmission {
   final int revision;
   final String reviewReason;
   final int? teacherRatingId;
+  final String teacherRatingStatus;
   final int? supersededBySubmissionId;
   final String supersededReason;
   final String proposedCourseName;
@@ -352,6 +354,7 @@ class CourseEvaluationSubmission {
     this.revision = 1,
     this.reviewReason = '',
     this.teacherRatingId,
+    this.teacherRatingStatus = '',
     this.supersededBySubmissionId,
     this.supersededReason = '',
     this.proposedCourseName = '',
@@ -361,6 +364,8 @@ class CourseEvaluationSubmission {
     this.createdAt,
     this.updatedAt,
   });
+
+  String get recordKey => 'submission:$id';
 
   /// 展示用的学科名：已归属取学科名，未归属取用户提议，最后回退原始课程名。
   String get subjectDisplayName {
@@ -391,6 +396,7 @@ class CourseEvaluationSubmission {
         revision: (json['revision'] as num?)?.toInt() ?? 1,
         reviewReason: json['review_reason']?.toString() ?? '',
         teacherRatingId: (json['teacher_rating_id'] as num?)?.toInt(),
+        teacherRatingStatus: json['teacher_rating_status']?.toString() ?? '',
         supersededBySubmissionId:
             (json['superseded_by_submission_id'] as num?)?.toInt(),
         supersededReason: json['superseded_reason']?.toString() ?? '',
@@ -408,11 +414,15 @@ class CourseEvaluationPage {
   final List<CourseEvaluationSubmission> items;
   final String nextCursor;
   final bool hasMore;
+  final int? total;
+  final MyContentCounts? contentCounts;
 
   const CourseEvaluationPage({
     this.items = const [],
     this.nextCursor = '',
     this.hasMore = false,
+    this.total,
+    this.contentCounts,
   });
 
   factory CourseEvaluationPage.fromJson(Map<String, dynamic> json) {
@@ -426,9 +436,31 @@ class CourseEvaluationPage {
           : const [],
       nextCursor: json['next_cursor']?.toString() ?? '',
       hasMore: json['has_more'] == true,
+      total: (json['total'] as num?)?.toInt(),
+      contentCounts: json['content_counts'] is Map
+          ? MyContentCounts.fromJson(
+              Map<String, dynamic>.from(json['content_counts'] as Map))
+          : null,
     );
   }
 }
 
+class MyContentCounts {
+  final int posts;
+  final int market;
+  final int evaluations;
+  int get total => posts + market + evaluations;
+
+  const MyContentCounts(
+      {required this.posts, required this.market, required this.evaluations});
+
+  factory MyContentCounts.fromJson(Map<String, dynamic> json) =>
+      MyContentCounts(
+        posts: (json['posts'] as num).toInt(),
+        market: (json['market'] as num).toInt(),
+        evaluations: (json['evaluations'] as num).toInt(),
+      );
+}
+
 /// 评论长度上限，与服务端 CourseEvaluationCommentMaxRunes 一致。
-const int kCourseEvaluationCommentMaxLength = 200;
+const int kCourseEvaluationCommentMaxLength = 500;

@@ -217,7 +217,7 @@ class _NotificationBackgroundSettingsScreenState
 
   Future<_KeepAliveGuideAction> _showKeepAliveGuideDialog() async {
     final dialogTheme = CampusTheme.withBrandAccent(Theme.of(context));
-    return await showDialog<_KeepAliveGuideAction>(
+    return await showAppDialog<_KeepAliveGuideAction>(
           context: context,
           builder: (ctx) => Theme(
             data: dialogTheme,

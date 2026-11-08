@@ -268,7 +268,7 @@ class _CompetitionPreferenceScreenState
       canPop: !_isDirty,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop || !_isDirty) return;
-        final leave = await showDialog<bool>(
+        final leave = await showAppDialog<bool>(
           context: context,
           builder: (context) => AppAlertDialog(
             title: const Text('放弃未保存的修改？'),
@@ -297,7 +297,7 @@ class _CompetitionPreferenceScreenState
                     color: CompetitionUiTokens.accent(isDark)))
             : _error != null
                 ? Center(
-                    child: Padding(
+                    child: AppContentSurface.card(child: Padding(
                       padding: const EdgeInsets.all(24),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -311,7 +311,7 @@ class _CompetitionPreferenceScreenState
                           ),
                         ],
                       ),
-                    ),
+                    )),
                   )
                 : Column(
                     children: [
@@ -517,7 +517,7 @@ class _CompetitionPreferenceScreenState
                   color: background,
                   border: Border(
                     top: BorderSide(
-                      color: CompetitionUiTokens.borderColor(isDark),
+                      color: appCardDividerColor(context, CompetitionUiTokens.borderColor(isDark)),
                     ),
                   ),
                 ),

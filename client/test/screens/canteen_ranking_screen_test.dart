@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -73,6 +74,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('商家排行'), findsOneWidget);
+    final hint = find.text('综合分兼顾评分与评价人数，降低少量评价带来的排名波动');
+    final hintSurface = find.ancestor(of: hint, matching: find.byType(AppContentSurface));
+    expect(tester.getRect(hint).center.dy, tester.getRect(hintSurface).center.dy,
+        reason: '说明行的上下内边距必须对称，文字与信息图标在底面内垂直居中');
+
     // rank 由服务端返回
     expect(find.text('01'), findsOneWidget);
     expect(find.text('02'), findsOneWidget);

@@ -246,7 +246,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
   Future<void> _confirmClearCurrentDirection(
       ThemeProvider themeProvider) async {
     final title = _isLandscape ? '删除横屏背景' : '删除竖屏背景';
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: Text(title),
@@ -278,7 +278,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
   }
 
   Future<void> _confirmClearAll(ThemeProvider themeProvider) async {
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('删除全部背景'),

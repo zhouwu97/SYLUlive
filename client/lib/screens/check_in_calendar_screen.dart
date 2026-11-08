@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
@@ -125,8 +126,10 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
         requestedMonth,
         forceRefresh: forceRefresh,
       );
-      final statusResponse = await statusRequest;
-      final monthSnapshot = await monthRequest;
+      // 同时订阅两个请求的失败，避免状态请求先失败后留下未处理的日历异常。
+      final results = await Future.wait<Object?>([statusRequest, monthRequest]);
+      final statusResponse = results[0] as Response<dynamic>?;
+      final monthSnapshot = results[1] as _CheckInMonthSnapshot;
       if (!mounted || requestedMonth != _visibleMonth) return;
 
       final status = statusResponse?.data is Map
@@ -348,7 +351,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
   Future<void> _doMakeup() async {
     final date = _selectedMakeupDate;
     if (date == null || _makingUp || _makeupCards <= 0) return;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) {
         final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
@@ -558,7 +561,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
             parent: animation,
             curve: Curves.easeOutCubic,
           );
-          return FadeTransition(
+          return AppSurfaceFadeTransition(
             opacity: curved,
             child: SlideTransition(
               position: Tween<Offset>(
@@ -1307,7 +1310,7 @@ class _CalendarError extends StatelessWidget {
     return SizedBox(
       height: 360,
       child: Center(
-        child: Column(
+        child: AppContentSurface.reading(child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
@@ -1324,7 +1327,7 @@ class _CalendarError extends StatelessWidget {
               label: const Text('重新加载'),
             ),
           ],
-        ),
+        )),
       ),
     );
   }

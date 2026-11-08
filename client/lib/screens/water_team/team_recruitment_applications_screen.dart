@@ -83,9 +83,9 @@ class _TeamRecruitmentApplicationsScreenState
               ? const Center(child: CircularProgressIndicator())
               : filtered.isEmpty
                   ? Center(
-                      child: Text(_filter == 'pending'
+                      child: AppContentSurface.reading(child: Text(_filter == 'pending'
                           ? '暂无待处理申请'
-                          : '暂无${_statusLabel(_filter)}记录'))
+                          : '暂无${_statusLabel(_filter)}记录')))
                   : RefreshIndicator(
                       onRefresh: _load,
                       child: ListView.separated(
@@ -134,7 +134,7 @@ class _TeamRecruitmentApplicationsScreenState
     final provider = context.read<WaterTeamProvider>();
     if (provider.isApplicationProcessing(application.id)) return;
     if (accept) {
-      final confirmed = await showDialog<bool>(
+      final confirmed = await showAppDialog<bool>(
           context: context,
           builder: (_) => AppAlertDialog(
                 title: const Text('确认通过该申请？'),
@@ -177,7 +177,7 @@ class _TeamRecruitmentApplicationsScreenState
 
   Future<String?> _showReplyDialog() async {
     final controller = TextEditingController();
-    final value = await showDialog<String>(
+    final value = await showAppDialog<String>(
         context: context,
         builder: (_) => AppAlertDialog(
               title: const Text('拒绝申请'),

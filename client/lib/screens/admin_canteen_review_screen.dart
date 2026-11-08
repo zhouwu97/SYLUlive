@@ -111,7 +111,7 @@ class _AdminCanteenReviewScreenState extends State<AdminCanteenReviewScreen> {
     if (id == 0) return;
     final name = (item['name'] ?? '').toString();
 
-    final reason = await showDialog<String>(
+    final reason = await showAppDialog<String>(
       context: context,
       builder: (ctx) {
         final controller = TextEditingController();
@@ -175,7 +175,7 @@ class _AdminCanteenReviewScreenState extends State<AdminCanteenReviewScreen> {
       body = const Center(child: CircularProgressIndicator());
     } else if (_loadFailed) {
       body = Center(
-        child: AppContentSurface(
+        child: AppContentSurface.reading(
             child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

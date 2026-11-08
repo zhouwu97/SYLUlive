@@ -20,13 +20,18 @@ import 'my_canteen_contributions_screen.dart';
 import '../widgets/app_card.dart';
 
 class MyCanteenReviewsScreen extends StatefulWidget {
-  const MyCanteenReviewsScreen({super.key});
+  final bool embedded;
+  final VoidCallback? onReviewsChanged;
+
+  const MyCanteenReviewsScreen(
+      {super.key, this.embedded = false, this.onReviewsChanged});
 
   @override
   State<MyCanteenReviewsScreen> createState() => _MyCanteenReviewsScreenState();
 }
 
-class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
+class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen>
+    with AutomaticKeepAliveClientMixin<MyCanteenReviewsScreen> {
   final ScrollController _scrollController = ScrollController();
   List<CanteenReviewEvent> _items = const [];
   String? _cursor;
@@ -34,12 +39,15 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
   bool _loadingMore = false;
   String? _error;
   int? _accountSessionEpoch;
+  int _requestSerial = 0;
+
+  @override
+  bool get wantKeepAlive => widget.embedded;
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
   }
 
   @override
@@ -50,18 +58,19 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     super.dispose();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final epoch = context.read<AuthProvider>().accountSessionEpoch;
-    if (_accountSessionEpoch == null) {
-      _accountSessionEpoch = epoch;
-    } else if (_accountSessionEpoch != epoch) {
-      _accountSessionEpoch = epoch;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _reload();
-      });
-    }
+  void _syncSession(AuthProvider auth) {
+    final epoch = auth.accountSessionEpoch;
+    if (_accountSessionEpoch == epoch) return;
+    _accountSessionEpoch = epoch;
+    _requestSerial++;
+    _items = const [];
+    _cursor = null;
+    _loading = auth.isLoggedIn;
+    _loadingMore = false;
+    _error = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && auth.accountSessionEpoch == epoch) _reload();
+    });
   }
 
   void _onScroll() {
@@ -71,7 +80,9 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
   }
 
   Future<void> _reload() async {
+    if (!mounted) return;
     final auth = context.read<AuthProvider>();
+    final request = ++_requestSerial;
     if (!auth.isLoggedIn) {
       if (mounted) {
         setState(() {
@@ -84,18 +95,37 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
       return;
     }
     final epoch = auth.accountSessionEpoch;
-    final page = await context.read<CanteenProvider>().loadMyCanteenReviews();
-    if (!mounted || auth.accountSessionEpoch != epoch) {
-      if (mounted) setState(() => _loading = false);
-      return;
-    }
+    final provider = context.read<CanteenProvider>();
     setState(() {
-      _items = page?.items ?? const [];
-      _cursor = page?.nextCursor;
-      _loading = false;
-      _error =
-          page == null ? context.read<CanteenProvider>().errorMessage : null;
+      _error = null;
+      _loading = _items.isEmpty;
+      _loadingMore = false;
     });
+    try {
+      final page = await provider.loadMyCanteenReviews();
+      if (!mounted ||
+          auth.accountSessionEpoch != epoch ||
+          request != _requestSerial) {
+        return;
+      }
+      setState(() {
+        if (page != null) _items = page.items;
+        _cursor = page?.nextCursor;
+        _loading = false;
+        _error = page == null ? provider.errorMessage ?? '食堂评价加载失败，请重试' : null;
+      });
+      if (page != null) widget.onReviewsChanged?.call();
+    } catch (_) {
+      if (!mounted ||
+          auth.accountSessionEpoch != epoch ||
+          request != _requestSerial) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _error = '食堂评价加载失败，请重试';
+      });
+    }
   }
 
   Future<void> _loadMore() async {
@@ -103,21 +133,32 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) return;
     final epoch = auth.accountSessionEpoch;
+    final request = _requestSerial;
     setState(() => _loadingMore = true);
-    final page = await context.read<CanteenProvider>().loadMyCanteenReviews(
-          cursor: _cursor,
-        );
-    if (!mounted || auth.accountSessionEpoch != epoch) {
-      if (mounted) setState(() => _loadingMore = false);
-      return;
-    }
-    setState(() {
-      if (page != null) {
-        _items = [..._items, ...page.items];
-        _cursor = page.nextCursor;
+    try {
+      final page = await context.read<CanteenProvider>().loadMyCanteenReviews(
+            cursor: _cursor,
+          );
+      if (!mounted ||
+          auth.accountSessionEpoch != epoch ||
+          request != _requestSerial) {
+        return;
       }
-      _loadingMore = false;
-    });
+      setState(() {
+        if (page != null) {
+          _items = [..._items, ...page.items];
+          _cursor = page.nextCursor;
+        }
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted ||
+          auth.accountSessionEpoch != epoch ||
+          request != _requestSerial) {
+        return;
+      }
+      setState(() => _loadingMore = false);
+    }
   }
 
   Future<void> _openCanteen(CanteenReviewEvent item) async {
@@ -154,9 +195,11 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
   Future<void> _edit(CanteenReviewEvent item) async {
     final canteen = item.canteen;
     if (!item.canEdit || canteen == null) return;
+    final auth = context.read<AuthProvider>();
+    final epoch = auth.accountSessionEpoch;
     final contextData =
         await context.read<CanteenProvider>().loadReviewEditContext(item.id);
-    if (!mounted) return;
+    if (!mounted || auth.accountSessionEpoch != epoch) return;
     if (contextData == null) {
       AppFeedback.error('评价编辑内容加载失败，请刷新后重试', context: context);
       return;
@@ -179,6 +222,8 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     final source = item.source == 'legacy' ? 'legacy' : 'v2';
     final id = source == 'legacy' ? item.legacyRatingId : item.id;
     if (id == null || id <= 0) return;
+    final auth = context.read<AuthProvider>();
+    final epoch = auth.accountSessionEpoch;
     final key = '$source:$id';
     final confirmed = await AppFeedback.confirmDanger(
       context,
@@ -186,12 +231,12 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
       message: '删除后将从菜品评价中移除，历史记录不会再参与评分统计。',
       confirmText: '删除',
     );
-    if (!confirmed || !mounted) return;
+    if (!confirmed || !mounted || auth.accountSessionEpoch != epoch) return;
     final result = await context.read<CanteenProvider>().deleteReview(
           id: id,
           source: source,
         );
-    if (!mounted) return;
+    if (!mounted || auth.accountSessionEpoch != epoch) return;
     if (!result.success) {
       AppFeedback.error(result.errorMessage ?? '删除失败，请稍后重试', context: context);
       return;
@@ -208,8 +253,16 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      AppPageBackground(builder: _buildPageWithBackground);
+  Widget build(BuildContext context) {
+    super.build(context);
+    _syncSession(context.watch<AuthProvider>());
+    if (widget.embedded) {
+      return RefreshIndicator(
+          onRefresh: _reload,
+          child: _buildBody(Theme.of(context).brightness == Brightness.dark));
+    }
+    return AppPageBackground(builder: _buildPageWithBackground);
+  }
 
   Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -237,6 +290,28 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
   }
 
   Widget _buildBody(bool isDark) {
+    if (!context.read<AuthProvider>().isLoggedIn) {
+      return ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          children: [
+            SizedBox(
+                height: 360,
+                child: Center(
+                    child: AppContentSurface.card(
+                        child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('登录后查看食堂评价'),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                        onPressed: () =>
+                            Navigator.of(context).pushNamed('/login'),
+                        child: const Text('去登录')),
+                  ]),
+                )))),
+          ]);
+    }
     if (_loading) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -247,12 +322,20 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     if (_error != null) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
         children: [
           SizedBox(
             height: 360,
             child: Center(
-              child:
+              child: AppContentSurface.card(
+                  child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text(_error!, textAlign: TextAlign.center),
+                  const SizedBox(height: 16),
                   FilledButton(onPressed: _reload, child: const Text('重新加载')),
+                ]),
+              )),
             ),
           ),
         ],
@@ -261,12 +344,15 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
     if (_items.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
         children: [
           SizedBox(
             height: 420,
             child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 36),
+              child: AppContentSurface.card(
+                  child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -299,7 +385,7 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
                     ),
                   ],
                 ),
-              ),
+              )),
             ),
           ),
         ],
@@ -458,17 +544,26 @@ class _MyCanteenReviewsScreenState extends State<MyCanteenReviewsScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              _scoreChip('味道', item.dimensions.taste, isDark),
-              _scoreChip('性价比', item.dimensions.value, isDark),
-              _scoreChip('排队', item.dimensions.queue, isDark),
-              _scoreChip('卫生', item.dimensions.hygiene, isDark),
-              _scoreChip('服务', item.dimensions.service, isDark),
-            ],
-          ),
+          if (item.source != 'legacy' && item.dimensions.isComplete)
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                _scoreChip('味道', item.dimensions.taste, isDark),
+                _scoreChip('性价比', item.dimensions.value, isDark),
+                _scoreChip('排队', item.dimensions.queue, isDark),
+                _scoreChip('卫生', item.dimensions.hygiene, isDark),
+                _scoreChip('服务', item.dimensions.service, isDark),
+              ],
+            )
+          else
+            Text(
+              item.source == 'legacy' ? '旧版星级评价' : '未提供五维评分',
+              style: TextStyle(
+                fontSize: 12,
+                color: CanteenTheme.textSecondaryColor(isDark),
+              ),
+            ),
           if (item.comment.trim().isNotEmpty) ...[
             const SizedBox(height: 12),
             Text(item.comment,

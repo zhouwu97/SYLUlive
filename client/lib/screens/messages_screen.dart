@@ -20,7 +20,7 @@ class MessagesScreen extends StatelessWidget {
         appBar: AppBar(title: const Text('消息')),
         body: const Center(
             child:
-                AppContentSurface(child: Text(PrivateChatPolicy.disabledHint))),
+                AppContentSurface.reading(child: Text(PrivateChatPolicy.disabledHint))),
       );
     }
     return const ChatListScreen();

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
+import 'package:shenliyuan/providers/canteen_provider.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/providers/message_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
@@ -53,7 +54,16 @@ class _PendingAdapter implements HttpClientAdapter {
     final path = options.uri.path;
     return ResponseBody.fromString(
       jsonEncode(responses[path] ??
-          (path.endsWith('count') ? {'count': 0} : <Object>[])),
+          (path == '/user/course-evaluations'
+              ? {
+                  'items': [],
+                  'content_counts': {'posts': 0, 'market': 0, 'evaluations': 0}
+                }
+              : path == '/user/canteen-reviews'
+                  ? {'items': [], 'has_more': false}
+              : path.endsWith('count')
+                  ? {'count': 0}
+                  : <Object>[])),
       path == failedPath ? 500 : 200,
       headers: {
         Headers.contentTypeHeader: ['application/json'],
@@ -75,6 +85,7 @@ Future<void> _pumpProfile(WidgetTester tester, _PendingAdapter adapter,
       ChangeNotifierProvider(
           create: (_) => appearance ?? ThemeProvider(loadOnStart: false)),
       ChangeNotifierProvider(create: (_) => EduProvider(dio)),
+      ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
       ChangeNotifierProvider(
           create: (_) => MessageProvider(dio, enableRealtime: false)),
     ],
@@ -117,11 +128,13 @@ void main() {
               findsNothing,
               reason: '头像和昵称区域融入壁纸，不增加整块底面');
           expect(
-              find.ancestor(of: nickname, matching: find.byType(AppCardSurface)),
+              find.ancestor(
+                  of: nickname, matching: find.byType(AppCardSurface)),
               findsNothing);
           expect(tester.getRect(nickname), headerRect);
           expect(tester.getRect(stats), statsRect);
-          expect(find.ancestor(of: stats, matching: find.byType(GlassContainer)),
+          expect(
+              find.ancestor(of: stats, matching: find.byType(GlassContainer)),
               findsOneWidget);
           expect(
               find.ancestor(
@@ -143,9 +156,12 @@ void main() {
             expect(tester.getRect(title), rect);
             expect(tester.widget<Text>(title).style!.color,
                 Theme.of(tester.element(title)).colorScheme.onSurfaceVariant);
-            expect(find.ancestor(of: title, matching: find.byType(AppContentSurface)),
+            expect(
+                find.ancestor(
+                    of: title, matching: find.byType(AppContentSurface)),
                 findsNothing);
-            expect(find.ancestor(of: title, matching: find.byType(AppCardSurface)),
+            expect(
+                find.ancestor(of: title, matching: find.byType(AppCardSurface)),
                 findsNothing);
             expect(tester.takeException(), isNull);
           }

@@ -217,7 +217,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     setState(() => _actionBusy = true);
     var enteredNote = '';
     try {
-      final note = await showDialog<String>(
+      final note = await showAppDialog<String>(
         context: context,
         builder: (dialogContext) => SecuritySessionGuard(
             auth: context.read<AuthProvider>(),
@@ -414,7 +414,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     var globalConfirmed = false;
     var reason = securityEventTitle(event);
     try {
-      final confirmed = await showDialog<bool>(
+      final confirmed = await showAppDialog<bool>(
         context: context,
         builder: (dialogContext) => SecuritySessionGuard(
             auth: context.read<AuthProvider>(),
@@ -648,7 +648,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                   Padding(
                     padding: const EdgeInsets.all(AppSpacing.xxl),
                     child: Center(
-                        child: AppContentSurface(child: Text(_emptyMessage()))),
+                        child: AppContentSurface.reading(child: Text(_emptyMessage()))),
                   )
                 else
                   ..._events.map(_buildEventCard),
@@ -660,7 +660,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                           textAlign: TextAlign.center),
                 if (!_loading && _error == null && _hasMore) ...[
                   if (_moreError != null)
-                    AppContentSurface(
+                    AppContentSurface.reading(
                         child: Text(_moreError!, textAlign: TextAlign.center)),
                   Center(
                       child: OutlinedButton(
@@ -955,7 +955,6 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
         margin: const EdgeInsets.only(bottom: AppSpacing.sm),
         padding: const EdgeInsets.all(AppSpacing.md),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(AppRadius.lg),
           border: Border.all(color: color.withValues(alpha: 0.45)),
         ),
@@ -1002,7 +1001,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     );
   }
 
-  Widget _buildError() => AppContentSurface(
+  Widget _buildError() => AppContentSurface.card(
           child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xxl),
         child: Column(children: [

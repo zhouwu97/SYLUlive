@@ -222,12 +222,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 color: const Color(0xFF55B97A),
                                 title: '二课分查询',
                                 subtitle: '支持 WebVPN 穿透',
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const ErkeScoreScreen(),
-                                  ),
-                                ),
+                                onTap: () => _openErke(context),
                               ),
                               _buildToolCard(
                                 context,
@@ -422,6 +417,16 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
         ],
       ),
     );
+  }
+
+  void _openErke(BuildContext context) {
+    if (context.read<AuthProvider>().user == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请先登录')));
+      return;
+    }
+    Navigator.push(context,
+        MaterialPageRoute(builder: (_) => const ErkeScoreScreen()));
   }
 
   void _openPhysicalTest(BuildContext context) {
@@ -803,6 +808,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
 
   Future<void> _loadSavedPassword() async {
     final pwd = await _credentialStore.read(widget.username);
+    if (!mounted) return;
     if (pwd != null && pwd.isNotEmpty) {
       _realPwd = pwd;
       _pwdCtrl.text = '•' * pwd.length;

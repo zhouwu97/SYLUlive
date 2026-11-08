@@ -7,6 +7,7 @@ import '../models/water_section.dart';
 import '../widgets/water_section/section_avatar.dart';
 import 'water_section_manage_screen.dart';
 import '../widgets/app_card.dart';
+import '../widgets/state_placeholder.dart';
 
 class AdminWaterSectionsScreen extends StatefulWidget {
   const AdminWaterSectionsScreen({super.key});
@@ -21,6 +22,7 @@ class _AdminWaterSectionsScreenState extends State<AdminWaterSectionsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       context.read<WaterSectionProvider>().loadSections();
     });
   }
@@ -39,7 +41,25 @@ class _AdminWaterSectionsScreenState extends State<AdminWaterSectionsScreen> {
       ),
       body: provider.isLoading && sections.isEmpty
           ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
+          : sections.isEmpty
+              ? ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(12),
+                  children: [
+                    ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 240),
+                      child: StatePlaceholder(
+                        icon: provider.error == null
+                            ? Icons.forum_outlined
+                            : Icons.cloud_off_outlined,
+                        title: provider.error ?? '暂无可管理版块',
+                        actionLabel: '重新加载',
+                        onAction: provider.refreshSections,
+                      ),
+                    ),
+                  ],
+                )
+              : ListView.builder(
                 addRepaintBoundaries: false,
               padding: const EdgeInsets.all(12),
               itemCount: sections.length,

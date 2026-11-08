@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'dart:convert';
 import 'package:cookie_jar/cookie_jar.dart';
@@ -542,7 +543,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   }
 
   Future<void> _showPhysicalQrDialog(BuildContext context, bool isDark) async {
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.black.withValues(alpha: 0.55),
@@ -1008,7 +1009,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
 
   Widget _buildError(bool isDark) {
     return Center(
-      child: Padding(
+      child: AppContentSurface.card(child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1041,7 +1042,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 }

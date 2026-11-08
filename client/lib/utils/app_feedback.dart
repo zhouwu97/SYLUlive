@@ -235,7 +235,7 @@ class AppFeedback {
     required String title,
     required String message,
   }) {
-    return showDialog<void>(
+    return showAppDialog<void>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -263,7 +263,7 @@ class AppFeedback {
     required String message,
     String confirmText = '确认删除',
   }) async {
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),

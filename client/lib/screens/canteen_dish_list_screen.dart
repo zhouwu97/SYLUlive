@@ -181,11 +181,11 @@ class _GridDishCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: AppContentSurface(
+      child: AppContentSurface.card(
           child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 图片独立圆角，无白色卡片容器 / 边框 / 阴影
+          // 封面与文字共用一层底面，字幕留出圆角所需的内侧空间。
           Expanded(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
@@ -205,24 +205,31 @@ class _GridDishCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            dish.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: CanteenTheme.textPrimaryColor(isDark),
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            '${dish.photoCount} 张实拍',
-            style: TextStyle(
-              fontSize: 12,
-              color: CanteenTheme.textSecondaryColor(isDark),
-            ),
-          ),
+          Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    dish.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: CanteenTheme.textPrimaryColor(isDark),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${dish.photoCount} 张实拍',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: CanteenTheme.textSecondaryColor(isDark),
+                    ),
+                  ),
+                ],
+              )),
         ],
       )),
     );

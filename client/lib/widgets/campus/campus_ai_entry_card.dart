@@ -32,7 +32,7 @@ class CampusAiEntryCard extends StatelessWidget {
       button: true,
       label: '校园 Agent，$quotaDescription',
       child: AppCardSurface(
-        height: 72,
+        constraints: const BoxConstraints(minHeight: 72),
         decoration: BoxDecoration(
             color: isDark ? CampusTheme.darkCard : CampusTheme.card,
             borderRadius: BorderRadius.circular(16),
@@ -46,7 +46,7 @@ class CampusAiEntryCard extends StatelessWidget {
             onTap: onTap,
             borderRadius: BorderRadius.circular(16),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(children: [
                 Container(
                     width: 40,
@@ -61,6 +61,7 @@ class CampusAiEntryCard extends StatelessWidget {
                 const SizedBox(width: 11),
                 Expanded(
                     child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [

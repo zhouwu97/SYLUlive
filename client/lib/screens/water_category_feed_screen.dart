@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'dart:async';
 
@@ -589,7 +590,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                 bottom: AppSpacing.lg + MediaQuery.paddingOf(context).bottom,
                 child: IgnorePointer(
                   ignoring: !_fabVisible,
-                  child: AnimatedOpacity(
+                  child: AppSurfaceAnimatedOpacity(
                     opacity: _fabVisible ? 1 : 0,
                     duration: MediaQuery.disableAnimationsOf(context)
                         ? Duration.zero
@@ -898,7 +899,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     final accent = _sectionColor(section, dark);
     final title = _emptyTitleFor(section);
     final description = _emptyDescriptionFor(section);
-    return AppContentSurface(
+    return AppContentSurface.card(
         child: Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.lg,

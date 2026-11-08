@@ -431,7 +431,7 @@ class _AcademicDataSettingsScreenState
     final retainedData = _session.capabilities.supportsGrades
         ? '课表（含自定义课程、隐藏记录和存档）、成绩、学业情况和课程提醒'
         : '课表（含自定义课程、隐藏记录和存档）和课程提醒';
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: const Text('关闭本机教务资料保存？'),
@@ -501,7 +501,7 @@ class _AcademicDataSettingsScreenState
     final retainedData = _session.capabilities.supportsGrades
         ? '教务凭据、课表、成绩和本机设置'
         : '教务凭据、课表和本机设置';
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: const Text('清除本机教务资料？'),

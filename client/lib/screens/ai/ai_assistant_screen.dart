@@ -248,7 +248,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           )
           .toSet()
           .join('、');
-      final choice = await showDialog<_ConsentChoice>(
+      final choice = await showAppDialog<_ConsentChoice>(
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) => Theme(
@@ -944,7 +944,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   ) async {
     if (!draft.isPending || draft.isExpired) return;
     final dialogTheme = CampusTheme.withBrandAccent(Theme.of(context));
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => Theme(
         data: dialogTheme,
@@ -1003,7 +1003,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       'calendar_reminder_create' => '添加日历提醒',
       _ => '创建日历事件',
     };
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: Text('确认$actionLabel？'),

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -81,7 +82,7 @@ class _SlideFadeTransition extends StatelessWidget {
         curve: AppMotion.incoming,
         reverseCurve: AppMotion.outgoing,
       )),
-      child: FadeTransition(
+      child: AppSurfaceFadeTransition(
         opacity: CurvedAnimation(
           parent: animation,
           curve: const Interval(0.0, 0.5, curve: AppMotion.incoming),

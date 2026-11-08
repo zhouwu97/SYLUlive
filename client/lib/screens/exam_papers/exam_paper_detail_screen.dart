@@ -197,8 +197,16 @@ class _ExamPaperDetailScreenState extends State<ExamPaperDetailScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
+                    child: FilledButton.tonalIcon(
                       onPressed: _preview,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: theme.colorScheme.surfaceContainerHigh,
+                        foregroundColor: theme.colorScheme.onSurface,
+                        textStyle: theme.textTheme.labelLarge
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                        minimumSize: const Size(44, 44),
+                        visualDensity: VisualDensity.standard,
+                      ),
                       icon: const Icon(Icons.visibility_outlined),
                       label: const Text('应用内预览'),
                     ),
@@ -207,11 +215,24 @@ class _ExamPaperDetailScreenState extends State<ExamPaperDetailScreen> {
                   Expanded(
                     child: FilledButton.icon(
                       onPressed: _downloading ? null : _download,
+                      style: FilledButton.styleFrom(
+                        disabledBackgroundColor:
+                            theme.colorScheme.primaryContainer,
+                        disabledForegroundColor:
+                            theme.colorScheme.onPrimaryContainer,
+                        textStyle: theme.textTheme.labelLarge
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                        minimumSize: const Size(44, 44),
+                        visualDensity: VisualDensity.standard,
+                      ),
                       icon: _downloading
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: theme.colorScheme.onPrimaryContainer,
+                              ),
                             )
                           : const Icon(Icons.download_outlined),
                       label: Text(_downloading ? '下载中…' : '下载 / 分享'),

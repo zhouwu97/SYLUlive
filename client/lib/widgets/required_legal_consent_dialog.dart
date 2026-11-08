@@ -9,7 +9,7 @@ Future<void> showRequiredLegalConsentDialog(
   BuildContext context, {
   required bool requiresEduDataConsent,
 }) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (_) => RequiredLegalConsentDialog(
@@ -19,7 +19,7 @@ Future<void> showRequiredLegalConsentDialog(
 }
 
 Future<bool> showRequiredCommunityRulesDialog(BuildContext context) async {
-  return await showDialog<bool>(
+  return await showAppDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder: (_) => const RequiredLegalConsentDialog(

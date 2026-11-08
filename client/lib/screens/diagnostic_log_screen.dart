@@ -57,7 +57,7 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
   }
 
   Future<void> _clearLogs() async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: const Text('清空诊断记录'),
@@ -139,7 +139,7 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 64),
                       child: Center(
-                          child: AppContentSurface(child: Text('当前筛选下没有诊断事件'))),
+                          child: AppContentSurface.reading(child: Text('当前筛选下没有诊断事件'))),
                     )
                   else
                     ...groups

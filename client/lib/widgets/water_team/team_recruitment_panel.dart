@@ -55,7 +55,7 @@ class TeamRecruitmentPanel extends StatelessWidget {
   }
 
   Future<void> _cancel(BuildContext context, TeamRecruitmentMeta meta) async {
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (_) => AppAlertDialog(
         title: const Text('取消申请？'),
@@ -229,7 +229,7 @@ class TeamRecruitmentPanel extends StatelessWidget {
       BuildContext context, TeamRecruitmentMeta meta) async {
     final close = meta.status != 'closed';
     final action = close ? '关闭' : '重新开启';
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
         context: context,
         builder: (_) => AppAlertDialog(
               title: Text('$action招募？'),

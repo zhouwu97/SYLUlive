@@ -13,6 +13,56 @@ import '../helpers/load_test_fonts.dart';
 
 void main() {
   setUpAll(loadTestFonts);
+  testWidgets('说明底面保留紧宽度约束及文字居中', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    final appearance = ThemeProvider(loadOnStart: false);
+    addTearDown(appearance.dispose);
+    await appearance.setBackgroundImage('morenbeijing.jpeg');
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: appearance,
+      child: const GoldenTestApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 240,
+              child: AppContentSurface.reading(
+                child: Text('居中的说明', textAlign: TextAlign.center),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.text('居中的说明')).width, 240);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('说明内嵌状态提示共用底面且不重复模糊', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    final appearance = ThemeProvider(loadOnStart: false);
+    addTearDown(appearance.dispose);
+    await appearance.setBackgroundImage('morenbeijing.jpeg');
+    await appearance.setFrostedGlass(true);
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: appearance,
+      child: const GoldenTestApp(
+        home: Scaffold(
+          body: Center(
+            child: AppContentSurface.reading(
+              child: Padding(
+                padding: EdgeInsets.all(12),
+                child: AppContentSurface.reading(child: Text('嵌套状态提示')),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(activeBackdropFilters(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
   for (final card in [false, true]) {
     for (final dark in [false, true]) {
       for (final scale in [1.0, 1.3]) {

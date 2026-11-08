@@ -11,13 +11,16 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/repositories/browsing_history_repository.dart';
 import 'package:shenliyuan/screens/legal_documents_screen.dart';
 import 'package:shenliyuan/screens/campus_article_detail_screen.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
+import 'package:shenliyuan/theme/app_radius.dart';
+import 'package:shenliyuan/theme/app_spacing.dart';
 
 import '../helpers/content_surface_fixtures.dart';
 import '../helpers/golden_test_app.dart';
 import '../helpers/golden_viewport.dart';
 import '../helpers/load_test_fonts.dart';
 
-// 对照材质迁移前的页面内容 inset；仅比较开关前后会漏掉两边同时被挤窄。
+// 对照页面约定的内容 inset；仅比较开关前后会漏掉两边同时被挤窄。
 void main() {
   setUpAll(loadTestFonts);
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
@@ -123,9 +126,9 @@ void main() {
           final rect = tester.getRect(target);
           final inset = switch (scene) {
             'likes' => 16.0,
-            'document' => 20.0,
-            'article' => 16.0,
-            'poll' => 12.0,
+            'document' => 20.0 + AppSpacing.lg,
+            'article' => AppSpacing.lg * 2,
+            'poll' => 16.0, // 与帖子详情正文、评论保持统一。
             _ => 0.0,
           };
           expect(rect.left - body.left, inset,
@@ -135,11 +138,36 @@ void main() {
           }
           if (scene == 'flags' || scene == 'permissions' || scene == 'social') {
             expect(rect.top, body.top);
-          } else if (scene == 'likes' || scene == 'document') {
+          } else if (scene == 'likes') {
             expect(rect.top - body.top, 16);
           }
+          if (scene == 'document' || scene == 'article') {
+            final surface = find.byKey(ValueKey(scene == 'document'
+                ? 'legal-document-reading-surface'
+                : 'campus-article-reading-surface'));
+            final material = tester.widget<AppCardSurface>(surface);
+            final card = tester.getRect(surface);
+            final content = tester.getRect(find.byWidget(material.child!));
+            expect((material.decoration! as BoxDecoration).borderRadius,
+                BorderRadius.circular(AppRadius.lg));
+            expect(card.left - body.left, scene == 'document' ? 20 : 16);
+            expect(content.left - card.left, AppSpacing.lg);
+            expect(card.right - content.right, AppSpacing.lg);
+            expect(content.top - card.top, AppSpacing.lg);
+            expect(card.bottom - content.bottom, AppSpacing.lg);
+            if (scene == 'document') {
+              expect(rect.top - body.top, AppSpacing.lg * 2);
+            }
+          }
+          if (scene == 'legal') {
+            final surface = tester.widget<AppCardSurface>(find
+                .ancestor(of: target, matching: find.byType(AppCardSurface))
+                .first);
+            expect((surface.decoration! as BoxDecoration).borderRadius,
+                BorderRadius.circular(AppRadius.lg));
+          }
           if (scene == 'poll') {
-            expect(tester.getRect(find.text('评论 1')).left - body.left, 12);
+            expect(tester.getRect(find.text('评论 1')).left - body.left, 16);
           }
           original ??= rect;
           expect(rect, original);

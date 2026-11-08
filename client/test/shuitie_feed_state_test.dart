@@ -129,6 +129,17 @@ void main() {
       find.byKey(const ValueKey('feed-skeleton-card')),
       findsNWidgets(3),
     );
+    final skeleton = find.byKey(const ValueKey('feed-skeleton-card')).first;
+    final original = tester.getRect(skeleton);
+    await page.themeProvider.setBackgroundImage('morenbeijing.jpeg');
+    await page.themeProvider.setFrostedGlass(true);
+    await _pumpFrames(tester, count: 2);
+    expect(tester.getRect(skeleton), original);
+    expect(find.descendant(of: skeleton, matching: activeBackdropFilters()), findsOneWidget);
+    await page.themeProvider.setFrostedGlass(false);
+    await _pumpFrames(tester, count: 2);
+    expect(tester.getRect(skeleton), original);
+    expect(find.descendant(of: skeleton, matching: activeBackdropFilters()), findsNothing);
     gate.complete();
     await _pumpFrames(tester);
     await _disposeFeed(tester, page);

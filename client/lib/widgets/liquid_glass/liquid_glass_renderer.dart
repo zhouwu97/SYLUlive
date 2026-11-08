@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../opacity_safe_backdrop_filter.dart';
+
 import 'liquid_glass_runtime.dart';
 import 'liquid_glass_scene.dart';
 
@@ -111,7 +113,7 @@ class _LiquidGlassRendererState extends State<LiquidGlassRenderer> {
     return fallback
         ? ClipRRect(
             borderRadius: BorderRadius.circular(32),
-            child: BackdropFilter(
+            child: OpacitySafeBackdropFilter(
               filter:
                   ui.ImageFilter.blur(sigmaX: widget.blur, sigmaY: widget.blur),
               child: paint,

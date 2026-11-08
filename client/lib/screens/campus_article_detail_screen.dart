@@ -159,7 +159,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
 
     final isOfficial = isSafeCampusUri(uri);
     if (!isOfficial) {
-      final shouldOpen = await showDialog<bool>(
+      final shouldOpen = await showAppDialog<bool>(
             context: context,
             builder: (dialogContext) => AppAlertDialog(
               title: const Text('打开外部链接？'),
@@ -311,9 +311,10 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
       children: [
         AppCardSurface(
           key: const ValueKey('campus-article-reading-surface'),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           decoration: BoxDecoration(
             color: isDark ? CampusTheme.darkCard : CampusTheme.card,
-            borderRadius: BorderRadius.zero,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
           ),
           child: article,
         ),
@@ -642,96 +643,119 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
 
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.md),
-      child: Row(
-        children: [
-          // 扩展名图标
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(AppRadius.md),
-            ),
-            child: Icon(attachment.icon, color: primary, size: 22),
-          ),
-          const SizedBox(width: 12),
-          // 文件名 + 提示
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: LayoutBuilder(builder: (context, constraints) {
+        final textScale = MediaQuery.textScalerOf(context).scale(12.5) / 12.5;
+        final stackDownload = constraints.maxWidth < 320 * textScale;
+        final download = _buildAttachmentDownloadButton(isDark, attachment);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    Text(
-                      attachment.extensionLabel,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: primary,
+                // 扩展名图标
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                  child: Icon(attachment.icon, color: primary, size: 22),
+                ),
+                const SizedBox(width: 12),
+                // 文件名 + 提示
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            attachment.extensionLabel,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: primary,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              attachment.name.isNotEmpty
+                                  ? attachment.name
+                                  : '未知文件',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: isDark
+                                    ? Colors.white
+                                    : const Color(0xFF292A35),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        attachment.name.isNotEmpty ? attachment.name : '未知文件',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      const SizedBox(height: 4),
+                      Text(
+                        isUrlSafe ? '需前往学校网站验证后下载' : '附件地址无效',
                         style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color:
-                              isDark ? Colors.white : const Color(0xFF292A35),
+                          fontSize: 11.5,
+                          color: isDark ? Colors.white38 : Colors.black45,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  isUrlSafe ? '需前往学校网站验证后下载' : '附件地址无效',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: isDark ? Colors.white38 : Colors.black45,
+                    ],
                   ),
                 ),
+                if (!stackDownload) ...[
+                  const SizedBox(width: 8),
+                  download,
+                ],
               ],
             ),
+            if (stackDownload)
+              Align(alignment: Alignment.centerRight, child: download),
+          ],
+        );
+      }),
+    );
+  }
+
+  Widget _buildAttachmentDownloadButton(
+      bool isDark, CampusAttachment attachment) {
+    const primary = AppColors.brandPrimary;
+    final isUrlSafe = attachment.isUrlSafe;
+    return TextButton(
+      onPressed: isUrlSafe
+          ? () => _openExternalUrl(attachment.url)
+          : () => AppFeedback.showSnackBar(
+                context,
+                '附件地址无效',
+                isError: true,
+              ),
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        minimumSize: const Size(0, 44),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.open_in_new_rounded,
+            size: 16,
+            color: isUrlSafe
+                ? primary
+                : (isDark ? Colors.white24 : Colors.black26),
           ),
-          const SizedBox(width: 8),
-          // 下载按钮
-          TextButton(
-            onPressed: isUrlSafe
-                ? () => _openExternalUrl(attachment.url)
-                : () => AppFeedback.showSnackBar(
-                      context,
-                      '附件地址无效',
-                      isError: true,
-                    ),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              minimumSize: const Size(0, 44),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.open_in_new_rounded,
-                  size: 16,
-                  color: isUrlSafe
-                      ? primary
-                      : (isDark ? Colors.white24 : Colors.black26),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '前往浏览器下载',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: isUrlSafe
-                        ? primary
-                        : (isDark ? Colors.white24 : Colors.black26),
-                  ),
-                ),
-              ],
+          const SizedBox(width: 4),
+          Text(
+            '前往浏览器下载',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: isUrlSafe
+                  ? primary
+                  : (isDark ? Colors.white24 : Colors.black26),
             ),
           ),
         ],

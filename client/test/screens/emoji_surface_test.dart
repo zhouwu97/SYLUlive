@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
+import 'package:shenliyuan/theme/app_spacing.dart';
 import '../helpers/emoji_surface_fixtures.dart';
 import 'package:shenliyuan/features/emoji/presentation/emoji_ui.dart';
 import '../helpers/golden_test_app.dart';
@@ -76,8 +77,24 @@ void main() {
         }
         await captureFrame('initial');
         if (scene == 'management') {
-          await tester.tap(find.text('收藏'));
-          await tester.pumpAndSettle();
+          final tabSurface = find.ancestor(
+              of: find.text('收藏'), matching: find.byType(AppContentSurface));
+          final tabsRect = tester.getRect(tabSurface);
+          for (final label in ['收藏', '我的表情包', '收藏']) {
+            await tester.tap(find.text(label));
+            await tester.pumpAndSettle();
+            final header = find.text(label == '收藏' ? '我的收藏' : '已安装');
+            final content = find.ancestor(
+                of: header, matching: find.byType(EmojiContentCard));
+            expect(tester.getRect(tabSurface), tabsRect,
+                reason: '切换标签不能移动标题栏或把它并入内容卡片');
+            expect(tester.getRect(content).top - tabsRect.bottom, AppSpacing.md,
+                reason: '两个标签始终保留独立卡片之间的相同留白');
+            expect(
+                find.ancestor(
+                    of: tabSurface, matching: find.byType(EmojiContentCard)),
+                findsNothing);
+          }
           expect(find.text('暂无收藏的表情'), findsOneWidget);
         } else if (scene == 'panel') {
           await tester.tap(find.byKey(const ValueKey('emoji-tab-favorite')));
@@ -86,8 +103,7 @@ void main() {
           // 内容和工具栏共用一个底面，不能再叠加白色工具栏。
           final surface = find.byKey(const ValueKey('emoji-panel-surface'));
           expect(
-              find.descendant(
-                  of: surface, matching: activeBackdropFilters()),
+              find.descendant(of: surface, matching: activeBackdropFilters()),
               clean ? findsNothing : findsOneWidget);
         } else {
           expect(find.text('本地官方表情'), findsOneWidget);
@@ -97,9 +113,9 @@ void main() {
         await appearance.setFrostedGlass(false);
         await tester.pumpAndSettle();
         expect(activeBackdropFilters(), findsNothing);
-        for (final material in tester.widgetList<AppCardMaterial>(find.byType(AppCardMaterial))) {
-          expect(material.color?.a, 1,
-              reason: '玻璃关闭后，浅色、深色与简约模式都必须有实色卡片底面');
+        for (final material in tester
+            .widgetList<AppCardMaterial>(find.byType(AppCardMaterial))) {
+          expect(material.color?.a, 1, reason: '玻璃关闭后，浅色、深色与简约模式都必须有实色卡片底面');
         }
         await captureFrame('solid');
         expect(tester.takeException(), isNull);

@@ -823,7 +823,7 @@ class _AdminTeacherGovernanceScreenState
   Future<void> _executeCourseMerge() async {
     if (_coursePreview == null || !_coursePreview!.mergeAllowed) return;
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('确认执行课程合并'),
@@ -964,7 +964,7 @@ class _AdminTeacherGovernanceScreenState
     AliasTargetItem? selectedTeacher;
     AliasTargetItem? selectedSubject;
 
-    await showDialog(
+    await showAppDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AppAlertDialog(
@@ -1094,7 +1094,7 @@ class _AdminTeacherGovernanceScreenState
   }
 
   Future<void> _confirmDeleteAlias(GovernanceAliasItem item) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('确认删除别名'),
@@ -1247,7 +1247,7 @@ class _AdminTeacherGovernanceScreenState
           ),
         ),
         body: Center(
-          child: Padding(
+          child: AppContentSurface.card(child: Padding(
             padding: const EdgeInsets.all(AppSpacing.xxl),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1287,7 +1287,7 @@ class _AdminTeacherGovernanceScreenState
                 ),
               ],
             ),
-          ),
+          )),
         ),
       );
     }
@@ -1404,10 +1404,10 @@ class _AdminTeacherGovernanceScreenState
             children: [
               _buildStepIndicator(0, '1. 选择课程', _courseMergeStep >= 0,
                   _courseMergeStep == 0, isDark),
-              const Expanded(child: Divider(indent: 8, endIndent: 8)),
+              const Expanded(child: AppCardDivider(indent: 8, endIndent: 8)),
               _buildStepIndicator(1, '2. 确认对应', _courseMergeStep >= 1,
                   _courseMergeStep == 1, isDark),
-              const Expanded(child: Divider(indent: 8, endIndent: 8)),
+              const Expanded(child: AppCardDivider(indent: 8, endIndent: 8)),
               _buildStepIndicator(2, '3. 预览执行', _courseMergeStep >= 2,
                   _courseMergeStep == 2, isDark),
             ],

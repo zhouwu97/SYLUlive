@@ -222,6 +222,20 @@ class CanteenProvider with ChangeNotifier {
     }
   }
 
+  Future<Map<String, dynamic>> getDisplayTags(int id) async {
+    final response = await _dio.get('/canteens/$id/display-tags');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<void> updateDisplayTags(
+      int id, String area, String floor, List<String>? tags) async {
+    await _dio.put('/canteens/$id/display-tags', data: {
+      'location_area': area,
+      'location_floor': floor,
+      'tags': tags,
+    });
+  }
+
   Future<Map<String, dynamic>?> offlineCanteen(int id,
       {String reason = ''}) async {
     try {
@@ -499,6 +513,30 @@ class CanteenProvider with ChangeNotifier {
       }
     } on DioException catch (e) {
       _errorMessage = _parseError(e);
+    }
+    return null;
+  }
+
+  /// 本人食堂记录与列表使用同一接口，跨页统计时绑定调用方的账号代次。
+  Future<int?> countMyCanteenReviews({required bool Function() isCurrent}) async {
+    final cursors = <String>{};
+    final records = <String>{};
+    String? cursor;
+    try {
+      while (isCurrent()) {
+        final page = await loadMyCanteenReviews(limit: 50, cursor: cursor);
+        if (!isCurrent() || page == null) return null;
+        for (final item in page.items) {
+          final legacy = item.source == 'legacy';
+          records.add('${legacy ? 'legacy' : 'v2'}:${legacy ? item.legacyRatingId ?? item.id : item.id}');
+        }
+        if (!page.hasMore) return records.length;
+        final next = page.nextCursor;
+        if (next == null || next.isEmpty || !cursors.add(next)) return null;
+        cursor = next;
+      }
+    } catch (_) {
+      // 无法确认完整数量时保持未知，不将半页结果或失败伪装成零。
     }
     return null;
   }

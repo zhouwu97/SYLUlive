@@ -815,7 +815,7 @@ class _TeamRecruitmentCreateScreenState
       bottomNavigationBar: DecoratedBox(
         decoration: BoxDecoration(
           color: pageColor,
-          border: Border(top: BorderSide(color: borderColor)),
+          border: Border(top: BorderSide(color: appCardDividerColor(context, borderColor))),
         ),
         child: SafeArea(
           child: Padding(

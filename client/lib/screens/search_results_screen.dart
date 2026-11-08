@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -390,10 +391,10 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     final itemCount = _type == 'posts' ? _posts.length : _users.length;
     if (itemCount == 0) {
       return Center(
-        child: Text(
+        child: AppContentSurface.reading(child: Text(
           _type == 'posts' ? '没有找到相关帖子' : '没有找到相关用户',
           style: TextStyle(color: isDark ? Colors.white60 : Colors.black54),
-        ),
+        )),
       );
     }
 

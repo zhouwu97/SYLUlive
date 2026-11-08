@@ -25,6 +25,7 @@ class _CheckInAdapter implements HttpClientAdapter {
   int checkInRequestCount = 0;
   final Map<String, int> calendarRequestCounts = {};
   bool failCalendar = false;
+  bool failStatus = false;
   Completer<void>? calendarGate;
 
   @override
@@ -36,6 +37,9 @@ class _CheckInAdapter implements HttpClientAdapter {
     Stream<List<int>>? requestStream,
     Future<void>? cancelFuture,
   ) async {
+    if (options.path == '/user/checkin/status' && failStatus) {
+      return _jsonResponse({'error': '本地签到状态读取失败'}, statusCode: 500);
+    }
     if (options.method == 'POST' && options.path == '/user/checkin') {
       checkInRequestCount++;
       checkedIn = true;
@@ -216,6 +220,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(CheckInMonthCalendar), findsOneWidget);
     expect(adapter.calendarRequestCounts['2026-07'], 2);
+    expect(adapter.checkInRequestCount, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('签到状态与月历同时失败不会产生未处理异常，重试恢复', (tester) async {
+    final adapter = _CheckInAdapter()
+      ..failStatus = true
+      ..failCalendar = true;
+    final auth = AuthProvider(Dio()..httpClientAdapter = adapter,
+        loadStoredAuth: false);
+    addTearDown(auth.dispose);
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: auth,
+      child: MaterialApp(
+          home: CheckInCalendarScreen(now: () => DateTime(2026, 7, 17))),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('重新加载'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    adapter.failStatus = false;
+    adapter.failCalendar = false;
+    await tester.ensureVisible(find.text('重新加载'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('重新加载'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CheckInMonthCalendar), findsOneWidget);
     expect(adapter.checkInRequestCount, 0);
     expect(tester.takeException(), isNull);
   });

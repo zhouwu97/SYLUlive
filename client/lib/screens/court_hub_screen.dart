@@ -107,14 +107,12 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           children: [
-            Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                  Text('社区自治', style: Theme.of(context).textTheme.titleLarge),
-                  const SizedBox(height: 4),
-                  Text('公平复核每一次有争议的治理决定',
-                      style: Theme.of(context).textTheme.bodyMedium),
-                ]),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('社区自治', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 4),
+              Text('公平复核每一次有争议的治理决定',
+                  style: Theme.of(context).textTheme.bodyMedium),
+            ]),
             const SizedBox(height: 16),
             _summaryRow(pendingCount),
             const SizedBox(height: 16),
@@ -202,7 +200,7 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
         : escalation == 'insufficient_jury'
             ? '暂无足够合格陪审员，案件由独立管理员复核。'
             : '社区评议未达到法定人数，以上票数仅作评议记录；最终由独立管理员复核。';
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: Text('案件 #${appeal['id']} · 已结案'),
@@ -313,7 +311,6 @@ class _SummaryItem extends StatelessWidget {
       child: AppCardSurface(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(children: [
@@ -335,11 +332,13 @@ class _ErrorState extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Center(
         child: AppContentSurface.card(
-          child: Column(children: [
-            Text(message),
-            const SizedBox(height: 8),
-            OutlinedButton(onPressed: onRetry, child: const Text('重试'))
-          ]),
+          child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text(message),
+                const SizedBox(height: 8),
+                OutlinedButton(onPressed: onRetry, child: const Text('重试'))
+              ])),
         ),
       );
 }

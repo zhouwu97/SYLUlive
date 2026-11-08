@@ -308,7 +308,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   }
 
   Future<void> _deleteExam(ExamModel exam) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: const Text('确认删除'),
@@ -367,7 +367,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     final jsonController = TextEditingController();
     bool isAiMode = exam == null;
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
@@ -953,7 +953,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                     child: const Icon(Icons.delete, color: Colors.white),
                   ),
                   confirmDismiss: (direction) async {
-                    return await showDialog(
+                    return await showAppDialog(
                       context: context,
                       builder: (BuildContext context) {
                         return AppAlertDialog(

@@ -77,21 +77,6 @@ func ensureTeacherCourseSubject(db *gorm.DB, courseName string, verified bool) *
 	return &id
 }
 
-// detachCourseEvaluationSubmission 删除公开评价时解绑提交记录，
-// 避免提交记录仍标称 published 却指向一条已删除的评价。
-// 记录转入 needs_edit 等待用户重新提交，不直接进入管理员待审核队列。
-func detachCourseEvaluationSubmission(db *gorm.DB, ratingID uint) {
-	if ratingID == 0 {
-		return
-	}
-	_ = db.Model(&models.CourseEvaluationSubmission{}).
-		Where("teacher_rating_id = ?", ratingID).
-		Updates(map[string]interface{}{
-			"teacher_rating_id": nil,
-			"status":            models.CourseEvaluationStatusNeedsEdit,
-		}).Error
-}
-
 type TeacherHandler struct {
 	db *gorm.DB
 }
@@ -619,17 +604,19 @@ func (h *TeacherHandler) logAdmin(c *gin.Context, action, target, detail string)
 
 // DeleteRating 删除自己的评价
 func (h *TeacherHandler) DeleteRating(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID := c.GetUint("user_id")
 	id, err := strconv.ParseUint(c.Param("id"), 10, strconv.IntSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
 		return
 	}
-	// 删除前先解绑关联的课程评价提交记录，避免提交记录指向已删除的评价。
-	detachCourseEvaluationSubmission(h.db, uint(id))
-	result := h.db.Where("id = ? AND user_id = ?", id, userID).Delete(&models.TeacherRating{})
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权删除"})
+	if err := services.NewCourseEvaluationService(h.db).DeleteTeacherEvaluation(userID, uint(id)); err != nil {
+		var businessErr *services.CourseEvaluationError
+		if errors.As(err, &businessErr) {
+			c.JSON(services.CourseEvaluationHTTPStatus(businessErr.Code), gin.H{"error": businessErr.Message, "code": businessErr.Code})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败，请稍后重试"})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})

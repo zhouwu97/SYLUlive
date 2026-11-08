@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:shenliyuan/widgets/app_glass_button_style.dart';
 import '../widgets/app_tab_bar_surface.dart';
 import '../widgets/app_card.dart';
@@ -356,7 +357,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                 : BackButton(onPressed: widget.onBack)),
         body: Center(
             child:
-                AppContentSurface(child: Text(_errorMessage ?? '用户不存在或加载失败'))),
+                AppContentSurface.reading(child: Text(_errorMessage ?? '用户不存在或加载失败'))),
       );
     }
 
@@ -711,7 +712,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
     if (_postsError != null && _posts.isEmpty) {
       return Center(
-        child: AppContentSurface(
+        child: AppContentSurface.reading(
             child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -737,7 +738,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
 
     if (_posts.isEmpty) {
-      return const Center(child: AppContentSurface(child: Text('暂无帖子')));
+      return const Center(child: AppContentSurface.reading(child: Text('暂无帖子')));
     }
 
     return ListView.builder(
@@ -790,7 +791,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
 
     if (_marketPosts.isEmpty) {
-      return const Center(child: Text('暂无集市记录'));
+      return const Center(child: AppContentSurface.reading(child: Text('暂无集市记录')));
     }
 
     return ListView.builder(
@@ -1179,7 +1180,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
   // ---------------- 编辑资料悬浮窗 ----------------
   void _showEditSheet(BuildContext context, User user) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,

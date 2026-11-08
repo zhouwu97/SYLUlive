@@ -95,7 +95,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
   }
 
   Future<void> _delete(CompetitionAward award) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: const Text('删除竞赛经历？'),
@@ -143,7 +143,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
       AppFeedback.showSnackBar(context, '请先编辑经历并上传至少一份证明材料', isError: true);
       return;
     }
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: Text(submit ? '提交材料核验？' : '取消材料核验？'),

@@ -169,7 +169,7 @@ class _AIModelChatScreenState extends State<AIModelChatScreen> {
       );
     }
     if (_controller.messages.isEmpty) {
-      return const Center(child: AppContentSurface(child: Text('开始新的对话')));
+      return const Center(child: AppContentSurface.reading(child: Text('开始新的对话')));
     }
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),

@@ -104,7 +104,7 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     if (dialogContext == null) return _retryLater(_showOptionalDialog);
 
     _optionalDialogVisible = true;
-    final action = await showDialog<_UpdateDialogAction>(
+    final action = await showAppDialog<_UpdateDialogAction>(
       context: dialogContext,
       builder: (_) => _UpdateDialog(
         info: info,
@@ -139,7 +139,7 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     if (dialogContext == null) return _retryLater(_showRequiredDialog);
 
     _requiredDialogVisible = true;
-    final action = await showDialog<_UpdateDialogAction>(
+    final action = await showAppDialog<_UpdateDialogAction>(
       context: dialogContext,
       barrierDismissible: false,
       builder: (_) => PopScope(
@@ -179,7 +179,7 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     }
     final dialogContext = _dialogContext;
     if (dialogContext == null) return _retryLater(_showFailedDialog);
-    final retry = await showDialog<bool>(
+    final retry = await showAppDialog<bool>(
       context: dialogContext,
       builder: (_) => AppAlertDialog(
         title: const Text('更新包下载失败'),

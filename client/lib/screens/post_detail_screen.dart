@@ -2,6 +2,7 @@ import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import '../widgets/ai_bot_identity.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
@@ -16,6 +17,7 @@ import '../services/root_page_state_service.dart';
 import '../utils/app_navigator.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_radius.dart';
+import '../theme/app_colors.dart';
 import '../config/api_constants.dart';
 import '../config/market_contact_type.dart';
 import '../config/water_post_taxonomy.dart';
@@ -49,8 +51,10 @@ import '../widgets/post_content_link_text.dart';
 import '../widgets/responsive_content.dart';
 import '../utils/responsive_util.dart';
 import '../widgets/post_reply/post_reply_list.dart';
+import '../widgets/post_reply/post_reply_thread_frame.dart';
 import '../widgets/post_reply/reply_image_media.dart';
 import '../widgets/post_reply_composer.dart';
+import '../widgets/post_status_surface.dart';
 import '../widgets/emoji/sticker_catalog.dart';
 import 'create_post_screen.dart';
 import 'court_screen.dart';
@@ -1018,7 +1022,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   Future<void> _submitModerationAppeal() async {
-    final reason = await showDialog<String>(
+    final reason = await showAppDialog<String>(
       context: context,
       builder: (context) => _PremiumInputDialog(
         title: '提交申诉',
@@ -1061,7 +1065,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   Future<void> _adminRestorePost() async {
-    final reason = await showDialog<String>(
+    final reason = await showAppDialog<String>(
       context: context,
       builder: (context) => _PremiumInputDialog(
         title: '恢复帖子公开展示',
@@ -1382,7 +1386,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
 
     final isSuperAdmin =
         context.read<AuthProvider>().user?.isSuperAdmin ?? false;
-    final dialogResult = await showDialog<_PinPostDialogResult>(
+    final dialogResult = await showAppDialog<_PinPostDialogResult>(
       context: context,
       builder: (_) => _PinPostDialog(isSuperAdmin: isSuperAdmin),
     );
@@ -1462,7 +1466,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     String hint = '请输入原因',
     String confirmText = '确认',
   }) async {
-    final result = await showDialog<String>(
+    final result = await showAppDialog<String>(
       context: context,
       builder: (ctx) => _PremiumInputDialog(
         title: title,
@@ -1482,7 +1486,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final sectionSlug = post.postType;
     if (sectionSlug.isEmpty) return;
 
-    final daysResult = await showDialog<int>(
+    final daysResult = await showAppDialog<int>(
       context: context,
       builder: (ctx) => _PremiumOptionsDialog<int>(
         title: '版块置顶时长',
@@ -1708,7 +1712,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     if (sectionSlug.isEmpty) return;
     if (post.authorId == 0) return;
 
-    final daysResult = await showDialog<int>(
+    final daysResult = await showAppDialog<int>(
       context: context,
       builder: (ctx) => _PremiumOptionsDialog<int>(
         title: '禁言时长',
@@ -1872,7 +1876,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     final titleController = TextEditingController(text: post.title);
     final contentController = TextEditingController(text: post.content);
     final summaryController = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('提交修改版本'),
@@ -2154,14 +2158,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                       isAdmin: isAdmin),
           body: Stack(
             children: [
-              if (_isLoading)
-                const SafeArea(
-                  child: Center(child: CircularProgressIndicator()),
+              if (_isLoading || _errorMessage != null || _post == null)
+                SafeArea(
+                  child: PostStatusSurface(
+                    isLoading: _isLoading,
+                    error: _errorMessage,
+                    onRetry: _loadPost,
+                  ),
                 )
-              else if (_errorMessage != null)
-                SafeArea(child: _buildErrorView(isDark))
-              else if (_post == null)
-                SafeArea(child: _buildEmptyView(isDark))
               else
                 _buildKeyboardAwareDetail(
                   child: widget.isMarket
@@ -2754,65 +2758,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     );
   }
 
-  // ---- 错误 / 空 ----
-
-  Widget _buildErrorView(bool isDark) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(40),
-        child: AppCardSurface(
-          padding: const EdgeInsets.all(28),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF171B24) : Colors.white,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.cloud_off,
-                size: 48,
-                color: isDark ? Colors.white30 : Colors.grey[400],
-              ),
-              const SizedBox(height: 14),
-              Text(
-                _errorMessage!,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: isDark ? Colors.white60 : Colors.grey[600],
-                  fontSize: 15,
-                ),
-              ),
-              const SizedBox(height: 18),
-              OutlinedButton.icon(
-                onPressed: _loadPost,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('重试'),
-                style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyView(bool isDark) {
-    return Center(
-      child: Text(
-        '帖子不存在',
-        style: TextStyle(
-          color: isDark ? Colors.white54 : Colors.grey[500],
-          fontSize: 15,
-        ),
-      ),
-    );
-  }
-
   // ---- 集市布局 ----
 
   Widget _buildMarketDetail(bool isDark) {
@@ -2846,7 +2791,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                   child: _buildInputDismissRegion(
                     child: AppCardSurface(
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF131720) : Colors.white,
+                        color: isDark
+                            ? AppColors.surfaceSecondaryDark
+                            : AppColors.surfaceSecondaryLight,
                         borderRadius: BorderRadius.circular(AppRadius.lg),
                       ),
                       child: SingleChildScrollView(
@@ -3007,7 +2954,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                 SliverToBoxAdapter(
                   child: p.images.isNotEmpty
                       ? _buildPostContentDismissWrapper(
-                          child: _buildMarketHeroImage(p, isDark),
+                          child: _MarketImageOverlap(
+                            overlap: 24,
+                            child: _buildMarketHeroImage(p, isDark),
+                          ),
                         )
                       : SizedBox(
                           height: MediaQuery.of(context).padding.top +
@@ -3016,16 +2966,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                 ),
                 SliverFillRemaining(
                   hasScrollBody: false,
-                  child: Transform.translate(
-                    offset: Offset(0, p.images.isNotEmpty ? -24 : 0),
-                    child: AppCardSurface(
+                  child: AppCardSurface(
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF131720) : Colors.white,
-                        borderRadius: p.images.isNotEmpty
-                            ? const BorderRadius.vertical(
-                                top: Radius.circular(24))
-                            : BorderRadius.circular(AppRadius.lg),
+                        color: isDark
+                            ? AppColors.surfaceSecondaryDark
+                            : AppColors.surfaceSecondaryLight,
+                        borderRadius: BorderRadius.circular(AppRadius.lg),
                       ),
                       padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
                       child: Column(
@@ -3120,7 +3067,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                         ],
                       ),
                     ),
-                  ),
                 ),
               ],
             ),
@@ -3256,7 +3202,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           child: _buildPostContentDismissWrapper(
             child: AppCardSurface(
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF131720) : Colors.white,
+                color: isDark
+                    ? AppColors.surfaceSecondaryDark
+                    : AppColors.surfaceSecondaryLight,
                 borderRadius: BorderRadius.circular(AppRadius.lg),
               ),
               child: Column(
@@ -3289,7 +3237,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           child: AppCardSurface(
             key: _commentsSectionKey,
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF131720) : Colors.white,
+              color: isDark
+                  ? AppColors.surfaceSecondaryDark
+                  : AppColors.surfaceSecondaryLight,
               borderRadius: BorderRadius.circular(AppRadius.lg),
             ),
             child: Padding(
@@ -3669,10 +3619,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       decoration: BoxDecoration(
         border: Border(
           top: BorderSide(
-            color: isDark ? Colors.white10 : const Color(0xFFEEEEEE),
+            color: appCardDividerColor(context,
+                isDark ? Colors.white10 : const Color(0xFFEEEEEE)),
           ),
           bottom: BorderSide(
-            color: isDark ? Colors.white10 : const Color(0xFFEEEEEE),
+            color: appCardDividerColor(context,
+                isDark ? Colors.white10 : const Color(0xFFEEEEEE)),
           ),
         ),
       ),
@@ -3794,7 +3746,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           color: isDark ? const Color(0xFF1B1F2A) : const Color(0xFFF7F8FA),
           border: Border(
             top: BorderSide(
-              color: isDark ? Colors.white10 : Colors.black12,
+              color: appCardDividerColor(context, isDark ? Colors.white10 : Colors.black12),
             ),
           ),
         ),
@@ -3844,8 +3796,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       child: AppCardSurface(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0x99171B24) : const Color(0x0A000000),
-          borderRadius: BorderRadius.circular(18),
+          color: isDark
+              ? AppColors.surfaceSecondaryDark
+              : AppColors.surfaceSecondaryLight,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
         ),
         child: Row(
           children: [
@@ -4726,25 +4680,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final threadComposerController = PostReplyComposerController();
-    final sheetController = DraggableScrollableController();
-
-    bool wasEmoji = false;
-    void handleComposerChanges() {
-      final isEmoji =
-          threadComposerController.bottomPanel == PostReplyBottomPanel.emoji;
-      if (isEmoji && !wasEmoji) {
-        if (sheetController.isAttached && sheetController.size < 0.90) {
-          sheetController.animateTo(
-            0.92,
-            duration: AppMotion.normal,
-            curve: AppMotion.standard,
-          );
-        }
-      }
-      wasEmoji = isEmoji;
-    }
-
-    threadComposerController.addListener(handleComposerChanges);
     final initialTarget = anchorReply ?? parentReply;
     threadComposerController.setReplyTarget(
       parentReplyId: parentReply.id,
@@ -4785,7 +4720,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           queryParameters: {
             'limit': 50,
             if (anchored && firstChildrenRequest)
-              'before_reply_id': anchorReply!.id,
+              'before_reply_id': anchorReply.id,
             if (sheetChildrenCursor != null) 'cursor': sheetChildrenCursor,
           },
         );
@@ -4848,206 +4783,90 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               );
             }
 
-            return AnimatedBuilder(
-              animation: threadComposerController,
-              builder: (animContext, _) {
-                final isEmoji = threadComposerController.bottomPanel ==
-                    PostReplyBottomPanel.emoji;
-                final bottomPadding =
-                    isEmoji ? 0.0 : threadComposerController.keyboardInset;
-
-                return Padding(
-                  padding: EdgeInsets.only(bottom: bottomPadding),
-                  child: DraggableScrollableSheet(
-                    controller: sheetController,
-                    initialChildSize: 0.72,
-                    minChildSize: 0.50,
-                    maxChildSize: 0.92,
-                    expand: false,
-                    builder: (context, scrollController) {
-                      return AppCardSurface(
-                        key: const ValueKey('reply-thread-surface'),
-                        decoration: BoxDecoration(
-                          color:
-                              isDark ? const Color(0xFF171B24) : Colors.white,
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(16),
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            _buildReplyThreadSheetHeader(sheetContext, isDark),
-                            Expanded(
-                              child: CustomScrollView(
-                                controller: scrollController,
-                                slivers: [
-                                  SliverToBoxAdapter(
-                                    child: Padding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                          16, 12, 16, 16),
-                                      child: _buildSheetParentReply(
-                                        sheetContext,
-                                        parentReply,
-                                        isDark,
-                                        onReply: () =>
-                                            selectReplyTarget(parentReply),
-                                      ),
-                                    ),
-                                  ),
-                                  SliverToBoxAdapter(
-                                    child: _buildRelatedRepliesHeader(
-                                      childrenTotal,
-                                      isDark,
-                                    ),
-                                  ),
-                                  SliverPadding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16),
-                                    sliver: _buildSheetChildrenList(
-                                      sheetContext,
-                                      sheetChildren,
-                                      isDark,
-                                      onReply: selectReplyTarget,
-                                      loading: sheetChildrenLoading,
-                                      error: sheetChildrenError,
-                                      hasMore: sheetChildrenCursor != null,
-                                      onLoadMore: loadMoreChildren,
-                                      highlightReplyId:
-                                          anchored ? anchorReply!.id : null,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            PostReplyComposer(
-                              embedded: true,
-                              controller: threadComposerController,
-                              sending: isSending,
-                              enabled: context.watch<AuthProvider>().isLoggedIn,
-                              preserveReplyTargetOnSuccess: true,
-                              emojiPanelFallbackHeight: 230,
-                              emojiPanelMaxHeight: 280,
-                              onSubmit: (draft) async {
-                                if (isSending) return false;
-                                setSheetState(() => isSending = true);
-                                try {
-                                  final created =
-                                      await _createReplyFromDraft(draft);
-                                  if (created != null) {
-                                    if (sheetContentContext.mounted) {
-                                      setSheetState(() {
-                                        if (!sheetChildren
-                                            .any((c) => c.id == created.id)) {
-                                          sheetChildren.add(created);
-                                          childrenTotal++;
-                                        }
-                                      });
-                                    }
-                                    threadComposerController.setReplyTarget(
-                                      parentReplyId: parentReply.id,
-                                      replyToUserId: parentReply.authorId,
-                                      replyToReplyId: parentReply.id,
-                                      replyToName: parentReply.author?.nickname,
-                                    );
-                                    return true;
-                                  }
-                                  return false;
-                                } on DioException catch (error) {
-                                  if (sheetContentContext.mounted) {
-                                    AppFeedback.showSnackBar(
-                                      sheetContentContext,
-                                      AppFeedback.dioErrorMessage(error,
-                                          fallback: '回复发送失败'),
-                                      isError: true,
-                                    );
-                                  }
-                                  return false;
-                                } catch (error) {
-                                  if (sheetContentContext.mounted) {
-                                    AppFeedback.showSnackBar(
-                                      sheetContentContext,
-                                      '回复发送失败',
-                                      isError: true,
-                                    );
-                                  }
-                                  return false;
-                                } finally {
-                                  if (sheetContentContext.mounted) {
-                                    setSheetState(() => isSending = false);
-                                  }
-                                }
-                              },
-                              onNeedLogin: _openReplyLogin,
-                            ),
-                          ],
-                        ),
+            return PostReplyThreadFrame(
+              controller: threadComposerController,
+              parentReply: _buildSheetParentReply(
+                sheetContext,
+                parentReply,
+                isDark,
+                onReply: () => selectReplyTarget(parentReply),
+              ),
+              replyCount: childrenTotal,
+              childrenSliver: _buildSheetChildrenList(
+                sheetContext,
+                sheetChildren,
+                isDark,
+                onReply: selectReplyTarget,
+                loading: sheetChildrenLoading,
+                error: sheetChildrenError,
+                hasMore: sheetChildrenCursor != null,
+                onLoadMore: loadMoreChildren,
+                highlightReplyId: anchored ? anchorReply.id : null,
+              ),
+              composer: PostReplyComposer(
+                embedded: true,
+                controller: threadComposerController,
+                sending: isSending,
+                enabled: context.watch<AuthProvider>().isLoggedIn,
+                preserveReplyTargetOnSuccess: true,
+                emojiPanelFallbackHeight: 230,
+                emojiPanelMaxHeight: 280,
+                onSubmit: (draft) async {
+                  if (isSending) return false;
+                  setSheetState(() => isSending = true);
+                  try {
+                    final created = await _createReplyFromDraft(draft);
+                    if (created != null) {
+                      if (sheetContentContext.mounted) {
+                        setSheetState(() {
+                          if (!sheetChildren.any((c) => c.id == created.id)) {
+                            sheetChildren.add(created);
+                            childrenTotal++;
+                          }
+                        });
+                      }
+                      threadComposerController.setReplyTarget(
+                        parentReplyId: parentReply.id,
+                        replyToUserId: parentReply.authorId,
+                        replyToReplyId: parentReply.id,
+                        replyToName: parentReply.author?.nickname,
                       );
-                    },
-                  ),
-                );
-              },
+                      return true;
+                    }
+                    return false;
+                  } on DioException catch (error) {
+                    if (sheetContentContext.mounted) {
+                      AppFeedback.showSnackBar(
+                        sheetContentContext,
+                        AppFeedback.dioErrorMessage(error, fallback: '回复发送失败'),
+                        isError: true,
+                      );
+                    }
+                    return false;
+                  } catch (error) {
+                    if (sheetContentContext.mounted) {
+                      AppFeedback.showSnackBar(
+                        sheetContentContext,
+                        '回复发送失败',
+                        isError: true,
+                      );
+                    }
+                    return false;
+                  } finally {
+                    if (sheetContentContext.mounted) {
+                      setSheetState(() => isSending = false);
+                    }
+                  }
+                },
+                onNeedLogin: _openReplyLogin,
+              ),
             );
           },
         );
       },
     );
 
-    threadComposerController.removeListener(handleComposerChanges);
-    sheetController.dispose();
     threadComposerController.dispose();
-  }
-
-  Widget _buildReplyThreadSheetHeader(BuildContext sheetContext, bool isDark) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const SizedBox(height: 10),
-        Container(
-          width: 36,
-          height: 4,
-          decoration: BoxDecoration(
-            color: isDark ? Colors.white24 : Colors.grey[300],
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const SizedBox(width: 24), // balance close button
-              Text(
-                '评论详情',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
-              ),
-              GestureDetector(
-                onTap: () => Navigator.pop(sheetContext),
-                // 48dp 最小触控目标。
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Icon(
-                    Icons.close,
-                    size: 24,
-                    color: isDark ? Colors.white54 : Colors.grey[600],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
-        AppCardDivider(
-          height: 1,
-          thickness: 1,
-          color: isDark ? Colors.white10 : Colors.grey[200],
-        ),
-      ],
-    );
   }
 
   Widget _buildSheetParentReply(
@@ -5197,42 +5016,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildRelatedRepliesHeader(int total, bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AppCardDivider(
-          height: 8,
-          thickness: 8,
-          color: isDark ? Colors.black26 : const Color(0xFFF3F4F6),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '相关回复共 $total 条',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white60 : Colors.grey[700],
-                ),
-              ),
-              Text(
-                '按时间',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? Colors.white30 : Colors.grey[400],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 
@@ -6294,4 +6077,53 @@ class _PremiumOptionsDialog<T> extends StatelessWidget {
       ),
     );
   }
+}
+
+// 图片仍完整绘制；正文覆盖的部分不再占用滚动布局，避免整体平移留下底部空带。
+class _MarketImageOverlap extends SingleChildRenderObjectWidget {
+  const _MarketImageOverlap({required this.overlap, required super.child});
+  final double overlap;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderMarketImageOverlap(overlap);
+
+  @override
+  void updateRenderObject(
+      BuildContext context, _RenderMarketImageOverlap renderObject) {
+    renderObject.overlap = overlap;
+  }
+}
+
+class _RenderMarketImageOverlap extends RenderProxyBox {
+  _RenderMarketImageOverlap(this._overlap);
+  double _overlap;
+  set overlap(double value) {
+    if (_overlap == value) return;
+    _overlap = value;
+    markNeedsLayout();
+  }
+
+  double _extent(double height) =>
+      (height - _overlap).clamp(0, double.infinity);
+  Size _size(Size childSize, BoxConstraints constraints) =>
+      constraints.constrain(Size(childSize.width, _extent(childSize.height)));
+
+  @override
+  void performLayout() {
+    child!.layout(constraints, parentUsesSize: true);
+    size = _size(child!.size, constraints);
+  }
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) =>
+      _size(child!.getDryLayout(constraints), constraints);
+
+  @override
+  double computeMinIntrinsicHeight(double width) =>
+      _extent(super.computeMinIntrinsicHeight(width));
+
+  @override
+  double computeMaxIntrinsicHeight(double width) =>
+      _extent(super.computeMaxIntrinsicHeight(width));
 }

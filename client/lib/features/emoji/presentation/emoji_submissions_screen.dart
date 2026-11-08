@@ -299,7 +299,7 @@ class _EmojiSubmissionDetailScreenState
 
   Future<void> _act(String action) async {
     if (!current || _busy || _item == null) return;
-    final reasonText = await showDialog<String>(
+    final reasonText = await showAppDialog<String>(
         context: context,
         builder: (context) => SecuritySessionGuard(
             auth: auth!,

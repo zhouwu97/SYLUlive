@@ -151,7 +151,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     BuildContext context,
     AuthProvider authProvider,
   ) async {
-    final confirm = await showDialog<bool>(
+    final confirm = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('退出登录'),

@@ -11,6 +11,7 @@ import '../../widgets/community_post_card.dart';
 import '../../widgets/poll/poll_post_card.dart';
 import 'poll_detail_screen.dart';
 import '../../widgets/app_card.dart';
+import '../../widgets/state_placeholder.dart';
 
 class MyPollsScreen extends StatefulWidget {
   const MyPollsScreen({super.key});
@@ -58,7 +59,7 @@ class _MyPollsScreenState extends State<MyPollsScreen>
 
   Future<void> _delete(Post post) async {
     final pollId = post.pollMeta!.id;
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
             context: context,
             builder: (context) => AppAlertDialog(
                     title: const Text('删除投票？'),
@@ -95,7 +96,28 @@ class _MyPollsScreenState extends State<MyPollsScreen>
         onRefresh: () => _load(refresh: true),
         child: state.isLoading && !state.hasLoaded
             ? const Center(child: CircularProgressIndicator())
-            : NotificationListener<ScrollNotification>(
+            : state.items.isEmpty
+                ? ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(12),
+                    children: [
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 240),
+                        child: StatePlaceholder(
+                          icon: state.error == null
+                              ? Icons.poll_outlined
+                              : Icons.cloud_off_outlined,
+                          title: state.error ??
+                              (_scope == 'created' ? '还没有发起投票' : '还没有参与投票'),
+                          actionLabel: state.error == null ? null : '重新加载',
+                          onAction: state.error == null
+                              ? null
+                              : () => _load(refresh: true),
+                        ),
+                      ),
+                    ],
+                  )
+                : NotificationListener<ScrollNotification>(
                 onNotification: (notification) {
                   if (notification.metrics.extentAfter < 400 &&
                       state.hasMore &&
@@ -125,7 +147,7 @@ class _MyPollsScreenState extends State<MyPollsScreen>
                                       pollId: post.pollMeta!.id,
                                       initialPost: post)))),
                       if (_scope == 'created')
-                        AppContentSurface(
+                        AppContentSurface.card(
                             child: Row(
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 children: [

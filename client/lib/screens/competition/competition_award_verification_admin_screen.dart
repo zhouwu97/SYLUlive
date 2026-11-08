@@ -245,7 +245,7 @@ class _CompetitionAwardVerificationAdminScreenState
   Widget _message(bool isDark, String text, String? action, VoidCallback? tap) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 52),
-      child: Column(
+      child: AppContentSurface.card(child: Column(
         children: [
           Icon(Icons.fact_check_outlined,
               size: 42, color: CompetitionUiTokens.subColor(isDark)),
@@ -256,7 +256,7 @@ class _CompetitionAwardVerificationAdminScreenState
             OutlinedButton(onPressed: tap, child: Text(action)),
           ],
         ],
-      ),
+      )),
     );
   }
 }
@@ -354,7 +354,7 @@ class _CompetitionAwardVerificationDetailScreenState
   Future<void> _review({required bool approve}) async {
     if (_submitting || _award?.verificationStatus != 'pending') return;
     var note = '';
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: Text(approve ? '确认通过材料核验？' : '驳回材料核验？'),
@@ -434,7 +434,10 @@ class _CompetitionAwardVerificationDetailScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor:
@@ -448,7 +451,7 @@ class _CompetitionAwardVerificationDetailScreenState
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: AppContentSurface(child: Text(_error!)))
+              ? Center(child: AppContentSurface.reading(child: Text(_error!)))
               : _content(isDark),
       bottomNavigationBar:
           _award?.verificationStatus == 'pending' ? _actions() : null,
@@ -485,11 +488,10 @@ class _CompetitionAwardVerificationDetailScreenState
         ),
         const SizedBox(height: 16),
         Text('证明材料（${award.evidenceFileIds.length}）',
-                style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w700)),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         ...award.evidenceFileIds.asMap().entries.map(
-              (entry) => AppContentSurface(
+              (entry) => AppContentSurface.card(
                   child: ListTile(
                 key: Key('award-evidence-${entry.value}'),
                 onTap: _loadingEvidence.contains(entry.value)

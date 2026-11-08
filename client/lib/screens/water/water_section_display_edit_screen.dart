@@ -759,8 +759,10 @@ class _WaterSectionDisplayEditScreenState
               : null,
         ),
         const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          spacing: 8,
+          runSpacing: 8,
           children: [
             Text(
               '建议上传 16:9 或 3:4，系统自动适配',

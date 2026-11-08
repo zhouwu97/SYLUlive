@@ -151,8 +151,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> {
         .where((item) => !_unreadAnnouncementIds.contains(item.id))
         .toList()
       ..sort(model.Announcement.compareForDisplay);
-    final useCustomBackground = themeProvider.shouldShowCustomBackground;
-    final cleanLightMode = !useCustomBackground && !isDark;
+    final cleanLightMode = !isDark;
     final foregroundColor =
         cleanLightMode ? const Color(0xFF1F2937) : Colors.white;
 

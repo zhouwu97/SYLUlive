@@ -218,7 +218,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _data == null
               ? Center(
-                  child: AppContentSurface(
+                  child: AppContentSurface.reading(
                       child: Text(
                     '加载失败',
                     style: TextStyle(
@@ -228,7 +228,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
               : ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                   children: [
-                    AppContentSurface(
+                    AppContentSurface.reading(
                         child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -263,7 +263,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                         ])),
                     if (_reviews.isNotEmpty) _buildReviewList(isDark),
                     if (isAdmin && _visiblePhotos.isNotEmpty)
-                      AppContentSurface(
+                      AppContentSurface.reading(
                           child: Padding(
                         padding: const EdgeInsets.only(top: 4, bottom: 4),
                         child: Text(
@@ -298,7 +298,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   }
 
   Widget _buildReviewList(bool isDark) {
-    return AppContentSurface(
+    return AppContentSurface.reading(
         child: Padding(
       padding: const EdgeInsets.only(top: 12, bottom: 4),
       child: Column(
@@ -460,7 +460,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   }
 
   Widget _buildOfflineUploadNotice(bool isDark) {
-    return AppContentSurface(
+    return AppContentSurface.reading(
         child: Text(
       '所属商家已下架，暂不能新增菜品实拍或评价',
       style: TextStyle(

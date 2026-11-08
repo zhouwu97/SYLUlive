@@ -43,18 +43,28 @@ class CanteenDiscoveryProvider with ChangeNotifier {
 
   CanteenDiscoveryProvider(this._dio);
 
-  Future<void>? _homeLoadFuture;
-  Future<void>? _rankingLoadFuture;
+  final Map<int, Future<void>> _homeLoadFutures = {};
+  final Map<(String, int), Future<void>> _rankingLoadFutures = {};
+  final Map<String, DateTime> _rankingLoadedAt = {};
+  int _rankingGeneration = 0;
 
   /// 拉取首页。已有数据时为刷新（不进入骨架）。
-  Future<void> loadHome({bool forceRefresh = true}) {
-    if (_homeLoadFuture != null) return _homeLoadFuture!;
-    _homeLoadFuture =
-        _loadHomeInternal().whenComplete(() => _homeLoadFuture = null);
-    return _homeLoadFuture!;
+  Future<void> loadHome({bool forceRefresh = true}) async {
+    final generation = _rankingGeneration;
+    final pending = _homeLoadFutures.putIfAbsent(
+      generation,
+      () => _loadHomeInternal(generation),
+    );
+    try {
+      await pending;
+    } finally {
+      if (identical(_homeLoadFutures[generation], pending)) {
+        _homeLoadFutures.remove(generation);
+      }
+    }
   }
 
-  Future<void> _loadHomeInternal() async {
+  Future<void> _loadHomeInternal(int generation) async {
     if (!hasHomeData) {
       _homeInitialLoading = true;
     } else {
@@ -65,12 +75,14 @@ class CanteenDiscoveryProvider with ChangeNotifier {
 
     try {
       final response = await _dio.get('/canteens/home');
+      if (generation != _rankingGeneration) return;
       if (response.statusCode == 200 && response.data is Map) {
         _home = CanteenHomeData.fromJson(
             (response.data as Map).cast<String, dynamic>());
         _hasHomeResponse = true;
       }
     } on DioException catch (e) {
+      if (generation != _rankingGeneration) return;
       if (!hasHomeData) {
         _homeError = _parseError(e);
       } else {
@@ -78,35 +90,54 @@ class CanteenDiscoveryProvider with ChangeNotifier {
         debugPrint('home refresh failed but keeping stale data: $e');
       }
     } finally {
-      _homeInitialLoading = false;
-      _homeRefreshing = false;
-      notifyListeners();
+      if (generation == _rankingGeneration) {
+        _homeInitialLoading = false;
+        _homeRefreshing = false;
+        notifyListeners();
+      }
     }
   }
 
   /// 拉取指定排序的完整排行（按 sort 缓存一份）。
-  Future<void> loadRanking({String sort = CanteenRankingSort.composite}) async {
+  Future<void> loadRanking({
+    String sort = CanteenRankingSort.composite,
+    bool forceRefresh = false,
+  }) async {
     _rankingSort = sort;
-    if (_rankings.containsKey(sort)) {
+    final loadedAt = _rankingLoadedAt[sort];
+    if (!forceRefresh &&
+        _rankings.containsKey(sort) &&
+        loadedAt != null &&
+        DateTime.now().difference(loadedAt) < const Duration(minutes: 1)) {
+      _rankingLoading = false;
+      _rankingError = null;
+      _rankingTotal = _rankings[sort]!.length;
       notifyListeners();
       return;
     }
-    if (_rankingLoadFuture != null) {
-      await _rankingLoadFuture;
-      if (_rankings.containsKey(sort)) return;
+    final generation = _rankingGeneration;
+    final key = (sort, generation);
+    final pending = _rankingLoadFutures.putIfAbsent(
+      key,
+      () => _loadRankingInternal(sort, generation),
+    );
+    try {
+      await pending;
+    } finally {
+      if (identical(_rankingLoadFutures[key], pending)) {
+        _rankingLoadFutures.remove(key);
+      }
     }
-    _rankingLoadFuture = _loadRankingInternal(sort);
-    await _rankingLoadFuture;
-    _rankingLoadFuture = null;
   }
 
-  Future<void> _loadRankingInternal(String sort) async {
+  Future<void> _loadRankingInternal(String sort, int generation) async {
     _rankingLoading = true;
     _rankingError = null;
     notifyListeners();
     try {
       final response =
           await _dio.get('/canteens/rankings', queryParameters: {'sort': sort});
+      if (generation != _rankingGeneration) return;
       if (response.statusCode == 200 && response.data is Map) {
         final data = (response.data as Map).cast<String, dynamic>();
         final rawItems = data['items'];
@@ -115,24 +146,33 @@ class CanteenDiscoveryProvider with ChangeNotifier {
               .whereType<Map<String, dynamic>>()
               .map(CanteenRankingItem.fromJson)
               .toList();
+          _rankingLoadedAt[sort] = DateTime.now();
         }
         final meta = data['meta'];
-        if (meta is Map) {
+        if (meta is Map && sort == _rankingSort) {
           _rankingTotal = (meta['total'] ?? _rankings[sort]?.length).toInt();
         }
       }
     } on DioException catch (e) {
+      if (generation != _rankingGeneration || sort != _rankingSort) return;
       _rankingError = _parseError(e);
       debugPrint('Error loading canteen ranking: $e');
     } finally {
-      _rankingLoading = false;
-      notifyListeners();
+      if (generation == _rankingGeneration && sort == _rankingSort) {
+        _rankingLoading = false;
+        notifyListeners();
+      }
     }
   }
 
   /// 变更后主动失效：让下次拉取拿到新数据。
   void invalidateRanking() {
+    _rankingGeneration++;
     _rankings.clear();
+    _rankingLoadedAt.clear();
+    _rankingTotal = null;
+    _rankingError = null;
+    _rankingLoading = false;
   }
 
   String _parseError(DioException e) {

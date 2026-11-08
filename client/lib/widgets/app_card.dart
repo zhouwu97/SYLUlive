@@ -6,6 +6,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import 'frosted_glass.dart';
+import 'app_surface_transition.dart';
 
 /// 卡片及系统弹层共用的最终底色，透明度只应用一次。
 Color appGlassSurfaceColor(BuildContext context, Color? color, double opacity) {
@@ -66,6 +67,12 @@ Gradient _glassGradient(
   return gradient.scale(opacity);
 }
 
+/// 自绘操作栏的装饰线与 AppCardDivider 使用同一材质策略，保留边宽占位。
+Color appCardDividerColor(BuildContext context, Color color) =>
+    context.watch<ThemeProvider?>()?.frostedGlass == true
+        ? Colors.transparent
+        : color;
+
 /// 菜单／设置组内部的装饰分隔线，玻璃模式只保留原有行间距。
 class AppCardDivider extends Divider {
   const AppCardDivider({
@@ -111,7 +118,8 @@ class AppContentSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final appearance = context.watch<ThemeProvider?>();
     final insideSurface =
-        context.findAncestorWidgetOfExactType<AppCardSurface>() != null ||
+        context.findAncestorWidgetOfExactType<AppContentSurface>() != null ||
+            context.findAncestorWidgetOfExactType<AppCardSurface>() != null ||
             context.findAncestorWidgetOfExactType<AppCardMaterial>() != null ||
             context.findAncestorWidgetOfExactType<AppCard>() != null;
     final paint =
@@ -122,6 +130,7 @@ class AppContentSurface extends StatelessWidget {
     if (_reading) {
       // 背景与前景分开绘制：圆角不会裁切首尾文字，开关也不改变内容宽度。
       return Stack(
+        fit: StackFit.passthrough,
         clipBehavior: Clip.none,
         children: [
           Positioned.fill(
@@ -192,6 +201,7 @@ class AppCardSurface extends Container {
   Widget build(BuildContext context) {
     final settings = context.watch<ThemeProvider?>();
     final glass = settings?.frostedGlass == true && blur > 0;
+    final progress = glass ? AppSurfaceTransition.progressOf(context) : 1.0;
     final custom = settings?.shouldShowCustomBackground == true;
     final box =
         decoration is BoxDecoration ? decoration! as BoxDecoration : null;
@@ -201,10 +211,11 @@ class AppCardSurface extends Container {
         (dark
             ? AppColors.surfaceSecondaryDark
             : AppColors.surfaceSecondaryLight);
-    final alpha = surfaceOpacity ??
-        (settings?.shouldShowCustomBackground == true
-            ? settings!.componentOpacity
-            : 1.0);
+    final alpha = (surfaceOpacity ??
+            (settings?.shouldShowCustomBackground == true
+                ? settings!.componentOpacity
+                : 1.0)) *
+        progress;
     final radius = box?.borderRadius ?? BorderRadius.zero;
     final plain = box == null
         ? BoxDecoration(color: surface)
@@ -252,8 +263,8 @@ class AppCardSurface extends Container {
         clipper: ShapeBorderClipper(shape: shape),
         child: FrostedGlass(
           enabled: glass,
-          sigmaX: blur,
-          sigmaY: blur,
+          sigmaX: blur * progress,
+          sigmaY: blur * progress,
           // 材质只替换绘制，保留原 Container 的边框占位和显式内容间距。
           child: DecoratedBox(
             decoration: material,
@@ -263,7 +274,11 @@ class AppCardSurface extends Container {
                   ? padding
                   : decoration!.padding.add(padding ?? EdgeInsets.zero),
               foregroundDecoration: foregroundDecoration,
-              child: child,
+              child: AppSurfaceTransition.foreground(
+                context,
+                progress: progress,
+                child: child,
+              ),
             ),
           ),
         ),
@@ -295,6 +310,7 @@ class AppCard extends Card {
   Widget build(BuildContext context) {
     final settings = context.watch<ThemeProvider?>();
     final glass = settings?.frostedGlass == true;
+    final progress = glass ? AppSurfaceTransition.progressOf(context) : 1.0;
     final theme = Theme.of(context);
     final cardTheme = CardTheme.of(context);
     final alpha = settings?.shouldShowCustomBackground == true
@@ -326,12 +342,14 @@ class AppCard extends Card {
         clipper: ShapeBorderClipper(shape: glassShape),
         child: FrostedGlass(
           enabled: glass,
+          sigmaX: 10 * progress,
+          sigmaY: 10 * progress,
           child: Card(
             margin: EdgeInsets.zero,
             color: glass
-                ? appGlassSurfaceColor(context, surface, alpha)
+                ? appGlassSurfaceColor(context, surface, alpha * progress)
                 : settings?.shouldShowCustomBackground == true
-                    ? appGlassSurfaceColor(context, fill, alpha)
+                    ? appGlassSurfaceColor(context, surface, alpha)
                     : alpha == 1
                         ? color
                         : fill.withValues(alpha: fill.a * alpha),
@@ -342,7 +360,11 @@ class AppCard extends Card {
             borderOnForeground: borderOnForeground,
             clipBehavior: clipBehavior ?? Clip.antiAlias,
             semanticContainer: semanticContainer,
-            child: child,
+            child: AppSurfaceTransition.foreground(
+              context,
+              progress: progress,
+              child: child,
+            ),
           ),
         ),
       ),
@@ -384,6 +406,7 @@ class _AppCardMaterialState extends State<Material> {
     final material = widget as AppCardMaterial;
     final settings = context.watch<ThemeProvider?>();
     final glass = settings?.frostedGlass == true;
+    final progress = glass ? AppSurfaceTransition.progressOf(context) : 1.0;
     final originalShape = widget.shape ??
         (widget.type == MaterialType.circle
             ? const CircleBorder()
@@ -415,17 +438,18 @@ class _AppCardMaterialState extends State<Material> {
           ? appGlassSurfaceColor(
               context,
               surface,
-              material.surfaceOpacity ??
-                  (settings!.shouldShowCustomBackground
-                      ? settings.componentOpacity
-                      : 1))
+              progress *
+                  (material.surfaceOpacity ??
+                      (settings!.shouldShowCustomBackground
+                          ? settings.componentOpacity
+                          : 1)))
           : alpha == 1 || widget.type == MaterialType.transparency
               ? settings?.shouldShowCustomBackground == true &&
                       widget.type != MaterialType.transparency
-                  ? appGlassSurfaceColor(context, plainColor, alpha)
+                  ? appGlassSurfaceColor(context, surface, alpha)
                   : widget.color
               : settings?.shouldShowCustomBackground == true
-                  ? appGlassSurfaceColor(context, plainColor, alpha)
+                  ? appGlassSurfaceColor(context, surface, alpha)
                   : plainColor?.withValues(alpha: plainColor.a * alpha),
       shadowColor: widget.shadowColor,
       surfaceTintColor: glass ? Colors.transparent : widget.surfaceTintColor,
@@ -433,15 +457,20 @@ class _AppCardMaterialState extends State<Material> {
       shape: shape,
       borderOnForeground: widget.borderOnForeground,
       clipBehavior: widget.clipBehavior,
-      animationDuration: widget.animationDuration,
-      child: widget.child,
+      animationDuration:
+          progress == 1 ? widget.animationDuration : Duration.zero,
+      child: AppSurfaceTransition.foreground(
+        context,
+        progress: progress,
+        child: widget.child,
+      ),
     );
     return ClipPath(
       clipper: ShapeBorderClipper(shape: shape),
       child: FrostedGlass(
         enabled: glass,
-        sigmaX: material.blur,
-        sigmaY: material.blur,
+        sigmaX: material.blur * progress,
+        sigmaY: material.blur * progress,
         child: content,
       ),
     );

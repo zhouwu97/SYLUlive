@@ -39,6 +39,8 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
   bool _candidateLoading = true;
   int? _candidateCount;
   String? _candidateError;
+  String? _candidateServiceStatus;
+  int _candidateRequestSerial = 0;
   String? _dashboardError;
   String? _profileError;
   String? _accessError;
@@ -59,7 +61,9 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
       _dashboard = null;
       _profile = null;
       _aiAccess = null;
+      _candidateRequestSerial++;
       _candidateCount = null;
+      _candidateServiceStatus = null;
       _candidateError = null;
       _loadAll();
     }
@@ -76,28 +80,37 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
 
   Future<void> _loadCandidateCount() async {
     final account = widget.accountKey;
+    final request = ++_candidateRequestSerial;
     setState(() {
       _candidateLoading = true;
       _candidateError = null;
+      _candidateServiceStatus = null;
     });
     try {
       final response = await widget.dio.get(
         '/user/competitions/candidates',
         queryParameters: const {'page': 1, 'page_size': 1},
       );
-      if (!mounted || account != widget.accountKey) return;
+      if (!mounted || account != widget.accountKey || request != _candidateRequestSerial) return;
       final data = Map<String, dynamic>.from(response.data as Map);
       setState(() {
         _candidateCount = (data['total'] as num?)?.toInt() ?? 0;
         _candidateLoading = false;
       });
     } catch (error) {
-      if (!mounted || account != widget.accountKey) return;
+      if (!mounted || account != widget.accountKey || request != _candidateRequestSerial) return;
       setState(() {
         _candidateLoading = false;
-        _candidateError = error is DioException
-            ? AppFeedback.dioErrorMessage(error, fallback: '匹配候选加载失败')
-            : '匹配候选解析失败';
+        final status = error is DioException ? error.response?.statusCode : null;
+        final unavailable = status == 404 || (status != null && status >= 500);
+        _candidateServiceStatus = status == 404 ? '未开放' : unavailable ? '暂不可用' : null;
+        _candidateError = status == 404
+            ? '当前服务尚未开放候选匹配，请稍后重试'
+            : unavailable
+                ? '匹配服务暂不可用，请稍后重试'
+                : error is DioException
+                    ? AppFeedback.dioErrorMessage(error, fallback: '匹配候选加载失败')
+                    : '匹配候选解析失败';
       });
     }
   }
@@ -321,11 +334,11 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
           title: '匹配候选',
           status: _candidateLoading && _candidateCount == null
               ? '读取中'
-              : _candidateError != null && _candidateCount == null
-                  ? '重试'
+              : _candidateError != null
+                  ? (_candidateServiceStatus ?? '重试')
                   : '${_candidateCount ?? 0}项',
           subtitle: _candidateError ?? '根据专业、资格和目标筛选',
-          onTap: _candidateError != null && _candidateCount == null
+          onTap: _candidateError != null
               ? _loadCandidateCount
               : () => Navigator.of(context).pop('fit'),
         ),

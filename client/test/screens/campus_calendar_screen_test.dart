@@ -11,10 +11,54 @@ import 'package:shenliyuan/providers/campus_calendar_provider.dart';
 import 'package:shenliyuan/screens/campus_calendar_screen.dart';
 import 'package:shenliyuan/services/campus_calendar_service.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
-
+import 'package:shenliyuan/providers/theme_provider.dart';
+import 'package:shenliyuan/widgets/global_background_wrapper.dart';
+import '../helpers/golden_test_app.dart';
+import '../helpers/golden_viewport.dart';
+import '../helpers/load_test_fonts.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('校历菜单进入官方原图时子路由保留背景和返回', (tester) async {
+    await loadTestFonts();
+    await setGoldenViewport(tester, GoldenViewports.phone360x800);
+    AppPreferencesStore.setMockInitialValues({});
+    final raw = await rootBundle
+        .loadString('assets/data/campus_calendar_fallback.json');
+    final calendar = CampusCalendar.fromJson(
+        Map<String, dynamic>.from(jsonDecode(raw) as Map));
+    final provider = CampusCalendarProvider(_StaticCalendarService(calendar));
+    await provider.load();
+    final appearance = ThemeProvider(loadOnStart: false);
+    addTearDown(appearance.dispose);
+    await appearance.setBackgroundImage('morenbeijing.jpeg');
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: provider),
+        ChangeNotifierProvider.value(value: appearance),
+      ],
+      child: const GoldenTestApp(
+          textScaler: TextScaler.linear(1.3), home: CampusCalendarScreen()),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('查看官方原图'));
+    await tester.pumpAndSettle();
+    expect(find.text('官方校历原图'), findsOneWidget);
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    expect(find.byType(CustomBackgroundLayer), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    final context = tester.element(find.byType(BackButton));
+    await tester.tap(
+        find.byTooltip(MaterialLocalizations.of(context).backButtonTooltip));
+    await tester.pumpAndSettle();
+    expect(find.byType(PageView), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    provider.dispose();
+  });
 
   testWidgets('在月历上向左滑动会切换到下一个月', (tester) async {
     AppPreferencesStore.setMockInitialValues({});

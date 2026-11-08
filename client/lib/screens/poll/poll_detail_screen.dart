@@ -11,6 +11,9 @@ import '../../providers/auth_provider.dart';
 import '../../providers/poll_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_spacing.dart';
 import '../../widgets/global_background_wrapper.dart';
 import '../../services/poll_service.dart';
 import '../../services/post_reply_service.dart';
@@ -21,7 +24,9 @@ import '../../services/idempotency_key.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/app_action_popup_menu.dart';
 import '../../widgets/post_reply/post_reply_list.dart';
+import '../../widgets/post_reply/post_reply_thread_sheet.dart';
 import '../../widgets/post_reply_composer.dart';
+import '../../widgets/post_status_surface.dart';
 import '../../widgets/poll/poll_post_card.dart';
 import '../../widgets/report_sheet.dart';
 import '../user_home_screen.dart';
@@ -337,13 +342,17 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
     }
   }
 
-  Future<bool> _sendReply(PostReplyDraft draft) async {
-    if (draft.isEmpty ||
-        _sending ||
-        _post == null ||
-        !context.read<AuthProvider>().isLoggedIn) {
-      return false;
+  Future<Reply?> _createReply(PostReplyDraft draft) async {
+    final auth = context.read<AuthProvider>();
+    if (draft.isEmpty || _sending || _post == null || !auth.isLoggedIn) {
+      return null;
     }
+    final accountId = auth.user?.id;
+    final epoch = auth.accountSessionEpoch;
+    bool current() =>
+        mounted &&
+        auth.user?.id == accountId &&
+        auth.accountSessionEpoch == epoch;
     final fingerprint = _replyFingerprint(_post!.id, draft);
     if (_replyIdempotencyFingerprint != fingerprint) {
       _replyIdempotencyFingerprint = fingerprint;
@@ -356,8 +365,14 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
         draft,
         idempotencyKey: _replyIdempotencyKey,
       );
-      if (!mounted) return false;
+      if (!mounted || !current()) return null;
       setState(() {
+        _replies = _replies
+            .map((existing) => existing.id == draft.parentReplyId
+                ? existing.copyWith(
+                    childReplyCount: existing.childReplyCount + 1)
+                : existing)
+            .toList();
         _replies.insert(0, reply);
         _repliesLoadMoreError = null;
         _post = _post!.copyWith(replyCount: _post!.replyCount + 1);
@@ -366,21 +381,21 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
       context.read<PollProvider>().applyExternalPostUpdate(_post!);
       _replyIdempotencyKey = null;
       _replyIdempotencyFingerprint = null;
-      return true;
+      return reply;
     } on DioException catch (error) {
-      if (mounted) {
+      if (mounted && current()) {
         AppFeedback.showSnackBar(
           context,
           AppFeedback.dioErrorMessage(error, fallback: '评论失败'),
           isError: true,
         );
       }
-      return false;
+      return null;
     } catch (_) {
-      if (mounted) {
+      if (mounted && current()) {
         AppFeedback.showSnackBar(context, '评论失败', isError: true);
       }
-      return false;
+      return null;
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -396,6 +411,10 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
   }
 
   void _openReply(Reply reply) {
+    if (reply.isDeleted) {
+      AppFeedback.showSnackBar(context, '该评论已删除，无法回复', isError: true);
+      return;
+    }
     if (!context.read<AuthProvider>().isLoggedIn) {
       _openLogin();
       return;
@@ -405,6 +424,35 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
       replyToUserId: reply.authorId,
       replyToReplyId: reply.id,
       replyToName: reply.author?.nickname,
+    );
+  }
+
+  Future<void> _openReplyThread(Reply parentReply, Reply? targetReply) async {
+    _replyComposerController.close(reason: 'thread_sheet');
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: .08),
+      builder: (sheetContext) => PostReplyThreadSheet(
+        parentReply: parentReply,
+        initialTarget: targetReply,
+        initialReplies: _replies
+            .where((reply) => reply.parentReplyId == parentReply.id)
+            .toList(),
+        onSubmit: _createReply,
+        onNeedLogin: _openLogin,
+        onAuthorTap: widget.onAuthorTap ??
+            (id) => Navigator.push(
+                  sheetContext,
+                  MaterialPageRoute(builder: (_) => UserHomeScreen(userId: id)),
+                ),
+        onMore: (reply) => showReportSheet(
+          sheetContext,
+          targetId: reply.id,
+          targetType: 'reply',
+        ),
+      ),
     );
   }
 
@@ -605,7 +653,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
 
   Future<void> _delete() async {
     if (_post == null) return;
-    final yes = await showDialog<bool>(
+    final yes = await showAppDialog<bool>(
             context: context,
             builder: (context) => AppAlertDialog(
                     title: const Text('删除投票？'),
@@ -642,30 +690,25 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
     final customBackground =
         context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
     final post = _post;
-    if (_loading && post == null) {
-      return Scaffold(
-        backgroundColor: customBackground ? Colors.transparent : null,
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
     if (post == null) {
       return Scaffold(
         backgroundColor: customBackground ? Colors.transparent : null,
-        body: Center(
-          child: AppContentSurface(
-              child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(_pollNotFound ? '投票不存在或已删除' : (_pollError ?? '加载投票失败')),
-              if (!_pollNotFound) ...[
-                const SizedBox(height: 12),
-                FilledButton.icon(
-                    onPressed: _loadPoll,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('重试')),
-              ],
-            ],
-          )),
+        appBar: widget.hideBackButton
+            ? null
+            : AppBar(
+                title: const Text('投票详情'),
+                backgroundColor: customBackground ? Colors.transparent : null,
+                surfaceTintColor: Colors.transparent,
+                scrolledUnderElevation: 0,
+              ),
+        body: SafeArea(
+          child: PostStatusSurface(
+            isLoading: _loading || (!_pollNotFound && _pollError == null),
+            error: _pollNotFound ? null : (_pollError ?? '加载投票失败'),
+            loadingMessage: '正在加载投票…',
+            emptyMessage: '投票不存在或已删除',
+            onRetry: _loadPoll,
+          ),
         ),
       );
     }
@@ -689,35 +732,36 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                 onRefresh: _reload,
                 child: ListView(
                   addRepaintBoundaries: false,
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                  padding: const EdgeInsets.only(
+                      top: AppSpacing.md, bottom: AppSpacing.lg),
                   children: [
-                    AppCardSurface(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: BorderRadius.zero,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (_pollError != null)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Text(
-                                _pollError!,
-                                style: const TextStyle(color: Colors.red),
+                    Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.lg),
+                        child: AppContentSurface.reading(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (_pollError != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: Text(
+                                    _pollError!,
+                                    style: const TextStyle(color: Colors.red),
+                                  ),
+                                ),
+                              const Text(
+                                '非官方用户投票，结果仅代表参与用户的选择。',
+                                style: TextStyle(fontSize: 12),
                               ),
-                            ),
-                          const Text(
-                            '非官方用户投票，结果仅代表参与用户的选择。',
-                            style: TextStyle(fontSize: 12),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
+                        )),
                     const SizedBox(height: 8),
                     PollPostCard(
                       post: post,
                       variant: PollCardVariant.centerFull,
+                      margin: EdgeInsets.zero,
                       onPostUpdated: (updated) {
                         setState(() {
                           _post = updated;
@@ -731,12 +775,15 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                                 ),
                               ),
                     ),
-                    const AppCardDivider(height: 24),
+                    const SizedBox(height: AppSpacing.sm),
                     AppCardSurface(
                       key: const ValueKey('poll-comments-surface'),
+                      padding: const EdgeInsets.all(AppSpacing.lg),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: BorderRadius.zero,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? AppColors.surfaceSecondaryDark
+                            : AppColors.surfaceSecondaryLight,
+                        borderRadius: BorderRadius.circular(AppRadius.lg),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -786,6 +833,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                               replyKeys: _replyAnchorKeys,
                               replies: _replies,
                               onReply: _openReply,
+                              onOpenThread: _openReplyThread,
                               onAuthorTap: widget.onAuthorTap ??
                                   (id) => Navigator.push(
                                         context,
@@ -847,7 +895,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
               controller: _replyComposerController,
               sending: _sending,
               enabled: context.watch<AuthProvider>().isLoggedIn,
-              onSubmit: _sendReply,
+              onSubmit: (draft) async => await _createReply(draft) != null,
               onNeedLogin: _openLogin,
             ),
           ],

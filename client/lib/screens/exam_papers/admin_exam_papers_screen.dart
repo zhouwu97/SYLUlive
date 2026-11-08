@@ -163,7 +163,7 @@ class _AdminExamPapersScreenState extends State<AdminExamPapersScreen>
 
   Future<void> _quickApprove(ExamPaper paper) async {
     if (_approving.contains(paper.id)) return;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: const Text('确认通过该试卷？'),

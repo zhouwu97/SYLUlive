@@ -79,7 +79,7 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
             }
             if (snap.hasError) {
               return Center(
-                child: Column(
+                child: AppContentSurface.reading(child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(Icons.cloud_off_outlined, size: 36),
@@ -96,7 +96,7 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                       child: const Text('重试'),
                     ),
                   ],
-                ),
+                )),
               );
             }
 
@@ -111,7 +111,7 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
               });
 
             if (members.isEmpty) {
-              return const Center(child: Text('暂无管理人员'));
+              return const Center(child: AppContentSurface.reading(child: Text('暂无管理人员')));
             }
 
             return RefreshIndicator(

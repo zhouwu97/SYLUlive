@@ -54,7 +54,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
     final provider = context.read<MajorProvider>();
     final messenger = ScaffoldMessenger.of(context);
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('删除评价'),
@@ -94,7 +94,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
 
-    final confirm = await showDialog<bool>(
+    final confirm = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('删除专业'),
@@ -177,7 +177,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
           }
           if (m.selectedMajorId != widget.majorId || m.selected == null) {
             return Center(
-              child: AppContentSurface(
+              child: AppContentSurface.reading(
                   child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -333,7 +333,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 20, bottom: 20),
               child: Center(
-                child: AppContentSurface(
+                child: AppContentSurface.reading(
                     child: Text(
                   '还没有同学评价',
                   style: TextStyle(

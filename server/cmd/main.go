@@ -748,6 +748,8 @@ func main() {
 		1<<20,
 		middleware.BodyLimitRule{Prefix: "/api/upload", Limit: cfg.MaxFileSize + 2<<20},
 		middleware.BodyLimitRule{Prefix: "/api/upload_multiple", Limit: 9*cfg.MaxFileSize + 5<<20},
+		// 机器人图片走独立上传接口，与 handler 内的 MaxBytesReader 保持同一上限。
+		middleware.BodyLimitRule{Prefix: "/api/integrations/v1/bot/media", Limit: (4 << 20) + (64 << 10)},
 		middleware.BodyLimitRule{Prefix: "/api/emoji/submissions", Limit: services.EmojiPackMaxUploadBytes},
 		middleware.BodyLimitRule{Prefix: "/api/exam-papers", Limit: services.ExamPaperMaxRequestBodySize},
 		middleware.BodyLimitRule{Prefix: "/api/admin/ai/knowledge/import", Limit: 9 << 20},
@@ -1482,8 +1484,10 @@ func main() {
 			"build_time":  BuildTime,
 			"api_version": APIVersion,
 			"capabilities": gin.H{
-				"teacher_governance_v1": true,
-				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
+				"teacher_governance_v1":  true,
+				"device_bridge_v1":       !cfg.SchoolDeviceCapabilityCut,
+				"managed_bot_v1":         cfg.IntegrationsEnabled,
+				"managed_bot_runtime_v1": cfg.IntegrationsEnabled,
 			},
 			"security": gin.H(securityHealth),
 			"ai": gin.H{
@@ -1508,8 +1512,10 @@ func main() {
 			"build_time":  BuildTime,
 			"api_version": APIVersion,
 			"capabilities": gin.H{
-				"teacher_governance_v1": true,
-				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
+				"teacher_governance_v1":  true,
+				"device_bridge_v1":       !cfg.SchoolDeviceCapabilityCut,
+				"managed_bot_v1":         cfg.IntegrationsEnabled,
+				"managed_bot_runtime_v1": cfg.IntegrationsEnabled,
 			},
 		})
 	}
@@ -2859,8 +2865,10 @@ func main() {
 			"build_time":  BuildTime,
 			"api_version": APIVersion,
 			"capabilities": gin.H{
-				"teacher_governance_v1": true,
-				"device_bridge_v1":      !cfg.SchoolDeviceCapabilityCut,
+				"teacher_governance_v1":  true,
+				"device_bridge_v1":       !cfg.SchoolDeviceCapabilityCut,
+				"managed_bot_v1":         cfg.IntegrationsEnabled,
+				"managed_bot_runtime_v1": cfg.IntegrationsEnabled,
 			},
 			"version":             "",
 			"min_version":         "",

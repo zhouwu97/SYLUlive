@@ -623,6 +623,10 @@ func Load() *Config {
 	integrationPublish := envBool("INTEGRATION_OWNER_PUBLISH_ENABLED", false)
 	integrationAutoReply := envBool("INTEGRATION_AUTO_REPLY_ENABLED", false)
 	integrationAutoPost := envBool("INTEGRATION_AUTO_POST_ENABLED", false)
+	integrationPersonal := envBool("INTEGRATION_PERSONAL_DATA_ENABLED", false)
+	if err := validateIntegrationPersonalConfig(integrationEnabled, integrationPersonal, schoolAuthorityRetired); err != nil {
+		panic(err)
+	}
 	if integrationAutoPost && (!integrationEnabled || !integrationProposals) {
 		panic("INTEGRATION_AUTO_POST_ENABLED requires integrations and proposals")
 	}
@@ -710,7 +714,7 @@ func Load() *Config {
 		IntegrationOwnerPublishEnabled:         integrationPublish,
 		IntegrationAutoReplyEnabled:            integrationAutoReply,
 		IntegrationAutoPostEnabled:             integrationAutoPost,
-		IntegrationPersonalDataEnabled:         envBool("INTEGRATION_PERSONAL_DATA_ENABLED", false),
+		IntegrationPersonalDataEnabled:         integrationPersonal,
 		IntegrationPublicOrigin:                integrationOrigin,
 		AIAgentRolloutPercent:                  aiAgentRolloutPercent,
 		AIAgentRolloutUserIDs:                  aiAgentRolloutUserIDs,

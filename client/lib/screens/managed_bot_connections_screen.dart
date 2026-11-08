@@ -476,7 +476,7 @@ class _ManagedBotConnectionsScreenState
     final session = _session;
     if (session == null || !_owns(session) || _busy) return;
     final auth = context.read<AuthProvider>();
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
         context: context,
         builder: (context) => SecuritySessionGuard(
             auth: auth,

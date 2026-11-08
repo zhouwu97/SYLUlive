@@ -129,9 +129,9 @@ void main() {
                   BorderRadius.circular(AppRadius.lg));
             }
             final composer = tester.getRect(find.byType(PostReplyComposer));
-            expect(
-                composer.top - rect.bottom, scene == 'market-detail' ? 0 : 16,
-                reason: '正文卡片必须填到输入栏，不能因图片覆盖平移留下 24px 壁纸空带');
+            // 评论材质延伸到输入栏接缝（底部留白放在材质内），下拉时帖子图片不会从缝里露出。
+            expect(composer.top - rect.bottom, 0,
+                reason: '评论卡片必须填到输入栏，不能留下露出壁纸或图片的空带');
             if (scene == 'post') {
               final label = find.text('评论 0').first;
               final action = tester.widget<Container>(find

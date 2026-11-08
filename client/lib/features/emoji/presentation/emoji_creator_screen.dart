@@ -257,7 +257,7 @@ class _EmojiCreatorReviewState
 
   Future<void> _review(EmojiCreator creator, String action) async {
     if (!current || _acting) return;
-    final reasonText = await showDialog<String>(
+    final reasonText = await showAppDialog<String>(
         context: context,
         builder: (_) => SecuritySessionGuard(
             auth: auth!,

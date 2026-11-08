@@ -14,9 +14,11 @@ import '../widgets/responsive_content.dart';
 import '../models/startup_destination.dart';
 import '../services/app_resume_coordinator.dart';
 import '../services/root_page_state_service.dart';
+import '../services/course_evaluation_service.dart';
 import '../utils/app_navigator.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/canteen_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
@@ -47,7 +49,6 @@ import 'feedback/feedback_center_screen.dart';
 import 'admin/admin_feedback_screen.dart';
 import 'user_home_screen.dart';
 import 'social_list_screen.dart';
-import 'my_canteen_reviews_screen.dart';
 import 'browsing_history_screen.dart';
 
 @visibleForTesting
@@ -87,6 +88,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _startOnTimetable = false;
   StartupDestinationMode _startupDestination = StartupDestinationMode.home;
   int? _postCount;
+  int _contentCountRequest = 0;
   Future<Map<String, int>>? _adminOverviewFuture;
   Future<Response<dynamic>>? _invitationsFuture;
   int? _loadedAccountSessionEpoch;
@@ -149,19 +151,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final requestEpoch = auth.accountSessionEpoch;
     final requestUserId = auth.user!.id;
+    final canteens = context.read<CanteenProvider>();
+    final request = ++_contentCountRequest;
+    bool isCurrent() => mounted && request == _contentCountRequest &&
+        auth.accountSessionEpoch == requestEpoch && auth.user?.id == requestUserId;
 
     try {
-      final res = await auth.dio.get('/user/$requestUserId/posts/count');
-      if (res.statusCode == 200 &&
-          mounted &&
-          auth.accountSessionEpoch == requestEpoch &&
-          auth.user?.id == requestUserId) {
+      final counts = await CourseEvaluationService(auth.dio).loadContentCounts(requestUserId, isCurrent: isCurrent);
+      final canteenCount = await canteens.countMyCanteenReviews(isCurrent: isCurrent);
+      if (!isCurrent()) return;
+      if (canteenCount == null) throw StateError('食堂评价数量读取失败');
+      if (isCurrent()) {
         setState(() {
-          _postCount = res.data['count'] ?? 0;
+          _postCount = counts.total + canteenCount;
         });
       }
     } catch (e) {
-      debugPrint('刷新我的内容数量失败: $e');
+      if (isCurrent()) debugPrint('刷新我的内容数量失败: $e');
     }
   }
 
@@ -232,6 +238,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (_loadedAccountSessionEpoch != authProvider.accountSessionEpoch) {
       _loadedAccountSessionEpoch = authProvider.accountSessionEpoch;
+      _contentCountRequest++;
       _postCount = null;
       _unreadReplyCount = 0;
       _unreadMessageCount = 0;
@@ -985,10 +992,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             padding: const EdgeInsets.only(left: 4, bottom: 10),
             child: Text(
               title,
+              key: ValueKey('profile-section-$title'),
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white54 : Colors.grey[600],
+                color: appContentSecondaryColor(
+                    context, isDark ? Colors.white54 : Colors.grey[600]!),
               ),
             ),
           ),
@@ -1114,15 +1123,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
           title: '食堂评价',
           subtitle: '查看与管理我的历史评价',
           isDark: isDark,
-          onTap: () {
+          onTap: () async {
             if (!context.read<AuthProvider>().isLoggedIn) {
               Navigator.pushNamed(context, '/login');
               return;
             }
-            Navigator.push(
+            await Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const MyCanteenReviewsScreen()),
+              MaterialPageRoute(builder: (_) => const MyContentScreen(initialTabIndex: 3)),
             );
+            if (mounted) await _fetchPostCount();
           },
         ),
       ),
@@ -1133,13 +1143,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           title: '学科评价',
           subtitle: '查看与管理我的学科评价',
           isDark: isDark,
-          onTap: () {
-            Navigator.push(
+          onTap: () async {
+            await Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (_) => const MyContentScreen(initialTabIndex: 2),
               ),
             );
+            if (mounted) await _fetchPostCount();
           },
         ),
       ),
@@ -1312,45 +1323,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
             }
 
             return AppCardSurface(
-              decoration: BoxDecoration(color: colors.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16))),
+              decoration: BoxDecoration(
+                  color: colors.surface,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(16))),
               child: SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Text(
-                      '启动页面',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: colors.onSurface,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Text(
+                        '启动页面',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: colors.onSurface,
+                        ),
                       ),
                     ),
-                  ),
-                  buildOption(
-                    StartupDestinationMode.home,
-                    '首页',
-                    '每次启动进入校园首页',
-                    Icons.home_rounded,
-                  ),
-                  buildOption(
-                    StartupDestinationMode.timetable,
-                    '课表',
-                    '每次启动直接进入当前课表',
-                    Icons.calendar_today,
-                  ),
-                  buildOption(
-                    StartupDestinationMode.lastPage,
-                    '上次退出页面',
-                    '重新打开 App 时恢复退出前所在页面',
-                    Icons.restore,
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ),
+                    buildOption(
+                      StartupDestinationMode.home,
+                      '首页',
+                      '每次启动进入校园首页',
+                      Icons.home_rounded,
+                    ),
+                    buildOption(
+                      StartupDestinationMode.timetable,
+                      '课表',
+                      '每次启动直接进入当前课表',
+                      Icons.calendar_today,
+                    ),
+                    buildOption(
+                      StartupDestinationMode.lastPage,
+                      '上次退出页面',
+                      '重新打开 App 时恢复退出前所在页面',
+                      Icons.restore,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
               ),
             );
           },
@@ -1486,7 +1499,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     AuthProvider authProvider,
   ) async {
     final controller = TextEditingController(text: authProvider.user?.nickname);
-    await showDialog(
+    await showAppDialog(
       context: context,
       builder: (context) => AppAlertDialog(
         title: const Text('编辑资料'),

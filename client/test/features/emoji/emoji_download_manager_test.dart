@@ -9,8 +9,65 @@ import 'package:shenliyuan/features/emoji/application/emoji_pack_installer.dart'
 import 'package:shenliyuan/features/emoji/data/emoji_pack_catalog_repository.dart';
 import 'package:shenliyuan/features/emoji/data/emoji_pack_local_store.dart';
 import 'package:shenliyuan/features/emoji/domain/emoji_pack_manifest.dart';
+import 'package:shenliyuan/features/emoji/domain/emoji_pack.dart';
 
 void main() {
+  test('新版目录主动请求社区包，下载后保持 local 身份并支持目录修复', () async {
+    final root =
+        await Directory.systemTemp.createTemp('emoji-community-download-');
+    addTearDown(() => root.delete(recursive: true));
+    final bytes = image.encodePng(image.Image(width: 2, height: 2));
+    const id = 'community-00000000-0000-0000-0000-000000000001';
+    final manifest = EmojiPackManifest(
+        schemaVersion: 1,
+        packId: id,
+        version: 1,
+        totalSize: bytes.length,
+        assets: [
+          EmojiManifestAsset(
+              id: 'image-1',
+              path: 'assets/image-1.png',
+              name: '校园表情',
+              sha256: sha256.convert(bytes).toString(),
+              mimeType: 'image/png',
+              fileSize: bytes.length)
+        ]);
+    final entry = EmojiCatalogEntry(
+        id: id,
+        name: '校园分享',
+        source: 'community',
+        version: 1,
+        assetCount: 1,
+        totalSize: bytes.length,
+        manifestSha256: EmojiPackInstaller.manifestHash(manifest));
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+      if (request.path == '/emoji/packs') {
+        expect(request.queryParameters['include_community'], isTrue);
+        handler.resolve(Response(
+            requestOptions: request, statusCode: 200, data: [entry.toJson()]));
+      } else if (request.path.endsWith('/manifest')) {
+        handler.resolve(Response(
+            requestOptions: request, statusCode: 200, data: manifest.toJson()));
+      } else {
+        handler.resolve(Response(
+            requestOptions: request,
+            statusCode: 200,
+            data: ResponseBody.fromBytes(bytes, 200)));
+      }
+    }));
+    final repository = EmojiPackCatalogRepository(dio);
+    final catalog = await repository.list();
+    expect(catalog.single.sourceLabel, '校园分享 · 已审核');
+    final store = EmojiPackLocalStore(root);
+    final manager = EmojiPackDownloadManager(store, repository);
+    await manager.start(catalog.single);
+    final installed = (await store.load()).single;
+    expect(installed.trustLevel, EmojiPackTrustLevel.localUntrusted);
+    expect(installed.isCatalogPack, isTrue);
+    expect(manager.tasks[id]!.status, EmojiDownloadStatus.installed);
+  });
+
   test('官方下载跨实例恢复断点，校验成功才安装', () async {
     final root = await Directory.systemTemp.createTemp('emoji-download-');
     addTearDown(() => root.delete(recursive: true));

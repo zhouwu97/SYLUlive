@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import '../../providers/theme_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
@@ -98,6 +99,8 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
           borderRadius: const BorderRadius.horizontal(left: Radius.circular(24))),
         child: SafeArea(
         child: AnimatedSwitcher(
+          transitionBuilder: (child, animation) =>
+              AppSurfaceFadeTransition(opacity: animation, child: child),
           duration: const Duration(milliseconds: 220),
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeInCubic,

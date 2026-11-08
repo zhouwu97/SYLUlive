@@ -13,6 +13,16 @@ enum AppBackgroundMode {
   custom,
 }
 
+enum FrostedGlassPerformanceMode {
+  off('关'),
+  highPerformance('高性能'),
+  highQuality('高画质'),
+  custom('自定义');
+
+  const FrostedGlassPerformanceMode(this.label);
+  final String label;
+}
+
 /// 底部导航栏的三种材质层级。
 ///
 /// 液态玻璃是悬浮底栏的增强态，而不是另一套完全独立的导航组件。
@@ -192,6 +202,7 @@ class ThemeProvider extends ChangeNotifier {
   static const bool _defaultFrostedGlass = false;
 
   static const String _frostedGlassKey = 'frosted_glass_enabled';
+  static const String _frostedGlassStrengthKey = 'frosted_glass_strength';
 
   bool _isLoaded = false;
   bool _isDarkMode = false;
@@ -203,8 +214,10 @@ class ThemeProvider extends ChangeNotifier {
   bool _backgroundFillScreen = false;
   bool _landscapeBackgroundFillScreen = false;
   double _backgroundBlur = _defaultBackgroundBlur;
-  double _componentOpacity = 0.7;
+  double _componentOpacity = 1.0;
   bool _frostedGlass = _defaultFrostedGlass;
+  double _frostedGlassStrength = 1.0;
+  Future<void>? _cardAppearanceWrites;
   bool _liquidGlass = true;
   bool _floatingNavBar = true;
   BottomNavStyle _bottomNavStyle = BottomNavStyle.liquidGlass;
@@ -212,6 +225,7 @@ class ThemeProvider extends ChangeNotifier {
       BottomNavPerformanceMode.highQuality;
   double _bottomNavAnimationIntensity = 1.0;
   double _bottomNavCustomIntensity = .65;
+  Future<void>? _bottomNavEffectWrites;
   bool _bottomNavClearMaterial = false;
   bool _bottomNavSetupHintDismissed = false;
   bool _bottomNavSetupHintSeen = false;
@@ -239,7 +253,20 @@ class ThemeProvider extends ChangeNotifier {
   bool get landscapeBackgroundFillScreen => _landscapeBackgroundFillScreen;
   double get backgroundBlur => _backgroundBlur;
   double get componentOpacity => _componentOpacity;
-  bool get frostedGlass => _frostedGlass;
+  // 简洁模式只暂停材质，保留自定义背景下已保存的开关和强度。
+  bool get frostedGlass => _frostedGlass && shouldShowCustomBackground;
+  double get frostedGlassStrength => _frostedGlassStrength;
+  FrostedGlassPerformanceMode get frostedGlassPerformanceMode => !frostedGlass
+      ? FrostedGlassPerformanceMode.off
+      : _glassModeForStrength(_frostedGlassStrength);
+  String get frostedGlassPresetLabel => frostedGlassPerformanceMode.label;
+
+  FrostedGlassPerformanceMode _glassModeForStrength(double value) => switch (value) {
+    0 => FrostedGlassPerformanceMode.off,
+    .35 => FrostedGlassPerformanceMode.highPerformance,
+    1 => FrostedGlassPerformanceMode.highQuality,
+    _ => FrostedGlassPerformanceMode.custom,
+  };
   bool get liquidGlass => _liquidGlass && _bottomNavPerformanceMode != BottomNavPerformanceMode.off;
   bool get floatingNavBar => _floatingNavBar;
   bool get predictiveBack => _predictiveBack;
@@ -373,6 +400,7 @@ class ThemeProvider extends ChangeNotifier {
   };
 
   BottomNavPerformanceMode _modeForIntensity(double value) {
+    if (value == 0) return BottomNavPerformanceMode.off;
     if ((value - .35).abs() < .0001) return BottomNavPerformanceMode.highPerformance;
     if ((value - 1).abs() < .0001) return BottomNavPerformanceMode.highQuality;
     return BottomNavPerformanceMode.custom;
@@ -408,9 +436,14 @@ class ThemeProvider extends ChangeNotifier {
         prefs.getBool(_landscapeBackgroundFillScreenKey) ?? false;
     _backgroundBlur =
         prefs.getDouble(_backgroundBlurKey) ?? _defaultBackgroundBlur;
-    _componentOpacity = prefs.getDouble(_componentOpacityKey) ?? 0.7;
     _frostedGlass =
         prefs.getBool(_frostedGlassKey) ?? _defaultFrostedGlass;
+    _componentOpacity = prefs.getDouble(_componentOpacityKey) ?? 1.0;
+    final glassStrength = prefs.getDouble(_frostedGlassStrengthKey) ?? 1.0;
+    _frostedGlassStrength = glassStrength.isFinite
+        ? glassStrength.clamp(0.0, 1.0)
+        : 1.0;
+    if (_frostedGlassStrength == 0) _frostedGlass = false;
     // 新底栏完整替换旧样式；旧模式/强度不能让升级后的首帧退回旧效果。
     _bottomNavStyle = BottomNavStyle.liquidGlass;
     _liquidGlass = true;
@@ -419,7 +452,9 @@ class ThemeProvider extends ChangeNotifier {
     _bottomNavClearMaterial = prefs.getBool('bottom_nav_clear_material') ?? false;
     _bottomNavSetupHintDismissed = prefs.getBool('bottom_nav_setup_hint_dismissed') ?? false;
     _bottomNavSetupHintSeen = prefs.getBool('bottom_nav_setup_hint_seen') ?? false;
-    _bottomNavCustomIntensity = (prefs.getDouble('bottom_nav_custom_intensity') ?? .65).clamp(0.0, 1.0);
+    final customIntensity = prefs.getDouble('bottom_nav_custom_intensity') ?? .65;
+    _bottomNavCustomIntensity = customIntensity.isFinite && customIntensity > 0
+        ? customIntensity.clamp(0.0, 1.0) : .65;
     _bottomNavPerformanceMode = materialMode == null
         ? BottomNavPerformanceMode.highQuality
         : BottomNavPerformanceModeStorage.fromStorage(materialMode);
@@ -576,11 +611,15 @@ class ThemeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setComponentOpacity(double value) async {
-    _componentOpacity = value.clamp(0.0, 1.0);
-    final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setDouble(_componentOpacityKey, _componentOpacity);
-    notifyListeners();
+  Future<bool> setComponentOpacity(double value) {
+    if (!value.isFinite) return Future<bool>.value(false);
+    final opacity = value.clamp(0.0, 1.0);
+    if (_componentOpacity != opacity) {
+      _componentOpacity = opacity;
+      notifyListeners();
+    }
+    return _queueCardAppearanceWrite(
+        (prefs) => prefs.setDouble(_componentOpacityKey, opacity));
   }
 
   Future<void> setBottomNavStyle(BottomNavStyle style) async {
@@ -592,38 +631,49 @@ class ThemeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setBottomNavPerformanceMode(
+  Future<bool> setBottomNavPerformanceMode(
     BottomNavPerformanceMode mode,
-  ) async {
-    if (mode == BottomNavPerformanceMode.custom && _bottomNavPerformanceMode == mode) return;
+  ) {
     _bottomNavPerformanceMode = mode;
     _bottomNavAnimationIntensity = _motionPreset(mode);
-    final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setString(_bottomNavPerformanceModeKey, mode.storageValue);
-    await prefs.setDouble(_bottomNavAnimationIntensityKey, _bottomNavAnimationIntensity);
-    await prefs.setDouble('bottom_nav_custom_intensity', _bottomNavCustomIntensity);
     notifyListeners();
+    return _persistBottomNavEffects();
   }
 
-  Future<void> setBottomNavAnimationIntensity(double value) async {
+  Future<bool> setBottomNavAnimationIntensity(double value) {
+    if (!value.isFinite) return Future<bool>.value(false);
     _bottomNavAnimationIntensity = (value.clamp(0.0, 1.0) * 100).round() / 100;
-    if (_bottomNavPerformanceMode != BottomNavPerformanceMode.off) {
+    if (_bottomNavPerformanceMode != BottomNavPerformanceMode.off ||
+        _bottomNavAnimationIntensity > 0) {
       _bottomNavPerformanceMode = _modeForIntensity(_bottomNavAnimationIntensity);
       if (_bottomNavPerformanceMode == BottomNavPerformanceMode.custom) {
         _bottomNavCustomIntensity = _bottomNavAnimationIntensity;
       }
-    } else {
-      // Off is a distinct ordinary navigation mode, not 0% liquid motion.
-      _bottomNavAnimationIntensity = 0;
     }
-    final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setString(_bottomNavPerformanceModeKey, _bottomNavPerformanceMode.storageValue);
-    await prefs.setDouble('bottom_nav_custom_intensity', _bottomNavCustomIntensity);
-    await prefs.setDouble(
-      _bottomNavAnimationIntensityKey,
-      _bottomNavAnimationIntensity,
-    );
     notifyListeners();
+    return _persistBottomNavEffects();
+  }
+
+  /// 保存调用时的快照，连续拖动及预设切换按顺序落盘，失败可保存当前值重试。
+  Future<bool> _persistBottomNavEffects() {
+    final mode = _bottomNavPerformanceMode.storageValue;
+    final intensity = _bottomNavAnimationIntensity;
+    final custom = _bottomNavCustomIntensity;
+    final write = (_bottomNavEffectWrites ?? Future<void>.value()).then((_) async {
+      try {
+        final prefs = await AppPreferencesStore.getInstance();
+        final results = [
+          await prefs.setString(_bottomNavPerformanceModeKey, mode),
+          await prefs.setDouble(_bottomNavAnimationIntensityKey, intensity),
+          await prefs.setDouble('bottom_nav_custom_intensity', custom),
+        ];
+        return results.every((saved) => saved);
+      } catch (_) {
+        return false;
+      }
+    });
+    _bottomNavEffectWrites = write.then((_) {});
+    return write;
   }
 
   Future<void> setBottomNavClearMaterial(bool value) async {
@@ -669,13 +719,79 @@ class ThemeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setFrostedGlass(bool value) async {
-    if (_frostedGlass == value) return;
+  Future<bool> setFrostedGlass(bool value) {
+    final strength = value && _frostedGlassStrength == 0 ? 1.0 : _frostedGlassStrength;
+    if (_frostedGlass != value || _frostedGlassStrength != strength) {
+      _frostedGlass = value;
+      _frostedGlassStrength = strength;
+      notifyListeners();
+    }
+    return _persistFrostedGlass();
+  }
 
-    _frostedGlass = value;
-    final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setBool(_frostedGlassKey, value);
-    notifyListeners();
+  Future<bool> setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode mode) {
+    final enabled = mode != FrostedGlassPerformanceMode.off;
+    final strength = switch (mode) {
+      FrostedGlassPerformanceMode.off => 0.0,
+      FrostedGlassPerformanceMode.highPerformance => .35,
+      FrostedGlassPerformanceMode.highQuality => 1.0,
+      FrostedGlassPerformanceMode.custom => .65,
+    };
+    final opacity = mode == FrostedGlassPerformanceMode.off ? 1.0 : .75;
+    if (_frostedGlass != enabled || _frostedGlassStrength != strength ||
+        _componentOpacity != opacity) {
+      _frostedGlass = enabled;
+      _frostedGlassStrength = strength;
+      _componentOpacity = opacity;
+      notifyListeners();
+    }
+    return _persistFrostedGlass(includeOpacity: true);
+  }
+
+  /// 重试只保存当前数值，不能再次套用预设覆盖用户后续拖动。
+  Future<bool> saveFrostedGlassSettings({bool includeOpacity = false}) =>
+      _persistFrostedGlass(includeOpacity: includeOpacity);
+
+  /// 拖动时立即预览，按顺序保存，避免较早的异步写入覆盖最终强度。
+  /// 同值也允许保存，供存储失败后重试；设置页可从关闭状态向上拖动启用模糊。
+  Future<bool> setFrostedGlassStrength(double value) {
+    if (!value.isFinite) return Future<bool>.value(false);
+    final strength = (value.clamp(0.0, 1.0) * 100).round() / 100;
+    final enabled = strength > 0;
+    final changed = _frostedGlassStrength != strength || _frostedGlass != enabled;
+    _frostedGlassStrength = strength;
+    _frostedGlass = enabled;
+    if (changed) notifyListeners();
+    return _persistFrostedGlass();
+  }
+
+  Future<bool> _persistFrostedGlass({bool includeEnabled = true, bool includeOpacity = false}) {
+    final enabled = _frostedGlass;
+    final strength = _frostedGlassStrength;
+    final opacity = _componentOpacity;
+    return _queueCardAppearanceWrite((prefs) async {
+      final results = [
+        await prefs.setDouble(_frostedGlassStrengthKey, strength),
+        if (includeEnabled) await prefs.setBool(_frostedGlassKey, enabled),
+        if (includeOpacity) await prefs.setDouble(_componentOpacityKey, opacity),
+      ];
+      return results.every((saved) => saved);
+    });
+  }
+
+  Future<bool> _queueCardAppearanceWrite(
+      Future<bool> Function(AppPreferencesStore) save) {
+    final write = (_cardAppearanceWrites ?? Future<void>.value())
+        .then((_) async {
+      try {
+        final prefs = await AppPreferencesStore.getInstance();
+        return await save(prefs);
+      } catch (_) {
+        return false;
+      }
+    });
+    _cardAppearanceWrites = write.then((_) {});
+    return write;
   }
 
   Future<void> clearBackground() async {

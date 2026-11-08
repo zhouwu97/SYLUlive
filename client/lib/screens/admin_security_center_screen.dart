@@ -217,7 +217,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     setState(() => _actionBusy = true);
     var enteredNote = '';
     try {
-      final note = await showDialog<String>(
+      final note = await showAppDialog<String>(
         context: context,
         builder: (dialogContext) => SecuritySessionGuard(
             auth: context.read<AuthProvider>(),
@@ -414,7 +414,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     var globalConfirmed = false;
     var reason = securityEventTitle(event);
     try {
-      final confirmed = await showDialog<bool>(
+      final confirmed = await showAppDialog<bool>(
         context: context,
         builder: (dialogContext) => SecuritySessionGuard(
             auth: context.read<AuthProvider>(),
@@ -647,19 +647,21 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                 else if (_events.isEmpty)
                   Padding(
                     padding: const EdgeInsets.all(AppSpacing.xxl),
-                    child: Center(child: Text(_emptyMessage())),
+                    child: Center(
+                        child: AppContentSurface.reading(child: Text(_emptyMessage()))),
                   )
                 else
                   ..._events.map(_buildEventCard),
                 if (!_loading && _error == null && _events.isNotEmpty)
                   Text(
-                      _total == null
-                          ? '已加载 ${_events.length} 条'
-                          : '已加载 ${_events.length} 条，共 $_total 条',
-                      textAlign: TextAlign.center),
+                          _total == null
+                              ? '已加载 ${_events.length} 条'
+                              : '已加载 ${_events.length} 条，共 $_total 条',
+                          textAlign: TextAlign.center),
                 if (!_loading && _error == null && _hasMore) ...[
                   if (_moreError != null)
-                    Text(_moreError!, textAlign: TextAlign.center),
+                    AppContentSurface.reading(
+                        child: Text(_moreError!, textAlign: TextAlign.center)),
                   Center(
                       child: OutlinedButton(
                     style: OutlinedButton.styleFrom(
@@ -898,11 +900,12 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
       };
 
   Widget _buildFilters() {
-    Widget chip(String label, bool selected, VoidCallback onTap) => AppChoiceChip(
-        visualDensity: VisualDensity.standard,
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => onTap());
+    Widget chip(String label, bool selected, VoidCallback onTap) =>
+        AppChoiceChip(
+            visualDensity: VisualDensity.standard,
+            label: Text(label),
+            selected: selected,
+            onSelected: (_) => onTap());
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -952,7 +955,6 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
         margin: const EdgeInsets.only(bottom: AppSpacing.sm),
         padding: const EdgeInsets.all(AppSpacing.md),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(AppRadius.lg),
           border: Border.all(color: color.withValues(alpha: 0.45)),
         ),
@@ -999,7 +1001,8 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
     );
   }
 
-  Widget _buildError() => Padding(
+  Widget _buildError() => AppContentSurface.card(
+          child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xxl),
         child: Column(children: [
           Text(_error!, textAlign: TextAlign.center),
@@ -1011,7 +1014,7 @@ class _AdminSecurityCenterScreenState extends State<AdminSecurityCenterScreen> {
                 onPressed: _load,
                 child: const Text('重试')),
         ]),
-      );
+      ));
 
   Color _severityColor(String value) => switch (value) {
         'critical' => AppColors.danger,

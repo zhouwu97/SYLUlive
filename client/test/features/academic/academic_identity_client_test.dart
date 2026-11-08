@@ -40,6 +40,95 @@ void main() {
     return AcademicIdentityClient(dio);
   }
 
+  test('自动绑定只传最小学校会话并固定 App 账号代次', () async {
+    final adapter = _IdentityHttpAdapter()
+      ..responses.add((
+        status: 200,
+        body: {
+          'provider_id': 'sylu_undergraduate',
+          'student_id': 'U-001',
+          'verified': true,
+          'verification_method': 'school_profile',
+        }
+      ));
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.invalid/api'))
+      ..httpClientAdapter = adapter;
+    final client = AcademicIdentityClient(dio, sessionEpoch: () => 12);
+    const identity = AcademicIdentityKey(
+        appUserId: '493',
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: 'U-001');
+    final artifact = ProviderSessionArtifact(
+        providerId: identity.providerId,
+        studentId: identity.studentId,
+        artifactVersion: 1,
+        createdAt: DateTime.now(),
+        validatedAt: DateTime.now(),
+        opaqueProviderState: {
+          'cookies': ['SID=fixture'],
+          'password': 'never-upload',
+          'profile_html': 'never-upload',
+          'session_path_prefix': 'not-for-undergraduate'
+        });
+    expect(
+        (await client.verifyLocalSession(identity, artifact)).isSchoolVerified,
+        true);
+    final request = adapter.requests.single;
+    expect(request.path, '/student-identity/verify-session');
+    expect(request.headers['X-Expected-App-User'], '493');
+    expect(request.extra['expectedAuthUserId'], 493);
+    expect(request.extra['expectedAuthSessionEpoch'], 12);
+    expect(request.extra['disable_safe_retry'], true);
+    expect(request.data, {
+      'provider_id': 'sylu_undergraduate',
+      'student_id': 'U-001',
+      'school_session': {
+        'cookies': ['SID=fixture']
+      }
+    });
+  });
+
+  test('认证冻结明确说明连接不等于认证且不自动重试', () async {
+    final adapter = _IdentityHttpAdapter()
+      ..responses.add((
+        status: 410,
+        body: <String, dynamic>{
+          'code': 'ACADEMIC_IDENTITY_FROZEN',
+          'message': 'opaque-sensitive-response',
+        }
+      ));
+    await expectLater(
+      createClient(adapter).requestChallenge(
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: 'U-001',
+      ),
+      throwsA(isA<AcademicIdentityApiException>()
+          .having((e) => e.code, 'code', 'ACADEMIC_IDENTITY_FROZEN')
+          .having((e) => e.isRetryable, 'retryable', false)
+          .having((e) => e.message, 'message', contains('暂未开放'))
+          .having((e) => e.message, 'message',
+              isNot(contains('opaque-sensitive')))),
+    );
+  });
+
+  test('HTTP 密码拒绝保留安全映射说明', () async {
+    final adapter = _IdentityHttpAdapter()
+      ..responses.add((
+        status: 422,
+        body: <String, dynamic>{
+          'code': 'ACADEMIC_CREDENTIAL_REJECTED',
+        }
+      ));
+    await expectLater(
+      createClient(adapter).requestChallenge(
+        providerId: AcademicProviderId.syluUndergraduate,
+        studentId: 'U-001',
+      ),
+      throwsA(isA<AcademicIdentityApiException>()
+          .having((e) => e.message, 'message', '教务密码需要更新')),
+    );
+  });
+
   Map<String, dynamic> challengeResponse({
     String providerId = 'sylu_graduate',
     String studentId = 'G-001',
@@ -147,7 +236,8 @@ void main() {
     await client.unbind(identity);
 
     expect(adapter.requests.single.method, 'DELETE');
-    expect(adapter.requests.single.headers['X-Expected-App-User'], 'app-user-1');
+    expect(
+        adapter.requests.single.headers['X-Expected-App-User'], 'app-user-1');
     expect(adapter.requests.single.sendTimeout, const Duration(seconds: 12));
     expect(adapter.requests.single.receiveTimeout, const Duration(seconds: 12));
   });
@@ -316,26 +406,45 @@ void main() {
   });
   for (final graduate in [false, true]) {
     test('换绑挑战和提交使用独立端点：$graduate', () async {
-      final data = graduate ? challengeResponse() : undergraduatePreverifyResponse();
-      data.addAll({'operation': 'change', 'challenge_token': 'sealed-change', 'expires_at': '2099-01-01T00:00:00Z'});
-      final provider = graduate ? AcademicProviderId.syluGraduate : AcademicProviderId.syluUndergraduate;
+      final data =
+          graduate ? challengeResponse() : undergraduatePreverifyResponse();
+      data.addAll({
+        'operation': 'change',
+        'challenge_token': 'sealed-change',
+        'expires_at': '2099-01-01T00:00:00Z'
+      });
+      final provider = graduate
+          ? AcademicProviderId.syluGraduate
+          : AcademicProviderId.syluUndergraduate;
       final student = graduate ? 'G-001' : 'U-001';
       final adapter = _IdentityHttpAdapter()
         ..responses.add((status: 200, body: data))
-        ..responses.add((status: 200, body: {
-          'verified': true,
-          'provider_id': provider.value,
-          'student_id': student,
-          'verification_method': 'school_profile',
-          'binding_version': 4,
-          'changed_at': '2026-09-08T00:00:00Z',
-        }));
+        ..responses.add((
+          status: 200,
+          body: {
+            'verified': true,
+            'provider_id': provider.value,
+            'student_id': student,
+            'verification_method': 'school_profile',
+            'binding_version': 4,
+            'changed_at': '2026-09-08T00:00:00Z',
+          }
+        ));
       final client = createClient(adapter);
-      final challenge = await client.requestChallenge(providerId: provider, studentId: student,
-        currentIdentity: const AcademicIdentityKey(appUserId: 'u', providerId: AcademicProviderId.syluUndergraduate, studentId: 'OLD'));
+      final challenge = await client.requestChallenge(
+          providerId: provider,
+          studentId: student,
+          currentIdentity: const AcademicIdentityKey(
+              appUserId: 'u',
+              providerId: AcademicProviderId.syluUndergraduate,
+              studentId: 'OLD'));
       final binding = graduate
-          ? await client.verify(challenge: challenge!, captcha: '1234', encryptedPassword: 'ciphertext')
-          : await client.verifyUndergraduatePreverify(challenge: challenge!, password: 'fixture');
+          ? await client.verify(
+              challenge: challenge!,
+              captcha: '1234',
+              encryptedPassword: 'ciphertext')
+          : await client.verifyUndergraduatePreverify(
+              challenge: challenge!, password: 'fixture');
       expect(adapter.requests.first.path, '/student-identity/change/challenge');
       expect(adapter.requests.last.path, '/student-identity/change');
       expect(adapter.requests.last.data['challenge_token'], 'sealed-change');
@@ -387,7 +496,8 @@ void main() {
 
     test('回执身份不一致属于契约错误，不重试', () async {
       final adapter = _IdentityHttpAdapter()
-        ..responses.add((status: 200, body: localDeclaration(student: 'OTHER')));
+        ..responses
+            .add((status: 200, body: localDeclaration(student: 'OTHER')));
       await expectLater(
         createClient(adapter).bindLocal(identity),
         throwsA(isA<AcademicIdentityApiException>()
@@ -410,7 +520,10 @@ void main() {
 
     test('回执自称学校核验属于契约错误，不重试', () async {
       final adapter = _IdentityHttpAdapter()
-        ..responses.add((status: 200, body: localDeclaration(assurance: 'school_verified')));
+        ..responses.add((
+          status: 200,
+          body: localDeclaration(assurance: 'school_verified')
+        ));
       await expectLater(
         createClient(adapter).bindLocal(identity),
         throwsA(isA<AcademicIdentityApiException>()
@@ -421,7 +534,8 @@ void main() {
 
     test('网络故障属于临时问题，允许重试', () async {
       final adapter = _IdentityHttpAdapter()
-        ..responses.add((status: 503, body: <String, dynamic>{'code': 'UNAVAILABLE'}));
+        ..responses
+            .add((status: 503, body: <String, dynamic>{'code': 'UNAVAILABLE'}));
       await expectLater(
         createClient(adapter).bindLocal(identity),
         throwsA(isA<AcademicIdentityApiException>()
@@ -430,15 +544,20 @@ void main() {
     });
 
     test('依据等级区分学校核验、历史回填和本机声明', () {
-      expect(assuranceLevelFor('school_profile'), academicAssuranceSchoolVerified);
-      expect(assuranceLevelFor('legacy_migration'), academicAssuranceLegacyInherited);
-      expect(assuranceLevelFor('local_academic_login'), academicAssuranceLocalDeclaration);
+      expect(
+          assuranceLevelFor('school_profile'), academicAssuranceSchoolVerified);
+      expect(assuranceLevelFor('legacy_migration'),
+          academicAssuranceLegacyInherited);
+      expect(assuranceLevelFor('local_academic_login'),
+          academicAssuranceLocalDeclaration);
       expect(assuranceLevelFor(null), academicAssuranceLocalDeclaration);
       expect(assuranceLevelFor(''), academicAssuranceLocalDeclaration);
       // 与服务端一致：精确匹配，未登记与带空白都不算可信。
       expect(assuranceLevelFor('test'), academicAssuranceLocalDeclaration);
-      expect(assuranceLevelFor(' school_profile'), academicAssuranceLocalDeclaration);
-      expect(assuranceLevelFor('school_profile_v2'), academicAssuranceLocalDeclaration);
+      expect(assuranceLevelFor(' school_profile'),
+          academicAssuranceLocalDeclaration);
+      expect(assuranceLevelFor('school_profile_v2'),
+          academicAssuranceLocalDeclaration);
     });
 
     test('旧版迁移身份不能凭服务端旧 verified 回执获得本次核验状态', () {

@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
@@ -11,6 +12,7 @@ import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/app_card.dart';
+import '../theme/app_radius.dart';
 
 class CheckInCalendarScreen extends StatefulWidget {
   final DateTime Function()? now;
@@ -124,8 +126,10 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
         requestedMonth,
         forceRefresh: forceRefresh,
       );
-      final statusResponse = await statusRequest;
-      final monthSnapshot = await monthRequest;
+      // 同时订阅两个请求的失败，避免状态请求先失败后留下未处理的日历异常。
+      final results = await Future.wait<Object?>([statusRequest, monthRequest]);
+      final statusResponse = results[0] as Response<dynamic>?;
+      final monthSnapshot = results[1] as _CheckInMonthSnapshot;
       if (!mounted || requestedMonth != _visibleMonth) return;
 
       final status = statusResponse?.data is Map
@@ -347,7 +351,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
   Future<void> _doMakeup() async {
     final date = _selectedMakeupDate;
     if (date == null || _makingUp || _makeupCards <= 0) return;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) {
         final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
@@ -557,7 +561,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
             parent: animation,
             curve: Curves.easeOutCubic,
           );
-          return FadeTransition(
+          return AppSurfaceFadeTransition(
             opacity: curved,
             child: SlideTransition(
               position: Tween<Offset>(
@@ -660,7 +664,8 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
                           key: const ValueKey('check-in-month-swipe-area'),
                           behavior: HitTestBehavior.opaque,
                           onHorizontalDragEnd: _handleMonthSwipe,
-                          child: Column(
+                          child: AppContentSurface.card(
+                              child: Column(
                             children: [
                               _MonthHeader(
                                 month: _visibleMonth,
@@ -673,7 +678,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
                               const SizedBox(height: 16),
                               _CalendarLegend(theme: theme),
                             ],
-                          ),
+                          )),
                         ),
                       ],
                     ),
@@ -686,10 +691,13 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
       ),
       bottomNavigationBar: SafeArea(
         top: false,
-        child: Container(
+        child: AppCardSurface(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           decoration: BoxDecoration(
             color: theme.colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(AppRadius.lg),
+            ),
             border: Border(
               top: BorderSide(color: theme.colorScheme.outlineVariant),
             ),
@@ -808,7 +816,7 @@ class _CheckInSummary extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1C211E) : const Color(0xFFF5F7F5),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         border: Border.all(
           color: isDark ? const Color(0xFF303630) : const Color(0xFFE3E7E3),
         ),
@@ -1302,7 +1310,7 @@ class _CalendarError extends StatelessWidget {
     return SizedBox(
       height: 360,
       child: Center(
-        child: Column(
+        child: AppContentSurface.reading(child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
@@ -1319,7 +1327,7 @@ class _CalendarError extends StatelessWidget {
               label: const Text('重新加载'),
             ),
           ],
-        ),
+        )),
       ),
     );
   }

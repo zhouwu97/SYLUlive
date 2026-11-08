@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_motion.dart';
+import 'app_card.dart';
 
 /// 统一空态 / 加载态 / 错误态占位组件。
 ///
-/// 契约（docs/design/DESIGN_QA.md §Empty/Error states）：
+/// 当前组件结构与反馈：
 /// - icon 置于圆形浅底（loading 态以 24×24 spinner 替代）
 /// - 主标题 + 可选副标题 + 可选操作按钮
 /// - 淡入使用 AppMotion.fast（160ms）+ standard 曲线
@@ -47,7 +48,8 @@ class StatePlaceholder extends StatelessWidget {
     final accent = isDark ? Colors.white60 : const Color(0xFF847A74);
 
     return Center(
-      child: Padding(
+      child: AppContentSurface.card(
+          child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32),
         child: AnimatedOpacity(
           key: const ValueKey('state-placeholder'),
@@ -116,8 +118,8 @@ class StatePlaceholder extends StatelessWidget {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 13,
-                        color:
-                            isDark ? Colors.white54 : const Color(0xFF847A74),
+                        color: appContentSecondaryColor(context,
+                            isDark ? Colors.white54 : const Color(0xFF847A74)),
                         height: 1.5,
                       ),
                     ),
@@ -134,7 +136,7 @@ class StatePlaceholder extends StatelessWidget {
             },
           ),
         ),
-      ),
+      )),
     );
   }
 }

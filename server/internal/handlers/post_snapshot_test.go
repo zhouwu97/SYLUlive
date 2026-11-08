@@ -26,6 +26,7 @@ func TestPostSnapshotLoadMorePreservesOrderAndIncludesOlderPosts(t *testing.T) {
 		&models.Post{},
 		&models.PostImage{},
 		&models.Like{},
+		&models.Reply{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}

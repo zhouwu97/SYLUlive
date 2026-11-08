@@ -27,6 +27,9 @@ class PollPostCard extends StatefulWidget {
   final ValueChanged<Post>? onPostUpdated;
   final PollCardVariant variant;
 
+  /// 详情页由外层统一管理正文与评论之间的间隔。
+  final EdgeInsetsGeometry? margin;
+
   /// 卡片右上角操作菜单回调（FEED-3）。为空时不渲染菜单。
   final ValueChanged<FeedPostAction>? onPostAction;
   final bool allowNotInterested;
@@ -44,6 +47,7 @@ class PollPostCard extends StatefulWidget {
     this.allowHideAuthor = true,
     this.allowReport = true,
     this.variant = PollCardVariant.homeCompact,
+    this.margin,
   });
 
   @override
@@ -132,14 +136,19 @@ class _PollPostCardState extends State<PollPostCard> {
     final authorName = widget.post.author?.nickname ?? '匿名用户';
 
     return AppCard(
-      margin: EdgeInsets.only(bottom: homeCompact ? AppSpacing.xs : 10),
+      margin: widget.margin ??
+          EdgeInsets.only(bottom: homeCompact ? AppSpacing.xs : 10),
       elevation: 0,
       color: isDark
           ? AppColors.surfaceSecondaryDark
           : AppColors.surfaceSecondaryLight,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(
-          homeCompact ? AppRadius.md : AppRadius.sm,
+          widget.variant == PollCardVariant.centerFull
+              ? AppRadius.lg
+              : homeCompact
+                  ? AppRadius.md
+                  : AppRadius.sm,
         ),
         side: BorderSide(
           color: (isDark
@@ -153,9 +162,11 @@ class _PollPostCardState extends State<PollPostCard> {
       child: InkWell(
         onTap: widget.onTap,
         child: Padding(
-          padding: homeCompact
-              ? const EdgeInsets.fromLTRB(12, 10, 12, 8)
-              : const EdgeInsets.all(14),
+          padding: widget.variant == PollCardVariant.centerFull
+              ? const EdgeInsets.all(AppSpacing.lg)
+              : homeCompact
+                  ? const EdgeInsets.fromLTRB(12, 10, 12, 8)
+                  : const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

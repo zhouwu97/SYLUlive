@@ -18,6 +18,8 @@ import '../../features/personal_data_sync/personal_data_sync_models.dart';
 import '../../features/personal_data_sync/personal_data_sync_result.dart';
 import '../../features/personal_data_sync/erke_snapshot_upload.dart';
 import '../../providers/edu_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/publish_session_scope.dart';
 import '../../services/webvpn_service.dart';
 import '../../services/physical_credential_store.dart';
 import '../../utils/app_feedback.dart';
@@ -45,6 +47,30 @@ class PersonalDataCenterScreen extends StatefulWidget {
 class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
   late Future<List<_VaultStatus>> _statuses;
   bool _isSyncing = false;
+  bool _clearing = false;
+  PublishSessionScope? _session;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.read<AuthProvider>();
+    if (_session == null &&
+        auth.isLoggedIn &&
+        auth.user?.id.toString() == widget.appUserId) {
+      _session = PublishSessionScope(
+          accountId: auth.user!.id,
+          accountSessionEpoch: auth.accountSessionEpoch);
+    }
+  }
+
+  bool _owns() {
+    if (!mounted || _session == null) return false;
+    final auth = context.read<AuthProvider>();
+    return auth.isLoggedIn &&
+        _session!.owns(
+            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch) &&
+        context.read<EduProvider>().studentId == widget.sourceAccountId;
+  }
 
   @override
   void initState() {
@@ -78,7 +104,8 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
           _VaultStatus(
             type: type,
             fetchedAt: snapshot?.fetchedAt,
-            isStale: snapshot?.isStale ?? false,
+            isStale: (snapshot?.isStale ?? false) ||
+                snapshot?.payload['isPartial'] == true,
             schemaVersion: snapshot?.schemaVersion,
           ),
         );
@@ -90,34 +117,43 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
   }
 
   Future<void> _clearCurrent() async {
+    if (!_owns()) return;
     final store = AesGcmAccountScopedSnapshotStore(appUserId: widget.appUserId);
     await store.clearUser();
+    if (!_owns()) return;
     await LocalToolAuditStore(
       accountFingerprint: AccountCacheNamespace.fingerprint(widget.appUserId),
     ).clear();
+    if (!_owns()) return;
     await DeviceCredentialStore().deleteErke(widget.sourceAccountId);
+    if (!_owns()) return;
     await PhysicalCredentialStore().delete(widget.sourceAccountId);
     if (mounted) setState(() => _statuses = _load());
   }
 
   Future<void> _clearAll() async {
+    if (!_owns()) return;
     await AesGcmAccountScopedSnapshotStore.clearAllVaultData();
+    if (!_owns()) return;
     await DeviceCredentialStore().deleteErke(widget.sourceAccountId);
+    if (!_owns()) return;
     await PhysicalCredentialStore().delete(widget.sourceAccountId);
     if (mounted) setState(() => _statuses = _load());
   }
 
   Future<void> _syncPersonalData() async {
-    if (_isSyncing) return;
+    if (_isSyncing || _clearing || !_owns()) return;
     setState(() => _isSyncing = true);
     final vpn = WebVpnService();
     try {
       final coordinator = PersonalDataSyncCoordinator(
+        isCurrent: _owns,
         academicGateway: EduProviderPersonalAcademicSyncGateway(
           context.read<EduProvider>(),
         ),
         erkeGateway: ErkeRepositoryPersonalSyncGateway(
           repository: ErkeRepository(
+            isCurrent: _owns,
             vpnService: vpn,
             cacheStore: ErkeCacheStore(
               appUserId: widget.appUserId,
@@ -125,7 +161,9 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
             ),
           ),
           requestCredentials: _requestErkeCredentials,
-          snapshotUploader: ErkeSnapshotUploadGateway(widget.dio),
+          snapshotUploader:
+              ErkeSnapshotUploadGateway(widget.dio, session: _session!),
+          isCurrent: _owns,
           uploadPolicyStore: PreferenceErkeSnapshotUploadPolicyStore(
             appUserId: widget.appUserId,
           ),
@@ -142,7 +180,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
         },
         trigger: PersonalSyncTrigger.vault,
       );
-      if (!mounted) return;
+      if (!mounted || !_owns()) return;
       final successful = result.items.values
           .where((item) => item.status == PersonalSyncItemStatus.success)
           .length;
@@ -160,10 +198,20 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
   }
 
   Future<PersonalErkeCredentials?> _requestErkeCredentials() async {
+    final saved =
+        await DeviceCredentialStore().readErke(widget.sourceAccountId);
+    if (!mounted || !_owns()) return null;
+    if (saved != null) {
+      return PersonalErkeCredentials(
+        studentId: widget.sourceAccountId,
+        casPassword: saved.casPassword,
+        erkePassword: saved.erkePassword,
+      );
+    }
     final casController = TextEditingController();
     final erkeController = TextEditingController();
     try {
-      return await showDialog<PersonalErkeCredentials>(
+      return await showAppDialog<PersonalErkeCredentials>(
         context: context,
         builder: (dialogContext) => AppAlertDialog(
           title: const Text('更新二课数据'),
@@ -214,12 +262,14 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
   }
 
   Future<ErkeSnapshotUploadPolicy?> _requestErkeSnapshotUploadPolicy() {
+    if (!_owns()) return Future.value(null);
     return showErkeSnapshotUploadDialog(context);
   }
 
   Future<void> _deleteUploadedErkeSnapshot() async {
     try {
-      await ErkeSnapshotUploadGateway(widget.dio).delete();
+      if (!_owns()) return;
+      await ErkeSnapshotUploadGateway(widget.dio, session: _session!).delete();
       if (mounted) {
         AppFeedback.success('已删除服务端二课快照', context: context);
       }
@@ -231,8 +281,14 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      AppPageBackground(builder: _buildPageWithBackground);
+  Widget build(BuildContext context) => AppPageBackground(
+      builder: (context) => Consumer2<AuthProvider, EduProvider>(
+            builder: (context, auth, edu, _) => _owns()
+                ? _buildPageWithBackground(context)
+                : Scaffold(
+                    appBar: AppBar(title: const Text('个人数据保险箱')),
+                    body: const Center(child: Text('登录状态或教务身份已变化，请返回后重新打开'))),
+          ));
 
   Widget _buildPageWithBackground(BuildContext context) {
     final appFingerprint = AccountCacheNamespace.fingerprint(widget.appUserId);
@@ -240,7 +296,8 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
         AccountCacheNamespace.fingerprint(widget.sourceAccountId);
     return Scaffold(
       appBar: AppBar(title: const Text('个人数据保险箱')),
-      body: FutureBuilder<List<_VaultStatus>>(
+      body: AppContentSurface(
+          child: FutureBuilder<List<_VaultStatus>>(
         future: _statuses,
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
@@ -274,7 +331,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: _isSyncing ? null : _syncPersonalData,
+                  onPressed: _isSyncing || _clearing ? null : _syncPersonalData,
                   icon: _isSyncing
                       ? const SizedBox(
                           width: 18,
@@ -289,29 +346,35 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
               ...snapshot.data!.map(_statusTile),
               const SizedBox(height: 16),
               OutlinedButton.icon(
-                onPressed: () => _confirm(
-                  '删除已上传二课快照？',
-                  _deleteUploadedErkeSnapshot,
-                ),
+                onPressed: _isSyncing || _clearing
+                    ? null
+                    : () => _confirm(
+                          '删除已上传二课快照？',
+                          _deleteUploadedErkeSnapshot,
+                        ),
                 icon: const Icon(Icons.cloud_off_outlined),
                 label: const Text('删除已上传二课快照'),
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
-                onPressed: () => _confirm('清除当前账号数据？', _clearCurrent),
+                onPressed: _isSyncing || _clearing
+                    ? null
+                    : () => _confirm('清除当前账号数据？', _clearCurrent),
                 icon: const Icon(Icons.delete_outline),
                 label: const Text('清除当前账号数据'),
               ),
               const SizedBox(height: 8),
               TextButton.icon(
-                onPressed: () => _confirm('清除全部本地个人数据？', _clearAll),
+                onPressed: _isSyncing || _clearing
+                    ? null
+                    : () => _confirm('清除全部本地个人数据？', _clearAll),
                 icon: const Icon(Icons.delete_sweep_outlined),
                 label: const Text('清除全部本地个人数据'),
               ),
             ],
           );
         },
-      ),
+      )),
     );
   }
 
@@ -347,24 +410,30 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
   }
 
   Future<void> _confirm(String title, Future<void> Function() action) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AppAlertDialog(
-        title: Text(title),
-        content: const Text('删除后需要重新同步，操作不可撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('确认删除'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) await action();
+    if (_isSyncing || _clearing || !_owns()) return;
+    setState(() => _clearing = true);
+    try {
+      final confirmed = await showAppDialog<bool>(
+        context: context,
+        builder: (context) => AppAlertDialog(
+          title: Text(title),
+          content: const Text('删除后需要重新同步，操作不可撤销。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('确认删除'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true && _owns()) await action();
+    } finally {
+      if (mounted) setState(() => _clearing = false);
+    }
   }
 }
 

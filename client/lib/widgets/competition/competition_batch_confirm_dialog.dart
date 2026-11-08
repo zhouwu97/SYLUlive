@@ -23,7 +23,7 @@ class CompetitionBatchConfirmDialog extends StatelessWidget {
     String confirmLabel = '确定',
     bool isDanger = false,
   }) {
-    return showDialog<bool>(
+    return showAppDialog<bool>(
       context: context,
       builder: (context) => CompetitionBatchConfirmDialog(
         title: title,

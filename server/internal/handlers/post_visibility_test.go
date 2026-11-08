@@ -29,7 +29,7 @@ func newPostFeedTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&models.User{}, &models.Post{}, &models.PostImage{}, &models.File{}, &models.ImageVariant{},
-		&models.Like{}, &models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
+		&models.Like{}, &models.Reply{}, &models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 	))
 	return db
 }

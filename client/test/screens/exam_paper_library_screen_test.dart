@@ -14,7 +14,7 @@ import 'package:shenliyuan/services/exam_paper_service.dart';
 class _FakeAuthProvider extends AuthProvider {
   _FakeAuthProvider(this.fakeUser) : super(Dio());
 
-  final User fakeUser;
+  User fakeUser;
   final Dio fakeDio = Dio();
 
   @override
@@ -31,6 +31,45 @@ class _FakeAuthProvider extends AuthProvider {
 
   @override
   Future<void> refreshUser() async {}
+}
+
+class _RefreshingAuth extends _FakeAuthProvider {
+  _RefreshingAuth(super.fakeUser, this.refresh);
+  final Future<void> Function(_RefreshingAuth) refresh;
+  int refreshes = 0;
+  int _profileGeneration = 7;
+  int _accountEpoch = 1;
+
+  @override
+  int get sessionGeneration => _profileGeneration;
+
+  @override
+  int get accountSessionEpoch => _accountEpoch;
+
+  void useAccount(User user) {
+    fakeUser = user;
+    _accountEpoch++;
+    _profileGeneration++;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> refreshUser() async {
+    refreshes++;
+    await refresh(this);
+    _profileGeneration++;
+    notifyListeners();
+  }
+}
+
+class _BindingCoordinator {
+  _BindingCoordinator(this.sync);
+  final Future<String?> Function() sync;
+  int synchronizations = 0;
+  Future<String?> synchronizeIdentityBinding({bool force = true}) {
+    synchronizations++;
+    return sync();
+  }
 }
 
 class _SwitchableAuthProvider extends _FakeAuthProvider {
@@ -209,6 +248,133 @@ class _DelayedRefreshExamPaperService extends ExamPaperService {
 }
 
 void main() {
+  User account({required bool verified}) => User(
+      id: 1,
+      studentId: '20260001',
+      nickname: '测试用户',
+      studentVerified: verified,
+      eduBound: false,
+      createdAt: DateTime(2026));
+
+  Future<void> openAccessCheck(WidgetTester tester, AuthProvider auth,
+      {_BindingCoordinator? coordinator, bool settle = true}) async {
+    await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider<ThemeProvider>(
+              create: (_) => ThemeProvider(loadOnStart: false)),
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+        ],
+        child: MaterialApp(
+            home: ExamPaperLibraryScreen(
+                service: _FakeExamPaperService(),
+                synchronizeAcademicBinding: coordinator == null
+                    ? null
+                    : () => coordinator.synchronizeIdentityBinding()))));
+    if (settle) {
+      await tester.pumpAndSettle(const Duration(milliseconds: 100),
+          EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    } else {
+      await tester.pump();
+    }
+  }
+
+  testWidgets('核对资格期间切号，旧账号完成不能解锁新账号试卷库', (tester) async {
+    final waiting = Completer<void>();
+    final started = Completer<void>();
+    final auth = _RefreshingAuth(account(verified: false), (auth) async {
+      if (auth.fakeUser.id == 1) {
+        if (!started.isCompleted) started.complete();
+        await waiting.future;
+      }
+    });
+    await openAccessCheck(tester, auth, settle: false);
+    await started.future;
+    auth.useAccount(User(
+        id: 2,
+        studentId: '20260002',
+        nickname: '另一账号',
+        studentVerified: false,
+        eduBound: false,
+        createdAt: DateTime(2026)));
+    await tester.pump();
+    waiting.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('高等数学'), findsNothing);
+    expect(find.text('完成教务认证后使用'), findsOneWidget);
+    expect(auth.user?.id, 2);
+  });
+
+  testWidgets('试卷库打开时刷新旧身份缓存，服务器已核验即可进入', (tester) async {
+    final auth = _RefreshingAuth(account(verified: false), (auth) async {
+      auth.fakeUser = account(verified: true);
+    });
+    await openAccessCheck(tester, auth);
+    expect(auth.refreshes, 1);
+    expect(find.text('高等数学'), findsOneWidget);
+    expect(find.text('完成教务认证后使用'), findsNothing);
+  });
+
+  testWidgets('同一账号重新登录后不接收旧登录会话的补交结果', (tester) async {
+    final waiting = Completer<String?>();
+    final started = Completer<void>();
+    final auth = _RefreshingAuth(account(verified: false), (_) async {});
+    var attempts = 0;
+    final coordinator = _BindingCoordinator(() async {
+      if (++attempts == 1) {
+        started.complete();
+        return waiting.future;
+      }
+      return '当前登录会话暂未同步';
+    });
+    await openAccessCheck(tester, auth,
+        coordinator: coordinator, settle: false);
+    await started.future;
+    auth.useAccount(account(verified: false));
+    await tester.pump();
+    waiting.complete('旧登录会话失败');
+    await tester.pumpAndSettle();
+    expect(coordinator.synchronizations, 2);
+    expect(find.text('当前登录会话暂未同步'), findsOneWidget);
+    expect(find.text('旧登录会话失败'), findsNothing);
+    expect(find.text('正在同步已有教务绑定…'), findsNothing);
+  });
+
+  testWidgets('试卷库在服务器漏记时恢复本机会话并自动补交后刷新资格', (tester) async {
+    var serverVerified = false;
+    final auth = _RefreshingAuth(account(verified: false), (auth) async {
+      auth.fakeUser = account(verified: serverVerified);
+    });
+    final coordinator = _BindingCoordinator(() async {
+      serverVerified = true;
+      return null;
+    });
+    await openAccessCheck(tester, auth, coordinator: coordinator);
+    expect(coordinator.synchronizations, 1);
+    expect(auth.refreshes, 2);
+    expect(find.text('高等数学'), findsOneWidget);
+  });
+
+  testWidgets('试卷库补交失败展示实际原因并可重试，不把失败画成未绑定', (tester) async {
+    var failed = true;
+    var serverVerified = false;
+    final auth = _RefreshingAuth(account(verified: false), (auth) async {
+      auth.fakeUser = account(verified: serverVerified);
+    });
+    final coordinator = _BindingCoordinator(() async {
+      if (failed) return '学校会话需要恢复，请在原教务入口重新登录';
+      serverVerified = true;
+      return null;
+    });
+    await openAccessCheck(tester, auth, coordinator: coordinator);
+    expect(find.text('学校会话需要恢复，请在原教务入口重新登录'), findsOneWidget);
+    expect(find.text('重试同步'), findsOneWidget);
+    failed = false;
+    await tester.tap(find.text('重试同步'));
+    await tester.pumpAndSettle();
+    expect(coordinator.synchronizations, 2);
+    expect(find.text('高等数学'), findsOneWidget);
+  });
+
   testWidgets('认证 generation 变化时重建生产试卷服务', (tester) async {
     final user = User(
       id: 1,

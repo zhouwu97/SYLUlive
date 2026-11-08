@@ -28,3 +28,22 @@ func TestIdempotencyDoesNotCacheIntegrationCredentialsOrConfirmation(t *testing.
 		})
 	}
 }
+
+func TestIdempotencyAllowsLargeEmojiSubmissionWithoutGlobalReplay(t *testing.T) {
+	db := openIdempotencyTestDB(t)
+	r := gin.New()
+	r.Use(IdempotencyMiddleware(db))
+	calls := 0
+	r.POST("/api/emoji/submissions", func(c *gin.Context) {
+		calls++
+		c.Status(200)
+	})
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest("POST", "/api/emoji/submissions", strings.NewReader(strings.Repeat("x", 1024*1024+1)))
+		req.Header.Set("Idempotency-Key", "same-key")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		require.Equal(t, 200, w.Code)
+	}
+	require.Equal(t, 2, calls, "表情投稿由业务层处理幂等，不应被全局中间件限制或重放")
+}

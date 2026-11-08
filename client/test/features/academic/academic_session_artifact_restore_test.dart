@@ -73,6 +73,10 @@ void main() {
       if (scenario == '500' || scenario == 'unknown') {
         expect(
             result.kind, isNot(AcademicLoginOutcomeKind.credentialsRequired));
+        final candidate =
+            await controller.exportSessionForIdentityVerification();
+        expect(candidate?.studentId, identity.studentId);
+        expect(candidate?.opaqueProviderState['cookies'], isNotEmpty);
       }
       if (scenario == 'expired') {
         expect(artifact, isNull);
@@ -90,6 +94,43 @@ void main() {
         expect(controller.profile?.major, isNotEmpty);
         expect(controller.profile?.grade, isNotEmpty);
       }
+      controller.dispose();
+      provider.close();
+    });
+  }
+  for (final reason in ['expired', 'future', 'disconnected', 'switched']) {
+    test('身份补交不能导出不可用的保险箱会话：$reason', () async {
+      final vault = AcademicSessionArtifactVault(
+          identity: identity,
+          secretStore: Secrets(),
+          fileBackend: MemoryAcademicSessionArtifactFileBackend());
+      final now = DateTime.now().toUtc();
+      await vault.write(ProviderSessionArtifact(
+          providerId: identity.providerId,
+          studentId: identity.studentId,
+          artifactVersion: 1,
+          createdAt: reason == 'expired'
+              ? now.subtract(const Duration(hours: 9))
+              : reason == 'future'
+                  ? now.add(const Duration(hours: 1))
+                  : now,
+          validatedAt: now,
+          maxRestoreAge: const Duration(hours: 8),
+          opaqueProviderState: const {
+            'cookies': ['SID=fixture']
+          }));
+      final provider = UndergraduateAcademicProvider(
+          identity: identity, source: JiaowuLocalDataSource());
+      final controller = AcademicSessionController.forProvider(
+          provider: provider,
+          identity: identity,
+          sessionArtifactVaultFactory: (_) => vault);
+      await controller.syncAppUser('u');
+      await AcademicConnectionStore(
+              identity, await AppPreferencesStore.getInstance())
+          .setConnected(reason != 'disconnected');
+      if (reason == 'switched') await controller.syncAppUser('other');
+      expect(await controller.exportSessionForIdentityVerification(), isNull);
       controller.dispose();
       provider.close();
     });

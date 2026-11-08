@@ -20,7 +20,6 @@ import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 import '../../../../helpers/personal_snapshot_test_fakes.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -120,6 +119,27 @@ void main() {
     expect(result.fetchedAt, fetchedAt);
     expect(result.expiresAt, expiresAt);
     expect(result.isStale, isFalse);
+  });
+
+  test('部分二课快照即使信封未过期也不能作为新鲜结果使用', () async {
+    final vault = createVault();
+    await vault.write(
+        type: PersonalDataType.erke,
+        schemaVersion: 2,
+        sourceSystem: 'erke',
+        sourceAccountId: sourceAccountId,
+        fetchedAt: DateTime.now().toUtc(),
+        expiresAt: DateTime.now().toUtc().add(const Duration(days: 1)),
+        payload: {..._erkePayload(), 'isPartial': true});
+    final gateway = createGateway(
+        context: PersonalAccountContext(
+            appUserId: appUserId, sourceAccountId: sourceAccountId),
+        snapshotStore: vault);
+    final result = await gateway.getErkeOverview();
+    expect(result.hasData, isTrue);
+    expect(result.isStale, isTrue);
+    expect(result.status, GatewayStatus.stale);
+    expect(result.warnings.single, contains('未更新'));
   });
 
   test('体测密文快照只返回最近学年和项目概览', () async {

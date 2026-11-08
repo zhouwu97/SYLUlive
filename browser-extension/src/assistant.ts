@@ -1,4 +1,5 @@
 import { isProvider } from "@sylulive/academic-contracts";
+import { mountSchoolAssistant } from "./school-assistant";
 import {
   origins,
   entrances,
@@ -11,6 +12,8 @@ const root = document.querySelector<HTMLDivElement>("#app")!;
 if (!isProvider(provider)) {
   root.innerHTML =
     '<main class="panel"><h1>沈理校园教务助手</h1><p>请从沈理校园的课表或成绩页面发起连接。</p></main>';
+} else if (provider !== "physical") {
+  mountSchoolAssistant(provider, root);
 } else {
   const name = {
     undergraduate: "本科教务",

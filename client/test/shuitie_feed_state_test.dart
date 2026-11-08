@@ -1,3 +1,4 @@
+import 'helpers/active_backdrop_filters.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -102,7 +103,7 @@ void main() {
                 tester.getCenter(surface).dy)
             .abs(),
         lessThanOrEqualTo(1));
-    expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)),
+    expect(find.descendant(of: surface, matching: activeBackdropFilters()),
         findsOneWidget);
     await tester.enterText(field, '课表');
     await _pumpFrames(tester);
@@ -113,7 +114,7 @@ void main() {
     expect(tester.widget<TextField>(field).controller!.text, isEmpty);
     await page.themeProvider.setFrostedGlass(false);
     await _pumpFrames(tester);
-    expect(find.descendant(of: surface, matching: find.byType(BackdropFilter)),
+    expect(find.descendant(of: surface, matching: activeBackdropFilters()),
         findsNothing);
     await _disposeFeed(tester, page);
   });
@@ -128,6 +129,17 @@ void main() {
       find.byKey(const ValueKey('feed-skeleton-card')),
       findsNWidgets(3),
     );
+    final skeleton = find.byKey(const ValueKey('feed-skeleton-card')).first;
+    final original = tester.getRect(skeleton);
+    await page.themeProvider.setBackgroundImage('morenbeijing.jpeg');
+    await page.themeProvider.setFrostedGlass(true);
+    await _pumpFrames(tester, count: 2);
+    expect(tester.getRect(skeleton), original);
+    expect(find.descendant(of: skeleton, matching: activeBackdropFilters()), findsOneWidget);
+    await page.themeProvider.setFrostedGlass(false);
+    await _pumpFrames(tester, count: 2);
+    expect(tester.getRect(skeleton), original);
+    expect(find.descendant(of: skeleton, matching: activeBackdropFilters()), findsNothing);
     gate.complete();
     await _pumpFrames(tester);
     await _disposeFeed(tester, page);

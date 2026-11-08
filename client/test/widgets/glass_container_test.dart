@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -40,37 +41,39 @@ void main() {
     await tester.pumpWidget(_buildWrapper(theme));
     await tester.pump();
 
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(activeBackdropFilters(), findsNothing);
     expect(find.text('Card Content'), findsOneWidget);
   });
 
   testWidgets('frostedGlass=true 时 GlassContainer 内渲染 BackdropFilter',
       (tester) async {
     final theme = await _createProvider();
+    await theme.setBackgroundImage('morenbeijing.jpeg');
     await theme.setFrostedGlass(true);
     expect(theme.frostedGlass, isTrue);
 
     await tester.pumpWidget(_buildWrapper(theme));
     await tester.pump();
 
-    expect(find.byType(BackdropFilter), findsOneWidget);
+    expect(activeBackdropFilters(), findsOneWidget);
     expect(find.text('Card Content'), findsOneWidget);
   });
 
   testWidgets('运行时切换毛玻璃开关会同步更新已挂载组件', (tester) async {
     final theme = await _createProvider();
+    await theme.setBackgroundImage('morenbeijing.jpeg');
 
     await tester.pumpWidget(_buildWrapper(theme));
     await tester.pump();
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(activeBackdropFilters(), findsNothing);
 
     await theme.setFrostedGlass(true);
     await tester.pump();
-    expect(find.byType(BackdropFilter), findsOneWidget);
+    expect(activeBackdropFilters(), findsOneWidget);
 
     await theme.setFrostedGlass(false);
     await tester.pump();
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(activeBackdropFilters(), findsNothing);
   });
 
   for (final dark in [false, true]) {
@@ -87,13 +90,13 @@ void main() {
         ),
       ));
       Color surface() => (tester
-              .widget<Container>(find
+              .widget<DecoratedBox>(find
                   .ancestor(
                     of: find.text('card'),
-                    matching: find.byType(Container),
+                    matching: find.byType(DecoratedBox),
                   )
                   .first)
-              .decoration! as BoxDecoration)
+              .decoration as BoxDecoration)
           .color!;
       expect(surface().a, closeTo(0.7, 0.01));
       await theme.setComponentOpacity(0.4);
@@ -105,8 +108,8 @@ void main() {
       await theme.trySetCustomBackgroundMode();
       await theme.setFrostedGlass(false);
       await tester.pump();
-      expect(surface().a, 1);
-      expect(find.byType(BackdropFilter), findsNothing);
+      expect(surface().a, closeTo(.4, .01));
+      expect(activeBackdropFilters(), findsNothing);
     });
   }
 
@@ -122,7 +125,7 @@ void main() {
     await tester.pump();
 
     // 核心解耦验证：底栏液态玻璃不再污染普通卡片
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(activeBackdropFilters(), findsNothing);
     expect(find.text('Card Content'), findsOneWidget);
   });
 
@@ -137,7 +140,7 @@ void main() {
     await tester.pump();
 
     final containerFinder = find.byWidgetPredicate((widget) {
-      if (widget is Container && widget.decoration is BoxDecoration) {
+      if (widget is DecoratedBox && widget.decoration is BoxDecoration) {
         final box = widget.decoration as BoxDecoration;
         return box.color != null && box.color!.a >= 0.85;
       }

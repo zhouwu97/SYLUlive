@@ -2,6 +2,7 @@ import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shenliyuan/widgets/app_tab_bar_surface.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../widgets/app_page_background.dart';
@@ -10,6 +11,8 @@ import '../models/admin_user_summary.dart';
 import '../providers/auth_provider.dart';
 import 'admin/app_release_admin_tab.dart';
 import '../widgets/app_card.dart';
+import '../widgets/state_placeholder.dart';
+import '../utils/app_feedback.dart';
 
 class SuperAdminScreen extends StatefulWidget {
   const SuperAdminScreen({super.key});
@@ -91,7 +94,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   }
 
   Future<Response<dynamic>> _loadLotteryParticipants() {
-    return _dio.get('/super/lottery/participants');
+    final request = _dio.get('/super/lottery/participants');
+    // 标签页延迟构建：先订阅预取的失败，原 Future 仍交给 FutureBuilder 展示错误。
+    request.ignore();
+    return request;
   }
 
   void _refreshLotteryTab() {
@@ -104,7 +110,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
 
   Future<void> _approveInvitation(dynamic inv, bool approve) async {
     final ctrl = TextEditingController();
-    final reason = await showDialog<String>(
+    final reason = await showAppDialog<String>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: Text(approve ? '同意理由' : '驳回理由'),
@@ -182,7 +188,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         title: const Text('超级管理员面板'),
         leading: const BackButton(),
         actions: const [],
-        bottom: TabBar(
+        bottom: AppTabBarSurface(
+            child: TabBar(
           controller: _tabController,
           tabs: const [
             Tab(text: '用户管理'),
@@ -191,7 +198,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             Tab(text: '抽奖管理'),
             Tab(text: '应用版本'),
           ],
-        ),
+        )),
       ),
       body: TabBarView(
         controller: _tabController,
@@ -228,7 +235,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         ),
         Expanded(
           child: _users.isEmpty
-              ? const Center(child: Text('暂无用户'))
+              ? const Center(child: AppContentSurface.reading(child: Text('暂无用户')))
               : ListView.builder(
                   itemCount: _users.length,
                   itemBuilder: (_, i) => _buildUserItem(_users[i]),
@@ -283,7 +290,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
 
   Widget _buildApprovalsTab() {
     if (_pendingInvitations.isEmpty) {
-      return const Center(child: Text('暂无待审批的申请'));
+      return const Center(child: AppContentSurface.reading(child: Text('暂无待审批的申请')));
     }
     return RefreshIndicator(
       onRefresh: _loadAll,
@@ -385,7 +392,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
 
   // --- 以下为原有用户管理逻辑 ---
   void _showChangeRoleDialog(AdminUserSummary user) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('修改角色'),
@@ -435,7 +442,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   }
 
   Future<void> _deleteUser(int uid) async {
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('确认删除'),
@@ -465,7 +472,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
 
   Widget _buildAdminLogsTab() {
     if (_adminLogs.isEmpty) {
-      return const Center(child: Text('暂无明显管理员操作日志'));
+      return const Center(child: AppContentSurface.reading(child: Text('暂无明显管理员操作日志')));
     }
     return RefreshIndicator(
       onRefresh: _loadAll,
@@ -555,7 +562,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     final amountCtrl = TextEditingController(text: '1');
     final reasonCtrl = TextEditingController();
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: Text('追回 $adminName 的管理经验'),
@@ -652,7 +659,15 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           if (snapshot.error.toString().contains('404')) {
             return _buildLotteryEmptyState('暂无抽奖活动');
           }
-          return Center(child: Text('加载失败: ${snapshot.error}'));
+          final error = snapshot.error;
+          return StatePlaceholder(
+            icon: Icons.cloud_off_outlined,
+            title: error is DioException
+                ? AppFeedback.dioErrorMessage(error, fallback: '抽奖参与者加载失败')
+                : '抽奖参与者加载失败',
+            actionLabel: '重新加载',
+            onAction: _refreshLotteryTab,
+          );
         }
         if (snapshot.data?.statusCode == 404) {
           return _buildLotteryEmptyState('暂无抽奖活动');
@@ -714,7 +729,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             ),
             Expanded(
               child: participants.isEmpty
-                  ? const Center(child: Text('暂无参与者'))
+                  ? const Center(child: AppContentSurface.reading(child: Text('暂无参与者')))
                   : ListView.builder(
                       itemCount: participants.length,
                       itemBuilder: (context, index) {
@@ -818,7 +833,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   }
 
   Future<void> _deleteLotteryEvent(dynamic eventId) async {
-    final confirm = await showDialog<bool>(
+    final confirm = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('删除抽奖'),
@@ -863,7 +878,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     required dynamic userId,
     required String userLabel,
   }) async {
-    final confirm = await showDialog<bool>(
+    final confirm = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: const Text('踢出用户'),
@@ -908,7 +923,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     final messenger = ScaffoldMessenger.of(context);
     DateTime drawTime = _nowBeijingWallTime().add(const Duration(hours: 1));
 
-    final created = await showDialog<bool>(
+    final created = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AppAlertDialog(
@@ -1010,7 +1025,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                 } on DioException catch (e) {
                   final data = e.response?.data;
                   final msg = data is Map
-                      ? ((data['message'] ?? data['error'])?.toString() ?? '发布失败')
+                      ? ((data['message'] ?? data['error'])?.toString() ??
+                          '发布失败')
                       : '发布失败';
                   messenger.showSnackBar(
                     SnackBar(content: Text(msg), backgroundColor: Colors.red),

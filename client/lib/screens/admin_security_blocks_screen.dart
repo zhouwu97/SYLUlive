@@ -97,7 +97,7 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
     if (_busy || session == null || !_owns(session)) return;
     setState(() => _busy = true);
     try {
-      final confirmed = await showDialog<bool>(
+      final confirmed = await showAppDialog<bool>(
         context: context,
         builder: (dialogContext) => SecuritySessionGuard(
             auth: context.read<AuthProvider>(),
@@ -158,23 +158,25 @@ class _AdminSecurityBlocksScreenState extends State<AdminSecurityBlocksScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
-            Text(
+            AppContentSurface.reading(
+                child: Text(
               '校园网、宿舍和运营商出口可能由多人共用。误封时请及时解除。',
               style: Theme.of(context).textTheme.bodyMedium,
-            ),
+            )),
             const SizedBox(height: AppSpacing.md),
             if (_loading)
               const Center(child: CircularProgressIndicator())
             else if (_error != null)
               Center(
-                child: Column(children: [
+                child: AppContentSurface.reading(
+                    child: Column(children: [
                   Text(_error!),
                   if (_session != null)
                     TextButton(onPressed: _load, child: const Text('重试')),
-                ]),
+                ])),
               )
             else if (_blocks.isEmpty)
-              const Center(child: Text('当前没有生效封禁'))
+              const Center(child: AppContentSurface.reading(child: Text('当前没有生效封禁')))
             else
               for (final block in _blocks)
                 Padding(

@@ -72,7 +72,7 @@ class _AdminFeaturedApplicationsScreenState
     int penaltyPoints = 0;
     String? reason;
     if (malicious) {
-      final result = await showDialog<Map<String, dynamic>>(
+      final result = await showAppDialog<Map<String, dynamic>>(
         context: context,
         builder: (ctx) {
           final controller = TextEditingController();
@@ -151,7 +151,7 @@ class _AdminFeaturedApplicationsScreenState
 
   Future<String?> _askAdminReason(String title, String hint) async {
     final controller = TextEditingController();
-    return showDialog<String>(
+    return showAppDialog<String>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: Text(title),
@@ -184,14 +184,14 @@ class _AdminFeaturedApplicationsScreenState
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-              ? Center(child: Text(_errorMessage!))
+              ? Center(child: AppContentSurface.reading(child: Text(_errorMessage!)))
               : _buildFeaturedApplicationsContent(),
     );
   }
 
   Widget _buildFeaturedApplicationsContent() {
     if (_featuredApplications.isEmpty) {
-      return const Center(child: Text('暂无精华申请'));
+      return const Center(child: AppContentSurface.reading(child: Text('暂无精华申请')));
     }
     return RefreshIndicator(
       onRefresh: _loadData,

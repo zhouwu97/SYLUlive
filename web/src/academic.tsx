@@ -17,13 +17,17 @@ import {
   type BridgeErrorCode,
   type Course,
   type Grade,
+  type HelloResult,
+  BridgeFailure,
 } from "@sylulive/academic-contracts";
 import { bridge } from "./bridge";
 import { useAssistantProbe } from "./use-assistant-probe";
 import { AssistantInstallGuide } from "./assistant-guide";
-import { downloadJSON, errorText, write } from "./api";
-import { Form, Head, Empty, Stats, Tabs, useUI } from "./ui";
+import { waitForSchoolLogin } from "./assistant-login";
+import { downloadJSON, errorText, write, request, entity } from "./api";
+import { Form, Head, Empty, Icon, Stats, Tabs, useUI } from "./ui";
 import { useAuth } from "./auth";
+import { mobileTermLabel, useMobile } from "./mobile";
 const initial = (): AcademicBackup => ({
   version: 1,
   term: defaultAcademicTerm(),
@@ -65,11 +69,13 @@ export const useAcademic = () => useContext(Context);
 export function ConnectionForm({
   dataset,
   onData,
+  successMessage = "学校资料已更新",
 }: {
   dataset: AcademicDataset;
   onData: (value: unknown, snapshot: AcademicSnapshot) => string | void;
+  successMessage?: string | null;
 }) {
-  const { requireUser } = useAuth(),
+  const { requireUser, user } = useAuth(),
     ui = useUI(),
     store = useAcademic();
   const [provider, setProvider] = useState<AcademicProvider>(
@@ -90,6 +96,7 @@ export function ConnectionForm({
   const assistant = useAssistantProbe({ watchProvider: provider });
   const pending = useRef<AbortController | null>(null),
     busyRef = useRef(false),
+    automaticLogin = useRef(false),
     announced = useRef(false);
   busyRef.current = busy;
   useEffect(() => () => pending.current?.abort(), []);
@@ -108,8 +115,15 @@ export function ConnectionForm({
     if (!known || busyRef.current) return;
     setConnection((current) => current || known);
   }, [assistant.connections, provider]);
+  async function verifySiteUser(signal: AbortSignal) {
+    const currentUser = entity(await request("/api/user/profile", { signal }), "user", "data");
+    if (currentUser.id !== user?.id)
+      throw new BridgeFailure("site_login_required", "本站账号已改变，请刷新网页后重新连接。");
+  }
   async function act(fn: (signal: AbortSignal) => Promise<void>) {
+    if (busyRef.current) return;
     if (!requireUser()) return;
+    busyRef.current = true;
     const controller = new AbortController();
     pending.current = controller;
     setBusy(true);
@@ -117,7 +131,11 @@ export function ConnectionForm({
     setFailure(undefined);
     assistant.setPaused(true);
     try {
-      await bridge("hello", {}, controller.signal);
+      // 由同源网页先刷新过期的 HttpOnly 会话，扩展始终只核对 Cookie，
+      // 不取得 Token，也不因页面缓存的旧用户资料而误报学校连接失败。
+      await verifySiteUser(controller.signal);
+      const hello = await bridge<HelloResult>("hello", {}, controller.signal);
+      automaticLogin.current = hello?.automaticLogin === true;
       assistant.markReady();
       await fn(controller.signal);
     } catch (e) {
@@ -136,8 +154,45 @@ export function ConnectionForm({
       }
     } finally {
       assistant.setPaused(false);
-      if (!controller.signal.aborted) setBusy(false);
+      busyRef.current = false;
+      setBusy(false);
       if (pending.current === controller) pending.current = null;
+    }
+  }
+  async function login(signal: AbortSignal) {
+    setStatus("请在助手页完成首次授权；已保存凭据时会自动登录，成功后自动返回并读取资料…");
+    const ready = await waitForSchoolLogin(provider, signal, setStatus, () => verifySiteUser(signal));
+    if (!ready) setStatus("已打开学校登录助手。请完成登录后返回，重新点击连接并读取资料。");
+    return ready;
+  }
+  async function readSchoolData(signal: AbortSignal, known?: AssistantConnection, retryLogin = true): Promise<void> {
+    try {
+      setStatus("正在获取学校身份…");
+      const value = known || await bridge<AcademicConnection>("session", { provider }, signal);
+      if (!known && 'appUserId' in value && value.appUserId !== user?.id)
+        throw new BridgeFailure("connection_stale", "本站账号已改变，本次学校连接未写入。");
+      if (!known && (provider === "undergraduate" || provider === "graduate")) {
+        await request("/api/student-identity/bind", {
+          method: "POST", signal, headers: {"X-Expected-App-User": String(user!.id)},
+          body: JSON.stringify({ provider_id: `sylu_${provider}`, student_id: value.studentId, verification_method: "local_academic_login" }),
+        });
+      }
+      if (signal.aborted) return;
+      setConnection(value);
+      setStatus(`已连接 ${value.displayName || value.studentId}，正在读取资料…`);
+      const snapshot = await bridge<AcademicSnapshot>("query", { provider, dataset, term: store.data.term, epoch: value.epoch }, signal);
+      if (signal.aborted) return;
+      const note = onData(snapshot.data, snapshot);
+      if (note) { setStatus(note); return; }
+      store.setUpdated(snapshot.fetchedAt);
+      if (successMessage) ui.notify(successMessage);
+      ui.close();
+    } catch (error) {
+      const code = bridgeErrorCode(error);
+      if (retryLogin && automaticLogin.current && (code === "school_login_required" || code === "authorization_required")) {
+        setConnection(null);
+        if (await login(signal)) await readSchoolData(signal, undefined, false);
+      } else throw error;
     }
   }
   const unauthorized = assistant.authorized
@@ -146,7 +201,7 @@ export function ConnectionForm({
   const guidance = unauthorized
     ? "本机助手还未获准访问这所学校的教务系统。用下方按钮打开助手页并授予权限，回到本页会自动继续，不必刷新。"
     : failure === "school_login_required"
-      ? "学校登录已过期：用下方按钮打开学校登录页，完成后重新点击。"
+      ? "学校登录已过期：用下方按钮打开学校登录助手；新版助手完成登录后会自动返回并读取。"
       : failure === "site_login_required"
         ? "沈理校园的登录状态已失效，请重新登录本站后再连接教务助手。"
         : failure === "identity_changed" || failure === "connection_stale"
@@ -196,26 +251,7 @@ export function ConnectionForm({
           className="btn primary"
           disabled={busy}
           onClick={() =>
-            act(async (signal) => {
-              setStatus("正在获取学校身份…");
-              const value = await bridge<AcademicConnection>("session", { provider }, signal);
-              if (provider === 'undergraduate' || provider === 'graduate') {
-                await write('/api/student-identity/bind', {provider_id:`sylu_${provider}`,student_id:value.studentId,verification_method:'local_academic_login'});
-              }
-              if (signal.aborted) return;
-              setConnection(value);
-              setStatus(`已连接 ${value.displayName || value.studentId}，正在读取资料…`);
-              const snapshot = await bridge<AcademicSnapshot>("query", {provider, dataset, term: store.data.term, epoch: value.epoch}, signal);
-              if (signal.aborted) return;
-              const note = onData(snapshot.data, snapshot);
-              if (note) {
-                setStatus(note);
-                return;
-              }
-              store.setUpdated(snapshot.fetchedAt);
-              ui.notify("学校资料已更新");
-              ui.close();
-            })
+            act(signal => readSchoolData(signal))
           }
         >
           {busy ? "正在连接并读取…" : "连接并读取资料"}
@@ -225,10 +261,7 @@ export function ConnectionForm({
           disabled={busy}
           onClick={() =>
             act(async (signal) => {
-              await bridge("connect", { provider }, signal);
-              setStatus(
-                "已打开本机助手页：按页面提示授予权限或登录学校，完成后回到本页。",
-              );
+              if (await login(signal)) await readSchoolData(signal, undefined, false);
             })
           }
         >
@@ -236,6 +269,7 @@ export function ConnectionForm({
         </button>
       </div>
       {guidance && <p className="notice-line">{guidance}</p>}
+      {busy && <button className="btn ghost" onClick={() => { pending.current?.abort(); setStatus("已取消本次连接，原资料已保留。"); }}>取消连接</button>}
       <AssistantInstallGuide state={assistant.state} onRecheck={assistant.recheck} />
       {connection && (
         <>
@@ -248,23 +282,7 @@ export function ConnectionForm({
             className="btn primary"
             disabled={busy}
             onClick={() =>
-              act(async (signal) => {
-                const snapshot = await bridge<AcademicSnapshot>("query", {
-                  provider,
-                  dataset,
-                  term: store.data.term,
-                  epoch: connection.epoch,
-                }, signal);
-                if (signal.aborted) return;
-                const note = onData(snapshot.data, snapshot);
-                if (note) {
-                  setStatus(note);
-                  return;
-                }
-                store.setUpdated(snapshot.fetchedAt);
-                ui.notify("学校资料已更新");
-                ui.close();
-              })
+              act(signal => readSchoolData(signal, connection))
             }
           >
             {busy ? "正在读取…" : "查询并更新资料"}
@@ -448,6 +466,51 @@ export function AcademicSettings() {
   );
 }
 export function Schedule() {
+  return useMobile() ? <MobileSchedule /> : <DesktopSchedule />;
+}
+function MobileSchedule() {
+  const store = useAcademic(), ui = useUI();
+  const termLabel = mobileTermLabel(store.data.term);
+  const [params, setParams] = useSearchParams();
+  const week = Math.min(60, Math.max(1, Number(params.get('week')) || teachingWeek(store.data.termStart) || 1));
+  const all = mergeCourses(store.data.courses, store.data.overrides);
+  const courses = all.filter(course => course.weeks.includes(week));
+  const monday = store.data.termStart ? new Date(`${store.data.termStart}T00:00:00`) : new Date();
+  if (store.data.termStart) monday.setDate(monday.getDate() + (week - 1) * 7);
+  else monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7);
+  const dates = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(monday);
+    date.setDate(date.getDate() + index);
+    return date;
+  });
+  function connect() {
+    ui.open('更新学校课表', <ConnectionForm dataset="courses" onData={value => {
+      const note = keepEmptyResult(value, store.data.courses);
+      if (note) return note;
+      store.setData(previous => ({ ...previous, courses: value as Course[] }));
+    }} />);
+  }
+  function tools() {
+    ui.open('课表工具', <div className="mobile-settings-actions">
+      <button className="btn" onClick={() => ui.open('课表设置', <AcademicSettings />)}>课表设置与导入</button>
+      <button className="btn" onClick={() => ui.open('添加课程', <CourseForm />)}>添加课程</button>
+      <button className="btn" onClick={connect}>连接教务助手 / 刷新</button>
+      <button className="btn" onClick={() => downloadJSON('sylulive-academic.json', store.data)}>导出课表</button>
+      <button className="btn" onClick={() => ui.open('课程提醒与小窗', <ReminderSettings />)}>课程提醒与小窗</button>
+      <button className="btn" onClick={() => ui.open('本周空闲节次', <>{Array.from({ length: 7 }, (_, day) => <p key={day}>周{day + 1} · {Array.from({ length: 12 }, (_, period) => period + 1).filter(period => !courses.some(course => course.day === day + 1 && course.periods.includes(period))).join('、') || '无'}</p>)}</>)}>查看空闲节次</button>
+      <button className="btn" onClick={() => ui.open('本地调整', <><p>清除调整后恢复学校原始课表。</p><button className="btn" onClick={() => { store.setData(previous => ({ ...previous, overrides: {} })); ui.close(); }}>清除本地调整</button></>)}>管理本地调整</button>
+    </div>);
+  }
+  return <div className="mobile-schedule">
+    <header className="mobile-page-heading"><div><h1>课表</h1><p>{termLabel}</p></div><button className="mobile-icon-button" aria-label="课表工具" onClick={tools}><Icon name="more" size={24} /></button></header>
+    <div className="mobile-week-nav"><button className="mobile-icon-button" aria-label="上一周" disabled={week === 1} onClick={() => setParams({ week: String(week - 1) })}><Icon name="arrow" size={17} /></button><b>第 {week} 周 · {dates[0].getMonth() + 1}/{dates[0].getDate()} – {dates[6].getMonth() + 1}/{dates[6].getDate()}</b><button className="mobile-icon-button next" aria-label="下一周" disabled={week === 60} onClick={() => setParams({ week: String(week + 1) })}><Icon name="arrow" size={17} /></button></div>
+    <div className="mobile-week-days">{dates.map((date, index) => <div className={date.toDateString() === new Date().toDateString() ? 'today' : ''} key={index}><b>{['一', '二', '三', '四', '五', '六', '日'][index]}</b><span>{date.getMonth() + 1}/{date.getDate()}</span></div>)}</div>
+    {!all.length ? <section className="mobile-schedule-empty"><i><Icon name="schedule" size={38} /></i><h2>还没有课表</h2><span className="mobile-term-hint">推荐导入 {termLabel}</span><p>还没有任何课表数据，可以通过教务助手读取，或导入本地课表。</p><button className="btn primary" onClick={connect}>课表拉取</button><button className="link-btn" onClick={() => ui.open('课表设置', <AcademicSettings />)}>切换历史学期 / 导入课表</button></section>
+      : <div className="schedule mobile-course-grid"><div className="sch-head">节次</div>{['一', '二', '三', '四', '五', '六', '日'].map(day => <div className="sch-head" key={day}>{day}</div>)}{Array.from({ length: 6 }, (_, index) => index * 2 + 1).map(period => <Row key={period} period={period} days={7} courses={courses} onEdit={course => ui.open('课程详情与编辑', <CourseForm course={course} />)} />)}</div>}
+    {!all.length && <p className="mobile-schedule-steps">1 选择学期 · 2 预览课程 · 3 设置开学第一周</p>}
+  </div>;
+}
+function DesktopSchedule() {
   const store = useAcademic(),
     ui = useUI();
   const [params, setParams] = useSearchParams();
@@ -462,6 +525,19 @@ export function Schedule() {
   const weekend = params.get("weekend") !== "0";
   const all = mergeCourses(store.data.courses, store.data.overrides);
   const courses = all.filter((c) => c.weeks.includes(week));
+  const openConnect = () =>
+    ui.open(
+      "更新学校课表",
+      <ConnectionForm
+        dataset="courses"
+        onData={(value) => {
+          const note = keepEmptyResult(value, store.data.courses);
+          if (note) return note;
+          store.setData((s) => ({ ...s, courses: value as Course[] }));
+        }}
+      />,
+    );
+  const todayIndex = (new Date().getDay() || 7) - 1;
   return (
     <>
       <Head
@@ -493,22 +569,7 @@ export function Schedule() {
             ? `学校数据更新于 ${new Date(store.updated).toLocaleString("zh-CN")}`
             : "未读取学校课表"}
         </span>
-        <button
-          className="link-btn"
-          onClick={() =>
-            ui.open(
-              "更新学校课表",
-              <ConnectionForm
-                dataset="courses"
-                onData={(value) => {
-                  const note = keepEmptyResult(value, store.data.courses);
-                  if (note) return note;
-                  store.setData((s) => ({ ...s, courses: value as Course[] }));
-                }}
-              />,
-            )
-          }
-        >
+        <button className="link-btn" onClick={openConnect}>
           连接教务助手 / 刷新
         </button>
       </div>
@@ -555,17 +616,28 @@ export function Schedule() {
         </label>
       </div>
       <div className="schedule-scroll" tabIndex={0}>
+        {!store.data.courses.length && (
+          <div className="schedule-empty-hint">
+            <Icon name="schedule" size={22} />
+            <b>还没有课表</b>
+            <p>连接教务助手自动读取本学期课表，也可以手动添加课程。</p>
+            <div className="empty-actions">
+              <button className="btn primary" onClick={openConnect}>连接教务助手</button>
+              <button className="btn" onClick={() => ui.open("添加课程", <CourseForm />)}>手动添加</button>
+            </div>
+          </div>
+        )}
         <div
           className="schedule"
           style={{
-            gridTemplateColumns: `65px repeat(${weekend ? 7 : 5},minmax(104px,1fr))`,
+            gridTemplateColumns: `86px repeat(${weekend ? 7 : 5},minmax(104px,1fr))`,
           }}
         >
           <div className="sch-head">节次</div>
           {["一", "二", "三", "四", "五", "六", "日"]
             .slice(0, weekend ? 7 : 5)
-            .map((d) => (
-              <div className="sch-head" key={d}>
+            .map((d, index) => (
+              <div className={`sch-head ${index === todayIndex ? "today" : ""}`} key={d}>
                 周{d}
               </div>
             ))}
@@ -573,6 +645,7 @@ export function Schedule() {
             <Row
               key={period}
               period={period}
+              today={todayIndex}
               days={weekend ? 7 : 5}
               courses={courses}
               onEdit={(c) =>
@@ -668,22 +741,26 @@ function ReminderSettings() {
     <button className="btn" onClick={() => {if(requireUser()) void ui.act(() => bridge('reminders',{enabled:false}),'已关闭提醒并清除保存的提醒课表');}}>关闭提醒并清除提醒数据</button>
   </div>;
 }
+// 与 App 课表页一致的大节作息，键为大节起始小节。
+const PERIOD_TIMES: Record<number, string> = { 1: "08:00–09:40", 3: "10:00–11:40", 5: "13:00–14:40", 7: "14:50–16:30", 9: "16:40–18:20", 11: "19:30–21:10" };
 function Row({
   period,
+  today,
   days,
   courses,
   onEdit,
 }: {
   period: number;
+  today?: number;
   days: number;
   courses: Course[];
   onEdit: (c: Course) => void;
 }) {
   return (
     <>
-      <div className="sch-time">第 {period}–{period+1} 节</div>
+      <div className="sch-time">第 {period}–{period+1} 节{PERIOD_TIMES[period] && <small>{PERIOD_TIMES[period]}</small>}</div>
       {Array.from({ length: days }, (_, i) => (
-        <div className="sch-cell" key={i}>
+        <div className={`sch-cell ${i === today ? "is-today" : ""}`} key={i}>
           {courses
             .filter((c) => c.day === i + 1 && c.periods.some(p=>p===period||p===period+1))
             .map((c) => (
@@ -791,7 +868,7 @@ export function Grades() {
               </tbody>
             </table>
             {!store.data.grades.length && (
-              <Empty description="通过教务助手更新成绩，或导入本地资料。" />
+              <Empty icon="grades" description="通过教务助手更新成绩，或导入本地资料。" />
             )}
           </div>
         </>

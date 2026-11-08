@@ -44,6 +44,20 @@ void main() {
     expect(tester.widget<Scaffold>(find.byKey(scaffold)).backgroundColor,
         Colors.transparent);
     expect(find.byType(CustomBackgroundLayer), findsOneWidget);
+    for (final glass in [true, false]) {
+      await theme.setFrostedGlass(glass);
+      await tester.pumpAndSettle();
+      expect(scaffold.currentState, same(state));
+      expect(input.text, '保留草稿');
+      expect(scroll.offset, 120);
+      expect(tester.widget<Scaffold>(find.byKey(scaffold)).backgroundColor,
+          Colors.transparent);
+      expect(tester.widget<AppBar>(find.byType(AppBar)).backgroundColor,
+          isNull);
+      final pageTheme = Theme.of(tester.element(find.byKey(scaffold)));
+      expect(pageTheme.appBarTheme.backgroundColor, Colors.transparent);
+      expect(find.byType(CustomBackgroundLayer), findsOneWidget);
+    }
     await theme.setCleanBackgroundMode();
     await tester.pumpAndSettle();
     expect(scaffold.currentState, same(state));

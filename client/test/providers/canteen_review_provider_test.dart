@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -39,6 +41,87 @@ const _dimensions = CanteenReviewDimensions(
 );
 
 void main() {
+  test('本人数量遍历全部游标页，区分旧评价并去除跨页重复', () async {
+    final queries = <Map<String, dynamic>>[];
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'))
+      ..httpClientAdapter = _FakeAdapter((o) async {
+        queries.add(Map.of(o.queryParameters));
+        return _json(
+            jsonEncode(o.queryParameters['cursor'] == null
+                ? {
+                    'items': [
+                      {'id': 7},
+                      {'id': 7, 'source': 'legacy', 'legacy_rating_id': 7}
+                    ],
+                    'count': 2,
+                    'has_more': true,
+                    'next_cursor': 'page2',
+                  }
+                : {
+                    'items': [
+                      {'id': 7},
+                      {'id': 8}
+                    ],
+                    'count': 2,
+                    'has_more': false,
+                  }),
+            200);
+      });
+    expect(
+        await CanteenProvider(dio).countMyCanteenReviews(isCurrent: () => true),
+        3);
+    expect(queries, [
+      {'limit': 50},
+      {'limit': 50, 'cursor': 'page2'}
+    ]);
+  });
+
+  for (final broken in ['error', 'missing-cursor', 'repeated-cursor']) {
+    test('不完整的食堂统计保持未知 $broken', () async {
+      var requests = 0;
+      final dio = Dio(BaseOptions(baseUrl: 'http://test'))
+        ..httpClientAdapter = _FakeAdapter((o) async {
+          requests++;
+          if (broken == 'error' && requests > 1) {
+            return _json('{"error":"失败"}', 503);
+          }
+          return _json(
+              jsonEncode({
+                'items': [
+                  {'id': requests}
+                ],
+                'has_more': true,
+                if (broken != 'missing-cursor') 'next_cursor': 'same',
+              }),
+              200);
+        });
+      expect(
+          await CanteenProvider(dio)
+              .countMyCanteenReviews(isCurrent: () => true),
+          isNull);
+      expect(requests, broken == 'missing-cursor' ? 1 : 2);
+    });
+  }
+
+  test('统计等待期间账号改变，不读取下一页或提交旧数量', () async {
+    final gate = Completer<ResponseBody>();
+    var current = true;
+    var requests = 0;
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'))
+      ..httpClientAdapter = _FakeAdapter((o) {
+        requests++;
+        return gate.future;
+      });
+    final result =
+        CanteenProvider(dio).countMyCanteenReviews(isCurrent: () => current);
+    await Future<void>.delayed(Duration.zero);
+    current = false;
+    gate.complete(_json(
+        '{"items":[{"id":1}],"has_more":true,"next_cursor":"more"}', 200));
+    expect(await result, isNull);
+    expect(requests, 1);
+  });
+
   test('deleteReview 使用 source 区分 V2 与 legacy URL', () async {
     final paths = <String>[];
     final dio = Dio(BaseOptions(baseUrl: 'http://test'))

@@ -17,11 +17,12 @@ async function visualFixture(page: Page) {
   return errors;
 }
 
-test("新主题四个主页面在 320–1900px 和深浅色下可读、无重叠，保留键盘焦点", async ({ page }) => {
-  const errors = await visualFixture(page);
-  for (const theme of ["light", "dark"]) {
-    await page.addInitScript((theme) => localStorage.setItem("sylulive-theme", theme), theme);
-    for (const width of [320, 375, 414, 768, 1132, 1280, 1440, 1900]) {
+for (const theme of ["light", "dark"]) {
+  for (const width of [320, 375, 414, 768, 1132, 1280, 1440, 1900]) {
+    // 每个主题和尺寸独立隔离，保留全部断言，避免 64 次导航共用一次超时。
+    test(`新主题四个主页面可读、无重叠，保留键盘焦点 ${theme} ${width}px`, async ({ page }) => {
+      const errors = await visualFixture(page);
+      await page.addInitScript(value => localStorage.setItem("sylulive-theme", value), theme);
       await page.setViewportSize({ width, height: width === 1280 ? 800 : 1000 });
       for (const route of ["./", "community", "post/675", "market"]) {
         await page.goto(route);
@@ -48,14 +49,20 @@ test("新主题四个主页面在 320–1900px 和深浅色下可读、无重叠
             const picture = img.getBoundingClientRect(), frame = img.parentElement!.getBoundingClientRect();
             return picture.left < frame.left - 1 || picture.right > frame.right + 1 || picture.top < frame.top - 1 || picture.bottom > frame.bottom + 1;
           });
-          const containers = Array.from(document.querySelectorAll<HTMLElement>(".sidebar, .compact-quick .quick, .right-rail .rail-card, .market-card")).filter((el) => el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
+          const containers = Array.from(document.querySelectorAll<HTMLElement>(".right-rail .rail-card, .market-card")).filter((el) => el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
           const unbounded = containers.filter((el) => {
             const style = getComputedStyle(el);
             return style.backgroundColor === "rgba(0, 0, 0, 0)" || style.borderTopStyle === "none" || parseFloat(style.borderTopWidth) < 1;
           }).map((el) => el.className);
           const nav = document.querySelector<HTMLElement>(".sidebar")!;
           const frame = nav.getBoundingClientRect();
-          const navOutside = innerWidth > 760 && Array.from(nav.querySelectorAll(".nav-item")).some((el) => {
+          const navStyle = getComputedStyle(nav);
+          const flatNavigation = parseFloat(navStyle.borderRightWidth) === 0 && navStyle.borderRadius === "0px" && navStyle.boxShadow === "none";
+          const cardShortcuts = Array.from(document.querySelectorAll<HTMLElement>(".compact-quick .quick")).every((el) => {
+            const style = getComputedStyle(el), icon = getComputedStyle(el.querySelector("i")!);
+            return parseFloat(style.borderTopWidth) >= 1 && style.boxShadow === "none" && el.getBoundingClientRect().height >= 44 && icon.backgroundColor !== "rgba(0, 0, 0, 0)" && icon.boxShadow === "none";
+          });
+          const navOutside = innerWidth > 600 && Array.from(nav.querySelectorAll(".nav-item")).filter(el => !el.closest("details:not([open])") && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden").some((el) => {
             const item = el.getBoundingClientRect();
             return item.left < frame.left || item.right > frame.right || item.width < 44 || item.height < 44;
           });
@@ -66,16 +73,26 @@ test("新主题四个主页面在 320–1900px 和深浅色下可读、无重叠
               return text.left < button.left || text.right > button.right || text.bottom > button.bottom;
             });
           });
-          return { overflow: document.documentElement.scrollWidth > innerWidth, contrast, unbounded, navOutside, overlap: quickOutside || mediaOutside || cards.some((card) => card.picture > card.title.top || card.title.bottom > card.price) };
+          const headerOutside = Array.from(document.querySelectorAll<HTMLElement>(".topbar button, .topbar .brand")).filter((el) => el.getClientRects().length).some((el) => {
+            const bounds = el.getBoundingClientRect();
+            return bounds.left < -1 || bounds.right > innerWidth + 1;
+          });
+          return { overflow: document.documentElement.scrollWidth > innerWidth, headerOutside, contrast, unbounded, flatNavigation, cardShortcuts, navOutside, overlap: quickOutside || mediaOutside || cards.some((card) => card.picture > card.title.top || card.title.bottom > card.price) };
         });
         expect(result.overflow, `${theme} ${width} ${route}`).toBe(false);
+        expect(result.headerOutside, `${theme} ${width} ${route} header controls fully visible`).toBe(false);
         expect(result.overlap, `${theme} ${width} ${route}`).toBe(false);
         expect(result.unbounded, `${theme} ${width} ${route} visible widget containers`).toEqual([]);
+        expect(result.flatNavigation, `${theme} ${width} ${route} integrated navigation`).toBe(true);
+        expect(result.cardShortcuts, `${theme} ${width} ${route} community shortcut cards and hit areas`).toBe(true);
         expect(result.navOutside, `${theme} ${width} ${route} navigation hit areas`).toBe(false);
         expect(result.contrast.filter((item) => item.ratio < 4.5), `${theme} ${width} ${route} contrast`).toEqual([]);
-        if (route === "./" && width <= 760) {
-          const schedule = await page.locator(".today-card").evaluate((el) => ({ text: el.querySelector(".today-copy")!.getBoundingClientRect().bottom, action: el.querySelector(".btn")!.getBoundingClientRect().top }));
-          expect(schedule.action, `${theme} ${width} schedule action below complete status text`).toBeGreaterThanOrEqual(schedule.text);
+        if (route === "./" && width <= 600) {
+          await expect(page.getByRole("searchbox", { name: "搜索帖子" }).or(page.getByRole("textbox", { name: "搜索帖子" }))).toBeVisible();
+          const publish = page.getByRole("button", { name: "发布校园内容", exact: true });
+          const dock = page.getByRole("navigation", { name: "底部导航" });
+          const publishBounds = await publish.boundingBox(), dockBounds = await dock.boundingBox();
+          expect(publishBounds!.y + publishBounds!.height, `${theme} ${width} publish stays above navigation`).toBeLessThan(dockBounds!.y);
         }
         if (width === 1280 && ["./", "market"].includes(route)) {
           const aboveFold = await page.locator(route === "market" ? ".market-page > .page-head, .market-page > .filter-row" : ".today-card").evaluateAll((elements) => elements.every((el) => el.getBoundingClientRect().bottom <= innerHeight));
@@ -117,9 +134,31 @@ test("新主题四个主页面在 320–1900px 和深浅色下可读、无重叠
         await expect(dialog).toHaveCount(0);
         await expect(publish).toBeFocused();
       }
+      await page.getByRole("button", { name: "发布闲置", exact: true }).focus();
+      expect(await page.getByRole("button", { name: "发布闲置", exact: true }).evaluate(el => getComputedStyle(el).outlineWidth)).toBe("2px");
+      expect(errors).toEqual([]);
+    });
+  }
+}
+
+test("游客在窄屏深浅主题下可完整访问登录入口", async ({ page }) => {
+  const errors = await visualFixture(page);
+  await page.route("**/api/user/profile", route => route.fulfill({ status: 401, json: { message: "未登录" } }));
+  await page.route("**/api/refresh", route => route.fulfill({ status: 401, json: { message: "未登录" } }));
+  for (const theme of ["light", "dark"]) {
+    await page.addInitScript(value => localStorage.setItem("sylulive-theme", value), theme);
+    for (const width of [320, 375]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("community");
+      const login = page.getByRole("button", { name: "登录", exact: true });
+      await expect(login).toBeVisible();
+      expect(await login.evaluate(el => { const bounds = el.getBoundingClientRect(); return bounds.left >= 0 && bounds.right <= innerWidth; }), `${theme} ${width} guest login is not clipped`).toBe(true);
+      await expect(page.locator(".profile-rail-stats")).toHaveCount(0);
+      await login.click();
+      await expect(page.getByRole("dialog", { name: "登录沈理校园", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
     }
   }
-  await page.getByRole("button", { name: "发布闲置", exact: true }).focus();
-  expect(await page.locator(".btn.primary").evaluate((el) => getComputedStyle(el).outlineWidth)).toBe("2px");
   expect(errors).toEqual([]);
 });

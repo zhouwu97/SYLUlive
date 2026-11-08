@@ -25,6 +25,11 @@ const IntegrationDeviceGrant = "urn:ietf:params:oauth:grant-type:device_code"
 const IntegrationReadScope = "community:read"
 const IntegrationProposeScope = "community:propose"
 const IntegrationActionScope = "actions:read_own"
+const IntegrationCheckInScope = "checkin:write"
+const IntegrationAutoReplyScope = "community:bot_reply"
+const IntegrationAutoPostScope = "community:bot_post"
+const IntegrationGradesScope = "academic:grades:read"
+const IntegrationErkeScope = "academic:erke:read"
 
 type IntegrationError struct {
 	Code   string
@@ -80,7 +85,7 @@ func IntegrationSecretHash(raw string) string {
 	return hex.EncodeToString(v[:])
 }
 func integrationScopes(raw string) (string, error) {
-	allowed := map[string]bool{"profile:read_minimal": true, IntegrationReadScope: true, "content:read_own_public": true, IntegrationProposeScope: true, IntegrationActionScope: true}
+	allowed := map[string]bool{"profile:read_minimal": true, IntegrationReadScope: true, "content:read_own_public": true, IntegrationProposeScope: true, IntegrationActionScope: true, IntegrationCheckInScope: true, IntegrationAutoReplyScope: true, IntegrationAutoPostScope: true, IntegrationGradesScope: true, IntegrationErkeScope: true}
 	set := map[string]bool{}
 	for _, scope := range strings.Fields(raw) {
 		if !allowed[scope] {
@@ -92,6 +97,9 @@ func integrationScopes(raw string) (string, error) {
 		return "", integrationError("invalid_scope", 400)
 	}
 	if set[IntegrationProposeScope] && (!set[IntegrationReadScope] || !set[IntegrationActionScope]) {
+		return "", integrationError("invalid_scope", 400)
+	}
+	if (set[IntegrationAutoReplyScope] || set[IntegrationAutoPostScope]) && !set[IntegrationProposeScope] {
 		return "", integrationError("invalid_scope", 400)
 	}
 	items := make([]string, 0, len(set))
@@ -346,6 +354,51 @@ func (s *IntegrationAuthService) DecideConsent(ctx context.Context, owner uint, 
 			return err
 		}
 		return tx.Create(&models.IntegrationAudit{OwnerID: owner, BindingID: result.ID, Event: "authorized", CreatedAt: s.Now()}).Error
+	})
+	return result, err
+}
+
+type IntegrationScopeUpdate struct {
+	Scopes        []string `json:"scopes"`
+	ExpectedEpoch uint     `json:"expected_epoch"`
+}
+
+// UpdateScopes 由本人在官网直接调整当前连接的权限，不重建连接：
+// epoch 与令牌保持不变，执行端下次请求即按新 scope 鉴权，令牌轮换时同步新的 scope 字段。
+// 收回「创建草稿」时作废未确认草稿，避免旧授权下生成的内容在权限收回后仍待确认。
+func (s *IntegrationAuthService) UpdateScopes(ctx context.Context, owner uint, id string, input IntegrationScopeUpdate) (models.IntegrationBinding, error) {
+	var result models.IntegrationBinding
+	err := s.ownerTx(ctx, owner, func(tx *gorm.DB, user models.User) error {
+		var b models.IntegrationBinding
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND owner_id = ?", id, owner).Take(&b).Error; err != nil {
+			return integrationError("binding_unavailable", 404)
+		}
+		if b.State != "active" || b.Epoch != input.ExpectedEpoch {
+			return integrationError("binding_conflict", 409)
+		}
+		if err := s.bindingValid(tx, b, user); err != nil {
+			return err
+		}
+		scopes, err := integrationScopes(strings.Join(input.Scopes, " "))
+		if err != nil {
+			return err
+		}
+		if scopes == b.Scopes {
+			result = b
+			return nil
+		}
+		hadPropose := IntegrationHasScope(b, IntegrationProposeScope)
+		if err = tx.Model(&b).Update("scopes", scopes).Error; err != nil {
+			return err
+		}
+		b.Scopes = scopes
+		if hadPropose && !IntegrationHasScope(b, IntegrationProposeScope) {
+			if err = tx.Model(&models.IntegrationAction{}).Where("binding_id = ? AND state = ?", b.ID, "pending").Updates(map[string]interface{}{"state": "invalidated", "confirm_nonce_hash": "", "confirm_expires_at": nil, "payload": "{}"}).Error; err != nil {
+				return err
+			}
+		}
+		result = b
+		return tx.Create(&models.IntegrationAudit{OwnerID: owner, BindingID: b.ID, Event: "scopes_updated", CreatedAt: s.Now()}).Error
 	})
 	return result, err
 }

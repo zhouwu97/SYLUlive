@@ -8,8 +8,8 @@ import (
 type Like struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
 	UserID     uint      `gorm:"not null;uniqueIndex:idx_like_unique" json:"user_id"`
-	TargetType string    `gorm:"size:20;not null;uniqueIndex:idx_like_unique" json:"target_type"` // post/reply
-	TargetID   uint      `gorm:"not null;uniqueIndex:idx_like_unique" json:"target_id"`
+	TargetType string    `gorm:"size:20;not null;uniqueIndex:idx_like_unique;index:idx_like_target,priority:1" json:"target_type"` // post/reply
+	TargetID   uint      `gorm:"not null;uniqueIndex:idx_like_unique;index:idx_like_target,priority:2" json:"target_id"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 

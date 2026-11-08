@@ -65,6 +65,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   String _postType = '';
   String _contactType = '';
   bool _isLoading = false;
+  bool _checkingEligibility = false;
   bool _isWritingPost = false;
   Set<_PublishField> _attentionFields = {};
   int _attentionPulse = 0;
@@ -116,10 +117,10 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   bool _publishAbandoned = false;
 
   Future<void> _maybePop() async {
-    if (_isLoading) {
+    if (_isLoading || _checkingEligibility) {
       // 发布进行中，返回等于取消这次发布。必须让用户明确选择，
       // 不能因为 [_hasDraft] 被判成 false 就无声离开、让旧流程继续提交。
-      final confirmed = await showDialog<bool>(
+      final confirmed = await showAppDialog<bool>(
         context: context,
         builder: (_) => AppAlertDialog(
           title: const Text('取消本次发布？'),
@@ -148,7 +149,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (_) => AppAlertDialog(
         title: const Text('放弃编辑？'),
@@ -628,13 +629,29 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   // ---------------------------------------------------------------------------
 
   Future<void> _submit() async {
-    if (_isLoading) return;
+    if (_isLoading || _checkingEligibility) return;
 
     final auth = context.read<AuthProvider>();
     final accountId = auth.user?.id;
     if (accountId == null || accountId <= 0) {
       AppFeedback.error('请先登录后再发布', context: context);
       return;
+    }
+
+    // 本地资料可能早于另一设备完成的认证，拒绝前刷新一次服务端投影。
+    // 刷新只更新当前会话；切号或离开页面后不得继续本次发布。
+    if (auth.user?.studentVerified != true) {
+      final epoch = auth.accountSessionEpoch;
+      setState(() => _checkingEligibility = true);
+      try {
+        await auth.refreshUser();
+      } finally {
+        if (mounted) setState(() => _checkingEligibility = false);
+      }
+      if (!mounted || _publishAbandoned || auth.user?.id != accountId ||
+          auth.accountSessionEpoch != epoch) {
+        return;
+      }
     }
 
     // 缺的是服务器学生认证，不是"毕业"。本机连接教务不构成认证，
@@ -777,7 +794,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     final colorScheme = Theme.of(context).colorScheme;
 
     return PopScope(
-      canPop: !_hasDraft && !_isLoading,
+      canPop: !_hasDraft && !_isLoading && !_checkingEligibility,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) _maybePop();
       },
@@ -810,7 +827,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
           leading: BackButton(onPressed: _maybePop),
         ),
         bottomNavigationBar: PublishBottomBar(
-          isLoading: _isLoading,
+          isLoading: _isLoading || _checkingEligibility,
           onPressed: _isLoading ? null : _submit,
           label: _bottomBarLabel,
           accent: _marketAccent,

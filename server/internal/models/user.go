@@ -3,6 +3,8 @@ package models
 import (
 	"encoding/json"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // Role 用户角色
@@ -16,7 +18,8 @@ const (
 
 // User 用户模型
 type User struct {
-	ID uint `gorm:"primaryKey" json:"id"`
+	ID    uint               `gorm:"primaryKey" json:"id"`
+	AIBot *PublicBotIdentity `gorm:"-" json:"-"`
 	// 学号是经教务验证后的稳定学生身份。唯一性由显式 SQL 部分索引保证。
 	StudentID         string     `gorm:"size:64;default:''" json:"student_id"`
 	StudentVerifiedAt *time.Time `json:"-"`
@@ -88,25 +91,59 @@ type User struct {
 	IsFollowing      bool   `gorm:"-" json:"is_following"`             // 当前登录者是否关注了此用户
 
 	// 社交统计聚合字段
-	FollowersCount     int `gorm:"default:0;index" json:"followers_count"`
-	FollowingCount     int `gorm:"default:0;index" json:"following_count"`
+	FollowersCount int `gorm:"default:0;index" json:"followers_count"`
+	FollowingCount int `gorm:"default:0;index" json:"following_count"`
+	// 兼容列保留旧增量写入；AfterFind 按有效点赞事实投影，不作为展示权威。
 	TotalLikesReceived int `gorm:"default:0;index" json:"total_likes_received"`
 }
 
 // PublicUserResponse 是所有面向其他用户的用户资料响应。
 // 数据库 User 同时承载认证、信誉和教务字段，绝不能直接作为公开 API 的嵌套对象返回。
 type PublicUserResponse struct {
-	ID                   uint   `json:"id"`
-	Nickname             string `json:"nickname"`
-	Avatar               string `json:"avatar"`
-	Background           string `json:"background"`
-	BackgroundPreviewURL string `json:"background_preview_url,omitempty"`
-	Exp                  int    `json:"exp"`
-	CreditScore          int    `json:"credit_score"`
-	FollowersCount       int    `json:"followers_count"`
-	FollowingCount       int    `json:"following_count"`
-	TotalLikesReceived   int    `json:"total_likes_received"`
-	IsFollowing          bool   `json:"is_following"`
+	ID                   uint               `json:"id"`
+	Nickname             string             `json:"nickname"`
+	Avatar               string             `json:"avatar"`
+	Background           string             `json:"background"`
+	BackgroundPreviewURL string             `json:"background_preview_url,omitempty"`
+	Exp                  int                `json:"exp"`
+	CreditScore          int                `json:"credit_score"`
+	FollowersCount       int                `json:"followers_count"`
+	FollowingCount       int                `json:"following_count"`
+	TotalLikesReceived   int                `json:"total_likes_received"`
+	IsFollowing          bool               `json:"is_following"`
+	AIBot                *PublicBotIdentity `json:"ai_bot,omitempty"`
+}
+
+// PublicBotIdentity 只含已公开的账号归属，不携带创建者的认证、学校或连接资料。
+type PublicBotIdentity struct {
+	OwnerID       uint   `json:"owner_id,omitempty"`
+	OwnerNickname string `json:"owner_nickname,omitempty"`
+}
+
+// AfterFind 填充有效获赞及真实 bot 归属，数据库历史聚合值不作为展示依据。
+func (u *User) AfterFind(tx *gorm.DB) error {
+	if err := fillReceivedLikesAfterFind(tx); err != nil {
+		return err
+	}
+	u.AIBot = nil
+	if u.AccountStatus != "bot" {
+		return nil
+	}
+	u.AIBot = &PublicBotIdentity{}
+	query := tx.Session(&gorm.Session{NewDB: true})
+	if !query.Migrator().HasTable("managed_bots") {
+		return nil
+	}
+	var owner PublicBotIdentity
+	if err := query.Table("managed_bots AS b").
+		Select("o.id AS owner_id, o.nickname AS owner_nickname").
+		Joins("JOIN users o ON o.id = b.owner_id").
+		Where("b.user_id = ? AND o.account_status = ?", u.ID, "active").
+		Scan(&owner).Error; err != nil {
+		return err
+	}
+	*u.AIBot = owner
+	return nil
 }
 
 // PublicUser 将数据库用户转换为安全的公开资料。
@@ -122,6 +159,7 @@ func PublicUser(user User) PublicUserResponse {
 		FollowingCount:     user.FollowingCount,
 		TotalLikesReceived: user.TotalLikesReceived,
 		IsFollowing:        user.IsFollowing,
+		AIBot:              user.AIBot,
 	}
 }
 

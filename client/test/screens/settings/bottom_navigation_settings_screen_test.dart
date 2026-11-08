@@ -66,8 +66,8 @@ void main() {
     await provider.setBottomNavAnimationIntensity(.35);
     expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highPerformance);
     await provider.setBottomNavAnimationIntensity(0);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.custom);
-    expect(provider.bottomNavShaderEnabled, isTrue);
+    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
+    expect(provider.bottomNavShaderEnabled, isFalse);
     await provider.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
     await provider.loadThemeForTesting();
     expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
@@ -101,7 +101,6 @@ void main() {
     await tester.pumpWidget(app(provider));
     await tester.pumpAndSettle();
     expect(find.text('自动'), findsNothing);
-    expect(find.text('关'), findsOneWidget);
     expect(find.byType(LiquidBottomNav), findsNothing);
     expect(find.byType(FloatingBottomNav), findsOneWidget);
     expect(
@@ -117,6 +116,10 @@ void main() {
             .widget<FloatingBottomNav>(find.byType(FloatingBottomNav))
             .currentIndex,
         4);
+    await tester.scrollUntilVisible(find.text('关'), 180,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+    expect(find.text('关'), findsOneWidget);
   });
   testWidgets('正式清透开关更新预览并持久化，不被画质模式覆盖', (tester) async {
     AppPreferencesStore.setMockInitialValues({});
@@ -201,7 +204,8 @@ void main() {
   testWidgets('动画强度与性能模式交互会持久化', (tester) async {
     await tester.pumpWidget(app(theme));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('高性能'));
+    await tester.scrollUntilVisible(find.text('高性能'), 180,
+        scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('高性能'));
     await tester.pumpAndSettle();

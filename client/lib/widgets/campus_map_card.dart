@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'app_surface_transition.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import 'glass_container.dart';
@@ -161,7 +162,7 @@ class CampusMapCard extends StatelessWidget {
         barrierColor: Colors.black.withValues(alpha: 0.5),
         transitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (context, animation, secondaryAnimation) {
-          return FadeTransition(
+          return AppSurfaceFadeTransition(
             opacity: animation,
             child: const MapControlFullscreenOverlay(),
           );

@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -41,20 +42,21 @@ void main() {
     await tester.pumpWidget(_buildWrapper(theme));
     await tester.pumpAndSettle();
 
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(activeBackdropFilters(), findsNothing);
     expect(find.text('二课分查询'), findsOneWidget);
     expect(find.text('更多工具'), findsOneWidget);
   });
 
   testWidgets('毛玻璃开启时 Toolbox 卡片包含 BackdropFilter', (tester) async {
     final theme = await _createProvider();
+    await theme.setBackgroundImage('morenbeijing.jpeg');
     await theme.setFrostedGlass(true);
     expect(theme.frostedGlass, isTrue);
 
     await tester.pumpWidget(_buildWrapper(theme));
     await tester.pumpAndSettle();
 
-    expect(find.byType(BackdropFilter), findsWidgets);
+    expect(activeBackdropFilters(), findsWidgets);
     expect(find.text('二课分查询'), findsOneWidget);
     expect(find.text('更多工具'), findsOneWidget);
   });
@@ -163,21 +165,31 @@ void main() {
               of: material,
               matching: find.byWidgetPredicate(
                 (widget) =>
-                    widget is Container &&
+                    widget is DecoratedBox &&
                     widget.decoration is BoxDecoration &&
-                    (widget.decoration! as BoxDecoration).color != null,
+                    (widget.decoration as BoxDecoration).color != null,
               ))
           .first;
       BoxDecoration decoration() =>
-          tester.widget<Container>(fill).decoration! as BoxDecoration;
+          tester.widget<DecoratedBox>(fill).decoration as BoxDecoration;
       expect(decoration().color!.a, closeTo(0.7, 0.01));
       expect(decoration().border, isNull);
       await theme.setComponentOpacity(0.4);
       await tester.pumpAndSettle();
       expect(decoration().color!.a, closeTo(0.4, 0.01));
+      for (final strength in [.35, 0.0, 1.0]) {
+        await theme.setFrostedGlassStrength(strength);
+        await tester.pumpAndSettle();
+        expect(decoration().color!.a, closeTo(0.4, 0.01));
+        expect(find.byWidgetPredicate((widget) => widget is BackdropFilter && widget.enabled),
+            strength == 0 ? findsNothing : findsWidgets);
+      }
       await theme.setFrostedGlass(false);
       await tester.pumpAndSettle();
-      expect(find.byType(BackdropFilter), findsNothing);
+      expect(activeBackdropFilters(), findsNothing);
+      expect(decoration().color!.a, closeTo(.4, .01));
+      await theme.setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode.off);
+      await tester.pumpAndSettle();
       expect(decoration().color!.a, 1);
       expect(tester.takeException(), isNull);
     }, variant: TargetPlatformVariant.only(TargetPlatform.android));

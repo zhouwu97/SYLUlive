@@ -14,12 +14,16 @@ import (
 )
 
 func TestImageVariantRequestRecognizesVersionedAndLegacyPaths(t *testing.T) {
-	variant, original, legacy := imageVariantRequest("ab/hash_v1_medium.png")
-	if variant != "medium" || original != "ab/hash.png" || legacy {
+	variant, original, version, legacy := imageVariantRequest("ab/hash_v1_medium.png")
+	if variant != "medium" || original != "ab/hash.png" || version != 1 || legacy {
 		t.Fatalf("variant=%q original=%q legacy=%v", variant, original, legacy)
 	}
-	variant, original, legacy = imageVariantRequest("ab/hash_medium.png")
-	if variant != "medium" || original != "ab/hash.png" || !legacy {
+	variant, original, version, legacy = imageVariantRequest("ab/hash_v2_thumb.png")
+	if variant != "thumb" || original != "ab/hash.png" || version != 2 || legacy {
+		t.Fatalf("GIF v2 变体路径解析错误: variant=%q original=%q version=%d legacy=%v", variant, original, version, legacy)
+	}
+	variant, original, version, legacy = imageVariantRequest("ab/hash_medium.png")
+	if variant != "medium" || original != "ab/hash.png" || version != 0 || !legacy {
 		t.Fatalf("旧变体路径解析错误: variant=%q original=%q legacy=%v", variant, original, legacy)
 	}
 }
@@ -67,7 +71,7 @@ func TestServePublicProvidesReadyVersionedVariant(t *testing.T) {
 	}
 }
 
-func TestServePublicResolvesJPEGPreviewBackToGIFOrigin(t *testing.T) {
+func TestServePublicResolvesPNGPreviewBackToGIFOrigin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newUploadTestDB(t)
 	uploadDir := t.TempDir()
@@ -81,14 +85,14 @@ func TestServePublicResolvesJPEGPreviewBackToGIFOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Create(&models.ImageVariant{
-		FileID: file.ID, Variant: "thumb", RecipeVersion: 1,
+		FileID: file.ID, Variant: "thumb", RecipeVersion: models.ImageVariantGIFRecipeVersion,
 		Status: models.ImageVariantStatusReady,
-		Path:   "/uploads/ready-gif-preview_v1_thumb.jpg", MimeType: "image/jpeg",
+		Path:   "/uploads/ready-gif-preview_v2_thumb.png", MimeType: "image/png",
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(
-		filepath.Join(uploadDir, "ready-gif-preview_v1_thumb.jpg"),
+		filepath.Join(uploadDir, "ready-gif-preview_v2_thumb.png"),
 		[]byte("static gif preview"),
 		0o600,
 	); err != nil {
@@ -100,12 +104,12 @@ func TestServePublicResolvesJPEGPreviewBackToGIFOrigin(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(
 		recorder,
-		httptest.NewRequest(http.MethodGet, "/uploads/ready-gif-preview_v1_thumb.jpg", nil),
+		httptest.NewRequest(http.MethodGet, "/uploads/ready-gif-preview_v2_thumb.png", nil),
 	)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("GIF 静态变体响应=%d，body=%s", recorder.Code, recorder.Body.String())
 	}
-	if got := recorder.Header().Get("Content-Type"); got != "image/jpeg" {
+	if got := recorder.Header().Get("Content-Type"); got != "image/png" {
 		t.Fatalf("GIF 静态变体 Content-Type=%q", got)
 	}
 	if got := recorder.Body.String(); got != "static gif preview" {

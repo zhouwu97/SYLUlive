@@ -3,6 +3,7 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 import '../campus_data/erke/erke_models.dart';
 import '../campus_data/storage/account_cache_namespace.dart';
+import '../../services/publish_session_scope.dart';
 
 /// 二课快照的上传授权策略。仅本次上传不写入偏好，其他策略按 App 账号隔离保存。
 enum ErkeSnapshotUploadPolicy {
@@ -76,6 +77,9 @@ class ErkeSnapshotUploadPayload {
   final Map<String, dynamic> _value;
 
   factory ErkeSnapshotUploadPayload.fromSnapshot(ErkeSnapshot snapshot) {
+    if (snapshot.isPartial) {
+      throw const ErkeSnapshotUploadException('部分二课数据未更新，不能上传为完整摘要');
+    }
     final graduation = snapshot.graduation;
     final yearly = snapshot.yearly;
     return ErkeSnapshotUploadPayload._(<String, dynamic>{
@@ -124,15 +128,18 @@ class ErkeSnapshotUploadPayload {
 /// 调用已鉴权的服务端接口。Dio 由上层注入，复用当前用户的 JWT 请求头。
 /// 路径不带 `/api` 前缀：Dio baseUrl 已含该前缀，重复书写会拼出 /api/api/。
 class ErkeSnapshotUploadGateway {
-  ErkeSnapshotUploadGateway(this._dio);
+  ErkeSnapshotUploadGateway(this._dio, {required PublishSessionScope session})
+      : _session = session;
 
   final Dio _dio;
+  final PublishSessionScope _session;
 
   Future<void> upload(ErkeSnapshot snapshot) async {
     try {
       final response = await _dio.put(
         '/personal-snapshots/erke',
         data: ErkeSnapshotUploadPayload.fromSnapshot(snapshot).toJson(),
+        options: Options(extra: _session.requestExtra),
       );
       if (response.statusCode != 200 || response.data is! Map) {
         throw const ErkeSnapshotUploadException('二课摘要上传失败');
@@ -146,7 +153,8 @@ class ErkeSnapshotUploadGateway {
 
   Future<void> delete() async {
     try {
-      final response = await _dio.delete('/personal-snapshots/erke');
+      final response = await _dio.delete('/personal-snapshots/erke',
+          options: Options(extra: _session.requestExtra));
       if (response.statusCode != 204) {
         throw const ErkeSnapshotUploadException('删除已上传二课快照失败');
       }

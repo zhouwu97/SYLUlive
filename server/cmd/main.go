@@ -216,6 +216,7 @@ func main() {
 		&models.AcademicIdentityChallenge{},
 		&models.IntegrationDeviceRequest{}, &models.IntegrationBinding{},
 		&models.IntegrationCredential{}, &models.IntegrationAction{},
+		&models.ManagedBot{},
 		&models.IntegrationAudit{}, &models.IntegrationRateBucket{},
 		&models.EmailVerificationChallenge{},
 		&models.EmailVerificationRequest{},
@@ -243,6 +244,7 @@ func main() {
 		&models.DeviceToolJob{},
 
 		&models.Post{},
+		&models.PostBookmark{},
 		&models.Topic{},
 		&models.PostTopic{},
 		&models.Poll{},
@@ -291,6 +293,9 @@ func main() {
 		&models.ImageVariant{},
 		&models.UserEmojiAsset{},
 		&models.UserEmojiFavorite{},
+		&models.CommunityEmojiPack{},
+		&models.CommunityEmojiPackAsset{},
+		&models.EmojiCreator{},
 
 		&models.ExamPaper{},
 
@@ -743,6 +748,7 @@ func main() {
 		1<<20,
 		middleware.BodyLimitRule{Prefix: "/api/upload", Limit: cfg.MaxFileSize + 2<<20},
 		middleware.BodyLimitRule{Prefix: "/api/upload_multiple", Limit: 9*cfg.MaxFileSize + 5<<20},
+		middleware.BodyLimitRule{Prefix: "/api/emoji/submissions", Limit: services.EmojiPackMaxUploadBytes},
 		middleware.BodyLimitRule{Prefix: "/api/exam-papers", Limit: services.ExamPaperMaxRequestBodySize},
 		middleware.BodyLimitRule{Prefix: "/api/admin/ai/knowledge/import", Limit: 9 << 20},
 		middleware.BodyLimitRule{Prefix: "/api/super/app-releases", Limit: cfg.AppReleaseMaxSize + 2<<20},
@@ -804,9 +810,13 @@ func main() {
 		log.Println("个人教务能力已退役，跳过教务客户端初始化")
 	}
 	authHandler := handlers.NewAuthHandlerWithEmailVerificationAndCleanup(db, cfg.JWTSecret, emailVerification, eduCredentialCleanupJobs)
+	var integrationHandler *handlers.IntegrationHandler
 	if cfg.IntegrationsEnabled {
-		integrationHandler := handlers.NewIntegrationHandler(db, handlers.IntegrationOptions{
+		integrationHandler = handlers.NewIntegrationHandler(db, handlers.IntegrationOptions{
 			PublicOrigin: cfg.IntegrationPublicOrigin, ProposalsEnabled: cfg.IntegrationProposalsEnabled, OwnerPublishEnabled: cfg.IntegrationOwnerPublishEnabled,
+			AutoReplyEnabled:    cfg.IntegrationAutoReplyEnabled,
+			AutoPostEnabled:     cfg.IntegrationAutoPostEnabled,
+			PersonalDataEnabled: cfg.IntegrationPersonalDataEnabled,
 			AfterReplyCommit: func(n models.Notification) {
 				handlers.SendJPushNotification(cfg.JPushAppKey, cfg.JPushMasterSecret, db, n.UserID, n.FromUID, n.RelatedID, n.PostID, n.Content)
 			},
@@ -889,6 +899,9 @@ func main() {
 	invitationHandler := handlers.NewInvitationHandler(db, cfg.JWTSecret)
 
 	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
+	if integrationHandler != nil {
+		integrationHandler.SetBotUploader(uploadHandler)
+	}
 	uploadProtectionConfig := services.UploadProtectionConfig{
 		PerMinuteCountLimit:   cfg.UploadPerMinuteCountLimit,
 		HourlyBytesLimit:      cfg.UploadHourlyBytesLimit,
@@ -1378,8 +1391,8 @@ func main() {
 	// 启动后台定时任务
 
 	// 图片管线开关直接影响生产资源链路，启动时打印实际取值便于部署核对。
-	log.Printf("[IMAGE_PIPELINE] worker=%t accel_redirect=%s upload_dir=%s workers=1 recipe=v%d",
-		cfg.ImageVariantWorkerEnabled, os.Getenv("UPLOAD_USE_ACCEL_REDIRECT"), cfg.UploadDir, services.ImageVariantRecipeVersion)
+	log.Printf("[IMAGE_PIPELINE] worker=%t accel_redirect=%s upload_dir=%s workers=1 recipe=v%d gif_recipe=v%d",
+		cfg.ImageVariantWorkerEnabled, os.Getenv("UPLOAD_USE_ACCEL_REDIRECT"), cfg.UploadDir, services.ImageVariantRecipeVersion, models.ImageVariantGIFRecipeVersion)
 	if cfg.ImageVariantWorkerEnabled {
 		services.StartImageVariantWorkers(appCtx, db, cfg.UploadDir, 1)
 	}
@@ -1565,6 +1578,7 @@ func main() {
 		auth.POST("/register/email", authHandler.RegisterWithEmail)
 
 		auth.POST("/login", authHandler.Login)
+		auth.POST("/auth/reauthenticate", middleware.AuthMiddleware(db, cfg.JWTSecret), authHandler.Reauthenticate)
 		auth.POST("/refresh", authHandler.Refresh)
 		auth.POST("/auth/refresh", authHandler.Refresh)
 
@@ -2040,11 +2054,8 @@ func main() {
 	}
 
 	// 账号级自定义表情收藏路由。
-	emojiPacks := r.Group("/api/emoji/packs")
-	emojiPacks.GET("", handlers.ListEmojiPacks)
-	emojiPacks.GET("/:id", handlers.GetEmojiPack)
-	emojiPacks.GET("/:id/manifest", handlers.GetEmojiPackManifest)
-	emojiPacks.GET("/:id/assets/:assetId", handlers.GetEmojiPackAsset)
+	emojiPackService := registerEmojiPackRoutes(r, db, cfg.UploadDir, cfg.JWTSecret)
+	go emojiPackService.Maintain(appCtx)
 
 	emojiFavorites := r.Group("/api/emoji/favorites")
 	emojiFavorites.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
@@ -2257,6 +2268,7 @@ func main() {
 	studentIdentity.POST("/bind", academicIdentityHandler.BindLocal)
 	studentIdentity.POST("/challenge", identityMutationHandler(academicIdentityHandler.CreateChallenge))
 	studentIdentity.POST("/verify", identityMutationHandler(academicIdentityHandler.Verify))
+	studentIdentity.POST("/verify-session", identityMutationHandler(academicIdentityHandler.VerifySession))
 	studentIdentity.POST("/change/challenge", identityMutationHandler(academicIdentityHandler.CreateChangeChallenge))
 	studentIdentity.POST("/change", identityMutationHandler(academicIdentityHandler.Change))
 	studentIdentity.GET("", academicIdentityHandler.List)
@@ -2632,6 +2644,8 @@ func main() {
 		canteenAdmin.DELETE("/:id", canteenHandler.DeleteCanteen)
 
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
+		canteenAdmin.GET("/:id/display-tags", canteenHandler.GetDisplayTags)
+		canteenAdmin.PUT("/:id/display-tags", canteenHandler.UpdateDisplayTags)
 
 		// 菜品实拍管理与事后治理
 		canteenAdmin.GET("/dish-photos/:photoId", canteenDishPhotoAdminHandler.AdminGetDishPhotoDetail)

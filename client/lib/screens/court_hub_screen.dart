@@ -107,10 +107,12 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           children: [
-            Text('社区自治', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 4),
-            Text('公平复核每一次有争议的治理决定',
-                style: Theme.of(context).textTheme.bodyMedium),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('社区自治', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 4),
+              Text('公平复核每一次有争议的治理决定',
+                  style: Theme.of(context).textTheme.bodyMedium),
+            ]),
             const SizedBox(height: 16),
             _summaryRow(pendingCount),
             const SizedBox(height: 16),
@@ -198,7 +200,7 @@ class _CourtHubScreenState extends State<CourtHubScreen> {
         : escalation == 'insufficient_jury'
             ? '暂无足够合格陪审员，案件由独立管理员复核。'
             : '社区评议未达到法定人数，以上票数仅作评议记录；最终由独立管理员复核。';
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: Text('案件 #${appeal['id']} · 已结案'),
@@ -276,20 +278,22 @@ class _EmptyCourtState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isJury = tab == 0;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 42, 24, 24),
-      child: Column(
-        children: [
-          Icon(isJury ? Icons.balance_outlined : Icons.gavel_outlined,
-              size: 40, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(height: 12),
-          Text(isJury ? '暂时没有待你陪审的案件' : '这里还没有案件记录',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 6),
-          Text(isJury ? '当你被随机选为陪审员后，案件会出现在这里。' : '你的申诉和参与记录会在案件创建后显示。',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall),
-        ],
+    return AppContentSurface.card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 42, 24, 24),
+        child: Column(
+          children: [
+            Icon(isJury ? Icons.balance_outlined : Icons.gavel_outlined,
+                size: 40, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(height: 12),
+            Text(isJury ? '暂时没有待你陪审的案件' : '这里还没有案件记录',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text(isJury ? '当你被随机选为陪审员后，案件会出现在这里。' : '你的申诉和参与记录会在案件创建后显示。',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ),
       ),
     );
   }
@@ -307,7 +311,6 @@ class _SummaryItem extends StatelessWidget {
       child: AppCardSurface(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(children: [
@@ -328,9 +331,14 @@ class _ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-          child: Column(children: [
-        Text(message),
-        const SizedBox(height: 8),
-        OutlinedButton(onPressed: onRetry, child: const Text('重试'))
-      ]));
+        child: AppContentSurface.card(
+          child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text(message),
+                const SizedBox(height: 8),
+                OutlinedButton(onPressed: onRetry, child: const Text('重试'))
+              ])),
+        ),
+      );
 }

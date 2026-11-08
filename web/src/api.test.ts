@@ -3,6 +3,7 @@ import {
   ApiError,
   beginAuthTransition,
   captureAuthSession,
+  errorText,
   request,
   requestBlob,
   setAuthSession,
@@ -29,6 +30,15 @@ beforeEach(() => {
   // 每个用例从干净世代开始，避免上一个用例的 abort 影响断言。
   beginAuthTransition();
   vi.unstubAllGlobals();
+});
+
+it("连接失败给出中文恢复提示，保留接口与程序错误的原始说明", () => {
+  for (const message of ["Failed to fetch", "Load failed", "NetworkError when attempting to fetch resource."]) {
+    expect(errorText(new TypeError(message))).toBe("暂时无法连接服务器，请检查网络后重试。");
+  }
+  expect(errorText(new ApiError(403, "forbidden", "没有访问权限"))).toBe("没有访问权限");
+  expect(errorText(new TypeError("Cannot read properties of undefined"))).toBe("Cannot read properties of undefined");
+  expect(errorText(new DOMException("操作已取消", "AbortError"))).toBe("操作已取消");
 });
 
 it("多步操作的会话检查覆盖 A → B → A 与退出转换", () => {

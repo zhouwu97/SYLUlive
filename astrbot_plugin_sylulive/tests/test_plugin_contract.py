@@ -33,7 +33,7 @@ def test_tool_definitions_match_documented_astrbot_schema():
             for t in params.values()
         )
         assert not ({"token", "owner_id", "role", "password", "approve"} & expected)
-    assert len(tools) == 13
+    assert len(tools) == 21
 
 
 def test_owner_and_group_boundary_and_same_message_operation(monkeypatch):
@@ -42,6 +42,7 @@ def test_owner_and_group_boundary_and_same_message_operation(monkeypatch):
 
     api = types.ModuleType("astrbot.api")
     api.AstrBotConfig = dict
+    api.logger = types.SimpleNamespace(warning=lambda *args, **kwargs: None)
     events = types.ModuleType("astrbot.api.event")
     events.AstrMessageEvent = object
     events.filter = types.SimpleNamespace(command=decorator, llm_tool=decorator, on_llm_request=decorator, on_agent_done=decorator, event_message_type=decorator, EventMessageType=types.SimpleNamespace(ALL=0))
@@ -50,6 +51,10 @@ def test_owner_and_group_boundary_and_same_message_operation(monkeypatch):
     providers.LLMResponse = object
     agent_messages = types.ModuleType("astrbot.core.agent.message")
     agent_messages.TextPart = object
+    agent_messages.Message = object
+    components = types.ModuleType("astrbot.core.message.components")
+    for name in ("File", "Image", "Plain", "Record", "Reply", "Video"):
+        setattr(components, name, type(name, (), {}))
     stars = types.ModuleType("astrbot.api.star")
     stars.Context = object
     stars.Star = object
@@ -61,10 +66,13 @@ def test_owner_and_group_boundary_and_same_message_operation(monkeypatch):
         ("astrbot.api.event", events),
         ("astrbot.api.provider", providers),
         ("astrbot.core.agent.message", agent_messages),
+        ("astrbot.core.message.components", components),
         ("astrbot.api.star", stars),
     ]:
         monkeypatch.setitem(sys.modules, name, module)
-    sys.modules.pop("astrbot_plugin_sylulive.main", None)
+    # Restore the real SDK module after this offline double; later hooks must not retain TextPart=object.
+    monkeypatch.delitem(sys.modules, "astrbot_plugin_sylulive.main", raising=False)
+    monkeypatch.delitem(sys.modules, "astrbot_plugin_sylulive.chat_context", raising=False)
     plugin = importlib.import_module(
         "astrbot_plugin_sylulive.main"
     ).SYLUlivePlugin.__new__(

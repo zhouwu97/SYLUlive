@@ -167,7 +167,7 @@ class _CanteenReviewHistoryScreenState
         children: [
           SizedBox(
             height: 360,
-            child: Center(child: Text(_error!)),
+            child: Center(child: AppContentSurface.reading(child: Text(_error!))),
           ),
         ],
       );
@@ -178,7 +178,7 @@ class _CanteenReviewHistoryScreenState
         children: const [
           SizedBox(
             height: 360,
-            child: Center(child: Text('暂无历史评价')),
+            child: Center(child: AppContentSurface.reading(child: Text('暂无历史评价'))),
           ),
         ],
       );

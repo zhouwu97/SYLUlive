@@ -29,6 +29,7 @@ func newSearchTestDB(t *testing.T) *gorm.DB {
 		&models.Post{},
 		&models.PostImage{},
 		&models.Like{},
+		&models.Reply{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}

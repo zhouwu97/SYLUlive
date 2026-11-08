@@ -165,7 +165,7 @@
   .post-detail-layout { grid-template-columns: minmax(0, 1fr); }
   .post-detail-rail { display: none; }
 }
-@media (max-width: 760px) {
+@media (max-width: 600px) {
   .post-detail-page .page-head { display: flex; flex-direction: row; align-items: center; gap: 12px; }
   .post-detail-page .page-title { min-width: 0; }
   .post-detail-page .post-detail-heading h1 { font-size: 13px; }
@@ -202,3 +202,8 @@
 @media (prefers-reduced-motion: reduce) {
   .post-interaction, .post-author .author-follow { transition: none; }
 }
+
+.ai-bot-identity { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; max-width: 100%; min-width: 0; margin-block: 3px; font-size: 12px; line-height: 1.5; }
+.ai-bot-identity .ai-bot-system-badge { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 4px; padding: 1px 6px; border: 1px solid var(--accent); border-radius: var(--radius-control); color: var(--accent); background: var(--color-accent-soft); font-size: 11px; font-weight: 700; line-height: 1.6; white-space: nowrap; }
+.ai-bot-identity .ai-bot-creator { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-width: 0; max-width: 100%; overflow-wrap: anywhere; color: var(--text-2); }
+.post-context-copy > .ai-bot-identity { justify-content: flex-start; }

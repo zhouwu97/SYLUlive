@@ -198,7 +198,8 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
         auth.user?.isAdmin == true || auth.user?.isSuperAdmin == true;
 
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
+      backgroundColor:
+          AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       appBar: AppBar(
         leading: const BackButton(),
         title: Text(
@@ -208,7 +209,8 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
+        backgroundColor:
+            AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
         foregroundColor: CanteenTheme.textPrimaryColor(isDark),
       ),
@@ -216,45 +218,53 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _data == null
               ? Center(
-                  child: Text(
+                  child: AppContentSurface.reading(
+                      child: Text(
                     '加载失败',
                     style: TextStyle(
                         color: CanteenTheme.textSecondaryColor(isDark)),
-                  ),
+                  )),
                 )
               : ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                   children: [
-                    Text(
-                      widget.canteenName,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: CanteenTheme.textSecondaryColor(isDark),
-                      ),
-                    ),
-                    if (_isOffline)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          '所属商家已下架，历史菜品与实拍仅供参考',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: CanteenTheme.textSecondaryColor(isDark),
+                    AppContentSurface.reading(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                          Text(
+                            widget.canteenName,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: CanteenTheme.textSecondaryColor(isDark),
+                            ),
                           ),
-                        ),
-                      ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${(_data?['mention_count'] as num?)?.toInt() ?? (_data?['reviewer_count'] as num?)?.toInt() ?? _reviews.length} 人评价中提到 · $_photoCount 张同学真实实拍',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: CanteenTheme.textPrimaryColor(isDark),
-                      ),
-                    ),
+                          if (_isOffline)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                '所属商家已下架，历史菜品与实拍仅供参考',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color:
+                                      CanteenTheme.textSecondaryColor(isDark),
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${(_data?['mention_count'] as num?)?.toInt() ?? (_data?['reviewer_count'] as num?)?.toInt() ?? _reviews.length} 人评价中提到 · $_photoCount 张同学真实实拍',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: CanteenTheme.textPrimaryColor(isDark),
+                            ),
+                          ),
+                        ])),
                     if (_reviews.isNotEmpty) _buildReviewList(isDark),
                     if (isAdmin && _visiblePhotos.isNotEmpty)
-                      Padding(
+                      AppContentSurface.reading(
+                          child: Padding(
                         padding: const EdgeInsets.only(top: 4, bottom: 4),
                         child: Text(
                           '管理员提示：长按实拍图片可进行下架治理',
@@ -264,7 +274,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                      ),
+                      )),
                     const SizedBox(height: 12),
                     DishPhotoMosaic(
                       imageUrls: _photoImages,
@@ -288,7 +298,8 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   }
 
   Widget _buildReviewList(bool isDark) {
-    return Padding(
+    return AppContentSurface.reading(
+        child: Padding(
       padding: const EdgeInsets.only(top: 12, bottom: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -334,7 +345,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
             ),
         ],
       ),
-    );
+    ));
   }
 
   Future<void> _reportDishReview(Map<String, dynamic> review) async {
@@ -378,8 +389,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
           if (mounted) {
             final data = error.response?.data;
             final message = data is Map
-                ? (data['message'] ?? data['error'])?.toString() ??
-                    '举报提交失败'
+                ? (data['message'] ?? data['error'])?.toString() ?? '举报提交失败'
                 : '举报提交失败';
             ScaffoldMessenger.of(context)
                 .showSnackBar(SnackBar(content: Text(message)));
@@ -391,7 +401,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   }
 
   Widget _buildGalleryFull(bool isDark, Color accent) {
-    return Row(
+    return AppContentSurface.reading(child: Row(
       children: [
         Icon(Icons.check_circle_rounded, color: accent, size: 22),
         const SizedBox(width: 10),
@@ -419,7 +429,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
           ),
         ),
       ],
-    );
+    ));
   }
 
   Widget _buildUploadEntry(bool isDark, Color accent) {
@@ -450,12 +460,13 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   }
 
   Widget _buildOfflineUploadNotice(bool isDark) {
-    return Text(
+    return AppContentSurface.reading(
+        child: Text(
       '所属商家已下架，暂不能新增菜品实拍或评价',
       style: TextStyle(
         fontSize: 12,
         color: CanteenTheme.textSecondaryColor(isDark),
       ),
-    );
+    ));
   }
 }

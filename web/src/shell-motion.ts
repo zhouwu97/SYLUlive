@@ -16,7 +16,7 @@ export function useWorkspaceMotion(route: string, enabled: boolean) {
     motion.current = null;
     const next = node.getBoundingClientRect().left;
     targetLeft.current = next;
-    if (previous === null || !enabled || window.matchMedia("(prefers-reduced-motion: reduce)").matches || window.matchMedia("(max-width: 760px)").matches) return;
+    if (previous === null || !enabled || window.matchMedia("(prefers-reduced-motion: reduce)").matches || window.matchMedia("(max-width: 600px)").matches) return;
     const distance = previous - next;
     if (Math.abs(distance) < .5) return;
     // 中途反向时读取当前可见位置，取消旧动画后从同一位置继续。

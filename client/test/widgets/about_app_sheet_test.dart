@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:shenliyuan/services/app_update_coordinator.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/widgets/about_app_sheet.dart';
+import 'package:shenliyuan/providers/theme_provider.dart';
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import '../helpers/golden_viewport.dart';
 
 class _NoUpdateCoordinator extends AppUpdateCoordinator {
@@ -29,6 +31,42 @@ void main() {
   });
 
   for (final brightness in Brightness.values) {
+    testWidgets('关于面板玻璃弹窗连续关闭恢复，大字号：$brightness', (tester) async {
+      await setGoldenViewport(tester, GoldenViewports.phone390x844);
+      final theme = ThemeProvider(loadOnStart: false);
+      addTearDown(theme.dispose);
+      await theme.setBackgroundImage('morenbeijing.jpeg');
+      await theme.setFrostedGlass(true);
+      await tester.pumpWidget(ChangeNotifierProvider.value(
+        value: theme,
+        child: MaterialApp(
+          theme: ThemeData(brightness: brightness),
+          builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context)
+                  .copyWith(textScaler: const TextScaler.linear(1.3)),
+              child: child!),
+          home: const Scaffold(body: AboutAppSheet()),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      for (final label in ['加入群聊', '联系作者']) {
+        await tester.ensureVisible(find.text(label));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+        expect(find.byType(AppDialog), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.text('知道了'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 32));
+        expect(find.byType(AppDialog), findsOneWidget);
+        await tester.pumpAndSettle();
+        expect(find.byType(AppDialog), findsNothing);
+        expect(find.byType(AboutAppSheet), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
+    });
+
     testWidgets('手动检查结果显示在关于面板上方，关闭后保留面板：$brightness', (tester) async {
       await setGoldenViewport(tester, GoldenViewports.phone360x800);
       final coordinator = _NoUpdateCoordinator();

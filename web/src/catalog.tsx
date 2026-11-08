@@ -1,6 +1,7 @@
 import { CompetitionPersonal } from "./competition-personal";
 import {CampusMap} from './campus-map';
 import {CanteenReviewForm,CanteenReviews,CanteenContributions,DishDetail} from './canteen';
+import {formatScore} from './canteen-data';
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { entity, query, rows, time, useApi, write, asset } from "./api";
 import { Empty, Form, Head, Pagination, QueryState, Tabs, useUI } from "./ui";
@@ -74,7 +75,7 @@ export function Catalog({ kind }: { kind: CatalogKind }) {
         />
       )}
       <form
-        className="filter-row"
+        className="filter-row catalog-search"
         onSubmit={(e) => {
           e.preventDefault();
           const next = new URLSearchParams(params);
@@ -193,6 +194,7 @@ export function CatalogDetail({ kind }: { kind: CatalogKind }) {
           : kind === "competition"
             ? "event"
             : "article",
+    ...(kind === "campus" ? ["item"] : []),
     "data",
   );
   const dishes = useApi(
@@ -283,7 +285,7 @@ export function CatalogDetail({ kind }: { kind: CatalogKind }) {
           {rows(q.data, "ratings", "reviews").map((r) => (
             <div className="comment-row" key={r.id}>
               <b>{r.user_name || r.user?.nickname || "同学"}</b>
-              <span> · {r.star || r.overall_score} 分</span>
+              <span> · {formatScore(r.star || r.overall_score)} 分</span>
               <p className="details-text">{r.comment}</p>
               {r.is_own && (
                 <button
@@ -326,7 +328,7 @@ export function CatalogDetail({ kind }: { kind: CatalogKind }) {
                   <div className="dish" key={dish.id}>
                     <h3>{dish.name}</h3>
                     <p>{dish.description}</p>
-                    <span>{dish.average_star || "暂无评分"}</span>
+                    <span>{Number(dish.average_star) > 0 ? `${formatScore(dish.average_star)} 分` : "暂无评分"}</span>
                     <button className="btn" onClick={()=>ui.open(dish.name,<DishDetail canteenId={id!} id={dish.id}/>)}>查看菜品</button>
                   </div>
                 ))}

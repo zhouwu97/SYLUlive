@@ -8,6 +8,7 @@ import '../widgets/app_page_app_bar.dart';
 import '../widgets/canteen/canteen_empty_state.dart';
 import '../widgets/canteen/canteen_status_image.dart';
 import '../widgets/canteen/canteen_theme.dart';
+import '../widgets/app_card.dart';
 
 /// 食堂贡献追踪页：菜品候选和实拍共享服务端状态，不与评价列表混在一起。
 class MyCanteenContributionsScreen extends StatefulWidget {
@@ -56,7 +57,8 @@ class _MyCanteenContributionsScreenState
   Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
+      backgroundColor:
+          AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       appBar: const AppPageAppBar(title: Text('我的食堂贡献')),
       body: RefreshIndicator(
         onRefresh: _reload,
@@ -82,7 +84,9 @@ class _MyCanteenContributionsScreenState
                         physics: const AlwaysScrollableScrollPhysics(),
                         children: const [
                           SizedBox(height: 220),
-                          Center(child: Text('还没有菜品或实拍贡献')),
+                          Center(
+                              child:
+                                  AppContentSurface.reading(child: Text('还没有菜品或实拍贡献'))),
                         ],
                       )
                     : ListView.separated(
@@ -103,7 +107,7 @@ class _MyCanteenContributionsScreenState
   }
 
   Widget _buildLoadErrorBanner(bool isDark) {
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceMutedBg(isDark),
@@ -148,7 +152,7 @@ class _MyCanteenContributionsScreenState
         : status == 'approved' || status == 'active'
             ? Colors.green
             : CanteenTheme.accentColor(isDark);
-    return Container(
+    return AppCardSurface(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),

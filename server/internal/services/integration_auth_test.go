@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/datatypes"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -58,6 +59,10 @@ func integrationMigrate(t *testing.T, db *gorm.DB) {
 func integrationTestUser(t *testing.T, db *gorm.DB, id uint) {
 	t.Helper()
 	require.NoError(t, db.Create(&models.User{ID: id, Nickname: fmt.Sprintf("合成用户%d", id), PasswordHash: "synthetic", AccountStatus: "active"}).Error)
+	if db.Dialector.Name() == "postgres" {
+		// PostgreSQL 显式种子 ID 不推进序列；后续机器人仍需正常自增创建。
+		require.NoError(t, db.Exec("SELECT setval(pg_get_serial_sequence('users', 'id'), (SELECT MAX(id) FROM users), true)").Error)
+	}
 	require.NoError(t, db.Create(&models.AcademicIdentityBinding{UserID: id, ProviderID: models.AcademicProviderUndergraduate, StudentID: fmt.Sprintf("synthetic-%d", id), BindingVersion: 1, VerifiedAt: time.Now(), VerificationMethod: models.AcademicVerificationMethodSchoolProfile, VerificationVersion: "v1"}).Error)
 	for _, document := range []string{models.LegalDocumentUserAgreement, models.LegalDocumentPrivacyPolicy} {
 		require.NoError(t, db.Create(&models.UserLegalConsent{UserID: id, Document: document, Version: models.LegalDocumentVersion, AcceptedAt: time.Now()}).Error)
@@ -242,4 +247,56 @@ func TestIntegrationConcurrentBindingAllowsOneActiveAuthorization(t *testing.T) 
 	var count int64
 	require.NoError(t, db.Model(&models.IntegrationBinding{}).Where("state = ?", "active").Count(&count).Error)
 	require.EqualValues(t, 1, count)
+}
+
+func TestIntegrationUpdateScopesKeepsConnectionAndTokens(t *testing.T) {
+	db := integrationTestDB(t)
+	integrationTestUser(t, db, 1)
+	integrationTestUser(t, db, 2)
+	s := NewIntegrationAuthService(db)
+	now := time.Now()
+	s.Now = func() time.Time { return now }
+	ctx := context.Background()
+	binding, device := integrationAuthorize(t, s, 1, uuid.NewString())
+	now = now.Add(6 * time.Second)
+	tokens, err := s.ExchangeDevice(ctx, device.DeviceCode)
+	require.NoError(t, err)
+
+	// 扩权：不在原请求里的机器人权限也可由本人直接加入，连接与令牌不变。
+	wider := []string{"profile:read_minimal", "community:read", "content:read_own_public", "actions:read_own", "community:propose", "community:bot_reply", "checkin:write"}
+	updated, err := s.UpdateScopes(ctx, 1, binding.ID, IntegrationScopeUpdate{Scopes: wider, ExpectedEpoch: binding.Epoch})
+	require.NoError(t, err)
+	require.Equal(t, binding.ID, updated.ID)
+	require.Equal(t, binding.Epoch, updated.Epoch)
+	current, err := s.Authenticate(ctx, tokens.AccessToken)
+	require.NoError(t, err)
+	require.True(t, IntegrationHasScope(current, IntegrationAutoReplyScope))
+	require.True(t, IntegrationHasScope(current, IntegrationCheckInScope))
+	rotated, err := s.Refresh(ctx, tokens.RefreshToken)
+	require.NoError(t, err)
+	require.Contains(t, strings.Fields(rotated.Scope), IntegrationAutoReplyScope)
+
+	// 依赖不满足、他人连接、过期 epoch 均拒绝且不改变现有权限。
+	_, err = s.UpdateScopes(ctx, 1, binding.ID, IntegrationScopeUpdate{Scopes: []string{"community:bot_post"}, ExpectedEpoch: binding.Epoch})
+	require.EqualError(t, err, "invalid_scope")
+	_, err = s.UpdateScopes(ctx, 2, binding.ID, IntegrationScopeUpdate{Scopes: []string{"community:read"}, ExpectedEpoch: binding.Epoch})
+	require.EqualError(t, err, "binding_unavailable")
+	_, err = s.UpdateScopes(ctx, 1, binding.ID, IntegrationScopeUpdate{Scopes: []string{"community:read"}, ExpectedEpoch: binding.Epoch + 1})
+	require.EqualError(t, err, "binding_conflict")
+
+	// 收回草稿权限时作废待确认草稿。
+	require.NoError(t, db.Create(&models.IntegrationAction{ID: uuid.NewString(), BindingID: binding.ID, OwnerID: 1, BindingEpoch: binding.Epoch, OperationID: uuid.NewString(), RequestHash: "h", PayloadHash: "h", Kind: "post", State: "pending", Payload: datatypes.JSON("{}"), ExpiresAt: now.Add(time.Hour), CreatedAt: now}).Error)
+	narrowed, err := s.UpdateScopes(ctx, 1, binding.ID, IntegrationScopeUpdate{Scopes: []string{"community:read", "profile:read_minimal"}, ExpectedEpoch: binding.Epoch})
+	require.NoError(t, err)
+	require.Equal(t, "community:read profile:read_minimal", narrowed.Scopes)
+	var pending int64
+	require.NoError(t, db.Model(&models.IntegrationAction{}).Where("binding_id = ? AND state = ?", binding.ID, "pending").Count(&pending).Error)
+	require.Zero(t, pending)
+	current, err = s.Authenticate(ctx, rotated.AccessToken)
+	require.NoError(t, err)
+	require.False(t, IntegrationHasScope(current, IntegrationProposeScope))
+
+	require.NoError(t, s.Revoke(ctx, 1, binding.ID))
+	_, err = s.UpdateScopes(ctx, 1, binding.ID, IntegrationScopeUpdate{Scopes: []string{"community:read"}, ExpectedEpoch: binding.Epoch})
+	require.EqualError(t, err, "binding_conflict")
 }

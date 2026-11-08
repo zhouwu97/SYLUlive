@@ -541,7 +541,8 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
 
   Widget _buildEmptyState(bool isDark) {
     return Center(
-      child: Column(
+      child: AppContentSurface.card(
+          child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
@@ -563,7 +564,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
             child: const Text('刷新'),
           ),
         ],
-      ),
+      )),
     );
   }
 
@@ -571,7 +572,8 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
 
   Widget _buildErrorState(bool isDark, String message) {
     return Center(
-      child: Padding(
+      child: AppContentSurface.card(
+          child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -597,7 +599,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 
@@ -621,13 +623,13 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Center(
-          child: Text(
+          child: AppContentSurface.reading(child: Text(
             '没有更多了',
             style: TextStyle(
               fontSize: 12.5,
               color: isDark ? Colors.white30 : CampusTheme.subText,
             ),
-          ),
+          )),
         ),
       );
     }

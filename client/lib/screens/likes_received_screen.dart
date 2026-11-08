@@ -1,6 +1,9 @@
+import '../theme/app_colors.dart';
 import 'package:flutter/material.dart';
+import '../widgets/app_card.dart';
 import 'package:provider/provider.dart';
 import '../widgets/app_page_background.dart';
+import '../providers/theme_provider.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/cached_avatar.dart';
 import '../utils/app_time.dart';
@@ -108,38 +111,47 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen> {
   Widget _buildPage(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('收到的赞')),
-      body: !(_auth?.isLoggedIn ?? false)
-          ? const Center(child: Text('请先登录后查看收到的赞'))
-          : _loading && _items.isEmpty
-              ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      if (_error != null)
-                        ListTile(
-                          title: Text(_error!),
-                          trailing: TextButton(
-                              onPressed: () => _load(more: _retryMore),
-                              child: const Text('重试')),
-                        ),
-                      if (_items.isEmpty && _error == null)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 80),
-                          child: Center(child: Text('暂时没有收到其他人的赞')),
-                        ),
-                      for (final item in _items) _buildItem(item),
-                      if (_loading)
-                        const Center(child: CircularProgressIndicator()),
-                      if (_hasMore && !_loading && _error == null)
-                        TextButton(
-                            onPressed: () => _load(more: true),
-                            child: const Text('加载更多')),
-                    ],
+      body: AppCardMaterial(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? AppColors.surfaceSecondaryDark
+            : AppColors.surfaceSecondaryLight,
+        borderRadius: BorderRadius.zero,
+        clipBehavior: Clip.antiAlias,
+        child: !(_auth?.isLoggedIn ?? false)
+            ? const Center(child: Text('请先登录后查看收到的赞'))
+            : _loading && _items.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView(
+                      addRepaintBoundaries:
+                          context.watch<ThemeProvider?>()?.frostedGlass != true,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        if (_error != null)
+                          ListTile(
+                            title: Text(_error!),
+                            trailing: TextButton(
+                                onPressed: () => _load(more: _retryMore),
+                                child: const Text('重试')),
+                          ),
+                        if (_items.isEmpty && _error == null)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 80),
+                            child: Center(child: Text('暂时没有收到其他人的赞')),
+                          ),
+                        for (final item in _items) _buildItem(item),
+                        if (_loading)
+                          const Center(child: CircularProgressIndicator()),
+                        if (_hasMore && !_loading && _error == null)
+                          TextButton(
+                              onPressed: () => _load(more: true),
+                              child: const Text('加载更多')),
+                      ],
+                    ),
                   ),
-                ),
+      ),
     );
   }
 

@@ -120,7 +120,7 @@ class _AdminAppealReviewScreenState extends State<AdminAppealReviewScreen> {
                 : _items.isEmpty
                     ? ListView(children: const [
                         SizedBox(height: 180),
-                        Center(child: Text('暂无待人工复核案件'))
+                        Center(child: AppContentSurface.reading(child: Text('暂无待人工复核案件')))
                       ])
                     : ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -164,7 +164,7 @@ class _AdminAppealReviewScreenState extends State<AdminAppealReviewScreen> {
       children: [
         SizedBox(height: MediaQuery.of(context).size.height * 0.22),
         Center(
-          child: Padding(
+          child: AppContentSurface.card(child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -196,7 +196,7 @@ class _AdminAppealReviewScreenState extends State<AdminAppealReviewScreen> {
                 ),
               ],
             ),
-          ),
+          )),
         ),
       ],
     );

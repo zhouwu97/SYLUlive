@@ -4,6 +4,7 @@ import 'dart:async';
 import 'account_scoped_snapshot_store.dart';
 import 'personal_snapshot_models.dart';
 import '../../academic/storage/academic_persistence_gate.dart';
+import '../../academic/storage/academic_connection_store.dart';
 
 /// 已验证来源账号的单学期成绩快照。
 class AcademicTermSnapshot {
@@ -410,9 +411,14 @@ class AcademicCacheStore {
     final now = DateTime.now().toUtc();
     final namespace = identityNamespace;
     final preferences = AppPreferencesStore.maybeInstance;
-    if (namespace != null && preferences != null &&
-        (preferences.getBool('academic_lifecycle_${namespace}_connected') == false ||
-         preferences.getBool('academic_lifecycle_${namespace}_cleanup') == true)) {
+    if (namespace != null &&
+        preferences != null &&
+        AcademicConnectionStore.blocksSnapshotWrite(
+          preferences: preferences,
+          appUserId: appUserId,
+          studentId: sourceAccountId,
+          identityNamespace: namespace,
+        )) {
       return;
     }
     await _snapshotStore.write(

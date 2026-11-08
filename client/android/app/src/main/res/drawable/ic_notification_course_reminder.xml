@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 通知小图标只取透明度蒙版，必须用单色形状，不能用全彩启动图标。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M12,2A1,1 0 1,1 12,4A1,1 0 1,1 12,2Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M12,4C9.1,4 7,6.3 7,9.3V13.2L5.6,16C5.35,16.5 5.7,17.1 6.25,17.1H17.75C18.3,17.1 18.65,16.5 18.4,16L17,13.2V9.3C17,6.3 14.9,4 12,4Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M10.1,18.5H13.9C13.9,19.6 13.05,20.5 12,20.5C10.95,20.5 10.1,19.6 10.1,18.5Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>

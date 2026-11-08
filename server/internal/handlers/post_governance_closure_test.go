@@ -36,6 +36,7 @@ func setupPostGovernanceTestDB(t *testing.T) *gorm.DB {
 		&models.WaterSection{},
 		&models.WaterTeamRecruitment{},
 		&models.Like{},
+		&models.Reply{},
 		&models.Topic{},
 		&models.PostTopic{},
 	); err != nil {

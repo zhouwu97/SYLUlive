@@ -6,6 +6,7 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/image_upload_widget.dart';
 import '../utils/app_feedback.dart';
+import '../widgets/app_card.dart';
 
 class FeedbackScreen extends StatefulWidget {
   const FeedbackScreen({super.key});
@@ -160,7 +161,8 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: SingleChildScrollView(
+      body: AppContentSurface(
+          child: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -282,7 +284,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
             const SizedBox(height: 40),
           ],
         ),
-      ),
+      )),
     );
   }
 }

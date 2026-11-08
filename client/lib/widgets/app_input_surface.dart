@@ -8,13 +8,22 @@ class AppInputSurface extends StatelessWidget {
   final double radius;
 
   @override
-  Widget build(BuildContext context) => AppCardSurface(
-        decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF1E2226)
-              : Colors.white,
-          borderRadius: BorderRadius.circular(radius),
-        ),
-        child: child,
+  Widget build(BuildContext context) => Stack(
+        fit: StackFit.passthrough,
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: AppCardSurface(
+              decoration: BoxDecoration(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF1E2226)
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(radius),
+              ),
+              child: const SizedBox.expand(),
+            ),
+          ),
+          child,
+        ],
       );
 }

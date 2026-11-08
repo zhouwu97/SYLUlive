@@ -15,6 +15,7 @@ import '../widgets/settings/settings_page_scaffold.dart';
 import '../widgets/settings/settings_section.dart';
 import '../widgets/settings/settings_status_badge.dart';
 import '../widgets/settings/settings_tile.dart';
+import '../widgets/app_card.dart';
 
 /// 账号身份、邮箱与教务连接的私有设置页。
 class AccountSecurityScreen extends StatefulWidget {
@@ -106,7 +107,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     final formKey = GlobalKey<FormState>();
     final emailKey = GlobalKey<FormFieldState<String>>();
     try {
-      await showDialog<void>(
+      await showAppDialog<void>(
         context: context,
         barrierDismissible: false,
         builder: (_) => SecuritySessionGuard(
@@ -239,7 +240,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     var submitting = false;
     final formKey = GlobalKey<FormState>();
     try {
-      await showDialog<void>(
+      await showAppDialog<void>(
         context: context,
         barrierDismissible: false,
         builder: (_) => SecuritySessionGuard(
@@ -326,7 +327,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     var submitting = false;
     final formKey = GlobalKey<FormState>();
     try {
-      await showDialog<void>(
+      await showAppDialog<void>(
         context: context,
         barrierDismissible: false,
         builder: (_) => SecuritySessionGuard(
@@ -426,13 +427,14 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
           title: '账号与安全',
           onRefresh: _reload,
           children: [
-            Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(children: [
-                  Text(_error!, textAlign: TextAlign.center),
-                  if (_session != null)
-                    TextButton(onPressed: _reload, child: const Text('重试')),
-                ]))
+            AppContentSurface.card(
+                child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(children: [
+                      Text(_error!, textAlign: TextAlign.center),
+                      if (_session != null)
+                        TextButton(onPressed: _reload, child: const Text('重试')),
+                    ])))
           ]);
     }
     if (_loading) {

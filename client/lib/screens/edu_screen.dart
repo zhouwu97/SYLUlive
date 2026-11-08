@@ -93,7 +93,8 @@ class _EduScreenState extends State<EduScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, isDark ? CampusTheme.darkBg : CampusTheme.bg),
+      backgroundColor: AppPageBackground.color(
+          context, isDark ? CampusTheme.darkBg : CampusTheme.bg),
       appBar: AppBar(
         title: Text(
           '教务系统',
@@ -241,9 +242,10 @@ class _EduScreenState extends State<EduScreen> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: context.watch<ThemeProvider?>()?.frostedGlass == true
-                    ? Colors.transparent : isDark
-                    ? Colors.white.withValues(alpha: 0.04)
-                    : const Color(0xFFF8F9FA),
+                    ? Colors.transparent
+                    : isDark
+                        ? Colors.white.withValues(alpha: 0.04)
+                        : const Color(0xFFF8F9FA),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(

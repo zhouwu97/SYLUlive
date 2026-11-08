@@ -1,5 +1,6 @@
 import '../widgets/app_page_background.dart';
 import 'package:flutter/material.dart';
+import '../widgets/app_card.dart';
 
 class ScamReportPlaceholder extends StatelessWidget {
   const ScamReportPlaceholder({super.key});
@@ -24,11 +25,12 @@ class ScamReportPlaceholder extends StatelessWidget {
               ).textTheme.headlineSmall?.copyWith(color: Colors.grey[600]),
             ),
             const SizedBox(height: 8),
-            Text(
+            AppContentSurface.reading(
+                child: Text(
               '骗子曝光功能正在开发中\n敬请期待',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey[500]),
-            ),
+            )),
           ],
         ),
       ),

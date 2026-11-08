@@ -6,6 +6,7 @@ import '../campus_data/erke/erke_repository.dart';
 import '../campus_data/storage/erke_cache_store.dart';
 import '../ai_runtime/personal_data/gateway/gateway_result.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/publish_session_scope.dart';
 import '../../providers/edu_provider.dart';
 import '../../services/physical_credential_store.dart';
 import '../../services/push_settings_service.dart';
@@ -106,6 +107,9 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
     if (!_auth.isLoggedIn || appUserId.isEmpty || sourceAccountId.isEmpty) {
       return null;
     }
+    final session = PublishSessionScope(
+        accountId: _auth.user!.id,
+        accountSessionEpoch: _auth.accountSessionEpoch);
     return DeviceToolWorkerContext(
       appUserId: appUserId,
       sourceAccountId: sourceAccountId,
@@ -119,10 +123,14 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
       createAutomationGateway: () => _createAutomationGateway(
         appUserId: appUserId,
         sourceAccountId: sourceAccountId,
+        session: session,
       ),
       isCurrent: () async =>
           mounted &&
           _auth.isLoggedIn &&
+          session.owns(
+              userId: _auth.user?.id,
+              sessionEpoch: _auth.accountSessionEpoch) &&
           _auth.user?.id.toString() == appUserId &&
           _sourceAccountId() == sourceAccountId,
     );
@@ -131,6 +139,7 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
   DeviceAutomationGateway _createAutomationGateway({
     required String appUserId,
     required String sourceAccountId,
+    required PublishSessionScope session,
   }) {
     final reader = PersonalDataGatewayFactory().create(
       PersonalAccountContext(
@@ -157,6 +166,7 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
       refreshErke: ({bool automationUpload = false}) => _refreshErke(
         appUserId: appUserId,
         sourceAccountId: sourceAccountId,
+        session: session,
         automationUpload: automationUpload,
       ),
       refreshPhysical: () => _refreshPhysical(
@@ -413,10 +423,26 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
   Future<RefreshResult> _refreshErke({
     required String appUserId,
     required String sourceAccountId,
+    required PublishSessionScope session,
     bool automationUpload = false,
   }) async {
+    bool current() =>
+        mounted &&
+        _auth.isLoggedIn &&
+        _auth.user?.id.toString() == appUserId &&
+        session.owns(
+            userId: _auth.user?.id, sessionEpoch: _auth.accountSessionEpoch) &&
+        _sourceAccountId() == sourceAccountId;
+    if (!current()) {
+      return const RefreshResult(
+          performed: false, message: '账号已切换', errorCode: 'context_changed');
+    }
     final credentials = _sessionErkeCredentials ??
         await _credentialStore.readErke(sourceAccountId);
+    if (!current()) {
+      return const RefreshResult(
+          performed: false, message: '账号已切换', errorCode: 'context_changed');
+    }
     if (credentials == null) {
       return const RefreshResult(
         performed: false,
@@ -426,6 +452,7 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
     }
     final vpn = WebVpnService();
     final repository = ErkeRepository(
+      isCurrent: current,
       vpnService: vpn,
       cacheStore: ErkeCacheStore(
         appUserId: appUserId,
@@ -440,11 +467,17 @@ class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
           casPassword: credentials.casPassword,
           erkePassword: credentials.erkePassword,
         ),
-        snapshotUploader: ErkeSnapshotUploadGateway(_auth.dio),
+        snapshotUploader:
+            ErkeSnapshotUploadGateway(_auth.dio, session: session),
         uploadPolicyStore:
             PreferenceErkeSnapshotUploadPolicyStore(appUserId: appUserId),
         automationUploadAllowed: automationUpload,
+        isCurrent: current,
       ).syncErke(automationUpload: automationUpload);
+      if (!current()) {
+        return const RefreshResult(
+            performed: false, message: '账号已切换', errorCode: 'context_changed');
+      }
       if (result.status == PersonalSyncItemStatus.success) {
         if (_saveErkeCredentials) {
           await _credentialStore.writeErke(sourceAccountId, credentials);

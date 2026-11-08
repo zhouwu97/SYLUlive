@@ -8,6 +8,7 @@ import '../providers/canteen_provider.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_page_app_bar.dart';
 import '../widgets/canteen/canteen_pending_card.dart';
+import '../widgets/app_card.dart';
 
 /// 管理员食堂审核页：待审核食堂提交列表 + 通过/驳回。
 class AdminCanteenReviewScreen extends StatefulWidget {
@@ -110,7 +111,7 @@ class _AdminCanteenReviewScreenState extends State<AdminCanteenReviewScreen> {
     if (id == 0) return;
     final name = (item['name'] ?? '').toString();
 
-    final reason = await showDialog<String>(
+    final reason = await showAppDialog<String>(
       context: context,
       builder: (ctx) {
         final controller = TextEditingController();
@@ -174,7 +175,8 @@ class _AdminCanteenReviewScreenState extends State<AdminCanteenReviewScreen> {
       body = const Center(child: CircularProgressIndicator());
     } else if (_loadFailed) {
       body = Center(
-        child: Column(
+        child: AppContentSurface.reading(
+            child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('加载待审核食堂失败'),
@@ -184,7 +186,7 @@ class _AdminCanteenReviewScreenState extends State<AdminCanteenReviewScreen> {
               child: const Text('重新加载'),
             ),
           ],
-        ),
+        )),
       );
     } else {
       body = RefreshIndicator(
@@ -215,7 +217,8 @@ class _AdminCanteenReviewScreenState extends State<AdminCanteenReviewScreen> {
   }
 
   Widget _buildEmptyState(bool isDark) {
-    return Container(
+    return AppContentSurface.card(
+        child: Container(
       padding: const EdgeInsets.all(32),
       child: Column(
         children: [
@@ -253,7 +256,7 @@ class _AdminCanteenReviewScreenState extends State<AdminCanteenReviewScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildCard(Map<String, dynamic> canteen, bool isDark) {

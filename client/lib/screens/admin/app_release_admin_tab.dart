@@ -56,7 +56,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
                   ? ListView(
                       children: const [
                         SizedBox(height: 180),
-                        Center(child: Text('暂无应用版本')),
+                        Center(child: AppContentSurface.reading(child: Text('暂无应用版本'))),
                       ],
                     )
                   : ListView.separated(
@@ -179,7 +179,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
     String selectedDeliveryMode = 'direct_package';
     final formKey = GlobalKey<FormState>();
 
-    final payload = await showDialog<_DraftPayload>(
+    final payload = await showAppDialog<_DraftPayload>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AppAlertDialog(
@@ -364,7 +364,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
       text: release['minimum_supported_version_code']?.toString() ?? '',
     );
     final formKey = GlobalKey<FormState>();
-    final update = await showDialog<Map<String, dynamic>>(
+    final update = await showAppDialog<Map<String, dynamic>>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: Text(isDraft ? '编辑草稿' : '调整最低支持版本'),
@@ -440,7 +440,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
     required Future<void> Function() action,
     bool destructive = false,
   }) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: Text(title),

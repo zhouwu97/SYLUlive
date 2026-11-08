@@ -10,6 +10,7 @@ import '../../app_bootstrap.dart';
 import '../../services/account_session_cleanup_coordinator.dart';
 import '../../services/ai_assistant_service.dart';
 import 'ai_model_settings_screen.dart';
+import '../../widgets/app_card.dart';
 
 class AIModelChatScreen extends StatefulWidget {
   const AIModelChatScreen({
@@ -94,7 +95,8 @@ class _AIModelChatScreenState extends State<AIModelChatScreen> {
                 children: [
                   Expanded(child: _buildConversation(context)),
                   if (_controller.error != null)
-                    Padding(
+                    AppContentSurface(
+                        child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                       child: Row(
                         children: [
@@ -113,10 +115,11 @@ class _AIModelChatScreenState extends State<AIModelChatScreen> {
                           ),
                         ],
                       ),
-                    ),
+                    )),
                   SafeArea(
                     top: false,
-                    child: Padding(
+                    child: AppContentSurface(
+                        child: Padding(
                       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                       child: TextField(
                         controller: _inputController,
@@ -147,7 +150,7 @@ class _AIModelChatScreenState extends State<AIModelChatScreen> {
                           ),
                         ),
                       ),
-                    ),
+                    )),
                   ),
                 ],
               ),
@@ -166,7 +169,7 @@ class _AIModelChatScreenState extends State<AIModelChatScreen> {
       );
     }
     if (_controller.messages.isEmpty) {
-      return const Center(child: Text('开始新的对话'));
+      return const Center(child: AppContentSurface.reading(child: Text('开始新的对话')));
     }
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -192,7 +195,7 @@ class _MessageBubble extends StatelessWidget {
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),
-        child: DecoratedBox(
+        child: AppCardSurface(
           decoration: BoxDecoration(
             color: isUser
                 ? scheme.primaryContainer

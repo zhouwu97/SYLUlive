@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
+import '../../../services/publish_session_scope.dart';
+
 import '../domain/academic_provider.dart';
 
 /// 服务端身份绑定接口的脱敏错误。响应正文不向上层透传，避免把 JWT、
@@ -31,6 +33,7 @@ final class AcademicIdentityApiException implements Exception {
         'INVALID_STUDENT_ID' ||
         'ACCOUNT_RESTRICTED' ||
         'AUTHENTICATION_REQUIRED' ||
+        'ACADEMIC_IDENTITY_FROZEN' ||
         'ACADEMIC_IDENTITY_ROUTE_UNAVAILABLE' =>
           false,
         _ => true,
@@ -216,9 +219,57 @@ final class AcademicIdentityChallenge {
 /// 访问服务端 provider-aware 身份路由。Dio 必须是已由 AuthProvider 注入
 /// JWT 的共享实例；本类不自己读取或保存 App Token。
 final class AcademicIdentityClient {
-  AcademicIdentityClient(this._dio);
+  AcademicIdentityClient(this._dio, {this.sessionEpoch});
 
   final Dio _dio;
+  final int Function()? sessionEpoch;
+
+  /// 学校会话只在本次服务端探活中使用；回执必须是服务端学校核验结果。
+  Future<AcademicIdentityBinding> verifyLocalSession(
+      AcademicIdentityKey identity, ProviderSessionArtifact artifact) async {
+    if (artifact.providerId != identity.providerId ||
+        artifact.studentId != identity.studentId) {
+      throw const AcademicIdentityApiException(
+          'IDENTITY_MISMATCH', '本机学校会话身份已变化');
+    }
+    final cookies = artifact.opaqueProviderState['cookies'];
+    if (cookies is! List ||
+        cookies.isEmpty ||
+        cookies.any((value) => value is! String)) {
+      throw const AcademicIdentityApiException(
+          'ACADEMIC_SESSION_MISSING', '学校会话尚未恢复');
+    }
+    final epoch = sessionEpoch?.call();
+    try {
+      final response = await _dio.post('/student-identity/verify-session',
+          data: {
+            'provider_id': identity.providerId.value,
+            'student_id': identity.studentId,
+            'school_session': {
+              'cookies': cookies,
+              if (identity.providerId == AcademicProviderId.syluGraduate)
+                'session_path_prefix':
+                    artifact.opaqueProviderState['session_path_prefix'] ?? ''
+            }
+          },
+          options: Options(
+              headers: {
+                'X-Expected-App-User': identity.appUserId
+              },
+              extra: {
+                'expectedAuthUserId': int.tryParse(identity.appUserId),
+                if (epoch != null) 'expectedAuthSessionEpoch': epoch,
+                'disable_safe_retry': true
+              },
+              sendTimeout: const Duration(seconds: 12),
+              receiveTimeout: const Duration(seconds: 45)));
+      return _parseVerifiedBinding(_requireMap(response, '同步教务绑定'),
+          expectedProvider: identity.providerId,
+          expectedStudentId: identity.studentId);
+    } on DioException catch (error) {
+      throw _networkError(error, '同步教务绑定失败');
+    }
+  }
 
   /// 本机完成登录探活后上报。App 用户由共享 Dio 的 JWT 确定，禁止附带学校凭据。
   ///
@@ -226,16 +277,22 @@ final class AcademicIdentityClient {
   /// 服务端正确实现会回 verified=false / assurance_level=local_declaration。
   /// 历史实现把它交给 [AcademicIdentityBinding] 的"学校已核验"解析器，
   /// 于是新后端的 200 正常响应被当成 IDENTITY_MISMATCH，同步永远失败并定时重试。
-  Future<AcademicIdentityBinding> bindLocal(AcademicIdentityKey identity) async {
+  Future<AcademicIdentityBinding> bindLocal(
+      AcademicIdentityKey identity) async {
     try {
-      final response = await _dio.post('/student-identity/bind', data: {
-        'provider_id': identity.providerId.value,
-        'student_id': identity.studentId,
-        'verification_method': academicVerificationMethodLocalDeclaration,
-      }, options: Options(headers: {'X-Expected-App-User': identity.appUserId},
-          sendTimeout: const Duration(seconds: 12), receiveTimeout: const Duration(seconds: 12)));
+      final response = await _dio.post('/student-identity/bind',
+          data: {
+            'provider_id': identity.providerId.value,
+            'student_id': identity.studentId,
+            'verification_method': academicVerificationMethodLocalDeclaration,
+          },
+          options: Options(
+              headers: {'X-Expected-App-User': identity.appUserId},
+              sendTimeout: const Duration(seconds: 12),
+              receiveTimeout: const Duration(seconds: 12)));
       return _parseLocalDeclarationBinding(_requireMap(response, '同步学生身份'),
-        expectedProvider: identity.providerId, expectedStudentId: identity.studentId);
+          expectedProvider: identity.providerId,
+          expectedStudentId: identity.studentId);
     } on AcademicIdentityApiException {
       rethrow;
     } on DioException catch (error) {
@@ -245,15 +302,19 @@ final class AcademicIdentityClient {
 
   Future<void> unbind(AcademicIdentityKey identity) async {
     try {
-      final response = await _dio.delete('/student-identity', data: {
-        'provider_id': identity.providerId.value, 'student_id': identity.studentId,
-      }, options: Options(
-        headers: {'X-Expected-App-User': identity.appUserId},
-        sendTimeout: const Duration(seconds: 12),
-        receiveTimeout: const Duration(seconds: 12),
-      ));
+      final response = await _dio.delete('/student-identity',
+          data: {
+            'provider_id': identity.providerId.value,
+            'student_id': identity.studentId,
+          },
+          options: Options(
+            headers: {'X-Expected-App-User': identity.appUserId},
+            sendTimeout: const Duration(seconds: 12),
+            receiveTimeout: const Duration(seconds: 12),
+          ));
       if (_requireMap(response, '解除教务绑定')['unbound'] != true) {
-        throw const AcademicIdentityApiException('INVALID_RESPONSE', '服务器未确认解绑');
+        throw const AcademicIdentityApiException(
+            'INVALID_RESPONSE', '服务器未确认解绑');
       }
     } on DioException catch (error) {
       throw _networkError(error, '解除教务绑定失败');
@@ -263,11 +324,12 @@ final class AcademicIdentityClient {
   Future<List<AcademicIdentityBinding>> listIdentities() async {
     final cancellation = CancelToken();
     try {
-      final response = await _dio.get('/student-identity', cancelToken: cancellation)
+      final response = await _dio
+          .get('/student-identity', cancelToken: cancellation)
           .timeout(const Duration(seconds: 12), onTimeout: () {
         cancellation.cancel('identity_restore_timeout');
-        throw const AcademicIdentityApiException('IDENTITY_TIMEOUT',
-            '确认教务身份超时，请检查网络后重试');
+        throw const AcademicIdentityApiException(
+            'IDENTITY_TIMEOUT', '确认教务身份超时，请检查网络后重试');
       });
       final data = _requireMap(response, '读取教务身份');
       final raw = data['identities'];
@@ -322,6 +384,7 @@ final class AcademicIdentityClient {
     required String studentId,
     String? redirectUri,
     AcademicIdentityKey? currentIdentity,
+    PublishSessionScope? session,
   }) async {
     final normalizedStudentId = studentId.trim();
     if (normalizedStudentId.isEmpty) {
@@ -332,7 +395,10 @@ final class AcademicIdentityClient {
     }
     try {
       final response = await _dio.post(
-        currentIdentity == null ? '/student-identity/challenge' : '/student-identity/change/challenge',
+        currentIdentity == null
+            ? '/student-identity/challenge'
+            : '/student-identity/change/challenge',
+        options: _verificationOptions(session),
         data: <String, Object?>{
           if (currentIdentity != null) ...{
             'current_provider_id': currentIdentity.providerId.value,
@@ -347,9 +413,11 @@ final class AcademicIdentityClient {
       final data = _requireMap(response, '获取教务挑战');
       if (currentIdentity != null &&
           (data['operation'] != 'change' ||
-           (data['challenge_token']?.toString().isEmpty ?? true) ||
-           DateTime.tryParse(data['expires_at']?.toString() ?? '') == null)) {
-        throw const AcademicIdentityApiException('INVALID_RESPONSE', '服务端未返回有效换绑挑战');
+              (data['challenge_token']?.toString().isEmpty ?? true) ||
+              DateTime.tryParse(data['expires_at']?.toString() ?? '') ==
+                  null)) {
+        throw const AcademicIdentityApiException(
+            'INVALID_RESPONSE', '服务端未返回有效换绑挑战');
       }
       final required = data['challenge_required'] == true;
       final challengeProvider = AcademicProviderId.tryParse(
@@ -369,7 +437,8 @@ final class AcademicIdentityClient {
           challengeType: verificationMode,
           isChange: currentIdentity != null,
           challengeToken: data['challenge_token']?.toString(),
-          schoolPublicKeyFingerprint: data['school_public_key_fingerprint']?.toString(),
+          schoolPublicKeyFingerprint:
+              data['school_public_key_fingerprint']?.toString(),
           expiresAt: DateTime.tryParse(data['expires_at']?.toString() ?? ''),
           verificationMode: verificationMode,
           verifyEndpoint: _normalizeApiPath(
@@ -438,6 +507,7 @@ final class AcademicIdentityClient {
     required AcademicIdentityChallenge challenge,
     required String captcha,
     required String encryptedPassword,
+    PublishSessionScope? session,
   }) async {
     if (challenge.isUndergraduatePreverify) {
       throw const AcademicIdentityApiException(
@@ -463,7 +533,10 @@ final class AcademicIdentityClient {
     }
     try {
       final response = await _dio.post(
-        challenge.isChange ? '/student-identity/change' : '/student-identity/verify',
+        challenge.isChange
+            ? '/student-identity/change'
+            : '/student-identity/verify',
+        options: _verificationOptions(session),
         data: <String, Object?>{
           'provider_id': challenge.providerId.value,
           'student_id': challenge.studentId,
@@ -517,6 +590,7 @@ final class AcademicIdentityClient {
   Future<AcademicIdentityBinding> verifyUndergraduatePreverify({
     required AcademicIdentityChallenge challenge,
     required String password,
+    PublishSessionScope? session,
   }) async {
     if (!challenge.isUndergraduatePreverify ||
         challenge.providerId != AcademicProviderId.syluUndergraduate) {
@@ -534,17 +608,21 @@ final class AcademicIdentityClient {
     }
     try {
       final response = await _dio.post(
-        challenge.isChange ? '/student-identity/change' : _normalizeApiPath(
-          challenge.verifyEndpoint,
-          fallback: '/student-identity/verify',
-        ),
+        challenge.isChange
+            ? '/student-identity/change'
+            : _normalizeApiPath(
+                challenge.verifyEndpoint,
+                fallback: '/student-identity/verify',
+              ),
+        options: _verificationOptions(session),
         data: <String, Object?>{
           'provider_id': challenge.providerId.value,
           'student_id': challenge.studentId,
           'password': normalizedPassword,
           if (challenge.isChange) ...{
             'challenge_token': challenge.challengeToken,
-            'school_public_key_fingerprint': challenge.schoolPublicKeyFingerprint ?? '',
+            'school_public_key_fingerprint':
+                challenge.schoolPublicKeyFingerprint ?? '',
           },
         },
       );
@@ -579,6 +657,15 @@ final class AcademicIdentityClient {
     }
     return Map<String, dynamic>.from(data);
   }
+
+  // 认证拦截器在真正发送与刷新重放前校验发起会话，不能只检查响应归属。
+  Options? _verificationOptions(PublishSessionScope? session) => session == null
+      ? null
+      : Options(
+          extra: session.requestExtra,
+          sendTimeout: const Duration(seconds: 12),
+          receiveTimeout: const Duration(seconds: 45),
+        );
 
   /// 本机声明回执的专用解析器：接受「声明已接收」，拒绝「自称已核验」。
   ///
@@ -691,7 +778,14 @@ final class AcademicIdentityClient {
     final code = data is Map
         ? _errorCode(Map<String, dynamic>.from(data), status)
         : 'UNAVAILABLE';
-    return AcademicIdentityApiException(code, message, statusCode: status);
+    // 只使用本地白名单说明，不透传可能含学校会话材料的响应正文。
+    return AcademicIdentityApiException(
+      code,
+      data is Map
+          ? _errorMessage(Map<String, dynamic>.from(data), message)
+          : message,
+      statusCode: status,
+    );
   }
 
   String _errorCode(Map<String, dynamic> data, int? status) {
@@ -711,10 +805,15 @@ final class AcademicIdentityClient {
       'ACADEMIC_ACCOUNT_REJECTED' => '教务账号无法识别',
       'ACADEMIC_ACCOUNT_RESTRICTED' => '教务账号当前受限',
       'ACADEMIC_IDENTITY_MISMATCH' => '学校返回的学生身份与当前绑定不一致',
+      'ACADEMIC_IDENTITY_ALREADY_BOUND' => '该学号已绑定其他账号，请使用原账号或联系管理员处理',
+      'ACADEMIC_IDENTITY_IMMUTABLE' => '该教务类型已有其他认证身份，请先在教务设置核对，不能直接覆盖',
+      'ACADEMIC_BINDING_CHANGED' => '学生身份状态已变化，请刷新后重试',
+      'ACADEMIC_SESSION_INVALID' => '学校会话格式无效，请在原教务入口重新连接',
       'ACADEMIC_IDENTITY_UNVERIFIED' => '学校尚未确认该教务身份，请重新绑定',
       'ACADEMIC_CHALLENGE_REPLAYED' => '教务挑战已使用，请刷新后重试',
       'ACADEMIC_RATE_LIMITED' || 'ACADEMIC_RATE_LIMIT' => '教务请求过于频繁，请稍后再试',
-      'ACADEMIC_PROVIDER_UNAVAILABLE' => '研究生教务验证暂不可用',
+      'ACADEMIC_PROVIDER_UNAVAILABLE' => '教务身份验证暂不可用，请稍后重试',
+      'ACADEMIC_IDENTITY_FROZEN' => '服务器暂未开放学生认证；本机连接教务不构成学生认证，请留意公告，无需反复重新绑定',
       _ => '$operation失败，请稍后重试',
     };
   }

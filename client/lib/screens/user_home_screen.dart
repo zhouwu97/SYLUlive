@@ -1,7 +1,9 @@
+import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:shenliyuan/widgets/app_glass_button_style.dart';
 import '../widgets/app_tab_bar_surface.dart';
 import '../widgets/app_card.dart';
 import 'package:flutter/material.dart';
+import '../widgets/ai_bot_identity.dart';
 import 'package:shenliyuan/utils/post_image_cache.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -353,7 +355,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
             leading: widget.onBack == null
                 ? null
                 : BackButton(onPressed: widget.onBack)),
-        body: Center(child: Text(_errorMessage ?? '用户不存在或加载失败')),
+        body: Center(
+            child:
+                AppContentSurface.reading(child: Text(_errorMessage ?? '用户不存在或加载失败'))),
       );
     }
 
@@ -557,18 +561,17 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                   collapseMode: CollapseMode.parallax,
                   background: Builder(
                     builder: (context) {
-                      final settings = context
-                          .dependOnInheritedWidgetOfExactType<
-                            FlexibleSpaceBarSettings
-                          >()!;
+                      final settings =
+                          context.dependOnInheritedWidgetOfExactType<
+                              FlexibleSpaceBarSettings>()!;
                       // 抵消 FlexibleSpaceBar 的 1/4 视差，仅固定图片与遮罩；
                       // 资料和按钮仍随原有折叠效果移动。
                       final backgroundOffset =
                           (settings.maxExtent - settings.currentExtent).clamp(
-                            0.0,
-                            settings.maxExtent - settings.minExtent,
-                          ) /
-                          4;
+                                0.0,
+                                settings.maxExtent - settings.minExtent,
+                              ) /
+                              4;
                       return Stack(
                         fit: StackFit.expand,
                         children: [
@@ -607,8 +610,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                               children: [
                                 _buildCircleButton(
                                   icon: Icons.arrow_back,
-                                  onTap:
-                                      widget.onBack ??
+                                  onTap: widget.onBack ??
                                       () => Navigator.maybePop(context),
                                 ),
                                 if (!isMe && PrivateChatPolicy.enabled)
@@ -710,7 +712,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
     if (_postsError != null && _posts.isEmpty) {
       return Center(
-        child: Column(
+        child: AppContentSurface.reading(
+            child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(_postsError!, style: const TextStyle(color: Colors.grey)),
@@ -730,16 +733,16 @@ class _UserHomeScreenState extends State<UserHomeScreen>
               child: const Text('重试'),
             ),
           ],
-        ),
+        )),
       );
     }
 
     if (_posts.isEmpty) {
-      return const Center(child: Text('暂无帖子'));
+      return const Center(child: AppContentSurface.reading(child: Text('暂无帖子')));
     }
 
     return ListView.builder(
-                addRepaintBoundaries: false,
+      addRepaintBoundaries: false,
       padding: padding,
       itemCount: _posts.length,
       itemBuilder: (context, index) {
@@ -788,11 +791,11 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
 
     if (_marketPosts.isEmpty) {
-      return const Center(child: Text('暂无集市记录'));
+      return const Center(child: AppContentSurface.reading(child: Text('暂无集市记录')));
     }
 
     return ListView.builder(
-                addRepaintBoundaries: false,
+      addRepaintBoundaries: false,
       padding: padding,
       itemCount: _marketPosts.length,
       itemBuilder: (context, index) {
@@ -981,6 +984,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           ],
         ),
 
+        AiBotIdentity(
+          user: user,
+          style: const TextStyle(color: Colors.white, fontSize: 12),
+        ),
         // 第三行：性别和公开用户 ID
         const SizedBox(height: 8),
         Row(
@@ -1173,7 +1180,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
   // ---------------- 编辑资料悬浮窗 ----------------
   void _showEditSheet(BuildContext context, User user) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
@@ -1505,7 +1512,10 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                   decoration: BoxDecoration(
                     color: context.watch<ThemeProvider?>()?.frostedGlass == true
-                        ? Colors.transparent : isDark ? Colors.grey[800] : Colors.grey[100],
+                        ? Colors.transparent
+                        : isDark
+                            ? Colors.grey[800]
+                            : Colors.grey[100],
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -1535,7 +1545,10 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                   decoration: BoxDecoration(
                     color: context.watch<ThemeProvider?>()?.frostedGlass == true
-                        ? Colors.transparent : isDark ? Colors.grey[800] : Colors.grey[100],
+                        ? Colors.transparent
+                        : isDark
+                            ? Colors.grey[800]
+                            : Colors.grey[100],
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(

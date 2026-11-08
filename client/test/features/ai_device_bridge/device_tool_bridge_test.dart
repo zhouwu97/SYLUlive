@@ -463,6 +463,7 @@ Future<PersonalSyncItemResult> _syncErkeWithVpnFailure(
         ErkeCacheStore(appUserId: 'user-1', sourceAccountId: 'source-1'),
   );
   return ErkeRepositoryPersonalSyncGateway(
+    isCurrent: () => true,
     repository: repository,
     requestCredentials: () async => const PersonalErkeCredentials(
       studentId: 'source-1',

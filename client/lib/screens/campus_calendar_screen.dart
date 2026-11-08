@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -333,6 +334,8 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
           const SizedBox(height: 16),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 160),
+            transitionBuilder: (child, animation) =>
+                AppSurfaceFadeTransition(opacity: animation, child: child),
             child: _DayDetailCard(
               key: ValueKey(formatCalendarDate(selectedInfo.date)),
               info: selectedInfo,
@@ -366,30 +369,33 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
     }
   }
 
-  Widget _buildMonthPager(CampusCalendar calendar, bool isDark) => SizedBox(
-        height: _monthPagerViewportHeight(calendar),
-        child: NotificationListener<ScrollNotification>(
-          onNotification: _handleMonthPagerScrollNotification,
-          child: PageView.builder(
-            controller: _monthPageController,
-            itemCount: _monthPageCount,
-            onPageChanged: _handleMonthPageChanged,
-            itemBuilder: (context, page) {
-              final month = _monthForPage(page);
-              return Align(
-                alignment: Alignment.topCenter,
-                child: _CalendarMonthCard(
-                  month: month,
-                  selectedDate: _selectedDate,
-                  calendar: calendar,
-                  exams: _importedExams,
-                  isDark: isDark,
-                  onPrevious: () => _changeMonth(-1),
-                  onNext: () => _changeMonth(1),
-                  onSelect: _selectDate,
-                ),
-              );
-            },
+  Widget _buildMonthPager(CampusCalendar calendar, bool isDark) =>
+      LayoutBuilder(
+        builder: (context, constraints) => SizedBox(
+          height: _monthPagerViewportHeight(calendar, constraints.maxWidth),
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _handleMonthPagerScrollNotification,
+            child: PageView.builder(
+              controller: _monthPageController,
+              itemCount: _monthPageCount,
+              onPageChanged: _handleMonthPageChanged,
+              itemBuilder: (context, page) {
+                final month = _monthForPage(page);
+                return Align(
+                  alignment: Alignment.topCenter,
+                  child: _CalendarMonthCard(
+                    month: month,
+                    selectedDate: _selectedDate,
+                    calendar: calendar,
+                    exams: _importedExams,
+                    isDark: isDark,
+                    onPrevious: () => _changeMonth(-1),
+                    onNext: () => _changeMonth(1),
+                    onSelect: _selectDate,
+                  ),
+                );
+              },
+            ),
           ),
         ),
       );
@@ -423,17 +429,22 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
     });
   }
 
-  double _monthPagerViewportHeight(CampusCalendar calendar) {
-    final currentHeight = _monthPagerHeight(_displayMonth, calendar);
+  double _monthPagerViewportHeight(CampusCalendar calendar, double width) {
+    final currentHeight =
+        _monthPagerHeight(context, _displayMonth, calendar, width);
     if (!_isMonthPagerScrolling) return currentHeight;
 
     final previousHeight = _monthPagerHeight(
+      context,
       DateTime(_displayMonth.year, _displayMonth.month - 1),
       calendar,
+      width,
     );
     final nextHeight = _monthPagerHeight(
+      context,
       DateTime(_displayMonth.year, _displayMonth.month + 1),
       calendar,
+      width,
     );
     return [currentHeight, previousHeight, nextHeight]
         .reduce((maximum, height) => maximum > height ? maximum : height);
@@ -521,7 +532,8 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
               if (importedExams.isEmpty && events.isEmpty)
                 const Padding(
                   padding: EdgeInsets.only(top: 56),
-                  child: Center(child: Text('暂无重要日程')),
+                  child: Center(
+                      child: AppContentSurface.reading(child: Text('暂无重要日程'))),
                 ),
             ],
           ),
@@ -1699,13 +1711,18 @@ class _OfficialCalendarSourceScreen extends StatelessWidget {
   const _OfficialCalendarSourceScreen();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, isDark ? CampusTheme.darkBg : CampusTheme.bg),
+      backgroundColor: AppPageBackground.color(
+          context, isDark ? CampusTheme.darkBg : CampusTheme.bg),
       appBar: AppBar(
         title: const Text('官方校历原图'),
-        backgroundColor: AppPageBackground.color(context, isDark ? CampusTheme.darkBg : CampusTheme.bg),
+        backgroundColor: AppPageBackground.color(
+            context, isDark ? CampusTheme.darkBg : CampusTheme.bg),
         surfaceTintColor: Colors.transparent,
       ),
       body: InteractiveViewer(
@@ -1823,14 +1840,62 @@ String _examScheduleLabel(ExamModel exam, {bool includeDate = true}) {
   return '$date$time${exam.location.isEmpty ? '' : ' · ${exam.location}'}';
 }
 
-double _monthPagerHeight(DateTime month, CampusCalendar calendar) {
+double _monthPagerHeight(BuildContext context, DateTime month,
+    CampusCalendar calendar, double width) {
   final monthEnd = DateTime(month.year, month.month + 1, 0);
   final trailingDays = (7 - monthEnd.weekday) % 7;
   final visibleDays = monthEnd.day + (month.weekday - 1) + trailingDays;
   final rows = (visibleDays / 7).ceil();
   final hasMarkers =
       calendar.events.isNotEmpty || calendar.dayOverrides.isNotEmpty;
-  return 102 + rows * 52 + (hasMarkers ? 24 : 0);
+  final original = 102 + rows * 52 + (hasMarkers ? 24 : 0);
+  final scaler = MediaQuery.textScalerOf(context);
+  if (scaler.scale(14) == 14) return original.toDouble();
+  Size measure(String text, double size, [FontWeight? weight]) {
+    final painter = TextPainter(
+      text: TextSpan(
+          text: text,
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium!
+              .copyWith(fontSize: size, fontWeight: weight)),
+      textDirection: Directionality.of(context),
+      textScaler: scaler,
+    )..layout();
+    final result = painter.size;
+    painter.dispose();
+    return result;
+  }
+
+  final titleHeight = measure('2026年11月', 18, FontWeight.w800).height;
+  final weekdayHeight = measure('一', 13, FontWeight.w700).height;
+  var legendHeight = 0.0;
+  if (hasMarkers) {
+    final available = width - 26;
+    var used = 0.0;
+    var lineHeight = 0.0;
+    for (final label in ['休 假期', '调 调课', '考 考试']) {
+      final text = measure(label, 12);
+      final itemWidth = 12 + text.width;
+      if (used > 0 && used + 12 + itemWidth > available) {
+        legendHeight += lineHeight + 6;
+        used = 0;
+        lineHeight = 0;
+      }
+      used += (used > 0 ? 12 : 0) + itemWidth;
+      if (text.height > lineHeight) lineHeight = text.height;
+    }
+    legendHeight += lineHeight;
+  }
+  // PageView 必须有高度；按真实字体和图例换行计算，普通字号保留原几何。
+  final needed = 28 +
+      (titleHeight > 36 ? titleHeight : 36) +
+      10 +
+      weekdayHeight +
+      6 +
+      rows * 52 +
+      (hasMarkers ? 10 + legendHeight : 0);
+  return needed > original ? needed.ceilToDouble() + 2 : original.toDouble();
 }
 
 DateTime _monthStart(DateTime date) => DateTime(date.year, date.month);

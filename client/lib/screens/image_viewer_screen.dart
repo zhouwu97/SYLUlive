@@ -28,9 +28,8 @@ bool shouldAutoLoadOriginalByDefault({
   required int originalSizeBytes,
   bool isAnimatedGif = false,
 }) {
-  // GIF 也遵守同一阈值：小 GIF 直出，大 GIF 留在静态预览并等待用户主动
-  // 加载完整动画，避免进入查看器就占用大带宽和动画解码资源。
-  return originalSizeBytes > 0 &&
+  // GIF 需要原图才能播放，静态图片继续按大小限制自动加载原图。
+  return isAnimatedGif || originalSizeBytes > 0 &&
       originalSizeBytes < imageOriginalAutoLoadThresholdBytes;
 }
 
@@ -117,8 +116,15 @@ class ImageViewerItem {
 
   bool get isAnimatedGif {
     if (mimeType.toLowerCase() == 'image/gif') return true;
+    if (bytes != null && bytes!.length >= 6 &&
+        bytes![0] == 0x47 && bytes![1] == 0x49 && bytes![2] == 0x46 &&
+        bytes![3] == 0x38 && (bytes![4] == 0x37 || bytes![4] == 0x39) &&
+        bytes![5] == 0x61) {
+      return true;
+    }
     return <String?>[
       resolvedOriginalUrl,
+      localPath,
       viewerUrl,
       previewUrl,
       thumbUrl,
@@ -512,7 +518,9 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     if (item.bytes != null && item.bytes!.isNotEmpty) {
       return Image(
         key: ValueKey('viewer-memory-image-$index'),
-        image: _decodeConstrained(MemoryImage(item.bytes!), item: item),
+        image: item.isAnimatedGif
+            ? MemoryImage(item.bytes!)
+            : _decodeConstrained(MemoryImage(item.bytes!), item: item),
         fit: BoxFit.contain,
       );
     }
@@ -521,7 +529,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     if (localPath != null) {
       return Image(
         key: ValueKey('viewer-local-image-$index'),
-        image: _decodeConstrained(FileImage(File(localPath)), item: item),
+        image: _imageProviderForFile(File(localPath), item),
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => _buildPreviewImage(item, index),
       );
@@ -549,6 +557,16 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     if (originalUrl == null) return _buildPreviewImage(item, index);
 
     final hasPreview = _hasPreview(item);
+    if (item.isAnimatedGif) {
+      return _buildNetworkImage(
+        originalUrl,
+        index: index,
+        key: ValueKey('viewer-original-image-$index'),
+        isAnimated: true,
+        loadingPlaceholder: hasPreview ? _buildPreviewImage(item, index) : null,
+        fallbackUrls: _previewCandidates(item),
+      );
+    }
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -706,6 +724,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     Key? key,
     bool isAnimated = false,
     bool showLoadingIndicator = true,
+    Widget? loadingPlaceholder,
     List<String> fallbackUrls = const <String>[],
   }) {
     final nextFallback = fallbackUrls.isEmpty
@@ -728,6 +747,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       fit: BoxFit.contain,
       loadingBuilder: (context, child, loadingProgress) {
         if (loadingProgress == null) return child;
+        if (loadingPlaceholder != null) return loadingPlaceholder;
         if (!showLoadingIndicator) return const SizedBox.expand();
         return const Center(
           child: CircularProgressIndicator(color: Colors.white),

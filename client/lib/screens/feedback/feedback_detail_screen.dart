@@ -80,7 +80,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
   /// `sessionGeneration` 在同账号的资料刷新、头像更新、consent 变化时也会计数，
   /// 拿它判断「是不是同一个账号」会让一次资料刷新丢掉未确认送达的幂等键，
   /// 用户再发一次就可能发出重复消息。它只用于把旧响应挡在 UI 之外。
-  bool _sameAccountSession(AuthProvider auth, int? accountId, int accountEpoch) =>
+  bool _sameAccountSession(
+          AuthProvider auth, int? accountId, int accountEpoch) =>
       accountId != null &&
       auth.user?.id == accountId &&
       auth.accountSessionEpoch == accountEpoch;
@@ -435,7 +436,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     final scope = _captureWriteScope(auth);
     if (scope == null) return;
     final reasonController = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('重新打开工单'),
@@ -602,7 +603,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       {'value': 'closed', 'label': '已关闭'},
     ];
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AppAlertDialog(
@@ -705,7 +706,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       {'key': 'other', 'label': '其他信息'},
     ];
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AppAlertDialog(
@@ -823,7 +824,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       return;
     }
     if (!_ownsWriteScope(auth, scope)) return;
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AppAlertDialog(
@@ -1216,7 +1217,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
     }
 
     if (msg.isInternalNote) {
-      return Container(
+      return AppCardSurface(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -1275,7 +1276,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
         'other': '其他排查信息',
       };
 
-      return Container(
+      return AppCardSurface(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -1365,7 +1366,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
             CircleAvatar(
               radius: 16,
               backgroundColor: msg.isUser
-                  ? AppColors.brandPrimary.withValues(alpha: 0.15)
+                  ? Color.alphaBlend(
+                      AppColors.brandPrimary.withValues(alpha: 0.15),
+                      Theme.of(context).colorScheme.surface)
                   : AppColors.brandPrimary,
               child: Text(msg.isUser ? '用户' : '官',
                   style: TextStyle(
@@ -1376,7 +1379,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
             const SizedBox(width: 8),
           ],
           Flexible(
-            child: Container(
+            child: AppCardSurface(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: isOutgoing
@@ -1451,7 +1454,9 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
             CircleAvatar(
               radius: 16,
               backgroundColor: msg.isUser
-                  ? AppColors.brandPrimary.withValues(alpha: 0.15)
+                  ? Color.alphaBlend(
+                      AppColors.brandPrimary.withValues(alpha: 0.15),
+                      Theme.of(context).colorScheme.surface)
                   : AppColors.brandPrimary,
               child: Text(msg.isUser ? '我' : '官',
                   style: TextStyle(
@@ -1712,7 +1717,8 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
       child: Row(
         children: [
           const Expanded(child: AppCardDivider(indent: 40, endIndent: 10)),
-          Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          Text(label,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey)),
           const Expanded(child: AppCardDivider(indent: 10, endIndent: 40)),
         ],
       ),
@@ -1783,7 +1789,7 @@ class _FeedbackDetailScreenState extends State<FeedbackDetailScreen>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(_error!),
+                      AppContentSurface.reading(child: Text(_error!)),
                       const SizedBox(height: 12),
                       OutlinedButton(
                         onPressed: _loadDetail,

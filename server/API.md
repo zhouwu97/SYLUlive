@@ -88,6 +88,10 @@
 | `POST`| `/api/user/checkin/makeup` | 使用补签卡补签本月过去的未签到日期 |
 | `GET` | `/api/user/checkin/status` | 获取签到状态 |
 | `GET` | `/api/user/checkin/calendar?month=YYYY-MM` | 获取指定月份的签到记录 |
+
+AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人状态）与 `POST /api/integrations/v1/me/checkin`（本人当日签到），二者需本人明确批准 `checkin:write`。不接受用户编号、日期、补签或经验参数；与 App 共用同日事实、奖励及幂等，撤权与签到串行复核。请求体仅允许空或 `{}`，拒绝额外字段／查询参数；返回日期、连续天数、本次奖励等最小数据，不返回学号或经验总额。
+
+公开工具接口 `GET /api/integrations/v1/public/community/{posts,posts/:id,posts/:id/replies,replies/:id/context,stickers,sections}` 无需账号令牌，仍按固定字段／可见状态过滤、限流且不增加浏览量。原有带授权路径保留兼容；本人资料／签到／草稿不属于该公开命名空间。食堂、校园资讯 `/api/campus/articles`、学校校历 `/api/campus-calendars/current` 沿用既有公开接口。
 | `POST`| `/api/user/:id/follow` | 关注指定用户 |
 | `DELETE`| `/api/user/:id/follow`| 取消关注指定用户 |
 | `GET` | `/api/user/:id/posts` | 获取指定用户发布的帖子 |
@@ -116,6 +120,14 @@
 | `POST` | `/api/erke/scores` | **Migration compatibility**：旧二课读取能力 |
 
 旧登录、注册和密码找回入口 `/api/login_edu`、`/api/register_with_edu`、`/api/forgot_password` 等已退役并返回 `410`，不应继续接入新客户端。
+
+### 原教务绑定自动核验与补交
+
+`POST /api/student-identity/verify-session` 沿用原绑定入口，没有新增学生绑定入口。需 JWT、有效协议、正常账号和 `X-Expected-App-User`（提供时必须匹配）；原有身份写入开关继续生效。请求仅接受 `provider_id`、`student_id` 和 `school_session: {cookies: ["NAME=value"], session_path_prefix?: "/(S(...))"}`，总大小不超过 24 KiB。配置必须是本人、匹配学号的 active 记录；不接受客户端 verified、网页、资料正文或 URL。
+
+服务端临时使用会话访问固定学校本人资料入口。本科通过带内部服务令牌的 Python `/api/edu/verify_session` 读取，不附带调用方提供的 `su`／学号查询参数；学校页面三个身份字段必须一致。研究生沿用固定学校资料协议。核对学号后事务内重新检查账号、协议、配置版本和90秒有效尝试；然后幂等写入 `school_profile/session-profile-v1` 可信绑定。学校会话、密码、完整学籍资料不落库、不返回、不记录日志。每账号10分钟最多5次、每IP最多20次尝试，超限429并建议600秒后重试。
+
+配置变化或解绑返回409，学校拒绝／身份不一致不授予资格，暂不可用返回503；客户端仅对临时故障退避重试。解绑原子撤销匹配身份、配置及在途尝试。旧 `/student-identity/bind` 仍只是低保证声明，不能作为学生权限依据。
 
 ### Active：已授权二课快照
 
@@ -221,6 +233,12 @@ FEED-H1 加固：
 
 提供教师避雷榜、专业榜、食堂榜的评价体系。
 
+课表入口和教师详情入口共用 `course_evaluation_submissions` 评价主记录。`source` 仅表达来源，历史回填为 `legacy_teacher`，所有记录使用真实主记录 ID、`revision` 与同一 PATCH 编辑流程。`teacher_ratings` 是兼容公开评价 ID、投票、举报与榜单的派生展示；正文和评分由同一事务同步，不独立接收用户写入。历史数据须先完成[统一迁移](../docs/ops/academic-evaluation-unification.md)，未完成时增强列表拒绝返回缺项的成功结果。
+
+`include_teacher_ratings=true` 保留为兼容能力参数，响应含 `includes_teacher_ratings`、`total`，但不再拼接两个表的评价。分页只按主记录创建时间和 ID 排序；旧混合来源游标失效时重新读取首页。公开评价 ID 只出现在 `teacher_rating_id` 中，不能作为主记录 PATCH 的 ID。两个入口正文上限统一为 500 个 Unicode 字符，迁移保留原文、评分、时间及治理状态。
+
+`include_content_counts=true` 随合并列表返回 `content_counts={posts,market,evaluations,count}`，仅统计当前认证用户可管理的三个页签：普通帖子、全部集市历史、统一主记录中的学科评价。本人受限内容保留，已删除内容按原列表规则排除。客户端不得指定其他用户或以管理员身份扩大此读取范围；公共 `/user/:id/posts/count` 的可见性保持原样。GET 本身只读，历史关联仅由显式迁移命令处理。
+
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/teachers` | 获取教师榜单列表 |
@@ -228,6 +246,7 @@ FEED-H1 加固：
 | `POST` | `/api/teachers/:id/rate` | 兼容入口：转入课程评价状态机 |
 | `DELETE` | `/api/teachers/rating/:id` | 删除自己的教师评价 |
 | `POST` | `/api/course-evaluations` | 创建课程评价（重复目标返回 409） |
+| `GET` | `/api/user/course-evaluations` | 当前用户的评价记录；支持 `limit` / `cursor`。显式传 `include_teacher_ratings=true` 返回统一评价主记录及总数；加 `include_content_counts=true` 返回三个内容页签的汇总 |
 | `PATCH` | `/api/user/course-evaluations/:id` | 更新课程评价（必须携带当前 `revision`） |
 | `GET` | `/api/majors` | 获取专业评价列表 |
 | `GET` | `/api/majors/:id` | 获取专业详情及评价 |
@@ -237,6 +256,7 @@ FEED-H1 加固：
 | `GET` | `/api/canteens/:id?review_sort=best\|latest&review_filter=all\|with_image\|high\|low` | 公开获取食堂详情及评价；登录时附带个人评价/投票状态 |
 | `POST` | `/api/canteens/:id/rate` | 评价食堂（需登录并绑定教务） |
 | `PUT` | `/api/canteens/ratings/:ratingId/vote` | 给食堂评价点赞/点踩/取消投票，不能给自己的评价投票 |
+| `GET` / `PUT` | `/api/canteens/:id/display-tags` | 管理员读取或保存位置及排行展示标签。PUT 必须提供 `location_area`、`location_floor` 和 `tags`；`tags: null` 恢复评价自动汇总，数组按顺序指定最多三个既有评价标签，空数组表示不展示。修改不改变原始评价或评分。 |
 | `PUT` | `/api/canteens/:id/image` | (管理员) 修改食堂封面图片 |
 | `POST` | `/api/canteens` | (需登录) 提交新食堂，进入待审核；`verified=false` 不公开，管理员收到站内通知。请求体 `{"name", "image", "location_area", "location_floor"}`；`location_area` 可选值 `一食堂`/`二食堂`，`location_floor` 可选值 `一楼`/`二楼`（旧客户端可省略） |
 | `GET` | `/api/canteens/pending` | (管理员) 待审核食堂列表（含 `creator_name` 提交人昵称与 `location_area`/`location_floor` 位置标签） |
@@ -327,7 +347,9 @@ FEED-H1 加固：
 | `GET` | `/api/user/notifications/unread_count`| 获取未读系统通知和互动红点数 |
 | `POST`| `/api/user/notifications/read` | 标记所有通知为已读 |
 | `POST`| `/api/notifications/read-selected` | 以当前登录用户为接收者。支持 `{"ids":[通知ID]}`（最多100个），或成功打开目标回复后发送 `{"post_id":帖子ID,"reply_id":回复ID}`；只消费匹配的回复通知 |
-| `GET` | `/api/user/likes/received` | 当前用户的帖子、评论收到的历史点赞；`limit` 默认30、最大50，`cursor` 为上一页返回的点赞ID。响应 `{items,has_more,next_cursor}`，每项含 `id,user_id,nickname,avatar,target_type,target_id,post_id,post_title,created_at`；过滤自赞、取消的赞、已删除/受限内容和注销账号 |
+| `GET` | `/api/user/likes/received` | 当前用户的帖子、评论收到的有效点赞；`limit` 默认30、最大50，`cursor` 为上一页返回的点赞ID。响应 `{items,has_more,next_cursor}`，每项含 `id,user_id,nickname,avatar,target_type,target_id,post_id,post_title,created_at`；过滤自赞、取消的赞、已删除/受限内容和注销账号 |
+
+用户资料的 `total_likes_received` 与此明细采用同一有效点赞查询：统计他人对本人公开帖子（`normal/sold/closed`）及这些帖子下本人正常评论的现存点赞，每个“点赞人 + 内容类型 + 内容 ID”计一次。同一人赞三条不同内容计 3 次。整帖删除或治理隐藏时，其下各评论作者的获赞也不再计入；恢复公开后仍存在的有效赞重新计入。自赞、已撤回的赞、已删除评论以及点赞账号非 `active`（兼容空状态）的记录不计。本人资料、会话刷新、公开资料及关联作者加载均从事实投影，不直接展示数据库兼容列的历史数值；无有效记录时返回 `0`。分页协议和字段类型不变。
 
 通知已读接口在原有响应上附加 `read_receipt`：`recipient_user_id` 表示接收账号，单条/目标回复读取返回实际归属该账号的 `ids` 和 `reply_ids`，全部已读返回 `all_before_id`。全部已读只处理该水位之前的通知，新产生的通知保持未读。旧客户端可忽略此附加字段。Android 用回执清理系统通知并阻止延迟重放；新回复推送附带 `notification_id`，使用 `reply_notifications_v1` 高优先级渠道，仍遵从用户的系统通知权限。
 | `POST` | `/api/notifications/replies/read` | 将当前账号全部回复通知标为已读，包含未加载分页；不影响其他类型通知。旧服务端无此路径返回 `404`，客户端保留提醒且提示重试，不降级为全部通知已读 |
@@ -397,9 +419,49 @@ FEED-H1 加固：
 
 > **注**: 以上仅为摘要级接口列表。请求载荷 (Body) 和返回体结构请参考对应处理器 (Handlers) 的 Go 源码定义。
 
-图片上传接受 JPG、PNG、GIF，单张最多 10 MiB，最长边不超过 12000 像素且总像素不超过 5000 万；先校验尺寸，再解码验证图片内容。客户端选择后即可上传，响应继续返回 `file_id`、`url`，发帖只需认领已上传的文件。上传后仍为 `temporary/private`，未发出的图片沿用临时文件留存与配额规则；成功重传相同图片会刷新当前用户授权的临时保留窗口，文件创建时间与访问权限保持不变，正在删除的文件仍拒绝复用。发帖认领后才生成公开预览任务。GIF 保留动画原文件，预览使用静态首帧；PNG 预览保留透明度并采用无损编码压缩。
+图片上传接受 JPG、PNG、GIF，单张最多 10 MiB，最长边不超过 12000 像素且总像素不超过 5000 万；先校验尺寸，再解码验证图片内容。客户端选择后即可上传，响应继续返回 `file_id`、`url`，发帖只需认领已上传的文件。上传后仍为 `temporary/private`，未发出的图片沿用临时文件留存与配额规则；成功重传相同图片会刷新当前用户授权的临时保留窗口，文件创建时间与访问权限保持不变，正在删除的文件仍拒绝复用。发帖认领后才生成公开预览任务。GIF 保留动画原文件，静态首帧预览使用保留透明度的 PNG；PNG 预览同样保留透明度并采用无损编码压缩。
 
 预览沿用 `_v1_thumb`、`_v1_medium`、`_v1_viewer` 路径与原图回退。普通图片的长边上限仍为 480、1280、2048；长宽比达到 3 的长图改按短边 320、960、1280 和总像素 150 万、500 万、1000 万的双重预算等比缩放，避免长截图文字被固定长边缩成窄条，不放大小图，不为达到固定字节数强行降清晰度。已有 ready 预览和原图保持不变，无需迁移或批量重编码。
+
+## 表情包导入、投稿与审核
+
+本机图片/ZIP 导入不发送文件到服务端。以下接口仅用于用户主动上传分享和审核。
+
+| 方法 | 路径 | 权限与行为 |
+| --- | --- | --- |
+| GET | `/api/emoji/packs` | 公开目录；默认仅原官方包，`include_community=true` 增加已审核的社区包 |
+| GET | `/api/emoji/packs/:id`、`/:id/manifest`、`/:id/assets/:assetId` | id 为稳定作品 ID；默认当前上架版，version 可显式选择已审核历史版，前提是整包仍上架；发送图片支持 Range/If-Range |
+| GET | `/api/emoji/packs/:id/cover`、`/:id/assets/:assetId?variant=thumbnail` | 已上架作品的封面/静态缩略图；cover 支持 `variant=icon`；同样校验 version 和整包状态 |
+| GET/POST | `/api/emoji/creator` | 本人读取申请/创作者状态，或提交 `{description, rights_confirmed:true, version}`；未申请返回 `{status:none,version:0}` |
+| GET | `/api/emoji/submissions` | 当前账号投稿；page 默认 1，limit 默认 20、最大 50；返回 items/total/page/limit，按创建时间和 ID 倒序 |
+| POST | `/api/emoji/submissions` | 登录 + 社区规则确认 + 当前 active 创作者权限；multipart 上传；同账号内的 Idempotency-Key 唯一 |
+| GET | `/api/emoji/submissions/:id`、`/:id/assets/:assetId` | 作者或现任管理员预览；其他账号返回 404 |
+| DELETE | `/api/emoji/submissions/:id` | 仅作者撤回，幂等；停止公开访问并回收服务端图片，保留状态记录 |
+| GET | `/api/admin/emoji-packs` | 现任管理员；默认 status=pending；支持 published/rejected/unpublished/withdrawn 及同一分页协议 |
+| GET | `/api/admin/emoji-packs/:id`、`/:id/assets/:assetId` | 现任管理员查看详情和全部内容 |
+| POST | `/api/admin/emoji-packs/:id/review` | JSON `{action: approve\|reject\|unpublish, reason: string}`；仅允许合法状态转换，不能审核自己投稿 |
+| GET | `/api/admin/emoji-creators` | 现任管理员；status 为 pending（默认）/active/rejected/suspended，page 默认 1，每页 20 |
+| POST | `/api/admin/emoji-creators/:userId/review` | `{action: approve\|reject\|suspend, reason, version}`；本人不能自审；拒绝/暂停必填原因；乐观版本失效返回 409 |
+
+投稿 multipart 字段：`name`（1–40 个字符）、`description`（可选，最多 300 个字符）、`rights_confirmed=true`、`names`（与图片一一对应的名称 JSON 数组），多张图片共用 `images` 字段。`Idempotency-Key` 为 16–64 位字母、数字、下划线或短横线；重试必须沿用同一键和同一内容，不同内容复用键返回 409。字符按 grapheme 计数，名称/单张名称额外上限 1200 UTF-8 bytes，简介 6000 bytes。
+
+新增可选字段 `cover_index`、`icon_index` 为从 0 开始的素材序号，缺省封面为首张、图标跟随封面；`tags` 是最多 5 个、每个最多 12 个 grapheme 的公开标签 JSON 数组。更新作品时传 `pack_id`（本人稳定作品 ID），同一作品只允许一份待审新版本，版本号由服务端持锁递增。公开图片、文字、封面和标签均绑定该不可变版本，客户端不能手工指定官方身份或版本号。
+
+创作者申请 description 为 1–300 个 grapheme、最多 6000 UTF-8 bytes。pending 状态相同内容重试幂等，已驳回/暂停可携当前 version 补充材料重新申请；active 不能通过申请接口自行变更权限。审核原因最多 300 个 grapheme 且 500 个 code points。创作者权限暂停不删除已安装内容或自动下架原已审核作品，但会阻断新增投稿及待审作品通过；历史投稿无需补授权记录，历史作者不自动成为创作者。
+
+每次最多 100 张；单张 10 MiB；包括 multipart 开销在内的请求体最多 50 MiB，客户端保留开销余量，图片总量最多 49 MiB。每账号最多 5 份待审核、有效投稿图片合计最多 100 MiB。仅接受真实 PNG/JPEG/GIF，静图边长最多 4096，动图边长最多 2048、最多 500 帧且累计逻辑画布最多 32M 像素。服务端检测真实格式并规范化图片，不信任文件名、客户端 Hash/MIME 或资源路径。
+
+审核 `reject` / `unpublish` 必须填写原因；最多 300 个 grapheme，且不超过 500 个 Unicode code points 以兼容管理员日志字段。审核状态变化和管理员日志同事务写入，重复/过期处理返回 409。新表单可重新投稿；已拒绝/撤回的旧请求重试仍返回原记录，不会重新进入待审。
+
+社区目录条目在旧字段外增加 `source=community` 和 `description`，不包含作者 ID。Manifest 使用与 Dart 一致的递归排序紧凑 JSON，不额外转义 HTML 字符；图片名称中的 Unicode 行/段分隔符规范为空格。社区包下载到本机后使用 local 资源身份发送；official 身份仍只授予内嵌官方资源。原内嵌官方包及其 Hash/版本保持不变。下架/撤回的包在目录中消失，详情/Manifest/资源返回 404；下载资源使用 `Cache-Control: no-store`，私有预览为 `private, no-store`。
+
+目录另返回 `author_name`（公开昵称快照）、`tags`、`cover_asset_id`、`icon_asset_id`、`preview_asset_ids`、`media_version=1`。派生图不进入旧 Manifest；服务端按 256/320/96px 长边生成静态缩略图/封面/图标，旧包按授权后的发送图回退生成。GIF 先合成局部增量帧再缩放。私有详情的 assets 接口也支持 `variant=thumbnail`，本人/管理员的 `/:id/cover` 与 `variant=icon` 受相同权限保护。
+
+新版本通过后，原公开版转为 superseded；目录只显示当前 published 版本。下架关闭该作品所有历史版本的公开路由。撤回待审/驳回版本只回收该次投稿；撤回已发布或 superseded 作品回收整个版本族（含待审更新）。账号 100 MiB 投稿空间包括服务端派生图。全部表情包免费，不引入价格或订单。
+
+错误码：400 `emoji_pack_invalid` / `emoji_rights_required`；401 认证失败；403 `admin_required` 或既有社区规则门禁；404 `emoji_pack_not_found`；409 `emoji_pack_conflict`；413 `request_body_too_large` / `emoji_pack_too_large`（请求体超限）；429 `emoji_pack_quota`；503 `emoji_upload_busy` 并附 Retry-After。该上传路径使用业务事务幂等，不经过普通写接口的 1 MiB 幂等响应缓存；其他写接口的大小限制保持不变。未审核图片不写普通 `files` 公开记录，存储与清理见 [运维说明](../docs/ops/emoji-packs.md)。
+
+403 `emoji_creator_required` 表示尚未开通、已暂停或账号不可用；这不等于当前操作管理员被撤权。申请、审核、封面、缩略图与版本状态均由服务端复核。
 
 ## 试卷库
 
@@ -441,12 +503,22 @@ FEED-H1 加固：
 | 路径 | 身份 | 用途 |
 | --- | --- | --- |
 | `POST /api/oauth/device_authorization` | 公开客户端 `client_id=sylulive-astrbot` | URLencoded：`installation_id` UUID、自报名称、scope；返回 RFC8628 字段，有效10分钟 |
+| `POST /api/oauth/device_authorization/cancel` | 本次设备 secret | URLencoded `client_id`、`device_code`；取消待处理请求，已批准但未完成换令牌的授权也撤销；不接受网页 user_code |
 | `POST /api/oauth/token` | 设备 secret 或 refresh token | URLencoded；device grant 或 refresh grant。access 10分钟、refresh闲置7天、绝对30天；旧 refresh 重用撤销该授权 |
 | `POST /api/oauth/revoke` | 所撤凭证 | RFC7009，同属授权一并撤销；不会注销 App 登录 |
-| `GET /api/connected-apps` | App 登录 | 本人的连接列表，不返回凭证 |
-| `POST /api/connected-apps/device-requests/lookup` | App 登录且10分钟内真实登录 | JSON `user_code`，返回待核对范围与一次性确认 nonce |
-| `POST /api/connected-apps/device-requests/:id/decision` | 同上 | `allow`、`scopes`、`confirmation_nonce`；替换还须旧 `replace_binding_id` 与 `expected_epoch` |
+| `GET /api/connected-apps` | App 登录 | 本人的连接列表及 `personal_data_enabled` 服务状态，不返回凭证 |
+| `POST /api/connected-apps/personal-sync/grades` | 本人 App 登录与可信教务资格 | `consent:true`、`fetched_at`、`year`、`semester`（3/12/16）及最多1000条 `grades`；白名单字段 `course_name`、`score`、`credits`、可选 `gpa`/`course_nature`，不收学校凭据；需个人查询开关与隐私设置允许 |
+| `DELETE /api/connected-apps/personal-sync/grades` | 本人 App 登录 | 删除本人上传成绩副本，关个人查询开关后仍可删除，不删除 App 原有教务快照 |
+| `GET /api/integrations/v1/me/grades` | `academic:grades:read` | 仅本人的已同步成绩，支持 `offset`、`limit`（1至50），返回覆盖学期、过期/部分标记与下一页；需个人查询开关 |
+| `GET /api/integrations/v1/me/erke` | `academic:erke:read` | 仅本人主动同步的二课摘要；上传/删除沿用 `/api/personal-snapshots/erke`，不是学校实时查询 |
+| `POST /api/connected-apps/device-requests/lookup` | 本人 App 登录 | JSON `user_code`，返回待核对范围与一次性确认 nonce |
+| `POST /api/connected-apps/device-requests/:id/decision` | 本人 App 登录；批准时需30分钟内认证 | `allow`、`scopes`、`confirmation_nonce`；替换还须旧 `replace_binding_id` 与 `expected_epoch` |
 | `POST /api/connected-apps/:id/revoke` | 本人 App 登录 | 立即撤销，无近期登录额外门槛 |
+| `GET /api/connected-apps/bot` | 本人 App 登录 | 返回 `policy_supported`、安全公开板块选项、`bot`（独立ID、名字、头像、启停、公开创建者、policy）和实际自动评论开关／授权状态 |
+| `GET /api/connected-apps/bot/runtime` | 本人 App 登录 | 本人机器人的控制／连接／心跳综合状态及最近浏览、计划、成功发言元数据；不返回凭据或执行会话ID |
+| `POST /api/integrations/v1/bot/runtime` | 有效集成授权及 `community:read` | 仅报告绑定自己的非正文运行元数据并获得两分钟执行占用；不授予内容写入权限 |
+| `POST /api/connected-apps/bot` | 本人 App 登录；创建／编辑／启用需近期认证 | `{name,avatar,enabled,policy}`；可创建暂停账号，一人一个。纯暂停只发 `{enabled:false}`，无需近期认证。旧请求省略头像和policy时保留已有值 |
+| `GET /api/integrations/v1/bot/policy` | `community:read` | 仅返回本连接对应bot的ID、启停和policy，不含创建者私有资料；无bot返回null |
 | `GET /api/integrations/v1/binding` | scoped Bearer | `profile:read_minimal`，账号 ID 与昵称、授权范围 |
 | `GET /api/integrations/v1/community/posts` | `community:read` | `query`、`after_id`、`limit`（1至20），最近/搜索公开普通水帖 |
 | `GET /api/integrations/v1/community/posts/:id` | 同上 | 文字详情、`post_id`、`source_version`；`data` 就是帖子 DTO |
@@ -455,12 +527,27 @@ FEED-H1 加固：
 | `GET /api/integrations/v1/community/stickers` | 同上 | `query`、`limit`、`after_sticker_id`，内置表情 ID 与标签 |
 | `GET /api/integrations/v1/community/sections` | 同上 | 活跃版块 slug 与标题 |
 | `GET /api/integrations/v1/me/public-posts` | `content:read_own_public` | 服务端从授权推导本人；不接收 owner 参数，仅正常普通社区帖子 |
+| `GET /api/integrations/v1/bot/capabilities` | `community:bot_post` | 返回当前 `auto_post` / `media_upload`；服务、授权、bot 状态与独立策略共同限制 |
+| `POST /api/integrations/v1/bot/media` | 同上 | 仅一个 `file` multipart 字段，最多4MiB，每授权24小时最多6次；实际格式/尺寸及上传配额复用原校验，文件属于独立 bot，未发布前私有 |
+| `POST /api/integrations/v1/bot/posts` | 同上及提案依赖 | `kind=post`、本轮来源 `sources`、可选 `image_file_ids`；服务开启且 bot 明确允许才发布，每24小时最多1帖 |
 | `POST /api/integrations/v1/actions` | `community:propose` | 只创建草稿，不能发布；需开启提案开关 |
 | `GET /api/integrations/v1/actions/:id` | `actions:read_own` | 本授权动作，不能得到发布确认 nonce；来源变更时阻断旧草稿正文 |
-| `GET /api/connected-apps/actions/:id` | 本人 App 登录且近期认证 | 草稿预览与5分钟确认 nonce；本人官网使用 |
-| `POST /api/connected-apps/actions/:id/decision` | 同上 | `allow`、`draft_version`、`payload_hash`、`confirmation_nonce`；发布需独立开关 |
+| `GET /api/connected-apps/actions/:id` | 本人 App 登录 | 草稿预览与5分钟确认 nonce；本人官网使用 |
+| `POST /api/connected-apps/actions/:id/decision` | 本人 App 登录；发布时需30分钟内认证 | `allow`、`draft_version`、`payload_hash`、`confirmation_nonce`；发布需独立开关，拒绝无需重复验证 |
 
-助手凭证不能调用普通 App API，App JWT 也不能调用集成 API。允许的 scope 为 `profile:read_minimal community:read content:read_own_public actions:read_own community:propose` 的子集；提案必须同时批准读取和结果查询。普通教务本地声明不满足可信核验要求；无权限失败返回稳定 `code`，OAuth 错误使用 `error`。所有含授权数据的响应设置 `Cache-Control: no-store`。
+核对设备请求和预览草稿无需再次输入密码。批准新连接、机器人创建／编辑／启用和实际确认发布需要当前登录会话30分钟内的密码证明；拒绝、撤销和紧急暂停不要求近期证明。`POST /api/auth/reauthenticate` 返回 `valid_until`，不新建登录、不延长令牌、不影响其他会话。
+
+助手凭证不能调用普通 App API，App JWT 也不能调用集成 API。允许的 scope 为 `profile:read_minimal community:read content:read_own_public actions:read_own community:propose checkin:write community:bot_reply community:bot_post academic:grades:read academic:erke:read` 的子集；提案必须同时批准读取和结果查询，自动评论和发帖分别需独立 scope，旧连接不自动扩权。个人查询需 `INTEGRATION_PERSONAL_DATA_ENABLED` 开启，Web/App 不因同步成功自动选择查询 scope。普通教务本地声明不满足可信核验要求；无权限失败返回稳定 `code`，OAuth 错误使用 `error`。所有含授权数据的响应设置 `Cache-Control: no-store`。
+
+机器人 `policy` 字段包括 `public_read_enabled`、`reply_enabled`、`sticker_enabled`、`post_enabled`、`image_enabled`、`allowed_post_types`、`blocked_terms`、`block_links`、`daily_reply_limit`（1–100）和 `min_reply_interval_minutes`（1–1440）。默认只读，新增发帖与配图字段缺省为 false，旧评论权限不扩大为发帖权限。允许板块为校园生活／课程学习，禁链接，默认评论日限3条且至少30分钟，已有设置保持不变；本人可保存更高频率，平台最高100条／滚动24小时、至少间隔1分钟；投诉、迎新求助、敏感或停用板块不可授权。屏蔽词最多20个，每个1–24字，按全角ASCII、零宽及空白规范化后匹配；不是语义审核。认证社区读取受机器人启停与白名单约束，最终自动发布事务复核规则、scope、信誉、社区禁言和平台开关。发帖来源版本重新核验，图片只接受 bot 自有或获上传授权的有效文件，发布与图片绑定原子提交。普通人工确认路径拒绝 bot 来源/配图载荷。公开用户 `ai_bot` 只返回创建者公开ID与昵称，普通用户昵称不会产生系统标记。
+
+自动评论在同一事务复核当前授权、独立身份、来源版本、版块、禁言、规则和额度；同一操作幂等；顶层评论同帖只参与一次，精确回复按真实目标评论去重，含删除后的历史回复，不因删内容重置。精确目标需同帖、正常且版本一致；拒绝自己或其他托管 AI 的评论及对AI帖的顶层自评；AI帖下人类的具体评论仍可跟进，根线程及通知对象由服务端推导。顶层、楼中楼和表情共用本人设置的滚动24小时额度和间隔（平台最高100条、最短1分钟）。自动机器人不受人工确认代发的20次发布上限阻挡；自动提案仍受每24小时130次尝试上限约束。读取在返回前再次核验暂停和范围变化；权限变化返回稳定错误，不返回已读取的旧正文。
+
+运行状态协议：管理响应新增 `runtime_supported:true` 与 `runtime`；`/bot/policy` 同时返回本人 binding 的不透明ID／代次及 bot `revision`。资料、权限或启停保存递增版本。心跳只接受 `session_id`（UUID）、`sequence`（递增正整数）、`revision`、`state`、`error_code`、`round_id`（可空UUID）、`read_count`（0–5）与 `next_run_in_seconds`（0–86400），拒绝额外字段／查询参数；每绑定每分钟最多12次。状态限定 idle/waiting/loading/completed/empty/error/paused/disabled/scope_required/cooldown/stopped，错误码限定为空或固定的执行／网络／模型配置错误，不接受正文、账号参数或客户端发布结果。
+
+同一有效 binding 的不同执行会话在两分钟占用内返回 `bot_runtime_busy`；旧序号返回 `stale_bot_runtime`，旧规则版本返回 `bot_policy_changed`。正常 stopped 释放占用，异常退出等待过期。首次加入运行协议后，自动评论／发帖必须携带当前 `runtime_session_id` 和 `bot_revision`，最终事务验证 binding、会话、占用和版本；旧插件省略这些字段返回 `bot_runtime_required`，普通本人确认发布拒绝这些机器人载荷。历史未加入的安装保留兼容入口，不自动获得新 scope。
+
+管理状态以当前控制／有效授权及心跳共同推导 paused/read_disabled/scope_required/offline/syncing 等结果；最近浏览是执行端非正文报告，最近发言只取实际 bot 作者的已发布帖子／评论。执行会话、递增序号和绑定ID不返回用户状态页；鉴权失败或读取失败不能使用缓存伪造运行。
 
 评论草稿 JSON：
 
@@ -468,7 +555,7 @@ FEED-H1 加固：
 {"operation_id":"YOUR_UUID","kind":"reply","post_id":123,"source_version":"刚读取的64位版本摘要","content":"正文","sticker_id":"可选白名单表情","reply_to_reply_id":0,"reply_source_version":""}
 ```
 
-精确回复需真实目标 ID 和目标 `source_version`；父线程与通知用户由服务器推导，不接受伪造 author、role 或 parent。发帖草稿使用 `kind=post`、有效 `post_type`、`title`（可空）、`content`，不接受评论字段、附件、市场/投票/公告操作。响应是 `action_id`、`state`、`review_uri`、`expires_at`，不表示发布完成。单 owner 每24小时最多30个新草稿、20次正式助手发布，并计入原有发帖/评论额度；发布事务内完成当前权限、来源/版块/禁言、额度、内容、计数、动作状态与审计的一致性更新。统计变化不影响来源版本，内容变化需要重读重建。助手评论与站内回复通知原子提交，按评论与接收人去重，自回复不提醒；精确回复通知目标评论作者。提交后复用现有推送流程，外部投递失败不回滚已提交评论，也不宣称必达。创建/删除/评论治理/恢复按先帖子后评论顺序加锁。已使用旧refresh在摘要保留期内重放仍撤销同一授权，不因旧闲置期限过期而跳过检测。无奖励、无后台队列、无无人确认发布。
+精确回复需真实目标 ID 和目标 `source_version`；父线程与通知用户由服务器推导，不接受伪造 author、role 或 parent。发帖草稿使用 `kind=post`、有效 `post_type`、`title`（可空）、`content`，不接受评论字段、附件、市场/投票/公告操作。响应是 `action_id`、`state`、`review_uri`、`expires_at`，不表示发布完成。单 owner 每24小时最多30个新草稿、20次正式助手发布，并计入原有发帖/评论额度；发布事务内完成当前权限、来源/版块/禁言、额度、内容、计数、动作状态与审计的一致性更新。统计变化不影响来源版本，内容变化需要重读重建。助手评论与站内回复通知原子提交，按评论与接收人去重，自回复不提醒；精确回复通知目标评论作者。提交后复用现有推送流程，外部投递失败不回滚已提交评论，也不宣称必达。创建/删除/评论治理/恢复按先帖子后评论顺序加锁。已使用旧refresh在摘要保留期内重放仍撤销同一授权，不因旧闲置期限过期而跳过检测。普通草稿确认路径不提供奖励或后台队列；独立机器人自动评论使用上述专用scope、开关与规则。
 
 ### 集成公开阅读字段与排名
 

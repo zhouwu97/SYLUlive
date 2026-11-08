@@ -23,6 +23,38 @@ class Store:
         self.value = None
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("revoke", [False, True])
+async def test_bot_upload_is_real_multipart_and_inflight_revoke_cannot_commit_result(revoke):
+    requests = []
+    client = None
+    async def respond(request):
+        requests.append(request)
+        assert request.url.path == "/api/integrations/v1/bot/media"
+        assert request.headers["Authorization"] == "Bearer sa_synthetic"
+        assert "multipart/form-data; boundary=" in request.headers["content-type"]
+        body = await request.aread()
+        assert b'name="file"' in body and b"synthetic-approved-bytes" in body
+        assert b"student_id" not in body and b"password" not in body
+        if revoke:
+            client.clear()
+        return httpx.Response(200, json={"file_id": 71})
+    client = BusinessClient("https://fixture.invalid", Store(), transport=httpx.MockTransport(respond))
+    client._save(tokens())
+    try:
+        operation = client.call("POST", "/bot/media", files={"file": ("approved.png", b"synthetic-approved-bytes", "image/png")})
+        if revoke:
+            with pytest.raises(IntegrationProblem, match="authorization_changed"):
+                await operation
+            assert client.tokens is None
+        else:
+            assert await operation == {"file_id": 71}
+            assert client.tokens["scope"] == "community:read", "upload cannot invent bot scopes"
+        assert len(requests) == 1
+    finally:
+        await client.close()
+
+
 def tokens():
     return {
         "access_token": "sa_synthetic",
@@ -77,7 +109,7 @@ async def test_device_flow_and_no_secret_returned():
         result = await client.begin(str(uuid.uuid4()), "测试安装", False)
         assert "sd_private" not in str(result)
         with pytest.raises(IntegrationProblem, match="poll_later"):
-            await client.poll()
+            await client.poll(wait=False)
         client.pending["next"] = 0
         await client.poll()
         assert client.pending is None and store.value["refresh_token"] == "sr_synthetic"
@@ -314,5 +346,26 @@ async def test_current_authorization_errors_still_clear_only_when_required(
             await client.call("GET", "/binding")
         assert (client.tokens is None) == clears
         assert (store.value is None) == clears
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_refresh_scope_reads_permissions_changed_on_website_without_reconnect():
+    async def respond(request):
+        assert request.url.path.endswith("/token")
+        return httpx.Response(
+            200,
+            json={**tokens(), "access_token": "sa_widened", "refresh_token": "sr_widened", "scope": "checkin:write community:read"},
+        )
+
+    store = Store()
+    client = BusinessClient("https://fixture.invalid", store, transport=httpx.MockTransport(respond))
+    try:
+        client._save(tokens())
+        generation = client.generation
+        assert "checkin:write" in (await client.refresh_scope()).split()
+        assert client.generation == generation, "原地改权限不能被当成换绑"
+        assert store.value["scope"] == "checkin:write community:read"
     finally:
         await client.close()

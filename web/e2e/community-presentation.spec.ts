@@ -1,5 +1,64 @@
 import { test, expect, type Page } from "@playwright/test";
 
+for (const dark of [false, true]) {
+  test(`系统AI归属不能由昵称伪造，dark=${dark}`, async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 900 });
+    if (dark) await page.addInitScript(() => localStorage.setItem('sylulive-theme', 'dark'));
+    const state = await setup(page);
+    Object.assign(state.post.author, { ai_bot: { owner_id: 3, owner_nickname: '校园创建者' } });
+    state.root.author.nickname = '[AI] 模仿昵称';
+    await page.goto('post/675');
+    await expect(page.locator('.post-author .ai-bot-system-badge')).toHaveText('AI机器人');
+    await expect(page.locator('.post-author .ai-bot-creator')).toHaveText('由校园创建者创建');
+    await expect(page.locator('.post-context-author .ai-bot-system-badge')).toHaveText('AI机器人');
+    await expect(page.locator('.post-comment').first()).toContainText('[AI] 模仿昵称');
+    await expect(page.locator('.post-comment').first().locator('.ai-bot-identity')).toHaveCount(0);
+    Object.assign(state.root.author, { ai_bot: { owner_id: 3, owner_nickname: '校园创建者' } });
+    await page.reload();
+    await expect(page.locator('.post-comment').first().locator('.ai-bot-creator')).toHaveText('由校园创建者创建');
+    await page.locator('.post-comment').first().evaluate(element => element.scrollIntoView({block:'center'}));
+    await expect(page.locator('.post-comment').first().locator('.ai-bot-system-badge')).toHaveText('AI机器人');
+    await page.screenshot({ path: `E:/AI/xynewui/scratch/bot-identity-20261104/web-community-ai-${dark ? 'dark' : 'light'}.png`, fullPage: true });
+    expect(state.errors).toEqual([]);
+  });
+}
+
+test('桌面作者侧栏与公开关注列表保留系统AI身份', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const state = await setup(page);
+  const bot = { id: 7, nickname: '只改昵称也保留系统归属', ai_bot: { owner_id: 3, owner_nickname: '校园创建者' } };
+  Object.assign(state.post.author, bot);
+  await page.goto('post/675');
+  await expect(page.locator('.post-context-author .ai-bot-system-badge')).toBeVisible();
+  await expect(page.locator('.post-context-author .ai-bot-creator')).toHaveText('由校园创建者创建');
+  await page.screenshot({ path: 'E:/AI/xynewui/scratch/bot-identity-20261104/web-desktop-ai.png', fullPage: true });
+  await page.route('**/api/user/3/following', route => route.fulfill({ json: { users: [bot, { id: 8, nickname: '[AI] 仅是普通昵称' }] } }));
+  await page.goto('profile');
+  await page.getByRole('tab', { name: '关注', exact: true }).click();
+  await expect(page.locator('.profile-feed .ai-bot-system-badge')).toHaveCount(1);
+  await expect(page.locator('.profile-feed')).toContainText('[AI] 仅是普通昵称');
+  expect(state.errors).toEqual([]);
+});
+
+for (const dark of [false, true]) {
+  test(`系统AI身份在楼中楼及长创建者归属可辨认，dark=${dark}`, async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 900 });
+    if (dark) await page.addInitScript(() => localStorage.setItem('sylulive-theme', 'dark'));
+    const state = await setup(page);
+    const owner = '校园创建者'.repeat(12);
+    Object.assign(state.post.author, { ai_bot: { owner_id: 3, owner_nickname: owner } });
+    Object.assign(state.children[0].author, { nickname: '鱼', ai_bot: { owner_id: 3, owner_nickname: '校园创建者' } });
+    Object.assign(state.children[1].author, { nickname: '未知创建者的鱼', ai_bot: {} });
+    await page.goto('post/675');
+    await expect(page.locator('.post-author').getByRole('img', { name: `系统AI机器人，由${owner}创建` })).toBeVisible();
+    await expect(page.getByRole('article', { name: '鱼的评论', exact: true }).locator('.ai-bot-system-badge')).toHaveText('AI机器人');
+    await expect(page.getByRole('article', { name: '未知创建者的鱼的评论', exact: true }).locator('.ai-bot-creator')).toHaveText('创建者未公开');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `E:/AI/xynewui/scratch/bot-identity-20261104/web-threaded-ai-${dark ? 'dark' : 'light'}.png`, fullPage: true });
+    expect(state.errors).toEqual([]);
+  });
+}
+
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900"><rect width="600" height="900" fill="#d8eee9"/><circle cx="300" cy="320" r="130" fill="#147c72"/><text x="300" y="620" text-anchor="middle" font-size="42" fill="#0e625b">UI TEST</text></svg>';
 function reply(id: number, nickname: string, parent: number | null = null) {
   return { id, author_id: id + 10, author: { nickname, avatar: "/uploads/e2e-avatar.svg" }, parent_reply_id: parent, content: `${nickname}的讨论内容`, created_at: "2026-10-08T10:30:00+08:00", status: "normal", like_count: 0, is_liked: false, child_reply_count: 0 };
@@ -166,7 +225,7 @@ test("分享复制成功，拒绝剪贴板时提供可选中链接且不发送 A
   await page.goto("post/675");
   await page.getByRole("button", { name: "分享", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "分享帖子" });
-  await expect(dialog.getByLabel("帖子链接")).toHaveValue("http://127.0.0.1:5173/web/post/675");
+  await expect(dialog.getByLabel("帖子链接")).toHaveValue(new URL("/web/post/675", page.url()).href);
   await expect(dialog.getByLabel("帖子链接")).toHaveAttribute("readonly");
   await dialog.getByRole("button", { name: "关闭", exact: true }).press("Escape");
   await expect(dialog).toHaveCount(0);
@@ -190,7 +249,7 @@ test("评论入口定位讨论区，返回保留列表筛选；更多操作支�
   await expect(page.getByRole("button", { name: "删除", exact: true })).toHaveCount(0);
   await page.locator(".post-more summary").press("Escape");
   await expect(page.locator(".post-more")).not.toHaveAttribute("open");
-  await page.getByRole("button", { name: "返回列表", exact: true }).click();
+  await page.getByRole("button", { name: page.viewportSize()!.width <= 600 ? "返回上一页" : "返回列表", exact: true }).click();
   await expect(page).toHaveURL((url) => url.pathname.endsWith("/community") && url.searchParams.get("sort") === "time" && url.searchParams.get("q") === "校园");
   expect(state.errors).toEqual([]);
 });
@@ -281,10 +340,18 @@ test("桌面与手机互动栏不溢出，点击区域足够，图片失败能�
     expect(geometry.every((item) => item.inside && item.height >= 44)).toBe(true);
     expect(await page.locator("#mainContent").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
     expect(await page.locator(".post-detail-main").evaluate((element) => element.getBoundingClientRect().width)).toBeLessThanOrEqual(860);
-    await page.getByRole("button", { name: "切换主题" }).click();
+    if (width <= 600) {
+      await page.goto("./");
+      await page.getByRole("button", { name: "打开导航", exact: true }).click();
+      await page.getByRole("button", { name: "切换主题", exact: true }).click();
+      await page.keyboard.press("Escape");
+      await page.goto("post/675");
+    } else {
+      await page.getByRole("button", { name: "切换主题" }).click();
+    }
     await page.getByRole("button", { name: "评论 7", exact: true }).click();
     await expect(page.getByRole("region", { name: "评论区" })).toBeFocused();
-    expect(await page.locator(".post-comments-head").evaluate((element) => element.getBoundingClientRect().top >= document.querySelector(".topbar")!.getBoundingClientRect().bottom)).toBe(true);
+    expect(await page.locator(".post-comments-head").evaluate((element) => element.getBoundingClientRect().top >= document.querySelector(innerWidth <= 600 ? ".mobile-header" : ".topbar")!.getBoundingClientRect().bottom)).toBe(true);
   }
   expect(state.errors).toEqual([]);
 });
@@ -349,9 +416,15 @@ test("手机侧栏关闭时不露出或抢占焦点，窄屏顶部与详情标�
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
     const positions = await page.locator(".post-detail-page .page-head").evaluate((element) => [element.querySelector("h1")!.getBoundingClientRect().top, element.querySelector("button")!.getBoundingClientRect().top]);
     expect(Math.abs(positions[0] - positions[1])).toBeLessThan(12);
+    await page.goto("./");
     await page.getByRole("button", { name: "打开导航", exact: true }).click();
-    await expect(page.getByRole("link", { name: "课表", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "收起导航", exact: true }).click();
+    await expect(page.getByLabel("主导航").getByRole("link", { name: "课表", exact: true })).toBeVisible();
+    // 遮罩中央被侧栏覆盖；点击实际可见区域，保留浏览器的命中检查。
+    const mask = page.getByRole("button", { name: "收起导航", exact: true });
+    await expect.poll(() => page.locator(".sidebar").evaluate(element => Math.abs(element.getBoundingClientRect().x))).toBeLessThan(1);
+    const sidebar = await page.locator(".sidebar").boundingBox();
+    expect(sidebar).not.toBeNull();
+    await mask.click({ position: { x: (sidebar!.x + sidebar!.width + width) / 2, y: 20 } });
     await expect(page.locator(".sidebar")).toHaveCSS("visibility", "hidden");
   }
   expect(state.errors).toEqual([]);
@@ -362,7 +435,7 @@ test("没有标题的帖子只展示一次正文，宽屏右栏与阅读区域�
   for (const width of [1900, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("community");
-    await expect(page.getByText("没有标题也可以分享日常", { exact: true })).toHaveCount(1);
+    await expect(page.locator(".community-feed").getByText("没有标题也可以分享日常", { exact: true })).toHaveCount(1);
     await expect(page.locator(".feed-card h3")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
     if (width === 1900) {
@@ -394,6 +467,7 @@ test("关注按钮保留成功状态和取消能力，兼容作者列表没有�
 });
 
 test("宽屏详情补齐作者与最新讨论，顶部紧凑，相关帖子可进入并返回", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
   const state = await setup(page);
   await page.goto("post/675");
   const context = page.getByRole("complementary", { name: "帖子相关信息" });
@@ -428,6 +502,7 @@ test("宽屏详情补齐作者与最新讨论，顶部紧凑，相关帖子可�
 });
 
 test("右侧更多帖子加载、失败、重试和空态不影响正文与作者信息", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
   const state = await setup(page); state.relatedMode = "slow";
   await page.goto("post/675");
   const context = page.getByRole("complementary", { name: "帖子相关信息" });
@@ -448,11 +523,13 @@ test("右侧更多帖子加载、失败、重试和空态不影响正文与作�
 });
 
 test("详情失败仍可返回，闲置详情使用集市上下文，窄屏侧栏不占阅读空间", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
   const state = await setup(page); state.postFail = true;
   await page.goto("post/675");
   await expect(page.getByText("帖子加载失败", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "返回列表", exact: true })).toBeVisible();
   await expect(page.locator(".post-detail-rail")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "重试", exact: true })).toBeVisible();
   state.postFail = false; await page.getByRole("button", { name: "重试", exact: true }).click();
   await expect(page.locator(".post-full h1")).toHaveText("社区展示测试");
   Object.assign(state.post, { board_id: 2, price: 88, contact: "", contact_type: "微信" });
@@ -463,7 +540,7 @@ test("详情失败仍可返回，闲置详情使用集市上下文，窄屏侧�
     await page.setViewportSize({ width, height: 1000 });
     await expect(page.locator(".post-detail-rail")).toBeHidden();
     expect(await page.locator("#mainContent").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
-    await expect(page.getByRole("button", { name: "返回列表", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: width <= 600 ? "返回上一页" : "返回列表", exact: true })).toBeVisible();
   }
   expect(state.writes).toEqual([]); expect(state.errors).toEqual([]);
 });

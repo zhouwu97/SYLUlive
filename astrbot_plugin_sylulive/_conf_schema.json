@@ -1,9 +1,353 @@
 {
- "server_origin":{"description":"SYLUlive 官方服务 origin（HTTPS，不含路径）；本地测试允许回环 HTTP","type":"string","default":"https://sylulive.online"},
- "owner_platform_id":{"description":"AstrBot 消息平台实例 ID，必须与本人的私聊来源一致","type":"string","default":""},
- "owner_sender_id":{"description":"仅允许此消息发送者在私聊使用插件；QQ 平台填本人 QQ 号。这是本地路由规则，不是 SYLUlive 身份证明","type":"string","default":""},
- "public_read_group_ids":{"description":"允许共享公开帖子、评论、版块和表情查询的群号列表；使用上方平台实例。默认不开放群。不会开放本人资料、绑定、草稿或发布权限","type":"list","default":[]},
- "installation_name":{"description":"官网显示的安装名称（由本机提供）","type":"string","default":"我的 AstrBot"},
- "allow_private_review":{"description":"启用私有结果逐条审核，默认关闭。仅绑定本人／可信管理员可用群内命令请求预览，必须原发起人在私聊确认后才发到原允许群；管理员不能继承别人的 SYLUlive 账号权限","type":"bool","default":false},
- "allow_proposals":{"description":"请求创建发帖/评论草稿的权限；仍须本人在官网逐次确认发布","type":"bool","default":false}
+  "server_origin": {
+    "description": "SYLUlive 服务地址",
+    "type": "string",
+    "default": "https://sylulive.online",
+    "hint": "填写官方 HTTPS origin，不含路径、密码或查询参数。本地隔离测试才可使用回环 HTTP。"
+  },
+  "owner_platform_id": {
+    "description": "QQ 平台实例",
+    "type": "string",
+    "default": "",
+    "hint": "留空自动使用已接入 AstrBot 的 QQ 平台；填写时仅允许该实例ID，不是通用平台名 aiocqhttp。不同机器人和发起人分别保存自己的授权。"
+  },
+  "owner_sender_id": {
+    "description": "旧安装凭据兼容 QQ（非管理员）",
+    "type": "string",
+    "default": "",
+    "hint": "旧版已有本人连接时保留，避免丢失旧凭据槽；新安装可留空。此字段不授予管理员角色。部署者通过 AstrBot 自身后台管理插件，QQ 管理命令沿用 AstrBot 的管理员名单。"
+  },
+  "allow_multi_user": {
+    "description": "允许各用户绑定本人账号",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后每人使用自己的临时链接和授权，凭据相互隔离。关闭后停止新普通用户绑定，不给管理员借用他人授权；本人仍可解绑。旧安装已保存的 false 不会自动改为 true。"
+  },
+  "allow_group_binding": {
+    "description": "默认允许群内本人账号管理",
+    "type": "bool",
+    "default": false,
+    "hint": "控制没有命中权限规则时，群名单内是否允许本人绑定、状态查询和解绑。下方规则可逐群、逐用户覆盖；成绩和二课须另行允许。签到默认使用群名单及独立开关。"
+  },
+  "binding_link_delivery": {
+    "description": "群内绑定链接发到哪里",
+    "type": "string",
+    "default": "auto",
+    "options": [
+      "auto",
+      "private",
+      "group"
+    ],
+    "labels": [
+      "先私发，失败时回当前群",
+      "只私发给发起人",
+      "直接回当前群并标注发起人"
+    ],
+    "subtitles": [
+      "方便非好友绑定；失败后可在本群取得自己的临时链接",
+      "私信不确定时仅提示，不回群公开链接",
+      "无需私聊；群成员能看到临时链接，误绑可由本人解绑"
+    ],
+    "hint": "只影响已获准的群绑定请求。链接定位原发起人，不能指定别人收件；群里仅发送短期官网授权链接，不发送设备秘密或访问令牌。选择 auto 或 group 即允许该链接在当前群展示。",
+    "obvious_hint": true
+  },
+  "allow_personal_queries": {
+    "description": "开放本人成绩和二课查询",
+    "type": "bool",
+    "default": false,
+    "hint": "功能总开关。关闭时所有入口停止私人查询；开启后仍需发起人官网逐项授权、有效教务资格和已有同步资料。群内是否可用由权限规则决定，结果位置见下方设置。不是实时登录学校。"
+  },
+  "group_personal_delivery": {
+    "description": "获准的群内个人查询如何回结果",
+    "type": "string",
+    "default": "confirm",
+    "options": [
+      "confirm",
+      "direct",
+      "private"
+    ],
+    "labels": [
+      "本人在当前群确认后展示",
+      "本人明确查询后直接回当前群",
+      "仅私发本人，群里回执"
+    ],
+    "subtitles": [
+      "先提示将公开的数据类型，本人再发 /sylu-share 确认；无需转私聊",
+      "本人群内输入查询命令即请求公开；部署者应确认群成员理解含义",
+      "保留群发起能力，私人内容发给本人"
+    ],
+    "hint": "先用权限规则允许该用户在该群查询成绩或二课，此设置才会生效。只读发起人自己的授权，管理员和群主也不能指定读取他人账号。回群后成员、QQ 与群记忆可能保存结果；关闭查询权限会阻止后续读取。",
+    "obvious_hint": true
+  },
+  "public_read_group_ids": {
+    "description": "默认公开读取与审核分享群",
+    "type": "list",
+    "default": [],
+    "hint": "填写原始群号。这些群默认允许本人签到（仍需签到总开关与本人授权）；群内绑定另受 allow_group_binding 控制。全会话公开读取不会扩大账号操作默认范围。仍限定私有审核分享目标。"
+  },
+  "public_read_all_sessions": {
+    "description": "默认向已接收会话开放公开查询",
+    "type": "bool",
+    "default": false,
+    "hint": "允许 AstrBot 已接收并唤醒的本平台会话匿名查看帖子、食堂、图片、地图和资讯。关闭时回到默认群名单；下方规则可逐会话允许或禁止。不会开放私人账号数据。"
+  },
+  "installation_name": {
+    "description": "官网显示的机器人名称",
+    "type": "string",
+    "default": "我的 AstrBot",
+    "hint": "用于本人核对正在授权哪台机器人，实际发起 QQ 由消息事件补充。自报名称不证明 QQ 归属。"
+  },
+  "allow_private_review": {
+    "description": "开放私有结果审核分享",
+    "type": "bool",
+    "default": false,
+    "hint": "功能总开关。允许获准用户发起已有私有结果的审核流程，分享须本人明确确认。关闭会停止新审核；不会让管理员继承他人的 SYLUlive 授权。原本机 QQ 会话审核仍只沿可信 AstrBot 管理员权限。"
+  },
+  "allow_proposals": {
+    "description": "开放本人发帖／评论草稿",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后才请求草稿 scope，仍需服务端开放、本人授权及每次官网确认；权限规则不能直接批准发布。关闭后停止创建新草稿，不影响公开读取或本人解绑。"
+  },
+  "allow_checkin": {
+    "description": "开放本人每日签到",
+    "type": "bool",
+    "default": false,
+    "hint": "功能总开关。开启多人功能后，用户私聊和群名单内的本人签到默认可用；严格白名单与显式禁止仍优先。仍须本人官网勾选 checkin:write，旧只读授权不扩权。不含代签、补签或自动定时签到。"
+  },
+  "access_default": {
+    "description": "未匹配权限规则时如何处理",
+    "type": "string",
+    "default": "inherit",
+    "options": [
+      "inherit",
+      "deny"
+    ],
+    "labels": [
+      "未匹配沿默认设置",
+      "仅允许命中允许规则（白名单）"
+    ],
+    "hint": "仅添加允许某用户的规则，不会自动禁止其他未匹配用户。需要严格白名单时选择 deny：本实例所有受控功能在私聊和群聊中，未命中允许规则均拒绝；请同时为公开查询、本人绑定、状态、解绑等需要的功能配置允许规则。明确禁止仍优先，允许规则不能替代功能总开关、本人scope或服务端资格。",
+    "obvious_hint": true
+  },
+  "access_rules": {
+    "description": "按用户、群和功能配置权限",
+    "type": "template_list",
+    "default": [],
+    "hint": "管理入口：AstrBot 后台 → 插件 → SYLUlive 配置。登录后台的部署者可管理本插件；QQ 管理身份沿用 AstrBot 原生名单，不使用旧兼容 QQ 字段。功能总开关、这里的规则、本人官网scope和服务端条件共同生效。禁止优先；未匹配按上方inherit／deny策略。仅添加允许规则不会自动形成白名单；选择deny时请给本人解绑等所需入口配置允许规则。最多128条；配置不完整时拒绝执行并提示检查。 可在插件页“权限管理”新增、编辑和保存规则，也可输入 QQ、群号检查入口判断；保存规则不代用户授权。",
+    "obvious_hint": true,
+    "templates": {
+      "access_rule": {
+        "name": "用户／群功能权限",
+        "display_item": "name",
+        "hint": "例如：允许指定群成员查询自己的成绩，或禁止某用户使用校园查询。只能配置消息入口，不会替用户批准校园账号授权。",
+        "items": {
+          "name": {
+            "description": "规则名称",
+            "type": "string",
+            "default": "新权限规则",
+            "hint": "用用途命名，例如“咕咕群允许本人查询”。"
+          },
+          "enabled": {
+            "description": "启用这条规则",
+            "type": "bool",
+            "default": true,
+            "hint": "关闭后整条规则不参与判断，其他规则与默认设置继续生效。"
+          },
+          "effect": {
+            "description": "允许还是禁止",
+            "type": "string",
+            "default": "allow",
+            "options": [
+              "allow",
+              "deny"
+            ],
+            "labels": [
+              "允许",
+              "禁止（优先）"
+            ],
+            "hint": "相同请求同时命中允许和禁止时，始终禁止，不按规则排列顺序覆盖。"
+          },
+          "capabilities": {
+            "description": "这条规则管理哪些功能",
+            "type": "list",
+            "default": [
+              "public_read"
+            ],
+            "options": [
+              "public_read",
+              "bind",
+              "status",
+              "unbind",
+              "checkin",
+              "grades",
+              "erke",
+              "proposals",
+              "private_review"
+            ],
+            "labels": [
+              "公开校园查询",
+              "绑定自己的账号",
+              "自己的连接状态",
+              "解除自己的绑定",
+              "本人每日签到",
+              "本人成绩",
+              "本人二课",
+              "本人发帖／评论草稿",
+              "私有结果审核分享"
+            ],
+            "subtitles": [
+              "帖子、评论、食堂、地图、图片及资讯，无需绑定",
+              "领取本人的官网临时授权链接",
+              "检查本人连接，不展示别人的账号",
+              "取消本人待请求或撤销本人连接",
+              "执行本人的每日签到，须签到 scope",
+              "读取本人已同步成绩，须成绩 scope",
+              "读取本人已同步二课，须二课 scope",
+              "仅生成草稿，发布仍须官网确认",
+              "发起已实现来源的审核分享，不新增读取权限"
+            ],
+            "hint": "至少选择一项。允许入口不会开启已关闭的功能总开关，也不会授予用户尚未同意的校园权限。"
+          },
+          "chat_types": {
+            "description": "在哪种会话生效",
+            "type": "list",
+            "default": [
+              "group"
+            ],
+            "options": [
+              "private",
+              "group"
+            ],
+            "labels": [
+              "私聊",
+              "群聊"
+            ],
+            "hint": "可同时选择。群内结果投递由上方专门选项决定，不再固定要求私聊。"
+          },
+          "subjects": {
+            "description": "适用于哪些发起人",
+            "type": "string",
+            "default": "everyone",
+            "options": [
+              "everyone",
+              "admins",
+              "specified_users"
+            ],
+            "labels": [
+              "所有真实发起人",
+              "AstrBot 原生管理员",
+              "下方指定用户"
+            ],
+            "hint": "管理员指 AstrBot 配置的管理员，不是QQ群主／群管理员头衔，也不是谁先发命令。所有人仍只能使用各自的校园授权。"
+          },
+          "user_ids": {
+            "description": "指定或进一步限定用户",
+            "type": "list",
+            "default": [],
+            "hint": "逐项填写原始QQ号。选择“指定用户”时必填；其他角色下留空表示不额外限制，非空则还必须在此名单中。按真实消息发起人判断，不接受@或引用对象代替。"
+          },
+          "group_ids": {
+            "description": "限定群号",
+            "type": "list",
+            "default": [],
+            "hint": "填写原始群号，例如692905367，不是会话UUID。留空匹配已接收的所有群；非空只命中这些群，不匹配私聊。私聊规则请将此列表留空。"
+          }
+        }
+      }
+    }
+  },
+  "community_agent_enabled": {
+    "description": "启用隔离的公开阅读与记忆；人格沿用 AstrBot 配置",
+    "type": "bool",
+    "default": false,
+    "hint": "开启隔离的公开上下文与阅读记忆；角色和语气仍在 AstrBot 人格配置。本人绑定、解绑、签到、成绩和二课统一按后台规则、总开关及本人授权执行；群内个人结果仍须按投递规则确认。后台公开 Agent 不获得个人查询工具。"
+  },
+  "community_multi_user_runtime_enabled": {
+    "description": "为已授权用户运行各自的社区机器人",
+    "type": "bool",
+    "default": false,
+    "hint": "部署者明确开启后，普通用户可在本人私聊连接时申请公开浏览和独立发言权限。每人仍须在 App/Web 创建并启用机器人、明确选择 scope；旧授权不扩权。各账号任务、公开记忆与发言账本隔离，最多同时执行2轮模型任务。执行端须常驻。"
+  },
+  "community_bot_authorization_group_ids": {
+    "description": "允许发起本人机器人授权申请的群号",
+    "type": "list",
+    "default": [],
+    "hint": "仅这些群在通过绑定权限规则后，可申请本人机器人的公开读取、独立评论与发帖权限；仍由本人在官网逐项批准。不会向群模型开放发布工具，留空维持仅私聊申请。"
+  },
+  "creator_memory_enabled": {
+    "description": "仅记录配置的创建者本人私聊的当前用户消息和最终助手回复；群消息不写长期记忆。正文在本机加密、密钥仅存系统凭据库，不可用时仅进程内保存。180天/最多2000轮，/sylu-agent forget-private清空",
+    "type": "bool",
+    "default": false
+  },
+  "community_auto_comment": {
+    "description": "允许后台以独立托管机器人账号自动评论并附社区内置表情；需服务端开关、官网创建/启用机器人和新 community:bot_reply 授权。每轮最多一次尝试，按本人保存的频率，平台每24小时最多100条、间隔至少1分钟（默认3条／30分钟）；顶层评论同帖一次，精确回复同一人类目标一次；结果不明不重发。群成员不能触发自动评论",
+    "type": "bool",
+    "default": false
+  },
+  "community_auto_post": {
+    "description": "允许后台以独立 AI 账号自动发帖；需服务端开关、官网启用 AI 账号及本人新授予 community:bot_post。每轮评论/发帖合计最多尝试一次，每24小时最多1帖；配图仅限插件数据目录 approved-public-media 中经管理员审核且有许可的公开素材。结果不明不重发；不会使用私人聊天或任意本地文件",
+    "type": "bool",
+    "default": false
+  },
+  "community_memory_mode": {
+    "description": "检索模式：vector_rerank 使用 AstrBot 现有向量与重排 Provider（推荐）；lexical 为无需模型的 BM25 离线基线。向量模式缺配置或失败明确报错，不静默降级",
+    "type": "string",
+    "default": "vector_rerank",
+    "options": [
+      "vector_rerank",
+      "lexical"
+    ]
+  },
+  "community_embedding_provider_id": {
+    "description": "AstrBot 嵌入模型 Provider ID，可配置 Qwen 兼容嵌入；仅接收复核过的公开帖子片段与本次检索词，模型密钥沿用 AstrBot 配置",
+    "type": "string",
+    "default": ""
+  },
+  "community_rerank_provider_id": {
+    "description": "AstrBot 重排模型 Provider ID，可配置 Qwen 兼容重排；只接收复核过的公开候选，未配置时向量模式拒绝检索",
+    "type": "string",
+    "default": ""
+  },
+  "community_allowed_sections": {
+    "description": "允许阅读的社区版块 slug 白名单；为空拒绝所有帖子。先在普通模式查询 sylulive_sections 后填写真实 slug",
+    "type": "list",
+    "default": []
+  },
+  "community_denied_sections": {
+    "description": "禁止版块 slug，优先于允许列表；更改后旧请求不再进入模型或记忆",
+    "type": "list",
+    "default": []
+  },
+  "community_denied_post_ids": {
+    "description": "禁止的帖子编号列表，优先于版块允许规则",
+    "type": "list",
+    "default": []
+  },
+  "community_auto_browse": {
+    "description": "公开 Agent 启用后定时浏览；只有独立自动评论配置和新授权均满足才提供评论工具，不自动发送群消息、点赞或发帖；重载后按此配置启动",
+    "type": "bool",
+    "default": false
+  },
+  "community_agent_provider_id": {
+    "description": "自动浏览使用的 AstrBot 聊天模型 Provider ID，必须显式填写；不继承私人会话、人格或知识库",
+    "type": "string",
+    "default": ""
+  },
+  "community_browse_topic": {
+    "description": "自动浏览的公开校园话题搜索词，最多100字",
+    "type": "string",
+    "default": "校园生活"
+  },
+  "community_browse_interval_minutes": {
+    "description": "浏览间隔分钟，最小15、最大1440；每轮最多5条候选、5次详情读取，最多4步原生 Agent、90秒超时；失败也遵守间隔",
+    "type": "int",
+    "default": 30
+  },
+  "community_chat_memes_enabled": {
+    "description": "允许模型在当前聊天选择表情",
+    "type": "bool",
+    "default": false,
+    "hint": "复用已安装并审核的表情包小偷 search_meme/send_meme。只允许当前聊天，不收集图片、不指定文件或跨会话目标；缺插件或无审核候选时不编造已发送。"
+  }
 }

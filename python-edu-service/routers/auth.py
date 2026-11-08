@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select, update
 
 from models.database import EduUser, get_db
-from models.schemas import AuthorizationCleanupInput, BindInput, BindResponse, UnbindResponse, EduStatusResponse, EduSessionResponse, ErrorResponse, PreVerifyResponse, PreVerifyInput, LoginEduInput, LoginEduResponse
+from models.schemas import AuthorizationCleanupInput, BindInput, BindResponse, UnbindResponse, EduStatusResponse, EduSessionResponse, ErrorResponse, PreVerifyResponse, PreVerifyInput, LoginEduInput, LoginEduResponse, SessionVerifyInput
 from services.crawler import EduCrawler, EduError, CookieLapseError, LoginFailedError, NetworkError
 from services.security import decrypt_credential, encrypt_credential, require_internal_service, require_internal_user
 
@@ -104,6 +104,22 @@ async def _store_active_cookie(
     await db.commit()
     await db.refresh(edu_user)
     return edu_user
+
+
+@router.post("/verify_session", response_model=PreVerifyResponse)
+async def verify_session_identity(input: SessionVerifyInput):
+    """固定学校入口重新核验会话，只返回学校学号，不存储 Cookie 或完整资料。"""
+    try:
+        async with EduCrawler() as crawler:
+            actual = await crawler.verify_session_student_id(input.cookie.get_secret_value())
+        return PreVerifyResponse(success=True, message="身份已核验", school_verified_student_id=actual)
+    except EduError as exc:
+        return PreVerifyResponse(success=False, message="学校会话核验未通过", code=_error_code(exc))
+    except httpx.HTTPError:
+        return PreVerifyResponse(success=False, message="学校暂不可用", code="REMOTE_SYSTEM_UNAVAILABLE")
+    except Exception:
+        # 不输出异常对象，httpx 异常可能携带学校请求及认证材料。
+        return PreVerifyResponse(success=False, message="学校会话核验暂未完成", code="REMOTE_SYSTEM_UNAVAILABLE")
 
 
 @router.post("/pre_verify", response_model=PreVerifyResponse)

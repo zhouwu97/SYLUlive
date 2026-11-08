@@ -169,6 +169,7 @@ class ErkeRepositoryPersonalSyncGateway implements PersonalErkeSyncGateway {
     ErkeSnapshotUploadPolicyStore? uploadPolicyStore,
     Future<ErkeSnapshotUploadPolicy?> Function()? requestUploadPolicy,
     bool automationUploadAllowed = false,
+    required bool Function() isCurrent,
     DateTime Function()? now,
   })  : _repository = repository,
         _requestCredentials = requestCredentials,
@@ -176,6 +177,7 @@ class ErkeRepositoryPersonalSyncGateway implements PersonalErkeSyncGateway {
         _uploadPolicyStore = uploadPolicyStore,
         _requestUploadPolicy = requestUploadPolicy,
         _automationUploadAllowed = automationUploadAllowed,
+        _isCurrent = isCurrent,
         _now = now ?? DateTime.now;
 
   final ErkeRepository _repository;
@@ -184,12 +186,21 @@ class ErkeRepositoryPersonalSyncGateway implements PersonalErkeSyncGateway {
   final ErkeSnapshotUploadPolicyStore? _uploadPolicyStore;
   final Future<ErkeSnapshotUploadPolicy?> Function()? _requestUploadPolicy;
   final bool _automationUploadAllowed;
+  final bool Function() _isCurrent;
   final DateTime Function() _now;
 
   @override
   Future<PersonalSyncItemResult> syncErke(
       {bool automationUpload = false}) async {
-    final credentials = await _requestCredentials();
+    final credentials = _isCurrent() ? await _requestCredentials() : null;
+    if (!_isCurrent()) {
+      return const PersonalSyncItemResult(
+        dataset: PersonalSyncDataset.erke,
+        status: PersonalSyncItemStatus.skipped,
+        source: PersonalDataSource.none,
+        message: '账号或页面已切换',
+      );
+    }
     if (credentials == null) {
       return const PersonalSyncItemResult(
         dataset: PersonalSyncDataset.erke,
@@ -203,15 +214,36 @@ class ErkeRepositoryPersonalSyncGateway implements PersonalErkeSyncGateway {
       credentials.casPassword,
       credentials.erkePassword,
     );
+    if (!_isCurrent()) {
+      return const PersonalSyncItemResult(
+        dataset: PersonalSyncDataset.erke,
+        status: PersonalSyncItemStatus.skipped,
+        source: PersonalDataSource.none,
+        message: '账号或页面已切换',
+      );
+    }
     if (updated) {
-      final uploadMessage =
-          await _uploadAuthorizedSnapshot(automation: automationUpload);
+      String? uploadMessage;
+      try {
+        uploadMessage =
+            await _uploadAuthorizedSnapshot(automation: automationUpload);
+      } catch (_) {
+        uploadMessage = '二课已更新，但摘要上传未完成，可稍后重试';
+      }
+      final messages = [
+        if (_repository.fetchError != null) _repository.fetchError!,
+        if (uploadMessage != null) uploadMessage,
+      ];
       return PersonalSyncItemResult(
         dataset: PersonalSyncDataset.erke,
         status: PersonalSyncItemStatus.success,
         source: PersonalDataSource.deviceEncryptedCache,
         updatedAt: _now(),
-        message: uploadMessage,
+        isPartial: _repository.lastRefreshPartial,
+        failureReason: _repository.lastRefreshPartial
+            ? PersonalSyncFailureReason.refreshIncomplete
+            : null,
+        message: messages.isEmpty ? null : messages.join('；'),
       );
     }
     if (_repository.hasCachedData) {
@@ -254,14 +286,19 @@ class ErkeRepositoryPersonalSyncGateway implements PersonalErkeSyncGateway {
     final uploader = _snapshotUploader;
     final policyStore = _uploadPolicyStore;
     if (uploader == null || policyStore == null) return null;
+    if (_repository.lastRefreshPartial) {
+      return '部分二课数据未更新，摘要暂未上传，请完整刷新后重试';
+    }
 
     var policy = await policyStore.read();
+    if (!_isCurrent()) return null;
     final automationOverride =
         automation && _automationUploadAllowed && _requestUploadPolicy == null;
     if (policy == ErkeSnapshotUploadPolicy.askEveryUpdate &&
         !automationOverride) {
       policy = await _requestUploadPolicy?.call() ?? policy;
     }
+    if (!_isCurrent()) return null;
     switch (policy) {
       case ErkeSnapshotUploadPolicy.askEveryUpdate:
         if (automationOverride) break;
@@ -277,7 +314,9 @@ class ErkeRepositoryPersonalSyncGateway implements PersonalErkeSyncGateway {
     }
 
     final snapshot = await _repository.readSnapshotForAuthorizedUpload();
+    if (!_isCurrent()) return null;
     if (snapshot == null) return '二课已更新，但未找到可上传的本地快照';
+    if (snapshot.isPartial) return '缓存包含未更新数据，摘要暂未上传，请完整刷新后重试';
     try {
       await uploader.upload(snapshot);
       return '二课摘要已按授权上传，可供校园 Agent 使用';
@@ -293,12 +332,15 @@ class PersonalDataSyncCoordinator {
     required PersonalAcademicSyncGateway academicGateway,
     PersonalErkeSyncGateway? erkeGateway,
     DateTime Function()? now,
+    bool Function()? isCurrent,
   })  : _academicGateway = academicGateway,
         _erkeGateway = erkeGateway,
+        _isCurrent = isCurrent ?? (() => true),
         _now = now ?? DateTime.now;
 
   final PersonalAcademicSyncGateway _academicGateway;
   final PersonalErkeSyncGateway? _erkeGateway;
+  final bool Function() _isCurrent;
   final DateTime Function() _now;
 
   Future<PersonalSyncResult> sync({
@@ -316,11 +358,15 @@ class PersonalDataSyncCoordinator {
       PersonalSyncDataset.creditRequirements,
     ]) {
       if (!datasets.contains(dataset)) continue;
-      items[dataset] = await _runAcademic(dataset, onProgress);
+      items[dataset] = _isCurrent()
+          ? await _runAcademic(dataset, onProgress)
+          : _cancelled(dataset);
     }
 
     if (datasets.contains(PersonalSyncDataset.erke)) {
-      items[PersonalSyncDataset.erke] = await _runErke(onProgress);
+      items[PersonalSyncDataset.erke] = _isCurrent()
+          ? await _runErke(onProgress)
+          : _cancelled(PersonalSyncDataset.erke);
     }
 
     return PersonalSyncResult(
@@ -375,6 +421,13 @@ class PersonalDataSyncCoordinator {
       );
     }
   }
+
+  PersonalSyncItemResult _cancelled(PersonalSyncDataset dataset) =>
+      PersonalSyncItemResult(
+          dataset: dataset,
+          status: PersonalSyncItemStatus.skipped,
+          source: PersonalDataSource.none,
+          message: '账号或页面已切换');
 
   Future<PersonalSyncItemResult> _runErke(
     PersonalSyncProgressListener? onProgress,

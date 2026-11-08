@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import '../app_card.dart';
 import 'dart:convert';
@@ -147,7 +148,7 @@ class CanteenReviewSection extends StatelessWidget {
           switchInCurve: AppMotion.standard,
           switchOutCurve: AppMotion.standard,
           transitionBuilder: (child, animation) {
-            return FadeTransition(
+            return AppSurfaceFadeTransition(
               opacity: animation,
               child: SlideTransition(
                 position: Tween<Offset>(
@@ -340,7 +341,8 @@ class _ReviewItemState extends State<_ReviewItem> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedOpacity(
+    return AppContentSurface.card(
+        child: AnimatedOpacity(
       duration: AppMotion.fast,
       curve: AppMotion.outgoing,
       opacity: _deleting ? 0 : 1,
@@ -362,7 +364,7 @@ class _ReviewItemState extends State<_ReviewItem> {
           onOpenDish: widget.onOpenDish,
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -443,7 +445,8 @@ class _ReviewItemContent extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              Flexible(child: Text(
+              Flexible(
+                  child: Text(
                 _reviewDate(review),
                 textAlign: TextAlign.end,
                 style: TextStyle(

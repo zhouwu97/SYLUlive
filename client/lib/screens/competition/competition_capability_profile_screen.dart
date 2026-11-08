@@ -191,8 +191,7 @@ class _CompetitionCapabilityProfileScreenState
     }
 
     final profile = _profile!;
-    final ready =
-        profile.preferenceConfigured ||
+    final ready = profile.preferenceConfigured ||
         profile.verifiedAwardCount + profile.selfReportedAwardCount > 0;
     return RefreshIndicator(
       onRefresh: _load,
@@ -236,7 +235,7 @@ class _CompetitionCapabilityProfileScreenState
     return Container(
       decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+          top: BorderSide(color: appCardDividerColor(context, CompetitionUiTokens.borderColor(isDark))),
         ),
       ),
       child: _accessError != null && _aiAccess == null
@@ -483,7 +482,8 @@ class _CompetitionCapabilityProfileScreenState
     ];
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 7),
-      child: Row(
+      child: AppContentSurface.reading(
+          child: Row(
         children: [
           Expanded(
             child: Text(
@@ -503,7 +503,7 @@ class _CompetitionCapabilityProfileScreenState
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 
@@ -523,7 +523,8 @@ class _CompetitionCapabilityProfileScreenState
       ('每周投入', profile.weeklyHours == 0 ? '暂不确定' : '${profile.weeklyHours} 小时'),
       ('长期训练', profile.acceptLongTermTraining ? '可以接受' : '暂不考虑'),
     ];
-    return Column(
+    return AppContentSurface.reading(
+        child: Column(
       children: values
           .map(
             (item) => Padding(
@@ -553,16 +554,17 @@ class _CompetitionCapabilityProfileScreenState
             ),
           )
           .toList(),
-    );
+    ));
   }
 
   Widget _emptyLine(String text, bool isDark) {
-    return Padding(
+    return AppContentSurface.reading(
+        child: Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Text(
         text,
         style: TextStyle(color: CompetitionUiTokens.subColor(isDark)),
       ),
-    );
+    ));
   }
 }

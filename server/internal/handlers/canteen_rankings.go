@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -57,6 +58,26 @@ func (h *CanteenHandler) batchAggregateSummaryTags(days int, topK int) (map[uint
 	result := make(map[uint][]services.SummaryTag, len(canteenRaws))
 	for cid, raws := range canteenRaws {
 		result[cid] = services.AggregateSummaryTagsInMemory(raws, topK)
+	}
+	var overrides []models.Canteen
+	if err := h.db.Select("id", "display_tags").Where("display_tags IS NOT NULL").Find(&overrides).Error; err != nil {
+		return nil, err
+	}
+	for _, canteen := range overrides {
+		var keys []string
+		if json.Unmarshal([]byte(*canteen.DisplayTags), &keys) != nil {
+			continue
+		}
+		tags := make([]services.SummaryTag, 0, len(keys))
+		for _, key := range keys {
+			if name, ok := services.CanteenTagName[key]; ok {
+				tags = append(tags, services.SummaryTag{Key: key, Name: name})
+			}
+		}
+		if topK > 0 && len(tags) > topK {
+			tags = tags[:topK]
+		}
+		result[canteen.ID] = tags
 	}
 	return result, nil
 }

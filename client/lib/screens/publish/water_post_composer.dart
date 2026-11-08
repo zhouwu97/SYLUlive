@@ -768,95 +768,107 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildCategorySelector(),
-                AnimatedBuilder(
-                  animation: _titleWarningController,
-                  builder: (context, child) {
-                    final offset = _titleNeedsAttention
-                        ? math.sin(
-                                _titleWarningController.value * math.pi * 6) *
-                            6
-                        : 0.0;
-                    return Transform.translate(
-                      offset: Offset(offset, 0),
-                      child: child,
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      AppSpacing.xl,
-                      AppSpacing.lg,
-                      0,
-                    ),
-                    child: TextFormField(
-                      controller: _titleController,
-                      focusNode: _titleFocusNode,
-                      decoration: InputDecoration(
-                        hintText: '添加标题（选填）',
-                        hintStyle: TextStyle(
-                          color:
-                              _titleNeedsAttention ? _titleWarning : _hintLight,
-                          fontSize: _titleFontSize,
-                          fontWeight: FontWeight.w600,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.sm, AppSpacing.xl, AppSpacing.sm, 0),
+                  child: AppContentSurface.card(
+                    child: Column(
+                      children: [
+                      AnimatedBuilder(
+                        animation: _titleWarningController,
+                        builder: (context, child) {
+                          final offset = _titleNeedsAttention
+                              ? math.sin(
+                                      _titleWarningController.value * math.pi * 6) *
+                                  6
+                              : 0.0;
+                          return Transform.translate(
+                            offset: Offset(offset, 0),
+                            child: child,
+                          );
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.sm,
+                            0,
+                            AppSpacing.sm,
+                            0,
+                          ),
+                          child: TextFormField(
+                            controller: _titleController,
+                            focusNode: _titleFocusNode,
+                            decoration: InputDecoration(
+                              hintText: '添加标题（选填）',
+                              hintStyle: TextStyle(
+                                color:
+                                    _titleNeedsAttention
+                                        ? _titleWarning
+                                        : appContentSecondaryColor(context, _hintLight),
+                                fontSize: _titleFontSize,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+                            ),
+                            style: TextStyle(
+                              fontSize: _titleFontSize,
+                              fontWeight: FontWeight.w700,
+                              color: isDark
+                                  ? AppColors.textPrimaryDark
+                                  : AppColors.textPrimaryLight,
+                            ),
+                            maxLines: 1,
+                          ),
                         ),
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: AppSpacing.xs),
                       ),
-                      style: TextStyle(
-                        fontSize: _titleFontSize,
-                        fontWeight: FontWeight.w700,
-                        color: isDark
-                            ? AppColors.textPrimaryDark
-                            : AppColors.textPrimaryLight,
+                      Padding(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                        child: AppCardDivider(
+                          height: 1,
+                          color: isDark
+                              ? AppColors.composerDividerDark
+                              : AppColors.composerDividerLight,
+                        ),
                       ),
-                      maxLines: 1,
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                  child: AppCardDivider(
-                    height: 1,
-                    color: isDark
-                        ? AppColors.composerDividerDark
-                        : AppColors.composerDividerLight,
-                  ),
-                ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                  child: TextFormField(
-                    controller: _contentController,
-                    inputFormatters: [
-                      LengthLimitingTextInputFormatter(_maxContentLength),
-                    ],
-                    decoration: const InputDecoration(
-                      hintText: '分享校园生活、提问或记录此时此刻···',
-                      hintStyle: TextStyle(
-                        color: _hintLight,
-                        fontSize: _contentFontSize,
-                        fontWeight: FontWeight.w500,
+                      Padding(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                        child: TextFormField(
+                          controller: _contentController,
+                          inputFormatters: [
+                            LengthLimitingTextInputFormatter(_maxContentLength),
+                          ],
+                          decoration: InputDecoration(
+                            hintText: '分享校园生活、提问或记录此时此刻···',
+                            hintStyle: TextStyle(
+                              color: appContentSecondaryColor(context, _hintLight),
+                              fontSize: _contentFontSize,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            contentPadding: const EdgeInsets.only(top: AppSpacing.lg),
+                            errorStyle: const TextStyle(fontSize: 13),
+                          ),
+                          style: TextStyle(
+                            fontSize: _contentFontSize,
+                            height: 1.55,
+                            color: isDark
+                                ? AppColors.textPrimaryDark
+                                : AppColors.textPrimaryLight,
+                          ),
+                          minLines: 6,
+                          maxLines: null,
+                          textAlignVertical: TextAlignVertical.top,
+                        ),
                       ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.only(top: AppSpacing.lg),
-                      errorStyle: TextStyle(fontSize: 13),
+                      ],
                     ),
-                    style: TextStyle(
-                      fontSize: _contentFontSize,
-                      height: 1.55,
-                      color: isDark
-                          ? AppColors.textPrimaryDark
-                          : AppColors.textPrimaryLight,
-                    ),
-                    minLines: 6,
-                    maxLines: null,
-                    textAlignVertical: TextAlignVertical.top,
                   ),
                 ),
                 PublishMediaSection(

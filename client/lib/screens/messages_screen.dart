@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../widgets/app_page_background.dart';
 import '../config/private_chat_policy.dart';
 import 'chat_list_screen.dart';
+import '../widgets/app_card.dart';
 
 class MessagesScreen extends StatelessWidget {
   const MessagesScreen({super.key});
@@ -17,7 +18,9 @@ class MessagesScreen extends StatelessWidget {
     if (!PrivateChatPolicy.enabled) {
       return Scaffold(
         appBar: AppBar(title: const Text('消息')),
-        body: const Center(child: Text(PrivateChatPolicy.disabledHint)),
+        body: const Center(
+            child:
+                AppContentSurface.reading(child: Text(PrivateChatPolicy.disabledHint))),
       );
     }
     return const ChatListScreen();

@@ -109,16 +109,67 @@ class CourseEvaluationService {
     }
   }
 
-  Future<CourseEvaluationPage> listMine({int? limit, String? cursor}) async {
+  Future<CourseEvaluationPage> listMine(
+      {int? limit, String? cursor, bool includeContentCounts = false}) async {
     try {
       final res = await _dio.get(
         '/user/course-evaluations',
-        queryParameters: _pageParams(limit, cursor),
+        queryParameters: {
+          ..._pageParams(limit, cursor),
+          'include_teacher_ratings': 'true',
+          if (includeContentCounts) 'include_content_counts': 'true',
+        },
       );
       return CourseEvaluationPage.fromJson(_asMap(res.data));
     } catch (e) {
       throw toCourseEvaluationException(e);
     }
+  }
+
+  /// 本人内容入口与三个页签共用统计口径；旧服务端保留兼容读取。
+  Future<MyContentCounts> loadContentCounts(int userId,
+      {required bool Function() isCurrent}) async {
+    void checkSession() {
+      if (!isCurrent()) {
+        throw const CourseEvaluationException(
+            CourseEvaluationErrorCodes.forbidden, '账号已切换');
+      }
+    }
+
+    checkSession();
+    var page = await listMine(limit: 1, includeContentCounts: true);
+    checkSession();
+    if (page.contentCounts != null) return page.contentCounts!;
+    var evaluationCount = page.items.length;
+    final cursors = <String>{};
+    while (page.hasMore) {
+      if (page.nextCursor.isEmpty || !cursors.add(page.nextCursor)) {
+        throw const CourseEvaluationException(
+            CourseEvaluationErrorCodes.networkUnavailable, '评价分页数据无效，请重试');
+      }
+      checkSession();
+      page = await listMine(limit: 50, cursor: page.nextCursor);
+      checkSession();
+      evaluationCount += page.items.length;
+    }
+    var postCount = 0;
+    for (var number = 1;; number++) {
+      checkSession();
+      final response = await _dio.get('/user/$userId/posts',
+          queryParameters: {'page': number, 'limit': 50});
+      checkSession();
+      final batch = response.data as List;
+      postCount += batch.length;
+      if (batch.length < 50) break;
+    }
+    checkSession();
+    final market = await _dio.get('/user/$userId/market-posts',
+        queryParameters: {'post_type': 'all', 'page': 1, 'limit': 1});
+    checkSession();
+    return MyContentCounts(
+        posts: postCount,
+        market: (_asMap(market.data)['total'] as num).toInt(),
+        evaluations: evaluationCount);
   }
 
   Future<CourseEvaluationPage> listPending({int? limit, String? cursor}) async {

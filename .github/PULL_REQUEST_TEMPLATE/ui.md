@@ -18,12 +18,12 @@
 - [ ] disabled
 - [ ] success
 
-## Design system
+## UI verification
 
-- [ ] existing color tokens reused
-- [ ] no new radius without design-system update
-- [ ] no unnecessary Card nesting
+- [ ] current theme and shared components inspected
+- [ ] changes match the task's design requirements
 - [ ] touch targets checked
+- [ ] keyboard, focus, semantics, and contrast checked
 
 ## Motion
 
@@ -36,7 +36,7 @@
 
 - [ ] Widget tests
 - [ ] Golden tests where appropriate
-- [ ] 360×800
+- [ ] affected viewport sizes
 - [ ] large text
 - [ ] dark mode where applicable
 
@@ -54,4 +54,4 @@ P3:
 
 ---
 
-References: `docs/design/DESIGN_SYSTEM.md` / `docs/design/MOTION.md` / `docs/design/DESIGN_QA.md`
+References: `DEVELOPMENT_STANDARD.md` / `client/test/goldens/README.md`

@@ -1,3 +1,5 @@
+import '../helpers/active_backdrop_filters.dart';
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -20,7 +22,13 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/poll_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
+import 'package:shenliyuan/theme/app_radius.dart';
 import 'package:shenliyuan/screens/erke_score_screen.dart';
+import 'package:shenliyuan/features/ai_device_bridge/device_credential_store.dart';
+import 'package:shenliyuan/features/campus_data/erke/erke_repository.dart';
+import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
+import 'package:shenliyuan/features/campus_data/storage/erke_cache_store.dart';
+import 'package:shenliyuan/platform/contracts/secure_store.dart';
 import 'package:shenliyuan/screens/market_screen.dart';
 import 'package:shenliyuan/screens/poll/poll_detail_screen.dart';
 import 'package:shenliyuan/screens/post_detail_screen.dart';
@@ -30,11 +38,13 @@ import 'package:shenliyuan/screens/notifications_screen.dart';
 import 'package:shenliyuan/screens/court_hub_screen.dart';
 import 'package:shenliyuan/services/poll_service.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
+import 'package:shenliyuan/widgets/poll/poll_post_card.dart';
 import 'package:shenliyuan/widgets/global_background_wrapper.dart';
 import 'package:shenliyuan/widgets/home_service_drawer.dart';
 import '../helpers/golden_test_app.dart';
 import '../helpers/golden_viewport.dart';
 import '../helpers/load_test_fonts.dart';
+import '../helpers/personal_snapshot_test_fakes.dart';
 
 class _FixtureAuth extends AuthProvider {
   _FixtureAuth(super.dio) : super(loadStoredAuth: false);
@@ -180,6 +190,56 @@ void main() {
   setUpAll(loadTestFonts);
   setUp(() => AppPreferencesStore.setMockInitialValues({}));
 
+  testWidgets('court 加载失败后可重试，错误与空态沿用统一圆角', (tester) async {
+    await setGoldenViewport(tester, GoldenViewports.phone390x844);
+    final theme = ThemeProvider(loadOnStart: false);
+    addTearDown(theme.dispose);
+    await theme.setBackgroundImage('morenbeijing.jpeg');
+    final pending = Completer<void>();
+    var fail = true;
+    var requestCount = 0;
+    final interceptor = InterceptorsWrapper(onRequest: (options, handler) async {
+      requestCount++;
+      if (options.path == '/appeals' && fail) {
+        await pending.future;
+        handler.reject(DioException(
+          requestOptions: options,
+          response: Response(
+              requestOptions: options,
+              statusCode: 500,
+              data: {'error': '本地案件列表读取失败'}),
+          type: DioExceptionType.badResponse,
+        ));
+      } else {
+        handler.resolve(
+            Response(requestOptions: options, statusCode: 200, data: []));
+      }
+    });
+    getSharedDio().interceptors.insert(0, interceptor);
+    addTearDown(() => getSharedDio().interceptors.remove(interceptor));
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+        value: theme,
+        child: const GoldenTestApp(home: CourtHubScreen())));
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    pending.complete();
+    await tester.pumpAndSettle();
+    final error = find.text('本地案件列表读取失败');
+    expect(error, findsOneWidget);
+    final surface = tester.widget<AppCardSurface>(find
+        .ancestor(of: error, matching: find.byType(AppCardSurface))
+        .first);
+    expect((surface.decoration! as BoxDecoration).borderRadius,
+        BorderRadius.circular(AppRadius.lg));
+    fail = false;
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(find.text('暂时没有待你陪审的案件'), findsOneWidget);
+    expect(error, findsNothing);
+    expect(requestCount, 3);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final profile in ['light', 'dark', 'large-text']) {
     for (final page in [
       'market',
@@ -215,7 +275,21 @@ void main() {
         final screen = switch (page) {
           'market' => const GlobalBackgroundWrapper(child: MarketScreen()),
           'drawer' => Scaffold(body: _drawer(() => toolboxTaps++)),
-          'erke' => const ErkeScoreScreen(),
+          'erke' => ErkeScoreScreen(
+              credentialStore: DeviceCredentialStore(secretStore: MemorySecretStore()),
+              createRepository: (user, student, vpn) => ErkeRepository(
+                vpnService: vpn,
+                cacheStore: ErkeCacheStore(
+                  appUserId: user,
+                  sourceAccountId: student,
+                  snapshotStore: AesGcmAccountScopedSnapshotStore(
+                    appUserId: user,
+                    secureStore: MemoryPersonalSnapshotSecureStore(),
+                    fileBackend: MemoryPersonalSnapshotFileBackend(),
+                  ),
+                ),
+              ),
+            ),
           'poll' => const PollDetailScreen(pollId: 1),
           'admin-members' => const AdminMembersScreen(),
           'admin-feedback' => const AdminFeedbackScreen(),
@@ -257,7 +331,7 @@ void main() {
             .runAsync(() => precacheImage(wallpaper, capture.currentContext!));
         await tester.pumpAndSettle();
         expect(find.byType(CustomBackgroundLayer), findsWidgets);
-        expect(find.byType(BackdropFilter), findsWidgets);
+        expect(activeBackdropFilters(), findsWidgets);
         expect(tester.takeException(), isNull);
         await _capture(tester, capture, '$page-$profile-glass');
 
@@ -267,32 +341,49 @@ void main() {
               find.ancestor(of: search, matching: find.byType(AppCardSurface));
           expect(
               find.descendant(
-                  of: surface, matching: find.byType(BackdropFilter)),
+                  of: surface, matching: activeBackdropFilters()),
               findsOneWidget);
           expect((tester.getCenter(find.descendant(of: search, matching: find.byType(EditableText))).dy -
               tester.getCenter(surface).dy).abs(), lessThanOrEqualTo(1));
           for (final label in ['全部', '出售', '最新发布', '筛选']) {
             final control = find.ancestor(of: find.text(label), matching:
                 find.byWidgetPredicate((w) => w is AppCardSurface || w is AppCardMaterial)).first;
-            expect(find.descendant(of: control, matching: find.byType(BackdropFilter)), findsOneWidget);
+            expect(find.descendant(of: control, matching: activeBackdropFilters()), findsOneWidget);
           }
           await tester.enterText(search, '自行车');
           await tester.pumpAndSettle();
           expect(tester.widget<TextField>(search).controller!.text, '自行车');
         } else if (page == 'drawer') {
-          // 五个分组各一层材质，内部版块项不能重复套玻璃。
-          expect(find.byType(BackdropFilter), findsNWidgets(5));
+          // 社区版块各自一层材质，分组不能再套第二层底面。
+          expect(activeBackdropFilters(), findsNWidgets(8));
+          final grid = find.byKey(const ValueKey('drawer-section-grid'));
+          expect(tester.widget<Container>(grid).decoration, isNull);
+          for (final tile in find
+              .descendant(of: grid, matching: find.byType(AppCardSurface))
+              .evaluate()) {
+            final card = find.byWidget(tile.widget);
+            expect(find.ancestor(of: card, matching: find.byType(AppCardSurface)),
+                findsNothing);
+            expect(find.descendant(of: card, matching: activeBackdropFilters()),
+                findsOneWidget);
+          }
           await tester.tap(find.text('工具箱'));
           expect(toolboxTaps, 1);
         } else if (page == 'erke') {
           expect(find.byType(TextField), findsNWidgets(2));
           await tester.tap(find.text('更新二课数据'));
           await tester.pumpAndSettle();
-          expect(find.text('请填写完整信息'), findsOneWidget);
+          expect(find.text('请填写统一认证密码和二课密码'), findsOneWidget);
         } else if (page == 'poll') {
-          final divider = find.byType(AppCardDivider);
-          expect(divider, findsOneWidget);
-          expect(find.descendant(of: divider, matching: find.byType(DecoratedBox)), findsNothing);
+          expect(find.byType(AppCardDivider), findsNothing);
+          final card = tester.getRect(find.descendant(
+              of: find.byType(PollPostCard), matching: find.byType(Card)).first);
+          final comments = tester.getRect(find.ancestor(
+              of: find.textContaining('评论 '),
+              matching: find.byType(AppCardSurface)).first);
+          expect(comments.top - card.bottom, 8);
+          expect(comments.left, card.left);
+          expect(comments.right, card.right);
           expect(find.text('选项一'), findsOneWidget);
           expect(
               tester
@@ -310,9 +401,32 @@ void main() {
           expect(find.text('测试通知'), findsOneWidget);
         } else if (page == 'court') {
           expect(find.text('暂时没有待你陪审的案件'), findsOneWidget);
+          final surface = find.ancestor(
+              of: find.text('暂时没有待你陪审的案件'),
+              matching: find.byType(AppCardSurface)).first;
+          final decoration =
+              tester.widget<AppCardSurface>(surface).decoration! as BoxDecoration;
+          expect(decoration.borderRadius,
+              BorderRadius.circular(AppRadius.lg));
+          final content = find.ancestor(
+              of: find.text('暂时没有待你陪审的案件'),
+              matching: find.byType(AppContentSurface));
+          expect(tester.getRect(surface), tester.getRect(content),
+              reason: '圆角只裁剪底面，不增加内外边距');
         } else if (page == 'section') {
           expect(tester.widget<SliverAppBar>(find.byType(SliverAppBar)).backgroundColor, Colors.transparent);
-          expect(find.descendant(of: find.byType(SectionFilterHeader), matching: find.byType(BackdropFilter)), findsOneWidget);
+          expect(find.descendant(of: find.byType(SectionFilterHeader), matching: activeBackdropFilters()), findsOneWidget);
+          for (final card in [
+            find.byKey(const ValueKey('water-section-summary-surface')),
+            find.descendant(
+                of: find.byType(SectionFilterHeader),
+                matching: find.byType(AppCardSurface)),
+          ]) {
+            final decoration =
+                tester.widget<AppCardSurface>(card).decoration! as BoxDecoration;
+            expect(decoration.borderRadius,
+                BorderRadius.circular(AppRadius.lg));
+          }
         }
 
         await theme.setCleanBackgroundMode();
@@ -321,7 +435,7 @@ void main() {
         expect(tester.takeException(), isNull);
         await theme.setFrostedGlass(false);
         await tester.pumpAndSettle();
-        expect(find.byType(BackdropFilter), findsNothing);
+        expect(activeBackdropFilters(), findsNothing);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       });

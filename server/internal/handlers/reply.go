@@ -20,7 +20,7 @@ import (
 )
 
 func withReplyImageVariants(db *gorm.DB) *gorm.DB {
-	return db.Preload("Images.Variants", "recipe_version = ?", services.ImageVariantRecipeVersion).
+	return db.Preload("Images.Variants", "recipe_version IN ?", []int{models.ImageVariantRecipeVersion, models.ImageVariantGIFRecipeVersion}).
 		Preload("ReplyToUser", func(query *gorm.DB) *gorm.DB { return query.Select("id", "nickname") })
 }
 

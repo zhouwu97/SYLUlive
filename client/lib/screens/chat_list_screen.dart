@@ -1,3 +1,4 @@
+import '../widgets/app_card.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -315,7 +316,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                       color: surfaceColor,
                       border: Border(
                         right: BorderSide(
-                          color: borderColor,
+                          color: appCardDividerColor(context, borderColor),
                         ),
                       ),
                     ),

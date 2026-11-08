@@ -6,8 +6,80 @@ import 'package:shenliyuan/platform/contracts/secure_store.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/screens/ai/ai_model_settings_screen.dart';
 import 'package:shenliyuan/widgets/app_page_app_bar.dart';
+import 'package:provider/provider.dart';
+import 'package:shenliyuan/providers/theme_provider.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
+import '../helpers/golden_test_app.dart';
+import '../helpers/golden_viewport.dart';
+import '../helpers/load_test_fonts.dart';
 
 void main() {
+  setUpAll(loadTestFonts);
+  for (final dark in [false, true]) {
+    for (final scale in [1.0, 1.3]) {
+      testWidgets('模型操作保持透明，校验错误仍有底面 dark=$dark scale=$scale', (tester) async {
+        await setGoldenViewport(tester, GoldenViewports.phone390x844);
+        AppPreferencesStore.setMockInitialValues({});
+        final appearance = ThemeProvider(loadOnStart: false);
+        addTearDown(appearance.dispose);
+        await appearance.setBackgroundImage('morenbeijing.jpeg');
+        await appearance.setComponentOpacity(.75);
+        final store = AIProviderSettingsStore(
+            appUserId: 'fixture', secureStore: _MemoryProviderSecureStore());
+        var probeCalls = 0;
+        await tester.pumpWidget(ChangeNotifierProvider.value(
+          value: appearance,
+          child: GoldenTestApp(
+              themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+              textScaler: TextScaler.linear(scale),
+              home: AIModelSettingsScreen(
+                  appUserId: 'fixture',
+                  settingsStore: store,
+                  toolCallingProbe: (_, __) async {
+                    probeCalls++;
+                  })),
+        ));
+        await tester.pumpAndSettle();
+        expect(
+            find.ancestor(
+                of: find.text('个人助手模型'),
+                matching: find.byType(AppContentSurface)),
+            findsNothing);
+        expect(
+            find.ancestor(
+                of: find.textContaining('个人 Skill 仅使用这里配置的第三方模型'),
+                matching: find.byType(AppContentSurface)),
+            findsOneWidget);
+        await tester.ensureVisible(find.text('测试连接'));
+        final discoveryRect = tester.getRect(find.text('查询模型'));
+        final probeRect = tester.getRect(find.text('测试连接'));
+        for (final glass in [true, false]) {
+          await appearance.setFrostedGlass(glass);
+          await tester.pumpAndSettle();
+          for (final label in ['查询模型', '测试连接']) {
+            expect(
+                find.ancestor(
+                    of: find.text(label),
+                    matching: find.byType(AppContentSurface)),
+                findsNothing);
+          }
+          expect(tester.getRect(find.text('查询模型')), discoveryRect);
+          expect(tester.getRect(find.text('测试连接')), probeRect);
+        }
+        await tester.tap(find.text('测试连接'));
+        await tester.pumpAndSettle();
+        const error = '请先查询并选择模型，或手动填写模型名称';
+        expect(find.text(error), findsOneWidget);
+        expect(
+            find.ancestor(
+                of: find.text(error), matching: find.byType(AppContentSurface)),
+            findsOneWidget);
+        expect(probeCalls, 0);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
   test('旧配置缺少 wire_api 时默认自动识别', () {
     final config = AIModelProviderConfig.fromJson(const <String, dynamic>{
       'provider_config_id': 'default',

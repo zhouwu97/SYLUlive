@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 
 import '../widgets/app_page_background.dart';
 import '../legal/legal_documents.dart';
+import '../theme/app_radius.dart';
+import '../theme/app_spacing.dart';
 import '../widgets/campus/campus_theme.dart';
+
 class LegalDocumentsScreen extends StatelessWidget {
   final String? initialDocumentId;
 
@@ -41,19 +44,31 @@ class LegalDocumentsScreen extends StatelessWidget {
         ),
       ),
       body: initial == null
-          ? ListView.separated(
+          ? ListView(
+              addRepaintBoundaries: false,
               padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: LegalDocuments.all.length,
-              separatorBuilder: (_, __) => const AppCardDivider(height: 1),
-              itemBuilder: (context, index) {
-                final document = LegalDocuments.all[index];
-                return ListTile(
-                  title: Text(document.title),
-                  subtitle: Text(document.summary),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => open(context, documentId: document.id),
-                );
-              },
+              children: [
+                AppCardSurface(
+                  decoration: BoxDecoration(
+                    color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+                    borderRadius: BorderRadius.circular(AppRadius.lg),
+                  ),
+                  child: Column(
+                    children: [
+                      for (var i = 0; i < LegalDocuments.all.length; i++) ...[
+                        if (i > 0) const AppCardDivider(height: 1),
+                        ListTile(
+                          title: Text(LegalDocuments.all[i].title),
+                          subtitle: Text(LegalDocuments.all[i].summary),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => open(context,
+                              documentId: LegalDocuments.all[i].id),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
             )
           : _DocumentBody(document: initial),
     );
@@ -67,26 +82,43 @@ class _DocumentBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return SelectionArea(
       child: ListView(
+        addRepaintBoundaries: false,
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
         children: [
-          Text(
-            document.title,
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            document.summary,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+          AppCardSurface(
+            key: const ValueKey('legal-document-reading-surface'),
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            decoration: BoxDecoration(
+              color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  document.title,
+                  style: Theme.of(context).textTheme.headlineSmall,
                 ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            document.body.trim(),
-            style:
-                Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.65),
+                const SizedBox(height: 8),
+                Text(
+                  document.summary,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  document.body.trim(),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(height: 1.65),
+                ),
+              ],
+            ),
           ),
         ],
       ),

@@ -1,3 +1,5 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -25,6 +27,8 @@ import 'admin_security_center_screen.dart';
 import '../models/security_event.dart';
 import '../widgets/global_background_wrapper.dart';
 import '../widgets/glass_container.dart';
+import '../features/emoji/presentation/emoji_submissions_screen.dart';
+import '../features/emoji/presentation/emoji_creator_screen.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -177,7 +181,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     if (_session == null) {
       return Scaffold(
           appBar: AppBar(title: const Text('管理员面板')),
-          body: const Center(child: Text('需要管理员权限，请返回')));
+          body: const Center(child: AppContentSurface.reading(child: Text('需要管理员权限，请返回'))));
     }
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bottomSafe = MediaQuery.of(context).padding.bottom;
@@ -325,6 +329,31 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       title: '审核待办',
                       isDark: isDark,
                       children: [
+                        _AdminActionPill(
+                          icon: Icons.emoji_emotions_outlined,
+                          iconColor: Theme.of(context).colorScheme.primary,
+                          title: '表情包审核',
+                          subtitle: '投稿预览、审核与已上架表情管理',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const EmojiSubmissionsScreen(
+                                      admin: true))).then((_) => _loadCounts()),
+                        ),
+                        _AdminActionPill(
+                          icon: Icons.verified_user_outlined,
+                          iconColor: Theme.of(context).colorScheme.primary,
+                          title: '表情创作者审核',
+                          subtitle: '申请开通、驳回与暂停创作权限',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const EmojiCreatorReviewScreen()))
+                              .then((_) => _loadCounts()),
+                        ),
                         _AdminActionPill(
                           icon: Icons.person_search,
                           iconColor: Colors.indigo,
@@ -483,7 +512,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                   reverseCurve: Curves.easeIn,
                                 );
 
-                                return FadeTransition(
+                                return AppSurfaceFadeTransition(
                                   opacity: animation,
                                   child: ScaleTransition(
                                     scale: Tween<double>(

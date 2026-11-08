@@ -12,7 +12,7 @@ const String kGroupChatNumber = '692905367';
 const String kGroupChatQrAsset = 'assets/images/group_chat_qr.png';
 
 Future<void> showGroupChatDialog(BuildContext context) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (_) => const _GroupChatDialog(),
   );
@@ -237,7 +237,7 @@ Future<void> _handleDownload(BuildContext context) async {
   final titleColor = isDark ? Colors.white : const Color(0xFF2D3142);
   final contentColor = isDark ? Colors.white70 : const Color(0xFF4F5568);
 
-  final confirm = await showDialog<bool>(
+  final confirm = await showAppDialog<bool>(
     context: context,
     builder: (ctx) => AppAlertDialog(
       backgroundColor: dialogBackground,

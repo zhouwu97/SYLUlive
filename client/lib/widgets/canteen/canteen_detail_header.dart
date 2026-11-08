@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'canteen_location_chip.dart';
 import 'canteen_theme.dart';
+import '../app_card.dart';
 
 /// 商家详情头部信息区：图片下方直接铺在页面上，不套外层白色 InfoCard。
 /// 店名 → ★评分 · 人数 → 菜品/实拍统计。
@@ -31,7 +32,8 @@ class CanteenDetailHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Padding(
+    return AppContentSurface.card(
+        child: Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -80,7 +82,7 @@ class CanteenDetailHeader extends StatelessWidget {
               '该店当前已下架，历史评价仅供参考',
               style: TextStyle(
                 fontSize: 12,
-                color: CanteenTheme.textSecondaryColor(isDark),
+                color: appContentSecondaryColor(context, CanteenTheme.textSecondaryColor(isDark)),
               ),
             ),
           ],
@@ -106,7 +108,7 @@ class CanteenDetailHeader extends StatelessWidget {
                 '$ratingCount 人评价',
                 style: TextStyle(
                   fontSize: 14,
-                  color: CanteenTheme.textSecondaryColor(isDark),
+                  color: appContentSecondaryColor(context, CanteenTheme.textSecondaryColor(isDark)),
                 ),
               ),
             ],
@@ -117,12 +119,12 @@ class CanteenDetailHeader extends StatelessWidget {
               '$dishCount 道菜 · $dishWithPhotoCount 道有实拍 · $dishPhotoCount 张同学实拍',
               style: TextStyle(
                 fontSize: 13,
-                color: CanteenTheme.textTertiaryColor(isDark),
+                color: appContentSecondaryColor(context, CanteenTheme.textTertiaryColor(isDark)),
               ),
             ),
           ],
         ],
       ),
-    );
+    ));
   }
 }

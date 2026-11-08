@@ -143,7 +143,15 @@ ImageResourceSelection selectImageResource({
   bool viewerReady = true,
   bool allowOriginFallback = true,
   bool allowStaticAnimatedPreview = false,
+  bool autoPlayAnimatedGif = false,
 }) {
+  if (isAnimatedGif && autoPlayAnimatedGif && originUrl.isNotEmpty) {
+    return ImageResourceSelection(
+      variant: ImageResourceVariant.origin,
+      url: originUrl,
+      shouldResize: false,
+    );
+  }
   final canUseAnimatedPreview = !isAnimatedGif || allowStaticAnimatedPreview;
   final candidates = <ImageResourceSelection>[];
 

@@ -16,6 +16,7 @@ import '../widgets/rating_detail/rating_item_card.dart';
 import '../widgets/rating_detail/rating_policy_tip.dart';
 import '../widgets/rating_detail/rating_bottom_input_bar.dart';
 import '../widgets/rating_detail/rating_input_sheet.dart';
+import '../widgets/app_card.dart';
 
 class MajorDetailScreen extends StatefulWidget {
   final int majorId;
@@ -53,7 +54,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
     final provider = context.read<MajorProvider>();
     final messenger = ScaffoldMessenger.of(context);
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('删除评价'),
@@ -93,7 +94,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
 
-    final confirm = await showDialog<bool>(
+    final confirm = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('删除专业'),
@@ -132,7 +133,8 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
     final accent = RankingTokens.majorAccent(isDark);
 
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
+      backgroundColor:
+          AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
       extendBodyBehindAppBar: false,
       appBar: AppBar(
         systemOverlayStyle: SystemUiOverlayStyle(
@@ -147,7 +149,8 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
         ),
         iconTheme: IconThemeData(color: RankingTokens.titleColor(isDark)),
         title: const Text('专业评价'),
-        backgroundColor: AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
+        backgroundColor:
+            AppPageBackground.color(context, RankingTokens.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -174,7 +177,8 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
           }
           if (m.selectedMajorId != widget.majorId || m.selected == null) {
             return Center(
-              child: Column(
+              child: AppContentSurface.reading(
+                  child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(m.errorMessage ?? '专业信息加载失败'),
@@ -184,7 +188,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                     child: const Text('重新加载'),
                   ),
                 ],
-              ),
+              )),
             );
           }
           return Stack(
@@ -329,13 +333,14 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 20, bottom: 20),
               child: Center(
-                child: Text(
+                child: AppContentSurface.reading(
+                    child: Text(
                   '还没有同学评价',
                   style: TextStyle(
                     fontSize: 13,
                     color: RankingTokens.subColor(isDark),
                   ),
-                ),
+                )),
               ),
             )
           else

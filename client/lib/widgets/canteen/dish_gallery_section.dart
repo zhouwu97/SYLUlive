@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../app_card.dart';
 import '../../config/api_constants.dart';
 import '../../models/canteen_dish.dart';
 import '../../providers/canteen_provider.dart';
@@ -199,7 +200,10 @@ class _DishGallerySectionState extends State<DishGallerySection> {
             )
           else
             SizedBox(
-              height: 150,
+              height: visibleDishes
+                  .map((dish) => _cardHeight(context, dish))
+                  .fold<double>(
+                      150, (height, value) => value > height ? value : height),
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: visibleDishes.length,
@@ -218,6 +222,35 @@ class _DishGallerySectionState extends State<DishGallerySection> {
         ],
       ),
     );
+  }
+
+  double _cardHeight(BuildContext context, CanteenDish dish) {
+    double textHeight(String text, double size, FontWeight weight,
+        {int? maxLines}) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: DefaultTextStyle.of(context).style.copyWith(
+                fontSize: size,
+                fontWeight: weight,
+              ),
+        ),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: maxLines,
+        ellipsis: maxLines == null ? null : '…',
+      )..layout(maxWidth: 124);
+      final height = painter.height;
+      painter.dispose();
+      return height;
+    }
+
+    return 104 +
+        8 +
+        12 +
+        textHeight(dish.name, 13, FontWeight.w700, maxLines: 1) +
+        3 +
+        textHeight('${dish.photoCount} 张实拍', 11, FontWeight.w600);
   }
 
   Widget _buildSkeleton(bool isDark) {
@@ -240,7 +273,6 @@ class _DishGallerySectionState extends State<DishGallerySection> {
       ),
     );
   }
-
 }
 
 class _DishCard extends StatelessWidget {
@@ -263,7 +295,8 @@ class _DishCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
         width: 148,
-        child: Column(
+        child: AppContentSurface.card(
+            child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
@@ -290,28 +323,36 @@ class _DishCard extends StatelessWidget {
                     : const SizedBox.shrink(),
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              dish.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: CanteenTheme.textPrimaryColor(isDark),
-              ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              '${dish.photoCount} 张实拍',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: CanteenTheme.accentColor(isDark),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    dish.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: CanteenTheme.textPrimaryColor(isDark),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${dish.photoCount} 张实拍',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: appContentSecondaryColor(
+                          context, CanteenTheme.accentStrongColor(isDark)),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
-        ),
+        )),
       ),
     );
   }

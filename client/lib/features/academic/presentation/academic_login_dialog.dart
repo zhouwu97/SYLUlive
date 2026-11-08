@@ -41,7 +41,7 @@ final class AcademicLoginDialog extends StatefulWidget {
     bool changeIdentity = false,
     bool addIdentity = false,
   }) {
-    return showDialog<bool>(
+    return showAppDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (_) => AcademicLoginDialog(
@@ -212,6 +212,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
   late final TextEditingController _captchaController;
   late final AcademicLoginCoordinator _coordinator;
   final _formKey = GlobalKey<FormState>();
+  final _feedbackKey = GlobalKey();
   bool _consentAccepted = false;
   bool _saveCredentials = false;
   bool _saveAcademicData = false;
@@ -336,7 +337,10 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
     }
     final password = _passwordController.text;
     // 验证码和临时故障仍属于本次登录，保留遮蔽输入以支持继续和重试。
-    setState(() => _submitting = true);
+    setState(() {
+      _submitting = true;
+      _coordinatorMessage = null;
+    });
     final result = await _coordinator
         .login(
       studentId: _studentIdController.text.trim(),
@@ -359,6 +363,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
     } else if (result.message != null) {
       setState(() => _coordinatorMessage = result.message);
     }
+    if (!result.isSuccess || !_controller.isProfileLoaded) _revealFeedback();
   }
 
   Future<void> _retryProfile() async {
@@ -366,12 +371,17 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
     if (!mounted) return;
     if (_controller.isProfileLoaded) {
       Navigator.of(context).pop(true);
+    } else {
+      _revealFeedback();
     }
   }
 
   Future<void> _submitCaptcha() async {
     if (_submitting || _captchaController.text.trim().isEmpty) return;
-    setState(() => _submitting = true);
+    setState(() {
+      _submitting = true;
+      _coordinatorMessage = null;
+    });
     final result = await _coordinator.continueLoginWithCaptcha(
       code: _captchaController.text.trim(),
     ).whenComplete(() { if (mounted) setState(() => _submitting = false); });
@@ -381,6 +391,15 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
     } else if (result.message != null) {
       setState(() => _coordinatorMessage = result.message);
     }
+    if (!result.isSuccess || !_controller.isProfileLoaded) _revealFeedback();
+  }
+
+  void _revealFeedback() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final feedbackContext = _feedbackKey.currentContext;
+      if (!mounted || feedbackContext == null) return;
+      Scrollable.ensureVisible(feedbackContext, alignment: 0);
+    });
   }
 
   Future<void> _cancel() async {
@@ -402,6 +421,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
       _submitting = false;
       _coordinatorMessage = result.message;
     });
+    _revealFeedback();
   }
 
   @override
@@ -447,7 +467,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                         widget.changeIdentity
                             ? '在本机登录新学号成功后更换，并清除旧学号的本机资料。登录失败保留原账号。'
                             : serverBinding
-                                ? '本设备直接登录所选教务系统，密码和学校会话仅在本机使用。云端只同步教务类型和学号，同步失败不影响本机使用。'
+                                ? '本设备直接登录所选教务系统。登录成功后自动同步绑定，服务器仅临时使用学校会话核对本人学号，不保存密码或学校会话；同步失败不影响本机使用。'
                                 : '密码用于学校登录；会话材料仅以加密形式保存在本机，可随时断开或清除。',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
@@ -548,7 +568,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                           subtitle: Text(
                             _usingSavedCredential
                                 ? '学号和密码仅保存在设备系统安全存储中'
-                                : '用于会话过期后自动重连；云端仅同步教务类型和学号',
+                                : '用于会话过期后自动重连；绑定同步不上传本机保存的密码',
                           ),
                           onChanged:
                               isBusy || awaitingCaptcha || _loadingPreferences
@@ -582,7 +602,7 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                           contentPadding: EdgeInsets.zero,
                           controlAffinity: ListTileControlAffinity.leading,
                           title: const Text('我已阅读并同意教务数据专项授权'),
-                          subtitle: const Text('手机登录教务成功后，仅将学号和教务类型同步到账户；密码与学校会话留在本机。'),
+                          subtitle: const Text('手机登录教务成功后自动登记绑定；缺少服务器记录时自动补交。学校会话仅用于本次核验，服务器只保存学号、教务类型和核验结果。'),
                           onChanged: isBusy || awaitingCaptcha
                               ? null
                               : (value) => setState(
@@ -598,28 +618,41 @@ class _AcademicLoginDialogState extends State<AcademicLoginDialog> {
                                   ),
                           child: const Text('查看教务数据专项授权'),
                         ),
-                      if (awaitingCaptcha && !_submitting) ...[
-                        const SizedBox(height: AppSpacing.sm),
-                        _CaptchaPanel(
-                          challenge: challenge,
-                          controller: _captchaController,
-                          enabled: !isBusy,
-                          onRefresh: _coordinator.refreshCaptcha,
-                        ),
-                      ],
-                      if (failure != null) ...[
-                        const SizedBox(height: AppSpacing.md),
-                        _FailureMessage(failure: failure),
-                      ],
-                      if (_controller.hasBoundIdentity &&
-                          !_controller.isAuthenticated) ...[
-                        const SizedBox(height: AppSpacing.sm),
-                        const Text('本机教务尚未连接，可继续登录或稍后设置。'),
-                      ],
-                      if (_coordinatorMessage != null) ...[
-                        const SizedBox(height: AppSpacing.sm),
-                        Text(_coordinatorMessage!),
-                      ],
+                      Column(
+                        key: _feedbackKey,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (awaitingCaptcha && !_submitting) ...[
+                            const SizedBox(height: AppSpacing.sm),
+                            _CaptchaPanel(
+                              challenge: challenge,
+                              controller: _captchaController,
+                              enabled: !isBusy,
+                              onRefresh: _coordinator.refreshCaptcha,
+                            ),
+                          ],
+                          if (failure != null) ...[
+                            const SizedBox(height: AppSpacing.md),
+                            Semantics(
+                              liveRegion: true,
+                              child: _FailureMessage(failure: failure),
+                            ),
+                          ],
+                          if (_controller.hasBoundIdentity &&
+                              !_controller.isAuthenticated) ...[
+                            const SizedBox(height: AppSpacing.sm),
+                            const Text('本机教务尚未连接，可继续登录或稍后设置。'),
+                          ],
+                          if (_coordinatorMessage != null &&
+                              _coordinatorMessage != failure?.message) ...[
+                            const SizedBox(height: AppSpacing.sm),
+                            Semantics(
+                              liveRegion: true,
+                              child: Text(_coordinatorMessage!),
+                            ),
+                          ],
+                        ],
+                      ),
                     ],
                   ),
                 ),

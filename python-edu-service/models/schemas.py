@@ -1,5 +1,5 @@
 """Pydantic 数据模型"""
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, SecretStr, ConfigDict, computed_field
 from typing import Optional, List
 from datetime import datetime
 
@@ -75,6 +75,12 @@ class PreVerifyResponse(BaseModel):
     # 独立解析自学校 profile；旧 student_id 字段仍保留兼容调用方。
     school_verified_student_id: Optional[str] = None
     name: Optional[str] = None
+
+
+class SessionVerifyInput(BaseModel):
+    """仅在本次内存请求使用学校会话；不接收客户端学号或个人资料作为证明。"""
+    model_config = ConfigDict(extra="forbid")
+    cookie: SecretStr = Field(..., min_length=1, max_length=16384)
 
 
 class LoginEduInput(BaseModel):

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_spacing.dart';
+import '../../theme/app_radius.dart';
 import '../app_card.dart';
 
 /// 版块 Feed 的排序栏。
@@ -38,7 +39,7 @@ class SectionFilterHeader extends StatelessWidget {
         color: isDark
             ? AppColors.surfacePrimaryDark
             : AppColors.surfacePrimaryLight,
-        borderRadius: BorderRadius.zero,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
       ),
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
       child: Row(

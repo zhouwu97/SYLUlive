@@ -71,9 +71,9 @@ class _AdminAIMetricsScreenState extends State<AdminAIMetricsScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: Text(_error!))
+              ? Center(child: AppContentSurface.reading(child: Text(_error!)))
               : metrics == null
-                  ? const Center(child: Text('暂无指标'))
+                  ? const Center(child: AppContentSurface.reading(child: Text('暂无指标')))
                   : RefreshIndicator(
                       onRefresh: _load,
                       child: ListView(
@@ -95,12 +95,12 @@ class _AdminAIMetricsScreenState extends State<AdminAIMetricsScreen> {
                             ],
                           ),
                           const SizedBox(height: 8),
-                          Text(
+                          AppContentSurface.reading(child: Text(
                             metrics['cost_currency'] == 'USD'
                                 ? '金额单位：美元（USD）。按 GPT 优享价表及已记录用量估算，不代表上游实际扣费。'
                                 : '金额单位：人民币元。按服务端配置单价和已记录用量估算，不代表上游实际扣费。',
                             style: Theme.of(context).textTheme.bodySmall,
-                          ),
+                          )),
                           if (metrics['cost_currency'] == 'USD')
                             Text(
                               '已定价 ${metrics['priced_requests'] ?? 0} 条 · 未定价 ${metrics['unpriced_requests'] ?? 0} 条；未定价记录不计入金额。',
@@ -117,10 +117,10 @@ class _AdminAIMetricsScreenState extends State<AdminAIMetricsScreen> {
                             '设备任务': metrics['device_jobs'],
                           }),
                           const SizedBox(height: 8),
-                          const Text(
+                          const AppContentSurface.reading(child: Text(
                             '仅展示聚合计量，不包含问题正文、Prompt、用户标识哈希或密钥。',
                             style: TextStyle(fontSize: 12, color: Colors.grey),
-                          ),
+                          )),
                         ],
                       ),
                     ),

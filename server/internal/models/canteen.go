@@ -61,6 +61,7 @@ type Canteen struct {
 	NormalizedName  string     `gorm:"size:100;not null;default:''" json:"-"`
 	LocationArea    string     `gorm:"size:20;not null;default:''" json:"location_area"`
 	LocationFloor   string     `gorm:"size:20;not null;default:''" json:"location_floor"`
+	DisplayTags     *string    `gorm:"type:text" json:"-"`
 	Image           string     `gorm:"size:500;not null" json:"image"` // 封面图
 	Verified        bool       `gorm:"default:false" json:"verified"`  // 仅管理员审核通过后公开
 	OperatingStatus string     `gorm:"size:20;not null;default:'active';index" json:"operating_status"`

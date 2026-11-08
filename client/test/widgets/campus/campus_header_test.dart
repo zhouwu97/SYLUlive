@@ -1,3 +1,4 @@
+import '../../helpers/active_backdrop_filters.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -134,14 +135,14 @@ void main() {
           .decoration! as BoxDecoration;
       expect(badge().color, Colors.transparent);
       expect(badge().border, isNull);
-      expect(find.byType(BackdropFilter), findsOneWidget);
+      expect(activeBackdropFilters(), findsOneWidget);
       expect(find.text('第9周'), findsOneWidget);
       expect(find.text('10-25'), findsOneWidget);
       await theme.setFrostedGlass(false);
       await tester.pumpAndSettle();
       expect(badge().color!.a, greaterThan(0));
       expect(badge().border, isNotNull);
-      expect(find.byType(BackdropFilter), findsNothing);
+      expect(activeBackdropFilters(), findsNothing);
       expect(tester.takeException(), isNull);
     });
 

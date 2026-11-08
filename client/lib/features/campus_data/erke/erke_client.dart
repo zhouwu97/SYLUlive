@@ -13,6 +13,12 @@ import '../common/erke_endpoints.dart';
 import 'erke_models.dart';
 import 'erke_parser.dart';
 
+/// 二课把多种上游故障统一提示为密码错误，不能据此删除本机凭据。
+class ErkeLoginException implements Exception {
+  const ErkeLoginException();
+  String get message => '二课平台未能完成登录，可能是学校服务或会话异常，请重试；若持续失败，可修改密码后重试';
+}
+
 /// 二课系统客户端
 ///
 /// 复用 WebVpnService 提供的 dio/cookieJar 完成:
@@ -112,15 +118,15 @@ class ErkeClient {
       ASN1Integer modulus;
       ASN1Integer exponent;
 
-      if (topLevelSeq.elements![0] is ASN1Integer) {
-        modulus = topLevelSeq.elements![0] as ASN1Integer;
-        exponent = topLevelSeq.elements![1] as ASN1Integer;
+      if (topLevelSeq.elements[0] is ASN1Integer) {
+        modulus = topLevelSeq.elements[0] as ASN1Integer;
+        exponent = topLevelSeq.elements[1] as ASN1Integer;
       } else {
-        final subjectPublicKey = topLevelSeq.elements![1] as ASN1BitString;
-        final innerParser = ASN1Parser(subjectPublicKey.contentBytes()!);
+        final subjectPublicKey = topLevelSeq.elements[1] as ASN1BitString;
+        final innerParser = ASN1Parser(subjectPublicKey.contentBytes());
         final pkSeq = innerParser.nextObject() as ASN1Sequence;
-        modulus = pkSeq.elements![0] as ASN1Integer;
-        exponent = pkSeq.elements![1] as ASN1Integer;
+        modulus = pkSeq.elements[0] as ASN1Integer;
+        exponent = pkSeq.elements[1] as ASN1Integer;
       }
 
       final rsaPublicKey = pc.RSAPublicKey(
@@ -129,7 +135,7 @@ class ErkeClient {
       );
       final cipher = pc.PKCS1Encoding(pc.RSAEngine())
         ..init(true, pc.PublicKeyParameter<pc.RSAPublicKey>(rsaPublicKey));
-      final plainBytes = utf8.encode(plainText) as Uint8List;
+      final plainBytes = utf8.encode(plainText);
       return base64Encode(cipher.process(plainBytes));
     } catch (e) {
       throw Exception('RSA密码加密失败: $e');
@@ -143,6 +149,18 @@ class ErkeClient {
   /// 执行二课 ASP.NET WebForms 登录
   /// 返回登录后可用于后续请求 (cookie 已写入 _cookieJar)
   Future<void> loginToErke(String username, String password) async {
+    // 上游偶发首次登录建立会话却返回错误页；先验证会话，再限次恢复。
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        await _loginOnce(username, password);
+        return;
+      } on ErkeLoginException {
+        if (attempt == 1) rethrow;
+      }
+    }
+  }
+
+  Future<void> _loginOnce(String username, String password) async {
     final loginUrl = buildVpnUrl(ErkeEndpoints.login);
 
     // 1. GET 登录页 → 处理重定向链
@@ -160,6 +178,10 @@ class ErkeClient {
         final location = getResp.headers.value('location');
         if (location != null) {
           currentUrl = _resolveUrl(location, currentUrl);
+          if (Uri.parse(currentUrl).host != Uri.parse(_vpnHost).host ||
+              Uri.parse(currentUrl).scheme != 'https') {
+            throw const ErkeLoginException();
+          }
           redirectCount++;
           if (redirectCount > 10) throw Exception('重定向次数过多');
           continue;
@@ -185,7 +207,8 @@ class ErkeClient {
     final pubKeyBase64 = _getInputValue(doc, 'pubKey');
 
     if (pubKeyBase64.isEmpty) {
-      throw Exception('未能从页面提取到 RSA 公钥 (pubKey字段不存在)');
+      if (await _hasAuthenticatedSession()) return;
+      throw const ErkeLoginException();
     }
 
     // 3. RSA 加密密码
@@ -204,19 +227,19 @@ class ErkeClient {
       '__VIEWSTATEGENERATOR': viewStateGen,
       '__EVENTVALIDATION': eventValidation,
       'UserName': username,
-      'Password': password,
+      'Password': '',
       'pwd': encryptedPwd,
       'pubKey': pubKeyBase64,
       'codeInput': captcha,
-      'queryBtn': '登          录',
+      'queryBtn': '登            录',
     };
 
-    final postResp = await _dio.post(
+    var postResp = await _dio.post(
       currentUrl,
-      data: formData,
+      data: _encodeGbkForm(formData),
       options: Options(
         responseType: ResponseType.bytes,
-        followRedirects: true,
+        followRedirects: false,
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Referer': currentUrl,
@@ -224,31 +247,82 @@ class ErkeClient {
       ),
     );
 
+    // 手动跟随，确保 CookieManager 收到每一跳的 Set-Cookie。
+    var responseUrl = currentUrl;
+    for (var redirects = 0;
+        const [301, 302, 303, 307, 308].contains(postResp.statusCode);
+        redirects++) {
+      final location = postResp.headers.value('location');
+      if (redirects >= 10 || location == null) {
+        throw const ErkeLoginException();
+      }
+      responseUrl = _resolveUrl(location, responseUrl);
+      if (Uri.parse(responseUrl).host != Uri.parse(_vpnHost).host ||
+          Uri.parse(responseUrl).scheme != 'https') {
+        throw const ErkeLoginException();
+      }
+      postResp = await _dio.get(responseUrl,
+          options: Options(
+              responseType: ResponseType.bytes, followRedirects: false));
+    }
+    if (postResp.statusCode != 200) throw const ErkeLoginException();
+
     final postHtml = decodeResponseBytes(
       postResp.data as List<int>,
       postResp.headers,
     );
     final postDoc = parse(postHtml);
 
-    // 6. 检查登录结果
+    // 6. 成功证据优先于页面中通用的 alert 脚本。
+    if (Uri.parse(responseUrl)
+            .path
+            .toLowerCase()
+            .endsWith('/systemform/main.htm') &&
+        postDoc.querySelector('input[id="pubKey"]') == null) {
+      return;
+    }
+    final successRedirect = RegExp(
+      r'''(?:window\.)?location(?:\.href)?\s*(?:=|\()\s*['"][^'"]*SystemForm/main\.htm''',
+      caseSensitive: false,
+    );
     for (final script in postDoc.querySelectorAll('script')) {
-      if (script.text.contains('alert')) {
-        throw Exception('登录失败: ${script.text.trim()}');
-      }
-      if (script.text.contains("window.location.href='SystemForm/main.htm'") ||
-          script.text.contains('window.location.href="SystemForm/main.htm"')) {
-        return; // 登录成功
-      }
+      if (successRedirect.hasMatch(script.text)) return;
     }
+    if (await _hasAuthenticatedSession()) return;
+    throw const ErkeLoginException();
+  }
 
-    for (final element in postDoc.querySelectorAll('*')) {
-      final id = element.id;
-      if (id.contains('msg') || id.contains('error')) {
-        throw Exception('登录失败: ${element.text.trim()}');
-      }
+  Future<bool> _hasAuthenticatedSession() async {
+    try {
+      await getGraduationSummary();
+      return true;
+    } on ErkePageChangedException {
+      return false;
+    } on ErkeLoginException {
+      return false;
     }
+  }
 
-    throw Exception('未能确认登录成功');
+  String _decodeProtectedResponse(Response response) {
+    if (response.statusCode != 200) {
+      if (const [301, 302, 303, 307, 308, 401, 403]
+          .contains(response.statusCode)) {
+        throw const ErkeLoginException();
+      }
+      throw DioException(
+        requestOptions: response.requestOptions,
+        response: response,
+        type: DioExceptionType.badResponse,
+      );
+    }
+    final html =
+        decodeResponseBytes(response.data as List<int>, response.headers);
+    final doc = parse(html);
+    if (doc.querySelector('#pubKey, #pwdEncryptSalt, input[name="UserName"]') !=
+        null) {
+      throw const ErkeLoginException();
+    }
+    return html;
   }
 
   // ====================================================================
@@ -262,7 +336,7 @@ class ErkeClient {
       url,
       options: Options(responseType: ResponseType.bytes),
     );
-    return decodeResponseBytes(resp.data as List<int>, resp.headers);
+    return _decodeProtectedResponse(resp);
   }
 
   /// 获取并解析毕业要求
@@ -282,8 +356,7 @@ class ErkeClient {
       url,
       options: Options(responseType: ResponseType.bytes),
     );
-    final getHtml =
-        decodeResponseBytes(getResp.data as List<int>, getResp.headers);
+    final getHtml = _decodeProtectedResponse(getResp);
 
     // 2. 解析表单
     final form = ErkeParser.parseYearPageForm(getHtml);
@@ -326,7 +399,7 @@ class ErkeClient {
 
     final postResp = await _dio.post(
       url,
-      data: formData,
+      data: _encodeGbkForm(formData),
       options: Options(
         responseType: ResponseType.bytes,
         followRedirects: true,
@@ -337,8 +410,7 @@ class ErkeClient {
       ),
     );
 
-    final postHtml =
-        decodeResponseBytes(postResp.data as List<int>, postResp.headers);
+    final postHtml = _decodeProtectedResponse(postResp);
 
     // 5. 验证 POST 结果
     final returnedForm = ErkeParser.parseYearPageForm(postHtml);
@@ -355,7 +427,7 @@ class ErkeClient {
     }
 
     if (!ErkeParser.yearlyPageHasScores(postHtml)) {
-      throw ErkePageChangedException(
+      throw const ErkePageChangedException(
         '学年查询已提交，但返回页面没有成绩数据',
       );
     }
@@ -379,7 +451,7 @@ class ErkeClient {
         url,
         options: Options(responseType: ResponseType.bytes),
       );
-      return decodeResponseBytes(resp.data as List<int>, resp.headers);
+      return _decodeProtectedResponse(resp);
     }
 
     // WebForms 学年筛选
@@ -387,8 +459,7 @@ class ErkeClient {
       url,
       options: Options(responseType: ResponseType.bytes),
     );
-    final getHtml =
-        decodeResponseBytes(getResp.data as List<int>, getResp.headers);
+    final getHtml = _decodeProtectedResponse(getResp);
     final hiddenInputs = ErkeParser.extractHiddenInputs(parse(getHtml));
 
     final formData = <String, dynamic>{
@@ -398,7 +469,7 @@ class ErkeClient {
 
     final postResp = await _dio.post(
       url,
-      data: formData,
+      data: _encodeGbkForm(formData),
       options: Options(
         responseType: ResponseType.bytes,
         followRedirects: true,
@@ -409,12 +480,17 @@ class ErkeClient {
       ),
     );
 
-    return decodeResponseBytes(postResp.data as List<int>, postResp.headers);
+    return _decodeProtectedResponse(postResp);
   }
 
   /// 获取并解析活动明细
   Future<List<ErkeActivity>> getActivities({String? year}) async {
     final html = await getActivitiesPageHtml(year: year);
+    if (parse(html).querySelector('table, #GridView1, #DataGrid1') == null &&
+        !RegExp(r'暂无|没有.*记录|未查询到|无活动记录')
+            .hasMatch(parse(html).body?.text ?? '')) {
+      throw const ErkePageChangedException('活动列表页面缺少数据或空状态');
+    }
     return ErkeParser.parseActivities(html);
   }
 
@@ -430,9 +506,23 @@ class ErkeClient {
   }
 
   static String _resolveUrl(String url, String base) {
-    if (url.startsWith('http')) return url;
-    final uri = Uri.parse(base);
-    if (url.startsWith('/')) return '${uri.scheme}://${uri.host}$url';
-    return '${uri.scheme}://${uri.host}${uri.path}$url';
+    return Uri.parse(base).resolve(url).toString();
+  }
+
+  /// ASP.NET 页面使用 GBK；Dio 对 Map 默认以 UTF-8 编码，会改变登录按钮值。
+  static String _encodeGbkForm(Map<String, dynamic> form) {
+    String encode(String value) => gbk.encode(value).map((byte) {
+          final unreserved = byte >= 65 && byte <= 90 ||
+              byte >= 97 && byte <= 122 ||
+              byte >= 48 && byte <= 57 ||
+              const [45, 46, 95, 126].contains(byte);
+          if (unreserved) return String.fromCharCode(byte);
+          if (byte == 32) return '+';
+          return '%${byte.toRadixString(16).padLeft(2, '0').toUpperCase()}';
+        }).join();
+    return form.entries
+        .map(
+            (entry) => '${encode(entry.key)}=${encode(entry.value.toString())}')
+        .join('&');
   }
 }

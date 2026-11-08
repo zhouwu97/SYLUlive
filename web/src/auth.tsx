@@ -4,6 +4,8 @@ import { beginAuthTransition, entity, setAuthSession, useApi, write, type User }
 import { Form, useUI } from "./ui";
 import { bridge } from './bridge';
 import { providers } from '@sylulive/academic-contracts';
+import { LoginPanel } from './login-panel';
+import { forgetSavedPasswords } from './login-history';
 function announceAuthChange(){const channel=new BroadcastChannel('sylulive-auth');channel.postMessage('changed');channel.close()}
 const AuthContext = createContext<{
   user: User | null;
@@ -20,16 +22,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const raw = entity(q.data, "user", "data");
   const user = raw.id ? (raw as User) : null;
   const [reloading, setReloading] = useState(false);
+  const [sessionUserId, setSessionUserId] = useState<number | null | undefined>(undefined);
   const reloadSequence = useRef(0), reloadInProgress = useRef(false);
   useEffect(() => {
-    if (!reloadInProgress.current) setAuthSession(user?.id ?? null);
-  }, [user?.id, reloading]);
+    const next = user?.id ?? null;
+    if (reloadInProgress.current || q.isPending || sessionUserId === next) return;
+    // 先建立请求世代，再公开账号，避免生产构建首次挂载的子请求被本次初始化取消。
+    const reads = { queryKey: ["api"], predicate: (query: { queryKey: readonly unknown[] }) => query.queryKey[1] !== "/api/user/profile" };
+    const cancelled = qc.cancelQueries(reads);
+    setAuthSession(next);
+    setSessionUserId(next);
+    void cancelled.then(() => qc.invalidateQueries(reads));
+  }, [user?.id, reloading, q.isPending, sessionUserId, qc]);
   useEffect(() => {
     const channel = new BroadcastChannel('sylulive-auth');
     channel.onmessage = async () => {
       const sequence = ++reloadSequence.current;
       reloadInProgress.current = true;
       setReloading(true);
+      setSessionUserId(undefined);
       beginAuthTransition();
       setAuthSession(null);
       qc.clear();
@@ -54,14 +65,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.dispatchEvent(new Event("sylulive-logout"));
     qc.clear();
     announceAuthChange();
-    await Promise.allSettled(providers.map(provider=>bridge('disconnect',{provider},AbortSignal.timeout(2000))));
+    await Promise.allSettled(providers.map(provider=>bridge('disconnect',{provider,localOnly:true,appUserId:user?.id},AbortSignal.timeout(2000))));
     ui.notify("已退出账号");
   }
   return (
     <AuthContext.Provider
       value={{
-        user: reloading ? null : user,
-        loading: reloading || q.isPending,
+        user: reloading || sessionUserId !== (user?.id ?? null) ? null : user,
+        loading: reloading || q.isPending || sessionUserId !== (user?.id ?? null),
         login,
         logout,
         requireUser: () => {
@@ -76,50 +87,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     </AuthContext.Provider>
   );
 }
-function Login() {
+function Login({ initialAccount = "" }: { initialAccount?: string } = {}) {
   const ui = useUI(),
     qc = useQueryClient();
-  return (
-    <>
-      <Form
-        fields={[
-          { name: "account", label: "邮箱或账号", required: true },
-          { name: "password", label: "密码", type: "password", required: true },
-        ]}
-        submit="登录"
-        onSubmit={async (data) => {
-          beginAuthTransition();
-          await write("/api/login", data);
-          qc.clear();
-          announceAuthChange();
-          await qc.invalidateQueries({ queryKey: ["api"] });
-          ui.close();
-        }}
-      />
-      <div className="form-actions">
-        <button
-          className="link-btn"
-          onClick={() => ui.open("邮箱注册", <EmailFlow />)}
-        >
-          注册账号
-        </button>
-        <button
-          className="link-btn"
-          onClick={() => ui.open("找回密码", <EmailFlow reset />)}
-        >
-          忘记密码
-        </button>
-      </div>
-    </>
-  );
+  return <LoginPanel initialAccount={initialAccount} onAuthenticated={async isCurrent => {
+    qc.clear();
+    announceAuthChange();
+    await qc.invalidateQueries({ queryKey: ["api"] });
+    if (isCurrent()) ui.close();
+  }} onRegister={account => ui.open("邮箱注册", <EmailFlow initialEmail={account.includes("@") ? account : ""} />)} onReset={account => ui.open("找回密码", <EmailFlow reset initialEmail={account.includes("@") ? account : ""} />)} />;
 }
-function EmailFlow({ reset = false }: { reset?: boolean }) {
+function EmailFlow({ reset = false, initialEmail = "" }: { reset?: boolean; initialEmail?: string }) {
   const ui = useUI();
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   return (
-    <>
+    <section className="auth-email-panel">
+      <p className="auth-email-intro">{reset ? "先获取邮箱验证码，再设置新密码。" : "使用邮箱注册，连接校园里的每一天。"}</p>
       <Form
         fields={[
-          { name: "email", label: "邮箱", type: "email", required: true },
+          { name: "email", label: "邮箱", type: "email", required: true, defaultValue: initialEmail, autoComplete: "email" },
         ]}
         submit="发送验证码"
         onSubmit={async (data) => {
@@ -133,13 +120,14 @@ function EmailFlow({ reset = false }: { reset?: boolean }) {
       <hr />
       <Form
         fields={[
-          { name: "email", label: "邮箱", type: "email", required: true },
+          { name: "email", label: "邮箱", type: "email", required: true, defaultValue: initialEmail, autoComplete: "email" },
           { name: "code", label: "验证码", required: true },
           {
             name: reset ? "new_password" : "password",
             label: "新密码",
             type: "password",
             required: true,
+            autoComplete: "new-password",
           },
           ...(!reset
             ? [{ name: "nickname", label: "昵称", required: true }]
@@ -151,10 +139,18 @@ function EmailFlow({ reset = false }: { reset?: boolean }) {
             reset ? "/api/password/email/reset" : "/api/register/email",
             reset?data:{...data,user_agreement_accepted:form.get('agreements')==='on',privacy_policy_accepted:form.get('agreements')==='on'},
           );
-          ui.notify(reset ? "密码已重置，请重新登录" : "注册已完成，请登录");
-          ui.close();
+          let clearingFailed = false;
+          if (reset) {
+            try { await forgetSavedPasswords({ account: String(data.email) }); }
+            catch { clearingFailed = true; }
+          }
+          if (active.current) {
+            ui.notify(clearingFailed ? "密码已重置，本机旧密码未能清理，请移除对应记录" : reset ? "密码已重置，请重新登录" : "注册已完成，请登录");
+            ui.open("登录沈理校园", <Login initialAccount={String(data.email)} />);
+          }
         }}
       >{!reset&&<label className="check-label"><input name="agreements" type="checkbox" required/>我已阅读并同意<a href="https://sylulive.online/terms" target="_blank" rel="noreferrer">用户协议</a>与<a href="https://sylulive.online/privacy" target="_blank" rel="noreferrer">隐私政策</a></label>}</Form>
-    </>
+      <button className="link-btn auth-back" type="button" onClick={() => ui.open("登录沈理校园", <Login initialAccount={initialEmail} />)}>返回登录</button>
+    </section>
   );
 }

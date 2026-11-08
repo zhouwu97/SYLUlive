@@ -20,10 +20,17 @@ SELECT 'public_missing_dimensions' AS metric,
 FROM files
 WHERE access_scope = 'public' AND mime_type LIKE 'image/%';
 
--- 3. 变体任务状态分布
-SELECT 'image_variants.status' AS metric, status AS bucket, count(*) AS total
-FROM image_variants
-GROUP BY status
+-- 3. 当前配方的变体任务状态分布；GIF v1 已停止处理，单独保留用于回滚审计。
+SELECT 'image_variants.status' AS metric, v.status AS bucket, count(*) AS total
+FROM image_variants v JOIN files f ON f.id = v.file_id
+WHERE v.recipe_version = CASE WHEN f.mime_type = 'image/gif' THEN 2 ELSE 1 END
+GROUP BY v.status
+ORDER BY total DESC;
+
+SELECT 'legacy_gif_v1.status' AS metric, v.status AS bucket, count(*) AS total
+FROM image_variants v JOIN files f ON f.id = v.file_id
+WHERE f.mime_type = 'image/gif' AND v.recipe_version = 1
+GROUP BY v.status
 ORDER BY total DESC;
 
 -- 4. 仍缺变体的公开图片数（应有引用但还没生成任何档位）
@@ -31,23 +38,26 @@ SELECT 'public_without_any_variant' AS metric, 'missing' AS bucket, count(*) AS 
 FROM files f
 WHERE f.access_scope = 'public'
   AND f.mime_type LIKE 'image/%'
-  AND NOT EXISTS (SELECT 1 FROM image_variants v WHERE v.file_id = f.id);
+  AND NOT EXISTS (SELECT 1 FROM image_variants v WHERE v.file_id = f.id
+      AND v.recipe_version = CASE WHEN f.mime_type = 'image/gif' THEN 2 ELSE 1 END);
 
 -- 5. 失败原因 Top 10（failed 不为 0 时排查）
 SELECT 'failure_reasons' AS metric,
-       coalesce(nullif(left(last_error, 120), ''), '(empty)') AS bucket,
+       coalesce(nullif(left(v.last_error, 120), ''), '(empty)') AS bucket,
        count(*) AS total
-FROM image_variants
-WHERE status = 'failed'
+FROM image_variants v JOIN files f ON f.id = v.file_id
+WHERE v.status = 'failed'
+  AND v.recipe_version = CASE WHEN f.mime_type = 'image/gif' THEN 2 ELSE 1 END
 GROUP BY bucket
 ORDER BY total DESC
 LIMIT 10;
 
 -- 6. 最近处理完成的 10 个任务（确认 worker 正在推进）
 SELECT 'latest_ready' AS metric,
-       variant AS bucket,
-       updated_at
-FROM image_variants
-WHERE status = 'ready'
-ORDER BY updated_at DESC
+       v.variant AS bucket,
+       v.updated_at
+FROM image_variants v JOIN files f ON f.id = v.file_id
+WHERE v.status = 'ready'
+  AND v.recipe_version = CASE WHEN f.mime_type = 'image/gif' THEN 2 ELSE 1 END
+ORDER BY v.updated_at DESC
 LIMIT 10;

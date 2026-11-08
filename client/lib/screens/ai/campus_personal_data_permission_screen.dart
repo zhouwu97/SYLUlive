@@ -1,6 +1,8 @@
+import '../../theme/app_colors.dart';
 import 'package:shenliyuan/widgets/app_popup_menu.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import '../../widgets/app_card.dart';
 import 'package:provider/provider.dart';
 
 import '../../widgets/app_page_background.dart';
@@ -116,38 +118,45 @@ class _CampusPersonalDataPermissionScreenState
   Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('校园 Agent 数据权限')),
-      body: FutureBuilder<
-          Map<AiPersonalDataPermissionScope, AiPersonalDataPermissionPolicy>>(
-        key: ValueKey('permission-future-$_accountUserId'),
-        future: _permissions,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError || !snapshot.hasData) {
-            return Center(
-              child: FilledButton.icon(
-                onPressed: () => setState(() => _permissions = _load()),
-                icon: const Icon(Icons.refresh),
-                label: const Text('重新加载'),
-              ),
+      body: AppCardMaterial(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? AppColors.surfaceSecondaryDark
+            : AppColors.surfaceSecondaryLight,
+        borderRadius: BorderRadius.zero,
+        clipBehavior: Clip.antiAlias,
+        child: FutureBuilder<
+            Map<AiPersonalDataPermissionScope, AiPersonalDataPermissionPolicy>>(
+          key: ValueKey('permission-future-$_accountUserId'),
+          future: _permissions,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError || !snapshot.hasData) {
+              return Center(
+                child: FilledButton.icon(
+                  onPressed: () => setState(() => _permissions = _load()),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('重新加载'),
+                ),
+              );
+            }
+            final permissions = snapshot.data!;
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              children: [
+                const Text(
+                  '这些设置仅适用于服务器上的校园 Agent。个人 AI 仍然只读取当前手机的本地加密缓存。',
+                  style: TextStyle(height: 1.5),
+                ),
+                const SizedBox(height: 12),
+                ...AiPersonalDataPermissionScope.values.map(
+                  (scope) => _permissionTile(permissions, scope),
+                ),
+              ],
             );
-          }
-          final permissions = snapshot.data!;
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-            children: [
-              const Text(
-                '这些设置仅适用于服务器上的校园 Agent。个人 AI 仍然只读取当前手机的本地加密缓存。',
-                style: TextStyle(height: 1.5),
-              ),
-              const SizedBox(height: 12),
-              ...AiPersonalDataPermissionScope.values.map(
-                (scope) => _permissionTile(permissions, scope),
-              ),
-            ],
-          );
-        },
+          },
+        ),
       ),
     );
   }

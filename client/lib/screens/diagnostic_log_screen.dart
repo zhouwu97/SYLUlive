@@ -13,6 +13,7 @@ import 'package:intl/intl.dart';
 import '../widgets/app_page_background.dart';
 import '../models/diagnostic_log_entry.dart';
 import '../services/diagnostic_log_service.dart';
+import '../theme/app_radius.dart';
 
 class DiagnosticLogScreen extends StatefulWidget {
   const DiagnosticLogScreen({super.key});
@@ -56,7 +57,7 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
   }
 
   Future<void> _clearLogs() async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: const Text('清空诊断记录'),
@@ -137,7 +138,8 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
                   if (groups.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 64),
-                      child: Center(child: Text('当前筛选下没有诊断事件')),
+                      child: Center(
+                          child: AppContentSurface.reading(child: Text('当前筛选下没有诊断事件'))),
                     )
                   else
                     ...groups
@@ -247,7 +249,9 @@ class _OverviewBand extends StatelessWidget {
     final attentionCount = issues.length;
 
     return AppCardSurface(
-      decoration: BoxDecoration(color: colors.surfaceContainerLow, borderRadius: BorderRadius.zero),
+      decoration: BoxDecoration(
+          color: colors.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(AppRadius.lg)),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
         child: Column(
@@ -462,14 +466,17 @@ class _DiagnosticTimelineItemState extends State<_DiagnosticTimelineItem> {
             ? colors.tertiary
             : colors.primary;
     return AppCardSurface(
-      foregroundDecoration: BoxDecoration(border: Border(left: BorderSide(color: accent, width: 2))),
+      foregroundDecoration: BoxDecoration(
+          border: Border(left: BorderSide(color: accent, width: 2))),
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: emphasized ? accent.withValues(alpha: 0.06) : Colors.transparent,
         border: Border(
           left: BorderSide(color: accent, width: 2),
-          bottom: BorderSide(color: context.watch<ThemeProvider?>()?.frostedGlass == true
-              ? Colors.transparent : colors.outlineVariant),
+          bottom: BorderSide(
+              color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                  ? Colors.transparent
+                  : colors.outlineVariant),
         ),
       ),
       child: InkWell(

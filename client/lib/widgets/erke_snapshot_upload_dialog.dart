@@ -9,7 +9,7 @@ import '../theme/app_colors.dart';
 Future<ErkeSnapshotUploadPolicy?> showErkeSnapshotUploadDialog(
   BuildContext context,
 ) {
-  return showDialog<ErkeSnapshotUploadPolicy>(
+  return showAppDialog<ErkeSnapshotUploadPolicy>(
     context: context,
     barrierDismissible: false,
     builder: (dialogContext) => const ErkeSnapshotUploadDialog(),

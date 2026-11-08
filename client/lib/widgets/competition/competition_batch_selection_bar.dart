@@ -1,3 +1,4 @@
+import '../app_card.dart';
 import 'package:flutter/material.dart';
 import 'competition_ui_tokens.dart';
 
@@ -30,7 +31,7 @@ class CompetitionBatchSelectionBar extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: bg,
-        border: Border(bottom: BorderSide(color: border)),
+        border: Border(bottom: BorderSide(color: appCardDividerColor(context, border))),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(

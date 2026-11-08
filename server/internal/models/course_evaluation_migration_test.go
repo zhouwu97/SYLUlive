@@ -202,7 +202,7 @@ func TestEnsureCourseEvaluationSchemaMergesLegacyPhysicalEducationSubject(t *tes
 
 func TestCourseEvaluationCommentTruncationUsesRunes(t *testing.T) {
 	long := ""
-	for i := 0; i < 250; i++ {
+	for i := 0; i < 550; i++ {
 		long += "评"
 	}
 	truncated := TruncateCourseEvaluationComment(long)

@@ -9,18 +9,31 @@ enum EmojiPackInstallStatus { installed, damaged, failed }
 /// 只能跟着这条历史指针走，不能按数值大小挑「更早」的版本。
 class EmojiPackVersionRef {
   const EmojiPackVersionRef(
-      {required this.version, required this.manifestSha256});
+      {required this.version,
+      required this.manifestSha256,
+      this.coverAssetId,
+      this.iconAssetId,
+      this.authorName});
 
   final int version;
   final String manifestSha256;
+  final String? coverAssetId, iconAssetId, authorName;
 
-  Map<String, dynamic> toJson() =>
-      {'version': version, 'manifest_sha256': manifestSha256};
+  Map<String, dynamic> toJson() => {
+        'version': version,
+        'manifest_sha256': manifestSha256,
+        if (coverAssetId != null) 'cover_asset_id': coverAssetId,
+        if (iconAssetId != null) 'icon_asset_id': iconAssetId,
+        if (authorName != null) 'author_name': authorName
+      };
 
   factory EmojiPackVersionRef.fromJson(Map<String, dynamic> json) =>
       EmojiPackVersionRef(
         version: json['version'] as int,
         manifestSha256: json['manifest_sha256'] as String,
+        coverAssetId: json['cover_asset_id'] as String?,
+        iconAssetId: json['icon_asset_id'] as String?,
+        authorName: json['author_name'] as String?,
       );
 }
 
@@ -38,6 +51,10 @@ class EmojiPackInstallation {
     this.externalPackId,
     this.importSourceSha256,
     this.previous,
+    this.personalTags = const [],
+    this.coverAssetId,
+    this.iconAssetId,
+    this.authorName = '',
   });
 
   final EmojiPackManifest manifest;
@@ -45,6 +62,13 @@ class EmojiPackInstallation {
   final String name;
   final EmojiPackTrustLevel trustLevel;
   final bool enabled;
+  final List<String> personalTags;
+  final String? coverAssetId, iconAssetId;
+  final String authorName;
+  // 本地导入始终使用 local-UUID；community-UUID 仅由服务端审核目录分配。
+  bool get isCatalogPack =>
+      trustLevel == EmojiPackTrustLevel.serverOfficial ||
+      packId.startsWith('community-') && importSourceSha256 == null;
   final int sortOrder;
   final EmojiPackInstallStatus status;
   final String? error;
@@ -66,15 +90,20 @@ class EmojiPackInstallation {
   bool hasUpdate(int catalogVersion) => catalogVersion > version;
 
   EmojiPackInstallation copyWith(
-          {bool? enabled,
+          {String? name,
+          bool? enabled,
           int? sortOrder,
           EmojiPackInstallStatus? status,
           String? error,
+          List<String>? personalTags,
+          String? coverAssetId,
+          String? iconAssetId,
+          String? authorName,
           EmojiPackVersionRef? previous}) =>
       EmojiPackInstallation(
         manifest: manifest,
         manifestSha256: manifestSha256,
-        name: name,
+        name: name ?? this.name,
         trustLevel: trustLevel,
         enabled: enabled ?? this.enabled,
         sortOrder: sortOrder ?? this.sortOrder,
@@ -83,6 +112,10 @@ class EmojiPackInstallation {
         externalPackId: externalPackId,
         importSourceSha256: importSourceSha256,
         previous: previous ?? this.previous,
+        personalTags: personalTags ?? this.personalTags,
+        coverAssetId: coverAssetId ?? this.coverAssetId,
+        iconAssetId: iconAssetId ?? this.iconAssetId,
+        authorName: authorName ?? this.authorName,
       );
 
   Map<String, dynamic> toJson() => {
@@ -95,8 +128,13 @@ class EmojiPackInstallation {
         'status': status.name,
         if (error != null) 'error': error,
         if (externalPackId != null) 'external_pack_id': externalPackId,
-        if (importSourceSha256 != null) 'import_source_sha256': importSourceSha256,
+        if (importSourceSha256 != null)
+          'import_source_sha256': importSourceSha256,
         if (previous != null) 'previous': previous!.toJson(),
+        'personal_tags': personalTags,
+        if (coverAssetId != null) 'cover_asset_id': coverAssetId,
+        if (iconAssetId != null) 'icon_asset_id': iconAssetId,
+        'author_name': authorName,
       };
 
   factory EmojiPackInstallation.fromJson(Map<String, dynamic> json) =>
@@ -112,6 +150,10 @@ class EmojiPackInstallation {
         error: json['error'] as String?,
         externalPackId: json['external_pack_id'] as String?,
         importSourceSha256: json['import_source_sha256'] as String?,
+        personalTags: List<String>.from(json['personal_tags'] as List? ?? []),
+        coverAssetId: json['cover_asset_id'] as String?,
+        iconAssetId: json['icon_asset_id'] as String?,
+        authorName: json['author_name'] as String? ?? '',
         previous: json['previous'] == null
             ? null
             : EmojiPackVersionRef.fromJson(

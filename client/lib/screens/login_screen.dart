@@ -108,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final subText = isDark ? Colors.white70 : const Color(0xFF747B82);
     final cardBg = isDark ? const Color(0xFF1E2226) : Colors.white;
 
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       barrierDismissible: true,
       builder: (dialogContext) => AppAlertDialog(
@@ -127,7 +127,8 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext),
-            style: FilledButton.styleFrom(backgroundColor: accent),
+            style: FilledButton.styleFrom(
+                backgroundColor: accent, foregroundColor: Colors.black),
             child: const Text('知道了'),
           ),
         ],
@@ -266,7 +267,7 @@ class _LoginScreenState extends State<LoginScreen> {
     var obscureNewPassword = true;
     var obscureConfirmPassword = true;
 
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -508,14 +509,15 @@ class _LoginScreenState extends State<LoginScreen> {
                             );
                           }
                         },
-                  style: FilledButton.styleFrom(backgroundColor: accent),
+                  style: FilledButton.styleFrom(
+                      backgroundColor: accent, foregroundColor: Colors.black),
                   child: isSubmitting
                       ? const SizedBox(
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: Colors.white,
+                            color: Colors.black,
                           ),
                         )
                       : const Text('确认重置'),
@@ -590,24 +592,26 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Text(
-                      '沈理校园',
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w800,
-                        color: text,
+                    Column(children: [
+                      Text(
+                        '沈理校园',
+                        style: TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          color: text,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '校园互助社交平台',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: subText,
+                      const SizedBox(height: 4),
+                      Text(
+                        '校园互助社交平台',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: subText,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
-                    ),
+                    ]),
                     const SizedBox(height: 40),
 
                     // Card
@@ -792,6 +796,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   onPressed: _isLoading ? null : _submit,
                                   style: FilledButton.styleFrom(
                                     backgroundColor: accent,
+                                    foregroundColor: Colors.black,
                                     disabledBackgroundColor:
                                         accent.withValues(alpha: 0.38),
                                     shape: RoundedRectangleBorder(
@@ -804,7 +809,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                           width: 18,
                                           child: CircularProgressIndicator(
                                             strokeWidth: 2,
-                                            color: Colors.white,
+                                            color: Colors.black,
                                           ),
                                         )
                                       : Text(
@@ -812,7 +817,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                           style: const TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.w600,
-                                            color: Colors.white,
+                                            color: Colors.black,
                                           ),
                                         ),
                                 ),

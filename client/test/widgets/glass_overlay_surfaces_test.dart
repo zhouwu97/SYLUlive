@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -182,7 +183,7 @@ void main() {
       final menu = find.ancestor(
           of: find.text('可用项'), matching: find.byType(AppCardMaterial));
       expect(menu, findsOneWidget);
-      expect(find.descendant(of: menu, matching: find.byType(BackdropFilter)),
+      expect(find.descendant(of: menu, matching: activeBackdropFilters()),
           findsOneWidget);
       await _capture(tester, capture, 'menu-$profile');
       await tester.tap(find.text('禁用项'));
@@ -196,10 +197,10 @@ void main() {
       await tester.pumpAndSettle();
       final dialog = find.byType(AppDialog);
       expect(dialog, findsOneWidget);
-      expect(find.descendant(of: dialog, matching: find.byType(BackdropFilter)),
+      expect(find.descendant(of: dialog, matching: activeBackdropFilters()),
           findsOneWidget);
       final filter =
-          find.descendant(of: dialog, matching: find.byType(BackdropFilter));
+          find.descendant(of: dialog, matching: activeBackdropFilters());
       expect(tester.getSize(filter).width, lessThan(390));
       expect(tester.getSize(filter).height, lessThan(500),
           reason: '模糊只能覆盖弹窗，不能铺满路由');
@@ -213,7 +214,7 @@ void main() {
       expect(
           find.descendant(
               of: find.byType(CourseTermSwitchSheet),
-              matching: find.byType(BackdropFilter)),
+              matching: activeBackdropFilters()),
           findsOneWidget);
       await _capture(tester, capture, 'term-$profile');
       Navigator.pop(tester.element(find.text('切换学期')));
@@ -226,13 +227,13 @@ void main() {
       expect(calendarSurface, findsOneWidget);
       expect(
           find.descendant(
-              of: calendarSurface, matching: find.byType(BackdropFilter)),
+              of: calendarSurface, matching: activeBackdropFilters()),
           findsOneWidget,
           reason: '实际日期选择器由一层玻璃承载，底部操作区不再叠加实色底板');
       await _capture(tester, capture, 'calendar-$profile');
       await theme.setFrostedGlass(false);
       await tester.pumpAndSettle();
-      expect(find.byType(BackdropFilter), findsNothing);
+      expect(activeBackdropFilters(), findsNothing);
       await tester.tap(find.text('保存设置'));
       await tester.pumpAndSettle();
       expect(pickedMonday, DateTime(2026, 8, 24));

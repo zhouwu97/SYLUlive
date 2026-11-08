@@ -602,7 +602,7 @@ class _TeamFeedStateView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
+    return AppContentSurface.card(child: Container(
       constraints:
           BoxConstraints(minHeight: MediaQuery.of(context).size.height * 0.5),
       alignment: Alignment.center,
@@ -637,7 +637,7 @@ class _TeamFeedStateView extends StatelessWidget {
             icon: Icon(actionIcon, size: 18),
             label: Text(actionLabel)),
       ]),
-    );
+    ));
   }
 }
 

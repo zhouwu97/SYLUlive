@@ -21,7 +21,6 @@ import '../features/academic/presentation/academic_login_dialog.dart';
 import '../features/academic/presentation/academic_restore_status.dart';
 import '../services/course_reminder_service.dart';
 import '../services/app_resume_coordinator.dart';
-import '../theme/app_colors.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey, currentHomeTabIndex;
 import '../utils/responsive_util.dart';
@@ -31,6 +30,7 @@ import 'edu_screen.dart';
 import '../services/home_widget_service.dart';
 import '../models/course_term.dart';
 import '../widgets/course/course_empty_state_card.dart';
+import '../widgets/course/course_fetch_progress_dialog.dart';
 import '../widgets/course/course_action_menu.dart';
 import '../widgets/course/course_evaluation_section.dart';
 import '../widgets/course/course_import_sheet.dart';
@@ -1023,7 +1023,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final academicWeek = sc.getAcademicWeek(_weekStart);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final titleColor = isDark ? Colors.white : CampusTheme.text;
-    final secondaryColor = CampusTheme.subText;
+    final secondaryColor = appContentSecondaryColor(context, CampusTheme.subText);
 
     return Container(
       color: Colors.transparent,
@@ -1154,7 +1154,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = CampusTheme.primary;
     final titleColor = isDark ? Colors.white : CampusTheme.text;
-    final secondaryColor = CampusTheme.subText;
+    final secondaryColor = appContentSecondaryColor(context, CampusTheme.subText);
 
     return SizedBox(
       height: _weekHeaderHeightOf(context),
@@ -1404,7 +1404,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       return;
     }
 
-    final confirm = await showDialog<bool>(
+    final confirm = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: const Text('从教务刷新'),
@@ -1434,80 +1434,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       });
 
     // 弹出精美加载动画，防止用户乱点
-    showDialog(
+    showAppDialog(
       context: context,
       barrierDismissible: false,
       barrierColor: Colors.black54,
-      builder: (ctx) => PopScope(
+      builder: (ctx) => const PopScope(
         canPop: false,
-        child: Center(
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 48),
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.white.withValues(alpha: 0.15),
-                  Colors.white.withValues(alpha: 0.05),
-                ],
-              ),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 30,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 渐变圆形进度指示器
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.brandPrimary.withValues(alpha: 0.12),
-                  ),
-                  child: const Padding(
-                    padding: EdgeInsets.all(14),
-                    child: CircularProgressIndicator(
-                      color: AppColors.brandPrimary,
-                      strokeWidth: 3,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  '正在从教务系统提取课表',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    decoration: TextDecoration.none,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '请耐心等待，数据量较大时可能需要几秒…',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    fontSize: 13,
-                    fontWeight: FontWeight.normal,
-                    decoration: TextDecoration.none,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ),
+        child: CourseFetchProgressDialog(),
       ),
     );
 
@@ -1589,7 +1522,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       );
 
       // 成功动画反馈
-      showDialog(
+      showAppDialog(
         context: context,
         barrierDismissible: false,
         barrierColor: Colors.black26,
@@ -1608,7 +1541,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   ),
                   decoration: BoxDecoration(
                     color: Theme.of(context).brightness == Brightness.dark
-                        ? CampusTheme.darkCard : Colors.white,
+                        ? CampusTheme.darkCard
+                        : Colors.white,
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
@@ -2195,7 +2129,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     BuildContext context,
   ) async {
     final dialogTheme = CampusTheme.withBrandAccent(Theme.of(context));
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => Theme(
         data: dialogTheme,
@@ -2291,7 +2225,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   Future<bool> _confirmCourseReminderEnable(BuildContext context) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: const Text('开启课程提醒'),
@@ -2486,16 +2420,17 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           width: double.infinity,
                           decoration: BoxDecoration(
                             gradient: ctx.watch<ThemeProvider>().frostedGlass
-                                ? null : LinearGradient(
-                              colors: [
-                                const Color(
-                                  0xFF6366F1,
-                                ).withValues(alpha: isDark ? 0.25 : 0.12),
-                                const Color(
-                                  0xFF8B5CF6,
-                                ).withValues(alpha: isDark ? 0.18 : 0.08),
-                              ],
-                            ),
+                                ? null
+                                : LinearGradient(
+                                    colors: [
+                                      const Color(
+                                        0xFF6366F1,
+                                      ).withValues(alpha: isDark ? 0.25 : 0.12),
+                                      const Color(
+                                        0xFF8B5CF6,
+                                      ).withValues(alpha: isDark ? 0.18 : 0.08),
+                                    ],
+                                  ),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
                               color: const Color(
@@ -2804,7 +2739,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   ),
                                 ),
                                 confirmDismiss: (_) async {
-                                  return await showDialog<bool>(
+                                  return await showAppDialog<bool>(
                                     context: ctx,
                                     builder: (dialogCtx) => AppAlertDialog(
                                       title: const Text('删除存档'),
@@ -3021,7 +2956,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     CourseScheduleProvider sc,
     StateSetter setSheetState,
   ) async {
-    final shouldProceed = await showDialog<bool>(
+    final shouldProceed = await showAppDialog<bool>(
       context: sheetCtx,
       builder: (dialogCtx) => AppAlertDialog(
         title: const Text('从文件导入'),
@@ -3120,7 +3055,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     CourseScheduleProvider sc,
     StateSetter setSheetState,
   ) {
-    showDialog(
+    showAppDialog(
       context: sheetCtx,
       builder: (dialogCtx) =>
           _SaveArchiveDialog(sc: sc, setSheetState: setSheetState),
@@ -3779,7 +3714,7 @@ $classFilterRule
             .join('、');
 
         // 发现冲突，弹出三选一对话框
-        showDialog(
+        showAppDialog(
           context: context,
           builder: (dialogContext) => AppAlertDialog(
             title: const Text("时间重叠提醒"),
@@ -4511,7 +4446,7 @@ $classFilterRule
   }
 
   Future<void> _confirmDeleteCourse(CourseBlock c) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('删除课程'),

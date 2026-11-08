@@ -197,7 +197,7 @@ class _SubjectRankingDetailScreenState
             ? const Center(child: CircularProgressIndicator())
             : _error != null
                 ? Center(
-                    child: Column(
+                    child: AppContentSurface.card(child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
@@ -213,7 +213,7 @@ class _SubjectRankingDetailScreenState
                           label: const Text('重试'),
                         ),
                       ],
-                    ),
+                    )),
                   )
                 : RefreshIndicator(
                     onRefresh: _loadDetail,
@@ -311,12 +311,12 @@ class _SubjectRankingDetailScreenState
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 48),
                             child: Center(
-                              child: Text(
+                              child: AppContentSurface.reading(child: Text(
                                 '该学科暂无已审核教师',
                                 style: TextStyle(
                                   color: RankingTokens.subColor(isDark),
                                 ),
-                              ),
+                              )),
                             ),
                           )
                         else

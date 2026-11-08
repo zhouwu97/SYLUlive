@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../theme/app_radius.dart';
+import '../theme/app_spacing.dart';
 import '../models/course_evaluation.dart';
 import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/course_evaluation_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/poll_provider.dart';
+import '../providers/social_provider.dart';
+import '../providers/canteen_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/governed_post_image_cache.dart';
 import '../utils/image_decode_size.dart';
@@ -14,17 +18,20 @@ import '../utils/post_route.dart';
 import '../widgets/course/course_evaluation_form_sheet.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/app_cached_image.dart';
+import '../widgets/app_tab_bar_surface.dart';
 import '../widgets/community_post_card.dart';
 import '../widgets/poll/poll_post_card.dart';
 import '../widgets/post_media/post_media_view.dart';
 import '../widgets/global_background_wrapper.dart';
 import 'create_post_screen.dart';
 import 'poll/poll_composer_screen.dart';
+import 'my_canteen_reviews_screen.dart';
+import 'my_canteen_contributions_screen.dart';
 
 /// 我的内容管理页面
-/// 查看并管理自己发布的帖子、评论、集市物品与学科评价，支持多选删除
+/// 查看并管理自己的帖子、集市物品、学科评价与食堂评价。
 class MyContentScreen extends StatefulWidget {
-  /// 初始打开的页签：0 帖子、1 集市、2 学科评价。
+  /// 初始打开的页签：0 帖子、1 集市、2 学科评价、3 食堂评价。
   final int? initialTabIndex;
 
   /// 深链定位的学科评价提交 ID。通知中心按 related_id 打开第三页签并定位。
@@ -52,10 +59,14 @@ class _MyContentScreenState extends State<MyContentScreen>
   String? _errorMessage;
   int _accountSessionEpoch = -1;
   int? _sessionUserId;
+  int _loadRequestSerial = 0;
+  static const int _pageSize = 50;
+  int? _canteenReviewCount;
+  int _canteenCountRequest = 0;
 
   /// 学科评价页签：滚动控制器与深链定位。
   final ScrollController _evaluationScrollController = ScrollController();
-  final Map<int, GlobalKey> _evaluationItemKeys = {};
+  final Map<String, GlobalKey> _evaluationItemKeys = {};
   int? _highlightEvaluationId;
 
   @override
@@ -63,9 +74,9 @@ class _MyContentScreenState extends State<MyContentScreen>
     super.initState();
     final initialIndex = widget.initialTabIndex == null
         ? 0
-        : widget.initialTabIndex!.clamp(0, 2);
+        : widget.initialTabIndex!.clamp(0, 3);
     _tabController =
-        TabController(length: 3, vsync: this, initialIndex: initialIndex);
+        TabController(length: 4, vsync: this, initialIndex: initialIndex);
     _tabController.addListener(_onTabChanged);
     _evaluationScrollController.addListener(_onEvaluationScroll);
     if (widget.focusCourseEvaluationId != null) {
@@ -77,6 +88,10 @@ class _MyContentScreenState extends State<MyContentScreen>
 
   void _onTabChanged() {
     if (_tabController.indexIsChanging) return;
+    if (_tabController.index >= 2) {
+      _isSelectionMode = false;
+      _selectedIds.clear();
+    }
     if (_tabController.index == 2 && mounted) {
       final provider = context.read<CourseEvaluationProvider>();
       if (!provider.isLoadingMine &&
@@ -120,7 +135,7 @@ class _MyContentScreenState extends State<MyContentScreen>
         }
         await Future<void>.delayed(const Duration(milliseconds: 350));
         if (!mounted) return;
-        final key = _evaluationItemKeys[widget.focusCourseEvaluationId];
+        final key = _evaluationItemKeys['submission:${widget.focusCourseEvaluationId}'];
         final itemContext = key?.currentContext;
         if (itemContext != null && itemContext.mounted) {
           await Scrollable.ensureVisible(
@@ -149,6 +164,9 @@ class _MyContentScreenState extends State<MyContentScreen>
     }
 
     _accountSessionEpoch = auth.accountSessionEpoch;
+    _loadRequestSerial++;
+    _canteenCountRequest++;
+    _canteenReviewCount = null;
     _sessionUserId = auth.user?.id;
     _myPosts = [];
     _myMarketPosts = [];
@@ -163,10 +181,9 @@ class _MyContentScreenState extends State<MyContentScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _loadData();
-          // 学科评价数据由 Provider 随账号隔离，此处只需按需重新拉取。
-          if (_tabController.index == 2) {
-            context.read<CourseEvaluationProvider>().loadMine(refresh: true);
-          }
+          // 预先读取数量，切换页签时不改变统计口径。
+          context.read<CourseEvaluationProvider>().loadMine(refresh: true);
+          _loadCanteenReviewCount();
         }
       });
     }
@@ -182,6 +199,11 @@ class _MyContentScreenState extends State<MyContentScreen>
   }
 
   Future<void> _loadData({bool silent = false}) async {
+    if (!mounted) return;
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.user?.id;
+    final requestEpoch = authProvider.accountSessionEpoch;
+    final request = ++_loadRequestSerial;
     if (!silent && mounted) {
       setState(() {
         _isLoading = true;
@@ -189,53 +211,84 @@ class _MyContentScreenState extends State<MyContentScreen>
       });
     }
 
+    if (currentUserId == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+    bool ownsRequest() =>
+        mounted &&
+        request == _loadRequestSerial &&
+        authProvider.accountSessionEpoch == requestEpoch &&
+        authProvider.user?.id == currentUserId &&
+        _sessionUserId == currentUserId;
+
     try {
-      final authProvider = context.read<AuthProvider>();
-      final currentUserId = authProvider.user?.id;
-      final requestEpoch = authProvider.accountSessionEpoch;
-      if (currentUserId == null) {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
-        return;
-      }
-
-      // 直接从 API 获取用户所有帖子，不走 PostProvider 的 board 分页
-      final res = await authProvider.dio.get(
-        '/user/$currentUserId/posts',
-        queryParameters: {'limit': '999'},
-      );
-      final data = res.data is Map ? res.data['data'] : res.data;
-      final allPosts = (data as List)
-          .map((e) => Post.fromJson(e as Map<String, dynamic>))
-          .toList();
-
-      if (!mounted ||
-          authProvider.accountSessionEpoch != requestEpoch ||
-          authProvider.user?.id != currentUserId ||
-          _sessionUserId != currentUserId) {
-        return;
-      }
-
-      // 按 board 拆分
-      if (mounted) {
-        setState(() {
-          _myPosts = allPosts.where((p) => p.boardId != 2).toList();
-          _myMarketPosts = allPosts.where((p) => p.boardId == 2).toList();
-          _isLoading = false;
-          _errorMessage = null;
-        });
-      }
+      final social = context.read<SocialProvider>();
+      // 帖子接口不包含集市，复用个人主页的两条读取路径，并按服务端上限分页。
+      final lists = await Future.wait<List<Post>>([
+        _loadPostPages(
+          (page) => social.getUserPosts(
+            currentUserId,
+            page: page,
+            limit: _pageSize,
+          ),
+          ownsRequest,
+        ),
+        _loadPostPages(
+          (page) async => (await social.getUserMarketPosts(
+            currentUserId,
+            page: page,
+            limit: _pageSize,
+          ))
+              .items,
+          ownsRequest,
+        ),
+      ]);
+      if (!ownsRequest()) return;
+      setState(() {
+        _myPosts = lists[0].where((post) => post.boardId != 2).toList();
+        _myMarketPosts = lists[1];
+        _isLoading = false;
+        _errorMessage = null;
+      });
     } catch (e) {
-      if (mounted) {
+      if (ownsRequest()) {
         setState(() {
           _isLoading = false;
           _errorMessage = '加载失败: $e';
         });
       }
     }
+  }
+
+  Future<List<Post>> _loadPostPages(
+    Future<List<Post>> Function(int page) loadPage,
+    bool Function() ownsRequest,
+  ) async {
+    final posts = <Post>[];
+    for (var page = 1; ownsRequest(); page++) {
+      final items = await loadPage(page);
+      if (!ownsRequest()) return [];
+      posts.addAll(items);
+      if (items.length < _pageSize) break;
+    }
+    return posts;
+  }
+
+  Future<void> _loadCanteenReviewCount() async {
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) return;
+    final epoch = auth.accountSessionEpoch;
+    final request = ++_canteenCountRequest;
+    bool isCurrent() =>
+        mounted &&
+        auth.accountSessionEpoch == epoch &&
+        request == _canteenCountRequest;
+    final count = await context
+        .read<CanteenProvider>()
+        .countMyCanteenReviews(isCurrent: isCurrent);
+    if (isCurrent()) setState(() => _canteenReviewCount = count);
   }
 
   void _toggleSelectionMode() {
@@ -369,13 +422,45 @@ class _MyContentScreenState extends State<MyContentScreen>
     }
   }
 
+  Tab _contentTab(String label, int? count, double height, TextStyle countStyle) {
+    final hasCount = count != null && count > 0;
+    return Tab(
+      height: height,
+      child: Semantics(
+        label: hasCount ? '$label ($count)' : label,
+        excludeSemantics: true,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label, maxLines: 1, softWrap: false),
+            const SizedBox(height: AppSpacing.xs),
+            // 数量尚未返回时保留同一行高度，名称和指示线不随请求完成跳位。
+            Text(hasCount ? '$count' : ' ', style: countStyle),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     _syncSessionScope(authProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final evaluationProvider = context.watch<CourseEvaluationProvider>();
-    final evaluationCount = evaluationProvider.mine.length;
+    final evaluationCount = evaluationProvider.mineTotal;
+    final theme = Theme.of(context);
+    final labelStyle = theme.textTheme.labelLarge!;
+    final countStyle = theme.textTheme.labelSmall!
+        .copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final textScaler = MediaQuery.textScalerOf(context);
+    final tabHeight = (textScaler.scale(labelStyle.fontSize!) *
+                (labelStyle.height ?? 1.2) +
+            textScaler.scale(countStyle.fontSize!) *
+                (countStyle.height ?? 1.2) +
+            AppSpacing.xs +
+            AppSpacing.lg)
+        .ceilToDouble();
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -393,6 +478,14 @@ class _MyContentScreenState extends State<MyContentScreen>
             ? Text('已选择 ${_selectedIds.length} 项')
             : const Text('我的内容'),
         actions: [
+          if (!_isSelectionMode &&
+              _tabController.index == 3 &&
+              authProvider.isLoggedIn)
+            IconButton(
+                tooltip: '我的食堂贡献',
+                icon: const Icon(Icons.inventory_2_outlined),
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const MyCanteenContributionsScreen()))),
           if (_isSelectionMode && _selectedIds.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.delete_outline, color: Colors.red),
@@ -407,58 +500,55 @@ class _MyContentScreenState extends State<MyContentScreen>
             child: Column(
               children: [
                 // Tab栏
-                Container(
+                AppTabBarSurface(
                   margin: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.sm,
                   ),
                   decoration: BoxDecoration(
                     color: isDark
                         ? Colors.white.withValues(alpha: 0.08)
                         : Colors.white.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(AppRadius.lg),
                   ),
                   child: TabBar(
                     controller: _tabController,
+                    isScrollable: false,
+                    tabAlignment: TabAlignment.fill,
+                    labelPadding:
+                        const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
                     indicatorColor: Theme.of(context).primaryColor,
                     indicatorWeight: 3,
-                    labelStyle: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-                    unselectedLabelStyle: const TextStyle(fontSize: 12),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    indicatorPadding:
+                        const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                    labelStyle: labelStyle.copyWith(fontWeight: FontWeight.w600),
+                    unselectedLabelStyle: labelStyle,
                     dividerColor: Colors.transparent,
                     tabs: [
-                      Tab(
-                        text:
-                            '我的帖子${_myPosts.isEmpty ? '' : ' (${_myPosts.length})'}',
-                      ),
-                      Tab(
-                        text:
-                            '我的集市${_myMarketPosts.isEmpty ? '' : ' (${_myMarketPosts.length})'}',
-                      ),
-                      Tab(
-                        text:
-                            '学科评价${evaluationCount == 0 ? '' : ' ($evaluationCount)'}',
-                      ),
+                      _contentTab(
+                          '我的帖子', _myPosts.length, tabHeight, countStyle),
+                      _contentTab(
+                          '我的集市', _myMarketPosts.length, tabHeight, countStyle),
+                      _contentTab('学科评价', evaluationCount, tabHeight, countStyle),
+                      _contentTab('食堂评价', _canteenReviewCount, tabHeight, countStyle),
                     ],
                   ),
                 ),
 
                 // Tab内容
                 Expanded(
-                  child: _isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : _errorMessage != null
-                          ? _buildErrorView(isDark)
-                          : TabBarView(
-                              controller: _tabController,
-                              children: [
-                                _buildPostsList(_myPosts, isDark),
-                                _buildMarketList(_myMarketPosts, isDark),
-                                _buildCourseEvaluationList(isDark),
-                              ],
-                            ),
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildPostTab(isDark, market: false),
+                      _buildPostTab(isDark, market: true),
+                      _buildCourseEvaluationList(isDark),
+                      MyCanteenReviewsScreen(
+                          embedded: true,
+                          onReviewsChanged: _loadCanteenReviewCount),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -507,6 +597,14 @@ class _MyContentScreenState extends State<MyContentScreen>
         ),
       ),
     );
+  }
+
+  Widget _buildPostTab(bool isDark, {required bool market}) {
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    if (_errorMessage != null) return _buildErrorView(isDark);
+    return market
+        ? _buildMarketList(_myMarketPosts, isDark)
+        : _buildPostsList(_myPosts, isDark);
   }
 
   // ---- 帖子列表 ----
@@ -951,13 +1049,16 @@ class _MyContentScreenState extends State<MyContentScreen>
     bool isDark,
   ) {
     final isHighlighted = submission.id == _highlightEvaluationId;
-    final statusColor = switch (submission.status) {
+    final isRestricted = submission.teacherRatingStatus.isNotEmpty && submission.teacherRatingStatus != 'normal';
+    final statusColor = isRestricted ? Colors.orange : switch (submission.status) {
       CourseEvaluationStatus.published => Colors.green,
       CourseEvaluationStatus.needsEdit => Colors.orange,
       CourseEvaluationStatus.pending => Colors.blue,
       CourseEvaluationStatus.superseded => Colors.grey,
     };
-    final statusLabel = switch (submission.status) {
+    final statusLabel = isRestricted
+        ? '已被限制展示'
+        : switch (submission.status) {
       CourseEvaluationStatus.published => '已发布',
       CourseEvaluationStatus.needsEdit => '需修改',
       CourseEvaluationStatus.pending => '待审核',
@@ -966,7 +1067,7 @@ class _MyContentScreenState extends State<MyContentScreen>
     final subColor = isDark ? Colors.white60 : Colors.grey[600];
 
     final itemKey = _evaluationItemKeys.putIfAbsent(
-      submission.id,
+      submission.recordKey,
       () => GlobalKey(),
     );
 

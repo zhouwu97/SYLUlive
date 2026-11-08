@@ -1,3 +1,4 @@
+import '../widgets/app_page_background.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +9,7 @@ import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
 import '../widgets/global_background_wrapper.dart';
 import 'post_detail_screen.dart';
+import '../widgets/app_card.dart';
 
 class TeacherRatingScreen extends StatefulWidget {
   const TeacherRatingScreen({super.key});
@@ -59,7 +61,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   Future<void> _addTeacher() async {
     final nameCtrl = TextEditingController();
     final deptCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -129,7 +131,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
 
   Future<void> _rateTeacher(dynamic teacher) async {
     final commentCtrl = TextEditingController();
-    final rating = await showDialog<String>(
+    final rating = await showAppDialog<String>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -175,7 +177,10 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      AppPageBackground(builder: _buildPageWithBackground);
+
+  Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -248,7 +253,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   }
 
   Widget _buildWarningBanner(bool isDark) {
-    return Container(
+    return AppCardSurface(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(

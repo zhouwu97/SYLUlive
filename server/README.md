@@ -11,13 +11,17 @@ server/ 是沈理校园的 Go 后端，负责 App 账号、社区、竞赛、通
 
 ## AstrBot 个人授权插件
 
+逐账号后台运行由常驻 AstrBot 执行，Go 使用 `managed_bots.revision/runtime_json` 保存规则版本和最新非正文状态。`/api/connected-apps/bot/runtime` 只返回本人状态，集成心跳 `/api/integrations/v1/bot/runtime` 只接受有效绑定及公开阅读授权；执行占用与策略版本在发布事务中再次校验。新列为兼容新增，旧 bot 默认不获得写权限；接口与迁移／回滚顺序见 [API](API.md) 和[运维入口](../docs/ops/astrbot-integrations.md)。
+
 新增集成以 AstrBot 为主助手，Go 提供限定 scope 的公开社区读取、草稿、本人确认发布与撤销。无需打开 Go AI 模型或 MCP 开关。安装、配置、准入限制与真实联调状态以 [插件 README](../astrbot_plugin_sylulive/README.md) 为入口。
 
-`INTEGRATIONS_ENABLED`、`INTEGRATION_PROPOSALS_ENABLED`、`INTEGRATION_OWNER_PUBLISH_ENABLED` 默认全关；后两项依次依赖前项。启用时必须配置 `INTEGRATION_PUBLIC_ORIGIN` 为官网 HTTPS origin（本地开发允许回环 HTTP）；该地址与插件 `server_origin` 保持一致。新增设备请求、授权、凭证摘要、草稿、审计与限流表及内容来源列；迁移需使用原有备份/发布流程，不能先开生产开关再补验收。
+`INTEGRATIONS_ENABLED`、`INTEGRATION_PROPOSALS_ENABLED`、`INTEGRATION_OWNER_PUBLISH_ENABLED` 默认全关；独立机器人自动评论开关 `INTEGRATION_AUTO_REPLY_ENABLED` 默认关闭，依赖集成及提案开关，采用新 `community:bot_reply` scope，不自动扩展旧授权。新增 `managed_bots` 表，App/Web 本人管理一个独立 bot 用户；创建/启用需近期认证，暂停无需近期认证。后两项依次依赖前项。启用时必须配置 `INTEGRATION_PUBLIC_ORIGIN` 为官网 HTTPS origin（本地开发允许回环 HTTP）；该地址与插件 `server_origin` 保持一致。新增设备请求、授权、凭证摘要、草稿、审计与限流表及内容来源列；迁移需使用原有备份/发布流程，不能先开生产开关再补验收。
 
-官方网页入口 `/web/connected-apps`；授权与发布需10分钟内真实登录。助手授权独立于 App 登录设备；QQ 平台实例和发送者白名单由插件本地检查，不作为后端身份。教务资格、scope、用户状态及内容源版本由后端当前数据复核。正常 App 的发帖/评论仍使用原规则，助手复用核心额度与评论统计事务。
+官方网页入口 `/web/connected-apps`；查看连接请求、预览本人草稿、拒绝及撤销使用当前 App 登录即可；批准新授权、创建／编辑／启用机器人及确认发布需30分钟内真实登录或当前会话密码验证。一次验证在同一会话内跨步骤复用，不保存密码。`POST /api/auth/reauthenticate` 只校验当前登录用户的密码与预期账号，更新当前刷新会话族的近期认证；不新建登录、不更换Cookie、不延长令牌、不影响其他设备。失败限流和成功审计沿用现有安全设施，密码和令牌不进入日志。助手授权独立于 App 登录设备；QQ 平台实例和发送者白名单由插件本地检查，不作为后端身份。教务资格、scope、用户状态及内容源版本由后端当前数据复核。正常 App 的发帖/评论仍使用原规则，助手复用核心额度与评论统计事务。
 
 ## 本地运行
+
+机器人管理通过 App/Web 共用的 `/api/connected-apps/bot` 新建暂停账号、编辑名字和本人公开头像、保存社区阅读／文字评论／内置表情权限以及板块、屏蔽词、链接和限频规则。规则存入兼容新增列 `managed_bots.policy_json`，旧记录默认只读；认证 Reader 和最终发布事务均执行当前规则。公开作者仅显示服务端确认的AI标记及创建者公开ID／昵称。App内也能完成设备代码核对和scope授权，不必跳网页。详细契约及部署顺序见 [API](API.md) 和 [集成运维入口](../docs/ops/astrbot-integrations.md)。
 
 准备 PostgreSQL 和环境变量后：
 
@@ -63,6 +67,8 @@ go run ./cmd
 
 迁移由服务端启动流程和仓库迁移脚本共同维护。生产执行前先备份 PostgreSQL，并在独立环境验证升级、回滚和安全表清理。不要直接修改生产表结构绕过迁移。
 
+资料“获赞”按当前有效点赞事实查询，与“收到的赞”明细保持同一口径，见 [API](API.md#6-消息与通知-messages)。用户/关联作者批量查询共用一次汇总；点赞表启动迁移增加 `idx_like_target(target_type,target_id)`，原唯一索引保留。数据库 `users.total_likes_received` 只保留兼容写入和校准快照，历史错值不影响新版接口。旧校准命令现在默认只预览，显式连接与写入步骤见 [运维入口](../docs/ops/backend.md#获赞兼容快照校准)。
+
 签到补签卡规则见 [用户接口说明](API.md#2-用户与个人中心-user)。迁移 `20261025_04_checkin_makeup_card_schedule` 在启动时按历史签到事实重建「每段连续签到第 7 天首张、之后每隔 14 天再发一张」的汇总，保留额外发放数量并按补签事实保留已使用数量，不修改用户经验或经验流水。若旧规则或补签合并前已经发放的奖励多于重建结果，差额转入 `makeup_cards_granted` 保留，后续重建不重复补发。整批重建与迁移标记在同一事务内，可失败重试；也兼容已存在 `20261025_03_checkin_weekly_makeup_cards` 标记的数据。升级期间应停止旧版实例写入签到；回退旧版前应同步恢复备份中的签到事实和汇总，避免旧版周期与新版余额混用。
 
 ## 测试
@@ -77,6 +83,18 @@ go build ./...
 
 ## 接口文档
 
+表情包投稿使用新增的 `community_emoji_packs` / `community_emoji_pack_assets` 表和现有上传卷内的私有 `.emoji-submissions` 目录；启动 AutoMigrate 创建新表，维护任务清理过期孤儿目录。不得把该目录单独暴露为静态文件。配套接口、审核和额度见 [API](API.md#表情包导入投稿与审核)，备份、验证和回退见 [运维说明](../docs/ops/emoji-packs.md)。
+
+免费商城增加 `emoji_creators` 独立创作者申请/权限表及作品版本、封面、图标、公开标签等兼容列。新投稿在入口及提交事务复核 active 权限，管理员通过新作品时再次复核；历史投稿不自动赋予作者权限。派生图片继续存于私有上传子目录，经过授权接口读取，不改变旧 Manifest Hash。版本与发布门禁见 [实施方案](../docs/design/emoji-creator-store-plan.md)。
+
 - [API 总览与路由状态](./API.md)
 - [仓库部署总入口](../DEPLOY.md)
 - [隐私数据台账](../docs/privacy-data-inventory.md)
+
+## 教务绑定自动登记
+
+原客户端绑定链路通过 `/api/student-identity/verify-session` 临时使用学校会话核对真实学号，仍受既有身份写入开关约束。配置／本机声明不直接授予资格；最终事务复核配置版本、账号、协议和在途尝试，解绑同时撤销匹配配置。完整契约与失败恢复见 [API 教务章节](API.md#3-教务系统-edu)。需同时部署 Python 内部核验接口，不批量手填可信身份。
+
+## 食堂展示标签
+
+管理员在食堂运营中设置位置和展示标签。手动标签保存在 `canteens.display_tags`（可空文本列），NULL 使用评价自动汇总，JSON 空数组隐藏展示标签；原始评价不变。服务启动的 AutoMigrate 添加该向后兼容列；旧数据默认为 NULL。回退代码会忽略手动标签并继续自动汇总，保留该列可在重新升级后恢复设置。发布前在隔离数据库验证升级、权限、榜单缓存和回退，生产迁移遵循备份与部署流程。

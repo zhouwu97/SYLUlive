@@ -35,33 +35,91 @@ void main() {
     return h;
   }
 
-  AcademicLoginCoordinator withIdentity(_Harness h, Dio api) =>
-      AcademicLoginCoordinator(
-          controller: h.session,
-          identityClient: AcademicIdentityClient(api),
-          credentialStore: h.credentials,
-          silentCaptcha: false,
-          preferencesLoader: () async => h.preferences);
+  Future<ProviderSessionArtifact?> proof(_Harness h) async {
+    final identity = h.session.identity;
+    if (identity == null || !h.session.isAuthenticated) return null;
+    return ProviderSessionArtifact(
+        providerId: identity.providerId,
+        studentId: identity.studentId,
+        artifactVersion: 1,
+        createdAt: DateTime.now(),
+        validatedAt: DateTime.now(),
+        opaqueProviderState: {
+          'cookies': ['SID=session-fixture'],
+          'session_path_prefix': ''
+        });
+  }
+
+  void configurationApi(_Harness h) {
+    final configs = <String, Map<String, dynamic>>{};
+    h.dio.interceptors.clear();
+    h.dio.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+      if (r.method == 'GET') {
+        handler.resolve(Response(
+            requestOptions: r,
+            statusCode: 200,
+            data: {'configs': configs.values.toList()}));
+      } else {
+        final id = r.path.split('/').last;
+        final config = {
+          'provider_id': id,
+          'student_id': r.data['student_id'],
+          'state': 'active',
+          'revision': (configs[id]?['revision'] as int? ?? 0) + 1
+        };
+        configs[id] = config;
+        handler.resolve(Response(
+            requestOptions: r, statusCode: 200, data: {'config': config}));
+      }
+    }));
+  }
+
+  AcademicLoginCoordinator withIdentity(_Harness h, Dio api) {
+    configurationApi(h);
+    return AcademicLoginCoordinator(
+        controller: h.session,
+        identityClient: AcademicIdentityClient(api),
+        sessionExporter: () => proof(h),
+        credentialStore: h.credentials,
+        silentCaptcha: false,
+        preferencesLoader: () async => h.preferences);
+  }
+
+  Map<String, Object?> receipt(AcademicProviderId provider) => {
+        'verified': true,
+        'assurance_level': 'school_verified',
+        'verification_method': 'school_profile',
+        'provider_id': provider.value,
+        'student_id': 'A'
+      };
 
   for (final provider in AcademicProviderId.values) {
-    test('本机登录成功后仅上报学号和类型，不访问服务器学校验证：${provider.value}', () async {
+    test('原入口本机登录成功后自动核验并登记，不上传密码：${provider.value}', () async {
       final h = await setup();
       final calls = <RequestOptions>[];
       final api = Dio();
       api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
         expect(h.session.isAuthenticated, true);
         calls.add(r);
-        expect(r.path, '/student-identity/bind');
+        if (r.method == 'GET') {
+          expect(r.path, '/student-identity');
+          handler.resolve(Response(
+              requestOptions: r, statusCode: 200, data: {'identities': []}));
+          return;
+        }
+        expect(r.path, '/student-identity/verify-session');
         expect(r.data, {
           'provider_id': provider.value,
           'student_id': 'A',
-          'verification_method': 'local_academic_login'
+          'school_session': {
+            'cookies': ['SID=session-fixture'],
+            if (provider == AcademicProviderId.syluGraduate)
+              'session_path_prefix': ''
+          }
         });
-        handler.resolve(Response(requestOptions: r, statusCode: 200, data: {
-          'verified': false, 'assurance_level': 'local_declaration', 'verification_method': 'local_academic_login',
-          'provider_id': provider.value,
-          'student_id': 'A'
-        }));
+        expect(jsonEncode(r.data), isNot(contains('password-secret')));
+        handler.resolve(Response(
+            requestOptions: r, statusCode: 200, data: receipt(provider)));
       }));
       final coordinator = withIdentity(h, api);
       var result = await coordinator.login(
@@ -76,11 +134,160 @@ void main() {
         result = await coordinator.continueLoginWithCaptcha(code: '1234');
       }
       expect(result.isSuccess, true);
-      expect(calls.length, 1);
+      expect(calls.length, 2);
       expect((await coordinator.ensureAuthenticated()).isSuccess, true);
-      expect(calls.length, 1);
+      expect(calls.length, 2);
     });
   }
+
+  for (final oldState in ['declared', 'bound', 'verified']) {
+    test('本机旧标记 $oldState 不能掩盖服务器缺失，自动补交', () async {
+      final h = await setup();
+      await h.coordinator.login(
+          studentId: 'A',
+          password: 'fixture',
+          providerId: AcademicProviderId.syluUndergraduate,
+          saveCredentials: false,
+          saveAcademicData: false);
+      await AcademicConnectionStore(h.session.identity!, h.preferences)
+          .setBindingSyncState(oldState);
+      final requests = <RequestOptions>[];
+      final api = Dio()
+        ..interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+          requests.add(r);
+          handler.resolve(Response(
+              requestOptions: r,
+              statusCode: 200,
+              data: r.method == 'GET'
+                  ? {'identities': []}
+                  : receipt(AcademicProviderId.syluUndergraduate)));
+        }));
+      final coordinator = withIdentity(h, api);
+      addTearDown(coordinator.dispose);
+      expect(await coordinator.synchronizeIdentityBinding(), isNull);
+      expect(requests.map((r) => r.method), ['GET', 'POST']);
+      expect(await coordinator.bindingSyncState(), 'verified');
+    });
+  }
+
+  test('已有服务器身份不重复发送学校会话，记录后来缺失仍会补交', () async {
+    final h = await setup();
+    var existing = true;
+    final requests = <RequestOptions>[];
+    final api = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+        requests.add(r);
+        handler.resolve(Response(
+            requestOptions: r,
+            statusCode: 200,
+            data: r.method == 'GET'
+                ? {
+                    'identities': [
+                      if (existing)
+                        receipt(AcademicProviderId.syluUndergraduate)
+                    ]
+                  }
+                : receipt(AcademicProviderId.syluUndergraduate)));
+      }));
+    final coordinator = withIdentity(h, api);
+    addTearDown(coordinator.dispose);
+    await coordinator.login(
+        studentId: 'A',
+        password: 'fixture',
+        providerId: AcademicProviderId.syluUndergraduate,
+        saveCredentials: false,
+        saveAcademicData: false);
+    expect(requests.map((r) => r.method), ['GET']);
+    existing = false;
+    await coordinator.synchronizeIdentityBinding();
+    expect(requests.map((r) => r.method), ['GET', 'GET', 'POST']);
+    expect(await coordinator.bindingSyncState(), 'verified');
+  });
+
+  test('配置已在云端解绑时不发送旧学校会话补交', () async {
+    final h = await setup();
+    var existing = true;
+    final api = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+        expect(r.method, 'GET');
+        handler.resolve(Response(requestOptions: r, statusCode: 200, data: {
+          'identities': [
+            if (existing) receipt(AcademicProviderId.syluUndergraduate)
+          ]
+        }));
+      }));
+    final coordinator = withIdentity(h, api);
+    addTearDown(coordinator.dispose);
+    await coordinator.login(
+        studentId: 'A',
+        password: 'fixture',
+        providerId: AcademicProviderId.syluUndergraduate,
+        saveCredentials: false,
+        saveAcademicData: false);
+    // 恢复一个带云端删除墓碑的快照，代表其他设备已经解绑。
+    h.dio.interceptors.clear();
+    h.dio.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+      handler.resolve(Response(requestOptions: r, statusCode: 200, data: {
+        'configs': [
+          {
+            'provider_id': 'sylu_undergraduate',
+            'student_id': '',
+            'state': 'deleted',
+            'revision': 20
+          }
+        ]
+      }));
+    }));
+    existing = false;
+    await AcademicConnectionStore(h.session.identity!, h.preferences)
+        .setBindingSyncState('declared');
+    expect(await coordinator.synchronizeIdentityBinding(), contains('配置已变更'));
+  });
+
+  test('云端已经是当前学号时，旧配置队列冲突不阻止独立的学校核验', () async {
+    final h = await setup();
+    await h.coordinator.login(
+        studentId: 'A',
+        password: 'fixture',
+        providerId: AcademicProviderId.syluUndergraduate,
+        saveCredentials: false,
+        saveAcademicData: false);
+    final api = Dio();
+    final requests = <RequestOptions>[];
+    api.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+      requests.add(request);
+      handler.resolve(Response(
+          requestOptions: request,
+          statusCode: 200,
+          data: request.method == 'GET'
+              ? {'identities': []}
+              : receipt(AcademicProviderId.syluUndergraduate)));
+    }));
+    final coordinator = withIdentity(h, api);
+    addTearDown(coordinator.dispose);
+    final snapshot = {
+      'provider_id': 'sylu_undergraduate',
+      'student_id': 'A',
+      'state': 'active',
+      'revision': 3
+    };
+    await h.router.accountStore!.update((state) {
+      final entry = state['sylu_undergraduate'] as Map;
+      entry['snapshot'] = snapshot;
+      entry['conflict'] = true;
+      entry['outbox'] = [];
+    });
+    h.dio.interceptors.clear();
+    h.dio.interceptors.add(InterceptorsWrapper(onRequest: (request, handler) {
+      expect(request.method, 'GET');
+      handler.resolve(Response(requestOptions: request, statusCode: 200, data: {
+        'configs': [snapshot]
+      }));
+    }));
+    expect(await coordinator.synchronizeIdentityBinding(), isNull);
+    expect(requests.map((request) => request.method), ['GET', 'POST']);
+    expect(await coordinator.bindingSyncState(), 'verified');
+  });
 
   test('学校拒绝密码时不会向 HK 上报学生绑定', () async {
     final h = await setup();
@@ -131,17 +338,19 @@ void main() {
         if (calls == 1) {
           handler.reject(DioException(
               requestOptions: r, type: DioExceptionType.connectionError));
+        } else if (r.method == 'GET') {
+          handler.resolve(Response(
+              requestOptions: r, statusCode: 200, data: {'identities': []}));
         } else {
-          handler.resolve(Response(requestOptions: r, statusCode: 200, data: {
-            'verified': false, 'assurance_level': 'local_declaration', 'verification_method': 'local_academic_login',
-            'provider_id': provider.value,
-            'student_id': 'A',
-          }));
+          handler.resolve(Response(
+              requestOptions: r, statusCode: 200, data: receipt(provider)));
         }
       }));
+      configurationApi(h);
       final coordinator = AcademicLoginCoordinator(
         controller: h.session,
         identityClient: AcademicIdentityClient(api),
+        sessionExporter: () => proof(h),
         credentialStore: h.credentials,
         silentCaptcha: false,
         preferencesLoader: () async => h.preferences,
@@ -160,16 +369,79 @@ void main() {
       expect(await coordinator.bindingSyncState(), 'pending');
       await Future.doWhile(() async {
         await Future<void>.delayed(const Duration(milliseconds: 5));
-        return await coordinator.bindingSyncState() != 'declared';
+        return await coordinator.bindingSyncState() != 'verified';
       }).timeout(const Duration(seconds: 2));
-      expect(calls, 2);
+      expect(calls, 3);
       expect(h.session.isAuthenticated, true);
       expect(
           await h.credentials.readForIdentity(h.session.identity!), isNotNull);
     });
   }
 
-  test('重启后恢复待同步声明，无学校 Session 或密码仍可补发', () async {
+  for (final provider in AcademicProviderId.values) {
+    test('重试计时器提前唤醒仍会补交身份：${provider.value}', () async {
+      final h = await setup();
+      var calls = 0;
+      var wokeEarly = false;
+      final api = Dio();
+      addTearDown(() => api.close(force: true));
+      api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+        calls++;
+        if (calls == 1) {
+          handler.reject(DioException(
+              requestOptions: r, type: DioExceptionType.connectionError));
+        } else {
+          handler.resolve(Response(
+              requestOptions: r,
+              statusCode: 200,
+              data:
+                  r.method == 'GET' ? {'identities': []} : receipt(provider)));
+        }
+      }));
+      configurationApi(h);
+      final coordinator = AcademicLoginCoordinator(
+        controller: h.session,
+        identityClient: AcademicIdentityClient(api),
+        sessionExporter: () => proof(h),
+        credentialStore: h.credentials,
+        silentCaptcha: false,
+        preferencesLoader: () async => h.preferences,
+        bindingRetryDelay: const Duration(milliseconds: 100),
+      );
+      addTearDown(coordinator.dispose);
+      await runZoned(() async {
+        var result = await coordinator.login(
+            studentId: 'A',
+            password: 'fixture',
+            providerId: provider,
+            saveCredentials: true,
+            saveAcademicData: false);
+        if (result.needsCaptcha) {
+          result = await coordinator.continueLoginWithCaptcha(code: '1234');
+        }
+        expect(result.isSuccess, true);
+        await Future.doWhile(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+          return await coordinator.bindingSyncState() != 'verified';
+        }).timeout(const Duration(seconds: 2));
+      }, zoneSpecification: ZoneSpecification(
+          createTimer: (self, parent, zone, duration, callback) {
+        // 模拟 VM 毫秒粒度导致的提前唤醒，只改变首个后台重试计时器。
+        if (!wokeEarly &&
+            duration > const Duration(milliseconds: 50) &&
+            duration <= const Duration(milliseconds: 100)) {
+          wokeEarly = true;
+          return parent.createTimer(zone, Duration.zero, callback);
+        }
+        return parent.createTimer(zone, duration, callback);
+      }));
+      expect(wokeEarly, true);
+      expect(calls, 3);
+      expect(h.session.isAuthenticated, true);
+    });
+  }
+
+  test('重启后缺少学校会话时只查询记录，不伪造补交', () async {
     final h = await setup();
     final offline = Dio();
     offline.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
@@ -192,16 +464,13 @@ void main() {
     var calls = 0;
     online.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
       calls++;
-      handler.resolve(Response(requestOptions: r, statusCode: 200, data: {
-        'verified': false, 'assurance_level': 'local_declaration', 'verification_method': 'local_academic_login',
-        'provider_id': 'sylu_undergraduate',
-        'student_id': 'A',
-      }));
+      handler.resolve(Response(
+          requestOptions: r, statusCode: 200, data: {'identities': []}));
     }));
     final restored = withIdentity(restarted, online);
     await restored.warmUp();
     expect(calls, 1);
-    expect(await restored.bindingSyncState(), 'declared');
+    expect(await restored.bindingSyncState(), 'pending');
     expect(restarted.session.isAuthenticated, false);
     expect(restarted.sources.fold(0, (n, source) => n + source.logins), 0);
   });
@@ -212,6 +481,11 @@ void main() {
     var calls = 0;
     api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
       calls++;
+      if (r.method == 'GET') {
+        handler.resolve(Response(
+            requestOptions: r, statusCode: 200, data: {'identities': []}));
+        return;
+      }
       // 旧式回执：自称 verified=true。这是契约错误，重试不会变好。
       handler.resolve(Response(requestOptions: r, statusCode: 200, data: {
         'verified': true,
@@ -219,9 +493,11 @@ void main() {
         'student_id': 'A',
       }));
     }));
+    configurationApi(h);
     final coordinator = AcademicLoginCoordinator(
       controller: h.session,
       identityClient: AcademicIdentityClient(api),
+      sessionExporter: () => proof(h),
       credentialStore: h.credentials,
       silentCaptcha: false,
       preferencesLoader: () async => h.preferences,
@@ -239,7 +515,47 @@ void main() {
     expect(await coordinator.bindingSyncState(), 'rejected');
     await Future<void>.delayed(const Duration(milliseconds: 80));
     // 定时器不再排：契约错误被当成临时故障重试，只会反复打扰用户。
-    expect(calls, 1);
+    expect(calls, 2);
+  });
+
+  test('身份登记被拒后手动重新连接可重新核验，不沿用旧错误', () async {
+    final h = await setup();
+    final api = Dio();
+    addTearDown(() => api.close(force: true));
+    var rejected = true;
+    var verifications = 0;
+    api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+      if (r.method == 'GET') {
+        handler.resolve(Response(
+            requestOptions: r, statusCode: 200, data: {'identities': []}));
+        return;
+      }
+      verifications++;
+      handler.resolve(Response(
+          requestOptions: r,
+          statusCode: rejected ? 409 : 200,
+          data: rejected
+              ? {'code': 'ACADEMIC_BINDING_CHANGED'}
+              : receipt(AcademicProviderId.syluUndergraduate)));
+    }));
+    final coordinator = withIdentity(h, api);
+    addTearDown(coordinator.dispose);
+    Future<AcademicLoginOutcome> reconnect() => coordinator.login(
+        studentId: 'A',
+        password: 'fixture',
+        providerId: AcademicProviderId.syluUndergraduate,
+        saveCredentials: true,
+        saveAcademicData: false);
+    expect((await reconnect()).isSuccess, true);
+    expect(await coordinator.bindingSyncState(), 'rejected');
+    expect(verifications, 1);
+
+    rejected = false;
+    final result = await reconnect();
+    expect(result.isSuccess, true);
+    expect(result.message ?? '', isNot(contains('已停止自动重试')));
+    expect(verifications, 2);
+    expect(await coordinator.bindingSyncState(), 'verified');
   });
 
   test('账号受限时同样停止自动重试', () async {
@@ -248,8 +564,10 @@ void main() {
     var calls = 0;
     api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
       calls++;
-      handler.resolve(
-          Response(requestOptions: r, statusCode: 403, data: {'code': 'ACCOUNT_RESTRICTED'}));
+      handler.resolve(Response(
+          requestOptions: r,
+          statusCode: 403,
+          data: {'code': 'ACCOUNT_RESTRICTED'}));
     }));
     final coordinator = AcademicLoginCoordinator(
       controller: h.session,
@@ -268,6 +586,52 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 80));
     expect(calls, 1);
     expect(await coordinator.bindingSyncState(), 'rejected');
+  });
+
+  test('限流计时器提前唤醒时继续等待，不绕过十分钟冷却', () async {
+    final h = await setup();
+    final api = Dio();
+    addTearDown(() => api.close(force: true));
+    var calls = 0;
+    final callbacks = <void Function()>[];
+    final delays = <Duration>[];
+    api.interceptors.add(InterceptorsWrapper(onRequest: (r, handler) {
+      calls++;
+      handler.resolve(Response(
+          requestOptions: r, statusCode: 429, data: {'code': 'RATE_LIMITED'}));
+    }));
+    final coordinator = AcademicLoginCoordinator(
+      controller: h.session,
+      identityClient: AcademicIdentityClient(api),
+      credentialStore: h.credentials,
+      preferencesLoader: () async => h.preferences,
+    );
+    addTearDown(coordinator.dispose);
+    await runZoned(() async {
+      final result = await coordinator.login(
+          studentId: 'A',
+          password: 'fixture',
+          providerId: AcademicProviderId.syluUndergraduate,
+          saveCredentials: true,
+          saveAcademicData: false);
+      expect(result.isSuccess, true);
+      expect(calls, 1);
+      expect(callbacks, hasLength(1));
+      callbacks.removeAt(0)();
+      expect(callbacks, hasLength(1));
+      expect(delays, hasLength(2));
+      expect(delays.every((delay) => delay > const Duration(minutes: 9)), true);
+      expect(await coordinator.bindingSyncState(), 'pending');
+      expect(calls, 1);
+    }, zoneSpecification: ZoneSpecification(
+        createTimer: (self, parent, zone, duration, callback) {
+      if (duration > const Duration(minutes: 1)) {
+        delays.add(duration);
+        callbacks.add(callback);
+        return parent.createTimer(zone, Duration.zero, () {});
+      }
+      return parent.createTimer(zone, duration, callback);
+    }));
   });
 
   for (final action in ['disconnect', 'switch-user', 'dispose']) {

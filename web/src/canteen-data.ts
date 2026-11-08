@@ -1,5 +1,11 @@
 import type {Entity} from './api';
 
+/** 评分统一保留一位小数；服务端的加权平均会带浮点尾数（如 4.000000000000001）。 */
+export function formatScore(value:unknown):string{
+  const n=Number(value);
+  return Number.isFinite(n)&&n>0?n.toFixed(1):'—';
+}
+
 export function stringList(value:unknown):string[]{
   const list=typeof value==='string'?JSON.parse(value||'[]'):value;
   return Array.isArray(list)?list.filter((item):item is string=>typeof item==='string'):[];

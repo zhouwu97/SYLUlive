@@ -23,14 +23,23 @@ func TestCanteenRatingMigrationIntegration(t *testing.T) {
 		t.Fatalf("open database: %v", err)
 	}
 
+	// 公共迁移同时维护教师、专业、举报和食堂索引，空库也必须提供完整前置表。
+	if err := db.AutoMigrate(&User{}, &Teacher{}, &TeacherRating{}, &Major{}, &MajorRating{}, &Report{}, &Canteen{}, &CanteenRating{}, &CanteenRatingVote{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
 	// 隔离测试数据：清空目标表
 	db.Exec("DELETE FROM canteen_rating_votes")
 	db.Exec("DELETE FROM canteen_ratings")
 	db.Exec("DELETE FROM canteens")
 	db.Exec("DROP INDEX IF EXISTS uq_canteen_rating_user")
 
-	if err := db.AutoMigrate(&Canteen{}, &CanteenRating{}, &CanteenRatingVote{}); err != nil {
-		t.Fatalf("migrate: %v", err)
+	// 真实 PostgreSQL 会校验评分作者外键；夹具不能依赖其他测试留下用户。
+	for _, userID := range []uint{1, 2, 3} {
+		user := User{ID: userID, Nickname: "迁移合成用户", Role: RoleUser, AccountStatus: "active"}
+		if err := db.FirstOrCreate(&user, User{ID: userID}).Error; err != nil {
+			t.Fatalf("create fixture user %d: %v", userID, err)
+		}
 	}
 
 	canteen := Canteen{Name: "迁移测试食堂", Image: "/uploads/x.png", Verified: true}
@@ -40,10 +49,10 @@ func TestCanteenRatingMigrationIntegration(t *testing.T) {
 
 	// 构造重复评分：用户 1 两条，用户 2 两条（其中一条与用户 1 投票重叠）
 	now := time.Now()
-	r1 := CanteenRating{CanteenID: canteen.ID, UserID: 1, Star: 5, Comment: "new", CreatedAt: now.Add(time.Hour)}
-	r1old := CanteenRating{CanteenID: canteen.ID, UserID: 1, Star: 1, Comment: "old", CreatedAt: now}
-	r2 := CanteenRating{CanteenID: canteen.ID, UserID: 2, Star: 4, CreatedAt: now.Add(2 * time.Hour)}
-	r2old := CanteenRating{CanteenID: canteen.ID, UserID: 2, Star: 2, CreatedAt: now.Add(time.Minute)}
+	r1 := CanteenRating{CanteenID: canteen.ID, UserID: 1, Star: 5, Comment: "new", CreatedAt: now.Add(time.Hour), UpdatedAt: now.Add(time.Hour)}
+	r1old := CanteenRating{CanteenID: canteen.ID, UserID: 1, Star: 1, Comment: "old", CreatedAt: now, UpdatedAt: now}
+	r2 := CanteenRating{CanteenID: canteen.ID, UserID: 2, Star: 4, CreatedAt: now.Add(2 * time.Hour), UpdatedAt: now.Add(2 * time.Hour)}
+	r2old := CanteenRating{CanteenID: canteen.ID, UserID: 2, Star: 2, CreatedAt: now.Add(time.Minute), UpdatedAt: now.Add(time.Minute)}
 	if err := db.Create(&r1).Error; err != nil {
 		t.Fatalf("create r1: %v", err)
 	}
@@ -132,8 +141,8 @@ func TestCanteenRatingMigrationIntegration(t *testing.T) {
 
 // models2Rating 用于从 CanteenRating 查询最小字段（避免与 models 包内同名冲突）。
 type models2Rating struct {
-	ID        uint
-	Comment   string
+	ID             uint
+	Comment        string
 	HelpfulCount   int
 	UnhelpfulCount int
 }

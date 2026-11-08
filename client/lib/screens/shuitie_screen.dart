@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import '../widgets/app_card.dart';
 import 'dart:async';
@@ -742,9 +743,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     session.ensure(
         userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch);
     await ReplyNotificationService(auth.dio,
-        recipientUserId: session.accountId,
-        isCurrentSession: () => session.owns(
-            userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch))
+            recipientUserId: session.accountId,
+            isCurrentSession: () => session.owns(
+                userId: auth.user?.id, sessionEpoch: auth.accountSessionEpoch))
         .markAllRead(repliesOnly: true, session: session);
     if (!mounted ||
         !session.owns(
@@ -787,7 +788,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       }
       final post = Post.fromJson(response.data as Map<String, dynamic>);
       try {
-        await ReplyNotificationService(authProvider.dio, recipientUserId: accountId, isCurrentSession: () => session.owns(userId: authProvider.user?.id, sessionEpoch: authProvider.accountSessionEpoch))
+        await ReplyNotificationService(authProvider.dio,
+                recipientUserId: accountId,
+                isCurrentSession: () => session.owns(
+                    userId: authProvider.user?.id,
+                    sessionEpoch: authProvider.accountSessionEpoch))
             .markRead(item.id, replyId: item.relatedId, session: session);
         if ((mounted && notificationSession.isCurrent(authProvider))) {
           ReplyNotificationState.instance.markRead(
@@ -815,7 +820,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       }
       if (error.response?.statusCode == 404) {
         try {
-          await ReplyNotificationService(authProvider.dio, recipientUserId: accountId, isCurrentSession: () => session.owns(userId: authProvider.user?.id, sessionEpoch: authProvider.accountSessionEpoch))
+          await ReplyNotificationService(authProvider.dio,
+                  recipientUserId: accountId,
+                  isCurrentSession: () => session.owns(
+                      userId: authProvider.user?.id,
+                      sessionEpoch: authProvider.accountSessionEpoch))
               .markRead(item.id, replyId: item.relatedId, session: session);
           if (!(mounted && notificationSession.isCurrent(authProvider))) {
             return;
@@ -919,7 +928,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Widget _buildFreshnessBanner() {
     final colors = Theme.of(context).colorScheme;
-    return Container(
+    return AppCardSurface(
       key: const ValueKey('feed-freshness-banner-container'),
       decoration: BoxDecoration(
         color: colors.surface,
@@ -1161,7 +1170,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             curve: AppMotion.incoming,
             reverseCurve: AppMotion.outgoing,
           );
-          return FadeTransition(
+          return AppSurfaceFadeTransition(
             opacity: curved,
             child: SlideTransition(
               position: Tween<Offset>(
@@ -1276,7 +1285,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             parent: animation,
             curve: Curves.easeOutCubic,
           )),
-          child: FadeTransition(
+          child: AppSurfaceFadeTransition(
             opacity: animation,
             child: child,
           ),
@@ -1397,9 +1406,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               decoration: BoxDecoration(
                 border: Border(
                   right: BorderSide(
-                    color: isDark
+                    color: appCardDividerColor(context, isDark
                         ? Colors.white10
-                        : Colors.black.withValues(alpha: 0.05),
+                        : Colors.black.withValues(alpha: 0.05)),
                     width: _useSplitLayout ? 1 : 0,
                   ),
                 ),
@@ -1484,7 +1493,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
     return ColoredBox(
       color: context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
-          ? Colors.transparent : isDark ? const Color(0xFF131720) : Colors.white,
+          ? Colors.transparent
+          : isDark
+              ? const Color(0xFF131720)
+              : Colors.white,
       child: content,
     );
   }
@@ -1682,7 +1694,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Future<void> _confirmDeletePost(Post post) async {
     if (!mounted) return;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: const Text('删除帖子'),
@@ -2199,7 +2211,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final border =
         isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
     return Center(
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(24),
         margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
         decoration: BoxDecoration(
@@ -2259,7 +2271,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final border =
         isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
     return Center(
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(24),
         margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
         decoration: BoxDecoration(
@@ -2723,7 +2735,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 switchInCurve: Curves.easeOut,
                 switchOutCurve: Curves.easeIn,
                 transitionBuilder: (child, animation) {
-                  return FadeTransition(
+                  return AppSurfaceFadeTransition(
                     opacity: animation,
                     child: SlideTransition(
                       position: Tween<Offset>(
@@ -2832,7 +2844,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final border =
         isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
     return Center(
-      child: Container(
+      child: AppCardSurface(
         padding: const EdgeInsets.all(AppSpacing.xxl),
         margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
         decoration: BoxDecoration(
@@ -2901,7 +2913,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       );
     }
 
-    return Container(
+    return AppCardSurface(
       key: const ValueKey('feed-skeleton-card'),
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       padding: const EdgeInsets.all(AppSpacing.md),

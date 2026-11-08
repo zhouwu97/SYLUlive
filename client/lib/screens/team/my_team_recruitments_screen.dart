@@ -49,7 +49,7 @@ class _MyTeamRecruitmentsScreenState extends State<MyTeamRecruitmentsScreen>
   Future<void> _load() => context.read<TeamRecruitmentProvider>().loadMine();
 
   Future<void> _deleteRecruitment(TeamRecruitment item) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
           context: context,
           builder: (dialogContext) => AppAlertDialog(
             title: const Text('删除组队'),
@@ -153,7 +153,7 @@ class _MyTeamRecruitmentsScreenState extends State<MyTeamRecruitmentsScreen>
     );
   }
 
-  Widget _emptyList(String text, bool isDark) => Container(
+  Widget _emptyList(String text, bool isDark) => AppContentSurface.card(child: Container(
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -175,7 +175,7 @@ class _MyTeamRecruitmentsScreenState extends State<MyTeamRecruitmentsScreen>
                   fontWeight: FontWeight.w700,
                   color: TeamUiTokens.title(isDark))),
         ]),
-      );
+      ));
 }
 
 class _ApplicationItem extends StatelessWidget {
@@ -247,7 +247,7 @@ class _ApplicationItem extends StatelessWidget {
                       onPressed: cancelling
                           ? null
                           : () async {
-                              final confirmed = await showDialog<bool>(
+                              final confirmed = await showAppDialog<bool>(
                                     context: context,
                                     builder: (dialogContext) => AppAlertDialog(
                                       title: const Text('撤回申请'),
@@ -292,7 +292,7 @@ class _ApplicationItem extends StatelessWidget {
                     onPressed: cancelling
                         ? null
                         : () async {
-                            final confirmed = await showDialog<bool>(
+                            final confirmed = await showAppDialog<bool>(
                                   context: context,
                                   builder: (dialogContext) => AppAlertDialog(
                                     title: const Text('退出队伍'),

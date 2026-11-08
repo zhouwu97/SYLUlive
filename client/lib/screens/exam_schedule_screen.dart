@@ -20,6 +20,7 @@ import '../features/academic/domain/academic_provider.dart';
 import '../features/academic/application/academic_session_controller.dart';
 import '../services/home_widget_service.dart';
 import 'home_widget_settings_screen.dart';
+import '../widgets/app_card.dart';
 
 class ExamScheduleScreen extends StatefulWidget {
   /// [examRepository] 仅供测试注入失败/桩实现；生产入口使用默认仓储。
@@ -307,7 +308,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   }
 
   Future<void> _deleteExam(ExamModel exam) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AppAlertDialog(
         title: const Text('确认删除'),
@@ -366,7 +367,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     final jsonController = TextEditingController();
     bool isAiMode = exam == null;
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
@@ -776,7 +777,8 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     final availableSemesters = _availableSemesters;
 
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
+      backgroundColor: AppPageBackground.color(context,
+          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
       appBar: AppBar(
         title: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
@@ -880,32 +882,52 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
         ],
       ),
       body: displayExams.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.event_note,
-                    size: 64,
-                    color: isDark ? Colors.white38 : Colors.grey[400],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    '当前学期暂无考试安排',
-                    style: TextStyle(
-                      color: isDark ? Colors.white54 : Colors.grey[600],
-                      fontSize: 16,
+          ? SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: AppContentSurface.card(
+                  key: const ValueKey('exam-empty-panel'),
+                  child: SizedBox.expand(
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.event_note,
+                            size: 64,
+                            color: isDark ? Colors.white38 : Colors.grey[400],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            '当前学期暂无考试安排',
+                            style: TextStyle(
+                              color: appContentSecondaryColor(
+                                context,
+                                isDark ? Colors.white54 : Colors.grey[600]!,
+                              ),
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '点击右上角 + 号添加',
+                            style: TextStyle(
+                              color: appContentSecondaryColor(
+                                context,
+                                isDark ? Colors.white38 : Colors.grey[500]!,
+                              ),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '点击右上角 + 号添加',
-                    style: TextStyle(
-                      color: isDark ? Colors.white38 : Colors.grey[500],
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
+                ),
               ),
             )
           : ListView.builder(
@@ -931,7 +953,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                     child: const Icon(Icons.delete, color: Colors.white),
                   ),
                   confirmDismiss: (direction) async {
-                    return await showDialog(
+                    return await showAppDialog(
                       context: context,
                       builder: (BuildContext context) {
                         return AppAlertDialog(
@@ -965,8 +987,8 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                       debugPrint('侧滑删除保存失败: $e');
                       if (!mounted) return;
                       setState(() => _exams.add(exam));
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text('删除保存失败，“${exam.name}”已恢复')));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('删除保存失败，“${exam.name}”已恢复')));
                       return;
                     }
                     if (!mounted) return;
@@ -1037,7 +1059,8 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                   vertical: 8,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: AppColors.brandPrimary.withValues(alpha: 0.12),
+                                  color: AppColors.brandPrimary
+                                      .withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Column(

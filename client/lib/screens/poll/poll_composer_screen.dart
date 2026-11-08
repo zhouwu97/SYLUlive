@@ -316,7 +316,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
   }
 
   void _preview() {
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: Text(_titleController.text.trim().isEmpty
@@ -356,7 +356,8 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, CampusTheme.pageBackground(context)),
+      backgroundColor:
+          AppPageBackground.color(context, CampusTheme.pageBackground(context)),
       appBar: AppBar(
         systemOverlayStyle:
             (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
@@ -397,12 +398,12 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
           children: [
             if (_rulesLocked) const _Notice(text: '已有用户参与，为保证公平，只能修改补充说明和图片。'),
-            Stack(
-              alignment: Alignment.bottomRight,
-              children: [
-                AppInputSurface(
-                    radius: 8,
-                    child: TextField(
+            AppInputSurface(
+                radius: 8,
+                child: Stack(
+                  alignment: Alignment.bottomRight,
+                  children: [
+                    TextField(
                       controller: _titleController,
                       focusNode: _titleFocus,
                       enabled: !_rulesLocked,
@@ -434,23 +435,23 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                               color: CampusTheme.primary, width: 1),
                         ),
                       ),
-                    )),
-                Padding(
-                  padding: EdgeInsets.only(
-                      right: 12, bottom: _titleError != null ? 30 : 12),
-                  child: Text('${_titleController.text.length}/80',
-                      style: const TextStyle(
-                          fontSize: 11, color: CampusTheme.subText)),
-                ),
-              ],
-            ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.only(
+                          right: 12, bottom: _titleError != null ? 30 : 12),
+                      child: Text('${_titleController.text.length}/80',
+                          style: const TextStyle(
+                              fontSize: 11, color: CampusTheme.subText)),
+                    ),
+                  ],
+                )),
             const SizedBox(height: 14),
-            Stack(
-              alignment: Alignment.bottomRight,
-              children: [
-                AppInputSurface(
-                    radius: 8,
-                    child: TextField(
+            AppInputSurface(
+                radius: 8,
+                child: Stack(
+                  alignment: Alignment.bottomRight,
+                  children: [
+                    TextField(
                       controller: _descriptionController,
                       maxLength: 1000,
                       minLines: 4,
@@ -477,15 +478,15 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                               color: CampusTheme.primary, width: 1),
                         ),
                       ),
-                    )),
-                Padding(
-                  padding: const EdgeInsets.only(right: 12, bottom: 12),
-                  child: Text('${_descriptionController.text.length}/1000',
-                      style: const TextStyle(
-                          fontSize: 11, color: CampusTheme.subText)),
-                ),
-              ],
-            ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12, bottom: 12),
+                      child: Text('${_descriptionController.text.length}/1000',
+                          style: const TextStyle(
+                              fontSize: 11, color: CampusTheme.subText)),
+                    ),
+                  ],
+                )),
             const SizedBox(height: 14),
             Row(children: [
               Expanded(child: _sectionTitle('图片（最多 3 张）')),
@@ -730,7 +731,8 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            const Row(
+            const AppContentSurface.reading(
+                child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(Icons.security, size: 14, color: CampusTheme.primary),
@@ -738,7 +740,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                 Text('投票默认匿名，仅展示汇总结果',
                     style: TextStyle(fontSize: 12, color: CampusTheme.subText)),
               ],
-            ),
+            )),
           ],
         ),
       ),
@@ -777,7 +779,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
   }
 
   Widget _sectionTitle(String title) => Text(title,
-      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700));
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700));
 
   String _durationLabel() {
     switch (_durationHours) {

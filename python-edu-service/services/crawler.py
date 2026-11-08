@@ -5,6 +5,7 @@ import binascii
 import hashlib
 import json
 import logging
+import os
 import random
 import re
 import ssl
@@ -12,6 +13,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, List, Tuple
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 from bs4 import BeautifulSoup
@@ -49,6 +51,11 @@ def _academic_tls_context() -> ssl.SSLContext:
     context = ssl.create_default_context()
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.set_ciphers(ACADEMIC_TLS_CIPHER)
+    # 学校只发送叶证书；补齐公开中间证书，仍要求链路最终到达系统可信根。
+    context.load_verify_locations(cafile=str(
+        Path(__file__).resolve().parent.parent / "certs" / "TrustAsiaTLSProRSACA2025.pem"
+    ))
+    context.verify_flags &= ~ssl.VERIFY_X509_PARTIAL_CHAIN
     return context
 
 logger = logging.getLogger(__name__)
@@ -141,6 +148,7 @@ class EduCrawler:
     async def __aenter__(self):
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout),
+            proxy=os.getenv("CAMPUS_CRAWLER_PROXY") or None,
             follow_redirects=False,
             verify=_academic_tls_context(),
             headers={
@@ -590,6 +598,24 @@ class EduCrawler:
             raise CookieLapseError("获取学生信息失败,Cookie可能已失敁")
 
         return self._parse_student_info_body(resp.text)
+
+    async def verify_session_student_id(self, cookie: str) -> str:
+        """只从当前学校会话取本人学号，不带 su/xh 等客户端可控身份参数。"""
+        if not self.client:
+            raise NetworkError("Client not initialized")
+        if not cookie or len(cookie) > 16384 or any(c in cookie for c in "\r\n\x00"):
+            raise LoginFailedError("学校会话无效", "EDU_IDENTITY_UNVERIFIED")
+        resp = await self.client.get(
+            STUDENT_INFO_URL,
+            params={"gnmkdm": "N100801", "layout": "default"},
+            headers={"Cookie": cookie, "Connection": "close"},
+        )
+        if resp.status_code != 200:
+            raise CookieLapseError("学校会话已失效", "EDU_IDENTITY_UNVERIFIED")
+        actual = self._parse_student_info_body(resp.text).school_verified_student_id
+        if not actual:
+            raise LoginFailedError("学校未返回可核验的学号", "EDU_IDENTITY_UNVERIFIED")
+        return actual
 
     # ============== 课表相关 ==============
 

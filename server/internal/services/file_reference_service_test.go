@@ -129,16 +129,20 @@ func TestClaimPublicImageFilesCreatesVersionedTasksExactlyOnce(t *testing.T) {
 		t.Fatalf("变体任务数量=%d，期望 6", len(variants))
 	}
 	for _, variant := range variants {
-		if variant.RecipeVersion != 1 {
-			t.Fatalf("配方版本=%d，期望 1", variant.RecipeVersion)
+		version := models.ImageVariantRecipeVersion
+		if variant.FileID == files[2].ID {
+			version = models.ImageVariantGIFRecipeVersion
+		}
+		if variant.RecipeVersion != version {
+			t.Fatalf("配方版本=%d，期望 %d", variant.RecipeVersion, version)
 		}
 		if variant.Status != "pending" {
 			t.Fatalf("任务状态=%q", variant.Status)
 		}
-		if variant.FileID == files[2].ID && variant.MimeType != "image/jpeg" {
-			t.Fatalf("GIF 静态预览应使用 JPEG，得到 %+v", variant)
+		if variant.FileID == files[2].ID && variant.MimeType != "image/png" {
+			t.Fatalf("GIF 静态预览应使用 PNG，得到 %+v", variant)
 		}
-		if variant.FileID == files[2].ID && !strings.Contains(variant.Path, "_v1_") {
+		if variant.FileID == files[2].ID && !strings.Contains(variant.Path, "_v2_") {
 			t.Fatalf("GIF 任务路径应保留版本信息，得到 %+v", variant)
 		}
 	}

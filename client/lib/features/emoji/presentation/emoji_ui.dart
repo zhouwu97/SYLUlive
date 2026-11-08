@@ -6,8 +6,10 @@ import '../../../theme/app_radius.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/app_page_app_bar.dart';
 import '../../../widgets/app_page_background.dart';
+import '../../../widgets/app_card.dart';
 import '../../../widgets/campus/campus_theme.dart';
 import '../../../widgets/responsive_content.dart';
+import '../../../utils/responsive_util.dart';
 
 Color emojiSurface(BuildContext context) =>
     Theme.of(context).brightness == Brightness.dark
@@ -39,31 +41,78 @@ class EmojiPageScaffold extends StatelessWidget {
     required this.body,
     this.actions = const [],
     this.bottomNavigationBar,
+    this.bodyHasCardSurfaces = false,
+    this.formLayout = false,
   });
 
   final String title;
   final Widget body;
   final List<Widget> actions;
   final Widget? bottomNavigationBar;
+  final bool bodyHasCardSurfaces;
+  final bool formLayout;
 
   @override
   Widget build(BuildContext context) => Theme(
         data: CampusTheme.withBrandAccent(Theme.of(context)).copyWith(
           visualDensity: VisualDensity.standard,
           materialTapTargetSize: MaterialTapTargetSize.padded,
+          filledButtonTheme: FilledButtonThemeData(
+              style: (Theme.of(context).filledButtonTheme.style ??
+                      const ButtonStyle())
+                  .copyWith(
+                      textStyle: WidgetStatePropertyAll(
+                          Theme.of(context).textTheme.labelLarge))),
         ),
         child: Builder(
-            builder: (context) => AppPageBackground(builder: (context) => Scaffold(
-                  backgroundColor: AppPageBackground.color(context, CampusTheme.pageBackground(context)),
-                  appBar: AppPageAppBar(title: Text(title), actions: actions),
-                  body: SafeArea(
-                      top: false, child: ResponsiveContent.page(child: body)),
-                  bottomNavigationBar: bottomNavigationBar == null
-                      ? null
-                      : Column(mainAxisSize: MainAxisSize.min, children: [
-                          ResponsiveContent.page(child: bottomNavigationBar!),
-                        ]),
-                ))),
+            builder: (context) => AppPageBackground(
+                builder: (context) => Scaffold(
+                      backgroundColor: AppPageBackground.color(
+                          context, CampusTheme.pageBackground(context)),
+                      appBar:
+                          AppPageAppBar(title: Text(title), actions: actions),
+                      body: SafeArea(
+                          top: false,
+                          child: ResponsiveContent(
+                            maxWidth: formLayout
+                                ? ResponsiveUtil.formContentWidth
+                                : ResponsiveUtil.pageContentWidth,
+                            child: bodyHasCardSurfaces
+                                ? body
+                                : AppCardMaterial(
+                                    key: const ValueKey('emoji-page-surface'),
+                                    color: emojiSurface(context),
+                                    borderRadius: BorderRadius.zero,
+                                    clipBehavior: Clip.antiAlias,
+                                    child: body,
+                                  ),
+                          )),
+                      bottomNavigationBar: bottomNavigationBar == null
+                          ? null
+                          : Column(mainAxisSize: MainAxisSize.min, children: [
+                              ResponsiveContent(
+                                  maxWidth: formLayout
+                                      ? ResponsiveUtil.formContentWidth
+                                      : ResponsiveUtil.pageContentWidth,
+                                  child: AppCardMaterial(
+                                      color: emojiSurface(context),
+                                      child: bottomNavigationBar!)),
+                            ]),
+                    ))),
+      );
+}
+
+/// 内容分组使用自然高度卡片，实色与玻璃外观共同保留主题底色。
+class EmojiContentCard extends StatelessWidget {
+  const EmojiContentCard({super.key, required this.child});
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => AppCardMaterial(
+        color: emojiSurface(context),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        clipBehavior: Clip.antiAlias,
+        child:
+            Padding(padding: const EdgeInsets.all(AppSpacing.md), child: child),
       );
 }
 
@@ -282,10 +331,12 @@ class EmojiPreviewItem {
       {required this.id,
       required this.name,
       required this.image,
+      this.previewImage,
       this.animated = false});
   final String id;
   final String name;
   final ImageProvider image;
+  final ImageProvider? previewImage;
   final bool animated;
 }
 
@@ -379,7 +430,7 @@ Future<void> showEmojiPreview(BuildContext context, EmojiPreviewItem item,
           height: MediaQuery.sizeOf(context).height * .36,
           child: Image(
               key: ValueKey(attempt),
-              image: item.image,
+              image: item.previewImage ?? item.image,
               fit: BoxFit.contain,
               loadingBuilder: (_, child, progress) => progress == null
                   ? child
@@ -389,7 +440,7 @@ Future<void> showEmojiPreview(BuildContext context, EmojiPreviewItem item,
                   icon: Icons.broken_image_outlined,
                   action: TextButton(
                       onPressed: () async {
-                        await item.image.evict();
+                        await (item.previewImage ?? item.image).evict();
                         if (context.mounted && isCurrent?.call() != false) {
                           invalidatePreview?.call(() => attempt++);
                         }
@@ -407,7 +458,7 @@ Future<void> showEmojiPreview(BuildContext context, EmojiPreviewItem item,
               child: const Text('关闭'))
         ],
       );
-  await showDialog<void>(
+  await showAppDialog<void>(
       context: context,
       builder: (dialogContext) =>
           StatefulBuilder(builder: (context, setPreviewState) {

@@ -3,6 +3,7 @@ import 'package:shenliyuan/features/academic/application/academic_session_contro
 import 'package:shenliyuan/features/academic/domain/academic_provider.dart';
 import 'package:shenliyuan/features/academic/domain/academic_repository.dart';
 import 'package:shenliyuan/widgets/course/course_action_menu.dart';
+import 'package:shenliyuan/widgets/app_card.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -197,6 +198,12 @@ void main() {
 
     expect(find.text('还没有课表'), findsNothing);
     expect(find.text('线性代数'), findsOneWidget);
+    expect(find.ancestor(of: find.byType(CourseActionMenu),
+        matching: find.byType(AppContentSurface)), findsNothing,
+        reason: '课表标题和操作栏融入背景');
+    expect(find.ancestor(of: find.text('一'),
+        matching: find.byType(AppContentSurface)), findsNothing,
+        reason: '日历列标题不应形成整块白色底板');
     expect(
       tester
           .widget<HomeTabKeepAliveStage>(find.byType(HomeTabKeepAliveStage))

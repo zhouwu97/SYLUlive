@@ -252,8 +252,8 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 		return
 	}
 	var file models.File
-	variant, originalRelative, legacyVariant := imageVariantRequest(relative)
-	originalPathCandidates := imageVariantSourcePathCandidates(originalRelative, variant != "")
+	variant, originalRelative, version, legacyVariant := imageVariantRequest(relative)
+	originalPathCandidates := imageVariantSourcePathCandidates(originalRelative, variant != "", version)
 	isPublic := true
 	if err := h.db.Where("path IN ? AND access_scope = ?", originalPathCandidates, models.FileAccessPublic).First(&file).Error; err != nil {
 		// 如果不是公开文件，尝试检查是否为私有待审核文件并校验管理员/上传者身份
@@ -271,26 +271,34 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 	publicPath := file.Path
 	mimeType := file.MimeType
 	if variant != "" {
+		// 旧客户端和缓存可能仍请求 GIF 的 v1 JPEG 预览。保留该地址作为
+		// 不可缓存的兼容别名；新配方未就绪时返回 GIF 原图。
+		oldGIFPreview := file.MimeType == "image/gif" &&
+			(version == models.ImageVariantRecipeVersion && strings.EqualFold(filepath.Ext(originalRelative), ".jpg") || legacyVariant)
 		expectedPath, ok := services.ImageVariantPath(file.Path, file.MimeType, variant)
-		if !ok || (!legacyVariant && normalizeUploadPath(expectedPath) != normalizeUploadPath("/uploads/"+relative)) {
+		if !ok || (!legacyVariant && !oldGIFPreview && normalizeUploadPath(expectedPath) != normalizeUploadPath("/uploads/"+relative)) {
 			servePublicNotFound(c)
 			return
 		}
+		legacyVariant = legacyVariant || oldGIFPreview
 		variantPath := strings.TrimPrefix(normalizeUploadPath(expectedPath), "/uploads/")
 		var imageVariant models.ImageVariant
 		if err := h.db.Where(
 			"file_id = ? AND variant = ? AND recipe_version = ? AND status = ? AND path IN ?",
 			file.ID,
 			variant,
-			services.ImageVariantRecipeVersion,
+			models.ImageVariantRecipeVersionForMime(file.MimeType),
 			models.ImageVariantStatusReady,
 			uploadPathCandidates(variantPath),
 		).First(&imageVariant).Error; err != nil {
-			servePublicNotFound(c)
-			return
+			if !oldGIFPreview || !errors.Is(err, gorm.ErrRecordNotFound) {
+				servePublicNotFound(c)
+				return
+			}
+		} else {
+			publicPath = imageVariant.Path
+			mimeType = imageVariant.MimeType
 		}
-		publicPath = imageVariant.Path
-		mimeType = imageVariant.MimeType
 	}
 
 	fullPath, err := services.ResolveUploadPath(h.uploadDir, publicPath)
@@ -339,11 +347,17 @@ func uploadPathCandidates(publicPath string) []string {
 	return []string{normalized, strings.TrimPrefix(normalized, "/")}
 }
 
-// imageVariantSourcePathCandidates 允许 GIF 静态预览使用 .jpg 变体路径，
-// 同时仍能反查 .gif 原图。普通 JPEG/PNG 变体保持原有路径解析不变。
-func imageVariantSourcePathCandidates(originalPath string, isVariant bool) []string {
+// GIF 的 v2 PNG 和旧 v1 JPEG 预览都需要反查 GIF 原图。
+func imageVariantSourcePathCandidates(originalPath string, isVariant bool, version int) []string {
 	candidates := uploadPathCandidates(originalPath)
-	if !isVariant || !strings.EqualFold(filepath.Ext(originalPath), ".jpg") {
+	if !isVariant {
+		return candidates
+	}
+	extension := filepath.Ext(originalPath)
+	if version == models.ImageVariantGIFRecipeVersion && strings.EqualFold(extension, ".png") {
+		return uploadPathCandidates(strings.TrimSuffix(originalPath, extension) + ".gif")
+	}
+	if !strings.EqualFold(extension, ".jpg") {
 		return candidates
 	}
 
@@ -393,20 +407,22 @@ func uploadAccelRedirectPath(publicPath string) string {
 	return prefix + relative
 }
 
-func imageVariantRequest(relative string) (variant string, original string, legacy bool) {
+func imageVariantRequest(relative string) (variant string, original string, version int, legacy bool) {
 	extension := filepath.Ext(relative)
 	base := strings.TrimSuffix(relative, extension)
 	for _, candidate := range []string{"thumb", "medium", "viewer"} {
-		suffix := "_v1_" + candidate
-		if strings.HasSuffix(base, suffix) {
-			return candidate, strings.TrimSuffix(base, suffix) + extension, false
+		for _, recipeVersion := range []int{models.ImageVariantRecipeVersion, models.ImageVariantGIFRecipeVersion} {
+			suffix := fmt.Sprintf("_v%d_%s", recipeVersion, candidate)
+			if strings.HasSuffix(base, suffix) {
+				return candidate, strings.TrimSuffix(base, suffix) + extension, recipeVersion, false
+			}
 		}
 		legacySuffix := "_" + candidate
 		if strings.HasSuffix(base, legacySuffix) {
-			return candidate, strings.TrimSuffix(base, legacySuffix) + extension, true
+			return candidate, strings.TrimSuffix(base, legacySuffix) + extension, 0, true
 		}
 	}
-	return "", relative, false
+	return "", relative, 0, false
 }
 
 // Upload 上传文件

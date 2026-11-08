@@ -110,7 +110,7 @@ class WebVpnService {
           final ok = await _submitCasLogin(resp, url, username, password);
           if (ok) return true;
           debugPrint('[VPN] CAS 登录失败');
-          _lastError ??= '统一认证登录失败，请检查密码';
+          _lastError ??= '统一认证服务未完成登录，请稍后重试';
           // 密码错误已在 _submitCasLogin 内标记；其余失败按链路问题处理。
           _lastFailureType ??= WebVpnLoginFailureType.unavailable;
           return false;
@@ -276,22 +276,22 @@ class WebVpnService {
 
     debugPrint('[CAS] 登录响应: ${loginResp.statusCode}');
 
-    if (loginResp.statusCode == 401) {
-      final body = loginResp.data.toString();
-      debugPrint('[CAS] 401! bodyLength=${body.length}');
-      _lastError = '统一认证登录失败，请检查密码';
+    final responseBody = loginResp.data.toString();
+    final responseDoc = parse(responseBody);
+    for (final node in responseDoc.querySelectorAll('script, style, template, [hidden]')) {
+      node.remove();
+    }
+    // HTTP 401 和“认证失败”也可能是 CAS 服务故障；仅明确的凭据拒绝可要求重输。
+    final message = responseDoc.body?.text ?? '';
+    if (const [200, 401].contains(loginResp.statusCode) &&
+        RegExp(r'密码错误|密码不正确|(?:用户名|账号)(?:或密码)?(?:错误|不正确|有误)|用户名不存在').hasMatch(message)) {
+      _lastError = '统一认证账号或密码不正确，请修改后重试';
       _lastFailureType = WebVpnLoginFailureType.invalidCredentials;
       return false;
     }
 
     if (loginResp.statusCode == 200) {
-      final body = loginResp.data.toString();
-      if (body.contains('认证失败') || body.contains('密码错误')) {
-        debugPrint('[CAS] 密码错误');
-        _lastError = '统一认证登录失败，请检查密码';
-        _lastFailureType = WebVpnLoginFailureType.invalidCredentials;
-        return false;
-      }
+      final body = responseBody;
       // 某些情况下 200 页面里包含 JavaScript 跳转
       final redirectMatch = RegExp(
         r"window\.location\.href\s*=\s*'([^']+)'",

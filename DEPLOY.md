@@ -50,7 +50,9 @@ SECURITY_SOURCE_ATTRIBUTION_VALID_FROM=<真实来源修复生效时间>
 
 ## 图片公开上传的授权静态传输（Docker P3）
 
-Docker 部署中的 `/uploads/` 仍然先反代到 Go 的 `ServePublic`。图片变体 worker 与 X-Accel 静态直传由 `.env` 显式配置，生产目标值均为 `true`：Go 启动时会自动为历史公开图片执行补偿任务（补建变体任务），worker 仅在 `IMAGE_VARIANT_WORKER_ENABLED=true` 时启动并消化 pending 任务；变体就绪前客户端继续回退原图，不会出现长期 404。只有 Go 根据 `files.access_scope = public` 完成授权、通过 `ResolveUploadPath` 路径校验并确认文件存在后，才会返回 `X-Accel-Redirect`。Nginx 的目标位置是 `internal`，客户端不能直接请求它。`GIN_MODE=release` 时两个开关缺失或为空会直接拒绝启动，避免漏配静默回退。
+Docker 部署中的 `/uploads/` 仍然先反代到 Go 的 `ServePublic`。图片变体 worker 与 X-Accel 静态直传由 `.env` 显式配置，生产目标值均为 `true`：Go 启动时会自动为历史公开图片执行补偿任务（补建变体任务），worker 仅在 `IMAGE_VARIANT_WORKER_ENABLED=true` 时启动并消化 pending 任务；变体就绪前接口返回原图地址，客户端仍按体积限制决定是否自动加载，大图可能暂时显示占位。只有 Go 根据 `files.access_scope = public` 完成授权、通过 `ResolveUploadPath` 路径校验并确认文件存在后，才会返回 `X-Accel-Redirect`。Nginx 的目标位置是 `internal`，客户端不能直接请求它。`GIN_MODE=release` 时两个开关缺失或为空会直接拒绝启动，避免漏配静默回退。
+
+GIF 静态预览使用保留透明度的 v2 PNG；局部首帧按完整画布定位，首帧几乎透明时在有限帧数与解码像素预算内选择可见内容完整的帧。JPEG/PNG 原有变体仍为 v1。启动回填只为仍有公开引用的历史 GIF 补建任务，worker 开启后逐步生成；旧 GIF v1 文件和记录保留供回滚。升级时先停止所有旧版 worker，再启动新版，避免旧 worker 领取不认识的 v2 任务；新版 worker 不领取旧 GIF v1 任务。验收脚本按当前配方统计，统计 SQL 另列旧 GIF v1 状态。客户端拿到新评论数据后使用新的图片 URL；离线持有的旧列表或缓存需刷新后才能切换。新版客户端在帖子、评论及图片查看器中自动加载 GIF 原图播放，流量和解码开销高于静态预览，原图失败时仍可回退已就绪的静态图。回滚时先停新版 worker，并在旧版服务的整个运行期间保持 `IMAGE_VARIANT_WORKER_ENABLED=false`，避免旧 worker 错领 v2；旧版可能重新显示黑底 JPEG，保留原图和两个版本的任务及文件。若旧 worker 曾误领 v2 并因 MIME 不匹配耗尽重试，重新升级时的启动回填会只重排此特定失败，其他失败仍需排查。
 
 生产 `.env` 目标值（compose 对两者使用 `:?` 强制显式提供）：
 

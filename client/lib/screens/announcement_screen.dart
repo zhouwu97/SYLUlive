@@ -151,8 +151,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> {
         .where((item) => !_unreadAnnouncementIds.contains(item.id))
         .toList()
       ..sort(model.Announcement.compareForDisplay);
-    final useCustomBackground = themeProvider.shouldShowCustomBackground;
-    final cleanLightMode = !useCustomBackground && !isDark;
+    final cleanLightMode = !isDark;
     final foregroundColor =
         cleanLightMode ? const Color(0xFF1F2937) : Colors.white;
 
@@ -190,6 +189,8 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> {
                     : RefreshIndicator(
                         onRefresh: _loadAnnouncements,
                         child: ListView(
+                          // 卡片尺寸变化时仍从页面壁纸采样，避免子项缓存隔断模糊背景。
+                          addRepaintBoundaries: !themeProvider.frostedGlass,
                           physics: const BouncingScrollPhysics(),
                           padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
                           children: [
@@ -372,49 +373,39 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
 
   @override
   Widget build(BuildContext context) {
-    final reduceMotion =
-        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    final staggerMs = (widget.index * 25).clamp(0, 50);
+    final duration = AppMotion.duration(context, AppMotion.fast);
 
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: reduceMotion
-          ? Duration.zero
-          : Duration(milliseconds: 160 + staggerMs),
-      curve: AppMotion.incoming,
-      builder: (context, value, child) {
-        return Transform.translate(
-          offset: Offset(0, 6 * (1 - value)),
-          child: Opacity(opacity: value, child: child),
-        );
-      },
-      child: GlassContainer(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        borderRadius: 16,
-        blur: 10,
-        opacity: widget.emphasized ? (widget.isDark ? 0.15 : 0.3) : 0.96,
-        backgroundColor: widget.emphasized
-            ? (widget.isDark
-                ? const Color(0x99A32020)
-                : const Color(0xFFFDF0F0))
-            : (widget.isDark
-                ? AppColors.surfaceSecondaryDark
-                : AppColors.surfaceSecondaryLight),
-        borderColor: widget.emphasized
-            ? Colors.red.withValues(alpha: widget.isDark ? 0.35 : 0.22)
-            : (widget.isDark
-                ? AppColors.borderNormalDark
-                : AppColors.borderNormalLight),
-        onTap: widget.emphasized
-            ? () {
-                if (mounted) {
-                  setState(() {
-                    _expanded = !_expanded;
-                  });
-                }
+    // 不对毛玻璃整体做 Opacity：离屏透明层会隔断背景采样。
+    return GlassContainer(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      borderRadius: 16,
+      blur: 10,
+      opacity: widget.emphasized ? (widget.isDark ? 0.15 : 0.3) : 0.96,
+      backgroundColor: widget.emphasized
+          ? (widget.isDark ? const Color(0x99A32020) : const Color(0xFFFDF0F0))
+          : (widget.isDark
+              ? AppColors.surfaceSecondaryDark
+              : AppColors.surfaceSecondaryLight),
+      borderColor: widget.emphasized
+          ? Colors.red.withValues(alpha: widget.isDark ? 0.35 : 0.22)
+          : (widget.isDark
+              ? AppColors.borderNormalDark
+              : AppColors.borderNormalLight),
+      onTap: widget.emphasized
+          ? () {
+              if (mounted) {
+                setState(() {
+                  _expanded = !_expanded;
+                });
               }
-            : null,
+            }
+          : null,
+      child: AnimatedSize(
+        duration: duration,
+        reverseDuration: duration,
+        curve: AppMotion.standard,
+        alignment: Alignment.topCenter,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -469,9 +460,14 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                   ),
                 ),
                 if (widget.emphasized)
-                  Icon(
-                    _expanded ? Icons.expand_less : Icons.expand_more,
-                    color: widget.isDark ? Colors.white54 : Colors.black54,
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: duration,
+                    curve: AppMotion.standard,
+                    child: Icon(
+                      Icons.expand_more,
+                      color: widget.isDark ? Colors.white54 : Colors.black54,
+                    ),
                   ),
               ],
             ),

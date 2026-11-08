@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -75,8 +76,8 @@ void main() {
           final bottom = find.byKey(ValueKey('$page-publish-bottom-surface'));
           expect(
               find.descendant(
-                  of: bottom, matching: find.byType(BackdropFilter)),
-              findsNWidgets(2),
+                  of: bottom, matching: activeBackdropFilters()),
+              clean ? findsNothing : findsNWidgets(2),
               reason: '底部栏与独立发布按钮各有一个底面，前景文字不参与透明合成');
           // 材质包住 SafeArea，手势区不会露出另一层不透明底色。
           expect(tester.getRect(bottom).bottom, closeTo(844, .1));
@@ -94,8 +95,8 @@ void main() {
                 find.descendant(
                     of: find.byKey(
                         const ValueKey('market-publish-details-surface')),
-                    matching: find.byType(BackdropFilter)),
-                findsOneWidget);
+                    matching: activeBackdropFilters()),
+                clean ? findsNothing : findsOneWidget);
           } else if (page == 'poll') {
             expect(find.byType(AppInputSurface), findsWidgets);
             for (final field
@@ -106,8 +107,17 @@ void main() {
             expect(
                 find.descendant(
                     of: find.byKey(const ValueKey('publish-section-surface')),
-                    matching: find.byType(BackdropFilter)),
-                findsOneWidget);
+                    matching: activeBackdropFilters()),
+                clean ? findsNothing : findsOneWidget);
+            final fields = find.byType(TextFormField);
+            final titleSurface = find.ancestor(
+                of: fields.first, matching: find.byType(AppCardSurface));
+            final bodySurface = find.ancestor(
+                of: fields.at(1), matching: find.byType(AppCardSurface));
+            expect(titleSurface, findsOneWidget);
+            expect(bodySurface, findsOneWidget);
+            expect(titleSurface.evaluate().single, bodySurface.evaluate().single,
+                reason: '标题和正文共用连续底面，避免相邻底面重叠');
           }
 
           final input = page == 'poll'
@@ -115,12 +125,27 @@ void main() {
               : find.byType(TextFormField).first;
           await tester.enterText(input, '保留发布草稿');
           await tester.pump();
+          Rect? waterContentRect;
+          if (page == 'water') {
+            final content = find.byType(TextFormField).at(1);
+            await tester.enterText(content, '正文输入在切换材质后仍保留焦点和草稿。');
+            await tester.pumpAndSettle();
+            waterContentRect = tester.getRect(content);
+          }
           await appearance.setFrostedGlass(false);
           await tester.pumpAndSettle();
           expect(find.text('保留发布草稿'), findsOneWidget);
+          if (page == 'water') {
+            expect(find.text('正文输入在切换材质后仍保留焦点和草稿。'), findsOneWidget);
+            expect(tester.getRect(find.byType(TextFormField).at(1)), waterContentRect);
+            final editable = tester.widget<EditableText>(
+                find.descendant(of: find.byType(TextFormField).at(1),
+                    matching: find.byType(EditableText)));
+            expect(editable.focusNode.hasFocus, isTrue);
+          }
           expect(
               find.descendant(
-                  of: bottom, matching: find.byType(BackdropFilter)),
+                  of: bottom, matching: activeBackdropFilters()),
               findsNothing);
           await appearance.setFrostedGlass(true);
           await tester.pumpAndSettle();

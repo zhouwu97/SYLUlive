@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/theme_provider.dart';
+import '../app_card.dart';
 
 import '../../config/api_constants.dart';
 import '../../features/emoji/application/emoji_recent_manager.dart';
@@ -22,6 +25,7 @@ import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../features/emoji/presentation/emoji_ui.dart';
+import '../../features/emoji/presentation/emoji_local_thumbnail.dart';
 import '../../utils/private_message_media_cache.dart';
 import 'emoji_catalog.dart';
 import 'sticker_catalog.dart';
@@ -40,6 +44,9 @@ class AppEmojiPanel extends StatefulWidget {
   final ValueChanged<EmojiFavoriteItem>? onFavoriteUndo;
   final Map<String, String> favoriteImageHeaders;
   final bool enabled;
+
+  /// 评论输入栏已提供连续玻璃底面，内嵌时只绘制面板内容。
+  final bool embedded;
   final EmojiFavoriteService? favoriteService;
   final EmojiRecentManager? recentManager;
   final void Function(String path, EmojiAssetRef asset)? onPackAssetSelected;
@@ -55,6 +62,7 @@ class AppEmojiPanel extends StatefulWidget {
     this.onFavoriteUndo,
     this.favoriteImageHeaders = const <String, String>{},
     this.enabled = true,
+    this.embedded = false,
     this.favoriteService,
     this.recentManager,
     this.onPackAssetSelected,
@@ -82,8 +90,10 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
   String? _displayedAccount;
   String? _favoriteAccount;
   int _accountEpoch = 0;
+  int _tabSelectionGeneration = 0;
   EmojiPackLocalStore? _packStore;
   List<EmojiPackInstallation> _installedPacks = const [];
+  final Map<String, String> _packQueries = {};
   int get _installedTabStart =>
       _stickerTabStartIndex +
       (widget.onStickerSelected == null ? 0 : appStickerGroups.length);
@@ -157,12 +167,14 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
   void _handleRecentChanged() {
     if (_displayedAccount != _recentManager.userId) {
       _accountEpoch++;
+      _tabSelectionGeneration++;
       _displayedAccount = _recentManager.userId;
       _favorites = const [];
       _favoritesLoading = true;
       _favoritesError = null;
       _favoritesGeneration++;
       _installedPacks = const [];
+      _packQueries.clear();
       _packStore = null;
       _packsError = null;
       unawaited(_loadFavorites());
@@ -203,29 +215,81 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
     }
   }
 
-  Widget _buildInstalledGrid(EmojiPackInstallation pack) => GridView.builder(
-      padding: const EdgeInsets.all(12),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 72,
-          mainAxisExtent: 72,
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8),
-      itemCount: pack.manifest.assets.length,
-      itemBuilder: (context, index) =>
-          _buildPackCell(pack, pack.manifest.assets[index]));
+  Widget _buildInstalledGrid(EmojiPackInstallation pack) {
+    final query = (_packQueries[pack.packId] ?? '').trim().toLowerCase();
+    final assets = pack.manifest.assets
+        .where((asset) => asset.name.toLowerCase().contains(query))
+        .toList();
+    return Column(children: [
+      Padding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md, AppSpacing.sm, AppSpacing.md, 0),
+          child: TextFormField(
+              key: ValueKey('emoji-search-${pack.packId}'),
+              initialValue: _packQueries[pack.packId] ?? '',
+              enabled: widget.enabled,
+              onChanged: (value) =>
+                  setState(() => _packQueries[pack.packId] = value),
+              decoration: const InputDecoration(
+                  isDense: true,
+                  labelText: '搜索当前表情包',
+                  hintText: '输入表情的对应文字',
+                  prefixIcon: Icon(Icons.search)))),
+      Expanded(
+          child: assets.isEmpty
+              ? const Center(child: Text('没有找到对应表情，试试其他文字'))
+              : GridView.builder(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 84,
+                      mainAxisExtent: 88,
+                      mainAxisSpacing: AppSpacing.sm,
+                      crossAxisSpacing: AppSpacing.sm),
+                  itemCount: assets.length,
+                  itemBuilder: (context, index) =>
+                      _buildPackCell(pack, assets[index])))
+    ]);
+  }
 
   Widget _buildPackCell(EmojiPackInstallation pack, EmojiManifestAsset asset) {
     return Semantics(
         button: true,
         label: asset.name,
-        child: InkWell(
-            onTap: widget.enabled
-                ? () => _selectInstalledSticker(pack, asset)
-                : null,
-            child: Image.file(_installedStickerFile(pack, asset),
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) =>
-                    const Icon(Icons.broken_image_outlined))));
+        child: Tooltip(
+            message: asset.name,
+            excludeFromSemantics: true,
+            child: InkWell(
+                onTap: widget.enabled
+                    ? () => _selectInstalledSticker(pack, asset)
+                    : null,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                child: Padding(
+                    padding: const EdgeInsets.fromLTRB(3, 3, 3, 1),
+                    child: Column(children: [
+                      Expanded(
+                          child: Image(
+                              image: emojiInstalledThumbnail(
+                                  _packStore!, pack, asset),
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) =>
+                                  const Icon(Icons.broken_image_outlined))),
+                      const SizedBox(height: 2),
+                      ExcludeSemantics(
+                          child: _stickerLabel(context, asset.name,
+                              Theme.of(context).colorScheme.onSurfaceVariant)),
+                    ])))));
+  }
+
+  Widget _stickerLabel(BuildContext context, String label, Color color) {
+    return SizedBox(
+      width: double.infinity,
+      height: MediaQuery.textScalerOf(context).scale(14).clamp(14, 20),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(label,
+            maxLines: 1, style: TextStyle(fontSize: 11, color: color)),
+      ),
+    );
   }
 
   File _installedStickerFile(
@@ -419,6 +483,23 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
 
   void _selectTab(int index) {
     if (index < 0 || index >= _tabCount) return;
+    final generation = ++_tabSelectionGeneration;
+    _initialTabResolved = true;
+    // 等新包完成布局后定位，避免旧边界截断分页，并同步标题与标签。
+    if (index >= _installedTabStart) {
+      setState(() => _tabIndex = index);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            generation != _tabSelectionGeneration ||
+            !_pageController.hasClients ||
+            index >= _tabCount) {
+          return;
+        }
+        _pageController.jumpToPage(index);
+        _handlePageChanged(index);
+      });
+      return;
+    }
     if (MediaQuery.disableAnimationsOf(context)) {
       _pageController.jumpToPage(index);
       return;
@@ -556,45 +637,52 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
         isDark ? AppColors.composerSurfaceDark : AppColors.composerSurfaceLight;
     final muted = emojiMuted(context);
 
-    return Material(
-      color: surface,
-      child: Column(
-        children: [
-          _buildPanelHeader(muted),
-          if (_packsError != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              child: EmojiInlineError(
-                  message: _packsError!, onRetry: () => _loadInstalledPacks()),
-            ),
-          Expanded(
-            child: PageView.builder(
-              key: const ValueKey('emoji-page-view'),
-              controller: _pageController,
-              itemCount: _tabCount,
-              onPageChanged: _handlePageChanged,
-              itemBuilder: (context, index) {
-                if (index == _favoriteTabIndex) {
-                  return _buildFavoriteGrid(muted);
-                }
-                if (index == _emojiTabIndex) {
-                  return _buildEmojiGrid();
-                }
-                if (index == _recentTabIndex) return _buildRecentGrid(muted);
-                if (index >= _installedTabStart) {
-                  return _buildInstalledGrid(
-                      _installedPacks[index - _installedTabStart]);
-                }
-                return _buildStickerGrid(
-                  appStickerGroups[index - _stickerTabStartIndex],
-                  muted,
-                );
-              },
-            ),
+    final content = Column(
+      children: [
+        _buildPanelHeader(muted),
+        if (_packsError != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            child: EmojiInlineError(
+                message: _packsError!, onRetry: () => _loadInstalledPacks()),
           ),
-          _buildBottomTabs(theme, isDark, muted),
-        ],
-      ),
+        Expanded(
+          child: PageView.builder(
+            key: const ValueKey('emoji-page-view'),
+            controller: _pageController,
+            itemCount: _tabCount,
+            onPageChanged: _handlePageChanged,
+            itemBuilder: (context, index) {
+              if (index == _favoriteTabIndex) {
+                return _buildFavoriteGrid(muted);
+              }
+              if (index == _emojiTabIndex) {
+                return _buildEmojiGrid();
+              }
+              if (index == _recentTabIndex) return _buildRecentGrid(muted);
+              if (index >= _installedTabStart) {
+                return _buildInstalledGrid(
+                    _installedPacks[index - _installedTabStart]);
+              }
+              return _buildStickerGrid(
+                appStickerGroups[index - _stickerTabStartIndex],
+                muted,
+              );
+            },
+          ),
+        ),
+        _buildBottomTabs(theme, isDark, muted),
+      ],
+    );
+    if (widget.embedded) {
+      return Material(color: Colors.transparent, child: content);
+    }
+    return AppCardMaterial(
+      key: const ValueKey('emoji-panel-surface'),
+      color: surface,
+      borderRadius: BorderRadius.zero,
+      clipBehavior: Clip.hardEdge,
+      child: content,
     );
   }
 
@@ -613,6 +701,7 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
     } else if (_tabIndex >= _installedTabStart && _tabIndex < _tabCount) {
       final pack = _installedPacks[_tabIndex - _installedTabStart];
       title = pack.name;
+      titleKey = ValueKey('installed-pack-title-${pack.packId}');
       count = pack.manifest.assets.length;
     } else {
       final group = appStickerGroups[_tabIndex - _stickerTabStartIndex];
@@ -984,12 +1073,7 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          sticker.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11, color: muted),
-                        ),
+                        _stickerLabel(context, sticker.label, muted),
                       ],
                     ),
                   ),
@@ -1009,13 +1093,17 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
   ) {
     final divider =
         isDark ? AppColors.composerDividerDark : AppColors.composerDividerLight;
+    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
     return Container(
       height: 50,
       decoration: BoxDecoration(
-        color: isDark
-            ? AppColors.surfaceSecondaryDark
-            : AppColors.surfaceSecondaryLight,
-        border: Border(top: BorderSide(color: divider)),
+        color: glass
+            ? Colors.transparent
+            : isDark
+                ? AppColors.surfaceSecondaryDark
+                : AppColors.surfaceSecondaryLight,
+        border: Border(
+            top: BorderSide(color: glass ? Colors.transparent : divider)),
       ),
       child: Row(
         children: [
@@ -1135,7 +1223,14 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
       icon = pack.manifest.assets.isEmpty || _packStore == null
           ? Icon(Icons.collections_outlined,
               color: selected ? selectedColor : muted)
-          : Image.file(_installedStickerFile(pack, pack.manifest.assets.first),
+          : Image(
+              image: emojiInstalledThumbnail(
+                  _packStore!,
+                  pack,
+                  pack.manifest.assets
+                          .where((asset) => asset.id == pack.iconAssetId)
+                          .firstOrNull ??
+                      pack.manifest.assets.first),
               width: 32,
               height: 32,
               fit: BoxFit.contain,

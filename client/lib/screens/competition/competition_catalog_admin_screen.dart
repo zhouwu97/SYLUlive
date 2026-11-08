@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../models/competition.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
+import '../../widgets/state_placeholder.dart';
 import 'competition_catalog_package_detail_screen.dart';
 
 class CompetitionCatalogAdminScreen extends StatefulWidget {
@@ -21,6 +22,7 @@ class CompetitionCatalogAdminScreen extends StatefulWidget {
 class _CompetitionCatalogAdminScreenState
     extends State<CompetitionCatalogAdminScreen> {
   bool _loading = true;
+  String? _loadError;
   List<CompetitionCatalogPackage> _packages = const [];
 
   @override
@@ -30,7 +32,10 @@ class _CompetitionCatalogAdminScreenState
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
     try {
       final response = await widget.dio.get(
         '/admin/competition-catalog/packages',
@@ -50,7 +55,10 @@ class _CompetitionCatalogAdminScreenState
       });
     } on DioException catch (error) {
       if (!mounted) return;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _loadError = AppFeedback.dioErrorMessage(error, fallback: '加载目录包失败');
+      });
       AppFeedback.showSnackBar(
         context,
         AppFeedback.dioErrorMessage(error, fallback: '加载目录包失败'),
@@ -77,7 +85,26 @@ class _CompetitionCatalogAdminScreenState
         onRefresh: _load,
         child: _loading
             ? const Center(child: CircularProgressIndicator())
-            : ListView.separated(
+            : _packages.isEmpty
+                ? ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 240),
+                        child: StatePlaceholder(
+                          icon: _loadError == null
+                              ? Icons.inventory_2_outlined
+                              : Icons.cloud_off_outlined,
+                          title: _loadError ?? '暂无目录包',
+                          subtitle: _loadError == null ? '导入目录包后会显示在这里。' : null,
+                          actionLabel: '重新加载',
+                          onAction: _load,
+                        ),
+                      ),
+                    ],
+                  )
+                : ListView.separated(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(16),
                 itemCount: _packages.length,

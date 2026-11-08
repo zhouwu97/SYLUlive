@@ -19,7 +19,8 @@ class GraduationChecklistScreen extends StatelessWidget {
   Widget _buildPageWithBackground(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('毕业清单')),
-      body: ListView(
+      body: AppContentSurface(
+          child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         children: [
           ListTile(
@@ -49,7 +50,7 @@ class GraduationChecklistScreen extends StatelessWidget {
             ),
           ],
         ],
-      ),
+      )),
     );
   }
 

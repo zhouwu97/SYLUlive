@@ -1,3 +1,4 @@
+import '../../helpers/active_backdrop_filters.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +7,7 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/settings/appearance_settings_screen.dart';
+import 'package:shenliyuan/screens/settings/bottom_navigation_settings_screen.dart';
 import 'package:shenliyuan/theme/app_text_scaler.dart';
 import 'package:shenliyuan/widgets/settings/settings_slider_tile.dart';
 import 'package:shenliyuan/widgets/settings/settings_tile.dart';
@@ -116,7 +118,8 @@ void main() {
     );
     expect(find.text('交互与视觉效果'), findsOneWidget);
     expect(find.text('预测性返回手势'), findsOneWidget);
-    expect(find.text('毛玻璃卡片'), findsOneWidget);
+    expect(find.text('毛玻璃卡片'), findsNothing);
+    expect(find.text('毛玻璃特效'), findsNothing);
 
     await tester.scrollUntilVisible(
       find.text('选择背景图片'),
@@ -131,7 +134,10 @@ void main() {
     );
 
     expect(find.text('背景高斯模糊'), findsOneWidget);
-    expect(find.text('组件卡片不透明度'), findsOneWidget);
+    expect(find.text('组件卡片不透明度'), findsNothing);
+    await tester.scrollUntilVisible(find.text('卡片外观'), 140,
+        scrollable: find.byType(Scrollable).first);
+    expect(find.text('卡片外观'), findsOneWidget);
     // 底栏样式配置（含液态玻璃）已收敛到底部导航栏二级页，外观页只留入口。
     expect(find.text('液态玻璃 2.0 效果'), findsNothing);
     expect(find.text('悬浮式底栏导航'), findsNothing);
@@ -145,7 +151,7 @@ void main() {
     expect(find.byType(CustomBackgroundLayer), findsOneWidget);
     expect(tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
         Colors.transparent);
-    expect(find.byType(BackdropFilter), findsWidgets);
+    expect(activeBackdropFilters(), findsWidgets);
     await themeProvider.setCleanBackgroundMode();
     await tester.pumpAndSettle();
     expect(tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
@@ -158,7 +164,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('预测性返回手势与毛玻璃卡片开关默认关闭，点击后切换并持久化', (tester) async {
+  testWidgets('预测性返回开关保留，卡片外观入口集中管理参数和四档开关', (tester) async {
+    await themeProvider.setBackgroundImage('morenbeijing.jpeg');
     expect(themeProvider.predictiveBack, isFalse);
     expect(themeProvider.frostedGlass, isFalse);
 
@@ -178,7 +185,7 @@ void main() {
     );
 
     expect(find.text('预测性返回手势'), findsOneWidget);
-    expect(find.text('毛玻璃卡片'), findsOneWidget);
+    expect(find.text('毛玻璃卡片'), findsNothing);
     expect(find.text('液态玻璃 2.0 效果'), findsNothing);
     expect(find.text('悬浮式底栏导航'), findsNothing);
 
@@ -201,23 +208,47 @@ void main() {
     final prefs = await AppPreferencesStore.getInstance();
     expect(prefs.getBool('predictive_back_enabled'), isTrue);
 
-    // 点击毛玻璃卡片开关
-    final frostedGlassTile = find.ancestor(
-      of: find.text('毛玻璃卡片'),
-      matching: find.byType(SettingsTile),
-    );
-    await tester.ensureVisible(frostedGlassTile);
+    await tester.scrollUntilVisible(find.text('卡片外观'), 140,
+        scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
-
-    final frostedSwitch = find.descendant(
-      of: frostedGlassTile,
-      matching: find.byType(Switch),
-    );
-    await tester.tap(frostedSwitch);
+    expect(find.text('不透明度 100% · 毛玻璃关闭'), findsOneWidget);
+    await tester.tap(find.text('卡片外观'));
+    await tester.pumpAndSettle();
+    expect(find.byWidgetPredicate(
+      (widget) => widget is SettingsTile && widget.title == '毛玻璃卡片',
+      skipOffstage: false,
+    ), findsNothing);
+    expect(find.byType(Switch), findsNothing);
+    expect(find.text('卡片不透明度'), findsOneWidget);
+    await tester.ensureVisible(find.text('高性能'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('高性能'));
     await tester.pumpAndSettle();
 
     expect(themeProvider.frostedGlass, isTrue);
     expect(prefs.getBool('frosted_glass_enabled'), isTrue);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('毛玻璃卡片'), findsNothing);
+    expect(find.text('不透明度 75% · 高性能'), findsOneWidget);
+  });
+
+  testWidgets('卡片外观入口展示预设及不透明度并打开统一设置页', (tester) async {
+    await themeProvider.setBackgroundImage('morenbeijing.jpeg');
+    await themeProvider.setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode.highPerformance);
+    await tester.pumpWidget(_buildTestApp(auth: authProvider, theme: themeProvider));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('卡片外观'), 200);
+    await tester.pumpAndSettle();
+    expect(find.text('不透明度 75% · 高性能'), findsOneWidget);
+    await tester.tap(find.text('卡片外观'));
+    await tester.pumpAndSettle();
+    expect(find.text('毛玻璃强度'), findsOneWidget);
+    expect(find.text('卡片不透明度'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('不透明度 75% · 高性能'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('字体大小滑块提供六档语义并立即持久化', (tester) async {
@@ -362,6 +393,42 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('底部导航栏'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('底栏入口按零强度显示悬浮底栏，其余显示液态玻璃与当前预设', (tester) async {
+    await themeProvider.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
+    await tester.pumpWidget(_buildTestApp(auth: authProvider, theme: themeProvider));
+    await tester.pumpAndSettle();
+    final entry = find.widgetWithText(SettingsTile, '底部导航栏');
+    await tester.scrollUntilVisible(entry, 200,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+    String? summary() => tester.widget<SettingsTile>(entry).subtitle;
+    expect(summary(), '悬浮底栏');
+    await themeProvider.setBottomNavAnimationIntensity(.35);
+    await tester.pumpAndSettle();
+    expect(summary(), '液态玻璃底栏 · 高性能');
+    await themeProvider.setBottomNavAnimationIntensity(1);
+    await tester.pumpAndSettle();
+    expect(summary(), '液态玻璃底栏 · 高画质');
+    await themeProvider.setBottomNavAnimationIntensity(.62);
+    await tester.pumpAndSettle();
+    expect(summary(), '液态玻璃底栏 · 自定义');
+    await themeProvider.setBottomNavAnimationIntensity(0);
+    await tester.pumpAndSettle();
+    expect(summary(), '悬浮底栏');
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomNavigationSettingsScreen), findsOneWidget);
+    final slider = find.descendant(
+        of: find.byKey(const ValueKey('bottom-nav-intensity')),
+        matching: find.byType(Slider));
+    tester.widget<Slider>(slider).onChanged!(.35);
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(summary(), '液态玻璃底栏 · 高性能');
     expect(tester.takeException(), isNull);
   });
 

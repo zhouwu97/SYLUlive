@@ -58,8 +58,10 @@ class CompetitionEmptyState extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
             children: [
               FilledButton(
                 onPressed: onPrimaryTap,
@@ -79,7 +81,6 @@ class CompetitionEmptyState extends StatelessWidget {
                       fontWeight: FontWeight.w600, fontSize: 14),
                 ),
               ),
-              const SizedBox(width: 12),
               OutlinedButton(
                 onPressed: onSecondaryTap,
                 style: OutlinedButton.styleFrom(

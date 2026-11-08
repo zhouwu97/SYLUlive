@@ -91,6 +91,7 @@ void main() {
 
     // 2. 创建一个挂起的网络请求 Completer
     final networkCompleter = Completer<Response<dynamic>>();
+    final networkStarted = Completer<void>();
     var networkRequestCount = 0;
 
     final dio = Dio();
@@ -98,6 +99,7 @@ void main() {
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           networkRequestCount++;
+          if (!networkStarted.isCompleted) networkStarted.complete();
           // 等待挂起的 Completer 完成
           final res = await networkCompleter.future;
           handler.resolve(res);
@@ -106,12 +108,19 @@ void main() {
     );
 
     final provider = PostProvider(dio, enableCache: true);
+    final cacheShown = Completer<void>();
+    provider.addListener(() {
+      if (!cacheShown.isCompleted &&
+          provider.postsFor(1, sort: 'all').any((post) => post.id == 999)) {
+        cacheShown.complete();
+      }
+    });
 
     // 3. 启动首屏初始化
     final initFuture = provider.ensureInitialFeed(boardId: 1, sort: 'all');
 
-    // 让 microtask 和本地缓存读取调度执行
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    // 等待真实缓存上屏信号，不把机器调度速度当作缓存契约。
+    await cacheShown.future.timeout(const Duration(seconds: 5));
 
     // 4. 关键断言：网络响应尚未返回时，缓存帖子必须已经发布并可见！
     expect(networkCompleter.isCompleted, isFalse, reason: '网络请求此时应当仍在挂起');
@@ -123,7 +132,8 @@ void main() {
     // 5. 并发再次调用 ensureInitialFeed：必须返回同一个在途 Future，不重复触发网络请求
     final secondInitFuture =
         provider.ensureInitialFeed(boardId: 1, sort: 'all');
-    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(identical(initFuture, secondInitFuture), isTrue);
+    await networkStarted.future.timeout(const Duration(seconds: 5));
     expect(networkRequestCount, 1, reason: '在途初始化期间不应触发重复网络请求');
 
     // 6. 网络响应完成，返回新数据

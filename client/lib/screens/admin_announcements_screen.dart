@@ -104,7 +104,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
 
     if (!context.mounted) return;
 
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
@@ -572,7 +572,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
       ),
       children: [
         Center(
-          child: ConstrainedBox(
+          child: AppContentSurface.card(
+              child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 300),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -628,7 +629,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                 ],
               ],
             ),
-          ),
+          )),
         ),
       ],
     );
@@ -704,7 +705,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                     child: Scrollbar(
                       thumbVisibility: true,
                       child: ListView.builder(
-                addRepaintBoundaries: false,
+                        addRepaintBoundaries: false,
                         keyboardDismissBehavior:
                             ScrollViewKeyboardDismissBehavior.onDrag,
                         physics: const AlwaysScrollableScrollPhysics(

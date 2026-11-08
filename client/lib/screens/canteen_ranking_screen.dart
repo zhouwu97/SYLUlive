@@ -12,6 +12,7 @@ import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/canteen_ranking_item.dart';
 import '../widgets/canteen/canteen_ranking_filter.dart';
 import 'canteen_detail_screen.dart';
+import '../widgets/app_card.dart';
 
 /// 完整排行榜：综合排序 / 评分优先 / 评价人数。
 /// rank 由服务端返回；同时展示原始星级、评价人数与综合分，便于用户理解。
@@ -29,7 +30,8 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
   String _locationFloor = '';
 
   /// 位置筛选（'' = 不限）：区域与楼层组合生效。
-  List<CanteenRankingItem> _applyLocationFilter(List<CanteenRankingItem> items) {
+  List<CanteenRankingItem> _applyLocationFilter(
+      List<CanteenRankingItem> items) {
     return items
         .where((item) => canteenRankingItemMatchesLocation(
             item, _locationArea, _locationFloor))
@@ -52,8 +54,17 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
     context.read<CanteenDiscoveryProvider>().loadRanking(sort: sort);
   }
 
+  Future<void> _refreshRanking() async {
+    final provider = context.read<CanteenDiscoveryProvider>();
+    await provider.loadRanking(sort: _sort, forceRefresh: true);
+    if (!mounted || provider.rankingError == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(provider.rankingError!)),
+    );
+  }
+
   void _showExplanation(bool isDark) {
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         backgroundColor: CanteenTheme.surfaceBg(isDark),
@@ -108,7 +119,7 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
   }
 
   Future<void> _confirmDelete(CanteenRankingItem item) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: const Text('删除商家'),
@@ -144,7 +155,8 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
+      backgroundColor:
+          AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
       appBar: AppBar(
         leading: const BackButton(),
         title: const Text(
@@ -154,7 +166,8 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
+        backgroundColor:
+            AppPageBackground.color(context, CanteenTheme.pageBg(isDark)),
         surfaceTintColor: Colors.transparent,
         foregroundColor: CanteenTheme.textPrimaryColor(isDark),
       ),
@@ -165,11 +178,10 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
             onChanged: _switchSort,
             locationArea: _locationArea,
             locationFloor: _locationFloor,
-            onLocationFilterChanged: (area, floor) =>
-                setState(() {
-                  _locationArea = area;
-                  _locationFloor = floor;
-                }),
+            onLocationFilterChanged: (area, floor) => setState(() {
+              _locationArea = area;
+              _locationFloor = floor;
+            }),
           ),
           _buildExplanationLine(isDark),
           const SizedBox(height: 4),
@@ -180,8 +192,9 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
   }
 
   Widget _buildExplanationLine(bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+    return AppContentSurface.card(
+        child: Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
       child: Row(
         children: [
           Expanded(
@@ -203,7 +216,7 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildList(bool isDark) {
@@ -224,7 +237,7 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
             title: '加载失败',
             subtitle: provider.rankingError,
             actionLabel: '重新加载',
-            onAction: () => provider.loadRanking(sort: _sort),
+            onAction: _refreshRanking,
           );
         }
         if (items.isEmpty) {
@@ -250,8 +263,9 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
         }
 
         return RefreshIndicator(
-          onRefresh: () => provider.loadRanking(sort: _sort),
+          onRefresh: _refreshRanking,
           child: ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             itemCount: items.length,
             itemBuilder: (_, index) {

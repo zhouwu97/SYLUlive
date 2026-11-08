@@ -1,3 +1,4 @@
+import '../helpers/active_backdrop_filters.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -93,7 +94,7 @@ void main() {
           isFalse);
       expect(tester.widget(today), isA<AppCardSurface>());
       for (final card in [search, today]) {
-        expect(find.descendant(of: card, matching: find.byType(BackdropFilter)),
+        expect(find.descendant(of: card, matching: activeBackdropFilters()),
             findsOneWidget);
       }
       await tester.ensureVisible(find.text('测试菜品'));
@@ -107,11 +108,11 @@ void main() {
           until: () => tester.widgetList<RawImage>(dishPixels).any((w) => w.image != null));
       expect(tester.widgetList<RawImage>(dishPixels).any((w) => w.image != null), isTrue,
           reason: '等待实拍图片的真实缓存与解码链完成，再采样和清理缓存计时器');
-      expect(find.descendant(of: dish, matching: find.byType(BackdropFilter)),
+      expect(find.descendant(of: dish, matching: activeBackdropFilters()),
           findsOneWidget);
       final rect = tester.getRect(dish);
       final filter = tester.getRect(
-          find.descendant(of: dish, matching: find.byType(BackdropFilter)));
+          find.descendant(of: dish, matching: activeBackdropFilters()));
       expect(filter, rect, reason: '封面与正文使用同一完整材质区域');
 
       final dir = Platform.environment['BACKGROUND_QA_DIR'];
@@ -133,7 +134,7 @@ void main() {
       }
       await theme.setFrostedGlass(false);
       await tester.pumpAndSettle();
-      expect(find.byType(BackdropFilter), findsNothing);
+      expect(activeBackdropFilters(), findsNothing);
       await theme.setCleanBackgroundMode();
       await tester.pumpAndSettle();
       expect(theme.backgroundImage, 'morenbeijing.jpeg');

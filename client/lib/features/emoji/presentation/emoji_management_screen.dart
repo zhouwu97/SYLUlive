@@ -12,16 +12,21 @@ import '../../../services/emoji_favorite_service.dart';
 import '../../../theme/app_radius.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/emoji/sticker_catalog.dart';
+import '../../../widgets/app_bottom_sheet.dart';
 import '../application/emoji_pack_installer.dart';
 import '../application/emoji_recent_manager.dart';
 import '../data/emoji_pack_local_store.dart';
 import '../data/emoji_pack_runtime.dart';
-import '../domain/emoji_pack.dart';
 import '../domain/emoji_pack_installation.dart';
 import 'emoji_download_screen.dart';
+import 'emoji_import_screen.dart';
+import 'emoji_creator_screen.dart';
+import 'emoji_local_thumbnail.dart';
 import 'emoji_ui.dart';
 
-enum _PackAction { preview, up, down, rollback, remove }
+enum _PackAction { preview, up, down, rollback, remove, tags }
+
+enum _AddAction { images, archive, catalog, submissions }
 
 class EmojiManagementScreen extends StatefulWidget {
   const EmojiManagementScreen(
@@ -234,6 +239,63 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
     }
   }
 
+  Future<void> _add() async {
+    final epoch = _accountEpoch;
+    final action = await showAppModalBottomSheet<_AddAction>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              ListTile(
+                  leading: const Icon(Icons.add_photo_alternate_outlined),
+                  title: const Text('从相册添加'),
+                  subtitle: const Text('多选图片，自动整理成表情包'),
+                  onTap: () => Navigator.pop(context, _AddAction.images)),
+              ListTile(
+                  leading: const Icon(Icons.folder_open_outlined),
+                  title: const Text('导入表情包文件'),
+                  subtitle: const Text('支持图片 ZIP 和 .sylupack'),
+                  onTap: () => Navigator.pop(context, _AddAction.archive)),
+              ListTile(
+                  leading: const Icon(Icons.collections_outlined),
+                  title: const Text('浏览表情商城'),
+                  subtitle: const Text('官方表情与审核通过的校园分享'),
+                  onTap: () => Navigator.pop(context, _AddAction.catalog)),
+              ListTile(
+                  leading: const Icon(Icons.cloud_upload_outlined),
+                  title: const Text('创作中心'),
+                  subtitle: const Text('申请创作者、制作作品与查看审核结果'),
+                  onTap: () => Navigator.pop(context, _AddAction.submissions)),
+            ]))));
+    if (!mounted || !_current(epoch) || action == null || _store == null) {
+      return;
+    }
+    if (action == _AddAction.catalog) return _openDownloads();
+    if (action == _AddAction.submissions) {
+      await _openCreator();
+      return;
+    }
+    final result = await Navigator.of(context).push<String>(MaterialPageRoute(
+        builder: (_) => EmojiImportScreen(
+            store: _store!,
+            recentManager: _recentManager,
+            initialSource: action == _AddAction.images
+                ? EmojiImportSource.images
+                : EmojiImportSource.archive)));
+    if (!_current(epoch)) return;
+    await _load();
+    if (mounted && _current(epoch) && result != null) {
+      if (widget.returnToPicker) {
+        Navigator.of(context).pop(result);
+      } else {
+        _feedback('表情包已导入，可以在表情面板使用');
+      }
+    }
+  }
+
   Future<void> _openDetail(EmojiPackInstallation pack) async {
     final store = _store;
     if (store == null) return;
@@ -243,7 +305,7 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
               pack: pack,
               store: store,
               recentManager: _recentManager,
-              onRepair: pack.trustLevel == EmojiPackTrustLevel.serverOfficial
+              onRepair: pack.isCatalogPack
                   ? () {
                       if (!_current(epoch)) return;
                       Navigator.of(context).pop();
@@ -254,11 +316,34 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
     if (_current(epoch)) await _load();
   }
 
+  Future<void> _openCreator() async {
+    if (_store == null) return;
+    final epoch = _accountEpoch;
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => EmojiCreatorScreen(store: _store)));
+    if (_current(epoch)) await _load();
+  }
+
+  Future<void> _editTags(EmojiPackInstallation pack) async {
+    final epoch = _accountEpoch, store = _store;
+    if (store == null) return;
+    final value = await showDialog<List<String>>(
+        context: context,
+        builder: (_) => AnimatedBuilder(
+            animation: _recentManager,
+            builder: (context, _) => _EmojiPersonalTagsDialog(
+                pack: pack, current: _current(epoch))));
+    if (value != null && _current(epoch)) {
+      await _run(() => store.setPersonalTags(pack.packId, value),
+          packId: pack.packId);
+    }
+  }
+
   Future<void> _remove(EmojiPackInstallation pack) async {
     final store = _store;
     final epoch = _accountEpoch;
     if (store == null) return;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
         context: context,
         builder: (context) => AnimatedBuilder(
             animation: _recentManager,
@@ -299,8 +384,13 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
               .manifest.assets.isEmpty ||
           _store == null
       ? null
-      : FileImage(File(
-          '${_store!.versionDirectory(pack.packId, pack.version).path}/${pack.manifest.assets.first.path}'));
+      : emojiInstalledThumbnail(
+          _store!,
+          pack,
+          pack.manifest.assets
+                  .where((asset) => asset.id == pack.coverAssetId)
+                  .firstOrNull ??
+              pack.manifest.assets.first);
 
   Widget _packRow(EmojiPackInstallation pack) {
     final index = _packs!.indexOf(pack);
@@ -311,7 +401,7 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
       key: ValueKey('managed-pack-${pack.packId}'),
       name: pack.name,
       detail:
-          '${pack.manifest.assets.length} 个表情 · ${emojiBytesLabel(pack.totalSize)}',
+          '${pack.manifest.assets.length} 个表情 · ${emojiBytesLabel(pack.totalSize)}${pack.personalTags.isEmpty ? '' : '\n个人标签：${pack.personalTags.join('、')}'}',
       cover: EmojiCover(image: _packImage(pack), label: '${pack.name}封面'),
       status: busy
           ? '正在处理…'
@@ -350,8 +440,7 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
                   ? null
                   : () => _move(pack, 1),
               icon: const Icon(Icons.arrow_downward, size: 20)),
-        ] else if (damaged &&
-            pack.trustLevel == EmojiPackTrustLevel.serverOfficial)
+        ] else if (damaged && pack.isCatalogPack)
           TextButton(
               onPressed:
                   _busy ? null : () => _openDownloads(packId: pack.packId),
@@ -382,6 +471,8 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
               _menuOpen = false;
               if (!_current(epoch)) return;
               switch (action) {
+                case _PackAction.tags:
+                  unawaited(_editTags(pack));
                 case _PackAction.preview:
                   unawaited(_openDetail(pack));
                 case _PackAction.up:
@@ -400,6 +491,7 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
             itemBuilder: (_) => [
               const PopupMenuItem(
                   value: _PackAction.preview, child: Text('查看表情')),
+              const PopupMenuItem(value: _PackAction.tags, child: Text('个人标签')),
               PopupMenuItem(
                   value: _PackAction.up,
                   enabled: index > 0,
@@ -528,48 +620,66 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
     ));
   }
 
-  Widget _managementTabs() => Row(children: [
-        for (final favorite in [false, true])
-          Padding(
-            padding: const EdgeInsets.only(right: AppSpacing.lg),
-            child: Semantics(
-              button: true,
-              selected: _showFavorites == favorite,
-              child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    onTap: _busy
-                        ? null
-                        : () => setState(() => _showFavorites = favorite),
-                    child: Container(
-                      constraints:
-                          const BoxConstraints(minHeight: 48, minWidth: 44),
-                      alignment: Alignment.center,
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-                      decoration: BoxDecoration(
-                          border: Border(
-                              bottom: BorderSide(
-                                  color: _showFavorites == favorite
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Colors.transparent,
-                                  width: 2))),
-                      child: Text(favorite ? '收藏' : '我的表情包',
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelLarge
-                              ?.copyWith(
-                                  color: _showFavorites == favorite
-                                      ? Theme.of(context).colorScheme.primary
-                                      : emojiMuted(context),
-                                  fontWeight: _showFavorites == favorite
-                                      ? FontWeight.w600
-                                      : FontWeight.w400)),
-                    ),
-                  )),
+  Widget _managementTabs() =>
+      Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Wrap(spacing: AppSpacing.sm, children: [
+          TextButton.icon(
+              onPressed:
+                  _store == null || _busy ? null : () => _openDownloads(),
+              icon: const Icon(Icons.storefront_outlined),
+              label: const Text('表情商城 · 免费')),
+          TextButton.icon(
+              onPressed: _store == null || _busy ? null : _openCreator,
+              icon: const Icon(Icons.draw_outlined),
+              label: const Text('创作中心')),
+        ]),
+        AppContentSurface.card(
+            child: Row(children: [
+          for (final favorite in [false, true])
+            Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.lg),
+              child: Semantics(
+                button: true,
+                selected: _showFavorites == favorite,
+                child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      onTap: _busy
+                          ? null
+                          : () => setState(() => _showFavorites = favorite),
+                      child: Container(
+                        constraints:
+                            const BoxConstraints(minHeight: 48, minWidth: 44),
+                        alignment: Alignment.center,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xs),
+                        decoration: BoxDecoration(
+                            border: Border(
+                                bottom: BorderSide(
+                                    color: _showFavorites == favorite
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Colors.transparent,
+                                    width: 2))),
+                        child: Text(favorite ? '收藏' : '我的表情包',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelLarge
+                                ?.copyWith(
+                                    color:
+                                        _showFavorites == favorite
+                                            ? Theme.of(context)
+                                                .colorScheme
+                                                .primary
+                                            : emojiMuted(context),
+                                    fontWeight: _showFavorites == favorite
+                                        ? FontWeight.w600
+                                        : FontWeight.w400)),
+                      ),
+                    )),
+              ),
             ),
-          ),
+        ]))
       ]);
 
   Widget _favoriteCell(EmojiFavoriteItem item, int index) {
@@ -662,6 +772,10 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                   _managementTabs(),
+                  const SizedBox(height: AppSpacing.md),
+                  EmojiContentCard(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
                   EmojiSectionHeader(
                       title: '我的收藏',
                       detail: items == null ? null : '${items.length} 个收藏',
@@ -694,6 +808,7 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
                                 icon: const Icon(
                                     Icons.add_photo_alternate_outlined),
                                 label: const Text('添加图片'))),
+                ])),
                 ]))),
         if (items?.isNotEmpty == true)
           SliverPadding(
@@ -745,13 +860,17 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
   Widget build(BuildContext context) {
     final packs = _packs;
     final visible = (packs ?? [])
-        .where((pack) => pack.name.toLowerCase().contains(_query.toLowerCase()))
+        .where((pack) =>
+            '${pack.name} ${pack.personalTags.join(' ')} ${pack.manifest.assets.map((asset) => asset.name).join(' ')}'
+                .toLowerCase()
+                .contains(_query.toLowerCase()))
         .toList();
     return EmojiPageScaffold(
       title: '表情管理',
+      bodyHasCardSurfaces: true,
       actions: [
         TextButton(
-            onPressed: _store == null || _busy ? null : () => _openDownloads(),
+            onPressed: _store == null || _busy ? null : _add,
             child: const Text('添加'))
       ],
       body: RefreshIndicator(
@@ -765,78 +884,92 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
                       AppSpacing.sm, AppSpacing.lg, AppSpacing.xxl),
                   children: [
                     _managementTabs(),
-                    EmojiSectionHeader(
-                        title: '已安装',
-                        detail: packs == null
-                            ? null
-                            : '${packs.length} 个表情包 · ${emojiBytesLabel(_storageBytes)}',
-                        action: TextButton(
-                            onPressed:
-                                _busy || packs == null || packs.length < 2
-                                    ? null
-                                    : () => setState(() {
-                                          _sorting = !_sorting;
-                                          _query = '';
-                                        }),
-                            child: Text(_sorting ? '完成' : '排序'))),
-                    if (!_sorting && packs?.isNotEmpty == true)
-                      TextField(
-                        key: const ValueKey('emoji-pack-search'),
-                        onChanged: (value) => setState(() => _query = value),
-                        decoration: InputDecoration(
-                            hintText: '搜索表情包',
-                            prefixIcon: const Icon(Icons.search, size: 20),
-                            filled: true,
-                            fillColor: emojiSurface(context),
-                            enabledBorder: OutlineInputBorder(
-                                borderRadius:
-                                    BorderRadius.circular(AppRadius.md),
-                                borderSide:
-                                    BorderSide(color: emojiBorder(context)))),
-                      ),
-                    if (_error != null)
-                      EmojiInlineError(
-                          message: '读取表情包失败，已显示内容会保留',
-                          onRetry: _busy ? null : _load),
-                    if (packs == null && _error == null)
-                      const Padding(
-                          padding: EdgeInsets.all(AppSpacing.xxl),
-                          child: Center(child: CircularProgressIndicator()))
-                    else if (packs?.isEmpty == true)
-                      EmojiStateView(
-                          title: '暂无已安装的表情包',
-                          detail: '内置表情可直接使用，也可以添加官方表情。',
-                          action: OutlinedButton.icon(
-                              onPressed: _store == null
-                                  ? null
-                                  : () => _openDownloads(),
-                              icon: const Icon(Icons.add),
-                              label: const Text('添加表情包')))
-                    else if (packs != null) ...[
-                      if (visible.isEmpty)
-                        const EmojiStateView(
-                            title: '没有找到这个表情包', detail: '换个关键词试试。'),
-                      for (final pack in visible) ...[
-                        _packRow(pack),
-                        AppCardDivider(height: 1, color: emojiBorder(context))
+                    const SizedBox(height: AppSpacing.md),
+                    EmojiContentCard(
+                        child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        EmojiSectionHeader(
+                            title: '已安装',
+                            detail: packs == null
+                                ? null
+                                : '${packs.length} 个表情包 · ${emojiBytesLabel(_storageBytes)}',
+                            action: TextButton(
+                                onPressed:
+                                    _busy || packs == null || packs.length < 2
+                                        ? null
+                                        : () => setState(() {
+                                              _sorting = !_sorting;
+                                              _query = '';
+                                            }),
+                                child: Text(_sorting ? '完成' : '排序'))),
+                        if (!_sorting && packs?.isNotEmpty == true)
+                          TextField(
+                            key: const ValueKey('emoji-pack-search'),
+                            onChanged: (value) =>
+                                setState(() => _query = value),
+                            decoration: InputDecoration(
+                                hintText: '搜索表情包、对应文字或个人标签',
+                                prefixIcon: const Icon(Icons.search, size: 20),
+                                filled: true,
+                                fillColor: emojiSurface(context),
+                                enabledBorder: OutlineInputBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(AppRadius.md),
+                                    borderSide: BorderSide(
+                                        color: emojiBorder(context)))),
+                          ),
+                        if (_error != null)
+                          EmojiInlineError(
+                              message: '读取表情包失败，已显示内容会保留',
+                              onRetry: _busy ? null : _load),
+                        if (packs == null && _error == null)
+                          const Padding(
+                              padding: EdgeInsets.all(AppSpacing.xxl),
+                              child: Center(child: CircularProgressIndicator()))
+                        else if (packs?.isEmpty == true)
+                          EmojiStateView(
+                              title: '暂无已安装的表情包',
+                              detail: '从相册、ZIP 文件或表情库添加喜欢的表情。',
+                              action: OutlinedButton.icon(
+                                  onPressed: _store == null ? null : _add,
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('添加表情包')))
+                        else if (packs != null) ...[
+                          if (visible.isEmpty)
+                            const EmojiStateView(
+                                title: '没有找到这个表情包', detail: '换个关键词试试。'),
+                          for (final pack in visible) ...[
+                            _packRow(pack),
+                            AppCardDivider(
+                                height: 1, color: emojiBorder(context))
+                          ],
+                        ],
                       ],
-                    ],
-                    const EmojiSectionHeader(title: '系统内置'),
-                    EmojiPackRow(
-                      name: appStickerGroups.first.name,
-                      detail:
-                          '${appStickerGroups.first.items.length} 个表情 · 无需下载',
-                      status: '内置表情始终可用',
-                      statusIcon: Icons.offline_bolt_outlined,
-                      cover: EmojiCover(
-                          image: AssetImage(appStickerGroups
-                              .first.items.first.thumbnailAsset)),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                              builder: (_) => EmojiBuiltinPackPreviewScreen(
-                                  group: appStickerGroups.first))),
-                    ),
+                    )),
+                    const SizedBox(height: AppSpacing.md),
+                    EmojiContentCard(
+                        child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const EmojiSectionHeader(title: '系统内置'),
+                        EmojiPackRow(
+                          name: appStickerGroups.first.name,
+                          detail:
+                              '${appStickerGroups.first.items.length} 个表情 · 无需下载',
+                          status: '内置表情始终可用',
+                          statusIcon: Icons.offline_bolt_outlined,
+                          cover: EmojiCover(
+                              image: AssetImage(appStickerGroups
+                                  .first.items.first.thumbnailAsset)),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                  builder: (_) => EmojiBuiltinPackPreviewScreen(
+                                      group: appStickerGroups.first))),
+                        ),
+                      ],
+                    )),
                   ],
                 )),
     );
@@ -893,7 +1026,8 @@ class _EmojiPackDetailScreenState extends State<EmojiPackDetailScreen> {
             EmojiPreviewItem(
                 id: asset.id,
                 name: asset.name,
-                image: FileImage(File(
+                image: emojiInstalledThumbnail(store, pack, asset),
+                previewImage: FileImage(File(
                     '${store.versionDirectory(pack.packId, pack.version).path}/${asset.path}')),
                 animated: asset.animated)
         ];
@@ -976,4 +1110,78 @@ class EmojiBuiltinPackPreviewScreen extends StatelessWidget {
           EmojiPreviewGrid(items: items, shrinkWrap: true),
         ]));
   }
+}
+
+class _EmojiPersonalTagsDialog extends StatefulWidget {
+  const _EmojiPersonalTagsDialog({required this.pack, required this.current});
+  final EmojiPackInstallation pack;
+  final bool current;
+  @override
+  State<_EmojiPersonalTagsDialog> createState() =>
+      _EmojiPersonalTagsDialogState();
+}
+
+class _EmojiPersonalTagsDialogState extends State<_EmojiPersonalTagsDialog> {
+  late final TextEditingController _tags =
+      TextEditingController(text: widget.pack.personalTags.join('，'));
+  final _form = GlobalKey<FormState>();
+  @override
+  void dispose() {
+    _tags.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AppAlertDialog(
+          title: const Text('个人标签'),
+          content: SingleChildScrollView(
+              child: Form(
+                  key: _form,
+                  child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(widget.current
+                            ? '仅用于自己的分类与查找，不会公开到商城。'
+                            : '账号已切换，请关闭后重新操作。'),
+                        if (widget.current)
+                          TextFormField(
+                              controller: _tags,
+                              enabled: widget.current,
+                              maxLength: 124,
+                              decoration: const InputDecoration(
+                                  labelText: '用逗号分隔，最多 5 个'),
+                              validator: (value) {
+                                final tags = (value ?? '')
+                                    .split(RegExp('[,，]'))
+                                    .map((tag) => tag.trim())
+                                    .where((tag) => tag.isNotEmpty)
+                                    .toSet();
+                                return tags.length > 5 ||
+                                        tags.any((tag) => tag.runes.length > 24)
+                                    ? '最多 5 个标签，每个不超过 24 个字符'
+                                    : null;
+                              }),
+                      ]))),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('取消')),
+            FilledButton(
+                onPressed: !widget.current
+                    ? null
+                    : () {
+                        if (_form.currentState!.validate()) {
+                          Navigator.pop(
+                              context,
+                              _tags.text
+                                  .split(RegExp('[,，]'))
+                                  .map((tag) => tag.trim())
+                                  .where((tag) => tag.isNotEmpty)
+                                  .toSet()
+                                  .toList());
+                        }
+                      },
+                child: const Text('保存'))
+          ]);
 }

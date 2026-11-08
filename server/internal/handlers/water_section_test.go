@@ -40,6 +40,7 @@ func newWaterSectionTestDB(t *testing.T) *gorm.DB {
 		&models.Post{},
 		&models.PostImage{},
 		&models.Like{},
+		&models.Reply{},
 		&models.WaterSection{},
 		&models.WaterSectionFollow{},
 		&models.WaterSectionTag{},

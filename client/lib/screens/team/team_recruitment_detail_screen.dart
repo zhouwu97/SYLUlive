@@ -115,7 +115,7 @@ class _TeamRecruitmentDetailScreenState
   }
 
   Future<void> _delete(TeamRecruitment item) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
           context: context,
           builder: (dialogContext) => AppAlertDialog(
             title: const Text('删除组队'),
@@ -183,7 +183,7 @@ class _TeamRecruitmentDetailScreenState
     }
     if (_item == null) {
       return Scaffold(
-          appBar: AppBar(), body: Center(child: Text(_error ?? '招募不存在')));
+          appBar: AppBar(), body: Center(child: AppContentSurface.reading(child: Text(_error ?? '招募不存在'))));
     }
     final item = _item!;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -239,7 +239,7 @@ class _TeamRecruitmentDetailScreenState
       bottomNavigationBar: DecoratedBox(
         decoration: BoxDecoration(
           color: pageColor,
-          border: Border(top: BorderSide(color: TeamUiTokens.border(isDark))),
+          border: Border(top: BorderSide(color: appCardDividerColor(context, TeamUiTokens.border(isDark)))),
         ),
         child: SafeArea(
           child: Padding(
@@ -481,7 +481,7 @@ class _TeamRecruitmentDetailScreenState
             onPressed: applicationId == null || processing
                 ? null
                 : () async {
-                    final confirmed = await showDialog<bool>(
+                    final confirmed = await showAppDialog<bool>(
                           context: context,
                           builder: (dialogContext) => AppAlertDialog(
                             title: const Text('退出队伍'),

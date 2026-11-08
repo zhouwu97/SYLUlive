@@ -1,3 +1,4 @@
+import 'package:shenliyuan/widgets/app_card.dart';
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -806,7 +807,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   Widget _buildEmptyView(bool isDark) {
     return Center(
-      child: Column(
+      child: AppContentSurface.reading(child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
@@ -823,13 +824,13 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 
   Widget _buildErrorView(bool isDark) {
     return Center(
-      child: Padding(
+      child: AppContentSurface.card(child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -856,7 +857,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 

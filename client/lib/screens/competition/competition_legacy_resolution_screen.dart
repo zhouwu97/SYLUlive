@@ -71,40 +71,42 @@ class _CompetitionLegacyResolutionScreenState
         backgroundColor: AppPageBackground.color(context, pageBg),
         surfaceTintColor: Colors.transparent,
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView.separated(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-                itemCount: _items.length + 1,
-                separatorBuilder: (_, __) => const AppCardDivider(height: 1),
-                itemBuilder: (_, index) {
-                  if (index == 0) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: Text(
-                        '$_total 条旧记录归并审计 · $_identityGroups 个身份组',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    );
-                  }
-                  final item = _items[index - 1];
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.history_rounded),
-                    title:
-                        Text('${item['canonical_title'] ?? 'canonical 记录不存在'}'),
-                    subtitle: Text(
-                      'canonical ${item['canonical_event_id'] ?? '-'} · '
-                      '旧记录 ${item['duplicate_event_id'] ?? '-'}\n'
-                      '${item['reason'] ?? '历史重复归并'}',
-                    ),
-                  );
-                },
-              ),
-            ),
+      body: AppContentSurface(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView.separated(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                    itemCount: _items.length + 1,
+                    separatorBuilder: (_, __) =>
+                        const AppCardDivider(height: 1),
+                    itemBuilder: (_, index) {
+                      if (index == 0) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Text(
+                            '$_total 条旧记录归并审计 · $_identityGroups 个身份组',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        );
+                      }
+                      final item = _items[index - 1];
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.history_rounded),
+                        title: Text(
+                            '${item['canonical_title'] ?? 'canonical 记录不存在'}'),
+                        subtitle: Text(
+                          'canonical ${item['canonical_event_id'] ?? '-'} · '
+                          '旧记录 ${item['duplicate_event_id'] ?? '-'}\n'
+                          '${item['reason'] ?? '历史重复归并'}',
+                        ),
+                      );
+                    },
+                  ),
+                )),
     );
   }
 }

@@ -962,6 +962,8 @@ class CourseScheduleProvider extends ChangeNotifier {
     // 任何内存写入之前先确认操作仍然有效：本方法可能在切换学期之后才返回，
     // 晚到的旧学期结果一旦写入就会污染新学期的课程、隐藏状态与调节层。
     if (!_isCurrentOperation(operation)) return false;
+    operation = _restoreCachedTermIdentity(operation, snapshot);
+    if (!_isCurrentOperation(operation)) return false;
     final cached = snapshot == null || snapshot.courses.isEmpty
         ? const <CourseBlock>[]
         : snapshot.courses.map(CourseBlock.fromJson).toList();
@@ -1010,6 +1012,38 @@ class CourseScheduleProvider extends ChangeNotifier {
     return true;
   }
 
+  /// 本地学期目录使用 year_semester，学校导入使用 provider_*。
+  /// 快照已按当前账号、来源和 year/semester 校验，恢复时沿用其中唯一的
+  /// 学校学期 ID，避免把同一学期的课程和调课规则误当成跨学期数据。
+  _ScheduleOperationContext _restoreCachedTermIdentity(
+    _ScheduleOperationContext operation,
+    ScheduleTermSnapshot? snapshot,
+  ) {
+    final localTermId = '${operation.year}_${operation.semester}';
+    if (snapshot == null || operation.term.id != localTermId) return operation;
+    final termIds = <String>{};
+    for (final course in [
+      ...snapshot.baseCourses,
+      ...snapshot.manualCourses,
+      ...snapshot.courses,
+    ]) {
+      final key = course['course_key']?.toString().split(':');
+      if (key != null &&
+          key.length >= 3 &&
+          (key[0] == 'edu' || key[0] == 'manual')) {
+        termIds.add(key[1]);
+      }
+    }
+    if (termIds.length != 1 ||
+        !RegExp(r'^provider_[a-f0-9]{64}$').hasMatch(termIds.single)) {
+      return operation;
+    }
+    // 开学日期可能已由同一快照恢复，沿用最新学期对象保留这些字段。
+    final term = currentTerm.copyWith(id: termIds.single);
+    _currentTerm = term;
+    return _captureOperationContext(term)!;
+  }
+
   /// 用固定操作上下文的学期提交来源模型。
   ///
   /// [termId] 必须来自发起该次操作的学期，不能用 await 之后可能已经变化的
@@ -1036,6 +1070,18 @@ class CourseScheduleProvider extends ChangeNotifier {
               !b.courseKey!.contains(':') ||
               b.courseKey!.split(':')[1] == currentTermId)
           .toList(growable: false);
+
+      // 已保存的展示课表非空，而原始快照无法匹配当前学期时，不能把
+      // 空解析结果当作成功恢复再覆盖磁盘。保留展示并禁止编辑，等待重同步。
+      if (snapshot!.courses.isNotEmpty &&
+          filteredBase.isEmpty &&
+          filteredManual.isEmpty) {
+        _baseSchedule = [];
+        _manualCourses = [];
+        _sourceTrustKnown = true;
+        _legacyCacheRequiresResync = true;
+        return false;
+      }
 
       final restoredBase = _convertToCourses(
         filteredBase,
@@ -1619,7 +1665,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     bool clearUi = false,
     bool isManualRefresh = false,
   }) async {
-    final operation = _captureOperationContext();
+    var operation = _captureOperationContext();
     if (operation == null || operation.store == null) return;
     if (await _resolveOperationStore(operation) == null) return;
 
@@ -1640,6 +1686,8 @@ class CourseScheduleProvider extends ChangeNotifier {
       final cached =
           cachedRaw == null ? null : _coalesceGraduateCourses(cachedRaw);
       if (cached != null && cached.isNotEmpty) {
+        operation = _restoreCachedTermIdentity(operation, snapshot);
+        if (!_isCurrentOperation(operation)) return;
         _hiddenCourseIds = snapshot?.hiddenCourseIds.toSet() ?? <int>{};
         final sourceRestored = _restoreSourceModels(snapshot);
         _overrides = await _overrideRepository.loadOverrides(
@@ -2425,20 +2473,17 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (operation == null) return;
     final snapshot = await _loadOperationSnapshot(operation);
     if (!_isCurrentOperation(operation)) return;
-    _commitSemesterStart(operation, snapshot);
+    _commitSemesterStart(snapshot);
   }
 
   /// 用固定操作上下文提交开学日。
   ///
   /// 读取失败不会走到这里——异常在到达本方法之前就已经抛出，所以这里可以安全地
-  /// 把「快照没有日期」判定为「目标学期日期未设置」，并直接从**固定操作上下文**的
-  /// 学期取字段，不再依赖 await 之后可能已经变化的 [_currentTerm]。
-  void _commitSemesterStart(
-    _ScheduleOperationContext operation,
-    ScheduleTermSnapshot? snapshot,
-  ) {
+  /// 把「快照没有日期」判定为「目标学期日期未设置」。调用方已校验操作代次、
+  /// 账号及自然学期，只更新日期，保留并发课程恢复刚确认的学校学期 ID。
+  void _commitSemesterStart(ScheduleTermSnapshot? snapshot) {
     final start = snapshot?.semesterStart;
-    _currentTerm = operation.term.copyWith(
+    _currentTerm = currentTerm.copyWith(
       clearStartDate: start == null,
       startDate:
           start == null ? null : DateTime(start.year, start.month, start.day),
@@ -2651,6 +2696,18 @@ class CourseScheduleProvider extends ChangeNotifier {
   Future<bool> switchTerm(CourseTerm term, {bool loadCache = true}) async {
     if (_userId == null) return false;
 
+    final selected = _currentTerm;
+    if (selected != null &&
+        selected.year == term.year &&
+        selected.semester == term.semester &&
+        term.id == '${term.year}_${term.semester}' &&
+        selected.providerTermId != null) {
+      term = term.copyWith(
+        id: selected.id,
+        providerTermId: selected.providerTermId,
+      );
+    }
+
     // 学期切换也必须让启动恢复和上一个学期的异步读写失效，避免旧操作
     // 在新学期切换完成后回写课程、开学日或存档状态。
     _contextGeneration++;
@@ -2699,7 +2756,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       // 读取失败会抛 _ScheduleLocalReadFailure，而不是被当成「没有课表」。
       final snapshot = await _readTermSnapshotStrict(operation);
       if (!_isCurrentOperation(operation)) return;
-      _commitSemesterStart(operation, snapshot);
+      _commitSemesterStart(snapshot);
       await loadArchiveList();
       if (!_isCurrentOperation(operation)) return;
       if (loadCache) {

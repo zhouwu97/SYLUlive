@@ -45,6 +45,10 @@ class _CompetitionAdminCenterScreenState
   CompetitionAdminCatalogSummary _catalogSummary =
       const CompetitionAdminCatalogSummary();
   bool _loading = true;
+  bool _initialized = false;
+  String? _loadError;
+  int _loadSerial = 0;
+  int _eventRequestSerial = 0;
 
   CompetitionCatalogPackage? get _activePackage {
     for (final package in _catalogPackages) {
@@ -86,18 +90,32 @@ class _CompetitionAdminCenterScreenState
   }
 
   Future<void> _load() async {
+    final request = ++_loadSerial;
+    _eventRequestSerial++;
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
     await Future.wait([
-      _loadCategories(),
-      _loadOverview(),
-      _loadCatalogPackages(),
+      _loadCategories(request),
+      _loadOverview(request),
+      _loadCatalogPackages(request),
     ]);
+    if (!mounted || request != _loadSerial) return;
+    if (_loadError != null) {
+      setState(() => _loading = false);
+      if (_initialized) AppFeedback.error(_loadError!, context: context);
+      return;
+    }
     await _loadEvents();
+    if (!mounted || request != _loadSerial) return;
+    if (_loadError == null) setState(() => _initialized = true);
   }
 
-  Future<void> _loadCatalogPackages() async {
+  Future<void> _loadCatalogPackages(int request) async {
     try {
       final res = await _dio.get('/admin/competition-catalog/packages');
-      if (!mounted) return;
+      if (!mounted || request != _loadSerial) return;
       final data = Map<String, dynamic>.from(res.data as Map);
       setState(() {
         _catalogPackages = ((data['items'] as List?) ?? const [])
@@ -108,15 +126,24 @@ class _CompetitionAdminCenterScreenState
             )
             .toList();
       });
-    } catch (_) {
-      // Catalog 功能关闭时保留旧管理模式。
+    } catch (error) {
+      if (!mounted || request != _loadSerial) return;
+      final status = error is DioException ? error.response?.statusCode : null;
+      if (status == 404 || status == 501) {
+        // 仅明确不支持目录接口时使用旧管理模式，失败不能冒充空目录。
+        setState(() => _catalogPackages = []);
+      } else {
+        setState(() => _loadError = error is DioException
+            ? AppFeedback.dioErrorMessage(error, fallback: '读取竞赛目录失败')
+            : '竞赛目录数据解析失败');
+      }
     }
   }
 
-  Future<void> _loadCategories() async {
+  Future<void> _loadCategories(int request) async {
     try {
       final res = await _dio.get('/competitions/categories');
-      if (!mounted) return;
+      if (!mounted || request != _loadSerial) return;
       setState(() {
         _categories = ((res.data as List?) ?? [])
             .map((item) => CompetitionCategory.fromJson(item))
@@ -125,10 +152,10 @@ class _CompetitionAdminCenterScreenState
     } catch (_) {}
   }
 
-  Future<void> _loadOverview() async {
+  Future<void> _loadOverview(int request) async {
     try {
       final res = await _dio.get('/admin/competitions/overview');
-      if (!mounted) return;
+      if (!mounted || request != _loadSerial) return;
       final data = res.data as Map<String, dynamic>;
       setState(() {
         _adminDraftCount = data['draft'] ?? 0;
@@ -141,11 +168,12 @@ class _CompetitionAdminCenterScreenState
 
   Future<void> _loadEvents() async {
     if (!mounted) return;
-    setState(() => _loading = true);
+    final request = ++_eventRequestSerial;
+    setState(() { _loading = true; _loadError = null; });
     try {
       final res = await _dio.get('/admin/competitions/events',
           queryParameters: _queryParams());
-      if (!mounted) return;
+      if (!mounted || request != _eventRequestSerial) return;
       final data = res.data as Map<String, dynamic>;
       setState(() {
         _filteredTotal = (data['total'] as num?)?.toInt() ?? 0;
@@ -167,14 +195,16 @@ class _CompetitionAdminCenterScreenState
             .removeWhere((id) => !_events.any((event) => event.id == id));
         _loading = false;
       });
-    } on DioException catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      AppFeedback.showSnackBar(
-        context,
-        AppFeedback.dioErrorMessage(e, fallback: '加载竞赛列表失败'),
-        isError: true,
-      );
+    } catch (error) {
+      if (!mounted || request != _eventRequestSerial) return;
+      final message = error is DioException
+          ? AppFeedback.dioErrorMessage(error, fallback: '加载竞赛列表失败')
+          : '竞赛列表数据解析失败';
+      setState(() {
+        _loading = false;
+        _loadError = message;
+      });
+      if (_initialized) AppFeedback.error(message, context: context);
     }
   }
 
@@ -251,7 +281,9 @@ class _CompetitionAdminCenterScreenState
             ),
         ],
       ),
-      body: RefreshIndicator(
+      body: !_initialized
+          ? _buildInitialState(isDark)
+          : RefreshIndicator(
         onRefresh: _load,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -265,6 +297,34 @@ class _CompetitionAdminCenterScreenState
             _buildSectionTitle(isDark),
             _buildEventList(isDark),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInitialState(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.all(CompetitionUiTokens.pagePadding),
+      child: AppCardSurface(
+        key: const ValueKey('competition-admin-initial-state'),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(24),
+        decoration: CompetitionUiTokens.cardDecoration(isDark),
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (_loadError == null) ...[
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              const Text('正在读取竞赛目录…'),
+            ] else ...[
+              const Icon(Icons.cloud_off_outlined, size: 40),
+              const SizedBox(height: 16),
+              Text(_loadError!, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(onPressed: _load,
+                  icon: const Icon(Icons.refresh), label: const Text('重试')),
+            ],
+          ]),
         ),
       ),
     );
@@ -489,6 +549,25 @@ class _CompetitionAdminCenterScreenState
   }
 
   Widget _buildAdminActions(bool isDark) {
+    final colors = Theme.of(context).colorScheme;
+    final outline = OutlinedButton.styleFrom(
+      backgroundColor: CompetitionUiTokens.cardBg(isDark),
+      foregroundColor: colors.onSurface,
+      iconColor: colors.onSurface,
+      side: BorderSide(color: colors.outline),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      minimumSize: const Size(0, 44),
+      visualDensity: VisualDensity.standard,
+      textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+    );
+    final primary = FilledButton.styleFrom(
+      backgroundColor: colors.primary,
+      foregroundColor: colors.onPrimary,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      minimumSize: const Size(0, 44),
+      visualDensity: VisualDensity.standard,
+      textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+    );
     if (_activePackage != null) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(
@@ -497,33 +576,26 @@ class _CompetitionAdminCenterScreenState
           CompetitionUiTokens.pagePadding,
           12,
         ),
-        child: Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _openCatalogPackages,
-                icon: const Icon(Icons.inventory_2_outlined, size: 18),
-                label: const Text('目录包'),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: _load,
-                icon: const Icon(Icons.list_alt_rounded, size: 18),
-                label: const Text('当前赛事'),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _openLegacyResolutions,
-                icon: const Icon(Icons.history_rounded, size: 18),
-                label: const Text('历史归并'),
-              ),
-            ),
-          ],
-        ),
+        child: _adminActionLayout([
+          OutlinedButton.icon(
+            onPressed: _openCatalogPackages,
+            icon: const Icon(Icons.inventory_2_outlined, size: 18),
+            label: const Text('目录包'),
+            style: outline,
+          ),
+          FilledButton.icon(
+            onPressed: _load,
+            icon: const Icon(Icons.list_alt_rounded, size: 18),
+            label: const Text('当前赛事'),
+            style: primary,
+          ),
+          OutlinedButton.icon(
+            onPressed: _openLegacyResolutions,
+            icon: const Icon(Icons.history_rounded, size: 18),
+            label: const Text('历史归并'),
+            style: outline,
+          ),
+        ]),
       );
     }
     return Padding(
@@ -533,64 +605,66 @@ class _CompetitionAdminCenterScreenState
         CompetitionUiTokens.pagePadding,
         12,
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: _openAdminImport,
-              icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-              label: const Text('AI导入'),
-              style: FilledButton.styleFrom(
-                backgroundColor: CompetitionUiTokens.accent(isDark),
-                foregroundColor: Colors.white,
-              ),
+      child: _adminActionLayout([
+        FilledButton.icon(
+          onPressed: _openAdminImport,
+          icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+          label: const Text('AI导入'),
+          style: primary,
+        ),
+        OutlinedButton.icon(
+          onPressed: _openAdminManualCreate,
+          icon: const Icon(Icons.add_rounded, size: 18),
+          label: const Text('新建'),
+          style: outline,
+        ),
+        OutlinedButton.icon(
+          onPressed: () {
+            setState(() {
+              if (_selectionMode) {
+                _selectionScope = _AdminSelectionScope.none;
+                _selectedEventIds.clear();
+                _excludedEventIds.clear();
+              } else {
+                _selectionScope = _AdminSelectionScope.page;
+                _selectedEventIds.clear();
+                _selectedEventIds.addAll(_events.map((e) => e.id));
+              }
+            });
+          },
+          icon: Icon(
+            _selectionMode ? Icons.close_rounded : Icons.checklist_rounded,
+            size: 18,
+          ),
+          label: Text(_selectionMode ? '退出批量' : '批量管理'),
+          style: outline.copyWith(
+            foregroundColor: WidgetStatePropertyAll(
+              _selectionMode ? colors.error : colors.onSurface,
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: _openAdminManualCreate,
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('新建'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: CompetitionUiTokens.titleColor(isDark),
-                side:
-                    BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () {
-                setState(() {
-                  if (_selectionMode) {
-                    _selectionScope = _AdminSelectionScope.none;
-                    _selectedEventIds.clear();
-                    _excludedEventIds.clear();
-                  } else {
-                    _selectionScope = _AdminSelectionScope.page;
-                    _selectedEventIds.clear();
-                    _selectedEventIds.addAll(_events.map((e) => e.id));
-                  }
-                });
-              },
-              icon: Icon(
-                _selectionMode ? Icons.close_rounded : Icons.checklist_rounded,
-                size: 18,
-              ),
-              label: Text(_selectionMode ? '退出批量' : '批量管理'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _selectionMode
-                    ? CompetitionUiTokens.dangerColor(isDark)
-                    : CompetitionUiTokens.titleColor(isDark),
-                side:
-                    BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _adminActionLayout(List<Widget> buttons) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 四字操作名在大字号下仍完整显示，空间不足时整颗按钮换行。
+        final minimumWidth =
+            MediaQuery.textScalerOf(context).scale(13) * 4 + 46;
+        final columns = ((constraints.maxWidth + 8) / (minimumWidth + 8))
+            .floor()
+            .clamp(1, buttons.length);
+        final width = (constraints.maxWidth - (columns - 1) * 8) / columns;
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: buttons
+              .map((button) => SizedBox(width: width, child: button))
+              .toList(),
+        );
+      },
     );
   }
 
@@ -701,7 +775,7 @@ class _CompetitionAdminCenterScreenState
           ),
           const SizedBox(height: 4),
           Text(
-            '当前显示 ${(_currentPage - 1) * _pageSize + 1}–${(_currentPage - 1) * _pageSize + _events.length}，共 $_filteredTotal 条',
+            '当前显示 ${_events.isEmpty ? 0 : (_currentPage - 1) * _pageSize + 1}–${(_currentPage - 1) * _pageSize + _events.length}，共 $_filteredTotal 条',
             style: TextStyle(
               fontSize: 13,
               color: CompetitionUiTokens.subColor(isDark),
@@ -860,7 +934,7 @@ class _CompetitionAdminCenterScreenState
     return Material(
       color: selected
           ? CompetitionUiTokens.titleColor(isDark)
-          : Colors.transparent,
+          : CompetitionUiTokens.cardBg(isDark),
       shape: StadiumBorder(
         side: BorderSide(
           color: selected
@@ -871,13 +945,15 @@ class _CompetitionAdminCenterScreenState
       child: InkWell(
         onTap: () => _selectStatus(value),
         customBorder: const StadiumBorder(),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 44),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Text(
             label,
             style: TextStyle(
               fontSize: 13,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+              fontWeight: FontWeight.w600,
               color: selected
                   ? CompetitionUiTokens.pageBg(isDark)
                   : CompetitionUiTokens.titleColor(isDark),
@@ -898,7 +974,7 @@ class _CompetitionAdminCenterScreenState
     return Material(
       color: highlight
           ? CompetitionUiTokens.titleColor(isDark)
-          : Colors.transparent,
+          : CompetitionUiTokens.cardBg(isDark),
       shape: StadiumBorder(
         side: BorderSide(
           color: highlight
@@ -909,8 +985,10 @@ class _CompetitionAdminCenterScreenState
       child: InkWell(
         onTap: onTap,
         customBorder: const StadiumBorder(),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 44),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -926,7 +1004,7 @@ class _CompetitionAdminCenterScreenState
                 label,
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: highlight ? FontWeight.w600 : FontWeight.normal,
+                  fontWeight: FontWeight.w600,
                   color: highlight
                       ? CompetitionUiTokens.pageBg(isDark)
                       : CompetitionUiTokens.titleColor(isDark),
@@ -968,7 +1046,7 @@ class _CompetitionAdminCenterScreenState
     String actionName,
     Future<dynamic> Function(int id) actionFn,
   ) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AppAlertDialog(
         title: Text('确认$actionName'),
@@ -1063,7 +1141,7 @@ class _CompetitionAdminCenterScreenState
       final success = (data?['success_count'] as num?)?.toInt() ?? 0;
       final skipped = (data?['skipped_count'] as num?)?.toInt() ?? 0;
 
-      final confirmed = await showDialog<bool>(
+      final confirmed = await showAppDialog<bool>(
         context: context,
         builder: (ctx) => CompetitionBatchConfirmDialog(
           title: '确认批量$actionName',

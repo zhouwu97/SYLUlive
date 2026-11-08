@@ -56,7 +56,7 @@ class _CompetitionCalendarItemDetailScreenState
   }
 
   Future<void> _archiveItem() async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: const Text('归档比赛'),
@@ -98,7 +98,7 @@ class _CompetitionCalendarItemDetailScreenState
   }
 
   Future<void> _deleteItem() async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (context) => AppAlertDialog(
         title: const Text('删除比赛'),

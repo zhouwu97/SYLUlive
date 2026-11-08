@@ -130,21 +130,42 @@ class _WaterSectionDirectoryScreenState
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
         child: InkWell(
           borderRadius: BorderRadius.circular(18),
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PollCenterScreen())),
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const PollCenterScreen())),
           child: AppCardSurface(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: isDark ? AppColors.brandSurfaceDark : AppColors.brandSurfaceLight,
+              color: isDark
+                  ? AppColors.brandSurfaceDark
+                  : AppColors.brandSurfaceLight,
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: AppColors.brandPrimary.withValues(alpha: 0.18)),
+              border: Border.all(
+                  color: AppColors.brandPrimary.withValues(alpha: 0.18)),
             ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('特殊版块', style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.black54)),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('特殊版块',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.white60 : Colors.black54)),
               const SizedBox(height: 8),
               Row(children: [
-                CircleAvatar(backgroundColor: isDark ? AppColors.surfaceMutedDark : AppColors.brandSurfaceLight, child: const Icon(Icons.poll_outlined, color: AppColors.brandPrimary)),
+                CircleAvatar(
+                    backgroundColor: isDark
+                        ? AppColors.surfaceMutedDark
+                        : AppColors.brandSurfaceLight,
+                    child: const Icon(Icons.poll_outlined,
+                        color: AppColors.brandPrimary)),
                 const SizedBox(width: 12),
-                const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('校园投票', style: TextStyle(fontWeight: FontWeight.w800)), SizedBox(height: 3), Text('参与校园话题、选择与意见征集', style: TextStyle(fontSize: 12))])),
+                const Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Text('校园投票',
+                          style: TextStyle(fontWeight: FontWeight.w800)),
+                      SizedBox(height: 3),
+                      Text('参与校园话题、选择与意见征集', style: TextStyle(fontSize: 12))
+                    ])),
                 const Icon(Icons.chevron_right, color: AppColors.brandPrimary),
               ]),
               const SizedBox(height: 8),
@@ -154,7 +175,10 @@ class _WaterSectionDirectoryScreenState
                 _pollShortcut('即将结束', 'ending'),
               ]),
               const SizedBox(height: 4),
-              Text('特殊版块 · 独立发布模式', style: TextStyle(fontSize: 11, color: isDark ? Colors.white54 : Colors.black45)),
+              Text('特殊版块 · 独立发布模式',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white54 : Colors.black45)),
             ]),
           ),
         ),
@@ -164,7 +188,10 @@ class _WaterSectionDirectoryScreenState
 
   Widget _pollShortcut(String label, String sort) {
     return TextButton(
-      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PollCenterScreen(initialSort: sort))),
+      onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => PollCenterScreen(initialSort: sort))),
       child: Text(label),
     );
   }
@@ -279,7 +306,7 @@ class _WaterSectionDirectoryScreenState
             ),
             const SizedBox(height: 12),
             if (followed.isEmpty)
-              Container(
+              AppCardSurface(
                 height: 56,
                 alignment: Alignment.centerLeft,
                 padding: const EdgeInsets.symmetric(horizontal: 16),

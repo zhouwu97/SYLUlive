@@ -136,7 +136,7 @@ func (h *PrivacyHandler) personalDataPayload(userID uint, includeRequests bool) 
 	}
 	payload := gin.H{
 		"exported_at":             time.Now().UTC(),
-		"scope":                   "账户资料、法律文件授权记录和个人信息请求记录；不含密码、教务 Cookie、会话令牌、推送标识及内部文件地址",
+		"scope":                   "账户资料、法律文件授权记录、表情包投稿和个人信息请求记录；不含密码、教务 Cookie、会话令牌、推送标识及内部文件地址",
 		"legal_consents_active":   consentState == models.LegalConsentStateActive,
 		"legal_consents_required": consentState == models.LegalConsentStateRequired,
 		"consent_revoked_at":      user.LegalConsentRevokedAt,
@@ -174,6 +174,21 @@ func (h *PrivacyHandler) personalDataPayload(userID uint, includeRequests bool) 
 		}
 	}
 	if includeRequests {
+		if h.db.Migrator().HasTable(&models.EmojiCreator{}) {
+			var creator models.EmojiCreator
+			if err := h.db.First(&creator, "user_id = ?", userID).Error; err == nil {
+				payload["emoji_creator_application"] = creator
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
+		}
+		if h.db.Migrator().HasTable(&models.CommunityEmojiPack{}) {
+			packs := []models.CommunityEmojiPack{}
+			if err := h.db.Omit("manifest", "request_key", "content_hash").Where("user_id = ?", userID).Order("created_at DESC").Find(&packs).Error; err != nil {
+				return nil, err
+			}
+			payload["emoji_submissions"] = packs
+		}
 		requests := make([]models.PersonalDataRequest, 0)
 		if err := h.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&requests).Error; err != nil {
 			return nil, err
@@ -495,6 +510,9 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 			if err := h.eduCredentialCleanupJobs.Enqueue(tx, userID, user.EduAuthorizationGeneration, now, true); err != nil {
 				return err
 			}
+		}
+		if err := services.WithdrawEmojiPacksForUser(tx, userID); err != nil {
+			return err
 		}
 		return tx.Create(&models.PersonalDataRequest{
 			UserID: userID, RequestType: models.PersonalDataRequestAccountCancelled,

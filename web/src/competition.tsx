@@ -14,7 +14,7 @@ export function Competition(){
     <button className="btn" onClick={()=>auth.requireUser()&&ui.open('竞赛偏好',<Preferences/>)}>偏好设置</button>
     <button className="btn primary" onClick={()=>setParams({tab:'plans'})}>我的计划</button>
   </Head><Tabs tabs={[["recommend","推荐"],["directory","竞赛目录"],["plans","我的日历"],["awards","我的获奖"],["capability","能力档案"]]} value={tab} onChange={tab=>setParams({tab})}/>
-  {privateTab&&!auth.user?<Empty title="登录后查看个人竞赛资料"><button className="btn primary" onClick={auth.login}>登录</button></Empty>:tab==='plans'?<Plans/>:tab==='awards'?<Awards/>:tab==='capability'?<Capability/>:<Events recommended={tab==='recommend'}/>}
+  {privateTab&&!auth.user?<Empty icon="lock" title="登录后查看个人竞赛资料"><button className="btn primary" onClick={auth.login}>登录</button></Empty>:tab==='plans'?<Plans/>:tab==='awards'?<Awards/>:tab==='capability'?<Capability/>:<Events recommended={tab==='recommend'}/>}
   </>;
 }
 function Events({recommended}:{recommended:boolean}){
@@ -27,10 +27,10 @@ function Events({recommended}:{recommended:boolean}){
   return <>
     {recommended&&auth.user&&<QueryState query={dashboard}><Stats items={[[dashboard.data?.award_total??0,'获奖记录'],[dashboard.data?.verified_award_count??0,'已核验'],[dashboard.data?.weekly_hours??0,'每周投入小时'],[dashboard.data?.pending_award_count??0,'待核验']]}/></QueryState>}
     {recommended&&!auth.user&&<p className="source-line">当前展示公开赛事，登录并设置偏好后获取个人推荐。</p>}
-    <form className="filter-row" onSubmit={event=>{event.preventDefault();update('q',String(new FormData(event.currentTarget).get('q')||''))}}>
+    <form className="filter-row competition-search" onSubmit={event=>{event.preventDefault();update('q',String(new FormData(event.currentTarget).get('q')||''))}}>
       <input name="q" aria-label="搜索竞赛" placeholder="搜索竞赛名称、组织单位" defaultValue={params.get('q')||''}/>
       <select aria-label="竞赛分类" value={params.get('category')||''} onChange={e=>update('category',e.target.value)}><option value="">全部分类</option>{rows(categories.data,'categories').map(c=><option key={c.id} value={c.slug}>{c.name}</option>)}</select><button className="btn">搜索</button>
-    </form><QueryState query={q}><div className="panel">{rows(q.data).map(item=>{const event=item.event||item;return <Link className="comp-row" key={event.id} to={`/competition/${event.id}`}><div className="comp-logo">{event.title?.slice(0,2)}</div><div className="list-main"><b>{event.title}</b><p>{event.organizer} · {event.competition_level||event.primary_category?.name}</p>{Array.isArray(item.reasons)&&<p>{item.reasons.filter((r:unknown)=>typeof r==='string').join(' · ')}</p>}</div><span className="tag">{event.time_status||'查看详情'}</span></Link>})}</div>
+    </form><QueryState query={q}><div className="panel competition-list">{rows(q.data).map(item=>{const event=item.event||item;return <Link className="comp-row" key={event.id} to={`/competition/${event.id}`}><div className="comp-logo" aria-hidden="true">{competitionMonogram(event.title)}</div><div className="list-main"><b>{event.title}</b><p>{[event.organizer,competitionLevelLabel(event.competition_level)||event.primary_category?.name].filter(Boolean).join(' · ')}</p>{Array.isArray(item.reasons)&&<p>{item.reasons.filter((r:unknown)=>typeof r==='string').join(' · ')}</p>}</div><span className="tag">{timeStatusLabel(event.time_status)}</span></Link>})}</div>
       {!rows(q.data).length&&<Empty title="暂无符合条件的赛事"/>}<Pagination page={page} hasMore={q.data?.total!==undefined?page*20<q.data.total:rows(q.data).length===20} onChange={n=>update('page',String(n))}/>
     </QueryState>{recommended&&auth.user&&<div className="section two-col"><Capability compact/><section className="panel panel-pad"><h3>我的参赛计划</h3><Plans/></section></div>}
   </>;
@@ -61,3 +61,9 @@ function Capability({compact=false}:{compact?:boolean}){
     {!rows(data,'skill_summary').length&&!rows(data,'role_summary').length&&<Empty title="暂无可汇总的参赛记录"/>}
   </QueryState></section>;
 }
+// 与 App 的竞赛级别、时间状态文案保持一致，避免直接展示接口枚举值。
+const competitionLevels:Record<string,string>={international:'国际级',national:'国家级',provincial:'省级',school:'校级',college:'院级'};
+function competitionLevelLabel(value:unknown){const key=String(value||'').trim();return key&&!['unknown','not_recorded'].includes(key)?competitionLevels[key]||key:''}
+function timeStatusLabel(value:unknown){return ({confirmed:'已确认',estimated:'预计时间',historical:'往年参考'} as Record<string,string>)[String(value||'')]||(value?'时间待核实':'查看详情')}
+// 标题常以引号或书名号开头，取前两个文字作为图标字。
+function competitionMonogram(title:unknown){return (String(title||'').match(/[\p{L}\p{N}]/gu)||[]).slice(0,2).join('')}

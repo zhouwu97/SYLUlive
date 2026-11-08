@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
+import 'package:shenliyuan/theme/app_colors.dart';
 import 'package:shenliyuan/theme/app_radius.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
 import 'package:shenliyuan/widgets/post_reply_composer.dart';
@@ -162,7 +163,9 @@ void main() {
                 Offset(195, edge - 3),
                 '$label-glass=$glass-alpha=$opacity-trailing');
             if (opacity == 1) {
-              final expected = dark ? const Color(0xFF131720) : Colors.white;
+              final expected = dark
+                  ? AppColors.surfaceSecondaryDark
+                  : AppColors.surfaceSecondaryLight;
               expect(color, expected, reason: '实色评论区接缝不能露出正文图片或壁纸');
             }
             await gesture.up();

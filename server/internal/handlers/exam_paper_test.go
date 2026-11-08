@@ -230,6 +230,43 @@ func createStoredExamPaper(t *testing.T, env examPaperTestEnv, submitter models.
 	return paper
 }
 
+func TestExamPaperDeniedLocalDeclarationGetsUpgradeHint(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	plain := createExamPaperTestUser(t, env.db, "plain-unverified", models.RoleUser, false, 0)
+	declared := createExamPaperTestUser(t, env.db, "20260000001", models.RoleUser, false, 0)
+	declaration := models.AcademicIdentityBinding{
+		UserID: declared.ID, ProviderID: models.AcademicProviderUndergraduate, StudentID: "20260000001",
+		VerifiedAt: time.Now(), VerificationMethod: models.AcademicVerificationMethodLocalDeclaration, VerificationVersion: "local-v1",
+	}
+	if err := env.db.Create(&declaration).Error; err != nil {
+		t.Fatalf("创建本机声明失败: %v", err)
+	}
+
+	decode := func(recorder *httptest.ResponseRecorder) (string, string) {
+		t.Helper()
+		var payload map[string]any
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("解析错误响应失败: %v body=%s", err, recorder.Body.String())
+		}
+		code, _ := payload["code"].(string)
+		message, _ := payload["error"].(string)
+		return code, message
+	}
+
+	// 本机声明不能开放试卷库，只换成升级提示，错误码保持不变。
+	response := performExamPaperRequest(env.handler.List, http.MethodGet, "/api/exam-papers", nil, declared.ID, nil, "")
+	code, message := decode(response)
+	if response.Code != http.StatusForbidden || code != "edu_verification_required" || message != examPaperLocalDeclarationMessage {
+		t.Fatalf("本机声明用户应收到升级提示: status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	response = performExamPaperRequest(env.handler.List, http.MethodGet, "/api/exam-papers", nil, plain.ID, nil, "")
+	code, message = decode(response)
+	if response.Code != http.StatusForbidden || code != "edu_verification_required" || message != "完成教务认证后才能使用试卷库" {
+		t.Fatalf("无任何记录的用户保留原提示: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestExamPaperListRequiresEduVerificationAndHidesPrivateFields(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	unverified := createExamPaperTestUser(t, env.db, "unverified", models.RoleUser, false, 0)

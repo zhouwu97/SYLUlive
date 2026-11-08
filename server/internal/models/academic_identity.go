@@ -241,3 +241,13 @@ func HasVerifiedAcademicIdentity(db *gorm.DB, userID uint) (bool, error) {
 		Where("user_id = ? AND verified_at > ?", userID, time.Time{})).Count(&count).Error
 	return count > 0, err
 }
+
+// HasLocalAcademicDeclaration 判断用户是否只留下了旧版 App 的本机声明。
+// 仅用于给出升级提示等文案，绝不能作为任何准入依据。
+func HasLocalAcademicDeclaration(db *gorm.DB, userID uint) (bool, error) {
+	var count int64
+	err := db.Model(&AcademicIdentityBinding{}).
+		Where("user_id = ? AND verification_method = ?", userID, AcademicVerificationMethodLocalDeclaration).
+		Count(&count).Error
+	return count > 0, err
+}

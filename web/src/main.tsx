@@ -26,6 +26,7 @@ import "./styles.css";
 import "./social-shell.css";
 import "./web-polish.css";
 import { useWorkspaceMotion } from "./shell-motion";
+import { isDetailPath, useReportedDetailOrigin } from "./detail-origin";
 import {Admin} from "./admin";
 import { Polls } from "./polls";
 import {Competition} from './competition';
@@ -119,6 +120,14 @@ function Shell() {
     location = useLocation(),
     navigate = useNavigate();
   const active = location.pathname.split("/")[1] || "dashboard";
+  // 详情页沿用来源分区：从集市进入的闲置详情保持集市的收起侧栏与分区色，从首页进入的帖子保持首页选中
+  const detail = isDetailPath(location.pathname);
+  const statedFrom = typeof (location.state as { from?: unknown } | null)?.from === "string" ? (location.state as { from: string }).from : "";
+  const reportedFrom = useReportedDetailOrigin();
+  const originPath = detail ? (statedFrom && !isDetailPath(statedFrom) ? statedFrom : reportedFrom) : "";
+  const [originPathname, originSearch = ""] = originPath.split("?");
+  const section = originPath ? originPathname.split("/")[1] || "dashboard" : active;
+  const feedSearch = originPath ? originSearch : location.search.slice(1);
   const mobile = useMobile();
   const standaloneProfile = active === "profile" && !mobile;
   const workspace = useWorkspaceMotion(location.pathname, navigationMotion);
@@ -187,7 +196,7 @@ function Shell() {
       onClick={(event) => setNavigationMotion(event.detail !== 0)}
       to={id === "dashboard" ? "/" : `/${id}`}
       end
-      className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
+      className={({ isActive }) => `nav-item ${isActive || (originPath && id === section && !(id === "community" && /sort=(bookmarks|mine)/.test(feedSearch))) ? "active" : ""}`}
     >
       <span className="nav-icon">
         <Icon name={id} />
@@ -197,7 +206,7 @@ function Shell() {
     </NavLink>
   );
   return (
-    <div data-mobile-page={active} data-zone={zoneOf(active)} className={`app-shell social-shell ${active === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
+    <div data-mobile-page={active} data-zone={zoneOf(section)} className={`app-shell social-shell ${section === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
       <a className="skip-link" href="#mainContent">
         跳到主要内容
       </a>
@@ -219,7 +228,7 @@ function Shell() {
             </div>
           </div>
           <nav className="desktop-top-nav" aria-label="快捷导航">
-            {[["/", "首页"], ["/community", "校园圈"], ["/market", "集市"], ["/schedule", "学习"], ["/campus", "发现"]].map(([to, label]) => <NavLink key={to} to={to} end={to === "/"}>{label}</NavLink>)}
+            {[["/", "首页", "home"], ["/community", "校园圈", "community"], ["/market", "集市", "market"], ["/schedule", "学习", "study"], ["/campus", "发现", "discover"]].map(([to, label, zone]) => <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive || zones[section] === zone ? "active" : "")}>{label}</NavLink>)}
           </nav>
           <div className="crumb">
             <span>校园</span>
@@ -292,8 +301,8 @@ function Shell() {
               </div>
             ))}
             <div className="personal-feed-links">
-              <Link className={`nav-item ${active === "community" && location.search.includes("sort=bookmarks") ? "active" : ""}`} to="/community?sort=bookmarks"><span className="nav-icon"><Icon name="bookmark" /></span><span className="nav-text">我的收藏</span></Link>
-              <Link className={`nav-item ${active === "community" && location.search.includes("sort=mine") ? "active" : ""}`} to="/community?sort=mine"><span className="nav-icon"><Icon name="file" /></span><span className="nav-text">我的帖子</span></Link>
+              <Link className={`nav-item ${section === "community" && feedSearch.includes("sort=bookmarks") ? "active" : ""}`} to="/community?sort=bookmarks"><span className="nav-icon"><Icon name="bookmark" /></span><span className="nav-text">我的收藏</span></Link>
+              <Link className={`nav-item ${section === "community" && feedSearch.includes("sort=mine") ? "active" : ""}`} to="/community?sort=mine"><span className="nav-icon"><Icon name="file" /></span><span className="nav-text">我的帖子</span></Link>
             </div>
             <SidebarBoards />
             <details className="sidebar-more">
@@ -314,7 +323,7 @@ function Shell() {
           <div className="sidebar-footer">沈理校园 · Web</div>
         </aside>}
         <main className="workspace" id="mainContent" ref={workspace}>
-          <div className={`workspace-grid ${["dashboard","community","polls"].includes(active)?"":"no-rail"}`}>
+          <div className={`workspace-grid ${["dashboard","community","polls"].includes(active) && !detail ? "" : "no-rail"}`}>
             <div className="main-pane">
               {/* 授权成功清理一次性连接码时保留管理草稿；账号切换由页面账号 key 隔离。 */}
               <section key={location.pathname === "/connected-apps" ? location.pathname : `${location.pathname}${location.search}`} className="page active">
@@ -374,9 +383,7 @@ function Shell() {
                 </Routes>
               </section>
             </div>
-            {["dashboard", "community", "polls"].includes(
-              active,
-            ) && <CampusRail />}
+            {["dashboard", "community", "polls"].includes(active) && !detail && <CampusRail />}
           </div>
         </main>
       </div>

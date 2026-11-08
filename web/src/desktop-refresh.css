@@ -262,3 +262,321 @@
     }
   }
 }
+
+/* ---------- 个人主页（桌面） ----------
+ * 941px 以上：左列竖版资料海报（封面按原比例完整显示，不裁切）+ 资料与设置，右列个人内容。
+ * 940px 及以下：横幅封面，资料、设置、内容上下堆叠。几何约束见 profile-presentation e2e。 */
+@media (min-width: 601px) {
+  .profile-page .profile-layout { margin-top: 0; }
+  .profile-page .profile-side { display: grid; gap: 20px; align-content: start; min-width: 0; }
+
+  /* 封面铺底：更通透的同图模糊 + 柔光，原图之外的留白不再发灰 */
+  .profile-page .profile-cover-wrap { background: linear-gradient(135deg, var(--brand-soft-2), var(--brand-soft)); }
+  .profile-page .profile-cover-backdrop { filter: blur(56px) saturate(1.45) brightness(1.06); transform: scale(1.45); opacity: .8; }
+  .profile-page .profile-cover-wrap::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1; /* 盖在铺底图之上、原图之下 */
+    pointer-events: none;
+    background:
+      radial-gradient(60% 90% at 50% 40%, rgb(255 255 255 / .22), transparent 70%),
+      linear-gradient(to bottom, transparent 55%, color-mix(in oklab, var(--surface) 26%, transparent));
+  }
+  :root[data-theme="dark"] .profile-page .profile-cover-wrap::before { background: linear-gradient(to bottom, rgb(0 0 0 / .05), rgb(0 0 0 / .28)); }
+  .profile-page .profile-cover-wrap::after { display: none; }
+  .profile-page .profile-cover-wrap .profile-photo-button { z-index: 2; box-sizing: border-box; }
+  .profile-page .profile-cover-wrap .profile-photo-button > img { transition: filter .35s var(--ease-out); }
+  .profile-page .profile-cover-wrap .profile-photo-button:hover > img { filter: brightness(1.04) saturate(1.05); }
+
+  .profile-page .profile-name h2 { font-size: var(--text-xl); }
+  .profile-page .profile-account { font-size: var(--text-caption); }
+  .profile-page .profile-description { color: var(--text-2); font-size: var(--text-sm); line-height: 1.75; }
+  .profile-page .profile-social b { font-size: var(--text-md); font-weight: var(--weight-bold); }
+
+  /* 资料与设置：标题与条目放大，整行可悬停；退出登录作为最后一行，弱化但仍易找到 */
+  .profile-page .profile-tools { padding: 16px 12px 10px; }
+  .profile-page .profile-tools h2 { margin: 0 4px 6px; color: var(--text-2); font-size: var(--text-caption); font-weight: var(--weight-semibold); }
+  .profile-page .profile-tool { min-height: 64px; padding: 10px 8px; border-top: 0; border-radius: var(--radius-control); transition: background .2s; }
+  .profile-page .profile-tool + .profile-tool { margin-top: 2px; }
+  .profile-page .profile-tool:hover { background: var(--surface-2); }
+  .profile-page .profile-tool b { font-size: var(--text-sm); font-weight: var(--weight-semibold); line-height: 1.5; }
+  .profile-page .profile-tool small { margin-top: 2px; line-height: 1.5; }
+  .profile-page .profile-tool-arrow { transition: transform .25s var(--ease-out), color .2s; }
+  .profile-page .profile-tool:hover .profile-tool-arrow { transform: translateX(2px); }
+  .profile-page .profile-tool-logout { margin-top: 6px !important; border-top: 1px solid var(--line-2); border-radius: 0 0 var(--radius-control) var(--radius-control); }
+  .profile-page .profile-tool-logout .profile-tool-icon { background: var(--surface-2); color: var(--text-3); }
+  .profile-page .profile-tool-logout:hover :is(b, .profile-tool-icon) { color: var(--color-error); }
+
+  /* 个人内容标签：滑动的 3px 下划线（与原样式同形） */
+  .social-shell .profile-content-tabs .tabs.has-nav-ind > .nav-ind::after { inset: auto 0 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--profile-accent); }
+  .profile-content-tabs .tabs.has-nav-ind .tab.active::after { display: none; }
+}
+
+/* 竖版资料海报 */
+@media (min-width: 941px) {
+  .profile-page .profile-layout { grid-template-columns: 312px minmax(0, 1fr); gap: 24px; }
+  .profile-page .profile-card { border-radius: 20px; }
+  /* 封面高度跟随原图：宽度占满海报，过高的竖图限高 460px 并居中，两侧由模糊铺底补足 */
+  .profile-page .profile-cover-wrap { height: auto; min-height: 200px; }
+  .profile-page .profile-cover-wrap.is-empty { height: 200px; }
+  .profile-page .profile-cover-wrap .profile-photo-button { height: auto; min-height: 200px; padding: 0; }
+  .profile-page .profile-cover-wrap .profile-photo-button > img {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 460px;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / .18), 0 18px 40px -18px rgb(15 23 42 / .5);
+  }
+  .profile-page .profile-photo-hint { top: 12px; right: 12px; bottom: auto; }
+  .profile-page .profile-cover-empty { align-items: center; text-align: center; padding: 20px; }
+
+  /* 资料居中排成一列：头像 → 名字 → 简介 → 统计 → 操作 */
+  .profile-page .profile-card-body { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 0 20px 20px; text-align: center; }
+  .profile-page .profile-identity { display: contents; }
+  .profile-page .profile-avatar { order: 1; width: 96px; height: 96px; margin-top: -48px; padding: 4px; border-radius: 50%; }
+  .profile-page .profile-avatar img, .profile-page .profile-avatar-fallback { border-radius: 50%; }
+  .profile-page .profile-name { order: 2; width: 100%; padding-top: 10px; }
+  .profile-page .profile-name-heading { justify-content: center; gap: 6px 8px; }
+  .profile-page .profile-summary { order: 3; width: 100%; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 14px; margin-top: 12px; padding-left: 0; }
+  .profile-page .profile-description { flex: none; text-align: center; }
+  /* 统计：去掉灰底盒子，改为上下细线分隔的三栏，数字更醒目；可点的两栏悬停变主题色 */
+  .profile-page .profile-social { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0; margin: 2px 0 0; padding: 12px 0; border-block: 1px solid var(--line-2); border-radius: 0; background: none; }
+  .profile-page .profile-social > * + * { position: relative; }
+  .profile-page .profile-social > * + *::before { content: ""; position: absolute; left: 0; top: 18%; bottom: 18%; border-left: 1px solid var(--line-2); }
+  .profile-page .profile-social button, .profile-page .profile-likes { min-width: 0; min-height: 48px; padding: 2px 4px; gap: 1px; border-radius: var(--radius-sm); font-size: var(--text-xs); }
+  .profile-page .profile-social b { font-size: var(--text-xl); line-height: 1.25; letter-spacing: -.01em; }
+  .profile-page .profile-social button { transition: color .2s; }
+  .profile-page .profile-social button:hover { background: transparent; }
+  .profile-page .profile-social button:hover b { color: var(--profile-accent); }
+  /* 操作：编辑资料为主按钮占大半，账号安全为浅色次按钮 */
+  .profile-page .profile-actions { order: 4; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 8px; width: 100%; margin: 16px 0 0; padding: 0; }
+  .profile-page .profile-actions .btn { justify-content: center; gap: 6px; min-height: 40px; padding-inline: 8px; border-radius: var(--radius-control); }
+  .profile-page .profile-actions .btn:not(.primary) { border-color: transparent; background: var(--surface-2); color: var(--text-2); }
+  .profile-page .profile-actions .btn:not(.primary):hover { background: color-mix(in oklab, var(--surface-2) 70%, var(--line)); color: var(--text); }
+}
+@media (min-width: 941px) and (max-width: 1100px) {
+  .profile-page .profile-layout { grid-template-columns: 280px minmax(0, 1fr); gap: 20px; }
+  .profile-page .profile-avatar { width: 88px; height: 88px; margin-top: -44px; }
+}
+
+/* 窄桌面：横幅封面，原图带圆角浮在封面上；资料左对齐成一列，统计横排 */
+@media (min-width: 601px) and (max-width: 940px) {
+  .profile-page .profile-cover-wrap .profile-photo-button { padding: 18px 0; }
+  .profile-page .profile-cover-wrap .profile-photo-button > img { border-radius: var(--radius-control); box-shadow: 0 22px 48px -18px rgb(15 23 42 / .5), 0 0 0 1px rgb(255 255 255 / .35); }
+  .profile-page .profile-card-body { gap: 0; padding-bottom: 20px; }
+  .profile-page .profile-summary { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; justify-content: flex-start; gap: 10px; margin-top: 10px; padding-left: 0; }
+  .profile-page .profile-description { flex: none; max-width: 64ch; }
+  .profile-page .profile-social { gap: 4px; margin: 0 0 0 -10px; }
+  .profile-page .profile-social button, .profile-page .profile-likes { flex-direction: row; align-items: baseline; gap: 6px; min-width: 0; min-height: 40px; padding: 6px 10px; border-radius: var(--radius-sm); font-size: var(--text-caption); }
+  .profile-page .profile-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 12px; }
+  .profile-page .profile-tool + .profile-tool { margin-top: 0; }
+  .profile-page .profile-tool-logout { margin-top: 0 !important; border-top: 0; border-radius: var(--radius-control); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .profile-page .profile-cover-wrap .profile-photo-button > img, .profile-page .profile-tool-arrow { transition: none; }
+}
+
+/* ---------- 侧栏资料卡（桌面） ----------
+ * 只展示真实数据：没有简介就不显示简介行。头像与名字横排，顶部用卡片内淡色渐变代替装饰封面条，整体更紧凑。
+ * 高度约束（140–330px）见 desktop-reference e2e。 */
+@media (min-width: 601px) {
+  .social-shell .profile-rail-card { padding: 14px; text-align: left; box-shadow: var(--shadow-card), inset 0 1px 0 rgb(255 255 255 / .7); }
+  :root[data-theme="dark"] .social-shell .profile-rail-card .profile-rail-head .profile-level { color: #10131c; }
+  :root[data-theme="dark"] .social-shell .profile-rail-card { box-shadow: var(--shadow-card), inset 0 1px 0 rgb(255 255 255 / .06); }
+  .social-shell .profile-rail-card .profile-rail-cover { display: none; }
+  .social-shell .profile-rail-card::before {
+    display: block;
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(140px 90px at 92% -10%, color-mix(in oklab, var(--brand) 22%, transparent), transparent 70%),
+      radial-gradient(120px 80px at 0% 0%, color-mix(in oklab, #a78bfa 16%, transparent), transparent 70%),
+      linear-gradient(180deg, var(--brand-soft) 0, transparent 92px);
+    pointer-events: none;
+  }
+  /* 头部整行可点进主页：头像 + 名字/等级 + 箭头，悬停整行着色 */
+  .social-shell .profile-rail-card .profile-rail-head { position: relative; flex-direction: row; align-items: center; gap: 12px; margin: -6px -6px 0; padding: 6px; border-radius: var(--radius-control); color: inherit; text-decoration: none; transition: background .2s; }
+  .social-shell .profile-rail-card a.profile-rail-head:hover { background: color-mix(in oklab, var(--brand-soft) 70%, transparent); }
+  .social-shell .profile-rail-card a.profile-rail-head:focus-visible { outline: 2px solid var(--brand); outline-offset: 0; }
+  /* 头像：主题色渐变描边环 */
+  .social-shell .profile-rail-card .profile-rail-avatar { width: 52px; height: 52px; flex-basis: 52px; padding: 4px; border: 0; border-radius: 50%; background: linear-gradient(140deg, var(--brand), color-mix(in oklab, var(--brand) 45%, #c084fc)); box-shadow: 0 6px 16px -6px color-mix(in oklab, var(--brand) 55%, transparent); }
+  .social-shell .profile-rail-card .profile-rail-avatar > * { border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); }
+  .social-shell .profile-rail-card .profile-rail-head .profile-level { padding: 0 7px; border: 0; border-radius: var(--radius-pill); background: linear-gradient(135deg, var(--brand), color-mix(in oklab, var(--brand) 55%, #a855f7)); color: #fff; font-size: var(--text-tiny); font-weight: var(--weight-bold); line-height: 18px; letter-spacing: .02em; }
+  .social-shell .profile-rail-card .profile-rail-head > div:nth-child(2) { flex: 1; width: auto; min-width: 0; }
+  .social-shell .profile-rail-card .profile-rail-head b { display: block; overflow: hidden; font-size: var(--text-md); font-weight: var(--weight-bold); letter-spacing: .01em; text-overflow: ellipsis; white-space: nowrap; }
+  .social-shell .profile-rail-card .profile-rail-head p { justify-content: flex-start; margin-top: 3px; }
+  .social-shell .profile-rail-card .profile-rail-go { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: color-mix(in oklab, var(--surface) 80%, transparent); box-shadow: inset 0 0 0 1px var(--line-2), 0 2px 6px -2px rgb(31 35 41 / .12); color: var(--text-3); transition: transform .25s var(--ease-out), color .2s, background .2s; }
+  .social-shell .profile-rail-card .profile-rail-go svg { transform: rotate(-90deg); }
+  .social-shell .profile-rail-card a.profile-rail-head:hover .profile-rail-go { transform: translateX(2px); background: var(--surface); color: var(--brand); }
+  .social-shell .profile-rail-card .profile-bio {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin: 12px 0 0;
+    color: var(--text-2);
+    font-size: var(--text-caption);
+    line-height: 1.6;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+  /* 统计：去掉灰底盒子，细线分隔三栏 */
+  /* 统计：三枚浅色小块，替代分隔线 */
+  .social-shell .profile-rail-card .profile-rail-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 14px 0 0; padding: 0; border: 0; border-radius: 0; background: none; }
+  .social-shell .profile-rail-card .profile-rail-stats > span { --tint: var(--icon-blue); position: relative; display: grid; justify-items: center; gap: 1px; padding: 9px 2px 8px; border-radius: 12px; background: color-mix(in oklab, var(--tint) 7%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tint) 14%, transparent); }
+  .social-shell .profile-rail-card .profile-rail-stats > span:nth-child(1) { --tint: var(--icon-rose); }
+  .social-shell .profile-rail-card .profile-rail-stats > span:nth-child(3) { --tint: var(--icon-violet); }
+  .social-shell .profile-rail-card .profile-rail-stats > span::after { content: ""; position: absolute; top: 7px; right: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--tint); opacity: .55; }
+  .social-shell .profile-rail-card .profile-rail-stats > span + span::before { display: none; }
+  .social-shell .profile-rail-card .profile-rail-stats b { font-size: var(--text-md); font-weight: var(--weight-bold); line-height: 22px; }
+  .social-shell .profile-rail-card .profile-rail-stats small { color: color-mix(in oklab, var(--tint) 45%, var(--text-3)); font-weight: var(--weight-medium); }
+  .social-shell .profile-rail-card > .btn { margin-top: 14px; }
+}
+
+/* ---------- 食堂与菜品（桌面） ----------
+ * 主页：推荐店铺大卡（封面 + 评分 + 五维评分条）与今日热门榜并排；下方实拍卡片流、点评卡片。
+ * 店铺/排行：带封面缩略图、标签与星级的列表。手机端对照 App，保持原结构，不受影响。 */
+@media (min-width: 601px) {
+  .food-page { --food-star: #f5a524; --food-ink: var(--icon-amber); }
+  .food-page .food-muted { margin: 0; color: var(--text-3); font-size: var(--text-caption); }
+  .food-stars { position: relative; display: inline-block; width: 5.4em; height: 1em; font-size: 13px; line-height: 1; vertical-align: -1px; }
+  .food-stars::before, .food-stars::after { content: "★★★★★"; position: absolute; inset: 0; letter-spacing: .08em; white-space: nowrap; overflow: hidden; }
+  .food-stars::before { color: var(--line); }
+  .food-stars::after { width: var(--fill, 0%); color: var(--food-star); }
+
+  .food-home { display: grid; gap: 28px; }
+  .food-top { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 16px; align-items: stretch; }
+
+  /* 推荐大卡 */
+  .food-hero { display: grid; grid-template-columns: minmax(180px, 42%) minmax(0, 1fr); padding: 0; overflow: hidden; }
+  .food-hero > .empty-state { grid-column: 1 / -1; }
+  .food-hero-media { position: relative; display: block; min-height: 100%; background: var(--surface-2); overflow: hidden; }
+  .food-hero-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform .6s var(--ease-out); }
+  .food-hero:hover .food-hero-media img { transform: scale(1.04); }
+  .food-media-empty { display: grid; place-items: center; width: 100%; height: 100%; min-height: 160px; color: var(--food-ink); background: color-mix(in oklab, var(--food-star) 10%, var(--surface-2)); }
+  .food-hero-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 22px 24px; }
+  .food-badge { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; padding: 3px 10px 3px 8px; border-radius: var(--radius-pill); background: color-mix(in oklab, var(--food-star) 14%, var(--surface)); color: var(--food-ink); font-size: var(--text-xs); font-weight: var(--weight-semibold); }
+  .food-hero-body h2 { margin: 2px 0 0; font-size: var(--text-xl); line-height: 1.3; }
+  .food-place { display: flex; align-items: center; gap: 5px; margin: -4px 0 0; color: var(--text-3); font-size: var(--text-caption); }
+  .food-hero-score { display: flex; align-items: center; gap: 12px; }
+  .food-hero-score > b { font-size: 40px; font-weight: var(--weight-bold); line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .food-hero-score > div { display: grid; gap: 4px; }
+  .food-hero-score .food-stars { font-size: 15px; }
+  .food-hero-score small { color: var(--text-3); font-size: var(--text-xs); }
+  .food-reason { margin: 0; color: var(--text-2); font-size: var(--text-sm); line-height: 1.6; }
+  .food-dims { display: grid; gap: 6px; margin: 2px 0 0; }
+  .food-dims > div { display: grid; grid-template-columns: 3.4em minmax(0, 1fr) 2.2em; align-items: center; gap: 10px; }
+  .food-dims dt { color: var(--text-2); font-size: var(--text-xs); }
+  .food-dims dd { height: 6px; margin: 0; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+  .food-dims dd > span { display: block; width: var(--v, 0%); height: 100%; border-radius: inherit; background: linear-gradient(90deg, color-mix(in oklab, var(--food-star) 70%, var(--surface)), var(--food-star)); transform-origin: left; animation: food-bar .8s var(--ease-out) both; }
+  .food-dims b { color: var(--text); font-size: var(--text-xs); font-weight: var(--weight-semibold); text-align: right; font-variant-numeric: tabular-nums; }
+  .food-hero-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 6px; }
+
+  /* 今日热门榜 */
+  .food-hot { display: flex; flex-direction: column; padding: 18px 14px 12px; }
+  .food-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 6px 8px; }
+  .food-card-head h3 { margin: 0; font-size: var(--text-md); }
+  .food-card-head small { color: var(--text-3); font-size: var(--text-xs); }
+  .food-hot ol { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+  .food-hot .food-muted { padding: 24px 6px; text-align: center; }
+  .food-hot-item { display: grid; grid-template-columns: 22px 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 8px 6px; border: 0; border-radius: var(--radius-control); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background .2s; }
+  .food-hot-item:hover { background: var(--surface-2); }
+  .food-hot-item:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+  .food-hot-copy { display: grid; gap: 2px; min-width: 0; }
+  .food-hot-copy b, .food-hot-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .food-hot-copy b { font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+  .food-hot-copy small { color: var(--text-3); font-size: var(--text-xs); }
+  .food-rank { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; background: var(--surface-2); color: var(--text-3); font-size: var(--text-xs); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
+  .food-rank.top-1 { background: linear-gradient(135deg, #ffcf5c, #f39c12); color: #fff; }
+  .food-rank.top-2 { background: linear-gradient(135deg, #c9d2e0, #8e9bb0); color: #fff; }
+  .food-rank.top-3 { background: linear-gradient(135deg, #e8b48a, #c27a4a); color: #fff; }
+  .food-thumb { display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--radius-control); background: var(--surface-2); color: var(--food-ink); overflow: hidden; }
+  .food-thumb.large { width: 64px; height: 64px; border-radius: 12px; }
+  .food-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .food-chip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-2); font-size: var(--text-xs); font-weight: var(--weight-semibold); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .food-chip i, .food-review-score i { color: var(--food-star); font-style: normal; }
+
+  /* 区块标题 */
+  .food-section { margin: 0; }
+  .food-section .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .food-section .section-head h2 { margin: 0; font-size: var(--text-lg); }
+  .food-section .section-head .link-btn { display: inline-flex; align-items: center; gap: 2px; }
+  .food-section .section-head .link-btn svg { transform: rotate(-90deg); }
+
+  /* 今天吃什么：实拍卡片流 */
+  .food-feed { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 14px; }
+  .food-card { display: flex; flex-direction: column; min-width: 0; border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); color: inherit; text-decoration: none; overflow: hidden; transition: transform .3s var(--ease-out), box-shadow .3s var(--ease-out); }
+  .food-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-hover); }
+  .food-card:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .food-card-media { position: relative; display: block; aspect-ratio: 4 / 3; background: var(--surface-2); overflow: hidden; }
+  .food-card-media img { width: 100%; height: 100%; object-fit: cover; transition: transform .6s var(--ease-out); }
+  .food-card:hover .food-card-media img { transform: scale(1.05); }
+  .food-card-kind { position: absolute; top: 10px; left: 10px; padding: 2px 9px; border-radius: var(--radius-pill); background: rgb(15 23 42 / .55); color: #fff; font-size: var(--text-tiny); font-weight: var(--weight-semibold); backdrop-filter: blur(8px); }
+  .food-card-body { display: grid; gap: 5px; padding: 12px 14px 14px; }
+  .food-card-body > b { overflow: hidden; font-size: var(--text-sm); font-weight: var(--weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
+  .food-card-body > small { overflow: hidden; color: var(--text-3); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
+  .food-card-reason { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-2); font-size: var(--text-xs); line-height: 1.55; }
+  .food-card-score { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: var(--text-xs); font-weight: var(--weight-semibold); }
+  .food-card-score small { color: var(--text-3); font-weight: var(--weight-regular); }
+  .food-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .food-tags > span { padding: 1px 7px; border-radius: var(--radius-xs); background: color-mix(in oklab, var(--food-star) 12%, var(--surface)); color: var(--food-ink); font-size: var(--text-tiny); line-height: 18px; }
+  .food-tags > span.plain { background: var(--surface-2); color: var(--text-3); }
+
+  /* 最新点评 */
+  .food-reviews { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .food-review { display: grid; align-content: start; gap: 10px; padding: 16px 18px; border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); color: inherit; text-decoration: none; transition: box-shadow .3s var(--ease-out), transform .3s var(--ease-out); }
+  .food-review:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
+  .food-review:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .food-review-head { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+  .food-review-avatar { width: 36px; height: 36px; border-radius: 50%; overflow: hidden; background: var(--surface-2); }
+  .food-review-avatar :is(img, .server-avatar-fallback) { width: 100%; height: 100%; object-fit: cover; }
+  .food-review-who { display: grid; min-width: 0; }
+  .food-review-who b { overflow: hidden; font-size: var(--text-sm); font-weight: var(--weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
+  .food-review-who small { color: var(--text-3); font-size: var(--text-xs); }
+  .food-review-score { display: inline-flex; align-items: center; gap: 3px; padding: 3px 9px; border-radius: var(--radius-pill); background: color-mix(in oklab, var(--food-star) 13%, var(--surface)); color: var(--food-ink); font-size: var(--text-caption); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
+  .food-review-store { display: inline-flex; align-items: center; gap: 5px; justify-self: start; max-width: 100%; padding: 2px 9px 2px 7px; border-radius: var(--radius-xs); background: var(--surface-2); color: var(--text-2); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .food-review-store svg { flex: none; color: var(--food-ink); }
+  .food-review-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-2); font-size: var(--text-sm); line-height: 1.7; overflow-wrap: anywhere; }
+
+  /* 店铺 / 排行列表 */
+  .food-stores { display: grid; padding: 6px; }
+  .food-store { display: grid; grid-template-columns: auto 64px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 12px; border-radius: var(--radius-control); color: inherit; text-decoration: none; transition: background .2s; }
+  .food-store:not(:has(> .food-rank)) { grid-template-columns: 64px minmax(0, 1fr) auto; }
+  .food-store + .food-store { box-shadow: 0 -1px 0 var(--line-2); }
+  .food-store:hover { background: var(--surface-2); box-shadow: none; }
+  .food-store:hover + .food-store { box-shadow: none; }
+  .food-store:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+  .food-store .food-rank { width: 26px; height: 26px; border-radius: 8px; font-size: var(--text-caption); }
+  .food-store-main { display: grid; gap: 4px; min-width: 0; }
+  .food-store-main b { overflow: hidden; font-size: var(--text-base); font-weight: var(--weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
+  .food-store-main small { overflow: hidden; color: var(--text-3); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
+  .food-store-score { display: grid; justify-items: end; gap: 3px; min-width: 92px; }
+  .food-store-score b { font-size: var(--text-xl); font-weight: var(--weight-bold); line-height: 1; font-variant-numeric: tabular-nums; }
+  .food-store-score small { color: var(--text-3); font-size: var(--text-xs); }
+}
+@media (min-width: 601px) and (max-width: 1100px) {
+  .food-top { grid-template-columns: minmax(0, 1fr); }
+}
+@media (min-width: 601px) and (max-width: 760px) {
+  .food-hero { grid-template-columns: minmax(0, 1fr); }
+  .food-hero-media { aspect-ratio: 16 / 9; min-height: 0; }
+}
+@keyframes food-bar { from { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .food-dims dd > span { animation: none; }
+  .food-card, .food-review, .food-card-media img, .food-hero-media img { transition: none; }
+}
+
+/* 顶栏搜索：中等宽度（显示顶部导航时）搜索框变窄，文字保持单行省略，不再折成两行 */
+@media (min-width: 601px) {
+  .social-shell .search-trigger .search-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+}
+
+/* 投票详情（桌面）：外层详情卡已是卡片，内层投票卡去掉边框与裁切，内容与普通帖子详情同一内边距；互动按钮不折行 */
+@media (min-width: 601px) {
+  .social-shell .post-full > .poll-card { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: visible; }
+  .social-shell .post-full > .poll-card .poll-footnote { margin-top: 12px; }
+  .social-shell .post-full .post-interaction { flex-wrap: nowrap; white-space: nowrap; }
+}

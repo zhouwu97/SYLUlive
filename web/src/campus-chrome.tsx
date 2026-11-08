@@ -15,17 +15,22 @@ export function ProfileSummary() {
   return <section className="profile-rail-card" aria-label="校园个人资料">
     {/* 侧栏只保留品牌渐变装饰，个人封面只在个人主页展示 */}
     <div className="profile-rail-cover" aria-hidden="true" />
-    <div className="profile-rail-head">
-      <div className="profile-rail-avatar"><ServerAvatar src={person.avatar || auth.user?.avatar} name={auth.user ? name : "沈理校园"} /></div>
-      <div><b>{auth.loading ? "正在读取账号…" : auth.user ? name : "欢迎来到沈理校园"}</b><p>{auth.user ? <><span className="profile-level">Lv.{userLevel(person)}</span><span className="profile-meta-separator"> · </span><span className="profile-role">校园观察员</span></> : "连接校园里的每一天"}</p></div>
-    </div>
-    <p className="profile-bio">{person.bio || (auth.user ? "把普通日子记得认真一点。" : "分享日常，发现同频的校园生活。")}</p>
+    {auth.user ? <Link className="profile-rail-head" to="/profile" title="我的主页">
+      <div className="profile-rail-avatar"><ServerAvatar src={person.avatar || auth.user?.avatar} name={name} /></div>
+      <div><b>{name}</b><p><span className="profile-level">Lv.{userLevel(person)}</span></p></div>
+      <span className="profile-rail-go" aria-hidden="true"><Icon name="chevron" size={15} /></span>
+    </Link> : <div className="profile-rail-head">
+      <div className="profile-rail-avatar"><ServerAvatar src={undefined} name="沈理校园" /></div>
+      <div><b>{auth.loading ? "正在读取账号…" : "欢迎来到沈理校园"}</b><p>分享日常，发现同频的校园生活</p></div>
+    </div>}
+    {/* 只展示用户自己写的简介；没写就不显示，不用占位文案冒充 */}
+    {auth.user && person.bio && <p className="profile-bio">{person.bio}</p>}
     {auth.user && <div className="profile-rail-stats">
       <span><b>{person.total_likes_received ?? person.like_count ?? 0}</b><small>获赞</small></span>
-      <span><b>{person.followers_count ?? person.follower_count ?? 0}</b><small>关注者</small></span>
+      <span><b>{person.followers_count ?? person.follower_count ?? 0}</b><small>粉丝</small></span>
       <span><b>{person.following_count ?? person.following ?? 0}</b><small>关注</small></span>
     </div>}
-    {auth.user ? <Link className="profile-home" to="/profile">进入我的主页 <Icon name="arrow" size={14} /></Link> : <button className="btn primary full-width" disabled={auth.loading} onClick={auth.login}>登录并参与讨论</button>}
+    {!auth.user && <button className="btn primary full-width" disabled={auth.loading} onClick={auth.login}>登录并参与讨论</button>}
   </section>;
 }
 

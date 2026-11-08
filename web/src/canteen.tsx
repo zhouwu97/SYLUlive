@@ -1,5 +1,5 @@
 import {Link} from 'react-router-dom';
-import {preservedReviewData,stringList} from './canteen-data';
+import {formatScore,preservedReviewData,stringList} from './canteen-data';
 import {asset,entity,rows,time,upload,useApi,write,type Entity} from './api';
 import {useAuth} from './auth';
 import {Empty,Form,QueryState,useUI,type Field} from './ui';
@@ -20,7 +20,7 @@ function CanteenReviewEditor({id,reviewId}:{id:string;reviewId:number}){
 }
 export function CanteenReviews({id}:{id:string}){
   const q=useApi(`/api/canteens/${id}/reviews`),ui=useUI(),auth=useAuth();
-  return <QueryState query={q}>{rows(q.data,'reviews').map(r=><article className="comment-row" key={r.id||r.review_id}><b>{r.user_name||r.user?.nickname||'同学'} · {r.overall_score||r.star} 分</b><p>{r.comment}</p><div className="post-images">{stringList(r.images).map((url:string)=><a key={url} href={asset(url)} target="_blank" rel="noreferrer"><img src={asset(url)} alt="就餐实拍"/></a>)}</div><small>{time(r.created_at)}</small>{r.user_id===auth.user?.id&&<div className="form-actions"><button className="btn" onClick={()=>ui.open('编辑我的评价',<CanteenReviewEditor id={id} reviewId={r.id}/>)}>编辑</button><button className="btn" onClick={()=>ui.open('删除评价',<><p>确认删除自己的这次评价？</p><button className="btn" onClick={async()=>{if(await ui.act(()=>write(`/api/canteens/reviews/${r.id}`,{},'DELETE')))ui.close()}}>确认删除</button></>)}>删除</button></div>}</article>)}{!rows(q.data,'reviews').length&&<Empty title="暂无就餐评价"/>}</QueryState>;
+  return <QueryState query={q}>{rows(q.data,'reviews').map(r=><article className="comment-row" key={r.id||r.review_id}><b>{r.user_name||r.user?.nickname||'同学'} · {formatScore(r.overall_score||r.star)} 分</b><p>{r.comment}</p><div className="post-images">{stringList(r.images).map((url:string)=><a key={url} href={asset(url)} target="_blank" rel="noreferrer"><img src={asset(url)} alt="就餐实拍"/></a>)}</div><small>{time(r.created_at)}</small>{r.user_id===auth.user?.id&&<div className="form-actions"><button className="btn" onClick={()=>ui.open('编辑我的评价',<CanteenReviewEditor id={id} reviewId={r.id}/>)}>编辑</button><button className="btn" onClick={()=>ui.open('删除评价',<><p>确认删除自己的这次评价？</p><button className="btn" onClick={async()=>{if(await ui.act(()=>write(`/api/canteens/reviews/${r.id}`,{},'DELETE')))ui.close()}}>确认删除</button></>)}>删除</button></div>}</article>)}{!rows(q.data,'reviews').length&&<Empty title="暂无就餐评价"/>}</QueryState>;
 }
 export function CanteenContributions(){
   const q=useApi('/api/user/canteen-contributions');

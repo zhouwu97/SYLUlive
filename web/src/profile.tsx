@@ -10,6 +10,7 @@ import {useMobile} from './mobile';
 import {ServerAvatar} from './server-avatar';
 import {userLevel} from './user-level';
 import {forgetSavedPasswords} from './login-history';
+import {useSlidingIndicator} from './desktop-motion';
 const profileTabs: [string, string][] = [["posts", "我的帖子"], ["market", "我的闲置"], ["bookmarks", "我的收藏"], ["evaluations", "课程评价"], ["following", "关注"], ["followers", "粉丝"]];
 const profileEmpty: Record<string, {title: string; description: string; to: string; action: string}> = {
   posts: {title: '还没有发布帖子', description: '分享校园日常，发布的内容会出现在这里。', to: '/community', action: '去校园社区'},
@@ -89,41 +90,43 @@ function DesktopProfile() {
   const stats = typeof user.total_likes_received === 'number' || typeof user.following_count === 'number' || typeof user.followers_count === 'number';
   return <div className="profile-page">
     <h1 className="sr-only">我的主页</h1>
-    {/* 主页头部：封面整图展示（同图模糊铺底补足留白），头像压在封面下沿，资料与操作同一行 */}
-    <section className="panel profile-card" aria-label="个人资料">
-      <div className={`profile-cover-wrap${cover ? '' : ' is-empty'}`}>
-        {cover ? <>
-          <img className="profile-cover-backdrop" src={cover} alt="" aria-hidden="true"/>
-          <ProfilePhoto key={`${user.id}:${cover}`} src={cover} cover/>
-        </> : <div className="profile-cover-empty"><p>用一张照片，记录校园里的自己。</p><button className="btn" onClick={() => ui.open('编辑资料', <EditProfile user={user}/>)}><Icon name="plus" size={16}/>添加主页封面</button></div>}
-      </div>
-      <div className="profile-card-body">
-        <div className="profile-identity">
-          <div className="profile-avatar"><ProfilePhoto key={`${user.id}:${avatar}`} src={avatar} name={nickname}/></div>
-          <div className="profile-name"><div className="profile-name-heading"><h2 title={nickname}>{nickname}</h2><span className="profile-level" aria-label={`等级 ${userLevel(user)}`}>Lv.{userLevel(user)}</span></div><AiBotIdentity user={user}/><span className="profile-account">账号 #{user.id}</span></div>
-          <div className="profile-actions">
-            <button className="btn primary profile-edit" aria-label="编辑资料与图片" onClick={() => ui.open('编辑资料', <EditProfile user={user}/>)}><Icon name="profile" size={16}/>编辑资料</button>
-            <button className="btn" onClick={() => ui.open('账号安全', <Security/>)}><Icon name="admin" size={16}/>账号安全</button>
-            <button className="btn profile-logout" onClick={auth.logout}>退出登录</button>
-          </div>
-        </div>
-        {(user.bio || stats) && <div className="profile-summary">
-          {user.bio && <p className="profile-description">{user.bio}</p>}
-          {stats && <div className="profile-social" aria-label="个人互动统计">
-            {typeof user.total_likes_received === 'number' && <span className="profile-likes"><b>{user.total_likes_received}</b><span>获赞</span></span>}
-            {typeof user.following_count === 'number' && <button onClick={() => openContent('following')}><b>{user.following_count}</b><span>关注</span></button>}
-            {typeof user.followers_count === 'number' && <button onClick={() => openContent('followers')}><b>{user.followers_count}</b><span>粉丝</span></button>}
-          </div>}
-        </div>}
-      </div>
-    </section>
     <div className="profile-layout">
-      <aside className="panel profile-tools" aria-label="个人工具">
-        <h2>资料与设置</h2>
-        <Link className="profile-tool" to="/connected-apps"><span className="profile-tool-icon"><Icon name="ai"/></span><span><b>已授权助手</b><small>管理机器人与外部助手授权</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></Link>
-        <button className="profile-tool" aria-label="导入与导出校园资料" onClick={() => ui.open('本地资料', <AcademicSettings/>)}><span className="profile-tool-icon"><Icon name="grades"/></span><span><b>校园资料</b><small>导入或导出课表与成绩</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></button>
-        <button className="profile-tool" aria-label="隐私与数据管理" onClick={openPrivacy}><span className="profile-tool-icon"><Icon name="admin"/></span><span><b>隐私与数据</b><small>导出数据、管理本地资料</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></button>
-      </aside>
+      <div className="profile-side">
+        {/* 资料海报：宽屏时封面按原比例做成竖版海报，资料与操作居中排在下方；窄屏退回横幅。封面不裁切，同图模糊铺底补足留白 */}
+        <section className="panel profile-card" aria-label="个人资料">
+          <div className={`profile-cover-wrap${cover ? '' : ' is-empty'}`}>
+            {cover ? <>
+              <img className="profile-cover-backdrop" src={cover} alt="" aria-hidden="true"/>
+              <ProfilePhoto key={`${user.id}:${cover}`} src={cover} cover/>
+            </> : <div className="profile-cover-empty"><p>用一张照片，记录校园里的自己。</p><button className="btn" onClick={() => ui.open('编辑资料', <EditProfile user={user}/>)}><Icon name="plus" size={16}/>添加主页封面</button></div>}
+          </div>
+          <div className="profile-card-body">
+            <div className="profile-identity">
+              <div className="profile-avatar"><ProfilePhoto key={`${user.id}:${avatar}`} src={avatar} name={nickname}/></div>
+              <div className="profile-name"><div className="profile-name-heading"><h2 title={nickname}>{nickname}</h2><span className="profile-level" aria-label={`等级 ${userLevel(user)}`}>Lv.{userLevel(user)}</span></div><AiBotIdentity user={user}/><span className="profile-account">账号 #{user.id}</span></div>
+              <div className="profile-actions">
+                <button className="btn primary profile-edit" aria-label="编辑资料与图片" onClick={() => ui.open('编辑资料', <EditProfile user={user}/>)}><Icon name="profile" size={16}/>编辑资料</button>
+                <button className="btn" onClick={() => ui.open('账号安全', <Security/>)}><Icon name="admin" size={16}/>账号安全</button>
+              </div>
+            </div>
+            {(user.bio || stats) && <div className="profile-summary">
+              {user.bio && <p className="profile-description">{user.bio}</p>}
+              {stats && <div className="profile-social" aria-label="个人互动统计">
+                {typeof user.total_likes_received === 'number' && <span className="profile-likes"><b>{user.total_likes_received}</b><span>获赞</span></span>}
+                {typeof user.following_count === 'number' && <button onClick={() => openContent('following')}><b>{user.following_count}</b><span>关注</span></button>}
+                {typeof user.followers_count === 'number' && <button onClick={() => openContent('followers')}><b>{user.followers_count}</b><span>粉丝</span></button>}
+              </div>}
+            </div>}
+          </div>
+        </section>
+        <aside className="panel profile-tools" aria-label="个人工具">
+          <h2>资料与设置</h2>
+          <Link className="profile-tool" to="/connected-apps"><span className="profile-tool-icon"><Icon name="ai"/></span><span><b>已授权助手</b><small>管理机器人与外部助手授权</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></Link>
+          <button className="profile-tool" aria-label="导入与导出校园资料" onClick={() => ui.open('本地资料', <AcademicSettings/>)}><span className="profile-tool-icon"><Icon name="grades"/></span><span><b>校园资料</b><small>导入或导出课表与成绩</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></button>
+          <button className="profile-tool" aria-label="隐私与数据管理" onClick={openPrivacy}><span className="profile-tool-icon"><Icon name="admin"/></span><span><b>隐私与数据</b><small>导出数据、管理本地资料</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></button>
+          <button className="profile-tool profile-tool-logout" aria-label="退出登录" onClick={auth.logout}><span className="profile-tool-icon"><Icon name="logout"/></span><span><b>退出登录</b><small>退出当前浏览器中的账号</small></span></button>
+        </aside>
+      </div>
       <div className="profile-content"><div className="profile-content-tabs"><ProfileTabs value={tab} onChange={setTab} contentId={contentId}/></div>
       <section id={contentId} className="profile-content-region" role="tabpanel" aria-labelledby={`${contentId}-${tab}`} tabIndex={0}><MyContent key={tab} tab={tab} userId={user.id}/></section></div>
     </div>
@@ -131,6 +134,8 @@ function DesktopProfile() {
 }
 
 function ProfileTabs({value, onChange, contentId}: {value: string; onChange: (value: string) => void; contentId: string}) {
+  // 桌面端选中标签由滑动指示器标出（样式见 desktop-refresh.css）
+  const tablist = useSlidingIndicator<HTMLDivElement>('.tab.active');
   function navigate(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     let next: number;
@@ -147,7 +152,7 @@ function ProfileTabs({value, onChange, contentId}: {value: string; onChange: (va
     button?.focus({preventScroll: true});
     button?.scrollIntoView({block: 'nearest', inline: 'nearest', behavior: 'instant'});
   }
-  return <div className="tabs" role="tablist" aria-label="个人内容">{profileTabs.map(([key, label], index) => <button key={key} id={`${contentId}-${key}`} className={`tab ${value === key ? 'active' : ''}`} role="tab" aria-selected={value === key} aria-controls={contentId} tabIndex={value === key ? 0 : -1} onClick={event => {onChange(key);event.currentTarget.scrollIntoView({block: 'nearest', inline: 'nearest', behavior: 'instant'})}} onKeyDown={event => navigate(event, index)}>{label}</button>)}</div>;
+  return <div className="tabs" role="tablist" aria-label="个人内容" ref={tablist}>{profileTabs.map(([key, label], index) => <button key={key} id={`${contentId}-${key}`} className={`tab ${value === key ? 'active' : ''}`} role="tab" aria-selected={value === key} aria-controls={contentId} tabIndex={value === key ? 0 : -1} onClick={event => {onChange(key);event.currentTarget.scrollIntoView({block: 'nearest', inline: 'nearest', behavior: 'instant'})}} onKeyDown={event => navigate(event, index)}>{label}</button>)}</div>;
 }
 
 function ProfilePhoto({src, name = '', cover = false}: {src?: string; name?: string; cover?: boolean}) {
@@ -172,7 +177,7 @@ function ProfileImagePreview({src, label}: {src: string; label: string}) {
 }
 function EditProfile({user}:{user:Entity}){const ui=useUI();return <Form fields={[{name:'nickname',label:'昵称',value:user.nickname,required:true},{name:'gender',label:'性别',value:user.gender||'',options:[['','不公开'],['male','男'],['female','女']]},{name:'avatar',label:'更新头像',type:'file'},{name:'background',label:'更新背景',type:'file'}]} onSubmit={async(values,form)=>{await write('/api/user/profile',{nickname:values.nickname,gender:values.gender},'PUT');for(const key of ['avatar','background']){const file=form.get(key);if(file instanceof File&&file.size){const url=await upload(file);await write(`/api/user/${key}`,{[key]:url},'PUT')}}await ui.act(async()=>{},'资料已保存');ui.close()}}/>}
 function MyContent({tab,userId}:{tab:string;userId:number}){
-  const ui=useUI();const path=tab==='bookmarks'?'/api/user/bookmarks':tab==='evaluations'?'/api/user/course-evaluations':`/api/user/${userId}/${tab==='market'?'market-posts':tab}`;const q=useApi(path);const people=['following','followers'].includes(tab);
+  const ui=useUI();const path=tab==='bookmarks'?'/api/user/bookmarks':tab==='evaluations'?'/api/user/course-evaluations':tab==='market'?`/api/user/${userId}/market-posts?post_type=all`:`/api/user/${userId}/${tab}`;const q=useApi(path);const people=['following','followers'].includes(tab);
   const items=rows(q.data,'users','following','followers'), empty=profileEmpty[tab] || profileEmpty.posts;
   if (!q.isPending && !q.error && !items.length) return <Empty title={empty.title} description={empty.description}><Link className="btn profile-empty-action" to={empty.to}>{empty.action}<span aria-hidden="true">→</span></Link></Empty>;
   return <QueryState query={q}><div className={`profile-feed ${people||tab==='evaluations'?'panel':''}`}>{items.map(x=>people?<div className="list-row" key={x.id}><img className="avatar" src={asset(x.avatar)} alt=""/><div className="list-main"><b>{x.nickname}</b><AiBotIdentity user={x}/></div>{tab==='following'&&<button className="btn" onClick={()=>void ui.act(()=>write(`/api/user/${x.id}/follow`,{},'DELETE'),'已取消关注')}>取消关注</button>}</div>:tab==='evaluations'?<div className="list-row" key={x.id}><div className="list-main"><b>{x.subject_name||x.course_name||'课程评价'}</b><p>{x.status} · {x.comment||x.content}</p></div></div>:<PostCard key={x.id} post={x.post||x}/>)}</div></QueryState>;

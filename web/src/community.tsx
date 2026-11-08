@@ -46,6 +46,7 @@ import {
 import { MediaGallery, MediaUploadPicker, mediaURL, uploadImageFiles } from "./media";
 import { EmojiSelectionPreview, StickerPicker, StickerRenderer, favoritePublicImage, type StickerPayload } from "./emoji";
 import { messageEmojiFields } from "./emoji-selection";
+import { isDetailPath, useReportDetailOrigin } from "./detail-origin";
 import "./community.css";
 import "./market.css";
 // 同一个 File 对象在「提交失败后原样重点提交」时不应再传一遍：
@@ -307,6 +308,8 @@ export function Community({ market = false }: { market?: boolean }) {
       q: params.get("q"),
       status: params.get("available") === "1" ? "normal" : undefined,
       capabilities: !market ? "poll_v1" : undefined,
+      // 个人集市记录接口默认只返回出售，显式请求全部类型（代办、求购等）
+      post_type: market && sort === "mine" ? "all" : undefined,
     }),
   );
   const posts = rows(q.data, "posts");
@@ -565,6 +568,7 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
   const isPoll = poll || !!p.poll_meta;
   const fallback = isPoll ? "/polls" : p.board_id === 2 ? "/market" : "/community";
   const origin = detailOrigin(from || fallback);
+  useReportDetailOrigin(from && !isDetailPath(from) ? from : q.data ? fallback : "");
   const goBack = () => from ? navigate(-1) : navigate(fallback);
   return (
     <div className="post-detail-page">

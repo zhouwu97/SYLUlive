@@ -15,7 +15,7 @@ async function setup(page: Page, user: Record<string, unknown> | null = person) 
 }
 // 头部同时有模糊铺底图（aria-hidden，alt 为空），只按可访问名称取完整封面。
 
-test('个人主页头部整图展示封面，资料与操作同行，工具与内容在下方居中排布', async ({ page }) => {
+test('个人主页整图展示封面；宽屏为左列资料海报、右列内容，窄屏上下堆叠，整体居中', async ({ page }) => {
   await setup(page);
   for (const width of [1920, 1440, 1040, 800, 680, 601]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -45,14 +45,17 @@ test('个人主页头部整图展示封面，资料与操作同行，工具与�
     expect(body!.y).toBeGreaterThanOrEqual(coverBox!.y + coverBox!.height - 1);
     expect(avatar!.y).toBeLessThan(coverBox!.y + coverBox!.height);
     expect(avatar!.y + avatar!.height).toBeGreaterThan(coverBox!.y + coverBox!.height);
-    // 头部卡片在上，工具与内容在下方
+    // 资料卡在上、工具紧随其下；宽屏两者组成左列海报，内容在右列与海报顶部对齐，窄屏内容排在最下方
     expect(tools!.y).toBeGreaterThan(card!.y + card!.height);
-    expect(content!.y).toBeGreaterThan(card!.y + card!.height);
     expect(Math.abs(card!.x - layout!.x)).toBeLessThan(2);
     if (width > 940) {
-      expect(content!.x).toBeGreaterThan(tools!.x + tools!.width);
-      expect(Math.abs(content!.y - tools!.y)).toBeLessThan(2);
-    } else expect(content!.y).toBeGreaterThan(tools!.y + tools!.height);
+      expect(Math.abs(tools!.x - card!.x)).toBeLessThan(2);
+      expect(content!.x).toBeGreaterThan(card!.x + card!.width);
+      expect(Math.abs(content!.y - card!.y)).toBeLessThan(2);
+    } else {
+      expect(content!.y).toBeGreaterThan(card!.y + card!.height);
+      expect(content!.y).toBeGreaterThan(tools!.y + tools!.height);
+    }
     expect(Math.abs(layout!.x - (width - layout!.x - layout!.width))).toBeLessThan(20);
     expect(await page.locator('.profile-content-tabs .tabs').evaluate(tabs => tabs.scrollWidth <= tabs.clientWidth)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

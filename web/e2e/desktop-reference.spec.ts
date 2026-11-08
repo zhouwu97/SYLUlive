@@ -349,7 +349,7 @@ test("长标题与宽窗口保留参考侧栏比例，资料、数量和热榜�
       return { profileWidth: profile.width, profileHeight: profile.height, profileInside: profile.left >= sidebar.left && profile.right <= sidebar.right + 1, railWidth: rail.width, cards, clippedBoardLabels, outsideHotRows, titles, eventSpacing, overflow: document.documentElement.scrollWidth > innerWidth };
     });
     expect(layout.profileWidth).toBe(214);
-    expect(layout.profileHeight).toBeGreaterThanOrEqual(190);
+    expect(layout.profileHeight).toBeGreaterThanOrEqual(140);
     // 资料卡以美观的留白为准，只限制不要无限增高
     expect(layout.profileHeight).toBeLessThanOrEqual(330);
     expect(layout.profileInside).toBe(true);

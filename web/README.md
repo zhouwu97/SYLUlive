@@ -118,7 +118,17 @@ node scripts/package-web.mjs --check <待部署 SHA>   # 或设置 RELEASE_SHA
 
 ## 部署
 
-将 `web/dist/` 内容放到现有站点 `/web/`。参考 `web/deploy/nginx.conf` 合并到原 HTTPS server；保留官网及分享路由，API 与附件使用同源代理，SSE 关闭缓冲。新增收藏和个人 AI 分析需要同时发布本仓库 Go 修改；仅更新静态页面不会让线上旧服务具备新接口。
+生产发布在仓库根目录执行一条命令（需已配置服务器 SSH 公钥，且 Web 相关目录无未提交改动）：
+
+~~~bash
+scripts/deploy-web.sh            # 构建当前 HEAD 并发布
+scripts/deploy-web.sh status     # 查看线上版本与可回滚版本
+scripts/deploy-web.sh rollback   # 切回上一版本
+~~~
+
+脚本在本机执行 check、单测和构建，把 `web/dist` 打成只含 `web/` 的包上传；服务器端 [deploy/deploy-web](../deploy/deploy-web) 解压到 `/var/www/sylulive/releases/<SHA>/`，保留上一版带哈希的 JS/CSS（已打开的页面不白屏），原子切换 `/var/www/sylulive/web` 链接。随后只做最小冒烟：公网 `/web/` 首页即本次版本，且其引用的 JS/CSS 可取到；失败自动切回并删除失败版本。保留最近 5 个版本。不触碰 Nginx、官网首页和后端进程。浏览器 E2E 不在脚本内，按发布风险另行执行。
+
+首次部署新站点时，将 `web/dist/` 内容放到现有站点 `/web/`。参考 `web/deploy/nginx.conf` 合并到原 HTTPS server；保留官网及分享路由，API 与附件使用同源代理，SSE 关闭缓冲。新增收藏和个人 AI 分析需要同时发布本仓库 Go 修改；仅更新静态页面不会让线上旧服务具备新接口。
 
 发布后请确认 `/web/assistant/assistant.json` 真的以 JSON 返回（例如 `curl -I https://<站点>/web/assistant/assistant.json` 看 `content-type`）。`web/deploy/nginx.conf` 的 `try_files` 会把缺失文件伪装成 200 + `index.html`，此时页面只会提示“本站暂无可用的教务助手安装包”，不会显示下载按钮。
 

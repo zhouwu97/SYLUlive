@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# 沈理校园 React Web（/web/）发布脚本，在服务器上以 root 执行。
+#
+# 用法：
+#   deploy-web <40位commit> <web包.tar.gz>   发布：解压、原子切换、冒烟，失败自动回滚
+#   deploy-web rollback                       切回上一个版本
+#   deploy-web status                         查看当前版本与可回滚版本
+#
+# 发布包内只有一个 web/ 目录（index.html、assets/、assistant/）。
+# 只切换 /var/www/sylulive/web 链接；不触碰 Nginx、官网首页与后端进程。
+set -Eeuo pipefail
+
+readonly ROOT=${WEB_ROOT:-/var/www/sylulive}
+readonly RELEASES="$ROOT/releases"
+readonly CURRENT="$ROOT/web"
+readonly PUBLIC_URL="${WEB_PUBLIC_URL:-https://sylulive.online}"
+readonly KEEP_RELEASES=5
+
+log() { printf '[web] %s\n' "$*"; }
+die() { printf '[web][错误] %s\n' "$*" >&2; exit 1; }
+
+[[ $EUID -eq 0 ]] || exec sudo -- "$0" "$@"
+
+exec 9>"$ROOT/.web-release.lock"
+flock -n 9 || die "另一个 Web 发布正在进行"
+
+current_target() { readlink -f "$CURRENT"; }
+
+# 链接替换用 rename，访问者不会读到半新半旧的目录。
+switch_to() {
+	local target=$1 tmp="$ROOT/.web-next-$$"
+	ln -sfn "$target" "$tmp"
+	mv -T "$tmp" "$CURRENT"
+}
+
+# 只做自动回滚所需的最小检查：公网首页就是本次版本，且其引用的 JS/CSS 可取到。
+# 子路由都由 Nginx 回落到同一 index.html，不再逐个请求。
+smoke() {
+	local dir=$1 asset
+	cmp -s <(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "$PUBLIC_URL/web/") "$dir/index.html" \
+		|| { log "线上首页不是本次版本"; return 1; }
+	for asset in $(grep -oE '/web/assets/[^"]+\.(js|css)' "$dir/index.html" | sort -u); do
+		curl -fsS -o /dev/null --max-time 15 "$PUBLIC_URL$asset" || { log "资源不可用: $asset"; return 1; }
+	done
+}
+
+prune() {
+	local active previous keep=() dir
+	active=$(dirname "$(current_target)")
+	previous=$(cat "$active/PREVIOUS" 2>/dev/null || true)
+	mapfile -t keep < <(ls -1dt "$RELEASES"/*/ 2>/dev/null | head -n "$KEEP_RELEASES")
+	for dir in "$RELEASES"/*/; do
+		dir=${dir%/}
+		[[ "$dir" == "$active" || "$dir" == "$(dirname "$previous" 2>/dev/null)" ]] && continue
+		printf '%s\n' "${keep[@]%/}" | grep -qxF "$dir" && continue
+		rm -rf -- "$dir"
+		log "清理旧版本 $(basename "$dir")"
+	done
+}
+
+cmd_status() {
+	local active
+	active=$(current_target)
+	log "当前版本: $(basename "$(dirname "$active")")"
+	log "可回滚到: $(cat "$(dirname "$active")/PREVIOUS" 2>/dev/null || echo 无)"
+	ls -1dt "$RELEASES"/*/ | head -n "$KEEP_RELEASES" | xargs -n1 basename
+}
+
+cmd_rollback() {
+	local active previous
+	active=$(current_target)
+	previous=$(cat "$(dirname "$active")/PREVIOUS" 2>/dev/null || true)
+	[[ -n "$previous" && -f "$previous/index.html" ]] || die "没有可回滚的上一版本"
+	switch_to "$previous"
+	smoke "$previous" || die "已切回 $previous，但冒烟未通过，请人工检查"
+	log "已回滚到 $(basename "$(dirname "$previous")")"
+}
+
+cmd_deploy() {
+	local sha=$1 archive=$2 release staging previous
+	[[ "$sha" =~ ^[0-9a-f]{40}$ ]] || die "需要 40 位 commit SHA"
+	[[ -f "$archive" ]] || die "发布包不存在: $archive"
+	release="$RELEASES/$sha"
+	[[ ! -e "$release" ]] || die "版本 $sha 已存在；发布不可覆盖，换新提交或先删除该目录"
+	previous=$(current_target)
+
+	staging=$(mktemp -d "$RELEASES/.staging-XXXXXX")
+	trap 'rm -rf -- "$staging"' EXIT
+	# 只接受 web/ 下的普通文件与目录，拒绝绝对路径和 ..。
+	if tar -tzf "$archive" | grep -vE '^web(/|$)' | grep -q .; then die "发布包只能包含 web/ 目录"; fi
+	if tar -tzf "$archive" | grep -qE '(^|/)\.\.(/|$)'; then die "发布包路径非法"; fi
+	tar -xzf "$archive" -C "$staging" --no-same-owner --no-same-permissions
+	[[ -f "$staging/web/index.html" && -d "$staging/web/assets" ]] || die "发布包缺少 index.html 或 assets/"
+
+	# 已打开页面的用户仍会请求旧的带哈希资源，保留它们避免白屏。
+	cp -n "$previous"/assets/*-????????.{js,css} "$staging/web/assets/" 2>/dev/null || true
+	# mktemp 建的目录是 0700，Nginx 无法进入，必须整体放开读权限。
+	printf '%s\n' "$previous" >"$staging/PREVIOUS"
+	chmod -R u=rwX,go=rX "$staging"
+	mv -T "$staging" "$release"
+	trap - EXIT
+
+	switch_to "$release/web"
+	if ! smoke "$release/web"; then
+		switch_to "$previous"
+		# 失败版本不保留，修复后可用同一提交重新发布。
+		rm -rf -- "$release"
+		die "冒烟失败，已自动回滚到 $(basename "$(dirname "$previous")")"
+	fi
+	date -u +%FT%TZ >"$release/DEPLOYED_AT"
+	log "已发布 $sha（上一版本 $(basename "$(dirname "$previous")")）"
+	prune
+}
+
+case "${1:-}" in
+	status) cmd_status ;;
+	rollback) cmd_rollback ;;
+	"" | -h | --help) sed -n '2,10p' "$0" ;;
+	*) [[ $# -eq 2 ]] || die "用法: deploy-web <commit> <web包.tar.gz>"; cmd_deploy "$1" "$2" ;;
+esac

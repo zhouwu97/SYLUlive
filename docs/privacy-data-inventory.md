@@ -12,6 +12,7 @@
 
 | 数据 | 来源 | 用途 | 位置 | 风险与边界 |
 | --- | --- | --- | --- | --- |
+| Web 本机登录记录与可选保存密码 | 用户表单选择、成功登录响应中的最小账号资料 | 最近账号选择和密码回填 | 当前站点 origin 的浏览器 IndexedDB `sylulive-login` | 最多 5 个账号，密码额外勾选才以 AES-GCM 保存，密钥不可导出且与密文同处本机记录；不是 OS 凭据库，同源脚本仍可能调用解密。密码不写入 localStorage／sessionStorage，不保存 Token，不同步本站服务端；可移除、清空或清除站点数据并刷新 |
 | Email、App 密码哈希、登录会话 | 用户输入 / 认证流程 | 注册、登录、找回密码 | Go 服务端 PostgreSQL | 认证高风险；验证码明文不落库 |
 | Web 本机登录记录与可选保存密码 | 用户表单选择、成功登录响应中的最小账号资料 | 最近账号选择和密码回填 | 当前站点 origin 的浏览器 IndexedDB `sylulive-login` | 最多 5 个账号，密码额外勾选才以 AES-GCM 保存，密钥不可导出且与密文同处本机记录；不是 OS 凭据库，同源脚本仍可能调用解密。密码不写入 localStorage／sessionStorage，不保存 Token，不同步本站服务端；可移除、清空或清除站点数据并刷新 |
 | 成功登录流水与设备来源摘要 | 登录成功后的服务端记录 | 调查异常成功登录、识别管理员新设备 | PostgreSQL `account_security_audit_logs`、`security_events` | 仅账号 ID、请求 ID、时间及 HMAC 摘要；不保存明文 IP、UA、安装标识、密码或令牌；设备摘要是可伪造观察信号 |

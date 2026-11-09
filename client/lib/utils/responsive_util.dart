@@ -35,6 +35,11 @@ class ResponsiveUtil {
     return isDesktop(context);
   }
 
+  /// 平板竖屏同样使用侧栏；分屏收窄至手机宽度后恢复底栏。
+  static bool useSideNavigation(BuildContext context) {
+    return !isMobile(context);
+  }
+
   /// 获取当前屏幕类型对应的最佳内容最大宽度
   static double getMaxContentWidth(BuildContext context) {
     if (isDesktop(context)) {

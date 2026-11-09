@@ -18,8 +18,12 @@ void main() {
     final provider = ThemeProvider(loadOnStart: false);
     addTearDown(provider.dispose);
     await provider.loadThemeForTesting();
-    Widget host(ThemeProvider theme, bool eligible) => ChangeNotifierProvider.value(
-      value: theme, child: MaterialApp(home: Scaffold(body: BottomNavSetupHint(eligible: eligible))));
+    Widget host(
+            ThemeProvider theme, bool eligible) =>
+        ChangeNotifierProvider.value(
+            value: theme,
+            child: MaterialApp(
+                home: Scaffold(body: BottomNavSetupHint(eligible: eligible))));
     await tester.pumpWidget(host(provider, false));
     await tester.pump(const Duration(seconds: 2));
     expect(find.text('首次使用建议'), findsNothing);
@@ -46,17 +50,21 @@ void main() {
     final provider = ThemeProvider(loadOnStart: false);
     addTearDown(provider.dispose);
     await provider.loadThemeForTesting();
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
-    await provider.setBottomNavPerformanceMode(BottomNavPerformanceMode.highPerformance);
+    expect(provider.bottomNavPerformanceMode,
+        BottomNavPerformanceMode.highQuality);
+    await provider
+        .setBottomNavPerformanceMode(BottomNavPerformanceMode.highPerformance);
     expect(provider.bottomNavAnimationIntensity, .35);
     await provider.setBottomNavAnimationIntensity(1);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highQuality);
+    expect(provider.bottomNavPerformanceMode,
+        BottomNavPerformanceMode.highQuality);
     await provider.setBottomNavAnimationIntensity(.62);
     expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.custom);
     await provider.loadThemeForTesting();
     expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.custom);
     expect(provider.bottomNavAnimationIntensity, .62);
-    await provider.setBottomNavPerformanceMode(BottomNavPerformanceMode.highQuality);
+    await provider
+        .setBottomNavPerformanceMode(BottomNavPerformanceMode.highQuality);
     final restored = ThemeProvider(loadOnStart: false);
     addTearDown(restored.dispose);
     await restored.loadThemeForTesting();
@@ -64,7 +72,8 @@ void main() {
     expect(restored.bottomNavAnimationIntensity, .62);
     await provider.loadThemeForTesting();
     await provider.setBottomNavAnimationIntensity(.35);
-    expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.highPerformance);
+    expect(provider.bottomNavPerformanceMode,
+        BottomNavPerformanceMode.highPerformance);
     await provider.setBottomNavAnimationIntensity(0);
     expect(provider.bottomNavPerformanceMode, BottomNavPerformanceMode.off);
     expect(provider.bottomNavShaderEnabled, isFalse);
@@ -151,6 +160,11 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late ThemeProvider theme;
   setUp(() async {
+    final view =
+        TestWidgetsFlutterBinding.instance.platformDispatcher.views.first;
+    view.physicalSize = const Size(400, 800);
+    view.devicePixelRatio = 1;
+    addTearDown(view.reset);
     AppPreferencesStore.setMockInitialValues({});
     theme = ThemeProvider(
         loadOnStart: false, performanceLevel: DevicePerformanceLevel.high);
@@ -217,8 +231,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(theme.bottomNavAnimationIntensity, lessThan(1));
     final prefs = await AppPreferencesStore.getInstance();
-    expect(
-        prefs.getString('bottom_nav_performance_mode_v2'), 'custom');
+    expect(prefs.getString('bottom_nav_performance_mode_v2'), 'custom');
     expect(theme.bottomNavPerformanceMode, BottomNavPerformanceMode.custom);
     expect(prefs.getDouble('bottom_nav_animation_intensity_v2'),
         theme.bottomNavAnimationIntensity);

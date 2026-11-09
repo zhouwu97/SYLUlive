@@ -13,8 +13,9 @@ import '../theme/app_motion.dart';
 import '../utils/responsive_util.dart';
 import '../utils/app_navigator.dart';
 import '../widgets/market_post_card.dart';
+import '../widgets/adaptive_detail_layout.dart';
+import '../utils/app_navigation.dart';
 import 'create_post_screen.dart';
-import 'post_detail_screen.dart';
 
 abstract final class AppLayout {
   static const double floatingNavHeight = 64;
@@ -57,6 +58,7 @@ class MarketScreen extends StatefulWidget {
 }
 
 class _MarketScreenState extends State<MarketScreen> {
+  final _detailNavigationKey = GlobalKey<AdaptiveDetailLayoutState>();
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   Timer? _searchDebounce;
@@ -66,6 +68,7 @@ class _MarketScreenState extends State<MarketScreen> {
   List<Post> _searchResults = [];
   String _typeFilter = 'all';
   int _searchGeneration = 0;
+  int? _accountSessionEpoch;
   VoidCallback? _unregisterResumeRefresh;
 
   static const _marketPostTypes = ['sell', 'buy', 'lost', 'found', 'proxy'];
@@ -143,6 +146,21 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final epoch = context.watch<AuthProvider>().accountSessionEpoch;
+    if (_accountSessionEpoch != null && _accountSessionEpoch != epoch) {
+      _searchGeneration++;
+      _searchDebounce?.cancel();
+      _searchController.clear();
+      _searchQuery = '';
+      _searchResults = [];
+      _isSearching = false;
+    }
+    _accountSessionEpoch = epoch;
+  }
+
+  @override
   void dispose() {
     _unregisterResumeRefresh?.call();
     _searchDebounce?.cancel();
@@ -182,6 +200,8 @@ class _MarketScreenState extends State<MarketScreen> {
     final query = raw.trim();
     final generation = ++_searchGeneration;
     if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    final epoch = auth.accountSessionEpoch;
 
     if (query.isEmpty) {
       if (mounted) {
@@ -212,7 +232,10 @@ class _MarketScreenState extends State<MarketScreen> {
           limit: 100,
         );
 
-    if (!mounted || generation != _searchGeneration || _searchQuery != query) {
+    if (!mounted ||
+        generation != _searchGeneration ||
+        _searchQuery != query ||
+        auth.accountSessionEpoch != epoch) {
       return;
     }
 
@@ -592,6 +615,41 @@ class _MarketScreenState extends State<MarketScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    return ValueListenableBuilder<int>(
+      valueListenable: currentHomeTabIndex,
+      builder: (context, currentTab, _) => AdaptiveDetailLayout(
+        key: _detailNavigationKey,
+        navigationScope: (
+          auth.user?.id,
+          auth.accountSessionEpoch,
+          auth.user?.role,
+        ),
+        isActive: currentTab == 1 && TickerMode.valuesOf(context).enabled,
+        paneKeyPrefix: 'market',
+        emptyDetail: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.storefront_outlined,
+                  size: 80,
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: .2)),
+              const SizedBox(height: 16),
+              Text('选择左侧商品查看详情',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            ],
+          ),
+        ),
+        master: Builder(builder: _buildMarketPage),
+      ),
+    );
+  }
+
+  Widget _buildMarketPage(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
 
@@ -1198,18 +1256,17 @@ class _MarketScreenState extends State<MarketScreen> {
       child: MarketPostCard(
         post: post,
         compact: inGrid,
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PostDetailScreen(
-                postId: post.id,
-                isMarket: true,
-                initialPost: post,
-              ),
-            ),
-          );
-        },
+        onAuthorTap: (userId) => AppNavigation.openUserHome<void>(
+          context,
+          userId: userId,
+          openRoute: _detailNavigationKey.currentState!.open,
+        ),
+        onTap: () => AppNavigation.openPostDetail<void>(
+          context,
+          post: post,
+          isMarket: true,
+          openRoute: _detailNavigationKey.currentState!.open,
+        ),
       ),
     );
   }

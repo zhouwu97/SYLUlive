@@ -9,6 +9,7 @@ import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/keep_alive_service.dart';
 import '../services/push_settings_service.dart';
+import '../utils/responsive_util.dart';
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/settings/settings_account_header.dart';
 import '../widgets/settings/settings_page_scaffold.dart';
@@ -65,7 +66,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _getAppearanceSummary(ThemeProvider theme) {
     final modeText = theme.isCleanBackgroundMode ? '简洁模式' : '自定义背景';
     final brightnessText = theme.isDarkMode ? '深色' : '浅色';
-    return '$modeText · $brightnessText · ${theme.bottomNavStyle.label}';
+    final navigationText = ResponsiveUtil.useSideNavigation(context)
+        ? switch (theme.bottomNavStyle) {
+            BottomNavStyle.normal => '标准侧栏',
+            BottomNavStyle.floating => '悬浮侧栏',
+            BottomNavStyle.liquidGlass => '液态玻璃侧栏',
+          }
+        : theme.bottomNavStyle.label;
+    return '$modeText · $brightnessText · $navigationText';
   }
 
   String _getNotificationSummary() {

@@ -29,14 +29,15 @@ class AppNavigation {
   static Future<T?> openUserHome<T>(
     BuildContext context, {
     required int userId,
+    Future<T?> Function(Route<T>)? openRoute,
   }) {
-    return Navigator.push<T>(
-      context,
-      MaterialPageRoute(
-        settings: RouteSettings(name: '/user/$userId'),
-        builder: (_) => UserHomeScreen(userId: userId),
-      ),
+    final route = MaterialPageRoute<T>(
+      settings: RouteSettings(name: '/user/$userId'),
+      builder: (_) => UserHomeScreen(userId: userId),
     );
+    return openRoute != null
+        ? openRoute(route)
+        : Navigator.of(context).push<T>(route);
   }
 
   static Future<T?> openPostDetail<T>(
@@ -44,23 +45,24 @@ class AppNavigation {
     required Post post,
     bool isMarket = false,
     int? sourceUserId,
+    Future<T?> Function(Route<T>)? openRoute,
   }) {
-    return Navigator.push<T>(
-      context,
-      MaterialPageRoute(
-        settings: RouteSettings(name: '/post/${post.id}'),
-        builder: (detailContext) => _buildDetail(
-          post,
-          isMarket: isMarket,
-          onAuthorTap: (authorId) {
-            if (sourceUserId != null && authorId == sourceUserId) {
-              return;
-            }
-            AppNavigation.openUserHome(detailContext, userId: authorId);
-          },
-        ),
+    final route = MaterialPageRoute<T>(
+      settings: RouteSettings(name: '/post/${post.id}'),
+      builder: (detailContext) => _buildDetail(
+        post,
+        isMarket: isMarket,
+        onAuthorTap: (authorId) {
+          if (sourceUserId != null && authorId == sourceUserId) {
+            return;
+          }
+          AppNavigation.openUserHome(detailContext, userId: authorId);
+        },
       ),
     );
+    return openRoute != null
+        ? openRoute(route)
+        : Navigator.of(context).push<T>(route);
   }
 
   static Widget _buildDetail(

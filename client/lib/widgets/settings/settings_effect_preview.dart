@@ -5,10 +5,12 @@ import '../../theme/app_colors.dart';
 
 /// 玻璃特效设置共用的预览画布；实际特效仍由各自的场景组件绘制。
 class SettingsEffectPreview extends StatelessWidget {
-  const SettingsEffectPreview({super.key, this.clipKey, required this.child});
+  const SettingsEffectPreview(
+      {super.key, this.clipKey, this.height = 220, required this.child});
 
   final Key? clipKey;
   final Widget child;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -18,15 +20,20 @@ class SettingsEffectPreview extends StatelessWidget {
     return ClipRRect(
       key: clipKey,
       borderRadius: BorderRadius.circular(AppRadius.sheet),
-      child: SizedBox(height: 220 + extraHeight, child: child),
+      child: SizedBox(height: height + extraHeight, child: child),
     );
   }
 }
 
 class SettingsEffectPreviewBackground extends StatelessWidget {
-  const SettingsEffectPreviewBackground({super.key, required this.title});
+  const SettingsEffectPreviewBackground({
+    super.key,
+    required this.title,
+    this.padding = const EdgeInsets.all(20),
+  });
 
   final String title;
+  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
@@ -38,7 +45,7 @@ class SettingsEffectPreviewBackground extends StatelessWidget {
           ),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: padding,
           child: Align(
             alignment: Alignment.topLeft,
             child: Text(title,

@@ -19,6 +19,7 @@ import 'package:shenliyuan/services/app_update_coordinator.dart';
 import 'package:shenliyuan/services/root_page_state_service.dart';
 import 'package:shenliyuan/utils/app_navigator.dart';
 import 'package:shenliyuan/widgets/bottom_nav.dart';
+import 'package:shenliyuan/widgets/liquid_bottom_nav.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'helpers/golden_viewport.dart';
 
@@ -62,8 +63,10 @@ void main() {
     final page = await _pumpHome(tester);
     await page.themeProvider.setBottomNavStyle(BottomNavStyle.liquidGlass);
     await tester.pumpAndSettle();
-    final start = tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-0')));
-    final end = tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-1')));
+    final start =
+        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-0')));
+    final end =
+        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-1')));
     final drag = await tester.startGesture(start);
     for (var i = 1; i <= 10; i++) {
       await drag.moveTo(Offset.lerp(start, end, i / 10)!);
@@ -78,7 +81,8 @@ void main() {
     await setGoldenViewport(tester, GoldenViewports.tabletLandscape1280x800);
     await tester.pumpAndSettle();
     expect(tester.state(find.byType(MarketScreen)), same(state));
-    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(tester.widget<BottomNavWrapper>(find.byType(BottomNavWrapper)).axis,
+        Axis.vertical);
     expect(tester.takeException(), isNull);
     await _disposeHome(tester, page);
   });
@@ -93,17 +97,73 @@ void main() {
     for (final size in [
       GoldenViewports.tabletPortrait834x1194,
       GoldenViewports.tabletLandscape1280x800,
-      GoldenViewports.tabletSplit600x800
+      GoldenViewports.tabletSplit600x800,
+      const Size(599, 800),
+      GoldenViewports.phone390x844,
     ]) {
       await setGoldenViewport(tester, size);
       await tester.pumpAndSettle();
       expect(tester.state(find.byType(MarketScreen)), same(screenState));
       expect(tester.widget<TextField>(input).controller!.text, '自行车草稿');
-      expect(find.byType(NavigationRail),
-          size.width >= 840 ? findsOneWidget : findsNothing);
+      expect(
+          tester.widget<BottomNavWrapper>(find.byType(BottomNavWrapper)).axis,
+          size.width >= 600 ? Axis.vertical : Axis.horizontal);
       expect(_rootTabIndex(tester), 1);
       expect(tester.takeException(), isNull);
     }
+    await _disposeHome(tester, page);
+  });
+  testWidgets('平板液态侧栏上下拖动松手切页，关闭后保留点击和当前页', (tester) async {
+    final page = await _pumpHome(tester);
+    await setGoldenViewport(tester, GoldenViewports.tabletLandscape1280x800);
+    await tester.pumpAndSettle();
+    final start =
+        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-0')));
+    final end =
+        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-1')));
+    expect(end.dx, start.dx);
+    expect(end.dy, greaterThan(start.dy));
+    final gesture = await tester.startGesture(start);
+    for (var i = 1; i <= 12; i++) {
+      await gesture.moveTo(Offset.lerp(start, end, i / 12)!);
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(_rootTabIndex(tester), 0);
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(_rootTabIndex(tester), 1);
+    final marketState = tester.state(find.byType(MarketScreen));
+    await page.themeProvider
+        .setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
+    await tester.pumpAndSettle();
+    expect(find.byType(LiquidBottomNav), findsNothing);
+    expect(tester.state(find.byType(MarketScreen)), same(marketState));
+    await tester.tap(find.byKey(const ValueKey('bottom-nav-item-4')));
+    await tester.pumpAndSettle();
+    expect(_rootTabIndex(tester), 4);
+    await _disposeHome(tester, page);
+  });
+
+  testWidgets('平板拖动中收窄为手机，旧指针松手不切页且页面草稿保留', (tester) async {
+    final page = await _pumpHome(tester, initialTab: 1);
+    final marketState = tester.state(find.byType(MarketScreen));
+    final input = find.byType(TextField).first;
+    await tester.enterText(input, '平板导航草稿');
+    await setGoldenViewport(tester, GoldenViewports.tabletPortrait834x1194);
+    await tester.pumpAndSettle();
+    final start =
+        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-1')));
+    final gesture = await tester.startGesture(start);
+    await gesture.moveBy(const Offset(0, 180));
+    await tester.pump(const Duration(milliseconds: 60));
+    await setGoldenViewport(tester, GoldenViewports.phone390x844);
+    await tester.pumpAndSettle();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(_rootTabIndex(tester), 1);
+    expect(tester.state(find.byType(MarketScreen)), same(marketState));
+    expect(tester.widget<TextField>(input).controller!.text, '平板导航草稿');
+    expect(tester.takeException(), isNull);
     await _disposeHome(tester, page);
   });
   testWidgets('首页内容区域横滑不切换根 Tab', (tester) async {
@@ -308,7 +368,13 @@ void main() {
 Finder _navLabel(String label) {
   return find.descendant(
     of: find.byType(BottomNavWrapper),
-    matching: find.byKey(ValueKey('bottom-nav-item-${const ['首页', '集市', '课表', '校园', '我'].indexOf(label)}')),
+    matching: find.byKey(ValueKey('bottom-nav-item-${const [
+      '首页',
+      '集市',
+      '课表',
+      '校园',
+      '我'
+    ].indexOf(label)}')),
   );
 }
 

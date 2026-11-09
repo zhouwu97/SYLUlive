@@ -32,6 +32,7 @@ class LiquidGlassRenderer extends StatefulWidget {
     this.blur = 6,
     this.tint,
     this.enabled = true,
+    this.axis = Axis.horizontal,
   });
 
   final Rect lens;
@@ -50,6 +51,7 @@ class LiquidGlassRenderer extends StatefulWidget {
   final double blur;
   final double? tint;
   final bool enabled;
+  final Axis axis;
 
   @override
   State<LiquidGlassRenderer> createState() => _LiquidGlassRendererState();
@@ -257,8 +259,8 @@ class _GlassPainter extends CustomPainter {
       14,
       10,
       .5,
-      ((settings.tint ?? (dark ? .52 : .58))
-          + (highContrast ? .12 : 0)).clamp(0.0, 1.0),
+      ((settings.tint ?? (dark ? .52 : .58)) + (highContrast ? .12 : 0))
+          .clamp(0.0, 1.0),
       settings.compare ? 1 : 0,
       dpr,
       settings.bend.dx,
@@ -268,6 +270,7 @@ class _GlassPainter extends CustomPainter {
       -b,
       a,
       settings.energy,
+      settings.axis == Axis.vertical ? 1 : 0,
     ];
     for (var i = 0; i < values.length; i++) {
       shader.setFloat(i, values[i]);
@@ -289,6 +292,7 @@ class _GlassPainter extends CustomPainter {
       textScale,
       dpr,
       settings.accent,
+      settings.axis,
       Object.hashAll(
         settings.badges.entries.map((e) => Object.hash(e.key, e.value)),
       ),
@@ -299,13 +303,13 @@ class _GlassPainter extends CustomPainter {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder)..scale(dpr.clamp(1.0, 3.0));
     _drawTabs(canvas, size, false);
-    canvas.translate(0, 64);
+    canvas.translate(0, size.height);
     _drawTabs(canvas, size, true);
     final picture = recorder.endRecording();
     final previous = resources.atlas;
     resources.atlas = picture.toImageSync(
       (size.width * dpr.clamp(1.0, 3.0)).ceil(),
-      (128 * dpr.clamp(1.0, 3.0)).ceil(),
+      (size.height * 2 * dpr.clamp(1.0, 3.0)).ceil(),
     );
     resources.atlasSignature = signature;
     picture.dispose();
@@ -316,9 +320,13 @@ class _GlassPainter extends CustomPainter {
     final color = accent
         ? settings.accent
         : (dark ? const Color(0xffd1d5db) : const Color(0xff4b525e));
-    final item = (size.width - 8) / settings.labels.length;
+    final vertical = settings.axis == Axis.vertical;
+    final item =
+        ((vertical ? size.height : size.width) - 8) / settings.labels.length;
     for (var i = 0; i < settings.labels.length; i++) {
-      final center = 4 + (i + .5) * item;
+      final position = 4 + (i + .5) * item;
+      final center = vertical ? size.width / 2 : position;
+      final top = vertical ? position - 32 : 0.0;
       final icon = settings.icons[i];
       final iconPainter = TextPainter(
         text: TextSpan(
@@ -333,7 +341,8 @@ class _GlassPainter extends CustomPainter {
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      iconPainter.paint(canvas, Offset(center - iconPainter.width / 2, 12));
+      iconPainter.paint(
+          canvas, Offset(center - iconPainter.width / 2, top + 12));
       iconPainter.dispose();
       final label = TextPainter(
         text: TextSpan(
@@ -349,12 +358,12 @@ class _GlassPainter extends CustomPainter {
         maxLines: 1,
         ellipsis: '…',
         textDirection: TextDirection.ltr,
-      )..layout(maxWidth: item - 4);
-      label.paint(canvas, Offset(center - label.width / 2, 39));
+      )..layout(maxWidth: vertical ? size.width - 8 : item - 4);
+      label.paint(canvas, Offset(center - label.width / 2, top + 39));
       label.dispose();
       if (settings.badges[i] == true) {
         canvas.drawCircle(
-          Offset(center + 12, 13),
+          Offset(center + 12, top + 13),
           4,
           Paint()..color = const Color(0xffff4d58),
         );

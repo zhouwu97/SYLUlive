@@ -1,5 +1,6 @@
 import 'package:shenliyuan/widgets/app_surface_transition.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
+import '../widgets/global_background_wrapper.dart';
 import '../widgets/app_card.dart';
 import 'dart:async';
 
@@ -193,6 +194,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _followingExpanded = false;
   Post? _selectedPost;
   int? _selectedUserId;
+  bool _detailHandlesBack = false;
 
   // FEED-3 桌面分屏：当前打开帖子的 open/dwell 归因上下文。
   _SplitOrigin? _splitOrigin;
@@ -1381,7 +1383,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           return PopScope(
             canPop: _useSplitLayout || !hasDetail,
             onPopInvokedWithResult: (didPop, result) {
-              if (!didPop) _closeNarrowDetail();
+              if (!didPop && !_detailHandlesBack) _closeNarrowDetail();
             },
             child:
                 _buildResponsiveLayout(isDark, constraints.maxWidth, hasDetail),
@@ -1427,9 +1429,18 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: hasDetail
-                      ? _buildRightDetailContainer(isDark)
-                      : _buildEmptyDetailState(isDark),
+                  child: NotificationListener<NavigationNotification>(
+                    onNotification: (notification) {
+                      // 局部详情先返回个人主页，不能同时关闭外层信息流详情。
+                      _detailHandlesBack = notification.canHandlePop;
+                      return false;
+                    },
+                    child: SharedPageBackground(
+                      child: hasDetail
+                          ? _buildRightDetailContainer(isDark)
+                          : _buildEmptyDetailState(isDark),
+                    ),
+                  ),
                 ),
                 if (!_useSplitLayout && hasDetail && _selectedUserId == null)
                   Positioned(
@@ -1449,6 +1460,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   void _closeNarrowDetail() {
+    _detailHandlesBack = false;
     _finalizeSplitDwell();
     setState(() {
       _selectedPost = null;
@@ -1457,10 +1469,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Widget _buildRightDetailContainer(bool isDark) {
+    final detailBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
+            ? Colors.transparent
+            : isDark
+                ? const Color(0xFF131720)
+                : Colors.white;
     final selectedUserId = _selectedUserId;
     if (selectedUserId != null) {
       return ColoredBox(
-        color: isDark ? const Color(0xFF131720) : Colors.white,
+        color: detailBackground,
         child: UserHomeScreen(
           key: ValueKey('user-$selectedUserId'),
           userId: selectedUserId,
@@ -1492,11 +1510,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
 
     return ColoredBox(
-      color: context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
-          ? Colors.transparent
-          : isDark
-              ? const Color(0xFF131720)
-              : Colors.white,
+      color: detailBackground,
       child: content,
     );
   }
@@ -1504,6 +1518,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void _openPostInSplit(Post post,
       {bool scrollToReplies = false, String feedKind = '', int position = 0}) {
     if (!mounted) return;
+    _detailHandlesBack = false;
     _finalizeSplitDwell(newPostId: post.id);
     _recordSplitOpen(post, feedKind: feedKind, position: position);
     setState(() {
@@ -1618,6 +1633,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   void _openUserInSplit(int userId) {
     if (!mounted) return;
+    _detailHandlesBack = false;
     _finalizeSplitDwell();
     if (!_useSplitLayout) {
       Navigator.push(
@@ -2763,8 +2779,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   /// 让最后一条帖子完整停在底栏与 FAB 之上，避免悬浮操作遮挡正文。
   double _feedBottomInset(BuildContext context) {
     final themeProvider = context.read<ThemeProvider>();
-    final hasBottomNav = !ResponsiveUtil.useDesktopShell(context) ||
-        themeProvider.floatingNavBar;
+    final hasBottomNav = !ResponsiveUtil.useSideNavigation(context);
     if (!hasBottomNav) return AppSpacing.xxl;
 
     // 标准底栏约 64，悬浮 Dock 为 64 高加 8 的底部留白。

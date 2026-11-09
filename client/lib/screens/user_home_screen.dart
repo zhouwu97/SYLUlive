@@ -12,6 +12,8 @@ import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import '../widgets/app_page_background.dart';
+import '../widgets/global_background_wrapper.dart';
+import '../widgets/adaptive_detail_layout.dart';
 import '../providers/auth_provider.dart';
 import '../services/publish_session_scope.dart';
 import '../providers/theme_provider.dart';
@@ -47,6 +49,7 @@ class UserHomeScreen extends StatefulWidget {
 
 class _UserHomeScreenState extends State<UserHomeScreen>
     with SingleTickerProviderStateMixin {
+  final _detailNavigationKey = GlobalKey<AdaptiveDetailLayoutState>();
   late TabController _tabController;
   final ScrollController _scrollController = ScrollController();
   User? _user;
@@ -293,6 +296,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       post: post,
       isMarket: isMarket,
       sourceUserId: _profileUserId,
+      openRoute: _openPage,
     );
 
     if (mounted) {
@@ -319,8 +323,35 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   }
 
   @override
-  Widget build(BuildContext context) =>
-      AppPageBackground(builder: _buildPageWithBackground);
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    // 已有局部路由时沿用它，避免在同一详情栏叠出两套返回拦截。
+    if (SharedPageBackground.of(context) &&
+        Navigator.of(context) != Navigator.of(context, rootNavigator: true)) {
+      return AppPageBackground(builder: _buildPageWithBackground);
+    }
+    return AppPageBackground(
+      builder: (context) => AdaptiveDetailLayout(
+        key: _detailNavigationKey,
+        navigationScope: (
+          auth.user?.id,
+          auth.accountSessionEpoch,
+          auth.user?.role,
+          widget.userId,
+        ),
+        isActive: TickerMode.valuesOf(context).enabled &&
+            (ModalRoute.isCurrentOf(context) ?? true),
+        embedded: SharedPageBackground.of(context),
+        expandMasterWhenEmpty: true,
+        paneKeyPrefix: 'user-home',
+        master: Builder(builder: _buildPageWithBackground),
+      ),
+    );
+  }
+
+  Future<T?> _openPage<T extends Object?>(Route<T> route) =>
+      _detailNavigationKey.currentState?.open(route) ??
+      Navigator.of(context).push(route);
 
   Widget _buildPageWithBackground(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -407,6 +438,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     Color panelColor,
     double width,
   ) {
+    final contentPadding = EdgeInsets.symmetric(
+      horizontal: SharedPageBackground.of(context) ? 0 : 16,
+      vertical: 16,
+    );
     return Scaffold(
       backgroundColor: AppPageBackground.color(context, pageBackground),
       body: Row(
@@ -510,10 +545,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                       controller: _tabController,
                       children: [
                         _buildPostsList(
-                          padding: const EdgeInsets.all(16),
+                          padding: contentPadding,
                         ),
                         _buildMarketPostsList(
-                          padding: const EdgeInsets.all(16),
+                          padding: contentPadding,
                         ),
                       ],
                     ),
@@ -537,6 +572,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     double screenWidth,
   ) {
     final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
+    // 分栏内的卡片与标签栏共用左右边界，个人封面仍按原来的方式展示。
+    final horizontalInset = SharedPageBackground.of(context) ? 0.0 : 12.0;
+    final contentPadding =
+        EdgeInsets.fromLTRB(horizontalInset, 10, horizontalInset, 24);
     return Scaffold(
       backgroundColor: AppPageBackground.color(context, panelColor),
       body: RefreshIndicator(
@@ -617,8 +656,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                   _buildCircleButton(
                                     icon: Icons.mail_outline,
                                     onTap: () {
-                                      Navigator.push(
-                                        context,
+                                      _openPage(
                                         MaterialPageRoute(
                                           builder: (_) => ChatDetailScreen(
                                             targetUser: user,
@@ -693,10 +731,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
             controller: _tabController,
             children: [
               _buildPostsList(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
+                padding: contentPadding,
               ),
               _buildMarketPostsList(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
+                padding: contentPadding,
               ),
             ],
           ),
@@ -1025,8 +1063,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
               '关注',
               isMe
                   ? () {
-                      Navigator.push(
-                        context,
+                      _openPage(
                         MaterialPageRoute(
                           builder: (_) => SocialListScreen(
                             userId: user.id,
@@ -1043,8 +1080,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
               '粉丝',
               isMe
                   ? () {
-                      Navigator.push(
-                        context,
+                      _openPage(
                         MaterialPageRoute(
                           builder: (_) => SocialListScreen(
                             userId: user.id,

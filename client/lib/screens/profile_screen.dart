@@ -11,6 +11,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../widgets/responsive_content.dart';
+import '../widgets/profile_detail_layout.dart';
 import '../models/startup_destination.dart';
 import '../services/app_resume_coordinator.dart';
 import '../services/root_page_state_service.dart';
@@ -82,6 +83,7 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  final _navigationKey = GlobalKey<ProfileDetailLayoutState>();
   int _unreadReplyCount = 0;
   int _unreadMessageCount = 0;
   int _feedbackUnreadCount = 0;
@@ -129,6 +131,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _handleHomeTabVisibilityChanged() {
+    if (mounted) setState(() {});
     if (mounted && currentHomeTabIndex.value == 4) {
       _refreshAdminOverview();
     }
@@ -182,8 +185,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadUnreadCount() async {
+    if (!mounted) return;
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) return;
+    final epoch = auth.accountSessionEpoch;
+    bool isCurrent() => mounted && auth.accountSessionEpoch == epoch;
     try {
       final repliesFuture = auth.dio.get('/user/notifications/unread_count');
       final feedbackFuture = auth.dio.get('/feedback/tickets/unread-count');
@@ -191,7 +197,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // 而 Future.wait 的失败会连带打断同批次的回复未读与反馈未读数。
       if (!PrivateChatPolicy.enabled) {
         final responses = await Future.wait([repliesFuture, feedbackFuture]);
-        if (!mounted) return;
+        if (!isCurrent()) return;
         setState(() {
           _unreadReplyCount = responses[0].data['count'] ?? 0;
           _unreadMessageCount = 0;
@@ -204,7 +210,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         auth.dio.get('/messages/unread_count'),
         feedbackFuture,
       ]);
-      if (!mounted) return;
+      if (!isCurrent()) return;
       final replyResp = responses[0];
       final messageResp = responses[1];
       final feedbackResp = responses[2];
@@ -242,6 +248,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _postCount = null;
       _unreadReplyCount = 0;
       _unreadMessageCount = 0;
+      _feedbackUnreadCount = 0;
       _adminOverviewFuture =
           user?.isAdmin == true ? _loadAdminOverview(authProvider, user) : null;
       _invitationsFuture = authProvider.isLoggedIn
@@ -274,81 +281,94 @@ class _ProfileScreenState extends State<ProfileScreen> {
       value: overlayStyle,
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: ResponsiveContent(
-            child: Stack(
-          children: [
-            // 内容
-            CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(
-                  child: SafeArea(
-                    bottom: false,
-                    child: Column(
-                      children: [
-                        _buildHeader(user, authProvider, isDark),
-                        if (authProvider.isLoggedIn)
-                          _buildSocialStatsSection(context, user, isDark),
-                      ],
+        body: ProfileDetailLayout(
+          key: _navigationKey,
+          isActive: widget.isActive && currentHomeTabIndex.value == 4,
+          navigationScope: (
+            authProvider.accountSessionEpoch,
+            authProvider.user?.id,
+            authProvider.isLoggedIn,
+            authProvider.user?.role,
+          ),
+          master: ResponsiveContent(
+              child: Stack(
+            children: [
+              // 内容
+              CustomScrollView(
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: SafeArea(
+                      bottom: false,
+                      child: Column(
+                        children: [
+                          _buildHeader(user, authProvider, isDark),
+                          if (authProvider.isLoggedIn)
+                            _buildSocialStatsSection(context, user, isDark),
+                        ],
+                      ),
                     ),
                   ),
-                ),
 
-                // 管理入口（仅管理员可见）
-                if (user?.isAdmin == true)
+                  // 管理入口（仅管理员可见）
+                  if (user?.isAdmin == true)
+                    SliverToBoxAdapter(
+                      child: _buildAdminSection(context, user, isDark),
+                    ),
+
+                  if (authProvider.isLoggedIn)
+                    SliverToBoxAdapter(
+                      child: _buildCommunityParticipationSection(context, isDark),
+                    ),
+
+                  // 收到邀请（所有用户）
+                  if (authProvider.isLoggedIn)
+                    SliverToBoxAdapter(
+                      child:
+                          _buildInvitationSection(context, authProvider, isDark),
+                    ),
+
+                  // 教务版块（绑定状态 + 题库入口）
                   SliverToBoxAdapter(
-                    child: _buildAdminSection(context, user, isDark),
+                    child: _buildEduSection(context, authProvider, isDark),
                   ),
 
-                if (authProvider.isLoggedIn)
+                  // 我的内容
                   SliverToBoxAdapter(
-                    child: _buildCommunityParticipationSection(context, isDark),
+                    child: _buildMyContentSection(context, isDark),
                   ),
 
-                // 收到邀请（所有用户）
-                if (authProvider.isLoggedIn)
+                  // 服务与支持
                   SliverToBoxAdapter(
-                    child:
-                        _buildInvitationSection(context, authProvider, isDark),
+                    child: _buildServiceAndSupportSection(context, isDark),
                   ),
 
-                // 教务版块（绑定状态 + 题库入口）
-                SliverToBoxAdapter(
-                  child: _buildEduSection(context, authProvider, isDark),
-                ),
-
-                // 我的内容
-                SliverToBoxAdapter(
-                  child: _buildMyContentSection(context, isDark),
-                ),
-
-                // 服务与支持
-                SliverToBoxAdapter(
-                  child: _buildServiceAndSupportSection(context, isDark),
-                ),
-
-                // 设置区域
-                SliverToBoxAdapter(
-                  child: _buildSettingsSection(
-                    context,
-                    themeProvider,
-                    authProvider,
-                    isDark,
+                  // 设置区域
+                  SliverToBoxAdapter(
+                    child: _buildSettingsSection(
+                      context,
+                      themeProvider,
+                      authProvider,
+                      isDark,
+                    ),
                   ),
-                ),
 
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: MediaQuery.of(context).padding.bottom + 90,
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: MediaQuery.of(context).padding.bottom + 90,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
-        )),
+                ],
+              ),
+            ],
+          )),
+        ),
       ),
     );
   }
+
+  Future<T?> _openProfilePage<T extends Object?>(Route<T> route) =>
+      _navigationKey.currentState!.open(route);
 
   Widget _buildDefaultBackground(bool isDark) {
     return ColoredBox(
@@ -415,8 +435,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               behavior: HitTestBehavior.opaque,
               onTap: () {
                 if (hasSession) {
-                  Navigator.push(
-                    context,
+                  _openProfilePage(
                     MaterialPageRoute(builder: (_) => const UserHomeScreen()),
                   );
                 } else {
@@ -610,8 +629,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             '我的内容',
             isDark,
             () async {
-              await Navigator.push(
-                context,
+              await _openProfilePage(
                 MaterialPageRoute(builder: (_) => const MyContentScreen()),
               );
               if (mounted) {
@@ -624,8 +642,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             '关注的人',
             isDark,
             () {
-              Navigator.push(
-                context,
+              _openProfilePage(
                 MaterialPageRoute(
                   builder: (_) =>
                       SocialListScreen(userId: user.id, initialIndex: 0),
@@ -638,8 +655,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             '关注我的',
             isDark,
             () {
-              Navigator.push(
-                context,
+              _openProfilePage(
                 MaterialPageRoute(
                   builder: (_) =>
                       SocialListScreen(userId: user.id, initialIndex: 1),
@@ -747,8 +763,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           title: '我的陪审',
           subtitle: '查看待处理与已参与的陪审案件',
           isDark: isDark,
-          onTap: () => Navigator.push(
-            context,
+          onTap: () => _openProfilePage(
             MaterialPageRoute(
                 builder: (_) => const CourtHubScreen(initialTab: 0)),
           ),
@@ -761,8 +776,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           title: '我的申诉',
           subtitle: '查看申诉与社区复核结果',
           isDark: isDark,
-          onTap: () => Navigator.push(
-            context,
+          onTap: () => _openProfilePage(
             MaterialPageRoute(
                 builder: (_) => const CourtHubScreen(initialTab: 1)),
           ),
@@ -795,8 +809,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ? (feedbackTodo > 99 ? '99+' : '$feedbackTodo')
                 : null,
             onTap: () {
-              Navigator.push(
-                context,
+              _openProfilePage(
                 MaterialPageRoute(builder: (_) => const AdminFeedbackScreen()),
               ).then((_) {
                 _refreshAdminOverview();
@@ -814,8 +827,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             badgeText:
                 adminTodo > 0 ? (adminTodo > 99 ? '99+' : '$adminTodo') : null,
             onTap: () {
-              Navigator.push(
-                context,
+              _openProfilePage(
                 MaterialPageRoute(builder: (_) => const AdminPanelScreen()),
               ).then((_) {
                 _refreshAdminOverview();
@@ -834,8 +846,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   : '管理用户、审批管理员邀请',
               badgeText: superTodo > 0 ? '$superTodo' : null,
               onTap: () {
-                Navigator.push(
-                  context,
+                _openProfilePage(
                   MaterialPageRoute(builder: (_) => const SuperAdminScreen()),
                 );
               },
@@ -848,8 +859,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             title: '管理人员',
             subtitle: '查看管理员与超级管理员列表',
             onTap: () {
-              Navigator.push(
-                context,
+              _openProfilePage(
                 MaterialPageRoute(builder: (_) => const AdminMembersScreen()),
               );
             },
@@ -1053,8 +1063,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 : null,
             isDark: isDark,
             onTap: () {
-              Navigator.push(
-                context,
+              _openProfilePage(
                 MaterialPageRoute(builder: (_) => const ChatListScreen()),
               ).then((_) {
                 _loadUnreadCount();
@@ -1081,8 +1090,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : null,
           isDark: isDark,
           onTap: () {
-            Navigator.push(
-              context,
+            _openProfilePage(
               MaterialPageRoute(builder: (_) => const NotificationsScreen()),
             ).then((_) {
               _loadUnreadCount();
@@ -1097,8 +1105,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           title: '收到的赞',
           subtitle: '查看谁赞了我的帖子和评论',
           isDark: isDark,
-          onTap: () => Navigator.push(
-            context,
+          onTap: () => _openProfilePage(
             MaterialPageRoute(builder: (_) => const LikesReceivedScreen()),
           ),
         ),
@@ -1110,8 +1117,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           title: '浏览记录',
           subtitle: '查看我看过的资讯与帖子',
           isDark: isDark,
-          onTap: () => Navigator.push(
-            context,
+          onTap: () => _openProfilePage(
             MaterialPageRoute(builder: (_) => const BrowsingHistoryScreen()),
           ),
         ),
@@ -1128,8 +1134,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Navigator.pushNamed(context, '/login');
               return;
             }
-            await Navigator.push(
-              context,
+            await _openProfilePage(
               MaterialPageRoute(builder: (_) => const MyContentScreen(initialTabIndex: 3)),
             );
             if (mounted) await _fetchPostCount();
@@ -1144,8 +1149,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           subtitle: '查看与管理我的学科评价',
           isDark: isDark,
           onTap: () async {
-            await Navigator.push(
-              context,
+            await _openProfilePage(
               MaterialPageRoute(
                 builder: (_) => const MyContentScreen(initialTabIndex: 2),
               ),
@@ -1195,8 +1199,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : null,
           isDark: isDark,
           onTap: () {
-            Navigator.push(
-              context,
+            _openProfilePage(
               MaterialPageRoute(builder: (_) => const FeedbackCenterScreen()),
             ).then((_) {
               _loadUnreadCount();
@@ -1227,8 +1230,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : '绑定后可查询课表、成绩',
           isDark: isDark,
           onTap: () {
-            Navigator.push(
-              context,
+            _openProfilePage(
               MaterialPageRoute(builder: (_) => const EduScreen()),
             );
           },
@@ -1387,8 +1389,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           subtitle: '主题外观、关于应用、账号设置等',
           isDark: isDark,
           onTap: () {
-            Navigator.push(
-              context,
+            _openProfilePage(
               MaterialPageRoute(builder: (_) => const SettingsScreen()),
             );
           },
@@ -1427,6 +1428,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
+        key: ValueKey('profile-entry-$title'),
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(

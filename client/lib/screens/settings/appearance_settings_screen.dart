@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/theme_provider.dart';
 import '../../theme/app_text_scaler.dart';
+import '../../utils/responsive_util.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../../widgets/settings/campus_segmented_control.dart';
 import '../../widgets/settings/settings_page_scaffold.dart';
@@ -296,6 +297,8 @@ class AppearanceSettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
+    final sideNavigation = ResponsiveUtil.useSideNavigation(context);
+    final navigationTitle = sideNavigation ? '侧边导航栏' : '底部导航栏';
     final isLandscapeScreen =
         MediaQuery.of(context).orientation == Orientation.landscape;
 
@@ -452,12 +455,13 @@ class AppearanceSettingsScreen extends StatelessWidget {
 
         // 底栏采用独立二级页：样式、动效和设备性能策略在同一处完成配置。
         SettingsSection(
-          title: '底部导航栏',
+          title: navigationTitle,
           children: [
             SettingsTile(
               icon: Icons.navigation_outlined,
-              title: '底部导航栏',
-              subtitle: _bottomNavSummary(themeProvider),
+              title: navigationTitle,
+              subtitle: _bottomNavSummary(themeProvider,
+                  sideNavigation: sideNavigation),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => const BottomNavigationSettingsScreen(),
@@ -470,11 +474,16 @@ class AppearanceSettingsScreen extends StatelessWidget {
     );
   }
 
-  String _bottomNavSummary(ThemeProvider theme) {
-    if (theme.bottomNavAnimationIntensity <= 0) return BottomNavStyle.floating.label;
-    final style = BottomNavStyle.liquidGlass.label;
+  String _bottomNavSummary(ThemeProvider theme,
+      {required bool sideNavigation}) {
+    if (theme.bottomNavAnimationIntensity <= 0) {
+      return sideNavigation ? '悬浮侧栏' : BottomNavStyle.floating.label;
+    }
+    final style = sideNavigation ? '液态玻璃侧栏' : BottomNavStyle.liquidGlass.label;
     final preset = theme.bottomNavPerformanceMode;
-    return preset == BottomNavPerformanceMode.off ? style : '$style · ${preset.label}';
+    return preset == BottomNavPerformanceMode.off
+        ? style
+        : '$style · ${preset.label}';
   }
 
   String _fontSizeLabel(AppFontSizePreset preset) {

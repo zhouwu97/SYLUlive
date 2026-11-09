@@ -7,7 +7,7 @@ import 'floating_bottom_nav.dart';
 export 'liquid_glass/bottom_nav_controller.dart';
 export 'liquid_glass/liquid_glass_scene.dart';
 
-/// 统一使用完整液态底栏，页面保留业务导航与鉴权。
+/// 底栏和侧栏共用材质偏好、交互与业务导航回调。
 class BottomNavWrapper extends StatelessWidget {
   const BottomNavWrapper({
     super.key,
@@ -19,6 +19,7 @@ class BottomNavWrapper extends StatelessWidget {
     this.onVisualPositionChanged,
     this.onInteractionStart,
     this.badges = const {},
+    this.axis = Axis.horizontal,
   });
   final int currentIndex;
   final ValueNotifier<double> visualIndexListenable;
@@ -28,12 +29,14 @@ class BottomNavWrapper extends StatelessWidget {
   final ValueChanged<double>? onVisualPositionChanged;
   final VoidCallback? onInteractionStart;
   final Map<int, bool> badges;
+  final Axis axis;
 
   @override
   Widget build(BuildContext context) {
     final preferences = context.watch<ThemeProvider>();
     if (preferences.bottomNavPerformanceMode == BottomNavPerformanceMode.off) {
-      return FloatingBottomNav(currentIndex: currentIndex, onTap: onTap, badges: badges);
+      return FloatingBottomNav(
+          currentIndex: currentIndex, onTap: onTap, badges: badges, axis: axis);
     }
     return LiquidBottomNav(
       currentIndex: currentIndex,
@@ -47,6 +50,7 @@ class BottomNavWrapper extends StatelessWidget {
       blur: preferences.bottomNavBlur,
       tint: preferences.bottomNavTint,
       shaderEnabled: preferences.bottomNavShaderEnabled,
+      axis: axis,
     );
   }
 }

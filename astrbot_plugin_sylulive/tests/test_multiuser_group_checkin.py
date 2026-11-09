@@ -69,6 +69,7 @@ async def test_group_checkin_fails_closed_without_falling_back_to_owner(case):
         plugin.accounts.get = missing
     elif case == "readonly":
         own.tokens = {"scope": "community:read"}
+        own.refresh_scope = AsyncMock(return_value="community:read")
     result = await plugin.checkin_result(event, submit=True)
     assert result and "签到成功" not in result
     own.call.assert_not_called()

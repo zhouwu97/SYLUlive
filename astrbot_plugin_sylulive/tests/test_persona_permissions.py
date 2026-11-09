@@ -134,6 +134,7 @@ async def test_group_confirmation_rechecks_permission_and_authorization(change):
         plugin.config["access_rules"].append(rule("grades", "deny"))
     elif change == "scope":
         client.tokens = {"scope": "profile:read_minimal"}
+        client.refresh_scope = AsyncMock(return_value="profile:read_minimal")
     elif change == "generation":
         client.generation += 1
     else:

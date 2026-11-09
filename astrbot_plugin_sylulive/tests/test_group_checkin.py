@@ -61,12 +61,13 @@ async def test_group_checkin_preserves_consent_and_truthful_outcomes(case):
         plugin.client.tokens = None
     elif case == "readonly":
         plugin.client.tokens = {"scope": "community:read"}
+        plugin.client.refresh_scope = AsyncMock(return_value="community:read")
     elif case == "timeout":
         plugin.client.call.side_effect = IntegrationProblem("network_unavailable")
     else:
         plugin.client.call.return_value["data"].update(already=True, exp_earned=0)
     result = await plugin.checkin_result(event, submit=True)
-    expected = {"disabled": "尚未启用", "unbound": "尚未授权", "readonly": "不会自动扩权",
+    expected = {"disabled": "尚未启用", "unbound": "尚未授权", "readonly": "没有签到权限",
                 "timeout": "未能确认", "repeat": "不会重复领奖"}
     assert expected[case] in result and "签到成功" not in result
     if case in {"disabled", "unbound", "readonly"}:

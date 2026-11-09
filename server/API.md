@@ -98,6 +98,12 @@ AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人�
 
 每段连续签到第 7 天获得首张补签卡，此后每隔 14 天再获得 1 张，即该段第 7、21、35、49 天各发 1 张；第 14 天不额外发卡。每次断签后重新开始均按此规则计算，已获得的卡保留。补签接续连续天数时按同一规则重算奖励，若合并两段记录导致理论奖励减少，已发奖励转为保留额度，不额外追扣。使用时消耗 1 张，仅可补签本月今天之前的未签到日期；重复请求不重复发卡或扣卡，签到经验规则保持不变。
 
+运维与超级管理员管理接口：
+- `POST /api/admin/checkin/users/:id/rebuild`：根据不可变事实表重算并更新指定用户的连续签到天数、最长天数与补签卡汇总。
+- `GET /api/admin/checkin/inspect`：只读检查全量用户的签到事实与汇总一致性，返回存在差异的账号、原因及期望值。
+- `POST /api/admin/checkin/rebuild-all`：批量对账并修复所有签到连续天数或汇总不一致的账号，并写入 `check_in_repair_logs` 审计流水。
+- 命令行工具：`go run ./cmd/reconcile_checkin_streaks [--inspect|--apply] [--user <id>]`。
+
 ## 3. 教务系统 (Edu)
 
 教务接口处于本地化迁移期，必须区分路由状态：

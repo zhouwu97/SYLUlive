@@ -2367,6 +2367,8 @@ func main() {
 		superAdmin.POST("/app-releases/:id/withdraw", appUpdateHandler.AdminWithdraw)
 		superAdmin.DELETE("/app-releases/:id", appUpdateHandler.AdminDeleteDraft)
 		superAdmin.POST("/checkin/users/:id/rebuild", checkinHandler.RebuildUserStats)
+		superAdmin.GET("/checkin/inspect", checkinHandler.InspectStats)
+		superAdmin.POST("/checkin/rebuild-all", checkinHandler.RebuildAllStats)
 		superAdmin.GET("/checkin/compensations", checkinCompensationHandler.ListCampaigns)
 		superAdmin.POST("/checkin/compensations", checkinCompensationHandler.Publish)
 		superAdmin.POST("/checkin/compensations/:id/close", checkinCompensationHandler.Close)

@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -173,7 +174,13 @@ func (s *CheckInService) Status(userID uint, now time.Time) (CheckInStatus, erro
 		return status, err
 	}
 
-	if statErr == nil && stat.LastCheckInDate != nil && sameCheckInDay(*stat.LastCheckInDate, today.AddDate(0, 0, -1)) {
+	yesterday := today.AddDate(0, 0, -1)
+	var yesterdayRecord models.CheckIn
+	if err := s.db.Where("user_id = ? AND check_in_date = ?", userID, yesterday).First(&yesterdayRecord).Error; err == nil {
+		status.StreakDays = yesterdayRecord.StreakDays
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return status, err
+	} else if statErr == nil && stat.LastCheckInDate != nil && sameCheckInDay(*stat.LastCheckInDate, yesterday) {
 		status.StreakDays = stat.CurrentStreak
 	}
 	status.NextExp = CheckInExpReward(status.StreakDays + 1)
@@ -272,6 +279,7 @@ func (s *CheckInService) Makeup(userID uint, targetDate, now time.Time) (MakeupC
 		if err := tx.Where("user_id = ?", userID).Order("check_in_date ASC, id ASC").Find(&records).Error; err != nil {
 			return err
 		}
+		sort.SliceStable(records, func(i, j int) bool { return records[i].CheckInDate.Before(records[j].CheckInDate) })
 		var ledgers []models.UserExperienceLedger
 		if err := tx.Where("user_id = ? AND source_type = ?", userID, "checkin").Find(&ledgers).Error; err != nil {
 			return err
@@ -287,15 +295,19 @@ func (s *CheckInService) Makeup(userID uint, targetDate, now time.Time) (MakeupC
 		var previousDate time.Time
 		for index := range records {
 			record := &records[index]
-			if index == 0 || !sameCheckInDay(record.CheckInDate, previousDate.AddDate(0, 0, 1)) {
+			if index == 0 {
 				current = 1
-			} else {
+			} else if sameCheckInDay(record.CheckInDate, previousDate) {
+				// 同一天重复记录，保留连续天数
+			} else if sameCheckInDay(record.CheckInDate, previousDate.AddDate(0, 0, 1)) {
 				current++
+			} else {
+				current = 1
 			}
 			if current > longest {
 				longest = current
 			}
-			if models.IsCheckInMakeupCardRewardDay(current) {
+			if (index == 0 || !sameCheckInDay(record.CheckInDate, previousDate)) && models.IsCheckInMakeupCardRewardDay(current) {
 				makeupCardsEarned++
 			}
 			if record.IsMakeup {
@@ -376,6 +388,16 @@ func (s *CheckInService) Makeup(userID uint, targetDate, now time.Time) (MakeupC
 // RebuildUserStats 从事实表重建单个用户的汇总，供修复任务和运维接口调用。
 func (s *CheckInService) RebuildUserStats(userID uint) (models.UserCheckInStat, error) {
 	return models.RebuildUserCheckInStats(s.db, userID)
+}
+
+// InspectStats 检查系统中所有用户的签到天数与汇总一致性。
+func (s *CheckInService) InspectStats() ([]models.CheckInInconsistency, error) {
+	return models.InspectAllUserCheckInStats(s.db)
+}
+
+// ReconcileAll 执行全局签到连续天数对账和修复，并记录审计日志。
+func (s *CheckInService) ReconcileAll(operatorID uint) (models.ReconcileReport, error) {
+	return models.ReconcileInconsistentCheckInStats(s.db, operatorID)
 }
 
 // CheckInExpReward 根据连续签到天数计算经验奖励。

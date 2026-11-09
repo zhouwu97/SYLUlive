@@ -632,6 +632,137 @@ func TestCheckInCompensationClaimIsIdempotent(t *testing.T) {
 	require.Equal(t, int64(1), ledgerCount)
 }
 
+func TestCheckInStatusFallsBackToFactsWhenStatMissing(t *testing.T) {
+	db := newCheckInTestDB(t)
+	user := createCheckInTestUser(t, db, "checkin-status-fallback")
+	loc := time.FixedZone("CST", 8*3600)
+	yesterday := time.Date(2026, 11, 8, 9, 0, 0, 0, loc)
+	today := time.Date(2026, 11, 9, 9, 0, 0, 0, loc)
+
+	// 历史签到事实存在，但汇总缺失
+	require.NoError(t, db.Create(&models.CheckIn{
+		UserID: user.ID, CheckInDate: checkInDateOnly(yesterday), StreakDays: 5, ExpEarned: 5,
+	}).Error)
+	require.NoError(t, db.Where("user_id = ?", user.ID).Delete(&models.UserCheckInStat{}).Error)
+
+	service := NewCheckInService(db)
+	status, err := service.Status(user.ID, today)
+	require.NoError(t, err)
+	require.False(t, status.CheckedIn)
+	require.Equal(t, 5, status.StreakDays)
+	require.Equal(t, CheckInExpReward(6), status.NextExp)
+}
+
+func TestInspectAndReconcileInconsistentCheckInStats(t *testing.T) {
+	db := newCheckInTestDB(t)
+
+	// 用户 1：签到事实 streak_days 错乱
+	user1 := createCheckInTestUser(t, db, "user-fact-drift")
+	d1 := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	d3 := time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, db.Create(&models.CheckIn{UserID: user1.ID, CheckInDate: d1, StreakDays: 1, ExpEarned: 1}).Error)
+	require.NoError(t, db.Create(&models.CheckIn{UserID: user1.ID, CheckInDate: d2, StreakDays: 99, ExpEarned: 1}).Error)
+	require.NoError(t, db.Create(&models.CheckIn{UserID: user1.ID, CheckInDate: d3, StreakDays: 1, ExpEarned: 1}).Error)
+	require.NoError(t, db.Create(&models.UserCheckInStat{UserID: user1.ID, LastCheckInDate: &d3, CurrentStreak: 1, LongestStreak: 99}).Error)
+
+	// 用户 2：签到汇总记录缺失
+	user2 := createCheckInTestUser(t, db, "user-stat-missing")
+	require.NoError(t, db.Create(&models.CheckIn{UserID: user2.ID, CheckInDate: d1, StreakDays: 1, ExpEarned: 1}).Error)
+	require.NoError(t, db.Create(&models.CheckIn{UserID: user2.ID, CheckInDate: d2, StreakDays: 2, ExpEarned: 2}).Error)
+
+	// 用户 3：签到汇总 CurrentStreak / LongestStreak 漂移
+	user3 := createCheckInTestUser(t, db, "user-stat-drift")
+	require.NoError(t, db.Create(&models.CheckIn{UserID: user3.ID, CheckInDate: d1, StreakDays: 1, ExpEarned: 1}).Error)
+	require.NoError(t, db.Create(&models.CheckIn{UserID: user3.ID, CheckInDate: d2, StreakDays: 2, ExpEarned: 2}).Error)
+	require.NoError(t, db.Create(&models.UserCheckInStat{UserID: user3.ID, LastCheckInDate: &d2, CurrentStreak: 10, LongestStreak: 50}).Error)
+
+	// 用户 4：正常一致的用户
+	user4 := createCheckInTestUser(t, db, "user-consistent")
+	require.NoError(t, db.Create(&models.CheckIn{UserID: user4.ID, CheckInDate: d1, StreakDays: 1, ExpEarned: 1}).Error)
+	require.NoError(t, db.Create(&models.CheckIn{UserID: user4.ID, CheckInDate: d2, StreakDays: 2, ExpEarned: 2}).Error)
+	require.NoError(t, db.Create(&models.UserCheckInStat{UserID: user4.ID, LastCheckInDate: &d2, CurrentStreak: 2, LongestStreak: 2}).Error)
+	require.NoError(t, db.Model(&models.User{}).Where("id = ?", user4.ID).Update("last_check_in_date", "2026-11-02").Error)
+
+	// 1. 检查不一致账号
+	inconsistencies, err := models.InspectAllUserCheckInStats(db)
+	require.NoError(t, err)
+	require.Len(t, inconsistencies, 3)
+
+	inconsistentUserIDs := map[uint]bool{
+		inconsistencies[0].UserID: true,
+		inconsistencies[1].UserID: true,
+		inconsistencies[2].UserID: true,
+	}
+	require.True(t, inconsistentUserIDs[user1.ID])
+	require.True(t, inconsistentUserIDs[user2.ID])
+	require.True(t, inconsistentUserIDs[user3.ID])
+	require.False(t, inconsistentUserIDs[user4.ID])
+
+	// 2. 执行全局对账修复
+	report, err := models.ReconcileInconsistentCheckInStats(db, 9999)
+	require.NoError(t, err)
+	require.Equal(t, 3, report.InconsistentCount)
+	require.Equal(t, 3, report.RepairedCount)
+
+	// 3. 验证修复后的事实与汇总
+	var u1Records []models.CheckIn
+	require.NoError(t, db.Where("user_id = ?", user1.ID).Order("check_in_date ASC").Find(&u1Records).Error)
+	require.Equal(t, []int{1, 2, 3}, []int{u1Records[0].StreakDays, u1Records[1].StreakDays, u1Records[2].StreakDays})
+
+	var u1Stat models.UserCheckInStat
+	require.NoError(t, db.Where("user_id = ?", user1.ID).First(&u1Stat).Error)
+	require.Equal(t, 3, u1Stat.CurrentStreak)
+	require.Equal(t, 3, u1Stat.LongestStreak)
+
+	var u2Stat models.UserCheckInStat
+	require.NoError(t, db.Where("user_id = ?", user2.ID).First(&u2Stat).Error)
+	require.Equal(t, 2, u2Stat.CurrentStreak)
+	require.Equal(t, 2, u2Stat.LongestStreak)
+
+	var u3Stat models.UserCheckInStat
+	require.NoError(t, db.Where("user_id = ?", user3.ID).First(&u3Stat).Error)
+	require.Equal(t, 2, u3Stat.CurrentStreak)
+	require.Equal(t, 2, u3Stat.LongestStreak)
+
+	// 4. 验证审计日志记录
+	var repairLogs []models.CheckInRepairLog
+	require.NoError(t, db.Where("operator_id = ?", 9999).Find(&repairLogs).Error)
+	require.Len(t, repairLogs, 3)
+
+	// 5. 再次检查，确认已全部一致
+	after, err := models.InspectAllUserCheckInStats(db)
+	require.NoError(t, err)
+	require.Empty(t, after)
+}
+
+func TestCheckInStreakReconciliationMigrationRunsOnStartup(t *testing.T) {
+	db := newCheckInTestDB(t)
+	user := createCheckInTestUser(t, db, "migration-streak-repair")
+	d1 := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, db.Create(&models.CheckIn{UserID: user.ID, CheckInDate: d1, StreakDays: 99, ExpEarned: 1}).Error)
+	require.NoError(t, db.Create(&models.CheckIn{UserID: user.ID, CheckInDate: d2, StreakDays: 1, ExpEarned: 1}).Error)
+
+	// 模拟未执行新迁移
+	require.NoError(t, db.Where("version = ?", models.CheckInStreakReconciliationMigrationVersion).Delete(&models.AppSchemaMigration{}).Error)
+
+	// 启动阶段 EnsureCheckInSchema 应自动执行修复
+	require.NoError(t, models.EnsureCheckInSchema(db))
+
+	var count int64
+	require.NoError(t, db.Model(&models.AppSchemaMigration{}).Where("version = ?", models.CheckInStreakReconciliationMigrationVersion).Count(&count).Error)
+	require.Equal(t, int64(1), count)
+
+	var records []models.CheckIn
+	require.NoError(t, db.Where("user_id = ?", user.ID).Order("check_in_date ASC").Find(&records).Error)
+	require.Equal(t, []int{1, 2}, []int{records[0].StreakDays, records[1].StreakDays})
+
+	var stat models.UserCheckInStat
+	require.NoError(t, db.Where("user_id = ?", user.ID).First(&stat).Error)
+	require.Equal(t, 2, stat.CurrentStreak)
+}
+
 func newCheckInTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+stringsForCheckInDB(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})

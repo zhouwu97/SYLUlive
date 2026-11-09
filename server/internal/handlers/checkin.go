@@ -203,6 +203,37 @@ func (h *CheckInHandler) RebuildUserStats(c *gin.Context) {
 	})
 }
 
+// InspectStats 检查所有账号的签到连续天数一致性，只允许超级管理员调用。
+func (h *CheckInHandler) InspectStats(c *gin.Context) {
+	inconsistencies, err := h.service.InspectStats()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查签到数据失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success":        true,
+		"total_count":    len(inconsistencies),
+		"inconsistent":   inconsistencies,
+	})
+}
+
+// RebuildAllStats 批量检查并修复所有签到连续天数不正确的账号，只允许超级管理员调用。
+func (h *CheckInHandler) RebuildAllStats(c *gin.Context) {
+	operatorID := c.GetUint("user_id")
+	report, err := h.service.ReconcileAll(operatorID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "批量修复签到数据失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success":             true,
+		"total_users_scanned": report.TotalUsersScanned,
+		"inconsistent_count":  report.InconsistentCount,
+		"repaired_count":      report.RepairedCount,
+		"details":             report.Details,
+	})
+}
+
 func shanghaiNow() (time.Time, error) {
 	loc, err := time.LoadLocation("Asia/Shanghai")
 	if err != nil {

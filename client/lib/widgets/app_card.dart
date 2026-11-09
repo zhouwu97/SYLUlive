@@ -24,6 +24,19 @@ Color appContentSecondaryColor(BuildContext context, Color fallback) =>
         ? Theme.of(context).colorScheme.onSurfaceVariant
         : fallback;
 
+/// 承载文字的弹层底面不透明度。
+///
+/// 毛玻璃真正在模糊背景时沿用全局不透明度，保持玻璃观感；模糊被关闭
+/// （强度 0%）时背景不再虚化，用可读下限遮住底层课表等密集文字。
+double appTextSheetSurfaceOpacity(BuildContext context) {
+  final settings = context.watch<ThemeProvider?>();
+  if (settings == null || !settings.shouldShowCustomBackground) return 1;
+  if (settings.frostedGlass && settings.frostedGlassStrength > 0) {
+    return settings.componentOpacity;
+  }
+  return settings.componentOpacity.clamp(0.9, 1.0);
+}
+
 Gradient _glassGradient(
     BuildContext context, Gradient gradient, double opacity) {
   // 先合成原本的淡色，再应用组件不透明度；直接 withOpacity 会把

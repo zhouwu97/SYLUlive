@@ -82,7 +82,7 @@ class _ChangeRoomSheetState extends State<ChangeRoomSheet> {
     return SafeArea(
       top: false,
       child: AppCardSurface(
-        surfaceOpacity: 1,
+        surfaceOpacity: appTextSheetSurfaceOpacity(context),
         padding: EdgeInsets.only(
           left: 20,
           right: 20,

@@ -17,6 +17,7 @@ import 'package:shenliyuan/widgets/app_card.dart';
 import '../helpers/golden_test_app.dart';
 import '../helpers/golden_viewport.dart';
 import '../helpers/load_test_fonts.dart';
+import '../helpers/active_backdrop_filters.dart';
 
 void main() {
   setUpAll(loadTestFonts);
@@ -90,8 +91,13 @@ void main() {
                   .descendant(of: surface, matching: find.byType(DecoratedBox))
                   .first)
               .decoration as BoxDecoration;
-          expect(paint.color!.a, 1,
-              reason: '详情底面必须完全遮住底层课表，不能留下课程文字重影');
+          final expectedAlpha = glass ? opacity : opacity.clamp(0.9, 1.0);
+          expect(paint.color!.a, closeTo(expectedAlpha, 0.005),
+              reason: '模糊生效时详情底面跟随全局不透明度保留玻璃观感，'
+                  '关闭模糊时用可读下限遮住底层课表');
+          expect(activeBackdropFilters(),
+              glass ? findsOneWidget : findsNothing,
+              reason: '毛玻璃开启时详情必须真实模糊背后内容');
           expect(find.text('测试教师'), findsOneWidget);
           expect(find.text('A-211'), findsOneWidget);
           expect(find.text('周一 第3-4节'), findsOneWidget);

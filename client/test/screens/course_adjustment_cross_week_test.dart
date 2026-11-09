@@ -122,7 +122,8 @@ void _expectOpaqueSheet(WidgetTester tester) {
           .descendant(of: surface, matching: find.byType(DecoratedBox))
           .first)
       .decoration as BoxDecoration;
-  expect(paint.color!.a, 1, reason: '调课每一步都必须遮住底层详情和课表文字');
+  expect(paint.color!.a, closeTo(0.9, 0.005),
+      reason: '关闭模糊时调课每一步仍用可读下限遮住底层详情和课表文字');
 }
 
 Future<void> _toConfirmation(WidgetTester tester, {String? captureName}) async {

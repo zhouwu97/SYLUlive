@@ -739,6 +739,21 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
   _lastOpenedNotificationTarget = target;
   _lastOpenedNotificationAt = now;
 
+  // 回退到根路由会连带关闭校园服务侧栏等中间路由，真机误报时靠这条日志定位触发源。
+  DiagnosticLogService.instance
+      .record(
+        level: 'info',
+        source: '导航',
+        type: '通知跳转回退导航栈',
+        summary: '通知打开前清理路由栈: type=${target.type}',
+        detail: '',
+        eventCode: 'navigation_notification_stack_reset',
+        category: 'navigation',
+        operation: 'popUntil',
+        result: 'success',
+      )
+      .ignore();
+
   navigator.popUntil((route) => route.isFirst);
 
   switch (target.type) {
@@ -1796,6 +1811,20 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         uri == 'campus://timetable' ||
         uri.startsWith('sylulive://schedule')) {
       if (_isLoginRouteVisible()) return _DeepLinkHandlingResult.deferred;
+      // 该分支回退后停留首页，侧栏等中间路由会被一并关闭，记录触发源便于真机定位。
+      DiagnosticLogService.instance
+          .record(
+            level: 'info',
+            source: '导航',
+            type: '小组件深链回退导航栈',
+            summary: '课表小组件/深链触发回退到首页: $uri',
+            detail: '',
+            eventCode: 'navigation_widget_link_stack_reset',
+            category: 'navigation',
+            operation: 'popUntil',
+            result: 'success',
+          )
+          .ignore();
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       widgetTabSwitch.value++;
       return _DeepLinkHandlingResult.handled;

@@ -19,6 +19,8 @@ import 'package:shenliyuan/models/schedule/course_source.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/widgets/app_card.dart';
 
+import 'helpers/active_backdrop_filters.dart';
+
 class _TestAuthProvider extends AuthProvider {
   _TestAuthProvider() : super(Dio(), loadStoredAuth: false);
 
@@ -130,8 +132,10 @@ void main() {
           (tester.widget<DecoratedBox>(painted).decoration as BoxDecoration)
               .color!
               .a,
-          1,
-          reason: '课程详情不能因背景透明度为零而透出底下的课程文字');
+          0,
+          reason: '毛玻璃开启时详情底面跟随全局不透明度，由背景模糊遮住底层文字');
+      expect(activeBackdropFilters(), findsOneWidget,
+          reason: '透明度为零时详情仍必须真实模糊背后内容');
       expect(find.text('数字图像处理'), findsOneWidget);
       expect(find.text('教务课表'), findsOneWidget);
 

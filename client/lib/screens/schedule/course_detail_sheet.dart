@@ -77,8 +77,8 @@ class CourseDetailSheet extends StatelessWidget {
         child: SafeArea(
           top: false,
           child: AppCardSurface(
-            // 详情承载文字和操作，必须遮住底层课表，避免低透明度下文字重叠。
-            surfaceOpacity: 1,
+            // 详情承载文字和操作：模糊生效时保留玻璃观感，关闭模糊时遮住底层课表。
+            surfaceOpacity: appTextSheetSurfaceOpacity(context),
             padding: const EdgeInsets.all(22),
             decoration: BoxDecoration(
               color: tokens.surface,

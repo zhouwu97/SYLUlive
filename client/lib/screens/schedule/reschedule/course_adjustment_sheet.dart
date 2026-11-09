@@ -191,7 +191,7 @@ class _CourseAdjustmentSheetState extends State<CourseAdjustmentSheet> {
     if (_baseMeeting == null) {
       return SafeArea(
         child: AppCardSurface(
-          surfaceOpacity: 1,
+          surfaceOpacity: appTextSheetSurfaceOpacity(context),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),

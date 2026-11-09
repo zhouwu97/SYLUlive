@@ -65,7 +65,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String _getAppearanceSummary(ThemeProvider theme) {
     final modeText = theme.isCleanBackgroundMode ? '简洁模式' : '自定义背景';
-    final brightnessText = theme.isDarkMode ? '深色' : '浅色';
+    final brightnessText = switch (theme.themeMode) {
+      ThemeMode.system => '跟随系统',
+      ThemeMode.light => '浅色',
+      ThemeMode.dark => '深色',
+    };
     final navigationText = ResponsiveUtil.useSideNavigation(context)
         ? switch (theme.bottomNavStyle) {
             BottomNavStyle.normal => '标准侧栏',

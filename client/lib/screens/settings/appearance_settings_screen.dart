@@ -21,8 +21,40 @@ import 'frosted_glass_settings_screen.dart';
 import '../../widgets/app_card.dart';
 
 /// 界面设置二级页
-class AppearanceSettingsScreen extends StatelessWidget {
+class AppearanceSettingsScreen extends StatefulWidget {
   const AppearanceSettingsScreen({super.key});
+
+  @override
+  State<AppearanceSettingsScreen> createState() =>
+      _AppearanceSettingsScreenState();
+}
+
+class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
+  int _themeSaveGeneration = 0;
+
+  Future<void> _handleThemeModeChange(
+    BuildContext context,
+    ThemeProvider themeProvider,
+    ThemeMode mode,
+  ) async {
+    final generation = ++_themeSaveGeneration;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    final saved = await themeProvider.setThemeMode(mode);
+    if (!context.mounted || generation != _themeSaveGeneration || saved) return;
+
+    messenger.showSnackBar(SnackBar(
+      content: const Text('配色已切换，但未能保存，请重试'),
+      action: SnackBarAction(
+        label: '重试',
+        onPressed: () => _handleThemeModeChange(
+          context,
+          themeProvider,
+          themeProvider.themeMode,
+        ),
+      ),
+    ));
+  }
 
   Future<void> _handleBackgroundModeChange(
     BuildContext context,
@@ -334,31 +366,20 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ],
         ),
 
-        // 暗色模式与全屏渲染
         SettingsSection(
-          title: '配色与暗色模式',
+          title: '配色模式',
+          showCard: false,
           children: [
-            SettingsTile(
-              icon: Icons.brightness_auto_outlined,
-              title: '跟随系统',
-              subtitle: '实时跟随系统浅色或深色外观切换',
-              trailing: SettingsSwitch(
-                value: themeProvider.followSystem,
-                onChanged: (val) => themeProvider.setFollowSystem(val),
-              ),
-            ),
-            SettingsTile(
-              icon: Icons.dark_mode_outlined,
-              title: '深色模式',
-              subtitle: themeProvider.followSystem
-                  ? '已启用跟随系统，关闭后可手动指定'
-                  : '针对夜间环境优化，降低屏幕明亮度',
-              trailing: SettingsSwitch(
-                value: themeProvider.isDarkMode,
-                onChanged: themeProvider.followSystem
-                    ? null
-                    : (val) => themeProvider.setDarkMode(val),
-              ),
+            CampusSegmentedControl<ThemeMode>(
+              key: const ValueKey('appearance-theme-mode'),
+              items: const [
+                CampusSegmentItem(value: ThemeMode.system, label: '跟随系统'),
+                CampusSegmentItem(value: ThemeMode.light, label: '浅色模式'),
+                CampusSegmentItem(value: ThemeMode.dark, label: '深色模式'),
+              ],
+              selectedValue: themeProvider.themeMode,
+              onSelectionChanged: (mode) =>
+                  _handleThemeModeChange(context, themeProvider, mode),
             ),
           ],
         ),

@@ -207,6 +207,8 @@ class ThemeProvider extends ChangeNotifier {
   bool _isLoaded = false;
   bool _isDarkMode = false;
   bool _followSystem = true;
+  bool _themeModeChanged = false;
+  Future<void>? _themeModeWrites;
   AppFontSizePreset _fontSizePreset = AppFontSizePreset.standard;
   AppBackgroundMode _backgroundMode = AppBackgroundMode.clean;
   String? _backgroundImage;
@@ -237,6 +239,8 @@ class ThemeProvider extends ChangeNotifier {
   bool _marketIsListView = false;
 
   bool get isLoaded => _isLoaded;
+
+  /// 上次手动选择的明暗偏好；当前生效的策略以 [themeMode] 为准。
   bool get isDarkMode => _isDarkMode;
   bool get followSystem => _followSystem;
   ThemeMode get themeMode => _followSystem
@@ -419,12 +423,10 @@ class ThemeProvider extends ChangeNotifier {
 
   /// 将已初始化偏好应用到内存状态，供同步首帧与异步回退共用。
   void _applyStoredPreferences(AppPreferencesStore prefs) {
-    _isDarkMode = prefs.getBool(_nightModeKey) ?? false;
-    if (prefs.containsKey(_followSystemKey)) {
+    // 初始化晚到时不能覆盖用户刚选的配色模式。
+    if (!_themeModeChanged) {
+      _isDarkMode = prefs.getBool(_nightModeKey) ?? false;
       _followSystem = prefs.getBool(_followSystemKey) ?? true;
-    } else {
-      // 默认开启跟随系统（无论旧版是否曾写入 night_mode，升级后统一默认跟随系统）
-      _followSystem = true;
     }
     _fontSizePreset = AppFontSizePreset.fromStorage(
       prefs.getString(_fontSizePresetKey),
@@ -512,28 +514,40 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   Future<void> setFollowSystem(bool value) async {
-    _followSystem = value;
-    final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setBool(_followSystemKey, value);
-    notifyListeners();
+    await setThemeMode(value
+        ? ThemeMode.system
+        : (_isDarkMode ? ThemeMode.dark : ThemeMode.light));
   }
 
   Future<void> toggleTheme() async {
-    _isDarkMode = !_isDarkMode;
-    _followSystem = false;
-    final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setBool(_nightModeKey, _isDarkMode);
-    await prefs.setBool(_followSystemKey, false);
-    notifyListeners();
+    await setDarkMode(!_isDarkMode);
   }
 
   Future<void> setDarkMode(bool value) async {
-    _isDarkMode = value;
-    _followSystem = false;
-    final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setBool(_nightModeKey, value);
-    await prefs.setBool(_followSystemKey, false);
+    await setThemeMode(value ? ThemeMode.dark : ThemeMode.light);
+  }
+
+  Future<bool> setThemeMode(ThemeMode mode) {
+    _themeModeChanged = true;
+    _followSystem = mode == ThemeMode.system;
+    if (!_followSystem) _isDarkMode = mode == ThemeMode.dark;
+    final followSystem = _followSystem;
+    final darkMode = _isDarkMode;
     notifyListeners();
+
+    // 两个兼容存储字段按选择顺序一起保存，避免快速切换后重启恢复旧模式。
+    final write = (_themeModeWrites ?? Future<void>.value()).then((_) async {
+      try {
+        final prefs = await AppPreferencesStore.getInstance();
+        final savedDark = await prefs.setBool(_nightModeKey, darkMode);
+        final savedFollow = await prefs.setBool(_followSystemKey, followSystem);
+        return savedDark && savedFollow;
+      } catch (_) {
+        return false;
+      }
+    });
+    _themeModeWrites = write.then((_) {});
+    return write;
   }
 
   Future<void> setFontSizePreset(AppFontSizePreset preset) async {

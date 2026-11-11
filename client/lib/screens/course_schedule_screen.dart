@@ -25,6 +25,7 @@ import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey, currentHomeTabIndex;
 import '../utils/responsive_util.dart';
 import 'course_schedule_settings_screen.dart';
+import 'academic_transfer/academic_transfer_screen.dart';
 import 'home_widget_settings_screen.dart';
 import 'edu_screen.dart';
 import '../services/home_widget_service.dart';
@@ -1996,6 +1997,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             updateScheduleOpacity: _updateScheduleOpacityFromSettings,
             updateScheduleSlotHeight: _updateScheduleSlotHeightFromSettings,
             resetScheduleDisplay: _resetScheduleDisplayFromSettings,
+            scanToWeb: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => AcademicTransferScreen(
+                  dio: context.read<AuthProvider>().dio,
+                ),
+              ),
+            ),
           ),
         ),
       ),

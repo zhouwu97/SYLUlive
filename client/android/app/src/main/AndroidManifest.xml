@@ -79,6 +79,11 @@
                     android:scheme="https"
                     android:host="sylulive.online"
                     android:pathPrefix="/team/" />
+                <!-- 网页课表的同步二维码：系统相机扫码时直接交给 App 核对。 -->
+                <data
+                    android:scheme="https"
+                    android:host="sylulive.online"
+                    android:path="/web/app-scan" />
             </intent-filter>
             <!-- 网页落地页使用自定义协议作为未完成域名验证时的兼容入口。 -->
             <intent-filter>
@@ -86,6 +91,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="sylulive" android:host="team" />
+            </intent-filter>
+            <!-- 网页同步落地页「在沈理校园 App 中打开」。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sylulive" android:host="academic-transfer" />
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

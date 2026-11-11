@@ -54,7 +54,7 @@ function MobileProfile() {
       { icon: 'bell', label: '通知', description: '互动回复与系统消息', to: '/notifications' },
       { icon: 'ai', label: '已授权助手', description: '管理机器人与外部助手授权', to: '/connected-apps' },
       { icon: 'admin', label: '账号安全', description: '查看绑定信息与修改密码', action: () => ui.open('账号安全', <Security />) },
-      { icon: 'admin', label: '隐私与数据', description: '导出数据、管理本地资料', action: () => ui.open('隐私与数据', <><a className="btn" href="/api/user/privacy/export" target="_blank" rel="noreferrer">导出服务器个人数据</a><button className="btn" onClick={() => { store.setData(previous => ({ ...previous, courses: [], grades: [], exams: [], overrides: {} })); store.setUpdated(''); ui.notify('当前页面的校园资料已清除'); ui.close(); }}>清除当前页面校园资料</button><p><Link to="/feedback" onClick={ui.close}>提交数据更正或删除请求</Link></p></>) },
+      { icon: 'admin', label: '隐私与数据', description: '导出数据、管理本地资料', action: () => ui.open('隐私与数据', <><a className="btn" href="/api/user/privacy/export" target="_blank" rel="noreferrer">导出服务器个人数据</a><button className="btn" onClick={() => { store.clearPersonal(); ui.notify('当前页面的校园资料已清除'); ui.close(); }}>清除当前页面校园资料</button><p><Link to="/feedback" onClick={ui.close}>提交数据更正或删除请求</Link></p></>) },
       { icon: 'feedback', label: '反馈与工单', description: '提交问题或查看处理进度', to: '/feedback' },
       { icon: 'profile', label: '编辑资料', description: '昵称、头像与背景', action: () => ui.open('编辑资料', <EditProfile user={user} />) },
     ] },
@@ -85,7 +85,7 @@ function DesktopProfile() {
     region?.focus({preventScroll: true});
   }
   function openPrivacy() {
-    ui.open('隐私与本地数据', <><p>校园资料默认仅保留在当前页面会话。扩展中启用的缓存和提醒可在课表连接及提醒设置内清除。</p><a className="btn" href="/api/user/privacy/export" target="_blank" rel="noreferrer">导出服务器个人数据</a><button className="btn" onClick={() => {store.setData(s => ({...s, courses: [], grades: [], exams: [], overrides: {}}));store.setUpdated('');ui.notify('当前页面的校园资料已清除');ui.close()}}>清除当前页面校园资料</button><p><Link to="/feedback" onClick={ui.close}>提交数据更正或删除请求</Link></p></>);
+    ui.open('隐私与本地数据', <><p>校园资料默认仅保留在当前页面会话。扩展中启用的缓存和提醒可在课表连接及提醒设置内清除。</p><a className="btn" href="/api/user/privacy/export" target="_blank" rel="noreferrer">导出服务器个人数据</a><button className="btn" onClick={() => {store.clearPersonal();ui.notify('当前页面的校园资料已清除');ui.close()}}>清除当前页面校园资料</button><p><Link to="/feedback" onClick={ui.close}>提交数据更正或删除请求</Link></p></>);
   }
   const stats = typeof user.total_likes_received === 'number' || typeof user.following_count === 'number' || typeof user.followers_count === 'number';
   return <div className="profile-page">

@@ -40,6 +40,8 @@ dependencies:
   package_info_plus: ^8.0.0
   jpush_flutter: ^3.4.5
   qr_flutter: ^4.1.0
+  # 课表「扫码同步到网页」的相机扫码；固定版本，Android 使用内置 ML Kit 模型，不依赖 Play 服务。
+  mobile_scanner: 7.5.0
   crypto: ^3.0.3
   characters: ^1.4.1
   dio_cookie_manager: ^3.4.0

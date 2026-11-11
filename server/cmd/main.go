@@ -2284,6 +2284,16 @@ func main() {
 	configRoutes.PUT("/:provider", academicConfigs.Mutate)
 	configRoutes.DELETE("/:provider", academicConfigs.Mutate)
 
+	// 扫码同步：网页出码、手机 App 扫码后上传端到端加密的本机教务资料。
+	// 服务端只在内存中转密文，不落库；不依赖学校代理，因此不挂学校退役开关。
+	academicTransfer := handlers.NewAcademicTransferHandler()
+	transferRoutes := r.Group("/api/academic-transfer/sessions", middleware.AuthMiddleware(db, cfg.JWTSecret))
+	transferRoutes.POST("", academicTransfer.Create)
+	transferRoutes.GET("/:id", academicTransfer.Get)
+	transferRoutes.POST("/:id/claim", academicTransfer.Claim)
+	transferRoutes.PUT("/:id/payload", academicTransfer.Upload)
+	transferRoutes.DELETE("/:id", academicTransfer.Delete)
+
 	// 解绑是纯本机撤销操作，不访问学校系统；学校退役或旧密钥冻结期间仍必须
 	// 可用，否则用户无法撤销服务端可信身份。JWT、归属校验、事务与幂等由
 	// Unbind 自身保证。

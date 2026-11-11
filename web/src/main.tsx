@@ -38,6 +38,7 @@ import { Feedback, TicketDetail, Notifications } from "./feedback";
 import { Community, PostDetail, PostForm } from "./community";
 import { AcademicProvider, Schedule, Grades } from "./academic";
 import { ConnectedApps, ConnectedAction } from "./connected-apps";
+import { AppScanLanding } from "./phone-scan";
 import { Messages } from "./messages";
 import "./commons.css";
 import { useMobile } from "./mobile";
@@ -379,6 +380,7 @@ function Shell() {
                   <Route path="/connected-apps" element={<ConnectedApps />} />
                   <Route path="/connected-apps/actions/:id" element={<ConnectedAction />} />
                   <Route path="/admin" element={<Admin />} />
+                  <Route path="/app-scan" element={<AppScanLanding />} />
                   <Route path="*" element={<Dashboard />} />
                 </Routes>
               </section>

@@ -8,9 +8,9 @@ for (const theme of ["light", "dark"]) {
     await page.route("**/api/user/profile", route => route.fulfill({ json: { id: 991, nickname: "图标验收同学", role: "user" } }));
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("toolbox");
-    // 分组与 App 工具箱一致：常用工具 5、校园与娱乐 2、更多工具 4
+    // 分组与 App 工具箱一致：常用工具 5、校园与娱乐 2；更多工具 5（含 Web 独有的手机扫码同步）
     await expect(page.getByRole("heading", { level: 2 })).toHaveText(["常用工具", "校园与娱乐", "更多工具"]);
-    await expect(page.locator(".tool-tile")).toHaveCount(11);
+    await expect(page.locator(".tool-tile")).toHaveCount(12);
     await expect(page.locator(".tool-icon .svg-icon").first()).toHaveCSS("width", "24px");
     await expect(page.locator(".nav-icon .svg-icon").first()).toHaveCSS("width", "20px");
     await expect(page.locator(".tool-icon [data-tone]").first()).toHaveCSS("fill-opacity", "0.14");
@@ -35,6 +35,9 @@ for (const theme of ["light", "dark"]) {
     await expect(sites.getByRole("link", { name: /教务处/ })).toHaveAttribute("target", "_blank");
     await page.keyboard.press("Escape");
     await expect(page.locator(".tool-tile").filter({ hasText: "试卷库" })).toHaveAttribute("href", /exams\?tab=papers$/);
+    await page.locator(".tool-tile").filter({ hasText: "手机扫码同步" }).click();
+    await expect(page.getByRole("dialog", { name: "手机 App 扫码同步", exact: true }).locator(".phone-scan")).toBeVisible();
+    await page.keyboard.press("Escape");
   });
 }
 

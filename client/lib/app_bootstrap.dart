@@ -1,4 +1,6 @@
 import 'features/academic/data/academic_account_config_client.dart';
+import 'features/academic_transfer/academic_transfer_payload.dart';
+import 'screens/academic_transfer/academic_transfer_screen.dart';
 import 'features/emoji/application/emoji_recent_manager.dart';
 import 'dart:async';
 import 'dart:ui';
@@ -1755,7 +1757,8 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
       if (result == _DeepLinkHandlingResult.deferred) {
         // Navigator 尚未就绪或会话门禁尚未通过时，组队链接必须留在 Dart
         // 层等待下一次状态变化；此时不能 ACK 原生 pending link。
-        if (TeamShareLink.parseRecruitmentId(uri) != null) {
+        if (TeamShareLink.parseRecruitmentId(uri) != null ||
+            AcademicTransferLink.tryParse(uri) != null) {
           _pendingTeamDeepLink = uri;
         }
         return;
@@ -1841,6 +1844,26 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
       return (await _openGradeDeepLink(uri))
           ? _DeepLinkHandlingResult.handled
           : _DeepLinkHandlingResult.unhandled;
+    }
+    // 网页课表的同步二维码：系统相机扫码打开落地页后，经「在 App 中打开」回到这里。
+    final transferLink = AcademicTransferLink.tryParse(uri);
+    if (transferLink != null) {
+      final auth = context.read<AuthProvider>();
+      if (_isLoginRouteVisible() ||
+          !auth.isLoggedIn ||
+          !(auth.user?.legalConsentsActive ?? false)) {
+        _pendingTeamDeepLink = uri;
+        return _DeepLinkHandlingResult.deferred;
+      }
+      appNavigatorKey.currentState?.push(
+        MaterialPageRoute(
+          builder: (_) => AcademicTransferScreen(
+            dio: getSharedDio(),
+            initialLink: transferLink,
+          ),
+        ),
+      );
+      return _DeepLinkHandlingResult.handled;
     }
     final postUri = Uri.tryParse(uri);
     if (postUri?.scheme == 'sylulive' &&

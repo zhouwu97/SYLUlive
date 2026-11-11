@@ -159,6 +159,20 @@ AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人�
 
 错误码：`invalid_erke_snapshot` 表示字段不符合结构、超过大小限制或含敏感字段；`personal_snapshot_not_found` 表示尚未上传或已经删除；`personal_snapshot_unavailable` 表示服务暂时不可用。
 
+### 手机 App 扫码同步到网页
+
+以下接口均需 JWT，可携带 `X-Expected-App-User` 核对账号（不一致返回 409 `APP_USER_CHANGED`）。服务端只在进程内存中转端到端加密的密文，不落库、不写日志，重启后在途会话失效；加密协议与字段契约见 `web/src/academic-transfer.ts` 和 `client/lib/features/academic_transfer/`。
+
+| Method | Endpoint | 调用方 | Description |
+|---|---|---|---|
+| `POST` | `/api/academic-transfer/sessions` | 网页 | 创建 5 分钟有效的会话，返回 `session_id`、`status`、`expires_at`、`ttl_seconds`；单用户最多 3 个在途会话（淘汰最早的），10 分钟内最多创建 30 个，超出返回 429 `TRANSFER_RATE_LIMITED` |
+| `GET` | `/api/academic-transfer/sessions/:id` | 网页 | 轮询状态 `pending` / `claimed` / `ready`；`ready` 时附带 `payload` 密文信封，网页确认前可重复读取 |
+| `POST` | `/api/academic-transfer/sessions/:id/claim` | App | 扫码后标记已扫到；已上传过返回 409 `TRANSFER_ALREADY_UPLOADED` |
+| `PUT` | `/api/academic-transfer/sessions/:id/payload` | App | 上传一次 `{"app_public_key","nonce","ciphertext"}`（base64url，P-256 未压缩公钥、12 字节随机数、AES-GCM 密文含标签），密文上限 600 KiB；未 claim 返回 409 `TRANSFER_NOT_CLAIMED` |
+| `DELETE` | `/api/academic-transfer/sessions/:id` | 两端 | 网页解密后清除或任一端取消，幂等返回 204 |
+
+错误码：`TRANSFER_SESSION_NOT_FOUND`（404，不存在或已过期）、`TRANSFER_ACCOUNT_MISMATCH`（403，扫码账号与网页账号不同）、`INVALID_TRANSFER_PAYLOAD`（400，含未知字段、编码或公钥无效）、`TRANSFER_PAYLOAD_TOO_LARGE`（413）、`TRANSFER_BUSY`（503，进程在途密文总量超过 96 MiB）。
+
 ## 4. 帖子与社区 (Posts & Replies)
 
 **帖子 (Posts)**

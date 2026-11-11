@@ -28,6 +28,8 @@ import { downloadJSON, errorText, write, request, entity } from "./api";
 import { Form, Head, Empty, Icon, Stats, Tabs, useUI } from "./ui";
 import { useAuth } from "./auth";
 import { mobileTermLabel, useMobile } from "./mobile";
+import { PhoneScanForm } from "./phone-scan";
+import { preferredSchedule, type TransferErke, type TransferPayload, type TransferPhysical, type TransferSchedule } from "./academic-transfer";
 const initial = (): AcademicBackup => ({
   version: 1,
   term: defaultAcademicTerm(),
@@ -45,11 +47,28 @@ function keepEmptyResult(next: unknown, previous: unknown[]): string | void {
   if (Array.isArray(next) && !next.length && previous.length)
     return "学校这次没有返回任何记录，已保留本机原有资料；请在设置里核对学年学期后重试。";
 }
+/** 手机 App 扫码同步带来的、现有备份结构之外的资料；与课表一样只保留在当前页面会话。 */
+export type PhoneData = {
+  receivedAt: string;
+  schedules: TransferSchedule[];
+  activeId: string;
+  erke: TransferErke | null;
+  physical: TransferPhysical | null;
+};
 type Store = {
   data: AcademicBackup;
   setData: React.Dispatch<React.SetStateAction<AcademicBackup>>;
   updated: string;
   setUpdated: (s: string) => void;
+  /** 当前课表的来源，决定来源行怎么描述这份数据。 */
+  source: "assistant" | "phone" | "";
+  setSource: (s: "assistant" | "phone" | "") => void;
+  phone: PhoneData | null;
+  setPhone: React.Dispatch<React.SetStateAction<PhoneData | null>>;
+  /** 教务助手按资料类型读回的快照；放在账号级状态里，切换页面后不必重新读取。 */
+  extra: Record<string, AcademicSnapshot>;
+  setExtra: React.Dispatch<React.SetStateAction<Record<string, AcademicSnapshot>>>;
+  clearPersonal: () => void;
 };
 const Context = createContext<Store>(null!);
 export function AcademicProvider({ children }: { children: ReactNode }) {
@@ -58,14 +77,57 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
 }
 function AccountData({ children }: { children: ReactNode }) {
   const [data, setData] = useState(initial),
-    [updated, setUpdated] = useState("");
+    [updated, setUpdated] = useState(""),
+    [source, setSource] = useState<Store["source"]>(""),
+    [phone, setPhone] = useState<PhoneData | null>(null),
+    [extra, setExtra] = useState<Record<string, AcademicSnapshot>>({});
+  const clearPersonal = () => {
+    setData((s) => ({ ...s, courses: [], grades: [], exams: [], overrides: {} }));
+    setUpdated(""); setSource(""); setPhone(null); setExtra({});
+  };
   return (
-    <Context.Provider value={{ data, setData, updated, setUpdated }}>
+    <Context.Provider value={{ data, setData, updated, setUpdated, source, setSource, phone, setPhone, extra, setExtra, clearPersonal }}>
       {children}
     </Context.Provider>
   );
 }
 export const useAcademic = () => useContext(Context);
+/**
+ * 把手机发来的资料写入页面。空的部分不覆盖已有资料：
+ * 手机上没读过成绩不代表要清掉网页里已有的成绩。本地调整（overrides）始终保留。
+ */
+function applyTransfer(store: Store, payload: TransferPayload): string[] {
+  const schedules = payload.schedules.filter((item) => item.courses.length);
+  const active = preferredSchedule(schedules);
+  const examIds = new Set(payload.exams?.map((exam) => exam.id));
+  store.setData((previous) => ({
+    ...previous,
+    ...(active ? { courses: active.courses, term: active.term ?? previous.term, termStart: active.termStart || previous.termStart } : {}),
+    ...(payload.grades?.length ? { grades: payload.grades } : {}),
+    ...(payload.exams?.length ? { exams: [...previous.exams.filter((exam) => !examIds.has(exam.id)), ...payload.exams] } : {}),
+  }));
+  store.setPhone((previous) => ({
+    receivedAt: payload.generatedAt,
+    schedules: schedules.length ? schedules : previous?.schedules || [],
+    activeId: active?.id ?? previous?.activeId ?? "",
+    erke: payload.erke ?? previous?.erke ?? null,
+    physical: payload.physical ?? previous?.physical ?? null,
+  }));
+  if (active) {
+    store.setUpdated(active.fetchedAt || payload.generatedAt);
+    store.setSource("phone");
+  }
+  const notes: string[] = [];
+  if (schedules.length > 1) notes.push("课表页的周次栏旁可以切换其他学期和存档课表。");
+  if (active && !active.termStart && !store.data.termStart) notes.push("手机上没有设置开学第一周，请在课表设置里补充，才能定位当前教学周。");
+  if (payload.skipped) notes.push(`有 ${payload.skipped} 条记录格式不完整，已跳过。`);
+  return notes;
+}
+export function PhoneSync() {
+  const store = useAcademic(), ui = useUI();
+  return <PhoneScanForm onPayload={(payload) => applyTransfer(store, payload)} onClose={ui.close} />;
+}
+const openPhoneSync = (ui: ReturnType<typeof useUI>) => ui.open("手机 App 扫码同步", <PhoneSync />);
 export function ConnectionForm({
   dataset,
   onData,
@@ -77,7 +139,8 @@ export function ConnectionForm({
 }) {
   const { requireUser, user } = useAuth(),
     ui = useUI(),
-    store = useAcademic();
+    store = useAcademic(),
+    mobile = useMobile();
   const [provider, setProvider] = useState<AcademicProvider>(
     dataset === "physical"
       ? "physical"
@@ -185,6 +248,7 @@ export function ConnectionForm({
       const note = onData(snapshot.data, snapshot);
       if (note) { setStatus(note); return; }
       store.setUpdated(snapshot.fetchedAt);
+      if (dataset === "courses") store.setSource("assistant");
       if (successMessage) ui.notify(successMessage);
       ui.close();
     } catch (error) {
@@ -271,6 +335,12 @@ export function ConnectionForm({
       {guidance && <p className="notice-line">{guidance}</p>}
       {busy && <button className="btn ghost" onClick={() => { pending.current?.abort(); setStatus("已取消本次连接，原资料已保留。"); }}>取消连接</button>}
       <AssistantInstallGuide state={assistant.state} onRecheck={assistant.recheck} />
+      {!busy && !connection && !mobile && (
+        <p className="assistant-alternative">
+          这台电脑不方便安装助手？
+          <button className="link-btn" onClick={() => openPhoneSync(ui)}>改用手机 App 扫码同步</button>
+        </p>
+      )}
       {connection && (
         <>
           <p className="source-line">
@@ -294,6 +364,7 @@ export function ConnectionForm({
               act(async () => {
                 await bridge("disconnect", { provider });
                 store.setData(initial());
+                store.clearPersonal();
                 setConnection(null);
               })
             }
@@ -538,6 +609,18 @@ function DesktopSchedule() {
       />,
     );
   const todayIndex = (new Date().getDay() || 7) - 1;
+  const phoneSchedules = store.phone?.schedules || [];
+  // 切换只替换学校课表这一层；本地调整按课程 id 叠加，换回原课表时仍然生效。
+  const switchSchedule = (id: string) => {
+    const next = phoneSchedules.find((item) => item.id === id);
+    if (!next) return;
+    store.setData((s) => ({ ...s, courses: next.courses, term: next.term ?? s.term, termStart: next.termStart || s.termStart }));
+    store.setPhone((s) => s && { ...s, activeId: id });
+    store.setUpdated(next.fetchedAt || store.phone?.receivedAt || "");
+    store.setSource("phone");
+    setParams({ weekend: weekend ? "1" : "0" });
+  };
+  const updatedText = store.updated ? new Date(store.updated).toLocaleString("zh-CN") : "";
   return (
     <>
       <Head
@@ -565,13 +648,20 @@ function DesktopSchedule() {
       </Head>
       <div className="source-line">
         <span>
-          {store.updated
-            ? `学校数据更新于 ${new Date(store.updated).toLocaleString("zh-CN")}`
-            : "未读取学校课表"}
+          {!store.updated
+            ? "未读取学校课表"
+            : store.source === "phone"
+              ? `来自手机 App 同步 · 课表读取于 ${updatedText}`
+              : `学校数据更新于 ${updatedText}`}
         </span>
-        <button className="link-btn" onClick={openConnect}>
-          连接教务助手 / 刷新
-        </button>
+        <span className="source-actions">
+          <button className="link-btn" onClick={() => openPhoneSync(ui)}>
+            <Icon name="scan" size={15} />手机 App 扫码同步
+          </button>
+          <button className="link-btn" onClick={openConnect}>
+            连接教务助手 / 刷新
+          </button>
+        </span>
       </div>
       <div className="schedule-toolbar">
         <div className="week-nav">
@@ -601,7 +691,19 @@ function DesktopSchedule() {
             下一周
           </button>
         </div>
-        <label>
+        {phoneSchedules.length > 1 && (
+          <label className="schedule-switch">
+            <span>切换课表</span>
+            <select value={store.phone?.activeId || ""} onChange={(e) => switchSchedule(e.target.value)}>
+              {phoneSchedules.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}{item.kind === "archive" ? "（存档）" : item.kind === "current" ? "（手机当前）" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="schedule-weekend">
           <input
             type="checkbox"
             checked={weekend}
@@ -620,9 +722,10 @@ function DesktopSchedule() {
           <div className="schedule-empty-hint">
             <Icon name="schedule" size={22} />
             <b>还没有课表</b>
-            <p>连接教务助手自动读取本学期课表，也可以手动添加课程。</p>
+            <p>用手机 App 扫码把正在用的课表同步过来，或连接教务助手从学校读取，也可以手动添加课程。</p>
             <div className="empty-actions">
-              <button className="btn primary" onClick={openConnect}>连接教务助手</button>
+              <button className="btn primary" onClick={() => openPhoneSync(ui)}><Icon name="scan" size={16} />手机 App 扫码同步</button>
+              <button className="btn" onClick={openConnect}>连接教务助手</button>
               <button className="btn" onClick={() => ui.open("添加课程", <CourseForm />)}>手动添加</button>
             </div>
           </div>
@@ -780,8 +883,12 @@ export function Grades() {
     ui = useUI();
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") || "grades";
-  const [extra, setExtra] = useState<Record<string,AcademicSnapshot>>({});
+  const { extra, setExtra, phone } = store;
+  // 手机网页无法用同一台手机扫自己的屏幕，扫码入口只在电脑宽度显示。
+  const mobile = useMobile();
   const dataset = tab === 'graduation' ? 'requirements' : tab;
+  // 助手读回的快照优先；没有时展示手机 App 同步来的二课、体测。
+  const phoneView = extra[dataset] ? null : dataset === "erke" && phone?.erke ? <PhoneErke value={phone.erke} /> : dataset === "physical" && phone?.physical ? <PhonePhysical value={phone.physical} /> : null;
   const stats = gradeStats(store.data.grades);
   return (
     <>
@@ -795,6 +902,11 @@ export function Grades() {
         >
           数据设置
         </button>
+        {!mobile && (
+          <button className="btn" onClick={() => openPhoneSync(ui)}>
+            <Icon name="scan" size={16} />手机 App 扫码同步
+          </button>
+        )}
         <button
           className="btn primary"
           onClick={() =>
@@ -868,7 +980,7 @@ export function Grades() {
               </tbody>
             </table>
             {!store.data.grades.length && (
-              <Empty icon="grades" description="通过教务助手更新成绩，或导入本地资料。" />
+              <Empty icon="grades" description={mobile ? "通过教务助手更新成绩，或导入本地资料。" : "用手机 App 扫码同步成绩，或通过教务助手更新、导入本地资料。"} />
             )}
           </div>
         </>
@@ -876,11 +988,62 @@ export function Grades() {
         <div className="panel panel-pad">
           {extra[dataset] ? (
             dataset==='requirements'?<Requirements value={extra[dataset].data} graduation={tab==='graduation'}/>:<DataTable value={extra[dataset].data} />
-          ) : (
-            <Empty description="点击更新本地资料，从对应学校系统读取。" />
+          ) : phoneView || (
+            <Empty description={!mobile && (dataset === "erke" || dataset === "physical") ? "点击更新本地资料从学校系统读取，或用手机 App 扫码同步。" : "点击更新本地资料，从对应学校系统读取。"} />
           )}
         </div>
       )}
+    </>
+  );
+}
+const formatNumber = (value: number | null) => (value === null ? "—" : String(Math.round(value * 100) / 100));
+const sourceTime = (value: string) => (value ? `来源：手机 App 同步 · 手机读取于 ${new Date(value).toLocaleString("zh-CN")}` : "来源：手机 App 同步");
+function PhoneErke({ value }: { value: TransferErke }) {
+  return (
+    <>
+      <p className="muted">{sourceTime(value.fetchedAt)}</p>
+      <Stats items={[[formatNumber(value.earnedTotal), "已获二课分"], [formatNumber(value.requiredTotal), "毕业要求"], [formatNumber(value.graduationGap), "距毕业还差"]]} />
+      {value.conclusion && <p>学校结论：{value.conclusion}</p>}
+      {!!value.categories.length && (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead><tr><th>类别</th><th>要求</th><th>已获</th><th>状态</th></tr></thead>
+            <tbody>{value.categories.map((item) => <tr key={item.code + item.name}><td>{item.code ? `${item.code} · ` : ""}{item.name}</td><td>{formatNumber(item.required)}</td><td>{formatNumber(item.earned)}</td><td>{item.earned >= item.required ? "已达到" : `还差 ${formatNumber(item.required - item.earned)}`}</td></tr>)}</tbody>
+          </table>
+        </div>
+      )}
+      {!!value.activities.length && (
+        <details className="phone-data-details">
+          <summary>活动明细（{value.activities.length} 条）</summary>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>活动</th><th>类别</th><th>日期</th><th>得分</th></tr></thead>
+              <tbody>{value.activities.map((item, index) => <tr key={index}><td>{item.item}</td><td>{item.category}</td><td>{item.date}</td><td>{item.score}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </details>
+      )}
+      {!value.categories.length && !value.activities.length && <Empty title="手机上的二课资料是空的" description="请先在 App 的二课页面读取一次，再重新扫码同步。" />}
+    </>
+  );
+}
+function PhonePhysical({ value }: { value: TransferPhysical }) {
+  return (
+    <>
+      <p className="muted">{sourceTime(value.fetchedAt)}</p>
+      {value.years.map((year) => (
+        <section className="phone-data-year" key={year.year}>
+          <h3>{year.year} 学年 <small>总分 {formatNumber(year.totalScore)}{year.totalGrade && ` · ${year.totalGrade}`}</small></h3>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>项目</th><th>成绩</th><th>得分</th><th>等级</th></tr></thead>
+              <tbody>{year.scores.map((item) => <tr key={item.name}><td>{item.name}</td><td>{item.result || "—"}</td><td>{formatNumber(item.score)}</td><td>{item.grade || "—"}</td></tr>)}</tbody>
+            </table>
+          </div>
+          {!year.scores.length && <p className="muted">这一学年没有项目成绩。</p>}
+        </section>
+      ))}
+      {!value.years.length && <Empty title="手机上的体测资料是空的" description="请先在 App 的体测页面读取一次，再重新扫码同步。" />}
     </>
   );
 }

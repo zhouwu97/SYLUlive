@@ -1,7 +1,8 @@
 import {useState,useEffect} from 'react';
 import {Link} from 'react-router-dom';
 import {mergeCourses,teachingWeek,gradeStats} from '@sylulive/academic-contracts';
-import {useAcademic} from './academic';
+import {PhoneSync, useAcademic} from './academic';
+import {useMobile} from './mobile';
 import {useAuth} from './auth';
 import {useAssistantProbe} from './use-assistant-probe';
 import {AssistantInstallGuide} from './assistant-guide';
@@ -25,6 +26,7 @@ const groups: { title: string; tools: Tool[] }[] = [
     { id: 'gpa', title: 'GPA 计算', subtitle: '按学分加权计算，以学校公布结果为准', icon: 'trending', modal: 'gpa' },
     { id: 'free', title: '空闲时间', subtitle: '从当前课表计算本周无课节次', icon: 'clock', modal: 'free' },
     { id: 'checkin', title: '校园签到', subtitle: '查看连续签到和补签状态', icon: 'check', modal: 'checkin' },
+    { id: 'phone', title: '手机扫码同步', subtitle: '用 App 扫码，把课表、成绩、二课、体测带到网页', icon: 'scan', modal: 'phone' },
     { id: 'diagnostic', title: '教务连接诊断', subtitle: '检测助手版本及本机连接能力', icon: 'monitor', modal: 'diagnostic' },
   ] },
 ];
@@ -42,16 +44,16 @@ const sites: [string, string, string][] = [
   ['教师资格证', 'NTCE 报名与认定', 'https://ntce.neea.edu.cn/'],
 ];
 export function Toolbox(){
-  const ui=useUI(),auth=useAuth();
+  const ui=useUI(),auth=useAuth(),mobile=useMobile();
   function open(tool:Tool){
     if(['checkin','lottery'].includes(tool.id)&&!auth.requireUser())return;
-    ui.open(tool.title,tool.modal==='gpa'?<Gpa/>:tool.modal==='free'?<Free/>:tool.modal==='checkin'?<Checkin/>:tool.modal==='lottery'?<Lottery/>:tool.modal==='sites'?<Sites/>:<Diagnostic/>);
+    ui.open(tool.modal==='phone'?'手机 App 扫码同步':tool.title,tool.modal==='gpa'?<Gpa/>:tool.modal==='free'?<Free/>:tool.modal==='checkin'?<Checkin/>:tool.modal==='lottery'?<Lottery/>:tool.modal==='sites'?<Sites/>:tool.modal==='phone'?<PhoneSync/>:<Diagnostic/>);
   }
   const body=(tool:Tool)=><><span className="tool-icon"><Icon name={tool.icon} size={24}/></span><span className="tool-tile-copy"><b>{tool.title}</b><small>{tool.subtitle}</small></span><Icon name={tool.href?'share':'chevron'} size={16}/></>;
   return <><Head title="工具箱" description="学习、查询与校园工具"/>
     {groups.map(group=><section className="tool-group" key={group.title} aria-label={group.title}>
       <h2 className="tool-group-title">{group.title}</h2>
-      <div className="tool-grid">{group.tools.map(tool=>tool.to?<Link key={tool.id} className="tool-tile" to={tool.to}>{body(tool)}</Link>
+      <div className="tool-grid">{group.tools.filter(tool=>!(mobile&&tool.id==='phone')).map(tool=>tool.to?<Link key={tool.id} className="tool-tile" to={tool.to}>{body(tool)}</Link>
         :tool.href?<a key={tool.id} className="tool-tile" href={tool.href} target="_blank" rel="noopener noreferrer">{body(tool)}</a>
         :<button key={tool.id} type="button" className="tool-tile" onClick={()=>open(tool)}>{body(tool)}</button>)}</div>
     </section>)}

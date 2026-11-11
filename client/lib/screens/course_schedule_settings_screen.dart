@@ -60,6 +60,7 @@ class CourseScheduleSettingsCallbacks {
     required this.updateScheduleOpacity,
     required this.updateScheduleSlotHeight,
     required this.resetScheduleDisplay,
+    this.scanToWeb,
   });
 
   final Future<CourseScheduleSettingsSnapshot> Function() reloadSnapshot;
@@ -75,6 +76,9 @@ class CourseScheduleSettingsCallbacks {
   final Future<void> Function(double value) updateScheduleOpacity;
   final Future<void> Function(double value) updateScheduleSlotHeight;
   final Future<void> Function() resetScheduleDisplay;
+
+  /// 扫描网页课表上的二维码，把本机课表等资料加密同步给网页；为空时不显示入口。
+  final Future<void> Function()? scanToWeb;
 }
 
 class CourseScheduleSettingsScreen extends StatefulWidget {
@@ -245,6 +249,13 @@ class _CourseScheduleSettingsScreenState
                   onTap: () =>
                       _runAndRefresh(widget.callbacks.pickSemesterStart),
                 ),
+                if (widget.callbacks.scanToWeb case final scanToWeb?)
+                  _CourseSettingsTile(
+                    icon: Icons.qr_code_scanner_outlined,
+                    title: '扫码同步到网页',
+                    subtitle: '扫描电脑网页上的二维码，同步课表、成绩、二课、体测',
+                    onTap: () => _runAndRefresh(scanToWeb),
+                  ),
                 _CourseSettingsTile(
                   icon: Icons.ios_share_outlined,
                   title: '分享本周课表',

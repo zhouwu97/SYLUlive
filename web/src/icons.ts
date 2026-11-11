@@ -38,6 +38,8 @@ export const paths: Record<string, string> = {
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 6.5V12l3.5 2"/>',
   trending: '<path data-tone d="M12 2c0 4 8 7 8 12a8 8 0 1 1-16 0c0-4 3-6 4-7 0 3 2 4 3 4-1-4 1-7 1-9Z"/><path d="M12 2c0 4 8 7 8 12a8 8 0 1 1-16 0c0-4 3-6 4-7 0 3 2 4 3 4-1-4 1-7 1-9Z"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  scan: '<path d="M4 8V6a2 2 0 0 1 2-2h2m8 0h2a2 2 0 0 1 2 2v2m0 8v2a2 2 0 0 1-2 2h-2m-8 0H6a2 2 0 0 1-2-2v-2M3 12h18"/>',
+  phone: '<rect data-tone x="6" y="2" width="12" height="20" rx="3"/><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10.5 18.5h3"/>',
   lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.5"/>',
   "eye-off": '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12ZM3 3l18 18"/><circle cx="12" cy="12" r="2.5"/>',

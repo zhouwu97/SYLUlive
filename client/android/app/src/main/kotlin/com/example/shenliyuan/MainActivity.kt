@@ -1076,6 +1076,10 @@ class MainActivity : FlutterActivity() {
         } else if (intent?.action == Intent.ACTION_VIEW && isTeamShareLink(data)) {
             pendingDeepLink = data.toString()
             return true
+        } else if (intent?.action == Intent.ACTION_VIEW && isAcademicTransferLink(data)) {
+            // 二维码参数（会话与一次性公钥）由 Dart 层严格校验后才使用。
+            pendingDeepLink = data.toString()
+            return true
         } else if (intent?.action == "com.example.shenliyuan.ACTION_WIDGET_EXAM") {
             val examName = intent.getStringExtra("exam_name") ?: ""
             val examDate = intent.getStringExtra("exam_date") ?: ""
@@ -1087,6 +1091,13 @@ class MainActivity : FlutterActivity() {
             return true
         }
         return false
+    }
+
+    /** 网页课表「扫码同步」链接：落地页的自定义协议，或已验证域名下的同步二维码。 */
+    private fun isAcademicTransferLink(data: Uri?): Boolean {
+        if (data == null) return false
+        return (data.scheme == "sylulive" && data.host == "academic-transfer") ||
+            (data.scheme == "https" && data.host == "sylulive.online" && data.path == "/web/app-scan")
     }
 
     /** 仅转发受清单约束且携带正整数编号的组队链接。 */

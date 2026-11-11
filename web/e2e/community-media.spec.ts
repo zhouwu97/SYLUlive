@@ -209,10 +209,13 @@ test("清晰预览及原图加载失败可以重试，更新图片后不继承�
   const state = await mediaFixture(page);
   state.failMedium(true);
   await page.goto("community");
+  // 登录初始化会重取信息流；先固定失败状态，避免点击时已被重取恢复。
+  await page.waitForLoadState("networkidle");
   const first = page.locator(".community-feed .media-tile").first();
   await expect(first).toContainText("图片加载失败 · 点击重试");
   state.failMedium(false);
   await first.click();
+  await expect(page.getByRole("dialog", { name: "图片预览" })).toHaveCount(0);
   await expect(first.locator("img")).toBeVisible();
   state.failViewer(true);
   await first.click();

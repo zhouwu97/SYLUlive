@@ -392,6 +392,55 @@ void main() {
     }
   });
 
+  test('拖动命中预设不覆盖自定义记忆，再点自定义恢复上一次自定义组合', () async {
+    final theme = ThemeProvider(loadOnStart: false);
+    addTearDown(theme.dispose);
+    await theme.setBackgroundImage('morenbeijing.jpeg');
+    await theme.setComponentOpacityLevel(.75);
+    await theme.setFrostedGlassStrength(.5);
+    expect(theme.frostedGlassPerformanceMode, FrostedGlassPerformanceMode.custom);
+    await theme.setFrostedGlassStrength(.35);
+    expect(theme.frostedGlassPerformanceMode,
+        FrostedGlassPerformanceMode.highPerformance);
+    expect(theme.frostedGlassCustomStrength, .5);
+    expect(theme.customComponentOpacityLevel, .75);
+
+    await theme
+        .setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode.custom);
+    expect(theme.frostedGlassPerformanceMode, FrostedGlassPerformanceMode.custom);
+    expect(theme.frostedGlassStrength, .5);
+    expect(theme.componentOpacityLevel, closeTo(.75, 1e-6));
+
+    // 0% 模糊也是合法的自定义组合，恢复时保持关闭模糊。
+    await theme.setComponentOpacityLevel(.4);
+    await theme.setFrostedGlassStrength(0);
+    await theme.setFrostedGlassPerformanceMode(
+        FrostedGlassPerformanceMode.highQuality);
+    final restored = ThemeProvider(loadOnStart: false);
+    addTearDown(restored.dispose);
+    await restored.loadThemeForTesting();
+    await restored
+        .setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode.custom);
+    expect(restored.frostedGlass, isFalse);
+    expect(restored.frostedGlassStrength, 0);
+    expect(restored.componentOpacityLevel, closeTo(.4, 1e-6));
+    expect(
+        restored.frostedGlassPerformanceMode, FrostedGlassPerformanceMode.custom);
+  });
+
+  test('旧版记成预设值的自定义记忆回退到默认 65%', () async {
+    AppPreferencesStore.setMockInitialValues({
+      'background_mode': 'custom',
+      'frosted_glass_custom_strength': .35,
+      'custom_component_opacity_level': .75,
+    });
+    final theme = ThemeProvider(loadOnStart: false);
+    addTearDown(theme.dispose);
+    await theme.loadThemeForTesting();
+    expect(theme.frostedGlassCustomStrength, .65);
+    expect(theme.customComponentOpacityLevel, .65);
+  });
+
   test('手动零强度关闭并跨重启恢复，不重设卡片不透明度', () async {
     final theme = ThemeProvider(loadOnStart: false);
     addTearDown(theme.dispose);

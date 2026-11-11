@@ -90,7 +90,7 @@ class CompetitionBatchActionSheet extends StatelessWidget {
           ...actions.map((action) =>
               _buildActionTile(context, action, titleColor, dangerColor)),
           const SizedBox(height: 8),
-          AppCardDivider(color: Colors.grey.withValues(alpha: 0.2)),
+          const AppCardDivider(),
           ListTile(
             title: const Center(
               child: Text(

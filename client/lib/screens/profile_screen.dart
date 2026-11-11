@@ -1016,12 +1016,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               for (int i = 0; i < items.length; i++) ...[
                 if (i > 0)
-                  AppCardDivider(
-                    height: 1,
-                    thickness: 0.5,
-                    indent: 68,
-                    color: isDark ? Colors.white12 : Colors.black12,
-                  ),
+                  const AppCardDivider.inset(),
                 items[i],
               ],
             ],

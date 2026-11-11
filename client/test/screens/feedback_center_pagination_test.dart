@@ -108,10 +108,15 @@ void main() {
         await tester.tap(find.text('重试'));
         await tester.pumpAndSettle();
         expect(find.text('暂无反馈记录'), findsOneWidget);
+        await appearance.setComponentOpacity(.35);
         for (final glass in [true, false]) {
           await appearance.setFrostedGlass(glass);
           await tester.pumpAndSettle();
           expect(tester.getRect(panel), expected);
+          final indicator = tester.widget<TabBar>(find.byType(TabBar)).indicator!
+              as BoxDecoration;
+          expect(indicator.color!.a, closeTo(.35, .01),
+              reason: '选中块跟随不透明度，独立于毛玻璃开关');
         }
         expect(requests, 2);
         expect(tester.takeException(), isNull);

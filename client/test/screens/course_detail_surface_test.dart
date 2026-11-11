@@ -39,7 +39,7 @@ void main() {
           await appearance.setBackgroundImage('morenbeijing.jpeg');
           await appearance.trySetCustomBackgroundMode();
           await appearance.setFrostedGlass(glass);
-          await appearance.setComponentOpacity(opacity);
+          await appearance.setComponentOpacityLevel(opacity);
           final boundary = GlobalKey();
           const course = CourseBlock(
               id: 1,
@@ -91,10 +91,9 @@ void main() {
                   .descendant(of: surface, matching: find.byType(DecoratedBox))
                   .first)
               .decoration as BoxDecoration;
-          final expectedAlpha = glass ? opacity : opacity.clamp(0.9, 1.0);
+          final expectedAlpha = .75 + .25 * opacity;
           expect(paint.color!.a, closeTo(expectedAlpha, 0.005),
-              reason: '模糊生效时详情底面跟随全局不透明度保留玻璃观感，'
-                  '关闭模糊时用可读下限遮住底层课表');
+              reason: '模糊启停时详情底面均跟随新的 75%–100% 映射');
           expect(activeBackdropFilters(),
               glass ? findsOneWidget : findsNothing,
               reason: '毛玻璃开启时详情必须真实模糊背后内容');

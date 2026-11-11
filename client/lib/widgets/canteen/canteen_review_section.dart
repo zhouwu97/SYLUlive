@@ -167,10 +167,8 @@ class CanteenReviewSection extends StatelessWidget {
                     children: [
                       for (var i = 0; i < reviews.length; i++) ...[
                         if (i > 0)
-                          AppCardDivider(
+                          const AppCardDivider(
                             height: 1,
-                            thickness: 0.5,
-                            color: CanteenTheme.borderColor(isDark),
                           ),
                         _ReviewItem(
                           review: reviews[i],

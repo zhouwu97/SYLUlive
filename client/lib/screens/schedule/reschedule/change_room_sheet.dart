@@ -141,7 +141,7 @@ class _ChangeRoomSheetState extends State<ChangeRoomSheet> {
                 style: TextStyle(fontSize: 12, color: tokens.textSecondary),
               ),
               const SizedBox(height: 16),
-              AppCardDivider(color: tokens.divider),
+              const AppCardDivider(),
               const SizedBox(height: 12),
               Text(
                 '修改范围',

@@ -1355,7 +1355,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
             ),
           ),
           const SizedBox(height: 14),
-          AppCardDivider(height: 1, color: CanteenTheme.borderColor(isDark)),
+          const AppCardDivider(height: 1),
           const SizedBox(height: 14),
           _buildDimensionRow('味道', _dimensions.taste, isDark, (score) {
             _setDimension(_dimensions.copyWith(taste: score));

@@ -167,9 +167,7 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
       backgroundWidget = Container(color: pageBgColor);
     }
 
-    final cardOpacity = themeProvider.isCleanBackgroundMode
-        ? 1.0
-        : themeProvider.componentOpacity;
+    final cardOpacity = themeProvider.effectiveComponentOpacity;
 
     final frameWidth = isLandscapeBg ? 230.0 : 122.0;
     final frameHeight = isLandscapeBg ? 130.0 : 216.0;
@@ -465,7 +463,7 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
             SettingsTile(
               icon: Icons.tune_rounded,
               title: '卡片外观',
-              subtitle: '不透明度 ${(themeProvider.componentOpacity * 100).round()}% · '
+              subtitle: '不透明度 ${(themeProvider.componentOpacityLevel * 100).round()}% · '
                   '${themeProvider.frostedGlass ? themeProvider.frostedGlassPresetLabel : '毛玻璃关闭'}',
               onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => const FrostedGlassSettingsScreen(),

@@ -167,11 +167,7 @@ class AppDialog extends Dialog {
       constraints: constraints,
       semanticsRole: semanticsRole,
       child: AppCardMaterial(
-        surfaceOpacity: glass
-            ? (settings!.shouldShowCustomBackground
-                ? settings.componentOpacity
-                : 1)
-            : 1,
+        surfaceOpacity: glass ? settings!.effectiveComponentOpacity : 1,
         elevation: glass ? 0 : elevation ?? theme.elevation ?? 6,
         shadowColor: shadowColor ?? theme.shadowColor,
         surfaceTintColor: glass

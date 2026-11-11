@@ -1547,7 +1547,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   padding:
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                   decoration: BoxDecoration(
-                    color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                    color: context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
                         ? Colors.transparent
                         : isDark
                             ? Colors.grey[800]
@@ -1580,7 +1580,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   padding:
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                   decoration: BoxDecoration(
-                    color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                    color: context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
                         ? Colors.transparent
                         : isDark
                             ? Colors.grey[800]

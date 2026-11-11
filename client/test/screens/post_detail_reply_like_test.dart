@@ -214,6 +214,9 @@ class LikeTestThemeProvider extends Fake
   bool get shouldShowCustomBackground => false;
 
   @override
+  double get effectiveComponentOpacity => 1;
+
+  @override
   bool get frostedGlass => false;
 }
 

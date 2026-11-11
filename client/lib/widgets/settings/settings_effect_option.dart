@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
+import '../app_card.dart';
 
 /// 液态底栏与毛玻璃共用的预设行，放在对应的 RadioGroup 内。
 class SettingsEffectOption<T> extends StatelessWidget {
@@ -56,9 +57,11 @@ class SettingsEffectOption<T> extends StatelessWidget {
                 child: Text(description,
                     textAlign: TextAlign.end,
                     style: AppTextStyles.labelMedium.copyWith(
-                      color: (dark
-                              ? AppColors.textSecondaryDark
-                              : AppColors.textSecondaryLight)
+                      color: appContentSecondaryColor(
+                              context,
+                              dark
+                                  ? AppColors.textSecondaryDark
+                                  : AppColors.textSecondaryLight)
                           .withValues(alpha: enabled ? 1 : .5),
                     )),
               ),

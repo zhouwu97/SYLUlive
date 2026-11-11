@@ -24,18 +24,9 @@ Color appContentSecondaryColor(BuildContext context, Color fallback) =>
         ? Theme.of(context).colorScheme.onSurfaceVariant
         : fallback;
 
-/// 承载文字的弹层底面不透明度。
-///
-/// 毛玻璃真正在模糊背景时沿用全局不透明度，保持玻璃观感；模糊被关闭
-/// （强度 0%）时背景不再虚化，用可读下限遮住底层课表等密集文字。
-double appTextSheetSurfaceOpacity(BuildContext context) {
-  final settings = context.watch<ThemeProvider?>();
-  if (settings == null || !settings.shouldShowCustomBackground) return 1;
-  if (settings.frostedGlass && settings.frostedGlassStrength > 0) {
-    return settings.componentOpacity;
-  }
-  return settings.componentOpacity.clamp(0.9, 1.0);
-}
+/// 文字弹层与普通卡片使用同一底色强度区间。
+double appTextSheetSurfaceOpacity(BuildContext context) =>
+    context.watch<ThemeProvider?>()?.effectiveComponentOpacity ?? 1;
 
 Gradient _glassGradient(
     BuildContext context, Gradient gradient, double opacity) {
@@ -96,6 +87,10 @@ class AppCardDivider extends Divider {
     super.endIndent,
     super.color,
   });
+
+  /// 卡片内部的分区线，两端统一留白；卡片外缘由底面自身分隔。
+  const AppCardDivider.inset({super.key, super.height = 1})
+      : super(indent: AppSpacing.lg, endIndent: AppSpacing.lg);
 
   @override
   Widget build(BuildContext context) {
@@ -224,10 +219,7 @@ class AppCardSurface extends Container {
         (dark
             ? AppColors.surfaceSecondaryDark
             : AppColors.surfaceSecondaryLight);
-    final alpha = (surfaceOpacity ??
-            (settings?.shouldShowCustomBackground == true
-                ? settings!.componentOpacity
-                : 1.0)) *
+    final alpha = (surfaceOpacity ?? settings?.effectiveComponentOpacity ?? 1.0) *
         progress;
     final radius = box?.borderRadius ?? BorderRadius.zero;
     final plain = box == null
@@ -326,9 +318,7 @@ class AppCard extends Card {
     final progress = glass ? AppSurfaceTransition.progressOf(context) : 1.0;
     final theme = Theme.of(context);
     final cardTheme = CardTheme.of(context);
-    final alpha = settings?.shouldShowCustomBackground == true
-        ? settings!.componentOpacity
-        : 1.0;
+    final alpha = settings?.effectiveComponentOpacity ?? 1.0;
     final fill = color ??
         cardTheme.color ??
         (theme.useMaterial3
@@ -434,10 +424,8 @@ class _AppCardMaterialState extends State<Material> {
         (dark
             ? AppColors.surfaceSecondaryDark
             : AppColors.surfaceSecondaryLight);
-    final alpha = material.surfaceOpacity ??
-        (settings?.shouldShowCustomBackground == true
-            ? settings!.componentOpacity
-            : 1.0);
+    final alpha =
+        material.surfaceOpacity ?? settings?.effectiveComponentOpacity ?? 1.0;
     final plainColor = widget.color ??
         switch (widget.type) {
           MaterialType.canvas => Theme.of(context).canvasColor,
@@ -448,14 +436,7 @@ class _AppCardMaterialState extends State<Material> {
       type: widget.type,
       elevation: glass ? 0 : widget.elevation,
       color: glass
-          ? appGlassSurfaceColor(
-              context,
-              surface,
-              progress *
-                  (material.surfaceOpacity ??
-                      (settings!.shouldShowCustomBackground
-                          ? settings.componentOpacity
-                          : 1)))
+          ? appGlassSurfaceColor(context, surface, progress * alpha)
           : alpha == 1 || widget.type == MaterialType.transparency
               ? settings?.shouldShowCustomBackground == true &&
                       widget.type != MaterialType.transparency

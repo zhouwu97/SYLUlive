@@ -13,6 +13,9 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
 import 'package:shenliyuan/controllers/post_reply_composer_controller.dart';
 import 'package:shenliyuan/widgets/post_reply_composer.dart';
+import 'package:shenliyuan/widgets/post_reply/post_reply_thread_frame.dart';
+
+import 'helpers/golden_viewport.dart';
 
 class _AuthProvider extends ChangeNotifier implements AuthProvider {
   _AuthProvider({required this.client});
@@ -48,6 +51,25 @@ Map<String, dynamic> _postJson({String content = '测试内容'}) {
     'like_count': 12,
   };
 }
+
+const _threadReplies = <Map<String, dynamic>>[
+  {
+    'id': 7,
+    'post_id': 100,
+    'author_id': 2,
+    'content': '根评论',
+    'child_reply_count': 2,
+    'created_at': '2026-08-01T00:00:00Z',
+  },
+  {
+    'id': 8,
+    'post_id': 100,
+    'author_id': 3,
+    'parent_reply_id': 7,
+    'content': '子回复预览',
+    'created_at': '2026-08-01T00:00:00Z',
+  },
+];
 
 Dio _detailDio({
   List<Map<String, dynamic>> replies = const [],
@@ -97,8 +119,9 @@ Widget _app(
   bool scrollToReplies = false,
   List<Map<String, dynamic>> replies = const [],
   String postContent = '测试内容',
+  Dio? client,
 }) {
-  final dio = _detailDio(replies: replies, postContent: postContent);
+  final dio = client ?? _detailDio(replies: replies, postContent: postContent);
   final auth = _AuthProvider(client: dio);
   return MultiProvider(
     providers: [
@@ -124,6 +147,119 @@ Widget _app(
 void main() {
   setUp(() {
     AppPreferencesStore.setMockInitialValues({});
+  });
+
+  for (final systemBack in [false, true]) {
+    testWidgets('楼中楼退出动画期间键盘变化不会访问已释放焦点 systemBack=$systemBack',
+        (tester) async {
+      await setGoldenViewport(tester, GoldenViewports.phone390x844);
+      addTearDown(tester.view.resetViewInsets);
+      final initial = Post.fromJson(_postJson());
+      await tester.pumpWidget(_app(
+        initial,
+        focusReplyComposer: false,
+        replies: _threadReplies,
+      ));
+      await tester.pumpAndSettle();
+
+      final thread = find.byType(PostReplyThreadFrame);
+      final input = find.descendant(
+        of: thread,
+        matching: find.byKey(const ValueKey('post-reply-input')),
+      );
+      final entry = find.textContaining('共 2 条回复');
+      await tester.ensureVisible(entry);
+      await tester.tap(entry);
+      await tester.pumpAndSettle();
+      await tester.tap(input);
+      await tester.pumpAndSettle();
+      await tester.enterText(input, '退出中的回复草稿');
+      final focus = tester.widget<TextField>(input).focusNode!;
+      expect(focus.hasFocus, isTrue);
+
+      if (systemBack) {
+        await tester.binding.handlePopRoute();
+      } else {
+        await tester.tap(find.byTooltip('关闭回复'));
+      }
+      await tester.pump();
+      expect(thread, findsOneWidget, reason: '关闭后仍保留退出动画中的弹层');
+      tester.view.viewInsets = const FakeViewPadding(bottom: 180);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.takeException(), isNull);
+      await tester.pumpAndSettle();
+      expect(thread, findsNothing);
+
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      await tester.tap(entry);
+      await tester.pumpAndSettle();
+      expect(thread, findsOneWidget);
+      expect(tester.widget<TextField>(input).focusNode, isNot(same(focus)));
+      await tester.enterText(input, '重新打开后可输入');
+      await tester.tap(find.byTooltip('关闭回复'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('楼中楼发送成功晚于弹层卸载时不再重置已释放的输入控制器', (tester) async {
+    await setGoldenViewport(tester, GoldenViewports.phone390x844);
+    final dio = _detailDio(replies: _threadReplies);
+    RequestInterceptorHandler? pendingSend;
+    RequestOptions? sendOptions;
+    dio.interceptors.insert(0, InterceptorsWrapper(onRequest: (options, handler) {
+      if (options.method == 'POST' && options.path == '/posts/100/replies') {
+        sendOptions = options;
+        pendingSend = handler;
+      } else {
+        handler.next(options);
+      }
+    }));
+    await tester.pumpWidget(_app(
+      Post.fromJson(_postJson()),
+      focusReplyComposer: false,
+      client: dio,
+    ));
+    await tester.pumpAndSettle();
+    final entry = find.textContaining('共 2 条回复');
+    await tester.ensureVisible(entry);
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+    final thread = find.byType(PostReplyThreadFrame);
+    final input = find.descendant(
+      of: thread,
+      matching: find.byKey(const ValueKey('post-reply-input')),
+    );
+    await tester.enterText(input, '晚到的成功回复');
+    final composer = tester.widget<PostReplyComposer>(find.descendant(
+      of: thread,
+      matching: find.byType(PostReplyComposer),
+    ));
+    final submitted = composer.onSubmit(composer.controller.draft);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(pendingSend, isNotNull);
+
+    await tester.tap(find.byTooltip('关闭回复'));
+    await tester.pumpAndSettle();
+    expect(thread, findsNothing);
+    pendingSend!.resolve(Response(
+      requestOptions: sendOptions!,
+      statusCode: 200,
+      data: <String, dynamic>{
+        'id': 9,
+        'post_id': 100,
+        'author_id': 1,
+        'parent_reply_id': 7,
+        'content': '晚到的成功回复',
+        'created_at': '2026-08-01T00:00:00Z',
+      },
+    ));
+    await tester.pumpAndSettle();
+    expect(await submitted, isTrue);
+    expect(thread, findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('点击评论回复不重置详情滚动位置', (tester) async {

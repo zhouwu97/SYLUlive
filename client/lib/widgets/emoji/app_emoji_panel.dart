@@ -1094,10 +1094,12 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
     final divider =
         isDark ? AppColors.composerDividerDark : AppColors.composerDividerLight;
     final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
     return Container(
       height: 50,
       decoration: BoxDecoration(
-        color: glass
+        color: customBackground
             ? Colors.transparent
             : isDark
                 ? AppColors.surfaceSecondaryDark

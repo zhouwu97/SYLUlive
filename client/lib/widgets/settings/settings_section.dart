@@ -20,21 +20,12 @@ class SettingsSection extends StatelessWidget {
     if (children.isEmpty) return const SizedBox.shrink();
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final dividerColor =
-        isDark ? Colors.white.withValues(alpha: 0.06) : CampusTheme.softBorder;
-
     final List<Widget> cardItems = [];
     for (int i = 0; i < children.length; i++) {
       cardItems.add(children[i]);
       if (i < children.length - 1) {
         cardItems.add(
-          AppCardDivider(
-            height: 1,
-            thickness: 1,
-            indent: 62,
-            endIndent: 16,
-            color: dividerColor,
-          ),
+          const AppCardDivider.inset(),
         );
       }
     }
@@ -52,7 +43,8 @@ class SettingsSection extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white70 : CampusTheme.subText,
+                  color: appContentSecondaryColor(
+                      context, isDark ? Colors.white70 : CampusTheme.subText),
                 ),
               ),
             ),

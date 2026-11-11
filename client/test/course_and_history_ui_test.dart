@@ -89,7 +89,7 @@ void main() {
       await appearance.setBackgroundImage('morenbeijing.jpeg');
       await appearance.trySetCustomBackgroundMode();
       await appearance.setFrostedGlass(true);
-      await appearance.setComponentOpacity(0);
+      await appearance.setComponentOpacityLevel(0);
 
       await tester.pumpWidget(
         MultiProvider(
@@ -132,10 +132,10 @@ void main() {
           (tester.widget<DecoratedBox>(painted).decoration as BoxDecoration)
               .color!
               .a,
-          0,
-          reason: '毛玻璃开启时详情底面跟随全局不透明度，由背景模糊遮住底层文字');
+          .75,
+          reason: '新刻度最低档的详情底面使用 75% 不透明度');
       expect(activeBackdropFilters(), findsOneWidget,
-          reason: '透明度为零时详情仍必须真实模糊背后内容');
+          reason: '最低档的详情仍必须真实模糊背后内容');
       expect(find.text('数字图像处理'), findsOneWidget);
       expect(find.text('教务课表'), findsOneWidget);
 

@@ -99,7 +99,7 @@ void main() {
           await tester.pumpAndSettle();
           final before = tester.getRect(find.text(title));
           await theme.setBackgroundImage('morenbeijing.jpeg');
-          await theme.setComponentOpacity(.75);
+          await theme.setComponentOpacityLevel(0);
           for (final glass in [false, true, false]) {
             await theme.setFrostedGlass(glass);
             await tester.pumpAndSettle();
@@ -171,7 +171,7 @@ void main() {
         final theme = ThemeProvider(loadOnStart: false);
         addTearDown(theme.dispose);
         await theme.setBackgroundImage('morenbeijing.jpeg');
-        await theme.setComponentOpacity(.55);
+        await theme.setComponentOpacityLevel(0);
         final capture = GlobalKey();
         const text = SizedBox(height: 100, width: 220, child: Text('前景文字保持清晰'));
         final content = reading
@@ -221,10 +221,11 @@ void main() {
         }
 
         await tester.pumpAndSettle();
-        expect(await spread(), greaterThan(80));
+        final unblurredSpread = await spread();
+        expect(unblurredSpread, greaterThan(255 * .25 * .8));
         await theme.setFrostedGlass(true);
         await tester.pumpAndSettle();
-        expect(await spread(), lessThan(20),
+        expect(await spread(), lessThan(unblurredSpread * .2),
             reason: '检查实际模糊后的像素，而非仅检查滤镜 Widget 是否存在');
         if (reading && !lazy) {
           expect(await spread(outside: true), lessThan(20),

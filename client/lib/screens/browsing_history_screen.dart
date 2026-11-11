@@ -316,7 +316,10 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
                   ),
                 ),
               ),
-              ...groupItems.map((item) => _buildItemTile(item, tokens)),
+              for (var index = 0; index < groupItems.length; index++) ...[
+                if (index > 0) const AppCardDivider.inset(),
+                _buildItemTile(groupItems[index], tokens),
+              ],
             ],
           ),
         );
@@ -342,14 +345,6 @@ class _BrowsingHistoryScreenState extends State<BrowsingHistoryScreen>
         onTap: () => _openDetail(item),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            border: Border(
-                bottom: BorderSide(
-                    color: context.watch<ThemeProvider?>()?.frostedGlass == true
-                        ? Colors.transparent
-                        : tokens.divider,
-                    width: 0.5)),
-          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

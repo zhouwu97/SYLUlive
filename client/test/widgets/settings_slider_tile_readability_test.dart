@@ -18,7 +18,7 @@ void main() {
         testWidgets('滑块说明与百分比之间有可读间隔 $viewport dark=$dark scale=$scale',
             (tester) async {
           await setGoldenViewport(tester, viewport);
-          const subtitle = '直接观察本页卡片；0% 保留底色并停止背景模糊';
+          const subtitle = '模糊卡片背后的背景，强度越高越柔和，0% 关闭模糊';
           await tester.pumpWidget(GoldenTestApp(
             themeMode: dark ? ThemeMode.dark : ThemeMode.light,
             textScaler: TextScaler.linear(scale),

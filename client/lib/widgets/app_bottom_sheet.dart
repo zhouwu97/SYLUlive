@@ -44,15 +44,16 @@ Future<T?> showAppModalBottomSheet<T>({
   return showModalBottomSheet<T>(
     context: context,
     builder: glass
-        ? (context) => FrostedGlass(enabled: true, child: builder(context))
+        ? (context) => FrostedGlass(
+            enabled: true,
+            child: builder(context),
+          )
         : builder,
     backgroundColor: glass
         ? appGlassSurfaceColor(
             context,
             surface,
-            appearance!.shouldShowCustomBackground
-                ? appearance.componentOpacity
-                : 1)
+            appearance!.effectiveComponentOpacity)
         : backgroundColor,
     barrierLabel: barrierLabel,
     elevation: glass ? 0 : elevation,

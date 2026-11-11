@@ -193,9 +193,8 @@ class _ReplyNotificationSheetContentState
       shrinkWrap: items.length <= 6,
       physics: items.length <= 6 ? const NeverScrollableScrollPhysics() : null,
       itemCount: items.length,
-      separatorBuilder: (_, __) => AppCardDivider(
+      separatorBuilder: (_, __) => const AppCardDivider(
         height: 1,
-        color: colors.outlineVariant.withValues(alpha: 0.25),
       ),
       itemBuilder: (_, index) {
         final item = items[index];

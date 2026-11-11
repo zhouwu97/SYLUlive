@@ -939,10 +939,9 @@ class _EmojiManagementScreenState extends State<EmojiManagementScreen> {
                           if (visible.isEmpty)
                             const EmojiStateView(
                                 title: '没有找到这个表情包', detail: '换个关键词试试。'),
-                          for (final pack in visible) ...[
-                            _packRow(pack),
-                            AppCardDivider(
-                                height: 1, color: emojiBorder(context))
+                          for (var index = 0; index < visible.length; index++) ...[
+                            if (index > 0) const AppCardDivider(height: 1),
+                            _packRow(visible[index]),
                           ],
                         ],
                       ],

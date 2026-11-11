@@ -70,7 +70,7 @@ void main() {
     await tester.runAsync(() async {
       final image = await render.toImage();
       final png = await image.toByteData(format: ui.ImageByteFormat.png);
-      final file = File('../scratch/managed-ai-admin-20261111.png');
+      final file = File('build/test-captures/managed-ai/overview.png');
       await file.parent.create(recursive: true);
       await file.writeAsBytes(png!.buffer.asUint8List());
       image.dispose();
@@ -139,7 +139,8 @@ void main() {
         final image = await render.toImage();
         final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
         final file = File(
-            '../scratch/bot-full-regression-20261111/所属AI-${dark ? '深色' : '浅色'}.png');
+            'build/test-captures/managed-ai/${dark ? 'dark' : 'light'}.png');
+        await file.parent.create(recursive: true);
         await file.writeAsBytes(bytes!.buffer.asUint8List());
         image.dispose();
       });

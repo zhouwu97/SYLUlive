@@ -217,7 +217,7 @@ func (h *IntegrationHandler) Token(c *gin.Context) {
 	if !h.protocolLimit(c, "token", 120) {
 		return
 	}
-	form, err := integrationForm(c, "client_id", "grant_type", "device_code", "refresh_token", "scope")
+	form, err := integrationForm(c, "client_id", "grant_type", "device_code", "refresh_token", "scope", "refresh_request_id")
 	if err != nil {
 		writeIntegrationError(c, err, true)
 		return
@@ -229,7 +229,7 @@ func (h *IntegrationHandler) Token(c *gin.Context) {
 	var response services.IntegrationTokenResponse
 	switch form.Get("grant_type") {
 	case services.IntegrationDeviceGrant:
-		if form.Get("refresh_token") != "" {
+		if form.Get("refresh_token") != "" || form.Get("refresh_request_id") != "" {
 			err = &services.IntegrationError{Code: "invalid_request", Status: 400}
 		} else {
 			err = h.auth.ValidateDeviceScope(c.Request.Context(), form.Get("device_code"), form.Get("scope"))
@@ -241,7 +241,7 @@ func (h *IntegrationHandler) Token(c *gin.Context) {
 		if form.Get("device_code") != "" || form.Get("scope") != "" {
 			err = &services.IntegrationError{Code: "invalid_request", Status: 400}
 		} else {
-			response, err = h.auth.Refresh(c.Request.Context(), form.Get("refresh_token"))
+			response, err = h.auth.RefreshWithRequest(c.Request.Context(), form.Get("refresh_token"), form.Get("refresh_request_id"))
 		}
 	default:
 		err = &services.IntegrationError{Code: "unsupported_grant_type", Status: 400}
@@ -272,19 +272,6 @@ func (h *IntegrationHandler) RevokeToken(c *gin.Context) {
 	c.Status(200)
 }
 
-// 同一登录会话的一次密码验证可覆盖一段连续的助手管理操作；刷新令牌不延长此窗口。
-const integrationRecentAuthenticationWindow = 30 * time.Minute
-
-func (h *IntegrationHandler) recent(c *gin.Context) bool {
-	family := c.GetString("session_id")
-	var session models.RefreshToken
-	err := h.db.WithContext(c.Request.Context()).Where("user_id = ? AND token_family = ? AND revoked_at IS NULL AND expires_at > ?", c.GetUint("user_id"), family, h.auth.Now()).Order("created_at DESC").Take(&session).Error
-	if family == "" || err != nil || session.AuthenticatedAt == nil || session.AuthenticatedAt.Before(h.auth.Now().Add(-integrationRecentAuthenticationWindow)) || session.AuthenticatedAt.After(h.auth.Now().Add(time.Minute)) {
-		writeIntegrationError(c, &services.IntegrationError{Code: "recent_authentication_required", Status: 403}, false)
-		return false
-	}
-	return true
-}
 func (h *IntegrationHandler) Lookup(c *gin.Context) {
 	if err := h.auth.AllowRequest(c.Request.Context(), "lookup", strconv.FormatUint(uint64(c.GetUint("user_id")), 10), 10, time.Minute); err != nil {
 		writeIntegrationError(c, err, false)
@@ -309,9 +296,6 @@ func (h *IntegrationHandler) Decide(c *gin.Context) {
 	var input services.IntegrationConsentDecision
 	if decodeStrictJSON(c, &input, 4096) != nil {
 		writeIntegrationError(c, &services.IntegrationError{Code: "invalid_request", Status: 422}, false)
-		return
-	}
-	if input.Allow && !h.recent(c) {
 		return
 	}
 	for _, scope := range input.Scopes {
@@ -365,15 +349,13 @@ func (h *IntegrationHandler) List(c *gin.Context) {
 	c.JSON(200, gin.H{"bindings": rows, "personal_data_enabled": h.options.PersonalDataEnabled,
 		"proposals_enabled": h.options.ProposalsEnabled, "auto_reply_enabled": h.options.AutoReplyEnabled, "auto_post_enabled": h.options.AutoPostEnabled})
 }
+
 // UpdateScopes 本人直接增减当前连接的权限；只对新增 scope 校验站点开关，
 // 站点关闭某功能后仍允许用户收回或保留既有权限，不会因此卡住其他调整。
 func (h *IntegrationHandler) UpdateScopes(c *gin.Context) {
 	var input services.IntegrationScopeUpdate
 	if decodeStrictJSON(c, &input, 4096) != nil {
 		writeIntegrationError(c, &services.IntegrationError{Code: "invalid_request", Status: 422}, false)
-		return
-	}
-	if !h.recent(c) {
 		return
 	}
 	current := map[string]bool{}

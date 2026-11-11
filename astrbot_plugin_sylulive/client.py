@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import time
+import uuid
 from urllib.parse import urlsplit
 
 import httpx
@@ -57,6 +58,7 @@ class BusinessClient:
         self.lock = asyncio.Lock()
         self.pending = None
         self.generation = 0
+        self.refresh_recovery_supported = True
 
     async def close(self):
         await self.http.aclose()
@@ -241,16 +243,22 @@ class BusinessClient:
             if self.tokens["expires_at"] > time.time() + 30:
                 return self.tokens["access_token"]
             old = self.tokens["refresh_token"]
+            if self.refresh_recovery_supported and not self.tokens.get("refresh_request_id"):
+                self.tokens["refresh_request_id"] = str(uuid.uuid4())
+                self.store.save(self.tokens)
+            data = {"client_id": CLIENT_ID, "grant_type": "refresh_token", "refresh_token": old}
+            if self.refresh_recovery_supported:
+                data["refresh_request_id"] = self.tokens["refresh_request_id"]
             try:
-                body = await self._request(
-                    "POST",
-                    "/api/oauth/token",
-                    data={
-                        "client_id": CLIENT_ID,
-                        "grant_type": "refresh_token",
-                        "refresh_token": old,
-                    },
-                )
+                try:
+                    body = await self._request("POST", "/api/oauth/token", data=data)
+                except IntegrationProblem as error:
+                    if error.code != "invalid_request" or "refresh_request_id" not in data:
+                        raise
+                    # 旧服务不认识新字段，拒绝发生在刷新之前，可沿用旧协议。
+                    self.refresh_recovery_supported = False
+                    data.pop("refresh_request_id")
+                    body = await self._request("POST", "/api/oauth/token", data=data)
                 self._save(body)
             except IntegrationProblem as error:
                 # 临时网络故障保留已保存授权，由下一次请求继续刷新。
@@ -346,7 +354,7 @@ class BusinessClient:
             raise IntegrationProblem("invalid_response") from None
 
     async def public_image(self, path):
-        if path != MAP_PATH and (
+        if path != MAP_PATH and not (isinstance(path, str) and re.fullmatch(r"/stickers/[a-f0-9]{32}", path)) and (
             not isinstance(path, str)
             or not path.startswith("/uploads/")
             or any(v in path for v in ("..", "\\", "?", "#", "%"))

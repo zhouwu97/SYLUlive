@@ -193,7 +193,7 @@ func (s *IntegrationActionService) UpdateManagedBot(ctx context.Context, owner u
 				}
 			}
 			actor := models.User{Nickname: "[AI] " + name, Avatar: avatar, Role: models.RoleUser, AccountStatus: "bot", PasswordHash: "!managed-bot:" + uuid.NewString()}
-			if err := tx.Create(&actor).Error; err != nil {
+			if err := createManagedBotActor(tx, &actor); err != nil {
 				return err
 			}
 			bot = models.ManagedBot{OwnerID: owner, UserID: actor.ID, Enabled: input.Enabled, CreatedAt: s.Auth.Now()}

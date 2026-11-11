@@ -56,8 +56,8 @@ func TestCheckInHandlerInspectAndRebuildAllStats(t *testing.T) {
 	require.Equal(t, http.StatusOK, w1.Code)
 
 	var inspectResp struct {
-		Success      bool                         `json:"success"`
-		TotalCount   int                          `json:"total_count"`
+		Success      bool                          `json:"success"`
+		TotalCount   int                           `json:"total_count"`
 		Inconsistent []models.CheckInInconsistency `json:"inconsistent"`
 	}
 	require.NoError(t, json.Unmarshal(w1.Body.Bytes(), &inspectResp))

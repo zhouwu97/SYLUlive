@@ -39,15 +39,16 @@ type IntegrationBinding struct {
 }
 
 type IntegrationCredential struct {
-	ID                string     `gorm:"size:36;primaryKey" json:"-"`
-	BindingID         string     `gorm:"size:36;not null;index" json:"-"`
-	TokenHash         string     `gorm:"size:64;not null;uniqueIndex" json:"-"`
-	Kind              string     `gorm:"size:10;not null" json:"-"`
-	Epoch             uint       `gorm:"not null" json:"-"`
-	UsedAt            *time.Time `json:"-"`
-	ExpiresAt         time.Time  `gorm:"index;not null" json:"-"`
-	AbsoluteExpiresAt time.Time  `json:"-"`
-	CreatedAt         time.Time  `json:"-"`
+	ID                 string     `gorm:"size:36;primaryKey" json:"-"`
+	BindingID          string     `gorm:"size:36;not null;index" json:"-"`
+	TokenHash          string     `gorm:"size:64;not null;uniqueIndex" json:"-"`
+	Kind               string     `gorm:"size:10;not null" json:"-"`
+	Epoch              uint       `gorm:"not null" json:"-"`
+	UsedAt             *time.Time `json:"-"`
+	RefreshRequestHash string     `gorm:"size:64;not null;default:''" json:"-"`
+	ExpiresAt          time.Time  `gorm:"index;not null" json:"-"`
+	AbsoluteExpiresAt  time.Time  `json:"-"`
+	CreatedAt          time.Time  `json:"-"`
 }
 
 // ManagedBot 无登录凭据/教务身份；一个创建者至多一个，公开时仅展示独立机器人身份。

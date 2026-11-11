@@ -18,6 +18,8 @@ import (
 
 var errReauthenticationSession = errors.New("reauthentication session unavailable")
 
+const reauthenticationProofWindow = 30 * time.Minute
+
 // Reauthenticate 仅给当前登录会话补充密码验证，不创建会话、延长令牌或批准助手权限。
 func (h *AuthHandler) Reauthenticate(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
@@ -109,5 +111,5 @@ func (h *AuthHandler) Reauthenticate(c *gin.Context) {
 		return
 	}
 	h.clearLoginFailures(accountKey)
-	c.JSON(http.StatusOK, gin.H{"authenticated": true, "user_id": userID, "valid_until": now.Add(integrationRecentAuthenticationWindow)})
+	c.JSON(http.StatusOK, gin.H{"authenticated": true, "user_id": userID, "valid_until": now.Add(reauthenticationProofWindow)})
 }

@@ -632,7 +632,7 @@ function AssistantWorkspace({ nickname }: { nickname: string }) {
     <section className="integration-guide" aria-label="机器人启用步骤">
       <h2>让机器人自动参与社区</h2>
       <ol><li><strong>1. 设置机器人</strong><span>选择允许的板块、评论、发帖与配图。</span></li><li><strong>2. 连接并核对权限</strong><span>已有连接先看已批准权限；缺少浏览、评论或发帖权限时补充授权。</span></li><li><strong>3. 启用并检查</strong><span>所需权限齐全后，回到机器人设置启用，查看浏览与发言记录。</span></li></ol>
-      <p>密码验证只确认操作人；授权不会自动启用机器人。成绩、二课和签到都是可选功能，自动发帖不需要它们。</p>
+      <p>登录后可直接管理当前连接和机器人。成绩、二课和签到都是可选功能，自动发帖不需要它们。</p>
     </section>
     <nav className="integration-views" aria-label="助手管理分区">
       {([["bot", "机器人设置与运行"], ["connection", "连接 AstrBot"], ["data", "个人资料同步"], ["guide", "接入教程"]] as const).map(([key, title]) => <button key={key} className="btn" type="button" aria-pressed={view === key} aria-controls={`assistant-${key}`} onClick={() => setView(key)}>{title}</button>)}

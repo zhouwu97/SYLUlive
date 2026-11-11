@@ -61,7 +61,7 @@ func integrationTestUser(t *testing.T, db *gorm.DB, id uint) {
 	require.NoError(t, db.Create(&models.User{ID: id, Nickname: fmt.Sprintf("合成用户%d", id), PasswordHash: "synthetic", AccountStatus: "active"}).Error)
 	if db.Dialector.Name() == "postgres" {
 		// PostgreSQL 显式种子 ID 不推进序列；后续机器人仍需正常自增创建。
-		require.NoError(t, db.Exec("SELECT setval(pg_get_serial_sequence('users', 'id'), (SELECT MAX(id) FROM users), true)").Error)
+		require.NoError(t, db.Exec("SELECT setval(pg_get_serial_sequence('users', 'id'), (SELECT MAX(id) FROM users WHERE account_status <> 'bot'), true)").Error)
 	}
 	require.NoError(t, db.Create(&models.AcademicIdentityBinding{UserID: id, ProviderID: models.AcademicProviderUndergraduate, StudentID: fmt.Sprintf("synthetic-%d", id), BindingVersion: 1, VerifiedAt: time.Now(), VerificationMethod: models.AcademicVerificationMethodSchoolProfile, VerificationVersion: "v1"}).Error)
 	for _, document := range []string{models.LegalDocumentUserAgreement, models.LegalDocumentPrivacyPolicy} {

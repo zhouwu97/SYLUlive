@@ -49,6 +49,7 @@ class BotRuntimeManager:
         self.network_slots, self.model_slots = asyncio.Semaphore(4), asyncio.Semaphore(2)
         self.task, self.closed, self.restore_error = None, False, False
         self.last_discovery = self.monotonic()
+        self.scope_checks = {}
 
     def health(self):
         alive = bool(self.task and not self.task.done() and not self.closed)
@@ -83,6 +84,18 @@ class BotRuntimeManager:
         if self.closed:
             return
         slots = [(self.owner_identity, self.owner_client, ""), *self.accounts.clients()]
+        # 官网可以原地补充权限；缺少读取 scope 的已连接账号也要周期同步。
+        for _, client, _ in slots:
+            if (self.config.get("community_agent_enabled", False) is True
+                    and (client is self.owner_client or self.multi_enabled())
+                    and client.tokens and not self._eligible(client)
+                    and self.monotonic() >= self.scope_checks.get(client, 0)):
+                self.scope_checks[client] = self.monotonic() + 60
+                try:
+                    async with self.network_slots:
+                        await client.refresh_scope()
+                except IntegrationProblem:
+                    pass
         active = {client for _, client, _ in slots if self._eligible(client)}
         for client in list(self.workers):
             if client not in active:

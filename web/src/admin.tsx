@@ -1,3 +1,5 @@
+import {useEffect,useRef} from 'react';
+import './admin.css';
 import {useSearchParams} from 'react-router-dom';
 import {useAuth} from './auth';
 import {rows,useApi,write,time,entity,type Entity} from './api';
@@ -13,10 +15,17 @@ const queues:Record<string,[string,string]>={
 };
 export function Admin(){
   const auth=useAuth(); const [params,setParams]=useSearchParams();const tab=params.get('tab')||'feedback';
+  const navigation=useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    const showCurrent=()=>navigation.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({block:'nearest',inline:'nearest'});
+    showCurrent();
+    window.addEventListener('resize',showCurrent);
+    return ()=>window.removeEventListener('resize',showCurrent);
+  },[tab,auth.user?.id]);
   if(!auth.user)return <Empty icon="lock" title="登录后访问管理中心"><button className="btn primary" onClick={auth.login}>登录</button></Empty>;
   if(!['admin','super_admin'].includes(auth.user.role))return <Empty title="当前账号没有管理权限"/>;
   const tabs:[string,string][]=[["integrations","助手授权"],["feedback","工单"],...Object.entries(queues).filter(([id])=>id!=='awards'||auth.user?.role==='super_admin').map(([id,[name]])=>[id,name] as [string,string]),...managementTabs.filter(([id])=>!['bots','users','releases','logs'].includes(id)||auth.user?.role==='super_admin')];
-  return <><Head title="管理中心" description="审核结果和权限以服务器响应为准"/><Tabs value={tab} tabs={tabs} onChange={tab=>setParams({tab})}/>{tab==='integrations'?<IntegrationManagement key={auth.user.id}/>:tab==='feedback'?<Feedback admin/>:queues[tab]?<Queue kind={tab}/>:managementTabs.some(([id])=>id===tab)?<Management kind={tab}/>:<Empty title="管理模块不存在"/>}</>;
+  return <><Head title="管理中心" description="审核结果和权限以服务器响应为准"/><div className="admin-tabs" ref={navigation}><Tabs value={tab} tabs={tabs} onChange={tab=>setParams({tab})}/></div>{tab==='integrations'?<IntegrationManagement key={auth.user.id}/>:tab==='feedback'?<Feedback admin/>:queues[tab]?<Queue kind={tab}/>:managementTabs.some(([id])=>id===tab)?<Management kind={tab}/>:<Empty title="管理模块不存在"/>}</>;
 }
 function Queue({kind}:{kind:string}){
   const meta=queues[kind],ui=useUI();const q=useApi(meta[1]); const list=rows(q.data,'reports','verifications','canteens','teachers');

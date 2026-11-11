@@ -81,6 +81,8 @@ test("社区与集市网络中断显示中文恢复入口，重试保留筛选",
     await expect(page.getByRole("heading", { name: "网络连接暂不可用", exact: true })).toBeVisible();
     await expect(page.getByText("暂时无法连接服务器，请检查网络后重试。", { exact: true })).toBeVisible();
     await expect(page.getByText("Failed to fetch", { exact: true })).toHaveCount(0);
+    // 等初次身份恢复及其查询失效完成，避免后台刷新抢先移除重试按钮。
+    await page.waitForLoadState("networkidle");
     const before = new URL(page.url()).search;
     disconnected = false;
     await page.locator(route.startsWith("market") ? ".market-page" : ".community-page").getByRole("button", { name: "重试", exact: true }).click();

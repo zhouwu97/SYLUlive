@@ -136,11 +136,10 @@ func TestManagedBotHTTPCreatePausedEditRecentPauseAndReadPolicy(t *testing.T) {
 		require.NoError(t, db.Model(&models.WaterSection{}).Where("slug = ?", "campus_life").Update("status", "active").Error)
 	}
 	require.NoError(t, db.Callback().Query().Remove(callback))
-	// Stale authentication blocks edits but must not block the emergency pause.
+	// 当前登录仍有效时，编辑和暂停都不再额外验证密码。
 	require.NoError(t, db.Model(&models.RefreshToken{}).Where("user_id = ?", owner).Update("authenticated_at", time.Now().Add(-time.Hour)).Error)
 	w = send("POST", "/api/connected-apps/bot", jwt, map[string]interface{}{"name": "改名鱼", "enabled": false, "policy": policy})
-	require.Equal(t, 403, w.Code, w.Body.String())
-	require.Contains(t, w.Body.String(), "recent_authentication_required")
+	require.Equal(t, 200, w.Code, w.Body.String())
 	w = send("POST", "/api/connected-apps/bot", jwt, map[string]interface{}{"enabled": false})
 	require.Equal(t, 200, w.Code, w.Body.String())
 	require.Contains(t, w.Body.String(), `"enabled":false`)

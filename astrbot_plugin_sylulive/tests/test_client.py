@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from urllib.parse import parse_qs
 import httpx
 import pytest
 from astrbot_plugin_sylulive.client import (
@@ -21,6 +22,53 @@ class Store:
 
     def delete(self):
         self.value = None
+
+
+@pytest.mark.asyncio
+async def test_refresh_lost_response_reuses_saved_request_after_restart():
+    seen = []
+    def respond(request):
+        seen.append(parse_qs(request.content.decode())["refresh_request_id"][0])
+        if len(seen) == 1:
+            raise httpx.ReadTimeout("synthetic lost response")
+        return httpx.Response(200, json=tokens())
+    store = Store()
+    client = BusinessClient("https://fixture.invalid", store, transport=httpx.MockTransport(respond))
+    client._save(tokens())
+    client.tokens["expires_at"] = 0
+    try:
+        with pytest.raises(IntegrationProblem, match="network_unavailable"):
+            await client._access()
+    finally:
+        await client.close()
+    restarted = BusinessClient("https://fixture.invalid", store, transport=httpx.MockTransport(respond))
+    try:
+        await restarted._access()
+        assert len(seen) == 2 and seen[0] == seen[1]
+        assert "refresh_request_id" not in store.value
+    finally:
+        await restarted.close()
+
+
+@pytest.mark.asyncio
+async def test_refresh_old_server_rejects_extension_before_rotation():
+    seen = []
+    def respond(request):
+        data = parse_qs(request.content.decode())
+        seen.append(data)
+        if "refresh_request_id" in data:
+            return httpx.Response(400, json={"error": "invalid_request"})
+        return httpx.Response(200, json=tokens())
+    client = BusinessClient("https://fixture.invalid", Store(), transport=httpx.MockTransport(respond))
+    try:
+        client._save(tokens())
+        client.tokens["expires_at"] = 0
+        await client._access()
+        assert len(seen) == 2
+        assert "refresh_request_id" not in seen[1]
+        assert client.tokens is not None
+    finally:
+        await client.close()
 
 
 @pytest.mark.asyncio

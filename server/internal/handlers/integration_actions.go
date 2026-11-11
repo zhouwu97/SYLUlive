@@ -55,9 +55,6 @@ func (h *IntegrationHandler) ActionDecision(c *gin.Context) {
 		writeIntegrationError(c, &services.IntegrationError{Code: "invalid_request", Status: 422}, false)
 		return
 	}
-	if d.Allow && !h.recent(c) {
-		return
-	}
 	if d.Allow && !h.options.OwnerPublishEnabled {
 		writeIntegrationError(c, &services.IntegrationError{Code: "owner_publish_disabled", Status: 403}, false)
 		return

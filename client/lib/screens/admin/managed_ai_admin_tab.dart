@@ -19,6 +19,12 @@ class _ManagedAIAdminTabState extends State<ManagedAIAdminTab> {
     _request = _load();
   }
 
+  @override
+  void didUpdateWidget(covariant ManagedAIAdminTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.dio, widget.dio)) _request = _load();
+  }
+
   Future<Response<dynamic>> _load() {
     final request =
         widget.dio.get('/super/users', queryParameters: {'kind': 'ai'});

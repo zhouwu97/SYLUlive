@@ -25,6 +25,9 @@ class Client:
         self.supported, self.busy = True, False
         self.reply_service = True
 
+    async def refresh_scope(self):
+        return self.tokens["scope"]
+
     async def public_image(self, _):
         raise AssertionError("no image was requested")
 
@@ -81,6 +84,36 @@ async def act(**request):
     assert "error" not in json.loads(await replies.handler(request["event"], ident))
     result = await tools.get_tool("comment_public_post").handler(request["event"], ident, "合成公开评论")
     assert json.loads(result)["state"] == "published"
+
+
+@pytest.mark.asyncio
+async def test_existing_connection_discovers_scope_added_on_website_without_rebinding(tmp_path):
+    now = [1000]
+    client = Client(10)
+    client.tokens = {"scope": "profile:read_minimal"}
+    refreshes = []
+    async def refresh():
+        refreshes.append(now[0])
+        if len(refreshes) == 2:
+            client.tokens["scope"] = "profile:read_minimal community:read"
+        return client.tokens["scope"]
+    client.refresh_scope = refresh
+    manager = runtime(tmp_path, [client], now=now)
+    try:
+        await manager.discover(start_workers=False)
+        assert not manager.workers and refreshes == [1000]
+        now[0] += 20
+        await manager.discover(start_workers=False)
+        assert refreshes == [1000]
+        now[0] += 41
+        await manager.discover(start_workers=False)
+        assert client in manager.workers and len(refreshes) == 2
+        client.tokens = None
+        now[0] += 61
+        await manager.discover(start_workers=False)
+        assert client not in manager.workers and len(refreshes) == 2
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio

@@ -33,6 +33,13 @@ regexes = ['^emoji_favorites_v1$']
 paths = ['^client/lib/services/emoji_favorite_service\.dart$']
 
 [[rules.allowlists]]
+description = "扫码同步测试中公开的合成会话 ID"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['^BBECAwQFBgcICQoLDA0ODw$']
+paths = ['^web/src/academic-transfer\.test\.ts$']
+
+[[rules.allowlists]]
 description = "已发布知识库清单的公开文档 ID"
 condition = "AND"
 regexes = ['^retained-v04-[1-6]$', '^sylu-student-status-2024-23$', '^sylu-retake-2025-6$', '^sylu-major-transfer-2020-4$', '^sylu-exam-misconduct-2024-17$', '^sylu-competition-grade-reward-2024-54$', '^sylu-competition-grade-reward-forms-2024-54$']

@@ -25,7 +25,7 @@ from .astrbot_persona import selected_prompt
 from .creator_memory import CreatorMemory
 from .community_publisher import CommunityPublisher
 from .personal import personal_intent
-from .chat_media import MEME_GUIDANCE, chat_tools, trusted_meme
+from .chat_media import MEME_GUIDANCE, chat_tools, trusted_meme, sticker_request
 from .chat_context import (CURRENT_INPUT_GUIDANCE, QUOTE_GUIDANCE, current_quote,
                            capture_merged_input, isolate_current_input,
                            restore_private_context, use_merged_input)
@@ -76,6 +76,7 @@ PUBLIC_GROUP_TOOLS = frozenset(
         "sylulive_replies",
         "sylulive_reply_context",
         "sylulive_stickers",
+        "sylulive_send_sticker",
         "sylulive_sections",
         "sylulive_canteens",
         "sylulive_canteen",
@@ -249,7 +250,7 @@ def read_kinds(path):
     return set()
 
 
-@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.5.7")
+@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.5.8")
 class SYLUlivePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -885,6 +886,22 @@ class SYLUlivePlugin(Star):
         if not event.is_at_or_wake_command or not any(self.permission(event, action).allowed for action in ("public_read", "checkin", "grades", "erke")):
             return
         text = (event.message_str or "").strip().rstrip("？?！!。")
+        if query := sticker_request(text):
+            try:
+                if not self.config.get("community_chat_memes_enabled", False):
+                    yield event.plain_result("当前聊天未开启表情发送，请在插件权限管理中开启。")
+                    return
+                catalog = json.loads(await self.stickers(event, query=query))
+                items = catalog.get("data", {}).get("items", [])
+                if not items:
+                    yield event.plain_result("没有找到这个表情，可以换个关键词。")
+                    return
+                result = json.loads(await self.send_sticker(event, items[0]["sticker_id"]))
+                if result.get("state") != "sent":
+                    yield event.plain_result("表情发送未确认，请稍后再试。")
+            finally:
+                event.stop_event()
+            return
         if text in {
             "吃什么",
             "今天吃什么",
@@ -1711,18 +1728,57 @@ class SYLUlivePlugin(Star):
     async def stickers(
         self, event: AstrMessageEvent, query: str = "", after_sticker_id: str = ""
     ):
-        """查询服务器允许的内置表情 ID，不能把 QQ 表情 ID 直接传入。
+        """查询服务器允许的内置表情 ID。发到当前聊天请继续调用 sylulive_send_sticker；搜索无结果时可留空查询。
 
         Args:
             query(string): 表情名称关键词。
             after_sticker_id(string): 上一页 next_after_sticker_id，首屏留空。
         """
+        query = {"开心": "好耶", "高兴": "好耶", "快乐": "好耶"}.get(query.strip(), query)
         return await self.tool(
             event,
             "GET",
             "/community/stickers",
             {"query": query, "after_sticker_id": after_sticker_id},
         )
+
+    @filter.llm_tool(name="sylulive_send_sticker")
+    async def send_sticker(self, event: AstrMessageEvent, sticker_id: str):
+        """把平台内置表情图片发送到当前聊天，不发布社区评论。
+
+        Args:
+            sticker_id(string): sylulive_stickers 返回的真实表情编号。
+        """
+        if not self.config.get("community_chat_memes_enabled", False) or not self.allowed_reading(event):
+            return '{"error":"permission_denied"}'
+        if not isinstance(sticker_id, str) or not re.fullmatch(r"[a-f0-9]{32}", sticker_id):
+            return '{"error":"invalid_sticker"}'
+        try:
+            result = json.loads(await self.stickers(event, query=sticker_id))
+            entries = result.get("data", {}).get("items", [])
+            if not any(row.get("sticker_id") == sticker_id for row in entries):
+                return '{"error":"sticker_not_found"}'
+            sent = event.get_extra("sylulive_sent_stickers", {})
+            if sticker_id in sent:
+                return json.dumps({"state": sent[sticker_id]})
+            raw = await self.client.public_image("/stickers/" + sticker_id)
+            from PIL import Image as PILImage
+            with PILImage.open(io.BytesIO(raw)) as picture:
+                if picture.width * picture.height > 16_000_000:
+                    raise IntegrationProblem("image_too_large")
+                picture.verify()
+            if not self.allowed_reading(event):
+                return '{"error":"permission_denied"}'
+            from astrbot.api.message_components import Image
+            sent[sticker_id] = "attempted"
+            event.set_extra("sylulive_sent_stickers", sent)
+            await event.send(event.chain_result([Image.fromBase64(base64.b64encode(raw).decode())]))
+            sent[sticker_id] = "sent"
+            return '{"state":"sent","destination":"current_chat"}'
+        except IntegrationProblem as error:
+            return json.dumps({"error": error.code})
+        except Exception:
+            return '{"error":"sticker_delivery_failed"}'
 
     @filter.llm_tool(name="sylulive_sections")
     async def sections(self, event: AstrMessageEvent):

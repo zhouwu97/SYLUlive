@@ -1,0 +1,13 @@
+.social-shell .admin-tabs { min-width: 0; margin-bottom: 16px; }
+.social-shell .admin-tabs .tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 4px;
+  scrollbar-width: thin;
+}
+.social-shell .admin-tabs .tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding-inline: 14px;
+}
+.managed-ai-label { display: block; margin-bottom: 4px; }

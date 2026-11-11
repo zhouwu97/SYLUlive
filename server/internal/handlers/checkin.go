@@ -211,9 +211,9 @@ func (h *CheckInHandler) InspectStats(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"success":        true,
-		"total_count":    len(inconsistencies),
-		"inconsistent":   inconsistencies,
+		"success":      true,
+		"total_count":  len(inconsistencies),
+		"inconsistent": inconsistencies,
 	})
 }
 

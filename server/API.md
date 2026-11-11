@@ -524,7 +524,7 @@ FEED-H1 加固：
 | --- | --- | --- |
 | `POST /api/oauth/device_authorization` | 公开客户端 `client_id=sylulive-astrbot` | URLencoded：`installation_id` UUID、自报名称、scope；返回 RFC8628 字段，有效10分钟 |
 | `POST /api/oauth/device_authorization/cancel` | 本次设备 secret | URLencoded `client_id`、`device_code`；取消待处理请求，已批准但未完成换令牌的授权也撤销；不接受网页 user_code |
-| `POST /api/oauth/token` | 设备 secret 或 refresh token | URLencoded；device grant 或 refresh grant。access 10分钟、refresh闲置7天、绝对30天；旧 refresh 重用撤销该授权 |
+| `POST /api/oauth/token` | 设备 secret 或 refresh token | URLencoded；device grant 或 refresh grant。access 10分钟、refresh闲置7天、绝对30天；同一 `refresh_request_id`（UUID）可恢复丢失的刷新结果，其他旧 refresh 重用撤销该授权 |
 | `POST /api/oauth/revoke` | 所撤凭证 | RFC7009，同属授权一并撤销；不会注销 App 登录 |
 | `GET /api/connected-apps` | App 登录 | 本人的连接列表及 `personal_data_enabled` 服务状态，不返回凭证 |
 | `POST /api/connected-apps/personal-sync/grades` | 本人 App 登录与可信教务资格 | `consent:true`、`fetched_at`、`year`、`semester`（3/12/16）及最多1000条 `grades`；白名单字段 `course_name`、`score`、`credits`、可选 `gpa`/`course_nature`，不收学校凭据；需个人查询开关与隐私设置允许 |
@@ -532,12 +532,12 @@ FEED-H1 加固：
 | `GET /api/integrations/v1/me/grades` | `academic:grades:read` | 仅本人的已同步成绩，支持 `offset`、`limit`（1至50），返回覆盖学期、过期/部分标记与下一页；需个人查询开关 |
 | `GET /api/integrations/v1/me/erke` | `academic:erke:read` | 仅本人主动同步的二课摘要；上传/删除沿用 `/api/personal-snapshots/erke`，不是学校实时查询 |
 | `POST /api/connected-apps/device-requests/lookup` | 本人 App 登录 | JSON `user_code`，返回待核对范围与一次性确认 nonce |
-| `POST /api/connected-apps/device-requests/:id/decision` | 本人 App 登录；批准时需30分钟内认证 | `allow`、`scopes`、`confirmation_nonce`；替换还须旧 `replace_binding_id` 与 `expected_epoch` |
+| `POST /api/connected-apps/device-requests/:id/decision` | 本人当前有效 App 登录 | `allow`、`scopes`、`confirmation_nonce`；替换还须旧 `replace_binding_id` 与 `expected_epoch` |
 | `POST /api/connected-apps/:id/revoke` | 本人 App 登录 | 立即撤销，无近期登录额外门槛 |
 | `GET /api/connected-apps/bot` | 本人 App 登录 | 返回 `policy_supported`、安全公开板块选项、`bot`（独立ID、名字、头像、启停、公开创建者、policy）和实际自动评论开关／授权状态 |
 | `GET /api/connected-apps/bot/runtime` | 本人 App 登录 | 本人机器人的控制／连接／心跳综合状态及最近浏览、计划、成功发言元数据；不返回凭据或执行会话ID |
 | `POST /api/integrations/v1/bot/runtime` | 有效集成授权及 `community:read` | 仅报告绑定自己的非正文运行元数据并获得两分钟执行占用；不授予内容写入权限 |
-| `POST /api/connected-apps/bot` | 本人 App 登录；创建／编辑／启用需近期认证 | `{name,avatar,enabled,policy}`；可创建暂停账号，一人一个。纯暂停只发 `{enabled:false}`，无需近期认证。旧请求省略头像和policy时保留已有值 |
+| `POST /api/connected-apps/bot` | 本人当前有效 App 登录 | `{name,avatar,enabled,policy}`；可创建暂停账号，一人一个。纯暂停只发 `{enabled:false}`，无需近期认证。旧请求省略头像和policy时保留已有值 |
 | `GET /api/integrations/v1/bot/policy` | `community:read` | 仅返回本连接对应bot的ID、启停和policy，不含创建者私有资料；无bot返回null |
 | `GET /api/integrations/v1/binding` | scoped Bearer | `profile:read_minimal`，账号 ID 与昵称、授权范围 |
 | `GET /api/integrations/v1/community/posts` | `community:read` | `query`、`after_id`、`limit`（1至20），最近/搜索公开普通水帖 |

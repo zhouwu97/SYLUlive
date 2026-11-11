@@ -46,7 +46,7 @@ def test_package_is_reproducible_and_excludes_local_secrets(tmp_path):
     with ZipFile(tmp_path / "dist" / "astrbot_plugin_sylulive.zip") as archive:
         assert set(archive.namelist()) == allowed | {"build.json"}
         manifest = json.loads(archive.read("build.json"))
-        assert manifest["version"] == "0.5.7" and manifest["source_dirty"] is True
+        assert manifest["version"] == "0.5.8" and manifest["source_dirty"] is True
         assert manifest["files"] == {name: hashlib.sha256(archive.read(name)).hexdigest() for name in allowed}
         assert archive.testzip() is None
         for name in allowed:

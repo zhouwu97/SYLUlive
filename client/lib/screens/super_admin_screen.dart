@@ -192,6 +192,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         bottom: AppTabBarSurface(
             child: TabBar(
           controller: _tabController,
+          isScrollable: true,
           tabs: const [
             Tab(text: '用户管理'),
             Tab(text: '管理员审批'),
@@ -210,7 +211,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           _buildAdminLogsTab(),
           _buildLotteryTab(),
           AppReleaseAdminTab(dio: _dio),
-          ManagedAIAdminTab(dio: _dio),
+          ManagedAIAdminTab(
+            key: ValueKey(context.watch<AuthProvider>().user?.id),
+            dio: _dio,
+          ),
         ],
       ),
     );

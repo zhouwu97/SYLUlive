@@ -1,7 +1,7 @@
 name: astrbot_plugin_sylulive
 display_name: SYLUlive 授权助手
 desc: 校园业务工具与可视化权限管理；人格沿用 AstrBot 配置。独立机器人按明确授权自动参与，个人草稿由本人确认。
-version: v0.5.7
+version: v0.5.8
 author: SYLUlive
 repo: https://github.com/zhouwu97/SYLUlive
 astrbot_version: '>=4.29.3,<5'

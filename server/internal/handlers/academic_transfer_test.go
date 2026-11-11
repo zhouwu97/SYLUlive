@@ -182,3 +182,22 @@ func TestAcademicTransferValidatesEnvelopeAndLimits(t *testing.T) {
 	code, _ = env.do(t, "POST", "/sessions", "")
 	require.Equal(t, 201, code)
 }
+
+func TestAcademicTransferKeepsNewestSessionsWhenCreationTimesMatch(t *testing.T) {
+	env := newAcademicTransferTestEnv()
+	var ids []string
+	// 夹具固定时钟；连续出码仍必须保留最后三张，不能随机淘汰。
+	for range academicTransferMaxSessionsPerUser + 5 {
+		code, created := env.do(t, "POST", "/sessions", "")
+		require.Equal(t, 201, code)
+		ids = append(ids, created["session_id"].(string))
+		for i, id := range ids {
+			want := 200
+			if i < len(ids)-academicTransferMaxSessionsPerUser {
+				want = 404
+			}
+			code, _ = env.do(t, "GET", "/sessions/"+id, "")
+			require.Equal(t, want, code)
+		}
+	}
+}

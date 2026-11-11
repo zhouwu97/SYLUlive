@@ -151,7 +151,10 @@ test("手机校园入口与个人统计进入真实页面，返回与滚动位�
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("./");
   await expect(page.locator(".mobile-feed-poll")).toBeVisible();
+  // 初始化认证会触发信息流重取；等页面稳定后再记录真实滚动位置。
+  await page.waitForLoadState("networkidle");
   await page.evaluate(() => window.scrollTo(0, 200));
+  await expect.poll(() => page.evaluate(() => scrollY)).toBe(200);
   const position = await page.evaluate(() => scrollY);
   const dock = page.getByRole("navigation", { name: "底部导航" });
   await dock.getByRole("link", { name: "校园", exact: true }).click();

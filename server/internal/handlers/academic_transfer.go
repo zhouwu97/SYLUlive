@@ -55,6 +55,7 @@ type academicTransferSession struct {
 	userID    uint
 	status    string
 	createdAt time.Time
+	sequence  uint64
 	expiresAt time.Time
 	payload   *academicTransferPayload
 	size      int
@@ -66,6 +67,7 @@ type AcademicTransferHandler struct {
 	sessions   map[string]*academicTransferSession
 	created    map[uint][]time.Time
 	totalBytes int
+	sequence   uint64
 	now        func() time.Time
 }
 
@@ -169,16 +171,19 @@ func (h *AcademicTransferHandler) Create(c *gin.Context) {
 			own = append(own, session)
 		}
 	}
-	sort.Slice(own, func(i, j int) bool { return own[i].createdAt.Before(own[j].createdAt) })
+	// 同一时间创建的会话也按实际创建顺序淘汰，不依赖 map 遍历顺序。
+	sort.Slice(own, func(i, j int) bool { return own[i].sequence < own[j].sequence })
 	for len(own) >= academicTransferMaxSessionsPerUser {
 		h.removeLocked(own[0].id)
 		own = own[1:]
 	}
+	h.sequence++
 	session := &academicTransferSession{
 		id:        base64.RawURLEncoding.EncodeToString(raw),
 		userID:    userID,
 		status:    academicTransferPending,
 		createdAt: now,
+		sequence:  h.sequence,
 		expiresAt: now.Add(academicTransferTTL),
 	}
 	h.sessions[session.id] = session

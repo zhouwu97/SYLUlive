@@ -23,6 +23,34 @@ enum FrostedGlassPerformanceMode {
   final String label;
 }
 
+extension FrostedGlassPerformanceModeStorage on FrostedGlassPerformanceMode {
+  String get storageValue {
+    switch (this) {
+      case FrostedGlassPerformanceMode.off:
+        return 'off';
+      case FrostedGlassPerformanceMode.highPerformance:
+        return 'high_performance';
+      case FrostedGlassPerformanceMode.highQuality:
+        return 'high_quality';
+      case FrostedGlassPerformanceMode.custom:
+        return 'custom';
+    }
+  }
+
+  static FrostedGlassPerformanceMode fromStorage(String? value) {
+    switch (value) {
+      case 'high_performance':
+        return FrostedGlassPerformanceMode.highPerformance;
+      case 'high_quality':
+        return FrostedGlassPerformanceMode.highQuality;
+      case 'custom':
+        return FrostedGlassPerformanceMode.custom;
+      default:
+        return FrostedGlassPerformanceMode.off;
+    }
+  }
+}
+
 /// 底部导航栏的三种材质层级。
 ///
 /// 液态玻璃是悬浮底栏的增强态，而不是另一套完全独立的导航组件。
@@ -204,6 +232,8 @@ class ThemeProvider extends ChangeNotifier {
 
   static const String _frostedGlassKey = 'frosted_glass_enabled';
   static const String _frostedGlassStrengthKey = 'frosted_glass_strength';
+  static const String _frostedGlassPerformanceModeKey =
+      'frosted_glass_performance_mode';
   static const String _frostedGlassCustomStrengthKey =
       'frosted_glass_custom_strength';
   static const String _customComponentOpacityLevelKey =
@@ -224,6 +254,8 @@ class ThemeProvider extends ChangeNotifier {
   double _componentOpacity = 1.0;
   bool _frostedGlass = _defaultFrostedGlass;
   double _frostedGlassStrength = 1.0;
+  FrostedGlassPerformanceMode _frostedGlassPerformanceMode =
+      FrostedGlassPerformanceMode.off;
   double _frostedGlassCustomStrength = .65;
   double _customComponentOpacityLevel = .65;
   Future<void>? _cardAppearanceWrites;
@@ -282,36 +314,10 @@ class ThemeProvider extends ChangeNotifier {
   double get frostedGlassStrength => _frostedGlassStrength;
   double get frostedGlassCustomStrength => _frostedGlassCustomStrength;
   double get customComponentOpacityLevel => _customComponentOpacityLevel;
-  // 固定预设同时约定不透明度和模糊强度，手动值按完整组合重新匹配。
-  FrostedGlassPerformanceMode get frostedGlassPerformanceMode {
-    if (!shouldShowCustomBackground) return FrostedGlassPerformanceMode.off;
-    return _cardAppearanceModeFor(
-        frostedGlass, componentOpacityLevel, _frostedGlassStrength);
-  }
-
-  static double _roundPercent(double value) => (value * 100).round() / 100;
-
-  static FrostedGlassPerformanceMode _cardAppearanceModeFor(
-      bool enabled, double opacityLevel, double strength) {
-    return switch ((enabled, _roundPercent(opacityLevel), strength)) {
-      (false, 1.0, _) => FrostedGlassPerformanceMode.off,
-      (true, .75, .35) => FrostedGlassPerformanceMode.highPerformance,
-      (true, 0.0, 1.0) => FrostedGlassPerformanceMode.highQuality,
-      _ => FrostedGlassPerformanceMode.custom,
-    };
-  }
-
-  /// 与底栏一致：只有手动组合不命中固定预设时才记为自定义，
-  /// 拖到预设值后再点「自定义」仍能回到上一次真正的自定义组合。
-  void _rememberCustomCardAppearance() {
-    final level = _roundPercent(componentOpacityLevel);
-    if (_cardAppearanceModeFor(_frostedGlass, level, _frostedGlassStrength) !=
-        FrostedGlassPerformanceMode.custom) {
-      return;
-    }
-    _customComponentOpacityLevel = level;
-    _frostedGlassCustomStrength = _frostedGlass ? _frostedGlassStrength : 0;
-  }
+  FrostedGlassPerformanceMode get frostedGlassPerformanceMode =>
+      !shouldShowCustomBackground
+          ? FrostedGlassPerformanceMode.off
+          : _frostedGlassPerformanceMode;
   String get frostedGlassPresetLabel => frostedGlassPerformanceMode.label;
   bool get liquidGlass => _liquidGlass && _bottomNavPerformanceMode != BottomNavPerformanceMode.off;
   bool get floatingNavBar => _floatingNavBar;
@@ -451,6 +457,37 @@ class ThemeProvider extends ChangeNotifier {
     if ((value - 1).abs() < .0001) return BottomNavPerformanceMode.highQuality;
     return BottomNavPerformanceMode.custom;
   }
+
+  static double _roundPercent(double value) => (value * 100).round() / 100;
+
+  (double, double) _frostedGlassPreset(FrostedGlassPerformanceMode mode) =>
+      switch (mode) {
+        FrostedGlassPerformanceMode.off => (0.0, 1.0),
+        FrostedGlassPerformanceMode.highPerformance => (.35, .75),
+        FrostedGlassPerformanceMode.highQuality => (1.0, 0.0),
+        FrostedGlassPerformanceMode.custom => (
+            _frostedGlassCustomStrength,
+            _customComponentOpacityLevel,
+          ),
+      };
+
+  FrostedGlassPerformanceMode _modeForFrostedGlass(
+    double strength,
+    double opacityLevel,
+  ) {
+    final s = _roundPercent(strength);
+    final o = _roundPercent(opacityLevel);
+    if (s == 0.0 && (o - 1.0).abs() < .0001) {
+      return FrostedGlassPerformanceMode.off;
+    }
+    if ((s - .35).abs() < .0001 && (o - .75).abs() < .0001) {
+      return FrostedGlassPerformanceMode.highPerformance;
+    }
+    if ((s - 1.0).abs() < .0001 && o.abs() < .0001) {
+      return FrostedGlassPerformanceMode.highQuality;
+    }
+    return FrostedGlassPerformanceMode.custom;
+  }
   Future<void> _loadTheme() async {
     try {
       final prefs = await AppPreferencesStore.getInstance();
@@ -502,12 +539,46 @@ class ThemeProvider extends ChangeNotifier {
             customOpacity <= 1.0
         ? (customOpacity * 100).round() / 100
         : .65;
-    // 旧版本会把命中预设的拖动值记为自定义，导致「自定义」无法再选中。
-    if (_cardAppearanceModeFor(_frostedGlassCustomStrength > 0,
-            _customComponentOpacityLevel, _frostedGlassCustomStrength) !=
+
+    if (_modeForFrostedGlass(
+            _frostedGlassCustomStrength, _customComponentOpacityLevel) !=
         FrostedGlassPerformanceMode.custom) {
       _frostedGlassCustomStrength = .65;
       _customComponentOpacityLevel = .65;
+    }
+
+    final glassMode = prefs.getString(_frostedGlassPerformanceModeKey);
+    if (glassMode == null) {
+      if (!_frostedGlass || _frostedGlassStrength == 0) {
+        _frostedGlass = false;
+        _frostedGlassPerformanceMode = FrostedGlassPerformanceMode.off;
+      } else {
+        _frostedGlassPerformanceMode =
+            _modeForFrostedGlass(_frostedGlassStrength, componentOpacityLevel);
+        if (_frostedGlassPerformanceMode == FrostedGlassPerformanceMode.custom) {
+          if (customGlassStrength == null && _frostedGlassStrength > 0) {
+            _frostedGlassCustomStrength = _frostedGlassStrength;
+          }
+          if (customOpacity == null) {
+            _customComponentOpacityLevel = _roundPercent(componentOpacityLevel);
+          }
+        }
+      }
+    } else {
+      _frostedGlassPerformanceMode =
+          FrostedGlassPerformanceModeStorage.fromStorage(glassMode);
+      if (_frostedGlassPerformanceMode != FrostedGlassPerformanceMode.off) {
+        _frostedGlassPerformanceMode =
+            _modeForFrostedGlass(_frostedGlassStrength, componentOpacityLevel);
+        if (_frostedGlassPerformanceMode == FrostedGlassPerformanceMode.custom) {
+          if (_frostedGlassStrength > 0 && customGlassStrength == null) {
+            _frostedGlassCustomStrength = _frostedGlassStrength;
+          }
+          if (customOpacity == null) {
+            _customComponentOpacityLevel = _roundPercent(componentOpacityLevel);
+          }
+        }
+      }
     }
     // 新底栏完整替换旧样式；旧模式/强度不能让升级后的首帧退回旧效果。
     _bottomNavStyle = BottomNavStyle.liquidGlass;
@@ -700,15 +771,24 @@ class ThemeProvider extends ChangeNotifier {
   Future<bool> setComponentOpacity(double value) {
     if (!value.isFinite) return Future<bool>.value(false);
     final opacity = value.clamp(0.0, 1.0);
-    if (_componentOpacity != opacity) {
-      _componentOpacity = opacity;
-      notifyListeners();
+    final oldMode = _frostedGlassPerformanceMode;
+    final changed = _componentOpacity != opacity;
+    _componentOpacity = opacity;
+    _frostedGlassPerformanceMode = _modeForFrostedGlass(
+      _frostedGlass ? _frostedGlassStrength : 0.0,
+      componentOpacityLevel,
+    );
+    if (_frostedGlassPerformanceMode == FrostedGlassPerformanceMode.custom) {
+      _customComponentOpacityLevel = _roundPercent(componentOpacityLevel);
+      _frostedGlassCustomStrength = _frostedGlass ? _frostedGlassStrength : 0.0;
     }
-    _rememberCustomCardAppearance();
+    if (changed || oldMode != _frostedGlassPerformanceMode) notifyListeners();
     final customLevel = _customComponentOpacityLevel;
     final customStrength = _frostedGlassCustomStrength;
+    final mode = _frostedGlassPerformanceMode.storageValue;
     return _queueCardAppearanceWrite((prefs) async {
       final results = [
+        await prefs.setString(_frostedGlassPerformanceModeKey, mode),
         await prefs.setDouble(_componentOpacityKey, opacity),
         await prefs.setDouble(_customComponentOpacityLevelKey, customLevel),
         await prefs.setDouble(_frostedGlassCustomStrengthKey, customStrength),
@@ -816,38 +896,37 @@ class ThemeProvider extends ChangeNotifier {
 
   Future<bool> setFrostedGlass(bool value) {
     final strength = value && _frostedGlassStrength == 0 ? 1.0 : _frostedGlassStrength;
-    if (_frostedGlass != value || _frostedGlassStrength != strength) {
-      _frostedGlass = value;
-      _frostedGlassStrength = strength;
-      notifyListeners();
+    final oldMode = _frostedGlassPerformanceMode;
+    final changed = _frostedGlass != value || _frostedGlassStrength != strength;
+    _frostedGlass = value;
+    _frostedGlassStrength = strength;
+    _frostedGlassPerformanceMode = _modeForFrostedGlass(
+      _frostedGlass ? _frostedGlassStrength : 0.0,
+      componentOpacityLevel,
+    );
+    if (_frostedGlassPerformanceMode == FrostedGlassPerformanceMode.custom) {
+      _frostedGlassCustomStrength = _frostedGlass ? _frostedGlassStrength : 0.0;
+      _customComponentOpacityLevel = _roundPercent(componentOpacityLevel);
     }
+    if (changed || oldMode != _frostedGlassPerformanceMode) notifyListeners();
     return _persistFrostedGlass();
   }
 
   Future<bool> setFrostedGlassPerformanceMode(FrostedGlassPerformanceMode mode) {
-    final strength = switch (mode) {
-      FrostedGlassPerformanceMode.off => 0.0,
-      FrostedGlassPerformanceMode.highPerformance => .35,
-      FrostedGlassPerformanceMode.highQuality => 1.0,
-      FrostedGlassPerformanceMode.custom => _frostedGlassCustomStrength,
+    _frostedGlassPerformanceMode = mode;
+    final (strength, opacityLevel) = _frostedGlassPreset(mode);
+    final enabled = switch (mode) {
+      FrostedGlassPerformanceMode.off => false,
+      FrostedGlassPerformanceMode.highPerformance => true,
+      FrostedGlassPerformanceMode.highQuality => true,
+      FrostedGlassPerformanceMode.custom => strength > 0,
     };
-    final opacityLevel = switch (mode) {
-      FrostedGlassPerformanceMode.off => 1.0,
-      FrostedGlassPerformanceMode.highPerformance => .75,
-      FrostedGlassPerformanceMode.highQuality => 0.0,
-      FrostedGlassPerformanceMode.custom => _customComponentOpacityLevel,
-    };
-    // 自定义组合允许 0% 模糊，此时恢复为关闭模糊而非强行开启。
-    final enabled = strength > 0;
     final opacity = minComponentOpacity +
         (1 - minComponentOpacity) * opacityLevel;
-    if (_frostedGlass != enabled || _frostedGlassStrength != strength ||
-        _componentOpacity != opacity) {
-      _frostedGlass = enabled;
-      _frostedGlassStrength = strength;
-      _componentOpacity = opacity;
-      notifyListeners();
-    }
+    _frostedGlass = enabled;
+    _frostedGlassStrength = strength;
+    _componentOpacity = opacity;
+    notifyListeners();
     return _persistFrostedGlass(includeOpacity: true);
   }
 
@@ -861,15 +940,24 @@ class ThemeProvider extends ChangeNotifier {
     if (!value.isFinite) return Future<bool>.value(false);
     final strength = (value.clamp(0.0, 1.0) * 100).round() / 100;
     final enabled = strength > 0;
+    final oldMode = _frostedGlassPerformanceMode;
     final changed = _frostedGlassStrength != strength || _frostedGlass != enabled;
     _frostedGlassStrength = strength;
     _frostedGlass = enabled;
-    _rememberCustomCardAppearance();
-    if (changed) notifyListeners();
+    _frostedGlassPerformanceMode = _modeForFrostedGlass(
+      _frostedGlass ? _frostedGlassStrength : 0.0,
+      componentOpacityLevel,
+    );
+    if (_frostedGlassPerformanceMode == FrostedGlassPerformanceMode.custom) {
+      _frostedGlassCustomStrength = _frostedGlass ? _frostedGlassStrength : 0.0;
+      _customComponentOpacityLevel = _roundPercent(componentOpacityLevel);
+    }
+    if (changed || oldMode != _frostedGlassPerformanceMode) notifyListeners();
     return _persistFrostedGlass();
   }
 
   Future<bool> _persistFrostedGlass({bool includeEnabled = true, bool includeOpacity = false}) {
+    final mode = _frostedGlassPerformanceMode.storageValue;
     final enabled = _frostedGlass;
     final strength = _frostedGlassStrength;
     final customStrength = _frostedGlassCustomStrength;
@@ -877,6 +965,7 @@ class ThemeProvider extends ChangeNotifier {
     final opacity = _componentOpacity;
     return _queueCardAppearanceWrite((prefs) async {
       final results = [
+        await prefs.setString(_frostedGlassPerformanceModeKey, mode),
         await prefs.setDouble(_frostedGlassStrengthKey, strength),
         await prefs.setDouble(_frostedGlassCustomStrengthKey, customStrength),
         await prefs.setDouble(_customComponentOpacityLevelKey, customOpacityLevel),

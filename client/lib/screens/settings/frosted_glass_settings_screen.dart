@@ -144,19 +144,8 @@ class _FrostedGlassSettingsScreenState
               },
               child: Column(children: [
                 for (final preset in FrostedGlassPerformanceMode.values)
-                  SettingsEffectOption<FrostedGlassPerformanceMode>(
-                    value: preset,
-                    title: preset.label,
-                    description: switch (preset) {
-                      FrostedGlassPerformanceMode.off =>
-                        '使用实色卡片，关闭背景模糊',
-                      FrostedGlassPerformanceMode.highPerformance =>
-                        '轻度雾化背景，不透明度 75%、模糊 35%',
-                      FrostedGlassPerformanceMode.highQuality =>
-                        '加深背景雾化，不透明度 0%、模糊 100%',
-                      FrostedGlassPerformanceMode.custom =>
-                        '自行调整卡片不透明度与背景模糊强度',
-                    },
+                  _FrostedGlassPerformanceOption(
+                    mode: preset,
                     selected: mode == preset,
                     enabled: customBackground,
                     onTap: () => _saveGlass(
@@ -168,6 +157,40 @@ class _FrostedGlassSettingsScreenState
           ],
         ),
       ],
+    );
+  }
+}
+
+class _FrostedGlassPerformanceOption extends StatelessWidget {
+  const _FrostedGlassPerformanceOption({
+    required this.mode,
+    required this.selected,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final FrostedGlassPerformanceMode mode;
+  final bool selected;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final description = switch (mode) {
+      FrostedGlassPerformanceMode.off => '使用实色卡片，关闭背景模糊',
+      FrostedGlassPerformanceMode.highPerformance =>
+        '轻度雾化背景，不透明度 75%、模糊 35%',
+      FrostedGlassPerformanceMode.highQuality =>
+        '加深背景雾化，不透明度 0%、模糊 100%',
+      FrostedGlassPerformanceMode.custom => '自行调整卡片不透明度与背景模糊强度',
+    };
+    return SettingsEffectOption<FrostedGlassPerformanceMode>(
+      value: mode,
+      title: mode.label,
+      description: description,
+      selected: selected,
+      enabled: enabled,
+      onTap: onTap,
     );
   }
 }

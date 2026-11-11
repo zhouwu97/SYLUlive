@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { asset, captureAuthSession, errorText, rows, time, useApi, write, type Entity } from "./api";
+import { ApiError, asset, captureAuthSession, errorText, rows, time, useApi, write, type Entity } from "./api";
 import { useAuth } from "./auth";
 import { uploadImageFiles } from "./media";
 import { EmojiSelectionPreview, StickerPicker, StickerRenderer, type StickerPayload } from "./emoji";
@@ -33,6 +33,8 @@ export function Messages() {
   const auth = useAuth(), ui = useUI(), qc = useQueryClient();
   const conversations = useApi(auth.user ? "/api/messages/conversations" : null);
   const [selected, setSelected] = useState<number | null>(null);
+  const [realtime, setRealtime] = useState<'connecting' | 'live' | 'offline'>('connecting');
+  const [streamAttempt, setStreamAttempt] = useState(0);
   const list = rows(conversations.data, "conversations");
   useEffect(() => {
     if (selected === null && list[0]?.id) setSelected(Number(list[0].id));
@@ -42,22 +44,29 @@ export function Messages() {
   const messages = useApi(selected ? `/api/messages/conversations/${selected}` : null);
 
   useEffect(() => {
-    if (!selected) return;
+    if (!selected || !active || conversations.isPending || conversations.error) return;
     write(`/api/messages/conversations/${selected}/read`, {}).then(() => qc.invalidateQueries({ queryKey: ["api", "/api/messages/conversations"] })).catch(() => undefined);
-  }, [selected, qc]);
+  }, [selected, active?.id, conversations.isPending, conversations.error, qc]);
 
   useEffect(() => {
-    if (!auth.user) return;
+    if (!auth.user || conversations.isPending || conversations.error) return;
     const controller = new AbortController();
+    setRealtime('connecting');
     fetch("/api/messages/events", { credentials: "same-origin", headers: { Accept: "text/event-stream", "X-Requested-With": "SYLUlive-Web" }, signal: controller.signal })
-      .then((response) => consumeSSE(response, () => { qc.invalidateQueries({ queryKey: ["api", "/api/messages/conversations"] }); if (selected) qc.invalidateQueries({ queryKey: ["api", `/api/messages/conversations/${selected}`] }); }))
-      .catch(() => undefined);
+      .then(async response => {
+        if (!response.ok || !response.headers.get('content-type')?.includes('text/event-stream')) throw new Error('实时通道未连接');
+        if (controller.signal.aborted) return;
+        setRealtime('live');
+        await consumeSSE(response, () => { qc.invalidateQueries({ queryKey: ["api", "/api/messages/conversations"] }); if (selected) qc.invalidateQueries({ queryKey: ["api", `/api/messages/conversations/${selected}`] }); });
+        if (!controller.signal.aborted) setRealtime('offline');
+      })
+      .catch(() => { if (!controller.signal.aborted) setRealtime('offline'); });
     return () => controller.abort();
-  }, [auth.user?.id, qc, selected]);
+  }, [auth.user?.id, conversations.isPending, conversations.error, qc, selected, streamAttempt]);
 
   return <>
     <Head title="私信" description="和同学分享图片、表情与校园日常" />
-    {!auth.user ? <Empty icon="lock" title="登录后查看私信" description="私信内容只会在账号之间传递"><button className="btn primary" onClick={auth.login}>登录</button></Empty> : !list.length ? <Empty title="还没有会话" description="从同学主页发起一条消息后，会话会出现在这里" /> : <div className="chat-layout messages-shell">
+    {auth.loading ? <div className="loading-state" role="status">正在加载…</div> : !auth.user ? <Empty icon="lock" title="登录后查看私信" description="私信内容只会在账号之间传递"><button className="btn primary" onClick={auth.login}>登录</button></Empty> : conversations.error instanceof ApiError && conversations.error.status === 410 ? <Empty icon="info" title="私聊功能已暂停开放" description="当前服务未开放私信，已有会话不代表已被删除。"><button className="btn" onClick={() => conversations.refetch()}>重新检查</button></Empty> : <QueryState query={conversations}>{!list.length ? <Empty title="还没有会话" description="从同学主页发起一条消息后，会话会出现在这里" /> : <div className="chat-layout messages-shell">
       <aside className="chat-list">
         {list.map((conversation) => {
           const itemPeer = conversationPeer(conversation, auth.user?.id);
@@ -69,7 +78,7 @@ export function Messages() {
         })}
       </aside>
       <section className="chat-main">
-        <div className="chat-head"><div><b>{peer?.nickname || "会话"}</b><small>私密消息</small></div><span className="tag brand">实时</span></div>
+        <div className="chat-head"><div><b>{peer?.nickname || "会话"}</b><small>私密消息</small></div><span className="tag" role="status">{realtime === 'live' ? '实时已连接' : realtime === 'connecting' ? '正在连接' : '实时连接已断开'}</span>{realtime === 'offline' && <button className="link-btn" onClick={() => { void messages.refetch(); setStreamAttempt(value => value + 1); }}>重新连接</button>}</div>
         <QueryState query={messages} empty={!rows(messages.data, "messages").length}>
           <div className="chat-messages">
             {rows(messages.data, "messages").map((message) => <MessageBubble key={message.id || message.client_message_id} message={message} mine={Number(message.sender_id) === auth.user?.id} />)}
@@ -77,7 +86,7 @@ export function Messages() {
         </QueryState>
         {peer?.id && <MessageComposer key={`${auth.user.id}:${peer.id}`} targetId={Number(peer.id)} onSent={() => { qc.invalidateQueries({ queryKey: ["api", `/api/messages/conversations/${selected}`] }); qc.invalidateQueries({ queryKey: ["api", "/api/messages/conversations"] }); }} />}
       </section>
-    </div>}
+    </div>}</QueryState>}
   </>;
 }
 

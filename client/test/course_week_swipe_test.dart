@@ -370,7 +370,7 @@ void main() {
     const maxWeek = 20; // CourseTerm 默认值
     final lastWeekMonday = _mondayOf(DateTime.now());
     final semesterStart =
-        lastWeekMonday.subtract(Duration(days: (maxWeek - 1) * 7));
+        lastWeekMonday.subtract(const Duration(days: (maxWeek - 1) * 7));
     final page = await _pumpCourse(tester, semesterStart: semesterStart);
 
     final controller =

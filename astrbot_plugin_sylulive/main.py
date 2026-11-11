@@ -13,7 +13,7 @@ from pathlib import Path
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.provider import LLMResponse, ProviderRequest
-from astrbot.api.star import Context, Star, StarTools, register
+from astrbot.api.star import Context, Star, StarTools
 from astrbot.core.agent.message import TextPart
 
 from .client import MAP_PATH, BusinessClient, IntegrationProblem, checked_origin
@@ -250,7 +250,6 @@ def read_kinds(path):
     return set()
 
 
-@register("astrbot_plugin_sylulive", "SYLUlive", "本人授权的校园社区工具", "0.5.8")
 class SYLUlivePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)

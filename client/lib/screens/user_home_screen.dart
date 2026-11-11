@@ -1106,7 +1106,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           final success = await context.read<SocialProvider>().unfollow(
                 user.id,
               );
-          if (success && mounted) {
+          if (success && mounted && context.mounted) {
             setState(() {
               _user!.isFollowing = false;
               _user!.followersCount = (_user!.followersCount - 1).clamp(
@@ -1128,7 +1128,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
             final success = await context.read<SocialProvider>().follow(
                   user.id,
                 );
-            if (success && mounted) {
+            if (success && mounted && context.mounted) {
               setState(() {
                 _user!.isFollowing = true;
                 _user!.followersCount++;
@@ -1290,7 +1290,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           toolbarTitle: '调整背景图',
           toolbarColor: Colors.black,
           toolbarWidgetColor: Colors.white,
-          statusBarColor: Colors.black,
+          statusBarLight: false,
           backgroundColor: Colors.black,
           lockAspectRatio: false,
         ),
@@ -1467,7 +1467,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withValues(alpha: 0.1),
               blurRadius: 20,
               spreadRadius: 5,
             ),
@@ -1488,7 +1488,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.3),
+                  color: Colors.grey.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),

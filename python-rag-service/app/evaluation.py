@@ -188,7 +188,8 @@ def evaluate_shared_fixture(directory: Path, *, k: int = 5) -> dict[str, Any]:
 
 
 def evaluate_reranker_fixture(
-    directory: Path, *, k: int = 5, rerank_model: Any | None = None
+    directory: Path, *, k: int = 5, rerank_model: Any | None = None,
+    timeout_seconds: float = 2,
 ) -> dict[str, Any]:
     """使用 T01 用例构造含干扰候选的校准池，并报告排序与拒答门禁指标。"""
 
@@ -210,7 +211,7 @@ def evaluate_reranker_fixture(
         model_version=str(selected_model.model_version),
         top_n=20,
         max_candidates=20,
-        timeout_seconds=2,
+        timeout_seconds=timeout_seconds,
         query_transform=lambda question: planner.invoke(question).retrieval_query,
         query_strategy="policy-planned-query-v1",
     )
@@ -235,6 +236,8 @@ def evaluate_reranker_fixture(
             candidates = corpus[:20]
         candidates = candidates[:20]
         reranked = list(reranker.compress_documents(candidates, str(case["question"])))
+        if any("rerank_score" not in document.metadata for document in reranked):
+            raise RuntimeError(f"reranker calibration unavailable for case {case['id']}")
         scores = [float(document.metadata["rerank_score"]) for document in reranked]
         evaluated.append(
             {

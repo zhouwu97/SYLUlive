@@ -51,7 +51,7 @@ void main() {
     });
 
     test('shortDate 从 publish_date 提取 MM-DD', () {
-      final s = CampusArticleSummary(
+      const s = CampusArticleSummary(
         id: 1,
         publishDate: '2026-06-23',
       );
@@ -59,7 +59,7 @@ void main() {
     });
 
     test('shortDate 在 publish_date 不完整时返回原值', () {
-      final s = CampusArticleSummary(
+      const s = CampusArticleSummary(
         id: 1,
         publishDate: '2026',
       );
@@ -120,7 +120,7 @@ void main() {
     });
 
     test('content_text 为"详见附件："时识别为弱正文', () {
-      final d = CampusArticleDetail(
+      const d = CampusArticleDetail(
         id: 1,
         contentText: '详见附件：',
         attachments: [
@@ -134,7 +134,7 @@ void main() {
     });
 
     test('content_text 为"详见附件"时识别为弱正文', () {
-      final d = CampusArticleDetail(
+      const d = CampusArticleDetail(
         id: 1,
         contentText: '详见附件',
         attachments: [],
@@ -143,7 +143,7 @@ void main() {
     });
 
     test('content_text 为"见附件"时识别为弱正文', () {
-      final d = CampusArticleDetail(
+      const d = CampusArticleDetail(
         id: 1,
         contentText: '见附件',
       );
@@ -151,7 +151,7 @@ void main() {
     });
 
     test('content_text 为空字符串时识别为弱正文', () {
-      final d = CampusArticleDetail(
+      const d = CampusArticleDetail(
         id: 1,
         contentText: '',
       );
@@ -167,7 +167,7 @@ void main() {
     });
 
     test('content_text 有实际内容时不识别为弱正文', () {
-      final d = CampusArticleDetail(
+      const d = CampusArticleDetail(
         id: 1,
         contentText: '请各位同学注意考试时间安排。详见附件中的具体时间表。',
       );
@@ -175,7 +175,7 @@ void main() {
     });
 
     test('hasComplexHtml 检测表格', () {
-      final d = CampusArticleDetail(
+      const d = CampusArticleDetail(
         id: 1,
         contentHtml: '<table><tr><td>数据</td></tr></table>',
       );
@@ -183,7 +183,7 @@ void main() {
     });
 
     test('hasComplexHtml 检测图片', () {
-      final d = CampusArticleDetail(
+      const d = CampusArticleDetail(
         id: 1,
         contentHtml: '<img src="photo.jpg" />',
       );
@@ -191,7 +191,7 @@ void main() {
     });
 
     test('hasComplexHtml 纯文本时返回 false', () {
-      final d = CampusArticleDetail(
+      const d = CampusArticleDetail(
         id: 1,
         contentHtml: '<p>这是纯文本段落。</p>',
       );
@@ -199,7 +199,7 @@ void main() {
     });
 
     test('fromSummary 保留摘要字段', () {
-      final s = CampusArticleSummary(
+      const s = CampusArticleSummary(
         id: 10,
         title: '测试标题',
         category: '教务公告',
@@ -220,7 +220,7 @@ void main() {
 
   group('CampusAttachment', () {
     test('未知扩展名使用通用图标', () {
-      final a = CampusAttachment(
+      const a = CampusAttachment(
         name: 'file.unknown',
         url: 'https://jwc.sylu.edu.cn/f.unknown',
         extension: 'unknown',
@@ -232,7 +232,7 @@ void main() {
     test('isUrlSafe 仅允许白名单域名的 HTTPS', () {
       // jwc domain
       expect(
-        CampusAttachment(
+        const CampusAttachment(
           name: 'f.xls',
           url: 'https://jwc.sylu.edu.cn/f.xls',
           extension: 'xls',
@@ -241,7 +241,7 @@ void main() {
       );
       // cxcy domain
       expect(
-        CampusAttachment(
+        const CampusAttachment(
           name: 'f.xls',
           url: 'https://cxcyxy.sylu.edu.cn/f.xls',
           extension: 'xls',
@@ -250,7 +250,7 @@ void main() {
       );
       // http rejected
       expect(
-        CampusAttachment(
+        const CampusAttachment(
           name: 'f.xls',
           url: 'http://jwc.sylu.edu.cn/f.xls',
           extension: 'xls',
@@ -258,7 +258,7 @@ void main() {
         false,
       );
       expect(
-        CampusAttachment(
+        const CampusAttachment(
           name: 'f.xls',
           url: 'http://cxcyxy.sylu.edu.cn/f.xls',
           extension: 'xls',
@@ -267,7 +267,7 @@ void main() {
       );
       // wrong host
       expect(
-        CampusAttachment(
+        const CampusAttachment(
           name: 'f.xls',
           url: 'https://evil.com/f.xls',
           extension: 'xls',

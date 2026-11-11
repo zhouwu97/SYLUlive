@@ -86,8 +86,8 @@ class _Server {
     }));
 }
 
-final _bundle = AcademicTransferBundle(
-  schedules: const [
+const _bundle = AcademicTransferBundle(
+  schedules: [
     AcademicTransferSchedule(
         id: 'current',
         kind: 'current',
@@ -119,7 +119,7 @@ final _bundle = AcademicTransferBundle(
           },
         ]),
   ],
-  grades: const [
+  grades: [
     {
       'id': 'g',
       'name': '线性代数',
@@ -130,7 +130,7 @@ final _bundle = AcademicTransferBundle(
       'term': ''
     },
   ],
-  erke: const {'categories': [], 'activities': []},
+  erke: {'categories': [], 'activities': []},
 );
 
 Future<void> _mount(WidgetTester tester, _Server server, _Loader loader,

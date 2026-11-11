@@ -104,9 +104,10 @@ class _CourtScreenState extends State<CourtScreen> {
     try {
       await getSharedDio().post('/appeals/${widget.appealId}/recuse',
           data: {'reason': reason.trim()});
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('已申请回避')));
+      }
       await _load();
     } on DioException catch (error) {
       if (!mounted) return;

@@ -85,7 +85,14 @@ Dio _fixtureDio(String screen) {
 }
 
 void main() {
-  setUpAll(loadTestFonts);
+  setUpAll(() async {
+    await loadTestFonts();
+    if (_capture) {
+      final icons = FontLoader('MaterialIcons')
+        ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+      await icons.load();
+    }
+  });
   setUp(() {
     AppPreferencesStore.setMockInitialValues({});
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -162,7 +169,11 @@ void main() {
         await tester.pumpWidget(GoldenTestApp(
             themeMode: profile.$3,
             textScaler: TextScaler.linear(profile.$2),
-            home: RepaintBoundary(key: boundaryKey, child: page)));
+            home: RepaintBoundary(
+                key: boundaryKey,
+                child: Builder(builder: (context) => ColoredBox(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    child: page)))));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         if (screen == 'dishes') {

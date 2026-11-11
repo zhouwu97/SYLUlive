@@ -133,13 +133,13 @@ def test_health_exposes_chain_identity_and_dependency_readiness(monkeypatch):
         assert response.status_code == 200
         payload = response.json()
         assert payload["chain_name"] == "shenliyuan_policy_rag"
-        assert payload["chain_version"] == "campus-assistant-release-v8"
+        assert payload["chain_version"] == "campus-assistant-release-v10"
         assert payload["dimensions"] == 384
         assert payload["dependencies_ready"]["embedding"] is True
         assert payload["dependencies_ready"]["lcel"] is True
         assert "chat_provider" in payload["dependencies_ready"]
         assert "policy_database" in payload["dependencies_ready"]
-        assert payload["reranker"]["query_strategy"] == "policy-planned-query-v1"
+        assert payload["reranker"]["query_strategy"] == "policy-planned-query-v4"
         assert (
             payload["reranker"]["document_type_label_version"]
             == "policy-document-type-zh-v1"

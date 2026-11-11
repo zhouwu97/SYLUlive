@@ -33,7 +33,6 @@ import '../models/course_term.dart';
 import '../widgets/course/course_empty_state_card.dart';
 import '../widgets/course/course_fetch_progress_dialog.dart';
 import '../widgets/course/course_action_menu.dart';
-import '../widgets/course/course_evaluation_section.dart';
 import '../widgets/course/course_import_sheet.dart';
 import '../widgets/course/course_term_switch_sheet.dart';
 import '../widgets/course/course_preview_sheet.dart';
@@ -87,7 +86,7 @@ Color getCourseColor(
     location: location,
   );
   final base = courseColors[idx];
-  return isActive ? base.withOpacity(0.45) : Colors.grey.withOpacity(0.4);
+  return isActive ? base.withValues(alpha: 0.45) : Colors.grey.withValues(alpha: 0.4);
 }
 
 /// 星期标签
@@ -126,7 +125,6 @@ const _ends = [
 ];
 
 /// 格式化月/日
-String _md(DateTime d) => '${d.month}/${d.day}';
 
 /// 课表页的终态判定。
 ///
@@ -217,8 +215,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final now = DateTime.now();
       final end = start.add(Duration(days: sc.currentTerm.maxWeek * 7));
       if (now.isBefore(start)) return start;
-      if (now.isAfter(end))
+      if (now.isAfter(end)) {
         return start.add(Duration(days: (sc.currentTerm.maxWeek - 1) * 7));
+      }
       return _mondayOf(now);
     }
     return _mondayOf(DateTime.now());
@@ -245,7 +244,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final coordinator = _coordinatorOrNull();
     if (coordinator == null) return;
     if (coordinator.controller.sourceKind == AcademicSourceKind.local &&
-        !await coordinator.hasSavedCredential()) return;
+        !await coordinator.hasSavedCredential()) {
+      return;
+    }
     final outcome = await coordinator.ensureAuthenticated();
     if (!mounted || !outcome.isSuccess) return;
     await context.read<EduProvider>().refreshStatus();
@@ -832,15 +833,15 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         c.name,
                         courseCode: c.courseCode,
                         location: c.location,
-                      ).withOpacity(1.0);
+                      ).withValues(alpha: 1.0);
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: color.withOpacity(0.15),
+                          color: color.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: color.withOpacity(0.3)),
+                          border: Border.all(color: color.withValues(alpha: 0.3)),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -853,7 +854,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: color.withOpacity(0.2),
+                                    color: color.withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
@@ -871,7 +872,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   Text(
                                     '第${c.startSection}-${c.endSection}节',
                                     style: TextStyle(
-                                      color: color.withOpacity(0.8),
+                                      color: color.withValues(alpha: 0.8),
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -896,7 +897,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   Icon(
                                     Icons.location_on,
                                     size: 14,
-                                    color: color.withOpacity(0.8),
+                                    color: color.withValues(alpha: 0.8),
                                   ),
                                   const SizedBox(width: 4),
                                   Expanded(
@@ -920,7 +921,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   Icon(
                                     Icons.person,
                                     size: 14,
-                                    color: color.withOpacity(0.8),
+                                    color: color.withValues(alpha: 0.8),
                                   ),
                                   const SizedBox(width: 4),
                                   Expanded(
@@ -1006,7 +1007,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   Widget _buildBackToCurrentWeekButton() {
-    final primary = CampusTheme.primary;
+    const primary = CampusTheme.primary;
     return Tooltip(
       message: '回到本周',
       child: IconButton(
@@ -1028,7 +1029,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     return Container(
       color: Colors.transparent,
-      padding: EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.only(top: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1153,7 +1154,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryColor = CampusTheme.primary;
+    const primaryColor = CampusTheme.primary;
     final titleColor = isDark ? Colors.white : CampusTheme.text;
     final secondaryColor = appContentSecondaryColor(context, CampusTheme.subText);
 
@@ -1320,7 +1321,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             ),
             child: Column(
               children: [
-                Icon(
+                const Icon(
                   Icons.calendar_month_outlined,
                   size: 42,
                   color: CampusTheme.primary,
@@ -1364,19 +1365,21 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const EduScreen()));
-    if (mounted) {
+    if (mounted && context.mounted) {
       final sc = context.read<CourseScheduleProvider>();
-      if (mounted)
+      if (mounted && context.mounted) {
         setState(() {
           _initializing = sc.courses.isEmpty;
         });
+      }
       await sc.loadCachedCoursesIfAvailable();
       await _syncCourseReminders(sc);
-      if (mounted)
+      if (mounted && context.mounted) {
         setState(() {
           _hasCache = sc.courses.isNotEmpty;
           _initializing = false;
         });
+      }
     }
   }
 
@@ -1398,7 +1401,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       controller: academicController,
       coordinator: _coordinatorOrNull(),
     );
-    if (!academicReady || !mounted) {
+    if (!mounted || !context.mounted) return;
+    if (!academicReady) {
       messenger.showSnackBar(
         const SnackBar(content: Text('教务会话尚未恢复，未开始拉取课表；请按提示登录后重试')),
       );
@@ -1426,13 +1430,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ],
       ),
     );
-    if (confirm != true || !mounted) return;
+    if (confirm != true || !mounted || !context.mounted) return;
 
-    if (mounted)
+    if (mounted && context.mounted) {
       setState(() {
         _isFetchingCourses = true;
         _initializing = sc.courses.isEmpty;
       });
+    }
 
     // 弹出精美加载动画，防止用户乱点
     showAppDialog(
@@ -1452,13 +1457,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           .getCourses(requestedTerm.year, requestedTerm.semester,
               providerTermId: requestedTerm.providerTermId)
           .timeout(_courseFetchTimeout);
-      if (mounted &&
+      if (mounted && context.mounted &&
           (sc.contextGeneration != requestedGeneration ||
               sc.currentTerm.id != requestedTerm.id)) {
         Navigator.pop(context);
         return;
       }
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
 
       if (result == null || !result.success) {
         Navigator.pop(context); // 关闭加载弹窗
@@ -1496,17 +1501,19 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       } catch (error) {
         reminderError = error;
       }
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
 
-      if (mounted)
+      if (mounted && context.mounted) {
         setState(() {
           _hasCache = sc.courses.isNotEmpty;
           _didLoad = true;
         });
+      }
 
       // 给底层 Widget 预留微小的重绘时间，防止部分机型路由弹窗关闭时阻断下层 setState 渲染
       await Future.delayed(const Duration(milliseconds: 100));
-      if (mounted) {
+      if (!mounted || !context.mounted) return;
+      if (mounted && context.mounted) {
         Navigator.pop(context); // 确保课表加载进状态后再关闭加载弹窗
       }
       messenger.showSnackBar(
@@ -1518,7 +1525,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     ? '课表已拉取，但教务身份暂未同步；联网后会自动重试。'
                     : '课表已拉取。首次导入请点击顶部“设置周数”，选择开学第一天。',
           ),
-          duration: Duration(seconds: 4),
+          duration: const Duration(seconds: 4),
         ),
       );
 
@@ -1562,7 +1569,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           color: Colors.green.shade50,
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(
+                        child: const Icon(
                           Icons.check_circle,
                           color: Colors.green,
                           size: 48,
@@ -1599,10 +1606,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
       // 1.5秒后自动关闭成功弹窗
       Future.delayed(const Duration(milliseconds: 1500), () {
-        if (mounted) Navigator.pop(context);
+        if (mounted && context.mounted) Navigator.pop(context);
       });
     } on TimeoutException {
-      if (mounted) {
+      if (mounted && context.mounted) {
         Navigator.pop(context);
         AppFeedback.showErrorDialog(
           context,
@@ -1612,7 +1619,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && context.mounted) {
         Navigator.pop(context);
         AppFeedback.showErrorDialog(
           context,
@@ -1621,7 +1628,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         );
       }
     } finally {
-      if (mounted) {
+      if (mounted && context.mounted) {
         setState(() {
           _isFetchingCourses = false;
           _initializing = false;
@@ -1650,7 +1657,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       controller: controller,
       coordinator: _coordinatorOrNull(),
     );
-    if (!ready || !mounted) return;
+    if (!ready || !mounted || !context.mounted) return;
 
     final result = await CourseImportSheet.show(
       context,
@@ -1659,7 +1666,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       initialSemester: sc.currentTerm.semester,
     );
 
-    if (result == null || !mounted) return;
+    if (result == null || !mounted || !context.mounted) return;
 
     final confirm = await CoursePreviewSheet.show(
       context,
@@ -1670,7 +1677,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       eduProvider: edu,
     );
 
-    if (confirm != true || !mounted) return;
+    if (confirm != true || !mounted || !context.mounted) return;
 
     final oldTerm = sc.currentTerm;
     final sameTerm = oldTerm.id == result.term.id;
@@ -1690,7 +1697,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         resetHidden: true,
       );
 
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
 
       if (importedCount == 0) {
         final rawCount = result.courses.length;
@@ -1706,7 +1713,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
       await _syncCourseReminders(sc);
 
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
 
       setState(() {
         _resetWeekPager(sc, _pageAnchorDate(sc));
@@ -1723,12 +1730,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ),
       );
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('课表拉取失败：$e')),
       );
     } finally {
-      if (mounted) {
+      if (mounted && context.mounted) {
         setState(() {
           _isFetchingCourses = false;
           _isImportingCourses = false;
@@ -1774,10 +1781,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       _initializing = false;
       _didLoad = true;
     });
-  }
-
-  Future<void> _openCourseImportSheet(BuildContext context) {
-    return _openCoursePullSheet(context);
   }
 
   Future<void> _shareSchedule(CourseScheduleProvider sc) async {
@@ -2456,7 +2459,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                       setSheetState(() => isRefreshing = true);
                                       Navigator.pop(ctx);
                                       await _fetchCourses(context);
-                                      if (mounted) {
+                                      if (mounted && context.mounted) {
                                         setState(() {});
                                       }
                                     },
@@ -2797,7 +2800,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                                   archive.id,
                                                 );
                                                 await _syncCourseReminders(sc);
-                                                if (mounted) {
+                                                if (mounted && context.mounted) {
                                                   setState(() {
                                                     _hasCache = true;
                                                     _didLoad = true;
@@ -2806,7 +2809,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                                 if (ctx.mounted) {
                                                   Navigator.pop(ctx);
                                                 }
-                                                if (mounted) {
+                                                if (mounted && context.mounted) {
                                                   ScaffoldMessenger.of(
                                                     context,
                                                   ).showSnackBar(
@@ -2818,7 +2821,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                                   );
                                                 }
                                               } catch (e) {
-                                                if (mounted) {
+                                                if (mounted && context.mounted) {
                                                   ScaffoldMessenger.of(
                                                     context,
                                                   ).showSnackBar(
@@ -2998,14 +3001,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
         await sc.importArchiveFromJson(fileName, jsonStr);
         setSheetState(() {});
-        if (mounted) {
+        if (mounted && context.mounted) {
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(SnackBar(content: Text('已导入存档「$fileName」')));
         }
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && context.mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('导入失败，文件可能已损坏: $e')));
@@ -3027,7 +3030,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final fileName = '沈理校园课表_$safeName.json';
       final file = await _writeArchiveExportFile(fileName, jsonStr);
 
-      if (mounted) {
+      if (mounted && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('存档已保存至：${file.savedPath}'),
@@ -3044,7 +3047,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && context.mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('导出失败: $e')));
@@ -3231,7 +3234,7 @@ $classFilterRule
                             const SizedBox(height: 12),
                             // 星期几
                             DropdownButtonFormField<int>(
-                              value: weekday,
+                              initialValue: weekday,
                               decoration:
                                   const InputDecoration(labelText: '星期'),
                               items: List.generate(7, (i) => i + 1)
@@ -3251,7 +3254,7 @@ $classFilterRule
                               children: [
                                 Expanded(
                                   child: DropdownButtonFormField<int>(
-                                    value: startSection,
+                                    initialValue: startSection,
                                     decoration: const InputDecoration(
                                         labelText: '开始节次'),
                                     items: List.generate(12, (i) => i + 1)
@@ -3275,7 +3278,7 @@ $classFilterRule
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: DropdownButtonFormField<int>(
-                                    value: endSection,
+                                    initialValue: endSection,
                                     decoration: const InputDecoration(
                                         labelText: '结束节次'),
                                     items: List.generate(12, (i) => i + 1)
@@ -3300,7 +3303,7 @@ $classFilterRule
                               children: [
                                 Expanded(
                                   child: DropdownButtonFormField<int>(
-                                    value: startWeek.clamp(1, maxWeek),
+                                    initialValue: startWeek.clamp(1, maxWeek),
                                     decoration:
                                         const InputDecoration(labelText: '开始周'),
                                     items: List.generate(maxWeek, (i) => i + 1)
@@ -3323,7 +3326,7 @@ $classFilterRule
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: DropdownButtonFormField<int>(
-                                    value: endWeek.clamp(startWeek, maxWeek),
+                                    initialValue: endWeek.clamp(startWeek, maxWeek),
                                     decoration:
                                         const InputDecoration(labelText: '结束周'),
                                     items: List.generate(maxWeek, (i) => i + 1)
@@ -3367,7 +3370,7 @@ $classFilterRule
                                 )
                                     .colorScheme
                                     .secondaryContainer
-                                    .withOpacity(0.5),
+                                    .withValues(alpha: 0.5),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Column(
@@ -3474,7 +3477,7 @@ $classFilterRule
                                         : aiPromptTemplate;
                                 Clipboard.setData(ClipboardData(text: prompt));
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
+                                  const SnackBar(
                                     content: Text(
                                       '提示词已复制。请前往你选择的外部 AI 服务提交，处理规则由对应服务商决定。',
                                     ),
@@ -3496,7 +3499,7 @@ $classFilterRule
                                 )
                                     .colorScheme
                                     .surfaceContainerHighest
-                                    .withOpacity(0.3),
+                                    .withValues(alpha: 0.3),
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -3749,7 +3752,7 @@ $classFilterRule
                   for (var oldCourse in conflictingCourses) {
                     await sc.removeCustomCourse(oldCourse.id);
                   }
-                  if (mounted) {
+                  if (mounted && dialogCtx.mounted) {
                     _executeImport(dialogCtx, action, validCourses);
                   }
                 },
@@ -3768,7 +3771,7 @@ $classFilterRule
     } catch (e) {
       debugPrint('AI 导入解析失败: ${e.runtimeType}');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text(
             '解析失败，请检查数据格式。',
           ),
@@ -4474,7 +4477,7 @@ $classFilterRule
         ],
       ),
     );
-    if (confirmed == true) {
+    if (confirmed == true && mounted) {
       await context.read<CourseScheduleProvider>().removeCustomCourse(c.id);
       if (mounted) setState(() {});
       if (mounted) {
@@ -4555,7 +4558,7 @@ class _SaveArchiveDialogState extends State<_SaveArchiveDialog> {
                     } catch (_) {
                       // App 内存档已成功保存，公开导出失败时保留它供用户重试。
                     }
-                    if (!mounted) return;
+                    if (!mounted || !context.mounted) return;
                     Navigator.pop(context);
                     widget.setSheetState(() {});
                     scaffoldMessenger.showSnackBar(
@@ -4565,12 +4568,12 @@ class _SaveArchiveDialogState extends State<_SaveArchiveDialog> {
                               : '存档已保存至：${exported.savedPath}')),
                     );
                   } catch (error) {
-                    if (!mounted) return;
+                    if (!mounted || !context.mounted) return;
                     scaffoldMessenger.showSnackBar(
                       SnackBar(content: Text('保存失败：$error')),
                     );
                   } finally {
-                    if (mounted) setState(() => _saving = false);
+                    if (mounted && context.mounted) setState(() => _saving = false);
                   }
                 },
           child: Text(_saving ? '保存中…' : '保存'),

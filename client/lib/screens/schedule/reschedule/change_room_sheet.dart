@@ -49,8 +49,10 @@ class _ChangeRoomSheetState extends State<ChangeRoomSheet> {
   void initState() {
     super.initState();
     _courseWeeks = widget.course.weeks.toSet();
-    final firstWeek = widget.course.weeks.isNotEmpty ? widget.course.weeks.first : 1;
-    final lastWeek = widget.course.weeks.isNotEmpty ? widget.course.weeks.last : 18;
+    final firstWeek =
+        widget.course.weeks.isNotEmpty ? widget.course.weeks.first : 1;
+    final lastWeek =
+        widget.course.weeks.isNotEmpty ? widget.course.weeks.last : 18;
     _startWeek = firstWeek;
     _endWeek = lastWeek;
     _roomController = TextEditingController();
@@ -122,7 +124,8 @@ class _ChangeRoomSheetState extends State<ChangeRoomSheet> {
                     ),
                   ),
                   IconButton(
-                    icon: Icon(Icons.close, color: tokens.textSecondary, size: 20),
+                    icon: Icon(Icons.close,
+                        color: tokens.textSecondary, size: 20),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -152,23 +155,28 @@ class _ChangeRoomSheetState extends State<ChangeRoomSheet> {
                 ),
               ),
               const SizedBox(height: 8),
-              RadioListTile<bool>(
-                value: true,
+              RadioGroup<bool>(
                 groupValue: _onlyCurrentWeek,
-                activeColor: tokens.primary,
-                contentPadding: EdgeInsets.zero,
-                title: Text('仅本周 (第${widget.currentAcademicWeek}周)',
-                    style: TextStyle(color: tokens.textPrimary, fontSize: 14)),
-                onChanged: (val) => setState(() => _onlyCurrentWeek = val ?? false),
-              ),
-              RadioListTile<bool>(
-                value: false,
-                groupValue: _onlyCurrentWeek,
-                activeColor: tokens.primary,
-                contentPadding: EdgeInsets.zero,
-                title: Text('指定周次范围',
-                    style: TextStyle(color: tokens.textPrimary, fontSize: 14)),
-                onChanged: (val) => setState(() => _onlyCurrentWeek = val ?? false),
+                onChanged: (value) =>
+                    setState(() => _onlyCurrentWeek = value ?? false),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  RadioListTile<bool>(
+                    value: true,
+                    activeColor: tokens.primary,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('仅本周 (第${widget.currentAcademicWeek}周)',
+                        style:
+                            TextStyle(color: tokens.textPrimary, fontSize: 14)),
+                  ),
+                  RadioListTile<bool>(
+                    value: false,
+                    activeColor: tokens.primary,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('指定周次范围',
+                        style:
+                            TextStyle(color: tokens.textPrimary, fontSize: 14)),
+                  ),
+                ]),
               ),
               if (!_onlyCurrentWeek) ...[
                 const SizedBox(height: 8),
@@ -223,7 +231,8 @@ class _ChangeRoomSheetState extends State<ChangeRoomSheet> {
                   hintStyle: TextStyle(color: tokens.textDisabled),
                   filled: true,
                   fillColor: tokens.inputBackground,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide(color: tokens.outline),
@@ -268,7 +277,8 @@ class _ChangeRoomSheetState extends State<ChangeRoomSheet> {
                           widget.onConfirm(_actualAffectedWeeks, room);
                         },
                   child: const Text('确认修改教室',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
@@ -285,11 +295,13 @@ class _ChangeRoomSheetState extends State<ChangeRoomSheet> {
     required ValueChanged<int?> onChanged,
     int minWeek = 1,
   }) {
-    final items = List.generate(25, (i) => i + 1).where((w) => w >= minWeek).toList();
+    final items =
+        List.generate(25, (i) => i + 1).where((w) => w >= minWeek).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(fontSize: 12, color: tokens.textSecondary)),
+        Text(label,
+            style: TextStyle(fontSize: 12, color: tokens.textSecondary)),
         const SizedBox(height: 4),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -304,7 +316,10 @@ class _ChangeRoomSheetState extends State<ChangeRoomSheet> {
               isExpanded: true,
               dropdownColor: tokens.surface,
               style: TextStyle(color: tokens.textPrimary, fontSize: 14),
-              items: items.map((w) => DropdownMenuItem<int>(value: w, child: Text('第 $w 周'))).toList(),
+              items: items
+                  .map((w) =>
+                      DropdownMenuItem<int>(value: w, child: Text('第 $w 周')))
+                  .toList(),
               onChanged: onChanged,
             ),
           ),

@@ -241,7 +241,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         isDark: isDark,
         slivers: [
           SliverToBoxAdapter(child: _buildHeroSection()),
-          SliverToBoxAdapter(
+          const SliverToBoxAdapter(
             child: CanteenDetailSkeleton(includeHero: false),
           ),
         ],
@@ -1129,6 +1129,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   Future<void> _openCreateReviewEditor() async {
     if (!await _ensureCanReview()) return;
+    if (!mounted) return;
 
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -1154,6 +1155,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   Future<void> _openEditLatestReviewEditor() async {
     if (!await _ensureCanReview()) return;
+    if (!mounted) return;
     final latest = _canteenData?['my_latest_review'];
     if (!_canEditLatest || latest is! Map || _latestReviewId == null) {
       ScaffoldMessenger.of(context).showSnackBar(

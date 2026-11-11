@@ -48,6 +48,10 @@ jobs:
 
   astrbot-plugin:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: ['4.29.3', '4.29.4']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -55,7 +59,7 @@ jobs:
           python-version: '3.12'
       - name: Install fixed AstrBot SDK and plugin test dependencies
         run: >-
-          python -m pip install astrbot==4.29.3
+          python -m pip install astrbot==${{ matrix.sdk }}
           -r astrbot_plugin_sylulive/requirements.txt
           pytest pytest-asyncio docstring-parser
       - name: Check real AstrBot dispatch and plugin contracts in isolation
@@ -207,8 +211,10 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter analyze --no-fatal-warnings --no-fatal-infos
-      # 关键可靠性路径使用默认 fatal 规则；保留全仓库历史样式告警的渐进式收口。
+      - name: Verify public legal documents match the App
+        run: dart run tool/export_legal_documents.dart --check
+      - run: flutter analyze
+      # 全仓提示已清零，默认 fatal 规则阻止回流；保留关键路径清单供变更审阅。
       - name: Analyze reliability-critical surfaces
         run: >-
           flutter analyze
@@ -305,7 +311,7 @@ jobs:
           cache: true
       - run: flutter pub get
       - name: Analyze OHOS platform integrity
-        run: flutter analyze --no-fatal-warnings --no-fatal-infos
+        run: flutter analyze
       - name: Verify no direct Android plugin usage
         run: |
           if grep -rnE 'package:(jpush_flutter|flutter_local_notifications|url_launcher|flutter_secure_storage)' lib/ | grep -v 'lib/platform/'; then

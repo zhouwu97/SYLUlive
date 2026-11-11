@@ -263,9 +263,9 @@ class SyluClientCrawler {
 
   /// 构造 WebVPN 加密后的目标 URL
   String _buildVpnUrl() {
-    final keyBytes = utf8.encode(_vpnKeyIvStr) as Uint8List;
-    final ivBytes = utf8.encode(_vpnKeyIvStr) as Uint8List;
-    final plainBytes = utf8.encode(_targetDomain) as Uint8List;
+    final keyBytes = utf8.encode(_vpnKeyIvStr);
+    final ivBytes = utf8.encode(_vpnKeyIvStr);
+    final plainBytes = utf8.encode(_targetDomain);
 
     final cipher = pc.CFBBlockCipher(pc.AESEngine(), 16);
     cipher.init(true, pc.ParametersWithIV(pc.KeyParameter(keyBytes), ivBytes));
@@ -316,15 +316,15 @@ class SyluClientCrawler {
       ASN1Integer modulus;
       ASN1Integer exponent;
 
-      if (topLevelSeq.elements![0] is ASN1Integer) {
-        modulus = topLevelSeq.elements![0] as ASN1Integer;
-        exponent = topLevelSeq.elements![1] as ASN1Integer;
+      if (topLevelSeq.elements[0] is ASN1Integer) {
+        modulus = topLevelSeq.elements[0] as ASN1Integer;
+        exponent = topLevelSeq.elements[1] as ASN1Integer;
       } else {
-        final subjectPublicKey = topLevelSeq.elements![1] as ASN1BitString;
-        final innerParser = ASN1Parser(subjectPublicKey.contentBytes()!);
+        final subjectPublicKey = topLevelSeq.elements[1] as ASN1BitString;
+        final innerParser = ASN1Parser(subjectPublicKey.contentBytes());
         final pkSeq = innerParser.nextObject() as ASN1Sequence;
-        modulus = pkSeq.elements![0] as ASN1Integer;
-        exponent = pkSeq.elements![1] as ASN1Integer;
+        modulus = pkSeq.elements[0] as ASN1Integer;
+        exponent = pkSeq.elements[1] as ASN1Integer;
       }
 
       final rsaPublicKey = pc.RSAPublicKey(
@@ -335,7 +335,7 @@ class SyluClientCrawler {
       final cipher = pc.PKCS1Encoding(pc.RSAEngine())
         ..init(true, pc.PublicKeyParameter<pc.RSAPublicKey>(rsaPublicKey));
 
-      final plainBytes = utf8.encode(plainText) as Uint8List;
+      final plainBytes = utf8.encode(plainText);
       final cipherBytes = cipher.process(plainBytes);
 
       return base64Encode(cipherBytes);
@@ -350,7 +350,7 @@ class SyluClientCrawler {
     final buffer = StringBuffer();
     for (int part in bytes) {
       if (part & 0xff != part) {
-        throw FormatException("Non-byte integer detected");
+        throw const FormatException("Non-byte integer detected");
       }
       buffer.write('${part < 16 ? '0' : ''}${part.toRadixString(16)}');
     }

@@ -363,11 +363,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     // 有 initialPost 时首帧已经显示完整帖子：刷新在后台进行，
     // 不再把 _isLoading 切回 true 遮住已有内容（stale-while-refresh）。
     final hasInitialPost = _post != null;
-    if (mounted)
+    if (mounted) {
       setState(() {
         if (!hasInitialPost) _isLoading = true;
         _errorMessage = null;
       });
+    }
     try {
       final response = await _dio.get('/posts/${widget.postId}',
           queryParameters: {'capabilities': 'poll_v1'});
@@ -1024,7 +1025,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   Future<void> _submitModerationAppeal() async {
     final reason = await showAppDialog<String>(
       context: context,
-      builder: (context) => _PremiumInputDialog(
+      builder: (context) => const _PremiumInputDialog(
         title: '提交申诉',
         hint: '请说明你认为原处理不正确的原因',
         confirmText: '提交申诉',
@@ -1067,7 +1068,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   Future<void> _adminRestorePost() async {
     final reason = await showAppDialog<String>(
       context: context,
-      builder: (context) => _PremiumInputDialog(
+      builder: (context) => const _PremiumInputDialog(
         title: '恢复帖子公开展示',
         hint: '请输入恢复原因（必填）',
         confirmText: '确认恢复',
@@ -1390,7 +1391,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       context: context,
       builder: (_) => _PinPostDialog(isSuperAdmin: isSuperAdmin),
     );
-    if (dialogResult == null) return;
+    if (dialogResult == null || !mounted) return;
 
     final postProvider = context.read<PostProvider>();
     final result = await postProvider.pinPost(
@@ -1430,7 +1431,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       message: '确定取消这条帖子的首页置顶吗？',
       confirmText: '取消置顶',
     );
-    if (!confirmed) return;
+    if (!confirmed || !mounted) return;
 
     final postProvider = context.read<PostProvider>();
     final result = await postProvider.unpinPost(post.id);
@@ -3785,128 +3786,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
 
   // ---- 作者卡片（集市复用，保持不变） ----
 
-  Widget _buildAuthorCard(Post p, bool isDark) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        if (p.author != null) {
-          _openAuthorHome(p.author!.id);
-        }
-      },
-      child: AppCardSurface(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark
-              ? AppColors.surfaceSecondaryDark
-              : AppColors.surfaceSecondaryLight,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-        ),
-        child: Row(
-          children: [
-            GestureDetector(
-              onTap: () {
-                if (p.author?.avatar.isNotEmpty == true) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ImageViewerScreen(
-                        imageUrls: [ApiConstants.fullUrl(p.author!.avatar)],
-                      ),
-                    ),
-                  );
-                }
-              },
-              child: CachedAvatar(
-                radius: 24,
-                imageUrl: p.author?.avatar.isNotEmpty == true
-                    ? ApiConstants.fullUrl(p.author!.avatar)
-                    : null,
-                fallbackText: p.author?.nickname,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          p.author?.nickname ?? '匿名',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: isDark ? Colors.white : Colors.black87,
-                          ),
-                        ),
-                      ),
-                      if (p.author != null) ...[
-                        const SizedBox(width: 6),
-                        _buildLevelBadge(p.author!, isDark),
-                      ],
-                      if (p.waterSectionAuthorMeta != null) ...[
-                        const SizedBox(width: 6),
-                        _buildSectionLevelBadge(p.waterSectionAuthorMeta!),
-                      ],
-                    ],
-                  ),
-                  AiBotIdentity(user: p.author),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _creditColor(
-                            p.author?.creditScore ?? 100,
-                          ).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          '诚信 ${p.author?.creditScore ?? 100}%',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: _creditColor(p.author?.creditScore ?? 100),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Icon(
-                        Icons.visibility_outlined,
-                        size: 13,
-                        color: isDark ? Colors.white30 : Colors.grey[400],
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        '${p.viewCount}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isDark ? Colors.white30 : Colors.grey[400],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Text(
-              _formatTime(p.createdAt),
-              style: TextStyle(
-                fontSize: 12,
-                color: isDark ? Colors.white30 : Colors.grey[400],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _openAuthorHome(int userId) {
     final handler = widget.onAuthorTap;
     if (handler != null) {
@@ -5446,12 +5325,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   // ---- 工具 ----
-
-  Color _creditColor(int score) {
-    if (score >= 90) return const Color(0xFF4CAF50);
-    if (score >= 70) return const Color(0xFFFF9800);
-    return const Color(0xFFF44336);
-  }
 
   String _formatTime(DateTime dt) {
     final now = DateTime.now();

@@ -134,6 +134,13 @@ async def test_business_command_never_falls_through_to_default_agent(monkeypatch
     assert len(responses) == 1
 
 
+def test_star_class_is_discovered_by_native_sdk_without_legacy_registration():
+    module = importlib.import_module("astrbot_plugin_sylulive.main")
+    metadata = star_map[module.__name__]
+    assert metadata.star_cls_type is module.SYLUlivePlugin
+    assert metadata.module_path == module.__name__
+
+
 def test_connection_error_does_not_claim_a_publish_was_attempted():
     cls = importlib.import_module("astrbot_plugin_sylulive.main").SYLUlivePlugin
     text = cls.problem(IntegrationProblem("network_unavailable"))

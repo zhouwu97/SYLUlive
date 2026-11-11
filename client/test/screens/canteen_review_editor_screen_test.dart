@@ -73,6 +73,31 @@ class _BlockingPreferencesStore extends MemoryPreferencesStore {
   }
 }
 
+class _BlockingSubmissionRepository extends CanteenReviewDraftRepository {
+  _BlockingSubmissionRepository(
+      {required super.storeOverride, required super.baseDirOverride});
+
+  final started = Completer<void>();
+  final release = Completer<void>();
+  int submissionSaves = 0;
+  bool failSave = false;
+
+  @override
+  Future<void> saveDraft(CanteenReviewDraft draft) async {
+    if (draft.submitIdempotencyKey != null) {
+      submissionSaves++;
+      if (!started.isCompleted) {
+        started.complete();
+        await release.future;
+      }
+      if (failSave) {
+        throw const FileSystemException('synthetic_storage_failure');
+      }
+    }
+    await super.saveDraft(draft);
+  }
+}
+
 Widget _buildEditorTestApp({
   required Dio dio,
   required CanteenReviewDraftRepository draftRepository,
@@ -406,6 +431,76 @@ void main() {
     final loaded = await draftRepository.loadDraft(userId: 101, canteenId: 1);
     expect(loaded, isNotNull);
     expect(loaded!.star, 4);
+  });
+
+  for (final leavePage in [false, true]) {
+    testWidgets('草稿落盘期间阻止重复发布，离开页面=$leavePage', (tester) async {
+      var reviewCalls = 0;
+      final repository = _BlockingSubmissionRepository(
+          storeOverride: store, baseDirOverride: tempDir);
+      final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+      dio.httpClientAdapter = FakeAdapter((options) async {
+        if (options.path == '/canteens/1/reviews' && options.method == 'POST') {
+          reviewCalls++;
+          return _json('{"review":{"updated_at":"2026-08-20T12:00:00Z"}}', 201);
+        }
+        if (options.path == '/canteens/1/dishes') return _json('[]', 200);
+        return _json('{}', 200);
+      });
+      await tester.pumpWidget(
+          _buildEditorTestApp(dio: dio, draftRepository: repository));
+      await tester.pumpAndSettle();
+      await _completeDimensions(tester);
+      final submit = tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, '发布食堂评价'))
+          .onPressed!;
+      submit();
+      submit();
+      await tester.pump();
+      expect(repository.started.isCompleted, isTrue);
+      expect(repository.submissionSaves, 1);
+      expect(reviewCalls, 0);
+      if (leavePage) {
+        await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+      }
+      repository.release.complete();
+      await tester.pumpAndSettle();
+      expect(reviewCalls, leavePage ? 0 : 1);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('草稿落盘失败不发送评价，保留表单并允许重试', (tester) async {
+    var reviewCalls = 0;
+    final repository = _BlockingSubmissionRepository(
+        storeOverride: store, baseDirOverride: tempDir)
+      ..failSave = true;
+    repository.release.complete();
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/1/reviews' && options.method == 'POST') {
+        reviewCalls++;
+        return _json('{"review":{"updated_at":"2026-08-20T12:00:00Z"}}', 201);
+      }
+      if (options.path == '/canteens/1/dishes') return _json('[]', 200);
+      return _json('{}', 200);
+    });
+    await tester
+        .pumpWidget(_buildEditorTestApp(dio: dio, draftRepository: repository));
+    await tester.pumpAndSettle();
+    await _completeDimensions(tester);
+    await tester.tap(find.widgetWithText(FilledButton, '发布食堂评价'));
+    await tester.pumpAndSettle();
+    expect(reviewCalls, 0);
+    expect(find.text('草稿保存失败，请检查本机存储后重试'), findsOneWidget);
+    final button = tester
+        .widget<FilledButton>(find.widgetWithText(FilledButton, '发布食堂评价'));
+    expect(button.onPressed, isNotNull);
+    repository.failSave = false;
+    button.onPressed!();
+    await tester.pumpAndSettle();
+    expect(reviewCalls, 1);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('成功发布评价后清除草稿并返回 true', (tester) async {

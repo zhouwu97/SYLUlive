@@ -34,7 +34,7 @@ class PostCacheService {
   static const _lastCleanedSchemaKey = '_last_cleaned_schema_version';
 
   static final Set<Future<void>> _pendingWrites = {};
-  static int _activeSessionEpoch = 0;
+  static int activeSessionEpoch = 0;
   static final Map<String, int> _keyWriteVersions = {};
   // 同一缓存键严格串行，清理可以等待已经排队的旧写入完成后再删除。
   static final Map<String, Future<void>> _keyWriteTails = {};
@@ -43,18 +43,12 @@ class PostCacheService {
   static Future<void> Function()? beforeCachePut;
 
   static void setActiveSessionEpoch(int epoch) {
-    _activeSessionEpoch = epoch;
-  }
-
-  static set activeSessionEpoch(int epoch) {
-    _activeSessionEpoch = epoch;
+    activeSessionEpoch = epoch;
   }
 
   static void incrementSessionEpoch() {
-    _activeSessionEpoch++;
+    activeSessionEpoch++;
   }
-
-  static int get activeSessionEpoch => _activeSessionEpoch;
 
   static Future<void> waitForPendingWrites() async {
     if (_pendingWrites.isEmpty) return;
@@ -106,8 +100,8 @@ class PostCacheService {
     int? tagId,
     int? sessionEpoch,
   }) async {
-    final epoch = sessionEpoch ?? _activeSessionEpoch;
-    if (epoch != _activeSessionEpoch) {
+    final epoch = sessionEpoch ?? activeSessionEpoch;
+    if (epoch != activeSessionEpoch) {
       // 旧会话产生的落后写入直接丢弃，不污染新会话
       return;
     }
@@ -150,9 +144,9 @@ class PostCacheService {
     int? sessionEpoch,
     int? writeVersion,
   }) async {
-    final epoch = sessionEpoch ?? _activeSessionEpoch;
+    final epoch = sessionEpoch ?? activeSessionEpoch;
     final key = _cacheKey(boardId, sort, type: type, tagId: tagId);
-    if (epoch != _activeSessionEpoch ||
+    if (epoch != activeSessionEpoch ||
         (writeVersion != null &&
             writeVersion < (_keyWriteVersions[key] ?? 0))) {
       return;
@@ -178,7 +172,7 @@ class PostCacheService {
       'posts': feed.posts.map((p) => _postToJson(p)).toList()
     });
     // 写入前再次校验会话世代与写入版本，确保没有在打开 box 期间发生切号或被新写入抢占
-    if (epoch != _activeSessionEpoch ||
+    if (epoch != activeSessionEpoch ||
         (writeVersion != null &&
             writeVersion < (_keyWriteVersions[key] ?? 0))) {
       return;
@@ -211,7 +205,7 @@ class PostCacheService {
       }
 
       final cachedEpoch = (decoded['session_epoch'] as num?)?.toInt() ?? 0;
-      final requiredEpoch = expectedSessionEpoch ?? _activeSessionEpoch;
+      final requiredEpoch = expectedSessionEpoch ?? activeSessionEpoch;
       if (boardId == 1 && cachedEpoch != requiredEpoch) {
         // 会话世代不匹配，清除旧账号/旧会话缓存
         await box.delete(key);

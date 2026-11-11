@@ -149,7 +149,7 @@ function EmailFlow({ reset = false, initialEmail = "" }: { reset?: boolean; init
             ui.open("登录沈理校园", <Login initialAccount={String(data.email)} />);
           }
         }}
-      >{!reset&&<label className="check-label"><input name="agreements" type="checkbox" required/>我已阅读并同意<a href="https://sylulive.online/terms" target="_blank" rel="noreferrer">用户协议</a>与<a href="https://sylulive.online/privacy" target="_blank" rel="noreferrer">隐私政策</a></label>}</Form>
+      >{!reset&&<label className="check-label"><input name="agreements" type="checkbox" required/>我已阅读并同意<a href="/terms" target="_blank" rel="noreferrer">用户协议</a>与<a href="/privacy" target="_blank" rel="noreferrer">隐私政策</a></label>}</Form>
       <button className="link-btn auth-back" type="button" onClick={() => ui.open("登录沈理校园", <Login initialAccount={initialEmail} />)}>返回登录</button>
     </section>
   );

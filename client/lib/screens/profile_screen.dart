@@ -1,13 +1,11 @@
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
-import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import '../widgets/app_card.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../widgets/responsive_content.dart';
@@ -21,12 +19,9 @@ import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/edu_provider.dart';
-import '../providers/course_schedule_provider.dart';
 import '../providers/message_provider.dart';
 import '../theme/app_colors.dart';
 import '../utils/app_feedback.dart';
-import '../utils/update_checker.dart';
-import '../utils/responsive_util.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
 import 'image_viewer_screen.dart';
@@ -34,7 +29,6 @@ import '../config/api_constants.dart';
 import '../config/private_chat_policy.dart';
 import 'edu_screen.dart';
 
-import 'login_screen.dart';
 import 'my_content_screen.dart';
 import 'chat_list_screen.dart';
 import 'admin_panel_screen.dart';
@@ -85,7 +79,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _unreadReplyCount = 0;
   int _unreadMessageCount = 0;
   int _feedbackUnreadCount = 0;
-  bool _startOnTimetable = false;
   StartupDestinationMode _startupDestination = StartupDestinationMode.home;
   int? _postCount;
   int _contentCountRequest = 0;
@@ -175,7 +168,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final tp = context.read<ThemeProvider>();
     if (mounted) {
       setState(() {
-        _startOnTimetable = tp.startOnTimetable;
         _startupDestination = tp.startupDestination;
       });
     }
@@ -350,12 +342,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildDefaultBackground(bool isDark) {
-    return ColoredBox(
-      color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
-    );
-  }
-
   Widget _buildHeader(user, AuthProvider authProvider, bool isDark) {
     final hasSession =
         authProvider.isLoggedIn || authProvider.hasRecoverableSession;
@@ -381,7 +367,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 border: Border.all(color: Colors.white, width: 2),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
+                    color: Colors.black.withValues(alpha: 0.1),
                     blurRadius: 10,
                     spreadRadius: 2,
                   ),
@@ -572,7 +558,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withOpacity(isDark ? 0.2 : 0.15),
+        color: color.withValues(alpha: isDark ? 0.2 : 0.15),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -694,45 +680,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           fontWeight: FontWeight.bold,
           color: Colors.white,
         ),
-      ),
-    );
-  }
-
-  Widget _buildStatBadge({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    return GlassContainer(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      borderRadius: 25,
-      blur: 15,
-      opacity: 0.15,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(fontSize: 10, color: Colors.black87),
-              ),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }
@@ -1287,15 +1234,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     style: TextStyle(
                         fontSize: 12, color: colors.onSurfaceVariant)),
                 trailing: selected
-                    ? Icon(Icons.check_rounded,
+                    ? const Icon(Icons.check_rounded,
                         color: AppColors.brandPrimary, size: 20)
                     : null,
                 onTap: () async {
                   try {
                     final provider = context.read<ThemeProvider>();
+                    final auth = context.read<AuthProvider>();
+                    final userId = auth.user?.id;
                     await provider.setStartupDestination(mode);
+                    if (!mounted || auth.user?.id != userId) return;
                     if (mode == StartupDestinationMode.lastPage) {
-                      final userId = context.read<AuthProvider>().user?.id;
                       if (userId != null && userId > 0) {
                         await RootPageStateStore.instance.saveLastPage(
                           RestorablePageState(
@@ -1309,6 +1258,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       }
                     }
                     if (!mounted) return;
+                    if (!sheetContext.mounted) return;
                     setSheetState(() {});
                     setState(() => _startupDestination = mode);
                     Navigator.pop(sheetContext);
@@ -1552,7 +1502,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             toolbarTitle: '裁剪头像',
             toolbarColor: Colors.black,
             toolbarWidgetColor: Colors.white,
-            statusBarColor: Colors.black,
+            statusBarLight: false,
             backgroundColor: Colors.black,
             initAspectRatio: CropAspectRatioPreset.square,
             lockAspectRatio: true,
@@ -1620,18 +1570,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onTap: () => pickAndUpload(ImageSource.camera),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  void _showAvatarViewer(BuildContext context, String avatarUrl) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ImageViewerScreen(
-          items: [avatarViewerItem(avatarUrl)],
-          initialIndex: 0,
         ),
       ),
     );

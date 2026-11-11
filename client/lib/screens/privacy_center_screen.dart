@@ -27,38 +27,9 @@ class PrivacyCenterScreen extends StatefulWidget {
 }
 
 class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
-  List<Map<String, dynamic>> _requests = const [];
-  bool _loadingRequests = true;
   bool _loadingData = false;
   bool _exporting = false;
   bool _revoking = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRequests();
-  }
-
-  Future<void> _loadRequests() async {
-    try {
-      final response =
-          await context.read<AuthProvider>().dio.get('/user/privacy/requests');
-      final items = response.data is Map ? response.data['items'] : null;
-      if (mounted) {
-        setState(() {
-          _requests = items is List
-              ? items
-                  .whereType<Map>()
-                  .map((item) => Map<String, dynamic>.from(item))
-                  .toList()
-              : const [];
-          _loadingRequests = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loadingRequests = false);
-    }
-  }
 
   Future<void> _showPersonalData() async {
     if (_loadingData) return;
@@ -278,11 +249,11 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
                         (auth.user?.eduAuthorized ?? false) ? '已授权' : '未授权',
                     trailing: const SizedBox.shrink(),
                   ),
-                  _PrivacyActionTile(
+                  const _PrivacyActionTile(
                     icon: Icons.alarm_on_outlined,
                     title: '本地课程和考试提醒',
                     subtitle: '本地提醒不依赖远程推送，可在课表和考试功能中分别管理',
-                    trailing: const SizedBox.shrink(),
+                    trailing: SizedBox.shrink(),
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(
@@ -333,7 +304,6 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
         widget.restricted || !(auth.user?.legalConsentsActive ?? true);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? CampusTheme.darkBg : CampusTheme.bg;
-    final accent = isDark ? const Color(0xFF62CDBD) : CampusTheme.primary;
 
     return Scaffold(
       backgroundColor: AppPageBackground.color(context, bg),

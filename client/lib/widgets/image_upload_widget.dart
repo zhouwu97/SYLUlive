@@ -209,7 +209,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
       }
     } on DioException catch (e) {
       debugPrint('Dio上传图片出错: ${e.type} status=${e.response?.statusCode}');
-      if (ownsScope()) {
+      if (mounted && ownsScope()) {
         String errMsg = '网络异常或超时';
         final data = e.response?.data;
         if (data is Map) {
@@ -225,13 +225,13 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
       }
     } catch (e) {
       debugPrint('上传图片异常: ${e.runtimeType}');
-      if (ownsScope()) {
+      if (mounted && ownsScope()) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('处理图片出错: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
-      if (ownsScope()) {
+      if (mounted && ownsScope()) {
         setState(() {
           _isUploading = false;
         });

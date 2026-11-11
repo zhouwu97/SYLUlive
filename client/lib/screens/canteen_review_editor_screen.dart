@@ -293,7 +293,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
       _selectedDishIds
         ..clear()
         ..addEntries(_recommendedDishIdNames(existing));
-      _dishReviews..clear();
+      _dishReviews.clear();
       _pendingDishReviews.clear();
       for (final item in dishReviews) {
         if (item.dishId > 0) {
@@ -312,7 +312,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                   type: ReviewDraftImageType.publishedRemote,
                   url: url,
                 ))
-            .toList(),
+            ,
         ...boundImages,
       ]);
       _isDirty = false;
@@ -718,7 +718,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                 FilledButton(
                   onPressed: () async {
                     await _saveDraftNow();
-                    if (!mounted) return;
+                    if (!mounted || !sheetContext.mounted) return;
                     Navigator.pop(sheetContext);
                     Navigator.of(context).pop(false);
                   },
@@ -743,7 +743,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
                       mode: _isEditing ? 'edit' : 'create',
                       reviewEventId: _isEditing ? _existingReviewId : null,
                     );
-                    if (!mounted) return;
+                    if (!mounted || !sheetContext.mounted) return;
                     Navigator.pop(sheetContext);
                     Navigator.of(context).pop(false);
                   },
@@ -824,13 +824,22 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     if (!_preparePhotoBindings()) return;
 
     _submitIdempotencyKey ??=
-        'canteen-review-${_userId}-${widget.canteenId}-${_existingReviewId ?? 0}-${DateTime.now().microsecondsSinceEpoch}';
+        'canteen-review-$_userId-${widget.canteenId}-${_existingReviewId ?? 0}-${DateTime.now().microsecondsSinceEpoch}';
 
     // 在任何网络请求前落盘幂等键；请求超时后重新进入页面仍复用同一提交身份。
-    await _draftRepo.saveDraft(_buildDraftSnapshot());
-
-    _draftWritesBlocked = true;
     setState(() => _isSubmitting = true);
+    try {
+      await _draftRepo.saveDraft(_buildDraftSnapshot());
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('草稿保存失败，请检查本机存储后重试')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    _draftWritesBlocked = true;
 
     final authProvider = context.read<AuthProvider>();
     final canteenProvider = context.read<CanteenProvider>();
@@ -1072,6 +1081,7 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
 
       final errMsg =
           result.errorMessage ?? canteenProvider.errorMessage ?? '提交失败，请稍后重试';
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(errMsg)),
       );
@@ -1900,46 +1910,6 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
         setState(() => _dishSuggestions = suggestions);
       }
     });
-  }
-
-  void _updateDishReview(CanteenDish dish,
-      {int? taste, int? value, int? portion}) {
-    final current = _dishReviews[dish.id] ??
-        CanteenDishReviewInput(dishId: dish.id, taste: 0, value: 0, portion: 0);
-    setState(() {
-      _dishReviews[dish.id] = CanteenDishReviewInput(
-        dishId: dish.id,
-        taste: taste ?? current.taste,
-        value: value ?? current.value,
-        portion: portion ?? current.portion,
-        comment: current.comment,
-      );
-    });
-    _onFormChanged();
-  }
-
-  void _updatePendingDishReview(String name,
-      {int? taste, int? value, int? portion}) {
-    final key = name.toLowerCase();
-    final current = _pendingDishReviews[key] ??
-        CanteenDishReviewInput(
-          dishId: 0,
-          dishName: name,
-          taste: 0,
-          value: 0,
-          portion: 0,
-        );
-    setState(() {
-      _pendingDishReviews[key] = CanteenDishReviewInput(
-        dishId: 0,
-        dishName: name,
-        taste: taste ?? current.taste,
-        value: value ?? current.value,
-        portion: portion ?? current.portion,
-        comment: current.comment,
-      );
-    });
-    _onFormChanged();
   }
 
   CanteenDish? _findDish(String name) {

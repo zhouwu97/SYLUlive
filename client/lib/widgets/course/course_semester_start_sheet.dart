@@ -105,7 +105,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 decoration: BoxDecoration(
-                  color: primaryColor.withOpacity(0.1),
+                  color: primaryColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -145,14 +145,14 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
                   decoration: BoxDecoration(
                     color: isSelected
                         ? primaryColor
-                        : (isDark ? Colors.white.withOpacity(0.06) : Colors.grey[100]),
+                        : (isDark ? Colors.white.withValues(alpha: 0.06) : Colors.grey[100]),
                     borderRadius: BorderRadius.circular(12),
                     border: isSelected
                         ? null
                         : Border.all(
                             color: isDark
-                                ? Colors.white.withOpacity(0.1)
-                                : Colors.grey.withOpacity(0.15),
+                                ? Colors.white.withValues(alpha: 0.1)
+                                : Colors.grey.withValues(alpha: 0.15),
                           ),
                   ),
                   alignment: Alignment.center,
@@ -214,7 +214,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
                 child: Icon(
                   Icons.arrow_drop_down,
                   size: 20,
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
               ),
             ],
@@ -280,7 +280,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
               margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 12),
               decoration: isSelected
                   ? BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: Theme.of(context).colorScheme.primary,
@@ -309,7 +309,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
                                   : (Theme.of(context).brightness == Brightness.dark
                                       ? Colors.white
                                       : Colors.black87))
-                              : Colors.grey.withOpacity(0.5),
+                              : Colors.grey.withValues(alpha: 0.5),
                           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                           fontSize: 15,
                         ),
@@ -344,7 +344,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
             : (isDark ? const Color(0xFF2A2A2A) : Colors.white),
         boxShadow: glass ? null : [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, -4),
           )
@@ -432,7 +432,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
               width: 40,
               height: 5,
               decoration: BoxDecoration(
-                color: Colors.grey.withOpacity(0.3),
+                color: Colors.grey.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2.5),
               ),
             ),
@@ -457,7 +457,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(

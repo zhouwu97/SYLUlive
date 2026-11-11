@@ -1009,6 +1009,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         ),
       );
       // 统一 lastPage 状态：仅当用户选择“上次退出页面”时才记录。
+      if (!mounted) return;
       final mode = context.read<ThemeProvider>().startupDestination;
       if (mode == StartupDestinationMode.lastPage) {
         await RootPageStateStore.instance.saveLastPage(

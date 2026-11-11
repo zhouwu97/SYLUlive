@@ -15,7 +15,5 @@ abstract final class BetaReleasePolicy {
   static const bool aiCompetitionFit = competitionAIExplanation;
   static const bool aiTeamMatching = false;
   static const bool competitionRecommendations = false;
-  static const bool awardArchive = false;
-  static const bool policyBenefits = false;
   static const bool clientAcademicProbe = false;
 }

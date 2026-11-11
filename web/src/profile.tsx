@@ -54,6 +54,7 @@ function MobileProfile() {
       { icon: 'bell', label: '通知', description: '互动回复与系统消息', to: '/notifications' },
       { icon: 'ai', label: '已授权助手', description: '管理机器人与外部助手授权', to: '/connected-apps' },
       { icon: 'admin', label: '账号安全', description: '查看绑定信息与修改密码', action: () => ui.open('账号安全', <Security />) },
+      { icon: 'file', label: '协议与隐私', description: '阅读并确认当前版本协议', to: '/agreements' },
       { icon: 'admin', label: '隐私与数据', description: '导出数据、管理本地资料', action: () => ui.open('隐私与数据', <><a className="btn" href="/api/user/privacy/export" target="_blank" rel="noreferrer">导出服务器个人数据</a><button className="btn" onClick={() => { store.clearPersonal(); ui.notify('当前页面的校园资料已清除'); ui.close(); }}>清除当前页面校园资料</button><p><Link to="/feedback" onClick={ui.close}>提交数据更正或删除请求</Link></p></>) },
       { icon: 'feedback', label: '反馈与工单', description: '提交问题或查看处理进度', to: '/feedback' },
       { icon: 'profile', label: '编辑资料', description: '昵称、头像与背景', action: () => ui.open('编辑资料', <EditProfile user={user} />) },
@@ -124,6 +125,7 @@ function DesktopProfile() {
           <Link className="profile-tool" to="/connected-apps"><span className="profile-tool-icon"><Icon name="ai"/></span><span><b>已授权助手</b><small>管理机器人与外部助手授权</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></Link>
           <button className="profile-tool" aria-label="导入与导出校园资料" onClick={() => ui.open('本地资料', <AcademicSettings/>)}><span className="profile-tool-icon"><Icon name="grades"/></span><span><b>校园资料</b><small>导入或导出课表与成绩</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></button>
           <button className="profile-tool" aria-label="隐私与数据管理" onClick={openPrivacy}><span className="profile-tool-icon"><Icon name="admin"/></span><span><b>隐私与数据</b><small>导出数据、管理本地资料</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></button>
+          <Link className="profile-tool" to="/agreements"><span className="profile-tool-icon"><Icon name="file"/></span><span><b>协议与隐私</b><small>阅读并确认当前版本协议</small></span><span className="profile-tool-arrow" aria-hidden="true">›</span></Link>
           <button className="profile-tool profile-tool-logout" aria-label="退出登录" onClick={auth.logout}><span className="profile-tool-icon"><Icon name="logout"/></span><span><b>退出登录</b><small>退出当前浏览器中的账号</small></span></button>
         </aside>
       </div>

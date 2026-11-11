@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -729,8 +728,7 @@ func main() {
 	r.Use(middleware.PrivateChatRetirementGate(cfg.PrivateChatDisabled))
 
 	// 法律页面无需登录和客户端版本头，供浏览器、下载页和分享页访问。
-	r.StaticFile("/terms", filepath.Join("static", "legal", "terms.html"))
-	r.StaticFile("/privacy", filepath.Join("static", "legal", "privacy.html"))
+	registerLegalDocumentRoutes(r)
 	// 公共表情使用内容寻址 ID，可长期缓存且不依赖登录态或版本请求头。
 	r.GET("/stickers/:id", handlers.ServeSticker)
 	r.HEAD("/stickers/:id", handlers.ServeSticker)

@@ -63,14 +63,14 @@ void main() {
 
       final provider = CourseScheduleProvider()
         ..setBaseScheduleForTesting([
-          Course(
+          const Course(
             courseKey: 'edu:2026_1:080123:TC20260127',
             semesterId: '2026_1',
             source: CourseSource.edu,
             name: '数字图像处理',
             courseCode: '080123',
             teachingClassId: 'TC20260127',
-            meetings: const [
+            meetings: [
               Meeting(
                 meetingKey: 'm_1_3_4',
                 weekday: 1,
@@ -175,13 +175,13 @@ void main() {
 
       final provider = CourseScheduleProvider()
         ..setBaseScheduleForTesting([
-          Course(
+          const Course(
             courseKey: 'edu:2026_1:080123',
             semesterId: '2026_1',
             source: CourseSource.edu,
             name: '数字图像处理',
             courseCode: '080123',
-            meetings: const [
+            meetings: [
               Meeting(
                 meetingKey: 'm_1_3_4',
                 weekday: 1,

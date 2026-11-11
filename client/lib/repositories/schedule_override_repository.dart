@@ -77,7 +77,7 @@ class ScheduleOverrideRepository {
       return overrides;
     } catch (error) {
       debugPrint('加载本地调课规则失败: $error');
-      throw ScheduleOverrideStorageException('本地调课规则读取失败，请稍后重试');
+      throw const ScheduleOverrideStorageException('本地调课规则读取失败，请稍后重试');
     }
   }
 

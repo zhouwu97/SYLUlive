@@ -1,6 +1,5 @@
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
-import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../widgets/app_page_background.dart';
 import '../providers/auth_provider.dart';
@@ -52,7 +51,7 @@ class _AdminFeaturedApplicationsScreenState
 
   Future<void> _approveFeatured(dynamic id) async {
     final reason = await _askAdminReason('通过精华申请', '审核理由');
-    if (reason == null) return;
+    if (reason == null || !mounted) return;
     try {
       await context.read<AuthProvider>().dio.post(
         '/admin/featured-applications/$id/approve',
@@ -130,6 +129,7 @@ class _AdminFeaturedApplicationsScreenState
       if (reason == null) return;
     }
 
+    if (!mounted) return;
     try {
       await context.read<AuthProvider>().dio.post(
         '/admin/featured-applications/$id/reject',

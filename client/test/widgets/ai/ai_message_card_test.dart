@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/models/ai_chat_message.dart';
 import 'package:shenliyuan/models/ai_personal_data_evidence.dart';
 import 'package:shenliyuan/widgets/ai/ai_message_card.dart';
-import 'package:shenliyuan/theme/app_colors.dart';
 
 void main() {
   final message = AiChatMessage(

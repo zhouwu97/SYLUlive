@@ -1,6 +1,7 @@
 import {useState,useEffect} from 'react';
 import {Link} from 'react-router-dom';
-import {mergeCourses,teachingWeek,gradeStats} from '@sylulive/academic-contracts';
+import {gradeStats} from '@sylulive/academic-contracts';
+import {calculateWeightedGpa,weeklyAvailability} from './toolbox-calculations';
 import {PhoneSync, useAcademic} from './academic';
 import {useMobile} from './mobile';
 import {useAuth} from './auth';
@@ -60,8 +61,13 @@ export function Toolbox(){
   </>;
 }
 function Sites(){return <div className="site-list">{sites.map(([title,subtitle,url])=><a key={url} className="site-link" href={url} target="_blank" rel="noopener noreferrer"><b>{title}</b><small>{subtitle}</small><Icon name="share" size={15}/></a>)}</div>}
-function Gpa(){const {data}=useAcademic();const stats=gradeStats(data.grades);const [result,setResult]=useState<number|null>(null);return <><p>已导入成绩的加权 GPA：{stats.gpa?.toFixed(2)||'暂无数据'}</p><Form fields={[{name:'rows',label:'每行填写：学分,绩点',type:'textarea',required:true}]} submit="计算" onSubmit={async values=>{let total=0,weighted=0;for(const line of String(values.rows).split('\n').filter(s=>s.trim())){const pair=line.split(/[,，]/).map(Number);if(pair.length!==2||!pair.every(Number.isFinite)||pair[0]<=0||pair[1]<0||pair[1]>5)throw new Error('请输入有效学分和 0–5 的绩点');total+=pair[0];weighted+=pair[0]*pair[1]}if(!total)throw new Error('请输入至少一门课程');setResult(weighted/total)}}/>{result!==null&&<p className="metric">加权 GPA：{result.toFixed(3)}</p>}</>}
-function Free(){const {data}=useAcademic();const week=teachingWeek(data.termStart);const courses=mergeCourses(data.courses,data.overrides).filter(c=>c.weeks.includes(week));return <><p>第 {week} 周 · 基于当前课表，本地计算</p>{Array.from({length:7},(_,i)=><p key={i}>周{'一二三四五六日'[i]}：{Array.from({length:12},(_,p)=>p+1).filter(p=>!courses.some(c=>c.day===i+1&&c.periods.includes(p))).join('、')||'没有空闲节次'}</p>)}<Link to="/schedule">前往课表核对</Link></>}
+function Gpa(){const {data}=useAcademic();const stats=gradeStats(data.grades);const [result,setResult]=useState<number|null>(null);return <><p>已导入成绩的加权 GPA：{stats.gpa?.toFixed(2)||'暂无数据'}</p><Form fields={[{name:'rows',label:'每行填写：学分,绩点',type:'textarea',required:true}]} submit="计算" onSubmit={async values=>{setResult(null);setResult(calculateWeightedGpa(String(values.rows)))}}/>{result!==null&&<p className="metric">加权 GPA：{result.toFixed(3)}</p>}</>}
+function Free(){
+  const {data}=useAcademic(),ui=useUI(),availability=weeklyAvailability(data);
+  const schedule=<Link to="/schedule" onClick={ui.close}>前往课表</Link>;
+  if(!availability.ready)return <Empty title={availability.title} description={availability.description}>{schedule}</Empty>;
+  return <><p>第 {availability.week} 周 · 基于当前课表，本地计算</p>{availability.days.map((periods,i)=><p key={i}>周{'一二三四五六日'[i]}：{periods.join('、')||'没有空闲节次'}</p>)}<p className="muted">结果仅依据已导入的排课，临时调课、考试和其他活动请另行核对。</p>{schedule}</>;
+}
 function Checkin(){const q=useApi('/api/user/checkin/status'),ui=useUI();return <QueryState query={q}><p>{q.data?.check_in_date} · {q.data?.checked_in?'今天已签到':'今天未签到'}</p><p>连续 {q.data?.streak_days||0} 天 · 补签卡 {q.data?.makeup_cards||0} 张</p><button className="btn primary" disabled={q.data?.checked_in} onClick={()=>void ui.act(()=>write('/api/user/checkin'),'签到成功')}>今日签到</button><Form fields={[{name:'check_in_date',label:'补签日期',type:'date',required:true}]} submit="使用补签卡" onSubmit={async values=>{await write('/api/user/checkin/makeup',values);await q.refetch();ui.notify('补签成功')}}/></QueryState>}
 function Lottery(){const q=useApi('/api/lottery/current'),ui=useUI(),event=entity(q.data,'event');return <QueryState query={q}><h3>{event.title||event.prize_name||'校园抽奖'}</h3><p>{event.description}</p><p>参与人数 {q.data?.participant_count||0} · 开奖时间 {event.draw_time}</p><p>{event.winner?.nickname?`获奖者：${event.winner.nickname}`:''}</p><button className="btn primary" disabled={q.data?.joined||event.status!==0} onClick={()=>void ui.act(()=>write(`/api/lottery/${event.id}/join`),'参与状态已保存')}>{q.data?.joined?'已参与':'参加本期活动'}</button></QueryState>}
 const providerNames:Record<string,string>={undergraduate:'本科教务',graduate:'研究生教务',erke:'二课 WebVPN',physical:'体测'};

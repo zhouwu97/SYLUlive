@@ -101,6 +101,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
 
     setState(() {}); // Show loading if needed? Actually let probe happen
     final type = await _evalCtrl.probePage();
+    if (!mounted) return;
 
     if (type != EvaluationPageType.evaluationForm) {
       _onError('未检测到足够的评价项，请先在网页中选择一门待评价课程。');

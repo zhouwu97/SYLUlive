@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useLayoutEffect, useState } from "react";
+import { StrictMode, Suspense, lazy, useEffect, useLayoutEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import {
@@ -12,7 +12,9 @@ import {
 } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./auth";
-import { Empty, Icon, UIProvider, useUI, DialogOutlet } from "./ui";
+import { Empty, Head, Icon, UIProvider, useUI, DialogOutlet } from "./ui";
+import { RouteBoundary } from './route-boundary';
+import {LegalConfirmation} from './legal-consent';
 import { useApi } from "./api";
 import { CampusRail, ProfileSummary, SidebarBoards } from "./campus-chrome";
 import { ServerAvatar } from "./server-avatar";
@@ -27,19 +29,11 @@ import "./social-shell.css";
 import "./web-polish.css";
 import { useWorkspaceMotion } from "./shell-motion";
 import { isDetailPath, useReportedDetailOrigin } from "./detail-origin";
-import {Admin} from "./admin";
-import { Polls } from "./polls";
-import {Competition} from './competition';
-import {CanteenPage} from './canteen-page';
-import {Campus} from './campus';
-import { Catalog, CatalogDetail, type CatalogKind } from "./catalog";
-import { AiPage } from "./ai";
-import { Feedback, TicketDetail, Notifications } from "./feedback";
+import { type CatalogKind } from "./catalog";
+import {Polls} from './polls';
+import {AppScanLanding} from './phone-scan';
 import { Community, PostDetail, PostForm } from "./community";
 import { AcademicProvider, Schedule, Grades } from "./academic";
-import { ConnectedApps, ConnectedAction } from "./connected-apps";
-import { AppScanLanding } from "./phone-scan";
-import { Messages } from "./messages";
 import "./commons.css";
 import { useMobile } from "./mobile";
 import { MobileHeader, MobileNavigation } from "./mobile-chrome";
@@ -48,6 +42,27 @@ import "./auth.css";
 import "./desktop-refresh.css";
 import { AppearanceButton, applyAppearance, readAppearance } from "./appearance";
 import { mountCollapsedTooltips, mountSlidingIndicator, revealTheme } from "./desktop-motion";
+const Admin = lazy(() => import('./admin').then(module => ({default: module.Admin})));
+const Competition = lazy(() => import('./competition').then(module => ({default: module.Competition})));
+const CanteenPage = lazy(() => import('./canteen-page').then(module => ({default: module.CanteenPage})));
+const Campus = lazy(() => import('./campus').then(module => ({default: module.Campus})));
+const Catalog = lazy(() => import('./catalog').then(module => ({default: module.Catalog})));
+const CatalogDetail = lazy(() => import('./catalog').then(module => ({default: module.CatalogDetail})));
+const AiPage = lazy(() => import('./ai').then(module => ({default: module.AiPage})));
+const Feedback = lazy(() => import('./feedback').then(module => ({default: module.Feedback})));
+const TicketDetail = lazy(() => import('./feedback').then(module => ({default: module.TicketDetail})));
+const Notifications = lazy(() => import('./feedback').then(module => ({default: module.Notifications})));
+const ConnectedApps = lazy(() => import('./connected-apps').then(module => ({default: module.ConnectedApps})));
+const ConnectedAction = lazy(() => import('./connected-apps').then(module => ({default: module.ConnectedAction})));
+const Messages = lazy(() => import('./messages').then(module => ({default: module.Messages})));
+
+function NotFound() {
+  return <><Head title="页面不存在" description="链接可能已失效或地址有误"/><Empty title="找不到这个页面" description="可以返回首页，或从工具箱重新选择要使用的功能。"><Link className="btn primary" to="/">返回首页</Link><Link className="btn" to="/toolbox">打开工具箱</Link></Empty></>;
+}
+function AgreementsPage() {
+  const auth = useAuth();
+  return <><Head title="协议与隐私"/>{auth.loading ? <div className="loading-state" role="status">正在加载…</div> : auth.user ? <LegalConfirmation/> : <Empty title="登录后确认协议"><button className="btn primary" onClick={auth.login}>登录</button></Empty>}</>;
+}
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { staleTime: 15000, refetchOnWindowFocus: false },
@@ -328,7 +343,7 @@ function Shell() {
             <div className="main-pane">
               {/* 授权成功清理一次性连接码时保留管理草稿；账号切换由页面账号 key 隔离。 */}
               <section key={location.pathname === "/connected-apps" ? location.pathname : `${location.pathname}${location.search}`} className="page active">
-                <Routes>
+                <RouteBoundary><Suspense fallback={<div className="loading-state" role="status">正在加载页面…</div>}><Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/community" element={<Community />} />
                   <Route path="/market" element={<Community market />} />
@@ -377,12 +392,13 @@ function Shell() {
                   <Route path="/ai" element={<AiPage />} />
                   <Route path="/toolbox" element={<Toolbox />} />
                   <Route path="/profile" element={<Profile />} />
+                  <Route path="/agreements" element={<AgreementsPage />} />
                   <Route path="/connected-apps" element={<ConnectedApps />} />
                   <Route path="/connected-apps/actions/:id" element={<ConnectedAction />} />
                   <Route path="/admin" element={<Admin />} />
                   <Route path="/app-scan" element={<AppScanLanding />} />
-                  <Route path="*" element={<Dashboard />} />
-                </Routes>
+                  <Route path="*" element={<NotFound />} />
+                </Routes></Suspense></RouteBoundary>
               </section>
             </div>
             {["dashboard", "community", "polls"].includes(active) && !detail && <CampusRail />}

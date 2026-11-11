@@ -21,6 +21,8 @@ void _showDevSnackBar(BuildContext context) {
   );
 }
 
+// 历史博客视觉原型：无产品导航入口，示例文章仅供此页的布局回归使用。
+// 当前校园新闻与公告使用各自真实数据页面，不能把本原型计入已上线功能。
 class BlogScreen extends StatefulWidget {
   const BlogScreen({super.key});
 
@@ -205,10 +207,10 @@ class _BlogScreenState extends State<BlogScreen> {
                       ),
                     ],
                   ),
-                  Column(
+                  const Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Flutter 状态管理深度对比',
                         style: TextStyle(
                           color: Color(0xFFF1F5F9),
@@ -218,11 +220,11 @@ class _BlogScreenState extends State<BlogScreen> {
                           height: 1.3,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: 8),
                       Text(
                         'Provider、Riverpod、Bloc、GetX — 四种方案的深入分析',
                         style: TextStyle(
-                          color: const Color(0xFFE2E8F0),
+                          color: Color(0xFFE2E8F0),
                           fontSize: 13,
                           fontFamily: 'monospace',
                           height: 1.4,
@@ -307,8 +309,8 @@ class _BlogScreenState extends State<BlogScreen> {
             // 摘要
             Text(
               excerpt,
-              style: TextStyle(
-                color: const Color(0xFFE2E8F0),
+              style: const TextStyle(
+                color: Color(0xFFE2E8F0),
                 fontSize: 13,
                 fontFamily: 'monospace',
                 height: 1.5,
@@ -390,8 +392,8 @@ class _ArticleReader extends StatefulWidget {
 class _ArticleReaderState extends State<_ArticleReader> {
   final _commentController = TextEditingController();
   final List<_BlogComment> _comments = [
-    _BlogComment(author: 'Doeuny', text: '好文章！状态管理这块一直很困扰我', time: '2小时前'),
-    _BlogComment(author: '管理员', text: '建议加上 GetX 的详细对比', time: '1天前'),
+    const _BlogComment(author: 'Doeuny', text: '好文章！状态管理这块一直很困扰我', time: '2小时前'),
+    const _BlogComment(author: '管理员', text: '建议加上 GetX 的详细对比', time: '1天前'),
   ];
 
   void _launchUrl(String url) async {
@@ -403,13 +405,14 @@ class _ArticleReaderState extends State<_ArticleReader> {
 
   void _addComment() {
     if (_commentController.text.isEmpty) return;
-    if (mounted)
+    if (mounted) {
       setState(() {
         _comments.insert(
           0,
           _BlogComment(author: '我', text: _commentController.text, time: '刚刚'),
         );
       });
+    }
     _commentController.clear();
   }
 

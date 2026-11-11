@@ -107,13 +107,15 @@ class _AdminWaterIconReviewScreenState
             review.id, reasonController.text.trim());
       }
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('处理成功')));
       _loadReviews();
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('处理失败: $e')));
+      }
     }
   }
 

@@ -1,3 +1,5 @@
+import '../config/app_contacts.dart';
+
 class LegalDocument {
   final String id;
   final String title;
@@ -18,14 +20,14 @@ class LegalDocument {
 
 /// 法律文档版本必须和服务端 models.LegalDocumentVersion 同步更新。
 class LegalDocuments {
-  static const version = '2026-09-30-r1';
+  static const version = '2026-11-11-r1';
 
   static const userAgreement = LegalDocument(
     id: 'user_agreement',
     title: '用户协议',
     summary: '账号、服务范围、行为规范与账号注销规则',
     body: '''
-版本：2026-09-22
+版本：2026-11-11
 
 一、服务说明
 本服务提供校园信息、社区互动、课程与其他校园工具。请在合法、善意且不侵害他人权益的前提下使用。
@@ -37,6 +39,8 @@ class LegalDocuments {
 教务绑定、远程消息推送和本地提醒分别管理，可在对应功能入口关闭或撤回。你也可以使用密码确认注销账号，注销后身份资料会被清除或匿名化。
 
 四、联系我们
+${AppContacts.legalContactText}
+
 个人信息与账号相关请求可在“隐私与数据权利”中提交并查看处理状态。
 ''',
   );
@@ -46,7 +50,7 @@ class LegalDocuments {
     title: '隐私政策',
     summary: '个人信息处理目的、范围、保存与权利行使方式',
     body: '''
-版本：2026-09-22
+版本：2026-11-11
 
 一、我们处理的信息
 注册与使用服务时，可能处理学号或 QQ 号、昵称、头像、账号密码摘要、设备推送标识、你主动发布的内容和图片。使用教务功能时，还会按专项授权处理教务账号、认证凭证、课表、成绩、学籍相关信息。
@@ -61,6 +65,8 @@ class LegalDocuments {
 你可以在“隐私与数据权利”中直接查阅账户资料和授权记录、导出个人数据，申请更正或删除特定信息、内容并查看处理状态。
 
 五、联系信息
+${AppContacts.legalContactText}
+
 个人信息保护请求可在“隐私与数据权利”中提交并查看处理状态。
 ''',
   );

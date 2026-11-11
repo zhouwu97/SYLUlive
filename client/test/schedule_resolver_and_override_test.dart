@@ -24,7 +24,7 @@ void main() {
     const resolver = ScheduleResolver();
     const conflictService = ScheduleConflictService();
 
-    final baseCourse1 = Course(
+    const baseCourse1 = Course(
       courseKey: 'edu:2026_1:080123:TC01',
       semesterId: '2026_1',
       source: CourseSource.edu,
@@ -123,7 +123,7 @@ void main() {
 
     test('场景3 & 4 & 5：单双周与离散周处理 -> 取 affectedWeeks 交集，不产生虚假周次', () {
       // 单周课: 1, 3, 5, 7, 9, 11, 13
-      final oddCourse = Course(
+      const oddCourse = Course(
         courseKey: 'edu:2026_1:odd_course:TC02',
         semesterId: '2026_1',
         source: CourseSource.edu,
@@ -174,7 +174,7 @@ void main() {
     });
 
     test('场景6 & 7：同课程两个 Meeting 以及同天 1-2 / 3-4 -> 互不影响', () {
-      final multiMeetingCourse = Course(
+      const multiMeetingCourse = Course(
         courseKey: 'edu:2026_1:multi:TC03',
         semesterId: '2026_1',
         source: CourseSource.edu,
@@ -246,7 +246,7 @@ void main() {
     });
 
     test('场景8：同名不同课 -> 互不影响 (通过 courseKey 隔离)', () {
-      final courseA = Course(
+      const courseA = Course(
         courseKey: 'edu:2026_1:CS01:TC_A',
         semesterId: '2026_1',
         source: CourseSource.edu,
@@ -264,7 +264,7 @@ void main() {
         ],
       );
 
-      final courseB = Course(
+      const courseB = Course(
         courseKey: 'edu:2026_1:CS02:TC_B',
         semesterId: '2026_1',
         source: CourseSource.edu,
@@ -403,7 +403,7 @@ void main() {
     });
 
     test('场景13：目标时间冲突检测与展示 -> 提示时间冲突并标识 hasConflict', () {
-      final existingCourse = Course(
+      const existingCourse = Course(
         courseKey: 'edu:2026_1:080999:TC99',
         semesterId: '2026_1',
         source: CourseSource.edu,
@@ -509,7 +509,7 @@ void main() {
         teachingClassId: baseCourse1.teachingClassId,
         teacher: baseCourse1.teacher,
         meetings: [
-          Meeting(
+          const Meeting(
             meetingKey: '', // 新拉取的课程暂无 key
             weekday: 1,
             startSection: 3,
@@ -572,7 +572,7 @@ void main() {
     });
 
     test('场景19：手动课程 -> 正常进入 ScheduleResolver，统一数据结构', () {
-      final manualCourse = Course(
+      const manualCourse = Course(
         courseKey: 'manual:2026_1:m1',
         semesterId: '2026_1',
         source: CourseSource.manual,
@@ -608,7 +608,7 @@ void main() {
     });
 
     test('回归测试：冲突只发生在第6周 -> 仅第6周标记冲突，第1-5、7-8周不得显示冲突', () {
-      final courseA = Course(
+      const courseA = Course(
         courseKey: 'edu:2026_1:c_a:tc_a',
         semesterId: '2026_1',
         source: CourseSource.edu,
@@ -624,7 +624,7 @@ void main() {
         ],
       );
 
-      final courseB = Course(
+      const courseB = Course(
         courseKey: 'edu:2026_1:c_b:tc_b',
         semesterId: '2026_1',
         source: CourseSource.edu,
@@ -777,7 +777,7 @@ void main() {
     test('回归测试：MeetingReconciler 优先教学班+课程代码匹配并忽略跨学期缓存', () {
       const reconciler = MeetingReconciler();
 
-      final oldCourseSameTerm = Course(
+      const oldCourseSameTerm = Course(
         courseKey: 'edu:2026_1:c1:tc01',
         semesterId: '2026_1',
         source: CourseSource.edu,
@@ -795,7 +795,7 @@ void main() {
         ],
       );
 
-      final oldCourseOtherTerm = Course(
+      const oldCourseOtherTerm = Course(
         courseKey: 'edu:2025_2:c1:tc01',
         semesterId: '2025_2', // 上学期同教学班 ID
         source: CourseSource.edu,
@@ -813,7 +813,7 @@ void main() {
         ],
       );
 
-      final newCourse = Course(
+      const newCourse = Course(
         courseKey: 'edu:2026_1:c1:tc01',
         semesterId: '2026_1',
         source: CourseSource.edu,

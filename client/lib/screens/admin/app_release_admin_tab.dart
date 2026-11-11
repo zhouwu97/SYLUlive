@@ -193,7 +193,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     DropdownButtonFormField<String>(
-                      value: selectedPlatform,
+                      initialValue: selectedPlatform,
                       decoration: const InputDecoration(labelText: '发布平台'),
                       items: const [
                         DropdownMenuItem(value: 'android', child: Text('Android')),
@@ -212,7 +212,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: selectedDeliveryMode,
+                      initialValue: selectedDeliveryMode,
                       decoration: const InputDecoration(labelText: '交付模式'),
                       items: const [
                         DropdownMenuItem(value: 'direct_package', child: Text('直接安装包')),

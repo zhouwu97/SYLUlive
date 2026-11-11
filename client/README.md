@@ -80,6 +80,8 @@ flutter run
 
 ## 常用检查
 
+公开协议正文与 App 共用 `lib/legal/legal_documents.dart`，修改后从仓库根目录执行 `dart run client/tool/export_legal_documents.dart`，并同步服务端确认版本。CI 的 `--check` 会阻止公开页面与 App 正文漂移；服务端将导出 HTML 嵌入二进制。维护与回退见 [公开法律文档运维](../docs/ops/public-legal-documents.md)。
+
 ```bash
 flutter analyze
 flutter test

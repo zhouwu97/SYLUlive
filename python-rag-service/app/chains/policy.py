@@ -45,7 +45,7 @@ from app.schemas import (
 
 
 POLICY_RAG_CHAIN_NAME = "shenliyuan_policy_rag"
-POLICY_RAG_CHAIN_VERSION = "campus-assistant-release-v8"
+POLICY_RAG_CHAIN_VERSION = "campus-assistant-release-v10"
 VERIFIED_GENERATION_ATTEMPTS = 2
 GUIDED_GAP_ANSWER = (
     "我暂时无法从已发布的校园资料中核验这项具体信息。"
@@ -65,7 +65,14 @@ _CALCULATION_TERMS = (
     "百分之",
     "%",
 )
-_RAW_REFERENCE_PATTERN = re.compile(r"\[(?:chunk:|R\d+)", re.IGNORECASE)
+_RAW_REFERENCE_PATTERN = re.compile(
+    r"\[chunk:|\bchunk:\d+|(?<![A-Za-z0-9_])(?:R[1-9]\d?(?:Q[1-9]\d?)?|Q\d{3})(?![A-Za-z0-9_])",
+    re.IGNORECASE,
+)
+_RAW_GENERAL_REFERENCE_PATTERN = re.compile(
+    r'\[(?:chunk:|R\d+)|\bchunk:\d+|(?:\(|（)\s*R[1-9]\d?(?:Q[1-9]\d?)?\s*(?:\)|）)|来源\s*R\d+|"(?:reference_id|citation_ids)"\s*:',
+    re.IGNORECASE,
+)
 _WARNING_BOUNDARY_MARKERS = (
     "为准",
     "核验",
@@ -138,6 +145,7 @@ def _bounded_documents(state: dict[str, Any]) -> list[Document]:
             0
             if str(item[1].metadata.get("document_type") or "") in preferred_order
             else 1,
+            1 if str(item[1].metadata.get('document_type') or '') == 'school_policy_reasoning_card' else 0,
             preferred_order.get(
                 str(item[1].metadata.get("document_type") or ""),
                 len(preferred_order),
@@ -170,6 +178,25 @@ def _reference_map(documents: list[Document]) -> dict[str, Document]:
     return {f"R{index}": document for index, document in enumerate(documents, start=1)}
 
 
+def _quote_options(content: str) -> list[str]:
+    """Build request-local anchors from continuous source spans, with bounded size."""
+    result: list[str] = []
+    pending = ''
+    for sentence in re.split(r'(?<=[。！？!?；;\n])', content):
+        for offset in range(0, len(sentence), 180):
+            part = sentence[offset:offset + 180]
+            if pending and len(pending) + len(part) > 180:
+                result.append(pending.strip())
+                pending = ''
+            pending += part
+    if pending.strip():
+        if len(pending.strip()) < 4 and result and len(result[-1]) + len(pending) <= 240:
+            result[-1] += pending
+        else:
+            result.append(pending.strip())
+    return [part for part in result if len(part) >= 4]
+
+
 def _generation_context(state: dict[str, Any], parser: PydanticOutputParser) -> dict[str, Any]:
     request: PolicyRAGInput = state["request"]
     plan: PolicyQueryPlan = state["query_plan"]
@@ -186,9 +213,13 @@ def _generation_context(state: dict[str, Any], parser: PydanticOutputParser) -> 
             "effective_to": str(metadata.get("effective_to") or ""),
             "locator": str(metadata.get("source_locator") or ""),
         }
+        quote_options = [
+            {'quote_id':f'Q{index:03d}', 'text':text}
+            for index,text in enumerate(_quote_options(document.page_content),1)
+        ]
         context_parts.append(
             f"<evidence metadata='{json.dumps(attributes, ensure_ascii=False)}'>\n"
-            f"{document.page_content}\n</evidence>"
+            f"{json.dumps(quote_options, ensure_ascii=False)}\n</evidence>"
         )
     return {
         "history": history_messages(request.history),
@@ -270,15 +301,34 @@ def _usage_from_messages(
     )
 
 
-def _validate_calculation_claim(statement: str, quotes: list[str]) -> None:
-    normalized_statement = _normalize_evidence_text(statement)
+def _validate_calculation_claim(statement: str, quotes: list[str], source_titles: list[str] | None = None) -> None:
+    def normalize_percentages(value: str) -> str:
+        return re.sub(r"百分之(\d+(?:\.\d+)?)", r"\1%", _normalize_evidence_text(value))
+
+    def values(value: str) -> set[str]:
+        # Chinese characters are valid number prefixes; ASCII identifiers are not.
+        result = set()
+        for token in re.findall(r"(?<![A-Za-z0-9_.])\d+(?:\.\d+)?%?", value):
+            integer, _, fraction = token.rstrip('%').partition('.')
+            fraction = fraction.rstrip('0')
+            result.add((integer.lstrip('0') or '0') + ('.' + fraction if fraction else '')
+                + ('%' if token.endswith('%') else ''))
+        return result
+
+    normalized_statement = normalize_percentages(statement)
+    # 已引用文档的真实文号属于来源标识，不是成绩/比例中的计算数字。
+    # 只剥离与该来源标题完全一致的文号，不能借此豁免任意年份或数值。
+    normalized_titles = [normalize_percentages(title) for title in source_titles or []]
+    for title in normalized_titles:
+        for identifier in re.findall(r'[\u4e00-\u9fff]{2,12}(?:〔(?:19|20)\d{2}〕\d+|第\d+)号', title):
+            normalized_statement = normalized_statement.replace(identifier, '')
     terms = [term for term in _CALCULATION_TERMS if _normalize_evidence_text(term) in normalized_statement]
     if not terms:
         return
-    normalized_quotes = _normalize_evidence_text(" ".join(quotes))
-    missing = [term for term in terms if _normalize_evidence_text(term) not in normalized_quotes]
-    numbers = re.findall(r"(?<![\w.])\d+(?:\.\d+)?%?", normalized_statement)
-    missing.extend(number for number in numbers if number not in normalized_quotes)
+    normalized_quotes = normalize_percentages("；".join(quotes))
+    missing = [term for term in terms if _normalize_evidence_text(term) not in normalized_quotes
+        and not (term == '比例' and '%' in normalized_quotes)]
+    missing.extend(sorted(values(normalized_statement) - values(normalized_quotes)))
     if missing:
         missing_summary = "、".join(dict.fromkeys(missing[:6]))
         raise PolicyCitationValidationError(
@@ -301,7 +351,8 @@ def _validate_rule(
         if bool(document.metadata.get("historical", False)) != expected_historical:
             raise PolicyCitationValidationError("rule crosses current and historical boundary")
         quotes.append(citations[reference_id])
-    _validate_calculation_claim(rule.statement, quotes)
+    _validate_calculation_claim(rule.statement, quotes,
+        [str(references[reference_id].metadata.get('title') or '') for reference_id in rule.citation_ids])
 
 
 def _validate_structured_answer(
@@ -317,6 +368,18 @@ def _validate_structured_answer(
         quote = item.quote
         if reference_id not in references:
             raise PolicyCitationValidationError("model forged a temporary citation")
+        if re.fullmatch(r'Q\d{3}', quote):
+            options = _quote_options(references[reference_id].page_content)
+            index = int(quote[1:]) - 1
+            if index < 0 or index >= len(options):
+                raise PolicyCitationValidationError('model forged a quote anchor')
+            quote = options[index]
+        if match := re.fullmatch(r'(R[1-9][0-9]?)Q([1-9][0-9]?)', quote):
+            options = _quote_options(references[reference_id].page_content)
+            index = int(match.group(2)) - 1
+            if match.group(1) != reference_id or index >= len(options):
+                raise PolicyCitationValidationError('model forged a quote anchor')
+            quote = options[index]
         if not _citation_quote_is_supported(
             quote,
             references[reference_id].page_content,
@@ -376,7 +439,8 @@ def _validate_structured_answer(
     )
     if _RAW_REFERENCE_PATTERN.search(all_text):
         raise PolicyCitationValidationError("answer exposes an internal reference")
-    _validate_calculation_claim(answer.answer, list(citations.values()))
+    _validate_calculation_claim(answer.answer, list(citations.values()),
+        [str(references[reference_id].metadata.get('title') or '') for reference_id in citations])
 
 
 def _citation_suffix(reference_ids: list[str]) -> str:
@@ -674,7 +738,8 @@ def _parse_fallback_generated(
     message: BaseMessage = state["message"]
     usage = _usage_from_message(message, provider_name, model_name)
     answer = _message_text(message)
-    if not answer or _RAW_REFERENCE_PATTERN.search(answer):
+    reference_pattern = _RAW_REFERENCE_PATTERN if _fallback_answer_mode(original) == 'guided_gap' else _RAW_GENERAL_REFERENCE_PATTERN
+    if not answer or reference_pattern.search(answer):
         return PolicyRAGResult(
             request_id=request.request_id,
             chain_name=POLICY_RAG_CHAIN_NAME,
@@ -723,6 +788,19 @@ def _has_sufficient_reranked_evidence(
 def _should_generate_verified_answer(
     state: dict[str, Any], relevance_threshold: float, reranker_enabled: bool
 ) -> bool:
+    question = state['request'].question
+    # 读政策不能伪装成办理学校业务。询问办理方法仍可走有来源的政策回答。
+    asks_for_action = re.search(r'(?:替我|代我|帮我).{0,12}(?:开具|盖章|签发|出具|修改成绩|改分|缴费|提交)', question)
+    asks_for_instructions = re.search(r'如何|怎么|流程|哪些材料|什么条件|哪里', question)
+    if asks_for_action and not asks_for_instructions:
+        return False
+    requested_version = re.search(r'((?:19|20)\d{2})年.{0,10}(?:新施行|新出台|新发布|新修订|新版|新标准|新通知)', question)
+    if requested_version:
+        year = requested_version.group(1)
+        if not any(year in str(document.metadata.get(field) or '')
+                   for document in _bounded_documents(state)
+                   for field in ('effective_from','title')):
+            return False
     # 通用问题不能因为向量检索偶然召回弱相关材料而退化为政策回答。
     if _fallback_answer_mode(state) != "guided_gap":
         return False
@@ -807,7 +885,10 @@ def build_policy_rag_chain(
                     "必须只输出符合既定 Schema 的 JSON；"
                     "简要回答不超过 300 个中文字符，只保留最多 3 条现行规则和 3 个引用；"
                     "每个 quote 不超过 160 个中文字符，"
-                    "每个 citation quote 必须直接复制同一 evidence 中的一段连续原文，"
+                    "reference_id 和 citation_ids 只能填写 R1 形式的来源编号，quote 只填写 Q001 形式的片段编号，不得混用。"
+                    "每条规则的 citation_ids 都必须在 citations 中声明；没有引用额度时应删去该规则。"
+                    "每个 citation 的 quote 优先填写该 evidence 提供的 quote_id（例如 Q001），"
+                    "由服务端恢复逐字原文；若填写原文，必须直接复制同一 evidence 中的一段连续文本，"
                     "不得改写、概括、跨句拼接或跨来源拼接；"
                     "答案或规则中的数字、比例、绩点、等级必须在其引用 quote 中原样出现，"
                     "否则删去该断言；用户没有询问成绩计算时，"

@@ -245,7 +245,7 @@ def test_runnable_branch_uses_inclusive_calibrated_threshold(
                 "confidence": "high",
             },
             ensure_ascii=False,
-        ),
+        ) if expected_status == 'completed' else '当前资料不足以核验该校内规定，请查询当期通知。',
         input_tokens=4,
         output_tokens=2,
     )
@@ -383,3 +383,16 @@ def test_t01_fixture_calibration_meets_gate_and_ranking_targets():
     assert report["v06_core_after"]["recall_at_k"] == 1.0
     assert report["v06_core_after"]["mrr"] == 1.0
     assert report["failures"] == []
+
+
+def test_real_calibration_fallback_fails_explicitly_without_inventing_scores():
+    class Unavailable:
+        model_name = 'unavailable'
+        model_version = 'test'
+
+        def score(self, query, documents):
+            raise RuntimeError('unavailable')
+
+    directory = Path(__file__).parents[2] / 'server' / 'testdata' / 'ai_eval'
+    with pytest.raises(RuntimeError, match='reranker calibration unavailable for case'):
+        evaluate_reranker_fixture(directory, rerank_model=Unavailable())

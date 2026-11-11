@@ -56,6 +56,15 @@ class MyRatingCard extends StatelessWidget {
                 )
               else
                 AppPopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  onSelected: (value) {
+                    if (value == 'edit') onEdit();
+                    if (value == 'delete') onDelete();
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'edit', child: Text('修改评价')),
+                    PopupMenuItem(value: 'delete', child: Text('删除评价')),
+                  ],
                   child: Padding(
                     padding: const EdgeInsets.only(
                         left: 8, right: 0, top: 4, bottom: 4),
@@ -79,15 +88,6 @@ class MyRatingCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  padding: EdgeInsets.zero,
-                  onSelected: (value) {
-                    if (value == 'edit') onEdit();
-                    if (value == 'delete') onDelete();
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: Text('修改评价')),
-                    PopupMenuItem(value: 'delete', child: Text('删除评价')),
-                  ],
                 ),
             ],
           ),

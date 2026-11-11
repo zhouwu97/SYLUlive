@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../widgets/app_page_background.dart';
-import '../config/api_constants.dart';
 import '../providers/canteen_provider.dart';
 import '../widgets/app_page_app_bar.dart';
 import '../widgets/canteen/canteen_empty_state.dart';

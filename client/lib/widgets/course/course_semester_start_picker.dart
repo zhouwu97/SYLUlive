@@ -172,7 +172,7 @@ class _PickerContentState extends State<_PickerContent> {
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Text(
               widget.term.title,
-              style: TextStyle(color: CampusTheme.subText, fontSize: 14),
+              style: const TextStyle(color: CampusTheme.subText, fontSize: 14),
             ),
           ),
           const SizedBox(height: 6),
@@ -347,7 +347,7 @@ class _PickerContentState extends State<_PickerContent> {
             width: 32,
             child: Text(day,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: CampusTheme.subText, fontSize: 13)),
+                style: const TextStyle(color: CampusTheme.subText, fontSize: 13)),
           );
         }).toList(),
       ),
@@ -470,7 +470,7 @@ class _PickerContentState extends State<_PickerContent> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (_selectedMonday != null) ...[
-            Text('已选择',
+            const Text('已选择',
                 style: TextStyle(color: CampusTheme.subText, fontSize: 13)),
             const SizedBox(height: 4),
             Text(
@@ -481,7 +481,7 @@ class _PickerContentState extends State<_PickerContent> {
             Text('以${_fmt(_selectedMonday!)}周一作为开学日期',
                 style: TextStyle(color: primary, fontSize: 13)),
           ] else ...[
-            Text('尚未选择',
+            const Text('尚未选择',
                 style: TextStyle(color: CampusTheme.subText, fontSize: 13)),
             const SizedBox(height: 4),
             const Text('--',

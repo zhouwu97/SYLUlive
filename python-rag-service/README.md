@@ -44,7 +44,7 @@ Provider 地址只从部署环境读取，并且必须命中 `RAG_PROVIDER_ALLOW
 
 ## 结构化政策生成与引用
 
-生产生成链版本为 `campus-assistant-release-v6`，事件契约版本为 `1.2`。LCEL 链使用
+生产生成链版本为 `campus-assistant-release-v10`，事件契约版本为 `1.2`。LCEL 链使用
 `ChatPromptTemplate`、LangChain `BaseChatModel`、`PydanticOutputParser(PolicyAnswer)` 和
 `astream_events(version="v2")`。模型只看到查询计划、最多 8 条历史消息和 rerank 后的
 有限证据；证据使用请求内临时编号 `R1`、`R2`，不向模型暴露数据库分块 ID。
@@ -55,6 +55,10 @@ Python 会确定性校验临时引用是否存在、引用原文是否为证据�
 Go 在完成前再按请求 ID、document/chunk 对、数据库发布状态和有效期重建白名单，来源撤销、
 伪造编号或文档不匹配都会整条降级为可靠拒答。来源卡按 `document_id` 聚合 citation 和 locator，
 客户端不显示裸分块 ID。
+
+证据为模型提供来源编号 `R1` 与来源内片段编号 `Q001`，模型可在 `quote` 中选择片段编号，服务端再恢复原文并校验；旧的逐字 `quote` 仍兼容。来源编号不能与片段编号混用，临时编号不得进入读者正文。数值校验按完整数值比较，支持中文相邻数字、百分号和等价小数，不把已引用标题里的真实文号当作比例计算数字。派生推理卡不能覆盖同域正式政策的优先级；要求新版本但缺少对应证据、或要求代开盖章材料时进入明确的无法核验/无法代办引导。
+
+真实权重和真实生成服务的独立评测入口见 [独立政策评测](../docs/ai/policy-independent-evaluation.md)，不能用离线夹具结果代替实测质量。
 
 ## T09 本地观测与发布门禁
 

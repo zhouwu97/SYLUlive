@@ -81,11 +81,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
-            title: Row(
+            title: const Row(
               children: [
-                const Icon(Icons.gavel, color: Colors.orange, size: 24),
-                const SizedBox(width: 8),
-                const Text('处理举报'),
+                Icon(Icons.gavel, color: Colors.orange, size: 24),
+                SizedBox(width: 8),
+                Text('处理举报'),
               ],
             ),
             content: SingleChildScrollView(
@@ -152,7 +152,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   if (isCanteenTarget) ...[
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: confirmedReasonCode,
+                      initialValue: confirmedReasonCode,
                       decoration: InputDecoration(
                         labelText: '确认治理原因（必选）',
                         helperText: '处罚依据以管理员确认原因为准，不直接沿用举报人选择。',
@@ -205,7 +205,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       },
     );
 
-    if (action == null) return;
+    if (action == null || !mounted) return;
 
     try {
       final dio = context.read<AuthProvider>().dio;

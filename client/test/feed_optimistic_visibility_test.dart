@@ -1,16 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
-
-Post _post(int id, int authorId) => Post(
-      id: id,
-      content: '内容 $id',
-      boardId: 1,
-      authorId: authorId,
-      createdAt: DateTime.utc(2026, 8, 1),
-    );
 
 Map<String, dynamic> _feedJson(List<int> postIds) => {
       'posts': [
@@ -33,7 +24,6 @@ Dio _feedDio({bool failFeedWrite = false, bool failFeedUndo = false}) {
     InterceptorsWrapper(
       onRequest: (options, handler) {
         if (options.path == '/posts' || options.path == '/posts/featured') {
-          final sort = options.queryParameters['sort'];
           // 每个 sort 返回帖子 1,2,3；作者 7 的帖子为 id3。
           handler.resolve(
             Response(

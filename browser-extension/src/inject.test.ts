@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { planRelayInjection } from "./inject";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { installSelfHealingInjection, planRelayInjection } from "./inject";
 
 const productionHosts = ["https://sylulive.online/*"];
 const developmentHosts = [
@@ -27,5 +27,41 @@ describe("planRelayInjection", () => {
   it("缺少 host_permissions 时不注入", () => {
     expect(planRelayInjection()).toEqual([]);
     expect(planRelayInjection([])).toEqual([]);
+  });
+});
+
+describe('self-healing relay lifecycle', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('injects on worker start and browser startup without adding school host access', async () => {
+    const installed = vi.fn(), startup = vi.fn();
+    const executeScript = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockResolvedValue([{id: 17}, {}]);
+    vi.stubGlobal('chrome', {
+      runtime: {getManifest: () => ({host_permissions: productionHosts}), onInstalled: {addListener: installed}, onStartup: {addListener: startup}},
+      tabs: {query}, scripting: {executeScript},
+    });
+    installSelfHealingInjection();
+    await vi.waitFor(() => expect(executeScript).toHaveBeenCalledTimes(1));
+    expect(query).toHaveBeenCalledWith({url: productionHosts[0]});
+    expect(executeScript).toHaveBeenCalledWith({target: {tabId: 17, frameIds: [0]}, files: ['relay.js']});
+    await Promise.resolve();
+    startup.mock.calls[0][0]();
+    await vi.waitFor(() => expect(executeScript).toHaveBeenCalledTimes(2));
+  });
+  it('coalesces simultaneous initialization/install events and tolerates inaccessible tabs', async () => {
+    const installed = vi.fn();
+    let resolve!: (value: unknown[]) => void;
+    const pending = new Promise<unknown[]>(done => { resolve = done; });
+    const query = vi.fn().mockReturnValue(pending);
+    const executeScript = vi.fn().mockRejectedValue(new Error('tab closed'));
+    vi.stubGlobal('chrome', {
+      runtime: {getManifest: () => ({host_permissions: productionHosts}), onInstalled: {addListener: installed}, onStartup: {addListener: vi.fn()}},
+      tabs: {query}, scripting: {executeScript},
+    });
+    installSelfHealingInjection();
+    installed.mock.calls[0][0]({reason: 'install'});
+    expect(query).toHaveBeenCalledTimes(1);
+    resolve([{id: 17}]);
+    await vi.waitFor(() => expect(executeScript).toHaveBeenCalledTimes(1));
   });
 });

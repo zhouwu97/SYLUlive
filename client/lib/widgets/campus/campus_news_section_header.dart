@@ -29,7 +29,7 @@ class CampusNewsSectionHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 4),
-              Text(
+              const Text(
                 '校园通知与赛事信息',
                 style: TextStyle(
                   fontSize: 12,

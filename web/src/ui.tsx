@@ -12,6 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { paths } from "./icons";
 import { useSlidingIndicator } from "./desktop-motion";
 import { ApiError, write, errorText, isNetworkError, type Entity } from "./api";
+import {LegalConfirmation} from './legal-consent';
 export function Icon({ name, size }: { name: string; size?: number }) {
   return (
     <svg
@@ -53,7 +54,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
       notify(success);
       return true;
     } catch (e) {
-      notify(errorText(e));
+      notify(e instanceof ApiError && e.code === 'legal_consent_required' ? '请在“我的主页 → 协议与隐私”确认最新协议后，重新提交当前操作' : errorText(e));
       return false;
     }
   }
@@ -175,7 +176,8 @@ export function Form({
 }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [rulesRequired, setRulesRequired] = useState(false);
+    [rulesRequired, setRulesRequired] = useState(false),
+    [legalRequired, setLegalRequired] = useState(false);
   async function send(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;
@@ -187,6 +189,7 @@ export function Form({
     } catch (err) {
       setError(errorText(err));
       if (err instanceof ApiError && err.code === 'community_rules_required') setRulesRequired(true);
+      if (err instanceof ApiError && err.code === 'legal_consent_required') setLegalRequired(true);
     } finally {
       setBusy(false);
     }
@@ -250,6 +253,7 @@ export function Form({
       ))}
       {children}
       {rulesRequired && <div className="panel panel-pad"><b>社区规则 · 2026-07-18</b><p>不得发布违法违规、侵犯隐私、侮辱诽谤、诈骗、色情低俗、暴力恐怖、违禁交易或侵犯知识产权的内容。发布他人信息、照片、联系方式或试卷资料前，应取得合法授权。</p><p>二手交易仅用于信息交流。请自行核验交易对象与商品，不要在平台外泄露密码、验证码或支付凭证。平台可依据举报和审核规则处理违规内容，并向内容发布者说明处置理由和申诉渠道。</p><button className="btn" type="button" disabled={busy} onClick={async()=>{setBusy(true);try{await write('/api/user/community-rules',{accepted:true});setRulesRequired(false);setError('规则已确认，请重新提交当前内容');}catch(error){setError(errorText(error))}finally{setBusy(false)}}}>我已阅读并同意社区规则</button></div>}
+      {legalRequired && <LegalConfirmation onAccepted={() => {setLegalRequired(false);setError('协议已确认，请重新提交当前内容');}}/>}
       {error && (
         <p className="field-error" role="alert">
           {error}
@@ -326,6 +330,8 @@ export function QueryState({
         正在加载…
       </div>
     );
+  if (query.error instanceof ApiError && query.error.code === 'legal_consent_required')
+    return <LegalConfirmation/>;
   if (query.error)
     return (
       <Empty icon="info" title={isNetworkError(query.error) ? "网络连接暂不可用" : "加载未完成"} description={errorText(query.error)}>

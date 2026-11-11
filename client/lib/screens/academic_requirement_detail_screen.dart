@@ -2,6 +2,8 @@
 ///
 /// 展示单个模块的完整课程列表。
 
+library;
+
 import 'package:flutter/material.dart';
 import '../widgets/app_page_background.dart';
 import '../models/edu_credit_requirement.dart';

@@ -1870,8 +1870,9 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         postUri?.host == 'post' &&
         postUri?.pathSegments.length == 1) {
       final postId = int.tryParse(postUri!.pathSegments.single);
-      if (postId == null || postId <= 0)
+      if (postId == null || postId <= 0) {
         return _DeepLinkHandlingResult.unhandled;
+      }
       if (_isLoginRouteVisible()) return _DeepLinkHandlingResult.deferred;
       appNavigatorKey.currentState?.push(
         MaterialPageRoute(builder: (_) => PostDetailScreen(postId: postId)),

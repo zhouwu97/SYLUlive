@@ -70,7 +70,7 @@ void main() {
       );
       final svc = FeedEventService(dio, maxBatch: 40);
 
-      svc.enqueue(FeedEvent(
+      svc.enqueue(const FeedEvent(
           feedSessionId: 's1',
           feedKind: 'all',
           algorithmVersion: 'v3',
@@ -78,7 +78,7 @@ void main() {
           postId: 1,
           position: 0,
           visibleMs: 800));
-      svc.enqueue(FeedEvent(
+      svc.enqueue(const FeedEvent(
           feedSessionId: 's1',
           feedKind: 'all',
           algorithmVersion: 'v3',
@@ -86,7 +86,7 @@ void main() {
           postId: 2,
           position: 1,
           visibleMs: 900));
-      svc.enqueue(FeedEvent(
+      svc.enqueue(const FeedEvent(
           feedSessionId: 's2',
           feedKind: 'time',
           algorithmVersion: 'v3',
@@ -125,7 +125,7 @@ void main() {
         ),
       );
       final svc = FeedEventService(dio, maxBatch: 40);
-      svc.enqueue(FeedEvent(
+      svc.enqueue(const FeedEvent(
           feedSessionId: 's1',
           feedKind: 'all',
           algorithmVersion: 'v3',
@@ -135,6 +135,12 @@ void main() {
 
       await svc.flush();
       expect(svc.pendingEvents, isNotEmpty, reason: '失败后事件回队列重试');
+      expect(calls, 1);
+      for (var retry = 0; retry < 3; retry++) {
+        await svc.flush();
+      }
+      expect(calls, 4, reason: '初次发送加三次重试后停止');
+      expect(svc.pendingEvents, isEmpty);
       svc.dispose();
     });
   });

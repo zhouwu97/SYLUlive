@@ -54,7 +54,7 @@ void main() {
     (_) async => null,
   );
 
-  testWidgets('正常模式保留数据权利请求区域', (tester) async {
+  testWidgets('正常模式保留数据权利，进入时不读取未展示的请求记录', (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 1800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final adapter = _PrivacyAdapter();
@@ -67,7 +67,7 @@ void main() {
     expect(find.text('导出个人数据'), findsOneWidget);
     expect(find.text('撤销全部同意'), findsNothing);
     expect(find.text('重新授权'), findsNothing);
-    expect(adapter.requestedPaths, contains('/user/privacy/requests'));
+    expect(adapter.requestedPaths, isEmpty);
   });
 
   testWidgets('受限模式保留数据权利、重新授权、注销和退出登录', (tester) async {
@@ -85,7 +85,7 @@ void main() {
     expect(find.text('重新授权'), findsOneWidget);
     expect(find.text('撤销全部同意'), findsNothing);
     expect(find.byTooltip('退出登录'), findsOneWidget);
-    expect(adapter.requestedPaths, contains('/user/privacy/requests'));
+    expect(adapter.requestedPaths, isEmpty);
   });
 }
 

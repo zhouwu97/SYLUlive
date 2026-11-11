@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal
+import re
 
 from pydantic import Field, model_validator
 
@@ -44,6 +45,26 @@ class PolicyQueryPlan(StrictSchema):
         return " ".join(
             dict.fromkeys(value.strip() for value in values if value.strip())
         )
+
+    @property
+    def uses_neutral_historical_query(self) -> bool:
+        return self.allow_historical and bool(
+            re.search(r'历史(?:规定|政策|规则|口径|文件|细则|版本)|旧(?:规定|政策|规则|口径|二考|文件|制度)|过时(?:规定|政策|口径|文件)', self.normalized_question)
+            and re.search(r'现行|当前|现在|新规|对比|比较|区分|套用|套在', self.normalized_question)
+        )
+
+    @property
+    def reranking_query(self) -> str:
+        # 历史/现行对比可能包含待纠正的前提；重排查找相关制度，
+        # 不应要求证据赞同该前提。生成阶段仍读取完整原问题。
+        if self.uses_neutral_historical_query:
+            terms = list(dict.fromkeys(value.strip() for value in
+                [*self.exact_terms, *self.expanded_terms] if value.strip()))
+            if re.search(r'成绩|记分|(?:记|给)\s*(?:\d+|[一二三四五六七八九十百]+)\s*分', self.normalized_question):
+                terms.append('成绩记载')
+            if terms:
+                return ' '.join(terms)
+        return self.retrieval_query
 
     def audit_summary(self) -> dict[str, object]:
         """审计摘要不包含原始或规范化问题，避免把用户输入写入事件。"""

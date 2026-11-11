@@ -1097,7 +1097,7 @@ class _GymScoreItem {
     rawResult = rawResult.replaceAll('times', '次');
     rawResult = rawResult.replaceAll(' min', ' 分钟');
 
-    rawResult = rawResult.replaceAll(RegExp(r"m's['" + '"' + r"]*"), "");
+    rawResult = rawResult.replaceAll(RegExp(r"m's['" '"' r"]*"), "");
     if (rawResult.contains("'") || rawResult.contains('"')) {
       rawResult = rawResult
           .replaceAll("''", "″")

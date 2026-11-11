@@ -1,4 +1,5 @@
 import '../providers/theme_provider.dart';
+import '../config/app_contacts.dart';
 import 'package:provider/provider.dart';
 import 'app_card.dart';
 import 'app_dialog.dart';
@@ -20,9 +21,6 @@ class AboutAppSheet extends StatefulWidget {
 class _AboutAppSheetState extends State<AboutAppSheet> {
   String _currentVersion = '加载中...';
   String _autoUpdateStatus = '加载中...';
-  static const String _pureHomozygoteEmail = '3170305904@qq.com';
-  static const String _scoreDropperEmail = '2350016823@qq.com';
-  static const String _nowEmail = '1517088507@qq.com';
 
   @override
   void initState() {
@@ -238,7 +236,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '纯合子、掉分员、Now',
+                                    AppContacts.developerNames,
                                     style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.bold,
@@ -518,8 +516,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
               _buildAuthorEmailRow(
                 context: context,
                 dialogContext: dialogContext,
-                author: '纯合子',
-                email: _pureHomozygoteEmail,
+                author: AppContacts.pureHomozygoteName,
+                email: AppContacts.pureHomozygoteEmail,
                 titleColor: titleColor,
                 labelColor: labelColor,
                 panelColor: valuePanelColor,
@@ -529,8 +527,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
               _buildAuthorEmailRow(
                 context: context,
                 dialogContext: dialogContext,
-                author: '掉分员',
-                email: _scoreDropperEmail,
+                author: AppContacts.scoreDropperName,
+                email: AppContacts.scoreDropperEmail,
                 titleColor: titleColor,
                 labelColor: labelColor,
                 panelColor: valuePanelColor,
@@ -540,8 +538,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
               _buildAuthorEmailRow(
                 context: context,
                 dialogContext: dialogContext,
-                author: 'Now',
-                email: _nowEmail,
+                author: AppContacts.nowName,
+                email: AppContacts.nowEmail,
                 titleColor: titleColor,
                 labelColor: labelColor,
                 panelColor: valuePanelColor,

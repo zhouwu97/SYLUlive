@@ -1,4 +1,14 @@
 import { test, expect, type Page } from "@playwright/test";
+import { measureTextContrast } from './visual-contrast';
+
+test('对比度逐层合成接近透明的背景，不把透明白色当成黑底', async ({ page }) => {
+  await page.setContent('<div style="background:#fff"><span class="contrast-fixture" style="color:#3358e0">浅色</span><span class="contrast-fixture" style="color:#3358e0;background:rgba(255,255,255,.001)">透明浅色</span></div><div style="background:#000"><span class="contrast-fixture" style="color:#fff">深色</span><span class="contrast-fixture" style="color:#fff;background:rgba(255,255,255,.001)">透明深色</span></div>');
+  const result = await page.locator('.contrast-fixture').evaluateAll(measureTextContrast);
+  expect(result[0].ratio).toBeCloseTo(5.8123, 3);
+  expect(result[1].ratio).toBeCloseTo(result[0].ratio, 2);
+  expect(result[2].ratio).toBe(21);
+  expect(result[3].ratio).toBeGreaterThan(20);
+});
 
 async function visualFixture(page: Page) {
   const errors: string[] = [];
@@ -28,23 +38,7 @@ for (const theme of ["light", "dark"]) {
         await page.goto(route);
         await expect(page.locator(".post-author, .market-card").first()).toBeVisible();
         const result = await page.evaluate(() => {
-          const ctx = document.createElement("canvas").getContext("2d")!;
-          const luminance = (color: string) => {
-            ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = color; ctx.fillRect(0, 0, 1, 1);
-            const values = Array.from(ctx.getImageData(0, 0, 1, 1).data).slice(0, 3).map((c) => c / 255).map((c) => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4);
-            return .2126 * values[0] + .7152 * values[1] + .0722 * values[2];
-          };
-          const contrast = Array.from(document.querySelectorAll<HTMLElement>(".page-title h1, .page-title p, .btn.primary, .market-price-row .price, .post-market-price, .post-body, .rail-item p, .post-context-copy p, .post-comment-main > p, .today-card h2, .today-card p, .today-card .btn, .today-label, .today-time, .today-side > span, .nav-item.active, .quick-copy b, .profile-rail-head p, .profile-rail-stats small, .post-interaction, .author-follow, .author-level, .market-page .filter-row select, .market-page .filter-row > label, .market-status, .market-meta time, .market-seller > span:last-child")).filter((el) => el.getClientRects().length && getComputedStyle(el).visibility !== "hidden").map((el) => {
-            let surface: HTMLElement | null = el;
-            while (surface && getComputedStyle(surface).backgroundColor === "rgba(0, 0, 0, 0)") surface = surface.parentElement;
-            const ink = luminance(getComputedStyle(el).color), paper = luminance(getComputedStyle(surface || document.body).backgroundColor);
-            return { selector: el.className || el.tagName, ratio: (Math.max(ink, paper) + .05) / (Math.min(ink, paper) + .05) };
-          });
           const cards = Array.from(document.querySelectorAll(".market-card")).map((el) => ({ picture: el.querySelector(".market-img")!.getBoundingClientRect().bottom, title: el.querySelector("h3")!.getBoundingClientRect(), price: el.querySelector(".price")!.getBoundingClientRect().top }));
-          for (const el of document.querySelectorAll<HTMLElement>(".filter-row input[placeholder]")) {
-            const ink = luminance(getComputedStyle(el, "::placeholder").color), paper = luminance(getComputedStyle(el.closest("form")!).backgroundColor);
-            contrast.push({ selector: "search placeholder", ratio: (Math.max(ink, paper) + .05) / (Math.min(ink, paper) + .05) });
-          }
           const mediaOutside = Array.from(document.querySelectorAll(".community-feed .media-gallery-1 img, .post-detail-gallery.media-gallery-1 img")).some((img) => {
             const picture = img.getBoundingClientRect(), frame = img.parentElement!.getBoundingClientRect();
             return picture.left < frame.left - 1 || picture.right > frame.right + 1 || picture.top < frame.top - 1 || picture.bottom > frame.bottom + 1;
@@ -77,8 +71,9 @@ for (const theme of ["light", "dark"]) {
             const bounds = el.getBoundingClientRect();
             return bounds.left < -1 || bounds.right > innerWidth + 1;
           });
-          return { overflow: document.documentElement.scrollWidth > innerWidth, headerOutside, contrast, unbounded, flatNavigation, cardShortcuts, navOutside, overlap: quickOutside || mediaOutside || cards.some((card) => card.picture > card.title.top || card.title.bottom > card.price) };
+          return { overflow: document.documentElement.scrollWidth > innerWidth, headerOutside, unbounded, flatNavigation, cardShortcuts, navOutside, overlap: quickOutside || mediaOutside || cards.some((card) => card.picture > card.title.top || card.title.bottom > card.price) };
         });
+        const contrast = await page.locator(".page-title h1, .page-title p, .btn.primary, .market-price-row .price, .post-market-price, .post-body, .rail-item p, .post-context-copy p, .post-comment-main > p, .today-card h2, .today-card p, .today-card .btn, .today-label, .today-time, .today-side > span, .nav-item.active, .quick-copy b, .profile-rail-head p, .profile-rail-stats small, .post-interaction, .author-follow, .author-level, .market-page .filter-row select, .market-page .filter-row > label, .market-status, .market-meta time, .market-seller > span:last-child, .filter-row input[placeholder]").evaluateAll(measureTextContrast);
         expect(result.overflow, `${theme} ${width} ${route}`).toBe(false);
         expect(result.headerOutside, `${theme} ${width} ${route} header controls fully visible`).toBe(false);
         expect(result.overlap, `${theme} ${width} ${route}`).toBe(false);
@@ -86,7 +81,7 @@ for (const theme of ["light", "dark"]) {
         expect(result.flatNavigation, `${theme} ${width} ${route} integrated navigation`).toBe(true);
         expect(result.cardShortcuts, `${theme} ${width} ${route} community shortcut cards and hit areas`).toBe(true);
         expect(result.navOutside, `${theme} ${width} ${route} navigation hit areas`).toBe(false);
-        expect(result.contrast.filter((item) => item.ratio < 4.5), `${theme} ${width} ${route} contrast`).toEqual([]);
+        expect(contrast.filter((item) => item.ratio < 4.5), `${theme} ${width} ${route} contrast`).toEqual([]);
         if (route === "./" && width <= 600) {
           await expect(page.getByRole("searchbox", { name: "搜索帖子" }).or(page.getByRole("textbox", { name: "搜索帖子" }))).toBeVisible();
           const publish = page.getByRole("button", { name: "发布校园内容", exact: true });

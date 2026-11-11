@@ -75,9 +75,9 @@ void main() {
 
     testWidgets('1.3 倍字号下校园页不产生布局异常', (tester) async {
       await tester.pumpWidget(
-        MediaQuery(
-          data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
-          child: const MaterialApp(home: CampusScreen()),
+        const MediaQuery(
+          data: MediaQueryData(textScaler: TextScaler.linear(1.3)),
+          child: MaterialApp(home: CampusScreen()),
         ),
       );
       await tester.pump();

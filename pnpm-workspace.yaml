@@ -4,3 +4,6 @@ packages:
   - packages/*
 allowBuilds:
   esbuild: true
+overrides:
+  # Vite 的 transform/build 使用同一受影响版本范围；在全量构建和浏览器回归中验证修复版。
+  esbuild@>=0.27.3 <0.28.1: 0.28.1

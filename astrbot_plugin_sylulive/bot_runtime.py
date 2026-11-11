@@ -58,7 +58,7 @@ class BotRuntimeManager:
         controls = owner.agent.publisher.controls if owner and owner.agent and owner.agent.publisher else {}
         return {"manager_alive": alive, "discovery_age_seconds": max(0, int(self.monotonic() - self.last_discovery)),
                 "workers": len(workers), "failed_workers": failed, "registry_error": self.restore_error,
-                "owner_state": owner.phase or owner.state if owner else "not_connected",
+                "owner_state": owner.phase or owner.state if owner else ("scope_required" if self.owner_client.tokens else "not_connected"),
                 "owner_error": owner.error if owner else "",
                 "control_error": owner.control_error if owner else "",
                 "heartbeat_accepted": bool(owner and owner.leased),

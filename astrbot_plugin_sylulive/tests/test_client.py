@@ -120,7 +120,7 @@ async def test_device_flow_and_no_secret_returned():
 
 
 @pytest.mark.asyncio
-async def test_refresh_is_single_flight_and_ambiguous_result_clears_tokens():
+async def test_refresh_is_single_flight_and_network_failure_preserves_tokens():
     refreshes = 0
 
     async def respond(request):
@@ -149,9 +149,9 @@ async def test_refresh_is_single_flight_and_ambiguous_result_clears_tokens():
             base_url=client.origin, transport=httpx.MockTransport(fail)
         )
         client.tokens["expires_at"] = 0
-        with pytest.raises(IntegrationProblem, match="reconnect_required"):
+        with pytest.raises(IntegrationProblem, match="network_unavailable"):
             await client.call("GET", "/binding")
-        assert client.tokens is None and store.value is None
+        assert client.tokens is not None and store.value is not None
     finally:
         await client.close()
 

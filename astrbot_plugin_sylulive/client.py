@@ -252,10 +252,12 @@ class BusinessClient:
                     },
                 )
                 self._save(body)
-            except IntegrationProblem:
-                # An ambiguous refresh cannot safely reuse a rotated credential.
-                self.clear()
-                raise IntegrationProblem("reconnect_required") from None
+            except IntegrationProblem as error:
+                # 临时网络故障保留已保存授权，由下一次请求继续刷新。
+                if error.code in {"invalid_grant", "invalid_token", "binding_revoked", "reconnect_required"}:
+                    self.clear()
+                    raise IntegrationProblem("reconnect_required") from None
+                raise
             return self.tokens["access_token"]
 
     async def refresh_scope(self):

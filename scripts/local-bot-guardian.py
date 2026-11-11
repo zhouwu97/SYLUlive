@@ -5,6 +5,7 @@ process identities. It never sends messages, calls a model or changes grants.
 """
 import argparse
 import contextlib
+from datetime import datetime
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -116,6 +117,20 @@ class Guardian:
         return "started"
 
     def reconnect(self):
+        # QQ 重开后按已登录账号和原程序路径恢复，无需用户手动填写 PID。
+        with httpx.Client(base_url="http://127.0.0.1:5099", trust_env=False, timeout=10) as client:
+            login = client.post("/api/login", json={"password": self.access["snowluma_password"]})
+            login.raise_for_status()
+            client.headers["Authorization"] = "Bearer " + login.json()["token"]
+            rows = client.get("/api/processes").json()["list"]
+            matches = [row for row in rows if str((row.get("account") or {}).get("uin")) == self.target["uin"]]
+            if len(matches) != 1:
+                return "verify_bot_login"
+            process = psutil.Process(matches[0]["pid"])
+            if process.exe().casefold() != self.target.get("executable", "").casefold():
+                return "verify_bot_login"
+            self.target.update(pid=process.pid, created_at=datetime.fromtimestamp(process.create_time()).isoformat())
+            write_json(self.root / "bot-target.json", self.target)
         # connect-bot verifies the pinned PID, creation time and QQ executable.
         result = subprocess.run([str(self.python), str(self.root / "connect-bot.py")],
             cwd=self.root, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

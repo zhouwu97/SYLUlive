@@ -10,6 +10,7 @@ import '../config/api_constants.dart';
 import '../models/admin_user_summary.dart';
 import '../providers/auth_provider.dart';
 import 'admin/app_release_admin_tab.dart';
+import 'admin/managed_ai_admin_tab.dart';
 import '../widgets/app_card.dart';
 import '../widgets/state_placeholder.dart';
 import '../utils/app_feedback.dart';
@@ -34,7 +35,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _dio = context.read<AuthProvider>().dio;
     _lotteryFuture = _loadLotteryParticipants();
     _loadAll();
@@ -197,6 +198,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             Tab(text: '管理日志'),
             Tab(text: '抽奖管理'),
             Tab(text: '应用版本'),
+            Tab(text: '所属 AI'),
           ],
         )),
       ),
@@ -208,6 +210,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           _buildAdminLogsTab(),
           _buildLotteryTab(),
           AppReleaseAdminTab(dio: _dio),
+          ManagedAIAdminTab(dio: _dio),
         ],
       ),
     );

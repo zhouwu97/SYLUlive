@@ -38,12 +38,16 @@ func NewSuperAdminHandlerWithEmailVerification(db *gorm.DB, emailVerification *s
 // GetUsers 获取所有用户
 
 func (h *SuperAdminHandler) GetUsers(c *gin.Context) {
+	if c.Query("kind") == "ai" {
+		h.getManagedAIs(c)
+		return
+	}
 
 	search := strings.TrimSpace(c.Query("search"))
 
 	role := c.Query("role")
 
-	query := h.db.Model(&models.User{})
+	query := h.db.Model(&models.User{}).Where("COALESCE(account_status, '') <> ?", "bot")
 
 	query = withAdminUserSearch(query, h.db, search)
 
@@ -290,6 +294,7 @@ func (h *SuperAdminHandler) DeleteUser(c *gin.Context) {
 
 type Statistics struct {
 	TotalUsers int64 `json:"total_users"`
+	TotalAIs   int64 `json:"total_ais"`
 
 	TotalPosts int64 `json:"total_posts"`
 
@@ -312,7 +317,8 @@ func (h *SuperAdminHandler) GetStatistics(c *gin.Context) {
 
 	var stats Statistics
 
-	h.db.Model(&models.User{}).Count(&stats.TotalUsers)
+	h.db.Model(&models.User{}).Where("COALESCE(account_status, '') <> ?", "bot").Count(&stats.TotalUsers)
+	h.db.Model(&models.User{}).Where("account_status = ?", "bot").Count(&stats.TotalAIs)
 
 	h.db.Model(&models.Post{}).Count(&stats.TotalPosts)
 

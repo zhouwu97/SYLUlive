@@ -32,6 +32,24 @@ def test_recovery_waits_for_consecutive_failures_and_limits_restart_storm():
     assert recovery.reserve("astrbot", 4300)
 
 
+@pytest.mark.parametrize("matching", [True, False])
+def test_reconnect_repins_only_expected_logged_in_account(tmp_path, monkeypatch, matching):
+    guardian = fixture(tmp_path)
+    guardian.target["executable"] = "C:/QQ/QQ.exe"
+    def respond(request):
+        if request.url.path == "/api/login":
+            return httpx.Response(200, json={"token": "synthetic"})
+        return httpx.Response(200, json={"list": [{"pid": 42, "account": {"uin": "123" if matching else "999"}}]})
+    original = httpx.Client
+    monkeypatch.setattr(module.httpx, "Client", lambda **kwargs: original(**kwargs, transport=httpx.MockTransport(respond)))
+    monkeypatch.setattr(module.psutil, "Process", lambda pid: Mock(pid=pid, exe=lambda: "C:/QQ/QQ.exe", create_time=lambda: 1000))
+    run = Mock(return_value=Mock(returncode=0))
+    monkeypatch.setattr(module.subprocess, "run", run)
+    assert guardian.reconnect() == ("reconnected" if matching else "verify_bot_login")
+    assert run.called == matching
+    assert guardian.target["pid"] == (42 if matching else 1)
+
+
 def fixture(tmp_path):
     (tmp_path / "secrets").mkdir()
     (tmp_path / "secrets/local-access.json").write_text(json.dumps({

@@ -11,6 +11,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// dishPhotoDisplayLimit 是菜品详情一次展示的最新实拍张数。
+const dishPhotoDisplayLimit = 6
+
 // CanteenDishHandler 公开菜品图库接口（approved-only）。
 type CanteenDishHandler struct {
 	db *gorm.DB
@@ -69,7 +72,7 @@ func (h *CanteenDishHandler) ListDishes(c *gin.Context) {
 			(SELECT f.path FROM canteen_dish_photos p
 			 JOIN files f ON f.id = p.file_id
 			 WHERE p.dish_id = d.id AND p.status = ?
-			 ORDER BY p.sort_order, p.created_at, p.id LIMIT 1) AS cover_image,
+			 ORDER BY p.sort_order, p.created_at DESC, p.id DESC LIMIT 1) AS cover_image,
 			(SELECT COUNT(*) FROM canteen_dish_photos p
 			 WHERE p.dish_id = d.id AND p.status = ?) AS photo_count,
 			%s,
@@ -133,12 +136,15 @@ func (h *CanteenDishHandler) GetDish(c *gin.Context) {
 		CreatedAt string `json:"created_at"`
 	}
 	var photos []photoRow
-	// 只出 approved；按 sort_order / created_at 排序。
+	// 只出 approved。实拍不设名额上限：同学随时可以补新图，详情只展示最新的
+	// dishPhotoDisplayLimit 张，旧图自动退居历史，避免菜换了做法图还停在过去。
+	// 管理员设为封面的图 sort_order 更小，固定排在最前。
 	err = h.db.Table("canteen_dish_photos AS p").
 		Joins("JOIN files f ON f.id = p.file_id").
 		Select("p.id, f.path AS image, p.created_at").
 		Where("p.dish_id = ? AND p.status = ?", dishID, models.DishPhotoStatusApproved).
-		Order("p.sort_order, p.created_at, p.id").
+		Order("p.sort_order, p.created_at DESC, p.id DESC").
+		Limit(dishPhotoDisplayLimit).
 		Scan(&photos).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取菜品实拍失败"})
@@ -146,6 +152,13 @@ func (h *CanteenDishHandler) GetDish(c *gin.Context) {
 	}
 	if photos == nil {
 		photos = []photoRow{}
+	}
+	var totalPhotos int64
+	if err := h.db.Model(&models.CanteenDishPhoto{}).
+		Where("dish_id = ? AND status = ?", dishID, models.DishPhotoStatusApproved).
+		Count(&totalPhotos).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取菜品实拍失败"})
+		return
 	}
 
 	var mentionCount int64
@@ -157,6 +170,8 @@ func (h *CanteenDishHandler) GetDish(c *gin.Context) {
 			Count(&mentionCount).Error
 	}
 
+	// 菜品三维评分（味道 / 性价比 / 分量）与首页热门菜品同一算法；没人打分时 rated_count 为 0。
+	aggregate := loadDishAggregates(h.db, []uint{dish.ID})[dish.ID]
 	c.JSON(http.StatusOK, gin.H{
 		"dish": gin.H{
 			"id":                       dish.ID,
@@ -165,9 +180,16 @@ func (h *CanteenDishHandler) GetDish(c *gin.Context) {
 			"canteen_name":             canteen.Name,
 			"canteen_operating_status": canteen.OperatingStatus,
 		},
-		"photo_count":    len(photos),
+		"photo_count":    totalPhotos,
 		"photos":         photos,
 		"mention_count":  mentionCount,
 		"reviewer_count": mentionCount,
+		"scores": gin.H{
+			"average": aggregate.AverageScore,
+			"taste":   aggregate.TasteScore,
+			"value":   aggregate.ValueScore,
+			"portion": aggregate.PortionScore,
+		},
+		"rated_count": aggregate.ReviewerCount,
 	})
 }

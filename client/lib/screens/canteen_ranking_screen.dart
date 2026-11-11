@@ -14,7 +14,7 @@ import '../widgets/canteen/canteen_ranking_filter.dart';
 import 'canteen_detail_screen.dart';
 import '../widgets/app_card.dart';
 
-/// 完整排行榜：综合排序 / 评分优先 / 评价人数。
+/// 完整排行榜：综合排序 / 低分优先 / 评价人数。
 /// rank 由服务端返回；同时展示原始星级、评价人数与综合分，便于用户理解。
 /// 热度排序待热度统计上线后再开放。
 class CanteenRankingScreen extends StatefulWidget {
@@ -28,13 +28,15 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
   String _sort = CanteenRankingSort.composite;
   String _locationArea = '';
   String _locationFloor = '';
+  String _tagKey = '';
 
-  /// 位置筛选（'' = 不限）：区域与楼层组合生效。
+  /// 位置筛选（'' = 不限）：区域与楼层组合生效；再叠加标签筛选。
   List<CanteenRankingItem> _applyLocationFilter(
       List<CanteenRankingItem> items) {
     return items
         .where((item) => canteenRankingItemMatchesLocation(
             item, _locationArea, _locationFloor))
+        .where((item) => _tagKey.isEmpty || item.tagKeys.contains(_tagKey))
         .toList();
   }
 
@@ -79,7 +81,7 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
         content: const Text(
           '综合排序采用贝叶斯加权评分，既看平均星级、也看评价人数：评分越高、人数越多越靠前；'
           '评价很少的高分商家会向全校平均分收缩，避免“5人/1人”虚高霸榜。\n\n'
-          '“评分优先”按星级从低到高倒序展示，样本很少时会标注“样本较少”；'
+          '“低分优先”按星级从低到高展示，方便先看到踩雷反馈，样本很少时会标注“样本较少”；'
           '“评价人数”按参与评价的人数排序。\n\n'
           '菜品和实拍数量仅供参考，不参与综合分计算。',
           style: TextStyle(fontSize: 13, height: 1.6),
@@ -182,6 +184,8 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
               _locationArea = area;
               _locationFloor = floor;
             }),
+            tagKey: _tagKey,
+            onTagChanged: (key) => setState(() => _tagKey = key),
           ),
           _buildExplanationLine(isDark),
           const SizedBox(height: 4),
@@ -243,14 +247,18 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
         if (items.isEmpty) {
           final hasLocationFilter =
               _locationArea.isNotEmpty || _locationFloor.isNotEmpty;
-          if (hasLocationFilter && provider.rankingItems.isNotEmpty) {
+          final hasTagFilter = _tagKey.isNotEmpty;
+          if ((hasLocationFilter || hasTagFilter) &&
+              provider.rankingItems.isNotEmpty) {
             return CanteenEmptyState(
-              title: '该位置暂无商家',
-              subtitle: '试试切换其他食堂或楼层',
+              title: hasTagFilter ? '没有符合条件的商家' : '该位置暂无商家',
+              subtitle:
+                  hasTagFilter ? '近 30 天还没有同学这样评价过，换个标签或位置试试' : '试试切换其他食堂或楼层',
               actionLabel: '查看全部商家',
               onAction: () => setState(() {
                 _locationArea = '';
                 _locationFloor = '';
+                _tagKey = '';
               }),
             );
           }

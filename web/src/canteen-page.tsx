@@ -20,14 +20,14 @@ function Stars({value}:{value:unknown}){
 export function CanteenPage(){
   const [params,setParams]=useSearchParams(),auth=useAuth(),ui=useUI(),mobile=useMobile();
   const tab=params.get('tab')||'home',page=Number(params.get('page'))||1;
-  const path=tab==='home'?'/api/canteens/home':tab==='ranking'?query('/api/canteens/rankings',{sort:params.get('sort')||'composite'}):tab==='stores'?query('/api/canteens',{q:params.get('q'),page,limit:20}):null;
+  const path=tab==='home'?'/api/canteens/home':tab==='ranking'?query('/api/canteens/rankings',{sort:params.get('sort')||'composite'}):tab==='stores'?query('/api/canteens',{q:params.get('q'),status:'active',page,limit:20}):null;
   const q=useApi(path);
   function change(key:string,value:string){const next=new URLSearchParams(params);next.set(key,value);if(key!=='page')next.delete('page');setParams(next)}
   return <div className={mobile?undefined:'food-page'}><Head title="食堂与菜品" description="食堂评分、菜品、排行与贡献"><button className="btn" onClick={()=>auth.requireUser()&&ui.open('我的点评',<MyReviews/>)}>我的点评</button><button className="btn primary" onClick={()=>change('tab','stores')}>＋ 写点评</button></Head>
     <Tabs tabs={[["home","食堂主页"],["stores","店铺菜品"],["ranking","食堂排行"],["mine","我的贡献"]]} value={tab} onChange={v=>change('tab',v)}/>
     {tab==='mine'?(auth.user?<CanteenContributions/>:<Empty icon="lock" title="登录后查看自己的贡献"><button className="btn" onClick={auth.login}>登录</button></Empty>):<>
       {tab==='stores'&&<form className="filter-row" onSubmit={e=>{e.preventDefault();change('q',String(new FormData(e.currentTarget).get('q')||''))}}><input name="q" aria-label="搜索食堂" defaultValue={params.get('q')||''} placeholder="搜索食堂或店铺"/><button className="btn">搜索</button></form>}
-      {tab==='ranking'&&<div className="filter-row"><label>排行方式 <select value={params.get('sort')||'composite'} onChange={e=>change('sort',e.target.value)}><option value="composite">综合排行</option><option value="rating">评分</option><option value="review_count">点评数量</option></select></label><span className="muted">按服务端真实统计排序</span></div>}
+      {tab==='ranking'&&<div className="filter-row"><label>排行方式 <select value={params.get('sort')||'composite'} onChange={e=>change('sort',e.target.value)}><option value="composite">综合排行</option><option value="rating">低分优先</option><option value="review_count">点评数量</option></select></label><span className="muted">按服务端真实统计排序</span></div>}
       <QueryState query={q}>{tab==='home'?(mobile?<MobileHome data={q.data} change={change}/>:<DesktopHome data={q.data} change={change}/>)
       :<>{mobile?<div className="panel">{rows(q.data,'canteens').map((c,i)=><Link className="list-row" to={`/canteen/${c.id}`} key={`canteen:${c.id??''}:${c.name??''}:${i}`}>{tab==='ranking'&&<span className="rail-index">{c.rank||i+1}</span>}{c.image&&<img className="author-avatar" src={asset(c.image)} alt=""/>}<div className="list-main"><b>{c.name}</b><p>{c.location_area} {c.location_floor} · {c.description}</p></div><span className="tag">{c.rating_count?`${formatScore(c.average_star)} 分`:'暂无评分'}</span></Link>)}</div>
         :<StoreList items={rows(q.data,'canteens')} ranking={tab==='ranking'}/>}

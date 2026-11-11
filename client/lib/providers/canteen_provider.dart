@@ -46,6 +46,158 @@ class CanteenProvider with ChangeNotifier {
 
   CanteenProvider(this._dio);
 
+  // ── 模块可选项（服务端 /canteens/meta 下发）────────────────────────
+  // 旧服务端没有该接口或请求失败时，回退到内置默认值，不影响提交和筛选。
+  static const List<String> defaultLocationAreas = ['一食堂', '二食堂'];
+  static const List<String> defaultLocationFloors = ['一楼', '二楼'];
+
+  List<String> _locationAreas = defaultLocationAreas;
+  List<String> _locationFloors = defaultLocationFloors;
+  List<({String key, String label})> _reviewTags = const [];
+  Future<void>? _metaFuture;
+
+  List<String> get locationAreas => _locationAreas;
+  List<String> get locationFloors => _locationFloors;
+
+  /// 体验标签默认值，与服务端 canteenTagOrder 一致；服务端下发后以下发为准。
+  static const List<({String key, String label})> defaultReviewTags = [
+    (key: 'taste_good', label: '味道不错'),
+    (key: 'portion_enough', label: '分量足'),
+    (key: 'price_fair', label: '价格合适'),
+    (key: 'serving_fast', label: '出餐快'),
+    (key: 'queue_long', label: '排队久'),
+    (key: 'recommended_window', label: '推荐窗口'),
+    (key: 'clean', label: '卫生干净'),
+    (key: 'service_warm', label: '服务热情'),
+    (key: 'environment_clean', label: '环境整洁'),
+    (key: 'good_value', label: '性价比高'),
+  ];
+
+  /// 体验标签：优先用服务端下发的列表，旧服务端或尚未加载时用默认值。
+  List<({String key, String label})> get reviewTags =>
+      _reviewTags.isEmpty ? defaultReviewTags : _reviewTags;
+
+  /// 加载一次可选项；失败后允许下次调用重试。
+  Future<void> loadMeta() {
+    return _metaFuture ??= _loadMetaInternal().then((ok) {
+      if (!ok) _metaFuture = null;
+    });
+  }
+
+  Future<bool> _loadMetaInternal() async {
+    try {
+      final response = await _dio.get('/canteens/meta');
+      final data = response.data;
+      if (response.statusCode != 200 || data is! Map) return false;
+      List<String> strings(dynamic raw) => raw is List
+          ? raw
+              .map((item) => item?.toString().trim() ?? '')
+              .where((item) => item.isNotEmpty)
+              .toList(growable: false)
+          : const [];
+      final areas = strings(data['location_areas']);
+      final floors = strings(data['location_floors']);
+      final tags = data['review_tags'] is List
+          ? (data['review_tags'] as List)
+              .whereType<Map>()
+              .map((tag) => (
+                    key: tag['key']?.toString() ?? '',
+                    label: tag['label']?.toString() ?? '',
+                  ))
+              .where((tag) => tag.key.isNotEmpty && tag.label.isNotEmpty)
+              .toList(growable: false)
+          : const <({String key, String label})>[];
+      if (areas.isNotEmpty) _locationAreas = areas;
+      if (floors.isNotEmpty) _locationFloors = floors;
+      _reviewTags = tags;
+      notifyListeners();
+      return true;
+    } on DioException catch (e) {
+      debugPrint('Error loading canteen meta: $e');
+      return false;
+    }
+  }
+
+  // ── 收藏（我常去）──────────────────────────────────────────────
+  List<Canteen> _favorites = const [];
+  int? _favoritesOwnerId;
+
+  /// 只返回属于 [userId] 的收藏；切换账号后上一个账号的收藏不会出现。
+  List<Canteen> favoritesFor(int? userId) =>
+      userId != null && userId == _favoritesOwnerId ? _favorites : const [];
+
+  /// 拉取 [userId] 收藏的商家；失败时保留上次结果，返回 false。
+  Future<bool> loadFavorites({required int userId}) async {
+    try {
+      final response = await _dio.get('/user/canteen-favorites');
+      final items =
+          response.data is Map ? (response.data as Map)['items'] : null;
+      if (response.statusCode == 200 && items is List) {
+        _favoritesOwnerId = userId;
+        _favorites = items
+            .whereType<Map>()
+            .map((item) => Canteen.fromJson(Map<String, dynamic>.from(item)))
+            .toList(growable: false);
+        notifyListeners();
+        return true;
+      }
+    } on DioException catch (e) {
+      debugPrint('Error loading canteen favorites: $e');
+    }
+    return false;
+  }
+
+  /// 退出登录或切换账号时清空，避免上一个账号的收藏出现在首页。
+  void clearFavorites() {
+    if (_favorites.isEmpty && _favoritesOwnerId == null) return;
+    _favorites = const [];
+    _favoritesOwnerId = null;
+    notifyListeners();
+  }
+
+  /// 收藏或取消收藏；成功后同步本地列表。
+  Future<bool> setFavorite(int canteenId, bool favorite) async {
+    _errorMessage = null;
+    try {
+      final path = '/user/canteen-favorites/$canteenId';
+      final response =
+          favorite ? await _dio.put(path) : await _dio.delete(path);
+      if (response.statusCode == 200) {
+        if (!favorite) {
+          _favorites = _favorites
+              .where((canteen) => canteen.id != canteenId)
+              .toList(growable: false);
+          notifyListeners();
+        }
+        return true;
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+    }
+    return false;
+  }
+
+  /// 管理员修改商家名称与位置；只发送传入的字段。
+  Future<bool> adminUpdateCanteen(
+    int canteenId, {
+    String? name,
+    String? locationArea,
+    String? locationFloor,
+  }) async {
+    _errorMessage = null;
+    try {
+      final response = await _dio.patch('/canteens/$canteenId', data: {
+        if (name != null) 'name': name,
+        if (locationArea != null) 'location_area': locationArea,
+        if (locationFloor != null) 'location_floor': locationFloor,
+      });
+      return response.statusCode == 200;
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      return false;
+    }
+  }
+
   Future<void>? _loadFuture;
 
   Future<void> loadCanteens() {
@@ -98,6 +250,7 @@ class CanteenProvider with ChangeNotifier {
     String locationArea = '',
     String locationFloor = '',
   }) async {
+    _errorMessage = null;
     try {
       final response = await _dio.post(
         '/canteens',
@@ -116,6 +269,10 @@ class CanteenProvider with ChangeNotifier {
     }
   }
 
+  /// 详情页首屏只取前 [reviewPageSize] 条混合评价（compact 模式），
+  /// 其余通过 [loadDisplayReviews] 分页拉取；旧服务端会忽略这两个参数并返回全部。
+  static const int reviewPageSize = 20;
+
   Future<Map<String, dynamic>> loadCanteenDetail(
     int id, {
     String reviewSort = 'best',
@@ -124,6 +281,8 @@ class CanteenProvider with ChangeNotifier {
     final queryParameters = {
       'review_sort': reviewSort,
       'review_filter': reviewFilter,
+      'compact': '1',
+      'review_limit': '$reviewPageSize',
     };
     try {
       final response = await _dio.get(
@@ -154,6 +313,60 @@ class CanteenProvider with ChangeNotifier {
       debugPrint('Error loading canteen detail: $e');
     }
     return {};
+  }
+
+  /// 分页读取详情页混合评价流。返回 null 表示失败；[unsupported] 为 true 表示
+  /// 服务端还没有这个接口（旧版本），调用方应回退到重新加载整页详情。
+  Future<
+      ({
+        List<Map<String, dynamic>> items,
+        int total,
+        bool hasMore,
+        bool unsupported
+      })?> loadDisplayReviews(
+    int canteenId, {
+    required String sort,
+    required String filter,
+    int offset = 0,
+    int limit = reviewPageSize,
+  }) async {
+    _errorMessage = null;
+    try {
+      final response = await _dio.get(
+        '/canteens/$canteenId/display-reviews',
+        queryParameters: {
+          'sort': sort,
+          'filter': filter,
+          'offset': offset,
+          'limit': limit,
+        },
+      );
+      final data = response.data;
+      if (response.statusCode == 200 && data is Map && data['items'] is List) {
+        final items = (data['items'] as List)
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+        return (
+          items: items,
+          total: (data['total'] as num?)?.toInt() ?? offset + items.length,
+          hasMore: data['has_more'] == true,
+          unsupported: false,
+        );
+      }
+      _errorMessage = '评价加载失败，请重试';
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) {
+        return (
+          items: const <Map<String, dynamic>>[],
+          total: 0,
+          hasMore: false,
+          unsupported: true,
+        );
+      }
+      _errorMessage = _parseError(e);
+    }
+    return null;
   }
 
   Future<Map<String, dynamic>?> voteRating({
@@ -518,7 +731,8 @@ class CanteenProvider with ChangeNotifier {
   }
 
   /// 本人食堂记录与列表使用同一接口，跨页统计时绑定调用方的账号代次。
-  Future<int?> countMyCanteenReviews({required bool Function() isCurrent}) async {
+  Future<int?> countMyCanteenReviews(
+      {required bool Function() isCurrent}) async {
     final cursors = <String>{};
     final records = <String>{};
     String? cursor;
@@ -528,7 +742,8 @@ class CanteenProvider with ChangeNotifier {
         if (!isCurrent() || page == null) return null;
         for (final item in page.items) {
           final legacy = item.source == 'legacy';
-          records.add('${legacy ? 'legacy' : 'v2'}:${legacy ? item.legacyRatingId ?? item.id : item.id}');
+          records.add(
+              '${legacy ? 'legacy' : 'v2'}:${legacy ? item.legacyRatingId ?? item.id : item.id}');
         }
         if (!page.hasMore) return records.length;
         final next = page.nextCursor;
@@ -747,6 +962,45 @@ class CanteenProvider with ChangeNotifier {
     return null;
   }
 
+  /// 分页读取菜品评价（服务端按同学去重、时间倒序）。返回 null 表示请求失败。
+  Future<({List<Map<String, dynamic>> items, int total, bool hasMore})?>
+      loadDishReviewPage(int dishId, {int offset = 0, int limit = 20}) async {
+    _errorMessage = null;
+    try {
+      final response = await _dio.get(
+        '/canteens/dishes/$dishId/reviews',
+        queryParameters: {'offset': offset, 'limit': limit},
+      );
+      final data = response.data;
+      if (response.statusCode == 200 && data is Map && data['items'] is List) {
+        final items = (data['items'] as List)
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+        final total = (data['total'] as num?)?.toInt() ?? offset + items.length;
+        // 旧服务端不认识分页参数会一次返回全部，此时没有 has_more。
+        final hasMore = data['has_more'] == true;
+        return (items: items, total: total, hasMore: hasMore);
+      }
+      _errorMessage = '评价加载失败，请重试';
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+    }
+    return null;
+  }
+
+  /// 管理员把一张实拍设为菜品封面。
+  Future<bool> adminSetDishPhotoCover(int photoId) async {
+    _errorMessage = null;
+    try {
+      final response = await _dio.post('/canteens/dish-photos/$photoId/cover');
+      return response.statusCode == 200;
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      return false;
+    }
+  }
+
   /// 管理端操作通过 [errorCode] 暴露服务端业务错误码。
   String? errorCode;
 
@@ -787,7 +1041,7 @@ class CanteenProvider with ChangeNotifier {
     return null;
   }
 
-  /// 驳回待审食堂（提交将被删除）。reason 可为空。
+  /// 驳回待审食堂：提交记录保留给提交人查看原因，并退出待审列表。reason 可为空。
   Future<bool> adminRejectCanteen(int canteenId, {String reason = ''}) async {
     try {
       final response = await _dio.delete(
@@ -802,8 +1056,31 @@ class CanteenProvider with ChangeNotifier {
     }
   }
 
+  /// 管理端菜品列表：包含上架和已隐藏的菜（已合并的菜只作为别名存在，不返回）。
+  /// 返回 null 表示请求失败，原因见 [errorMessage]。
+  Future<List<AdminCanteenDish>?> adminListDishes(int canteenId) async {
+    _errorMessage = null;
+    try {
+      final response = await _dio.get('/canteens/$canteenId/admin-dishes');
+      final items =
+          response.data is Map ? (response.data as Map)['items'] : null;
+      if (response.statusCode == 200 && items is List) {
+        return items
+            .whereType<Map>()
+            .map((item) =>
+                AdminCanteenDish.fromJson(Map<String, dynamic>.from(item)))
+            .toList();
+      }
+      _errorMessage = '菜品列表加载失败，请重试';
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+    }
+    return null;
+  }
+
   /// 将管理端识别出的疑似重复菜品合并到指定实体。
   Future<bool> adminMergeDish(int dishId, int targetDishId) async {
+    _errorMessage = null;
     try {
       final response = await _dio.post(
         '/canteens/dishes/$dishId/merge',
@@ -834,6 +1111,7 @@ class CanteenProvider with ChangeNotifier {
     String? name,
     String? status,
   }) async {
+    _errorMessage = null;
     try {
       final response = await _dio.patch(
         '/canteens/dishes/$dishId',

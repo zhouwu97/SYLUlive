@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 )
 
@@ -247,6 +249,43 @@ func TestCreateReviewAllowsImmediateRepeat(t *testing.T) {
 	}
 	if eventCount != 2 {
 		t.Fatalf("event count=%d want 2", eventCount)
+	}
+}
+
+// 客户端在发布前把 Idempotency-Key 落进草稿，超时后重新发布会复用同一个键。
+// 这条用例走真实的全局幂等中间件，锁住“同键重试只产生一条到店评价”。
+func TestCreateReviewRetryWithSameIdempotencyKeyCreatesOneEvent(t *testing.T) {
+	h, _, user := prepareReviewV2DB(t)
+	if err := h.db.AutoMigrate(&models.IdempotencyRecord{}); err != nil {
+		t.Fatalf("migrate idempotency: %v", err)
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("user_id", user.ID) })
+	router.Use(middleware.IdempotencyMiddleware(h.db))
+	router.POST("/api/canteens/:id/reviews", h.CreateReview)
+
+	send := func() *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/api/canteens/88/reviews", strings.NewReader(reviewBody()))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Idempotency-Key", "canteen-review-88-88-0-retry")
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, request)
+		return recorder
+	}
+	first := send()
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first status=%d body=%s", first.Code, first.Body.String())
+	}
+	retry := send()
+	if retry.Code != http.StatusCreated || retry.Header().Get("Idempotency-Replay") != "true" {
+		t.Fatalf("retry status=%d replay=%q body=%s", retry.Code, retry.Header().Get("Idempotency-Replay"), retry.Body.String())
+	}
+	var eventCount int64
+	if err := h.db.Model(&models.CanteenReviewEvent{}).Where("canteen_id = ? AND user_id = ?", 88, user.ID).Count(&eventCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("event count=%d want 1", eventCount)
 	}
 }
 

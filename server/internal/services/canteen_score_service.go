@@ -1,6 +1,7 @@
 package services
 
 import (
+	"math"
 	"sort"
 	"time"
 
@@ -152,6 +153,28 @@ func ComputeEffectiveUserRating(events []models.CanteenReviewEvent) EffectiveUse
 	result.UsedEventCount = len(active)
 	result.EventCount = result.UsedEventCount
 	return result
+}
+
+// 评分时间衰减：每过 ReviewDecayHalfLifeDays 天，一位同学评价的权重减半；
+// 最低保留 ReviewDecayMinWeight，老评价仍算数但不再和上周的评价一样重。
+// 店换了老板、口味变了，分数能更快跟上；评价很少的店也不会因此归零。
+const (
+	ReviewDecayHalfLifeDays = 180.0
+	ReviewDecayMinWeight    = 0.1
+)
+
+// TimeDecayWeight 返回 at 时刻的评价在 now 的时间权重，范围 [ReviewDecayMinWeight, 1]。
+// 未来时间或零值时间按刚发布处理。
+func TimeDecayWeight(at, now time.Time) float64 {
+	if at.IsZero() || !at.Before(now) {
+		return 1
+	}
+	ageDays := now.Sub(at).Hours() / 24
+	weight := math.Pow(0.5, ageDays/ReviewDecayHalfLifeDays)
+	if weight < ReviewDecayMinWeight {
+		return ReviewDecayMinWeight
+	}
+	return weight
 }
 
 // ComputeCreditWeight 将诚信度映射到 [0.5, 1.0]，避免低诚信用户完全失去发言权。

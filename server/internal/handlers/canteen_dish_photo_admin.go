@@ -160,10 +160,20 @@ func (h *CanteenDishPhotoAdminHandler) AdminUpdateDish(c *gin.Context) {
 			if conflict > 0 {
 				return errDishNameConflict
 			}
+			oldName, oldNormalized := dish.Name, dish.NormalizedName
 			if err := tx.Model(&dish).Updates(map[string]interface{}{
 				"name": name, "normalized_name": normalized,
 			}).Error; err != nil {
 				return err
+			}
+			// 旧名留作别名：同学继续输入旧名时会落到改名后的这道菜，不会重新长出重复菜。
+			if oldNormalized != "" && oldNormalized != normalized {
+				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.CanteenDishAlias{
+					CanteenID: dish.CanteenID, DishID: dish.ID, Alias: oldName,
+					NormalizedAlias: oldNormalized, CreatedBy: adminID,
+				}).Error; err != nil {
+					return err
+				}
 			}
 		}
 		if input.Status != nil {
@@ -199,6 +209,79 @@ func (h *CanteenDishPhotoAdminHandler) AdminUpdateDish(c *gin.Context) {
 	}
 	canteenDiscoveryCache.Invalidate()
 	c.JSON(http.StatusOK, gin.H{"message": "已更新", "dish": dish})
+}
+
+// SetDishPhotoCover 管理员把一张已公开实拍设为菜品封面；其余实拍按时间倒序排在后面。
+// POST /api/canteens/dish-photos/:photoId/cover
+func (h *CanteenDishPhotoAdminHandler) SetDishPhotoCover(c *gin.Context) {
+	photoID, err := strconv.ParseUint(c.Param("photoId"), 10, 64)
+	if err != nil || photoID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+	adminID := c.GetUint("user_id")
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		var photo models.CanteenDishPhoto
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND status = ?", photoID, models.DishPhotoStatusApproved).First(&photo).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.CanteenDishPhoto{}).Where("dish_id = ?", photo.DishID).Update("sort_order", 0).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.CanteenDishPhoto{}).Where("id = ?", photo.ID).Update("sort_order", -1).Error; err != nil {
+			return err
+		}
+		return tx.Create(&models.AdminLog{
+			AdminID: adminID, AdminName: adminNickname(tx, adminID), Action: "设置菜品封面",
+			Target: fmt.Sprintf("dish:%d", photo.DishID), Detail: fmt.Sprintf("实拍 %d 设为菜品 %d 的封面", photo.ID, photo.DishID),
+		}).Error
+	})
+	if err != nil {
+		respondDishPhotoAdminError(c, err)
+		return
+	}
+	canteenDiscoveryCache.Invalidate()
+	c.JSON(http.StatusOK, gin.H{"message": "已设为封面"})
+}
+
+// AdminListDishes 管理端菜品列表：同时列出上架和已隐藏的菜，供改名、隐藏/恢复与合并使用。
+// 已合并的菜只作为别名存在，不再出现在列表里。
+// GET /api/canteens/:id/admin-dishes
+func (h *CanteenDishPhotoAdminHandler) AdminListDishes(c *gin.Context) {
+	canteenID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || canteenID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+	var canteen models.Canteen
+	if err := h.db.Select("id").First(&canteen, canteenID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
+		return
+	}
+	type dishRow struct {
+		ID           uint      `json:"id"`
+		Name         string    `json:"name"`
+		Status       string    `json:"status"`
+		PhotoCount   int       `json:"photo_count"`
+		MentionCount int       `json:"mention_count"`
+		CreatedAt    time.Time `json:"created_at"`
+	}
+	rows := make([]dishRow, 0)
+	if err := h.db.Table("canteen_dishes AS d").
+		Select(`d.id, d.name, d.status, d.created_at,
+			(SELECT COUNT(*) FROM canteen_dish_photos p WHERE p.dish_id = d.id AND p.status = ?) AS photo_count,
+			(SELECT COUNT(DISTINCT red.review_event_id) FROM canteen_review_event_dishes red
+			 JOIN canteen_review_events re ON re.id = red.review_event_id
+			 WHERE red.dish_id = d.id AND re.status = ?) AS mention_count`,
+			models.DishPhotoStatusApproved, models.ReviewEventStatusActive).
+		Where("d.canteen_id = ? AND d.status IN ?", canteenID, []string{models.DishStatusActive, models.DishStatusHidden}).
+		Order("CASE WHEN d.status = 'active' THEN 0 ELSE 1 END, d.name ASC, d.id ASC").
+		Scan(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取菜品列表失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": rows})
 }
 
 // ── 辅助 ────────────────────────────────────────────────────────────

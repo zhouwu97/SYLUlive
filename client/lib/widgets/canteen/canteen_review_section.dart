@@ -38,6 +38,11 @@ class CanteenReviewSection extends StatelessWidget {
   final VoidCallback? onOpenHistory;
   final void Function(int dishId, String dishName)? onOpenDish;
 
+  /// 还有未加载的评价时显示“加载更多”；[onLoadMore] 为空表示不分页（旧服务端）。
+  final bool hasMore;
+  final bool isLoadingMore;
+  final VoidCallback? onLoadMore;
+
   const CanteenReviewSection({
     super.key,
     required this.reviews,
@@ -58,6 +63,9 @@ class CanteenReviewSection extends StatelessWidget {
     this.onDelete,
     this.onOpenHistory,
     this.onOpenDish,
+    this.hasMore = false,
+    this.isLoadingMore = false,
+    this.onLoadMore,
   });
 
   @override
@@ -195,6 +203,24 @@ class CanteenReviewSection extends StatelessWidget {
                           onEditLatestReview: onEditLatestReview,
                         ),
                       ],
+                      if (onLoadMore != null && (hasMore || isLoadingMore))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: isLoadingMore
+                              ? const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  ),
+                                )
+                              : TextButton(
+                                  onPressed: onLoadMore,
+                                  child: const Text('加载更多评价'),
+                                ),
+                        ),
                     ],
                   ),
           ),

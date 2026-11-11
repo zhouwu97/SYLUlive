@@ -49,7 +49,7 @@ class CanteenDiscoveryProvider with ChangeNotifier {
   int _rankingGeneration = 0;
 
   /// 拉取首页。已有数据时为刷新（不进入骨架）。
-  Future<void> loadHome({bool forceRefresh = true}) async {
+  Future<void> loadHome() async {
     final generation = _rankingGeneration;
     final pending = _homeLoadFutures.putIfAbsent(
       generation,
@@ -163,6 +163,36 @@ class CanteenDiscoveryProvider with ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  /// 热门菜品分页（首页“更多”）。返回 null 表示请求失败，原因见 [lastError]。
+  String? lastError;
+
+  Future<({List<CanteenHotDish> items, int total, bool hasMore})?>
+      loadHotDishPage({int offset = 0, int limit = 20}) async {
+    lastError = null;
+    try {
+      final response = await _dio.get('/canteens/dishes/hot',
+          queryParameters: {'offset': offset, 'limit': limit});
+      final data = response.data;
+      if (response.statusCode == 200 && data is Map && data['items'] is List) {
+        final items = (data['items'] as List)
+            .whereType<Map>()
+            .map((item) =>
+                CanteenHotDish.fromJson(Map<String, dynamic>.from(item)))
+            .where((dish) => dish.hasDisplayImage)
+            .toList();
+        return (
+          items: items,
+          total: (data['total'] as num?)?.toInt() ?? offset + items.length,
+          hasMore: data['has_more'] == true,
+        );
+      }
+      lastError = '热门菜品加载失败，请重试';
+    } on DioException catch (e) {
+      lastError = _parseError(e);
+    }
+    return null;
   }
 
   /// 变更后主动失效：让下次拉取拿到新数据。

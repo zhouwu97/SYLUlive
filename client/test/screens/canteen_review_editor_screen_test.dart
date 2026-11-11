@@ -174,6 +174,8 @@ Future<void> _setTasteDimension(WidgetTester tester, int score) async {
 }
 
 void main() {
+  group('多道菜评价', multiDishEditorTests);
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late MemoryPreferencesStore store;
@@ -316,8 +318,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 1. 验证初始状态：0 / 1，展示快捷推荐
-    expect(find.text('0 / 1'), findsOneWidget);
+    // 1. 验证初始状态：0 / 3，展示快捷推荐
+    expect(find.text('0 / 3'), findsOneWidget);
     expect(find.text('已有菜品（点击快速填入）：'), findsOneWidget);
     expect(find.text('牛肉面'), findsWidgets);
 
@@ -329,36 +331,33 @@ void main() {
     await tester.tap(find.byKey(const Key('canteen_dish_add_btn')));
     await tester.pumpAndSettle();
 
-    // 新输入的菜名在本次评价中保留，作为本次菜品随评价一次提交。
+    // 新输入的菜名在本次评价中保留，作为本次菜品随评价一次提交，并可单独打分。
     expect(find.text('自创麻辣烫'), findsWidgets);
-    expect(find.text('1 / 1'), findsOneWidget);
+    expect(find.text('1 / 3'), findsOneWidget);
+    expect(find.text('给「自创麻辣烫」打分（选填）'), findsOneWidget);
 
-    // 3. 删除后再从已有菜品中选择“牛肉面”
-    var closeIcons = find.byIcon(Icons.close_rounded);
-    expect(closeIcons, findsOneWidget);
-    await tester.ensureVisible(closeIcons.first);
-    await tester.tap(closeIcons.first);
-    await tester.pumpAndSettle();
+    // 3. 一顿饭吃了几样：再从已有菜品里选“牛肉面”
     final beefNoodleFinder = find.text('牛肉面').first;
     await tester.ensureVisible(beefNoodleFinder);
     await tester.pumpAndSettle();
     await tester.tap(beefNoodleFinder);
     await tester.pumpAndSettle();
+    expect(find.text('2 / 3'), findsOneWidget);
+    expect(find.text('给「牛肉面」打分（选填）'), findsOneWidget);
 
-    // 单条评价只能保留一道菜
-    expect(find.text('1 / 1'), findsOneWidget);
-    expect(find.text('牛肉面'), findsWidgets);
-
-    // 4. 删除已选择的推荐菜品后恢复为空
-    closeIcons = find.byIcon(Icons.close_rounded);
-    expect(closeIcons, findsOneWidget);
-    await tester.ensureVisible(closeIcons.first);
-    await tester.pumpAndSettle();
-    await tester.tap(closeIcons.first);
-    await tester.pumpAndSettle();
+    // 4. 逐个删除已选择的菜品后恢复为空
+    for (var remaining = 2; remaining > 0; remaining--) {
+      final closeIcons = find.byIcon(Icons.close_rounded);
+      expect(closeIcons, findsNWidgets(remaining));
+      await tester.ensureVisible(closeIcons.first);
+      await tester.pumpAndSettle();
+      await tester.tap(closeIcons.first);
+      await tester.pumpAndSettle();
+    }
 
     // 验证删除后恢复为空，快捷推荐仍可再次选择已有菜品
-    expect(find.text('0 / 1'), findsOneWidget);
+    expect(find.text('0 / 3'), findsOneWidget);
+    expect(find.textContaining('打分（选填）'), findsNothing);
     expect(find.text('牛肉面'), findsWidgets);
   });
 
@@ -774,5 +773,141 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('你的诚信度 100 · 权重约 1.0'), findsOneWidget);
+  });
+}
+
+Future<void> _tapDishScore(
+    WidgetTester tester, String dish, String label, int value) async {
+  final target = find.byKey(Key('canteen_dish_score_${dish}_${label}_$value'));
+  await tester.ensureVisible(target);
+  await tester.pumpAndSettle();
+  await tester.tap(target);
+  await tester.pumpAndSettle();
+}
+
+void multiDishEditorTests() {
+  late MemoryPreferencesStore store;
+  late Directory tempDir;
+  late CanteenReviewDraftRepository draftRepository;
+
+  setUp(() async {
+    store = MemoryPreferencesStore();
+    tempDir = await Directory.systemTemp.createTemp('canteen_multi_dish_');
+    draftRepository = CanteenReviewDraftRepository(
+        storeOverride: store, baseDirOverride: tempDir);
+  });
+  tearDown(() async {
+    if (await tempDir.exists()) await tempDir.delete(recursive: true);
+  });
+
+  Dio dioCapturing(List<Map<String, dynamic>> payloads) {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/1/reviews' && options.method == 'POST') {
+        payloads.add(Map<String, dynamic>.from(options.data as Map));
+        return _json('{"review":{"updated_at":"2026-08-20T12:00:00Z"}}', 201);
+      }
+      if (options.path == '/canteens/1/dishes') {
+        return _json(
+          '[{"id":1,"canteen_id":1,"name":"牛肉面","status":"active"},{"id":2,"canteen_id":1,"name":"炸酱面","status":"active"}]',
+          200,
+        );
+      }
+      return _json('{}', 200);
+    });
+    return dio;
+  }
+
+  testWidgets('一条评价选两道菜并分别打分，提交时两道菜各带自己的分', (tester) async {
+    final payloads = <Map<String, dynamic>>[];
+    await tester.pumpWidget(_buildEditorTestApp(
+        dio: dioCapturing(payloads), draftRepository: draftRepository));
+    await tester.pumpAndSettle();
+    await _completeDimensions(tester);
+
+    for (final dish in ['牛肉面', '炸酱面']) {
+      final chip = find.text(dish).first;
+      await tester.ensureVisible(chip);
+      await tester.pumpAndSettle();
+      await tester.tap(chip);
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('2 / 3'), findsOneWidget);
+    await _tapDishScore(tester, '牛肉面', '味道', 5);
+    await _tapDishScore(tester, '牛肉面', '性价比', 4);
+    await _tapDishScore(tester, '牛肉面', '分量', 3);
+
+    await tester.tap(find.widgetWithText(FilledButton, '发布食堂评价'));
+    await tester.pumpAndSettle();
+
+    expect(payloads, hasLength(1));
+    final dishes = (payloads.single['dishes'] as List).cast<Map>();
+    expect(dishes, hasLength(2));
+    final beef = dishes.firstWhere((dish) => dish['dish_id'] == 1);
+    final noodles = dishes.firstWhere((dish) => dish['dish_id'] == 2);
+    expect([beef['taste_score'], beef['value_score'], beef['portion_score']],
+        [5, 4, 3]);
+    expect([
+      noodles['taste_score'],
+      noodles['value_score'],
+      noodles['portion_score']
+    ], [
+      0,
+      0,
+      0
+    ]);
+  });
+
+  testWidgets('菜品评分只填一半时拦截发布并提示', (tester) async {
+    final payloads = <Map<String, dynamic>>[];
+    await tester.pumpWidget(_buildEditorTestApp(
+        dio: dioCapturing(payloads), draftRepository: draftRepository));
+    await tester.pumpAndSettle();
+    await _completeDimensions(tester);
+    final chip = find.text('牛肉面').first;
+    await tester.ensureVisible(chip);
+    await tester.pumpAndSettle();
+    await tester.tap(chip);
+    await tester.pumpAndSettle();
+    await _tapDishScore(tester, '牛肉面', '味道', 4);
+
+    await tester.tap(find.widgetWithText(FilledButton, '发布食堂评价'));
+    await tester.pump();
+
+    expect(find.text('「牛肉面」的评分需三项都填，或全部留空'), findsOneWidget);
+    expect(payloads, isEmpty);
+  });
+
+  testWidgets('从菜品页进入时预选该菜，且不算作用户修改', (tester) async {
+    final dio = dioCapturing([]);
+    final user = User(
+      id: 101,
+      studentId: '2023001',
+      studentVerified: true,
+      nickname: '测试小周',
+      createdAt: DateTime.now(),
+    );
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthProvider>.value(
+            value: _FakeAuthProvider(user, dio)),
+        ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
+      ],
+      child: MaterialApp(
+        home: CanteenReviewEditorScreen(
+          canteenId: 1,
+          canteenName: '我家有面',
+          draftRepositoryOverride: draftRepository,
+          initialDishId: 2,
+          initialDishName: '炸酱面',
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 / 3'), findsOneWidget);
+    expect(find.text('给「炸酱面」打分（选填）'), findsOneWidget);
+    // 只是入口带来的默认值：不应写入草稿。
+    expect(await draftRepository.loadDraft(userId: 101, canteenId: 1), isNull);
   });
 }

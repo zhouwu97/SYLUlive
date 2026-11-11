@@ -1615,6 +1615,9 @@ func main() {
 		user.GET("/profile", userHandler.GetProfile)
 		user.GET("/canteen-reviews", canteenHandler.GetMyCanteenReviews)
 		user.GET("/canteen-contributions", canteenHandler.GetMyCanteenContributions)
+		user.GET("/canteen-favorites", canteenHandler.ListFavorites)
+		user.PUT("/canteen-favorites/:id", canteenHandler.AddFavorite)
+		user.DELETE("/canteen-favorites/:id", canteenHandler.RemoveFavorite)
 
 		user.PUT("/profile", userHandler.UpdateProfile)
 
@@ -2626,6 +2629,7 @@ func main() {
 		canteen.GET("/home", canteenHandler.GetHome)
 		canteen.GET("/rankings", canteenHandler.GetRankings)
 		canteen.GET("/search", canteenHandler.Search)
+		canteen.GET("/meta", canteenHandler.GetMeta)
 
 		// 食堂详情属于公开内容；存在有效登录态时附带“我的评价/投票”状态。
 		canteen.GET("/:id", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetDetail)
@@ -2635,10 +2639,12 @@ func main() {
 		canteen.GET("/:id/dishes", canteenDishHandler.ListDishes)
 		canteen.GET("/:id/dishes/:dishId", canteenDishHandler.GetDish)
 		canteen.GET("/:id/reviews", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetReviews)
+		canteen.GET("/:id/display-reviews", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetDisplayReviews)
 		canteen.GET("/:id/reviews/history/:userId", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetReviewHistory)
 		canteen.GET("/:id/reviewers/:userId/history", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetReviewHistory)
 		canteen.GET("/:id/dish-suggestions", canteenHandler.GetDishSuggestions)
 		canteen.GET("/dishes/:dishId/reviews", canteenHandler.GetDishReviews)
+		canteen.GET("/dishes/hot", canteenHandler.GetHotDishes)
 
 	}
 
@@ -2660,14 +2666,17 @@ func main() {
 		canteenAdmin.DELETE("/:id", canteenHandler.DeleteCanteen)
 
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
+		canteenAdmin.PATCH("/:id", canteenHandler.AdminUpdateCanteen)
 		canteenAdmin.GET("/:id/display-tags", canteenHandler.GetDisplayTags)
 		canteenAdmin.PUT("/:id/display-tags", canteenHandler.UpdateDisplayTags)
 
 		// 菜品实拍管理与事后治理
 		canteenAdmin.GET("/dish-photos/:photoId", canteenDishPhotoAdminHandler.AdminGetDishPhotoDetail)
 		canteenAdmin.POST("/dish-photos/:photoId/archive", canteenDishPhotoAdminHandler.ArchiveDishPhoto)
+		canteenAdmin.POST("/dish-photos/:photoId/cover", canteenDishPhotoAdminHandler.SetDishPhotoCover)
 		canteenAdmin.PATCH("/dishes/:dishId", canteenDishPhotoAdminHandler.AdminUpdateDish)
 		canteenAdmin.POST("/dishes/:dishId/merge", canteenDishPhotoAdminHandler.AdminMergeDish)
+		canteenAdmin.GET("/:id/admin-dishes", canteenDishPhotoAdminHandler.AdminListDishes)
 
 	}
 
@@ -3108,7 +3117,7 @@ func ensureUserCalendarAgentActionUniqueIndex(db *gorm.DB) error {
 // ensureCanteenNormalizedNameIndex 回填历史数据后建立数据库级唯一约束。
 func ensureCanteenNormalizedNameIndex(db *gorm.DB) error {
 	var canteens []models.Canteen
-	if err := db.Select("id", "name", "normalized_name", "location_area", "location_floor").Find(&canteens).Error; err != nil {
+	if err := db.Select("id", "name", "normalized_name", "location_area", "location_floor", "verified", "rejected_at").Find(&canteens).Error; err != nil {
 		return err
 	}
 	type locationKey struct {
@@ -3119,6 +3128,10 @@ func ensureCanteenNormalizedNameIndex(db *gorm.DB) error {
 	seen := make(map[locationKey]uint, len(canteens))
 	for _, canteen := range canteens {
 		normalized := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(canteen.Name)), " "))
+		// 被驳回的提交保留记录但不占真实店名，规范名固定为占位值，否则同名重新提交会让启动失败。
+		if canteen.IsRejected() {
+			normalized = models.CanteenRejectedNormalizedName(canteen.ID)
+		}
 		key := locationKey{
 			normalized: normalized,
 			area:       canteen.LocationArea,

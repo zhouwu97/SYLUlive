@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/canteen_discovery_provider.dart';
 import 'package:shenliyuan/providers/canteen_provider.dart';
@@ -99,17 +100,38 @@ class FakeAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+/// 已登录且完成学生认证的账号，用于覆盖首页“去评价”入口。
+class _VerifiedAuthProvider extends Fake
+    with ChangeNotifier
+    implements AuthProvider {
+  @override
+  bool get isLoggedIn => true;
+
+  @override
+  User? get user => User(
+        id: 7,
+        studentId: '20260007',
+        nickname: '评价同学',
+        avatar: '',
+        createdAt: DateTime(2026, 1, 1),
+        studentVerified: true,
+        eduBound: true,
+      );
+}
+
 Widget _buildApp({
   Dio? dio,
   ThemeData? theme,
   double textScale = 1.0,
+  AuthProvider? auth,
 }) {
   final d = dio ?? _buildDio();
   return MultiProvider(
     providers: [
       ChangeNotifierProvider(create: (_) => CanteenProvider(d)),
       ChangeNotifierProvider(create: (_) => CanteenDiscoveryProvider(d)),
-      ChangeNotifierProvider(create: (_) => AuthProvider(d)),
+      ChangeNotifierProvider<AuthProvider>(
+          create: (_) => auth ?? AuthProvider(d)),
     ],
     child: MaterialApp(
       theme: theme,
@@ -347,5 +369,129 @@ void main() {
 
     expect(find.textContaining('没有找到'), findsOneWidget);
     expect(find.text('提交商家'), findsOneWidget);
+  });
+  testWidgets('服务端搜索只展示服务端综合名次，不把结果下标当排行', (tester) async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/home') return _json(_homeBody);
+      if (options.path == '/canteens/search') {
+        return _json('{"canteens":['
+            '{"id":5,"name":"拉面馆","image":"","verified":true,"created_by":1,"rating_count":1,"average_star":2.0,"rank":3},'
+            '{"id":6,"name":"旧服务端面馆","image":"","verified":true,"created_by":1,"rating_count":2,"average_star":4.0}'
+            '],"dishes":[]}');
+      }
+      return ResponseBody.fromString('{"error":"not found"}', 404);
+    });
+    await tester.pumpWidget(_buildApp(dio: dio));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), '面');
+    await tester.pumpAndSettle();
+
+    expect(find.text('拉面馆'), findsOneWidget);
+    expect(find.text('旧服务端面馆'), findsOneWidget);
+    expect(find.text('商家排行 #3'), findsOneWidget);
+    // 缺少 rank 的旧响应不能用结果下标冒充名次。
+    expect(find.text('商家排行 #1'), findsNothing);
+    expect(find.text('商家排行 #2'), findsNothing);
+  });
+
+  testWidgets('服务端搜索无结果时文案不再提菜品审核', (tester) async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/home') return _json(_homeBody);
+      if (options.path == '/canteens/search') {
+        return _json('{"canteens":[],"dishes":[]}');
+      }
+      return ResponseBody.fromString('{"error":"not found"}', 404);
+    });
+    await tester.pumpWidget(_buildApp(dio: dio));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), '不存在');
+    await tester.pumpAndSettle();
+
+    expect(find.text('换个关键词试试，或提交新的商家'), findsOneWidget);
+    expect(find.textContaining('审核通过后再搜索'), findsNothing);
+  });
+
+  Future<void> scrollToReviewCta(WidgetTester tester) async {
+    final listFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is Scrollable &&
+          widget.axisDirection == AxisDirection.down &&
+          widget.physics is AlwaysScrollableScrollPhysics,
+    );
+    await tester.scrollUntilVisible(
+      find.text('去评价一家商家'),
+      300,
+      scrollable: listFinder,
+    );
+    await tester.pumpAndSettle();
+  }
+
+  Dio emptyHomeDio(List<String> requests) {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      requests.add('${options.method} ${options.path}');
+      if (options.path == '/canteens/home') {
+        return _json(_homeWithoutDishesBody);
+      }
+      if (options.path == '/canteens' && options.method == 'GET') {
+        return _json('['
+            '{"id":1,"name":"一食堂二楼","image":"","verified":true,"created_by":1,"rating_count":5,"average_star":4.6,"location_area":"一食堂","location_floor":"二楼"},'
+            '{"id":3,"name":"三食堂面馆","image":"","verified":true,"created_by":1,"rating_count":0,"average_star":0},'
+            '{"id":9,"name":"已下架小炒","image":"","verified":true,"created_by":1,"rating_count":2,"average_star":3.0,"operating_status":"offline","is_offline":true}'
+            ']');
+      }
+      return ResponseBody.fromString('{"error":"not found"}', 404);
+    });
+    return dio;
+  }
+
+  testWidgets('未登录点“去评价一家商家”只提示登录，不打开选店', (tester) async {
+    final requests = <String>[];
+    await tester.pumpWidget(_buildApp(dio: emptyHomeDio(requests)));
+    await tester.pumpAndSettle();
+    await scrollToReviewCta(tester);
+
+    await tester.tap(find.text('去评价一家商家'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('请先登录后评价'), findsOneWidget);
+    expect(find.text('选择要评价的商家'), findsNothing);
+    expect(requests, isNot(contains('GET /canteens')));
+  });
+
+  testWidgets('“去评价一家商家”先让用户选店，且不列出已下架商家', (tester) async {
+    final requests = <String>[];
+    await tester.pumpWidget(_buildApp(
+      dio: emptyHomeDio(requests),
+      auth: _VerifiedAuthProvider(),
+    ));
+    await tester.pumpAndSettle();
+    await scrollToReviewCta(tester);
+
+    await tester.tap(find.text('去评价一家商家'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('选择要评价的商家'), findsOneWidget);
+    expect(requests, contains('GET /canteens'));
+    expect(find.text('一食堂二楼'), findsOneWidget);
+    expect(find.text('一食堂·二楼 · 4.6 分 · 5 人评价'), findsOneWidget);
+    expect(find.text('三食堂面馆'), findsOneWidget);
+    expect(find.text('已下架小炒'), findsNothing);
+
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byType(TextField),
+      ),
+      '面馆',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('一食堂二楼'), findsNothing);
+    expect(find.text('三食堂面馆'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

@@ -9,7 +9,7 @@ import '../widgets/canteen/canteen_status_image.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/app_card.dart';
 
-/// 食堂贡献追踪页：菜品候选和实拍共享服务端状态，不与评价列表混在一起。
+/// 食堂贡献追踪页：提交的商家、菜品候选和实拍共享服务端状态，不与评价列表混在一起。
 class MyCanteenContributionsScreen extends StatefulWidget {
   const MyCanteenContributionsScreen({super.key});
 
@@ -85,7 +85,7 @@ class _MyCanteenContributionsScreenState
                           SizedBox(height: 220),
                           Center(
                               child:
-                                  AppContentSurface.reading(child: Text('还没有菜品或实拍贡献'))),
+                                  AppContentSurface.reading(child: Text('还没有商家、菜品或实拍贡献'))),
                         ],
                       )
                     : ListView.separated(
@@ -138,8 +138,15 @@ class _MyCanteenContributionsScreenState
     final reason = item['reject_reason']?.toString() ?? '';
     final image = item['image']?.toString() ?? '';
     final isPhoto = item['type'] == 'dish_photo';
+    final isCanteen = item['type'] == 'canteen';
+    final location = [
+      item['location_area']?.toString() ?? '',
+      item['location_floor']?.toString() ?? '',
+    ].where((part) => part.isNotEmpty).join('·');
     final mergedName = item['merged_into_dish_name']?.toString().trim() ?? '';
     final statusLabel = switch (status) {
+      'approved' when isCanteen && item['is_offline'] == true => '已收录 · 目前已下架',
+      'approved' when isCanteen => '已收录',
       'approved' || 'active' => '已通过',
       'rejected' => '未通过',
       'archived' => '已归档',
@@ -179,7 +186,10 @@ class _MyCanteenContributionsScreenState
                 color: CanteenTheme.surfaceMutedBg(isDark),
                 borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
               ),
-              child: Icon(Icons.restaurant_outlined,
+              child: Icon(
+                  isCanteen
+                      ? Icons.storefront_outlined
+                      : Icons.restaurant_outlined,
                   color: CanteenTheme.textTertiaryColor(isDark)),
             ),
           const SizedBox(width: 12),
@@ -188,7 +198,9 @@ class _MyCanteenContributionsScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${item['dish_name'] ?? '未命名菜品'}${isPhoto ? ' · 实拍' : ''}',
+                  isCanteen
+                      ? item['canteen_name']?.toString() ?? '未命名商家'
+                      : '${item['dish_name'] ?? '未命名菜品'}${isPhoto ? ' · 实拍' : ''}',
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: CanteenTheme.textPrimaryColor(isDark),
@@ -196,7 +208,10 @@ class _MyCanteenContributionsScreenState
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  item['canteen_name']?.toString() ?? '',
+                  isCanteen
+                      ? ['提交的商家', if (location.isNotEmpty) location]
+                          .join(' · ')
+                      : item['canteen_name']?.toString() ?? '',
                   style: TextStyle(
                     fontSize: 12,
                     color: CanteenTheme.textSecondaryColor(isDark),
@@ -220,7 +235,11 @@ class _MyCanteenContributionsScreenState
                 if (status == 'rejected' || status == 'archived') ...[
                   const SizedBox(height: 6),
                   Text(
-                    isPhoto ? '请从食堂评价重新关联菜品或实拍' : '请从食堂评价重新关联菜品',
+                    isCanteen
+                        ? '可以按原因修改后重新提交这家店'
+                        : isPhoto
+                            ? '请从食堂评价重新关联菜品或实拍'
+                            : '请从食堂评价重新关联菜品',
                     style: TextStyle(
                       fontSize: 12,
                       color: CanteenTheme.textSecondaryColor(isDark),

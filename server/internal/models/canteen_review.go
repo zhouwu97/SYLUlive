@@ -136,6 +136,14 @@ type CanteenSanction struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+// CanteenFavorite 用户收藏的商家（“我常去”）。属于个人数据：注销账号时删除，导出个人数据时包含。
+type CanteenFavorite struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	UserID    uint      `gorm:"not null;uniqueIndex:uq_canteen_favorite_user" json:"user_id"`
+	CanteenID uint      `gorm:"not null;uniqueIndex:uq_canteen_favorite_user;index" json:"canteen_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // EnsureCanteenReviewSchema 建立 V2 评价相关表和索引。AutoMigrate 与显式索引均保持幂等。
 func EnsureCanteenReviewSchema(db *gorm.DB) error {
 	if err := db.AutoMigrate(
@@ -146,6 +154,7 @@ func EnsureCanteenReviewSchema(db *gorm.DB) error {
 		&CanteenDishRatingSummary{},
 		&CanteenDishAlias{},
 		&CanteenSanction{},
+		&CanteenFavorite{},
 	); err != nil {
 		return err
 	}

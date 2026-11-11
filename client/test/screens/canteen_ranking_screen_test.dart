@@ -106,7 +106,8 @@ void main() {
     // 首次加载 composite
     expect(sorts.contains('composite'), isTrue);
 
-    await tester.tap(find.text('评分优先'));
+    expect(find.text('评分优先'), findsNothing);
+    await tester.tap(find.text('低分优先'));
     await tester.pumpAndSettle();
 
     expect(sorts.contains('rating'), isTrue);

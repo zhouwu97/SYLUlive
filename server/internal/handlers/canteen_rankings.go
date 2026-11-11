@@ -3,12 +3,15 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"sort"
 	"strconv"
 	"time"
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
+
+	"gorm.io/gorm"
 
 	"github.com/gin-gonic/gin"
 )
@@ -186,8 +189,8 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 	}
 	sortRanking(entries, sortMode)
 
-	// 批量拉取近 30 天评价标签，避免 N+1
-	tagMap, tagErr := h.batchAggregateSummaryTags(summaryTagDays, 3)
+	// 批量拉取近 30 天全部评价标签（避免 N+1）：前 3 个用于展示，完整 key 列表供客户端按标签筛选。
+	tagMap, tagErr := h.batchAggregateSummaryTags(summaryTagDays, 0)
 	if tagErr != nil {
 		c.JSON(500, gin.H{"error": "获取排行失败"})
 		return
@@ -208,6 +211,7 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 		DishWithPhotoCount int                   `json:"dish_with_photo_count"`
 		DishPhotoCount     int                   `json:"dish_photo_count"`
 		SummaryTags        []services.SummaryTag `json:"summary_tags"`
+		TagKeys            []string              `json:"tag_keys"`
 	}
 	items := make([]item, 0, len(entries))
 	for _, e := range entries {
@@ -225,7 +229,8 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 			DishCount:          e.DishCount,
 			DishWithPhotoCount: e.DishWithPhotoCount,
 			DishPhotoCount:     e.DishPhotoCount,
-			SummaryTags:        tagMap[e.ID],
+			SummaryTags:        takeSummaryTags(tagMap[e.ID], 3),
+			TagKeys:            summaryTagKeys(tagMap[e.ID]),
 		})
 	}
 
@@ -293,6 +298,15 @@ func buildFeedReason(tags []services.SummaryTag, averageStar float64, ratingCoun
 		return "真实评分 " + trimFloat(averageStar, 1) + " · " + itoa(ratingCount) + " 人评价"
 	}
 	return "暂无足够评分，先看看同学实拍"
+}
+
+// summaryTagKeys 返回标签 key 列表（无标签时为空数组而不是 null，方便客户端筛选）。
+func summaryTagKeys(tags []services.SummaryTag) []string {
+	keys := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		keys = append(keys, tag.Key)
+	}
+	return keys
 }
 
 // takeSummaryTags 安全截取前 k 个标签。
@@ -588,9 +602,15 @@ type canteenHotDishItem struct {
 	PhotoCount             int     `json:"photo_count"`
 	AverageScore           float64 `json:"average_score"`
 	ReviewerCount          int     `json:"reviewer_count"`
+	// RecentMentionCount 是近 hotDishRecentDays 天有多少条到店评价提到这道菜。
+	RecentMentionCount int `json:"recent_mention_count"`
 }
 
-// hotDishes 首页热菜：先取有真实实拍的 active 菜品，再在 Go 层按诚信加权后的菜品摘要排序。
+// hotDishRecentDays 是“近期热门”的统计窗口。
+const hotDishRecentDays = 30
+
+// hotDishes 热门菜品：只取有真实实拍的 active 菜品，先按近 30 天被评价提到的次数排序
+// （真正的“最近大家在吃”），再按打分人数、分数和实拍数兜底。limit<=0 返回全部。
 func (h *CanteenHandler) hotDishes(limit int) []canteenHotDishItem {
 	type dishRow struct {
 		ID                     uint   `gorm:"column:id"`
@@ -606,7 +626,7 @@ func (h *CanteenHandler) hotDishes(limit int) []canteenHotDishItem {
 		Joins("JOIN canteens c ON c.id = d.canteen_id AND c.verified = ? AND (c.operating_status = ? OR c.operating_status IS NULL OR c.operating_status = '')", true, models.CanteenOperatingActive).
 		Select(`d.id, d.name, d.canteen_id, c.name AS canteen_name, c.operating_status AS canteen_operating_status,
 			(SELECT f.path FROM canteen_dish_photos p JOIN files f ON f.id = p.file_id
-			 WHERE p.dish_id = d.id AND p.status = ? ORDER BY p.sort_order, p.created_at, p.id LIMIT 1) AS cover_image,
+			 WHERE p.dish_id = d.id AND p.status = ? ORDER BY p.sort_order, p.created_at DESC, p.id DESC LIMIT 1) AS cover_image,
 			(SELECT COUNT(*) FROM canteen_dish_photos p WHERE p.dish_id = d.id AND p.status = ?) AS photo_count`,
 			models.DishPhotoStatusApproved, models.DishPhotoStatusApproved).
 		Where("d.status = ? AND EXISTS (SELECT 1 FROM canteen_dish_photos p WHERE p.dish_id = d.id AND p.status = ?)",
@@ -619,28 +639,27 @@ func (h *CanteenHandler) hotDishes(limit int) []canteenHotDishItem {
 	for _, row := range rows {
 		ids = append(ids, row.ID)
 	}
-	var summaries []models.CanteenDishRatingSummary
+	aggregates := loadDishAggregates(h.db, ids)
+	recentMentions := make(map[uint]int, len(ids))
 	if len(ids) > 0 {
-		_ = h.db.Preload("User").Where("dish_id IN ?", ids).Find(&summaries).Error
-	}
-	byDish := make(map[uint][]services.DishRatingSample)
-	for _, summary := range summaries {
-		weight := 1.0
-		if summary.User != nil {
-			weight = services.ComputeCreditWeight(summary.User.CreditScore)
+		var recentRows []struct {
+			DishID uint `gorm:"column:dish_id"`
+			Count  int  `gorm:"column:count"`
 		}
-		byDish[summary.DishID] = append(byDish[summary.DishID], services.DishRatingSample{
-			Overall: summary.EffectiveScore,
-			Taste:   summary.TasteScore,
-			Value:   summary.ValueScore,
-			Portion: summary.PortionScore,
-			Weight:  weight,
-		})
+		_ = h.db.Table("canteen_review_event_dishes AS r").
+			Joins("JOIN canteen_review_events e ON e.id = r.review_event_id").
+			Select("r.dish_id AS dish_id, COUNT(DISTINCT r.review_event_id) AS count").
+			Where("r.dish_id IN ? AND e.status = ? AND e.created_at >= ?", ids, models.ReviewEventStatusActive,
+				time.Now().AddDate(0, 0, -hotDishRecentDays)).
+			Group("r.dish_id").Scan(&recentRows).Error
+		for _, row := range recentRows {
+			recentMentions[row.DishID] = row.Count
+		}
 	}
 
 	hot := make([]canteenHotDishItem, 0, len(rows))
 	for _, row := range rows {
-		agg := services.ComputeDishAggregate(byDish[row.ID])
+		agg := aggregates[row.ID]
 		hot = append(hot, canteenHotDishItem{
 			ID:                     row.ID,
 			Name:                   row.Name,
@@ -651,9 +670,13 @@ func (h *CanteenHandler) hotDishes(limit int) []canteenHotDishItem {
 			PhotoCount:             row.PhotoCount,
 			AverageScore:           agg.AverageScore,
 			ReviewerCount:          agg.ReviewerCount,
+			RecentMentionCount:     recentMentions[row.ID],
 		})
 	}
 	sort.SliceStable(hot, func(i, j int) bool {
+		if hot[i].RecentMentionCount != hot[j].RecentMentionCount {
+			return hot[i].RecentMentionCount > hot[j].RecentMentionCount
+		}
 		if hot[i].ReviewerCount != hot[j].ReviewerCount {
 			return hot[i].ReviewerCount > hot[j].ReviewerCount
 		}
@@ -662,10 +685,95 @@ func (h *CanteenHandler) hotDishes(limit int) []canteenHotDishItem {
 		}
 		return hot[i].PhotoCount > hot[j].PhotoCount
 	})
-	if len(hot) > limit {
+	if limit > 0 && len(hot) > limit {
 		hot = hot[:limit]
 	}
 	return hot
+}
+
+// GetHotDishes 首页“热门菜品 · 更多”：全校有实拍的菜品按近期热度分页。
+// GET /api/canteens/dishes/hot?offset=0&limit=20
+func (h *CanteenHandler) GetHotDishes(c *gin.Context) {
+	limit, limitErr := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	offset, offsetErr := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	if limitErr != nil || limit < 1 || limit > 50 || offsetErr != nil || offset < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "分页参数无效"})
+		return
+	}
+	const cacheKey = "hot_dishes:v1"
+	var all []canteenHotDishItem
+	if cached, ok := canteenDiscoveryCache.Get(cacheKey); ok {
+		all, _ = cached.([]canteenHotDishItem)
+	}
+	if all == nil {
+		generation := canteenDiscoveryCache.Generation()
+		all = h.hotDishes(0)
+		canteenDiscoveryCache.SetIfGeneration(cacheKey, all, generation)
+	}
+	page := []canteenHotDishItem{}
+	if offset < len(all) {
+		end := len(all)
+		if offset+limit < end {
+			end = offset + limit
+		}
+		page = all[offset:end]
+	}
+	c.JSON(http.StatusOK, gin.H{"items": page, "total": len(all), "has_more": offset+len(page) < len(all)})
+}
+
+// loadDishAggregates 一次查询批量计算菜品三维评分聚合（按诚信度加权，每人一个有效样本）。
+// 热门菜品和菜品详情共用，保证两处显示的分数一致。
+func loadDishAggregates(db *gorm.DB, dishIDs []uint) map[uint]services.DishAggregate {
+	result := make(map[uint]services.DishAggregate, len(dishIDs))
+	if len(dishIDs) == 0 {
+		return result
+	}
+	var summaries []models.CanteenDishRatingSummary
+	if err := db.Preload("User").Where("dish_id IN ?", dishIDs).Find(&summaries).Error; err != nil {
+		return result
+	}
+	latestEventIDs := make([]uint, 0, len(summaries))
+	for _, summary := range summaries {
+		if summary.LatestReviewEventID != nil {
+			latestEventIDs = append(latestEventIDs, *summary.LatestReviewEventID)
+		}
+	}
+	latestAt := make(map[uint]time.Time, len(latestEventIDs))
+	if len(latestEventIDs) > 0 {
+		var events []models.CanteenDishReviewEvent
+		if err := db.Select("id", "created_at").Where("id IN ?", latestEventIDs).Find(&events).Error; err == nil {
+			for _, event := range events {
+				latestAt[event.ID] = event.CreatedAt
+			}
+		}
+	}
+	now := time.Now()
+	byDish := make(map[uint][]services.DishRatingSample, len(dishIDs))
+	for _, summary := range summaries {
+		weight := 1.0
+		if summary.User != nil {
+			weight = services.ComputeCreditWeight(summary.User.CreditScore)
+		}
+		// 与商家评分同一套时间衰减：按这位同学最近一次给这道菜打分的时间。
+		ratedAt := summary.UpdatedAt
+		if summary.LatestReviewEventID != nil {
+			if at, ok := latestAt[*summary.LatestReviewEventID]; ok {
+				ratedAt = at
+			}
+		}
+		weight *= services.TimeDecayWeight(ratedAt, now)
+		byDish[summary.DishID] = append(byDish[summary.DishID], services.DishRatingSample{
+			Overall: summary.EffectiveScore,
+			Taste:   summary.TasteScore,
+			Value:   summary.ValueScore,
+			Portion: summary.PortionScore,
+			Weight:  weight,
+		})
+	}
+	for dishID, samples := range byDish {
+		result[dishID] = services.ComputeDishAggregate(samples)
+	}
+	return result
 }
 
 func pickPhoto(pool []canteenPhotoItem, seen map[uint]int, lastCanteen uint, lastType string) *canteenFeedItem {
@@ -721,10 +829,13 @@ func sumRecentReviewCounts(counts map[uint]int64) int {
 	return total
 }
 
+// heroCandidateLimit 是“今天吃什么”可轮换的候选数。
+const heroCandidateLimit = 5
+
 // GetHome 食堂发现首页聚合。GET /api/canteens/home
 func (h *CanteenHandler) GetHome(c *gin.Context) {
 	// 首页响应新增 recent_reviews 与今日去重样本计数，单独升级缓存键避免命中旧结构。
-	cacheKey := "home:v3"
+	cacheKey := "home:v4"
 	generation := canteenDiscoveryCache.Generation()
 	if cached, ok := canteenDiscoveryCache.Get(cacheKey); ok {
 		c.JSON(200, cached)
@@ -758,9 +869,14 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 		return
 	}
 
-	// Hero：综合分最高的「有评价」食堂。
+	// Hero：综合分最高的「有评价」食堂；同时给出前几名作为“换一家”的候选，
+	// 客户端按天轮换默认展示哪一家，用户也可以手动换。
 	var hero *canteenFeedItem
+	heroCandidates := make([]canteenFeedItem, 0, heroCandidateLimit)
 	for _, e := range entries {
+		if len(heroCandidates) >= heroCandidateLimit {
+			break
+		}
 		if e.RatingCount == 0 {
 			continue
 		}
@@ -789,8 +905,10 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 			VisitReviewCount:  e.VisitReviewCount,
 			RecentReviewCount: int(recentCounts[e.ID]),
 		}
-		hero = heroItem
-		break
+		if hero == nil {
+			hero = heroItem
+		}
+		heroCandidates = append(heroCandidates, *heroItem)
 	}
 
 	// 排行入口：第一名 + 总数。
@@ -825,6 +943,7 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 	resp := gin.H{
 		"generated_at":                   time.Now(),
 		"hero":                           hero,
+		"hero_candidates":                heroCandidates,
 		"ranking_entry":                  rankingEntry,
 		"feed":                           feed,
 		"hot_dishes":                     hotDishes,

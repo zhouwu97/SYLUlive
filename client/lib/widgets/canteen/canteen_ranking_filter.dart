@@ -1,12 +1,25 @@
 import '../app_card.dart';
 import 'package:flutter/material.dart';
 
+import 'package:provider/provider.dart';
+
 import '../../models/canteen_ranking.dart';
+import '../../providers/canteen_provider.dart';
 import 'canteen_theme.dart';
 
 /// 排行页位置筛选可选值：'' 表示该维度不限。
-const List<String> kCanteenLocationAreaOptions = ['', '一食堂', '二食堂'];
-const List<String> kCanteenLocationFloorOptions = ['', '一楼', '二楼'];
+// 位置选项来自服务端 /canteens/meta（加载失败时为内置默认值）；'' 表示“全部”。
+// 独立使用该组件（如组件测试）时没有 CanteenProvider，直接用默认值。
+List<String> _areaOptions(BuildContext context) => [
+      '',
+      ...(context.watch<CanteenProvider?>()?.locationAreas ??
+          CanteenProvider.defaultLocationAreas),
+    ];
+List<String> _floorOptions(BuildContext context) => [
+      '',
+      ...(context.watch<CanteenProvider?>()?.locationFloors ??
+          CanteenProvider.defaultLocationFloors),
+    ];
 
 /// 筛选条按钮文案：两个维度都为空时显示中性「位置」。
 String canteenLocationFilterLabel(String area, String floor) {
@@ -44,7 +57,13 @@ class CanteenRankingFilterBar extends StatelessWidget {
     this.locationArea = '',
     this.locationFloor = '',
     required this.onLocationFilterChanged,
+    this.tagKey = '',
+    this.onTagChanged,
   });
+
+  /// 当前标签筛选（'' = 不限）；[onTagChanged] 为空时不显示标签筛选。
+  final String tagKey;
+  final ValueChanged<String>? onTagChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -57,11 +76,17 @@ class CanteenRankingFilterBar extends StatelessWidget {
         children: [
           _sortChip(isDark, '综合排序', CanteenRankingSort.composite),
           const SizedBox(width: 8),
-          _sortChip(isDark, '评分优先', CanteenRankingSort.rating),
+          // 服务端 rating 排序刻意从低分往高分排，用于先看到踩雷反馈；
+          // 文案必须说清方向，不能写成会被理解为“高分在前”的“评分优先”。
+          _sortChip(isDark, '低分优先', CanteenRankingSort.rating),
           const SizedBox(width: 8),
           _sortChip(isDark, '评价人数', CanteenRankingSort.reviewCount),
           const SizedBox(width: 8),
           _locationChip(context, isDark),
+          if (onTagChanged != null) ...[
+            const SizedBox(width: 8),
+            _tagChip(context, isDark),
+          ],
         ],
       ),
     );
@@ -90,6 +115,87 @@ class CanteenRankingFilterBar extends StatelessWidget {
             : CanteenTheme.textSecondaryColor(isDark),
       ),
       onTap: () => _showLocationSheet(context, isDark),
+    );
+  }
+
+  Widget _tagChip(BuildContext context, bool isDark) {
+    final tags = context.watch<CanteenProvider?>()?.reviewTags ??
+        CanteenProvider.defaultReviewTags;
+    final selectedLabel = tags
+            .where((tag) => tag.key == tagKey)
+            .map((tag) => tag.label)
+            .firstOrNull ??
+        '';
+    final isSel = selectedLabel.isNotEmpty;
+    return _pill(
+      isDark,
+      label: isSel ? selectedLabel : '标签',
+      selected: isSel,
+      leading: Icon(
+        Icons.sell_outlined,
+        size: 15,
+        color: isSel
+            ? CanteenTheme.accentStrongColor(isDark)
+            : CanteenTheme.textSecondaryColor(isDark),
+      ),
+      onTap: () => _showTagSheet(context, isDark, tags),
+    );
+  }
+
+  void _showTagSheet(BuildContext context, bool isDark,
+      List<({String key, String label})> tags) {
+    context.read<CanteenProvider?>()?.loadMeta();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => AppCardSurface(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        decoration: BoxDecoration(
+          color: CanteenTheme.surfaceBg(isDark),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '按同学评价标签筛选',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: CanteenTheme.textPrimaryColor(isDark),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '只看近 30 天常被这样评价的商家',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: CanteenTheme.textSecondaryColor(isDark),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final tag in [(key: '', label: '全部'), ...tags])
+                    ChoiceChip(
+                      label: Text(tag.label),
+                      selected: tag.key == tagKey,
+                      onSelected: (_) {
+                        Navigator.pop(sheetContext);
+                        onTagChanged?.call(tag.key);
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -140,6 +246,7 @@ class CanteenRankingFilterBar extends StatelessWidget {
   }
 
   void _showLocationSheet(BuildContext context, bool isDark) {
+    context.read<CanteenProvider?>()?.loadMeta();
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -215,7 +322,7 @@ class _LocationFilterSheetState extends State<_LocationFilterSheet> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final option in kCanteenLocationAreaOptions)
+                for (final option in _areaOptions(context))
                   _optionChip(isDark, '区域', option),
               ],
             ),
@@ -226,7 +333,7 @@ class _LocationFilterSheetState extends State<_LocationFilterSheet> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final option in kCanteenLocationFloorOptions)
+                for (final option in _floorOptions(context))
                   _optionChip(isDark, '楼层', option),
               ],
             ),
@@ -299,8 +406,7 @@ class _LocationFilterSheetState extends State<_LocationFilterSheet> {
   }
 
   Widget _optionChip(bool isDark, String group, String option) {
-    final selected =
-        group == '区域' ? _area == option : _floor == option;
+    final selected = group == '区域' ? _area == option : _floor == option;
     final label = option.isEmpty ? '全部' : option;
     return GestureDetector(
       onTap: () => setState(() {

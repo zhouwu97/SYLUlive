@@ -136,7 +136,7 @@ func (h *PrivacyHandler) personalDataPayload(userID uint, includeRequests bool) 
 	}
 	payload := gin.H{
 		"exported_at":             time.Now().UTC(),
-		"scope":                   "账户资料、法律文件授权记录、表情包投稿和个人信息请求记录；不含密码、教务 Cookie、会话令牌、推送标识及内部文件地址",
+		"scope":                   "账户资料、法律文件授权记录、食堂收藏、表情包投稿和个人信息请求记录；不含密码、教务 Cookie、会话令牌、推送标识及内部文件地址",
 		"legal_consents_active":   consentState == models.LegalConsentStateActive,
 		"legal_consents_required": consentState == models.LegalConsentStateRequired,
 		"consent_revoked_at":      user.LegalConsentRevokedAt,
@@ -172,6 +172,13 @@ func (h *PrivacyHandler) personalDataPayload(userID uint, includeRequests bool) 
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
+	}
+	if h.db.Migrator().HasTable(&models.CanteenFavorite{}) {
+		favorites := make([]models.CanteenFavorite, 0)
+		if err := h.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&favorites).Error; err != nil {
+			return nil, err
+		}
+		payload["canteen_favorites"] = favorites
 	}
 	if includeRequests {
 		if h.db.Migrator().HasTable(&models.EmojiCreator{}) {
@@ -497,6 +504,11 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 		}
 		if err := tx.Where("user_id = ?", userID).Delete(&models.PushDevice{}).Error; err != nil {
 			return err
+		}
+		if tx.Migrator().HasTable(&models.CanteenFavorite{}) {
+			if err := tx.Where("user_id = ?", userID).Delete(&models.CanteenFavorite{}).Error; err != nil {
+				return err
+			}
 		}
 		if err := tx.Where("follower_id = ? OR following_id = ?", userID, userID).Delete(&models.UserFollow{}).Error; err != nil {
 			return err

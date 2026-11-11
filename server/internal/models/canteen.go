@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -56,14 +57,18 @@ func IsValidCanteenLocationFloor(v string) bool {
 
 // Canteen 食堂/店铺
 type Canteen struct {
-	ID              uint       `gorm:"primaryKey" json:"id"`
-	Name            string     `gorm:"size:100;not null;index" json:"name"`
-	NormalizedName  string     `gorm:"size:100;not null;default:''" json:"-"`
-	LocationArea    string     `gorm:"size:20;not null;default:''" json:"location_area"`
-	LocationFloor   string     `gorm:"size:20;not null;default:''" json:"location_floor"`
-	DisplayTags     *string    `gorm:"type:text" json:"-"`
-	Image           string     `gorm:"size:500;not null" json:"image"` // 封面图
-	Verified        bool       `gorm:"default:false" json:"verified"`  // 仅管理员审核通过后公开
+	ID             uint    `gorm:"primaryKey" json:"id"`
+	Name           string  `gorm:"size:100;not null;index" json:"name"`
+	NormalizedName string  `gorm:"size:100;not null;default:''" json:"-"`
+	LocationArea   string  `gorm:"size:20;not null;default:''" json:"location_area"`
+	LocationFloor  string  `gorm:"size:20;not null;default:''" json:"location_floor"`
+	DisplayTags    *string `gorm:"type:text" json:"-"`
+	Image          string  `gorm:"size:500;not null" json:"image"` // 封面图
+	Verified       bool    `gorm:"default:false" json:"verified"`  // 仅管理员审核通过后公开
+	// RejectedAt 非空表示提交已被驳回：记录保留给提交人查看原因，不再进入待审列表。
+	// 驳回时 NormalizedName 会改成 CanteenRejectedNormalizedName，腾出名称唯一索引。
+	RejectedAt      *time.Time `json:"rejected_at,omitempty"`
+	RejectReason    string     `gorm:"size:500" json:"-"`
 	OperatingStatus string     `gorm:"size:20;not null;default:'active';index" json:"operating_status"`
 	OfflinedAt      *time.Time `json:"offlined_at,omitempty"`
 	OfflinedBy      *uint      `json:"-"`
@@ -82,6 +87,17 @@ type Canteen struct {
 
 	// 管理端待审核列表返回的提交人昵称（非数据库字段）
 	CreatorName string `gorm:"-" json:"creator_name,omitempty"`
+}
+
+// CanteenRejectedNormalizedName 是被驳回提交的占位规范名，保证它不占用真实店名的唯一索引，
+// 同学可以重新提交同名商家。
+func CanteenRejectedNormalizedName(id uint) string {
+	return fmt.Sprintf("#rejected-%d", id)
+}
+
+// IsRejected 表示这条提交已被管理员驳回。
+func (c *Canteen) IsRejected() bool {
+	return !c.Verified && c.RejectedAt != nil
 }
 
 // NormalizeOperatingStatus 为历史数据库补齐状态，并计算只读 JSON 字段。

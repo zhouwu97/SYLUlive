@@ -1,6 +1,7 @@
 package services
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -81,5 +82,26 @@ func TestComputeDishAggregateDoesNotUseStoreDimensions(t *testing.T) {
 	got := ComputeDishAggregate([]DishRatingSample{{Taste: 5, Value: 4, Portion: 3, Overall: 4.2, Weight: 1}})
 	if got.AverageScore != 4.2 || got.PortionScore != 3 {
 		t.Fatalf("aggregate=%+v", got)
+	}
+}
+
+func TestTimeDecayWeightHalvesEveryHalfLifeWithFloor(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name string
+		at   time.Time
+		want float64
+	}{
+		{"刚发布", now, 1},
+		{"零值时间", time.Time{}, 1},
+		{"未来时间", now.Add(time.Hour), 1},
+		{"一个半衰期", now.AddDate(0, 0, -180), 0.5},
+		{"两个半衰期", now.AddDate(0, 0, -360), 0.25},
+		{"很久以前保底", now.AddDate(-5, 0, 0), ReviewDecayMinWeight},
+	}
+	for _, tc := range cases {
+		if got := TimeDecayWeight(tc.at, now); math.Abs(got-tc.want) > 1e-9 {
+			t.Fatalf("%s: got %v want %v", tc.name, got, tc.want)
+		}
 	}
 }

@@ -46,6 +46,35 @@ class CanteenDish {
   bool get hasDisplayImage => coverImage.trim().isNotEmpty;
 }
 
+/// 管理端菜品条目：包含已隐藏的菜，用于改名、隐藏/恢复与合并。
+class AdminCanteenDish {
+  final int id;
+  final String name;
+  final String status;
+  final int photoCount;
+  final int mentionCount;
+
+  const AdminCanteenDish({
+    required this.id,
+    required this.name,
+    required this.status,
+    this.photoCount = 0,
+    this.mentionCount = 0,
+  });
+
+  factory AdminCanteenDish.fromJson(Map<String, dynamic> json) {
+    return AdminCanteenDish(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      name: json['name']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'active',
+      photoCount: (json['photo_count'] as num?)?.toInt() ?? 0,
+      mentionCount: (json['mention_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  bool get isHidden => status == 'hidden';
+}
+
 /// 菜品实拍（公开接口仅含 approved）。
 class CanteenDishPhoto {
   final int id;

@@ -41,6 +41,7 @@ func newDishPhotoTestDB(t *testing.T) *gorm.DB {
 		&models.CanteenReviewEvent{},
 		&models.CanteenDish{},
 		&models.CanteenDishPhoto{},
+		&models.CanteenDishAlias{},
 		&models.AdminLog{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)

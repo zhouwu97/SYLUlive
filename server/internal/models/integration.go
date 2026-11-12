@@ -104,5 +104,6 @@ type IntegrationAudit struct {
 	ActionID  string    `gorm:"size:36"`
 	Event     string    `gorm:"size:40;not null"`
 	ActorID   uint      `gorm:"index"`
+	Reason    string    `gorm:"size:240"`
 	CreatedAt time.Time `gorm:"index"`
 }

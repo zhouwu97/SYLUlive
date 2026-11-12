@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -141,4 +142,53 @@ func (s *IntegrationAuthService) ReadPersonal(ctx context.Context, expected mode
 		return nil, err
 	}
 	return result, nil
+}
+
+// RestrictBinding 管理员只能缩减已有授权或撤销，不能代用户添加私人权限。
+func (s *IntegrationAuthService) RestrictBinding(ctx context.Context, actor uint, id string, epoch uint, scopes []string, revoke bool, reason string) error {
+	var before models.IntegrationBinding
+	if err := s.DB.WithContext(ctx).Where("id = ?", id).Take(&before).Error; err != nil {
+		return integrationError("binding_unavailable", 404)
+	}
+	return s.ownerTx(ctx, before.OwnerID, func(tx *gorm.DB, _ models.User) error {
+		var admin models.User
+		if err := tx.First(&admin, actor).Error; err != nil || (admin.Role != models.RoleAdmin && admin.Role != models.RoleSuperAdmin) || admin.AccountStatus != "active" {
+			return integrationError("admin_required", 403)
+		}
+		var binding models.IntegrationBinding
+		if err := tx.Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).Where("id = ?", id).Take(&binding).Error; err != nil {
+			return err
+		}
+		if binding.Epoch != epoch || binding.State != "active" {
+			return integrationError("binding_conflict", 409)
+		}
+		event := "admin_restricted"
+		if revoke {
+			if err := s.revokeTx(tx, binding); err != nil {
+				return err
+			}
+			event = "admin_revoked"
+		} else {
+			raw, err := integrationScopes(strings.Join(scopes, " "))
+			if err != nil {
+				return err
+			}
+			for _, scope := range scopes {
+				if !IntegrationHasScope(binding, scope) {
+					return integrationError("scope_escalation_forbidden", 403)
+				}
+			}
+			if raw == binding.Scopes {
+				return integrationError("no_permission_change", 409)
+			}
+			if err := tx.Model(&binding).Updates(map[string]interface{}{"scopes": raw, "epoch": binding.Epoch + 1}).Error; err != nil {
+				return err
+			}
+			// 所有旧凭证随代次失效，恢复权限须本人重新核对并授权。
+			if err := tx.Model(&models.IntegrationAction{}).Where("binding_id = ? AND state = ?", id, "pending").Updates(map[string]interface{}{"state": "invalidated", "payload": "{}", "confirm_nonce_hash": "", "confirm_expires_at": nil}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Create(&models.IntegrationAudit{OwnerID: binding.OwnerID, ActorID: actor, BindingID: id, Event: event, Reason: reason, CreatedAt: s.Now()}).Error
+	})
 }

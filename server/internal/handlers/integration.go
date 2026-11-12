@@ -97,6 +97,12 @@ func (h *IntegrationHandler) Register(r *gin.Engine, jwtSecret string) {
 	api.GET("/bot/policy", h.BotPolicy)
 	api.POST("/bot/runtime", h.BotRuntimeHeartbeat)
 	api.GET("/actions/:id", h.ActionStatus)
+	// 管理端只读元数据并只允许缩减／撤销；该组曾在合并中丢失，导致 Web 管理中心 404。
+	admin := r.Group("/api/admin/integrations", middleware.AuthMiddleware(h.db, jwtSecret), middleware.AdminMiddleware())
+	admin.Use(func(c *gin.Context) { c.Header("Cache-Control", "no-store"); c.Header("Pragma", "no-cache") })
+	admin.GET("", h.AdminBindings)
+	admin.GET("/:id/audits", h.AdminAudits)
+	admin.POST("/:id/restrict", h.AdminRestrict)
 }
 
 // CheckIn 只操作令牌所属本人；不提供任意用户签到、补签或日期覆盖入口。

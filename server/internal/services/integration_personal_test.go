@@ -125,3 +125,25 @@ func TestIntegrationPersonalPaginationStaleAndAuditRollback(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, result)
 }
+
+func TestIntegrationAdminCannotGrantAndInvalidatesExistingCredentials(t *testing.T) {
+	db, auth, b, _ := personalIntegrationFixture(t)
+	require.NoError(t, db.Create(&models.User{ID: 8, Role: models.RoleAdmin, AccountStatus: "active"}).Error)
+	err := auth.RestrictBinding(context.Background(), 2, b.ID, b.Epoch, []string{IntegrationGradesScope}, false, "合成拒绝管理员越权")
+	require.Error(t, err)
+	err = auth.RestrictBinding(context.Background(), 8, b.ID, b.Epoch, []string{IntegrationGradesScope, IntegrationCheckInScope}, false, "合成权限添加")
+	require.Error(t, err)
+	err = auth.RestrictBinding(context.Background(), 8, b.ID, b.Epoch, []string{IntegrationGradesScope}, false, "合成权限缩减")
+	require.NoError(t, err)
+	_, err = auth.ReadPersonal(context.Background(), b, "grades", 0, 20)
+	require.Error(t, err)
+	require.NoError(t, db.First(&b, "id = ?", b.ID).Error)
+	require.False(t, IntegrationHasScope(b, IntegrationErkeScope))
+	err = auth.RestrictBinding(context.Background(), 8, b.ID, b.Epoch, nil, true, "合成撤销操作")
+	require.NoError(t, err)
+	require.NoError(t, db.First(&b, "id = ?", b.ID).Error)
+	require.Equal(t, "revoked", b.State)
+	var audits []models.IntegrationAudit
+	require.NoError(t, db.Where("actor_id = ?", 8).Find(&audits).Error)
+	require.Len(t, audits, 2)
+}

@@ -65,8 +65,8 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
     return (
       <>
         <Head
-          title={admin ? "工单管理" : "反馈与工单"}
-          description="提交问题、补充信息，查看处理进展"
+          title={admin ? "工单管理" : "我的工单"}
+          description="创建工单反馈 Bug 或建议，查看处理进度与管理员回复"
         />
         <Empty icon="lock" title="登录后查看工单" description="登录后可提交问题并跟进处理进展。">
           <button className="btn primary" onClick={auth.login}>
@@ -78,15 +78,15 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
   return (
     <>
       <Head
-        title={admin ? "工单管理" : "反馈与工单"}
-        description="提交问题、补充信息，查看处理进展"
+        title={admin ? "工单管理" : "我的工单"}
+        description="创建工单反馈 Bug 或建议，查看处理进度与管理员回复"
       >
         {!admin && (
           <button
             className="btn primary"
             onClick={() =>
               ui.open(
-                "提交反馈",
+                "创建工单",
                 <Form
                   fields={[
                     {
@@ -140,7 +140,7 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
               )
             }
           >
-            新建工单
+            创建工单
           </button>
         )}
       </Head>

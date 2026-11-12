@@ -28,7 +28,7 @@ export function MobileHeader({ menu, onMenu }: { menu: boolean; onMenu: () => vo
   const [params, setParams] = useSearchParams();
   const home = location.pathname === "/";
   if (location.pathname.startsWith("/post/") || /^\/polls\/\d+/.test(location.pathname) || !home && destinations.some(([path]) => path === location.pathname)) return null;
-  const titles: Record<string, string> = { community: "校园社区", messages: "消息", grades: "教务中心", exams: "考试与试卷库", campus: "校园资讯", canteen: "食堂", competition: "竞赛中心", ratings: "校园榜单", polls: "校园投票", ai: "校园 Agent", toolbox: "工具箱", feedback: "意见反馈", notifications: "通知", "connected-apps": "已授权助手", admin: "管理中心" };
+  const titles: Record<string, string> = { community: "校园社区", messages: "消息", grades: "教务中心", exams: "考试与试卷库", campus: "校园资讯", canteen: "食堂", competition: "竞赛中心", ratings: "校园榜单", polls: "校园投票", ai: "校园 Agent", toolbox: "工具箱", feedback: "我的工单", notifications: "通知", "connected-apps": "已授权助手", admin: "管理中心" };
   return <header className={`mobile-header ${home ? "mobile-home-header" : ""}`}>
     <button className="mobile-icon-button" aria-label={home ? "打开导航" : "返回上一页"} aria-expanded={home ? menu : undefined} onClick={home ? onMenu : () => window.history.state?.idx ? navigate(-1) : navigate("/")}><Icon name={home ? "menu" : "arrow"} /></button>
     {home ? <Tabs tabs={[["time", "最新"], ["all", "综合"], ["featured", "精华"], ["following", "关注"]]} value={params.get("sort") || "all"} onChange={sort => {

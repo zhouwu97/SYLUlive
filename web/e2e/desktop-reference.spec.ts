@@ -47,7 +47,7 @@ test("普通桌面高度向下阅读时两侧组件保持可见且底部入口�
     await expect(page.getByRole("region", { name: "校园个人资料" })).toBeInViewport();
     await expect(page.locator(".right-rail .today-card")).toBeInViewport();
     if (width === 1750) await page.screenshot({ path: ".codex-captures/desktop-bugs/reading-fixed.png" });
-    const services = page.locator(".right-rail .rail-footer").getByRole("link", { name: "意见反馈", exact: true });
+    const services = page.locator(".right-rail .rail-footer").getByRole("link", { name: "我的工单", exact: true });
     await services.scrollIntoViewIfNeeded();
     await expect(services).toBeInViewport();
     const tools = page.getByLabel("主导航").getByRole("link", { name: "工具箱", exact: true });

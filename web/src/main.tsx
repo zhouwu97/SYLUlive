@@ -84,7 +84,7 @@ export const navigation = [
   ["polls", "投票 · 组队"],
   ["ai", "AI 校园助手"],
   ["toolbox", "工具箱"],
-  ["feedback", "反馈与工单"],
+  ["feedback", "我的工单"],
   ["profile", "我的主页"],
   ["admin", "管理中心"],
 ];

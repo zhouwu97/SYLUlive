@@ -5,12 +5,15 @@ import {useAuth} from './auth';
 import {useMobile} from './mobile';
 import {ServerAvatar} from './server-avatar';
 import {Empty,Head,Icon,Pagination,QueryState,Tabs,useUI} from './ui';
-import {CanteenContributions,DishDetail} from './canteen';
+import {CanteenContributions,CanteenFavorites,DishDetail} from './canteen';
 import {formatScore} from './canteen-data';
 
 const DIMENSIONS=[['taste','口味'],['value','性价比'],['queue','排队'],['hygiene','卫生'],['service','服务']] as const;
 const shortTime=(value:unknown)=>typeof value==='string'&&Number.isFinite(Date.parse(value))?new Date(value).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}):'';
 const place=(item:Entity)=>[item.location_area,item.location_floor].filter(Boolean).join(' · ');
+/** 没人评价的店不占名次；旧服务端没有 ranked 字段时按评价人数判断。 */
+const isRanked=(item:Entity)=>typeof item.ranked==='boolean'?item.ranked:Number(item.rating_count)>0;
+const offlineTag=(item:Entity)=>item.is_offline?<span className="tag">已下架</span>:null;
 
 function Stars({value}:{value:unknown}){
   const n=Math.max(0,Math.min(5,Number(value)||0));
@@ -20,16 +23,16 @@ function Stars({value}:{value:unknown}){
 export function CanteenPage(){
   const [params,setParams]=useSearchParams(),auth=useAuth(),ui=useUI(),mobile=useMobile();
   const tab=params.get('tab')||'home',page=Number(params.get('page'))||1;
-  const path=tab==='home'?'/api/canteens/home':tab==='ranking'?query('/api/canteens/rankings',{sort:params.get('sort')||'composite'}):tab==='stores'?query('/api/canteens',{q:params.get('q'),status:'active',page,limit:20}):null;
+  const path=tab==='home'?'/api/canteens/home':tab==='ranking'?query('/api/canteens/rankings',{sort:params.get('sort')||'composite',scope:params.get('scope')==='all'?'all':undefined}):tab==='stores'?query('/api/canteens',{q:params.get('q'),status:'active',page,limit:20}):null;
   const q=useApi(path);
   function change(key:string,value:string){const next=new URLSearchParams(params);next.set(key,value);if(key!=='page')next.delete('page');setParams(next)}
   return <div className={mobile?undefined:'food-page'}><Head title="食堂与菜品" description="食堂评分、菜品、排行与贡献"><button className="btn" onClick={()=>auth.requireUser()&&ui.open('我的点评',<MyReviews/>)}>我的点评</button><button className="btn primary" onClick={()=>change('tab','stores')}>＋ 写点评</button></Head>
     <Tabs tabs={[["home","食堂主页"],["stores","店铺菜品"],["ranking","食堂排行"],["mine","我的贡献"]]} value={tab} onChange={v=>change('tab',v)}/>
     {tab==='mine'?(auth.user?<CanteenContributions/>:<Empty icon="lock" title="登录后查看自己的贡献"><button className="btn" onClick={auth.login}>登录</button></Empty>):<>
       {tab==='stores'&&<form className="filter-row" onSubmit={e=>{e.preventDefault();change('q',String(new FormData(e.currentTarget).get('q')||''))}}><input name="q" aria-label="搜索食堂" defaultValue={params.get('q')||''} placeholder="搜索食堂或店铺"/><button className="btn">搜索</button></form>}
-      {tab==='ranking'&&<div className="filter-row"><label>排行方式 <select value={params.get('sort')||'composite'} onChange={e=>change('sort',e.target.value)}><option value="composite">综合排行</option><option value="rating">低分优先</option><option value="review_count">点评数量</option></select></label><span className="muted">按服务端真实统计排序</span></div>}
+      {tab==='ranking'&&<div className="filter-row"><label>排行方式 <select value={params.get('sort')||'composite'} onChange={e=>change('sort',e.target.value)}><option value="composite">综合排行</option><option value="rating">低分优先</option><option value="review_count">点评数量</option></select></label><label>范围 <select value={params.get('scope')==='all'?'all':'current'} onChange={e=>change('scope',e.target.value)}><option value="current">现有商家</option><option value="all">全部排名（含已下架）</option></select></label><span className="muted">没人评价的店不参与排名</span></div>}
       <QueryState query={q}>{tab==='home'?(mobile?<MobileHome data={q.data} change={change}/>:<DesktopHome data={q.data} change={change}/>)
-      :<>{mobile?<div className="panel">{rows(q.data,'canteens').map((c,i)=><Link className="list-row" to={`/canteen/${c.id}`} key={`canteen:${c.id??''}:${c.name??''}:${i}`}>{tab==='ranking'&&<span className="rail-index">{c.rank||i+1}</span>}{c.image&&<img className="author-avatar" src={asset(c.image)} alt=""/>}<div className="list-main"><b>{c.name}</b><p>{c.location_area} {c.location_floor} · {c.description}</p></div><span className="tag">{c.rating_count?`${formatScore(c.average_star)} 分`:'暂无评分'}</span></Link>)}</div>
+      :<>{mobile?<div className="panel">{rows(q.data,'canteens').map((c,i)=><Link className="list-row" to={`/canteen/${c.id}`} key={`canteen:${c.id??''}:${c.name??''}:${i}`}>{tab==='ranking'&&<span className="rail-index" aria-label={isRanked(c)?`第${c.rank||i+1}名`:'暂无评价，不参与排名'}>{isRanked(c)?c.rank||i+1:'—'}</span>}{c.image&&<img className="author-avatar" src={asset(c.image)} alt=""/>}<div className="list-main"><b>{c.name}</b> {offlineTag(c)}<p>{[place(c),c.description].filter(Boolean).join(' · ')}</p></div><span className="tag">{c.rating_count?`${formatScore(c.average_star)} 分`:'暂无评分'}</span></Link>)}</div>
         :<StoreList items={rows(q.data,'canteens')} ranking={tab==='ranking'}/>}
         {!rows(q.data,'canteens').length&&<Empty/>}{tab==='stores'&&<Pagination page={page} hasMore={rows(q.data,'canteens').length===20} onChange={n=>change('page',String(n))}/>}</>}
       </QueryState></>}
@@ -42,10 +45,11 @@ type HomeProps={data:Entity|undefined;change:(key:string,value:string)=>void};
 function MobileHome({data,change}:HomeProps){
   const ui=useUI();
   return <>
-    <div className="two-col"><section className="panel panel-pad"><span className="tag brand">综合推荐</span>{data?.hero?<><h2>{data.hero.canteen_name}</h2><p>{data.hero.location_area} · {data.hero.location_floor}</p><div className="metric">{formatScore(data.hero.average_star)} <small>分</small></div><p>{data.hero.reason}</p><Link className="btn" to={`/canteen/${data.hero.canteen_id}`}>查看店铺与点评</Link></>:<Empty title="暂无足够的评价数据"/>}</section>
-    <section className="panel panel-pad"><h3>今日热门</h3>{rows(data,'hot_dishes').map((d,i)=><button className="list-row" key={`hot:${d.id??''}:${d.canteen_id??''}:${d.name??''}:${i}`} onClick={()=>ui.open(d.name,<DishDetail canteenId={String(d.canteen_id)} id={d.id}/>)}><b>{d.name}</b><span>{d.canteen_name}</span></button>)}</section></div>
+    <CanteenFavorites render={items=><section className="section"><h2>我常去</h2><div className="panel">{items.map(c=><Link className="list-row" key={`fav:${c.id}`} to={`/canteen/${c.id}`}>{c.image&&<img className="author-avatar" src={asset(c.image)} alt=""/>}<div className="list-main"><b>{c.name}</b> {offlineTag(c)}<p>{place(c)}</p></div><span className="tag">{c.rating_count?`${formatScore(c.average_star)} 分`:'暂无评分'}</span></Link>)}</div></section>}/>
+    <div className="two-col"><section className="panel panel-pad"><span className="tag brand">综合推荐</span>{data?.hero?<><h2>{data.hero.canteen_name}</h2><p>{place(data.hero)}</p><div className="metric">{formatScore(data.hero.average_star)} <small>分 · {data.hero.rating_count||0} 人评价</small></div>{typeof data.hero.reason==='string'&&!data.hero.reason.startsWith('真实评分')&&<p>{data.hero.reason}</p>}<Link className="btn" to={`/canteen/${data.hero.canteen_id}`}>查看店铺与点评</Link></>:<Empty title="暂无足够的评价数据"/>}</section>
+    <section className="panel panel-pad"><h3>今日热门</h3>{rows(data,'hot_dishes').map((d,i)=><button className="list-row" key={`hot:${d.id??''}:${d.canteen_id??''}:${d.name??''}:${i}`} onClick={()=>ui.open(d.name,<DishDetail canteenId={String(d.canteen_id)} id={d.id}/>)}><b>{d.name}</b>{d.canteen_name&&d.canteen_name!==d.name&&<span>{d.canteen_name}</span>}</button>)}</section></div>
     <section className="section"><div className="section-head"><h2>今天吃什么</h2><button className="link-btn" onClick={()=>change('tab','stores')}>查看全部店铺</button></div><div className="dish-list">{rows(data,'feed').map((f,i)=><Link className="dish" key={`feed:${f.id??''}:${f.canteen_id??''}:${f.dish_name??''}:${i}`} to={`/canteen/${f.canteen_id}`}>{f.image&&<img src={asset(f.image)} alt=""/>}<div><h4>{f.dish_name||f.canteen_name}</h4><p>{f.reason||f.title}</p></div></Link>)}</div></section>
-    <section className="section"><h2>最新点评</h2><div className="panel">{rows(data,'recent_reviews').map((r,i)=><Link className="list-row" key={`review:${r.id??''}:${r.canteen_id??''}:${r.created_at??''}:${i}`} to={`/canteen/${r.canteen_id}`}><div><b>{r.user_name||r.canteen_name}</b><p>{r.comment}</p></div><span>{formatScore(r.overall_score)} 分</span></Link>)}</div></section>
+    <section className="section"><div className="section-head"><h2>最新点评</h2>{Number(data?.recent_effective_review_count)>0&&<small className="muted">近 7 天新增 {data!.recent_effective_review_count} 条</small>}</div><div className="panel">{rows(data,'recent_reviews').map((r,i)=><Link className="list-row" key={`review:${r.id??''}:${r.canteen_id??''}:${r.created_at??''}:${i}`} to={`/canteen/${r.canteen_id}`}><div><b>{r.user_name||r.canteen_name}</b><p>{r.comment}</p></div><span>{formatScore(r.overall_score)} 分</span></Link>)}</div></section>
   </>;
 }
 
@@ -55,10 +59,13 @@ function DesktopHome({data,change}:HomeProps){
   const hero=data?.hero as Entity|undefined;
   const hot=rows(data,'hot_dishes'),feed=rows(data,'feed'),reviews=rows(data,'recent_reviews');
   const total=Number(data?.ranking_entry?.total)||0;
+  // 首页“第 1 / N”只数有人评价的店；旧服务端没有 rated_total 时退回 total。
+  const ratedTotal=Number(data?.ranking_entry?.rated_total??total)||0;
   const dims=hero?.dimension_scores as Record<string,number>|undefined;
   // 推荐理由与评分行重复时（「真实评分 4.7 · 9 人评价」）不再单列
   const reason=typeof hero?.reason==='string'&&!hero.reason.startsWith('真实评分')?hero.reason:'';
   return <div className="food-home">
+    <CanteenFavorites render={items=><section className="section food-section"><div className="section-head"><h2>我常去</h2><small className="food-muted">你收藏的商家</small></div><StoreList items={items} ranking={false}/></section>}/>
     <div className="food-top">
       <section className="panel food-hero" aria-label="综合推荐">
         {hero?<>
@@ -66,7 +73,7 @@ function DesktopHome({data,change}:HomeProps){
             {hero.image?<img src={asset(hero.image)} alt="" loading="lazy"/>:<span className="food-media-empty"><Icon name="canteen" size={40}/></span>}
           </Link>
           <div className="food-hero-body">
-            <span className="food-badge"><Icon name="trending" size={14}/>综合推荐{total>0?` · 排行第 1 / ${total}`:''}</span>
+            <span className="food-badge"><Icon name="trending" size={14}/>综合推荐{ratedTotal>0?` · 排行第 1 / ${ratedTotal}`:''}</span>
             <h2>{hero.canteen_name}</h2>
             {place(hero)&&<p className="food-place"><Icon name="campus" size={15}/>{place(hero)}</p>}
             <div className="food-hero-score">
@@ -115,11 +122,11 @@ function DesktopHome({data,change}:HomeProps){
     </section>
 
     <section className="section food-section">
-      <div className="section-head"><h2>最新点评</h2>{Number(data?.recent_effective_review_count)>0&&<small className="food-muted">近期 {data!.recent_effective_review_count} 条有效点评</small>}</div>
+      <div className="section-head"><h2>最新点评</h2>{Number(data?.recent_effective_review_count)>0&&<small className="food-muted">近 7 天新增 {data!.recent_effective_review_count} 条</small>}</div>
       {reviews.length?<div className="food-reviews">{reviews.map((r,i)=><Link className="food-review" key={`review:${r.review_id??r.id??''}:${r.canteen_id??''}:${r.created_at??''}:${i}`} to={`/canteen/${r.canteen_id}`}>
         <span className="food-review-head">
           <span className="food-review-avatar"><ServerAvatar src={r.user_avatar} name={r.user_name||'同学'}/></span>
-          <span className="food-review-who"><b>{r.user_name||'同学'}</b><small>{shortTime(r.created_at)}</small></span>
+          <span className="food-review-who"><b>{r.user_name||'同学'}</b><small>{shortTime(r.updated_at&&Date.parse(r.updated_at)-Date.parse(r.created_at)>1000?r.updated_at:r.created_at)}</small></span>
           <span className="food-review-score"><i aria-hidden="true">★</i>{formatScore(r.overall_score)}</span>
         </span>
         <span className="food-review-store"><Icon name="canteen" size={14}/>{r.canteen_name}</span>
@@ -132,13 +139,13 @@ function DesktopHome({data,change}:HomeProps){
 function StoreList({items,ranking}:{items:Entity[];ranking:boolean}){
   if(!items.length)return null;
   return <div className="panel food-stores">{items.map((c,i)=>{
-    const rank=Number(c.rank)||i+1;
+    const rank=Number(c.rank)||i+1,ranked=isRanked(c);
     const tags=Array.isArray(c.summary_tags)?c.summary_tags.map((tag:Entity)=>tag?.name).filter(Boolean).slice(0,3):[];
     return <Link className="food-store" to={`/canteen/${c.id}`} key={`canteen:${c.id??''}:${c.name??''}:${i}`}>
-      {ranking&&<span className={`food-rank${rank<=3?` top-${rank}`:''}`}>{rank}</span>}
+      {ranking&&<span className={`food-rank${ranked&&rank<=3?` top-${rank}`:''}`} aria-label={ranked?`第${rank}名`:'暂无评价，不参与排名'}>{ranked?rank:'—'}</span>}
       <span className="food-thumb large">{c.image?<img src={asset(c.image)} alt="" loading="lazy"/>:<Icon name="canteen" size={24}/>}</span>
       <span className="food-store-main">
-        <b>{c.name}</b>
+        <b>{c.name}</b>{offlineTag(c)}
         <small>{[place(c),c.description].filter(Boolean).join(' · ')||'校园食堂'}</small>
         {(tags.length>0||Number(c.dish_count)>0)&&<span className="food-tags">{tags.map((tag:string)=><span key={tag}>{tag}</span>)}{Number(c.dish_count)>0&&<span className="plain">{c.dish_count} 道菜品</span>}</span>}
       </span>

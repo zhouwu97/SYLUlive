@@ -128,7 +128,7 @@ export function CampusRail() {
       {!hot.error && <div className="campus-hot-list">{rows(hot.data, "posts").slice(0, 5).map((post, index) => <Link key={post.id} to={`/post/${post.id}`} className="campus-hot-item"><span className="hot-rank">{String(index + 1).padStart(2, "0")}</span><span>{post.title || post.content}</span><small>{post.reply_count ?? 0} 讨论</small></Link>)}</div>}
     </section>
     <MarketRail />
-    <p className="rail-footer"><Link to="/feedback">意见反馈</Link><span> · </span><Link to="/toolbox">校园工具箱</Link><span> · </span><Link to="/campus">校园服务</Link><br />© 沈理校园 · 连接校园日常</p>
+    <p className="rail-footer"><Link to="/feedback">我的工单</Link><span> · </span><Link to="/toolbox">校园工具箱</Link><span> · </span><Link to="/campus">校园服务</Link><br />© 沈理校园 · 连接校园日常</p>
   </aside>;
 }
 

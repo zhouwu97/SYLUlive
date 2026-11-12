@@ -71,8 +71,8 @@ test('提交工单被协议门禁拒绝时保留草稿，确认后由用户手�
     return route.fulfill(accepted ? {json: {id: 884}} : {status: 403, json: {code: 'legal_consent_required', message: '请先确认最新协议与隐私政策'}});
   });
   await page.goto('feedback');
-  await page.getByRole('button', {name: '新建工单', exact: true}).click();
-  const dialog = page.getByRole('dialog', {name: '提交反馈', exact: true});
+  await page.getByRole('button', {name: '创建工单', exact: true}).click();
+  const dialog = page.getByRole('dialog', {name: '创建工单', exact: true});
   await dialog.getByLabel('标题', {exact: true}).fill('课表导入失败的详细反馈');
   await dialog.getByLabel('具体描述', {exact: true}).fill('保留这段文字，确认协议后继续提交。');
   await dialog.getByRole('button', {name: '提交工单', exact: true}).click();

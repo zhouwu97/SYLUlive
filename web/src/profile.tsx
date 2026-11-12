@@ -31,7 +31,7 @@ function MobileProfile() {
   const view = params.get('view') || '';
   const posts = useApi(auth.user ? `/api/user/${auth.user.id}/posts?page=1&limit=1` : null);
   if (auth.loading) return <div className="loading-state" role="status">正在加载个人资料…</div>;
-  if (!auth.user) return <div className="mobile-profile"><h1>我</h1><section className="mobile-profile-guest"><span className="mobile-profile-avatar"><ServerAvatar name="同学" /></span><h2>欢迎来到沈理校园</h2><p>登录后记录校园日常，管理发布与收藏。</p><button className="btn primary" onClick={auth.login}>登录</button></section><Link className="mobile-service-row" to="/feedback"><Icon name="feedback" /><b>反馈与帮助</b><span aria-hidden="true">›</span></Link></div>;
+  if (!auth.user) return <div className="mobile-profile"><h1>我</h1><section className="mobile-profile-guest"><span className="mobile-profile-avatar"><ServerAvatar name="同学" /></span><h2>欢迎来到沈理校园</h2><p>登录后记录校园日常，管理发布与收藏。</p><button className="btn primary" onClick={auth.login}>登录</button></section><Link className="mobile-service-row" to="/feedback"><Icon name="feedback" /><b>我的工单</b><span aria-hidden="true">›</span></Link></div>;
   const user = auth.user;
   if (profileTabs.some(([value]) => value === view)) return <div className="mobile-profile-content"><header className="mobile-page-heading"><button className="mobile-icon-button" aria-label="返回我的主页" onClick={() => setParams({})}><Icon name="arrow" /></button><h1>{profileTabs.find(([value]) => value === view)?.[1]}</h1></header><MyContent key={`${user.id}:${view}`} tab={view} userId={user.id}/></div>;
   type Item = { icon: string; label: string; description: string; to?: string; action?: () => void };
@@ -56,7 +56,7 @@ function MobileProfile() {
       { icon: 'admin', label: '账号安全', description: '查看绑定信息与修改密码', action: () => ui.open('账号安全', <Security />) },
       { icon: 'file', label: '协议与隐私', description: '阅读并确认当前版本协议', to: '/agreements' },
       { icon: 'admin', label: '隐私与数据', description: '导出数据、管理本地资料', action: () => ui.open('隐私与数据', <><a className="btn" href="/api/user/privacy/export" target="_blank" rel="noreferrer">导出服务器个人数据</a><button className="btn" onClick={() => { store.clearPersonal(); ui.notify('当前页面的校园资料已清除'); ui.close(); }}>清除当前页面校园资料</button><p><Link to="/feedback" onClick={ui.close}>提交数据更正或删除请求</Link></p></>) },
-      { icon: 'feedback', label: '反馈与工单', description: '提交问题或查看处理进度', to: '/feedback' },
+      { icon: 'feedback', label: '我的工单', description: '创建工单、查看处理进度与管理员回复', to: '/feedback' },
       { icon: 'profile', label: '编辑资料', description: '昵称、头像与背景', action: () => ui.open('编辑资料', <EditProfile user={user} />) },
     ] },
   ];

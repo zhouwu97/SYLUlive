@@ -8,6 +8,7 @@ import 'package:shenliyuan/providers/course_schedule_provider.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/settings_screen.dart';
+import '../../helpers/golden_viewport.dart';
 
 Widget _buildTestApp({
   required AuthProvider auth,
@@ -93,5 +94,50 @@ void main() {
     expect(find.text('登录沈理校园'), findsOneWidget);
     expect(find.text('登录后管理账号和教务数据'), findsOneWidget);
     expect(find.text('退出登录'), findsNothing);
+  });
+
+  testWidgets('平板外观摘要显示侧边导航样式', (tester) async {
+    await setGoldenViewport(tester, GoldenViewports.tabletLandscape1280x800);
+    await themeProvider.setDarkMode(false);
+    await tester.pumpWidget(_buildTestApp(
+      auth: authProvider,
+      theme: themeProvider,
+      edu: eduProvider,
+      course: courseProvider,
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('简洁模式 · 浅色 · 液态玻璃侧栏'), findsOneWidget);
+    await themeProvider
+        .setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
+    await tester.pumpAndSettle();
+    expect(find.text('简洁模式 · 浅色 · 悬浮侧栏'), findsOneWidget);
+  });
+
+  testWidgets('外观摘要按当前模式显示，跟随系统不展示上次手动偏好', (tester) async {
+    await setGoldenViewport(tester, GoldenViewports.phone390x844);
+    await themeProvider.setDarkMode(true);
+    await themeProvider.setFollowSystem(true);
+    await tester.pumpWidget(_buildTestApp(
+      auth: authProvider,
+      theme: themeProvider,
+      edu: eduProvider,
+      course: courseProvider,
+    ));
+    await tester.pumpAndSettle();
+    for (final (mode, label) in [
+      (ThemeMode.system, '跟随系统'),
+      (ThemeMode.light, '浅色'),
+      (ThemeMode.dark, '深色'),
+    ]) {
+      await themeProvider.setThemeMode(mode);
+      await tester.pumpAndSettle();
+      expect(find.text('简洁模式 · $label · 液态玻璃底栏'), findsOneWidget);
+    }
+    await setGoldenViewport(tester, GoldenViewports.tabletLandscape1280x800);
+    await tester.pumpAndSettle();
+    expect(find.text('简洁模式 · 深色 · 液态玻璃侧栏'), findsOneWidget);
+    await themeProvider.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
+    await tester.pumpAndSettle();
+    expect(find.text('简洁模式 · 深色 · 悬浮侧栏'), findsOneWidget);
   });
 }

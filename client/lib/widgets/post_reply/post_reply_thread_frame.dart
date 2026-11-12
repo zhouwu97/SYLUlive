@@ -167,20 +167,14 @@ class _PostReplyThreadFrameState extends State<PostReplyThreadFrame> {
             ),
           ),
           const SizedBox(height: 10),
-          AppCardDivider(
-              height: 1,
-              thickness: 1,
-              color: isDark ? Colors.white10 : Colors.grey[200]),
+          const AppCardDivider.inset(),
         ],
       );
 
   Widget _relatedHeader(BuildContext context, bool isDark) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppCardDivider(
-              height: AppSpacing.sm,
-              thickness: AppSpacing.sm,
-              color: isDark ? Colors.black26 : const Color(0xFFF3F4F6)),
+          const AppCardDivider.inset(height: AppSpacing.sm),
           Padding(
             padding: const EdgeInsets.fromLTRB(
                 AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.sm),

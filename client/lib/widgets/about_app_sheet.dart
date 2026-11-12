@@ -46,6 +46,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
 
     // 颜色令牌
     final pageBg = isDark ? const Color(0xFF101219) : const Color(0xFFFFFAF4);
@@ -156,7 +158,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                       _buildSectionTitle('版本信息', text),
                       Container(
                         decoration: BoxDecoration(
-                          color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : cardBg,
+                          color: customBackground ? Colors.transparent : cardBg,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : border),
                         ),
@@ -165,17 +167,15 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                             _buildInfoRow(
                                 '当前版本', _currentVersion, text, subText,
                                 height: 52),
-                            AppCardDivider(
+                            const AppCardDivider(
                                 height: 1,
-                                color: border,
                                 indent: 16,
                                 endIndent: 16),
                             _buildInfoRow(
                                 '自动更新状态', _autoUpdateStatus, text, subText,
                                 height: 52),
-                            AppCardDivider(
+                            const AppCardDivider(
                                 height: 1,
-                                color: border,
                                 indent: 16,
                                 endIndent: 16),
                             InkWell(
@@ -186,9 +186,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                               child: _buildActionRow('检查更新', text, subText,
                                   height: 52),
                             ),
-                            AppCardDivider(
+                            const AppCardDivider(
                                 height: 1,
-                                color: border,
                                 indent: 16,
                                 endIndent: 16),
                             InkWell(
@@ -214,7 +213,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 16),
                         decoration: BoxDecoration(
-                          color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : cardBg,
+                          color: customBackground ? Colors.transparent : cardBg,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : border),
                         ),
@@ -264,7 +263,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                       _buildSectionTitle('相关链接', text),
                       Container(
                         decoration: BoxDecoration(
-                          color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : cardBg,
+                          color: customBackground ? Colors.transparent : cardBg,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent : border),
                         ),
@@ -281,9 +280,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                               onTap: () => _launchUrl(
                                   'https://github.com/zhouwu97/SYLUlive'),
                             ),
-                            AppCardDivider(
+                            const AppCardDivider(
                                 height: 1,
-                                color: border,
                                 indent: 56,
                                 endIndent: 16),
                             _buildLinkRow(
@@ -300,9 +298,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                               border: border,
                               onTap: () => showGroupChatDialog(context),
                             ),
-                            AppCardDivider(
+                            const AppCardDivider(
                                 height: 1,
-                                color: border,
                                 indent: 56,
                                 endIndent: 16),
                             _buildLinkRow(

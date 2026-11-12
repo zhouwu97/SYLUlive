@@ -3614,87 +3614,85 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   // ---- 水帖操作栏 ----
 
   Widget _buildWaterActionBar(bool isDark) {
-    return Container(
+    return SizedBox(
+      key: const ValueKey('post-detail-action-bar'),
       height: 42,
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(
-            color: appCardDividerColor(context,
-                isDark ? Colors.white10 : const Color(0xFFEEEEEE)),
-          ),
-          bottom: BorderSide(
-            color: appCardDividerColor(context,
-                isDark ? Colors.white10 : const Color(0xFFEEEEEE)),
-          ),
-        ),
-      ),
-      child: Row(
+      child: Column(
         children: [
-          // 点赞
-          GestureDetector(
-            onTap: _toggleLike,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  _post?.isLiked == true
-                      ? Icons.thumb_up
-                      : Icons.thumb_up_outlined,
-                  size: 16,
-                  color: _post?.isLiked == true
-                      ? Theme.of(context).primaryColor
-                      : (isDark ? Colors.white38 : Colors.grey[500]),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '${_post?.likeCount ?? 0}',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: _post?.isLiked == true
-                        ? Theme.of(context).primaryColor
-                        : (isDark ? Colors.white38 : Colors.grey[500]),
+          const AppCardDivider.inset(),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  // 点赞
+                  GestureDetector(
+                    onTap: _toggleLike,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _post?.isLiked == true
+                              ? Icons.thumb_up
+                              : Icons.thumb_up_outlined,
+                          size: 16,
+                          color: _post?.isLiked == true
+                              ? Theme.of(context).primaryColor
+                              : (isDark ? Colors.white38 : Colors.grey[500]),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${_post?.likeCount ?? 0}',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: _post?.isLiked == true
+                                ? Theme.of(context).primaryColor
+                                : (isDark ? Colors.white38 : Colors.grey[500]),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 28),
-          // 评论
-          GestureDetector(
-            onTap: () => _openReplyComposer(),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.chat_bubble_outline,
-                  size: 16,
-                  color: isDark ? Colors.white38 : Colors.grey[500],
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '评论 ${_post?.replyCount ?? 0}',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: isDark ? Colors.white38 : Colors.grey[500],
+                  const SizedBox(width: 28),
+                  // 评论
+                  GestureDetector(
+                    onTap: () => _openReplyComposer(),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline,
+                          size: 16,
+                          color: isDark ? Colors.white38 : Colors.grey[500],
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '评论 ${_post?.replyCount ?? 0}',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: isDark ? Colors.white38 : Colors.grey[500],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const Spacer(),
-          // 浏览量
-          Icon(
-            Icons.visibility_outlined,
-            size: 14,
-            color: isDark ? Colors.white24 : Colors.grey[400],
-          ),
-          const SizedBox(width: 3),
-          Text(
-            '浏览 ${_post?.viewCount ?? 0}',
-            style: TextStyle(
-              fontSize: 11,
-              color: isDark ? Colors.white24 : Colors.grey[400],
+                  const Spacer(),
+                  // 浏览量
+                  Icon(
+                    Icons.visibility_outlined,
+                    size: 14,
+                    color: isDark ? Colors.white24 : Colors.grey[400],
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    '浏览 ${_post?.viewCount ?? 0}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white24 : Colors.grey[400],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -4273,6 +4271,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     bool compact = false,
     int depth = 0,
   }) {
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
     final allChildren = _collectThreadChildren(thread.parent.id);
     // 服务端 child_reply_count 是真实总数（列表只携带前 N 条，其余懒加载）。
     final totalChildren = thread.parent.childReplyCount > 0
@@ -4300,7 +4300,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
               margin: const EdgeInsets.only(left: 44, top: 4),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                color: customBackground
                     ? Colors.transparent
                     : isDark
                         ? Colors.white.withValues(alpha: 0.03)
@@ -4442,6 +4442,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
   }
 
   Widget _buildChildReply(Reply r, bool isDark, {int depth = 0}) {
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
     final threadParentId = _findTopLevelParentId(r);
     final currentUser = context.read<AuthProvider>().user;
     final isOwn = currentUser?.id == r.authorId;
@@ -4467,7 +4469,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             decoration: BoxDecoration(
-              color: context.watch<ThemeProvider?>()?.frostedGlass == true
+              color: customBackground
                   ? Colors.transparent
                   : isDark
                       ? const Color(0xFF1F222A)
@@ -4587,6 +4589,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
     bool sheetChildrenError = false;
     bool firstChildrenRequest = true;
     VoidCallback? sheetUpdater;
+    ModalRoute<void>? threadRoute;
 
     Future<void> loadMoreChildren() async {
       if (sheetChildrenLoading) return;
@@ -4638,6 +4641,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.08),
       builder: (sheetContext) {
+        threadRoute = ModalRoute.of<void>(sheetContext);
         return StatefulBuilder(
           builder: (sheetContentContext, setSheetState) {
             sheetUpdater = () {
@@ -4703,13 +4707,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
                             childrenTotal++;
                           }
                         });
+                        threadComposerController.setReplyTarget(
+                          parentReplyId: parentReply.id,
+                          replyToUserId: parentReply.authorId,
+                          replyToReplyId: parentReply.id,
+                          replyToName: parentReply.author?.nickname,
+                        );
                       }
-                      threadComposerController.setReplyTarget(
-                        parentReplyId: parentReply.id,
-                        replyToUserId: parentReply.authorId,
-                        replyToReplyId: parentReply.id,
-                        replyToName: parentReply.author?.nickname,
-                      );
                       return true;
                     }
                     return false;
@@ -4745,6 +4749,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> with RouteAware {
       },
     );
 
+    // pop 返回时退出动画仍在运行，等弹层移出 Overlay 后再释放输入资源。
+    await threadRoute?.completed;
     threadComposerController.dispose();
   }
 

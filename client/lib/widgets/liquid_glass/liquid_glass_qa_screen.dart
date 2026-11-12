@@ -1,17 +1,22 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../utils/responsive_util.dart';
 import '../liquid_bottom_nav.dart';
 import 'liquid_glass_runtime.dart';
 
 class LiquidGlassReferenceParityScreen extends StatelessWidget {
   const LiquidGlassReferenceParityScreen({super.key});
   @override
-  Widget build(BuildContext context) => const LiquidGlassQaScreen();
+  Widget build(BuildContext context) => LiquidGlassQaScreen(
+      axis: ResponsiveUtil.useSideNavigation(context)
+          ? Axis.vertical
+          : Axis.horizontal);
 }
 
 /// 使用正式组件与真实背景采样，避免参数面板验证另一套旧渲染器。
 class LiquidGlassQaScreen extends StatefulWidget {
-  const LiquidGlassQaScreen({super.key});
+  const LiquidGlassQaScreen({super.key, this.axis = Axis.horizontal});
+  final Axis axis;
   @override
   State<LiquidGlassQaScreen> createState() => _LiquidGlassQaScreenState();
 }
@@ -29,6 +34,7 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final vertical = widget.axis == Axis.vertical;
     if (kReleaseMode) {
       return const Scaffold(
           body: Center(child: Text('Liquid Glass QA 仅在开发包可用')));
@@ -41,7 +47,8 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               painter: _GridPainter(
                   Theme.of(context).brightness == Brightness.dark)),
           ListView(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 128),
+              padding: EdgeInsets.fromLTRB(
+                  vertical ? 136 : 24, 24, 24, vertical ? 24 : 128),
               children: [
                 const Text('慢拖、快甩、突然反向',
                     style:
@@ -70,8 +77,9 @@ class _LiquidGlassQaScreenState extends State<LiquidGlassQaScreen> {
               ]),
         ]),
         overlay: Align(
-            alignment: Alignment.bottomCenter,
+            alignment: vertical ? Alignment.centerLeft : Alignment.bottomCenter,
             child: LiquidBottomNav(
+              axis: widget.axis,
               currentIndex: _selected,
               visualIndexListenable: _position,
               onTap: (v) => setState(() => _selected = v),

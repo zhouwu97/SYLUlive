@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
+import '../app_card.dart';
 
 /// 专用的全宽 Slider 设置项组件 (支持 valueText / valueLabel 兼容)
 class SettingsSliderTile extends StatelessWidget {
@@ -92,8 +93,8 @@ class SettingsSliderTile extends StatelessWidget {
                           subtitle!,
                           style: TextStyle(
                             fontSize: 12.5,
-                            color:
-                                isDark ? Colors.white60 : CampusTheme.subText,
+                            color: appContentSecondaryColor(context,
+                                isDark ? Colors.white60 : CampusTheme.subText),
                           ),
                         ),
                       ],

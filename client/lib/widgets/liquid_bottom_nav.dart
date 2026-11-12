@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
@@ -7,6 +8,7 @@ import 'liquid_glass/bottom_nav_controller.dart';
 import 'liquid_glass/liquid_glass_renderer.dart';
 import 'liquid_glass/liquid_glass_dynamics.dart';
 import 'liquid_glass/liquid_glass_tilt.dart';
+import 'navigation_dock_layout.dart';
 export 'liquid_glass/bottom_nav_controller.dart';
 export 'liquid_glass/liquid_glass_scene.dart';
 
@@ -35,6 +37,7 @@ class LiquidBottomNav extends StatefulWidget {
     this.intensity = 1,
     this.shaderEnabled = true,
     this.accent,
+    this.axis = Axis.horizontal,
   });
   final int currentIndex;
   final ValueNotifier<double> visualIndexListenable;
@@ -49,6 +52,7 @@ class LiquidBottomNav extends StatefulWidget {
   final double intensity;
   final bool shaderEnabled;
   final Color? accent;
+  final Axis axis;
   @override
   State<LiquidBottomNav> createState() => _LiquidBottomNavState();
 }
@@ -76,6 +80,11 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
   Offset _light = const Offset(40, 0);
   VelocityTracker? _tracker;
   bool get _reduceMotion => MediaQuery.disableAnimationsOf(context);
+  bool get _vertical => widget.axis == Axis.vertical;
+  Offset _fromTrack(Offset point) =>
+      _vertical ? Offset(point.dy, point.dx) : point;
+  double _velocity(Velocity value) =>
+      _vertical ? value.pixelsPerSecond.dy : value.pixelsPerSecond.dx;
 
   @override
   void initState() {
@@ -121,6 +130,18 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
       oldWidget.visualIndexListenable.removeListener(_externalPosition);
       widget.visualIndexListenable.addListener(_externalPosition);
     }
+    if (oldWidget.axis != widget.axis) {
+      // 旋转或分屏改变轨道方向时取消旧手势，旧指针松手不能切到其他页。
+      _pointerId = null;
+      _tracker = null;
+      _dragging = false;
+      _ownedTarget = null;
+      _committedTarget = null;
+      _drag.cancelDrag(widget.currentIndex.toDouble());
+      _recoil.stop();
+      _recoil.value = 0;
+      _fluid.snapTo(widget.currentIndex.toDouble());
+    }
     if (oldWidget.currentIndex != widget.currentIndex) {
       if (_committedTarget != widget.currentIndex) {
         _ownedTarget = null;
@@ -134,6 +155,10 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
 
   @override
   void dispose() {
+    // Flutter 会把抬手继续派发给按下时命中的对象，即使它已因布局切换卸载。
+    _pointerId = null;
+    _tracker = null;
+    _dragging = false;
     widget.visualIndexListenable.removeListener(_externalPosition);
     _recoil.dispose();
     _fluid.dispose();
@@ -173,9 +198,8 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
   }
 
   Offset _local(PointerEvent event) =>
-      (_dockKey.currentContext!.findRenderObject()! as RenderBox).globalToLocal(
-        event.position,
-      );
+      _fromTrack((_dockKey.currentContext!.findRenderObject()! as RenderBox)
+          .globalToLocal(event.position));
   int _index(double x) => ((x - 4) / _itemWidth).floor().clamp(0, 4);
   double _pressure(PointerEvent event) {
     // Mouse clicks and common touch devices report a constant 1. Treat that
@@ -199,7 +223,7 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
     _recoil.stop();
     _startX = p.dx;
     _startY = p.dy;
-    _light = p;
+    _light = _fromTrack(p);
     _speed = 0;
     final center = 4 + (_fluid.position + .5) * _itemWidth;
     _grabOffset = p.dx - center;
@@ -240,13 +264,13 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
       );
       return;
     }
-    final measured = _tracker!.getVelocity().pixelsPerSecond.dx;
+    final measured = _velocity(_tracker!.getVelocity());
     _speed = (_speed * .5 + measured * .5).clamp(-3000, 3000);
     _drag.updateDragFromCenter(
       centerX: p.dx - _grabOffset,
       velocityPixelsPerSecond: _speed,
     );
-    _light = p;
+    _light = _fromTrack(p);
     _fluid.dragTo(
       _drag.position,
       pullY: (p.dy - _startY) * .25,
@@ -260,7 +284,8 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
   void _up(PointerUpEvent event) {
     if (event.pointer != _pointerId) return;
     _tracker?.addPosition(event.timeStamp, event.position);
-    final velocity = _tracker?.getVelocity().pixelsPerSecond.dx ?? 0;
+    final velocity =
+        _tracker == null ? 0.0 : _velocity(_tracker!.getVelocity());
     final target = _dragging
         ? _drag.endDrag(
             velocityPixelsPerSecond: velocity,
@@ -310,8 +335,18 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
     }
     final key = event.logicalKey;
     int? target;
-    if (key == LogicalKeyboardKey.arrowRight) target = widget.currentIndex + 1;
-    if (key == LogicalKeyboardKey.arrowLeft) target = widget.currentIndex - 1;
+    if (key ==
+        (_vertical
+            ? LogicalKeyboardKey.arrowDown
+            : LogicalKeyboardKey.arrowRight)) {
+      target = widget.currentIndex + 1;
+    }
+    if (key ==
+        (_vertical
+            ? LogicalKeyboardKey.arrowUp
+            : LogicalKeyboardKey.arrowLeft)) {
+      target = widget.currentIndex - 1;
+    }
     if (key == LogicalKeyboardKey.home) target = 0;
     if (key == LogicalKeyboardKey.end) target = 4;
     if (target == null) return KeyEventResult.ignored;
@@ -321,162 +356,153 @@ class _LiquidBottomNavState extends State<LiquidBottomNav>
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      minimum: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-        child: Align(
-          heightFactor: 1,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Focus(
-              onKeyEvent: _key,
-              onFocusChange: (value) => setState(() => _keyboardFocus = value),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final width = constraints.maxWidth;
-                  _itemWidth = (width - 8) / 5;
-                  _fluid.configure(_itemWidth);
-                  _fluid.reduced = _reduceMotion;
-                  _fluid.intensity = widget.intensity.clamp(0, 1);
-                  return AnimatedBuilder(
-                    animation: _motion,
-                    builder: (context, _) {
-                      final press = _fluid.pressure;
-                      final scale = 1 + (78 / 56 - 1) * press;
-                      final lens = Rect.fromCenter(
-                        center: Offset(
-                          4 +
-                              (_fluid.position.clamp(-.12, 4.12) + .5) *
-                                  _itemWidth,
-                          32 + _fluid.vertical,
-                        ),
-                        width: _itemWidth * scale,
-                        height: 56 * scale,
-                      );
-                      return Transform.translate(
-                        offset: Offset(_recoil.value, 0),
-                        child: MouseRegion(
-                          cursor: SystemMouseCursors.click,
-                          onHover: (event) =>
-                              setState(() => _light = event.localPosition),
-                          child: Listener(
-                            behavior: HitTestBehavior.opaque,
-                            onPointerDown: _down,
-                            onPointerMove: _move,
-                            onPointerUp: _up,
-                            onPointerCancel: _cancel,
-                            child: SizedBox(
-                              key: const ValueKey('bottom-nav-floating-dock'),
-                              height: 64,
-                              child: Stack(
-                                key: _dockKey,
-                                clipBehavior: Clip.none,
-                                children: [
-                                  Positioned.fill(
-                                    child: RepaintBoundary(
-                                      child: LiquidGlassRenderer(
-                                        lens: lens,
-                                        press: press,
-                                        bend: _fluid.bend,
-                                        stretch: _fluid.stretch,
-                                        angle: _fluid.angle,
-                                        energy: _fluid.energy,
-                                        enabled: widget.shaderEnabled,
-                                        pointer: _light +
-                                            (_reduceMotion
-                                                ? Offset.zero
-                                                : _tilt.value * width * .8),
-                                        labels: LiquidBottomNav.labels,
-                                        icons: LiquidBottomNav.icons,
-                                        badges: widget.badges,
-                                        accent: widget.accent ??
+    return NavigationDockLayout(
+      axis: widget.axis,
+      child: Focus(
+        onKeyEvent: _key,
+        onFocusChange: (value) => setState(() => _keyboardFocus = value),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            final height = constraints.maxHeight;
+            _itemWidth = ((_vertical ? height : width) - 8) / 5;
+            _fluid.configure(_itemWidth);
+            _fluid.reduced = _reduceMotion;
+            _fluid.intensity = widget.intensity.clamp(0, 1);
+            return AnimatedBuilder(
+              animation: _motion,
+              builder: (context, _) {
+                final press = _fluid.pressure;
+                final scale = 1 + (78 / 56 - 1) * press;
+                final lens = Rect.fromCenter(
+                  center: _fromTrack(Offset(
+                    4 + (_fluid.position.clamp(-.12, 4.12) + .5) * _itemWidth,
+                    (_vertical ? width / 2 : 32) + _fluid.vertical,
+                  )),
+                  width: (_vertical ? width - 8 : _itemWidth) * scale,
+                  height: (_vertical ? _itemWidth : 56) * scale,
+                );
+                return Transform.translate(
+                  offset: _fromTrack(Offset(_recoil.value, 0)),
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    onHover: (event) =>
+                        setState(() => _light = event.localPosition),
+                    child: Listener(
+                      behavior: HitTestBehavior.opaque,
+                      onPointerDown: _down,
+                      onPointerMove: _move,
+                      onPointerUp: _up,
+                      onPointerCancel: _cancel,
+                      child: SizedBox(
+                        key: const ValueKey('bottom-nav-floating-dock'),
+                        height: height,
+                        child: Stack(
+                          key: _dockKey,
+                          clipBehavior: Clip.none,
+                          children: [
+                            Positioned.fill(
+                              child: RepaintBoundary(
+                                child: LiquidGlassRenderer(
+                                  lens: lens,
+                                  press: press,
+                                  axis: widget.axis,
+                                  bend: _fromTrack(_fluid.bend),
+                                  stretch: _fluid.stretch,
+                                  angle: _vertical
+                                      ? math.pi / 2 - _fluid.angle
+                                      : _fluid.angle,
+                                  energy: _fluid.energy,
+                                  enabled: widget.shaderEnabled,
+                                  pointer: _light +
+                                      (_reduceMotion
+                                          ? Offset.zero
+                                          : _tilt.value *
+                                              (_vertical ? height : width) *
+                                              .8),
+                                  labels: LiquidBottomNav.labels,
+                                  icons: LiquidBottomNav.icons,
+                                  badges: widget.badges,
+                                  accent: widget.accent ??
+                                      (Theme.of(context).brightness ==
+                                              Brightness.dark
+                                          ? const Color(0xff84baff)
+                                          : const Color(0xff1765da)),
+                                  compare: widget.compare,
+                                  blur: widget.blur,
+                                  tint: widget.tint,
+                                ),
+                              ),
+                            ),
+                            Positioned.fromRect(
+                              rect: lens,
+                              child: const IgnorePointer(
+                                child: SizedBox(
+                                  key: ValueKey('bottom-nav-selection'),
+                                ),
+                              ),
+                            ),
+                            if (_keyboardFocus)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(
+                                        32,
+                                      ),
+                                      border: Border.all(
+                                        color: widget.accent ??
                                             (Theme.of(context).brightness ==
                                                     Brightness.dark
                                                 ? const Color(0xff84baff)
                                                 : const Color(0xff1765da)),
-                                        compare: widget.compare,
-                                        blur: widget.blur,
-                                        tint: widget.tint,
+                                        width: 2,
                                       ),
                                     ),
                                   ),
-                                  Positioned.fromRect(
-                                    rect: lens,
-                                    child: const IgnorePointer(
-                                      child: SizedBox(
-                                        key: ValueKey('bottom-nav-selection'),
-                                      ),
-                                    ),
-                                  ),
-                                  if (_keyboardFocus)
-                                    Positioned.fill(
-                                      child: IgnorePointer(
-                                        child: DecoratedBox(
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(
-                                              32,
-                                            ),
-                                            border: Border.all(
-                                              color: widget.accent ??
-                                                  (Theme.of(context)
-                                                              .brightness ==
-                                                          Brightness.dark
-                                                      ? const Color(0xff84baff)
-                                                      : const Color(
-                                                          0xff1765da)),
-                                              width: 2,
-                                            ),
-                                          ),
+                                ),
+                              ),
+                            Positioned.fill(
+                              child: Padding(
+                                padding: _vertical
+                                    ? const EdgeInsets.symmetric(vertical: 4)
+                                    : const EdgeInsets.symmetric(horizontal: 4),
+                                child: Flex(
+                                  direction: widget.axis,
+                                  children: List.generate(
+                                    5,
+                                    (index) => Expanded(
+                                      child: Semantics(
+                                        key: ValueKey(
+                                          'bottom-nav-semantic-$index',
                                         ),
-                                      ),
-                                    ),
-                                  Positioned.fill(
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                      ),
-                                      child: Row(
-                                        children: List.generate(
-                                          5,
-                                          (index) => Expanded(
-                                            child: Semantics(
-                                              key: ValueKey(
-                                                'bottom-nav-semantic-$index',
-                                              ),
-                                              label:
-                                                  '${LiquidBottomNav.labels[index]}${widget.badges[index] == true ? '，有新消息' : ''}',
-                                              button: true,
-                                              selected:
-                                                  widget.currentIndex == index,
-                                              onTap: () =>
-                                                  _accessibleSelect(index),
-                                              child: SizedBox.expand(
-                                                key: ValueKey(
-                                                  'bottom-nav-item-$index',
-                                                ),
-                                                child: const ColoredBox(
-                                                    color: Colors.transparent),
-                                              ),
-                                            ),
+                                        label:
+                                            '${LiquidBottomNav.labels[index]}${widget.badges[index] == true ? '，有新消息' : ''}',
+                                        button: true,
+                                        selected: widget.currentIndex == index,
+                                        onTap: () => _accessibleSelect(index),
+                                        child: SizedBox.expand(
+                                          key: ValueKey(
+                                            'bottom-nav-item-$index',
                                           ),
+                                          child: const ColoredBox(
+                                              color: Colors.transparent),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ],
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
         ),
       ),
     );

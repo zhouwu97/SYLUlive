@@ -329,7 +329,8 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
 
   Widget _buildBottomArea() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
 
     return Container(
       padding: EdgeInsets.only(
@@ -339,10 +340,10 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
         bottom: MediaQuery.of(context).padding.bottom + 16,
       ),
       decoration: BoxDecoration(
-        color: glass
+        color: customBackground
             ? Colors.transparent
             : (isDark ? const Color(0xFF2A2A2A) : Colors.white),
-        boxShadow: glass ? null : [
+        boxShadow: customBackground ? null : [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,

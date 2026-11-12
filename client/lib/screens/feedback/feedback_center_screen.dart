@@ -612,9 +612,8 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
               indicator: BoxDecoration(
                 color: (isDark ? const Color(0xFF262C33) : Colors.white)
                     .withValues(
-                        alpha: themeProvider.frostedGlass &&
-                                themeProvider.shouldShowCustomBackground
-                            ? themeProvider.componentOpacity
+                        alpha: themeProvider.shouldShowCustomBackground
+                            ? themeProvider.effectiveComponentOpacity
                             : 1),
                 borderRadius: BorderRadius.circular(AppRadius.md - 2),
                 boxShadow: isDark

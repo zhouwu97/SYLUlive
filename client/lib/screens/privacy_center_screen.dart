@@ -537,16 +537,10 @@ class _PrivacyDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final borderColor =
-        isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.softBorder;
-
-    return AppCardDivider(
+    return const AppCardDivider(
       height: 1,
-      thickness: 1,
       indent: 64,
       endIndent: 16,
-      color: borderColor,
     );
   }
 }

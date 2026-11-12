@@ -16,6 +16,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/user_home_screen.dart';
 import 'package:shenliyuan/widgets/global_background_wrapper.dart';
+import 'package:shenliyuan/widgets/community_post_card.dart';
 
 class _ProfileRouteAdapter implements HttpClientAdapter {
   final requestedPaths = <String>[];
@@ -219,6 +220,11 @@ void main() {
     final wallpaperRect = tester.getRect(wallpaper);
     final profilePosition = tester.getTopLeft(find.text('编辑资料'));
     final post = find.text('滚动测试帖 0');
+    final postCard = find.ancestor(
+        of: post, matching: find.byType(CommunityPostCard));
+    final tabs = find.byType(TabBar);
+    expect(tester.getRect(postCard).left, tester.getRect(tabs).left + 12);
+    expect(tester.getRect(postCard).right, tester.getRect(tabs).right - 12);
     final postPosition = tester.getTopLeft(post);
     final nested =
         tester.widget<NestedScrollView>(find.byType(NestedScrollView));

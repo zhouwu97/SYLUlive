@@ -290,7 +290,7 @@ class CourseDetailSheet extends StatelessWidget {
                 ],
 
                 const SizedBox(height: 16),
-                AppCardDivider(color: tokens.divider),
+                const AppCardDivider(),
                 const SizedBox(height: 12),
 
                 // 操作按钮区 (Section 16 & 17 & 23)

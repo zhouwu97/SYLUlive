@@ -56,6 +56,12 @@ class AppTheme {
       ],
       // 全局紧凑密度
       visualDensity: VisualDensity.compact,
+      dividerTheme: DividerThemeData(
+        color: brightness == Brightness.dark
+            ? AppColors.borderSubtleDark
+            : AppColors.borderSubtleLight,
+        thickness: 0.5,
+      ),
       appBarTheme: AppBarTheme(
         systemOverlayStyle: brightness == Brightness.dark
             ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,

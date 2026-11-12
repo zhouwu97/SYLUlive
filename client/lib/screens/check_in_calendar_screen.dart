@@ -906,9 +906,8 @@ class _CheckInSummary extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          AppCardDivider(
+          const AppCardDivider(
             height: 1,
-            color: foreground.withValues(alpha: 0.10),
           ),
           const SizedBox(height: 16),
           Row(

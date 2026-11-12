@@ -21,7 +21,7 @@ void main() {
           await appearance.setBackgroundImage('morenbeijing.jpeg');
           if (clean) await appearance.setCleanBackgroundMode();
           await appearance.setFrostedGlass(glass);
-          await appearance.setComponentOpacity(.7);
+          await appearance.setComponentOpacityLevel(.7);
           int? selected;
           await tester.pumpWidget(ChangeNotifierProvider.value(
             value: appearance,
@@ -58,7 +58,7 @@ void main() {
               glass && !clean ? findsOneWidget : findsNothing);
           if (glass) {
             final sheet = tester.widget<BottomSheet>(find.byType(BottomSheet));
-            expect(sheet.backgroundColor!.a, closeTo(clean ? 1 : .7, .005));
+            expect(sheet.backgroundColor!.a, closeTo(clean ? 1 : .925, .005));
           }
           await tester.tap(find.text('选择'));
           await tester.pumpAndSettle();

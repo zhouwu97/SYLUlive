@@ -801,11 +801,12 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
 
   Widget _buildSelectionControl() {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
     return Container(
       height: 32,
       decoration: BoxDecoration(
-        color: glass
+        color: customBackground
             ? Colors.transparent
             : (dark ? CampusTheme.darkCard : CampusTheme.card),
         border: Border.all(color: dark ? Colors.white24 : CampusTheme.border),
@@ -895,8 +896,6 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
           padding: EdgeInsets.only(left: 47),
           child: AppCardDivider(
             height: 1,
-            thickness: 0.5,
-            color: Color(0xFFE2EFEA),
           ),
         ),
       ],
@@ -905,6 +904,8 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
 
   Widget _buildSegment(String value, String label, bool isLeft) {
     final isSelected = _selectionMode == value;
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
     return GestureDetector(
       onTap: _rulesLocked
           ? null
@@ -916,7 +917,11 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
         width: 60,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isSelected ? CampusTheme.primaryLight : Colors.transparent,
+          color: isSelected
+              ? customBackground
+                  ? CampusTheme.primary.withValues(alpha: 0.12)
+                  : CampusTheme.primaryLight
+              : Colors.transparent,
           borderRadius: isLeft
               ? const BorderRadius.horizontal(left: Radius.circular(5))
               : const BorderRadius.horizontal(right: Radius.circular(5)),

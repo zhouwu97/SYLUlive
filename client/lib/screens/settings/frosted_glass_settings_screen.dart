@@ -52,7 +52,7 @@ class _FrostedGlassSettingsScreenState
     final theme = context.read<ThemeProvider>();
     if (!theme.shouldShowCustomBackground) return;
     final generation = ++_opacityGeneration;
-    final saved = await theme.setComponentOpacity(value);
+    final saved = await theme.setComponentOpacityLevel(value);
     if (mounted &&
         generation == _opacityGeneration &&
         _opacitySaveFailed != !saved) {
@@ -75,13 +75,14 @@ class _FrostedGlassSettingsScreenState
               key: const ValueKey('card-opacity'),
               icon: Icons.opacity_rounded,
               title: '卡片不透明度',
-              subtitle:
-                  !customBackground ? '仅在自定义背景模式下生效' : '直接观察本页卡片，预设后仍可自由调整',
-              value: theme.componentOpacity.clamp(.1, 1),
-              min: .1,
+              subtitle: !customBackground
+                  ? '仅在自定义背景模式下生效'
+                  : '调节卡片底色的通透程度',
+              value: theme.componentOpacityLevel,
+              min: 0,
               max: 1,
-              divisions: 90,
-              valueLabel: '${(theme.componentOpacity * 100).round()}%',
+              divisions: 100,
+              valueLabel: '${(theme.componentOpacityLevel * 100).round()}%',
               semanticFormatterCallback: (value) => '${(value * 100).round()}%',
               enabled: customBackground,
               onChanged: _setOpacity,
@@ -93,7 +94,7 @@ class _FrostedGlassSettingsScreenState
                 icon: Icons.blur_on_rounded,
                 title: '毛玻璃强度',
                 subtitle: customBackground
-                    ? '直接观察本页卡片；0% 保留底色并停止背景模糊'
+                    ? '模糊卡片背后的背景，强度越高越柔和，0% 关闭模糊'
                     : '仅在自定义背景模式下生效',
                 value: theme.frostedGlass ? theme.frostedGlassStrength : 0,
                 divisions: 100,
@@ -113,7 +114,7 @@ class _FrostedGlassSettingsScreenState
                 subtitle:
                     customBackground ? '当前效果仍有效，点击重试保存' : '切换到自定义背景后可重试保存',
                 enabled: customBackground,
-                onTap: () => _setOpacity(theme.componentOpacity),
+                onTap: () => _setOpacity(theme.componentOpacityLevel),
               ),
             if (_glassSaveFailed)
               SettingsTile(
@@ -143,18 +144,8 @@ class _FrostedGlassSettingsScreenState
               },
               child: Column(children: [
                 for (final preset in FrostedGlassPerformanceMode.values)
-                  SettingsEffectOption<FrostedGlassPerformanceMode>(
-                    value: preset,
-                    title: preset.label,
-                    description: switch (preset) {
-                      FrostedGlassPerformanceMode.off => '不透明度 100% · 关闭模糊',
-                      FrostedGlassPerformanceMode.highPerformance =>
-                        '不透明度 75% · 模糊强度 35%',
-                      FrostedGlassPerformanceMode.highQuality =>
-                        '不透明度 75% · 模糊强度 100%',
-                      FrostedGlassPerformanceMode.custom =>
-                        '不透明度 75% · 模糊强度 65%',
-                    },
+                  _FrostedGlassPerformanceOption(
+                    mode: preset,
                     selected: mode == preset,
                     enabled: customBackground,
                     onTap: () => _saveGlass(
@@ -166,6 +157,40 @@ class _FrostedGlassSettingsScreenState
           ],
         ),
       ],
+    );
+  }
+}
+
+class _FrostedGlassPerformanceOption extends StatelessWidget {
+  const _FrostedGlassPerformanceOption({
+    required this.mode,
+    required this.selected,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final FrostedGlassPerformanceMode mode;
+  final bool selected;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final description = switch (mode) {
+      FrostedGlassPerformanceMode.off => '使用实色卡片，关闭背景模糊',
+      FrostedGlassPerformanceMode.highPerformance =>
+        '轻度雾化背景，不透明度 75%、模糊 35%',
+      FrostedGlassPerformanceMode.highQuality =>
+        '加深背景雾化，不透明度 0%、模糊 100%',
+      FrostedGlassPerformanceMode.custom => '自行调整卡片不透明度与背景模糊强度',
+    };
+    return SettingsEffectOption<FrostedGlassPerformanceMode>(
+      value: mode,
+      title: mode.label,
+      description: description,
+      selected: selected,
+      enabled: enabled,
+      onTap: onTap,
     );
   }
 }

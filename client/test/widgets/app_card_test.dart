@@ -67,7 +67,7 @@ void main() {
       addTearDown(theme.dispose);
       await theme.setBackgroundImage('morenbeijing.jpeg');
       await theme.setFrostedGlass(true);
-      await theme.setComponentOpacity(.7);
+      await theme.setComponentOpacityLevel(.7);
       final capture = GlobalKey();
       final color = dark ? AppColors.surfaceSecondaryDark : Colors.white;
       var taps = 0;
@@ -162,15 +162,15 @@ void main() {
       }
 
       expect(activeBackdropFilters(), findsNWidgets(4));
-      await checkPixels(.7);
+      await checkPixels(.925);
       for (final y in [140.0, 230.0, 320.0]) {
         await tester.tapAt(Offset(160, y));
       }
       expect(taps, 3);
       await tester.pumpAndSettle();
-      await theme.setComponentOpacity(.4);
+      await theme.setComponentOpacityLevel(.4);
       await tester.pumpAndSettle();
-      await checkPixels(.4);
+      await checkPixels(.85);
       await theme.setCleanBackgroundMode();
       await tester.pumpAndSettle();
       await checkPixels(1);

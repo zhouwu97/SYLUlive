@@ -75,6 +75,8 @@ class _ModeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
     return Semantics(
       button: true,
       selected: isSelected,
@@ -87,8 +89,9 @@ class _ModeButton extends StatelessWidget {
           child: Container(
             constraints: const BoxConstraints(minHeight: 44),
             decoration: BoxDecoration(
-              color: isSelected ? colors.surface.withValues(alpha:
-                  context.watch<ThemeProvider?>()?.frostedGlass == true ? .16 : 1) : Colors.transparent,
+              color: isSelected
+                  ? colors.surface.withValues(alpha: customBackground ? .16 : 1)
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(AppRadius.sm),
               boxShadow: isSelected
                   ? [

@@ -220,7 +220,7 @@ class _SelectTimeSheetState extends State<SelectTimeSheet> {
                 style: TextStyle(fontSize: 12, color: tokens.textSecondary),
               ),
               const SizedBox(height: 16),
-              AppCardDivider(color: tokens.divider),
+              const AppCardDivider(),
               const SizedBox(height: 12),
               DropdownButtonFormField<int>(
                 key: const ValueKey('reschedule-target-week'),

@@ -15,6 +15,17 @@ import '../services/wallpaper_prefetch_service.dart';
 final GlobalKey<BackgroundWrapperState> backgroundWrapperKey =
     GlobalKey<BackgroundWrapperState>();
 
+/// 分栏内容透出外壳的完整背景，避免每个局部页面重新裁切壁纸。
+class SharedPageBackground extends InheritedWidget {
+  const SharedPageBackground({super.key, required super.child});
+
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<SharedPageBackground>() != null;
+
+  @override
+  bool updateShouldNotify(SharedPageBackground oldWidget) => false;
+}
+
 class GlobalBackgroundWrapper extends StatefulWidget {
   final Widget child;
 
@@ -54,6 +65,7 @@ class CustomBackgroundLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (SharedPageBackground.of(context)) return const SizedBox.expand();
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     if (themeProvider.shouldShowCustomBackground) {

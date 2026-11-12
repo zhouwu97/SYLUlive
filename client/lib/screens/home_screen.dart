@@ -29,7 +29,7 @@ import '../utils/post_image_cache.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/bottom_nav_setup_hint.dart';
 import '../widgets/global_background_wrapper.dart' show CustomBackgroundLayer;
-import '../widgets/glass_container.dart';
+import '../widgets/navigation_dock_layout.dart';
 import '../widgets/home_tab_reveal.dart';
 import '../utils/responsive_util.dart';
 import '../utils/tab_transition_ledger.dart';
@@ -1241,7 +1241,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _onTabTapped(int index) {
-    final useSideRail = ResponsiveUtil.useDesktopShell(context);
+    final useSideRail = ResponsiveUtil.useSideNavigation(context);
     if (useSideRail) {
       _switchTab(index);
       return;
@@ -1484,13 +1484,10 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final bottomSafe = MediaQuery.of(context).padding.bottom;
-    final useDesktopShell = ResponsiveUtil.useDesktopShell(context);
-    context.watch<ThemeProvider>();
     final authProvider = context.watch<AuthProvider>();
-
-    // 宽屏默认按 Pad 版处理；开启悬浮底栏时，宽屏也切到浮动导航。
-    final useSideRail = useDesktopShell;
+    final useSideRail = ResponsiveUtil.useSideNavigation(context);
+    final sideWidth =
+        NavigationDockLayout.sideWidth + MediaQuery.paddingOf(context).left;
     final useBottomNav = !useSideRail;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1499,43 +1496,46 @@ class _HomeScreenState extends State<HomeScreen>
       }
     });
 
-    final normalHome = LiquidGlassScope(child: Scaffold(
+    final normalHome = LiquidGlassScope(
+        child: Scaffold(
       backgroundColor: Colors.transparent,
       extendBody: true,
       extendBodyBehindAppBar: true,
-      body: LiquidGlassBackground(child: Stack(
+      body: Stack(
         children: [
-          // 捕获区域必须包含壁纸和业务内容，不能只采透明的页面图层。
-          const Positioned.fill(child: CustomBackgroundLayer()),
-          // 实际内容区
-          useSideRail
-              ? _buildWideLayout(bottomSafe, authProvider, false)
-              : _buildNarrowLayout(bottomSafe, authProvider),
+          // 导航在采样层之外，避免侧栏折射时把自身重复采入背景。
+          Positioned.fill(
+              child: LiquidGlassBackground(
+                  child: Stack(children: [
+            const Positioned.fill(child: CustomBackgroundLayer()),
+            Row(children: [
+              SizedBox(width: useSideRail ? sideWidth : 0),
+              Expanded(child: _buildTabContent()),
+            ]),
+          ]))),
+          if (useSideRail)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: sideWidth,
+              child: _buildNavigation(authProvider, Axis.vertical),
+            ),
         ],
-      )),
+      ),
       bottomNavigationBar: useSideRail
           ? null
           : Column(mainAxisSize: MainAxisSize.min, children: [
-            BottomNavSetupHint(eligible: !_restoringInitialDeepPage && !_announcementDialogOpen),
-            BottomNavWrapper(
-              currentIndex: _currentIndex,
-              visualIndexListenable: _mainVisualIndexListenable,
-              onTap: _onTabTapped,
-              onNavigationCommitted: _handleLiquidNavigationCommitted,
-              onVisualPositionChanged: _handleLiquidVisualPositionChanged,
-              onInteractionStart: _handleLiquidInteractionStart,
-              authProvider: authProvider,
-              badges: {
-                4: _hasAdminTasks,
-              },
-            ),
-          ]),
+              BottomNavSetupHint(
+                  eligible:
+                      !_restoringInitialDeepPage && !_announcementDialogOpen),
+              _buildNavigation(authProvider, Axis.horizontal),
+            ]),
       floatingActionButton: _currentIndex == 0 && useBottomNav
           ? Theme(
               data: Theme.of(context).copyWith(
-                floatingActionButtonTheme: Theme.of(context)
-                    .floatingActionButtonTheme
-                    .copyWith(
+                floatingActionButtonTheme:
+                    Theme.of(context).floatingActionButtonTheme.copyWith(
                           sizeConstraints: const BoxConstraints.tightFor(
                             width: 52,
                             height: 52,
@@ -1569,104 +1569,20 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildWideLayout(
-    double bottomSafe,
-    AuthProvider authProvider,
-    bool isExtended,
-  ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  Widget _buildNavigation(AuthProvider authProvider, Axis axis) =>
+      BottomNavWrapper(
+        axis: axis,
+        currentIndex: _currentIndex,
+        visualIndexListenable: _mainVisualIndexListenable,
+        onTap: _onTabTapped,
+        onNavigationCommitted: _handleLiquidNavigationCommitted,
+        onVisualPositionChanged: _handleLiquidVisualPositionChanged,
+        onInteractionStart: _handleLiquidInteractionStart,
+        authProvider: authProvider,
+        badges: {4: _hasAdminTasks},
+      );
 
-    return Row(
-      children: [
-        // 美化 NavigationRail，增加 GlassContainer 包裹
-        SafeArea(
-          right: false,
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(16, 16, 8, 16),
-            child: GlassContainer(
-              borderRadius: 24,
-              blur: 24,
-              backgroundColor: isDark
-                  ? const Color(0xFF111827).withValues(alpha: 0.5)
-                  : Colors.white.withValues(alpha: 0.5),
-              borderColor: isDark
-                  ? Colors.white.withValues(alpha: 0.1)
-                  : Colors.white.withValues(alpha: 0.5),
-              child: NavigationRail(
-                extended: false,
-                selectedIndex: _currentIndex,
-                onDestinationSelected: _onTabTapped,
-                labelType: NavigationRailLabelType.all,
-                backgroundColor: Colors.transparent,
-                indicatorColor: Theme.of(
-                  context,
-                ).primaryColor.withValues(alpha: 0.15),
-                selectedIconTheme: IconThemeData(
-                  color: Theme.of(context).primaryColor,
-                  size: 28,
-                ),
-                unselectedIconTheme: IconThemeData(
-                  color: isDark ? Colors.white60 : Colors.black54,
-                  size: 24,
-                ),
-                selectedLabelTextStyle: TextStyle(
-                  color: Theme.of(context).primaryColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-                unselectedLabelTextStyle: TextStyle(
-                  color: isDark ? Colors.white60 : Colors.black54,
-                  fontSize: 12,
-                ),
-                groupAlignment: 0.0,
-                destinations: const [
-                  NavigationRailDestination(
-                    icon: Icon(Icons.home_outlined),
-                    selectedIcon: Icon(Icons.home_rounded),
-                    label: Text('水贴'),
-                  ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.storefront_outlined),
-                    selectedIcon: Icon(Icons.storefront_rounded),
-                    label: Text('集市'),
-                  ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.calendar_month_outlined),
-                    selectedIcon: Icon(Icons.calendar_month_rounded),
-                    label: Text('课表'),
-                  ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.apartment_outlined),
-                    selectedIcon: Icon(Icons.apartment_rounded),
-                    label: Text('校园'),
-                  ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.person_outline_rounded),
-                    selectedIcon: Icon(Icons.person_rounded),
-                    label: Text('我的'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        Expanded(
-          child: HomeTabRevealScope(
-            key: _contentKey,
-            animation: _contentTabController,
-            serial: _tabTransitionSerial,
-            revealEnabled: !_revealedTabs.contains(_currentIndex),
-            child: HomeTabKeepAliveStage(
-              index: _currentIndex,
-              children: _buildLazyTabChildren(),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNarrowLayout(double bottomSafe, AuthProvider authProvider) {
+  Widget _buildTabContent() {
     return HomeTabRevealScope(
       key: _contentKey,
       animation: _contentTabController,

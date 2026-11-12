@@ -16,7 +16,7 @@ class GlassContainer extends StatelessWidget {
   final Color? backgroundColor;
   final double blur;
 
-  /// 保留旧调用兼容；卡片透明度统一由 ThemeProvider.componentOpacity 控制。
+  /// 保留旧调用兼容；卡片透明度统一使用 ThemeProvider.effectiveComponentOpacity。
   final double opacity;
   final double borderWidth;
   final Color? borderColor;

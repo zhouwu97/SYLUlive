@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/theme_provider.dart';
 import '../../theme/app_text_scaler.dart';
+import '../../utils/responsive_util.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../../widgets/settings/campus_segmented_control.dart';
 import '../../widgets/settings/settings_page_scaffold.dart';
@@ -20,8 +21,40 @@ import 'frosted_glass_settings_screen.dart';
 import '../../widgets/app_card.dart';
 
 /// 界面设置二级页
-class AppearanceSettingsScreen extends StatelessWidget {
+class AppearanceSettingsScreen extends StatefulWidget {
   const AppearanceSettingsScreen({super.key});
+
+  @override
+  State<AppearanceSettingsScreen> createState() =>
+      _AppearanceSettingsScreenState();
+}
+
+class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
+  int _themeSaveGeneration = 0;
+
+  Future<void> _handleThemeModeChange(
+    BuildContext context,
+    ThemeProvider themeProvider,
+    ThemeMode mode,
+  ) async {
+    final generation = ++_themeSaveGeneration;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    final saved = await themeProvider.setThemeMode(mode);
+    if (!context.mounted || generation != _themeSaveGeneration || saved) return;
+
+    messenger.showSnackBar(SnackBar(
+      content: const Text('配色已切换，但未能保存，请重试'),
+      action: SnackBarAction(
+        label: '重试',
+        onPressed: () => _handleThemeModeChange(
+          context,
+          themeProvider,
+          themeProvider.themeMode,
+        ),
+      ),
+    ));
+  }
 
   Future<void> _handleBackgroundModeChange(
     BuildContext context,
@@ -134,9 +167,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
       backgroundWidget = Container(color: pageBgColor);
     }
 
-    final cardOpacity = themeProvider.isCleanBackgroundMode
-        ? 1.0
-        : themeProvider.componentOpacity;
+    final cardOpacity = themeProvider.effectiveComponentOpacity;
 
     final frameWidth = isLandscapeBg ? 230.0 : 122.0;
     final frameHeight = isLandscapeBg ? 130.0 : 216.0;
@@ -296,6 +327,8 @@ class AppearanceSettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
+    final sideNavigation = ResponsiveUtil.useSideNavigation(context);
+    final navigationTitle = sideNavigation ? '侧边导航栏' : '底部导航栏';
     final isLandscapeScreen =
         MediaQuery.of(context).orientation == Orientation.landscape;
 
@@ -331,31 +364,20 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ],
         ),
 
-        // 暗色模式与全屏渲染
         SettingsSection(
-          title: '配色与暗色模式',
+          title: '配色模式',
+          showCard: false,
           children: [
-            SettingsTile(
-              icon: Icons.brightness_auto_outlined,
-              title: '跟随系统',
-              subtitle: '实时跟随系统浅色或深色外观切换',
-              trailing: SettingsSwitch(
-                value: themeProvider.followSystem,
-                onChanged: (val) => themeProvider.setFollowSystem(val),
-              ),
-            ),
-            SettingsTile(
-              icon: Icons.dark_mode_outlined,
-              title: '深色模式',
-              subtitle: themeProvider.followSystem
-                  ? '已启用跟随系统，关闭后可手动指定'
-                  : '针对夜间环境优化，降低屏幕明亮度',
-              trailing: SettingsSwitch(
-                value: themeProvider.isDarkMode,
-                onChanged: themeProvider.followSystem
-                    ? null
-                    : (val) => themeProvider.setDarkMode(val),
-              ),
+            CampusSegmentedControl<ThemeMode>(
+              key: const ValueKey('appearance-theme-mode'),
+              items: const [
+                CampusSegmentItem(value: ThemeMode.system, label: '跟随系统'),
+                CampusSegmentItem(value: ThemeMode.light, label: '浅色模式'),
+                CampusSegmentItem(value: ThemeMode.dark, label: '深色模式'),
+              ],
+              selectedValue: themeProvider.themeMode,
+              onSelectionChanged: (mode) =>
+                  _handleThemeModeChange(context, themeProvider, mode),
             ),
           ],
         ),
@@ -441,7 +463,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
             SettingsTile(
               icon: Icons.tune_rounded,
               title: '卡片外观',
-              subtitle: '不透明度 ${(themeProvider.componentOpacity * 100).round()}% · '
+              subtitle: '不透明度 ${(themeProvider.componentOpacityLevel * 100).round()}% · '
                   '${themeProvider.frostedGlass ? themeProvider.frostedGlassPresetLabel : '毛玻璃关闭'}',
               onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => const FrostedGlassSettingsScreen(),
@@ -452,12 +474,13 @@ class AppearanceSettingsScreen extends StatelessWidget {
 
         // 底栏采用独立二级页：样式、动效和设备性能策略在同一处完成配置。
         SettingsSection(
-          title: '底部导航栏',
+          title: navigationTitle,
           children: [
             SettingsTile(
               icon: Icons.navigation_outlined,
-              title: '底部导航栏',
-              subtitle: _bottomNavSummary(themeProvider),
+              title: navigationTitle,
+              subtitle: _bottomNavSummary(themeProvider,
+                  sideNavigation: sideNavigation),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => const BottomNavigationSettingsScreen(),
@@ -470,11 +493,16 @@ class AppearanceSettingsScreen extends StatelessWidget {
     );
   }
 
-  String _bottomNavSummary(ThemeProvider theme) {
-    if (theme.bottomNavAnimationIntensity <= 0) return BottomNavStyle.floating.label;
-    final style = BottomNavStyle.liquidGlass.label;
+  String _bottomNavSummary(ThemeProvider theme,
+      {required bool sideNavigation}) {
+    if (theme.bottomNavAnimationIntensity <= 0) {
+      return sideNavigation ? '悬浮侧栏' : BottomNavStyle.floating.label;
+    }
+    final style = sideNavigation ? '液态玻璃侧栏' : BottomNavStyle.liquidGlass.label;
     final preset = theme.bottomNavPerformanceMode;
-    return preset == BottomNavPerformanceMode.off ? style : '$style · ${preset.label}';
+    return preset == BottomNavPerformanceMode.off
+        ? style
+        : '$style · ${preset.label}';
   }
 
   String _fontSizeLabel(AppFontSizePreset preset) {

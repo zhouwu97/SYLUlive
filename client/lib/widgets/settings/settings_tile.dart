@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
+import '../app_card.dart';
 
 /// 标准设置列表项组件 (恢复舒适高档间距与图标尺寸)
 class SettingsTile extends StatelessWidget {
@@ -51,7 +52,8 @@ class SettingsTile extends StatelessWidget {
     final titleColor =
         danger ? CampusTheme.red : (isDark ? Colors.white : CampusTheme.text);
 
-    final subtitleColor = isDark ? Colors.white60 : CampusTheme.subText;
+    final subtitleColor = appContentSecondaryColor(
+        context, isDark ? Colors.white60 : CampusTheme.subText);
 
     Widget? leadingWidget;
     if (customIcon != null) {
@@ -77,9 +79,11 @@ class SettingsTile extends StatelessWidget {
       trailingWidget = Icon(
         Icons.chevron_right_rounded,
         size: 20,
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.3)
-            : CampusTheme.subText.withValues(alpha: 0.5),
+        color: appContentSecondaryColor(
+            context,
+            isDark
+                ? Colors.white.withValues(alpha: 0.3)
+                : CampusTheme.subText.withValues(alpha: 0.5)),
       );
     }
 

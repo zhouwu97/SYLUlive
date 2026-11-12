@@ -256,6 +256,8 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
 
     return AppCardSurface(
       decoration: BoxDecoration(
@@ -322,8 +324,11 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                     decoration: BoxDecoration(
                       color: isSelected
                           ? CampusTheme.primary.withValues(alpha: 0.1)
-                          : (context.watch<ThemeProvider?>()?.frostedGlass == true ? Colors.transparent
-                              : isDark ? CampusTheme.darkCard : Colors.white),
+                          : customBackground
+                              ? Colors.transparent
+                              : isDark
+                                  ? CampusTheme.darkCard
+                                  : Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: isSelected

@@ -19,7 +19,7 @@ void main() {
         final theme = ThemeProvider(loadOnStart: false);
         addTearDown(theme.dispose);
         await theme.setBackgroundImage('morenbeijing.jpeg');
-        await theme.setComponentOpacity(.6);
+        await theme.setComponentOpacityLevel(.6);
         const content = SizedBox(
             key: ValueKey('default-fill-content'), width: 180, height: 90);
         final card = switch (kind) {
@@ -49,7 +49,7 @@ void main() {
             ? AppColors.surfaceSecondaryDark
             : AppColors.surfaceSecondaryLight;
         final expected =
-            Color.alphaBlend(base.withValues(alpha: .6), Colors.red);
+            Color.alphaBlend(base.withValues(alpha: .9), Colors.red);
         Rect? before;
         for (final glass in [false, true, false]) {
           await theme.setFrostedGlass(glass);
@@ -123,8 +123,8 @@ void main() {
         ));
         Rect? previous;
         final levels = <int>[];
-        for (final opacity in [.4, .75, 1.0]) {
-          await theme.setComponentOpacity(opacity);
+        for (final level in [.4, .75, 1.0]) {
+          await theme.setComponentOpacityLevel(level);
           await tester.pumpAndSettle();
           final rect = tester.getRect(find.byKey(const ValueKey('content')));
           previous ??= rect;
@@ -144,7 +144,7 @@ void main() {
                               matching: find.byType(Material))
                           .first)
                       .color!;
-          expect(color.a, closeTo(opacity, .01));
+          expect(color.a, closeTo(.75 + .25 * level, .01));
           final blue = await tester.runAsync(() async {
             final image = await (capture.currentContext!.findRenderObject()!
                     as RenderRepaintBoundary)

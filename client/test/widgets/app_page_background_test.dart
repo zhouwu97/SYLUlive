@@ -87,4 +87,37 @@ void main() {
         Colors.blue);
     expect(find.byType(CustomBackgroundLayer), findsNothing);
   });
+
+  testWidgets('共享背景同时覆盖普通二级页和直接绘制背景的分栏页面', (tester) async {
+    final theme = ThemeProvider(loadOnStart: false);
+    addTearDown(theme.dispose);
+    await theme.setBackgroundImage('morenbeijing.jpeg');
+    await theme.setBackgroundBlur(10);
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: theme,
+      child: MaterialApp(
+          home: GlobalBackgroundWrapper(
+        child: SharedPageBackground(
+            child: AppPageBackground(
+          builder: (_) => const Stack(children: [
+            Positioned.fill(child: CustomBackgroundLayer()),
+            Center(child: Text('共享背景页面')),
+          ]),
+        )),
+      )),
+    ));
+    await tester.pumpAndSettle();
+    final scope = find.byType(SharedPageBackground);
+    expect(find.text('共享背景页面'), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byType(ImageFiltered), findsOneWidget);
+    expect(
+        find.descendant(of: scope, matching: find.byType(Image)), findsNothing);
+    await theme.setCleanBackgroundMode();
+    await tester.pumpAndSettle();
+    expect(find.byType(Image), findsNothing);
+    expect(find.byType(ImageFiltered), findsNothing);
+    expect(find.text('共享背景页面'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

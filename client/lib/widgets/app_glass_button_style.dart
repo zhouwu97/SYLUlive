@@ -19,9 +19,7 @@ ButtonStyle appGlassButtonStyle(BuildContext context, ButtonStyle style,
       return style.foregroundColor?.resolve(states) ??
           theme.colorScheme.onSurface.withValues(alpha: .38);
     }
-    final alpha = appearance!.shouldShowCustomBackground
-        ? appearance.componentOpacity
-        : 1.0;
+    final alpha = appearance!.effectiveComponentOpacity;
     final composited = Color.alphaBlend(
         appGlassSurfaceColor(context, surface(states), alpha),
         theme.colorScheme.surface);

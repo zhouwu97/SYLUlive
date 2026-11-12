@@ -26,6 +26,7 @@ uniform float uDpr;
 uniform vec2 uBend;
 uniform vec4 uInverse;
 uniform float uEnergy;
+uniform float uVertical;
 uniform sampler2D uScene;
 uniform sampler2D uTabs;
 out vec4 fragColor;
@@ -78,7 +79,7 @@ vec3 scene(vec2 p) {
   return texture(uScene, clamp(uv, vec2(.001), vec2(.999))).rgb;
 }
 float surfaceLight(float d, vec2 n, vec2 center, float strength) {
-  vec2 l = normalize(vec2(-.65, -1.) + (uPointer - center) / max(uSize.x, 1.) * .8);
+  vec2 l = normalize(vec2(-.65, -1.) + (uPointer - center) / max(max(uSize.x, uSize.y), 1.) * .8);
   float a = pow(max(dot(n, l), 0.0), 7.0);
   float b = pow(max(dot(n, -l), 0.0), 7.0) * .52;
   float edge = clamp(1.0 + d / 8.0, 0.0, 1.0);
@@ -92,12 +93,13 @@ float surfaceLight(float d, vec2 n, vec2 center, float strength) {
     + caustic * b * .07 + fresnel * .045) * strength * (1.0 - uCompare);
 }
 vec4 tabs(vec2 p, float accent) {
-  float itemWidth = (uSize.x - 8.0) / 5.0;
-  float index = clamp(floor((p.x - 4.0) / itemWidth), 0.0, 4.0);
-  vec2 center = vec2(4.0 + (index + .5) * itemWidth, 32.0);
+  float itemWidth = (mix(uSize.x, uSize.y, uVertical) - 8.0) / 5.0;
+  float index = clamp(floor((mix(p.x, p.y, uVertical) - 4.0) / itemWidth), 0.0, 4.0);
+  float position = 4.0 + (index + .5) * itemWidth;
+  vec2 center = mix(vec2(position, uSize.y * .5), vec2(uSize.x * .5, position), uVertical);
   p = center + (p - center) / (1.0 + .20 * uPress * accent);
-  if (p.x < 0.0 || p.x > uSize.x || p.y < 0.0 || p.y > 64.0) return vec4(0);
-  vec2 uv = vec2(p.x / uSize.x, (p.y + 64.0 * accent) / 128.0);
+  if (p.x < 0.0 || p.x > uSize.x || p.y < 0.0 || p.y > uSize.y) return vec4(0);
+  vec2 uv = vec2(p.x / uSize.x, (p.y + uSize.y * accent) / (uSize.y * 2.0));
 #ifdef IMPELLER_TARGET_OPENGLES
   uv.y = 1.0 - uv.y;
 #endif
@@ -105,7 +107,7 @@ vec4 tabs(vec2 p, float accent) {
 }
 vec3 dock(vec2 p, float accent) {
   vec2 halfSize = uSize * .5;
-  float scale = 1.0 + 16.0 / uSize.x * uPress;
+  float scale = 1.0 + 16.0 / mix(uSize.x, uSize.y, uVertical) * uPress;
   vec2 h = halfSize * scale;
   vec2 q = p - halfSize;
   float d = sdCapsule(q, h);
@@ -121,7 +123,7 @@ vec3 dock(vec2 p, float accent) {
 }
 void main() {
   vec2 p = FlutterFragCoord().xy;
-  vec2 dockHalf = uSize * .5 * (1.0 + 16.0 / uSize.x * uPress);
+  vec2 dockHalf = uSize * .5 * (1.0 + 16.0 / mix(uSize.x, uSize.y, uVertical) * uPress);
   float dd = sdCapsule(p - uSize * .5, dockHalf);
   vec2 lc = uLens.xy + uLens.zw * .5;
   vec2 halfSize = uLens.zw * .5;

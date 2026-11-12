@@ -444,7 +444,8 @@ class _PickerContentState extends State<_PickerContent> {
 
   Widget _buildBottomArea() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
+    final customBackground =
+        context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
     final primary = _primary(context)!;
 
     return Container(
@@ -455,10 +456,10 @@ class _PickerContentState extends State<_PickerContent> {
         bottom: MediaQuery.of(context).padding.bottom + 16,
       ),
       decoration: BoxDecoration(
-        color: glass
+        color: customBackground
             ? Colors.transparent
             : (isDark ? CampusTheme.darkCard : CampusTheme.card),
-        boxShadow: glass ? null : [
+        boxShadow: customBackground ? null : [
           BoxShadow(
               color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 10,

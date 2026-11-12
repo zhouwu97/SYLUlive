@@ -69,7 +69,7 @@ Future<CourseScheduleProvider> _open(WidgetTester tester,
   addTearDown(appearance.dispose);
   await appearance.setBackgroundImage('morenbeijing.jpeg');
   await appearance.trySetCustomBackgroundMode();
-  await appearance.setComponentOpacity(0.1);
+  await appearance.setComponentOpacityLevel(0);
   await appearance.setFrostedGlass(false);
   provider.setBaseScheduleForTesting([
     Course(
@@ -122,8 +122,8 @@ void _expectOpaqueSheet(WidgetTester tester) {
           .descendant(of: surface, matching: find.byType(DecoratedBox))
           .first)
       .decoration as BoxDecoration;
-  expect(paint.color!.a, closeTo(0.9, 0.005),
-      reason: '关闭模糊时调课每一步仍用可读下限遮住底层详情和课表文字');
+  expect(paint.color!.a, closeTo(0.75, 0.005),
+      reason: '调课各步骤的最低档使用统一的 75% 底色');
 }
 
 Future<void> _toConfirmation(WidgetTester tester, {String? captureName}) async {

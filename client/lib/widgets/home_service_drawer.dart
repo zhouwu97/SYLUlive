@@ -607,14 +607,10 @@ class HomeServiceDrawer extends StatelessWidget {
   }
 
   Widget _buildServiceDivider(bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 58, right: 14),
+    return const Padding(
+      padding: EdgeInsets.only(left: 58, right: 14),
       child: AppCardDivider(
         height: 1,
-        thickness: 1,
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.06)
-            : const Color(0xFFEFF3F8),
       ),
     );
   }

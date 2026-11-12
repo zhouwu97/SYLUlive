@@ -241,7 +241,7 @@ class _EduScreenState extends State<EduScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: context.watch<ThemeProvider?>()?.frostedGlass == true
+                color: context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
                     ? Colors.transparent
                     : isDark
                         ? Colors.white.withValues(alpha: 0.04)

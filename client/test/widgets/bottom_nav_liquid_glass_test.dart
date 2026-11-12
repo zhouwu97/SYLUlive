@@ -18,6 +18,108 @@ import '../helpers/golden_viewport.dart';
 import '../helpers/load_test_fonts.dart';
 
 void main() {
+  for (final profile in ['light', 'dark', 'large-text']) {
+    testWidgets('液态侧栏 $profile 纵向跟手、松手提交、材质设置与语义生效', (tester) async {
+      final h = await pumpNav(tester,
+          viewport: GoldenViewports.tabletLandscape1280x800,
+          axis: Axis.vertical,
+          dark: profile == 'dark',
+          textScale: profile == 'large-text' ? 1.5 : 1);
+      final semantics = tester.ensureSemantics();
+      final dock = find.byKey(const ValueKey('bottom-nav-floating-dock'));
+      expect(tester.getSize(dock), const Size(80, 440));
+      for (var i = 0; i < 5; i++) {
+        final size = tester.getSize(find.byKey(ValueKey('bottom-nav-item-$i')));
+        expect(size.width, greaterThanOrEqualTo(48));
+        expect(size.height, greaterThanOrEqualTo(48));
+      }
+      expect(find.bySemanticsLabel('我，有新消息'), findsOneWidget);
+      expect(liquidGlassRuntimeStatus.value.tier, LiquidGlassTier.a);
+      final start =
+          tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-0')));
+      final end =
+          tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-2')));
+      final gesture = await tester.startGesture(start);
+      for (var i = 1; i <= 16; i++) {
+        await gesture.moveTo(Offset.lerp(start, end, i / 16)!);
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(h.selected.value, 0);
+      expect(h.commits, 0);
+      final held =
+          tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer));
+      expect(held.axis, Axis.vertical);
+      expect(held.bend.dy, greaterThan(2));
+      expect(held.lens.center.dy, greaterThan(100));
+      expect(held.press, greaterThan(.5));
+      await snapshot(tester, h, 'side-$profile-held');
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(h.selected.value, 2);
+      expect(h.commits, 1);
+      expect(h.position.value, closeTo(2, .001));
+      await h.theme.setBottomNavClearMaterial(true);
+      await tester.pumpAndSettle();
+      final clear =
+          tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer));
+      expect(clear.blur, 0);
+      expect(clear.tint, .06);
+      await snapshot(tester, h, 'side-$profile-clear');
+      await h.theme.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
+      await tester.pumpAndSettle();
+      expect(find.byType(LiquidGlassRenderer), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('bottom-nav-item-4')));
+      await tester.pumpAndSettle();
+      expect(h.selected.value, 4);
+      expect(h.taps, 1);
+      await h.theme.setBottomNavPerformanceMode(
+          BottomNavPerformanceMode.highPerformance);
+      await tester.pumpAndSettle();
+      expect(h.selected.value, 4);
+      expect(liquidGlassRuntimeStatus.value.tier, LiquidGlassTier.a);
+      expect(tester.takeException(), isNull);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      semantics.dispose();
+    });
+  }
+
+  testWidgets('侧栏取消拖动不提交；减少动态效果仍支持上下键和语义导航', (tester) async {
+    final h = await pumpNav(tester,
+        viewport: GoldenViewports.tabletPortrait834x1194,
+        axis: Axis.vertical,
+        reduced: true);
+    final gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-0'))));
+    await gesture.moveBy(const Offset(0, 200));
+    await tester.pumpAndSettle();
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+    expect(h.commits, 0);
+    expect(h.selected.value, 0);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(h.selected.value, 1);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(h.selected.value, 0);
+    final semantics = tester.ensureSemantics();
+    final entry = find.byKey(const ValueKey('bottom-nav-semantic-3'));
+    tester
+        .renderObject(entry)
+        .owner!
+        .semanticsOwner!
+        .performAction(tester.getSemantics(entry).id, ui.SemanticsAction.tap);
+    await tester.pumpAndSettle();
+    expect(h.selected.value, 3);
+    final optics =
+        tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer));
+    expect(optics.press, 0);
+    expect(optics.bend, Offset.zero);
+    expect(tester.takeException(), isNull);
+    semantics.dispose();
+  });
+
   testWidgets('关闭档不创建液态渲染器，普通悬浮入口仍切页', (tester) async {
     final h = await pumpNav(tester);
     await h.theme.setBottomNavPerformanceMode(BottomNavPerformanceMode.off);
@@ -35,7 +137,8 @@ void main() {
     final h = await pumpNav(tester);
     await h.theme.setBottomNavClearMaterial(true);
     await tester.pumpAndSettle();
-    final optics = tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer));
+    final optics =
+        tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer));
     expect(optics.blur, 0);
     expect(optics.tint, .06);
     expect(liquidGlassRuntimeStatus.value.tier, LiquidGlassTier.a);
@@ -44,13 +147,18 @@ void main() {
   });
   testWidgets('透镜从原处进入按压态并连续移向课表，跟手且松手才切页', (tester) async {
     final h = await pumpNav(tester);
-    final target = tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-2')));
+    final target =
+        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-2')));
     final drag = await tester.startGesture(target);
     expect(h.position.value, 0, reason: '按下不得瞬移');
     await tester.pump(const Duration(milliseconds: 16));
     expect(h.position.value, greaterThan(0));
     expect(h.position.value, lessThan(1));
-    expect(tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer)).press, greaterThan(0));
+    expect(
+        tester
+            .widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer))
+            .press,
+        greaterThan(0));
     await drag.moveBy(const Offset(1, 0));
     for (var i = 0; i < 7; i++) {
       await tester.pump(const Duration(milliseconds: 16));
@@ -59,11 +167,16 @@ void main() {
     expect(h.position.value, lessThan(2), reason: '液态按压途中应仍在行进');
     expect(h.selected.value, 0);
     expect(h.commits, 0);
-    expect(tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer)).press, greaterThan(.4));
+    expect(
+        tester
+            .widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer))
+            .press,
+        greaterThan(.4));
     await tester.pumpAndSettle();
     expect(h.position.value, closeTo(2, .03));
     expect(h.commits, 0);
-    final next = tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-3')));
+    final next =
+        tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-3')));
     for (var i = 1; i <= 12; i++) {
       await drag.moveTo(Offset.lerp(target, next, i / 12)!);
       await tester.pump(const Duration(milliseconds: 16));
@@ -74,44 +187,93 @@ void main() {
     await tester.pumpAndSettle();
     expect(h.selected.value, 3);
     expect(h.commits, 1);
-    expect(tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer)).press, closeTo(0, .001));
+    expect(
+        tester
+            .widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer))
+            .press,
+        closeTo(0, .001));
   });
 
-  testWidgets('QA 清透开关在按压态仍区分磨砂和清透像素', (tester) async {
-    await tester.runAsync(() async { await loadLiquidGlassProgram(); });
-    final boundaryKey = GlobalKey();
-    await tester.pumpWidget(MaterialApp(home: RepaintBoundary(
-      key: boundaryKey, child: const LiquidGlassQaScreen())));
-    await tester.runAsync(() async {});
-    await tester.pumpAndSettle();
-    Future<List<int>> capture() async {
-      return (await tester.runAsync(() async {
-        final boundary = boundaryKey.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-        final image = await boundary.toImage(pixelRatio: 1);
-        final bytes = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
-        final data = bytes.buffer.asUint8List().toList();
-        final start = ((image.height - 100) * image.width * 4).clamp(0, data.length);
-        image.dispose();
-        return data.sublist(start);
-      }))!;
-    }
-    final held = await tester.startGesture(
-      tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-2'))), pointer: 7);
-    await tester.pumpAndSettle();
-    expect(tester.widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer)).press, greaterThan(.9));
-    final frosted = await capture();
-    await tester.tap(find.text('清透材质'));
-    await tester.pumpAndSettle();
-    final clear = await capture();
-    expect(liquidGlassRuntimeStatus.value.tier, LiquidGlassTier.a);
-    var changed = 0;
-    for (var i = 0; i < clear.length; i += 4) {
-      if ((clear[i] - frosted[i]).abs() > 10) changed++;
-    }
-    expect(changed, greaterThan(1000), reason: '不能只切换按钮，真实底栏材质必须有明显像素差异');
-    await held.cancel();
-    await tester.pumpAndSettle();
-  });
+  for (final axis in Axis.values) {
+    testWidgets('QA $axis 清透与仅模糊对照改变正式导航的真实像素', (tester) async {
+      await setGoldenViewport(
+          tester,
+          axis == Axis.vertical
+              ? GoldenViewports.tabletLandscape1280x800
+              : GoldenViewports.phone390x844);
+      await tester.runAsync(() async {
+        await loadTestFonts();
+        final icons = FontLoader('MaterialIcons')
+          ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+        await icons.load();
+        await loadLiquidGlassProgram();
+      });
+      final boundaryKey = GlobalKey();
+      await tester.pumpWidget(MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: RepaintBoundary(
+              key: boundaryKey, child: LiquidGlassQaScreen(axis: axis))));
+      await tester.runAsync(() async {});
+      await tester.pumpAndSettle();
+      Future<List<int>> capture(String name) async {
+        return (await tester.runAsync(() async {
+          final boundary = boundaryKey.currentContext!.findRenderObject()!
+              as RenderRepaintBoundary;
+          final image = await boundary.toImage(pixelRatio: 1);
+          final bytes =
+              (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+          final data = bytes.buffer.asUint8List().toList();
+          final dock = tester
+              .getRect(find.byKey(const ValueKey('bottom-nav-floating-dock')));
+          final origin = boundary.localToGlobal(Offset.zero);
+          final region = dock.shift(-origin);
+          final pixels = <int>[];
+          for (var y = region.top.ceil(); y < region.bottom.floor(); y++) {
+            final start = (y * image.width + region.left.ceil()) * 4;
+            pixels
+                .addAll(data.sublist(start, start + region.width.floor() * 4));
+          }
+          final png = await image.toByteData(format: ui.ImageByteFormat.png);
+          final directory = Directory('build/verification')
+            ..createSync(recursive: true);
+          File('${directory.path}/liquid-qa-${axis.name}-$name.png')
+              .writeAsBytesSync(png!.buffer.asUint8List());
+          image.dispose();
+          return pixels;
+        }))!;
+      }
+
+      final held = await tester.startGesture(
+          tester.getCenter(find.byKey(const ValueKey('bottom-nav-item-2'))),
+          pointer: 7);
+      await tester.pumpAndSettle();
+      expect(
+          tester
+              .widget<LiquidGlassRenderer>(find.byType(LiquidGlassRenderer))
+              .press,
+          greaterThan(.9));
+      final frosted = await capture('frosted-held');
+      await tester.tap(find.text('清透材质'));
+      await tester.pumpAndSettle();
+      final clear = await capture('clear-held');
+      expect(liquidGlassRuntimeStatus.value.tier, LiquidGlassTier.a);
+      var changed = 0;
+      for (var i = 0; i < clear.length; i += 4) {
+        if ((clear[i] - frosted[i]).abs() > 10) changed++;
+      }
+      expect(changed, greaterThan(1000), reason: '清透开关必须改变正式导航材质的像素');
+      await tester.tap(find.text('仅模糊对照'));
+      await tester.pumpAndSettle();
+      final blurOnly = await capture('blur-only-held');
+      var refracted = 0;
+      for (var i = 0; i < clear.length; i += 4) {
+        if ((clear[i] - blurOnly[i]).abs() > 10) refracted++;
+      }
+      expect(refracted, greaterThan(1000), reason: '网格与图标必须产生真实折射，不能只有模糊');
+      await held.cancel();
+      await tester.pumpAndSettle();
+    });
+  }
 
   testWidgets('同一拖动高性能形变更轻，高画质与高性能都保持折射', (tester) async {
     final bends = <double>[];
@@ -326,6 +488,7 @@ Future<NavHarness> pumpNav(
   bool reduced = false,
   double textScale = 1,
   bool withScope = true,
+  Axis axis = Axis.horizontal,
 }) async {
   tester.view.devicePixelRatio = 1;
   await setGoldenViewport(tester, viewport);
@@ -366,24 +529,37 @@ Future<NavHarness> pumpNav(
                                               ? const Color(0xffb7dbe4)
                                               : const Color(0xffe9d7cc),
                                           child: Text('背景纹理 $i')))));
+                          final navigation = BottomNavWrapper(
+                              axis: axis,
+                              currentIndex: selected,
+                              visualIndexListenable: h.position,
+                              onTap: (v) {
+                                h.taps++;
+                                h.selected.value = v;
+                              },
+                              onNavigationCommitted: (v) {
+                                h.commits++;
+                                h.selected.value = v;
+                              },
+                              authProvider: h.auth,
+                              badges: const {4: true});
+                          final background = withScope
+                              ? LiquidGlassBackground(child: content)
+                              : content;
                           final scaffold = Scaffold(
                               extendBody: true,
-                              body: withScope
-                                  ? LiquidGlassBackground(child: content)
-                                  : content,
-                              bottomNavigationBar: BottomNavWrapper(
-                                  currentIndex: selected,
-                                  visualIndexListenable: h.position,
-                                  onTap: (v) {
-                                    h.taps++;
-                                    h.selected.value = v;
-                                  },
-                                  onNavigationCommitted: (v) {
-                                    h.commits++;
-                                    h.selected.value = v;
-                                  },
-                                  authProvider: h.auth,
-                                  badges: const {4: true}));
+                              body: Stack(children: [
+                                Positioned.fill(child: background),
+                                if (axis == Axis.vertical)
+                                  Positioned(
+                                      left: 0,
+                                      top: 0,
+                                      bottom: 0,
+                                      width: 112,
+                                      child: navigation),
+                              ]),
+                              bottomNavigationBar:
+                                  axis == Axis.horizontal ? navigation : null);
                           return withScope
                               ? LiquidGlassScope(child: scaffold)
                               : scaffold;

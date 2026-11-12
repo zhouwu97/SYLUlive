@@ -32,7 +32,12 @@ class _Auth extends ChangeNotifier implements AuthProvider {
   @override
   final Dio dio;
 
-  final bool loggedIn;
+  bool loggedIn;
+
+  void signIn() {
+    loggedIn = true;
+    notifyListeners();
+  }
 
   @override
   User? get user => loggedIn
@@ -132,7 +137,16 @@ Future<void> _pump(WidgetTester tester, _Api api,
           child: child!,
         ),
         routes: {
-          '/login': (_) => Scaffold(appBar: AppBar(title: const Text('登录测试页'))),
+          '/login': (context) => Scaffold(
+                appBar: AppBar(title: const Text('登录测试页')),
+                body: TextButton(
+                  onPressed: () {
+                    (context.read<AuthProvider>() as _Auth).signIn();
+                    Navigator.pop(context);
+                  },
+                  child: const Text('模拟登录成功'),
+                ),
+              ),
         },
         home: Builder(
           builder: (context) => ColoredBox(
@@ -223,6 +237,18 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('未登录点击创建工单，登录成功后直接进入创建页', (tester) async {
+    await _pump(tester, _Api(), loggedIn: false);
+    await tester.ensureVisible(find.text('创建工单'));
+    await tester.tap(find.text('创建工单'));
+    await tester.pumpAndSettle();
+    expect(find.text('登录测试页'), findsOneWidget);
+    await tester.tap(find.text('模拟登录成功'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FeedbackCreateScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('创建 Bug 工单失败保留内容，重试成功后可查看我的工单', (tester) async {
     final api = _Api();

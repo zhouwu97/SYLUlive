@@ -27,6 +27,28 @@ type CanteenHandler struct {
 
 var errCanteenOffline = errors.New("canteen_offline")
 
+// canteenOfflineReadonlyMessage 是商家下架后用户尝试改动内容时的统一提示：
+// 下架商家的评价、图片和投票都只读，只有管理员可以处理。
+const canteenOfflineReadonlyMessage = "该商家已下架，评价和图片仅供查看；如需修改或删除请联系管理员"
+
+// respondCanteenOfflineReadonly 返回下架只读的统一错误，客户端按 code 展示提示。
+func respondCanteenOfflineReadonly(c *gin.Context) {
+	c.JSON(http.StatusConflict, gin.H{"code": "canteen_offline", "error": canteenOfflineReadonlyMessage})
+}
+
+// ensureCanteenNotOffline 只读校验商家仍在营业，用于投票这类不需要串行化的轻量写入。
+func ensureCanteenNotOffline(tx *gorm.DB, canteenID uint) error {
+	var canteen models.Canteen
+	if err := tx.Select("id", "operating_status").First(&canteen, canteenID).Error; err != nil {
+		return err
+	}
+	canteen.NormalizeOperatingStatus()
+	if canteen.IsOffline {
+		return errCanteenOffline
+	}
+	return nil
+}
+
 // canteenSubmissionRewardExp 用户提交食堂审核通过后的一次性经验奖励。
 // 下架/删除时收回，恢复营业时返还，保证经验与“店铺是否公开在列”对称。
 const canteenSubmissionRewardExp = 10
@@ -310,9 +332,15 @@ func isCanteenReviewSchemaMissing(err error) bool {
 // sortRanking 按 mode 策略排序并赋 rank，tie-break 稳定（都退到 rating_count → average → created_at → id）。
 // rating 模式倒序展示：从低分开始往下，星级低→高、同星级评价人数少→多；composite / review_count 仍高分在前。
 func sortRanking(entries []canteenRankingEntry, mode string) {
+	sortRankingScoped(entries, mode, true)
+}
+
+// sortRankingScoped 与 sortRanking 相同；activeFirst=false 时不把营业中的店强制排在前面，
+// 用于“全部排名”：已下架的店按当年的真实评分和营业中的店一起排名。
+func sortRankingScoped(entries []canteenRankingEntry, mode string, activeFirst bool) {
 	less := func(a, b canteenRankingEntry) bool {
 		aActive, bActive := isCanteenOperatingActive(a.OperatingStatus), isCanteenOperatingActive(b.OperatingStatus)
-		if aActive != bActive {
+		if activeFirst && aActive != bActive {
 			return aActive
 		}
 		var ka, kb float64
@@ -1020,6 +1048,9 @@ func (h *CanteenHandler) VoteRating(c *gin.Context) {
 		if rating.UserID == userID {
 			return errVoteOwnRating
 		}
+		if err := ensureCanteenNotOffline(tx, rating.CanteenID); err != nil {
+			return err
+		}
 
 		var oldVote models.CanteenRatingVote
 		oldVoteType := ""
@@ -1084,6 +1115,8 @@ func (h *CanteenHandler) VoteRating(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "评价不存在"})
 		case errors.Is(err, errVoteOwnRating):
 			c.JSON(http.StatusBadRequest, gin.H{"error": "不能给自己的评价投票"})
+		case errors.Is(err, errCanteenOffline):
+			respondCanteenOfflineReadonly(c)
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "投票失败"})
 		}
@@ -2248,4 +2281,51 @@ func (h *CanteenHandler) AdminUpdateCanteen(c *gin.Context) {
 	canteen.NormalizeOperatingStatus()
 	canteenDiscoveryCache.Invalidate()
 	c.JSON(http.StatusOK, gin.H{"message": "食堂信息已更新", "canteen": canteen})
+}
+
+// adminCanteenRow 是管理端商家列表的一行：公开统计之外，带上下架原因和时间。
+type adminCanteenRow struct {
+	canteenStatsRow
+	OfflineReason string `json:"offline_reason"`
+}
+
+// AdminListCanteens 管理端商家列表：全部已收录商家（含已下架），附下架原因与时间，
+// 营业中的在前，同状态按收录时间倒序。
+// GET /api/canteens/admin-list
+func (h *CanteenHandler) AdminListCanteens(c *gin.Context) {
+	rows, err := h.queryCanteenStats(true)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取商家列表失败"})
+		return
+	}
+	reasons := make(map[uint]string, len(rows))
+	var offline []models.Canteen
+	if err := h.db.Select("id", "offline_reason").
+		Where("verified = ? AND operating_status = ?", true, models.CanteenOperatingOffline).
+		Find(&offline).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取商家列表失败"})
+		return
+	}
+	for _, canteen := range offline {
+		reasons[canteen.ID] = canteen.OfflineReason
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].IsOffline != rows[j].IsOffline {
+			return !rows[i].IsOffline
+		}
+		return rows[i].CreatedAt.After(rows[j].CreatedAt)
+	})
+	items := make([]adminCanteenRow, 0, len(rows))
+	activeCount := 0
+	for _, row := range rows {
+		if !row.IsOffline {
+			activeCount++
+		}
+		items = append(items, adminCanteenRow{canteenStatsRow: row, OfflineReason: reasons[row.ID]})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"items":         items,
+		"active_count":  activeCount,
+		"offline_count": len(items) - activeCount,
+	})
 }

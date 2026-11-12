@@ -1100,11 +1100,9 @@ class _ReviewItemContent extends StatelessWidget {
         .toList(growable: false);
   }
 
-  String _reviewAuthorText(String nickname, Map<String, dynamic> review) {
-    final date = _reviewDate(review);
-    if (date.isEmpty) return nickname;
-    return '$nickname · $date';
-  }
+  // 时间已在评分行右侧显示，作者行不再重复。
+  String _reviewAuthorText(String nickname, Map<String, dynamic> review) =>
+      nickname;
 
   String _reviewDate(Map<String, dynamic> review) => formatCanteenReviewDate(
         DateTime.tryParse(review['created_at']?.toString() ?? ''),

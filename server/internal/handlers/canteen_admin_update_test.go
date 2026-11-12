@@ -59,3 +59,21 @@ func TestAdminUpdateCanteenNameAndLocation(t *testing.T) {
 		t.Fatalf("missing status=%d", resp.Code)
 	}
 }
+
+func TestAdminListCanteensShowsOfflineReason(t *testing.T) {
+	h, _, user := prepareReviewV2DB(t)
+	other := models.Canteen{Name: "麻辣烫", NormalizedName: "麻辣烫", Image: "/uploads/m.png", CreatedBy: user.ID, Verified: true}
+	h.db.Create(&other)
+	if resp := performCanteenRequest(t, h.OfflineCanteen, http.MethodPost, "/offline", mapParams("id", "88"), user.ID, `{"reason":"档口转让"}`); resp.Code != http.StatusOK {
+		t.Fatalf("offline status=%d", resp.Code)
+	}
+	resp := performCanteenRequest(t, h.AdminListCanteens, http.MethodGet, "/api/canteens/admin-list", nil, user.ID, "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d", resp.Code)
+	}
+	body := resp.Body.String()
+	if !containsString(resp.Body.Bytes(), `"offline_reason":"档口转让"`) || !containsString(resp.Body.Bytes(), `"active_count":1`) ||
+		!containsString(resp.Body.Bytes(), `"offline_count":1`) {
+		t.Fatalf("body=%s", body)
+	}
+}

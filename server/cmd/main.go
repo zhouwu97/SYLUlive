@@ -2655,6 +2655,7 @@ func main() {
 	{
 
 		canteenAdmin.GET("/pending", canteenHandler.AdminListPending)
+		canteenAdmin.GET("/admin-list", canteenHandler.AdminListCanteens)
 
 		canteenAdmin.POST("/:id/approve", canteenHandler.ApproveCanteen)
 

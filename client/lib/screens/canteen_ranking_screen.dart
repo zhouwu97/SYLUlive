@@ -26,6 +26,9 @@ class CanteenRankingScreen extends StatefulWidget {
 
 class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
   String _sort = CanteenRankingSort.composite;
+
+  /// 默认看现有商家排名（下架商家不占名次）；“全部排名”包含已下架商家。
+  String _scope = CanteenRankingScope.current;
   String _locationArea = '';
   String _locationFloor = '';
   String _tagKey = '';
@@ -45,20 +48,32 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        context.read<CanteenDiscoveryProvider>().loadRanking(sort: _sort);
+        context
+            .read<CanteenDiscoveryProvider>()
+            .loadRanking(sort: _sort, scope: _scope);
       }
     });
+  }
+
+  void _switchScope(String scope) {
+    if (scope == _scope) return;
+    setState(() => _scope = scope);
+    context
+        .read<CanteenDiscoveryProvider>()
+        .loadRanking(sort: _sort, scope: scope);
   }
 
   void _switchSort(String sort) {
     if (sort == _sort) return;
     setState(() => _sort = sort);
-    context.read<CanteenDiscoveryProvider>().loadRanking(sort: sort);
+    context
+        .read<CanteenDiscoveryProvider>()
+        .loadRanking(sort: sort, scope: _scope);
   }
 
   Future<void> _refreshRanking() async {
     final provider = context.read<CanteenDiscoveryProvider>();
-    await provider.loadRanking(sort: _sort, forceRefresh: true);
+    await provider.loadRanking(sort: _sort, scope: _scope, forceRefresh: true);
     if (!mounted || provider.rankingError == null) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(provider.rankingError!)),
@@ -83,7 +98,9 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
           '评价很少的高分商家会向全校平均分收缩，避免“5人/1人”虚高霸榜。\n\n'
           '“低分优先”按星级从低到高展示，方便先看到踩雷反馈，样本很少时会标注“样本较少”；'
           '“评价人数”按参与评价的人数排序。\n\n'
-          '菜品和实拍数量仅供参考，不参与综合分计算。',
+          '菜品和实拍数量仅供参考，不参与综合分计算。\n\n'
+          '“现有商家”只排营业中的商家，商家下架后不再占名次，其余商家名次顺延；'
+          '“全部排名”把已下架商家也按历史评分一起排，并标注“已下架”。',
           style: TextStyle(fontSize: 13, height: 1.6),
         ),
         actions: [
@@ -145,7 +162,9 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('删除成功')));
       context.read<CanteenDiscoveryProvider>().invalidateRanking();
-      context.read<CanteenDiscoveryProvider>().loadRanking(sort: _sort);
+      context
+          .read<CanteenDiscoveryProvider>()
+          .loadRanking(sort: _sort, scope: _scope);
     }
   }
 
@@ -175,6 +194,7 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
       ),
       body: Column(
         children: [
+          _buildScopeTabs(isDark),
           CanteenRankingFilterBar(
             selected: _sort,
             onChanged: _switchSort,
@@ -195,6 +215,60 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
     );
   }
 
+  /// 排行范围切换：全部排名 / 现有商家，下划线文字标签，与评价区“综合/最新”同一风格。
+  Widget _buildScopeTabs(bool isDark) {
+    Widget tab(String scope, String label) {
+      final selected = _scope == scope;
+      return Semantics(
+        button: true,
+        selected: selected,
+        child: InkWell(
+          onTap: () => _switchScope(scope),
+          borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    color: selected
+                        ? CanteenTheme.textPrimaryColor(isDark)
+                        : CanteenTheme.textSecondaryColor(isDark),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  width: selected ? 20 : 0,
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: CanteenTheme.accentColor(isDark),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+      child: Row(
+        children: [
+          tab(CanteenRankingScope.all, '全部排名'),
+          const SizedBox(width: 20),
+          tab(CanteenRankingScope.current, '现有商家'),
+        ],
+      ),
+    );
+  }
+
   Widget _buildExplanationLine(bool isDark) {
     return AppContentSurface.card(
         child: Padding(
@@ -203,7 +277,9 @@ class _CanteenRankingScreenState extends State<CanteenRankingScreen> {
         children: [
           Expanded(
             child: Text(
-              '综合分兼顾评分与评价人数，降低少量评价带来的排名波动',
+              _scope == CanteenRankingScope.all
+                  ? '全部排名包含已下架商家，按历史真实评分一起排名'
+                  : '只排营业中的商家，综合分兼顾评分与评价人数',
               style: TextStyle(
                 fontSize: 11,
                 color: CanteenTheme.textTertiaryColor(isDark),

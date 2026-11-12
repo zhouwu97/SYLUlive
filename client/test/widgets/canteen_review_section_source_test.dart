@@ -4,16 +4,16 @@ import 'package:shenliyuan/widgets/canteen/canteen_review_section.dart';
 import 'package:shenliyuan/utils/canteen_review_date.dart';
 
 void main() {
-  test('评价日期区分发布和更新，兼容缺失字段及时间精度误差', () {
+  test('评价日期只显示一个时间：改过显示更新，否则显示发布，兼容缺失字段及时间精度误差', () {
     final created = DateTime(2026, 9, 7, 12);
     expect(formatCanteenReviewDate(created, null), '09-07 发布');
     expect(formatCanteenReviewDate(created, created), '09-07 发布');
     expect(formatCanteenReviewDate(created,
         created.add(const Duration(milliseconds: 500))), '09-07 发布');
     expect(formatCanteenReviewDate(created, DateTime(2026, 9, 10, 12)),
-        '09-07 发布 · 09-10 更新');
+        '09-10 更新');
     expect(formatCanteenReviewDate(created, DateTime(2026, 9, 7, 13)),
-        '09-07 发布 · 09-07 更新');
+        '09-07 更新');
     expect(formatCanteenReviewDate(created, DateTime(2026, 9, 6)), '09-07 发布');
     expect(formatCanteenReviewDate(null, created), '');
   });
@@ -42,8 +42,9 @@ void main() {
           onVote: (_, __, ___) async {},
         ))),
       ));
-      expect(find.text('09-07 发布 · 09-10 更新'), findsOneWidget);
-      expect(find.text('雪织儿 · 09-07 发布 · 09-10 更新 · 诚信 100'), findsOneWidget);
+      expect(find.text('09-10 更新'), findsOneWidget);
+      expect(find.text('雪织儿 · 诚信 100'), findsOneWidget);
+      expect(find.textContaining('09-07 发布'), findsNothing);
       expect(tester.takeException(), isNull);
     });
   }

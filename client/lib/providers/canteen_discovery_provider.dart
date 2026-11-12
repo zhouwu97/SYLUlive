@@ -33,13 +33,19 @@ class CanteenDiscoveryProvider with ChangeNotifier {
   String? _rankingError;
   int? _rankingTotal;
   String _rankingSort = CanteenRankingSort.composite;
+  String _rankingScope = CanteenRankingScope.current;
+
+  String get _rankingKey => '$_rankingSort|$_rankingScope';
 
   List<CanteenRankingItem> get rankingItems =>
-      _rankings[_rankingSort] ?? const [];
+      _rankings[_rankingKey] ?? const [];
   bool get rankingLoading => _rankingLoading;
   String? get rankingError => _rankingError;
   int? get rankingTotal => _rankingTotal;
   String get rankingSort => _rankingSort;
+
+  /// 排行范围：现有商家（默认，下架商家不占名次）或全部排名（含已下架）。
+  String get rankingScope => _rankingScope;
 
   CanteenDiscoveryProvider(this._dio);
 
@@ -98,67 +104,75 @@ class CanteenDiscoveryProvider with ChangeNotifier {
     }
   }
 
-  /// 拉取指定排序的完整排行（按 sort 缓存一份）。
+  /// 拉取指定排序和范围的完整排行（按 排序+范围 各缓存一份）。
+  /// [scope] 不传时沿用当前范围。
   Future<void> loadRanking({
     String sort = CanteenRankingSort.composite,
+    String? scope,
     bool forceRefresh = false,
   }) async {
     _rankingSort = sort;
-    final loadedAt = _rankingLoadedAt[sort];
+    _rankingScope = scope ?? _rankingScope;
+    final key = _rankingKey;
+    final loadedAt = _rankingLoadedAt[key];
     if (!forceRefresh &&
-        _rankings.containsKey(sort) &&
+        _rankings.containsKey(key) &&
         loadedAt != null &&
         DateTime.now().difference(loadedAt) < const Duration(minutes: 1)) {
       _rankingLoading = false;
       _rankingError = null;
-      _rankingTotal = _rankings[sort]!.length;
+      _rankingTotal = _rankings[key]!.length;
       notifyListeners();
       return;
     }
     final generation = _rankingGeneration;
-    final key = (sort, generation);
+    final futureKey = (key, generation);
     final pending = _rankingLoadFutures.putIfAbsent(
-      key,
-      () => _loadRankingInternal(sort, generation),
+      futureKey,
+      () => _loadRankingInternal(sort, _rankingScope, generation),
     );
     try {
       await pending;
     } finally {
-      if (identical(_rankingLoadFutures[key], pending)) {
-        _rankingLoadFutures.remove(key);
+      if (identical(_rankingLoadFutures[futureKey], pending)) {
+        _rankingLoadFutures.remove(futureKey);
       }
     }
   }
 
-  Future<void> _loadRankingInternal(String sort, int generation) async {
+  Future<void> _loadRankingInternal(
+      String sort, String scope, int generation) async {
+    final key = '$sort|$scope';
     _rankingLoading = true;
     _rankingError = null;
     notifyListeners();
     try {
-      final response =
-          await _dio.get('/canteens/rankings', queryParameters: {'sort': sort});
+      final response = await _dio.get('/canteens/rankings', queryParameters: {
+        'sort': sort,
+        if (scope != CanteenRankingScope.current) 'scope': scope,
+      });
       if (generation != _rankingGeneration) return;
       if (response.statusCode == 200 && response.data is Map) {
         final data = (response.data as Map).cast<String, dynamic>();
         final rawItems = data['items'];
         if (rawItems is List) {
-          _rankings[sort] = rawItems
+          _rankings[key] = rawItems
               .whereType<Map<String, dynamic>>()
               .map(CanteenRankingItem.fromJson)
               .toList();
-          _rankingLoadedAt[sort] = DateTime.now();
+          _rankingLoadedAt[key] = DateTime.now();
         }
         final meta = data['meta'];
-        if (meta is Map && sort == _rankingSort) {
-          _rankingTotal = (meta['total'] ?? _rankings[sort]?.length).toInt();
+        if (meta is Map && key == _rankingKey) {
+          _rankingTotal = (meta['total'] ?? _rankings[key]?.length).toInt();
         }
       }
     } on DioException catch (e) {
-      if (generation != _rankingGeneration || sort != _rankingSort) return;
+      if (generation != _rankingGeneration || key != _rankingKey) return;
       _rankingError = _parseError(e);
       debugPrint('Error loading canteen ranking: $e');
     } finally {
-      if (generation == _rankingGeneration && sort == _rankingSort) {
+      if (generation == _rankingGeneration && key == _rankingKey) {
         _rankingLoading = false;
         notifyListeners();
       }

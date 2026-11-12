@@ -175,3 +175,39 @@ func TestSearchMatchesLocationAndTagsAndRankingExposesTagKeys(t *testing.T) {
 		}
 	}
 }
+
+// 默认“现有商家排名”不含下架店，现有店名次重排；“全部排名”按真实评分把下架店排进去并标注。
+func TestRankingScopeCurrentAndAll(t *testing.T) {
+	db := newCanteenTestDB(t)
+	seedSearchListCanteens(t, db) // 牛肉面 5★×4、黄焖鸡 4★×3、拉面 2★×1、下架面馆 5★×1（已下架）
+	h := NewCanteenHandler(db)
+	canteenDiscoveryCache.Invalidate()
+	ranks := func(query string) map[string][2]interface{} {
+		resp := performCanteenRequest(t, h.GetRankings, http.MethodGet, "/api/canteens/rankings"+query, nil, 0, "")
+		var body struct {
+			Items []struct {
+				Name      string `json:"name"`
+				Rank      int    `json:"rank"`
+				IsOffline bool   `json:"is_offline"`
+			} `json:"items"`
+		}
+		_ = json.Unmarshal(resp.Body.Bytes(), &body)
+		out := map[string][2]interface{}{}
+		for _, item := range body.Items {
+			out[item.Name] = [2]interface{}{item.Rank, item.IsOffline}
+		}
+		return out
+	}
+	current := ranks("")
+	if _, ok := current["下架面馆"]; ok || current["牛肉面"][0] != 1 || current["黄焖鸡"][0] != 2 || current["拉面"][0] != 3 {
+		t.Fatalf("current scope=%v", current)
+	}
+	all := ranks("?scope=all")
+	if len(all) != 4 || all["下架面馆"][1] != true || all["牛肉面"][1] != false {
+		t.Fatalf("all scope=%v", all)
+	}
+	// 下架店不再被强制排到最后：它按评分参与排名，排在 2★ 的拉面前面。
+	if all["下架面馆"][0].(int) >= all["拉面"][0].(int) {
+		t.Fatalf("offline shop should be ranked by score in all scope: %v", all)
+	}
+}

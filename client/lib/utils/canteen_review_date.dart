@@ -1,4 +1,5 @@
-/// 保留首次发布时间，避免把编辑旧评价误认为一次新的就餐评价。
+/// 评价只展示一个时间：编辑过的显示“更新”，否则显示“发布”，用“更新”字样区分，
+/// 避免把编辑旧评价误认为一次新的就餐评价。
 String formatCanteenReviewDate(DateTime? createdAt, DateTime? updatedAt) {
   if (createdAt == null) return '';
   String date(DateTime value) {
@@ -7,11 +8,11 @@ String formatCanteenReviewDate(DateTime? createdAt, DateTime? updatedAt) {
         '${local.day.toString().padLeft(2, '0')}';
   }
 
-  final published = '${date(createdAt)} 发布';
   // 沿用评价记录页的一秒容差，忽略创建时数据库时间精度造成的微小差异。
+  // 只显示一个时间：改过的评价显示最后更新时间，没改过的显示发布时间。
   if (updatedAt == null ||
       updatedAt.difference(createdAt) <= const Duration(seconds: 1)) {
-    return published;
+    return '${date(createdAt)} 发布';
   }
-  return '$published · ${date(updatedAt)} 更新';
+  return '${date(updatedAt)} 更新';
 }

@@ -74,7 +74,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('商家排行'), findsOneWidget);
-    final hint = find.text('综合分兼顾评分与评价人数，降低少量评价带来的排名波动');
+    final hint = find.text('只排营业中的商家，综合分兼顾评分与评价人数');
     final hintSurface = find.ancestor(of: hint, matching: find.byType(AppContentSurface));
     expect(tester.getRect(hint).center.dy, tester.getRect(hintSurface).center.dy,
         reason: '说明行的上下内边距必须对称，文字与信息图标在底面内垂直居中');

@@ -161,6 +161,9 @@ func (h *CanteenHandler) recentReviewCount(canteenID uint, days int) int64 {
 
 // GetRankings 食堂完整排行（sort=composite|rating|review_count；hot 暂不开放）。
 // rating 倒序展示：从低分开始往下，星级低→高、同星级评价人数少→多。
+//
+// scope=current（默认）只排营业中的商家，下架商家不占名次，现有商家的名次随之重排；
+// scope=all 是“全部排名”：已下架商家按真实评分一起参与，并标注下架状态。
 func (h *CanteenHandler) GetRankings(c *gin.Context) {
 	sortMode := c.DefaultQuery("sort", "composite")
 	switch sortMode {
@@ -168,15 +171,19 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 	default:
 		sortMode = "composite"
 	}
+	scope := c.DefaultQuery("scope", "current")
+	if scope != "all" {
+		scope = "current"
+	}
 
-	cacheKey := "rankings:" + sortMode
+	cacheKey := "rankings:" + sortMode + ":" + scope
 	generation := canteenDiscoveryCache.Generation()
 	if cached, ok := canteenDiscoveryCache.Get(cacheKey); ok {
 		c.JSON(200, cached)
 		return
 	}
 
-	rows, err := h.queryCanteenStats()
+	rows, err := h.queryCanteenStats(scope == "all")
 	if err != nil {
 		c.JSON(500, gin.H{"error": "获取排行失败"})
 		return
@@ -187,7 +194,7 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 		score := services.BayesianRatingScore(r.AverageStar, r.EffectiveSample, mean, services.BayesianPriorWeight)
 		entries = append(entries, canteenRankingEntry{canteenStatsRow: r, RankingScore: score})
 	}
-	sortRanking(entries, sortMode)
+	sortRankingScoped(entries, sortMode, scope != "all")
 
 	// 批量拉取近 30 天全部评价标签（避免 N+1）：前 3 个用于展示，完整 key 列表供客户端按标签筛选。
 	tagMap, tagErr := h.batchAggregateSummaryTags(summaryTagDays, 0)
@@ -203,6 +210,8 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 		LocationArea       string                `json:"location_area"`
 		LocationFloor      string                `json:"location_floor"`
 		Image              string                `json:"image"`
+		OperatingStatus    string                `json:"operating_status"`
+		IsOffline          bool                  `json:"is_offline"`
 		AverageStar        float64               `json:"average_star"`
 		RatingCount        int                   `json:"rating_count"`
 		RankingScore       float64               `json:"ranking_score"`
@@ -222,6 +231,8 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 			LocationArea:       e.LocationArea,
 			LocationFloor:      e.LocationFloor,
 			Image:              e.Image,
+			OperatingStatus:    e.OperatingStatus,
+			IsOffline:          e.IsOffline,
 			AverageStar:        e.AverageStar,
 			RatingCount:        e.RatingCount,
 			RankingScore:       services.BayesianScoreTo100(e.RankingScore),
@@ -238,6 +249,7 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 		"items": items,
 		"meta": gin.H{
 			"sort":         sortMode,
+			"scope":        scope,
 			"algorithm":    "bayesian",
 			"prior_weight": services.BayesianPriorWeight,
 			"updated_at":   time.Now(),

@@ -294,7 +294,7 @@ func (h *CanteenHandler) UpdateReview(c *gin.Context) {
 		case errors.Is(err, errReviewNotActive):
 			c.JSON(http.StatusConflict, gin.H{"error": "该评价当前不可修改"})
 		case errors.Is(err, errCanteenOffline):
-			c.JSON(http.StatusConflict, gin.H{"code": "canteen_offline", "error": "该店当前已下架，暂不能修改评价"})
+			respondCanteenOfflineReadonly(c)
 		case errors.Is(err, errReviewNotLatest):
 			c.JSON(http.StatusConflict, gin.H{"code": "review_not_latest", "error": "只能修改最近一次评价，请刷新后重试"})
 		case errors.Is(err, errReviewDishConflict):
@@ -345,6 +345,10 @@ func (h *CanteenHandler) DeleteReview(c *gin.Context) {
 		}
 		if review.Status != models.ReviewEventStatusActive {
 			return errReviewNotActive
+		}
+		// 下架商家的评价只读：用户不能自行删除，由管理员处理。
+		if _, err := lockActiveCanteen(tx, review.CanteenID); err != nil {
+			return err
 		}
 
 		oldImageFileIDs, err := services.FileIDsByPublicPaths(tx, decodeStringList(review.Images)...)
@@ -452,6 +456,8 @@ func (h *CanteenHandler) DeleteReview(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "评价不存在"})
 		case errors.Is(err, errReviewForbidden):
 			c.JSON(http.StatusForbidden, gin.H{"code": "review_forbidden", "error": "只能删除自己的评价"})
+		case errors.Is(err, errCanteenOffline):
+			respondCanteenOfflineReadonly(c)
 		case errors.Is(err, errReviewNotActive):
 			c.JSON(http.StatusConflict, gin.H{"code": "review_not_active", "error": "评价当前不可操作"})
 		default:
@@ -492,6 +498,9 @@ func (h *CanteenHandler) DeleteLegacyRating(c *gin.Context) {
 		if rating.Status != "" && rating.Status != models.ReviewEventStatusActive {
 			return errReviewNotActive
 		}
+		if _, err := lockActiveCanteen(tx, rating.CanteenID); err != nil {
+			return err
+		}
 
 		oldImageFileIDs, err := services.FileIDsByPublicPaths(tx, decodeStringList(rating.Images)...)
 		if err != nil {
@@ -521,6 +530,8 @@ func (h *CanteenHandler) DeleteLegacyRating(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "评价不存在"})
 		case errors.Is(err, errReviewForbidden):
 			c.JSON(http.StatusForbidden, gin.H{"code": "review_forbidden", "error": "只能删除自己的评价"})
+		case errors.Is(err, errCanteenOffline):
+			respondCanteenOfflineReadonly(c)
 		case errors.Is(err, errReviewNotActive):
 			c.JSON(http.StatusConflict, gin.H{"code": "review_not_active", "error": "评价当前不可操作"})
 		default:
@@ -570,6 +581,9 @@ func (h *CanteenHandler) VoteReview(c *gin.Context) {
 		}
 		if review.UserID == uid {
 			return errVoteOwnRating
+		}
+		if err := ensureCanteenNotOffline(tx, review.CanteenID); err != nil {
+			return err
 		}
 		var oldVote models.CanteenReviewEventVote
 		oldType := ""
@@ -621,6 +635,8 @@ func (h *CanteenHandler) VoteReview(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "评价不存在"})
 		case errors.Is(err, errReviewNotActive):
 			c.JSON(http.StatusConflict, gin.H{"error": "评价当前不可投票"})
+		case errors.Is(err, errCanteenOffline):
+			respondCanteenOfflineReadonly(c)
 		case errors.Is(err, errVoteOwnRating):
 			c.JSON(http.StatusBadRequest, gin.H{"error": "不能给自己的评价投票"})
 		default:

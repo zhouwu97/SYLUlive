@@ -177,6 +177,32 @@ class CanteenProvider with ChangeNotifier {
     return false;
   }
 
+  /// 管理端商家列表（含已下架商家及下架原因）。旧服务端没有该接口时回退到公开列表。
+  /// 返回 null 表示请求失败，原因见 [errorMessage]。
+  Future<List<Canteen>?> adminListCanteens() async {
+    _errorMessage = null;
+    try {
+      final response = await _dio.get('/canteens/admin-list');
+      final items =
+          response.data is Map ? (response.data as Map)['items'] : null;
+      if (response.statusCode == 200 && items is List) {
+        return items
+            .whereType<Map>()
+            .map((item) => Canteen.fromJson(Map<String, dynamic>.from(item)))
+            .toList(growable: false);
+      }
+      _errorMessage = '商家列表加载失败，请重试';
+      return null;
+    } on DioException catch (e) {
+      if (e.response?.statusCode != 404) {
+        _errorMessage = _parseError(e);
+        return null;
+      }
+    }
+    await loadCanteens();
+    return _errorMessage == null && !_isLoading ? _canteens : null;
+  }
+
   /// 管理员修改商家名称与位置；只发送传入的字段。
   Future<bool> adminUpdateCanteen(
     int canteenId, {

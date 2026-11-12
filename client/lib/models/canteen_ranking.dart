@@ -114,6 +114,15 @@ class SummaryTag {
 }
 
 /// 排行页排序模式。
+/// 排行范围。
+class CanteenRankingScope {
+  /// 现有商家：只排营业中的商家，下架商家不占名次（默认）。
+  static const current = 'current';
+
+  /// 全部排名：已下架商家也按真实评分参与。
+  static const all = 'all';
+}
+
 class CanteenRankingSort {
   static const composite = 'composite';
   static const rating = 'rating';

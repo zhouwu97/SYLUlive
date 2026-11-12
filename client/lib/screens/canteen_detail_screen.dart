@@ -399,6 +399,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 dishPhotoCount: _dishPhotoCount,
                 offline: _isOffline,
               ),
+              if (_isOffline) _buildOfflineReadonlyNotice(isDark),
               _buildDimensionSummary(isDark),
               DishGallerySection(
                 canteenId: widget.canteenId,
@@ -467,9 +468,11 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 canWriteReview:
                     !_isOffline && (_canCreateReview || _canEditLatest),
                 latestReviewId: _latestReviewId,
-                onEditLatestReview: _openEditLatestReviewEditor,
+                // 商家下架后评价只读：不提供修改、删除入口，举报仍可用于治理。
+                onEditLatestReview:
+                    _isOffline ? null : _openEditLatestReviewEditor,
                 onReport: _reportReview,
-                onDelete: _deleteReview,
+                onDelete: _isOffline ? null : _deleteReview,
                 onOpenHistory: _openOwnReviewHistory,
                 hasMore: _reviewsHasMore,
                 isLoadingMore: _loadingMoreReviews,
@@ -1001,6 +1004,63 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     }
   }
 
+  static const _offlineReadonlyMessage = '该商家已下架，评价和图片仅供查看；如需修改或删除请联系管理员';
+
+  /// 下架商家的只读说明：评价、图片和投票都不能再改动，只有管理员可以处理。
+  Widget _buildOfflineReadonlyNotice(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Semantics(
+        container: true,
+        label: '该商家已下架，只读',
+        child: AppCardSurface(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          decoration: BoxDecoration(
+            color: CanteenTheme.surfaceMutedBg(isDark),
+            borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+            border: Border.all(color: CanteenTheme.borderColor(isDark)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.lock_outline_rounded,
+                size: 18,
+                color: CanteenTheme.textSecondaryColor(isDark),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '商家已下架 · 内容只读',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: CanteenTheme.textPrimaryColor(isDark),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '历史评价、图片和投票保留供参考，不能再发布、修改、删除或投票。'
+                      '如有问题可以举报，由管理员处理。',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.45,
+                        color: CanteenTheme.textSecondaryColor(isDark),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // ── 底部贡献入口 ──────────────────────────────────────────────
 
   Widget _buildContributionBar(bool isDark, Color accent) {
@@ -1019,7 +1079,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       child: FilledButton.icon(
         onPressed: canContribute ? () => _showContributionSheet(isDark) : null,
         icon: const Icon(Icons.add_rounded, size: 18),
-        label: Text(canContribute ? '贡献内容' : '暂不能贡献内容'),
+        label: Text(canContribute ? '贡献内容' : '商家已下架，内容仅供查看'),
         style: FilledButton.styleFrom(
           backgroundColor: accent,
           foregroundColor: Colors.white,
@@ -1156,6 +1216,10 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   Future<void> _voteRating(int ratingId, String source, String vote) async {
     if (_isVoting) return;
+    if (_isOffline) {
+      AppFeedback.info(_offlineReadonlyMessage, context: context);
+      return;
+    }
     if (!context.read<AuthProvider>().isLoggedIn) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('请先登录后操作')));

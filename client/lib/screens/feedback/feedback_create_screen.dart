@@ -411,9 +411,12 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
     return Scaffold(
       backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
-        title: const Text(
-          '新建反馈',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+        title: Text(
+          '创建工单',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+              ),
         ),
         centerTitle: true,
         elevation: 0,
@@ -659,9 +662,11 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
                           valueColor: AlwaysStoppedAnimation(Colors.white),
                         ),
                       )
-                    : const Text(
+                    : Text(
                         '提交反馈',
                         style: TextStyle(
+                          fontFamily:
+                              Theme.of(context).textTheme.labelLarge?.fontFamily,
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),

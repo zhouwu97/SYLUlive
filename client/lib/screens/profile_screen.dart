@@ -40,6 +40,7 @@ import 'notifications_screen.dart';
 import 'likes_received_screen.dart';
 import 'settings_screen.dart';
 import 'feedback/feedback_center_screen.dart';
+import 'feedback/feedback_create_screen.dart';
 import 'admin/admin_feedback_screen.dart';
 import 'user_home_screen.dart';
 import 'social_list_screen.dart';
@@ -1105,14 +1106,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return _buildSectionLayout(context, '我的内容', items, isDark);
   }
 
+  Future<void> _openFeedback({bool create = false}) async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || auth.user == null) {
+      Navigator.pushNamed(context, '/login');
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => create
+            ? const FeedbackCreateScreen(initialRouteName: '我的 / 创建工单')
+            : const FeedbackCenterScreen(),
+      ),
+    );
+    if (mounted) _loadUnreadCount();
+  }
+
   Widget _buildServiceAndSupportSection(BuildContext context, bool isDark) {
     final items = [
       _buildSettingsRow(
         child: _buildSettingsTile(
+          icon: Icons.bug_report_outlined,
+          iconColor: AppColors.brandPrimary,
+          title: '创建工单',
+          subtitle: '反馈 Bug 或提交功能建议',
+          isDark: isDark,
+          onTap: () => _openFeedback(create: true),
+        ),
+      ),
+      _buildSettingsRow(
+        child: _buildSettingsTile(
           icon: Icons.chat_bubble_outline_rounded,
           iconColor: AppColors.brandPrimary,
-          title: '帮助与反馈',
-          subtitle: '问题反馈、功能建议与处理进度',
+          title: '我的工单',
+          subtitle: '查看处理进度与管理员回复',
           trailing: _feedbackUnreadCount > 0
               ? Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1141,14 +1169,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 )
               : null,
           isDark: isDark,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const FeedbackCenterScreen()),
-            ).then((_) {
-              _loadUnreadCount();
-            });
-          },
+          onTap: () => _openFeedback(),
         ),
       ),
     ];

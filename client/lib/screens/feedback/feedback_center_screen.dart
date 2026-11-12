@@ -414,7 +414,7 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
               }
             },
             icon: const Icon(Icons.add, size: 16),
-            label: const Text('新建反馈'),
+            label: const Text('创建工单'),
             style: appGlassButtonStyle(
                 context,
                 ElevatedButton.styleFrom(
@@ -426,7 +426,9 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  textStyle: const TextStyle(
+                  textStyle: TextStyle(
+                    fontFamily:
+                        Theme.of(context).textTheme.labelLarge?.fontFamily,
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
                   ),
@@ -577,9 +579,12 @@ class _FeedbackCenterScreenState extends State<FeedbackCenterScreen>
     return Scaffold(
       backgroundColor: AppPageBackground.color(context, pageBg),
       appBar: AppBar(
-        title: const Text(
-          '帮助与反馈',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+        title: Text(
+          '我的工单',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+              ),
         ),
         centerTitle: true,
         elevation: 0,

@@ -1,10 +1,11 @@
 import 'team_share_link.dart';
 
-/// 商家分享链接：与 Web 端 /canteen/:id 路由一致，未安装 App 的同学也能直接打开。
+/// 商家分享链接：指向 Web 应用的商家详情页 /web/canteen/:id（Web 的 base 是 /web/），
+/// 任何浏览器都能直接打开，不依赖网关为 /canteen/ 单独配置落地页。
 Uri canteenShareUri(int canteenId) => Uri(
       scheme: 'https',
       host: TeamShareLink.domain,
-      pathSegments: ['canteen', '$canteenId'],
+      pathSegments: ['web', 'canteen', '$canteenId'],
     );
 
 /// 分享文案只用公开信息（店名、位置、公开评分），不带任何个人数据。

@@ -26,8 +26,12 @@ class CanteenRankingItem {
   /// 旧服务端没有该字段时退回 [summaryTags] 里的 key。
   final List<String> tagKeys;
 
+  /// 是否参与名次：没人评价的店不占名次。旧服务端没有该字段时按评价人数判断。
+  final bool ranked;
+
   const CanteenRankingItem({
     required this.rank,
+    this.ranked = true,
     required this.id,
     required this.name,
     this.locationArea = '',
@@ -56,6 +60,9 @@ class CanteenRankingItem {
     final rawKeys = json['tag_keys'];
     return CanteenRankingItem(
       rank: (json['rank'] ?? 0).toInt(),
+      ranked: json['ranked'] is bool
+          ? json['ranked'] as bool
+          : ((json['rating_count'] ?? 0) as num) > 0,
       id: (json['id'] ?? 0).toInt(),
       name: json['name']?.toString() ?? '',
       locationArea: json['location_area']?.toString() ?? '',

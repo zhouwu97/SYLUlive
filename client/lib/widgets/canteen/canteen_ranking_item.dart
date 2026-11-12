@@ -60,14 +60,25 @@ class _CanteenRankingItemTileState extends State<CanteenRankingItemTile> {
                             // 排名：纯排版数字
                             Padding(
                               padding: const EdgeInsets.only(left: 2, top: 2),
-                              child: Text(
-                                item.rank.toString().padLeft(2, '0'),
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.6,
-                                  height: 1.1,
-                                  color: CanteenTheme.rankColor(item.rank),
+                              // 没人评价的店不占名次，用“—”占位并配读屏说明。
+                              child: Semantics(
+                                label: item.ranked
+                                    ? '第${item.rank}名'
+                                    : '暂无评价，不参与排名',
+                                excludeSemantics: true,
+                                child: Text(
+                                  item.ranked
+                                      ? item.rank.toString().padLeft(2, '0')
+                                      : '—',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.6,
+                                    height: 1.1,
+                                    color: item.ranked
+                                        ? CanteenTheme.rankColor(item.rank)
+                                        : CanteenTheme.rankColor(99),
+                                  ),
                                 ),
                               ),
                             ),

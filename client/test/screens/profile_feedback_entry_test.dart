@@ -250,6 +250,40 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('从其他入口进入创建页时预选类型并预填标题', (tester) async {
+    await setGoldenViewport(tester, GoldenViewports.phone360x800);
+    final api = _Api();
+    final dio = Dio(BaseOptions(baseUrl: 'https://fixture.invalid'))
+      ..httpClientAdapter = api;
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthProvider>(create: (_) => _Auth(dio)),
+        ChangeNotifierProvider(create: (_) => ThemeProvider(loadOnStart: false)),
+      ],
+      child: const MaterialApp(
+        home: FeedbackCreateScreen(
+          initialRouteName: '版块 / 校园日常',
+          initialType: 'other',
+          initialTitle: '举报版块：校园日常',
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('举报版块：校园日常'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).at(1), '版块内长期出现广告');
+    tester.testTextInput.hide();
+    await tester.ensureVisible(find.text('提交反馈'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('提交反馈'));
+    await tester.pumpAndSettle();
+    final submission =
+        api.requests.where((o) => o.method == 'POST').single.data as Map;
+    expect(submission['type'], 'other');
+    expect(submission['title'], '举报版块：校园日常');
+    expect(submission['current_route'], '版块 / 校园日常');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('创建 Bug 工单失败保留内容，重试成功后可查看我的工单', (tester) async {
     final api = _Api();
     await _pump(tester, api);

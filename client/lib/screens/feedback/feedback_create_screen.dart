@@ -19,7 +19,16 @@ import '../../widgets/app_card.dart';
 class FeedbackCreateScreen extends StatefulWidget {
   final String? initialRouteName;
 
-  const FeedbackCreateScreen({super.key, this.initialRouteName});
+  /// 从其他入口带入的类型与标题，例如“举报版块”预选“其他”并填好版块名，用户仍可修改。
+  final String? initialType;
+  final String? initialTitle;
+
+  const FeedbackCreateScreen({
+    super.key,
+    this.initialRouteName,
+    this.initialType,
+    this.initialTitle,
+  });
 
   @override
   State<FeedbackCreateScreen> createState() => _FeedbackCreateScreenState();
@@ -45,6 +54,10 @@ class _FeedbackCreateScreenState extends State<FeedbackCreateScreen> {
   @override
   void initState() {
     super.initState();
+    if (const {'bug', 'suggestion', 'other'}.contains(widget.initialType)) {
+      _type = widget.initialType!;
+    }
+    _titleController.text = widget.initialTitle ?? '';
     _loadDiagnostics();
   }
 

@@ -29,6 +29,7 @@ import '../widgets/water_section/section_floating_dock.dart';
 import '../widgets/water_section/section_post_card.dart';
 import '../widgets/water_section/section_avatar.dart';
 import 'create_post_screen.dart';
+import 'feedback/feedback_create_screen.dart';
 import 'water_section_manage_screen.dart';
 
 class WaterCategoryFeedScreen extends StatefulWidget {
@@ -792,6 +793,24 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     );
   }
 
+  /// 版块还没有独立的举报类型，先以“其他”类工单提交，管理员在工单里处理；未登录先登录。
+  Future<void> _reportSection(WaterSection section) async {
+    var auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || auth.user == null) {
+      await Navigator.pushNamed(context, '/login');
+      if (!mounted) return;
+      auth = context.read<AuthProvider>();
+      if (!auth.isLoggedIn || auth.user == null) return;
+    }
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => FeedbackCreateScreen(
+        initialRouteName: '版块 / ${section.title}',
+        initialType: 'other',
+        initialTitle: '举报版块：${section.title}',
+      ),
+    ));
+  }
+
   Future<void> _showSectionActions(WaterSection section) async {
     final permission =
         context.read<WaterModeratorProvider>().permissionOf(section.slug);
@@ -817,11 +836,10 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
             ListTile(
               leading: const Icon(Icons.flag_outlined),
               title: const Text('举报版块'),
+              subtitle: const Text('以工单提交给管理员处理'),
               onTap: () {
                 Navigator.pop(sheetContext);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('举报入口即将上线')),
-                );
+                unawaited(_reportSection(section));
               },
             ),
             if (canManage)

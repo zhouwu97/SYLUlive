@@ -216,9 +216,15 @@ class CanteenReviewSection extends StatelessWidget {
                                         strokeWidth: 2),
                                   ),
                                 )
-                              : TextButton(
+                              : TextButton.icon(
                                   onPressed: onLoadMore,
-                                  child: const Text('加载更多评价'),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor:
+                                        CanteenTheme.accentStrongColor(isDark),
+                                  ),
+                                  icon: const Icon(Icons.expand_more_rounded,
+                                      size: 18),
+                                  label: const Text('加载更多评价'),
                                 ),
                         ),
                     ],

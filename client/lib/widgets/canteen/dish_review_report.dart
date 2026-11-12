@@ -64,17 +64,22 @@ Future<void> reportDishReview(
   );
 }
 
-/// 菜品评价里的三维分文案，例如“味道 5 · 性价比 4 · 分量 3”；没打分时返回空串。
-String dishReviewScoreLine(Map<String, dynamic> review) {
-  int score(String primary, [String? fallback]) =>
-      (review[primary] as num?)?.toInt() ??
-      (fallback == null ? null : (review[fallback] as num?)?.toInt()) ??
-      0;
+/// 菜品评价里的三维分（味道、性价比、分量）；没打分或不完整时返回 null。
+({int taste, int value, int portion})? dishReviewScores(
+    Map<String, dynamic> review) {
+  int score(String key) => (review[key] as num?)?.toInt() ?? 0;
   final isParent = review['review_source'] == 'canteen_review_event';
   // 到店评价自身的 taste/value 是商家维度，只有菜品子评分才算菜的分。
   final taste = isParent ? score('dish_taste_score') : score('taste_score');
   final value = isParent ? score('dish_value_score') : score('value_score');
   final portion = score('portion_score');
-  if (taste <= 0 || value <= 0 || portion <= 0) return '';
-  return '味道 $taste · 性价比 $value · 分量 $portion';
+  if (taste <= 0 || value <= 0 || portion <= 0) return null;
+  return (taste: taste, value: value, portion: portion);
+}
+
+/// 菜品评价里的三维分文案，例如“味道 5 · 性价比 4 · 分量 3”；没打分时返回空串。
+String dishReviewScoreLine(Map<String, dynamic> review) {
+  final scores = dishReviewScores(review);
+  if (scores == null) return '';
+  return '味道 ${scores.taste} · 性价比 ${scores.value} · 分量 ${scores.portion}';
 }

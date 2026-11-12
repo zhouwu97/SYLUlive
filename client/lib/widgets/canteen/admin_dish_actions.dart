@@ -5,6 +5,7 @@ import '../../models/canteen_dish.dart';
 import '../../providers/canteen_discovery_provider.dart';
 import '../../providers/canteen_provider.dart';
 import '../app_dialog.dart';
+import 'canteen_theme.dart';
 
 /// 管理员菜品治理动作（改名 / 隐藏或恢复 / 合并）的共享弹窗。
 ///
@@ -134,10 +135,15 @@ Future<bool> showAdminMergeDishFlow(
     );
     return false;
   }
+  final isDark = Theme.of(context).brightness == Brightness.dark;
   final target = await showModalBottomSheet<AdminCanteenDish>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
+    backgroundColor: CanteenTheme.surfaceBg(isDark),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
     builder: (sheetContext) =>
         _MergeTargetSheet(sourceName: sourceDishName, targets: targets),
   );

@@ -182,10 +182,11 @@ class CanteenRankingFilterBar extends StatelessWidget {
                 runSpacing: 8,
                 children: [
                   for (final tag in [(key: '', label: '全部'), ...tags])
-                    ChoiceChip(
-                      label: Text(tag.label),
+                    canteenFilterPill(
+                      isDark,
+                      label: tag.label,
                       selected: tag.key == tagKey,
-                      onSelected: (_) {
+                      onTap: () {
                         Navigator.pop(sheetContext);
                         onTagChanged?.call(tag.key);
                       },
@@ -260,6 +261,60 @@ class CanteenRankingFilterBar extends StatelessWidget {
       },
     );
   }
+}
+
+/// 筛选弹层里的可选胶囊：选中时浅橙底、橙色描边并带对勾。位置和标签筛选共用。
+Widget canteenFilterPill(
+  bool isDark, {
+  required String label,
+  required bool selected,
+  required VoidCallback onTap,
+}) {
+  return Semantics(
+    button: true,
+    selected: selected,
+    child: GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected
+              ? CanteenTheme.accentSoftColor(isDark)
+              : CanteenTheme.surfaceMutedBg(isDark),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? CanteenTheme.accentColor(isDark)
+                : CanteenTheme.borderColor(isDark),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (selected) ...[
+              Icon(
+                Icons.check_rounded,
+                size: 15,
+                color: CanteenTheme.accentStrongColor(isDark),
+              ),
+              const SizedBox(width: 3),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                color: selected
+                    ? CanteenTheme.accentStrongColor(isDark)
+                    : CanteenTheme.textPrimaryColor(isDark),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 /// 位置筛选弹层：区域 + 楼层两组胶囊，组合生效，点「应用」后关闭。
@@ -407,8 +462,10 @@ class _LocationFilterSheetState extends State<_LocationFilterSheet> {
 
   Widget _optionChip(bool isDark, String group, String option) {
     final selected = group == '区域' ? _area == option : _floor == option;
-    final label = option.isEmpty ? '全部' : option;
-    return GestureDetector(
+    return canteenFilterPill(
+      isDark,
+      label: option.isEmpty ? '全部' : option,
+      selected: selected,
       onTap: () => setState(() {
         if (group == '区域') {
           _area = option;
@@ -416,44 +473,6 @@ class _LocationFilterSheetState extends State<_LocationFilterSheet> {
           _floor = option;
         }
       }),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-        decoration: BoxDecoration(
-          color: selected
-              ? CanteenTheme.accentSoftColor(isDark)
-              : CanteenTheme.surfaceMutedBg(isDark),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected
-                ? CanteenTheme.accentColor(isDark)
-                : CanteenTheme.borderColor(isDark),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (selected) ...[
-              Icon(
-                Icons.check_rounded,
-                size: 15,
-                color: CanteenTheme.accentStrongColor(isDark),
-              ),
-              const SizedBox(width: 3),
-            ],
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                color: selected
-                    ? CanteenTheme.accentStrongColor(isDark)
-                    : CanteenTheme.textPrimaryColor(isDark),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

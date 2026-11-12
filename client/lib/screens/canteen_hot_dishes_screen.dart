@@ -4,10 +4,9 @@ import 'package:provider/provider.dart';
 import '../models/canteen_home.dart';
 import '../providers/canteen_discovery_provider.dart';
 import '../utils/responsive_util.dart';
-import '../widgets/app_card.dart';
 import '../widgets/app_page_background.dart';
 import '../widgets/canteen/canteen_empty_state.dart';
-import '../widgets/canteen/canteen_status_image.dart';
+import '../widgets/canteen/canteen_hot_dish_card.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import 'canteen_dish_detail_screen.dart';
 
@@ -161,7 +160,7 @@ class _CanteenHotDishesScreenState extends State<CanteenHotDishesScreen> {
                       spacing: 10),
                   crossAxisSpacing: 10,
                   mainAxisSpacing: 10,
-                  childAspectRatio: 0.82,
+                  childAspectRatio: 0.92,
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, index) => _buildDishCard(isDark, _dishes[index]),
@@ -198,7 +197,8 @@ class _CanteenHotDishesScreenState extends State<CanteenHotDishesScreen> {
   }
 
   Widget _buildDishCard(bool isDark, CanteenHotDish dish) {
-    return GestureDetector(
+    return CanteenHotDishCard(
+      dish: dish,
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
@@ -208,79 +208,6 @@ class _CanteenHotDishesScreenState extends State<CanteenHotDishesScreen> {
             dishName: dish.name,
             canteenName: dish.canteenName,
           ),
-        ),
-      ),
-      child: AppCardSurface(
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: CanteenTheme.surfaceBg(isDark),
-          borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
-          border: Border.all(color: CanteenTheme.borderColor(isDark)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: CanteenStatusImage(
-                imageUrl: dish.coverImage,
-                variant: 'thumb',
-                offline: dish.isCanteenOffline,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => Container(
-                  color: CanteenTheme.surfaceMutedBg(isDark),
-                  alignment: Alignment.center,
-                  child: Icon(Icons.ramen_dining_rounded,
-                      color: CanteenTheme.textTertiaryColor(isDark)),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    dish.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: CanteenTheme.textPrimaryColor(isDark),
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    dish.canteenName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: CanteenTheme.textTertiaryColor(isDark),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    [
-                      dish.averageScore > 0
-                          ? '${dish.averageScore.toStringAsFixed(1)} 分'
-                          : '暂无评分',
-                      if (dish.recentMentionCount > 0)
-                        '近 30 天 ${dish.recentMentionCount} 人提到',
-                    ].join(' · '),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: CanteenTheme.textSecondaryColor(isDark),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ),
       ),
     );

@@ -152,7 +152,7 @@ void main() {
     await tester.ensureVisible(find.text('标签'));
     await tester.tap(find.text('标签'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, '出餐快'));
+    await tester.tap(find.text('出餐快').last);
     await tester.pumpAndSettle();
 
     expect(find.text('出餐快的店'), findsOneWidget);

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../theme/app_motion.dart';
 import '../widgets/app_page_background.dart';
 import '../utils/responsive_util.dart';
 import '../models/canteen.dart';
@@ -15,6 +16,7 @@ import '../widgets/canteen/canteen_location_chip.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/canteen_status_image.dart';
 import '../widgets/canteen/canteen_hero_recommendation.dart';
+import '../widgets/canteen/canteen_hot_dish_card.dart';
 import '../widgets/canteen/canteen_ranking_entry.dart';
 import '../widgets/canteen/canteen_recent_review_card.dart';
 import '../widgets/image_upload_widget.dart';
@@ -770,6 +772,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
                 '今天吃什么',
                 meta: '综合真实评分与近期反馈',
                 actionLabel: '换一家',
+                actionIcon: Icons.autorenew_rounded,
                 onMore: provider.home.heroCandidates.length > 1
                     ? () => setState(() => _heroOffset++)
                     : null,
@@ -777,17 +780,23 @@ class _CanteenScreenState extends State<CanteenScreen> {
               if (showHero)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: CanteenHeroRecommendationCard(
-                    key: ValueKey('canteen-home-hero-${hero.canteenId}'),
-                    hero: hero,
-                    onTap: () => _openDetail(
-                      hero.canteenId,
-                      hero.canteenName,
-                      initialImage: hero.image,
-                      initialOffline: hero.operatingStatus == 'offline',
+                  // “换一家”时淡入新卡片；系统开启减少动态效果时时长会收窄。
+                  child: AnimatedSwitcher(
+                    duration: AppMotion.duration(context, AppMotion.normal),
+                    switchInCurve: AppMotion.incoming,
+                    switchOutCurve: AppMotion.outgoing,
+                    child: CanteenHeroRecommendationCard(
+                      key: ValueKey('canteen-home-hero-${hero.canteenId}'),
+                      hero: hero,
+                      onTap: () => _openDetail(
+                        hero.canteenId,
+                        hero.canteenName,
+                        initialImage: hero.image,
+                        initialOffline: hero.operatingStatus == 'offline',
+                        heroTag: 'canteen-home-hero-${hero.canteenId}',
+                      ),
                       heroTag: 'canteen-home-hero-${hero.canteenId}',
                     ),
-                    heroTag: 'canteen-home-hero-${hero.canteenId}',
                   ),
                 ),
               Padding(
@@ -945,125 +954,36 @@ class _CanteenScreenState extends State<CanteenScreen> {
 
   Widget _buildHotDishes(bool isDark, List<CanteenHotDish> dishes) {
     return LayoutBuilder(
-        builder: (context, constraints) => GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: dishes.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: ResponsiveUtil.gridColumnCount(
-                    constraints.maxWidth,
-                    spacing: 10),
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: 0.92,
+      builder: (context, constraints) => GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: dishes.length,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount:
+              ResponsiveUtil.gridColumnCount(constraints.maxWidth, spacing: 10),
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          childAspectRatio: 0.92,
+        ),
+        itemBuilder: (context, index) {
+          final dish = dishes[index];
+          return CanteenHotDishCard(
+            dish: dish,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CanteenDishDetailScreen(
+                  canteenId: dish.canteenId,
+                  dishId: dish.id,
+                  dishName: dish.name,
+                  canteenName: dish.canteenName,
+                ),
               ),
-              itemBuilder: (context, index) {
-                final dish = dishes[index];
-                return GestureDetector(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CanteenDishDetailScreen(
-                        canteenId: dish.canteenId,
-                        dishId: dish.id,
-                        dishName: dish.name,
-                        canteenName: dish.canteenName,
-                      ),
-                    ),
-                  ),
-                  child: AppCardSurface(
-                    clipBehavior: Clip.antiAlias,
-                    decoration: BoxDecoration(
-                      color: CanteenTheme.surfaceBg(isDark),
-                      borderRadius:
-                          BorderRadius.circular(CanteenTheme.radiusMd),
-                      border:
-                          Border.all(color: CanteenTheme.borderColor(isDark)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 无图菜品在上游已被过滤，这里一定有封面。
-                        Expanded(
-                          child: CanteenStatusImage(
-                            imageUrl: dish.coverImage,
-                            variant: 'thumb',
-                            offline: dish.isCanteenOffline,
-                            width: double.infinity,
-                            fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) => Container(
-                              color: CanteenTheme.surfaceMutedBg(isDark),
-                              alignment: Alignment.center,
-                              child: Icon(
-                                Icons.ramen_dining_rounded,
-                                color: CanteenTheme.textTertiaryColor(isDark),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                dish.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w800,
-                                  color: CanteenTheme.textPrimaryColor(isDark),
-                                ),
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                dish.canteenName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: CanteenTheme.textTertiaryColor(isDark),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Icon(Icons.star_rounded,
-                                      size: 14,
-                                      color: CanteenTheme.accentColor(isDark)),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    dish.averageScore > 0
-                                        ? dish.averageScore.toStringAsFixed(1)
-                                        : '暂无评分',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w700,
-                                      color:
-                                          CanteenTheme.textPrimaryColor(isDark),
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Text(
-                                    '${dish.reviewerCount}人评',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: CanteenTheme.textTertiaryColor(
-                                          isDark),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ));
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildFavoritesRow(bool isDark) {
@@ -1077,7 +997,9 @@ class _CanteenScreenState extends State<CanteenScreen> {
         children: [
           _sectionHeader(isDark, '我常去', meta: '你收藏的商家'),
           SizedBox(
-            height: 64,
+            // 大字号下两行文字会变高，行高跟着字号放大，避免卡片内容被裁切。
+            height:
+                64 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.4),
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: favorites.length,
@@ -1103,9 +1025,8 @@ class _CanteenScreenState extends State<CanteenScreen> {
                   ),
                   child: AppCardSurface(
                     constraints:
-                        const BoxConstraints(minWidth: 120, maxWidth: 200),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
+                        const BoxConstraints(minWidth: 150, maxWidth: 230),
+                    padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
                     decoration: BoxDecoration(
                       color: CanteenTheme.surfaceBg(isDark),
                       borderRadius:
@@ -1113,28 +1034,57 @@ class _CanteenScreenState extends State<CanteenScreen> {
                       border:
                           Border.all(color: CanteenTheme.borderColor(isDark)),
                     ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          canteen.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: CanteenTheme.textPrimaryColor(isDark),
+                        ClipRRect(
+                          borderRadius:
+                              BorderRadius.circular(CanteenTheme.radiusSm),
+                          child: SizedBox(
+                            width: 46,
+                            height: 46,
+                            child: canteen.image.isEmpty
+                                ? _favoritePlaceholder(isDark)
+                                : CanteenStatusImage(
+                                    imageUrl: canteen.image,
+                                    variant: 'thumb',
+                                    offline: canteen.isOffline,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, __, ___) =>
+                                        _favoritePlaceholder(isDark),
+                                    placeholder: (_, __) =>
+                                        _favoritePlaceholder(isDark),
+                                  ),
                           ),
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: CanteenTheme.textSecondaryColor(isDark),
+                        const SizedBox(width: 10),
+                        Flexible(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                canteen.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: CanteenTheme.textPrimaryColor(isDark),
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                subtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color:
+                                      CanteenTheme.textSecondaryColor(isDark),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -1149,6 +1099,13 @@ class _CanteenScreenState extends State<CanteenScreen> {
     );
   }
 
+  Widget _favoritePlaceholder(bool isDark) => Container(
+        color: CanteenTheme.surfaceMutedBg(isDark),
+        alignment: Alignment.center,
+        child: Icon(Icons.storefront_rounded,
+            size: 20, color: CanteenTheme.textTertiaryColor(isDark)),
+      );
+
   void _openHotDishes() {
     Navigator.push(
       context,
@@ -1157,7 +1114,10 @@ class _CanteenScreenState extends State<CanteenScreen> {
   }
 
   Widget _sectionHeader(bool isDark, String title,
-      {String? meta, VoidCallback? onMore, String actionLabel = '更多'}) {
+      {String? meta,
+      VoidCallback? onMore,
+      String actionLabel = '更多',
+      IconData? actionIcon}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(2, 6, 2, 10),
       child: Row(
@@ -1191,13 +1151,28 @@ class _CanteenScreenState extends State<CanteenScreen> {
                 minimumSize: const Size(0, 32),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              child: Text(
-                actionLabel,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: CanteenTheme.accentStrongColor(isDark),
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (actionIcon != null) ...[
+                    Icon(actionIcon,
+                        size: 14,
+                        color: CanteenTheme.accentStrongColor(isDark)),
+                    const SizedBox(width: 2),
+                  ],
+                  Text(
+                    actionLabel,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: CanteenTheme.accentStrongColor(isDark),
+                    ),
+                  ),
+                  if (actionIcon == null)
+                    Icon(Icons.chevron_right_rounded,
+                        size: 16,
+                        color: CanteenTheme.accentStrongColor(isDark)),
+                ],
               ),
             ),
         ],

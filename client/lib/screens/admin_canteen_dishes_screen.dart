@@ -154,9 +154,42 @@ class _AdminCanteenDishesScreenState extends State<AdminCanteenDishesScreen> {
       onRefresh: _load,
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
-        itemCount: visible.length,
+        itemCount: visible.length + 1,
         separatorBuilder: (_, __) => const SizedBox(height: 8),
-        itemBuilder: (_, index) => _buildDishRow(isDark, visible[index]),
+        itemBuilder: (_, index) => index == 0
+            ? _buildSummary(isDark, dishes)
+            : _buildDishRow(isDark, visible[index - 1]),
+      ),
+    );
+  }
+
+  Widget _buildSummary(bool isDark, List<AdminCanteenDish> dishes) {
+    final hidden = dishes.where((dish) => dish.isHidden).length;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 0, 2, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            hidden > 0
+                ? '共 ${dishes.length} 道菜 · $hidden 道已隐藏'
+                : '共 ${dishes.length} 道菜',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: CanteenTheme.textPrimaryColor(isDark),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '同学评价时可以直接写新菜名，叫法不同的同一道菜请合并。',
+            style: TextStyle(
+              fontSize: 11,
+              height: 1.4,
+              color: CanteenTheme.textSecondaryColor(isDark),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -166,7 +199,7 @@ class _AdminCanteenDishesScreenState extends State<AdminCanteenDishesScreen> {
       padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
       decoration: BoxDecoration(
         color: CanteenTheme.surfaceBg(isDark),
-        borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+        borderRadius: BorderRadius.circular(CanteenTheme.radiusLg),
         border: Border.all(color: CanteenTheme.borderColor(isDark)),
       ),
       child: Row(
@@ -223,6 +256,10 @@ class _AdminCanteenDishesScreenState extends State<AdminCanteenDishesScreen> {
           ),
           PopupMenuButton<_DishAction>(
             tooltip: '管理「${dish.name}」',
+            icon: Icon(
+              Icons.more_horiz_rounded,
+              color: CanteenTheme.textSecondaryColor(isDark),
+            ),
             onSelected: (action) => _run(action, dish),
             itemBuilder: (_) => [
               const PopupMenuItem(

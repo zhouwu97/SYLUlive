@@ -12,7 +12,7 @@ import '../widgets/canteen/admin_dish_actions.dart';
 import '../widgets/canteen/canteen_empty_state.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/dish_photo_mosaic.dart';
-import '../widgets/canteen/dish_review_report.dart';
+import '../widgets/canteen/dish_review_tile.dart';
 import 'canteen_dish_reviews_screen.dart';
 import 'canteen_review_editor_screen.dart';
 
@@ -40,6 +40,16 @@ class CanteenDishDetailScreen extends StatefulWidget {
 }
 
 enum _AdminDishMenu { rename, hide, merge }
+
+/// 菜品页内容宽度：手机上左右 16，平板和桌面上内容居中、最宽 720，
+/// 评分条和评价正文不会被拉得过长。
+EdgeInsets dishPagePadding(BuildContext context,
+    {double top = 0, double bottom = 0}) {
+  const maxWidth = 720.0;
+  final width = MediaQuery.sizeOf(context).width;
+  final side = width > maxWidth + 32 ? (width - maxWidth) / 2 : 16.0;
+  return EdgeInsets.fromLTRB(side, top, side, bottom);
+}
 
 class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
   static const _previewReviewCount = 3;
@@ -409,52 +419,99 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                   onRefresh: _load,
                   child: ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                    padding: dishPagePadding(context, top: 8, bottom: 32),
                     children: [
+                      if (_photoImages.isNotEmpty) ...[
+                        _buildPhotoSection(isDark, isAdmin),
+                        const SizedBox(height: 14),
+                      ],
                       _buildSummaryCard(isDark),
                       const SizedBox(height: 12),
                       _buildReviewPreview(isDark),
-                      const SizedBox(height: 16),
-                      _buildPhotoSection(isDark, isAdmin),
+                      const SizedBox(height: 12),
+                      _buildContributeHint(isDark),
                     ],
                   ),
                 ),
     );
   }
 
+  /// 菜品页统一的内容卡片：与首页评价卡、排行卡同一套底色、描边和圆角。
+  Widget _card(bool isDark, {required Widget child, EdgeInsets? padding}) {
+    return AppCardSurface(
+      padding: padding ?? const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      decoration: BoxDecoration(
+        color: CanteenTheme.surfaceBg(isDark),
+        borderRadius: BorderRadius.circular(CanteenTheme.radiusLg),
+        border: Border.all(color: CanteenTheme.borderColor(isDark)),
+      ),
+      child: child,
+    );
+  }
+
   Widget _buildSummaryCard(bool isDark) {
-    return AppContentSurface.reading(
+    return _card(
+      isDark,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            widget.canteenName,
-            style: TextStyle(
-              fontSize: 13,
-              color: CanteenTheme.textSecondaryColor(isDark),
-            ),
+          Row(
+            children: [
+              Icon(
+                Icons.storefront_rounded,
+                size: 15,
+                color: CanteenTheme.textTertiaryColor(isDark),
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  widget.canteenName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: CanteenTheme.textSecondaryColor(isDark),
+                  ),
+                ),
+              ),
+            ],
           ),
           if (_isOffline)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                '所属商家已下架，历史菜品与实拍仅供参考',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: CanteenTheme.textSecondaryColor(isDark),
+              padding: const EdgeInsets.only(top: 8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: CanteenTheme.surfaceMutedBg(isDark),
+                  borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                ),
+                child: Text(
+                  '所属商家已下架，历史菜品与实拍仅供参考',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: CanteenTheme.textSecondaryColor(isDark),
+                  ),
                 ),
               ),
             ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
           Text(
             '$_mentionCount 人评价中提到 · $_photoTotal 张同学真实实拍',
             style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
               color: CanteenTheme.textPrimaryColor(isDark),
             ),
           ),
-          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Divider(
+              height: 1,
+              thickness: 0.5,
+              color: CanteenTheme.borderColor(isDark),
+            ),
+          ),
           _buildScores(isDark),
         ],
       ),
@@ -463,21 +520,37 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
 
   Widget _buildScores(bool isDark) {
     if (_ratedCount <= 0) {
-      return Text(
-        '还没有同学给这道菜打分，写评价时可以顺手打个分',
-        style: TextStyle(
-          fontSize: 12,
-          color: CanteenTheme.textSecondaryColor(isDark),
-        ),
+      return Row(
+        children: [
+          Icon(
+            Icons.star_outline_rounded,
+            size: 18,
+            color: CanteenTheme.textTertiaryColor(isDark),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              '还没有同学给这道菜打分，写评价时可以顺手打个分',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: CanteenTheme.textSecondaryColor(isDark),
+              ),
+            ),
+          ),
+        ],
       );
     }
-    final accent = CanteenTheme.accentStrongColor(isDark);
+    final accent = CanteenTheme.accentColor(isDark);
+    // 标签列宽跟随字号放大，大字号下“性价比”也不会被折成两行。
+    final labelWidth =
+        44 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.8);
     Widget bar(String label, double value) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 3),
+          padding: const EdgeInsets.symmetric(vertical: 4),
           child: Row(
             children: [
               SizedBox(
-                width: 48,
+                width: labelWidth,
                 child: Text(
                   label,
                   style: TextStyle(
@@ -491,13 +564,13 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                   borderRadius: BorderRadius.circular(99),
                   child: LinearProgressIndicator(
                     value: (value / 5).clamp(0.0, 1.0),
-                    minHeight: 6,
+                    minHeight: 8,
                     color: accent,
                     backgroundColor: CanteenTheme.surfaceMutedBg(isDark),
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               SizedBox(
                 width: 28,
                 child: Text(
@@ -505,7 +578,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                   textAlign: TextAlign.end,
                   style: TextStyle(
                     fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w800,
                     color: CanteenTheme.textPrimaryColor(isDark),
                   ),
                 ),
@@ -520,26 +593,42 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
           label:
               '菜品综合分 ${_score('average').toStringAsFixed(1)}，$_ratedCount 人打分',
           excludeSemantics: true,
-          child: Column(
-            children: [
-              Text(
-                _score('average').toStringAsFixed(1),
-                style: TextStyle(
-                  fontSize: 30,
-                  height: 1,
-                  fontWeight: FontWeight.w900,
-                  color: accent,
+          child: Container(
+            width: 84,
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: CanteenTheme.accentSoftColor(isDark),
+              borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  _score('average').toStringAsFixed(1),
+                  style: TextStyle(
+                    fontSize: 30,
+                    height: 1,
+                    fontWeight: FontWeight.w900,
+                    color: CanteenTheme.accentStrongColor(isDark),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '$_ratedCount 人打分',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: CanteenTheme.textSecondaryColor(isDark),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.star_rounded, size: 12, color: accent),
+                    const SizedBox(width: 2),
+                    Text(
+                      '$_ratedCount 人打分',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: CanteenTheme.textSecondaryColor(isDark),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         const SizedBox(width: 16),
@@ -558,19 +647,35 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
 
   Widget _buildReviewPreview(bool isDark) {
     final currentUserId = context.read<AuthProvider>().user?.id;
-    return AppContentSurface.reading(
+    return _card(
+      isDark,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '大家怎么说',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: CanteenTheme.textPrimaryColor(isDark),
-            ),
+          Row(
+            children: [
+              Text(
+                '大家怎么说',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: CanteenTheme.textPrimaryColor(isDark),
+                ),
+              ),
+              if (_reviewTotal > 0) ...[
+                const SizedBox(width: 6),
+                Text(
+                  '· $_reviewTotal',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: CanteenTheme.textSecondaryColor(isDark),
+                  ),
+                ),
+              ],
+            ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 10),
           if (_reviewsFailed)
             Row(
               children: [
@@ -583,7 +688,13 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
                     ),
                   ),
                 ),
-                TextButton(onPressed: _load, child: const Text('重试')),
+                TextButton(
+                  onPressed: _load,
+                  style: TextButton.styleFrom(
+                    foregroundColor: CanteenTheme.accentStrongColor(isDark),
+                  ),
+                  child: const Text('重试'),
+                ),
               ],
             )
           else if (_reviews.isEmpty)
@@ -595,121 +706,139 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
               ),
             )
           else ...[
-            for (final review in _reviews)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${review['user_name'] ?? '匿名同学'}：${(review['comment']?.toString().trim().isNotEmpty ?? false) ? review['comment'] : '这位同学没有留下文字评价'}',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              height: 1.4,
-                              color: CanteenTheme.textSecondaryColor(isDark),
-                            ),
-                          ),
-                          if (dishReviewScoreLine(review).isNotEmpty)
-                            Text(
-                              dishReviewScoreLine(review),
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: CanteenTheme.accentStrongColor(isDark),
-                              ),
-                            ),
-                        ],
+            for (var i = 0; i < _reviews.length; i++) ...[
+              if (i > 0)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Divider(
+                    height: 1,
+                    thickness: 0.5,
+                    color: CanteenTheme.borderColor(isDark),
+                  ),
+                ),
+              DishReviewTile(
+                review: _reviews[i],
+                maxCommentLines: 3,
+                canReport:
+                    currentUserId != (_reviews[i]['user_id'] as num?)?.toInt(),
+              ),
+            ],
+            if (_reviewTotal > _reviews.length) ...[
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: _openAllReviews,
+                borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        '查看全部 $_reviewTotal 条评价',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: CanteenTheme.accentStrongColor(isDark),
+                        ),
                       ),
-                    ),
-                    if (currentUserId != (review['user_id'] as num?)?.toInt())
-                      PopupMenuButton<String>(
-                        tooltip: '举报评价',
-                        padding: EdgeInsets.zero,
-                        onSelected: (_) => reportDishReview(context, review),
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(value: 'report', child: Text('举报该评价')),
-                        ],
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 18,
+                        color: CanteenTheme.accentStrongColor(isDark),
                       ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            if (_reviewTotal > _reviews.length)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: _openAllReviews,
-                  child: Text('查看全部 $_reviewTotal 条评价'),
-                ),
-              ),
+            ],
           ],
         ],
       ),
     );
   }
 
+  /// 最新实拍放在页首：菜品页首先是“长什么样”。
   Widget _buildPhotoSection(bool isDark, bool isAdmin) {
     final shown = _photoImages.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (isAdmin && shown > 0)
-          AppContentSurface.reading(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 4),
-              child: Text(
-                '管理员提示：长按实拍图片可设为封面或下架',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.redAccent.withAlpha(217),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-        if (shown > 0) ...[
-          const SizedBox(height: 8),
-          DishPhotoMosaic(
-            imageUrls: _photoImages,
-            offline: _isOffline,
-            onLongPress: isAdmin ? _handleAdminManagePhoto : null,
-            onImageError: (imageUrl) {
-              if (_failedPhotoImages.contains(imageUrl)) return;
-              setState(() => _failedPhotoImages.add(imageUrl));
-            },
-          ),
-          if (_photoTotal > shown)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                '共 $_photoTotal 张实拍，展示最新 $shown 张',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: CanteenTheme.textTertiaryColor(isDark),
-                ),
-              ),
-            ),
-        ],
-        const SizedBox(height: 12),
-        AppContentSurface.reading(
-          child: Text(
-            _isOffline
-                ? '所属商家已下架，暂不能新增菜品实拍或评价'
-                : shown == 0
-                    ? '还没有实拍。评价「$_dishName」时上传照片，就会展示在这里。'
-                    : '吃过了？评价时上传新照片，会替换掉较旧的实拍。',
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.4,
-              color: CanteenTheme.textSecondaryColor(isDark),
-            ),
-          ),
+        DishPhotoMosaic(
+          imageUrls: _photoImages,
+          offline: _isOffline,
+          onLongPress: isAdmin ? _handleAdminManagePhoto : null,
+          onImageError: (imageUrl) {
+            if (_failedPhotoImages.contains(imageUrl)) return;
+            setState(() => _failedPhotoImages.add(imageUrl));
+          },
         ),
+        if (_photoTotal > shown || isAdmin)
+          Padding(
+            padding: const EdgeInsets.only(top: 8, left: 2, right: 2),
+            child: Row(
+              children: [
+                if (_photoTotal > shown)
+                  Expanded(
+                    child: Text(
+                      '共 $_photoTotal 张实拍，展示最新 $shown 张',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: CanteenTheme.textTertiaryColor(isDark),
+                      ),
+                    ),
+                  )
+                else
+                  const Spacer(),
+                if (isAdmin)
+                  Text(
+                    '管理员提示：长按实拍图片可设为封面或下架',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.redAccent.withAlpha(217),
+                    ),
+                  ),
+              ],
+            ),
+          ),
       ],
+    );
+  }
+
+  Widget _buildContributeHint(bool isDark) {
+    final shown = _photoImages.length;
+    return AppCardSurface(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: CanteenTheme.surfaceMutedBg(isDark),
+        borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _isOffline
+                ? Icons.storefront_outlined
+                : Icons.photo_camera_outlined,
+            size: 18,
+            color: CanteenTheme.textSecondaryColor(isDark),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _isOffline
+                  ? '所属商家已下架，暂不能新增菜品实拍或评价'
+                  : shown == 0
+                      ? '还没有实拍。评价「$_dishName」时上传照片，就会展示在这里。'
+                      : '吃过了？评价时上传新照片，会替换掉较旧的实拍。',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.45,
+                color: CanteenTheme.textSecondaryColor(isDark),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -718,7 +847,7 @@ class _CanteenDishDetailScreenState extends State<CanteenDishDetailScreen> {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        padding: dishPagePadding(context, top: 8, bottom: 12),
         child: FilledButton.icon(
           onPressed: _openReviewEditor,
           icon: const Icon(Icons.rate_review_outlined, size: 18),

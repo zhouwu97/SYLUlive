@@ -16,6 +16,7 @@ import '../providers/canteen_provider.dart';
 import '../services/canteen_review_draft_repository.dart';
 import '../theme/app_colors.dart';
 import '../widgets/canteen/canteen_review_image_picker.dart';
+import '../theme/app_motion.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/app_card.dart';
 
@@ -1538,89 +1539,109 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     String label,
     int selected,
     bool isDark,
-    ValueChanged<int> onChanged,
-  ) {
+    ValueChanged<int> onChanged, {
+    String? keyPrefix,
+    bool stacked = false,
+  }) {
+    // 评分按钮保留 44dp 触控热区；窄屏时允许按钮自然换行，避免挤压出屏。
+    final buttons = Wrap(
+      spacing: 4,
+      children: List.generate(5, (index) {
+        final score = index + 1;
+        final active = score == selected;
+        return SizedBox(
+          width: 44,
+          height: 44,
+          child: InkWell(
+            key: keyPrefix == null ? null : Key('${keyPrefix}_$score'),
+            onTap: _isSubmitting ? null : () => onChanged(score),
+            borderRadius: BorderRadius.circular(6),
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                width: 28,
+                height: 26,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: active
+                      ? CanteenTheme.accentSoftColor(isDark)
+                      : CanteenTheme.surfaceMutedBg(isDark),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: active
+                        ? CanteenTheme.accentColor(isDark)
+                        : CanteenTheme.borderColor(isDark),
+                  ),
+                ),
+                child: Text(
+                  '$score',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                    color: active
+                        ? CanteenTheme.accentStrongColor(isDark)
+                        : CanteenTheme.textSecondaryColor(isDark),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+    final labelText = Text(
+      label,
+      style: TextStyle(
+        fontSize: 11,
+        color: CanteenTheme.textSecondaryColor(isDark),
+      ),
+    );
+    final valueText = Text(
+      selected > 0 ? '$selected.0' : '--',
+      textAlign: TextAlign.right,
+      style: TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        color: selected > 0
+            ? CanteenTheme.textSecondaryColor(isDark)
+            : CanteenTheme.textTertiaryColor(isDark),
+      ),
+    );
+
+    // 嵌在小卡片里时（菜品打分）横向空间不够放“标签 + 5 个按钮 + 分数”，
+    // 改为标签和分数一行、按钮单独一行，5 个按钮不会被挤成两行。
+    if (stacked) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                labelText,
+                const Spacer(),
+                valueText,
+                const SizedBox(width: 4),
+              ],
+            ),
+            buttons,
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // 评分按钮保留 44dp 触控热区；窄屏时允许按钮自然换行，避免挤压出屏。
           final labelWidth = constraints.maxWidth < 360 ? 64.0 : 88.0;
           return Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              SizedBox(
-                width: labelWidth,
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: CanteenTheme.textSecondaryColor(isDark),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Wrap(
-                  spacing: 4,
-                  children: List.generate(5, (index) {
-                    final score = index + 1;
-                    final active = score == selected;
-                    return SizedBox(
-                      width: 44,
-                      height: 44,
-                      child: InkWell(
-                        onTap: _isSubmitting ? null : () => onChanged(score),
-                        borderRadius: BorderRadius.circular(6),
-                        child: Center(
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 120),
-                            width: 28,
-                            height: 26,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: active
-                                  ? CanteenTheme.accentSoftColor(isDark)
-                                  : CanteenTheme.surfaceMutedBg(isDark),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                color: active
-                                    ? CanteenTheme.accentColor(isDark)
-                                    : CanteenTheme.borderColor(isDark),
-                              ),
-                            ),
-                            child: Text(
-                              '$score',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight:
-                                    active ? FontWeight.w700 : FontWeight.w500,
-                                color: active
-                                    ? CanteenTheme.accentStrongColor(isDark)
-                                    : CanteenTheme.textSecondaryColor(isDark),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              ),
+              SizedBox(width: labelWidth, child: labelText),
+              Expanded(child: buttons),
               const SizedBox(width: 4),
-              SizedBox(
-                width: 30,
-                child: Text(
-                  selected > 0 ? '$selected.0' : '--',
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: selected > 0
-                        ? CanteenTheme.textSecondaryColor(isDark)
-                        : CanteenTheme.textTertiaryColor(isDark),
-                  ),
-                ),
-              ),
+              SizedBox(width: 30, child: valueText),
             ],
           );
         },
@@ -1927,52 +1948,94 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     );
   }
 
-  static const _unboundImageValue = '';
-
+  /// 选了多道菜时，逐张图片选择它属于哪道菜（或作为商家图）。用胶囊而不是下拉框：
+  /// 选项最多 4 个，一眼能看全，点一下就改。
   Widget _buildImageDishBindingRow(bool isDark, int index) {
     final image = _draftImages[index];
-    final current = _selectedDishNameForImage(image) ?? _unboundImageValue;
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 56,
+    final current = _selectedDishNameForImage(image);
+
+    void bind(String? dishName) {
+      setState(() {
+        final next = List<CanteenReviewDraftImage>.from(_draftImages);
+        next[index] = dishName == null
+            ? image.copyWith(dishId: 0, dishName: '')
+            : image.copyWith(dishId: _dishIdFor(dishName), dishName: dishName);
+        _draftImages = next;
+      });
+      _onFormChanged();
+    }
+
+    Widget pill(String label, bool selected, VoidCallback onTap) {
+      return Semantics(
+        button: true,
+        selected: selected,
+        label: '第 ${index + 1} 张图片归属：$label',
+        excludeSemantics: true,
+        child: InkWell(
+          onTap: _isSubmitting ? null : onTap,
+          borderRadius: BorderRadius.circular(999),
+          child: AnimatedContainer(
+            duration: AppMotion.duration(context, AppMotion.fast),
+            constraints: const BoxConstraints(minHeight: 32),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: selected
+                  ? CanteenTheme.accentSoftColor(isDark)
+                  : CanteenTheme.surfaceMutedBg(isDark),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: selected
+                    ? CanteenTheme.accentColor(isDark)
+                    : CanteenTheme.borderColor(isDark),
+              ),
+            ),
             child: Text(
-              '第 ${index + 1} 张',
+              label,
               style: TextStyle(
-                fontSize: 13,
-                color: CanteenTheme.textPrimaryColor(isDark),
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                color: selected
+                    ? CanteenTheme.accentStrongColor(isDark)
+                    : CanteenTheme.textSecondaryColor(isDark),
               ),
             ),
           ),
+        ),
+      );
+    }
+
+    return Padding(
+      key: Key('canteen_image_dish_binding_$index'),
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 48,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: CanteenTheme.surfaceMutedBg(isDark),
+              borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+            ),
+            child: Text(
+              '第 ${index + 1} 张',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: CanteenTheme.textSecondaryColor(isDark),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
           Expanded(
-            child: DropdownButton<String>(
-              key: Key('canteen_image_dish_binding_$index'),
-              isExpanded: true,
-              value: current,
-              onChanged: _isSubmitting
-                  ? null
-                  : (value) {
-                      if (value == null) return;
-                      setState(() {
-                        final next =
-                            List<CanteenReviewDraftImage>.from(_draftImages);
-                        next[index] = value == _unboundImageValue
-                            ? image.copyWith(dishId: 0, dishName: '')
-                            : image.copyWith(
-                                dishId: _dishIdFor(value), dishName: value);
-                        _draftImages = next;
-                      });
-                      _onFormChanged();
-                    },
-              items: [
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
                 for (final name in _recommendedDishes)
-                  DropdownMenuItem(value: name, child: Text(name)),
-                const DropdownMenuItem(
-                  value: _unboundImageValue,
-                  child: Text('不关联菜品（作为商家图）'),
-                ),
+                  pill(name, current == name, () => bind(name)),
+                pill('商家图', current == null, () => bind(null)),
               ],
             ),
           ),
@@ -1981,83 +2044,68 @@ class _CanteenReviewEditorScreenState extends State<CanteenReviewEditorScreen>
     );
   }
 
+  /// 每道已选菜品的选填打分：复用商家五维评分同款的 1~5 数字按钮，放在浅底小卡片里，
+  /// 和商家评分区分开但保持同一种操作方式。
   Widget _buildDishScoreEditor(bool isDark, Color accent, String name) {
     final review = _dishReviewFor(name);
-    Widget row(String label, int score, void Function(int) onPick) {
-      return Row(
-        children: [
-          SizedBox(
-            width: 48,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: CanteenTheme.textSecondaryColor(isDark),
-              ),
-            ),
-          ),
-          for (var value = 1; value <= 5; value++)
-            Semantics(
-              button: true,
-              selected: score == value,
-              label: '$name $label $value 分',
-              child: InkWell(
-                key: Key('canteen_dish_score_${name}_${label}_$value'),
-                onTap: _isSubmitting ? null : () => onPick(value),
-                borderRadius: BorderRadius.circular(16),
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(
-                    value <= score
-                        ? Icons.circle_rounded
-                        : Icons.circle_outlined,
-                    size: 20,
-                    color: value <= score
-                        ? accent
-                        : CanteenTheme.textTertiaryColor(isDark),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      );
-    }
-
     final hasAny = review != null &&
         (review.taste > 0 || review.value > 0 || review.portion > 0);
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: CanteenTheme.surfaceMutedBg(isDark),
+        borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
+              Icon(Icons.restaurant_menu_rounded, size: 15, color: accent),
+              const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   '给「$name」打分（选填）',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                     color: CanteenTheme.textPrimaryColor(isDark),
                   ),
                 ),
               ),
-              if (hasAny)
-                TextButton(
-                  onPressed: _isSubmitting
-                      ? null
-                      : () =>
-                          _setDishScore(name, taste: 0, value: 0, portion: 0),
-                  child: const Text('清空'),
-                ),
+              SizedBox(
+                height: 32,
+                child: hasAny
+                    ? TextButton(
+                        onPressed: _isSubmitting
+                            ? null
+                            : () => _setDishScore(name,
+                                taste: 0, value: 0, portion: 0),
+                        style: TextButton.styleFrom(
+                          foregroundColor:
+                              CanteenTheme.textSecondaryColor(isDark),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: const Size(0, 32),
+                        ),
+                        child: const Text('清空', style: TextStyle(fontSize: 12)),
+                      )
+                    : null,
+              ),
             ],
           ),
-          row('味道', review?.taste ?? 0,
-              (value) => _setDishScore(name, taste: value)),
-          row('性价比', review?.value ?? 0,
-              (value) => _setDishScore(name, value: value)),
-          row('分量', review?.portion ?? 0,
-              (value) => _setDishScore(name, portion: value)),
+          const SizedBox(height: 4),
+          _buildDimensionRow('味道', review?.taste ?? 0, isDark,
+              (value) => _setDishScore(name, taste: value),
+              keyPrefix: 'canteen_dish_score_${name}_味道', stacked: true),
+          _buildDimensionRow('性价比', review?.value ?? 0, isDark,
+              (value) => _setDishScore(name, value: value),
+              keyPrefix: 'canteen_dish_score_${name}_性价比', stacked: true),
+          _buildDimensionRow('分量', review?.portion ?? 0, isDark,
+              (value) => _setDishScore(name, portion: value),
+              keyPrefix: 'canteen_dish_score_${name}_分量', stacked: true),
         ],
       ),
     );

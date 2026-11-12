@@ -123,6 +123,12 @@ void main() {
     expect(find.text('实拍资料已完善'), findsNothing);
     expect(find.text('评价这道菜'), findsOneWidget);
     expect(find.text('共 8 张实拍，展示最新 3 张'), findsOneWidget);
+    // 实拍放在页首后，补图提示在首屏下方，需要滚动到它。
+    await tester.scrollUntilVisible(find.textContaining('上传新照片'), 200,
+        scrollable: find
+            .byWidgetPredicate((w) =>
+                w is Scrollable && w.axisDirection == AxisDirection.down)
+            .first);
     expect(find.textContaining('上传新照片'), findsOneWidget);
   });
 
@@ -281,9 +287,12 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text('同学1：第1条'), findsOneWidget);
-    expect(find.text('同学3：第3条'), findsOneWidget);
-    expect(find.text('味道 5 · 性价比 4 · 分量 3'), findsNWidgets(3));
+    expect(find.text('同学1'), findsOneWidget);
+    expect(find.text('第1条'), findsOneWidget);
+    expect(find.text('第3条'), findsOneWidget);
+    // 菜品三维分以胶囊展示，读屏会合并成一句。
+    expect(find.text('味道 5'), findsNWidgets(3));
+    expect(find.text('分量 3'), findsNWidgets(3));
     expect(find.text('查看全部 7 条评价'), findsOneWidget);
   });
 

@@ -19,6 +19,7 @@ import {
   ticketAttachmentLimits,
   TicketAttachments,
 } from "./attachments";
+import "./feedback.css";
 const states: Record<string, string> = {
   pending: "待受理",
   accepted: "已受理",
@@ -29,6 +30,39 @@ const states: Record<string, string> = {
   resolved: "已解决",
   closed: "已关闭",
 };
+// 状态色只做辅助，文字本身始终表达状态：待受理需要管理员动作，待补充等用户，
+// 处理中各阶段共用品牌色，已解决为成功色，已关闭弱化。
+const statusTones: Record<string, string> = {
+  pending: "warn",
+  waiting_user: "indigo",
+  accepted: "brand",
+  investigating: "brand",
+  fixing: "brand",
+  testing: "brand",
+  resolved: "is-resolved",
+};
+function StatusTag({ status }: { status: string }) {
+  return (
+    <span className={`tag ticket-status ${statusTones[status] || ""}`}>
+      {states[status] || status}
+    </span>
+  );
+}
+const ticketTypes: Record<string, string> = {
+  bug: "问题反馈",
+  suggestion: "功能建议",
+  other: "其他",
+};
+const priorities: Record<string, string> = {
+  P0: "P0 紧急",
+  P1: "P1 重要",
+  P2: "P2 一般",
+  P3: "P3 次要",
+};
+const listDescription = (admin: boolean) =>
+  admin
+    ? "处理用户反馈的问题与建议，回复、内部备注和状态变更都会留下记录"
+    : "创建工单反馈 Bug 或建议，查看处理进度与管理员回复";
 // 工单列表的筛选条件只写在列表自己的地址里，进详情时必须把它带上，
 // 否则返回会掉回「全部 / 第 1 页」，管理员刚在看的那批工单就找不回来了。
 // 管理端列表是 /admin 的 feedback 标签页，不是独立路由。
@@ -66,7 +100,7 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
       <>
         <Head
           title={admin ? "工单管理" : "我的工单"}
-          description="创建工单反馈 Bug 或建议，查看处理进度与管理员回复"
+          description={listDescription(admin)}
         />
         <Empty icon="lock" title="登录后查看工单" description="登录后可提交问题并跟进处理进展。">
           <button className="btn primary" onClick={auth.login}>
@@ -79,7 +113,7 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
     <>
       <Head
         title={admin ? "工单管理" : "我的工单"}
-        description="创建工单反馈 Bug 或建议，查看处理进度与管理员回复"
+        description={listDescription(admin)}
       >
         {!admin && (
           <button
@@ -158,7 +192,7 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
         value={status}
         onChange={(status) => setParams({ status, page: "1" })}
       />
-      <div className="panel">
+      <div className="panel ticket-list">
         <QueryState query={q}>
           {rows(q.data, "tickets").map((t) => (
             <Link
@@ -167,12 +201,14 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
               to={ticketRowHREF(admin, t.id, location.search)}
             >
               <span className="mono">{t.ticket_no}</span>
-              <div>
+              <div className="ticket-row-copy">
                 <b>{t.title}</b>
                 <p>{t.latest_reply_snippet || t.description}</p>
               </div>
-              <span className="tag">{states[t.status] || t.status}</span>
-              <span>{time(t.updated_at)}</span>
+              <StatusTag status={t.status} />
+              <time className="ticket-row-time" dateTime={t.updated_at}>
+                {time(t.updated_at)}
+              </time>
             </Link>
           ))}
           {!rows(q.data, "tickets").length && <Empty />}
@@ -195,15 +231,32 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
   const ticket = entity(q.data, "ticket");
   const back = ticketListHREF(admin, location.search);
   const closedForUser = !admin && ticket.status === "closed";
+  const messages = rows(q.data, "messages"),
+    history = rows(q.data, "history");
+  // 创建时只有描述进入初始消息，复现步骤等结构化字段要单独展示，否则网页端看不到。
+  const extraFields = (
+    [
+      ["复现步骤", ticket.steps_to_reproduce],
+      ["实际结果", ticket.actual_result],
+      ["期望结果", ticket.expected_result],
+    ] as [string, unknown][]
+  ).filter(([, value]) => typeof value === "string" && value.trim());
+  const headline = [
+    ticket.ticket_no,
+    ticketTypes[ticket.type],
+    ticket.created_at && `提交于 ${time(ticket.created_at)}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <>
-      <Head title={ticket.title || "工单详情"} description={ticket.ticket_no}>
+      <Head title={ticket.title || "工单详情"} description={headline}>
         <Link className="btn" to={back}>
           返回列表
         </Link>
       </Head>
       <QueryState query={q}>
-        <div className="ticket-layout">
+        <div className="ticket-layout ticket-detail">
           <div className="ticket-main">
             <div className="panel">
               <div className="thread">
@@ -215,9 +268,19 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
                   <div className="bubble details-text">
                     {q.data?.initial_submission?.content || ticket.description}
                   </div>
+                  {extraFields.length > 0 && (
+                    <dl className="ticket-extra">
+                      {extraFields.map(([label, value]) => (
+                        <div key={label}>
+                          <dt>{label}</dt>
+                          <dd className="details-text">{String(value)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
                   <TicketAttachments data={initialAttachmentIDs(q.data)} scope="初始提交附件" />
                 </div>
-                {rows(q.data, "messages").map((m) => (
+                {messages.map((m) => (
                   <div
                     key={m.id}
                     className={`thread-message ${m.sender_type === "admin" ? "official" : ""} ${isInternalMessage(m) ? "internal" : ""}`}
@@ -243,25 +306,27 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
                   </div>
                 ) : (
                   <Form
+                    // 表单非受控：消息数变化即发送成功，换 key 清空输入，避免重复发送同一条回复。
+                    key={messages.length}
                     fields={[
-                      {
-                        name: "content",
-                        label: admin ? "官方回复 / 内部备注" : "补充信息",
-                        type: "textarea",
-                        required: true,
-                      },
                       ...(admin
                         ? [
                             {
                               name: "scope",
-                              label: "可见范围",
+                              label: "回复方式",
                               options: [
-                                ["public", "用户可见"],
-                                ["internal", "内部备注"],
+                                ["public", "公开回复（用户可见）"],
+                                ["internal", "内部备注（仅管理员可见）"],
                               ] as [string, string][],
                             },
                           ]
                         : []),
+                      {
+                        name: "content",
+                        label: admin ? "回复内容" : "补充信息",
+                        type: "textarea",
+                        required: true,
+                      },
                       {
                         name: "images",
                         label: "附件图片",
@@ -294,12 +359,14 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
           </div>
           <aside className="ticket-aside">
             <div className="panel panel-pad">
-              <h3>处理进度</h3>
-              <span className="tag brand">
-                {states[ticket.status] || ticket.status}
-              </span>
+              <div className="ticket-aside-head">
+                <h3>处理进度</h3>
+                <StatusTag status={ticket.status} />
+              </div>
               {admin ? (
                 <Form
+                  key={`${ticket.status}:${history.length}`}
+                  submit="更新状态"
                   fields={[
                     {
                       name: "status",
@@ -308,10 +375,11 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
                       options: Object.entries(states),
                     },
                     {
+                      // 与 App 一致：说明选填，服务端也不要求；填写后随状态变更通知用户。
                       name: "status_note",
-                      label: "处理说明",
+                      label: "进度说明（选填）",
                       type: "textarea",
-                      required: true,
+                      help: "如版本号或修复说明，会随状态变更通知用户",
                     },
                   ]}
                   onSubmit={async (data) => {
@@ -321,6 +389,7 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
                       "PATCH",
                     );
                     await q.refetch();
+                    ui.notify("处理进度已更新");
                   }}
                 />
               ) : (
@@ -367,22 +436,63 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
                 </div>
               )}
             </div>
+            {admin && <TicketFacts ticket={ticket} />}
             <div className="panel panel-pad">
               <h3>操作记录</h3>
-              <ul className="event-list">
-                {rows(q.data, "history").map((h) => (
+              <ol className="event-list ticket-timeline">
+                {history.map((h) => (
                   <li key={h.id}>
-                    {states[h.new_status] || h.new_status} · {h.note}
-                    <br />
-                    <span className="muted">{time(h.created_at)}</span>
+                    <b>{states[h.new_status] || h.new_status}</b>
+                    {h.note && <span> · {h.note}</span>}
+                    <time className="muted" dateTime={h.created_at}>
+                      {time(h.created_at)}
+                    </time>
                   </li>
                 ))}
-              </ul>
+              </ol>
+              {!history.length && <p className="muted">暂无操作记录</p>}
             </div>
           </aside>
         </div>
       </QueryState>
     </>
+  );
+}
+// 管理端排查所需的提交上下文；只展示接口已返回的字段，缺失的行直接省略。
+function TicketFacts({ ticket }: { ticket: Entity }) {
+  const facts: [string, unknown][] = [
+    [
+      "提交人",
+      ticket.user_id &&
+        `${ticket.user?.nickname || "未设置昵称"} · UID ${ticket.user_id}`,
+    ],
+    ["类型", ticketTypes[ticket.type] || ticket.type],
+    ["优先级", priorities[ticket.priority] || ticket.priority],
+    ["负责人", ticket.assignee_admin?.nickname],
+    [
+      "客户端",
+      [ticket.app_version, ticket.build_number && `(${ticket.build_number})`]
+        .filter(Boolean)
+        .join(" "),
+    ],
+    ["设备", [ticket.device_model, ticket.os_version].filter(Boolean).join(" · ")],
+    ["网络", ticket.network_type],
+    ["页面", ticket.current_route],
+  ];
+  const visible = facts.filter(([, value]) => value);
+  if (!visible.length) return null;
+  return (
+    <div className="panel panel-pad">
+      <h3>工单信息</h3>
+      <dl className="ticket-facts">
+        {visible.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{String(value)}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 export function Notifications() {

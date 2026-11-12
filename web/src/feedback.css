@@ -1,0 +1,121 @@
+/* 工单列表与详情：只在 .ticket-list / .ticket-detail 作用域内覆盖，不影响其它使用 .ticket-row 的页面。 */
+
+.tag.ticket-status.is-resolved {
+  background: color-mix(in srgb, var(--success) 14%, var(--surface));
+  color: color-mix(in srgb, var(--success) 82%, var(--text));
+}
+
+.ticket-list .ticket-row-copy {
+  min-width: 0;
+}
+.ticket-list .ticket-row-copy b,
+.ticket-list .ticket-row-copy p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ticket-list .ticket-row-time {
+  color: var(--text-3);
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 601px) {
+  /* 单号 12 位等宽字符，原 75px 列放不下会压到标题上；时间列加宽避免折成两行。 */
+  .ticket-list .ticket-row {
+    grid-template-columns: 116px minmax(0, 1fr) 76px 128px;
+    gap: 16px;
+    padding: 14px 20px;
+  }
+  .ticket-list .ticket-row > .mono {
+    color: var(--text-3);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ticket-list .ticket-row .tag {
+    justify-self: center;
+  }
+  .ticket-list .ticket-row-time {
+    justify-self: end;
+  }
+}
+
+/* 详情页 */
+.ticket-detail .ticket-extra {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+}
+.ticket-detail .ticket-extra dt {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+.ticket-detail .ticket-extra dd {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  font-size: 14px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ticket-detail .ticket-aside-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.ticket-detail .ticket-aside-head h3 {
+  margin: 0;
+}
+.ticket-detail .ticket-aside .dialog-form textarea {
+  min-height: 72px;
+}
+.ticket-detail .ticket-aside .form-actions .btn {
+  width: 100%;
+}
+
+.ticket-detail .ticket-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+}
+.ticket-detail .ticket-facts > div {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 8px;
+}
+.ticket-detail .ticket-facts dt {
+  color: var(--text-3);
+}
+.ticket-detail .ticket-facts dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.ticket-detail .ticket-timeline {
+  margin: 0;
+}
+.ticket-detail .ticket-timeline li {
+  overflow-wrap: anywhere;
+}
+.ticket-detail .ticket-timeline li:last-child {
+  border-bottom: 0;
+}
+.ticket-detail .ticket-timeline time {
+  display: block;
+  font-size: 12px;
+}
+
+/* 回复区输入框保持紧凑，减少详情页滚动距离。 */
+.ticket-detail .reply-form .dialog-form textarea {
+  min-height: 96px;
+}

@@ -243,7 +243,21 @@ func ComputeCanteenAggregate(samples []UserRatingSample) CanteenAggregate {
 		result.HygieneScore /= result.DimensionEffectiveSample
 		result.ServiceScore /= result.DimensionEffectiveSample
 	}
+	result.AverageScore = roundAggregateScore(result.AverageScore)
+	result.EffectiveSample = roundAggregateScore(result.EffectiveSample)
+	result.DimensionEffectiveSample = roundAggregateScore(result.DimensionEffectiveSample)
+	result.TasteScore = roundAggregateScore(result.TasteScore)
+	result.ValueScore = roundAggregateScore(result.ValueScore)
+	result.QueueScore = roundAggregateScore(result.QueueScore)
+	result.HygieneScore = roundAggregateScore(result.HygieneScore)
+	result.ServiceScore = roundAggregateScore(result.ServiceScore)
 	return result
+}
+
+// roundAggregateScore 把加权平均和有效样本量保留到 4 位小数。时间衰减权重随当前时刻连续变化，
+// 不取整时同一分数会出现 4.999999999999999 这样的浮点尾数，排名分也会在两次请求之间微小抖动。
+func roundAggregateScore(v float64) float64 {
+	return math.Round(v*10000) / 10000
 }
 
 type DishRatingSample struct {
@@ -280,9 +294,10 @@ func ComputeDishAggregate(samples []DishRatingSample) DishAggregate {
 	if result.EffectiveSample == 0 {
 		return result
 	}
-	result.AverageScore /= result.EffectiveSample
-	result.TasteScore /= result.EffectiveSample
-	result.ValueScore /= result.EffectiveSample
-	result.PortionScore /= result.EffectiveSample
+	result.AverageScore = roundAggregateScore(result.AverageScore / result.EffectiveSample)
+	result.TasteScore = roundAggregateScore(result.TasteScore / result.EffectiveSample)
+	result.ValueScore = roundAggregateScore(result.ValueScore / result.EffectiveSample)
+	result.PortionScore = roundAggregateScore(result.PortionScore / result.EffectiveSample)
+	result.EffectiveSample = roundAggregateScore(result.EffectiveSample)
 	return result
 }

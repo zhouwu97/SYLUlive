@@ -63,7 +63,8 @@ func TestComputeCreditWeightRange(t *testing.T) {
 
 func TestComputeCanteenAggregateWeighted(t *testing.T) {
 	got := ComputeCanteenAggregate([]UserRatingSample{{Overall: 5, Weight: 1}, {Overall: 1, Weight: 0.5}})
-	if got.AverageScore != 3.6666666666666665 || got.ReviewerCount != 2 {
+	// (5×1 + 1×0.5) / 1.5 = 3.666…，接口统一保留 4 位小数。
+	if got.AverageScore != 3.6667 || got.ReviewerCount != 2 {
 		t.Fatalf("aggregate=%+v", got)
 	}
 }
@@ -103,5 +104,24 @@ func TestTimeDecayWeightHalvesEveryHalfLifeWithFloor(t *testing.T) {
 		if got := TimeDecayWeight(tc.at, now); math.Abs(got-tc.want) > 1e-9 {
 			t.Fatalf("%s: got %v want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestAggregateScoresHaveNoFloatingTailUnderDecayWeights(t *testing.T) {
+	// 与时间衰减相同量级的非整数权重：同一分数加权平均后必须仍是整数分。
+	weights := []float64{0.9999993, 0.7071068, 0.5000001}
+	dish := make([]DishRatingSample, 0, len(weights))
+	canteen := make([]UserRatingSample, 0, len(weights))
+	for _, w := range weights {
+		dish = append(dish, DishRatingSample{Overall: 4.45, Taste: 5, Value: 4, Portion: 3, Weight: w})
+		canteen = append(canteen, UserRatingSample{Overall: 4, Taste: 5, Value: 4, Queue: 3, Hygiene: 4, Service: 4, Weight: w, HasDimensions: true})
+	}
+	d := ComputeDishAggregate(dish)
+	if d.TasteScore != 5 || d.PortionScore != 3 || d.ValueScore != 4 || d.AverageScore != 4.45 {
+		t.Fatalf("dish aggregate=%+v", d)
+	}
+	c := ComputeCanteenAggregate(canteen)
+	if c.AverageScore != 4 || c.TasteScore != 5 || c.QueueScore != 3 {
+		t.Fatalf("canteen aggregate=%+v", c)
 	}
 }

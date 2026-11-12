@@ -48,6 +48,8 @@ class _SearchTheme extends ChangeNotifier implements ThemeProvider {
   bool get frostedGlass => false;
   @override
   double get componentOpacity => 1;
+  @override
+  double get effectiveComponentOpacity => 1;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

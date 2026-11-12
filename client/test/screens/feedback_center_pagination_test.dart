@@ -108,14 +108,15 @@ void main() {
         await tester.tap(find.text('重试'));
         await tester.pumpAndSettle();
         expect(find.text('暂无反馈记录'), findsOneWidget);
-        await appearance.setComponentOpacity(.35);
+        // 卡片不透明度的可调区间为 75–100%，取区间内的 0.8 验证选中块跟随设置。
+        await appearance.setComponentOpacity(.8);
         for (final glass in [true, false]) {
           await appearance.setFrostedGlass(glass);
           await tester.pumpAndSettle();
           expect(tester.getRect(panel), expected);
           final indicator = tester.widget<TabBar>(find.byType(TabBar)).indicator!
               as BoxDecoration;
-          expect(indicator.color!.a, closeTo(.35, .01),
+          expect(indicator.color!.a, closeTo(.8, .01),
               reason: '选中块跟随不透明度，独立于毛玻璃开关');
         }
         expect(requests, 2);

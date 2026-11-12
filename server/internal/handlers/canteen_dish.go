@@ -45,16 +45,16 @@ func (h *CanteenDishHandler) ListDishes(c *gin.Context) {
 	canteen.NormalizeOperatingStatus()
 
 	type dishRow struct {
-		ID                     uint     `json:"id"`
-		Name                   string   `json:"name"`
-		CanteenID              uint     `json:"canteen_id"`
-		CanteenName            string   `json:"canteen_name"`
-		CanteenOperatingStatus string   `json:"canteen_operating_status"`
-		CoverImage             string   `json:"cover_image"`
-		PhotoCount             int      `json:"photo_count"`
-		MentionCount           int      `json:"mention_count"`
-		LastPhotoAt            string   `json:"last_photo_at"`
-		ReviewerCount          int      `json:"reviewer_count"`
+		ID                     uint   `json:"id"`
+		Name                   string `json:"name"`
+		CanteenID              uint   `json:"canteen_id"`
+		CanteenName            string `json:"canteen_name"`
+		CanteenOperatingStatus string `json:"canteen_operating_status"`
+		CoverImage             string `json:"cover_image"`
+		PhotoCount             int    `json:"photo_count"`
+		MentionCount           int    `json:"mention_count"`
+		LastPhotoAt            string `json:"last_photo_at"`
+		ReviewerCount          int    `json:"reviewer_count"`
 	}
 	var dishes []dishRow
 	hasRelationTable := h.db.Migrator().HasTable(&models.CanteenReviewEventDish{})

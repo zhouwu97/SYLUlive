@@ -1301,3 +1301,42 @@ func TestMyCanteenContributionsClearAfterDeletingReview(t *testing.T) {
 		t.Fatalf("deleted review leftovers still listed: %s", after.Body.String())
 	}
 }
+
+func TestCreateDishReviewKeepsThreeDishLimitPerVisit(t *testing.T) {
+	h, canteen, user := prepareReviewV2DB(t)
+	parent := models.CanteenReviewEvent{CanteenID: canteen.ID, UserID: user.ID, OverallScore: 4, Status: models.ReviewEventStatusActive, ScoreVersion: 2}
+	if err := h.db.Create(&parent).Error; err != nil {
+		t.Fatal(err)
+	}
+	dishes := make([]models.CanteenDish, 0, 4)
+	for _, name := range []string{"鱼香肉丝", "宫保鸡丁", "麻婆豆腐", "回锅肉"} {
+		dish := models.CanteenDish{CanteenID: canteen.ID, Name: name, NormalizedName: name, Status: models.DishStatusActive, CreatedBy: user.ID}
+		if err := h.db.Create(&dish).Error; err != nil {
+			t.Fatal(err)
+		}
+		dishes = append(dishes, dish)
+	}
+	post := func(dish models.CanteenDish) int {
+		w := performCanteenRequest(t, h.CreateDishReview, http.MethodPost,
+			"/api/canteens/dishes/"+itoaForTest(dish.ID)+"/reviews", mapParams("dishId", itoaForTest(dish.ID)), user.ID,
+			`{"taste_score":4,"value_score":4,"portion_score":4,"canteen_review_event_id":`+itoaForTest(parent.ID)+`}`)
+		return w.Code
+	}
+	for _, dish := range dishes[:3] {
+		if code := post(dish); code != http.StatusCreated {
+			t.Fatalf("前三道菜应可关联，status=%d", code)
+		}
+	}
+	if code := post(dishes[3]); code != http.StatusBadRequest {
+		t.Fatalf("第四道菜应被拒绝，status=%d", code)
+	}
+	// 已关联的菜重新打分不受上限影响。
+	if code := post(dishes[0]); code != http.StatusCreated {
+		t.Fatalf("已关联菜品重新打分应成功，status=%d", code)
+	}
+	var linked int64
+	h.db.Model(&models.CanteenReviewEventDish{}).Where("review_event_id = ?", parent.ID).Distinct("dish_id").Count(&linked)
+	if linked != 3 {
+		t.Fatalf("关联菜品数应为 3，实际 %d", linked)
+	}
+}

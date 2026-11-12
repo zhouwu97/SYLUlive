@@ -211,3 +211,43 @@ func TestRankingScopeCurrentAndAll(t *testing.T) {
 		t.Fatalf("offline shop should be ranked by score in all scope: %v", all)
 	}
 }
+
+func TestRankingMarksUnratedCanteensAsUnranked(t *testing.T) {
+	db := newCanteenTestDB(t)
+	seedSearchListCanteens(t, db)
+	if err := db.Create(&models.Canteen{
+		Name: "新开小炒", NormalizedName: "新开小炒", Image: "/uploads/x.png", CreatedBy: 1,
+		Verified: true, OperatingStatus: models.CanteenOperatingActive,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	h := NewCanteenHandler(db)
+	canteenDiscoveryCache.Invalidate()
+	resp := performCanteenRequest(t, h.GetRankings, http.MethodGet, "/api/canteens/rankings", nil, 0, "")
+	var body struct {
+		Items []struct {
+			Name   string `json:"name"`
+			Rank   int    `json:"rank"`
+			Ranked bool   `json:"ranked"`
+		} `json:"items"`
+		Meta struct {
+			Total      int `json:"total"`
+			RatedTotal int `json:"rated_total"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Meta.Total != 4 || body.Meta.RatedTotal != 3 {
+		t.Fatalf("meta=%+v", body.Meta)
+	}
+	for _, item := range body.Items {
+		if item.Name == "新开小炒" {
+			if item.Ranked || item.Rank != 4 {
+				t.Fatalf("无人评价的店应排在最后且 ranked=false: %+v", item)
+			}
+		} else if !item.Ranked {
+			t.Fatalf("有评价的店应 ranked=true: %+v", item)
+		}
+	}
+}

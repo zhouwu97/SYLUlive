@@ -204,7 +204,9 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 	}
 
 	type item struct {
-		Rank               int                   `json:"rank"`
+		Rank int `json:"rank"`
+		// Ranked 为 false 表示还没有人评价：rank 只为兼容旧客户端保留，新客户端不显示名次。
+		Ranked             bool                  `json:"ranked"`
 		ID                 uint                  `json:"id"`
 		Name               string                `json:"name"`
 		LocationArea       string                `json:"location_area"`
@@ -223,9 +225,14 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 		TagKeys            []string              `json:"tag_keys"`
 	}
 	items := make([]item, 0, len(entries))
+	ratedTotal := 0
 	for _, e := range entries {
+		if e.RatingCount > 0 {
+			ratedTotal++
+		}
 		items = append(items, item{
 			Rank:               e.Rank,
+			Ranked:             e.RatingCount > 0,
 			ID:                 e.ID,
 			Name:               e.Name,
 			LocationArea:       e.LocationArea,
@@ -254,6 +261,7 @@ func (h *CanteenHandler) GetRankings(c *gin.Context) {
 			"prior_weight": services.BayesianPriorWeight,
 			"updated_at":   time.Now(),
 			"total":        len(items),
+			"rated_total":  ratedTotal,
 		},
 	}
 	canteenDiscoveryCache.SetIfGeneration(cacheKey, resp, generation)
@@ -934,9 +942,17 @@ func (h *CanteenHandler) GetHome(c *gin.Context) {
 	if len(entries) > 0 {
 		top = topItem{ID: entries[0].ID, Name: entries[0].Name, RankingScore: services.BayesianScoreTo100(entries[0].RankingScore)}
 	}
+	ratedTotal := 0
+	for _, e := range entries {
+		if e.RatingCount > 0 {
+			ratedTotal++
+		}
+	}
 	rankingEntry := gin.H{
 		"top":   top,
 		"total": rankTotal,
+		// rated_total 只数有人评价的店：没人评价的店不占名次，首页按它显示“第 1 / N”。
+		"rated_total": ratedTotal,
 	}
 
 	// 信息流排除 Hero 已展示的食堂，避免同店重复刷屏，也避免首页 Hero(同一 tag) 冲突。

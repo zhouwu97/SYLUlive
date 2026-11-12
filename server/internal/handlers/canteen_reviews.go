@@ -1919,6 +1919,22 @@ func (h *CanteenHandler) CreateDishReview(c *gin.Context) {
 			if parent.CanteenID != lockedDish.CanteenID || parent.Status != models.ReviewEventStatusActive {
 				return errDishReviewEventInvalid
 			}
+			// 与到店评价接口一致：一条到店评价最多关联 maxReviewDishes 道菜，已关联的菜可以重复打分。
+			var linked []uint
+			if err := tx.Model(&models.CanteenReviewEventDish{}).
+				Where("review_event_id = ?", parent.ID).Distinct("dish_id").Pluck("dish_id", &linked).Error; err != nil {
+				return err
+			}
+			alreadyLinked := false
+			for _, id := range linked {
+				if id == lockedDish.ID {
+					alreadyLinked = true
+					break
+				}
+			}
+			if !alreadyLinked && len(linked) >= maxReviewDishes {
+				return errDishReviewEventDishLimit
+			}
 		}
 		if err := tx.Create(&event).Error; err != nil {
 			return err
@@ -1940,6 +1956,8 @@ func (h *CanteenHandler) CreateDishReview(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"code": "review_event_forbidden", "error": "只能关联自己的到店评价"})
 		case errors.Is(err, errDishReviewEventInvalid):
 			c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_canteen_review_event", "error": "到店评价不存在、已隐藏或不属于该食堂"})
+		case errors.Is(err, errDishReviewEventDishLimit):
+			c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_review_dish", "error": "每条评价最多选择3道菜品"})
 		case errors.Is(err, errCanteenOffline):
 			c.JSON(http.StatusConflict, gin.H{"code": "canteen_offline", "error": "该店当前已下架，暂不能发布新的评价"})
 		default:
@@ -2162,6 +2180,7 @@ var (
 	errReviewDishInvalid        = errors.New("review_dish_invalid")
 	errDishReviewEventInvalid   = errors.New("dish_review_event_invalid")
 	errDishReviewEventForbidden = errors.New("dish_review_event_forbidden")
+	errDishReviewEventDishLimit = errors.New("dish_review_event_dish_limit")
 	errLegacyRatingSuperseded   = errors.New("legacy_rating_superseded")
 )
 

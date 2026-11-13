@@ -372,6 +372,8 @@ jobs:
       # 它读的是 browser-extension/dist-dev，必须先构建出来。
       - name: Build development extension bundle
         run: pnpm --filter @sylulive/extension dev
+      - name: Build store extension bundle
+        run: pnpm --filter @sylulive/extension package:store
       - name: Run browser specs against the dev server
         # vite 的 /api 与 /uploads 代理默认指向 https://sylulive.online，CI 不覆盖
         # 就会把每一次页面加载都打到生产。这里把它指向一个必定拒绝的本地端口：

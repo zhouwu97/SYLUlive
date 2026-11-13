@@ -199,7 +199,11 @@ test("单图动态始终在正文下方，收紧阅读宽度后缩放、预览�
   await page.reload();
   const failed = page.locator(".feed-card .media-tile").first();
   await expect(failed).toContainText("点击重试");
-  expect(await failed.evaluate(el => el.getBoundingClientRect().width)).toBe(320);
+  // 登录初始化会重取信息流：在同一次采样中核对失败态与尺寸，避免读取已卸载的旧节点。
+  await expect.poll(() => failed.evaluate(el => ({
+    width: el.getBoundingClientRect().width,
+    retry: el.textContent?.includes("点击重试"),
+  }))).toEqual({width: 320, retry: true});
   state.failMedium(false);
   await failed.click();
   await expect(failed.locator("img")).toBeVisible();

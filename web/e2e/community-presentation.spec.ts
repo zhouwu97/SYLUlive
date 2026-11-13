@@ -183,12 +183,14 @@ test("列表互动有可读标签，点赞等待时阻止重复提交，失败�
   state.holdLike = true;
   const like = actions.getByRole("button", { name: "点赞 4", exact: true });
   await like.click();
-  await expect(like).toBeDisabled();
-  await expect(like).toHaveAttribute("aria-busy", "true");
+  // 点击后立即切到已赞并计数 +1，服务端确认前保持忙碌、阻止重复提交。
+  const liked = actions.getByRole("button", { name: "已赞 5", exact: true });
+  await expect(liked).toHaveAttribute("aria-pressed", "true");
+  await expect(liked).toBeDisabled();
+  await expect(liked).toHaveAttribute("aria-busy", "true");
   await expect.poll(() => state.releaseLike !== undefined).toBe(true);
   expect(state.writes.filter((item) => item.path.endsWith("/like"))).toHaveLength(1);
   state.holdLike = false; state.releaseLike!();
-  const liked = actions.getByRole("button", { name: "已赞 5", exact: true });
   await expect(liked).toHaveAttribute("aria-pressed", "true");
   await expect(liked).toBeEnabled();
   state.likeFail = true;
@@ -199,6 +201,54 @@ test("列表互动有可读标签，点赞等待时阻止重复提交，失败�
   state.likeFail = false;
   await liked.click();
   await expect(like).toHaveAttribute("aria-pressed", "false");
+  expect(state.errors).toEqual([]);
+});
+
+test("信息流卡片菜单：不感兴趣立即收起、失败恢复、可撤销，搜索结果不提供负反馈", async ({ page }) => {
+  const state = await setup(page);
+  const feedback: string[] = [];
+  let failNext = false;
+  await page.route("**/api/feed/**", async (route) => {
+    const url = new URL(route.request().url());
+    feedback.push(`${route.request().method()} ${url.pathname}${url.search}`);
+    if (failNext) { failNext = false; return route.fulfill({ status: 503, json: { message: "反馈暂时失败" } }); }
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto("community");
+  const cards = page.locator(".community-feed .feed-card");
+  const trigger = () => cards.first().getByRole("button", { name: "帖子更多操作", exact: true });
+  await trigger().click();
+  const menu = page.getByRole("menu", { name: "帖子操作" });
+  await expect(menu.getByRole("menuitem")).toHaveText([/不感兴趣/, /不看 TA/, /复制链接/, /举报/]);
+  await expect(menu.getByRole("menuitem").first()).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem").nth(1)).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(trigger()).toBeFocused();
+
+  failNext = true;
+  await trigger().click();
+  await page.getByRole("menuitem", { name: /不感兴趣/ }).click();
+  await expect(page.locator(".toast")).toContainText("反馈暂时失败");
+  await expect(cards).toHaveCount(1);
+
+  await trigger().click();
+  await page.getByRole("menuitem", { name: /不感兴趣/ }).click();
+  const dismissed = page.locator(".feed-dismissed");
+  await expect(dismissed).toContainText("已减少此类推荐");
+  await expect(dismissed).toContainText("搜索仍然可以找到");
+  await expect(cards).toHaveCount(0);
+  expect(feedback.at(-1)).toBe("PUT /api/feed/posts/675/not-interested?source=all");
+  await dismissed.getByRole("button", { name: "撤销", exact: true }).click();
+  await expect(cards).toHaveCount(1);
+  expect(feedback.at(-1)).toBe("DELETE /api/feed/posts/675/not-interested");
+
+  await page.goto("community?q=校园");
+  await trigger().click();
+  await expect(page.getByRole("menuitem", { name: /不感兴趣/ })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: /不看 TA/ })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: /举报/ })).toBeVisible();
   expect(state.errors).toEqual([]);
 });
 

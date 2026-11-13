@@ -20,7 +20,7 @@ import {
   TicketAttachments,
 } from "./attachments";
 import "./feedback.css";
-const states: Record<string, string> = {
+export const states: Record<string, string> = {
   pending: "待受理",
   accepted: "已受理",
   waiting_user: "待补充",
@@ -41,14 +41,14 @@ const statusTones: Record<string, string> = {
   testing: "brand",
   resolved: "is-resolved",
 };
-function StatusTag({ status }: { status: string }) {
+export function StatusTag({ status }: { status: string }) {
   return (
     <span className={`tag ticket-status ${statusTones[status] || ""}`}>
       {states[status] || status}
     </span>
   );
 }
-const ticketTypes: Record<string, string> = {
+export const ticketTypes: Record<string, string> = {
   bug: "问题反馈",
   suggestion: "功能建议",
   other: "其他",
@@ -77,19 +77,31 @@ export function ticketListHREF(admin: boolean, search: string) {
   params.set("tab", "feedback");
   return `/admin?${params}`;
 }
+// 管理端列表按服务端 status_filter 分组筛选：“处理中”包含已受理、定位中、修复中，
+// 服务端不支持按这三个单独状态过滤，所以不能直接用 states 的八个值当筛选项。
+export const adminTicketFilters: [string, string][] = [
+  ["", "全部"],
+  ["pending", "待受理"],
+  ["processing", "处理中"],
+  ["testing", "测试中"],
+  ["waiting_user", "待补充"],
+  ["resolved", "已解决"],
+  ["closed", "已关闭"],
+  ["unviewed", "未查看"],
+];
 export function Feedback({ admin = false }: { admin?: boolean }) {
   const auth = useAuth(),
     ui = useUI(),
     nav = useNavigate(),
     location = useLocation();
   const [params, setParams] = useSearchParams();
-  const status = params.get("status") || "",
+  const status = admin && params.get("status") === "all" ? "" : params.get("status") || "",
     page = Number(params.get("page")) || 1;
   const base = admin ? "/api/admin/feedback" : "/api/feedback";
   const q = useApi(
     auth.user
       ? query(`${base}/tickets`, {
-          ...(admin ? { status } : { status_group: status }),
+          ...(admin ? { status_filter: status } : { status_group: status }),
           page,
           limit: 20,
         })
@@ -101,6 +113,7 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
         <Head
           title={admin ? "工单管理" : "我的工单"}
           description={listDescription(admin)}
+          level={admin ? 2 : 1}
         />
         <Empty icon="lock" title="登录后查看工单" description="登录后可提交问题并跟进处理进展。">
           <button className="btn primary" onClick={auth.login}>
@@ -114,6 +127,7 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
       <Head
         title={admin ? "工单管理" : "我的工单"}
         description={listDescription(admin)}
+        level={admin ? 2 : 1}
       >
         {!admin && (
           <button
@@ -181,7 +195,7 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
       <Tabs
         tabs={
           admin
-            ? [["", "全部"], ...Object.entries(states)]
+            ? adminTicketFilters
             : [
                 ["", "全部"],
                 ["processing", "处理中"],
@@ -190,7 +204,7 @@ export function Feedback({ admin = false }: { admin?: boolean }) {
               ]
         }
         value={status}
-        onChange={(status) => setParams({ status, page: "1" })}
+        onChange={(status) => setParams({ ...(admin ? {tab: "feedback"} : {}), status: admin && !status ? "all" : status, page: "1" })}
       />
       <div className="panel ticket-list">
         <QueryState query={q}>
@@ -231,6 +245,7 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
   const ticket = entity(q.data, "ticket");
   const back = ticketListHREF(admin, location.search);
   const closedForUser = !admin && ticket.status === "closed";
+  const closedForAdmin = admin && ticket.status === "closed";
   const messages = rows(q.data, "messages"),
     history = rows(q.data, "history");
   // 创建时只有描述进入初始消息，复现步骤等结构化字段要单独展示，否则网页端看不到。
@@ -305,16 +320,19 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
                     </p>
                   </div>
                 ) : (
+                  <>
+                  {closedForAdmin && <p className="muted">该工单已关闭，请先修改处理状态，再公开回复。内部备注仍可保存。</p>}
                   <Form
                     // 表单非受控：消息数变化即发送成功，换 key 清空输入，避免重复发送同一条回复。
-                    key={messages.length}
+                    key={`${messages.length}:${closedForAdmin}`}
                     fields={[
                       ...(admin
                         ? [
                             {
                               name: "scope",
                               label: "回复方式",
-                              options: [
+                              value: closedForAdmin ? "internal" : "public",
+                              options: closedForAdmin ? [["internal", "内部备注（仅管理员可见）"]] as [string, string][] : [
                                 ["public", "公开回复（用户可见）"],
                                 ["internal", "内部备注（仅管理员可见）"],
                               ] as [string, string][],
@@ -336,7 +354,7 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
                         help: attachmentHelp,
                       },
                     ]}
-                    submit="发送"
+                    submit={closedForAdmin ? "保存备注" : "发送"}
                     onSubmit={async (data, fd) => {
                       const image_ids = await uploadIDs(
                         fd,
@@ -353,6 +371,7 @@ export function TicketDetail({ admin = false }: { admin?: boolean }) {
                       ui.notify("回复已发送");
                     }}
                   />
+                  </>
                 )}
               </div>
             </div>

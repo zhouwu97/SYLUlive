@@ -43,4 +43,10 @@ export const paths: Record<string, string> = {
   lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.5"/>',
   "eye-off": '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12ZM3 3l18 18"/><circle cx="12" cy="12" r="2.5"/>',
+  // 帖子菜单：不感兴趣、举报、复制链接、编辑、删除
+  block: '<circle cx="12" cy="12" r="8.5"/><path d="m6 6 12 12"/>',
+  flag: '<path data-tone d="M5 4h12l-2.5 4L17 12H5z"/><path d="M5 21V4h12l-2.5 4L17 12H5"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  edit: '<path data-tone d="M4 20h4L19 9l-4-4L4 16z"/><path d="M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4"/>',
+  trash: '<path d="M4 7h16M9 7V4.5h6V7M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M10 11v6m4-6v6"/>',
 };

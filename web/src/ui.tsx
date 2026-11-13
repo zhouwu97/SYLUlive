@@ -27,10 +27,12 @@ export function Icon({ name, size }: { name: string; size?: number }) {
     />
   );
 }
-type Dialog = { title: string; body: ReactNode };
+// drawer：桌面端从右侧滑出的编辑面板，适合需要边改边看列表的管理表单；手机端仍是底部弹层。
+export type DialogVariant = "modal" | "drawer";
+type Dialog = { title: string; body: ReactNode; variant?: DialogVariant };
 const UIContext = createContext<{
   dialog: Dialog | null;
-  open: (title: string, body: ReactNode) => void;
+  open: (title: string, body: ReactNode, variant?: DialogVariant) => void;
   close: () => void;
   notify: (s: string) => void;
   act: (fn: () => Promise<unknown>, success?: string) => Promise<boolean>;
@@ -62,7 +64,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
     <UIContext.Provider
       value={{
         dialog,
-        open: (title, body) => setDialog({ title, body }),
+        open: (title, body, variant) => setDialog({ title, body, variant }),
         close,
         notify,
         act,
@@ -83,10 +85,12 @@ export function Modal({
   title,
   close,
   children,
+  variant = "modal",
 }: {
   title: string;
   close: () => void;
   children: ReactNode;
+  variant?: DialogVariant;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -125,14 +129,14 @@ export function Modal({
   }, []);
   return (
     <div
-      className="overlay open"
+      className={variant === "drawer" ? "overlay open overlay-drawer" : "overlay open"}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) close();
       }}
     >
       <div
         ref={ref}
-        className="modal"
+        className={variant === "drawer" ? "modal modal-drawer" : "modal"}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -260,7 +264,7 @@ export function Form({
         </p>
       )}
       <div className="form-actions">
-        <button className="btn primary" disabled={busy}>
+        <button className="btn primary" disabled={busy} aria-busy={busy}>
           {busy ? "正在提交…" : submit}
         </button>
       </div>
@@ -273,17 +277,21 @@ export function Head({
   subtitle,
   action,
   children,
+  level = 1,
 }: {
   title: string;
   description?: string;
   subtitle?: string;
   action?: ReactNode;
   children?: ReactNode;
+  /** 嵌在其它页面里的分区标题用 2，避免一页出现两个 h1。 */
+  level?: 1 | 2;
 }) {
+  const Heading = level === 2 ? "h2" : "h1";
   return (
-    <div className="page-head">
+    <div className={level === 2 ? "page-head section-head" : "page-head"}>
       <div className="page-title">
-        <h1>{title}</h1>
+        <Heading>{title}</Heading>
         {(description || subtitle) && <p>{description || subtitle}</p>}
       </div>
       <div className="head-actions">
@@ -315,19 +323,39 @@ export function Empty({
     </div>
   );
 }
+/** 信息流加载骨架：按帖子卡片的结构占位，加载完成后内容在同一位置出现，不跳动。 */
+export function FeedSkeleton({ count = 3, label = "正在加载…" }: { count?: number; label?: string }) {
+  return (
+    <div className="loading-state loading-skeleton" role="status">
+      <span className="loading-label">{label}</span>
+      {Array.from({ length: count }, (_, index) => (
+        <div className="skeleton-card" aria-hidden="true" key={index}>
+          <div className="skeleton-author"><span className="skeleton-block skeleton-avatar" /><span className="skeleton-lines"><span className="skeleton-block" /><span className="skeleton-block" /></span></div>
+          <span className="skeleton-block skeleton-title" />
+          <span className="skeleton-block" />
+          <span className="skeleton-block skeleton-short" />
+          {index === 0 && <span className="skeleton-block skeleton-media" />}
+        </div>
+      ))}
+    </div>
+  );
+}
 export function QueryState({
   query,
   children,
   empty = false,
+  skeleton,
 }: {
   query: { isPending: boolean; error: Error | null; refetch: () => unknown };
   children: ReactNode;
   empty?: boolean;
+  /** feed / post：用帖子卡片骨架代替通用加载条（列表三张、详情一张）。 */
+  skeleton?: "feed" | "post";
 }) {
   if (query.isPending)
-    return (
+    return skeleton ? <FeedSkeleton count={skeleton === "post" ? 1 : 3} /> : (
       <div className="loading-state" role="status">
-        正在加载…
+        <span className="loading-label">正在加载…</span>
       </div>
     );
   if (query.error instanceof ApiError && query.error.code === 'legal_consent_required')
@@ -435,7 +463,7 @@ export function Pagination({
 export function DialogOutlet() {
   const { dialog, close } = useUI();
   return dialog ? (
-    <Modal title={dialog.title} close={close}>
+    <Modal title={dialog.title} close={close} variant={dialog.variant}>
       {dialog.body}
     </Modal>
   ) : null;

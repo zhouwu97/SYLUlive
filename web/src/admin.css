@@ -1,13 +1,255 @@
-.social-shell .admin-tabs { min-width: 0; margin-bottom: 16px; }
-.social-shell .admin-tabs .tabs {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  gap: 4px;
-  scrollbar-width: thin;
+/* 管理中心
+   桌面（≥601px）：独立工作台，左侧分组导航 + 右侧模块区，社区侧栏由 main.tsx 隐藏。
+   手机（≤600px）：对照 App，保留页头 + 横向模块标签 + 列表 → 详情页。
+   颜色全部来自站点令牌（--brand / --surface / --line …），跟随用户的深浅色和主题色设置。 */
+.social-shell .admin-page, .social-shell .admin-console { min-width: 0; }
+.social-shell .admin-tabs { min-width: 0; margin-bottom: 24px; }
+.social-shell .admin-tabs .tabs { display: flex; width: 100%; flex-wrap: nowrap; overflow-x: auto; gap: 4px; scrollbar-width: thin; }
+.social-shell .admin-tabs .tab { flex: 0 0 auto; white-space: nowrap; padding-inline: 14px; }
+
+/* 分区：分区头 + 筛选 + 内容，统一 16px 节奏。 */
+.social-shell .admin-section { display: grid; gap: 16px; min-width: 0; }
+.social-shell .admin-section > * { min-width: 0; margin-block: 0; }
+.social-shell .admin-section .section-head { align-items: flex-end; gap: 16px; margin: 0; }
+.social-shell .admin-section .section-head h2 { margin: 0 0 4px; font-size: 22px; font-weight: 650; line-height: 1.35; letter-spacing: 0; }
+.social-shell .admin-section .section-head p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.6; }
+.social-shell .admin-section .head-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.social-shell .admin-count { color: var(--text-3); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; margin-right: 4px; }
+.social-shell .admin-section > .filter-row { margin: 0; }
+.social-shell .admin-section .pagination { margin-top: 12px; }
+.social-shell .admin-hints { display: inline-flex; align-items: center; gap: 4px; color: var(--text-3); font-size: 12px; white-space: nowrap; }
+.social-shell .admin-hints kbd { min-width: 20px; height: 20px; padding: 0 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--surface); font: 11px/17px ui-monospace, Consolas, monospace; text-align: center; color: var(--text-2); }
+.social-shell .admin-hints kbd + kbd { margin-left: -1px; }
+.social-shell .admin-hints kbd:not(:first-child):not(kbd + kbd) { margin-left: 6px; }
+
+/* 管理中心专用按钮尺寸与危险操作样式（站点没有通用的 sm / danger 按钮）。 */
+.social-shell :is(.admin-console, .admin-page) .btn.sm { min-height: 32px; height: 32px; padding: 0 12px; font-size: 13px; }
+.social-shell :is(.admin-console, .admin-page) .btn.ghost { border-color: transparent; background: transparent; color: var(--text-2); }
+.social-shell :is(.admin-console, .admin-page) .btn.ghost:hover { color: var(--text); background: var(--surface-2); }
+.social-shell :is(.admin-console, .admin-page) .btn.danger { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 45%, var(--line)); background: var(--surface); }
+.social-shell :is(.admin-console, .admin-page) .btn.danger:not(:disabled):hover { background: color-mix(in oklab, var(--danger) 8%, var(--surface)); }
+
+/* 等待时长：超过 1 天琥珀色，超过 3 天红色；文字本身说明时长，不只靠颜色。 */
+.social-shell .admin-wait { display: inline-flex; align-items: center; gap: 4px; font-style: normal; font-size: 12px; color: var(--text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.social-shell .admin-wait.warn { color: var(--color-price, #b74730); }
+.social-shell .admin-wait.late { color: var(--danger); font-weight: 600; }
+.social-shell .admin-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.social-shell .admin-chip { min-height: 28px; padding: 0 10px; border: 1px dashed var(--line); border-radius: 999px; background: transparent; color: var(--text-2); font-size: 12px; cursor: pointer; }
+.social-shell .admin-chip:hover, .social-shell .admin-chip:focus-visible { border-style: solid; border-color: var(--color-accent-border); color: var(--brand-strong); background: var(--brand-soft); }
+
+/* ---------- 桌面：工作台布局 ---------- */
+@media (min-width: 601px) {
+  .social-shell.admin-shell .frame { max-width: 1440px; grid-template-columns: minmax(0, 1fr); }
+  .social-shell.admin-shell .workspace { grid-column: 1; }
+  .social-shell.admin-shell .workspace-grid.no-rail .main-pane { max-width: none; }
+  .social-shell .admin-console { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 32px; align-items: start; }
+  .social-shell .admin-main { min-width: 0; padding-bottom: 48px; }
+
+  .social-shell .admin-nav { position: sticky; top: calc(var(--topbar) + 8px); max-height: calc(100dvh - var(--topbar) - 24px); overflow-y: auto; scrollbar-width: none; padding-bottom: 16px; }
+  .social-shell .admin-back { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: var(--radius-sm); color: var(--text-3); font-size: 13px; text-decoration: none; }
+  .social-shell .admin-back .svg-icon { transform: rotate(90deg); }
+  .social-shell .admin-back:hover { color: var(--text); background: var(--surface-2); }
+  .social-shell .admin-who { display: flex; align-items: center; gap: 10px; margin: 12px 0 18px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
+  .social-shell .admin-who .avatar, .social-shell .admin-who img, .social-shell .admin-who > :first-child { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; }
+  .social-shell .admin-who span { display: grid; min-width: 0; }
+  .social-shell .admin-who b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .social-shell .admin-who small { color: var(--text-3); font-size: 12px; }
+  .social-shell .admin-nav .nav-section { margin-bottom: 14px; }
+  .social-shell .admin-nav .nav-item { display: flex; align-items: center; gap: 10px; min-height: 40px; text-decoration: none; }
+  .social-shell .admin-badge { margin-left: auto; min-width: 22px; height: 20px; padding: 0 7px; border-radius: 999px; display: grid; place-items: center; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; background: var(--surface-2); color: var(--text-3); box-shadow: inset 0 0 0 1px var(--line); }
+  .social-shell .admin-badge.is-hot { background: var(--danger); color: var(--color-accent-ink, #fff); box-shadow: none; }
+  :root[data-theme="dark"] .social-shell .admin-badge.is-hot { color: #2a0d0d; }
+  .social-shell .admin-dot { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: var(--color-price, #b74730); }
+
+  /* 二级筛选：胶囊分段，与一级导航区分。 */
+  .social-shell .admin-section .tabs { display: inline-flex; flex-wrap: wrap; width: fit-content; max-width: 100%; gap: 2px; margin: 0; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface); }
+  .social-shell .admin-section .tab { min-height: 32px; padding: 0 12px; border: 0; border-radius: var(--radius-sm); color: var(--text-2); font-size: 13px; box-shadow: none; white-space: nowrap; }
+  .social-shell .admin-section .tab::after { display: none; }
+  .social-shell .admin-section .tab:hover { color: var(--text); }
+  .social-shell .admin-section .tab.active { background: var(--brand-soft); color: var(--brand-strong); font-weight: 600; box-shadow: none; }
+  .social-shell .admin-section .tabs.has-nav-ind > .nav-ind { border-radius: var(--radius-sm); background: var(--brand-soft); }
+  .social-shell .admin-section .tabs.has-nav-ind > .nav-ind::after { display: none; }
+  .social-shell .admin-section .tabs.has-nav-ind .tab.active { background: transparent; }
 }
-.social-shell .admin-tabs .tab {
-  flex: 0 0 auto;
-  white-space: nowrap;
-  padding-inline: 14px;
-}
+
+/* ---------- 工作台 ---------- */
+.social-shell .admin-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.social-shell .admin-kpi { display: grid; gap: 6px; padding: 16px 18px; text-align: left; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); color: var(--text); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.social-shell .admin-kpi:hover { border-color: var(--color-accent-border); box-shadow: var(--shadow-hover); }
+.social-shell .admin-kpi-top { display: flex; align-items: center; justify-content: space-between; color: var(--text-2); font-size: 13px; }
+.social-shell .admin-kpi-icon { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: color-mix(in oklab, var(--kpi) 12%, var(--surface)); color: var(--kpi); }
+.social-shell .admin-kpi.tone-danger { --kpi: var(--danger); }
+.social-shell .admin-kpi.tone-warn { --kpi: var(--icon-amber, #aa650e); }
+.social-shell .admin-kpi.tone-violet { --kpi: var(--icon-violet, #7653b8); }
+.social-shell .admin-kpi.tone-success { --kpi: var(--success); }
+.social-shell .admin-kpi b { font-size: 28px; line-height: 1.15; font-weight: 700; font-variant-numeric: tabular-nums; }
+.social-shell .admin-kpi small { color: var(--text-3); font-size: 12px; }
+.social-shell .admin-kpi small.is-alert { color: var(--danger); font-weight: 600; }
+.social-shell .admin-dash { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+.social-shell .admin-dash-side { display: grid; gap: 16px; }
+.social-shell .admin-card { overflow: hidden; }
+.social-shell .admin-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line-2); }
+.social-shell .admin-card-head h3 { margin: 0; font-size: 15px; font-weight: 650; }
+.social-shell .admin-card-head > span { color: var(--text-3); font-size: 12px; }
+.social-shell .admin-card-foot { margin: 0; padding: 12px 20px; color: var(--text-3); font-size: 12px; border-top: 1px solid var(--line-2); }
+.social-shell .admin-queue { list-style: none; margin: 0; padding: 0; }
+.social-shell .admin-queue li { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 12px 20px; border-top: 1px solid var(--line-2); }
+.social-shell .admin-queue li:first-child { border-top: 0; }
+.social-shell .admin-queue .tag { justify-self: start; }
+.social-shell .tag.violet { background: color-mix(in oklab, var(--icon-violet, #7653b8) 12%, var(--surface)); color: var(--icon-violet, #7653b8); }
+:root[data-theme="dark"] .social-shell .tag.violet { color: color-mix(in oklab, var(--icon-violet, #7653b8) 45%, #fff); }
+.social-shell .admin-queue-copy { display: grid; min-width: 0; }
+.social-shell .admin-queue-copy b, .social-shell .admin-queue-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.social-shell .admin-queue-copy b { font-size: 14px; font-weight: 600; }
+.social-shell .admin-queue-copy small { color: var(--text-3); font-size: 12px; }
+.social-shell .admin-health { list-style: none; margin: 0; padding: 4px 20px 10px; }
+.social-shell .admin-health-row { display: flex; gap: 10px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--line-2); color: var(--text-3); }
+.social-shell .admin-health-row:first-child { border-top: 0; }
+.social-shell .admin-health-row .svg-icon { flex: 0 0 auto; margin-top: 2px; }
+.social-shell .admin-health-row.ok .svg-icon { color: var(--success); }
+.social-shell .admin-health-row.warn .svg-icon { color: var(--icon-amber, #aa650e); }
+.social-shell .admin-health-row.bad .svg-icon { color: var(--danger); }
+.social-shell .admin-health-row span { display: grid; gap: 2px; min-width: 0; }
+.social-shell .admin-health-row b { color: var(--text); font-size: 13px; font-weight: 600; }
+.social-shell .admin-health-row small { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.social-shell .admin-log { list-style: none; margin: 0; padding: 0; }
+.social-shell .admin-log li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 20px; border-top: 1px solid var(--line-2); font-size: 13px; }
+.social-shell .admin-log li:first-child { border-top: 0; }
+.social-shell .admin-log time { color: var(--text-3); font-size: 12px; white-space: nowrap; }
+
+/* ---------- 工单：列表与详情同屏 ---------- */
+.social-shell .admin-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.social-shell .admin-search { display: flex; gap: 8px; align-items: center; }
+.social-shell .admin-search input { width: 220px; min-height: 36px; }
+.social-shell .admin-split { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.social-shell .admin-split-list { min-width: 0; }
+.social-shell .admin-ticket-list { overflow: hidden; }
+.social-shell .admin-ticket-row { position: relative; display: grid; gap: 4px; width: 100%; padding: 13px 16px; border: 0; border-top: 1px solid var(--line-2); background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.social-shell .admin-ticket-row:first-child { border-top: 0; }
+.social-shell .admin-ticket-row:hover { background: var(--surface-2); }
+.social-shell .admin-ticket-row[aria-current="true"] { background: var(--brand-soft); }
+.social-shell .admin-ticket-row[aria-current="true"]::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--color-accent-fill); }
+.social-shell .admin-ticket-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.social-shell .admin-ticket-top b { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.social-shell .admin-ticket-top .tag { flex-shrink: 0; }
+.social-shell .admin-unviewed { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent-fill); }
+.social-shell .admin-ticket-snippet { color: var(--text-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.social-shell .admin-ticket-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.social-shell .admin-ticket-meta > span:last-child { display: inline-flex; gap: 8px; align-items: center; }
+.social-shell .admin-ticket-pane { position: sticky; top: calc(var(--topbar) + 8px); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: calc(100dvh - var(--topbar) - 24px); min-height: 420px; overflow: hidden; }
+.social-shell .admin-ticket-pane > .loading-state, .social-shell .admin-ticket-pane > .empty-state { grid-row: 1 / -1; }
+.social-shell .admin-pane-head { display: grid; gap: 10px; padding: 16px 20px 14px; border-bottom: 1px solid var(--line-2); }
+.social-shell .admin-pane-title { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.social-shell .admin-pane-title h3 { margin: 0; font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+.social-shell .admin-pane-title .btn { margin-left: auto; }
+.social-shell .admin-pane-facts { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; color: var(--text-3); font-size: 12px; }
+.social-shell .admin-status-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); }
+.social-shell .admin-status-form label { display: inline-flex; align-items: center; gap: 6px; }
+.social-shell .admin-status-form select { min-height: 32px; height: 32px; padding: 0 28px 0 10px; }
+.social-shell .admin-status-form input { flex: 1 1 200px; min-height: 32px; height: 32px; }
+.social-shell .admin-thread { overflow-y: auto; padding: 16px 20px; margin: 0; }
+.social-shell .admin-thread-empty { margin: 4px 0 0; text-align: center; color: var(--text-3); font-size: 12px; }
+.social-shell .admin-composer { display: grid; gap: 10px; padding: 12px 16px 14px; border-top: 1px solid var(--line-2); background: var(--surface); }
+.social-shell .admin-composer-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.social-shell .admin-composer textarea { width: 100%; min-height: 76px; resize: vertical; }
+.social-shell .admin-composer-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.social-shell .admin-attach { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12px; }
+.social-shell .admin-attach input { max-width: 190px; font-size: 12px; }
+.social-shell .admin-composer-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+
+/* ---------- 举报：卡片内处理 ---------- */
+.social-shell .admin-reports { display: grid; gap: 12px; }
+.social-shell .admin-report { display: grid; gap: 12px; padding: 18px 20px; }
+.social-shell .admin-report-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.social-shell .admin-report-title b { font-size: 15px; font-weight: 600; }
+.social-shell .admin-report-id { color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.social-shell .admin-report-status { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
+.social-shell .admin-report-snapshot { display: grid; gap: 4px; padding: 10px 14px; border-left: 3px solid var(--line); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--surface-2); }
+.social-shell .admin-report-snapshot small { color: var(--text-3); font-size: 12px; }
+.social-shell .admin-report-snapshot p { margin: 0; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.social-shell .admin-report-snapshot p.is-empty { color: var(--text-3); }
+.social-shell .admin-report-note { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.social-shell .admin-report-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.social-shell .admin-report-meta { color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.social-shell .admin-report-actions, .social-shell .admin-confirm-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.social-shell .admin-decide { display: grid; gap: 12px; padding: 14px; border-radius: var(--radius-control); border: 1px solid color-mix(in oklab, var(--danger) 30%, var(--line)); background: color-mix(in oklab, var(--danger) 5%, var(--surface)); }
+.social-shell .admin-decide .field { margin: 0; }
+.social-shell .admin-decide textarea { min-height: 72px; }
+.social-shell .admin-decide small.muted { display: block; margin-top: 4px; font-weight: 400; font-size: 12px; color: var(--text-3); }
+.social-shell .admin-decide-foot { display: flex; justify-content: flex-end; gap: 8px; }
+.social-shell .admin-confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-radius: var(--radius-control); border: 1px solid var(--line); background: var(--surface-2); font-size: 13px; }
+
+/* 通用队列行。 */
+.social-shell .admin-list { overflow: hidden; }
+.social-shell .admin-row { gap: 16px; padding: 16px 20px; }
+.social-shell .admin-row .list-main b { font-size: 15px; font-weight: 600; }
+.social-shell .admin-row .list-main p { margin-top: 4px; font-size: 13px; line-height: 1.6; color: var(--text-2); }
+.social-shell .admin-row .list-main small { display: block; margin-top: 4px; color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.social-shell .admin-row > .btn { flex-shrink: 0; }
+
+/* AI 指标。 */
+.social-shell .admin-metrics { display: grid; gap: 16px; min-width: 0; }
+.social-shell .admin-metrics .split-stats { margin: 0; }
+.social-shell .admin-metrics .stat { padding: 18px 20px; }
+.social-shell .admin-metrics .stat b { display: block; margin-bottom: 4px; font-size: 24px; }
+.social-shell .admin-table :is(th, td) { padding: 12px 20px; }
+.social-shell .admin-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .managed-ai-label { display: block; margin-bottom: 4px; }
+
+/* 中等宽度：工作台两列折为一列，统计卡两列。 */
+@media (min-width: 601px) and (max-width: 1180px) {
+  .social-shell .admin-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .social-shell .admin-dash { grid-template-columns: minmax(0, 1fr); }
+  .social-shell .admin-console { grid-template-columns: 196px minmax(0, 1fr); gap: 20px; }
+  .social-shell .admin-split { grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); }
+  .social-shell .admin-hints { display: none; }
+}
+@media (min-width: 601px) and (max-width: 900px) {
+  .social-shell .admin-split { grid-template-columns: minmax(0, 1fr); }
+  .social-shell .admin-ticket-pane { position: static; max-height: none; }
+}
+
+@media (max-width: 600px) {
+  .social-shell .admin-tabs { margin-bottom: 16px; }
+  .social-shell .admin-section { gap: 12px; }
+  .social-shell .admin-section .section-head { align-items: flex-start; }
+  .social-shell .admin-section .section-head .head-actions { width: 100%; justify-content: space-between; }
+  .social-shell .admin-hints { display: none; }
+  .social-shell .admin-row { padding: 14px 16px; }
+  .social-shell .admin-report { padding: 14px 16px; }
+  .social-shell .admin-report-status { margin-left: 0; }
+  .social-shell .admin-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .social-shell .admin-kpi { padding: 12px 14px; }
+  .social-shell .admin-kpi b { font-size: 24px; }
+  .social-shell .admin-dash { grid-template-columns: minmax(0, 1fr); }
+  .social-shell .admin-queue li { grid-template-columns: minmax(0, 1fr) auto; padding: 12px 16px; }
+  .social-shell .admin-queue li > .tag { grid-column: 1 / -1; }
+  .social-shell .admin-queue .admin-wait { display: none; }
+  .social-shell .admin-metrics .split-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .social-shell .admin-table :is(th, td) { padding: 10px 12px; }
+}
+
+/* ---------- 抽屉式编辑（弹层在 .social-shell 之外渲染，不加外壳前缀） ---------- */
+@media (min-width: 601px) {
+  .overlay.overlay-drawer { align-items: stretch; justify-content: flex-end; padding: 0; }
+  .overlay.overlay-drawer .modal.modal-drawer { width: min(560px, 100vw); max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; border-width: 0 0 0 1px; display: flex; flex-direction: column; animation: admin-drawer-in .2s var(--ease-out); }
+  .modal.modal-drawer .modal-body { flex: 1; overflow-y: auto; }
+}
+@keyframes admin-drawer-in { from { transform: translateX(24px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .overlay.overlay-drawer .modal.modal-drawer { animation: none; } }
+.notice-preview { display: grid; gap: 8px; margin-top: 4px; padding: 14px; border-radius: var(--radius-control, 10px); border: 1px dashed var(--line); background: var(--surface-2); }
+.notice-preview > small { font-size: 12px; font-weight: 600; color: var(--text-3); }
+.notice-preview-screen { position: relative; min-height: 150px; overflow: hidden; border-radius: 14px; border: 1px solid var(--line); background: var(--bg); }
+.notice-preview-bar { display: block; height: 26px; border-bottom: 1px solid var(--line-2); background: var(--surface); }
+.notice-preview-banner { margin: 8px; padding: 8px 10px; border-radius: 8px; background: var(--brand-soft); color: var(--brand-strong); font-size: 12px; }
+.notice-preview-banner.is-important { background: color-mix(in oklab, var(--icon-amber, #aa650e) 14%, var(--surface)); color: var(--icon-amber, #aa650e); }
+.notice-preview-banner.is-urgent { background: color-mix(in oklab, var(--danger) 12%, var(--surface)); color: var(--danger); }
+.notice-preview-item { margin: 8px; padding: 10px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); font-size: 12px; }
+.notice-preview-item b, .notice-preview-modal b { display: block; color: var(--text); font-size: 13px; }
+.notice-preview-item p, .notice-preview-modal p { margin: 2px 0 0; color: var(--text-3); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.notice-preview-lines { display: grid; gap: 6px; padding: 8px; }
+.notice-preview-lines i { display: block; height: 10px; border-radius: 4px; background: var(--surface-3); }
+.notice-preview-lines i:nth-child(2) { width: 70%; }
+.notice-preview-lines i:nth-child(3) { width: 55%; }
+.notice-preview-modal { position: absolute; inset: 0; display: grid; place-items: center; padding: 14px; background: rgb(10 14 22 / .35); }
+.notice-preview-modal div { width: 100%; padding: 12px; border-radius: 12px; background: var(--surface); font-size: 12px; }

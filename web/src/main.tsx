@@ -40,6 +40,8 @@ import { MobileHeader, MobileNavigation } from "./mobile-chrome";
 import "./mobile-app.css";
 import "./auth.css";
 import "./desktop-refresh.css";
+import "./motion.css";
+import { LoadingBar, PageLoading } from "./loading-bar";
 import { AppearanceButton, applyAppearance, readAppearance } from "./appearance";
 import { mountCollapsedTooltips, mountSlidingIndicator, revealTheme } from "./desktop-motion";
 const Admin = lazy(() => import('./admin').then(module => ({default: module.Admin})));
@@ -146,6 +148,8 @@ function Shell() {
   const feedSearch = originPath ? originSearch : location.search.slice(1);
   const mobile = useMobile();
   const standaloneProfile = active === "profile" && !mobile;
+  // 管理中心在桌面端是独立工作台：用自己的分组导航替换社区侧栏；手机端仍对照 App 保留原导航。
+  const adminConsole = active === "admin" && !mobile;
   const workspace = useWorkspaceMotion(location.pathname, navigationMotion);
   const unread = useApi(auth.user ? '/api/user/notifications/unread-count' : null);
   const messageUnread = useApi(auth.user ? '/api/messages/unread_count' : null);
@@ -168,7 +172,7 @@ function Shell() {
     const sidebar = document.querySelector<HTMLElement>(".sidebar");
     if (sidebar) cleanups.push(mountCollapsedTooltips(sidebar));
     return () => cleanups.forEach((cleanup) => cleanup());
-  }, [mobile, standaloneProfile]);
+  }, [mobile, standaloneProfile, adminConsole]);
   const toggleTheme = (from: Element | null) => {
     const next = !dark;
     revealTheme(from, () => {
@@ -222,7 +226,7 @@ function Shell() {
     </NavLink>
   );
   return (
-    <div data-mobile-page={active} data-zone={zoneOf(section)} className={`app-shell social-shell ${section === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
+    <div data-mobile-page={active} data-zone={zoneOf(section)} className={`app-shell social-shell ${section === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${adminConsole ? "admin-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
       <a className="skip-link" href="#mainContent">
         跳到主要内容
       </a>
@@ -302,7 +306,7 @@ function Shell() {
           aria-label="收起导航"
           onClick={() => setMenu(false)}
         />
-        {!standaloneProfile && <aside className={`sidebar ${menu ? "open" : ""}`} aria-label="主导航">
+        {!standaloneProfile && !adminConsole && <aside className={`sidebar ${menu ? "open" : ""}`} aria-label="主导航">
           <div className="sidebar-scroll">
             {mobile && <div className="mobile-drawer-title"><b>校园服务</b><button className="mobile-icon-button" aria-label="切换主题" onClick={() => setDark(!dark)}><Icon name={dark ? "sun" : "moon"} /></button></div>}
             <ProfileSummary />
@@ -343,7 +347,7 @@ function Shell() {
             <div className="main-pane">
               {/* 授权成功清理一次性连接码时保留管理草稿；账号切换由页面账号 key 隔离。 */}
               <section key={location.pathname === "/connected-apps" ? location.pathname : `${location.pathname}${location.search}`} className="page active">
-                <RouteBoundary><Suspense fallback={<div className="loading-state" role="status">正在加载页面…</div>}><Routes>
+                <RouteBoundary><Suspense fallback={<PageLoading />}><Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/community" element={<Community />} />
                   <Route path="/market" element={<Community market />} />
@@ -416,6 +420,7 @@ createRoot(document.getElementById("root")!).render(
         <AuthProvider>
           <AcademicProvider>
             <BrowserRouter basename="/web/">
+              <LoadingBar />
               <Shell />
               <DialogOutlet />
             </BrowserRouter>

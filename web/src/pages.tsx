@@ -4,6 +4,7 @@ import { ServerAvatar } from "./server-avatar";
 import { useMobile } from "./mobile";
 import { MobileHome } from "./mobile-home";
 import { useDesktopHomeFeed } from "./desktop-home-feed";
+import { feedSourceOf } from "./feed-feedback";
 import { PaperLibrary } from './papers';
 import { teachingWeek, mergeCourses } from "@sylulive/academic-contracts";
 import {
@@ -129,9 +130,9 @@ function DesktopDashboard() {
     </section>
     <div className="home-feed-heading"><h2>校园动态</h2><Tabs tabs={[["all", "推荐"], ["time", "最新"], ["following", "关注"], ["hot", "热门"]]} value={sort} onChange={value => setParams({ sort: value })} /><Link className="home-feed-more" to="/community">全部动态 <span aria-hidden="true">→</span></Link></div>
     <div className="dashboard-feed">
-      {sort === "following" && !auth.loading && !auth.user ? <Empty icon="lock" title="登录后查看关注动态" description="关注同学，看看他们的校园日常。"><button className="btn primary" onClick={auth.login}>登录</button></Empty> : <QueryState query={{ isPending: posts.isPending, error: posts.data ? null : posts.error, refetch: posts.refetch }}>
+      {sort === "following" && !auth.loading && !auth.user ? <Empty icon="lock" title="登录后查看关注动态" description="关注同学，看看他们的校园日常。"><button className="btn primary" onClick={auth.login}>登录</button></Empty> : <QueryState skeleton="feed" query={{ isPending: posts.isPending, error: posts.data ? null : posts.error, refetch: posts.refetch }}>
         {pinned.length > 0 && <PublicPosts posts={pinned} />}
-        {feed.map(post => <CommunityPostCard post={post} key={post.id} />)}
+        {feed.map(post => <CommunityPostCard post={post} key={post.id} feedSource={feedSourceOf(sort)} />)}
         {!feed.length && <Empty title="暂时没有新的校园动态" description="分享一段校园日常，开启讨论。" />}
       </QueryState>}
     </div>

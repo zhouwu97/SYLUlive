@@ -1,0 +1,101 @@
+/* 信息流卡片「…」菜单与「不感兴趣」撤销条。桌面与手机共用功能，手机端只放大触控区域。 */
+.post-card-menu { position: relative; display: inline-flex; flex: none; }
+.post-card-menu-trigger {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background-color var(--dur-micro, 120ms) ease, color var(--dur-micro, 120ms) ease, transform var(--dur-micro, 120ms) ease;
+}
+.post-card-menu-trigger:hover,
+.post-card-menu-trigger[aria-expanded="true"] { background: var(--surface-2); color: var(--text); }
+.post-card-menu-trigger:active { transform: scale(.9); }
+.post-card-menu-trigger:focus-visible { outline: 2px solid var(--color-focus, var(--brand)); outline-offset: 2px; }
+
+/* 卡片入场动画会让每张卡片成为独立层叠上下文；打开菜单的卡片需要压在后面的卡片之上。 */
+.feed-card:has(.post-card-menu.is-open) { position: relative; z-index: 6; }
+
+.post-card-menu-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  display: grid;
+  min-width: 236px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-opaque, var(--surface));
+  box-shadow: 0 18px 48px -12px rgb(20 24 33 / .24), 0 2px 6px rgb(20 24 33 / .07);
+  transform-origin: top right;
+  animation: post-menu-in .18s var(--ease-out, ease-out) both;
+}
+.post-card-menu-row { display: contents; }
+.post-card-menu-list [role="menuitem"] {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-micro, 120ms) ease;
+}
+.post-card-menu-list [role="menuitem"] .svg-icon { margin-top: 1px; color: var(--text-2); }
+.post-card-menu-list [role="menuitem"]:is(:hover, :focus-visible) { background: var(--surface-2); outline: none; }
+.post-card-menu-list [role="menuitem"]:active { background: var(--surface-3, var(--surface-2)); }
+.post-card-menu-list .is-danger, .post-card-menu-list .is-danger .svg-icon { color: var(--danger); }
+.post-card-menu-copy { display: grid; gap: 2px; min-width: 0; }
+.post-card-menu-copy b { font-size: 14px; font-weight: var(--weight-medium, 500); line-height: 1.35; }
+.post-card-menu-copy small { color: var(--text-3); font-size: 12px; line-height: 1.4; }
+.post-card-menu-divider { display: block; height: 1px; margin: 4px 8px; background: var(--line); }
+
+.feed-dismissed {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 14px 18px;
+  border: 1px dashed color-mix(in srgb, var(--text-3) 40%, var(--line));
+  border-radius: var(--radius-card, 16px);
+  background: var(--surface-2);
+  color: var(--text-2);
+  animation: feed-dismiss-in .32s var(--ease-out, ease-out) both;
+}
+.feed-dismissed > .svg-icon { flex: none; color: var(--text-3); }
+.feed-dismissed p { display: grid; gap: 2px; min-width: 0; margin: 0; }
+.feed-dismissed b { color: var(--text); font-size: 14px; font-weight: var(--weight-medium, 500); }
+.feed-dismissed span { font-size: 12px; line-height: 1.5; }
+.feed-dismissed .btn { flex: none; margin-left: auto; min-height: 36px; }
+.community-feed .feed-dismissed { margin-bottom: 16px; }
+
+.modal .btn.danger { color: var(--danger); }
+
+@keyframes post-menu-in { from { opacity: 0; transform: translateY(-4px) scale(.96); } }
+@keyframes feed-dismiss-in { from { opacity: 0; transform: scale(.98); } }
+
+@media (max-width: 600px) {
+  .post-card-menu { margin-left: auto; }
+  .post-card-menu-trigger { width: 44px; height: 44px; color: var(--text-2); }
+  .post-card-menu-list { min-width: 220px; }
+  .feed-dismissed { padding: 12px 14px; border-radius: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .post-card-menu-list, .feed-dismissed { animation: none; }
+  .post-card-menu-trigger { transition: none; }
+  .post-card-menu-trigger:active { transform: none; }
+}

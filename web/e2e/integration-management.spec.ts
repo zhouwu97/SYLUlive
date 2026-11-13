@@ -40,6 +40,19 @@ async function fixture(page: Page, options: { role?: string; empty?: boolean; fa
   return { writes, listRequests, releaseWrite, releaseList, recover: () => { failed = false; } };
 }
 
+test('管理表单跨桌面和手机断点保留草稿与待确认操作', async ({page}) => {
+  await fixture(page);
+  await page.goto('/web/admin?tab=integrations');
+  await page.getByRole('button', {name: '管理此授权', exact: true}).click();
+  await page.getByRole('textbox', {name: '处理原因'}).fill('合成待处理草稿');
+  await page.getByRole('checkbox', {name: /已同步成绩/}).uncheck();
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({width, height: 900});
+    await expect(page.getByRole('textbox', {name: '处理原因'})).toHaveValue('合成待处理草稿');
+    await expect(page.getByRole('checkbox', {name: /已同步成绩/})).not.toBeChecked();
+  }
+});
+
 test("管理员可视化缩减权限并查看无正文审计", async ({ page }) => {
   const { writes } = await fixture(page);
   await page.goto("/web/admin?tab=integrations");

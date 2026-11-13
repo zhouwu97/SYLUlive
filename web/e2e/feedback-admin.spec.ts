@@ -28,23 +28,38 @@ function detail(messages: unknown[] = [], status = 'accepted') {
 
 async function signInAsAdmin(page: Page) {
   await page.context().addCookies([{name: 'jwt', value: 'e2e-session', url: 'http://127.0.0.1:5173'}]);
+  await page.route('**/api/**', route => route.fulfill({json: {items: []}}));
   await page.route('**/api/user/profile', route => route.fulfill({json: {id: 9, nickname: '管理员', role: 'admin'}}));
 }
 
-test('管理端工单列表单号与标题分列，状态和时间不挤压换行', async ({page}, info) => {
+test('桌面工单列表与详情同屏，单号时间完整显示且可切换工单', async ({page}, info) => {
   await signInAsAdmin(page);
   await page.setViewportSize({width: 1440, height: 900});
   await page.route('**/api/admin/feedback/tickets?*', route => route.fulfill({json: {tickets}}));
-  await page.goto('admin?tab=feedback');
-  const row = page.locator('.ticket-list .ticket-row').first();
+  await page.route(/\/api\/admin\/feedback\/tickets\/\d+$/, route => {
+    const ticket = tickets.find(item => String(item.id) === route.request().url().split('/').pop());
+    return route.fulfill({json: {...detail(), ticket: {...detail().ticket, ...ticket}}});
+  });
+  await page.goto('admin?tab=feedback&status=all');
+  const list = page.locator('.admin-ticket-list');
+  const pane = page.locator('.admin-ticket-pane');
+  const row = list.getByRole('button', {name: /透明bug/});
   await expect(row).toContainText('透明bug');
+  await expect(row).toHaveAttribute('aria-current', 'true');
+  await expect(pane.getByRole('heading', {name: '透明bug'})).toBeVisible();
   const no = await row.locator('.mono').boundingBox();
-  const title = await row.locator('.ticket-row-copy').boundingBox();
-  expect(no && title && no.x + no.width <= title.x).toBeTruthy();
-  // 时间不折行：单行高度远小于两行。
-  const timeBox = await row.locator('.ticket-row-time').boundingBox();
+  const title = await row.locator('.admin-ticket-top b').boundingBox();
+  const timeBox = await row.locator('time').boundingBox();
+  expect(title!.y + title!.height).toBeLessThanOrEqual(no!.y);
+  expect(no!.x + no!.width).toBeLessThanOrEqual(timeBox!.x);
   expect(timeBox!.height).toBeLessThan(24);
-  await expect(page.getByText('处理用户反馈的问题与建议')).toBeVisible();
+  const listBox = await list.boundingBox(), paneBox = await pane.boundingBox();
+  expect(listBox!.x + listBox!.width).toBeLessThanOrEqual(paneBox!.x);
+  await expect(page.getByText('处理用户反馈的问题与建议', {exact: false})).toBeVisible();
+  await list.getByRole('button', {name: /课表与实际有些不符/}).click();
+  await expect(pane.getByRole('heading', {name: '课表与实际有些不符'})).toBeVisible();
+  await expect(list.getByRole('button', {name: /课表与实际有些不符/})).toHaveAttribute('aria-current', 'true');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({path: info.outputPath('admin-ticket-list.png'), fullPage: true});
 });
 
@@ -98,4 +113,22 @@ test('窄屏工单列表沿用 App 式两列布局且无横向溢出', async ({p
   await expect(page.locator('.ticket-list .ticket-row').first()).toBeVisible();
   await expect(page.locator('.ticket-list .ticket-row > .mono').first()).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+});
+
+test('工单全部筛选在桌面与手机之间切换保持选中且不发送 all 状态码', async ({page}) => {
+  await signInAsAdmin(page);
+  const requests: URL[] = [];
+  await page.route('**/api/admin/feedback/tickets?*', route => {
+    requests.push(new URL(route.request().url()));
+    return route.fulfill({json: {tickets}});
+  });
+  await page.goto('admin?tab=feedback&status=all');
+  await expect(page.getByRole('tab', {name: '全部', exact: true})).toHaveAttribute('aria-selected', 'true');
+  await page.setViewportSize({width: 390, height: 844});
+  await expect(page.getByRole('tab', {name: '全部', exact: true})).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('tab', {name: '待受理', exact: true}).click();
+  await page.getByRole('tab', {name: '全部', exact: true}).click();
+  await page.setViewportSize({width: 1440, height: 900});
+  await expect(page.getByRole('tab', {name: '全部', exact: true})).toHaveAttribute('aria-selected', 'true');
+  expect(requests.some(url => url.searchParams.get('status_filter') === 'all')).toBe(false);
 });

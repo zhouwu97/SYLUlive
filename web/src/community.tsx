@@ -29,6 +29,8 @@ import {
 } from "./api";
 import { useAuth } from "./auth";
 import { PostActions, retryInterruptedRead } from "./post-actions";
+import { DismissedPost, PostCardMenu, ReportPostForm } from "./post-menu";
+import { dismissalFor, feedSourceOf, useDismissals, type FeedSource } from "./feed-feedback";
 import {
   rejectAttachmentFiles,
   type AttachmentLimits,
@@ -188,7 +190,7 @@ function PostThumbnail({ post, className }: { post: Entity; className: string })
   </span>;
 }
 
-function PostAuthor({ post }: { post: Entity }) {
+function PostAuthor({ post, menu }: { post: Entity; menu?: ReactNode }) {
   const auth = useAuth(), ui = useUI();
   const mobile = useMobile();
   const [pending, setPending] = useState(false);
@@ -203,7 +205,6 @@ function PostAuthor({ post }: { post: Entity }) {
         <AiBotIdentity user={post.author} />
         <span><PostTime value={post.created_at} />{post.author?.followers_count != null ? ` · ${post.author.followers_count} 位关注者` : ""}</span>
       </div>
-      {mobile && <Link className="mobile-post-more" to={`/post/${post.id}`} aria-label="查看帖子详情与操作"><Icon name="more" size={20} /></Link>}
       {auth.user && post.author_id && post.author_id !== auth.user.id && (
         <button className={`author-follow ${followed ? "active" : ""}`} type="button" disabled={pending} aria-pressed={followed} aria-busy={pending} onClick={async () => {
           if (lock.current) return;
@@ -213,6 +214,7 @@ function PostAuthor({ post }: { post: Entity }) {
           finally { lock.current = false; setPending(false); }
         }}><span className="follow-control">{!mobile && <Icon name={pending ? "clock" : followed ? "check" : "plus"} size={13} />}<span>{followed ? "已关注" : "关注"}</span></span></button>
       )}
+      {menu}
     </div>
   );
 }
@@ -233,12 +235,16 @@ function detailOrigin(path: string): { label: string; icon: string } {
 export function PostCard({
   post,
   market = false,
+  feedSource,
 }: {
   post: Entity;
   market?: boolean;
+  /** 首页信息流传入当前 Tab；带上后卡片提供「不感兴趣 / 不看 TA」，并按本地负反馈收起。 */
+  feedSource?: FeedSource;
 }) {
-  const auth = useAuth();
+  const auth = useAuth(), ui = useUI();
   const mobile = useMobile();
+  useDismissals();
   const marketType = post.post_type || post.type;
   const marketLabel = ({ sell: "出售", buy: "求购", lost: "寻物", found: "招领", proxy: "办事", marketplace_sell: "出售", marketplace_buy: "求购" } as Record<string, string>)[marketType] || "出售";
   const marketStateLabel = ({ sold: "已售出", closed: "已结束" } as Record<string, string>)[post.status]
@@ -274,10 +280,14 @@ export function PostCard({
         </div>
       </Link>
     );
+  const dismissal = feedSource ? dismissalFor(auth.user?.id, Number(post.id), Number(post.author_id || post.author?.id) || undefined) : { mode: "visible" as const };
+  if (dismissal.mode === "hidden") return null;
+  if (dismissal.mode === "placeholder") return <DismissedPost dismissal={dismissal.dismissal} />;
   if (post.poll_meta) return <PollCard key={`${post.id}:${auth.user?.id}`} post={post} compact />;
+  const menu = <PostCardMenu post={post} feedSource={feedSource} onEdit={() => ui.open("编辑内容", <PostForm post={post} />)} />;
   return (
     <article className="feed-card">
-      <PostAuthor key={`author:${post.id}:${auth.user?.id}`} post={post} />
+      <PostAuthor key={`author:${post.id}:${auth.user?.id}`} post={post} menu={menu} />
       <Link className="post-summary" to={`/post/${post.id}`} state={back}>
         {post.title && <h3 className="post-title">{post.title}</h3>}
         {post.content && <p className={`post-body ${post.title ? "" : "post-text-only"}`}>{post.content.slice(0, 220)}{post.content.length > 220 && "…"}</p>}
@@ -313,6 +323,8 @@ export function Community({ market = false }: { market?: boolean }) {
     }),
   );
   const posts = rows(q.data, "posts");
+  // 社区默认列表与首页走同一套服务端负反馈过滤；搜索和分区筛选不过滤，也不提供「不感兴趣」。
+  const feedSource = !market && !personal && !params.get("q") && !params.get("type") ? feedSourceOf(sort) : undefined;
   const publicPosts = !market && !personal && page === 1
     ? [...new Map([...rows(q.data, "pinned_posts"), ...posts].filter(isPublicPost).map(post => [post.id, post])).values()]
     : [];
@@ -412,11 +424,11 @@ export function Community({ market = false }: { market?: boolean }) {
         )}
       </div>
       {market && <div className="market-results-head"><div role="group" aria-label="闲置分类" className="market-types" ref={marketTypes}>{(mobile ? [["", "全部"], ["sell", "出售"], ["buy", "求购"], ["lost", "寻物"], ["found", "招领"], ["proxy", "办事"]] : [["", "全部闲置"], ["marketplace_sell", "出售"], ["marketplace_buy", "求购"]]).map(([value, label]) => <button type="button" key={value} aria-pressed={(params.get("type") || "") === value} onClick={() => filter("type", value)}>{label}</button>)}</div>{q.data && !q.error && <span>本页 {posts.length} 件</span>}</div>}
-      <QueryState query={q}>
+      <QueryState query={q} skeleton={market ? undefined : "feed"}>
         {!market && !personal && page === 1 && publicPosts.length > 0 && <PublicPosts posts={publicPosts} />}
         <div className={market ? "market-grid" : "panel community-feed"}>
           {posts.filter(post => !publicPosts.some(item => item.id === post.id)).map((post) => (
-            <PostCard key={post.id} post={post} market={market} />
+            <PostCard key={post.id} post={post} market={market} feedSource={feedSource} />
           ))}
         </div>
         {!posts.length && <Empty title={market ? "没有找到闲置" : "暂时没有帖子"} description={params.get("q") || params.get("type") || params.get("available") === "1" ? "试试调整搜索词或筛选条件。" : market ? "发布一件闲置，或稍后再来逛逛。" : "分享一段校园日常，开启讨论。"} />}
@@ -477,30 +489,7 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
             )}
             <button
               type="button"
-              onClick={() =>
-                auth.requireUser() && ui.open(
-                  "举报内容",
-                  <Form
-                    fields={[
-                      {
-                        name: "reason",
-                        label: "举报原因",
-                        type: "textarea",
-                        required: true,
-                      },
-                    ]}
-                    onSubmit={async (data) => {
-                      await write("/api/reports", {
-                        ...data,
-                        target_type: "post",
-                        target_id: Number(id),
-                      });
-                      ui.close();
-                      ui.notify("举报已提交");
-                    }}
-                  />,
-                )
-              }
+              onClick={() => auth.requireUser() && ui.open("举报内容", <ReportPostForm postId={Number(id)} />)}
             >
               举报
             </button>
@@ -585,7 +574,7 @@ export function PostDetail({ poll = false }: { poll?: boolean }) {
         <button className="btn post-back" onClick={goBack}><Icon name="arrow" size={17} />返回列表</button>
       </header>}
       {mobile && p.poll_meta && <p className="mobile-poll-notice">非官方用户投票，结果仅代表参与用户的选择。</p>}
-      <QueryState query={q}>
+      <QueryState query={q} skeleton="post">
         <div className="post-detail-layout">
         <div className="post-detail-main">
         <article className="panel post-full">

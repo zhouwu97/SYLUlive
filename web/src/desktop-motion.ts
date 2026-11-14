@@ -126,7 +126,7 @@ export function mountSlidingIndicator(container: HTMLElement, activeSelector: st
   const media = window.matchMedia(desktopQuery);
   const onMedia = () => place(true);
   media.addEventListener("change", onMedia);
-  // 「学习与校园服务」展开动画期间下方条目会整体下移，逐帧跟随；其他元素的悬停过渡不处理
+  // 「学习与成长」展开动画期间下方条目会整体下移，逐帧跟随；其他元素的悬停过渡不处理
   let followUntil = 0, followFrame = 0;
   const follow = () => {
     place(true);

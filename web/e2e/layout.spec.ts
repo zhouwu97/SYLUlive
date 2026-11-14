@@ -12,7 +12,7 @@ test('原型主要页签和右栏范围恢复',async({page})=>{
   for(const name of ['推荐','竞赛目录','我的日历','我的获奖','能力档案'])await expect(page.getByRole('tab',{name,exact:true})).toBeVisible();
   await page.goto('community');
   await expect(page.getByRole('tab',{name:'我的发布'})).toBeVisible();await expect(page.getByRole('tab',{name:'收藏'})).toBeVisible();
-  await page.goto('campus');await expect(page.locator('.quick-grid .quick')).toHaveCount(4);await expect(page.locator('.right-rail')).toHaveCount(0);
+  await page.goto('campus');await expect(page.locator('.quick-grid .quick')).toHaveCount(8);await expect(page.locator('.right-rail')).toHaveCount(0);
   await page.goto('market');await expect(page.locator('.right-rail')).toHaveCount(0);
 });
 test('工具箱在宽屏多列、窄屏单列，切换主题不破坏布局',async({page})=>{

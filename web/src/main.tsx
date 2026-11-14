@@ -125,7 +125,14 @@ function Search() {
   );
 }
 // 分区渐变的颜色归属：与顶栏五个主分区一致
-const zones: Record<string, string> = { dashboard: "home", community: "community", polls: "community", messages: "community", market: "market", schedule: "study", grades: "study", exams: "study", competition: "study", ratings: "study", campus: "discover", canteen: "discover", toolbox: "discover", ai: "discover" };
+const zones: Record<string, string> = { dashboard: "home", community: "community", polls: "community", messages: "community", market: "market", schedule: "study", grades: "study", exams: "study", competition: "study", ratings: "study", campus: "discover", canteen: "canteen", toolbox: "discover", ai: "discover" };
+// 桌面顶栏五个主入口：校园圈与首页同为信息流，并入「首页」，让出位置给食堂；「发现」改名为「校园」。
+const TOP_NAV = [["/", "首页", ["home", "community"]], ["/canteen", "食堂", ["canteen"]], ["/market", "集市", ["market"]], ["/schedule", "学习", ["study"]], ["/campus", "校园", ["discover"]]] as const;
+// 桌面侧栏「校园生活」分组：投票与组队已在首页信息流混排，入口换成校园；手机端抽屉对照 App 保持原样。
+const DESKTOP_SIDEBAR = ["dashboard", "canteen", "market", "schedule", "campus"];
+const DESKTOP_GROWTH = ["grades", "exams", "competition", "ratings", "polls", "community", "ai"];
+const MOBILE_SIDEBAR = ["dashboard", "community", "market", "schedule", "polls"];
+const DESKTOP_LABELS: Record<string, string> = { canteen: "食堂", campus: "校园" };
 const zoneOf = (active: string) => zones[active] || "home";
 function Shell() {
   const [menu, setMenu] = useState(false);
@@ -208,7 +215,7 @@ function Shell() {
     if (navigation.some(([id]) => id === hash))
       navigate(hash === "dashboard" ? "/" : `/${hash}`, { replace: true });
   }, []);
-  const link = ([id, label]: string[]) => (
+  const link = ([id, fullLabel]: string[]) => { const label = (!mobile && DESKTOP_LABELS[id]) || fullLabel; return (
     <NavLink
       key={id}
       title={label}
@@ -224,7 +231,7 @@ function Shell() {
       <span className="nav-text">{label}</span>
       {id === "messages" && Number(messageUnread.data?.unread_count || messageUnread.data?.count) > 0 && <span className="nav-unread">{messageUnread.data?.unread_count || messageUnread.data?.count}</span>}
     </NavLink>
-  );
+  ); };
   return (
     <div data-mobile-page={active} data-zone={zoneOf(section)} className={`app-shell social-shell ${section === "market" ? "market-shell" : ""} ${standaloneProfile ? "profile-shell" : ""} ${adminConsole ? "admin-shell" : ""} ${navigationMotion ? "" : "navigation-instant"}`}>
       <a className="skip-link" href="#mainContent">
@@ -248,7 +255,7 @@ function Shell() {
             </div>
           </div>
           <nav className="desktop-top-nav" aria-label="快捷导航">
-            {[["/", "首页", "home"], ["/community", "校园圈", "community"], ["/market", "集市", "market"], ["/schedule", "学习", "study"], ["/campus", "发现", "discover"]].map(([to, label, zone]) => <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive || zones[section] === zone ? "active" : "")}>{label}</NavLink>)}
+            {TOP_NAV.map(([to, label, owned]) => <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive || (owned as readonly string[]).includes(zones[section]) ? "active" : "")}>{label}</NavLink>)}
           </nav>
           <div className="crumb">
             <span>校园</span>
@@ -311,24 +318,43 @@ function Shell() {
             {mobile && <div className="mobile-drawer-title"><b>校园服务</b><button className="mobile-icon-button" aria-label="切换主题" onClick={() => setDark(!dark)}><Icon name={dark ? "sun" : "moon"} /></button></div>}
             <ProfileSummary />
             {mobile && !auth.user && <button className="btn primary mobile-drawer-login" onClick={auth.login}>登录</button>}
-            {[
-              { label: "社区", ids: ["dashboard", "community", "market", "schedule", "polls"] },
-              { label: "我的", ids: ["messages"] },
-            ].map(({label, ids}) => (
-              <div className="nav-section" key={label}>
-                <div className="nav-label">{label}</div>
-                {ids.map(id => navigation.find(item => item[0] === id)!).map(link)}
+            {mobile ? <>
+              <div className="nav-section">
+                <div className="nav-label">社区</div>
+                {MOBILE_SIDEBAR.map(id => navigation.find(item => item[0] === id)!).map(link)}
               </div>
-            ))}
-            <div className="personal-feed-links">
-              <Link className={`nav-item ${section === "community" && feedSearch.includes("sort=bookmarks") ? "active" : ""}`} to="/community?sort=bookmarks"><span className="nav-icon"><Icon name="bookmark" /></span><span className="nav-text">我的收藏</span></Link>
-              <Link className={`nav-item ${section === "community" && feedSearch.includes("sort=mine") ? "active" : ""}`} to="/community?sort=mine"><span className="nav-icon"><Icon name="file" /></span><span className="nav-text">我的帖子</span></Link>
-            </div>
-            <SidebarBoards />
-            <details className="sidebar-more">
-              <summary>学习与校园服务 <Icon name="chevron" size={14} /></summary>
-              {["grades", "exams", "competition", "ratings", "campus", "canteen", "ai"].map(id => navigation.find(item => item[0] === id)!).map(link)}
-            </details>
+              <div className="nav-section">
+                <div className="nav-label">我的</div>
+                {["messages"].map(id => navigation.find(item => item[0] === id)!).map(link)}
+              </div>
+              <div className="personal-feed-links">
+                <Link className={`nav-item ${section === "community" && feedSearch.includes("sort=bookmarks") ? "active" : ""}`} to="/community?sort=bookmarks"><span className="nav-icon"><Icon name="bookmark" /></span><span className="nav-text">我的收藏</span></Link>
+                <Link className={`nav-item ${section === "community" && feedSearch.includes("sort=mine") ? "active" : ""}`} to="/community?sort=mine"><span className="nav-icon"><Icon name="file" /></span><span className="nav-text">我的帖子</span></Link>
+              </div>
+              <SidebarBoards />
+              <details className="sidebar-more">
+                <summary>学习与校园服务 <Icon name="chevron" size={14} /></summary>
+                {["grades", "exams", "competition", "ratings", "campus", "canteen", "ai"].map(id => navigation.find(item => item[0] === id)!).map(link)}
+              </details>
+            </> : <>
+              <div className="nav-section">
+                <div className="nav-label">校园生活</div>
+                {DESKTOP_SIDEBAR.map(id => navigation.find(item => item[0] === id)!).map(link)}
+              </div>
+              <details className="sidebar-more">
+                <summary>学习与成长 <Icon name="chevron" size={14} /></summary>
+                {DESKTOP_GROWTH.map(id => navigation.find(item => item[0] === id)!).map(link)}
+              </details>
+              <div className="nav-section">
+                <div className="nav-label">我的</div>
+                {["messages"].map(id => navigation.find(item => item[0] === id)!).map(link)}
+              </div>
+              <div className="personal-feed-links">
+                <Link className={`nav-item ${section === "community" && feedSearch.includes("sort=bookmarks") ? "active" : ""}`} to="/community?sort=bookmarks"><span className="nav-icon"><Icon name="bookmark" /></span><span className="nav-text">我的收藏</span></Link>
+                <Link className={`nav-item ${section === "community" && feedSearch.includes("sort=mine") ? "active" : ""}`} to="/community?sort=mine"><span className="nav-icon"><Icon name="file" /></span><span className="nav-text">我的帖子</span></Link>
+              </div>
+              <SidebarBoards />
+            </>}
           <div className="nav-section sidebar-account">
             {navigation
               .slice(13)

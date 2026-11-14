@@ -148,7 +148,7 @@ test('游客主页保留独立布局与登录入口，返回社区恢复全站�
   await page.locator('.empty-state').getByRole('button', { name: '登录', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '登录沈理校园', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
-  await page.locator('.desktop-top-nav').getByRole('link', { name: '校园圈', exact: true }).click();
+  await page.locator('.desktop-top-nav').getByRole('link', { name: '首页', exact: true }).click();
   await expect(page.getByRole('complementary', { name: '主导航', exact: true })).toBeVisible();
 });
 

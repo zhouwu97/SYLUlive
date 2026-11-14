@@ -4,6 +4,7 @@ import {Empty,Head,Icon,Pagination,QueryState,useUI} from './ui';
 import {CampusMap} from './campus-map';
 import { mobileTermLabel, useMobile } from './mobile';
 import { useAcademic } from './academic';
+import { WeekCalendar } from './campus-chrome';
 
 export function Campus(){
   const mobile = useMobile();
@@ -11,20 +12,24 @@ export function Campus(){
   return mobile && params.get('view') !== 'articles' ? <MobileCampus /> : <DesktopCampus />;
 }
 function DesktopCampus(){
-  const [params,setParams]=useSearchParams(),ui=useUI();
+  const [params,setParams]=useSearchParams(),ui=useUI(),mobile=useMobile();
   const page=Number(params.get('page'))||1;
   const q=useApi(query('/api/campus/articles',{page,page_size:20,q:params.get('q')}));
   const map=`${import.meta.env.BASE_URL}assets/campus-map.png`;
   function search(value:string){setParams(value?{q:value}:{})}
-  return <><Head title="校园服务" description="公告、校历、地图与公共信息"><button className="btn" onClick={()=>document.getElementById('campus-search')?.focus()}>搜索校园信息</button></Head>
-    <div className="quick-grid">
-      {[['file','校园公告',()=>search('')],['schedule','校历',()=>ui.open('学校校历',<SchoolCalendar/>)],['campus','校园地图',()=>ui.open('校园地图',<CampusMap/>)],['canteen','食堂',null]].map(([icon,label,action])=>action?<button className="quick" key={String(label)} onClick={action as ()=>void}><i><Icon name={String(icon)}/></i><span>{String(label)}</span></button>:<Link className="quick" to="/canteen" key={String(label)}><i><Icon name={String(icon)}/></i><span>{String(label)}</span></Link>)}
-    </div>
+  const openMap=()=>ui.open('校园地图',<CampusMap/>);
+  // 桌面「校园」是侧栏与顶栏的一级入口，承接原「发现」里的竞赛、评价、AI 和工具箱；手机「查看全部资讯」仍只保留原四项。
+  const services:[string,string,(()=>void)|string][]=[['file','校园公告',()=>search('')],['schedule','校历',()=>ui.open('学校校历',<SchoolCalendar/>)],['campus','校园地图',openMap],['canteen','食堂','/canteen'],...(mobile?[]:[['competition','竞赛中心','/competition'],['ratings','教师评价','/ratings'],['ai','AI 助手','/ai'],['toolbox','工具箱','/toolbox']] as [string,string,string][])];
+  const mapCard=<section className="panel panel-pad campus-map-card"><div className="section-head"><h2>校园地图</h2><button className="link-btn" onClick={openMap}>放大查看</button></div><button className="campus-map-preview" aria-label="打开校园地图" onClick={openMap}><img src={map} alt="沈阳理工大学校园地图"/></button></section>;
+  return <div className={mobile?undefined:'campus-page'}><Head title={mobile?'校园服务':'校园'} description={mobile?'公告、校历、地图与公共信息':'学校公告、校历、地图和常用校园服务'}><button className="btn" onClick={()=>document.getElementById('campus-search')?.focus()}>搜索校园信息</button></Head>
+    <nav className={`quick-grid ${mobile?'':'campus-services'}`} aria-label="校园服务入口">
+      {services.map(([icon,label,action])=>typeof action==='function'?<button className="quick" key={label} onClick={action}><i><Icon name={icon}/></i><span>{label}</span></button>:<Link className="quick" to={action} key={label}><i><Icon name={icon}/></i><span>{label}</span></Link>)}
+    </nav>
     <form className="filter-row section campus-search" onSubmit={e=>{e.preventDefault();search(String(new FormData(e.currentTarget).get('q')||''))}}><input key={params.get('q')||''} id="campus-search" name="q" aria-label="搜索校园信息" defaultValue={params.get('q')||''} placeholder="搜索学校公告和公开服务信息"/><button className="btn">搜索</button></form>
     {params.get('q')&&<p className="source-line">在已同步的学校公开文章中搜索“{params.get('q')}”，联系方式和办理要求以原文为准。</p>}
-    <div className="section two-col"><section className="panel campus-notices"><div className="rail-title"><b>校园公告</b><span className="muted">学校公开来源</span></div><div className="rail-body"><QueryState query={q}>{rows(q.data).map(a=><Link className="notice-line" key={a.id} to={`/campus/${a.id}`}><b>{a.title}</b><p>{a.author_department} · {a.publish_date}</p></Link>)}{!rows(q.data).length&&<Empty title="没有找到相关公开信息"/>}<Pagination page={page} hasMore={q.data?.has_more||false} onChange={page=>{const next=new URLSearchParams(params);next.set('page',String(page));setParams(next)}}/></QueryState></div></section>
-    <section className="panel panel-pad"><div className="section-head"><h2>校园地图</h2><button className="link-btn" onClick={()=>ui.open('校园地图',<CampusMap/>)}>放大查看</button></div><button className="campus-map-preview" aria-label="打开校园地图" onClick={()=>ui.open('校园地图',<CampusMap/>)}><img src={map} alt="沈阳理工大学校园地图"/></button></section></div>
-  </>;
+    <div className={`section ${mobile?'two-col':'campus-columns'}`}><section className="panel campus-notices"><div className="rail-title"><b>校园公告</b><span className="muted">学校公开来源</span></div><div className="rail-body"><QueryState query={q}>{rows(q.data).map(a=><Link className="notice-line" key={a.id} to={`/campus/${a.id}`}><b>{a.title}</b><p>{a.author_department} · {a.publish_date}</p></Link>)}{!rows(q.data).length&&<Empty title="没有找到相关公开信息"/>}<Pagination page={page} hasMore={q.data?.has_more||false} onChange={page=>{const next=new URLSearchParams(params);next.set('page',String(page));setParams(next)}}/></QueryState></div></section>
+    {mobile?mapCard:<aside className="campus-aside" aria-label="地图与日历">{mapCard}<WeekCalendar/></aside>}</div>
+  </div>;
 }
 function MobileCampus() {
   const ui = useUI(), store = useAcademic();

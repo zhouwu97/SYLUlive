@@ -147,6 +147,32 @@ async function setup(page: Page, options: { guest?: boolean; owner?: boolean; bo
   return state;
 }
 
+test("桌面帖子卡片空白区可进入详情，互动按钮不误触导航", async ({ page }) => {
+  const state = await setup(page);
+  await page.setViewportSize({ width: 1480, height: 1000 });
+  await page.goto("community");
+  const card = page.locator(".community-feed .feed-card").first();
+  await expect(card).toBeVisible();
+  await expect(card.locator(".media-gallery")).toBeVisible();
+  await card.locator(".media-gallery img").evaluate(async (img: HTMLImageElement) => { await img.decode(); });
+  const geometry = await card.evaluate(element => {
+    const cardBox = element.getBoundingClientRect();
+    const mediaBox = element.querySelector(".media-gallery")?.getBoundingClientRect();
+    return { card: cardBox.toJSON(), media: mediaBox?.toJSON() };
+  });
+  expect(geometry.media && geometry.media.width < geometry.card.width).toBe(true);
+  const blankX = Math.min(geometry.card.x + geometry.card.width - 16, geometry.media!.x + geometry.media!.width + 36);
+  await page.mouse.click(blankX, geometry.media!.y + geometry.media!.height / 2);
+  await expect(page).toHaveURL(/post\/675$/);
+
+  await page.goto("community");
+  const actions = page.locator(".community-feed .feed-card").first().getByRole("group", { name: "帖子互动" });
+  await actions.getByRole("button", { name: "点赞 4", exact: true }).click();
+  await expect(page).toHaveURL(/community$/);
+  await expect(actions.getByRole("button", { name: "已赞 5", exact: true })).toBeVisible();
+  expect(state.errors).toEqual([]);
+});
+
 test("关闭发布弹窗后，迟到的上传不能继续发布帖子", async ({ page }) => {
   const state = await setup(page);
   let releaseUpload!: () => void;

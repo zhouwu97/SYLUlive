@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { AiBotIdentity } from "./ai-bot-identity";
 import { PublicPosts, isPublicPost } from "./campus-chrome";
 import { ServerAvatar } from "./server-avatar";
@@ -249,7 +249,7 @@ export function PostCard({
   const marketLabel = ({ sell: "出售", buy: "求购", lost: "寻物", found: "招领", proxy: "办事", marketplace_sell: "出售", marketplace_buy: "求购" } as Record<string, string>)[marketType] || "出售";
   const marketStateLabel = ({ sold: "已售出", closed: "已结束" } as Record<string, string>)[post.status]
     || (post.status === "normal" && ["sell", "marketplace_sell"].includes(marketType) ? "出售中" : "");
-  const location=useLocation();
+  const location=useLocation(), navigate=useNavigate();
   const back={from:location.pathname+location.search};
   if (market)
     return (
@@ -285,8 +285,18 @@ export function PostCard({
   if (dismissal.mode === "placeholder") return <DismissedPost dismissal={dismissal.dismissal} />;
   if (post.poll_meta) return <PollCard key={`${post.id}:${auth.user?.id}`} post={post} compact />;
   const menu = <PostCardMenu post={post} feedSource={feedSource} onEdit={() => ui.open("编辑内容", <PostForm post={post} />)} />;
+  const openPostFromCard = (event: ReactMouseEvent<HTMLElement>) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("a,button,input,textarea,select,details,summary,[role=\"button\"],.post-author,.post-toolbar,.media-gallery")) return;
+    navigate(`/post/${post.id}`, { state: back });
+  };
+  const openPostFromKeyboard = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.target !== event.currentTarget || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    navigate(`/post/${post.id}`, { state: back });
+  };
   return (
-    <article className="feed-card">
+    <article className="feed-card feed-card-clickable" tabIndex={0} aria-label={`打开帖子：${post.title || post.content?.slice(0, 40) || "无标题"}`} onClick={openPostFromCard} onKeyDown={openPostFromKeyboard}>
       <PostAuthor key={`author:${post.id}:${auth.user?.id}`} post={post} menu={menu} />
       <Link className="post-summary" to={`/post/${post.id}`} state={back}>
         {post.title && <h3 className="post-title">{post.title}</h3>}

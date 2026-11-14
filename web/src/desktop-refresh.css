@@ -19,6 +19,7 @@
   .app-shell { --zone: var(--color-accent-fill); position: relative; isolation: isolate; }
   .app-shell[data-zone="community"] { --zone: #4f6bed; }
   .app-shell[data-zone="market"] { --zone: #e0782f; }
+  .app-shell[data-zone="canteen"] { --zone: #d9922b; }
   .app-shell[data-zone="study"] { --zone: #12968a; }
   .app-shell[data-zone="discover"] { --zone: #7a5bd8; }
   :root[data-wash="accent"] .app-shell { --zone: var(--color-accent-fill); }
@@ -118,7 +119,7 @@
   }
   .nav-tip.is-shown { opacity: 1; transform: translate(0, -50%); }
 
-  /* ---------- 「学习与校园服务」展开 ---------- */
+  /* ---------- 「学习与成长」展开 ---------- */
   .social-shell .sidebar-more { interpolate-size: allow-keywords; }
   .social-shell .sidebar-more::details-content {
     block-size: 0;

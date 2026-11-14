@@ -116,7 +116,7 @@ export function AppearanceButton() {
               <button key={wash} aria-pressed={value.wash === wash} onClick={() => setValue({ ...value, wash })}>{name}</button>
             ))}
           </div>
-          <p className="appearance-hint">分区渐变：首页跟随主题色，校园圈、集市、学习、校园服务各有一种淡色，一眼认出当前在哪。</p>
+          <p className="appearance-hint">分区渐变：首页跟随主题色，食堂、集市、学习、校园各有一种淡色，一眼认出当前在哪。</p>
         </div>
       )}
     </div>

@@ -142,7 +142,7 @@ function DesktopDashboard() {
           : posts.hasNextPage ? <button className="btn" disabled={posts.isFetching} onClick={() => posts.fetchNextPage()}>{posts.isFetching ? "正在加载…" : "加载更多"}</button>
             : feed.length > 0 && <span>已经看完啦</span>)}
     </div>
-    <Link className="browse-community" to="/community">继续逛逛校园圈 <span aria-hidden="true">→</span></Link>
+    <Link className="browse-community" to="/community">查看全部动态 <span aria-hidden="true">→</span></Link>
   </div>;
 }
 

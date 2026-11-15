@@ -133,5 +133,5 @@ test('页面模块下载失败有恢复入口，重新加载后可以进入原�
   await page.unroute('**/src/connected-apps.tsx');
   await page.getByRole('button', {name: '重新加载页面', exact: true}).click();
   await expect(page.getByText('页面加载未完成', {exact: true})).toHaveCount(0);
-  await expect(page.locator('main')).toContainText('当前账号：恢复测试同学');
+  await expect(page.locator('main')).toContainText('当前校园账号：恢复测试同学');
 });

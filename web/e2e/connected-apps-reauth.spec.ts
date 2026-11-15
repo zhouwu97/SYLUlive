@@ -137,7 +137,7 @@ test("首次读取真实延迟下等待会话就绪，不需手动重试机器�
     if (route.request().failure()) return;
     await route.fulfill({ json: { bindings: [], personal_data_enabled: true } });
   });
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await expect(page.getByRole("button", { name: "新建机器人", exact: true })).toBeVisible();
   await page.getByRole("navigation", { name: "助手管理分区" }).getByRole("button", { name: "连接 AstrBot", exact: true }).click();
   await expect(page.getByRole("heading", { name: "当前没有有效连接", exact: true })).toBeVisible();
@@ -148,15 +148,17 @@ test("首次读取真实延迟下等待会话就绪，不需手动重试机器�
 
 test("个人查询状态读取失败说明授权阻塞原因，重试保留已选权限和核对项", async ({ page }) => {
   const writes = await fixture(page);
-  let available = false;
+  let available = true;
   await page.route("**/api/connected-apps", route => route.fulfill(available
     ? { json: { bindings: [], personal_data_enabled: true } }
     : { status: 503, json: { code: "integration_unavailable" } }));
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=personal&user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
   const grades = page.getByLabel("读取本人主动同步的成绩（非学校实时查询）", { exact: true });
   const reviewed = page.getByLabel("我已核对连接码与当前账号，并了解外发范围", { exact: true });
   await grades.check(); await reviewed.check();
+  available = false;
+  await page.getByRole("button", { name: "刷新连接列表", exact: true }).click();
   const grant = page.getByRole("button", { name: "授权此助手", exact: true });
   await expect(grant).toBeDisabled();
   await expect(grant).toHaveAttribute("aria-describedby", "integration-consent-requirements");
@@ -168,18 +170,18 @@ test("个人查询状态读取失败说明授权阻塞原因，重试保留已�
   expect(writes.filter(value => value.path.endsWith("/decision"))).toHaveLength(0);
 });
 
-test("个人查询连接明确说明未申请自主发帖权限", async ({ page }) => {
+test("社区机器人连接明确说明未申请自主发帖权限", async ({ page }) => {
   await fixture(page);
   await page.route("**/api/connected-apps/device-requests/lookup", route => route.fulfill({ json: {
     ...consent, requested_scopes: ["profile:read_minimal", "actions:read_own"] } }));
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
   await expect(page.getByText("这份连接请求未申请机器人自主评论或发帖", { exact: false })).toBeVisible();
 });
 
 test("机器人自主评论和发帖权限默认不勾选", async ({ page }) => {
   await fixture(page);
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求" }).click();
   await expect(page.getByLabel(/以本人管理的独立AI机器人自动评论/)).not.toBeChecked();
   await expect(page.getByLabel(/以独立AI机器人自动发帖/)).not.toBeChecked();
@@ -196,7 +198,7 @@ test("机器人操作补充密码验证后保留草稿且不自动重放创建",
     return route.fulfill({ json: { bot: null, policy_supported: true, sections: [{ slug: "campus_life", name: "校园生活" }], auto_post_server_enabled: true, auto_post_authorized: false } });
   });
   await page.route("**/api/auth/reauthenticate", route => route.fulfill({ json: { authenticated: true, user_id: 991 } }));
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByRole("textbox", { name: "机器人名称", exact: true }).fill("合成机器人草稿");
   await page.getByRole("button", { name: "新建机器人", exact: true }).click();
   await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
@@ -216,7 +218,7 @@ test("取消机器人密码验证会关闭表单，保留资料并允许重新�
     }
     return route.fulfill({ json: { bot: null, policy_supported: true, sections: [], auto_post_authorized: false } });
   });
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByLabel("机器人名称", { exact: true }).fill("保留我的机器人草稿");
   await page.getByRole("button", { name: "新建机器人", exact: true }).click();
   await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
@@ -237,7 +239,7 @@ test("取消连接密码验证中止在途请求且不会继续授权，连接�
     await new Promise<void>(resolve => { release = resolve; });
     await route.fulfill({ json: { authenticated: true, user_id: 991 } }).catch(() => {});
   });
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
   await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
   await page.getByRole("button", { name: "验证并继续", exact: true }).click();
@@ -253,19 +255,19 @@ test("取消连接密码验证中止在途请求且不会继续授权，连接�
 
 test("自动参与权限可成组选择，仍需核对确认，且不会连带开启个人查询", async ({ page }) => {
   const writes = await fixture(page);
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   const navigation = page.getByRole("navigation", { name: "助手管理分区" });
   await expect(navigation.getByRole("button", { name: "连接 AstrBot", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByLabel("机器人名称", { exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "从本机教务助手读取", exact: true })).toBeHidden();
   await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
   await expect(page.getByRole("group", { name: "机器人自动参与", exact: true })).toBeVisible();
-  await expect(page.getByRole("group", { name: "可选：本人查询与签到", exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "可选：本人查询与签到", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "选择自动评论和发帖所需权限", exact: true }).click();
   for (const name of ["创建待本人确认的帖子或评论草稿", /以本人管理的独立AI机器人自动评论/, /以独立AI机器人自动发帖/])
     await expect(page.getByLabel(name, { exact: typeof name === "string" })).toBeChecked();
   for (const name of ["读取本人主动同步的成绩（非学校实时查询）", "读取本人主动同步的二课摘要（非完整活动记录）", "查看本人签到状态，并按本人指令每日签到（不含补签）"])
-    await expect(page.getByLabel(name, { exact: true })).not.toBeChecked();
+    await expect(page.getByLabel(name, { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "授权此助手", exact: true })).toBeDisabled();
   expect(writes.filter(value => value.path.endsWith("/decision"))).toHaveLength(0);
   await page.getByLabel("我已核对连接码与当前账号，并了解外发范围").check();
@@ -278,17 +280,18 @@ test("自动参与权限可成组选择，仍需核对确认，且不会连带�
   expect(scopes.some(scope => scope.startsWith("academic:") || scope === "checkin:write")).toBe(false);
 });
 
-test("切换管理分区保留机器人草稿、连接码和勾选，个人资料单独展示", async ({ page }) => {
+test("切换社区机器人分区保留草稿、连接码和勾选，个人资料不混入", async ({ page }) => {
   await fixture(page);
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   const navigation = page.getByRole("navigation", { name: "助手管理分区" });
   await navigation.getByRole("button", { name: "机器人设置与运行", exact: true }).click();
   await page.getByLabel("机器人名称", { exact: true }).fill("切换后仍保留");
   await page.getByRole("button", { name: "下一步：连接 AstrBot", exact: true }).click();
   await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
   await page.getByRole("button", { name: "选择自动评论和发帖所需权限", exact: true }).click();
-  await navigation.getByRole("button", { name: "个人资料同步", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "供本人 QQ 查询的资料同步", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("button", { name: "个人资料同步", exact: true })).toHaveCount(0);
+  await navigation.getByRole("button", { name: "接入教程", exact: true }).click();
+  await expect(page.getByRole("region", { name: "AstrBot 接入教程" })).toBeVisible();
   await expect(page.getByLabel("一次性连接码", { exact: true })).toBeHidden();
   await navigation.getByRole("button", { name: "机器人设置与运行", exact: true }).click();
   await expect(page.getByLabel("机器人名称", { exact: true })).toHaveValue("切换后仍保留");
@@ -304,7 +307,7 @@ test("更换连接码后旧请求返回不能恢复旧授权表单", async ({ pa
     await new Promise<void>(resolve => { release = resolve; });
     await route.fulfill({ json: consent });
   });
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   const started = page.waitForRequest("**/api/connected-apps/device-requests/lookup");
   await page.getByRole("button", { name: "查看授权请求", exact: true }).click(); await started;
   await page.getByLabel("一次性连接码", { exact: true }).fill("EFGH-5678");
@@ -317,7 +320,7 @@ test("更换连接码后旧请求返回不能恢复旧授权表单", async ({ pa
 test("过期连接码说明恢复入口且不会提交授权", async ({ page }) => {
   const writes = await fixture(page);
   await page.route("**/api/connected-apps/device-requests/lookup", route => route.fulfill({ status: 410, json: { code: "device_request_expired" } }));
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("这份连接请求已过期");
   await expect(page.getByRole("alert")).toContainText("/sylu-connect 获取新代码");
@@ -336,7 +339,7 @@ test("批准前验证一次密码后保留权限选择，重新核对才能提�
     return route.fulfill(verified ? { json: { binding: { binding_id: "bound" } } } : { status: 403, json: { code: "recent_authentication_required" } });
   });
   await page.route("**/api/auth/reauthenticate", route => { verifications++; verified = true; return route.fulfill({ json: { authenticated: true, user_id: 991 } }); });
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
   await expect(page.getByRole("form", { name: "验证当前账号身份" })).toHaveCount(0);
   await page.getByRole("button", { name: "选择自动评论和发帖所需权限", exact: true }).click();
@@ -348,7 +351,7 @@ test("批准前验证一次密码后保留权限选择，重新核对才能提�
   await expect(page.getByLabel(/以独立AI机器人自动发帖/)).toBeChecked();
   await expect(page.getByLabel(/以本人管理的独立AI机器人自动评论/)).toBeChecked();
   await expect(page.getByLabel("创建待本人确认的帖子或评论草稿", { exact: true })).toBeChecked();
-  await expect(page.getByLabel("读取本人主动同步的成绩（非学校实时查询）", { exact: true })).not.toBeChecked();
+  await expect(page.getByLabel("读取本人主动同步的成绩（非学校实时查询）", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("我已核对连接码与当前账号，并了解外发范围")).not.toBeChecked();
   await expect(page.getByRole("button", { name: "授权此助手", exact: true })).toBeDisabled();
   expect(decisions).toBe(1); expect(verifications).toBe(1); expect(lookups).toBe(2);
@@ -362,9 +365,9 @@ test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身
   page,
 }) => {
   const writes = await fixture(page);
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await expect(
-    page.getByRole("heading", { name: "已授权助手", exact: true }),
+    page.getByRole("heading", { name: "社区机器人管理", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "当前没有有效连接" }),
@@ -374,8 +377,8 @@ test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身
   await expect(
     page.getByLabel("公开帖子与评论、作者昵称、互动统计、公开图片和表情目录"),
   ).toBeVisible();
-  await expect(page.getByLabel("读取本人主动同步的成绩（非学校实时查询）")).not.toBeChecked();
-  await expect(page.getByLabel("读取本人主动同步的二课摘要（非完整活动记录）")).not.toBeChecked();
+  await expect(page.getByLabel("读取本人主动同步的成绩（非学校实时查询）")).toHaveCount(0);
+  await expect(page.getByLabel("读取本人主动同步的二课摘要（非完整活动记录）")).toHaveCount(0);
   await expect(page.getByText("本连接不提供站内私信", { exact: false })).toBeVisible();
   await page.screenshot({
     path: test.info().outputPath("consent-public-media.png"),
@@ -383,7 +386,7 @@ test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身
   });
   const writeScope = page.getByLabel("创建待本人确认的帖子或评论草稿");
   await expect(writeScope).not.toBeChecked();
-  await expect(page.getByLabel("查看本人签到状态，并按本人指令每日签到（不含补签）")).not.toBeChecked();
+  await expect(page.getByLabel("查看本人签到状态，并按本人指令每日签到（不含补签）")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "授权此助手" })).toBeDisabled();
   await page.getByLabel("我已核对连接码与当前账号，并了解外发范围").check();
   await page.getByRole("button", { name: "授权此助手" }).click();
@@ -427,7 +430,7 @@ test("官方网页真实登录交互后重读当前账号，能够继续设备�
       },
     });
   });
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page
     .getByRole("main")
     .getByRole("button", { name: "登录", exact: true })
@@ -436,7 +439,7 @@ test("官方网页真实登录交互后重读当前账号，能够继续设备�
   await dialog.getByLabel("邮箱或账号").fill("synthetic");
   await dialog.getByLabel("密码", { exact: true }).fill("synthetic-password");
   await dialog.getByRole("button", { name: "登录", exact: true }).click();
-  await expect(page.getByText(/当前账号：登录后的合成账号/)).toBeVisible();
+  await expect(page.getByText(/当前校园账号：登录后的合成账号/)).toBeVisible();
   await page.getByRole("button", { name: "查看授权请求" }).click();
   await expect(page.getByRole("button", { name: "授权此助手" })).toBeVisible();
 });
@@ -466,7 +469,7 @@ test("正式发布必须本人核对，重复点击只发送一次确认并展�
 
 test("过旧登录只要求当前账号密码，不跳完整登录或自动授权", async ({ page }) => {
   const writes = await fixture(page, { recent: true });
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求" }).click();
   await expect(page.getByRole("alert")).toContainText(
     "无需重新登录",
@@ -489,7 +492,7 @@ test("当前会话密码验证后保留连接码并重读请求，错误密码�
     options.recent = false;
     return route.fulfill({ json: { authenticated: true, user_id: 991 } });
   });
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求" }).click();
   await page.getByLabel("当前账号密码", { exact: true }).fill("wrong-password");
   await page.getByRole("button", { name: "验证并继续", exact: true }).click();
@@ -514,7 +517,7 @@ test("验证取消后迟到响应不会自动继续，期间不会重复提交",
     await new Promise<void>(done => { resolve = done; });
     await route.fulfill({ json: { authenticated: true, user_id: 991 } }).catch(() => {});
   });
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求" }).click();
   await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
   await page.getByRole("button", { name: "验证并继续", exact: true }).click();
@@ -532,7 +535,7 @@ test("验证取消后迟到响应不会自动继续，期间不会重复提交",
 test("密码验证限流保留页面且不当作账号退出", async ({ page }) => {
   await fixture(page, { recent: true });
   await page.route("**/api/auth/reauthenticate", route => route.fulfill({ status: 429, json: { code: "reauthentication_throttled", message: "验证次数过多，请稍后重试" } }));
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求" }).click();
   await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
   await page.getByRole("button", { name: "验证并继续", exact: true }).click();
@@ -569,14 +572,14 @@ test("验证中跨标签切号不会把旧响应当作新账号的验证或授�
     await new Promise<void>(resolve => { release = resolve; });
     await route.fulfill({ json: { authenticated: true, user_id: 991 } }).catch(() => {});
   });
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求" }).click();
   await page.getByLabel("当前账号密码", { exact: true }).fill("synthetic-password");
   await page.getByRole("button", { name: "验证并继续", exact: true }).click();
   await expect.poll(() => pending).toBe(true);
   userId = 992;
   await page.evaluate(() => { const channel = new BroadcastChannel("sylulive-auth"); channel.postMessage("changed"); channel.close(); });
-  await expect(page.getByText(/当前账号：合成账号992/)).toBeVisible();
+  await expect(page.getByText(/当前校园账号：合成账号992/)).toBeVisible();
   release();
   await expect(page.getByRole("button", { name: "授权此助手", exact: true })).toHaveCount(0);
   await expect(page.getByText("signal is aborted", { exact: false })).toHaveCount(0);
@@ -588,7 +591,7 @@ for (const theme of ["light", "dark"]) for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.addInitScript(value => localStorage.setItem("sylulive-theme", value), theme);
     await fixture(page, { recent: true });
-    await page.goto("./connected-apps?user_code=ABCD-1234");
+    await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
     await page.getByRole("button", { name: "查看授权请求" }).click();
     await expect(page.getByLabel("当前账号密码", { exact: true })).toBeFocused();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -628,7 +631,7 @@ test("账号切换中止旧授权请求，旧账号响应不能恢复确认按�
       await route.fulfill({ json: consent }).catch(() => {});
     },
   );
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   const started = page.waitForRequest(
     "**/api/connected-apps/device-requests/lookup",
   );
@@ -644,7 +647,7 @@ test("账号切换中止旧授权请求，旧账号响应不能恢复确认按�
     c.postMessage("changed");
     c.close();
   });
-  await expect(page.getByText(/当前账号：切换后的账号/)).toBeVisible();
+  await expect(page.getByText(/当前校园账号：切换后的账号/)).toBeVisible();
   release();
   await expect(page.getByRole("button", { name: "授权此助手" })).toHaveCount(0);
 });
@@ -695,7 +698,7 @@ for (const width of [375, 1440])
   test(`授权与确认在${width}px真实渲染无横向溢出`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await fixture(page);
-    await page.goto("./connected-apps?user_code=ABCD-1234");
+    await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
     await page.getByRole("button", { name: "查看授权请求" }).click();
     await expect(
       page.getByRole("button", { name: "授权此助手" }),

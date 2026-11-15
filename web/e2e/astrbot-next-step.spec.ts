@@ -50,7 +50,7 @@ async function confirm(page: Page) {
 
 test("旧连接缺权限时补充授权直接原地修改，不重新连接", async ({ page }) => {
   const writes = await fixture(page);
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByRole("button", { name: "下一步：连接 AstrBot", exact: true }).click();
   const missing = page.locator(".connection-authorization-needed");
   await expect(missing).toContainText("公开社区浏览");
@@ -61,7 +61,7 @@ test("旧连接缺权限时补充授权直接原地修改，不重新连接", as
   await expect(editor).toContainText("无需重新连接");
   await expect(editor.getByLabel(/以独立AI机器人自动发帖/)).toBeChecked();
   await expect(editor.getByLabel(/以本人管理的独立AI机器人自动评论/)).toBeChecked();
-  await expect(editor.getByLabel(/读取本人主动同步的成绩/)).not.toBeChecked();
+  await expect(editor.getByLabel(/读取本人主动同步的成绩/)).toHaveCount(0);
   await expect(page.locator("#new-astrbot-connection")).toHaveCount(0);
   expect(writes).toHaveLength(0);
   await editor.getByRole("button", { name: "保存权限", exact: true }).click();
@@ -76,7 +76,7 @@ test("旧连接缺权限时补充授权直接原地修改，不重新连接", as
 
 test("修改权限可收回，依赖不满足时不能保存", async ({ page }) => {
   const writes = await fixture(page);
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByRole("button", { name: "下一步：连接 AstrBot", exact: true }).click();
   await page.getByRole("button", { name: "修改权限", exact: true }).click();
   const editor = page.getByRole("group", { name: "修改连接权限" });
@@ -84,16 +84,16 @@ test("修改权限可收回，依赖不满足时不能保存", async ({ page }) 
   await expect(editor).toContainText("自动评论或发帖还需要勾选");
   await expect(editor.getByRole("button", { name: "保存权限", exact: true })).toBeDisabled();
   await editor.getByLabel(/以本人管理的独立AI机器人自动评论/).uncheck();
-  await editor.getByLabel(/查看本人签到状态/).uncheck();
+  await editor.getByLabel("本授权创建的草稿与发布结果", { exact: true }).uncheck();
   await editor.getByRole("button", { name: "保存权限", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "权限已更新" })).toBeVisible();
   expect(writes).toHaveLength(1);
-  expect(writes[0].body.scopes).toEqual(oldScopes.filter(scope => scope !== "checkin:write"));
+  expect(writes[0].body.scopes).toEqual(oldScopes.filter(scope => scope !== "actions:read_own"));
 });
 
 test("修改权限失败保留连接和所选权限", async ({ page }) => {
   await fixture(page, { failedScopes: true });
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByRole("button", { name: "下一步：连接 AstrBot", exact: true }).click();
   await page.getByRole("button", { name: "补充机器人授权", exact: true }).click();
   const editor = page.getByRole("group", { name: "修改连接权限" });
@@ -105,7 +105,7 @@ test("修改权限失败保留连接和所选权限", async ({ page }) => {
 
 test("站点未开放的权限置灰且不预选，已持有的仍可保留", async ({ page }) => {
   const writes = await fixture(page, { toggles: { proposals_enabled: true, auto_reply_enabled: true, auto_post_enabled: false } });
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByRole("button", { name: "下一步：连接 AstrBot", exact: true }).click();
   await page.getByRole("button", { name: "补充机器人授权", exact: true }).click();
   const editor = page.getByRole("group", { name: "修改连接权限" });
@@ -122,7 +122,7 @@ test("站点未开放的权限置灰且不预选，已持有的仍可保留", as
 
 test("同时打开权限编辑与新连接时，密码验证只继续触发验证的授权", async ({ page }) => {
   const writes = await fixture(page, { recentDecision: true });
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByRole("button", { name: "下一步：连接 AstrBot", exact: true }).click();
   await page.getByRole("button", { name: "补充机器人授权", exact: true }).click();
   await openRequest(page);
@@ -137,7 +137,7 @@ test("同时打开权限编辑与新连接时，密码验证只继续触发验�
 
 test("连接已变化时保存失败会刷新并关闭编辑区", async ({ page }) => {
   await fixture(page, { conflictScopes: true });
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByRole("button", { name: "下一步：连接 AstrBot", exact: true }).click();
   await page.getByRole("button", { name: "修改权限", exact: true }).click();
   await page.getByRole("group", { name: "修改连接权限" }).getByRole("button", { name: "保存权限", exact: true }).click();
@@ -148,7 +148,7 @@ test("连接已变化时保存失败会刷新并关闭编辑区", async ({ page 
 
 test("补齐并明确替换后才能去启用，不连带批准个人查询", async ({ page }) => {
   const writes = await fixture(page);
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await openRequest(page);
   await page.getByRole("button", { name: "选择自动评论和发帖所需权限", exact: true }).click();
   await expect(page.getByRole("button", { name: "授权此助手", exact: true })).toBeDisabled();
@@ -165,7 +165,7 @@ test("补齐并明确替换后才能去启用，不连带批准个人查询", as
 
 test("只批准读取仍提示缺权限，不把授权成功当成自动参与就绪", async ({ page }) => {
   await fixture(page, { requested: oldScopes });
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await openRequest(page);
   await confirm(page);
   await expect(page.getByRole("status").filter({ hasText: "已授权。" })).toBeVisible();
@@ -176,7 +176,7 @@ test("只批准读取仍提示缺权限，不把授权成功当成自动参与�
 
 test("只申请评论也能启用已授权功能，发帖仍需另外批准", async ({ page }) => {
   await fixture(page, { requested: required.filter(scope => scope !== "community:bot_post") });
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await openRequest(page);
   await page.getByLabel("创建待本人确认的帖子或评论草稿", { exact: true }).check();
   await page.getByLabel(/以本人管理的独立AI机器人自动评论/).check();
@@ -187,7 +187,7 @@ test("只申请评论也能启用已授权功能，发帖仍需另外批准", as
 
 test("补授权失败保留旧连接、选择和恢复入口", async ({ page }) => {
   await fixture(page, { failedDecision: true });
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await openRequest(page);
   await page.getByRole("button", { name: "选择自动评论和发帖所需权限", exact: true }).click();
   await confirm(page);
@@ -202,7 +202,10 @@ for (const [theme, width] of [["light", 1440], ["dark", 390]] as const) {
     const writes = await fixture(page);
     await page.setViewportSize({ width, height: 1000 });
     await page.addInitScript(value => localStorage.setItem("sylulive-theme", value), theme);
-    await page.goto("./connected-apps?user_code=ABCD-1234");
+    await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
+    const navigation = page.getByRole("navigation", { name: "助手管理分区" });
+    await navigation.getByRole("button", { name: "接入教程", exact: true }).click();
+    await page.getByText("部署者工具与后台", { exact: true }).click();
     const dashboard = page.getByRole("region", { name: "AstrBot 插件后台" });
     const link = dashboard.getByRole("link", { name: "打开 AstrBot 插件管理", exact: true });
     await expect(link).toHaveAttribute("href", "http://127.0.0.1:6185/#/plugin-view/astrbot_plugin_sylulive/permissions");
@@ -222,6 +225,7 @@ for (const [theme, width] of [["light", 1440], ["dark", 390]] as const) {
     expect(writes).toHaveLength(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await dashboard.screenshot({ path: test.info().outputPath(`dashboard-${theme}.png`) });
+    await navigation.getByRole("button", { name: "连接 AstrBot", exact: true }).click();
     await page.getByRole("button", { name: "补充机器人授权", exact: true }).click();
     await page.getByRole("group", { name: "修改连接权限" }).screenshot({ path: test.info().outputPath(`supplement-${theme}.png`) });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

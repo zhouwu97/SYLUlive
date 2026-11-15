@@ -26,7 +26,7 @@ async function fixture(page: Page, options: { connected?: boolean; fail?: boolea
 
 test("已连接时先给明确状态，不要求重复填代码，历史连接默认收起", async ({ page }) => {
   const { writes } = await fixture(page);
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   const status = page.getByRole("region", { name: "当前连接状态" });
   await expect(status).toContainText("已连接 AstrBot");
   await expect(status).toContainText("示例创建者");
@@ -47,7 +47,7 @@ test("已连接时先给明确状态，不要求重复填代码，历史连接�
 
 test("连接新执行端才展开代码，并解释它是短期核对码", async ({ page }) => {
   const { writes } = await fixture(page, { connected: false });
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByRole("region", { name: "当前连接状态" }).getByRole("button", { name: "开始连接", exact: true }).click();
   await expect(page.getByRole("heading", { name: "当前没有有效连接", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "连接新的 AstrBot", exact: true }).click();
@@ -64,7 +64,7 @@ test("连接新执行端才展开代码，并解释它是短期核对码", async
 
 test("断开已有连接先说明影响，取消不写入，确认后只断开当前连接", async ({ page }) => {
   const { writes } = await fixture(page);
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByRole("region", { name: "当前连接状态" }).getByRole("button", { name: "管理连接", exact: true }).click();
   await page.getByRole("button", { name: "断开此连接", exact: true }).click();
   const confirm = page.getByRole("group", { name: "确认断开连接" });
@@ -81,7 +81,7 @@ test("断开已有连接先说明影响，取消不写入，确认后只断开�
 
 test("批准成功收起表单并清理已消费的连接码和URL，保留其他参数", async ({ page }) => {
   const { writes } = await fixture(page, { connected: false });
-  await page.goto("./connected-apps?user_code=ABCD-1234&entry=example");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234&entry=example");
   const navigation = page.getByRole("navigation", { name: "助手管理分区" });
   await navigation.getByRole("button", { name: "机器人设置与运行", exact: true }).click();
   await page.getByRole("textbox", { name: "机器人名称", exact: true }).fill("保留未保存的名字");
@@ -111,7 +111,7 @@ test("新的连接码历史导航清除旧核对，迟到旧请求不能恢复�
     await delayed;
     await route.fulfill({ json: { consent_id: "old-request", installation_name: "旧执行端", installation_id: "old-install", user_code: "ABCD-1234", requested_scopes: ["community:read"], confirmation_nonce: "old-nonce", expires_at: "2099-01-01T00:00:00Z" } });
   });
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   const navigation = page.getByRole("navigation", { name: "助手管理分区" });
   await navigation.getByRole("button", { name: "机器人设置与运行", exact: true }).click();
   await page.getByRole("textbox", { name: "机器人名称", exact: true }).fill("URL变化保留的名字");
@@ -119,7 +119,7 @@ test("新的连接码历史导航清除旧核对，迟到旧请求不能恢复�
   await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
   await expect.poll(() => started).toBe(true);
   await page.evaluate(() => {
-    history.pushState(null, "", "/web/connected-apps?user_code=EFGH-5678");
+    history.pushState(null, "", "/web/connected-apps?purpose=bot&user_code=EFGH-5678");
     dispatchEvent(new PopStateEvent("popstate"));
   });
   release();
@@ -143,7 +143,7 @@ test("批准响应迟到时不能清空后来输入的连接码或冒充新请�
     started = true; await delayed;
     await route.fulfill({ json: { binding: active } });
   });
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求", exact: true }).click();
   await page.getByRole("checkbox", { name: "我已核对连接码与当前账号，并了解外发范围", exact: true }).check();
   await page.getByRole("button", { name: "授权此助手", exact: true }).click();
@@ -157,7 +157,7 @@ test("批准响应迟到时不能清空后来输入的连接码或冒充新请�
 
 test("读取失败显示未确认，恢复读取不把有效连接变成未绑定", async ({ page }) => {
   const state = await fixture(page, { fail: true });
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   const status = page.getByRole("region", { name: "当前连接状态" });
   await expect(status).toContainText("连接状态未确认");
   await expect(status).not.toContainText("尚未连接");
@@ -169,7 +169,7 @@ test("读取失败显示未确认，恢复读取不把有效连接变成未绑�
 
 test("刷新失败不把缓存的有效连接冒充为本次已确认", async ({ page }) => {
   const state = await fixture(page);
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   const status = page.getByRole("region", { name: "当前连接状态" });
   await expect(status).toContainText("已连接 AstrBot");
   await status.getByRole("button", { name: "管理连接", exact: true }).click();
@@ -190,7 +190,7 @@ test("断开失败保留连接并允许核实，不显示已经断开", async ({
     attempts++;
     return route.fulfill({ status: 503, json: { code: "integration_unavailable" } });
   });
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByRole("region", { name: "当前连接状态" }).getByRole("button", { name: "管理连接", exact: true }).click();
   await page.getByRole("button", { name: "断开此连接", exact: true }).click();
   const confirm = page.getByRole("group", { name: "确认断开连接" });
@@ -215,7 +215,7 @@ for (const result of ["response_lost_but_revoked", "failed_still_active", "readb
         ? route.fulfill({ status: 503, json: { code: "integration_unavailable" } })
         : route.abort("failed");
     });
-    await page.goto("./connected-apps");
+    await page.goto("./connected-apps?purpose=bot");
     const status = page.getByRole("region", { name: "当前连接状态" });
     await status.getByRole("button", { name: "管理连接", exact: true }).click();
     await page.getByRole("button", { name: "断开此连接", exact: true }).click();

@@ -32,6 +32,21 @@
 .integration-guide li span, .integration-guide > p, .integration-data-hint { color: var(--integration-muted); font-size: 14px; line-height: 1.75; }
 .integration-guide > p { margin: 16px 0 0; }
 .integration-views { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+.integration-purposes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+.integration-purposes a { display: flex; gap: 12px; align-items: flex-start; min-width: 0; padding: 18px; color: var(--color-ink); text-decoration: none; border: 1px solid var(--integration-border); border-radius: var(--radius-card); background: var(--integration-solid); }
+.integration-purposes a[aria-current="page"] { border-color: var(--integration-accent); background: var(--integration-soft); }
+.integration-purposes a[aria-current="page"] strong { color: var(--integration-accent); }
+.integration-purposes .svg-icon { flex: none; margin-top: 2px; }
+.integration-purposes strong { display: block; font-size: 16px; }
+.integration-purposes small { display: block; margin-top: 6px; color: var(--integration-muted); line-height: 1.6; font-size: 13px; }
+.integration-purposes a:focus-visible, .integration-deployer-tools > summary:focus-visible { outline: 2px solid var(--integration-accent); outline-offset: 3px; }
+.integration-personal-commands { padding-block: 16px; border-top: 1px solid var(--integration-border); }
+.integration-personal-commands h3 { margin: 0 0 12px; font-size: 16px; }
+.integration-personal-commands dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.integration-personal-commands dt { color: var(--integration-muted); font-size: 13px; }
+.integration-personal-commands dd { margin: 4px 0 0; font-size: 14px; overflow-wrap: anywhere; }
+.integration-deployer-tools { margin-top: 20px; }
+.integration-deployer-tools > summary { cursor: pointer; min-height: 44px; padding-block: 12px; }
 .connection-status { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: start; gap: 14px; margin: 0 0 20px; padding: 18px 20px; border: 1px solid var(--integration-border); border-radius: var(--radius-card); background: var(--integration-solid); }
 .connection-status > .svg-icon { color: var(--integration-accent); margin-top: 2px; }
 .connection-status strong { font-size: 16px; }
@@ -168,6 +183,8 @@
 .integration-panel .integration-sticker { width: 88px; height: 88px; object-fit: contain; display: block; }
 @media (max-width: 1120px) { .integration-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) {
+  .integration-purposes { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .integration-purposes a { padding: 14px 16px; }
   .connection-status { grid-template-columns: 22px minmax(0, 1fr); padding: 16px; }
   .connection-status > .btn { grid-column: 2; justify-self: start; }
   .connection-history-row { display: grid; }

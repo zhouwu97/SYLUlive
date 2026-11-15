@@ -86,6 +86,24 @@ const scopeGroups = [
   { title: "机器人自动参与", hint: "自动评论需要「创建草稿＋自动评论」；自动发帖需要「创建草稿＋自动发帖」。两者都需要上方的公开社区读取和草稿结果权限。", scopes: ["community:propose", "community:bot_reply", "community:bot_post"] },
   { title: "可选：本人查询与签到", hint: "自动浏览、评论和发帖都不需要这些权限。仅在你要通过 QQ 查询本人已同步资料或签到时选择，默认不勾选。", scopes: ["academic:grades:read", "academic:erke:read", "checkin:write"] },
 ];
+type AssistantPurpose = "personal" | "bot";
+const personalScopes = ["profile:read_minimal", "checkin:write", "academic:grades:read", "academic:erke:read"];
+const personalScopeGroups = [
+  { title: "账号识别", hint: "让 QQ 机器人识别你本人授权的校园账号。", scopes: ["profile:read_minimal"] },
+  { title: "本人签到与查询", hint: "按需勾选。签到不需要同步成绩或二课，也不需要创建社区机器人。", scopes: ["checkin:write", "academic:grades:read", "academic:erke:read"] },
+];
+function groupsFor(purpose: AssistantPurpose) {
+  return purpose === "personal" ? personalScopeGroups : scopeGroups.slice(0, 2);
+}
+function scopesFor(purpose: AssistantPurpose) {
+  return groupsFor(purpose).flatMap(group => group.scopes);
+}
+function purposeLink(params: URLSearchParams, purpose: AssistantPurpose) {
+  const next = new URLSearchParams(params);
+  next.set("purpose", purpose);
+  next.delete("guide");
+  return `/connected-apps?${next}`;
+}
 const botScopeDependencies = ["community:read", "actions:read_own", "community:propose"];
 // 按分组顺序展示已批准权限，避免服务端字母序把成绩、二课排在最前面。
 const scopeOrder = scopeGroups.flatMap(group => group.scopes);
@@ -500,32 +518,34 @@ function BotPanel({ active, onConnect }: { active: boolean; onConnect: () => voi
 }
 
 
-function ConnectionStatus({ query: q, nickname, onManage }: { query: ConnectionsQuery; nickname: string; onManage: () => void }) {
+function ConnectionStatus({ query: q, nickname, onManage, purpose }: { query: ConnectionsQuery; nickname: string; onManage: () => void; purpose: AssistantPurpose }) {
   const known = !q.error && Array.isArray(q.data?.bindings);
   const active = Array.isArray(q.data?.bindings) ? q.data.bindings.filter(binding => binding.state === "active") : [];
   return <section className="connection-status" aria-label="当前连接状态" aria-live="polite" aria-busy={q.isFetching}>
     <Icon name="monitor" size={22} />
     <div>
-      <strong>{q.isPending ? "正在核对连接状态…" : !known ? "连接状态未确认" : q.isFetching ? "正在更新连接状态…" : active.length ? "已连接 AstrBot" : "当前没有有效连接"}</strong>
+      <strong>{q.isPending ? "正在核对连接状态…" : !known ? "连接状态未确认" : q.isFetching ? "正在更新连接状态…" : active.length ? purpose === "personal" ? "已绑定 QQ 机器人" : "已连接 AstrBot" : "当前没有有效连接"}</strong>
       {q.isPending ? <p>正在读取当前账号的授权，不需要输入连接码。</p> : !known
         ? <p>读取失败不能判断为未绑定。请先重试，不要重复生成连接或撤销已有授权。</p>
-        : active.length ? <><p>{nickname} 已授权给 {active.map(binding => binding.installation_name).join("、")}。{active.some(binding => missingBotScopes(binding).length > 0) ? "现有权限继续有效；如需自动参与，请在「管理连接」核对并补充缺少的权限。" : "无需再填连接码。"}</p><p>后台是否正在执行，请查看「机器人设置与运行」中的启用状态与心跳。</p></>
-        : <p>先在 AstrBot 发起本人的连接请求，再回到这里核对；已有机器人资料会保留。</p>}
+        : active.length ? <><p>{nickname} 已授权给 {active.map(binding => binding.installation_name).join("、")}。{purpose === "bot" && active.some(binding => missingBotScopes(binding).length > 0) ? "现有权限继续有效；如需自动参与，请在「管理连接」核对并补充缺少的权限。" : "无需再填连接码。"}</p><p>{purpose === "personal" ? "签到和查询以你批准的本人权限为准。需要调整时，在下方修改权限即可。" : "后台是否正在执行，请查看「机器人设置与运行」中的启用状态与心跳。"}</p></>
+        : <p>在与 QQ 机器人的原聊天发送 /sylu-connect，再用它返回的链接绑定自己的校园账号。</p>}
     </div>
     {!known && !q.isPending ? <button className="btn" type="button" disabled={q.isFetching} onClick={() => void q.refetch()}>重试读取连接状态</button>
       : <button className="btn" type="button" disabled={q.isPending} onClick={onManage}>{active.length ? "管理连接" : "开始连接"}</button>}
   </section>;
 }
 
-function ScopeEditor({ editing, busy, unavailable, onChange, onSave, onCancel }: {
+function ScopeEditor({ editing, busy, unavailable, onChange, onSave, onCancel, purpose }: {
   editing: ScopeEdit; busy: boolean; unavailable: Set<string>;
+  purpose: AssistantPurpose;
   onChange: (selected: string[]) => void; onSave: () => void; onCancel: () => void;
 }) {
   const problems = scopeProblems(editing.selected);
   return <div className="connection-scope-editor" role="group" aria-label="修改连接权限">
     <h4>修改权限</h4>
     <p className="integration-hint">保存后立即生效，连接与 AstrBot 凭证保持不变，无需重新连接。收回「创建草稿」时，尚未确认的草稿会失效。</p>
-    {scopeGroups.map(group => <fieldset className="integration-scope-group" key={group.title} disabled={busy}>
+    <p className="integration-hint">这里只修改{purpose === "personal" ? "本人签到与查询" : "社区机器人"}权限，另一用途已有的权限会保留。断开连接会同时撤销该连接的所有权限。</p>
+    {groupsFor(purpose).map(group => <fieldset className="integration-scope-group" key={group.title} disabled={busy}>
       <legend>{group.title}</legend>
       <p className="integration-hint">{group.hint}</p>
       {group.scopes.map(scope => {
@@ -549,8 +569,9 @@ function ScopeEditor({ editing, busy, unavailable, onChange, onSave, onCancel }:
   </div>;
 }
 
-function CurrentConnections({ query: q, nickname, busy, disconnect, confirmed, onDisconnect, onCancelDisconnect, onConfirmed, onRevoke, editing, onEdit, onEditChange, onSaveScopes, onCancelEdit }: {
+function CurrentConnections({ query: q, nickname, busy, disconnect, confirmed, onDisconnect, onCancelDisconnect, onConfirmed, onRevoke, editing, onEdit, onEditChange, onSaveScopes, onCancelEdit, purpose }: {
   query: ConnectionsQuery; nickname: string; busy: boolean; disconnect: Binding | null; confirmed: boolean;
+  purpose: AssistantPurpose;
   onDisconnect: (binding: Binding) => void; onCancelDisconnect: () => void; onConfirmed: (value: boolean) => void; onRevoke: (id: string) => void;
   editing: ScopeEdit | null; onEdit: (binding: Binding, addBot: boolean) => void; onEditChange: (selected: string[]) => void;
   onSaveScopes: () => void; onCancelEdit: () => void;
@@ -567,12 +588,13 @@ function CurrentConnections({ query: q, nickname, busy, disconnect, confirmed, o
         {q.isFetching && <p className="integration-hint" role="status">正在更新连接状态，下面保留上次读取的结果…</p>}
         {active.length ? active.map(binding => <article className="current-astrbot-connection" key={binding.binding_id}>
           <div className="connection-installation-heading"><h3>{binding.installation_name}</h3><span className="connection-state-label">已连接</span></div>
-          <p>校园账号：<strong>{nickname}</strong>。{missingBotScopes(binding).length ? "现有授权已生效，已批准的功能可继续使用；需要自动参与时可直接在这里补充权限。" : "此授权已生效，无需再次输入连接码。"}</p>
-          <ul className="connection-permission-tags" aria-label="当前连接已批准权限">{orderedScopes(binding.scopes).map(scope => <li key={scope}>{integrationScopeTitles[scope] || scope}</li>)}</ul>
-          {editing?.id === binding.binding_id ? <ScopeEditor editing={editing} busy={busy || q.isFetching} unavailable={unavailableScopes(q.data)}
+          <p>校园账号：<strong>{nickname}</strong>。此授权已生效，无需再次输入连接码。</p>
+          <ul className="connection-permission-tags" aria-label="当前连接已批准权限">{orderedScopes(binding.scopes).filter(scope => scopesFor(purpose).includes(scope)).map(scope => <li key={scope}>{integrationScopeTitles[scope] || scope}</li>)}</ul>
+          {purpose === "personal" && !binding.scopes.split(/\s+/).some(scope => personalScopes.slice(1).includes(scope)) && <p className="integration-hint">这条连接尚未授权本人签到或资料查询。需要使用时，点击「修改权限」选择对应功能。</p>}
+          {editing?.id === binding.binding_id ? <ScopeEditor purpose={purpose} editing={editing} busy={busy || q.isFetching} unavailable={unavailableScopes(q.data)}
             onChange={onEditChange} onSave={onSaveScopes} onCancel={onCancelEdit} />
             : <>
-              {missingBotScopes(binding).length > 0 && <div className="connection-authorization-needed">
+              {purpose === "bot" && missingBotScopes(binding).length > 0 && <div className="connection-authorization-needed">
                 <h4>自动参与权限尚未齐全</h4>
                 <p className="integration-hint">尚未批准：{missingBotScopes(binding).map(scope => integrationScopeTitles[scope]).join("、")}。已连接只代表上方列出的权限有效，启用机器人不会补齐授权。</p>
                 <button className="btn primary" type="button" disabled={busy || q.isFetching} onClick={() => onEdit(binding, true)}>补充机器人授权</button>
@@ -583,7 +605,7 @@ function CurrentConnections({ query: q, nickname, busy, disconnect, confirmed, o
             <ul>{orderedScopes(binding.scopes).map(scope => <li key={scope}>{labels[scope] || scope}</li>)}</ul>
             <p className="integration-hint">安装标识：{binding.installation_id}。安装名称和标识由插件自报，不证明 QQ 归属；App 登录设备另行管理。</p>
           </details>
-          <p className="integration-hint">这条连接允许 AstrBot 执行已批准的功能。机器人还需启用、满足规则并收到执行端心跳，才会按计划运行。</p>
+          <p className="integration-hint">{purpose === "personal" ? "授权完成后回到原 QQ 聊天使用本人功能，无需进入机器人后台或启用社区机器人。" : "这条连接允许 AstrBot 执行已批准的功能。机器人还需启用、满足规则并收到执行端心跳，才会按计划运行。"}</p>
           {disconnect?.binding_id === binding.binding_id ? <div className="connection-disconnect" role="group" aria-label="确认断开连接">
             <h4>断开「{binding.installation_name}」？</h4>
             <p>这会撤销该执行端的全部已批准权限，旧凭证和待发布草稿将失效。机器人资料、已发布内容和其他人的连接会保留。需要再次使用时，在 AstrBot 重新发起连接并授权。</p>
@@ -593,7 +615,7 @@ function CurrentConnections({ query: q, nickname, busy, disconnect, confirmed, o
             <button className="btn" type="button" disabled={busy || q.isFetching} onClick={() => onEdit(binding, false)}>修改权限</button>
             <button className="btn" type="button" disabled={busy || q.isFetching} onClick={() => onDisconnect(binding)}>断开此连接</button>
           </div>}
-        </article>) : <p className="integration-description">当前账号没有有效的 AstrBot 授权。下方历史记录不代表仍在连接；在原聊天取得新请求后，可点击「连接新的 AstrBot」。</p>}
+        </article>) : <p className="integration-description">{purpose === "personal" ? "当前校园账号尚未绑定 QQ 机器人。在原 QQ 聊天发送 /sylu-connect，打开返回的本人链接，或点击「绑定我的 QQ 账号」填写连接码。" : "当前账号没有有效的 AstrBot 授权。下方历史记录不代表仍在连接；在原聊天取得新请求后，可点击「连接新的 AstrBot」。"}</p>}
         {history.length > 0 && <details className="connection-history"><summary>历史连接（{history.length}）</summary>
           <p className="integration-hint">这里只保留旧授权记录，不会继续执行，也不需要再次撤销。</p>
           {history.map(binding => <div className="connection-history-row" key={binding.binding_id}><strong>{binding.installation_name}</strong><span>{binding.state === "revoked" ? "已撤销 · 已断开" : "授权已失效 · 需重新连接"}</span></div>)}
@@ -605,18 +627,35 @@ function CurrentConnections({ query: q, nickname, busy, disconnect, confirmed, o
 export function ConnectedApps() {
   const auth = useAuth();
   const [params] = useSearchParams();
+  const purpose: AssistantPurpose = params.get("purpose") === "bot" || (params.get("purpose") !== "personal" && params.get("guide") === "astrbot") ? "bot" : "personal";
   return (
-    <IntegrationFrame title="已授权助手" subtitle="管理你的独立 AI 机器人，核对连接与参与权限。">
-      {auth.user ? <AssistantWorkspace key={auth.user.id} nickname={auth.user.nickname} /> : params.get("guide") === "astrbot"
+    <IntegrationFrame title={purpose === "personal" ? "QQ 账号绑定与签到查询" : "社区机器人管理"} subtitle={purpose === "personal" ? "把自己的校园账号授权给 QQ 机器人，用于本人签到和资料查询。" : "设置独立机器人，授权它在社区自动浏览、评论和发帖。"}>
+      <nav className="integration-purposes" aria-label="选择使用目的">
+        <Link to={purposeLink(params, "personal")} aria-current={purpose === "personal" ? "page" : undefined}><Icon name="profile" size={22} /><span><strong>用户绑定 · 签到查询</strong><small>使用已有 QQ 机器人，绑定自己的账号</small></span></Link>
+        <Link to={purposeLink(params, "bot")} aria-current={purpose === "bot" ? "page" : undefined}><Icon name="ai" size={22} /><span><strong>社区机器人</strong><small>设置独立机器人，自动浏览、评论和发帖</small></span></Link>
+      </nav>
+      {auth.user ? <AssistantWorkspace key={`${auth.user.id}-${purpose}`} purpose={purpose} nickname={auth.user.nickname} /> : purpose === "bot" && params.get("guide") === "astrbot"
         ? <AstrBotConnectionGuide onConnect={auth.login} onBot={auth.login} />
-        : <SignIn><Link className="btn" to="/connected-apps?guide=astrbot">查看 AstrBot 接入教程</Link></SignIn>}
+        : <><p className="integration-description">{purpose === "personal" ? "请登录自己的校园账号，核对原 QQ 聊天中的连接码，再选择签到或查询权限。不要使用他人转发的链接，学校密码不要发给机器人。" : "登录后可管理自己创建的社区机器人及其参与权限。"}</p><SignIn /></>}
     </IntegrationFrame>
   );
 }
 type AssistantView = "bot" | "connection" | "data" | "guide";
-function AssistantWorkspace({ nickname }: { nickname: string }) {
+function PersonalGuide() {
+  return <section className="panel panel-pad integration-panel" aria-label="QQ 签到查询使用说明">
+    <h2>在 QQ 使用自己的签到与查询</h2>
+    <ol className="astrbot-guide-steps">
+      <li>在与 QQ 机器人的原聊天发送 <code>/sylu-connect</code>，打开属于本人的临时链接。</li>
+      <li>登录自己的校园账号，核对连接码，按需勾选「本人签到与查询」权限，再确认授权。</li>
+      <li>回原聊天发送 <code>/sylu-status</code> 核对连接。签到用 <code>/sylu-checkin</code>，签到状态用 <code>/sylu-checkin-status</code>。</li>
+      <li>查询成绩用 <code>/sylu-grades</code>，二课用 <code>/sylu-erke</code>。需先在「个人资料同步」同步对应摘要，并批准对应权限；查询结果会标明同步时间，不是学校实时查询。</li>
+    </ol>
+    <p className="integration-hint">功能和群聊入口由部署者开放。遇到权限不足，先核对本人的授权，再联系部署者；无需安装 AstrBot 或创建社区机器人。绑定不会开启每日自动签到。</p>
+  </section>;
+}
+function AssistantWorkspace({ nickname, purpose }: { nickname: string; purpose: AssistantPurpose }) {
   const [params] = useSearchParams();
-  const [view, setView] = useState<AssistantView>(params.get("user_code") ? "connection" : params.get("guide") === "astrbot" ? "guide" : "bot");
+  const [view, setView] = useState<AssistantView>(params.get("user_code") || purpose === "personal" ? "connection" : params.get("guide") === "astrbot" ? "guide" : "bot");
   const urlCode = params.get("user_code") || "", urlGuide = params.get("guide") || "";
   const previousEntry = useRef({ code: urlCode, guide: urlGuide });
   useEffect(() => {
@@ -626,23 +665,22 @@ function AssistantWorkspace({ nickname }: { nickname: string }) {
   }, [urlCode, urlGuide]);
   const connections = useApi<ConnectionsResult>("/api/connected-apps");
   return <>
-    <p className="integration-current-account">当前账号：{nickname}。机器人设置和连接授权都只作用于这个账号。</p>
-    <ConnectionStatus query={connections} nickname={nickname} onManage={() => setView("connection")} />
-    <AstrBotDashboard />
-    <section className="integration-guide" aria-label="机器人启用步骤">
+    <p className="integration-current-account">当前校园账号：<strong>{nickname}</strong>。请核对是你本人，勿替他人授权。</p>
+    {!(purpose === "personal" && urlCode && view === "connection") && <ConnectionStatus purpose={purpose} query={connections} nickname={nickname} onManage={() => setView("connection")} />}
+    {purpose === "bot" && !urlCode && <section className="integration-guide" aria-label="机器人启用步骤">
       <h2>让机器人自动参与社区</h2>
       <ol><li><strong>1. 设置机器人</strong><span>选择允许的板块、评论、发帖与配图。</span></li><li><strong>2. 连接并核对权限</strong><span>已有连接先看已批准权限；缺少浏览、评论或发帖权限时补充授权。</span></li><li><strong>3. 启用并检查</strong><span>所需权限齐全后，回到机器人设置启用，查看浏览与发言记录。</span></li></ol>
       <p>登录后可直接管理当前连接和机器人。成绩、二课和签到都是可选功能，自动发帖不需要它们。</p>
-    </section>
+    </section>}
     <nav className="integration-views" aria-label="助手管理分区">
-      {([["bot", "机器人设置与运行"], ["connection", "连接 AstrBot"], ["data", "个人资料同步"], ["guide", "接入教程"]] as const).map(([key, title]) => <button key={key} className="btn" type="button" aria-pressed={view === key} aria-controls={`assistant-${key}`} onClick={() => setView(key)}>{title}</button>)}
+      {(purpose === "bot" ? [["bot", "机器人设置与运行"], ["connection", "连接 AstrBot"], ["guide", "接入教程"]] as const : [["connection", "账号绑定与权限"], ["data", "个人资料同步"], ["guide", "使用说明"]] as const).map(([key, title]) => <button key={key} className="btn" type="button" aria-pressed={view === key} aria-controls={`assistant-${key}`} onClick={() => setView(key)}>{title}</button>)}
     </nav>
-    <div id="assistant-bot" hidden={view !== "bot"}><BotPanel active={view === "bot"} onConnect={() => setView("connection")} /></div>
-    <ConnectionPanel nickname={nickname} view={view} query={connections} onBot={() => setView("bot")} onGuide={() => setView("guide")} />
-    <div id="assistant-guide" hidden={view !== "guide"}><AstrBotConnectionGuide onConnect={() => setView("connection")} onBot={() => setView("bot")} /></div>
+    {purpose === "bot" && <div id="assistant-bot" hidden={view !== "bot"}><BotPanel active={view === "bot"} onConnect={() => setView("connection")} /></div>}
+    <ConnectionPanel purpose={purpose} nickname={nickname} view={view} query={connections} onBot={() => setView("bot")} onGuide={() => setView("guide")} />
+    <div id="assistant-guide" hidden={view !== "guide"}>{purpose === "personal" ? <PersonalGuide /> : <><AstrBotConnectionGuide onConnect={() => setView("connection")} onBot={() => setView("bot")} />{view === "guide" && <details className="integration-deployer-tools"><summary>部署者工具与后台</summary><AstrBotDashboard /></details>}</>}</div>
   </>;
 }
-function ConnectionPanel({ nickname, view, query: q, onBot, onGuide }: { nickname: string; view: AssistantView; query: ConnectionsQuery; onBot: () => void; onGuide: () => void }) {
+function ConnectionPanel({ nickname, view, query: q, onBot, onGuide, purpose }: { nickname: string; view: AssistantView; query: ConnectionsQuery; onBot: () => void; onGuide: () => void; purpose: AssistantPurpose }) {
   const queryClient = useQueryClient();
   const requestHeading = useRef<HTMLHeadingElement>(null);
   const lookupVersion = useRef(0);
@@ -686,7 +724,7 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide }: { nicknam
   }, [urlCode]);
   const personalSelected = selected.some(scope => scope === "academic:grades:read" || scope === "academic:erke:read");
   const personalBlocked = personalSelected && (!!q.error || q.isFetching || q.data?.personal_data_enabled !== true);
-  const canSelectBotScopes = !!consent && [...botScopeDependencies, "community:bot_reply", "community:bot_post"].every(scope => consent.requested_scopes.includes(scope));
+  const canSelectBotScopes = purpose === "bot" && !!consent && [...botScopeDependencies, "community:bot_reply", "community:bot_post"].every(scope => consent.requested_scopes.includes(scope));
   const authorizationProblems: string[] = [];
   if (!checked) authorizationProblems.push("请先核对连接码与当前账号，并勾选外发范围确认。");
   if (!selected.length) authorizationProblems.push("请至少选择一项本次请求的权限。");
@@ -719,7 +757,7 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide }: { nicknam
         setSelected(sameRequest
           ? previousSelection.filter(scope => result.requested_scopes.includes(scope))
           : result.requested_scopes.filter(
-            (s) => !["community:propose", "checkin:write", "community:bot_reply", "community:bot_post", "academic:grades:read", "academic:erke:read"].includes(s),
+            (s) => scopesFor(purpose).includes(s) && !["community:propose", "checkin:write", "community:bot_reply", "community:bot_post", "academic:grades:read", "academic:erke:read"].includes(s),
           ),
         );
       }
@@ -731,7 +769,8 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide }: { nicknam
   }
   function selectBotScopes() {
     if (!canSelectBotScopes) return;
-    setSelected(previous => [...new Set([...previous, ...botScopeDependencies, "community:bot_reply", "community:bot_post"])]);
+    const blocked = unavailableScopes(q.data);
+    setSelected(previous => [...new Set([...previous, ...[...botScopeDependencies, "community:bot_reply", "community:bot_post"].filter(scope => !blocked.has(scope))])]);
   }
   async function decide(allow: boolean) {
     if (!consent) return;
@@ -770,7 +809,7 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide }: { nicknam
         }
         setSuccess(
           allow
-            ? "已授权。返回 AstrBot，等待插件完成连接。"
+            ? purpose === "personal" ? "已授权。回到原 QQ 聊天，等待机器人确认绑定后使用本人功能。" : "已授权。返回 AstrBot，等待插件完成连接。"
             : "已拒绝本次授权。",
         );
         await q.refetch();
@@ -858,48 +897,24 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide }: { nicknam
       if (current()) setBusy(false);
     }
   }
+  const problem = view === "connection" && <Problem message={message} onCancel={() => { setMessage(""); setSuccess(lastOperation.current === "scopes" ? "已取消密码验证。所选权限已保留，尚未保存。" : "已取消密码验证。连接码已保留，本次连接授权未提交。"); }} onVerified={async () => {
+    setMessage("");
+    if (lastOperation.current === "scopes") { if (editing) await saveScopes(); else await q.refetch(); return; }
+    if (code.trim()) await lookup(true);
+    else await q.refetch();
+  }} />;
   return (
     <>
       <div id="assistant-connection" hidden={view !== "connection"} className="integration-connections">
-      <section className="panel panel-pad integration-panel" aria-label="AstrBot 连接管理">
-        <CurrentConnections query={q} nickname={nickname} busy={busy} disconnect={disconnect} confirmed={disconnectConfirmed}
-          onDisconnect={binding => { setDisconnect(binding); setDisconnectConfirmed(false); setMessage(""); }}
-          onCancelDisconnect={() => { setDisconnect(null); setDisconnectConfirmed(false); }}
-          onConfirmed={setDisconnectConfirmed} onRevoke={id => void revoke(id)}
-          editing={editing} onEdit={startEdit} onEditChange={selected => setEditing(value => value && { ...value, selected })}
-          onSaveScopes={() => void saveScopes()} onCancelEdit={() => setEditing(null)} />
-        {view === "connection" && <Problem message={message} onCancel={() => { setMessage(""); setSuccess(lastOperation.current === "scopes" ? "已取消密码验证。所选权限已保留，尚未保存。" : "已取消密码验证。连接码已保留，本次连接授权未提交。"); }} onVerified={async () => {
-          setMessage("");
-          if (lastOperation.current === "scopes") { if (editing) await saveScopes(); else await q.refetch(); return; }
-          if (code.trim()) await lookup(true);
-          else await q.refetch();
-        }} />}
-        {success && <p className="integration-feedback integration-feedback--success" role="status">{success}</p>}
-        {success.startsWith("已授权。") && <>
-          <p className="integration-hint">{!connectionsKnown ? "请先刷新连接列表核对已批准权限，再启用自动参与。" : participationReady
-            ? "已批准的自动参与功能可在机器人设置中启用；其他功能仍以连接卡片列出的权限为准。"
-            : "本次授权尚不足以自动评论或发帖。请在上方连接卡片点「补充机器人授权」勾选所需权限并保存，再启用自动参与。"}</p>
-          <button className={`btn${participationReady ? " primary" : ""}`} type="button" onClick={onBot}>{participationReady ? "去启用机器人并检查运行" : "返回机器人设置"}</button>
-        </>}
-        {success.startsWith("已授权。") && <p className="integration-hint">网站授权已生效。回到原聊天发送 /sylu-status 核对执行端是否取得授权；连接码无需重复填写。</p>}
-        <div className="connection-next-actions">
-          <button className="btn" type="button" disabled={busy} aria-expanded={requestOpen} aria-controls="new-astrbot-connection"
-            onClick={() => { if (requestOpen) { lookupVersion.current++; setConsent(null); setBusy(false); } setRequestOpen(!requestOpen); }}>
-            {requestOpen ? "收起新连接表单" : "连接新的 AstrBot"}
-          </button>
-          <button className="btn" type="button" onClick={onGuide}>查看接入教程</button>
-          <p className="integration-hint">保留现有连接时不用重新绑定；增减权限直接在连接卡片点「修改权限」。只有更换执行端时，才需从 AstrBot 发起新请求。</p>
-        </div>
-      </section>
-      {requestOpen && <section id="new-astrbot-connection" className="panel panel-pad integration-panel">
-        <header className="integration-section-head"><Icon name="monitor" size={22} /><h2 ref={requestHeading} tabIndex={-1}>核对连接请求</h2></header>
-        <ol className="astrbot-guide-steps">
+      {requestOpen && <section id="new-astrbot-connection" className="panel panel-pad integration-panel" aria-busy={busy}>
+        <header className="integration-section-head"><Icon name="monitor" size={22} /><h2 ref={requestHeading} tabIndex={-1}>{purpose === "personal" ? "核对本人绑定请求" : "核对连接请求"}</h2></header>
+        {purpose === "personal" ? <p className="integration-description">确认下方是你本人在原 QQ 聊天发起的请求，按需选择签到或查询权限。无需创建机器人或进入 AstrBot 后台。</p> : <ol className="astrbot-guide-steps">
           <li>在与机器人的原聊天发送 <code>/sylu-connect</code>，取得本次官网链接或一次性连接码。无需先断开现有连接。</li>
           <li>打开机器人给的新链接，或在下方输入新码并点击「查看授权请求」。</li>
-          <li>选择自动浏览、评论或发帖所需权限，核对外发范围；已有连接时勾选替换旧授权，最后点击「授权此助手」。</li>
-        </ol>
-        <p className="integration-hint">它是一次性的短期核对码（旧称设备代码），不是电脑编号、登录密码或绑定状态。若新请求没有申请机器人参与权限，请让部署者在上方 AstrBot 插件后台检查功能与会话范围后，再发起新请求。</p>
-        <p className="integration-description">这一步把 AstrBot 连接到你管理的机器人。自动发帖请选择「机器人自动参与」中的相应权限；个人资料查询可以不选。</p>
+          <li>选择自动浏览、评论或发帖所需权限，核对外发范围后点击「授权此助手」。已有连接时，还需确认替换旧授权。</li>
+        </ol>}
+        <p className="integration-hint">它是一次性的短期核对码（旧称设备代码），不是电脑编号、登录密码或绑定状态。</p>
+        {purpose === "bot" && <p className="integration-description">这一步为独立社区机器人授权。按需要选择自动评论或发帖权限，保存并启用后才会运行。</p>}
         <p>
           授权账号：{nickname}。只为自己刚刚在 AstrBot
           发起的请求授权。不要替他人输入连接码。
@@ -929,16 +944,18 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide }: { nicknam
             查看授权请求
           </button>
         </form>
+        {lastOperation.current === "consent" && problem}
+        {busy && lastOperation.current === "consent" && <p className="integration-hint" role="status">正在处理本人授权请求，请稍候…</p>}
         {consent && (
           <div>
             <h3>授权给 {consent.installation_name}</h3>
-            <p>安装标识：{consent.installation_id}（名称和标识由插件提供）</p>
+            {purpose === "bot" && <p>安装标识：{consent.installation_id}（名称和标识由插件提供）</p>}
             <p>
               请与 AstrBot 中显示的代码 <strong>{consent.user_code}</strong>{" "}
               核对。请求有效至 {new Date(consent.expires_at).toLocaleString()}。
             </p>
             {canSelectBotScopes && <div className="integration-scope-shortcut"><button className="btn" type="button" disabled={busy} onClick={selectBotScopes}>选择自动评论和发帖所需权限</button><p className="integration-hint">仅补齐公开读取、草稿和独立机器人发言权限；不会勾选成绩、二课或签到，也不会立即授权。</p></div>}
-            {[...scopeGroups, { title: "其他请求权限", hint: "请单独核对后选择。", scopes: consent.requested_scopes.filter(scope => !scopeGroups.some(group => group.scopes.includes(scope))) }].map(group => {
+            {groupsFor(purpose).map(group => {
               const scopes = group.scopes.filter(scope => consent.requested_scopes.includes(scope));
               return scopes.length > 0 && <fieldset className="integration-scope-group" key={group.title} disabled={busy}>
                 <legend>{group.title}</legend><p className="integration-hint">{group.hint}</p>
@@ -948,6 +965,7 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide }: { nicknam
                   <input
                     type="checkbox"
                     checked={selected.includes(scope)}
+                    disabled={unavailableScopes(q.data).has(scope)}
                     onChange={(e) =>
                       setSelected((v) =>
                         e.target.checked
@@ -960,17 +978,20 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide }: { nicknam
                 </span>
               </label>
               {scope === "community:propose" && <p className="integration-hint">这是生成内容的共同前置权限。单独勾选只会生成待确认草稿；另选下方自动评论／发帖后，才允许以独立机器人账号自动发布。</p>}
+              {unavailableScopes(q.data).has(scope) && <p className="integration-hint">站点尚未开放此功能，暂不能新增授权。</p>}
                 </div>)}
               </fieldset>;
             })}
-            {!consent.requested_scopes.includes("community:bot_post") && !consent.requested_scopes.includes("community:bot_reply") && <p className="integration-hint">这份连接请求未申请机器人自主评论或发帖。请在与机器人的私聊，或部署者已开放机器人授权的群内重新发送 /sylu-connect，再核对新请求。</p>}
-            <p>
+            {purpose === "bot" && !consent.requested_scopes.includes("community:bot_post") && !consent.requested_scopes.includes("community:bot_reply") && <p className="integration-hint">这份连接请求未申请机器人自主评论或发帖。请在与机器人的私聊，或部署者已开放机器人授权的群内重新发送 /sylu-connect，再核对新请求。</p>}
+            {purpose === "personal" && !consent.requested_scopes.some(scope => personalScopes.slice(1).includes(scope)) && <p className="integration-hint">这份请求没有申请本人签到或资料查询。可先完成账号识别，再在当前连接的「修改权限」按需授权；若功能未开放，请联系机器人部署者。</p>}
+            <p className="integration-hint">当前只选择{purpose === "personal" ? "本人签到与查询" : "社区机器人"}用途的权限。需要另一用途时，可切换上方入口；不会自动勾选或提交授权。</p>
+            {purpose === "bot" && <p>
               获准读取的公开文字、作者昵称、互动统计和图片会交给你部署的
               AstrBot，可能继续发送至你选择的模型、记忆插件或部署者允许的群。SYLUlive
               无法收回已经外发的数据。本连接不提供站内私信、课表、学校密码或学校登录会话。
-            </p>
-            <p>成绩和二课为独立可选权限，默认不勾选。授权后按本人明确命令返回已同步数据，标明同步时间，不是学校实时查询。允许的用户、群及结果投递由机器人后台配置；在群内查询并确认展示，或在已配置直接展示的群明确查询，会向该群公开本人结果，群成员、后续群模型与记忆可能保存。绑定不会自动完成学校登录或数据同步。</p>
-            <p>如果连接共享机器人，QQ、机器人部署者及其安装的其他插件可能保存私聊和返回结果；请确认你信任部署者。SYLUlive 后台管理员不会仅凭管理身份获得他人成绩读取接口。</p>
+            </p>}
+            {purpose === "personal" && <><p>所选功能的请求和结果会交给 QQ 机器人。共享机器人部署者可能保存返回结果；群内展示会向该群公开，请仅授权你信任的机器人。</p><details className="connection-permission-details"><summary>数据范围与群聊隐私说明</summary><p>安装标识：{consent.installation_id}（名称和标识由插件提供，不证明 QQ 归属）。签到、成绩和二课均需按需勾选。查询按本人明确命令返回已同步数据，标明同步时间，不是学校实时查询。允许的用户、群及结果投递由机器人后台配置；在群内查询并确认展示，或在已配置直接展示的群明确查询，会向该群公开本人结果，群成员、后续群模型与记忆可能保存。绑定不会自动完成学校登录或数据同步。</p><p>QQ、机器人部署者及其安装的其他插件可能保存私聊和返回结果。SYLUlive 后台管理员不会仅凭管理身份获得他人成绩读取接口。</p></details></>}
+            {purpose === "bot" && <p>如果连接共享机器人，QQ、机器人部署者及其安装的其他插件可能保存私聊和返回结果；请确认你信任部署者。SYLUlive 后台管理员不会仅凭管理身份获得他人成绩读取接口。</p>}
             <label className="field">
               <span>
                 <input
@@ -982,6 +1003,8 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide }: { nicknam
               </span>
             </label>
             {consent.existing_binding && (
+              <div>
+              <p className="integration-hint">替换会撤销旧连接的全部权限，本次只批准当前选中的权限。旧连接中另一用途的权限也会被收回；如需保留，请取消本次请求，改在已有连接中「修改权限」。</p>
               <label className="field">
                 <span>
                   <input
@@ -993,6 +1016,7 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide }: { nicknam
                   {consent.existing_binding.installation_name}」
                 </span>
               </label>
+              </div>
             )}
             {authorizationProblems.length > 0 && <div id="integration-consent-requirements" className="integration-hint" role="status">
               <p>授权前还需完成：</p>
@@ -1019,12 +1043,42 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide }: { nicknam
           </div>
         )}
       </section>}
+      <section className="panel panel-pad integration-panel" aria-label={purpose === "personal" ? "QQ 账号绑定管理" : "AstrBot 连接管理"}>
+        <CurrentConnections purpose={purpose} query={q} nickname={nickname} busy={busy} disconnect={disconnect} confirmed={disconnectConfirmed}
+          onDisconnect={binding => { setDisconnect(binding); setDisconnectConfirmed(false); setMessage(""); }}
+          onCancelDisconnect={() => { setDisconnect(null); setDisconnectConfirmed(false); }}
+          onConfirmed={setDisconnectConfirmed} onRevoke={id => void revoke(id)}
+          editing={editing} onEdit={startEdit} onEditChange={selected => setEditing(value => value && { ...value, selected })}
+          onSaveScopes={() => void saveScopes()} onCancelEdit={() => setEditing(null)} />
+        {lastOperation.current !== "consent" && problem}
+        {success && <p className="integration-feedback integration-feedback--success" role="status">{success}</p>}
+        {success.startsWith("已授权。") && purpose === "bot" && <>
+          <p className="integration-hint">{!connectionsKnown ? "请先刷新连接列表核对已批准权限，再启用自动参与。" : participationReady
+            ? "已批准的自动参与功能可在机器人设置中启用；其他功能仍以连接卡片列出的权限为准。"
+            : "本次授权尚不足以自动评论或发帖。请在上方连接卡片点「补充机器人授权」勾选所需权限并保存，再启用自动参与。"}</p>
+          <button className={`btn${participationReady ? " primary" : ""}`} type="button" onClick={onBot}>{participationReady ? "去启用机器人并检查运行" : "返回机器人设置"}</button>
+        </>}
+        {success.startsWith("已授权。") && <p className="integration-hint">网站授权已生效。回到原聊天发送 /sylu-status 核对执行端是否取得授权；连接码无需重复填写。</p>}
+        {purpose === "personal" && <div className="integration-personal-commands" aria-label="QQ 本人功能命令">
+          <h3>回到原 QQ 聊天使用</h3>
+          <dl><div><dt>本人签到</dt><dd><code>/sylu-checkin</code></dd></div><div><dt>签到状态</dt><dd><code>/sylu-checkin-status</code></dd></div><div><dt>查询成绩</dt><dd><code>/sylu-grades</code></dd></div><div><dt>查询二课</dt><dd><code>/sylu-erke</code></dd></div></dl>
+          <p className="integration-hint">仅可使用部署者已开放且你已授权的功能。成绩与二课还需先在「个人资料同步」同步摘要。绑定不会开启每日自动签到。</p>
+        </div>}
+        <div className="connection-next-actions">
+          <button className="btn" type="button" disabled={busy} aria-expanded={requestOpen} aria-controls="new-astrbot-connection"
+            onClick={() => { if (requestOpen) { lookupVersion.current++; setConsent(null); setBusy(false); } setRequestOpen(!requestOpen); }}>
+            {purpose === "personal" ? requestOpen ? "收起绑定表单" : "绑定我的 QQ 账号" : requestOpen ? "收起新连接表单" : "连接新的 AstrBot"}
+          </button>
+          <button className="btn" type="button" onClick={onGuide}>{purpose === "personal" ? "查看使用说明" : "查看接入教程"}</button>
+          <p className="integration-hint">保留现有连接时不用重新绑定；增减权限直接在连接卡片点「修改权限」。只有更换执行端时，才需从 AstrBot 发起新请求。</p>
+        </div>
+      </section>
       </div>
-      <div id="assistant-data" hidden={view !== "data"}>
+      {purpose === "personal" && <div id="assistant-data" hidden={view !== "data"}>
         <p className="integration-data-hint">这里供本人 QQ 查询使用，和机器人自动发帖分开。仅需自动参与社区时，无需同步成绩或二课。</p>
         <button className="btn" type="button" disabled={q.isFetching} onClick={() => void q.refetch()}>{q.isFetching ? "正在刷新个人查询状态…" : "刷新个人查询状态"}</button>
         <IntegrationPersonalSync enabled={q.error || q.isFetching ? undefined : q.data?.personal_data_enabled} refreshing={q.isFetching} onRefresh={() => void q.refetch()} />
-      </div>
+      </div>}
     </>
   );
 }
@@ -1033,7 +1087,7 @@ export function ConnectedAction() {
   const auth = useAuth(),
     { id } = useParams();
   return (
-    <IntegrationFrame title="确认助手草稿" action={<Link className="btn" to="/connected-apps">连接管理</Link>}>
+    <IntegrationFrame title="确认助手草稿" action={<Link className="btn" to="/connected-apps?purpose=bot">连接管理</Link>}>
       {auth.user && id ? <ActionPanel key={`${auth.user.id}:${id}`} id={id} nickname={auth.user.nickname} /> : <SignIn />}
     </IntegrationFrame>
   );

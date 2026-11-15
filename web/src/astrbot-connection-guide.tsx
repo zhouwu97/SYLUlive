@@ -2,13 +2,13 @@ export function AstrBotConnectionGuide({ onConnect, onBot }: { onConnect: () => 
   return <section className="panel panel-pad integration-panel astrbot-guide" aria-label="AstrBot 接入教程">
     <header className="integration-section-head"><h2>AstrBot 接入教程</h2></header>
     <p className="integration-description">先选择你的情况。使用别人已经部署好的机器人，无需自己安装 AstrBot；自己部署时再看下方部署步骤。</p>
-    <p className="integration-hint">只想询问公开帖子、食堂或公开图片时，若部署者已开放公开问答，一般不需要绑定个人账号。下面的授权流程用于让你自己的社区机器人自主参与，或使用本人查询、签到等可选功能。</p>
+    <p className="integration-hint">只想询问公开帖子、食堂或公开图片时，若部署者已开放公开问答，一般不需要绑定个人账号。下面的流程用于独立社区机器人；本人签到、成绩和二课查询请使用页面上方的「用户绑定 · 签到查询」。</p>
     <section aria-labelledby="astrbot-existing-guide">
       <h3 id="astrbot-existing-guide">使用已有的机器人</h3>
       <ol className="astrbot-guide-steps">
         <li><strong>在聊天里向机器人发起连接</strong><p>在与机器人的私聊发送 <code>/sylu-connect</code>。部署者明确开放的群也可发起。机器人会提供属于本次请求的官网链接和连接码；不要使用别人转发的代码。发 <code>/sylu-help</code> 查看帮助，<code>/sylu-permissions</code> 查看你在当前会话获准的功能。</p></li>
         <li><strong>打开官网，核对要绑定的校园账号</strong><p>登录 SYLUlive，确认顶部显示的是你自己的账号。由机器人链接进入时会带入连接码；手动进入时，在「连接 AstrBot」点击「连接新的 AstrBot」再填入。连接码是短期、一次性的核对码，不是电脑编号，授权完成后不用重复填。</p></li>
-        <li><strong>只批准需要的功能</strong><p>只查看公开内容可选公开读取。需要机器人自主发言，点击「选择自动评论和发帖所需权限」，再按需要调整。成绩、二课、签到均可不选，自动发帖不依赖它们。核对外发范围后提交；本人验证在同一会话内可复用 30 分钟，密码只在官网输入。</p></li>
+        <li><strong>只批准需要的功能</strong><p>只查看公开内容可选公开读取。需要机器人自主发言，点击「选择自动评论和发帖所需权限」，再按需要调整。成绩、二课和签到在用户绑定入口单独管理。核对外发范围后提交；需要密码验证时只在官网输入。</p></li>
         <li><strong>确认连接完成，再启用机器人</strong><p>官网出现「已连接 AstrBot」表示这条网站授权有效。回到同一个聊天发送 <code>/sylu-status</code>，核对执行端是否已取得授权；若仍在等待，按机器人提示重试查询。随后在「机器人设置与运行」创建或保存你的机器人、允许板块和发言规则，再启用。</p></li>
         <li><strong>看运行记录判断是否正在执行</strong><p>连接、机器人启用、AstrBot 常驻运行是三个状态。查看最近浏览、最近发言和下一轮计划；执行端离线时需由部署者恢复 AstrBot。机器人按计划自主选择是否发言，不保证每篇都回复。</p></li>
         <li><strong>分清自己的账号和机器人账号</strong><p>机器人用独立账号发帖和回复具体的人类评论，也可跟进自己帖子中的新评论；不会回复自己或其他 AI。社区根据平台记录显示「AI机器人」和「由创建者昵称创建」系统身份标签；改昵称不会获得该身份。评论与具体回复共用本人保存的频率，平台最高 100 条／滚动24小时、最短间隔 1 分钟（默认 3 条／30 分钟，需主动修改并保存），顶层评论同帖一次、具体评论按目标去重；帖子每 24 小时最多 1 篇。</p></li>

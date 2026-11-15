@@ -23,7 +23,7 @@ for (const [theme, width] of [["light", 375], ["dark", 1440]] as const) {
         auto_reply_server_enabled:true, auto_reply_authorized:true
       }});
     });
-    await page.goto("./connected-apps");
+    await page.goto("./connected-apps?purpose=bot");
     const runtime = page.getByRole("region", {name:"后台运行状态"});
     await expect(runtime.getByText("正在浏览", {exact:true})).toBeVisible();
     await page.getByLabel("机器人名称", {exact:true}).fill("未保存的名字");
@@ -55,7 +55,7 @@ for (const [theme, width] of [["light", 375], ["dark", 1440]] as const) {
 
 test("评论频率可保存100条和1分钟，未保存前不发请求", async ({page}) => {
   const writes = await fixture(page);
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByRole("button", {name:"新建机器人", exact:true}).click();
   await page.getByLabel("每 24 小时最多评论数").selectOption("100");
   await page.getByLabel("评论间隔（分钟）").fill("1");
@@ -69,7 +69,7 @@ test("评论频率可保存100条和1分钟，未保存前不发请求", async (
 
 test('自动发帖和配图默认关闭，独立保存并授权，不继承评论权限',async({page})=>{
   const writes=await fixture(page,{postEnabled:true});
-  await page.goto('./connected-apps?user_code=ABCD-1234');
+  await page.goto('./connected-apps?purpose=bot&user_code=ABCD-1234');
   await page.getByRole('navigation',{name:'助手管理分区'}).getByRole('button',{name:'机器人设置与运行',exact:true}).click();
   const post=page.getByLabel('自动发布帖子',{exact:false}),image=page.getByLabel('使用已审核公开配图',{exact:false});
   await expect(post).not.toBeChecked();await expect(image).not.toBeChecked();await expect(image).toBeDisabled();
@@ -232,9 +232,9 @@ test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身
   page,
 }) => {
   const writes = await fixture(page);
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await expect(
-    page.getByRole("heading", { name: "已授权助手", exact: true }),
+    page.getByRole("heading", { name: "社区机器人管理", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "当前没有有效连接" }),
@@ -252,7 +252,7 @@ test("授权需核对代码，写入提案默认不勾选，提交不携带QQ身
   const writeScope = page.getByLabel("创建待本人确认的帖子或评论草稿");
   await expect(writeScope).not.toBeChecked();
   await expect(page.getByLabel(/以本人管理的独立AI机器人自动评论/)).not.toBeChecked();
-  await expect(page.getByLabel("查看本人签到状态，并按本人指令每日签到（不含补签）")).not.toBeChecked();
+  await expect(page.getByLabel("查看本人签到状态，并按本人指令每日签到（不含补签）")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "授权此助手" })).toBeDisabled();
   await page.getByLabel("我已核对连接码与当前账号，并了解外发范围").check();
   await page.getByRole("button", { name: "授权此助手" }).click();
@@ -297,7 +297,7 @@ test("官方网页真实登录交互后重读当前账号，能够继续设备�
       },
     });
   });
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page
     .getByRole("main")
     .getByRole("button", { name: "登录", exact: true })
@@ -306,7 +306,7 @@ test("官方网页真实登录交互后重读当前账号，能够继续设备�
   await dialog.getByLabel("邮箱或账号").fill("synthetic");
   await dialog.getByLabel("密码", { exact: true }).fill("synthetic-password");
   await dialog.getByRole("button", { name: "登录", exact: true }).click();
-  await expect(page.getByText(/当前账号：登录后的合成账号/)).toBeVisible();
+  await expect(page.getByText(/当前校园账号：登录后的合成账号/)).toBeVisible();
   await page.getByRole("button", { name: "查看授权请求" }).click();
   await expect(page.getByRole("button", { name: "授权此助手" })).toBeVisible();
 });
@@ -336,7 +336,7 @@ test("正式发布必须本人核对，重复点击只发送一次确认并展�
 
 test("过旧登录要求验证当前账号密码，验证前不发送授权确认", async ({ page }) => {
   const writes = await fixture(page, { recent: true });
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page.getByRole("button", { name: "查看授权请求" }).click();
   await expect(page.getByRole("alert")).toContainText(
     "继续前请验证当前账号的密码",
@@ -380,7 +380,7 @@ test("账号切换中止旧授权请求，旧账号响应不能恢复确认按�
       await route.fulfill({ json: consent }).catch(() => {});
     },
   );
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   const started = page.waitForRequest(
     "**/api/connected-apps/device-requests/lookup",
   );
@@ -396,7 +396,7 @@ test("账号切换中止旧授权请求，旧账号响应不能恢复确认按�
     c.postMessage("changed");
     c.close();
   });
-  await expect(page.getByText(/当前账号：切换后的账号/)).toBeVisible();
+  await expect(page.getByText(/当前校园账号：切换后的账号/)).toBeVisible();
   release();
   await expect(page.getByRole("button", { name: "授权此助手" })).toHaveCount(0);
 });
@@ -445,7 +445,7 @@ test("表情加载失败时阻止确认发布，可重试恢复实际图片", as
 
 test("机器人新建头像权限编辑启用暂停完整链路，自动评论授权默认不选", async ({ page }) => {
   const writes = await fixture(page);
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page.getByRole("navigation", { name: "助手管理分区" }).getByRole("button", { name: "机器人设置与运行", exact: true }).click();
   await expect(page.getByText("尚未创建机器人", {exact: true})).toBeVisible();
   await page.getByLabel("机器人名称").fill("本鱼");
@@ -498,7 +498,7 @@ test("机器人读取有加载反馈，失败可重试且不伪造账号状态",
     await route.fulfill(fail ? {status:503,json:{code:"integration_unavailable"}}
       : {json:{bot:null,policy_supported:true,sections:[{slug:"campus_life",name:"校园生活"}],auto_reply_server_enabled:false,auto_reply_authorized:false}});
   });
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   const panel = page.locator(".bot-panel");
   await expect(panel.getByRole("status").filter({hasText:"正在加载"})).toBeVisible();
   await expect(panel.getByText("尚未创建机器人", {exact:true})).toHaveCount(0);
@@ -517,7 +517,7 @@ test("机器人读取有加载反馈，失败可重试且不伪造账号状态",
 test("未升级的服务明确不可用，旧服务权限不能伪保存", async ({ page }) => {
   const writes = await fixture(page);
   await page.route("**/api/connected-apps/bot", route => route.fulfill({ status: 404, json: { code: "resource_unavailable" } }));
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   const panel = page.locator(".bot-panel");
   await expect(panel.getByRole("alert")).toContainText("当前服务端尚未支持机器人管理");
   await expect(panel.getByText("尚未创建机器人", { exact: true })).toHaveCount(0);
@@ -540,7 +540,7 @@ test("保存失败保留名字和权限草稿，重复点击只产生一次创�
     await pending;
     return route.fulfill({ status: 503, json: { code: "integration_unavailable" } });
   });
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByLabel("机器人名称").fill("失败后仍保留");
   await page.getByLabel("自动文字评论", { exact: false }).check();
   await page.getByLabel("屏蔽词", { exact: true }).fill("私人资料");
@@ -558,7 +558,7 @@ test("保存失败保留名字和权限草稿，重复点击只产生一次创�
 
 test("公共读取总闸关闭时停用发言权限，限制规则输入不能绕过", async ({ page }) => {
   const writes = await fixture(page);
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByLabel("自动文字评论", { exact: false }).check();
   await page.getByLabel("发表内置表情", { exact: false }).check();
   await page.getByLabel("浏览公开社区", { exact: false }).uncheck();
@@ -577,7 +577,7 @@ test("公共读取总闸关闭时停用发言权限，限制规则输入不能�
 
 test("头像坏文件可恢复，账号切换中止上传且不写入新账号", async ({ page }) => {
   const writes = await fixture(page);
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await page.getByLabel("上传机器人头像").setInputFiles({ name: "broken.png", mimeType: "image/png", buffer: Buffer.from("not-an-image") });
   await expect(page.locator(".bot-panel").getByRole("alert")).toContainText("头像未能上传");
   expect(writes.filter(write => write.path === "/api/upload")).toHaveLength(0);
@@ -589,7 +589,7 @@ test("头像坏文件可恢复，账号切换中止上传且不写入新账号",
   await started;
   await page.route("**/api/user/profile", route => route.fulfill({ json: { id: 992, nickname: "新账号", role: "user" } }));
   await page.evaluate(() => { const channel = new BroadcastChannel("sylulive-auth"); channel.postMessage("changed"); channel.close(); });
-  await expect(page.getByText(/当前账号：新账号/)).toBeVisible();
+  await expect(page.getByText(/当前校园账号：新账号/)).toBeVisible();
   release();
   await expect(page.getByRole("button", { name: "选择头像", exact: true })).toBeEnabled();
   await expect(page.getByRole("img", { name: "机器人头像", exact: true })).toHaveCount(0);
@@ -599,7 +599,7 @@ test("头像坏文件可恢复，账号切换中止上传且不写入新账号",
 
 test("设备授权刷新实际条件时保留未保存的机器人草稿", async ({ page }) => {
   await fixture(page);
-  await page.goto("./connected-apps?user_code=ABCD-1234");
+  await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
   await page.getByRole("navigation", { name: "助手管理分区" }).getByRole("button", { name: "机器人设置与运行", exact: true }).click();
   await page.getByLabel("机器人名称").fill("尚未保存的机器人");
   await page.getByLabel("屏蔽词", { exact: true }).fill("不公开资料");
@@ -651,7 +651,7 @@ for (const theme of ["light", "dark"]) for (const width of [375, 1440]) {
     await page.addInitScript(theme => localStorage.setItem("sylulive-theme", theme), theme);
     await page.setViewportSize({width,height:1000});
     await fixture(page);
-    await page.goto("./connected-apps");
+    await page.goto("./connected-apps?purpose=bot");
     const panel = page.locator(".bot-panel");
     const create = panel.getByRole("button",{name:"新建机器人",exact:true});
     await expect(create).toBeVisible();
@@ -691,7 +691,7 @@ for (const theme of ["light", "dark"]) for (const width of [375, 1440]) {
 
 test("助手实色卡片在系统降透明度和高对比模式下仍可操作", async ({page}) => {
   await fixture(page);
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   const panel = page.locator(".bot-panel");
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Emulation.setEmulatedMedia", {features:[{name:"prefers-reduced-transparency", value:"reduce"}]});
@@ -705,7 +705,7 @@ test("助手实色卡片在系统降透明度和高对比模式下仍可操作",
 test("历史助手毛玻璃偏好不覆盖新版社区主题", async ({page}) => {
   await page.addInitScript(() => localStorage.setItem("sylulive-integrations-glass", "on"));
   await fixture(page);
-  await page.goto("./connected-apps");
+  await page.goto("./connected-apps?purpose=bot");
   await expect(page.getByRole("button", {name:/^毛玻璃/})).toHaveCount(0);
   await expect(page.locator(".bot-panel").getByRole("button", {name:"新建机器人", exact:true})).toBeEnabled();
   expect(await page.locator(".bot-panel").evaluate(el => getComputedStyle(el).backdropFilter)).toBe("none");
@@ -715,7 +715,7 @@ for (const width of [375, 1440])
   test(`授权与确认在${width}px真实渲染无横向溢出`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await fixture(page);
-    await page.goto("./connected-apps?user_code=ABCD-1234");
+    await page.goto("./connected-apps?purpose=bot&user_code=ABCD-1234");
     await page.getByRole("button", { name: "查看授权请求" }).click();
     await expect(
       page.getByRole("button", { name: "授权此助手" }),

@@ -26,9 +26,12 @@ test('社区广场全模块在深浅色桌面与手机下保留可见操作和�
         expect(layout.left).toBeGreaterThanOrEqual(0);
         expect(layout.right).toBeLessThanOrEqual(width + 1);
         if (route === 'profile') {
-          const assistant = page.getByRole('link', { name: /已授权助手/ });
-          await expect(assistant).toBeVisible();
-          await expect(assistant).toHaveAttribute('href', '/web/connected-apps');
+          const binding = page.getByRole('link', { name: /QQ 账号绑定/ });
+          await expect(binding).toBeVisible();
+          await expect(binding).toHaveAttribute('href', '/web/connected-apps');
+          const bot = page.getByRole('link', { name: /社区机器人/ });
+          await expect(bot).toBeVisible();
+          await expect(bot).toHaveAttribute('href', '/web/connected-apps?purpose=bot');
         }
         if (route === 'ai') {
           const composer = page.locator('.ai-input');

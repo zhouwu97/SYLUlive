@@ -42,7 +42,8 @@ class AcademicTransferScreen extends StatefulWidget {
   State<AcademicTransferScreen> createState() => _AcademicTransferScreenState();
 }
 
-class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
+class _AcademicTransferScreenState extends State<AcademicTransferScreen>
+    with WidgetsBindingObserver {
   MobileScannerController? _scanner;
   _Phase _phase = _Phase.scanning;
   AcademicTransferLink? _link;
@@ -51,14 +52,58 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
   Set<AcademicTransferPart> _selected = <AcademicTransferPart>{};
   String _error = '';
   bool _canRescan = true;
-  bool _claimed = false;
   bool _uploaded = false;
   String _appUserId = '';
   int _generation = 0;
+  AuthProvider? _auth;
+  int? _authEpoch;
+  String _sourceIdentity = '';
+  DateTime? _generatedAt;
+  bool _pasting = false;
+  bool _pickingImage = false;
+  bool _retryClaim = false;
+  DateTime? _lastInvalidCode;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.read<AuthProvider>();
+    if (identical(auth, _auth)) return;
+    _auth?.removeListener(_authChanged);
+    _auth = auth..addListener(_authChanged);
+  }
+
+  void _authChanged() {
+    if (!mounted ||
+        _appUserId.isEmpty ||
+        (_auth?.user?.id.toString() == _appUserId &&
+            _auth?.accountSessionEpoch == _authEpoch &&
+            _auth!.isLoggedIn)) {
+      return;
+    }
+    _generation++;
+    _bundle = null;
+    _selected = {};
+    _retryClaim = false;
+    _fail('App 登录状态已改变，请使用与网页相同的账号重新扫码。本次资料已清除。', canRescan: false);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_phase != _Phase.scanning) {
+      return;
+    }
+    if (state == AppLifecycleState.resumed && !_pasting && !_pickingImage) {
+      unawaited(_startScanner());
+    } else if (state != AppLifecycleState.resumed) {
+      unawaited(_scanner?.stop());
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final link = widget.initialLink;
     if (link != null) {
       // 带着二维码内容进入时不打开相机，首帧就显示核对进度。
@@ -66,17 +111,33 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _start(link));
     } else {
       _scanner = MobileScannerController(
+        autoStart: false,
         formats: const <BarcodeFormat>[BarcodeFormat.qrCode],
-        detectionSpeed: DetectionSpeed.noDuplicates,
+        // Android 的同码去重早于扫描框过滤，第一次在框外识别会永久吞掉这张码。
+        detectionSpeed: DetectionSpeed.normal,
       );
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startScanner());
+    }
+  }
+
+  Future<void> _startScanner() async {
+    if (!mounted || _phase != _Phase.scanning) {
+      return;
+    }
+    try {
+      await _scanner?.start();
+    } catch (_) {
+      // 控制器错误由扫描组件的 errorBuilder 展示，并保留相册识别入口。
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _auth?.removeListener(_authChanged);
     _generation++;
     final link = _link, api = _api;
-    if (_claimed && !_uploaded && link != null && api != null) {
+    if (!_uploaded && link != null && api != null) {
       unawaited(api.cancel(link.sessionId));
     }
     _scanner?.dispose();
@@ -122,7 +183,16 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
     );
   }
 
-  Future<void> _start(AcademicTransferLink link) async {
+  Future<void> _start(AcademicTransferLink link, {bool retry = false}) async {
+    final initial = widget.initialLink != null &&
+        _link == null &&
+        _phase == _Phase.claiming;
+    if (!mounted ||
+        (_phase != _Phase.scanning &&
+            !initial &&
+            !(retry && _phase == _Phase.failed))) {
+      return;
+    }
     final auth = context.read<AuthProvider>();
     final appUserId = auth.user?.id.toString() ?? '';
     if (!auth.isLoggedIn || appUserId.isEmpty) {
@@ -131,24 +201,35 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
     }
     final generation = ++_generation;
     _appUserId = appUserId;
+    _authEpoch = auth.accountSessionEpoch;
     _link = link;
-    _api = AcademicTransferApi(widget.dio, appUserId: appUserId);
-    await _scanner?.stop();
-    if (!mounted) return;
+    final api = AcademicTransferApi(widget.dio,
+        appUserId: appUserId, accountSessionEpoch: _authEpoch);
+    _api = api;
+    _retryClaim = false;
+    _generatedAt = DateTime.now();
     setState(() {
       _phase = _Phase.claiming;
       _error = '';
     });
     final transferContext = _context(appUserId);
+    _sourceIdentity =
+        '${transferContext.sourceAccountId}|${transferContext.identityNamespace}|${transferContext.provider}';
     final loader = widget.loader ??
         AcademicTransferLoader(loadExams: ExamScheduleRepository().load);
     try {
+      await _scanner?.stop();
+      if (!mounted || generation != _generation) return;
       // 先告诉网页「已扫到」，同时读取本机资料，两者互不依赖。
       final results = await Future.wait<Object?>(<Future<Object?>>[
-        _api!.claim(link.sessionId).then((_) => null),
+        api.claim(link.sessionId).then((_) {
+          if (!mounted || generation != _generation) {
+            unawaited(api.cancel(link.sessionId));
+          }
+          return null;
+        }),
         loader.load(transferContext),
       ]);
-      _claimed = true;
       if (!mounted || generation != _generation) return;
       final bundle = results[1]! as AcademicTransferBundle;
       setState(() {
@@ -160,6 +241,8 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
       });
     } on AcademicTransferException catch (error) {
       if (!mounted || generation != _generation) return;
+      _retryClaim = error.failure == AcademicTransferFailure.network ||
+          error.failure == AcademicTransferFailure.busy;
       _fail(error.message,
           canRescan: error.failure != AcademicTransferFailure.accountMismatch);
     } catch (_) {
@@ -170,27 +253,43 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
 
   Future<void> _upload() async {
     final link = _link, api = _api, bundle = _bundle;
-    if (link == null || api == null || bundle == null || _selected.isEmpty) {
+    if (_phase != _Phase.confirm ||
+        link == null ||
+        api == null ||
+        bundle == null ||
+        _selected.isEmpty) {
       return;
     }
     // 核对期间切换了账号时停止，避免把另一个账号的资料发给网页。
-    if (context.read<AuthProvider>().user?.id.toString() != _appUserId) {
-      _fail('App 登录账号已改变，本次没有同步任何资料。', canRescan: false);
+    final auth = context.read<AuthProvider>();
+    final current = _context(_appUserId);
+    if (!auth.isLoggedIn ||
+        auth.user?.id.toString() != _appUserId ||
+        auth.accountSessionEpoch != _authEpoch ||
+        '${current.sourceAccountId}|${current.identityNamespace}|${current.provider}' !=
+            _sourceIdentity) {
+      _bundle = null;
+      _selected = {};
+      unawaited(api.cancel(link.sessionId));
+      _fail('账号或学校资料来源已改变，本次没有同步任何资料。请重新扫码。', canRescan: false);
       return;
     }
     final generation = _generation;
     setState(() => _phase = _Phase.uploading);
     try {
-      await api.upload(link, bundle.encode(_selected));
+      await api.upload(link, bundle.encode(_selected, now: _generatedAt));
       _uploaded = true;
       if (!mounted || generation != _generation) return;
       setState(() => _phase = _Phase.done);
     } on AcademicTransferException catch (error) {
       if (!mounted || generation != _generation) return;
-      if (error.failure == AcademicTransferFailure.tooLarge) {
-        setState(() => _phase = _Phase.confirm);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.message)));
+      if (error.failure == AcademicTransferFailure.tooLarge ||
+          error.failure == AcademicTransferFailure.network ||
+          error.failure == AcademicTransferFailure.busy) {
+        setState(() {
+          _phase = _Phase.confirm;
+          _error = '${error.message} 所选资料已保留，可调整选择后重试。';
+        });
         return;
       }
       _fail(error.message,
@@ -211,26 +310,26 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
 
   Future<void> _rescan() async {
     final link = _link, api = _api;
-    if (_claimed && !_uploaded && link != null && api != null) {
+    if (!_uploaded && link != null && api != null) {
       unawaited(api.cancel(link.sessionId));
     }
     _generation++;
-    _claimed = false;
     _uploaded = false;
     _link = null;
     _bundle = null;
+    _retryClaim = false;
+    _error = '';
     _scanner ??= MobileScannerController(
+      autoStart: false,
       formats: const <BarcodeFormat>[BarcodeFormat.qrCode],
-      detectionSpeed: DetectionSpeed.noDuplicates,
+      detectionSpeed: DetectionSpeed.normal,
     );
     setState(() => _phase = _Phase.scanning);
-    try {
-      await _scanner!.start();
-    } catch (_) {}
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startScanner());
   }
 
   void _onDetect(BarcodeCapture capture) {
-    if (_phase != _Phase.scanning) return;
+    if (_phase != _Phase.scanning || _pasting || _pickingImage) return;
     for (final barcode in capture.barcodes) {
       final link = AcademicTransferLink.tryParse(barcode.rawValue);
       if (link != null) {
@@ -238,6 +337,12 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
         return;
       }
     }
+    final now = DateTime.now();
+    if (_lastInvalidCode != null &&
+        now.difference(_lastInvalidCode!).inSeconds < 3) {
+      return;
+    }
+    _lastInvalidCode = now;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(const SnackBar(
@@ -247,10 +352,17 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
 
   Future<void> _pickImage() async {
     final scanner = _scanner;
-    if (scanner == null) return;
-    final image = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (image == null || !mounted) return;
+    if (scanner == null ||
+        _pickingImage ||
+        _pasting ||
+        _phase != _Phase.scanning) {
+      return;
+    }
+    _pickingImage = true;
     try {
+      await scanner.stop();
+      final image = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (image == null || !mounted) return;
       final capture = await scanner.analyzeImage(image.path);
       if (!mounted) return;
       if (capture == null || capture.barcodes.isEmpty) {
@@ -259,12 +371,67 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
         );
         return;
       }
+      _pickingImage = false;
       _onDetect(capture);
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('这台设备暂不支持从图片识别二维码')),
       );
+    } finally {
+      _pickingImage = false;
+      if (mounted && _phase == _Phase.scanning) unawaited(_startScanner());
+    }
+  }
+
+  Future<void> _pasteLink() async {
+    if (_pasting || _pickingImage || _phase != _Phase.scanning) {
+      return;
+    }
+    _pasting = true;
+    String input = '';
+    try {
+      await _scanner?.stop();
+      if (!mounted) return;
+      String? error;
+      final link = await showDialog<AcademicTransferLink>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(builder: (context, update) {
+          void submit() {
+            final parsed = AcademicTransferLink.tryParse(input);
+            if (parsed == null) {
+              update(() => error = '请粘贴网页「手机 App 扫码同步」中复制的完整链接。');
+            } else {
+              Navigator.of(dialogContext).pop(parsed);
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('粘贴同步链接'),
+            content: TextField(
+              autofocus: true,
+              maxLines: 3,
+              minLines: 2,
+              onChanged: (value) => input = value,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                  labelText: '网页同步链接', errorText: error, errorMaxLines: 3),
+              onSubmitted: (_) => submit(),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('取消')),
+              FilledButton(onPressed: submit, child: const Text('核对同步资料')),
+            ],
+          );
+        }),
+      );
+      if (link != null && mounted) await _start(link);
+    } finally {
+      _pasting = false;
+      if (mounted && _phase == _Phase.scanning) unawaited(_startScanner());
     }
   }
 
@@ -282,7 +449,16 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
             ? Colors.black
             : AppPageBackground.color(context, pageBackground),
         appBar: AppBar(
-          title: const Text('扫码同步到网页'),
+          title: Text('扫码同步到网页',
+              style: baseTheme.textTheme.titleMedium?.copyWith(
+                  color:
+                      scanning ? Colors.white : baseTheme.colorScheme.onSurface,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600)),
+          titleTextStyle: scanning
+              ? baseTheme.appBarTheme.titleTextStyle
+                  ?.copyWith(color: Colors.white)
+              : baseTheme.appBarTheme.titleTextStyle,
           backgroundColor: scanning
               ? Colors.black
               : AppPageBackground.color(context, pageBackground),
@@ -292,6 +468,11 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
           elevation: 0,
           scrolledUnderElevation: 0,
           actions: [
+            if (scanning)
+              IconButton(
+                  tooltip: '粘贴同步链接',
+                  onPressed: _pasteLink,
+                  icon: const Icon(Icons.link)),
             if (scanning && _scanner != null)
               IconButton(
                 tooltip: '从相册识别',
@@ -341,52 +522,61 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
         width: side,
         height: side,
       );
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          MobileScanner(
-            controller: scanner,
-            scanWindow: window,
-            onDetect: _onDetect,
-            errorBuilder: (context, error) => _ScannerUnavailable(
-              permissionDenied:
-                  error.errorCode == MobileScannerErrorCode.permissionDenied,
-              onPickImage: _pickImage,
-            ),
-          ),
-          IgnorePointer(
-              child: CustomPaint(painter: _ScanWindowPainter(window))),
-          Positioned(
-            left: 24,
-            right: 24,
-            top: window.bottom + 24,
-            child: const Column(
-              children: [
-                Text(
-                  '对准电脑网页上的二维码',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  '在网页课表页点「手机 App 扫码同步」即可看到二维码。\n扫码后会先让你核对要同步的内容。',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white70, height: 1.6),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
+      return ValueListenableBuilder<MobileScannerState>(
+          valueListenable: scanner,
+          builder: (context, state, _) => Stack(
+                fit: StackFit.expand,
+                children: [
+                  MobileScanner(
+                    controller: scanner,
+                    scanWindow: window,
+                    onDetect: _onDetect,
+                    errorBuilder: (context, error) => _ScannerUnavailable(
+                      permissionDenied: error.errorCode ==
+                          MobileScannerErrorCode.permissionDenied,
+                      onPickImage: _pickImage,
+                      onPasteLink: _pasteLink,
+                    ),
+                  ),
+                  if (state.error == null)
+                    IgnorePointer(
+                        child:
+                            CustomPaint(painter: _ScanWindowPainter(window))),
+                  if (state.error == null)
+                    Positioned(
+                      left: 24,
+                      right: 24,
+                      top: window.bottom + 24,
+                      child: const Column(
+                        children: [
+                          Text(
+                            '对准电脑网页上的二维码',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700),
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            '在网页课表页点「手机 App 扫码同步」即可看到二维码。\n扫码后会先让你核对要同步的内容。',
+                            textAlign: TextAlign.center,
+                            style:
+                                TextStyle(color: Colors.white70, height: 1.6),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ));
     });
   }
 
   Widget _buildConfirm() {
     final bundle = _bundle!;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent =
+        CampusTheme.withBrandAccent(Theme.of(context)).colorScheme.primary;
     final schedules =
         bundle.schedules.where((item) => item.courses.isNotEmpty).toList();
     final others = schedules.where((item) => item.kind != 'current').length;
@@ -444,27 +634,26 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
         AppCardSurface(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: CampusTheme.primary.withValues(alpha: isDark ? 0.16 : 0.08),
+            color: accent.withValues(alpha: isDark ? 0.16 : 0.08),
             borderRadius: BorderRadius.circular(18),
-            border:
-                Border.all(color: CampusTheme.primary.withValues(alpha: 0.18)),
+            border: Border.all(color: accent.withValues(alpha: 0.18)),
           ),
-          child: const Row(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.computer_outlined, color: CampusTheme.primary),
-              SizedBox(width: 12),
+              Icon(Icons.computer_outlined, color: accent),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('已连接到网页',
                         style: TextStyle(
-                            color: CampusTheme.primary,
+                            color: accent,
                             fontSize: 17,
                             fontWeight: FontWeight.w800)),
-                    SizedBox(height: 6),
-                    Text('选择要发送到这台电脑网页的资料。只同步一次，关闭网页后资料不会保留在电脑上。',
+                    const SizedBox(height: 6),
+                    const Text('选择要发送到这台电脑网页的资料。只同步一次，关闭网页后资料不会保留在电脑上。',
                         style: TextStyle(height: 1.55)),
                   ],
                 ),
@@ -473,6 +662,15 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
           ),
         ),
         const SizedBox(height: 18),
+        if (_error.isNotEmpty) ...[
+          Text(_error,
+              style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          const SizedBox(height: 12),
+        ],
+        if (bundle.isEmpty) ...[
+          const Text('手机上还没有可同步的资料。请返回 App 读取课表、成绩等资料后，再重新扫码。'),
+          const SizedBox(height: 12),
+        ],
         AppCardSurface(
           decoration: BoxDecoration(
             color: isDark ? CampusTheme.darkCard : CampusTheme.card,
@@ -522,8 +720,14 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
         FilledButton.icon(
           onPressed: _selected.isEmpty ? null : _upload,
           icon: const Icon(Icons.send_outlined),
-          label: Text(_selected.isEmpty ? '请至少选择一项' : '同步到网页'),
-          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+          label: Text(_selected.isEmpty
+              ? '请至少选择一项'
+              : _error.isNotEmpty
+                  ? '重试同步'
+                  : '同步到网页'),
+          style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(50),
+              textStyle: Theme.of(context).textTheme.labelLarge),
         ),
         const SizedBox(height: 10),
         TextButton(
@@ -539,7 +743,7 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
     return _ResultView(
       icon: Icons.check_circle_rounded,
       color: CampusTheme.green,
-      title: '已同步到网页',
+      title: '资料已发送',
       message: '请回到电脑查看课表。资料只在那个网页里显示，刷新或关闭网页后需要重新同步。',
       primaryLabel: '完成',
       onPrimary: () => Navigator.of(context).maybePop(),
@@ -552,8 +756,16 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen> {
       color: CampusTheme.orange,
       title: '同步没有完成',
       message: _error,
-      primaryLabel: _canRescan ? '重新扫码' : '返回',
-      onPrimary: _canRescan ? _rescan : () => Navigator.of(context).maybePop(),
+      primaryLabel: _retryClaim
+          ? '重试连接'
+          : _canRescan
+              ? '重新扫码'
+              : '返回',
+      onPrimary: _retryClaim
+          ? () => _start(_link!, retry: true)
+          : _canRescan
+              ? _rescan
+              : () => Navigator.of(context).maybePop(),
       secondaryLabel: _canRescan ? '返回' : null,
       onSecondary: () => Navigator.of(context).maybePop(),
     );
@@ -618,7 +830,9 @@ class _ResultView extends StatelessWidget {
               const SizedBox(height: 26),
               FilledButton(
                 onPressed: onPrimary,
-                style: FilledButton.styleFrom(minimumSize: const Size(200, 48)),
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size(200, 48),
+                    textStyle: Theme.of(context).textTheme.labelLarge),
                 child: Text(primaryLabel),
               ),
               if (secondaryLabel != null) ...[
@@ -639,10 +853,12 @@ class _ScannerUnavailable extends StatelessWidget {
   const _ScannerUnavailable({
     required this.permissionDenied,
     required this.onPickImage,
+    required this.onPasteLink,
   });
 
   final bool permissionDenied;
   final VoidCallback onPickImage;
+  final VoidCallback onPasteLink;
 
   @override
   Widget build(BuildContext context) => ColoredBox(
@@ -681,6 +897,13 @@ class _ScannerUnavailable extends StatelessWidget {
                     side: const BorderSide(color: Colors.white54),
                     minimumSize: const Size(180, 46),
                   ),
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: onPasteLink,
+                  icon: const Icon(Icons.link),
+                  label: const Text('粘贴同步链接'),
+                  style: TextButton.styleFrom(foregroundColor: Colors.white),
                 ),
               ],
             ),

@@ -18,19 +18,21 @@ async function encryptLikeApp(webPublicKey: string, sessionId: string, payload: 
   return {app_public_key: b64u(await subtle.exportKey('raw', app.publicKey)), nonce: b64u(nonce), ciphertext: b64u(ciphertext)};
 }
 
-type Session = {status: string; payload?: unknown; gone?: boolean; deleted: number; created: number};
+type Session = {status: string; payload?: unknown; gone?: boolean; deleted: number; created: number; polls: number; ttl: number; offline?: boolean};
 
 async function setup(page: Page): Promise<Session> {
-  const session: Session = {status: 'pending', deleted: 0, created: 0};
+  const session: Session = {status: 'pending', deleted: 0, created: 0, polls: 0, ttl: 300};
   await page.route('**/api/**', route => route.fulfill({json: {items: []}}));
   await page.route('**/api/user/profile', route => route.fulfill({json: {id: 7, nickname: '测试用户', role: 'user'}}));
   await page.route('**/api/academic-transfer/sessions', route => {
     session.created += 1;
     expect(route.request().headers()['x-expected-app-user']).toBe('7');
-    return route.fulfill({status: 201, json: {session_id: SESSION, status: 'pending', ttl_seconds: 300}});
+    return route.fulfill({status: 201, json: {session_id: SESSION, status: 'pending', ttl_seconds: session.ttl}});
   });
   await page.route(`**/api/academic-transfer/sessions/${SESSION}`, route => {
     if (route.request().method() === 'DELETE') { session.deleted += 1; return route.fulfill({status: 204}); }
+    session.polls += 1;
+    if (session.offline) return route.fulfill({status: 503, json: {message: 'synthetic-network-failure'}});
     if (session.gone) return route.fulfill({status: 404, json: {code: 'TRANSFER_SESSION_NOT_FOUND', message: '二维码已失效，请在网页重新生成'}});
     return route.fulfill({json: {session_id: SESSION, status: session.status, ttl_seconds: 280, ...(session.payload ? {payload: session.payload} : {})}});
   });
@@ -124,10 +126,11 @@ test('二维码失效可重新生成，关闭弹窗会作废未完成的会话',
   expect(session.created).toBeGreaterThan(before);
 
   // 另一张码的密文在这里解不开：只提示重试，不写入任何资料。
+  const deleted = session.deleted;
   session.payload = await encryptLikeApp(await page.evaluate(() => (window as unknown as {__transferKey: string}).__transferKey), 'another-session-id', payload);
   session.status = 'ready';
   await expect(dialog).toContainText('无法解密手机发来的资料');
-  const deleted = session.deleted;
+  await expect.poll(() => session.deleted).toBeGreaterThan(deleted);
   await dialog.getByRole('button', {name: '取消'}).click();
   await expect.poll(() => session.deleted).toBeGreaterThan(deleted);
   await expect(page.locator('.source-line')).toContainText('未读取学校课表');
@@ -141,4 +144,48 @@ test('其他扫码工具打开同步链接时提示改用 App', async ({page}) =
   await expect(page.getByRole('link', {name: '在沈理校园 App 中打开'})).toHaveAttribute('href', `sylulive://academic-transfer?v=1&s=${SESSION}&k=${'A'.repeat(87)}`);
   await page.goto('app-scan#v=1&s=short');
   await expect(page.locator('.app-scan-landing')).toContainText('链接不完整或已经失效');
+});
+
+
+test('本地倒计时过期会立即作废会话并停止轮询，网络恢复不能导入旧码资料', async ({page}) => {
+  const session = await setup(page);
+  session.ttl = 2;
+  session.offline = true;
+  await page.clock.install();
+  await page.goto('schedule');
+  await page.locator('.source-line').getByRole('button', {name: '手机 App 扫码同步'}).click();
+  const dialog = page.locator('.phone-scan');
+  await expect(dialog.getByRole('status')).toContainText('等待手机扫码');
+  await page.clock.fastForward(4000);
+  await expect(dialog.getByRole('status')).toContainText('二维码已失效');
+  await expect.poll(() => session.deleted).toBe(1);
+  const polls = session.polls;
+  session.offline = false;
+  session.status = 'claimed';
+  await page.clock.fastForward(15000);
+  expect(session.polls).toBe(polls);
+  await expect(dialog.getByRole('status')).toContainText('二维码已失效');
+});
+
+test('扫码困难时可放大和复制同一条同步链接，保留当前会话与手机确认', async ({page}) => {
+  const session = await setup(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {value: {writeText: async (text: string) => {
+      (window as unknown as {copiedTransfer: string}).copiedTransfer = text;
+    }}});
+  });
+  await page.goto('schedule');
+  await page.locator('.source-line').getByRole('button', {name: '手机 App 扫码同步'}).click();
+  const dialog = page.locator('.phone-scan');
+  await expect(dialog).toContainText('当前网页账号：测试用户');
+  await dialog.getByRole('button', {name: '放大二维码'}).click();
+  await expect(dialog.locator('.phone-scan-body')).toHaveClass(/is-enlarged/);
+  await dialog.getByText('无法扫码？', {exact: true}).click();
+  await dialog.getByRole('button', {name: '复制同步链接'}).click();
+  await expect(dialog).toContainText('同步链接已复制');
+  const copied = await page.evaluate(() => (window as unknown as {copiedTransfer: string}).copiedTransfer);
+  expect(copied).toContain('/web/app-scan#v=1&s=' + SESSION);
+  expect(session.created).toBe(1);
+  expect(session.deleted).toBe(0);
+  await expect(dialog).toContainText('粘贴同步链接');
 });

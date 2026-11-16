@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -83,8 +84,13 @@ func TestAcademicTransferHappyPathKeepsCiphertextUntilAcknowledged(t *testing.T)
 	require.Equal(t, 200, code, body)
 	require.Equal(t, "ready", body["status"])
 
-	// 一张码只接受一次上传，后续扫码也被拒绝。
+	// 相同密文重试可确认已接收，不能替换资料或重复计入内存。
+	storedBytes := env.handler.totalBytes
 	code, body = env.do(t, "PUT", "/sessions/"+id+"/payload", envelope)
+	require.Equal(t, 200, code, body)
+	require.Equal(t, "ready", body["status"])
+	require.Equal(t, storedBytes, env.handler.totalBytes)
+	code, body = env.do(t, "PUT", "/sessions/"+id+"/payload", academicTransferEnvelope(t, 65))
 	require.Equal(t, 409, code)
 	require.Equal(t, "TRANSFER_ALREADY_UPLOADED", body["code"])
 	code, _ = env.do(t, "POST", "/sessions/"+id+"/claim", "")
@@ -105,6 +111,36 @@ func TestAcademicTransferHappyPathKeepsCiphertextUntilAcknowledged(t *testing.T)
 	code, body = env.do(t, "GET", "/sessions/"+id, "")
 	require.Equal(t, 404, code)
 	require.Equal(t, "TRANSFER_SESSION_NOT_FOUND", body["code"])
+}
+
+func TestAcademicTransferConcurrentRetryKeepsOnePayload(t *testing.T) {
+	env := newAcademicTransferTestEnv()
+	_, created := env.do(t, "POST", "/sessions", "")
+	id := created["session_id"].(string)
+	code, _ := env.do(t, "POST", "/sessions/"+id+"/claim", "")
+	require.Equal(t, 200, code)
+	envelope := academicTransferEnvelope(t, 64)
+	var group sync.WaitGroup
+	statuses := make(chan int, 8)
+	for range 8 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			response := httptest.NewRecorder()
+			env.router.ServeHTTP(response, httptest.NewRequest("PUT", "/sessions/"+id+"/payload", strings.NewReader(envelope)))
+			statuses <- response.Code
+		}()
+	}
+	group.Wait()
+	close(statuses)
+	for status := range statuses {
+		require.Equal(t, 200, status)
+	}
+	var input academicTransferPayload
+	require.NoError(t, json.Unmarshal([]byte(envelope), &input))
+	require.Equal(t, len(input.AppPublicKey)+len(input.Nonce)+len(input.Ciphertext), env.handler.totalBytes)
+	_, _ = env.do(t, "DELETE", "/sessions/"+id, "")
+	require.Zero(t, env.handler.totalBytes)
 }
 
 func TestAcademicTransferRejectsOtherAccountAndExpiry(t *testing.T) {

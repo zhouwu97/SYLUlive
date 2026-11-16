@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 
 import '../../models/exam_schedule.dart';
@@ -270,16 +271,26 @@ class AcademicTransferException implements Exception {
 const int academicTransferMaxPlaintextBytes = 590 * 1024;
 
 class AcademicTransferApi {
-  AcademicTransferApi(this._dio, {required this.appUserId});
+  AcademicTransferApi(this._dio,
+      {required this.appUserId, this.accountSessionEpoch});
 
   final Dio _dio;
   final String appUserId;
+  final int? accountSessionEpoch;
+  String? _pendingDigest;
+  AcademicTransferEnvelope? _pendingEnvelope;
 
   String _path(String sessionId, [String suffix = '']) =>
-      '/api/academic-transfer/sessions/${Uri.encodeComponent(sessionId)}$suffix';
+      '/academic-transfer/sessions/${Uri.encodeComponent(sessionId)}$suffix';
 
-  Options get _options =>
-      Options(headers: <String, String>{'X-Expected-App-User': appUserId});
+  Options get _options => Options(headers: <String, String>{
+        'X-Expected-App-User': appUserId
+      }, extra: {
+        if (accountSessionEpoch != null) ...{
+          'expectedAuthSessionEpoch': accountSessionEpoch,
+          'expectedAuthUserId': int.tryParse(appUserId),
+        },
+      });
 
   Future<void> claim(String sessionId) => _send(
       () => _dio.post<dynamic>(_path(sessionId, '/claim'), options: _options));
@@ -291,11 +302,18 @@ class AcademicTransferApi {
         '选中的资料太多，超过单次同步上限。请少选几项（例如二课活动明细较多时先不选二课）后重试。',
       );
     }
-    final envelope = encryptAcademicTransfer(
-      webPublicKey: link.webPublicKey,
-      sessionId: link.sessionId,
-      plaintext: plaintext,
-    );
+    // 响应丢失后重发同一份密文；不保存明文，也不把第二次确认变成新上传。
+    final digest =
+        '${link.sessionId}|${link.webPublicKey}|${sha256.convert(plaintext)}';
+    if (_pendingDigest != digest) {
+      _pendingEnvelope = encryptAcademicTransfer(
+        webPublicKey: link.webPublicKey,
+        sessionId: link.sessionId,
+        plaintext: plaintext,
+      );
+      _pendingDigest = digest;
+    }
+    final envelope = _pendingEnvelope!;
     await _send(() => _dio.put<dynamic>(_path(link.sessionId, '/payload'),
         data: jsonEncode(envelope.toJson()),
         options: _options.copyWith(contentType: Headers.jsonContentType)));
@@ -303,6 +321,8 @@ class AcademicTransferApi {
 
   /// 用户在手机上取消时作废会话，网页随即显示二维码失效。失败不影响用户继续操作。
   Future<void> cancel(String sessionId) async {
+    _pendingEnvelope = null;
+    _pendingDigest = null;
     try {
       await _dio.delete<dynamic>(_path(sessionId), options: _options);
     } catch (_) {}

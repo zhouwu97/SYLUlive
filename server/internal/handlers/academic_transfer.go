@@ -240,7 +240,7 @@ func decodeAcademicTransferField(value string, maxEncoded int) ([]byte, bool) {
 	return decoded, err == nil
 }
 
-// Upload 由 App 在用户确认后调用：只接受一次，且必须先 Claim。
+// Upload 只接收一次内容；响应丢失可重试相同密文，不能替换已接收资料。
 func (h *AcademicTransferHandler) Upload(c *gin.Context) {
 	if !configUserMatches(c) {
 		return
@@ -294,6 +294,10 @@ func (h *AcademicTransferHandler) Upload(c *gin.Context) {
 	}
 	switch session.status {
 	case academicTransferReady:
+		if session.payload != nil && *session.payload == input {
+			c.JSON(http.StatusOK, academicTransferView(session, now))
+			return
+		}
 		academicTransferError(c, http.StatusConflict, "TRANSFER_ALREADY_UPLOADED", "这张二维码已经完成过一次同步，请在网页重新生成")
 		return
 	case academicTransferPending:

@@ -41,8 +41,9 @@ type SessionView = { session_id: string; status: string; ttl_seconds: number; pa
 
 const sleep = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
+    const finish = () => { clearTimeout(timer); signal.removeEventListener("abort", finish); resolve(); };
+    const timer = setTimeout(finish, ms);
+    signal.addEventListener("abort", finish, { once: true });
   });
 
 const phaseText: Record<Phase, string> = {
@@ -65,8 +66,9 @@ export function PhoneScanForm({ onPayload, onClose }: { onPayload: (payload: Tra
   const [attempt, setAttempt] = useState(0);
   const [phase, setPhase] = useState<Phase>("preparing");
   const [qr, setQr] = useState("");
-  const [deadline, setDeadline] = useState(0);
   const [remaining, setRemaining] = useState(0);
+  const [enlarged, setEnlarged] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
   const [detail, setDetail] = useState("");
   const [result, setResult] = useState<string[]>([]);
   const userId = user?.id;
@@ -74,18 +76,39 @@ export function PhoneScanForm({ onPayload, onClose }: { onPayload: (payload: Tra
   useEffect(() => {
     if (!userId) return;
     const controller = new AbortController(), { signal } = controller;
-    let sessionId = "", settled = false;
+    let sessionId = "", settled = false, deadline = 0;
+    let timer: ReturnType<typeof setInterval> | undefined;
     const path = () => `/api/academic-transfer/sessions/${encodeURIComponent(sessionId)}`;
     const headers = { "X-Expected-App-User": String(userId) };
-    setPhase("preparing"); setQr(""); setDetail(""); setResult([]);
+    const discard = () => {
+      if (!sessionId || settled) return;
+      settled = true;
+      void request(path(), { method: "DELETE", headers }).catch(() => undefined);
+    };
+    const expire = (message = "二维码有效期为 5 分钟，请重新生成。") => {
+      clearInterval(timer);
+      discard();
+      controller.abort();
+      setPhase("expired"); setRemaining(0); setDetail(message);
+    };
+    setPhase("preparing"); setQr(""); setDetail(""); setResult([]); setCopyStatus(""); setRemaining(0);
     (async () => {
       const keys = await createTransferKeys();
-      const created = await request<SessionView>("/api/academic-transfer/sessions", { method: "POST", body: "{}", headers, signal });
       if (signal.aborted) return;
+      const created = await request<SessionView>("/api/academic-transfer/sessions", { method: "POST", body: "{}", headers, signal });
       sessionId = created.session_id;
+      if (signal.aborted) { discard(); return; }
+      deadline = Date.now() + Math.max(0, created.ttl_seconds) * 1000;
+      const tick = () => {
+        const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+        setRemaining(left);
+        if (!left) expire();
+      };
+      tick();
+      if (signal.aborted) return;
       setQr(transferQrText(location.origin, sessionId, keys.publicKey));
-      setDeadline(Date.now() + created.ttl_seconds * 1000);
       setPhase("waiting");
+      timer = setInterval(tick, 1000);
       while (!signal.aborted) {
         await sleep(1500, signal);
         if (signal.aborted) return;
@@ -95,20 +118,22 @@ export function PhoneScanForm({ onPayload, onClose }: { onPayload: (payload: Tra
         } catch (error) {
           if (signal.aborted) return;
           // 断网只是暂时看不到进度，手机那边可能已经上传；继续轮询而不是丢掉这张码。
-          if (isNetworkError(error) || (error instanceof ApiError && error.status >= 500)) { setDetail("网络不稳定，正在重试…"); continue; }
-          settled = true;
-          if (error instanceof ApiError && error.status === 404) { setPhase("expired"); setDetail("二维码已过期，或手机端取消了本次同步。"); return; }
+          if (isNetworkError(error) || (error instanceof ApiError && (error.status >= 500 || error.status === 429))) { setDetail("暂时无法获取进度，正在重试，请保留本页和手机上的确认页面。"); continue; }
+          if (error instanceof ApiError && error.status === 404) { expire("二维码已过期，或手机端取消了本次同步。"); return; }
           throw error;
         }
+        if (signal.aborted) return;
+        if (Date.now() >= deadline) { expire(); return; }
         setDetail("");
         if (view.status === "claimed") setPhase("claimed");
         if (view.status !== "ready" || !view.payload) continue;
         setPhase("receiving");
         const payload = parseTransferPayload(await decryptTransfer(keys.privateKey, sessionId, view.payload));
         if (signal.aborted) return;
-        settled = true;
+        if (Date.now() >= deadline) { expire(); return; }
+        clearInterval(timer);
         // 解密成功后立刻让服务器丢掉密文，不等它自然过期。
-        void request(path(), { method: "DELETE", headers }).catch(() => undefined);
+        discard();
         const summary = transferSummary(payload);
         if (!summary.length) { setPhase("empty"); setDetail("请先在 App 里读取课表、成绩等资料，再回到这里重新扫码。"); return; }
         setResult([`已同步：${summary.join("、")}`, ...onPayload(payload)]);
@@ -117,30 +142,22 @@ export function PhoneScanForm({ onPayload, onClose }: { onPayload: (payload: Tra
       }
     })().catch((error) => {
       if (signal.aborted) return;
+      clearInterval(timer);
+      discard();
       setPhase("error");
-      setDetail(error instanceof TransferError ? error.message : errorText(error));
+      setDetail(error instanceof TransferError ? error.message : error instanceof ApiError && error.status === 404 ? "当前服务暂不支持扫码同步，请更新服务后重试，或先导入本地资料。" : errorText(error));
     });
     return () => {
       controller.abort();
+      clearInterval(timer);
       // 关闭弹窗或重新出码时作废旧会话：手机即使已经扫到旧码，也不会再把资料传上来。
-      if (sessionId && !settled) void request(path(), { method: "DELETE", headers }).catch(() => undefined);
+      discard();
     };
     // onPayload 只在收到资料的那一刻调用，不应因父组件重渲染而重新出码。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt, userId]);
 
   const live = phase === "waiting" || phase === "claimed";
-  useEffect(() => {
-    if (!live) return;
-    const tick = () => {
-      const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
-      setRemaining(left);
-      if (!left) { setPhase("expired"); setDetail("二维码有效期为 5 分钟，请重新生成。"); }
-    };
-    tick();
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, [live, deadline]);
 
   if (!user)
     return (
@@ -153,7 +170,7 @@ export function PhoneScanForm({ onPayload, onClose }: { onPayload: (payload: Tra
   const retry = phase === "expired" || phase === "error" || phase === "empty";
   return (
     <div className="dialog-form phone-scan">
-      <div className="phone-scan-body">
+      <div className={`phone-scan-body${enlarged ? " is-enlarged" : ""}`}>
         <div className="phone-scan-code" data-phase={phase}>
           {qr ? <QrCode text={qr} label="手机 App 扫码同步二维码" /> : <div className="qr-code qr-placeholder" aria-hidden="true" />}
           {masked && (
@@ -165,6 +182,7 @@ export function PhoneScanForm({ onPayload, onClose }: { onPayload: (payload: Tra
           )}
         </div>
         <div className="phone-scan-guide">
+          <p className="phone-scan-account">当前网页账号：<strong>{user.nickname}</strong><small>手机 App 请使用同一账号</small></p>
           <ol className="phone-scan-steps">
             <li><b>1</b><span>打开手机上的<strong>沈理校园 App</strong>，登录与本页相同的账号</span></li>
             <li><b>2</b><span>进入<strong>课表</strong>，点右上角设置，选择<strong>扫码同步到网页</strong></span></li>
@@ -176,8 +194,19 @@ export function PhoneScanForm({ onPayload, onClose }: { onPayload: (payload: Tra
           </p>
           {detail && <p className="notice-line">{detail}</p>}
           {result.map((line) => <p className="phone-scan-result" key={line}>{line}</p>)}
+          {live && <button className="btn ghost" onClick={() => setEnlarged(value => !value)} aria-pressed={enlarged}>{enlarged ? "还原二维码大小" : "放大二维码"}</button>}
         </div>
       </div>
+      {live && <details className="phone-scan-fallback">
+        <summary>无法扫码？</summary>
+        <p>可在 App 扫码页选择「从相册识别」，或复制下面的链接，在 App 扫码页选择「粘贴同步链接」。之后仍需在手机核对资料并确认。</p>
+        <input aria-label="同步链接" value={qr} readOnly onFocus={event => event.currentTarget.select()} />
+        <button className="btn ghost" onClick={async () => {
+          try { await navigator.clipboard.writeText(qr); setCopyStatus("同步链接已复制，请在 App 扫码页粘贴。"); }
+          catch { setCopyStatus("无法自动复制，请选中上方链接手动复制。"); }
+        }}>复制同步链接</button>
+        {copyStatus && <p aria-live="polite">{copyStatus}</p>}
+      </details>}
       <p className="muted phone-scan-privacy">
         <Icon name="lock" size={14} />
         可同步手机上正在使用的课表、其他学期和存档课表，以及成绩、考试、二课、体测。资料在手机上加密后传到本页解密，服务器只做短暂中转、不保存内容；学校账号和密码不会传输。

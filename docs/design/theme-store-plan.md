@@ -7,7 +7,7 @@
 | [制作与审核细则](theme-creation-guide.md) | 作者规范、审核规程、官方主题参数 |
 | 本文 | 实施步骤与验证标准 |
 
-本文写给实施者。按阶段顺序执行，每个阶段单独提交，并附第 11 节格式的交付报告。
+本文写给实施者。按阶段顺序执行，每个阶段单独提交，并附第 12 节格式的交付报告。
 
 ## 0. 工作方式
 
@@ -24,6 +24,7 @@
 - 语义 Token 化，覆盖九个首批页面；
 - `.sltheme` 主题包，以及本机导入、导出、试用和回退；
 - 页面壁纸与底栏图标；
+- 自定义字体、桌面启动图标、桌面小部件跟随主题配色；
 - 主题工坊；
 - 服务端投稿、审核、目录、下载、下架；
 - 客户端主题商城；
@@ -33,12 +34,9 @@
 **不做**：
 
 - 鸿蒙端；
-- 桌面启动图标；
 - 界面文案替换；
 - 付费；
 - 评论；
-- 桌面小部件配色；
-- 自定义字体；
 - 多份外观历史，只保留"上一个外观"；
 - 工坊的撤销和重做。
 
@@ -98,7 +96,8 @@
    - 首批页面中的 `AppRadius.*` 改为 `AppShape.of(context).*`。
 4. **改造 `AppTheme`**：
    - 新增 `AppTheme.build({brightness, palette, shape, seedColor, variant})`，`lightTheme`、`darkTheme` 改为用默认参数调用它。
-   - **Token 必须同步进入 `ColorScheme`**：先用 `ColorScheme.fromSeed(seedColor, brightness, variant)` 生成颜色方案，再用 `copyWith` 把 Token 覆盖进去，对应关系如下：
+   - **默认路径保持现有 `ColorScheme`**：没有应用主题配色（`theme_appearance_v1.colors` 为 null）时，`ColorScheme` 仍然只由 `ColorScheme.fromSeed(seedColor: AppColors.brandPrimary, brightness)` 生成，不做任何覆盖。现有方案的亮色 `primary` 是 `#006A61`、`surface` 是 `#F4FBF8`，与 Token 默认值（`#147C72`、`#FFFAF4`）不同；按钮、顶栏这些读取 `scheme` 的控件，P0 之后颜色必须保持不变。
+   - **应用了主题配色时，Token 同步进入 `ColorScheme`**：先用主题的 `seedColor` 和 `schemeVariant` 生成颜色方案，再用 `copyWith` 把 Token 覆盖进去，对应关系如下：
 
      | ColorScheme 角色 | Token |
      | --- | --- |
@@ -114,8 +113,9 @@
      | `outlineVariant` | `divider` |
 
      现有组件主题（`app_theme.dart` 约第 98–170 行的按钮、TabBar、进度条、开关、滑块）都读 `scheme.primary`，覆盖之后会自动跟随主题，不需要逐个改。
+   - 官方主题"沈理青"以 Token 默认值加上上表的映射来渲染，所以按钮会变成 `#147C72`，属于 P5 验收的有意视觉变化。
    - `primaryColor`、`scaffoldBackgroundColor`、`canvasColor` 和分割线颜色改为从 palette 读取。
-   - 默认 palette 加上默认种子色，必须得到与现在完全相同的 `ColorScheme`，由像素比对来证明。
+   - 默认路径的 `ColorScheme` 与现在完全相同，由像素比对来证明。
 5. **`AppThemeTokens`** 的每个 getter 改为读取 `Theme.of(context).extension<AppPalette>()!`，原有公开接口不变，并为新 Token 补充 getter。
 6. **`CampusTheme`** 中的品牌、表面、文字、边框颜色改为从 palette 读取。blue、orange、green、cyan、red、dining 这几个功能识别色保持不变。
 7. **课表**：`getCourseColor` 增加参数 `List<Color> palette`，调用方传入 `AppThemeTokens.of(context).coursePalette`。
@@ -167,9 +167,9 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 
 - 在 `Isolate.run` 中运行。
 - 读取步骤：
-  1. 检查包体是否超过 20MB；
+  1. 检查包体是否超过 48MB；
   2. 解析 `manifest.json`，同时校验字段；
-  3. 只解出 manifest 引用到的条目，累计解压量，超过 64MB 时停止；
+  3. 只解出 manifest 引用到的条目，累计解压量，超过 96MB 时停止；
   4. 读图片头部检查尺寸，再完整解码一次。
 - 遇到第一个错误就停止，返回错误码，并删除临时目录。
 - 每个读取的条目解压后调用 `ZipFile.verifyCrc32()`，返回 false 时报 `theme_zip_invalid`。`archive` 4.2.0 的 `ZipDecoder` 不会自动做这一步（它的校验代码被注释掉了）。除此之外不计算哈希。
@@ -199,15 +199,18 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 
 **原则**：持久化保存的是"当前外观每个分组最终生效的值"，启动时直接读取这些值，不根据主题来源重新拼装。主题 ID 和版本只作为每个分组的来源标记，用于界面展示和更新提示。
 
-主题分为五个分组，各分组生效值的存放位置如下：
+主题分为八个分组，各分组生效值的存放位置如下。后三个分组的应用逻辑在 P1.5 实现；P1 先实现前五个，并在数据结构中预留后三个。
 
 | 分组 | 包含 | 生效值存放位置 |
 | --- | --- | --- |
 | `colors` | 明暗两套的种子色、方案、Token、课程色板 | `theme_appearance_v1` |
 | `shape` | 圆角档位 | `theme_appearance_v1` |
 | `wallpapers` | 明暗两套各四个槽位的壁纸（路径、`fit`、焦点、`blur`、`scrim`） | `theme_appearance_v1` |
-| `material` | 组件透明度、毛玻璃 | `ThemeProvider` 现有的偏好 key。主题写入这组值时，等同于用户在毛玻璃设置里选择"自定义"并填入这两个值 |
-| `navigation` | 底栏样式，加上五个槽位的图标和 `iconTint` | 底栏样式用现有偏好 key；图标和 `iconTint` 存在 `theme_appearance_v1` |
+| `material` | 明暗两套各自的组件透明度和毛玻璃 | `theme_appearance_v1` |
+| `navigation` | 底栏样式，加上五个槽位的图标和 `iconTint` | `theme_appearance_v1` |
+| `font` | 字体名称、常规体与粗体文件路径 | `theme_appearance_v1` |
+| `widgets` | 小部件是否跟随 App 主题 | 现有的小部件主题偏好 key（`widget_course_theme`、`widget_exam_theme`），取值为 `appTheme`。这是主题唯一会写入的现有 key，因为原生小部件只读这两个 key |
+| `launcherIcon` | 当前内置桌面图标 ID | 由系统组件的启用状态决定，见 5.2 节；`theme_appearance_v1` 只记录来源 |
 
 新增两个偏好 key，值都是 JSON：
 
@@ -217,29 +220,35 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
     colors:     { source, light, dark } | null,
     shape:      { source, value } | null,
     wallpapers: { source, light: {global, home, schedule, me}, dark: {...} } | null,
-    material:   { source },
-    navigation: { source, icons, iconTint }
+    material:   { source, light: {componentOpacity, frostedGlass}, dark: {...} } | null,
+    navigation: { source, style, icons, iconTint } | null,
+    font:       { source, name, regular, bold } | null,
+    widgets:    { source },
+    launcherIcon: { source }
   }
   ```
   - `source` 的值为 `{themeId, version}`，或 null（表示默认值或用户自己设置的）。
   - `colors` 和 `shape` 为 null 时，使用 `AppPalette.defaults` 和 `standard`。
-  - `wallpapers` 为 null 时，沿用 `ThemeProvider` 现有的壁纸偏好，也就是今天的行为。
-- **`theme_previous_v1`**：上一个外观。内容是 `theme_appearance_v1` 的完整副本，加上 `material`、`navigation`、壁纸相关的现有偏好 key 的值。
+  - `wallpapers`、`material`、`navigation` 为 null 时，沿用 `ThemeProvider` 现有的偏好 key，也就是今天的行为。
+  - 不为 null 时，`ThemeProvider` 的对应 getter 返回 `theme_appearance_v1` 中的值；`material` 和 `wallpapers` 按当前生效的明暗模式（`MediaQuery.platformBrightness` 与用户的明暗设置共同决定）取 `light` 或 `dark`，系统切换明暗时立即切换。
+- **`theme_previous_v1`**：上一个外观，内容是 `theme_appearance_v1` 的完整副本。
+
+**主题不改写现有偏好 key**：壁纸、透明度、毛玻璃、底栏样式这些现有 key，只有用户在外观设置里手动修改时才会写入；主题的值全部存在 `theme_appearance_v1` 中。唯一的例外是 `widgets` 分组，见上表。
 
 **规则**：
 
 1. **应用主题**：
    1. 把当前的完整外观写入 `theme_previous_v1`；
-   2. 把勾选分组的值合并进 `theme_appearance_v1`，`material` 和底栏样式写入现有 key；被写入分组的 `source` 设为这个主题；未勾选的分组保持不变；
+   2. 把勾选分组的值合并进 `theme_appearance_v1`，被写入分组的 `source` 设为这个主题；未勾选的分组保持不变；
    3. 按 4.3 节的规则清理不再被引用的文件。
 2. **手动修改**：
    - 用户在外观设置里改了壁纸，`wallpapers` 设为 null，回到现有的壁纸偏好，也就是用户刚设置的那张；
-   - 改了毛玻璃或透明度，`material.source` 设为 null；
-   - 改了底栏样式，`navigation.source` 设为 null，图标保留。
+   - 改了毛玻璃或透明度，`material` 设为 null，回到现有 key，也就是用户刚设置的值；
+   - 改了底栏样式：把用户选的样式写入现有 key，`navigation.style` 设为 null，图标保留。`navigation.style` 为 null 时，样式读现有 key。
 3. **恢复上一个外观**：先把当前外观和 `theme_previous_v1` 互换，然后清理文件。连续点两次，会回到原来的外观。
-4. **恢复默认外观**：先保存 `theme_previous_v1`；然后把 `colors`、`shape`、`wallpapers` 设为 null，清空图标，`material` 和底栏样式写回 `ThemeProvider` 的现有默认值。
+4. **恢复默认外观**：先保存 `theme_previous_v1`；然后把 `theme_appearance_v1` 中除 `widgets`、`launcherIcon` 以外的分组全部设为 null，外观回到现有 key 所记录的、用户自己设置过的值。
 5. **删除主题**：只把它从 `index.json` 中移除，当前外观不变。它的文件按清理规则处理：如果还被当前外观或上一个外观引用，就会保留。
-6. **升级兼容**：老用户升级后没有这两个 key，外观完全保持原样（`wallpapers` 为 null，所以沿用现有壁纸偏好）。现有壁纸文件移入 `themes/user/`，见 4.3 节。现有偏好 key 不会被删除，因此回退到旧版本 App 后，用户看到的是升级前的外观。
+6. **升级兼容**：老用户升级后没有这两个 key，外观完全保持原样（`wallpapers` 为 null，所以沿用现有壁纸偏好）。现有壁纸文件移入 `themes/user/`，见 4.3 节。现有偏好 key 不会被删除。
 
 **全局试用会话**：
 
@@ -271,7 +280,7 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
   - 解析中；
   - 无效（显示提示、错误码和字段，以及"重新选择"）；
   - 需要升级（跳转到现有的更新入口）；
-  - 预览（明暗切换、五个分组的勾选、对比度警告、"试用"和"应用"）；
+  - 预览（明暗切换、按分组勾选（主题里没有的分组置灰，`launcherIcon` 默认不勾选）、对比度警告、"试用"和"应用"）；
   - 已应用（显示 Snackbar，带"撤销"，撤销等于恢复上一个外观）。
   - 点"试用"后进入全局试用会话，可以返回去浏览其他页面；结束试用通过顶部横条操作。
 - **本机主题页**：每项可以应用、导出分享、删除（删除需要二次确认）。
@@ -283,7 +292,7 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
   - mimeType 为 `application/vnd.sylulive.theme+zip` 和 `application/octet-stream`；
   - `pathPattern` 为 `.*\\.sltheme` 及其多级点号变体。
 
-  收到文件后，复制到 `cacheDir/incoming-theme/`，复制量超过 20MB 就停止。然后经 `DEEPLINK_CHANNEL` 发送 `{type: "theme_file", path}`，Flutter 打开导入页。冷启动和热启动都要支持。
+  收到文件后，复制到 `cacheDir/incoming-theme/`，复制量超过 48MB 就停止。然后经 `DEEPLINK_CHANNEL` 发送 `{type: "theme_file", path}`，Flutter 打开导入页。冷启动和热启动都要支持。
 - **iOS**：在 `Info.plist` 中声明 `online.sylulive.theme`（后缀 `sltheme`，遵从 `public.zip-archive`）和 `CFBundleDocumentTypes`，然后由 `AppDelegate` 把文件交给同一个通道。
 - **导出**：文件名为 `<主题名>.sltheme`。用 `share_plus` 分享，也可以用 `file_picker.saveFile` 保存到文件。
 
@@ -294,7 +303,7 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 **`client/test/theme_pack/theme_pack_test.dart`**：
 
 - **codec 表格驱动**：用内存生成的包，覆盖契约第 8 节中的每个客户端错误码，再加一条合法包；其中包括"内容能正常解压，但 CRC32 被改过"的用例，期望结果为 `theme_zip_invalid`；
-- **解压上限**：超过 64MB 时停止，并且临时目录被删除；
+- **解压上限**：超过 96MB 时停止，并且临时目录被删除；
 - **对比度**：黑对白为 21.0，`#777777` 对白为 4.48，结果保留两位小数；每条规则都至少有一个不达标的例子。
 
 **`client/test/theme_pack/theme_apply_test.dart`**：
@@ -306,6 +315,8 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
   - 删除正在使用的主题后，外观不变；之后恢复上一个外观，仍然可以正常恢复；
   - 恢复上一个外观连续执行两次，回到原外观；
   - 恢复默认后，配置中没有残留 `themes/installed` 路径，被清理掉的版本目录确实已被删除；
+  - 应用主题后，壁纸、透明度、毛玻璃、底栏样式这些现有偏好 key 的值都没有被改写；
+  - 主题亮色透明度 0.9、暗色 0.75：切换平台明暗后，生效值随之切换，重启后仍然正确；
   - 试用期间不写任何偏好，重启后试用自然结束；
   - 用旧版本的偏好构造 Provider，外观保持不变，壁纸文件已移入 `themes/user/`。
 - **Widget**：
@@ -335,16 +346,123 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 | 应用主题 | 300ms 内出现新配色的首帧 |
 | 带页面壁纸切换页签 | 没有超过 16ms 的 raster 帧 |
 
-## 5. P2 主题工坊
+## 5. P1.5 字体、桌面图标与小部件
 
-### 5.1 页面
+本阶段依赖 P1，可以和 P3 并行。三项功能分别对应 4.4 节中的 `font`、`launcherIcon`、`widgets` 三个分组。
+
+### 5.1 自定义字体
+
+- **注册字体**：
+  - 字体用 `FontLoader` 注册，家族名为 `theme_font_<id>_<version>`。同一个家族名不能重复注册不同的字体，所以每个版本使用不同的家族名。
+  - 常规体和粗体加到同一个 `FontLoader` 中，由引擎根据字体文件自带的字重信息进行匹配。
+- **启动时加载**：在 `app_bootstrap.dart` 中，`runApp` 之前读取 `theme_appearance_v1.font`。有值时，读取文件、注册字体并 `await load()`，这样首帧就是主题字体，不会先闪一下默认字体。
+- **切换时加载**：应用主题或开始试用时，先注册新的字体家族，再切换 `ThemeData.fontFamily`。之前注册过的字体家族会留在内存里直到进程结束，这是 `FontLoader` 的限制，不需要处理。
+- **ThemeData**：
+  - `fontFamily` 取主题字体的家族名，没有主题字体时为 `NotoSansCJKsc`；
+  - `fontFamilyFallback` 为 `['NotoSansCJKsc', 'Noto Color Emoji', 'Segoe UI Emoji', 'Apple Color Emoji']`；
+  - `lib/` 中有 2 处显式写了 `fontFamily: 'NotoSansCJKsc'`，改为不指定，让它们跟随主题；
+  - `monospace` 保持不变。
+- **导入校验**：codec 在 isolate 中运行，拿不到引擎，所以字体在 codec 返回之后、在主 isolate 中用一个临时家族名试加载一次。加载失败时报 `theme_font_invalid`。
+- **恢复默认外观**：`font` 设为 null。
+
+### 5.2 桌面启动图标
+
+**Android**：
+
+- **Manifest**：
+  - 把 `MainActivity` 中 `MAIN`／`LAUNCHER` 的 intent-filter 移到新的 `<activity-alias android:name=".LauncherDefault" android:targetActivity=".MainActivity" android:icon="@mipmap/ic_launcher_main" android:enabled="true" android:exported="true">` 上。深链等其他 intent-filter 留在 `MainActivity` 上不动。
+  - 契约 3.2 节中的其余每个图标，各加一个 alias（`.LauncherNight` 等），`android:enabled="false"`，图标为 `@mipmap/ic_launcher_<id>`（自适应图标：`mipmap-anydpi-v26` 中放 xml，各密度目录中放前景 PNG）。
+- **升级影响**：启动入口组件由 `MainActivity` 变为 `.LauncherDefault`，在部分启动器上，用户桌面上原有的图标会在这次升级后被移除，需要从应用列表中重新拖到桌面。这是一次性的影响，写进这个版本的更新说明里。
+- **内置图标清单**：新增 `BuiltinLauncherIcons.kt`，每项包含 `id`、名称、mipmap、前景 drawable，以及两个 alias 类名。未知 ID 一律按 `default` 处理。做法参照 SukiSU-Nova 的 `BuiltinAppIcons.kt`。
+- **两种变体**：每个内置图标在 Manifest 中有两个 alias：
+  - `.Launcher<Id>`：自适应图标带 `<monochrome>` 层，Android 13 及以上开启"主题图标"时跟随系统配色；
+  - `.Launcher<Id>Static`：不带 `<monochrome>` 层，始终显示原色。
+  - 用户在桌面图标页里用开关"跟随系统主题色"在两者之间选择，默认关闭。Manifest 中只有 `.LauncherDefaultStatic` 为 `enabled="true"`，与现有图标外观一致。
+- **期望值存偏好，系统状态由切换逻辑对齐**：
+  - 新增偏好 `launcher_icon_id_v1` 和 `launcher_icon_themed_v1`，表示用户希望使用的图标。
+  - 新增 MethodChannel `app_icon`，提供 `setDesired(id, themed)`（只写这两个偏好）和 `current()`（读组件的实际启用状态）。
+  - 真正切换组件的是 `applyIfNeeded()`：先确认 `MainActivity` 处于启用状态；如果目标 alias 已经启用、其他 alias 都已禁用，就什么也不做；否则先启用目标，再禁用其余，每次调用都带 `DONT_KILL_APP`。
+- **只在后台切换**：在部分 ROM 上，切换正在启动或正在显示的任务所属的组件，会杀掉进程。所以 `applyIfNeeded()` 只在两个时机调用：
+  1. 在 `MainActivity` 所在进程中注册 `ActivityLifecycleCallbacks`：已启动的 Activity 数降到 0、并且不是配置变更时，延迟 1 秒后再检查一次计数，仍为 0 才调用；
+  2. 新增 `LauncherIconUpdateReceiver`，监听 `MY_PACKAGE_REPLACED`；App 不在前台、并且用户已解锁时调用。
+  - 用户选完图标后，界面提示"返回桌面后生效，部分桌面需要几秒刷新"。
+- **自定义图片快捷方式**：
+  - 使用 `ShortcutManagerCompat.requestPinShortcut`，图标为 `IconCompat.createWithAdaptiveBitmap`，图片取自主题的 `launcherIcon.custom`，缩放到 432×432；
+  - shortcut ID 为 `theme_<id>`，intent 直接指向 `MainActivity`（它始终处于启用状态，深链也依赖它）；
+  - 小米 MIUI／HyperOS 上，请求之前先用反射调用 `AppOpsManager.checkOpNoThrow(10017, uid, pkg)` 读取"桌面快捷方式"权限：结果为 `1`（拒绝）或 `5`（询问）时，先弹窗说明，并提供跳转到本应用权限设置页的按钮；用户返回后再请求。做法参照 SukiSU-Nova 的 `Shortcut.kt`，但不使用其中的 root 授权分支；
+  - `isRequestPinShortcutSupported` 返回 false 时，不显示这个入口；
+  - 在 `app/build.gradle` 中显式声明 `androidx.core:core-ktx` 依赖，版本与现有 Gradle 依赖树中解析出的 `androidx.core` 一致。
+- **主题应用**：应用主题时勾选了 `launcherIcon` 分组，就调用 `setDesired(builtin, 当前的 themed 设置)`，然后提示返回桌面后生效。
+
+**iOS**：
+
+- 把备选图标做成资源目录中的 `AppIcon-<id>.appiconset`，在 Runner target 中设置 `ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES` 和 `ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES`。
+- `AppDelegate` 在同一个 `app_icon` 通道中实现 `setDesired(id, themed)`：忽略 `themed`，直接调用 `UIApplication.shared.setAlternateIconName`（`default` 对应 nil，系统会自动弹出提示）。iOS 允许在前台切换，所以不需要延迟。同时实现 `current()`，返回 `alternateIconName` 对应的 ID。
+- iOS 不显示"添加自定义快捷方式"。
+
+**界面**：
+
+- 外观设置页的"主题"分组新增"桌面图标"页：用网格展示内置图标（前景图叠在圆形和圆角方形两种遮罩上预览），标出期望使用的图标；网格下方是"跟随系统主题色"开关（只在 Android 13 及以上显示）。
+- 当前主题带 `custom` 图标、并且系统支持时，显示"用主题图标添加桌面快捷方式"。
+- "恢复默认外观"不会改动桌面图标；桌面图标只在这个页面里修改。
+
+### 5.3 桌面小部件跟随主题
+
+- **Dart**：
+  - `client/lib/models/home_widget_config.dart` 中的 `HomeWidgetTheme` 新增 `appTheme`（存储值为 `appTheme`，显示为"跟随 App 主题"）；小部件设置页中出现这个选项。
+  - 当前生效的颜色发生变化时（应用主题、恢复外观、试用结束后应用），以及每次启动时，按契约 3.1 节换算出 `widget_app_palette_v1`（JSON，明暗两套，颜色格式为 `#AARRGGBB`），通过现有的小部件数据写入方式保存，然后触发两个小部件的更新。
+  - 课表小部件数据中每门课的 `color`，改为用当前主题的 `coursePalette` 来计算。
+  - 应用主题时勾选了 `widgets` 分组：把 `widget_course_theme` 和 `widget_exam_theme` 设为 `appTheme`。
+- **Android**：
+  - `NativeHomeWidgetTheme` 新增 `APP_THEME("appTheme")`。
+  - `HomeWidgetThemeConfig.resolve` 处理 `APP_THEME` 时：从同一个 SharedPreferences 读取 `widget_app_palette_v1`，按系统的 uiMode 选择亮色或暗色；JSON 不存在时，按 `SYSTEM` 处理。
+  - 背景：在 6 个根布局（课表、考试各 2x2、4x2、4x2_extra_large）中，加一个铺满的 `ImageView`（id 为 `widget_bg_tint`，src 为新增的白色圆角形状 `widget_bg_tint_shape`，圆角与现有背景一致，默认 `gone`）。
+  - `APP_THEME` 时：`widget_bg_tint` 设为可见，`setInt("setColorFilter", background)`，`setInt("setImageAlpha", 开启毛玻璃时为 209，否则为 255)`，根视图的背景设为透明。其他主题时，`widget_bg_tint` 设为 gone，走现有逻辑。
+- **iOS**：
+  - `CourseScheduleWidget.swift` 中的十六进制颜色常量，收进一个 `WidgetPalette` 结构体。
+  - 从 App Group 的 UserDefaults 读取 `widget_app_palette_v1`，按 `@Environment(\.colorScheme)` 选择亮色或暗色；没有这份数据时，使用现有的颜色常量。
+
+### 5.4 验证标准
+
+新增一个测试文件：`client/test/theme_pack/theme_system_test.dart`。
+
+- **字体**：
+  - 应用带字体的主题后，`ThemeData.fontFamily` 等于对应的家族名，`fontFamilyFallback` 的第一项是 `NotoSansCJKsc`；
+  - 用损坏的字体字节导入，结果为 `theme_font_invalid`；
+  - 恢复默认外观后，`fontFamily` 回到 `NotoSansCJKsc`。
+- **小部件**：
+  - 用默认 palette 和一套自定义 palette 换算出的 `widget_app_palette_v1`，逐项等于契约 3.1 节的映射；
+  - 开启毛玻璃时的不透明度正确；
+  - 应用主题、恢复外观之后都会写入，并触发更新；
+  - 课程颜色使用主题色板。
+- **桌面图标**（mock `app_icon` 通道）：
+  - 应用主题时没有勾选 `launcherIcon`：不调用通道；
+  - 勾选了：调用 `setDesired(id, themed)`，`themed` 保持用户当前的设置；
+  - 恢复默认外观：不调用通道。
+
+Kotlin 和 Swift 部分不新增单元测试，用下面的真机步骤验证。
+
+**真机验收**（Android 中端机一台、小米 HyperOS 一台，iOS 一台）：
+
+1. 从当前线上版本覆盖安装新版本，记录各台设备桌面上原有图标是保留还是被移除，写进报告和更新说明。
+2. 依次选择每个内置图标，然后回到桌面：桌面显示新图标，前台使用期间 App 没有被杀；点击新图标能打开 App；`sylulive://grades`、`timetable://home` 深链和小部件点击跳转仍然正常。在 Android 13 及以上开启"跟随系统主题色"，并开启系统的主题图标，桌面图标变为单色。
+2a. 选择一个非默认图标后，覆盖安装同一个新版本，安装完成后桌面图标仍是所选的那个。
+3. Android：用主题图标添加桌面快捷方式，系统弹出确认，确认后快捷方式出现在桌面上，点击能打开 App。在小米 HyperOS 上先在系统设置中关闭"桌面快捷方式"权限，再操作一次：App 先弹出说明并跳转到设置页，开启权限后能成功添加。
+4. 小部件选择"跟随 App 主题"，应用"海盐蓝"，课表和考试小部件的颜色更新；在系统设置中切换明暗模式，小部件跟着切换。iOS 课表小部件同样检查。
+5. 应用"纸感"：九个页面的正文都是霞鹜文楷，等宽文字不变；1.5 倍字号下没有溢出；杀掉进程后冷启动，首帧就是霞鹜文楷。
+
+**性能**（`flutter run --profile`）：带 6MB 字体的主题，冷启动到首帧的时间，比不带字体时增加不超过 150ms。
+
+## 6. P2 主题工坊
+
+### 6.1 页面
 
 文件：`client/lib/features/theme_pack/theme_workshop_screen.dart`，以及 `theme_resolver.dart`（实现契约第 4 节的推导）。
 
 - **上半屏预览**：可以在"首页信息流 / 课表周视图 / 帖子卡片 / 设置列表"四个样例之间切换，并有明暗切换。
   - 样例使用正式页面的共享组件，配上固定的假数据，不访问网络；
   - 样例放在 `theme_workshop_samples.dart` 一个文件里。
-- **下半屏分五个 Tab**：
+- **下半屏分八个 Tab**：
 
 | Tab | 内容 |
 | --- | --- |
@@ -353,9 +471,12 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 | 壁纸 | 四个槽位：选图（复用现有的裁剪流程）、焦点、`blur`、`scrim`、`fit`；暗色组提供"沿用亮色" |
 | 材质 | 透明度、毛玻璃、底栏样式、圆角档位 |
 | 图标 | 五个槽位，每个两态；选图后自动居中裁成正方形，并缩放到 192px；`template`／`original` 切换 |
+| 字体 | 从文件选择常规体，可选粗体；选择字体许可；预览区显示"正文 / 标题 / 数字与英文"三行样例 |
+| 桌面图标 | 从内置图标中选一个（可以不选）；可选上传一张自定义图标，预览中按圆形、圆角方形两种遮罩显示 |
+| 小部件 | 只读预览：按契约 3.1 节的映射，显示课表和考试小部件在亮色、暗色下的效果 |
 
 - **起点**：可以选"当前外观"、某个已安装主题，或"默认"。
-- **制作指南**：顶栏的"制作指南"打开一个静态页面，内容是制作细则第 1–4 节。
+- **制作指南**：顶栏的"制作指南"打开一个静态页面，内容是制作细则第 1–5 节。
 - **草稿**：编辑停顿 800ms 后自动保存到 `drafts/<draftId>/`。保存失败时，顶栏显示"未保存"和"重试"。
 - **导出**：
   1. 用 `RepaintBoundary` 离屏渲染首页样例，亮色和暗色各一张，尺寸 1080×2340，编码为 PNG；
@@ -363,7 +484,7 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
   3. 写入完整的 tokens，然后打包；
   4. 用 codec 再解析一遍，并运行对比度检查。不达标时停留在工坊，并定位到对应的 Token。
 
-### 5.2 验证标准
+### 6.2 验证标准
 
 新增一个测试文件：`client/test/theme_pack/theme_workshop_test.dart`。
 
@@ -378,11 +499,11 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
   - 修改种子色后，预览跟着变化；
   - 在 360×800 视口、1.5 倍字号下，五个 Tab 都没有溢出。
 
-**手工验收**：按制作细则第 8 节的参数做出"海盐蓝"，导出后在另一台设备上导入，外观一致；杀掉进程后草稿能恢复。
+**手工验收**：按制作细则第 9 节的参数做出"海盐蓝"，导出后在另一台设备上导入，外观一致；杀掉进程后草稿能恢复。
 
-## 6. P3 服务端
+## 7. P3 服务端
 
-### 6.1 模型
+### 7.1 模型
 
 `server/internal/models/theme_pack.go`，通过现有的 AutoMigrate 注册。
 
@@ -398,6 +519,7 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 | `Source` | `community` 或 `official` |
 | `Status` | `pending`、`approved`、`rejected`、`withdrawn`、`superseded`、`removed` |
 | `MinAppVersion` | |
+| `FontCopyright`、`FontLicenseNote` | 带字体时，从字体 `name` 表读出的版权和许可说明，供审核页显示 |
 | `PackageSHA256`、`PackageSize` | 规范包的哈希和大小 |
 | `ReviewReasonCode`、`ReviewNote`、`ReviewedBy`、`ReviewedAt` | |
 | `IdempotencyKey` | |
@@ -413,7 +535,7 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 
 **不变式**：同一个 `FamilyID` 下，`approved` 状态的记录最多只有一条。
 
-### 6.2 存储
+### 7.2 存储
 
 ```
 <uploadDir>/.theme-packs/<id>/package.sltheme
@@ -423,7 +545,7 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 
 处理过程中使用 `.stage-<uuid>` 暂存目录，完成后 rename 成正式目录。暂存目录的启动清理复用 `EmojiPackService` 的做法。
 
-### 6.3 服务
+### 7.3 服务
 
 在 `server/internal/services/theme_pack_service.go` 中实现以下流程。校验器写在同一个包里，文件为 `theme_pack_validator.go`。
 
@@ -433,10 +555,10 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 
 锁外（不开事务）：
 
-1. 请求体上限 21MB。
+1. 请求体上限 49MB。
 2. 账号被封禁或正在注销时，返回 `theme_forbidden`。
 3. 同一个用户再次提交相同的幂等键时，直接返回原来的记录。
-4. 按契约做完整校验，并检查对比度规则。
+4. 按契约做完整校验，并检查对比度规则。带字体时，用 `sfnt` 解析字体，并检查 GB2312 一级汉字的覆盖率（契约第 6 节）；同时读出字体 `name` 表中的版权（nameID 0）和许可说明（nameID 13），保存到记录上，供审核页显示。
 5. 按契约第 6 节重新编码图片，写入 `.stage-<uuid>/`，同时得到改写后的图片路径。这一步与 ID、版本号无关。
 
 锁内（一个事务）：
@@ -459,7 +581,7 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 - **通过**：
   - 如果这个版本族当前已上架的版本号大于等于本条的版本号，返回 `theme_conflict`。按下面的取代规则，正常情况下不会出现这种情况，这里只是事务边界上的保护。
   - 本条设为 `approved`；原来的 `approved` 记录改为 `superseded`；同一版本族中版本号比本条小的 `pending` 记录，全部改为 `superseded`，并给作者发通知："已被 vN 取代"。
-- **拒绝**：`reasonCode` 必须来自制作细则 7.2 节。
+- **拒绝**：`reasonCode` 必须来自制作细则 8.2 节。
 - 写管理员日志，并给作者发站内通知，两者都复用现有机制。
 
 所以不论审核顺序如何，上架的版本只会前进，不会退回旧版本：
@@ -476,7 +598,7 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 
 **下载计数**：在版本化的包下载接口上，请求没有 Range 头，或者 Range 从 0 开始时，`Downloads` 加 1，不做去重。计数加在根记录上。
 
-### 6.4 接口
+### 7.4 接口
 
 在 `server/cmd/theme_pack_routes.go` 中注册。错误响应统一为 `{error, code}`。
 
@@ -501,7 +623,7 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 
 **举报**：`report.go` 新增举报对象类型 `theme`，举报对象 ID 为 familyId。
 
-### 6.5 验证标准
+### 7.5 验证标准
 
 新增两个测试文件：
 
@@ -539,9 +661,9 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 
 **隔离环境**：在一个可丢弃的 PostgreSQL 上验证首次和重复启动时的 AutoMigrate；并发审核的用例连接 PostgreSQL 再跑一次。
 
-## 7. P4 客户端商城
+## 8. P4 客户端商城
 
-### 7.1 页面
+### 8.1 页面
 
 **商城首页**：
 
@@ -579,8 +701,8 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 **管理端**：在 `admin_panel_screen` 中新增"主题审核"：
 
 - 队列页；
-- 审核页：明暗预览、与上一版的对比、"试用此主题"、"通过"、"拒绝"（原因必选）。
-  - "试用此主题"会下载私有包，安装为临时版本，然后调用 `startTrial` 进入全局试用会话。审核员按制作细则 7.1 节的路径跨页面检查，再通过试用横条上的"结束"回到原外观，最后返回审核页做出判定。
+- 审核页：明暗预览、与上一版的对比、小部件预览、字体信息（manifest 声明的许可，以及服务端读出的 `name` 表版权和许可说明）、桌面图标（内置 ID 与自定义图片）、"试用此主题"、"通过"、"拒绝"（原因必选）。
+  - "试用此主题"会下载私有包，安装为临时版本，然后调用 `startTrial` 进入全局试用会话。审核员按制作细则 8.1 节的路径跨页面检查，再通过试用横条上的"结束"回到原外观，最后返回审核页做出判定。
   - 审核页上同时显示当前是否处于试用中。
 - 已上架列表：可以下架。
 
@@ -589,7 +711,7 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 - `sylulive://theme/<familyId>`；
 - `https://sylulive.online/theme/<familyId>`：加入现有的 autoVerify intent-filter，并配置 iOS Universal Links。
 
-### 7.2 验证标准
+### 8.2 验证标准
 
 新增一个测试文件：`client/test/theme_pack/theme_store_test.dart`。
 
@@ -614,9 +736,9 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 6. A 发布新版本，B 审核通过，C 的本机主题页显示"可更新"，更新后生效；
 7. B 下架这个主题：C 本机的副本仍可使用，商城中搜不到，分享链接打开显示"主题不存在或已下架"。
 
-## 8. P5 首批官方主题
+## 9. P5 首批官方主题
 
-1. 按制作细则第 8 节的参数，在工坊中做出前 5 套主题。其中"沈理青"以内置默认值为基础，只把亮色 `textSecondary` 改为 `#6E757C`。这个改动和内置默认外观不同，单独截图对比，作为有意的视觉变化验收。
+1. 按制作细则第 9 节的参数，在工坊中做出前 5 套主题。其中"沈理青"以内置默认值为基础，只把亮色 `textSecondary` 改为 `#6E757C`。这个改动和内置默认外观不同，单独截图对比，作为有意的视觉变化验收。
 2. 用维护者账号以 `official` 来源投稿，用另一个管理员账号审核通过。生产环境的操作需要维护者授权。
 3. 校园四季等维护者提供照片后再制作。
 
@@ -626,7 +748,7 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 - 九个页面明暗两套的截图，存放在 `docs/reports/<日期>-official-themes/`；
 - 商城"官方主题"区按顺序显示这 5 套。
 
-## 9. P6 移动网页
+## 10. P6 移动网页
 
 1. 在 `web/tokens.css` 中加入与契约第 3 节对应的 `--theme-<kebab-case>` 变量，默认值等于契约的默认值。
 2. 在 600px 以下的布局中，把首批页面对应的网页视图的颜色迁移到这些变量上。600px 以上的桌面布局不改。
@@ -635,6 +757,8 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
    - **应用**：
      - 用目录中的 `packageUrl` 下载规范包，用 `fflate` 解压；
      - 读取 manifest 中 `light`／`dark` 的 `tokens`，写到 `:root` 上；
+     - 带字体时，用 `FontFace` API 从解出的字节注册字体，并设置 `--theme-font-family`。正文的 `font-family` 改为 `var(--theme-font-family), <现有字体栈>`。刷新后同样从缓存的规范包中重新注册；
+     - 桌面图标和小部件只在 App 中生效，网页端忽略；
      - 把 `{familyId, version, packageUrl, light: tokens, dark: tokens}` 存入 `localStorage`，读写都要包在 try/catch 中。这份数据只有几 KB。
    - **刷新后恢复**：
      1. 页面启动时，同步读取 `localStorage` 中的 tokens 并写到 `:root` 上，避免先闪一下默认配色；
@@ -654,7 +778,7 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 
 **全量检查**：`pnpm -r check`；`pnpm test`。
 
-## 10. 文档同步、依赖与回退
+## 11. 文档同步、依赖与回退
 
 **文档同步**：
 
@@ -662,24 +786,25 @@ cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|comp
 | --- | --- |
 | P0 | 回填契约第 3 节 |
 | P1 | `docs/local-storage-inventory.md`：`themes/` 目录（包括 `user/` 下的自选壁纸）、`theme_appearance_v1`、`theme_previous_v1`、`cacheDir/incoming-theme/` |
+| P1.5 | `docs/local-storage-inventory.md`：`widget_app_palette_v1`（小部件共享存储，Android SharedPreferences 与 iOS App Group）；`docs/ops/app-release.md`：在引入桌面图标 alias 的版本的更新说明中，写明"部分桌面需要重新添加图标" |
 | P6 | `docs/local-storage-inventory.md`：网页端 `localStorage` 中保存的主题数据 |
 | P3 | `docs/privacy-data-inventory.md`：投稿属于公开内容，服务端去除元数据 |
 | P3 | `docs/retention-and-backup-inventory.md`：下架、撤回、注销时的处理 |
 | P3 | `server/API.md` |
 | P3 | 新建 `docs/ops/theme-packs.md`：存储、下架、商城开关、回退 |
 
-**依赖**：P0 → P1 → P2 和 P3 可以并行 → P4 → P5 → P6。
+**依赖**：P0 → P1 → P1.5、P3 可以并行 → P2（工坊需要 P1.5 的字体、桌面图标和小部件能力）→ P4 → P5 → P6。
 
 **发布顺序**：服务端先于客户端发布。商城入口由服务端的现有功能开关控制，关闭开关只隐藏商城，本机主题功能不受影响。
 
 **回退**：
 
 - 关闭商城开关；
-- 客户端回退到旧版本时，旧版本会忽略两个主题 key，读取仍然保留着的原有外观偏好 key，外观回到升级前的样子。旧版本通过 `FileImage(File(path))` 按绝对路径加载壁纸（`global_background_wrapper.dart` 第 109 行），所以迁移到 `themes/user/` 后改写过的路径同样能读到；
+- 客户端回退到旧版本时，旧版本忽略两个主题 key，读取现有外观偏好 key。主题从不改写这些 key，所以旧版本显示的是用户最后一次在外观设置里手动设置的值，主题带来的配色、壁纸、材质都不再生效。小部件主题 key 若为 `appTheme`，旧版本不认识这个值，Dart 和 Kotlin 两端都会按"跟随系统"处理。旧版本通过 `FileImage(File(path))` 按绝对路径加载壁纸（`global_background_wrapper.dart` 第 109 行），所以迁移到 `themes/user/` 后改写过的路径同样能读到；
 - 服务端先于客户端回退时，版本化的下载接口不受影响；
 - 服务端的数据表保留。
 
-## 11. 交付报告格式
+## 12. 交付报告格式
 
 ```
 ## P<n> <阶段名>

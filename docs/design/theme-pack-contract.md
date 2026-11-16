@@ -24,12 +24,13 @@
 | MIME | `application/vnd.sylulive.theme+zip` |
 | 封装 | 标准 ZIP（STORE 或 DEFLATE），不加密。每个读取的条目都要校验 CRC32，不一致时报 `theme_zip_invalid` |
 | 条目名 | 只解出 manifest 引用到的条目，加上 `manifest.json` 本身，其余条目忽略。被引用的路径必须匹配下方的正则 |
-| 大小 | 包体不超过 20MB；被引用条目的解压总量不超过 64MB，达到上限立即停止解压 |
+| 大小 | 包体不超过 48MB；被引用条目的解压总量不超过 96MB，达到上限立即停止解压。不带字体的主题通常在 10MB 以内 |
 
-manifest 中引用的路径必须匹配下面的正则（`|` 是正则的"或"）：
+manifest 中引用的路径必须匹配下面两个正则之一（`|` 是正则的"或"）：
 
 ```text
 ^(preview|wallpaper|icons)/[a-z0-9_-]{1,40}\.(webp|jpg|png)$
+^fonts/[a-z0-9_-]{1,40}\.(ttf|otf)$
 ```
 
 ## 2. `manifest.json`
@@ -47,15 +48,19 @@ UTF-8 编码，大小不超过 64KB。
 | `name` | string | 是 | 1–20 个字符，不能有换行 |
 | `description` | string | 否 | 不超过 200 个字符 |
 | `author` | string | 是 | 1–20 个字符。商城规范包由服务端改写为作者昵称 |
-| `tags` | string[] | 否 | 最多 5 个，取值来自第 6 节 |
+| `tags` | string[] | 否 | 最多 5 个，取值来自第 7 节 |
 | `license` | string | 是 | `CC0-1.0`、`CC-BY-4.0`、`CC-BY-NC-4.0`、`personal-use` 之一 |
 | `source` | string | 否 | 只出现在商城规范包里，取值 `community` 或 `official`。本机文件中的这个字段一律忽略 |
 | `preview` | object | 是 | `{ "light": path, "dark": path }` |
 | `light`、`dark` | object | 是 | 见 2.2 节 |
 | `shape` | string | 否 | `compact`、`standard`（默认）、`rounded` 之一 |
 | `bottomNav` | object | 否 | 见 2.4 节 |
+| `font` | object | 否 | 见 2.5 节 |
+| `launcherIcon` | object | 否 | 见 2.6 节 |
 
 不认识的字段：客户端直接忽略；服务端在规范化时删除。
+
+桌面小部件的配色不在 manifest 中单独声明，由明暗变体的 Token 映射得到，见 3.1 节。
 
 ### 2.2 明暗变体（`light`、`dark` 结构相同）
 
@@ -66,7 +71,7 @@ UTF-8 编码，大小不超过 64KB。
 | `tokens` | object | 是 | 第 3 节的全部 Token 都要给出。值为 `#RRGGBB`；标注了"可透明"的 Token 也可以用 `#AARRGGBB` |
 | `coursePalette` | string[] | 是 | 5–12 个 `#RRGGBB` |
 | `wallpapers` | object | 否 | 键为 `global`、`home`、`schedule`、`me`，值为壁纸对象或 null |
-| `componentOpacity` | number | 否 | 0.75–1.0，默认 1.0 |
+| `componentOpacity` | number | 否 | 0.75–1.0，默认 1.0。明暗两套分别生效，系统切换明暗时随之切换 |
 | `frostedGlass` | object | 否 | `{ "enabled": bool, "strength": 0–1 }` |
 
 ### 2.3 壁纸对象
@@ -98,6 +103,35 @@ UTF-8 编码，大小不超过 64KB。
 | `style` | `normal`、`floating`、`liquid_glass` 之一，与 `BottomNavStyle.storageValue` 一致 |
 | `iconTint` | `template`（默认）或 `original`。`template` 模式只取图标的 alpha 通道，再按 `navSelected` 或 `navUnselected` 着色 |
 | `icons` | 键为 `home`、`market`、`schedule`、`campus`、`me`，值为 `{ "normal": path, "selected": path }` 或 null。每个槽位的两态必须同时给出 |
+
+### 2.5 `font`
+
+| 字段 | 必填 | 约束 |
+| --- | --- | --- |
+| `name` | 是 | 字体的显示名称，1–30 个字符，例如"霞鹜文楷" |
+| `regular` | 是 | `fonts/` 下的路径。TTF 或 OTF，单个文件不超过 24MB，不能是字体集合（TTC） |
+| `bold` | 否 | `fonts/` 下的路径，约束同上。缺省时，粗体由引擎合成 |
+| `license` | 是 | `OFL-1.1`、`Apache-2.0`、`CC0-1.0`、`author-owned` 之一。`author-owned` 表示作者本人拥有字体版权 |
+
+适用范围：
+
+- 字体只替换 App 正文所用的字体（`ThemeData.fontFamily`）。
+- 等宽字体（代码、日志等处显式写着 `fontFamily: 'monospace'` 的地方）不受影响。
+- 字号和文字缩放仍由用户的字号设置决定，主题不改变它们。
+- 字体里缺少的字形，按顺序回退到内置的 `NotoSansCJKsc` 和表情字体。
+- 桌面小部件不使用主题字体：Android 的 RemoteViews 不能加载 App 私有目录中的字体文件。
+
+### 2.6 `launcherIcon`
+
+| 字段 | 必填 | 约束 |
+| --- | --- | --- |
+| `builtin` | 否 | 内置备选图标的 ID，取值来自第 3.2 节的表格 |
+| `custom` | 否 | `icons/` 下的路径，正方形 PNG 或 WebP，边长 432–1024，必须完全不透明 |
+
+两者至少给出一个。
+
+- **`builtin`**：替换系统桌面上 App 本身的图标。Android 和 iOS 都只能切换到随安装包一起打包的图标，所以只能从内置列表中选择。
+- **`custom`**：在 Android 上以"添加桌面快捷方式"的方式使用。系统会弹窗请用户确认，然后在桌面上多出一个使用这张图片的快捷方式，原来的 App 图标仍然保留。大部分启动器会在这类快捷方式的角上叠加一个小的 App 图标。iOS 没有对应的能力，所以 iOS 上不显示这个选项。
 
 ## 3. 语义 Token
 
@@ -152,8 +186,36 @@ UTF-8 编码，大小不超过 64KB。
 **主题不能修改的颜色**：
 
 - 状态色（success、warning、danger、info）；
-- 头像和图片占位色；
-- 桌面小部件的颜色。
+- 头像和图片占位色。
+
+### 3.1 桌面小部件颜色映射
+
+小部件选择"跟随 App 主题"时，App 会把当前生效的 Token 按下表换算成小部件的颜色，写入小部件的共享存储。小部件按系统的明暗模式，在亮色和暗色两套颜色之间选择。
+
+| 小部件颜色 | 来源 Token |
+| --- | --- |
+| `background` | `card` |
+| `primaryText` | `textPrimary` |
+| `secondaryText` | `textSecondary` |
+| `mutedText` | `textTertiary` |
+| `accent` | `primary` |
+| `divider` | `divider` |
+
+- 小部件开启了毛玻璃时，`background` 以 0.82 的不透明度绘制；没有开启时，完全不透明。
+- 课表小部件中每门课的颜色，与 App 课表使用同一个 `coursePalette` 和同一套取色规则。
+
+### 3.2 内置备选桌面图标
+
+| ID | 名称 | 对应官方主题 |
+| --- | --- | --- |
+| `default` | 沈理青 | 沈理青（即当前的 `ic_launcher_main`） |
+| `night` | 墨夜 | 墨夜 |
+| `sea` | 海盐蓝 | 海盐蓝 |
+| `sakura` | 樱粉 | 樱粉 |
+| `paper` | 纸感 | 纸感 |
+| `campus` | 校园四季 | 校园四季 |
+
+图标图片由维护者提供，随安装包发布。每个图标要提供三张图：前景、背景色，以及单色剪影（用于 Android 13 及以上的"主题图标"）。新增备选图标需要发布新版本 App，同时在本表中追加一行，已有 ID 不能改名。
 
 ## 4. 工坊推导规则（只在 Dart 中实现）
 
@@ -219,13 +281,22 @@ UTF-8 编码，大小不超过 64KB。
 | 本机导入 | 显示警告，仍然允许应用 |
 | 商城投稿 | 服务端拒绝 |
 
-## 6. 图片
+## 6. 图片与字体
 
 | 用途 | 格式 | 尺寸 | 单张上限 |
 | --- | --- | --- | --- |
 | 壁纸 | WebP、JPEG、PNG | 长边不超过 4096 | 8MB |
 | 图标 | WebP、PNG | 正方形，边长 48–256 | 256KB |
 | 预览图 | WebP、JPEG、PNG | 1080×2340 | 2MB |
+| 自定义桌面图标 | WebP、PNG | 正方形，边长 432–1024，不能有透明像素 | 1MB |
+
+**字体文件**：
+
+- 客户端：用 `FontLoader` 加载，加载失败时报 `theme_font_invalid`。
+- 服务端：
+  - 用 `golang.org/x/image/font/sfnt`（`x/image` 已经是现有依赖）解析，解析失败时报 `theme_font_invalid`；
+  - 检查字形覆盖：可打印 ASCII 全部覆盖，GB2312 一级汉字（3755 个）至少覆盖 99%，否则报 `theme_font_coverage_low`。一级汉字列表用 `golang.org/x/text/encoding/simplifiedchinese` 解码 GB2312 的 0xB0A1–0xD7F9 区间得到，`x/text` 已经是现有的间接依赖，改为直接依赖；
+  - 字体文件不重新编码，原样放进规范包。
 
 **尺寸检查**：先只读取图片头部拿到尺寸，超出限制就直接拒绝，不做完整解码。Dart 端用 `ui.ImageDescriptor`，Go 端用 `image.DecodeConfig`。
 
@@ -256,6 +327,8 @@ Dart 和 Go 使用同一组错误码。界面上显示中文提示，详情里�
 | `theme_asset_missing` | 引用的条目不存在 | 主题缺少图片：{路径} |
 | `theme_image_invalid` | 图片无法解码，或尺寸、大小不合规 | 主题图片不符合要求：{路径} |
 | `theme_contrast_low` | 对比度不达标（仅服务端报这个错误） | 文字与背景对比度不足：{前景} / {背景} |
+| `theme_font_invalid` | 字体文件无法加载或解析 | 主题字体无法使用 |
+| `theme_font_coverage_low` | 字体缺少常用汉字（仅服务端报这个错误） | 字体缺少常用汉字，覆盖率 {百分比} |
 
 服务端在此基础上还有以下业务错误码：
 

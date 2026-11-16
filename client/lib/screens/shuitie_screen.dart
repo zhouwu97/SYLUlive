@@ -18,8 +18,9 @@ import '../models/water_section.dart';
 import '../config/water_post_taxonomy.dart';
 import '../widgets/water_section/section_avatar.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme_tokens.dart';
 import '../theme/app_motion.dart';
-import '../theme/app_radius.dart';
+import '../theme/app_palette.dart';
 import '../theme/app_spacing.dart';
 import '../utils/responsive_util.dart';
 import '../utils/app_feedback.dart';
@@ -1373,7 +1374,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     return Scaffold(
       backgroundColor: showCustomBackground
           ? Colors.transparent
-          : (isDark ? const Color(0xFF101219) : kCleanWarmBackgroundLight),
+          : AppThemeTokens.of(context).background,
       extendBodyBehindAppBar: true,
       body: LayoutBuilder(
         builder: (context, constraints) {
@@ -1472,9 +1473,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final detailBackground =
         context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
             ? Colors.transparent
-            : isDark
-                ? const Color(0xFF131720)
-                : Colors.white;
+            : AppThemeTokens.of(context).surfaceElevated;
     final selectedUserId = _selectedUserId;
     if (selectedUserId != null) {
       return ColoredBox(
@@ -1722,7 +1721,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           ),
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('删除', style: TextStyle(color: Color(0xFFE54848))),
+            child: const Text('删除', style: TextStyle(color: AppColors.danger)),
           ),
         ],
       ),
@@ -1773,7 +1772,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             '点击左侧帖子查看详情',
             style: TextStyle(
               fontSize: 16,
-              color: isDark ? Colors.white54 : Colors.black54,
+              color: AppThemeTokens.of(context).textSecondary,
             ),
           ),
         ],
@@ -1784,9 +1783,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Widget _buildFeedTabs(bool isDark) {
     const tabWidth = 56.0;
     final activeColor =
-        isDark ? Theme.of(context).colorScheme.primary : AppColors.brandPrimary;
+        isDark ? Theme.of(context).colorScheme.primary : AppThemeTokens.of(context).primary;
     final inactiveColor =
-        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
+        AppThemeTokens.of(context).textSecondary;
 
     return SizedBox(
       width: tabWidth * kFeedModes.length,
@@ -1883,7 +1882,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     icon: Icon(
                       Icons.menu_rounded,
                       size: 26,
-                      color: isDark ? Colors.white : Colors.black87,
+                      color: Theme.of(context).iconTheme.color,
                     ),
                     padding: EdgeInsets.zero,
                   ),
@@ -1895,7 +1894,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                         width: 8,
                         height: 8,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFEF4444),
+                          color: const Color(0xFFEF4444), // theme: fixed — 签到奖励或异常状态的识别色
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: isDark ? Colors.black87 : Colors.white,
@@ -1929,7 +1928,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                         icon: Icon(
                           Icons.chat_bubble_outline_rounded,
                           size: 25,
-                          color: isDark ? Colors.white : Colors.black87,
+                          color: Theme.of(context).iconTheme.color,
                         ),
                         padding: EdgeInsets.zero,
                       ),
@@ -1995,7 +1994,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : Colors.black87)),
+                      color: AppThemeTokens.of(context).textPrimary)),
               GestureDetector(
                 onTap: () {
                   setState(() => _followingExpanded = true);
@@ -2005,10 +2004,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     Text('全部',
                         style: TextStyle(
                             fontSize: 14,
-                            color: isDark ? Colors.white54 : Colors.black54)),
+                            color: AppThemeTokens.of(context).textSecondary)),
                     Icon(Icons.chevron_right,
                         size: 16,
-                        color: isDark ? Colors.white54 : Colors.black54),
+                        color: AppThemeTokens.of(context).textSecondary),
                   ],
                 ),
               ),
@@ -2020,7 +2019,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               height: 100,
               width: double.infinity,
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1F2937) : Colors.white,
+                color: AppThemeTokens.of(context).card,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                     color: isDark
@@ -2034,12 +2033,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                       style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white70 : Colors.black87)),
+                          color: AppThemeTokens.of(context).textPrimary)),
                   const SizedBox(height: 4),
                   Text('关注的人和版块有新动态时，会显示在这里',
                       style: TextStyle(
                           fontSize: 13,
-                          color: isDark ? Colors.white54 : Colors.black54)),
+                          color: AppThemeTokens.of(context).textSecondary)),
                 ],
               ),
             )
@@ -2092,7 +2091,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : Colors.black87)),
+                      color: AppThemeTokens.of(context).textPrimary)),
               GestureDetector(
                 onTap: () {
                   Navigator.push(
@@ -2107,10 +2106,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     Text('全部',
                         style: TextStyle(
                             fontSize: 14,
-                            color: isDark ? Colors.white54 : Colors.black54)),
+                            color: AppThemeTokens.of(context).textSecondary)),
                     Icon(Icons.chevron_right,
                         size: 16,
-                        color: isDark ? Colors.white54 : Colors.black54),
+                        color: AppThemeTokens.of(context).textSecondary),
                   ],
                 ),
               ),
@@ -2143,7 +2142,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 child: AppCardSurface(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1F2937) : Colors.white,
+                    color: AppThemeTokens.of(context).card,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                         color: isDark
@@ -2169,7 +2168,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                               style: TextStyle(
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : Colors.black87,
+                                color: AppThemeTokens.of(context).textPrimary,
                               ),
                             ),
                             if (section.subtitle.isNotEmpty)
@@ -2180,7 +2179,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                 style: TextStyle(
                                   fontSize: 12,
                                   color:
-                                      isDark ? Colors.white54 : Colors.black54,
+                                      AppThemeTokens.of(context).textSecondary,
                                 ),
                               ),
                           ],
@@ -2205,7 +2204,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         children: [
           IconButton(
             icon: Icon(Icons.arrow_back,
-                color: isDark ? Colors.white : Colors.black87),
+                color: AppThemeTokens.of(context).textPrimary),
             onPressed: () => setState(() => _followingExpanded = false),
           ),
           const SizedBox(width: 4),
@@ -2213,7 +2212,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black87)),
+                  color: AppThemeTokens.of(context).textPrimary)),
         ],
       ),
     );
@@ -2221,18 +2220,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   // ---- 关注模式未登录占位 ----
   Widget _buildFollowingPlaceholder(bool isDark) {
-    final surface = isDark
-        ? AppColors.surfaceSecondaryDark
-        : AppColors.surfaceSecondaryLight;
+    final surface = AppThemeTokens.of(context).card;
     final border =
-        isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
+        AppThemeTokens.of(context).divider;
     return Center(
       child: AppCardSurface(
         padding: const EdgeInsets.all(24),
         margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
         decoration: BoxDecoration(
           color: surface,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderRadius: BorderRadius.circular(AppShape.of(context).lg),
           border: Border.all(color: border),
         ),
         child: Column(
@@ -2241,14 +2238,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             Icon(
               Icons.login_rounded,
               size: 64,
-              color: isDark ? Colors.white60 : Colors.grey[400],
+              color: AppThemeTokens.of(context).textTertiary,
             ),
             const SizedBox(height: 16),
             Text(
               '登录后查看关注动态',
               style: TextStyle(
                 fontSize: 18,
-                color: isDark ? Colors.white70 : Colors.grey[600],
+                color: AppThemeTokens.of(context).textPrimary,
               ),
             ),
             const SizedBox(height: 8),
@@ -2257,9 +2254,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.4)
-                    : Colors.grey[400],
+                color: AppThemeTokens.of(context).textSecondary,
               ),
             ),
             const SizedBox(height: 16),
@@ -2281,18 +2276,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   // ---- 关注模式已登录但无帖子 ----
   Widget _buildFollowingEmptyState(bool isDark) {
-    final surface = isDark
-        ? AppColors.surfaceSecondaryDark
-        : AppColors.surfaceSecondaryLight;
+    final surface = AppThemeTokens.of(context).card;
     final border =
-        isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
+        AppThemeTokens.of(context).divider;
     return Center(
       child: AppCardSurface(
         padding: const EdgeInsets.all(24),
         margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
         decoration: BoxDecoration(
           color: surface,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderRadius: BorderRadius.circular(AppShape.of(context).lg),
           border: Border.all(color: border),
         ),
         child: Column(
@@ -2301,14 +2294,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             Icon(
               Icons.people_outline_rounded,
               size: 64,
-              color: isDark ? Colors.white60 : Colors.grey[400],
+              color: AppThemeTokens.of(context).textTertiary,
             ),
             const SizedBox(height: 16),
             Text(
               '还没有关注动态',
               style: TextStyle(
                 fontSize: 18,
-                color: isDark ? Colors.white70 : Colors.grey[600],
+                color: AppThemeTokens.of(context).textPrimary,
               ),
             ),
             const SizedBox(height: 8),
@@ -2317,9 +2310,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.4)
-                    : Colors.grey[400],
+                color: AppThemeTokens.of(context).textSecondary,
               ),
             ),
             const SizedBox(height: 24),
@@ -2789,16 +2780,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Widget _buildSearchBar(bool isDark) {
-    final background = isDark
-        ? AppColors.surfaceSecondaryDark
-        : AppColors.surfaceSecondaryLight;
+    final background = AppThemeTokens.of(context).card;
     final border =
-        isDark ? AppColors.borderNormalDark : AppColors.borderNormalLight;
+        AppThemeTokens.of(context).outline;
     return AppCardSurface(
       height: 46,
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
+        borderRadius: BorderRadius.circular(AppShape.of(context).lg),
         border: Border.all(color: border),
       ),
       child: TextField(
@@ -2822,16 +2811,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           hintText: '搜索帖子标题、关键词、校园话题',
           hintStyle: TextStyle(
             fontSize: 14,
-            color: isDark
-                ? AppColors.textSecondaryDark
-                : AppColors.textSecondaryLight,
+            color: AppThemeTokens.of(context).textSecondary,
           ),
           prefixIcon: Icon(
             Icons.search_rounded,
             size: 20,
-            color: isDark
-                ? AppColors.textSecondaryDark
-                : AppColors.textSecondaryLight,
+            color: AppThemeTokens.of(context).textSecondary,
           ),
           suffixIcon: _searchController.text.isEmpty
               ? null
@@ -2853,18 +2838,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     required String subtitle,
     VoidCallback? onRetry,
   }) {
-    final surface = isDark
-        ? AppColors.surfaceSecondaryDark
-        : AppColors.surfaceSecondaryLight;
+    final surface = AppThemeTokens.of(context).card;
     final border =
-        isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
+        AppThemeTokens.of(context).divider;
     return Center(
       child: AppCardSurface(
         padding: const EdgeInsets.all(AppSpacing.xxl),
         margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
         decoration: BoxDecoration(
           color: surface,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderRadius: BorderRadius.circular(AppShape.of(context).lg),
           border: Border.all(color: border),
         ),
         child: Column(
@@ -2873,14 +2856,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             Icon(
               Icons.chat_bubble_outline,
               size: 64,
-              color: isDark ? Colors.white60 : Colors.grey[400],
+              color: AppThemeTokens.of(context).textTertiary,
             ),
             const SizedBox(height: 16),
             Text(
               title,
               style: TextStyle(
                 fontSize: 18,
-                color: isDark ? Colors.white70 : Colors.grey[600],
+                color: AppThemeTokens.of(context).textPrimary,
               ),
             ),
             const SizedBox(height: 8),
@@ -2889,9 +2872,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.4)
-                    : Colors.grey[400],
+                color: AppThemeTokens.of(context).textSecondary,
               ),
             ),
             if (onRetry != null) ...[
@@ -2914,16 +2895,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Widget _buildFeedSkeleton(bool isDark) {
-    final fill = isDark ? const Color(0xFF2A3032) : const Color(0xFFF0F3F1);
+    final fill = AppThemeTokens.of(context).surfaceMuted;
     final border =
-        isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
+        AppThemeTokens.of(context).divider;
     Widget bar(double width, {double height = 12}) {
       return Container(
         width: width,
         height: height,
         decoration: BoxDecoration(
           color: fill,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
+          borderRadius: BorderRadius.circular(AppShape.of(context).sm),
         ),
       );
     }
@@ -2933,10 +2914,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: isDark
-            ? AppColors.surfaceSecondaryDark
-            : AppColors.surfaceSecondaryLight,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
+        color: AppThemeTokens.of(context).card,
+        borderRadius: BorderRadius.circular(AppShape.of(context).lg),
         border: Border.all(color: border),
       ),
       child: Column(
@@ -2972,7 +2951,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             height: 92,
             decoration: BoxDecoration(
               color: fill,
-              borderRadius: BorderRadius.circular(AppRadius.md),
+              borderRadius: BorderRadius.circular(AppShape.of(context).md),
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -3070,7 +3049,7 @@ class CheckInSuccessDialog extends StatelessWidget {
         child: AppCardSurface(
           padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1D1F24) : Colors.white,
+            color: AppThemeTokens.of(context).surfaceElevated,
             borderRadius: BorderRadius.circular(22),
             boxShadow: [
               BoxShadow(
@@ -3090,14 +3069,14 @@ class CheckInSuccessDialog extends StatelessWidget {
                 height: 44,
                 decoration: BoxDecoration(
                   color: isDark
-                      ? const Color(0xFF3A3020)
-                      : const Color(0xFFFFF3DC),
+                      ? const Color(0xFF3A3020) // theme: fixed — 签到奖励或异常状态的识别色
+                      : const Color(0xFFFFF3DC), // theme: fixed — 签到奖励或异常状态的识别色
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: const Icon(
                   Icons.celebration_rounded,
                   size: 24,
-                  color: Color(0xFFF59E0B),
+                  color: AppColors.warning,
                 ),
               ),
               const SizedBox(height: 10),
@@ -3106,7 +3085,7 @@ class CheckInSuccessDialog extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : const Color(0xFF1F2937),
+                  color: AppThemeTokens.of(context).textPrimary,
                 ),
               ),
               const SizedBox(height: 8),
@@ -3114,7 +3093,7 @@ class CheckInSuccessDialog extends StatelessWidget {
                 '已连续签到',
                 style: TextStyle(
                   fontSize: 13,
-                  color: isDark ? Colors.white54 : const Color(0xFF8B909A),
+                  color: AppThemeTokens.of(context).textSecondary,
                 ),
               ),
               const SizedBox(height: 2),
@@ -3126,7 +3105,7 @@ class CheckInSuccessDialog extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFFF59E0B),
+                        color: AppColors.warning,
                         height: 1.0,
                       ),
                     ),
@@ -3136,7 +3115,7 @@ class CheckInSuccessDialog extends StatelessWidget {
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color:
-                            isDark ? Colors.white70 : const Color(0xFF4B5563),
+                            AppThemeTokens.of(context).textSecondary,
                       ),
                     ),
                   ],
@@ -3148,8 +3127,8 @@ class CheckInSuccessDialog extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
                   color: isDark
-                      ? const Color(0xFF31291D)
-                      : const Color(0xFFFFF6E6),
+                      ? const Color(0xFF31291D) // theme: fixed — 签到奖励或异常状态的识别色
+                      : const Color(0xFFFFF6E6), // theme: fixed — 签到奖励或异常状态的识别色
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -3158,7 +3137,7 @@ class CheckInSuccessDialog extends StatelessWidget {
                     const Icon(
                       Icons.bolt_rounded,
                       size: 16,
-                      color: Color(0xFFF59E0B),
+                      color: AppColors.warning,
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -3166,7 +3145,7 @@ class CheckInSuccessDialog extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFFF59E0B),
+                        color: AppColors.warning,
                       ),
                     ),
                     const SizedBox(width: 4),
@@ -3175,7 +3154,7 @@ class CheckInSuccessDialog extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 13,
                         color:
-                            isDark ? Colors.white60 : const Color(0xFF7B808A),
+                            AppThemeTokens.of(context).textSecondary,
                       ),
                     ),
                   ],
@@ -3187,7 +3166,7 @@ class CheckInSuccessDialog extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 12,
-                  color: isDark ? Colors.white54 : const Color(0xFF9AA0AA),
+                  color: AppThemeTokens.of(context).textSecondary,
                   height: 1.2,
                 ),
               ),
@@ -3198,7 +3177,7 @@ class CheckInSuccessDialog extends StatelessWidget {
                 child: FilledButton(
                   onPressed: () => Navigator.pop(context),
                   style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.brandPrimary,
+                    backgroundColor: AppThemeTokens.of(context).primary,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),

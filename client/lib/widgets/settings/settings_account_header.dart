@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_theme_tokens.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/api_constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../screens/account_security_screen.dart';
 import '../../screens/login_screen.dart';
-import '../campus/campus_theme.dart';
 import '../cached_avatar.dart';
 import 'settings_status_badge.dart';
 import '../app_card.dart';
@@ -45,12 +45,12 @@ class SettingsAccountHeader extends StatelessWidget {
     return AppCardSurface(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+        color: AppThemeTokens.of(context).card,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.08)
-              : CampusTheme.softBorder,
+              : AppThemeTokens.of(context).divider,
         ),
         boxShadow: isDark
             ? null
@@ -109,7 +109,7 @@ class SettingsAccountHeader extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.white : CampusTheme.text,
+                            color: AppThemeTokens.of(context).textPrimary,
                           ),
                         ),
                         const SizedBox(height: 3),
@@ -119,8 +119,7 @@ class SettingsAccountHeader extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 12.5,
-                            color:
-                                isDark ? Colors.white60 : CampusTheme.subText,
+                            color: AppThemeTokens.of(context).textSecondary,
                           ),
                         ),
                         if (isLoggedIn) ...[
@@ -150,7 +149,9 @@ class SettingsAccountHeader extends StatelessWidget {
                     size: 22,
                     color: isDark
                         ? Colors.white.withValues(alpha: 0.3)
-                        : CampusTheme.subText.withValues(alpha: 0.5),
+                        : AppThemeTokens.of(context)
+                            .textSecondary
+                            .withValues(alpha: 0.5),
                   ),
                 ],
               ),

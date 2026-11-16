@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_theme_tokens.dart';
 import '../campus/campus_theme.dart';
 import '../app_card.dart';
 
@@ -39,21 +40,20 @@ class SettingsTile extends StatelessWidget {
 
     final effectiveIconColor = danger
         ? CampusTheme.red
-        : (iconColor ??
-            (isDark ? const Color(0xFF7ED6C5) : CampusTheme.primary));
+        : (iconColor ?? (AppThemeTokens.of(context).primary));
 
     final effectiveIconBgColor = danger
         ? CampusTheme.red.withValues(alpha: 0.1)
         : (iconBgColor ??
             (isDark
-                ? const Color(0xFF7ED6C5).withValues(alpha: 0.15)
-                : CampusTheme.primaryLight));
+                ? AppThemeTokens.of(context).primary.withValues(alpha: 0.15)
+                : AppThemeTokens.of(context).primaryContainer));
 
     final titleColor =
-        danger ? CampusTheme.red : (isDark ? Colors.white : CampusTheme.text);
+        danger ? CampusTheme.red : (AppThemeTokens.of(context).textPrimary);
 
     final subtitleColor = appContentSecondaryColor(
-        context, isDark ? Colors.white60 : CampusTheme.subText);
+        context, AppThemeTokens.of(context).textSecondary);
 
     Widget? leadingWidget;
     if (customIcon != null) {
@@ -83,7 +83,9 @@ class SettingsTile extends StatelessWidget {
             context,
             isDark
                 ? Colors.white.withValues(alpha: 0.3)
-                : CampusTheme.subText.withValues(alpha: 0.5)),
+                : AppThemeTokens.of(context)
+                    .textSecondary
+                    .withValues(alpha: 0.5)),
       );
     }
 

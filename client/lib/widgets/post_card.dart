@@ -11,7 +11,8 @@ import '../screens/post_detail_screen.dart';
 import '../screens/user_home_screen.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
-import '../theme/app_radius.dart';
+import '../theme/app_palette.dart';
+import '../theme/app_theme_tokens.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import '../utils/app_feedback.dart';
@@ -188,11 +189,9 @@ class _PostCardState extends State<PostCard>
       borderRadius: isDesktop ? 16 : 12,
       blur: 8,
       opacity: 1,
-      backgroundColor: isDark
-          ? AppColors.surfaceSecondaryDark
-          : AppColors.surfaceSecondaryLight,
+      backgroundColor: AppThemeTokens.of(context).card,
       borderColor:
-          isDark ? AppColors.borderNormalDark : AppColors.borderNormalLight,
+          AppThemeTokens.of(context).outline,
       onTap: widget.onTap,
       child: Padding(
         padding: EdgeInsets.all(isDesktop ? 16 : 12),
@@ -264,9 +263,7 @@ class _PostCardState extends State<PostCard>
                         style: TextStyle(
                           fontSize: isDesktop ? 12 : 10,
                           height: 1.1,
-                          color: isDark
-                              ? AppColors.textSecondaryDark
-                              : AppColors.textSecondaryLight,
+                          color: AppThemeTokens.of(context).textSecondary,
                         ),
                       ),
                     ],
@@ -330,9 +327,7 @@ class _PostCardState extends State<PostCard>
                 maxLines: contentMaxLines,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: isDark
-                      ? AppColors.textPrimaryDark
-                      : AppColors.textPrimaryLight,
+                  color: AppThemeTokens.of(context).textPrimary,
                   height: isDesktop ? 1.4 : 1.3,
                   fontSize: isDesktop ? 15 : 13,
                 ),
@@ -379,13 +374,11 @@ class _PostCardState extends State<PostCard>
   }) {
     final colors = Theme.of(context).colorScheme;
     final labels = _waterLabels(context, post);
-    final surface = isDark
-        ? AppColors.surfaceSecondaryDark
-        : AppColors.surfaceSecondaryLight;
+    final surface = AppThemeTokens.of(context).card;
     final border =
-        isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight;
+        AppThemeTokens.of(context).divider;
     final secondary =
-        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
+        AppThemeTokens.of(context).textSecondary;
     final contentMaxLines = validImageCount == 0 ? 3 : 2;
     final hasUsefulTag = _isMeaningfulLegacyTopicLabel(labels.tagLabel);
 
@@ -393,7 +386,7 @@ class _PostCardState extends State<PostCard>
       margin: const EdgeInsets.only(bottom: AppSpacing.xs),
       decoration: BoxDecoration(
         color: surface,
-        borderRadius: BorderRadius.circular(AppRadius.md),
+        borderRadius: BorderRadius.circular(AppShape.of(context).md),
         border: Border.all(
           color: border.withValues(alpha: isDark ? 0.82 : 0.52),
           width: 0.8,
@@ -403,7 +396,7 @@ class _PostCardState extends State<PostCard>
         color: Colors.transparent,
         child: InkWell(
           onTap: widget.onTap,
-          borderRadius: BorderRadius.circular(AppRadius.md),
+          borderRadius: BorderRadius.circular(AppShape.of(context).md),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.md,
@@ -471,9 +464,7 @@ class _PostCardState extends State<PostCard>
                     maxLines: contentMaxLines,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.feedBody.copyWith(
-                      color: isDark
-                          ? AppColors.textPrimaryDark
-                          : const Color(0xFF4E565A),
+                      color: AppThemeTokens.of(context).textPrimary,
                     ),
                   ),
                 ],
@@ -484,7 +475,7 @@ class _PostCardState extends State<PostCard>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.feedTag.copyWith(
-                      color: AppColors.brandPrimary,
+                      color: AppThemeTokens.of(context).primary,
                     ),
                   ),
                 ],
@@ -545,7 +536,7 @@ class _PostCardState extends State<PostCard>
             onTap: widget.disableAuthorNavigation
                 ? null
                 : () => _openAuthor(context),
-            borderRadius: BorderRadius.circular(AppRadius.sm),
+            borderRadius: BorderRadius.circular(AppShape.of(context).sm),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
               child: Column(
@@ -559,9 +550,7 @@ class _PostCardState extends State<PostCard>
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppTextStyles.feedAuthor.copyWith(
-                            color: isDark
-                                ? AppColors.textPrimaryDark
-                                : AppColors.textPrimaryLight,
+                            color: AppThemeTokens.of(context).textPrimary,
                           ),
                         ),
                       ),
@@ -583,9 +572,7 @@ class _PostCardState extends State<PostCard>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.feedTime.copyWith(
-                      color: isDark
-                          ? AppColors.textTertiaryDark
-                          : AppColors.textTertiaryLight,
+                      color: AppThemeTokens.of(context).textTertiary,
                     ),
                   ),
                 ],
@@ -611,9 +598,7 @@ class _PostCardState extends State<PostCard>
       height: 20,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
-        color: isDark
-            ? AppColors.brandSurfaceDark
-            : AppColors.feedSectionSurfaceLight,
+        color: AppThemeTokens.of(context).feedSectionSurface,
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
@@ -621,7 +606,7 @@ class _PostCardState extends State<PostCard>
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: AppTextStyles.feedBadge.copyWith(
-          color: AppColors.brandPrimary,
+          color: AppThemeTokens.of(context).primary,
         ),
       ),
     );
@@ -657,7 +642,7 @@ class _PostCardState extends State<PostCard>
                 ? Icons.favorite_rounded
                 : Icons.favorite_border_rounded,
             label: '${post.likeCount}',
-            color: post.isLiked ? AppColors.brandPrimary : secondary,
+            color: post.isLiked ? AppThemeTokens.of(context).primary : secondary,
             onTap: _toggleLike,
             scale: _likePressed ? 0.92 : 1,
           ),
@@ -689,7 +674,7 @@ class _PostCardState extends State<PostCard>
       child: InkWell(
         key: key,
         onTap: onTap,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
+        borderRadius: BorderRadius.circular(AppShape.of(context).sm),
         child: SizedBox(
           height: 44,
           child: Padding(
@@ -740,7 +725,7 @@ class _PostCardState extends State<PostCard>
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color:
-            isDark ? AppColors.surfaceMutedDark : AppColors.surfaceMutedLight,
+            AppThemeTokens.of(context).surfaceMuted,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -748,9 +733,7 @@ class _PostCardState extends State<PostCard>
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w500,
-          color: isDark
-              ? AppColors.textSecondaryDark
-              : AppColors.textSecondaryLight,
+          color: AppThemeTokens.of(context).textSecondary,
         ),
         overflow: TextOverflow.ellipsis,
       ),
@@ -768,7 +751,7 @@ class _PostCardState extends State<PostCard>
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
           color:
-              isDark ? AppColors.surfaceMutedDark : AppColors.surfaceMutedLight,
+              AppThemeTokens.of(context).surfaceMuted,
           borderRadius: BorderRadius.circular(999),
         ),
         child: Text(
@@ -776,9 +759,7 @@ class _PostCardState extends State<PostCard>
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
-            color: isDark
-                ? AppColors.textSecondaryDark
-                : AppColors.textSecondaryLight,
+            color: AppThemeTokens.of(context).textSecondary,
           ),
         ),
       ),
@@ -793,14 +774,14 @@ class _PostCardState extends State<PostCard>
         _buildStatusPill(
           icon: Icons.workspace_premium_rounded,
           label: '已入版块精华',
-          color: const Color(0xFFD97706),
+          color: const Color(0xFFD97706), // theme: fixed — 置顶、审核、点赞或等级的状态识别色
           isDark: isDark,
         ),
         if (post.homeFeaturedPending)
           _buildStatusPill(
             icon: Icons.pending_actions_rounded,
             label: '首页推荐待审核',
-            color: const Color(0xFF2563EB),
+            color: const Color(0xFF2563EB), // theme: fixed — 置顶、审核、点赞或等级的状态识别色
             isDark: isDark,
           ),
       ],
@@ -990,17 +971,13 @@ class _PostCardState extends State<PostCard>
         padding: const EdgeInsets.symmetric(horizontal: 6),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isDark
-              ? AppColors.feedFeaturedSurfaceDark
-              : AppColors.feedFeaturedSurfaceLight,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
+          color: AppThemeTokens.of(context).feedFeaturedSurface,
+          borderRadius: BorderRadius.circular(AppShape.of(context).sm),
         ),
         child: Text(
           label,
           style: AppTextStyles.feedBadge.copyWith(
-            color: isDark
-                ? AppColors.feedFeaturedTextDark
-                : AppColors.feedFeaturedTextLight,
+            color: AppThemeTokens.of(context).feedFeaturedText,
           ),
         ),
       );
@@ -1012,10 +989,10 @@ class _PostCardState extends State<PostCard>
         vertical: isDesktop ? 3 : 2,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFB020).withValues(alpha: 0.16),
+        color: AppThemeTokens.of(context).feedFeaturedSurface,
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
-          color: const Color(0xFFFFB020).withValues(alpha: 0.35),
+          color: AppThemeTokens.of(context).feedFeaturedText.withValues(alpha: 0.35),
         ),
       ),
       child: Row(
@@ -1024,7 +1001,7 @@ class _PostCardState extends State<PostCard>
           Icon(
             Icons.workspace_premium_rounded,
             size: isDesktop ? 13 : 11,
-            color: const Color(0xFFD97706),
+            color: AppThemeTokens.of(context).feedFeaturedText,
           ),
           const SizedBox(width: 3),
           Text(
@@ -1032,7 +1009,7 @@ class _PostCardState extends State<PostCard>
             style: TextStyle(
               fontSize: isDesktop ? 11 : 10,
               fontWeight: FontWeight.w700,
-              color: const Color(0xFFD97706),
+              color: AppThemeTokens.of(context).feedFeaturedText,
             ),
           ),
         ],
@@ -1047,10 +1024,10 @@ class _PostCardState extends State<PostCard>
         vertical: isDesktop ? 3 : 2,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFC857).withValues(alpha: 0.16),
+        color: const Color(0xFFFFC857).withValues(alpha: 0.16), // theme: fixed — 置顶、审核、点赞或等级的状态识别色
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
-          color: const Color(0xFFFFC857).withValues(alpha: 0.4),
+          color: const Color(0xFFFFC857).withValues(alpha: 0.4), // theme: fixed — 置顶、审核、点赞或等级的状态识别色
         ),
       ),
       child: Row(
@@ -1059,7 +1036,7 @@ class _PostCardState extends State<PostCard>
           Icon(
             Icons.visibility_off_outlined,
             size: isDesktop ? 13 : 11,
-            color: const Color(0xFFD48806),
+            color: const Color(0xFFD48806), // theme: fixed — 置顶、审核、点赞或等级的状态识别色
           ),
           const SizedBox(width: 3),
           Text(
@@ -1067,7 +1044,7 @@ class _PostCardState extends State<PostCard>
             style: TextStyle(
               fontSize: isDesktop ? 11 : 10,
               fontWeight: FontWeight.w700,
-              color: const Color(0xFFD48806),
+              color: const Color(0xFFD48806), // theme: fixed — 置顶、审核、点赞或等级的状态识别色
             ),
           ),
         ],
@@ -1082,10 +1059,10 @@ class _PostCardState extends State<PostCard>
         vertical: isDesktop ? 3 : 2,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFFFF4D4F).withValues(alpha: 0.12),
+        color: const Color(0xFFFF4D4F).withValues(alpha: 0.12), // theme: fixed — 置顶、审核、点赞或等级的状态识别色
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
-          color: const Color(0xFFFF4D4F).withValues(alpha: 0.32),
+          color: const Color(0xFFFF4D4F).withValues(alpha: 0.32), // theme: fixed — 置顶、审核、点赞或等级的状态识别色
         ),
       ),
       child: Row(
@@ -1094,7 +1071,7 @@ class _PostCardState extends State<PostCard>
           Icon(
             Icons.push_pin_rounded,
             size: isDesktop ? 13 : 11,
-            color: const Color(0xFFD92D20),
+            color: const Color(0xFFD92D20), // theme: fixed — 置顶、审核、点赞或等级的状态识别色
           ),
           const SizedBox(width: 3),
           Text(
@@ -1102,7 +1079,7 @@ class _PostCardState extends State<PostCard>
             style: TextStyle(
               fontSize: isDesktop ? 11 : 10,
               fontWeight: FontWeight.w700,
-              color: const Color(0xFFD92D20),
+              color: const Color(0xFFD92D20), // theme: fixed — 置顶、审核、点赞或等级的状态识别色
             ),
           ),
         ],
@@ -1290,7 +1267,7 @@ class _PostCardState extends State<PostCard>
                   post.isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
                   size: 16,
                   color: post.isLiked
-                      ? const Color(0xFFFF6B6B)
+                      ? const Color(0xFFFF6B6B) // theme: fixed — 置顶、审核、点赞或等级的状态识别色
                       : (isDark
                           ? AppColors.iconMutedDark
                           : AppColors.iconMutedLight),
@@ -1301,10 +1278,8 @@ class _PostCardState extends State<PostCard>
                   style: TextStyle(
                     fontSize: 12,
                     color: post.isLiked
-                        ? const Color(0xFFFF6B6B)
-                        : (isDark
-                            ? AppColors.textSecondaryDark
-                            : AppColors.textSecondaryLight),
+                        ? const Color(0xFFFF6B6B) // theme: fixed — 置顶、审核、点赞或等级的状态识别色
+                        : (AppThemeTokens.of(context).textSecondary),
                   ),
                 ),
               ],
@@ -1334,9 +1309,7 @@ class _PostCardState extends State<PostCard>
                   '${post.replyCount}',
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark
-                        ? AppColors.textSecondaryDark
-                        : AppColors.textSecondaryLight,
+                    color: AppThemeTokens.of(context).textSecondary,
                   ),
                 ),
               ],
@@ -1354,7 +1327,7 @@ class _PostCardState extends State<PostCard>
         vertical: 0.5,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFF6B8EFF).withValues(alpha: 0.15),
+        color: const Color(0xFF6B8EFF).withValues(alpha: 0.15), // theme: fixed — 置顶、审核、点赞或等级的状态识别色
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
@@ -1363,7 +1336,7 @@ class _PostCardState extends State<PostCard>
           fontSize: 8,
           height: 1.15,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF6B8EFF),
+          color: Color(0xFF6B8EFF), // theme: fixed — 置顶、审核、点赞或等级的状态识别色
         ),
       ),
     );

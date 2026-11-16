@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../campus/campus_theme.dart';
+import '../../theme/app_theme_tokens.dart';
 import '../app_card.dart';
 
 /// 设置页分组卡片组件
@@ -44,7 +44,7 @@ class SettingsSection extends StatelessWidget {
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: appContentSecondaryColor(
-                      context, isDark ? Colors.white70 : CampusTheme.subText),
+                      context, AppThemeTokens.of(context).textSecondary),
                 ),
               ),
             ),
@@ -54,12 +54,12 @@ class SettingsSection extends StatelessWidget {
           else
             AppCardSurface(
               decoration: BoxDecoration(
-                color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+                color: AppThemeTokens.of(context).card,
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(
                   color: isDark
                       ? Colors.white.withValues(alpha: 0.08)
-                      : CampusTheme.softBorder,
+                      : AppThemeTokens.of(context).divider,
                 ),
                 boxShadow: isDark
                     ? null

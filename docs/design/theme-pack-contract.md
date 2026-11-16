@@ -152,7 +152,7 @@ UTF-8 编码，大小不超过 64KB。
 | `textPrimary` | 正文 | `#1F2328` | `#F2F4F3` | |
 | `textSecondary` | 次要文字 | `#747B82` | `#A7AFAB` | |
 | `textTertiary` | 辅助文字 | `#9AA1A1` | `#8E9894` | |
-| `textDisabled` | 禁用文字 | P0 回填 | P0 回填 | |
+| `textDisabled` | 禁用文字 | `#B8BDBA` | `#5A615D` | |
 | `divider` | 分割线 | `#E8EEE9` | `#252A2C` | ✓ |
 | `outline` | 控件描边 | `#E2EFEA` | `#303638` | ✓ |
 | `inputFill` | 输入框 | `#F2F3F1` | `#24282A` | |
@@ -160,21 +160,23 @@ UTF-8 编码，大小不超过 64KB。
 | `searchFill` | 搜索框 | `#F1F2F0` | `#24282A` | |
 | `tagBackground` | 标签底色 | `#EEF2F0` | `#282D30` | |
 | `tagText` | 标签文字 | `#147C72` | `#90D5C7` | |
-| `navBackground` | 底栏与侧栏 | P0 回填 | P0 回填 | ✓ |
-| `navSelected` | 底栏选中项 | P0 回填 | P0 回填 | |
-| `navUnselected` | 底栏未选中项 | P0 回填 | P0 回填 | |
-| `appBarBackground` | 顶栏 | P0 回填 | P0 回填 | ✓ |
-| `appBarForeground` | 顶栏内容 | P0 回填 | P0 回填 | |
+| `navBackground` | 底栏与侧栏 | `#9EEDF0F5` | `#B8252A32` | ✓ |
+| `navSelected` | 底栏选中项 | `#1765DA` | `#84BAFF` | |
+| `navUnselected` | 底栏未选中项 | `#4B525E` | `#D1D5DB` | |
+| `appBarBackground` | 顶栏 | `#F4FBF8` | `#0E1513` | ✓ |
+| `appBarForeground` | 顶栏内容 | `#161D1C` | `#DDE4E1` | |
 | `bubbleIncoming` | 收到的消息气泡 | `#F0F1EF` | `#262A2C` | |
 | `bubbleIncomingText` | 收到的消息文字 | `#1F2328` | `#F2F4F3` | |
 | `bubbleOutgoing` | 发出的消息气泡 | `#76C4FF` | `#80C4FC` | |
 | `bubbleOutgoingText` | 发出的消息文字 | `#1F2328` | `#111315` | |
-| `feedSectionSurface` | 首页版块角标 | `#E8F5F1` | P0 回填 | |
+| `feedSectionSurface` | 首页版块角标 | `#E8F5F1` | `#162B28` | |
 | `feedFeaturedSurface` | 精华角标底色 | `#FFF3E0` | `#3A2A18` | |
 | `feedFeaturedText` | 精华角标文字 | `#D97706` | `#F2B15A` | |
 | `courseCardText` | 课表卡片文字 | `#1F2328` | `#FFFFFF` | |
-| `timetableGrid` | 课表网格线 | P0 回填 | P0 回填 | ✓ |
-| `timetableToday` | 课表"今天"列 | P0 回填 | P0 回填 | ✓ |
+| `timetableGrid` | 课表网格线 | `#0D000000` | `#33FFFFFF` | ✓ |
+| `timetableToday` | 课表"今天"列 | `#00000000` | `#00000000` | ✓ |
+
+默认值来源：`textDisabled` 取禁用文字色；顶栏取默认 `ColorScheme` 的 `surface` 与 `onSurface`；`feedSectionSurface` 暗色取 `brandSurfaceDark`。导航取液态底栏的选中、未选中文字和非着色器表面，表面 alpha 分别为 0.62、0.72。课表网格取横线（亮色为简洁模式），没有“今天”列底色，取透明。
 
 **默认值与对比度规则的关系**：默认的 `textSecondary` 亮色值 `#747B82`，在 `card`（`#FFFFFF`）上的对比度为 4.29，在 `background`（`#FFFAF4`）上为 4.13，达不到第 5 节要求的 4.5。
 

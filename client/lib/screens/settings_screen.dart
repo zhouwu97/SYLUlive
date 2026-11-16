@@ -1,5 +1,6 @@
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
+import '../theme/app_theme_tokens.dart';
 import 'package:provider/provider.dart';
 
 import '../platform/platform_capabilities.dart';
@@ -224,9 +225,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SettingsTile(
               icon: Icons.wb_sunny_outlined,
               iconBgColor:
-                  isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0),
+                  isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0), // theme: fixed — 设置分类图标的识别色
               iconColor:
-                  isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72),
+                  AppThemeTokens.of(context).primary,
               title: '界面设置',
               subtitle: _getAppearanceSummary(themeProvider),
               onTap: () {
@@ -241,9 +242,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SettingsTile(
               icon: Icons.notifications_none_rounded,
               iconBgColor:
-                  isDark ? const Color(0xFF1A334E) : const Color(0xFFE6F0FA),
+                  isDark ? const Color(0xFF1A334E) : const Color(0xFFE6F0FA), // theme: fixed — 设置分类图标的识别色
               iconColor:
-                  isDark ? const Color(0xFF82B1FF) : const Color(0xFF2A72D4),
+                  isDark ? const Color(0xFF82B1FF) : const Color(0xFF2A72D4), // theme: fixed — 设置分类图标的识别色
               title: '通知与后台',
               subtitle: _getNotificationSummary(),
               trailing: pendingIssues > 0
@@ -272,9 +273,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SettingsTile(
               icon: Icons.shield_outlined,
               iconBgColor:
-                  isDark ? const Color(0xFF1B382B) : const Color(0xFFE6F5EE),
+                  isDark ? const Color(0xFF1B382B) : const Color(0xFFE6F5EE), // theme: fixed — 设置分类图标的识别色
               iconColor:
-                  isDark ? const Color(0xFF81C784) : const Color(0xFF1E8256),
+                  isDark ? const Color(0xFF81C784) : const Color(0xFF1E8256), // theme: fixed — 设置分类图标的识别色
               title: '账号与安全',
               subtitle: '学号、邮箱、密码和教务授权',
               onTap: () {
@@ -299,9 +300,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SettingsTile(
               icon: Icons.lock_outline_rounded,
               iconBgColor:
-                  isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0),
+                  isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0), // theme: fixed — 设置分类图标的识别色
               iconColor:
-                  isDark ? const Color(0xFF7ED6C5) : const Color(0xFF0D7B74),
+                  isDark ? const Color(0xFF7ED6C5) : const Color(0xFF0D7B74), // theme: fixed — 设置分类图标的识别色
               title: '隐私与数据',
               subtitle: '授权管理、查阅导出与账号注销',
               onTap: () {
@@ -351,9 +352,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SettingsTile(
               icon: Icons.build_outlined,
               iconBgColor:
-                  isDark ? const Color(0xFF3D2A1A) : const Color(0xFFFDF0E6),
+                  isDark ? const Color(0xFF3D2A1A) : const Color(0xFFFDF0E6), // theme: fixed — 设置分类图标的识别色
               iconColor:
-                  isDark ? const Color(0xFFFFB74D) : const Color(0xFFE07A2B),
+                  isDark ? const Color(0xFFFFB74D) : const Color(0xFFE07A2B), // theme: fixed — 设置分类图标的识别色
               title: '诊断与反馈',
               subtitle: '通知诊断、运行日志和问题反馈',
               onTap: () {
@@ -368,9 +369,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SettingsTile(
               icon: Icons.info_outline_rounded,
               iconBgColor:
-                  isDark ? const Color(0xFF1A334E) : const Color(0xFFE6F0FA),
+                  isDark ? const Color(0xFF1A334E) : const Color(0xFFE6F0FA), // theme: fixed — 设置分类图标的识别色
               iconColor:
-                  isDark ? const Color(0xFF82B1FF) : const Color(0xFF2A72D4),
+                  isDark ? const Color(0xFF82B1FF) : const Color(0xFF2A72D4), // theme: fixed — 设置分类图标的识别色
               title: '关于沈理校园',
               subtitle: '版本、检查更新与开源信息',
               onTap: () {
@@ -390,7 +391,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 4),
           Container(
             decoration: BoxDecoration(
-              color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+              color: AppThemeTokens.of(context).card,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: CampusTheme.red.withValues(alpha: 0.3),

@@ -65,7 +65,7 @@
 
 | 页面 | 文件 |
 | --- | --- |
-| 首页 | `home_screen.dart` |
+| 首页 | `shuitie_screen.dart`（信息流），`home_screen.dart`（导航外壳与发布按钮） |
 | 集市 | `market_screen.dart` |
 | 课表 | `course_schedule_screen.dart`、`screens/schedule/` |
 | 校园 | `campus_screen.dart` |
@@ -77,14 +77,14 @@
 
 **连带迁移的共享组件**：`liquid_bottom_nav.dart`、`floating_bottom_nav.dart`、`post_card.dart`、`market_post_card.dart`、`home_service_drawer.dart`、`widgets/campus/`、`widgets/settings/`、`widgets/ai/`、`widgets/course/`。
 
-## 3. P0 语义 Token 化（外观不变）
+## 3. P0 语义 Token 化（默认外观与已确认的颜色统一）
 
 ### 3.1 步骤
 
 1. **截取迁移前的基线。** 在迁移前的提交上，写一个临时比对测试 `client/test/theme_parity/parity_test.dart`：
-   - 九个页面，视口 390×844，亮色和暗色各一张，使用 `test/helpers/` 中已有的 fixtures；
+   - 本次试点为首页、设置页和帖子卡片，视口 390×844，亮色和暗色共六张，使用 `test/helpers/` 中已有的 fixtures；其余页面迁移时再建立对应的明暗基线；
    - 运行 `flutter test test/theme_parity --update-goldens`。
-   - 整个 `client/test/theme_parity/` 目录加入 `.gitignore`；P0 完成后删除这个目录，不提交。
+   - 整个 `client/test/theme_parity/` 目录加入 `.gitignore`；P0 完成后移出测试目录，不提交。最终六张试点基线保存到 `artifacts/theme-p0/baseline/`，该目录只保留图片。
 2. **新增 `client/lib/theme/app_palette.dart`**：
    - `AppPalette extends ThemeExtension<AppPalette>`，字段为契约第 3 节的全部 Token，加上 `coursePalette`；
    - `lerp` 中，颜色用 `Color.lerp`，色板在 t 小于 0.5 时取 a、否则取 b；
@@ -116,29 +116,36 @@
    - 官方主题"沈理青"以 Token 默认值加上上表的映射来渲染，所以按钮会变成 `#147C72`，属于 P5 验收的有意视觉变化。
    - `primaryColor`、`scaffoldBackgroundColor`、`canvasColor` 和分割线颜色改为从 palette 读取。
    - 默认路径的 `ColorScheme` 与现在完全相同，由像素比对来证明。
-5. **`AppThemeTokens`** 的每个 getter 改为读取 `Theme.of(context).extension<AppPalette>()!`，原有公开接口不变，并为新 Token 补充 getter。
+5. **`AppThemeTokens`** 的每个 getter 改为读取 `Theme.of(context).extension<AppPalette>() ?? AppPalette.defaults(Theme.of(context).brightness)`，原有公开接口不变，并为新 Token 补充 getter。
 6. **`CampusTheme`** 中的品牌、表面、文字、边框颜色改为从 palette 读取。blue、orange、green、cyan、red、dining 这几个功能识别色保持不变。
 7. **课表**：`getCourseColor` 增加参数 `List<Color> palette`，调用方传入 `AppThemeTokens.of(context).coursePalette`。
-8. **先做试点**：只迁移首页、设置页和 `post_card.dart`。然后在测试里临时注入一套明显不同的 palette（例如把 primary 设为品红），确认这三处的页面背景、文字、按钮、开关全部变色，没有遗漏的控件。试点通过后，再迁移其余页面。
+8. **先做试点**：只迁移首页、设置页和 `post_card.dart`。然后在测试里临时注入一套明显不同的 palette（例如把 primary 设为品红），确认这三处的页面背景、文字、按钮、开关全部变色，没有遗漏的控件。本次 P0 提交先验收这三处试点并等待确认；其余页面迁移时再执行全范围门禁。
 9. **迁移页面和组件**：
    - `Color(0x…)` 字面量，以及 `AppColors` 中品牌、表面、文字、边框、输入、聊天、首页角标类的常量，替换为 Token；
    - 状态色继续使用 `AppColors`；
    - 和主题无关的纯装饰色保留原值，并在行尾加注释 `// theme: fixed`；
    - 读取 context 后不能再用 `const` 的地方，去掉 `const`。
 
+已确认的试点颜色统一：
+
+- 首页暗色背景使用 `background`；首页帖子正文使用 `textPrimary`；设置页暗色标题和副标题使用 `textPrimary`、`textSecondary`；首页发布按钮使用 `primary`、`onPrimary`；设置开关选中圆钮使用 `onPrimary`，未选中圆钮使用 `textPrimary`。
+- 这些角色使用契约现有 Token，接受对应的颜色变化，不新增 Token。更新对应基线前保存改动前后截图，其他截图保持零像素差。
+- 试点扫描包含 `shuitie_screen.dart`、`home_screen.dart`、`settings_screen.dart`、`post_card.dart` 和 `widgets/settings/`；状态、分类识别色及固定预览底图保留现值，并标明 `// theme: fixed`。
+- 缺少扩展的局部 `Theme(data: ...)` 使用当前明暗模式的默认调色板及标准圆角，不要求测试壳挂载 `AppTheme`。
+
 ### 3.2 验证标准
 
 | 项 | 方法 | 通过条件 |
 | --- | --- | --- |
-| 外观不变 | 在迁移后运行 `flutter test test/theme_parity` | 18 张图零像素差。出现差异时修改代码，不更新基线 |
-| 迁移完整 | 运行下方的扫描命令 | 先在迁移前运行一次，确认能命中已知的颜色字面量（例如 `toolbox_screen.dart`），以证明命令有效；迁移后再运行，输出为空。两次的命令和输出都写进报告 |
+| 外观不变 | 在迁移后运行 `flutter test test/theme_parity` | 本次六张试点截图除上述已确认的颜色统一外，零像素差。只更新受确认变更影响的基线，其他基线不更新 |
+| 迁移完整 | 本次先运行试点扫描，其余页面迁移后运行下方全范围扫描 | 迁移前确认命中已知颜色；迁移后对应范围输出为空。两次的命令和输出都写进报告 |
 | 静态检查与回归 | `flutter analyze`；`flutter test --reporter compact` | 没有新增问题；全部通过 |
-| 真机 | 中端 Android 机，亮暗模式下各打开九个页面一次 | 与迁移前一致 |
+| 真机 | 中端 Android 机，亮暗模式下打开当前迁移页面；全部迁移后覆盖九个页面 | 除确认的颜色统一外，与迁移前一致 |
 
 扫描命令如下。表达式中的 `|` 是正则的"或"，不能写成 `\|`：
 
 ```bash
-cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|composer|searchBar|message|feed)' lib/screens/home_screen.dart lib/screens/market_screen.dart lib/screens/course_schedule_screen.dart lib/screens/schedule lib/screens/campus_screen.dart lib/screens/profile_screen.dart lib/screens/user_home_screen.dart lib/screens/ai lib/screens/toolbox_screen.dart lib/screens/settings_screen.dart lib/screens/settings lib/widgets/liquid_bottom_nav.dart lib/widgets/floating_bottom_nav.dart lib/widgets/post_card.dart lib/widgets/market_post_card.dart lib/widgets/home_service_drawer.dart lib/widgets/campus lib/widgets/settings lib/widgets/ai lib/widgets/course | rg -v 'theme: fixed'
+cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|composer|searchBar|message|feed)' lib/screens/shuitie_screen.dart lib/screens/home_screen.dart lib/screens/market_screen.dart lib/screens/course_schedule_screen.dart lib/screens/schedule lib/screens/campus_screen.dart lib/screens/profile_screen.dart lib/screens/user_home_screen.dart lib/screens/ai lib/screens/toolbox_screen.dart lib/screens/settings_screen.dart lib/screens/settings lib/widgets/liquid_bottom_nav.dart lib/widgets/floating_bottom_nav.dart lib/widgets/post_card.dart lib/widgets/market_post_card.dart lib/widgets/home_service_drawer.dart lib/widgets/campus lib/widgets/settings lib/widgets/ai lib/widgets/course | rg -v 'theme: fixed'
 ```
 
 | 项 | 方法 | 通过条件 |

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../campus/campus_theme.dart';
+import '../../theme/app_theme_tokens.dart';
 import '../app_card.dart';
 
 class CampusSegmentItem<T> {
@@ -28,13 +28,11 @@ class CampusSegmentedControl<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return AppCardSurface(
       height: 48,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF26292E) : const Color(0xFFEFECE6),
+        color: AppThemeTokens.of(context).surfaceMuted,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
@@ -48,7 +46,6 @@ class CampusSegmentedControl<T> extends StatelessWidget {
               child: _CampusSegmentButton<T>(
                 item: item,
                 isSelected: isSelected,
-                isDark: isDark,
                 onTap: () => onSelectionChanged(item.value),
               ),
             ),
@@ -62,13 +59,11 @@ class CampusSegmentedControl<T> extends StatelessWidget {
 class _CampusSegmentButton<T> extends StatefulWidget {
   final CampusSegmentItem<T> item;
   final bool isSelected;
-  final bool isDark;
   final VoidCallback onTap;
 
   const _CampusSegmentButton({
     required this.item,
     required this.isSelected,
-    required this.isDark,
     required this.onTap,
   });
 
@@ -104,20 +99,23 @@ class __CampusSegmentButtonState<T> extends State<_CampusSegmentButton<T>> {
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: widget.onTap,
-          focusColor: CampusTheme.primary.withValues(alpha: 0.15),
-          highlightColor: CampusTheme.primary.withValues(alpha: 0.08),
-          splashColor: CampusTheme.primary.withValues(alpha: 0.12),
+          focusColor:
+              AppThemeTokens.of(context).primary.withValues(alpha: 0.15),
+          highlightColor:
+              AppThemeTokens.of(context).primary.withValues(alpha: 0.08),
+          splashColor:
+              AppThemeTokens.of(context).primary.withValues(alpha: 0.12),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeInOut,
             decoration: BoxDecoration(
               color: widget.isSelected
-                  ? (widget.isDark ? const Color(0xFF383C42) : Colors.white)
+                  ? AppThemeTokens.of(context).surfaceElevated
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(12),
               border: _isFocused
                   ? Border.all(
-                      color: CampusTheme.primary,
+                      color: AppThemeTokens.of(context).primary,
                       width: 2,
                     )
                   : null,
@@ -139,12 +137,8 @@ class __CampusSegmentButtonState<T> extends State<_CampusSegmentButton<T>> {
                   fontWeight:
                       widget.isSelected ? FontWeight.bold : FontWeight.w500,
                   color: widget.isSelected
-                      ? (widget.isDark
-                          ? const Color(0xFF7ED6C5)
-                          : CampusTheme.primary)
-                      : (widget.isDark
-                          ? Colors.white60
-                          : const Color(0xFF6E7278)),
+                      ? (AppThemeTokens.of(context).primary)
+                      : (AppThemeTokens.of(context).textSecondary),
                 ),
               ),
             ),

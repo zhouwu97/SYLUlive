@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
+import '../../theme/app_theme_tokens.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../app_card.dart';
@@ -26,7 +26,6 @@ class SettingsEffectOption<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     return Semantics(
       button: true,
       selected: selected,
@@ -46,9 +45,7 @@ class SettingsEffectOption<T> extends StatelessWidget {
                 child: Text(title,
                     style: AppTextStyles.bodyMedium.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: (dark
-                              ? AppColors.textPrimaryDark
-                              : AppColors.textPrimaryLight)
+                      color: (AppThemeTokens.of(context).textPrimary)
                           .withValues(alpha: enabled ? 1 : .5),
                     )),
               ),
@@ -58,10 +55,7 @@ class SettingsEffectOption<T> extends StatelessWidget {
                     textAlign: TextAlign.end,
                     style: AppTextStyles.labelMedium.copyWith(
                       color: appContentSecondaryColor(
-                              context,
-                              dark
-                                  ? AppColors.textSecondaryDark
-                                  : AppColors.textSecondaryLight)
+                              context, AppThemeTokens.of(context).textSecondary)
                           .withValues(alpha: enabled ? 1 : .5),
                     )),
               ),

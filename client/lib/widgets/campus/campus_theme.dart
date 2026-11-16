@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
+import '../../theme/app_theme_tokens.dart';
 
 class CampusTheme {
   static const Color bg = AppColors.surfacePrimaryLight;
   static const Color darkBg = AppColors.surfacePrimaryDark;
 
   static Color pageBackground(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark ? darkBg : bg;
+    return AppThemeTokens.of(context).background;
   }
 
   static const Color card = AppColors.surfaceSecondaryLight;
@@ -35,10 +37,14 @@ class CampusTheme {
   /// 校园/设置类页面时，在页面边界使用这个方法即可。
   static ThemeData withBrandAccent(ThemeData base) {
     final isDark = base.brightness == Brightness.dark;
-    final accent = isDark ? const Color(0xFF7ED6C5) : primary;
-    final onAccent = isDark ? darkBg : Colors.white;
-    final accentContainer = isDark ? const Color(0xFF1B3B36) : primaryLight;
-    final onAccentContainer = isDark ? const Color(0xFFBFEDE3) : primary;
+    final palette =
+        base.extension<AppPalette>() ?? AppPalette.defaults(base.brightness);
+    final accent = palette.primary;
+    final onAccent = isDark ? palette.background : palette.onPrimary;
+    final accentContainer =
+        isDark ? const Color(0xFF1B3B36) : palette.primaryContainer;
+    final onAccentContainer =
+        isDark ? const Color(0xFFBFEDE3) : palette.primary;
 
     return base.copyWith(
       colorScheme: base.colorScheme.copyWith(

@@ -22,7 +22,7 @@ import '../services/app_update_coordinator.dart';
 import '../services/app_resume_coordinator.dart';
 import '../services/root_page_state_service.dart';
 import '../theme/app_motion.dart';
-import '../theme/app_colors.dart';
+import '../theme/app_theme_tokens.dart';
 import '../utils/app_navigator.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
@@ -716,9 +716,9 @@ class _HomeScreenState extends State<HomeScreen>
     final isUrgent = priority == 'urgent';
     final isImportant = priority == 'important';
     final color = isUrgent
-        ? const Color(0xFFE53935)
+        ? const Color(0xFFE53935) // theme: fixed — 公告优先级的状态识别色
         : isImportant
-            ? const Color(0xFFFF9800)
+            ? const Color(0xFFFF9800) // theme: fixed — 公告优先级的状态识别色
             : Theme.of(context).primaryColor;
     final label = isUrgent
         ? '紧急'
@@ -901,12 +901,12 @@ class _HomeScreenState extends State<HomeScreen>
           child: AppCardSurface(
             constraints: const BoxConstraints(maxWidth: 520),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF161B24) : Colors.white,
+              color: AppThemeTokens.of(context).surfaceElevated,
               borderRadius: BorderRadius.circular(28),
               border: Border.all(
                 color: isDark
                     ? Colors.white.withValues(alpha: 0.06)
-                    : const Color(0xFFE7EBF3),
+                    : AppThemeTokens.of(context).outline,
               ),
               boxShadow: [
                 BoxShadow(
@@ -928,11 +928,11 @@ class _HomeScreenState extends State<HomeScreen>
                     gradient: LinearGradient(
                       colors: priority == 'urgent'
                           ? (isDark
-                              ? const [Color(0xFF4A1A1A), Color(0xFF2D1010)]
-                              : const [Color(0xFFFFF5F5), Color(0xFFFFE8E8)])
+                              ? const [Color(0xFF4A1A1A), Color(0xFF2D1010)] // theme: fixed — 公告优先级的状态识别色
+                              : const [Color(0xFFFFF5F5), Color(0xFFFFE8E8)]) // theme: fixed — 公告优先级的状态识别色
                           : (isDark
-                              ? const [Color(0xFF24334E), Color(0xFF192231)]
-                              : const [Color(0xFFF4F7FF), Color(0xFFEAF0FF)]),
+                              ? const [Color(0xFF24334E), Color(0xFF192231)] // theme: fixed — 公告优先级的状态识别色
+                              : const [Color(0xFFF4F7FF), Color(0xFFEAF0FF)]), // theme: fixed — 公告优先级的状态识别色
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
@@ -950,7 +950,7 @@ class _HomeScreenState extends State<HomeScreen>
                             height: 42,
                             decoration: BoxDecoration(
                               color: priority == 'urgent'
-                                  ? const Color(0xFFE53935)
+                                  ? const Color(0xFFE53935) // theme: fixed — 公告优先级的状态识别色
                                       .withValues(alpha: 0.15)
                                   : Theme.of(context)
                                       .primaryColor
@@ -962,7 +962,7 @@ class _HomeScreenState extends State<HomeScreen>
                                   ? Icons.warning_rounded
                                   : Icons.campaign_rounded,
                               color: priority == 'urgent'
-                                  ? const Color(0xFFE53935)
+                                  ? const Color(0xFFE53935) // theme: fixed — 公告优先级的状态识别色
                                   : Theme.of(context).primaryColor,
                             ),
                           ),
@@ -1008,7 +1008,7 @@ class _HomeScreenState extends State<HomeScreen>
                           fontSize: 22,
                           fontWeight: FontWeight.w800,
                           color:
-                              isDark ? Colors.white : const Color(0xFF111827),
+                              AppThemeTokens.of(context).textPrimary,
                         ),
                       ),
                       if (timeText.isNotEmpty) ...[
@@ -1041,14 +1041,12 @@ class _HomeScreenState extends State<HomeScreen>
                     constraints: const BoxConstraints(maxHeight: 320),
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF11161F)
-                          : const Color(0xFFF7F9FC),
+                      color: AppThemeTokens.of(context).surfaceMuted,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                         color: isDark
                             ? Colors.white.withValues(alpha: 0.05)
-                            : const Color(0xFFE9EDF5),
+                            : AppThemeTokens.of(context).divider,
                       ),
                     ),
                     child: SingleChildScrollView(
@@ -1068,31 +1066,23 @@ class _HomeScreenState extends State<HomeScreen>
                           p: TextStyle(
                             fontSize: 15,
                             height: 1.7,
-                            color: isDark
-                                ? Colors.white70
-                                : const Color(0xFF334155),
+                            color: AppThemeTokens.of(context).textSecondary,
                           ),
                           h1: TextStyle(
                               fontSize: 22,
                               height: 1.4,
                               fontWeight: FontWeight.w800,
-                              color: isDark
-                                  ? Colors.white
-                                  : const Color(0xFF0F172A)),
+                              color: AppThemeTokens.of(context).textPrimary),
                           h2: TextStyle(
                               fontSize: 19,
                               height: 1.45,
                               fontWeight: FontWeight.w700,
-                              color: isDark
-                                  ? Colors.white
-                                  : const Color(0xFF0F172A)),
+                              color: AppThemeTokens.of(context).textPrimary),
                           h3: TextStyle(
                               fontSize: 17,
                               height: 1.45,
                               fontWeight: FontWeight.w700,
-                              color: isDark
-                                  ? Colors.white
-                                  : const Color(0xFF0F172A)),
+                              color: AppThemeTokens.of(context).textPrimary),
                         ),
                         sizedImageBuilder: (config) =>
                             _buildAnnouncementImage(config, isDark),
@@ -1545,11 +1535,11 @@ class _HomeScreenState extends State<HomeScreen>
               child: FloatingActionButton(
                 heroTag: 'home_fab',
                 onPressed: () => _showPublishTypeSheet(context),
-                backgroundColor: AppColors.brandPrimary,
+                backgroundColor: AppThemeTokens.of(context).primary,
                 elevation: 2,
                 shape: const CircleBorder(),
-                child: const Icon(Icons.edit_rounded,
-                    color: Colors.white, size: 22),
+                child: Icon(Icons.edit_rounded,
+                    color: AppThemeTokens.of(context).onPrimary, size: 22),
               ),
             )
           : null,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
+import '../../theme/app_theme_tokens.dart';
 
 enum SettingsStatusBadgeType {
   success,
@@ -45,7 +46,7 @@ class SettingsStatusBadge extends StatelessWidget {
         bgColor = CampusTheme.red.withValues(alpha: isDark ? 0.2 : 0.1);
         break;
       case SettingsStatusBadgeType.neutral:
-        textColor = isDark ? Colors.white60 : CampusTheme.subText;
+        textColor = AppThemeTokens.of(context).textSecondary;
         bgColor = isDark
             ? Colors.white.withValues(alpha: 0.08)
             : Colors.grey.withValues(alpha: 0.12);

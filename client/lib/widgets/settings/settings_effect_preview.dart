@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import '../../theme/app_colors.dart';
 
 /// 玻璃特效设置共用的预览画布；实际特效仍由各自的场景组件绘制。
@@ -19,7 +19,7 @@ class SettingsEffectPreview extends StatelessWidget {
         .clamp(0.0, double.infinity);
     return ClipRRect(
       key: clipKey,
-      borderRadius: BorderRadius.circular(AppRadius.sheet),
+      borderRadius: BorderRadius.circular(AppShape.of(context).sheet),
       child: SizedBox(height: height + extraHeight, child: child),
     );
   }
@@ -41,7 +41,11 @@ class SettingsEffectPreviewBackground extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xffb1d5e2), Color(0xffecd0d7), Color(0xffdce9fa)],
+            colors: [
+              Color(0xffb1d5e2), // theme: fixed — 材质预览底图
+              Color(0xffecd0d7), // theme: fixed — 材质预览底图
+              Color(0xffdce9fa), // theme: fixed — 材质预览底图
+            ], // theme: fixed — 材质预览底图
           ),
         ),
         child: Padding(
@@ -50,7 +54,8 @@ class SettingsEffectPreviewBackground extends StatelessWidget {
             alignment: Alignment.topLeft,
             child: Text(title,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: AppColors.textPrimaryLight,
+                      color: AppColors
+                          .textPrimaryLight, // theme: fixed — 亮色预览底图上的固定前景
                     )),
           ),
         ),

@@ -5,6 +5,7 @@
 - [Emoji 资源契约](./emoji-resource-contract.md)
 - [表情导入与投稿初版背景](./emoji-import-review-plan.md)
 - [免费表情商城与创作者流程](./emoji-creator-store-plan.md)
+- [主题商城实施计划](./theme-store-plan.md)、[主题包格式契约](./theme-pack-contract.md)、[主题制作与审核细则](./theme-creation-guide.md)（决策见 [ADR-005](./adr/005-theme-package-and-store.md)）
 - [决策记录](./adr/)：竞赛排序授权和表情创作者权限等仍有效的业务决策继续适用；已撤销的品牌记录仅用于追溯。
 
 UI 状态、异步竞态、真实渲染和无障碍验证统一见 [开发与交付规范](../../DEVELOPMENT_STANDARD.md#42-flutter-与客户端)。Golden 更新规则见 [基线维护说明](../../client/test/goldens/README.md)。撤下文档不改变现有界面实现和测试。

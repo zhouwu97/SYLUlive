@@ -33,6 +33,7 @@ func newAcademicTransferTestEnv() *academicTransferTestEnv {
 	r.POST("/sessions/:id/claim", env.handler.Claim)
 	r.PUT("/sessions/:id/payload", env.handler.Upload)
 	r.DELETE("/sessions/:id", env.handler.Delete)
+	env.handler.RegisterAppRoutes(r.Group("/api/api/academic-transfer/sessions"))
 	env.router = r
 	return env
 }
@@ -141,6 +142,33 @@ func TestAcademicTransferConcurrentRetryKeepsOnePayload(t *testing.T) {
 	require.Equal(t, len(input.AppPublicKey)+len(input.Nonce)+len(input.Ciphertext), env.handler.totalBytes)
 	_, _ = env.do(t, "DELETE", "/sessions/"+id, "")
 	require.Zero(t, env.handler.totalBytes)
+}
+
+func TestAcademicTransferLegacyAppSharesSessionAndOwnershipChecks(t *testing.T) {
+	env := newAcademicTransferTestEnv()
+	_, created := env.do(t, "POST", "/sessions", "")
+	id := created["session_id"].(string)
+	legacy := "/api/api/academic-transfer/sessions/" + id
+	code, body := env.do(t, "POST", legacy+"/claim", "")
+	require.Equal(t, 200, code, body)
+	envelope := academicTransferEnvelope(t, 64)
+	code, body = env.do(t, "PUT", legacy+"/payload", envelope)
+	require.Equal(t, 200, code, body)
+	code, body = env.do(t, "GET", "/sessions/"+id, "")
+	require.Equal(t, 200, code)
+	require.Equal(t, "ready", body["status"])
+	env.user = 2
+	code, body = env.do(t, "PUT", legacy+"/payload", envelope)
+	require.Equal(t, 403, code)
+	require.Equal(t, "TRANSFER_ACCOUNT_MISMATCH", body["code"])
+	code, _ = env.do(t, "DELETE", legacy, "")
+	require.Equal(t, 204, code)
+	env.user = 1
+	code, _ = env.do(t, "GET", "/sessions/"+id, "")
+	require.Equal(t, 200, code, "其他账号不能经兼容路径删除本人会话")
+	code, _ = env.do(t, "DELETE", legacy, "")
+	require.Equal(t, 204, code)
+	require.Empty(t, env.handler.sessions)
 }
 
 func TestAcademicTransferRejectsOtherAccountAndExpiry(t *testing.T) {

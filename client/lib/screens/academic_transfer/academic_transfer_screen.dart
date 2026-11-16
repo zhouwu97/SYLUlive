@@ -15,6 +15,7 @@ import '../../providers/course_schedule_provider.dart';
 import '../../providers/edu_provider.dart';
 import '../../services/exam_schedule_repository.dart';
 import '../../widgets/app_card.dart';
+import '../../widgets/app_dialog.dart';
 import '../../widgets/app_page_background.dart';
 import '../../widgets/campus/campus_theme.dart';
 
@@ -394,7 +395,7 @@ class _AcademicTransferScreenState extends State<AcademicTransferScreen>
       await _scanner?.stop();
       if (!mounted) return;
       String? error;
-      final link = await showDialog<AcademicTransferLink>(
+      final link = await showAppDialog<AcademicTransferLink>(
         context: context,
         builder: (dialogContext) => StatefulBuilder(builder: (context, update) {
           void submit() {

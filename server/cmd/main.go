@@ -2291,9 +2291,10 @@ func main() {
 	transferRoutes := r.Group("/api/academic-transfer/sessions", middleware.AuthMiddleware(db, cfg.JWTSecret))
 	transferRoutes.POST("", academicTransfer.Create)
 	transferRoutes.GET("/:id", academicTransfer.Get)
-	transferRoutes.POST("/:id/claim", academicTransfer.Claim)
-	transferRoutes.PUT("/:id/payload", academicTransfer.Upload)
-	transferRoutes.DELETE("/:id", academicTransfer.Delete)
+	academicTransfer.RegisterAppRoutes(transferRoutes)
+	// 已安装旧版 App 曾重复拼接 /api；只兼容这三个手机操作，鉴权及归属检查完全一致。
+	legacyTransferRoutes := r.Group("/api/api/academic-transfer/sessions", middleware.AuthMiddleware(db, cfg.JWTSecret))
+	academicTransfer.RegisterAppRoutes(legacyTransferRoutes)
 
 	// 解绑是纯本机撤销操作，不访问学校系统；学校退役或旧密钥冻结期间仍必须
 	// 可用，否则用户无法撤销服务端可信身份。JWT、归属校验、事务与幂等由

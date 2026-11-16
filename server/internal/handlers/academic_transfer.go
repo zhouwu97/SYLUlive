@@ -232,6 +232,13 @@ func (h *AcademicTransferHandler) Claim(c *gin.Context) {
 	c.JSON(http.StatusOK, academicTransferView(session, now))
 }
 
+// 两个 App 路径复用同一组处理器与同一个中转会话，调用方统一挂 JWT 中间件。
+func (h *AcademicTransferHandler) RegisterAppRoutes(routes *gin.RouterGroup) {
+	routes.POST("/:id/claim", h.Claim)
+	routes.PUT("/:id/payload", h.Upload)
+	routes.DELETE("/:id", h.Delete)
+}
+
 func decodeAcademicTransferField(value string, maxEncoded int) ([]byte, bool) {
 	if value == "" || len(value) > maxEncoded {
 		return nil, false

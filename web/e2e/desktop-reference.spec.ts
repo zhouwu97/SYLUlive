@@ -1,5 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 
+async function revealFeedEnd(page: Page) {
+  const end = page.locator('.dashboard-feed-end');
+  // 等加载入口布局稳定后滚到它，避免用旧文档高度推断已到达分页触发区。
+  await end.scrollIntoViewIfNeeded();
+  await expect(end).toBeInViewport();
+}
+
 test("校园资讯按真实 item 封装进入详情并完整显示正文与官方来源", async ({ page }) => {
   await fixture(page, true);
   const article = { id: 600, title: "校园公开通知的完整标题", author_department: "校园服务中心", publish_date: "2026-11-03", content_text: "这是一则学校公开通知的完整正文。", source_url: "https://www.sylu.edu.cn/notice/test.htm" };
@@ -181,7 +188,7 @@ test("切换账号隔离迟到后续页与等级，游客关注页有明确登�
     await page.goto("./");
     await expect(page.locator(".profile-rail-card")).toContainText("Lv.7");
     await expect(page.locator(".dashboard-feed .feed-card")).toHaveCount(8);
-    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await revealFeedEnd(page);
     await expect.poll(() => pending).toBe(true);
     account = 992;
     await changeAccount();

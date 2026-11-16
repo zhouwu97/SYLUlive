@@ -171,6 +171,8 @@ AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人�
 | `PUT` | `/api/academic-transfer/sessions/:id/payload` | App | 上传一份资料；响应丢失可重试完全相同的 `{"app_public_key","nonce","ciphertext"}`，返回 `ready` 且不重复占用内存，替换内容仍返回 409 `TRANSFER_ALREADY_UPLOADED`。信封字段使用 base64url（P-256 未压缩公钥、12 字节随机数、AES-GCM 密文含标签），密文上限 600 KiB；未 claim 返回 409 `TRANSFER_NOT_CLAIMED` |
 | `DELETE` | `/api/academic-transfer/sessions/:id` | 两端 | 网页解密后清除或任一端取消，幂等返回 204 |
 
+旧版已安装 App 重复拼接 `/api` 的兼容路径仅提供 `POST /api/api/academic-transfer/sessions/:id/claim`、`PUT .../:id/payload`、`DELETE .../:id`，与规范路径共享会话、JWT及本人归属校验；不提供重复的网页创建或读取入口。新版App始终使用规范路径。
+
 错误码：`TRANSFER_SESSION_NOT_FOUND`（404，不存在或已过期）、`TRANSFER_ACCOUNT_MISMATCH`（403，扫码账号与网页账号不同）、`INVALID_TRANSFER_PAYLOAD`（400，含未知字段、编码或公钥无效）、`TRANSFER_PAYLOAD_TOO_LARGE`（413）、`TRANSFER_BUSY`（503，进程在途密文总量超过 96 MiB）。
 
 ## 4. 帖子与社区 (Posts & Replies)

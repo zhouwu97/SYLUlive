@@ -581,3 +581,64 @@
   .social-shell .post-full > .poll-card .poll-footnote { margin-top: 12px; }
   .social-shell .post-full .post-interaction { flex-wrap: nowrap; white-space: nowrap; }
 }
+
+/* ---------- 桌面细节收口（≥601px） ----------
+ * 只调间距、字重和装饰，不改栏宽与右栏卡片高度（desktop-reference e2e 精确约束）。
+ * 目标：去掉多余的渐变光晕、彩色小圆点和多色底块，让层次靠留白和细线建立。 */
+@media (min-width: 601px) {
+  /* 顶栏：发布与登录按钮和图标按钮同一高度，不再比搜索框更抢眼。 */
+  .social-shell .top-actions .header-publish { min-width: 0; height: 38px; min-height: 38px; padding-inline: 14px 16px; border-radius: var(--radius-control); font-size: var(--text-sm); }
+  .social-shell .top-actions > .avatar { width: 38px; height: 38px; min-height: 38px; flex: 0 0 38px; margin-left: 4px; font-size: 15px; }
+  .social-shell .top-actions .btn.login-button { height: 38px; min-height: 38px; padding-inline: 16px; border-radius: var(--radius-control); font-size: var(--text-sm); }
+
+  /* 侧栏资料卡：单色头像环、实心等级徽标、中性统计格；去掉紫色光斑与角标圆点。 */
+  .social-shell .profile-rail-card::before { background: linear-gradient(180deg, color-mix(in oklab, var(--brand-soft) 80%, transparent) 0, transparent 84px); }
+  .social-shell .profile-rail-card .profile-rail-avatar { padding: 2px; background: color-mix(in oklab, var(--brand) 32%, var(--surface)); box-shadow: none; }
+  .social-shell .profile-rail-card .profile-rail-head .profile-level { padding: 0 6px; border-radius: var(--radius-xs); background: var(--brand-soft); color: var(--brand-strong); line-height: 18px; }
+  :root[data-theme="dark"] .social-shell .profile-rail-card .profile-rail-head .profile-level { color: var(--brand-strong); }
+  .social-shell .profile-rail-card .profile-rail-go { background: transparent; box-shadow: none; }
+  .social-shell .profile-rail-card .profile-rail-stats { gap: 0; margin-top: 12px; padding: 8px 0; border-radius: var(--radius-control); background: var(--surface-2); }
+  .social-shell .profile-rail-card .profile-rail-stats > span { padding: 0; border-radius: 0; background: none; box-shadow: none; }
+  .social-shell .profile-rail-card .profile-rail-stats > span::after { display: none; }
+  .social-shell .profile-rail-card .profile-rail-stats > span + span::before { display: block; content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 1px; background: var(--line); }
+  .social-shell .profile-rail-card .profile-rail-stats b { font-size: var(--text-base); line-height: 20px; }
+  .social-shell .profile-rail-card .profile-rail-stats small { color: var(--text-3); font-weight: var(--weight-regular); }
+  /* 未登录时的欢迎语允许换行，不再截成「欢迎来到沈理…」。 */
+  .social-shell .profile-rail-card div.profile-rail-head b { overflow: visible; font-size: var(--text-sm); line-height: 1.4; white-space: normal; text-wrap: balance; }
+  .social-shell .profile-rail-card div.profile-rail-head p { line-height: 1.5; }
+
+  /* 侧栏导航：图标去掉彩色底块，未选中统一中性色，选中项用主色，颜色只留给当前位置。 */
+  .social-shell .sidebar .nav-item .nav-icon { background: transparent; color: var(--text-3); }
+  .social-shell .sidebar .nav-item:hover .nav-icon { color: var(--text-2); }
+  .social-shell .sidebar .nav-item.active .nav-icon,
+  .social-shell .sidebar-scroll.has-nav-ind .nav-item[data-ind-current] .nav-icon { color: var(--brand-strong); }
+  .social-shell .sidebar .nav-item .svg-icon [data-tone] { fill-opacity: 0; }
+  .social-shell .sidebar .nav-item.active .svg-icon [data-tone] { fill-opacity: .18; }
+
+  /* 首页问候卡：收紧上下留白，入口块加细边，去掉右上角光斑。 */
+  .home-hero { padding: 18px 20px 16px; }
+  .home-hero::after { display: none; }
+  .home-hero h1 { font-size: var(--text-lg); line-height: 1.4; }
+  .home-week { min-height: 30px; padding: 0 10px; }
+  .home-quick { gap: 10px; margin-top: 14px; }
+  .home-quick a { gap: 7px; min-height: 76px; border-color: var(--line-2); color: var(--text-2); }
+  .home-quick-icon { width: 34px; height: 34px; }
+
+  /* 校园页搜索：整行一体的搜索条，按钮收进输入框内，与集市搜索同形。 */
+  .campus-page .campus-search { gap: 0; margin-block: 14px 0; padding: 4px 4px 4px 14px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface); box-shadow: var(--shadow-card); }
+  .campus-page .campus-search:focus-within { border-color: var(--color-accent-border); box-shadow: 0 0 0 3px var(--brand-soft); }
+  .campus-page .campus-search input { max-width: none; height: 40px; min-height: 40px; padding: 0; border: 0; background: transparent; box-shadow: none; outline: none; }
+  .campus-page .campus-search .btn { height: 40px; min-height: 40px; padding-inline: 18px; border-color: transparent; background: var(--color-accent-fill); color: var(--color-accent-ink); }
+
+  /* 食堂：热门榜四行均分卡片高度，不在底部留一截空白。 */
+  .food-hot ol { flex: 1; grid-auto-rows: minmax(0, 1fr); }
+  .food-hot ol > li { display: flex; }
+}
+/* 宽屏食堂：实拍最多 8 张、点评最多 5 条（服务端上限），按整行排布，避免末行留出空格位。 */
+@media (min-width: 1100px) {
+  .food-feed { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .food-card-media { aspect-ratio: 3 / 2; }
+  .food-reviews { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .food-reviews > * { grid-column: span 2; }
+  .food-reviews > :nth-child(3n+1):nth-last-child(2), .food-reviews > :nth-child(3n+2):last-child { grid-column: span 3; }
+}

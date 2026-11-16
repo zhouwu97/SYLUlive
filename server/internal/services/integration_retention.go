@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// 调用者已持有用户行锁。注销、撤销协议和教务换绑与发布按同一锁顺序生效。
+// 调用者已持有用户行锁。注销、撤销协议与发布按同一锁顺序生效。
 func InvalidateUserIntegrations(tx *gorm.DB, owner uint, now time.Time) error {
 	if tx.Migrator().HasTable(&models.PersonalUploadedSnapshot{}) {
 		if err := tx.Where("user_id = ? AND snapshot_type = ?", owner, "integration_grades").Delete(&models.PersonalUploadedSnapshot{}).Error; err != nil {
@@ -21,6 +21,20 @@ func InvalidateUserIntegrations(tx *gorm.DB, owner uint, now time.Time) error {
 		return err
 	}
 	return tx.Model(&models.IntegrationAction{}).Where("owner_id = ? AND state = ?", owner, "pending").Updates(map[string]interface{}{"state": "invalidated", "payload": "{}", "confirm_nonce_hash": "", "confirm_expires_at": nil}).Error
+}
+
+// 学校换绑／解绑只清除旧学校资料，保留本站账号的 QQ 连接、签到和公开社区授权。
+// 调用者持有用户行锁，不能让旧资料在身份切换与重新同步之间被继续读取。
+func InvalidateUserAcademicIntegrationData(tx *gorm.DB, owner uint) error {
+	if tx.Migrator().HasTable(&models.PersonalUploadedSnapshot{}) {
+		if err := tx.Where("user_id = ? AND snapshot_type IN ?", owner, []string{"integration_grades", PersonalSnapshotTypeErke}).Delete(&models.PersonalUploadedSnapshot{}).Error; err != nil {
+			return err
+		}
+	}
+	if tx.Migrator().HasTable(&models.AcademicSnapshot{}) {
+		return tx.Where("user_id = ? AND dataset_type = ?", owner, "grades").Delete(&models.AcademicSnapshot{}).Error
+	}
+	return nil
 }
 
 // 小规模定时清理复用 PostgreSQL；不为凭据与草稿维护另一个队列。

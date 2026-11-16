@@ -51,7 +51,7 @@ try {
   diagnostics.phase=action;
   if(action==='approve') {
     await page.getByRole('button',{name:'查看授权请求',exact:true}).click();
-    for(const name of [/读取本人主动同步的成绩/,/读取本人主动同步的二课/]) {
+    for(const name of [/查看本人签到状态/,/读取本人主动同步的成绩/,/读取本人主动同步的二课/]) {
       const box=page.getByRole('checkbox',{name});
       await expect(box).not.toBeChecked();
       await box.check();

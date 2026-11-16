@@ -94,12 +94,19 @@ async def main():
     client=BusinessClient(origin,MemoryStore())
     steps=[]
     try:
-        device=await client.begin(str(uuid.uuid4()),"跨端合成 AstrBot",True,personal=True,bot_reply=True,bot_post=True)
+        device=await client.begin(str(uuid.uuid4()),"跨端合成 AstrBot",True,personal=True,checkin=True,bot_reply=True,bot_post=True)
         await web("approve",device["user_code"])
         await asyncio.sleep(max(0,client.pending["next"]-time.monotonic())+.1)
         await client.poll()
         assert "academic:grades:read" in client.tokens["scope"]
         steps.append("web_device_authorization")
+        try: await client.call("GET","/me/grades",params={"offset":0,"limit":20})
+        except IntegrationProblem as error: assert error.code=="academic_sync_required"
+        else: raise AssertionError("Unsynced academic data should require website repair")
+        signed=await client.call("POST","/me/checkin",payload={})
+        assert signed["data"]["already"] is False
+        await client.call("GET","/binding")
+        steps.append("unverified_account_connects_and_checks_in_despite_missing_academic_data")
         await web("bot")
         steps.append("web_create_explicit_permissions_enable_bot")
         await web("sync")

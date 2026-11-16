@@ -165,7 +165,7 @@ func (s *IntegrationActionService) UpdateManagedBot(ctx context.Context, owner u
 			bot.Revision++
 			return tx.Save(&bot).Error
 		}
-		if _, err := s.Auth.eligible(tx, user, nil); err != nil {
+		if err := s.Auth.eligible(tx, user); err != nil {
 			return err
 		}
 		if _, err := s.eligibleCommunityRules(tx, user); err != nil {

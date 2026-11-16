@@ -52,6 +52,12 @@ func (s *IntegrationAuthService) ReadPersonal(ctx context.Context, expected mode
 		}
 		var lookup academic.SnapshotLookup
 		if dataset == "grades" {
+			identity, err := s.personalAcademicContext(tx, user.ID)
+			if err != nil {
+				return integrationError("personal_data_unavailable", 503)
+			}
+			// 学校资料按当前上下文匹配；QQ 凭据不再固定在创建时的学校身份上。
+			binding.AcademicBindingID, binding.AcademicVersion = identity.ID, identity.BindingVersion
 			uploaded, err := s.uploadedGrades(ctx, tx, binding)
 			if err != nil {
 				return integrationError("personal_data_unavailable", 503)

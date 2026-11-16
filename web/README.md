@@ -50,7 +50,7 @@ pnpm dev
 
 「社区机器人」提供一人一个独立 AI 机器人的创建、命名、启用和暂停。页面分别显示服务端自动评论开关与专用授权，启用账号不代表 AstrBot 后台运行。自动评论 scope 默认不选，须本人明确选择；不改旧授权。记忆只在本机 AstrBot 保存，群不进长期库，公共后台无法读取私聊记忆。
 
-本人绑定成功后回原 QQ 聊天用 `/sylu-status` 核对领取；`/sylu-checkin` 签到，`/sylu-checkin-status` 查状态，成绩和二课还需同步并授权对应摘要。绑定不会开启每日自动签到。`/web/connected-apps/actions/:id` 显示不可变草稿并由本人确认。提案、机器人自主评论和自主发帖权限默认不选，草稿仍须本人逐条确认；只有独立获准的机器人可自动参与。当前服务的核对、批准、机器人管理和本人确认发布均使用有效登录，不额外要求再次输入密码；旧服务返回 `recent_authentication_required` 时仍保留兼容验证，验证后必须重新核对，不自动重放创建、授权或发布。帖子来源或授权变化时，页面禁止发布并要求重读。
+本人绑定不要求学校核验或预先连接教务。缺少学校资料只影响成绩／二课查询，可从 `/web/connected-apps?purpose=personal&view=data` 在网页准备并同步，不需要重绑 QQ，也不影响签到。本人绑定成功后回原 QQ 聊天用 `/sylu-status` 核对领取；`/sylu-checkin` 签到，`/sylu-checkin-status` 查状态，成绩和二课还需同步并授权对应摘要。绑定不会开启每日自动签到。`/web/connected-apps/actions/:id` 显示不可变草稿并由本人确认。提案、机器人自主评论和自主发帖权限默认不选，草稿仍须本人逐条确认；只有独立获准的机器人可自动参与。当前服务的核对、批准、机器人管理和本人确认发布均使用有效登录，不额外要求再次输入密码；旧服务返回 `recent_authentication_required` 时仍保留兼容验证，验证后必须重新核对，不自动重放创建、授权或发布。帖子来源或授权变化时，页面禁止发布并要求重读。
 
 详见 [插件安装与本地配置](../astrbot_plugin_sylulive/README.md)。本地开发务必设置前述 `SYLULIVE_API_ORIGIN`，插件与 `INTEGRATION_PUBLIC_ORIGIN` 均指向本地网页 origin 5173。未启用后端新集成时，这些页面不会伪装成功。该入口不改变现有 Web/Flutter 校园 AI。
 

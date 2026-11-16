@@ -102,6 +102,7 @@ function purposeLink(params: URLSearchParams, purpose: AssistantPurpose) {
   const next = new URLSearchParams(params);
   next.set("purpose", purpose);
   next.delete("guide");
+  next.delete("view");
   return `/connected-apps?${next}`;
 }
 const botScopeDependencies = ["community:read", "actions:read_own", "community:propose"];
@@ -133,7 +134,7 @@ const errors: Record<string, string> = {
   recent_authentication_required:
     "继续前请验证当前账号的密码。验证成功后可继续本次操作，无需重新登录。",
   academic_verification_required:
-    "当前账号尚无符合要求的教务核验。请在账号设置完成受支持的身份核验；本地自报资料不能用于此授权。",
+    "连接本站账号和签到不需要教务核验。当前请求仍被此限制拦住，请联系维护者处理；无需重新绑定教务。",
   source_changed: "原帖或回复内容已变化，请让助手重新读取并生成草稿。",
   source_unavailable: "原帖或回复已不可用，此草稿不能发布。",
   draft_expired: "草稿已过期，请让助手重新生成。",
@@ -650,19 +651,21 @@ function PersonalGuide() {
       <li>回原聊天发送 <code>/sylu-status</code> 核对连接。签到用 <code>/sylu-checkin</code>，签到状态用 <code>/sylu-checkin-status</code>。</li>
       <li>查询成绩用 <code>/sylu-grades</code>，二课用 <code>/sylu-erke</code>。需先在「个人资料同步」同步对应摘要，并批准对应权限；查询结果会标明同步时间，不是学校实时查询。</li>
     </ol>
-    <p className="integration-hint">功能和群聊入口由部署者开放。遇到权限不足，先核对本人的授权，再联系部署者；无需安装 AstrBot 或创建社区机器人。绑定不会开启每日自动签到。</p>
+    <p className="integration-hint">绑定本站账号、查看连接和本人签到无需教务核验。成绩、二课没有资料或学校连接失败时，在网页「个人资料同步」重新连接并准备资料；这些问题不会断开 QQ 或影响签到。功能和群聊入口仍由部署者开放，绑定不会开启每日自动签到。</p>
   </section>;
 }
 function AssistantWorkspace({ nickname, purpose }: { nickname: string; purpose: AssistantPurpose }) {
   const [params] = useSearchParams();
-  const [view, setView] = useState<AssistantView>(params.get("user_code") || purpose === "personal" ? "connection" : params.get("guide") === "astrbot" ? "guide" : "bot");
+  const dataEntry = purpose === "personal" && params.get("view") === "data";
+  const [view, setView] = useState<AssistantView>(params.get("user_code") ? "connection" : dataEntry ? "data" : purpose === "personal" ? "connection" : params.get("guide") === "astrbot" ? "guide" : "bot");
   const urlCode = params.get("user_code") || "", urlGuide = params.get("guide") || "";
-  const previousEntry = useRef({ code: urlCode, guide: urlGuide });
+  const previousEntry = useRef({ code: urlCode, guide: urlGuide, data: dataEntry });
   useEffect(() => {
     if (urlCode && previousEntry.current.code !== urlCode) setView("connection");
+    else if (!urlCode && dataEntry && !previousEntry.current.data) setView("data");
     else if (!urlCode && urlGuide === "astrbot" && previousEntry.current.guide !== urlGuide) setView("guide");
-    previousEntry.current = { code: urlCode, guide: urlGuide };
-  }, [urlCode, urlGuide]);
+    previousEntry.current = { code: urlCode, guide: urlGuide, data: dataEntry };
+  }, [urlCode, urlGuide, dataEntry]);
   const connections = useApi<ConnectionsResult>("/api/connected-apps");
   return <>
     <p className="integration-current-account">当前校园账号：<strong>{nickname}</strong>。请核对是你本人，勿替他人授权。</p>
@@ -908,7 +911,7 @@ function ConnectionPanel({ nickname, view, query: q, onBot, onGuide, purpose }: 
       <div id="assistant-connection" hidden={view !== "connection"} className="integration-connections">
       {requestOpen && <section id="new-astrbot-connection" className="panel panel-pad integration-panel" aria-busy={busy}>
         <header className="integration-section-head"><Icon name="monitor" size={22} /><h2 ref={requestHeading} tabIndex={-1}>{purpose === "personal" ? "核对本人绑定请求" : "核对连接请求"}</h2></header>
-        {purpose === "personal" ? <p className="integration-description">确认下方是你本人在原 QQ 聊天发起的请求，按需选择签到或查询权限。无需创建机器人或进入 AstrBot 后台。</p> : <ol className="astrbot-guide-steps">
+        {purpose === "personal" ? <p className="integration-description">确认下方是你本人在原 QQ 聊天发起的请求，按需选择签到或查询权限。连接和签到无需教务核验；成绩、二课可以连接成功后再准备。</p> : <ol className="astrbot-guide-steps">
           <li>在与机器人的原聊天发送 <code>/sylu-connect</code>，取得本次官网链接或一次性连接码。无需先断开现有连接。</li>
           <li>打开机器人给的新链接，或在下方输入新码并点击「查看授权请求」。</li>
           <li>选择自动浏览、评论或发帖所需权限，核对外发范围后点击「授权此助手」。已有连接时，还需确认替换旧授权。</li>

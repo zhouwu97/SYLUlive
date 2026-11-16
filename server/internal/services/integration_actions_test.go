@@ -89,7 +89,7 @@ func TestIntegrationActionOwnerConfirmationAndIdempotency(t *testing.T) {
 	require.Zero(t, post.ViewCount)
 }
 func TestIntegrationDraftBlockingAndRollback(t *testing.T) {
-	for _, reason := range []string{"revoked", "identity_changed", "hidden", "edited", "expired", "nonce_expired", "muted", "rules", "binding_scope", "audit_failure"} {
+	for _, reason := range []string{"revoked", "account_session_changed", "hidden", "edited", "expired", "nonce_expired", "muted", "rules", "binding_scope", "audit_failure"} {
 		t.Run(reason, func(t *testing.T) {
 			db, s, b, post := integrationActionFixture(t)
 			ctx := context.Background()
@@ -99,8 +99,8 @@ func TestIntegrationDraftBlockingAndRollback(t *testing.T) {
 			switch reason {
 			case "revoked":
 				require.NoError(t, s.Auth.Revoke(ctx, 1, b.ID))
-			case "identity_changed":
-				require.NoError(t, db.Model(&models.AcademicIdentityBinding{}).Where("user_id = 1").Update("binding_version", 2).Error)
+			case "account_session_changed":
+				require.NoError(t, db.Model(&models.User{}).Where("id = 1").Update("token_version", 2).Error)
 			case "hidden":
 				require.NoError(t, db.Model(&post).Update("status", models.PostStatusModeratedHidden).Error)
 			case "edited":
@@ -132,6 +132,21 @@ func TestIntegrationDraftBlockingAndRollback(t *testing.T) {
 		})
 	}
 }
+func TestIntegrationSchoolChangePreservesOwnConfirmedCommunityDraft(t *testing.T) {
+	db, service, binding, post := integrationActionFixture(t)
+	ctx := context.Background()
+	action, err := service.Propose(ctx, binding, integrationReplyProposal(post))
+	require.NoError(t, err)
+	decision := integrationDecision(t, service, action)
+	require.NoError(t, db.Model(&models.AcademicIdentityBinding{}).Where("user_id = ?", binding.OwnerID).Update("binding_version", 2).Error)
+	_, err = service.Decide(ctx, binding.OwnerID, action.ID, decision)
+	require.NoError(t, err)
+	var replies []models.Reply
+	require.NoError(t, db.Where("post_id = ?", post.ID).Find(&replies).Error)
+	require.Len(t, replies, 1)
+	require.Equal(t, binding.OwnerID, replies[0].AuthorID)
+}
+
 func TestIntegrationSourceStatisticsDoNotInvalidateAndThreadIsDerived(t *testing.T) {
 	db, s, b, post := integrationActionFixture(t)
 	ctx := context.Background()

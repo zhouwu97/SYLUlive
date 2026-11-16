@@ -23,6 +23,7 @@ type IntegrationDeviceRequest struct {
 	CreatedAt        time.Time
 }
 
+// IntegrationBinding 的学校快照字段保留兼容，不再作为 QQ 基础授权的准入条件。
 type IntegrationBinding struct {
 	ID                string     `gorm:"size:36;primaryKey" json:"binding_id"`
 	OwnerID           uint       `gorm:"not null;uniqueIndex:ux_integration_owner_active,where:state = 'active'" json:"-"`

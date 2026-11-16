@@ -110,14 +110,17 @@ func TestIntegrationDeviceAuthorizationAndCredentialSeparation(t *testing.T) {
 	require.Len(t, rows, 2)
 	require.NotEqual(t, tokens.AccessToken, rows[0].TokenHash)
 }
-func TestIntegrationQualificationDoesNotUseSelfDeclaredOrHistoricalIdentity(t *testing.T) {
+func TestIntegrationBasicEligibilityDoesNotChangeAcademicQualification(t *testing.T) {
 	for _, method := range []string{"", models.AcademicVerificationMethodLocalDeclaration, models.AcademicVerificationMethodLegacyMigration, "school_profile_v2"} {
 		t.Run(method, func(t *testing.T) {
 			db := integrationTestDB(t)
 			integrationTestUser(t, db, 1)
 			require.NoError(t, db.Model(&models.AcademicIdentityBinding{}).Where("user_id = 1").Update("verification_method", method).Error)
 			s := NewIntegrationAuthService(db)
-			require.EqualError(t, s.Eligible(context.Background(), 1), "academic_verification_required")
+			require.NoError(t, s.Eligible(context.Background(), 1))
+			var identity models.AcademicIdentityBinding
+			require.NoError(t, db.Where("user_id = ?", 1).First(&identity).Error)
+			require.Equal(t, method, identity.VerificationMethod, "允许本人连接不升级任何学校身份")
 		})
 	}
 }
@@ -204,9 +207,17 @@ func TestIntegrationLiveEligibilityAndCredentialExpiry(t *testing.T) {
 				now = now.Add(31 * 24 * time.Hour)
 			}
 			_, err = s.Authenticate(context.Background(), tokens.AccessToken)
-			require.Error(t, err)
+			if mutation == "academic_version" || mutation == "academic_delete" {
+				require.NoError(t, err, "学校状态变化不使 QQ 连接失效")
+			} else {
+				require.Error(t, err)
+			}
 			_, err = s.Refresh(context.Background(), tokens.RefreshToken)
-			require.Error(t, err)
+			if mutation == "academic_version" || mutation == "academic_delete" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
 		})
 	}
 }

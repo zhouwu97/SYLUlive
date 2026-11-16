@@ -89,7 +89,7 @@
 | `GET` | `/api/user/checkin/status` | 获取签到状态 |
 | `GET` | `/api/user/checkin/calendar?month=YYYY-MM` | 获取指定月份的签到记录 |
 
-AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人状态）与 `POST /api/integrations/v1/me/checkin`（本人当日签到），二者需本人明确批准 `checkin:write`。不接受用户编号、日期、补签或经验参数；与 App 共用同日事实、奖励及幂等，撤权与签到串行复核。请求体仅允许空或 `{}`，拒绝额外字段／查询参数；返回日期、连续天数、本次奖励等最小数据，不返回学号或经验总额。
+AstrBot 的独立授权接口为 `GET /api/integrations/v1/me/checkin`（本人状态）与 `POST /api/integrations/v1/me/checkin`（本人当日签到），二者需本人明确批准 `checkin:write`，不要求教务核验或学校连接。不接受用户编号、日期、补签或经验参数；与 App 共用同日事实、奖励及幂等，撤权与签到串行复核。请求体仅允许空或 `{}`，拒绝额外字段／查询参数；返回日期、连续天数、本次奖励等最小数据，不返回学号或经验总额。
 
 公开工具接口 `GET /api/integrations/v1/public/community/{posts,posts/:id,posts/:id/replies,replies/:id/context,stickers,sections}` 无需账号令牌，仍按固定字段／可见状态过滤、限流且不增加浏览量。原有带授权路径保留兼容；本人资料／签到／草稿不属于该公开命名空间。食堂、校园资讯 `/api/campus/articles`、学校校历 `/api/campus-calendars/current` 沿用既有公开接口。
 | `POST`| `/api/user/:id/follow` | 关注指定用户 |
@@ -527,7 +527,7 @@ FEED-H1 加固：
 | `POST /api/oauth/token` | 设备 secret 或 refresh token | URLencoded；device grant 或 refresh grant。access 10分钟、refresh闲置7天、绝对30天；同一 `refresh_request_id`（UUID）可恢复丢失的刷新结果，其他旧 refresh 重用撤销该授权 |
 | `POST /api/oauth/revoke` | 所撤凭证 | RFC7009，同属授权一并撤销；不会注销 App 登录 |
 | `GET /api/connected-apps` | App 登录 | 本人的连接列表及 `personal_data_enabled` 服务状态，不返回凭证 |
-| `POST /api/connected-apps/personal-sync/grades` | 本人 App 登录与可信教务资格 | `consent:true`、`fetched_at`、`year`、`semester`（3/12/16）及最多1000条 `grades`；白名单字段 `course_name`、`score`、`credits`、可选 `gpa`/`course_nature`，不收学校凭据；需个人查询开关与隐私设置允许 |
+| `POST /api/connected-apps/personal-sync/grades` | 本人 App 当前有效登录、明确上传确认 | `consent:true`、`fetched_at`、`year`、`semester`（3/12/16）及最多1000条 `grades`；白名单字段 `course_name`、`score`、`credits`、可选 `gpa`/`course_nature`，不收学校凭据；需个人查询开关与隐私设置允许，来源标记为用户上传，不授予学生资格 |
 | `DELETE /api/connected-apps/personal-sync/grades` | 本人 App 登录 | 删除本人上传成绩副本，关个人查询开关后仍可删除，不删除 App 原有教务快照 |
 | `GET /api/integrations/v1/me/grades` | `academic:grades:read` | 仅本人的已同步成绩，支持 `offset`、`limit`（1至50），返回覆盖学期、过期/部分标记与下一页；需个人查询开关 |
 | `GET /api/integrations/v1/me/erke` | `academic:erke:read` | 仅本人主动同步的二课摘要；上传/删除沿用 `/api/personal-snapshots/erke`，不是学校实时查询 |
@@ -553,11 +553,11 @@ FEED-H1 加固：
 | `POST /api/integrations/v1/actions` | `community:propose` | 只创建草稿，不能发布；需开启提案开关 |
 | `GET /api/integrations/v1/actions/:id` | `actions:read_own` | 本授权动作，不能得到发布确认 nonce；来源变更时阻断旧草稿正文 |
 | `GET /api/connected-apps/actions/:id` | 本人 App 登录 | 草稿预览与5分钟确认 nonce；本人官网使用 |
-| `POST /api/connected-apps/actions/:id/decision` | 本人 App 登录；发布时需30分钟内认证 | `allow`、`draft_version`、`payload_hash`、`confirmation_nonce`；发布需独立开关，拒绝无需重复验证 |
+| `POST /api/connected-apps/actions/:id/decision` | 本人 App 当前有效登录 | `allow`、`draft_version`、`payload_hash`、`confirmation_nonce`；发布需独立开关，拒绝无需重复验证 |
 
-核对设备请求和预览草稿无需再次输入密码。批准新连接、机器人创建／编辑／启用和实际确认发布需要当前登录会话30分钟内的密码证明；拒绝、撤销和紧急暂停不要求近期证明。`POST /api/auth/reauthenticate` 返回 `valid_until`，不新建登录、不延长令牌、不影响其他会话。
+核对设备请求、批准新连接、机器人创建／编辑／启用和本人确认发布均使用当前有效的本站登录及对应 nonce／版本校验，不额外要求30分钟密码证明。`POST /api/auth/reauthenticate` 返回 `valid_until`，不新建登录、不延长令牌、不影响其他会话。
 
-助手凭证不能调用普通 App API，App JWT 也不能调用集成 API。允许的 scope 为 `profile:read_minimal community:read content:read_own_public actions:read_own community:propose checkin:write community:bot_reply community:bot_post academic:grades:read academic:erke:read` 的子集；提案必须同时批准读取和结果查询，自动评论和发帖分别需独立 scope，旧连接不自动扩权。个人查询需 `INTEGRATION_PERSONAL_DATA_ENABLED` 开启，Web/App 不因同步成功自动选择查询 scope。普通教务本地声明不满足可信核验要求；无权限失败返回稳定 `code`，OAuth 错误使用 `error`。所有含授权数据的响应设置 `Cache-Control: no-store`。
+助手凭证不能调用普通 App API，App JWT 也不能调用集成 API。允许的 scope 为 `profile:read_minimal community:read content:read_own_public actions:read_own community:propose checkin:write community:bot_reply community:bot_post academic:grades:read academic:erke:read` 的子集；提案必须同时批准读取和结果查询，自动评论和发帖分别需独立 scope，旧连接不自动扩权。个人查询需 `INTEGRATION_PERSONAL_DATA_ENABLED` 开启，Web/App 不因同步成功自动选择查询 scope。QQ 连接和本站签到不要求学校身份；本人同步资料不会因此获得可信学生资格。缺少学校资料返回 `academic_sync_required`，在官网「个人资料同步」修复，不撤销基础连接；无权限失败返回稳定 `code`，OAuth 错误使用 `error`。所有含授权数据的响应设置 `Cache-Control: no-store`。
 
 机器人 `policy` 字段包括 `public_read_enabled`、`reply_enabled`、`sticker_enabled`、`post_enabled`、`image_enabled`、`allowed_post_types`、`blocked_terms`、`block_links`、`daily_reply_limit`（1–100）和 `min_reply_interval_minutes`（1–1440）。默认只读，新增发帖与配图字段缺省为 false，旧评论权限不扩大为发帖权限。允许板块为校园生活／课程学习，禁链接，默认评论日限3条且至少30分钟，已有设置保持不变；本人可保存更高频率，平台最高100条／滚动24小时、至少间隔1分钟；投诉、迎新求助、敏感或停用板块不可授权。屏蔽词最多20个，每个1–24字，按全角ASCII、零宽及空白规范化后匹配；不是语义审核。认证社区读取受机器人启停与白名单约束，最终自动发布事务复核规则、scope、信誉、社区禁言和平台开关。发帖来源版本重新核验，图片只接受 bot 自有或获上传授权的有效文件，发布与图片绑定原子提交。普通人工确认路径拒绝 bot 来源/配图载荷。公开用户 `ai_bot` 只返回创建者公开ID与昵称，普通用户昵称不会产生系统标记。
 

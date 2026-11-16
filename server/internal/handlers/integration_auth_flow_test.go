@@ -45,6 +45,48 @@ func flowConsent(t *testing.T, f reauthenticationFixture, h *IntegrationHandler)
 	return consent
 }
 
+func TestIntegrationUnverifiedUserConnectsAndChecksInHTTP(t *testing.T) {
+	f, h := integrationAuthFlowFixture(t)
+	require.NoError(t, f.db.Where("user_id = ?", f.user.ID).Delete(&models.AcademicIdentityBinding{}).Error)
+	require.NoError(t, f.db.AutoMigrate(&models.CheckIn{}, &models.UserCheckInStat{}, &models.UserExperienceLedger{}))
+	now := time.Now()
+	h.auth.Now = func() time.Time { return now }
+	device, err := h.auth.RequestDevice(context.Background(), uuid.NewString(), "普通 QQ 绑定", "profile:read_minimal checkin:write")
+	require.NoError(t, err)
+	w := integrationFlowRequest(t, f, "POST", "/api/connected-apps/device-requests/lookup", `{"user_code":"`+device.UserCode+`"}`)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	var consent services.IntegrationConsent
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &consent))
+	decision := services.IntegrationConsentDecision{Allow: true, Nonce: "wrong-confirmation", Scopes: consent.RequestedScopes}
+	body, _ := json.Marshal(decision)
+	w = integrationFlowRequest(t, f, "POST", "/api/connected-apps/device-requests/"+consent.ID+"/decision", string(body))
+	require.Equal(t, 403, w.Code)
+	require.Contains(t, w.Body.String(), "confirmation_required")
+	decision.Nonce = consent.Nonce
+	body, _ = json.Marshal(decision)
+	w = integrationFlowRequest(t, f, "POST", "/api/connected-apps/device-requests/"+consent.ID+"/decision", string(body))
+	require.Equal(t, 200, w.Code, w.Body.String())
+	now = now.Add(6 * time.Second)
+	tokens, err := h.auth.ExchangeDevice(context.Background(), device.DeviceCode)
+	require.NoError(t, err)
+	call := func(method, path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(`{}`))
+		req.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
+		req.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		f.r.ServeHTTP(response, req)
+		return response
+	}
+	require.Equal(t, 200, call("GET", "/api/integrations/v1/binding").Code)
+	w = call("POST", "/api/integrations/v1/me/checkin")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"already":false`)
+	w = call("GET", "/api/integrations/v1/me/grades")
+	require.Equal(t, 403, w.Code)
+	require.Contains(t, w.Body.String(), "personal_queries_disabled")
+	require.Equal(t, 200, call("GET", "/api/integrations/v1/binding").Code)
+}
+
 func TestIntegrationOldSessionCanReviewAndRejectWithoutPassword(t *testing.T) {
 	f, h := integrationAuthFlowFixture(t)
 	consent := flowConsent(t, f, h)

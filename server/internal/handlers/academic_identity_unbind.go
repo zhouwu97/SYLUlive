@@ -76,7 +76,7 @@ func (h *AcademicIdentityHandler) Unbind(c *gin.Context) {
 				return err
 			}
 		}
-		if err := services.InvalidateUserIntegrations(tx, userID, time.Now()); err != nil {
+		if err := services.InvalidateUserAcademicIntegrationData(tx, userID); err != nil {
 			return err
 		}
 		// 使尚未提交的挑战失效，解绑前的验证码不能再次绑定回来。

@@ -47,7 +47,10 @@ func (s *IntegrationAuthService) StoreUploadedGrades(ctx context.Context, owner 
 		}
 	}
 	return s.ownerTx(ctx, owner, func(tx *gorm.DB, user models.User) error {
-		identity, err := s.eligible(tx, user, nil)
+		if err := s.eligible(tx, user); err != nil {
+			return err
+		}
+		identity, err := s.personalAcademicContext(tx, user.ID)
 		if err != nil {
 			return err
 		}
@@ -84,6 +87,17 @@ func (s *IntegrationAuthService) StoreUploadedGrades(ctx context.Context, owner 
 		}
 		return tx.Create(&models.IntegrationAudit{OwnerID: owner, ActorID: owner, Event: "grades_synced", CreatedAt: s.Now()}).Error
 	})
+}
+
+// 仅关联本人同步资料的版本，不授予学生资格，也不要求服务端保管学校登录状态。
+// 没有学校记录时仍可保存本人明确上传的资料，其来源始终标记为用户上传。
+func (s *IntegrationAuthService) personalAcademicContext(tx *gorm.DB, owner uint) (models.AcademicIdentityBinding, error) {
+	var identity models.AcademicIdentityBinding
+	err := tx.Where("user_id = ?", owner).Order("id DESC").Take(&identity).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return models.AcademicIdentityBinding{}, nil
+	}
+	return identity, err
 }
 
 func (s *IntegrationAuthService) uploadedGrades(ctx context.Context, tx *gorm.DB, b models.IntegrationBinding) (academic.SnapshotLookup, error) {

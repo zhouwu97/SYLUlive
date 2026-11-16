@@ -10,7 +10,7 @@ async function fixture(page: Page, options: { connected?: boolean; failed?: bool
     const req = route.request(), path = new URL(req.url()).pathname;
     requests.push(path);
     if (req.method() !== "GET") writes.push({ path, body: req.postDataJSON() });
-    if (path === "/api/user/profile") return route.fulfill(options.signedOut ? { status: 401, json: { code: "invalid_token" } } : { json: { id: 991, nickname: "示例用户", role: "user" } });
+    if (path === "/api/user/profile") return route.fulfill(options.signedOut ? { status: 401, json: { code: "invalid_token" } } : { json: { id: 991, nickname: "示例用户", role: "user", student_verified: false } });
     if (path === "/api/connected-apps") return route.fulfill(failed ? { status: 503, json: { code: "integration_unavailable" } } : { json: { bindings: connected ? [binding()] : [], personal_data_enabled: true } });
     if (path.endsWith("/lookup")) return route.fulfill({ json: { consent_id: "request", installation_name: "QQ 示例 · 群机器人", installation_id: "my-install", user_code: "ABCD-1234", requested_scopes: [...personal, ...community], confirmation_nonce: "synthetic-nonce", expires_at: "2099-01-01T00:00:00Z" } });
     if (path.endsWith("/decision") || path.endsWith("/scopes")) { connected = true; scopes = req.postDataJSON().scopes; return route.fulfill({ json: { binding: binding() } }); }
@@ -25,6 +25,7 @@ test("QQ 临时链接直达用户绑定，普通用户看不到机器人设置�
   await page.goto("./connected-apps?user_code=ABCD-1234");
   await expect(page.getByRole("heading", { name: "QQ 账号绑定与签到查询", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "一次性连接码" })).toHaveValue("ABCD-1234");
+  await expect(page.locator("#new-astrbot-connection")).toContainText("连接和签到无需教务核验");
   await expect(page.getByRole("region", { name: "AstrBot 插件后台" })).toHaveCount(0);
   await expect(page.getByLabel("机器人名称", { exact: true })).toHaveCount(0);
   await expect(page.getByText("自动参与权限尚未齐全", { exact: true })).toHaveCount(0);
@@ -194,4 +195,15 @@ test("本人资料同步有独立分区，切换分区保留尚未提交的签�
   await nav.getByRole("button", { name: "账号绑定与权限", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: /查看本人签到状态/ })).toBeChecked();
   expect(writes.some(value => value.path.includes("personal-sync") || value.path.endsWith("/decision"))).toBe(false);
+});
+
+test("资料修复链接直达个人同步，学校资料失败后基础连接保持可管理", async ({ page }) => {
+  const { writes } = await fixture(page, { connected: true });
+  await page.goto("./connected-apps?purpose=personal&view=data");
+  await expect(page.getByRole("heading", { name: "供本人 QQ 查询的资料同步", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "助手管理分区" }).getByRole("button", { name: "个人资料同步", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("navigation", { name: "助手管理分区" }).getByRole("button", { name: "账号绑定与权限", exact: true }).click();
+  await expect(page.getByRole("region", { name: "当前连接状态" })).toContainText("已绑定 QQ 机器人");
+  await expect(page.getByRole("button", { name: "修改权限", exact: true })).toBeVisible();
+  expect(writes).toHaveLength(0);
 });

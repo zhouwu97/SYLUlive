@@ -134,38 +134,26 @@ func (s *IntegrationAuthService) ownerTx(ctx context.Context, owner uint, fn fun
 	})
 }
 
-// 只接受服务端当前可核验的身份；自报配置、旧投影与历史迁移不在集成准入中。
-func (s *IntegrationAuthService) eligible(tx *gorm.DB, user models.User, expected *models.IntegrationBinding) (models.AcademicIdentityBinding, error) {
-	var academic models.AcademicIdentityBinding
+// QQ 连接归属于本站账号；学校身份和学校连接状态不决定基础授权是否有效。
+func (s *IntegrationAuthService) eligible(tx *gorm.DB, user models.User) error {
 	if user.AccountStatus != "active" || user.LegalConsentRevokedAt != nil {
-		return academic, integrationError("account_unavailable", 403)
+		return integrationError("account_unavailable", 403)
 	}
 	state, err := models.LegalConsentStateForUser(tx, user)
 	if err != nil {
-		return academic, err
+		return err
 	}
 	if state != models.LegalConsentStateActive {
-		return academic, integrationError("legal_consent_required", 403)
+		return integrationError("legal_consent_required", 403)
 	}
-	query := tx.Where("user_id = ? AND verification_method = ? AND verification_version IN ? AND verified_at > ?", user.ID, models.AcademicVerificationMethodSchoolProfile, []string{"v1", "undergraduate-preverify-v1"}, time.Time{})
-	if expected != nil {
-		query = query.Where("id = ? AND binding_version = ?", expected.AcademicBindingID, expected.AcademicVersion)
-	}
-	if err := query.Order("id DESC").Take(&academic).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return academic, integrationError("academic_verification_required", 403)
-		}
-		return academic, err
-	}
-	return academic, nil
+	return nil
 }
 func (s *IntegrationAuthService) Eligible(ctx context.Context, owner uint) error {
 	var user models.User
 	if err := s.DB.WithContext(ctx).First(&user, owner).Error; err != nil {
 		return err
 	}
-	_, err := s.eligible(s.DB.WithContext(ctx), user, nil)
-	return err
+	return s.eligible(s.DB.WithContext(ctx), user)
 }
 
 func (s *IntegrationAuthService) CheckBinding(ctx context.Context, b models.IntegrationBinding) error {
@@ -250,7 +238,7 @@ func (s *IntegrationAuthService) LookupConsent(ctx context.Context, owner uint, 
 		return result, integrationError("invalid_user_code", 422)
 	}
 	err := s.ownerTx(ctx, owner, func(tx *gorm.DB, user models.User) error {
-		if _, err := s.eligible(tx, user, nil); err != nil {
+		if err := s.eligible(tx, user); err != nil {
 			return err
 		}
 		var row models.IntegrationDeviceRequest
@@ -309,8 +297,7 @@ func (s *IntegrationAuthService) DecideConsent(ctx context.Context, owner uint, 
 		if !input.Allow {
 			return tx.Model(&row).Updates(map[string]interface{}{"state": "denied", "nonce_hash": ""}).Error
 		}
-		academic, err := s.eligible(tx, user, nil)
-		if err != nil {
+		if err := s.eligible(tx, user); err != nil {
 			return err
 		}
 		scopes, err := integrationScopes(strings.Join(input.Scopes, " "))
@@ -347,7 +334,7 @@ func (s *IntegrationAuthService) DecideConsent(ctx context.Context, owner uint, 
 		if other > 0 {
 			return integrationError("installation_conflict", 409)
 		}
-		result = models.IntegrationBinding{ID: uuid.NewString(), OwnerID: owner, InstallationID: row.InstallationID, InstallationName: row.InstallationName, State: "active", Scopes: scopes, Epoch: 1, AcademicBindingID: academic.ID, AcademicVersion: academic.BindingVersion, TokenVersion: user.TokenVersion, CreatedAt: s.Now()}
+		result = models.IntegrationBinding{ID: uuid.NewString(), OwnerID: owner, InstallationID: row.InstallationID, InstallationName: row.InstallationName, State: "active", Scopes: scopes, Epoch: 1, TokenVersion: user.TokenVersion, CreatedAt: s.Now()}
 		if err = tx.Create(&result).Error; err != nil {
 			return err
 		}
@@ -431,8 +418,7 @@ func (s *IntegrationAuthService) bindingValid(tx *gorm.DB, b models.IntegrationB
 	if b.State != "active" || b.TokenVersion != user.TokenVersion {
 		return integrationError("invalid_token", 401)
 	}
-	_, err := s.eligible(tx, user, &b)
-	return err
+	return s.eligible(tx, user)
 }
 func (s *IntegrationAuthService) Authenticate(ctx context.Context, raw string) (models.IntegrationBinding, error) {
 	var b models.IntegrationBinding

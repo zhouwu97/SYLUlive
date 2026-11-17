@@ -1,5 +1,6 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import 'campus_theme.dart';
 import 'campus_service_item.dart';
 import '../app_card.dart';
@@ -48,7 +49,7 @@ class CampusServiceGrid extends StatelessWidget {
       CampusServiceItem(
         title: '组队',
         icon: Icons.groups_2_rounded,
-        color: CampusTheme.primary,
+        color: AppThemeTokens.of(context).primary,
         onTap: onTeamTap,
       ),
       CampusServiceItem(
@@ -73,42 +74,37 @@ class CampusServiceGrid extends StatelessWidget {
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w800,
-              color: isDark ? Colors.white : CampusTheme.text,
+              color: AppThemeTokens.of(context).textPrimary,
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             '常用校园功能',
             style: TextStyle(
               fontSize: 12,
-              color: CampusTheme.subText,
+              color: AppThemeTokens.of(context).textSecondary,
             ),
           ),
         ]),
         const SizedBox(height: 12),
         AppCardSurface(
           decoration: BoxDecoration(
-            gradient: isDark
-                ? const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [CampusTheme.darkCard, Color(0xFF20272A)],
-                  )
-                : const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Colors.white, Color(0xFFF7FCFA)],
-                  ),
-            borderRadius: BorderRadius.circular(AppRadius.lg),
+            gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppThemeTokens.of(context).card,
+                  AppThemeTokens.of(context).primaryContainer
+                ]),
+            borderRadius: BorderRadius.circular(AppShape.of(context).lg),
             border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.04)
-                  : CampusTheme.primary.withValues(alpha: 0.08),
+              color: AppThemeTokens.of(context).cardBorder,
             ),
             boxShadow: [
               BoxShadow(
-                color: (isDark ? Colors.black : CampusTheme.primary)
-                    .withValues(alpha: isDark ? 0.18 : 0.06),
+                color:
+                    (isDark ? Colors.black : AppThemeTokens.of(context).primary)
+                        .withValues(alpha: isDark ? 0.18 : 0.06),
                 blurRadius: 22,
                 offset: const Offset(0, 8),
               ),

@@ -1,7 +1,7 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
 import '../../theme/app_motion.dart';
-import '../../theme/app_radius.dart';
-import 'campus_theme.dart';
+import '../../theme/app_palette.dart';
 
 class CampusServiceItem {
   final String title;
@@ -38,7 +38,6 @@ class _CampusServiceCardState extends State<CampusServiceCard> {
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final service = widget.service;
-    final isDark = widget.isDark;
 
     final content = Container(
       height: 86,
@@ -54,7 +53,7 @@ class _CampusServiceCardState extends State<CampusServiceCard> {
             height: 40,
             decoration: BoxDecoration(
               color: service.color.withValues(alpha: _pressed ? 0.2 : 0.12),
-              borderRadius: BorderRadius.circular(AppRadius.md),
+              borderRadius: BorderRadius.circular(AppShape.of(context).md),
               border: Border.all(
                 color: service.color.withValues(
                   alpha: _pressed ? 0.24 : 0.0,
@@ -86,7 +85,7 @@ class _CampusServiceCardState extends State<CampusServiceCard> {
                 fontSize: 11.5,
                 height: 1.0,
                 fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white : CampusTheme.text,
+                color: AppThemeTokens.of(context).textPrimary,
               ),
             ),
           ),
@@ -97,7 +96,7 @@ class _CampusServiceCardState extends State<CampusServiceCard> {
     final interactive = Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.md),
+        borderRadius: BorderRadius.circular(AppShape.of(context).md),
         onTap: service.onTap,
         onHighlightChanged: (highlighted) {
           if (mounted) setState(() => _pressed = highlighted);

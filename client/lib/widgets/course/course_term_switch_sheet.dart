@@ -1,8 +1,8 @@
+import '../../theme/app_theme_tokens.dart';
 import '../../providers/theme_provider.dart';
 import 'package:provider/provider.dart';
 import '../app_card.dart';
 import 'package:flutter/material.dart';
-import '../campus/campus_theme.dart';
 import '../../models/course_term.dart';
 
 class CourseTermSwitchSheet extends StatefulWidget {
@@ -50,13 +50,12 @@ class _CourseTermSwitchSheetState extends State<CourseTermSwitchSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final customBackground =
         context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
 
     return AppCardSurface(
       decoration: BoxDecoration(
-        color: isDark ? CampusTheme.darkBg : CampusTheme.bg,
+        color: AppThemeTokens.of(context).background,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: SafeArea(
@@ -68,7 +67,7 @@ class _CourseTermSwitchSheetState extends State<CourseTermSwitchSheet> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: isDark ? Colors.white24 : Colors.black12,
+                color: AppThemeTokens.of(context).textTertiary,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -81,7 +80,7 @@ class _CourseTermSwitchSheetState extends State<CourseTermSwitchSheet> {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : CampusTheme.text,
+                      color: AppThemeTokens.of(context).textPrimary,
                     ),
                   ),
                 ],
@@ -102,16 +101,18 @@ class _CourseTermSwitchSheetState extends State<CourseTermSwitchSheet> {
                     margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? CampusTheme.primary.withValues(alpha: 0.1)
+                          ? AppThemeTokens.of(context)
+                              .primary
+                              .withValues(alpha: 0.1)
                           : customBackground
                               ? Colors.transparent
-                              : isDark
-                                  ? CampusTheme.darkCard
-                                  : Colors.white,
+                              : AppThemeTokens.of(context).card,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: isSelected
-                            ? CampusTheme.primary.withValues(alpha: 0.3)
+                            ? AppThemeTokens.of(context)
+                                .primary
+                                .withValues(alpha: 0.3)
                             : Colors.transparent,
                       ),
                     ),
@@ -128,15 +129,15 @@ class _CourseTermSwitchSheetState extends State<CourseTermSwitchSheet> {
                         term.title,
                         style: TextStyle(
                           color: isSelected
-                              ? CampusTheme.primary
-                              : (isDark ? Colors.white : CampusTheme.text),
+                              ? AppThemeTokens.of(context).primary
+                              : (AppThemeTokens.of(context).textPrimary),
                           fontWeight:
                               isSelected ? FontWeight.bold : FontWeight.w500,
                         ),
                       ),
                       trailing: isSelected
-                          ? const Icon(Icons.check_circle_rounded,
-                              color: CampusTheme.primary)
+                          ? Icon(Icons.check_circle_rounded,
+                              color: AppThemeTokens.of(context).primary)
                           : null,
                     ),
                   );
@@ -153,8 +154,8 @@ class _CourseTermSwitchSheetState extends State<CourseTermSwitchSheet> {
                   Navigator.pop(context, term);
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: CampusTheme.primary,
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppThemeTokens.of(context).primary,
+                  foregroundColor: AppThemeTokens.of(context).onPrimary,
                   elevation: 0,
                   minimumSize: const Size(double.infinity, 50),
                   shape: RoundedRectangleBorder(

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../providers/course_schedule_provider.dart';
 import '../../../services/schedule/schedule_conflict_service.dart';
 import '../../../theme/app_theme_tokens.dart';
-import '../../../theme/app_radius.dart';
+import '../../../theme/app_palette.dart';
 import '../../../utils/week_formatter.dart';
 
 /// 调课第三步：确认源周次、目标周次、合并方式及真实冲突。
@@ -87,8 +87,8 @@ class ConfirmChangeSheet extends StatelessWidget {
             20, 16, 20, 24 + MediaQuery.viewInsetsOf(context).bottom),
         decoration: BoxDecoration(
             color: tokens.surface,
-            borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(AppRadius.sheet))),
+            borderRadius: BorderRadius.vertical(
+                top: Radius.circular(AppShape.of(context).sheet))),
         child: SingleChildScrollView(
             child: Column(
           mainAxisSize: MainAxisSize.min,

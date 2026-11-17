@@ -1,11 +1,11 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../providers/campus_calendar_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/app_motion.dart';
-import '../../theme/app_radius.dart';
-import 'campus_theme.dart';
+import '../../theme/app_palette.dart';
 import '../app_card.dart';
 
 class CampusHeader extends StatelessWidget {
@@ -37,26 +37,20 @@ class CampusHeader extends StatelessWidget {
     return AppCardSurface(
       padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
       decoration: BoxDecoration(
-        gradient: isDark
-            ? const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [CampusTheme.darkCard, Color(0xFF172522)],
-              )
-            : const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Colors.white, Color(0xFFF1FBF7)],
-              ),
-        borderRadius: BorderRadius.circular(AppRadius.lg),
+        gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppThemeTokens.of(context).card,
+              AppThemeTokens.of(context).primaryContainer
+            ]),
+        borderRadius: BorderRadius.circular(AppShape.of(context).lg),
         border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : CampusTheme.primary.withValues(alpha: 0.08),
+          color: AppThemeTokens.of(context).cardBorder,
         ),
         boxShadow: [
           BoxShadow(
-            color: (isDark ? Colors.black : CampusTheme.primary)
+            color: (isDark ? Colors.black : AppThemeTokens.of(context).primary)
                 .withValues(alpha: isDark ? 0.16 : 0.05),
             blurRadius: 20,
             offset: const Offset(0, 7),
@@ -76,15 +70,15 @@ class CampusHeader extends StatelessWidget {
                     fontSize: 28,
                     height: 1.1,
                     fontWeight: FontWeight.w900,
-                    color: isDark ? Colors.white : const Color(0xFF20212B),
+                    color: AppThemeTokens.of(context).textPrimary,
                   ),
                 ),
                 const SizedBox(height: 7),
                 Text(
                   semesterText,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12.5,
-                    color: CampusTheme.subText,
+                    color: AppThemeTokens.of(context).textSecondary,
                   ),
                 ),
               ],
@@ -99,16 +93,14 @@ class CampusHeader extends StatelessWidget {
               // 与页头共用一层材质，避免内部实色底遮住毛玻璃。
               color: glass
                   ? Colors.transparent
-                  : isDark
-                      ? Colors.white.withValues(alpha: 0.06)
-                      : Colors.white.withValues(alpha: 0.78),
-              borderRadius: BorderRadius.circular(AppRadius.md),
+                  : AppThemeTokens.of(context)
+                      .surfaceMuted
+                      .withValues(alpha: isDark ? 1 : 0.78),
+              borderRadius: BorderRadius.circular(AppShape.of(context).md),
               border: glass
                   ? null
                   : Border.all(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.08)
-                          : CampusTheme.border,
+                      color: AppThemeTokens.of(context).cardBorder,
                     ),
             ),
             child: Column(
@@ -116,20 +108,20 @@ class CampusHeader extends StatelessWidget {
                 if (week != null) ...[
                   Text(
                     '第${week.week}周',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: CampusTheme.primary,
+                      color: AppThemeTokens.of(context).primary,
                     ),
                   ),
                   const SizedBox(height: 2),
                 ],
                 Text(
                   dateStr,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
-                    color: CampusTheme.subText,
+                    color: AppThemeTokens.of(context).textSecondary,
                   ),
                 ),
                 if (progress != null) ...[
@@ -140,15 +132,17 @@ class CampusHeader extends StatelessWidget {
                     curve: AppMotion.standard,
                     builder: (context, progress, child) {
                       return ClipRRect(
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                        borderRadius:
+                            BorderRadius.circular(AppShape.of(context).pill),
                         child: LinearProgressIndicator(
                           minHeight: 3,
                           value: progress,
-                          backgroundColor: CampusTheme.primary.withValues(
-                            alpha: isDark ? 0.16 : 0.1,
-                          ),
-                          valueColor: const AlwaysStoppedAnimation(
-                            CampusTheme.primary,
+                          backgroundColor:
+                              AppThemeTokens.of(context).primary.withValues(
+                                    alpha: isDark ? 0.16 : 0.1,
+                                  ),
+                          valueColor: AlwaysStoppedAnimation(
+                            AppThemeTokens.of(context).primary,
                           ),
                         ),
                       );

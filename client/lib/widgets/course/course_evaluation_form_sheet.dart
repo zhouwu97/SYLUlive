@@ -1,3 +1,4 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:shenliyuan/widgets/app_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -335,7 +336,7 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final subColor = isDark ? Colors.white60 : Colors.grey[600];
+    final subColor = AppThemeTokens.of(context).textSecondary;
 
     return Padding(
       // 键盘弹出时整体上移，输入框不被遮挡。
@@ -356,7 +357,7 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
                 width: 42,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.grey[300],
+                  color: AppThemeTokens.of(context).textTertiary,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -425,12 +426,12 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
                   child: FilledButton(
                     onPressed: _submitting ? null : _submit,
                     child: _submitting
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color: AppThemeTokens.of(context).onPrimary,
                             ),
                           )
                         : Text(
@@ -645,7 +646,7 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
       style: TextStyle(
         fontSize: 14,
         fontWeight: FontWeight.w700,
-        color: isDark ? Colors.white : Colors.black87,
+        color: AppThemeTokens.of(context).textPrimary,
       ),
     );
   }
@@ -658,7 +659,7 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
     required VoidCallback onTap,
     String? trailingBadge,
   }) {
-    final subColor = isDark ? Colors.white60 : Colors.grey[600];
+    final subColor = AppThemeTokens.of(context).textSecondary;
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: InkWell(
@@ -670,7 +671,7 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
             border: Border.all(
               color: selected
                   ? Theme.of(context).primaryColor
-                  : (isDark ? Colors.white12 : Colors.grey[300]!),
+                  : (AppThemeTokens.of(context).outline),
               width: selected ? 2 : 1,
             ),
             borderRadius: BorderRadius.circular(12),
@@ -699,7 +700,7 @@ class _CourseEvaluationFormSheetState extends State<CourseEvaluationFormSheet> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : Colors.black87,
+                        color: AppThemeTokens.of(context).textPrimary,
                       ),
                     ),
                     const SizedBox(height: 2),

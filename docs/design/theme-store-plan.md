@@ -117,7 +117,11 @@
    - `primaryColor`、`scaffoldBackgroundColor`、`canvasColor` 和分割线颜色改为从 palette 读取。
    - 默认路径的 `ColorScheme` 与现在完全相同，由像素比对来证明。
 5. **`AppThemeTokens`** 的每个 getter 改为读取 `Theme.of(context).extension<AppPalette>() ?? AppPalette.defaults(Theme.of(context).brightness)`，原有公开接口不变，并为新 Token 补充 getter。
-6. **`CampusTheme`** 中的品牌、表面、文字、边框颜色改为从 palette 读取。blue、orange、green、cyan、red、dining 这几个功能识别色保持不变。
+6. **`CampusTheme`**：
+   - 现有的静态字段和 `cardDecoration(bool)` 原样保留，值不变。九个首批页面以外还有 21 个文件、168 行在 const 表达式中调用它们，这些调用在 P0 中不改。
+   - 首批页面范围内的调用，改为通过 `AppThemeTokens.of(context)` 读取品牌、表面、文字、边框颜色。
+   - blue、orange、green、cyan、red、dining 这几个功能识别色保持不变。
+   - 首批范围以外的页面，在以后扩大主题化范围时再迁移。
 7. **课表**：`getCourseColor` 增加参数 `List<Color> palette`，调用方传入 `AppThemeTokens.of(context).coursePalette`。
 8. **先做试点**：只迁移首页、设置页和 `post_card.dart`。然后在测试里临时注入一套明显不同的 palette（例如把 primary 设为品红），确认这三处的页面背景、文字、按钮、开关全部变色，没有遗漏的控件。本次 P0 提交先验收这三处试点并等待确认；其余页面迁移时再执行全范围门禁。
 9. **迁移页面和组件**：
@@ -142,10 +146,12 @@
 | 静态检查与回归 | `flutter analyze`；`flutter test --reporter compact` | 没有新增问题；全部通过 |
 | 真机 | 中端 Android 机，亮暗模式下打开当前迁移页面；全部迁移后覆盖九个页面 | 除确认的颜色统一外，与迁移前一致 |
 
+颜色扫描排除 `campus_theme.dart` 中按第 3.1.6 条保留的兼容实现；该文件的新增 Token 装饰路径单独扫描，旧静态字段与 `cardDecoration(bool)` 对照迁移前源码核验原值。
+
 扫描命令如下。表达式中的 `|` 是正则的"或"，不能写成 `\|`：
 
 ```bash
-cd client && rg -n -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|composer|searchBar|message|feed)' lib/screens/shuitie_screen.dart lib/screens/home_screen.dart lib/screens/market_screen.dart lib/screens/course_schedule_screen.dart lib/screens/schedule lib/screens/campus_screen.dart lib/screens/profile_screen.dart lib/screens/user_home_screen.dart lib/screens/ai lib/screens/toolbox_screen.dart lib/screens/settings_screen.dart lib/screens/settings lib/widgets/liquid_bottom_nav.dart lib/widgets/floating_bottom_nav.dart lib/widgets/post_card.dart lib/widgets/market_post_card.dart lib/widgets/home_service_drawer.dart lib/widgets/campus lib/widgets/settings lib/widgets/ai lib/widgets/course | rg -v 'theme: fixed'
+cd client && rg -n -g '!campus_theme.dart' -e 'Color\(0x' -e 'AppColors\.(brand|surface|text|border|composer|searchBar|message|feed)' lib/screens/shuitie_screen.dart lib/screens/home_screen.dart lib/screens/market_screen.dart lib/screens/course_schedule_screen.dart lib/screens/schedule lib/screens/campus_screen.dart lib/screens/profile_screen.dart lib/screens/user_home_screen.dart lib/screens/ai lib/screens/toolbox_screen.dart lib/screens/settings_screen.dart lib/screens/settings lib/widgets/liquid_bottom_nav.dart lib/widgets/floating_bottom_nav.dart lib/widgets/post_card.dart lib/widgets/market_post_card.dart lib/widgets/home_service_drawer.dart lib/widgets/campus lib/widgets/settings lib/widgets/ai lib/widgets/course | rg -v 'theme: fixed'
 ```
 
 | 项 | 方法 | 通过条件 |

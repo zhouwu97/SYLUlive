@@ -1,3 +1,5 @@
+import '../widgets/app_page_background.dart';
+import '../theme/app_theme_tokens.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'dart:async';
 import 'package:dio/dio.dart';
@@ -21,7 +23,6 @@ import '../providers/canteen_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/message_provider.dart';
-import '../theme/app_colors.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
@@ -273,7 +274,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPageBackground.color(
+            context, AppThemeTokens.of(context).background),
         body: ProfileDetailLayout(
           key: _navigationKey,
           isActive: widget.isActive && currentHomeTabIndex.value == 4,
@@ -453,7 +455,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     fontSize: 22,
                                     fontWeight: FontWeight.w700,
                                     color:
-                                        isDark ? Colors.white : Colors.black87,
+                                        AppThemeTokens.of(context).textPrimary,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -465,7 +467,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   Icons.edit,
                                   size: 16,
                                   color:
-                                      isDark ? Colors.white54 : Colors.black54,
+                                      AppThemeTokens.of(context).textSecondary,
                                 ),
                               ],
                             ],
@@ -516,7 +518,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 .trim(),
                             style: TextStyle(
                               fontSize: 12,
-                              color: isDark ? Colors.white54 : Colors.black45,
+                              color: AppThemeTokens.of(context).textSecondary,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -557,7 +559,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       child: Icon(
                         Icons.arrow_forward_ios,
                         size: 14,
-                        color: isDark ? Colors.white54 : Colors.black45,
+                        color: AppThemeTokens.of(context).textSecondary,
                       ),
                     ),
                 ],
@@ -672,7 +674,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : Colors.black87,
+              color: AppThemeTokens.of(context).textPrimary,
             ),
           ),
           const SizedBox(height: 4),
@@ -680,7 +682,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             label,
             style: TextStyle(
               fontSize: 12,
-              color: isDark ? Colors.white70 : Colors.black87,
+              color: AppThemeTokens.of(context).textPrimary,
             ),
           ),
         ],
@@ -707,7 +709,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.gavel_rounded,
-          iconColor: const Color(0xFF147C72),
+          iconColor: AppThemeTokens.of(context).primary,
           title: '我的陪审',
           subtitle: '查看待处理与已参与的陪审案件',
           isDark: isDark,
@@ -720,7 +722,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.assignment_outlined,
-          iconColor: const Color(0xFF5D64C4),
+          iconColor: const Color(0xFF5D64C4), // theme: fixed 个人中心功能识别色
           title: '我的申诉',
           subtitle: '查看申诉与社区复核结果',
           isDark: isDark,
@@ -955,7 +957,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: appContentSecondaryColor(
-                    context, isDark ? Colors.white54 : Colors.grey[600]!),
+                    context, AppThemeTokens.of(context).textSecondary),
               ),
             ),
           ),
@@ -990,7 +992,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _buildSettingsRow(
           child: _buildSettingsTile(
             icon: Icons.chat_outlined,
-            iconColor: const Color(0xFF10B981),
+            iconColor: const Color(0xFF10B981), // theme: fixed 个人中心功能识别色
             title: '私信',
             subtitle: messageEntryState.privateSubtitle,
             trailing: messageEntryState.showPrivateBadge
@@ -1044,7 +1046,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.favorite_outline,
-          iconColor: AppColors.brandPrimary,
+          iconColor: AppThemeTokens.of(context).primary,
           title: '收到的赞',
           subtitle: '查看谁赞了我的帖子和评论',
           isDark: isDark,
@@ -1056,7 +1058,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.history_rounded,
-          iconColor: const Color(0xFF3B82F6),
+          iconColor: const Color(0xFF3B82F6), // theme: fixed 个人中心功能识别色
           title: '浏览记录',
           subtitle: '查看我看过的资讯与帖子',
           isDark: isDark,
@@ -1068,7 +1070,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.restaurant_outlined,
-          iconColor: const Color(0xFFD97706),
+          iconColor: const Color(0xFFD97706), // theme: fixed 个人中心功能识别色
           title: '食堂评价',
           subtitle: '查看与管理我的历史评价',
           isDark: isDark,
@@ -1087,7 +1089,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.rate_review_outlined,
-          iconColor: AppColors.brandPrimary,
+          iconColor: AppThemeTokens.of(context).primary,
           title: '学科评价',
           subtitle: '查看与管理我的学科评价',
           isDark: isDark,
@@ -1129,7 +1131,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.bug_report_outlined,
-          iconColor: AppColors.brandPrimary,
+          iconColor: AppThemeTokens.of(context).primary,
           title: '创建工单',
           subtitle: '反馈 Bug 或提交功能建议',
           isDark: isDark,
@@ -1139,7 +1141,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.chat_bubble_outline_rounded,
-          iconColor: AppColors.brandPrimary,
+          iconColor: AppThemeTokens.of(context).primary,
           title: '我的工单',
           subtitle: '查看处理进度与管理员回复',
           trailing: _feedbackUnreadCount > 0
@@ -1209,7 +1211,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : _startupDestination == StartupDestinationMode.lastPage
                   ? Icons.restore
                   : Icons.home_rounded,
-          iconColor: AppColors.brandPrimary,
+          iconColor: AppThemeTokens.of(context).primary,
           title: '启动页面',
           subtitle: switch (_startupDestination) {
             StartupDestinationMode.home => '首页',
@@ -1245,7 +1247,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               return ListTile(
                 leading: Icon(icon,
                     color: selected
-                        ? AppColors.brandPrimary
+                        ? AppThemeTokens.of(context).primary
                         : colors.onSurfaceVariant),
                 title: Text(title,
                     style: TextStyle(
@@ -1255,8 +1257,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     style: TextStyle(
                         fontSize: 12, color: colors.onSurfaceVariant)),
                 trailing: selected
-                    ? const Icon(Icons.check_rounded,
-                        color: AppColors.brandPrimary, size: 20)
+                    ? Icon(Icons.check_rounded,
+                        color: AppThemeTokens.of(context).primary, size: 20)
                     : null,
                 onTap: () async {
                   try {
@@ -1423,7 +1425,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        color: isDark ? Colors.white : Colors.black87,
+                        color: AppThemeTokens.of(context).textPrimary,
                       ),
                     ),
                     if (subtitle != null) ...[
@@ -1432,7 +1434,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         subtitle,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: isDark ? Colors.white54 : Colors.grey[600],
+                          color: AppThemeTokens.of(context).textSecondary,
                           fontSize: 11,
                         ),
                       ),
@@ -1445,7 +1447,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Icon(
                   Icons.chevron_right,
                   size: 18,
-                  color: isDark ? Colors.white30 : Colors.grey[400],
+                  color: AppThemeTokens.of(context).textTertiary,
                 ),
             ],
           ),
@@ -1619,7 +1621,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   '收到管理员邀请',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: AppThemeTokens.of(context).textPrimary,
                   ),
                 ),
               ),

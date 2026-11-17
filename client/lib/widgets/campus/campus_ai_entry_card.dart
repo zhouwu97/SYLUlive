@@ -1,7 +1,7 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/ai_capabilities.dart';
-import 'campus_theme.dart';
 import '../app_card.dart';
 
 /// 校园页的校园 Agent 主入口，业务快捷问题统一放在 AI 页内维护。
@@ -19,7 +19,7 @@ class CampusAiEntryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final foreground = isDark ? Colors.white : CampusTheme.text;
+    final foreground = AppThemeTokens.of(context).textPrimary;
     final quotaDescription = capabilities.quota.unlimited
         ? '使用次数不限'
         : '每小时 ${capabilities.quota.limit} 次';
@@ -34,12 +34,9 @@ class CampusAiEntryCard extends StatelessWidget {
       child: AppCardSurface(
         constraints: const BoxConstraints(minHeight: 72),
         decoration: BoxDecoration(
-            color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+            color: AppThemeTokens.of(context).card,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : CampusTheme.border)),
+            border: Border.all(color: AppThemeTokens.of(context).cardBorder)),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -53,11 +50,13 @@ class CampusAiEntryCard extends StatelessWidget {
                     height: 40,
                     decoration: BoxDecoration(
                         color: isDark
-                            ? CampusTheme.primary.withValues(alpha: 0.20)
-                            : CampusTheme.primaryLight,
+                            ? AppThemeTokens.of(context)
+                                .primary
+                                .withValues(alpha: 0.20)
+                            : AppThemeTokens.of(context).primaryContainer,
                         borderRadius: BorderRadius.circular(12)),
-                    child: const Icon(Icons.auto_awesome_rounded,
-                        color: CampusTheme.primary, size: 23)),
+                    child: Icon(Icons.auto_awesome_rounded,
+                        color: AppThemeTokens.of(context).primary, size: 23)),
                 const SizedBox(width: 11),
                 Expanded(
                     child: Column(
@@ -73,18 +72,17 @@ class CampusAiEntryCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text('帮你查信息、看安排、做计划',
                           style: TextStyle(
-                              color:
-                                  isDark ? Colors.white60 : CampusTheme.subText,
+                              color: AppThemeTokens.of(context).textSecondary,
                               fontSize: 12))
                     ])),
                 Text(quotaBadge,
-                    style: const TextStyle(
-                        color: CampusTheme.primary,
+                    style: TextStyle(
+                        color: AppThemeTokens.of(context).primary,
                         fontSize: 12,
                         fontWeight: FontWeight.w700)),
                 const SizedBox(width: 5),
                 Icon(Icons.chevron_right_rounded,
-                    color: isDark ? Colors.white38 : Colors.black38, size: 20)
+                    color: AppThemeTokens.of(context).textTertiary, size: 20)
               ]),
             ),
           ),

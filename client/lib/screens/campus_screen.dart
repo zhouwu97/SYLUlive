@@ -1,3 +1,5 @@
+import '../widgets/app_page_background.dart';
+import '../theme/app_theme_tokens.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -409,8 +411,9 @@ class _CampusScreenState extends State<CampusScreen>
     final todayShown = _todayItems.isNotEmpty;
 
     return Scaffold(
-      // 根 Tab 的壁纸与简洁底色统一由 GlobalBackgroundWrapper 绘制。
-      backgroundColor: Colors.transparent,
+      // 壁纸沿用外层绘制，简洁模式使用当前主题底色。
+      backgroundColor: AppPageBackground.color(
+            context, AppThemeTokens.of(context).background),
       body: ResponsiveContent.page(
           child: SafeArea(
         bottom: false,
@@ -612,13 +615,13 @@ class _CampusScreenState extends State<CampusScreen>
                 '查看全部校园资讯',
                 style: TextStyle(
                   fontSize: 13,
-                  color: isDark ? Colors.white54 : Colors.black54,
+                  color: AppThemeTokens.of(context).textSecondary,
                 ),
               ),
               Icon(
                 Icons.chevron_right_rounded,
                 size: 18,
-                color: isDark ? Colors.white38 : Colors.black45,
+                color: AppThemeTokens.of(context).textTertiary,
               ),
             ],
           ),
@@ -635,14 +638,14 @@ class _LatestCardSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shimmerColor = isDark ? Colors.white10 : CampusTheme.softBorder;
+    final shimmerColor = AppThemeTokens.of(context).surfaceMuted;
 
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 112),
       child: AppCardSurface(
         width: double.infinity,
         clipBehavior: Clip.antiAlias,
-        decoration: CampusTheme.cardDecoration(isDark, softGreen: true),
+        decoration: CampusTheme.themedCardDecoration(context, softGreen: true),
         padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -709,20 +712,20 @@ class _LatestCardError extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppCardSurface(
       padding: const EdgeInsets.all(20),
-      decoration: CampusTheme.cardDecoration(isDark),
+      decoration: CampusTheme.themedCardDecoration(context),
       child: Column(
         children: [
           Icon(
             Icons.cloud_off_rounded,
             size: 36,
-            color: isDark ? Colors.white38 : Colors.black38,
+            color: AppThemeTokens.of(context).textTertiary,
           ),
           const SizedBox(height: 10),
           Text(
             message,
             style: TextStyle(
               fontSize: 14,
-              color: isDark ? Colors.white54 : Colors.black54,
+              color: AppThemeTokens.of(context).textSecondary,
             ),
           ),
           const SizedBox(height: 12),
@@ -745,20 +748,20 @@ class _LatestCardEmpty extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppCardSurface(
       padding: const EdgeInsets.all(20),
-      decoration: CampusTheme.cardDecoration(isDark),
+      decoration: CampusTheme.themedCardDecoration(context),
       child: Column(
         children: [
           Icon(
             Icons.inbox_rounded,
             size: 36,
-            color: isDark ? Colors.white38 : Colors.black38,
+            color: AppThemeTokens.of(context).textTertiary,
           ),
           const SizedBox(height: 10),
           Text(
             '暂无校园资讯',
             style: TextStyle(
               fontSize: 14,
-              color: isDark ? Colors.white54 : Colors.black54,
+              color: AppThemeTokens.of(context).textSecondary,
             ),
           ),
         ],
@@ -774,14 +777,14 @@ class _RecentListSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shimmerColor = isDark ? Colors.white10 : const Color(0xFFEDEBF3);
+    final shimmerColor = AppThemeTokens.of(context).surfaceMuted;
     return Column(
       children: [
         for (int i = 0; i < 3; i++) ...[
           AppCardSurface(
             height: 90,
             padding: const EdgeInsets.all(14),
-            decoration: CampusTheme.cardDecoration(isDark),
+            decoration: CampusTheme.themedCardDecoration(context),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -827,20 +830,20 @@ class _RecentListError extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppCardSurface(
       padding: const EdgeInsets.all(24),
-      decoration: CampusTheme.cardDecoration(isDark),
+      decoration: CampusTheme.themedCardDecoration(context),
       child: Column(
         children: [
           Icon(
             Icons.cloud_off_rounded,
             size: 36,
-            color: isDark ? Colors.white38 : Colors.black38,
+            color: AppThemeTokens.of(context).textTertiary,
           ),
           const SizedBox(height: 10),
           Text(
             message,
             style: TextStyle(
               fontSize: 14,
-              color: isDark ? Colors.white54 : Colors.black54,
+              color: AppThemeTokens.of(context).textSecondary,
             ),
           ),
           const SizedBox(height: 12),
@@ -863,20 +866,20 @@ class _RecentListEmpty extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppCardSurface(
       padding: const EdgeInsets.all(24),
-      decoration: CampusTheme.cardDecoration(isDark),
+      decoration: CampusTheme.themedCardDecoration(context),
       child: Column(
         children: [
           Icon(
             Icons.inbox_rounded,
             size: 36,
-            color: isDark ? Colors.white38 : Colors.black38,
+            color: AppThemeTokens.of(context).textTertiary,
           ),
           const SizedBox(height: 10),
           Text(
             '暂无校园资讯',
             style: TextStyle(
               fontSize: 14,
-              color: isDark ? Colors.white54 : Colors.black54,
+              color: AppThemeTokens.of(context).textSecondary,
             ),
           ),
         ],

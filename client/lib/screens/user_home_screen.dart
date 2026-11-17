@@ -1,3 +1,4 @@
+import '../theme/app_theme_tokens.dart';
 import 'package:shenliyuan/widgets/app_dialog.dart';
 import 'package:shenliyuan/widgets/app_glass_button_style.dart';
 import '../widgets/app_tab_bar_surface.dart';
@@ -395,12 +396,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     final user = displayedUser;
     final isMe = isSelfProfile;
 
-    final pageBackground = isDark
-        ? const Color(0xFF111214)
-        : Theme.of(context).scaffoldBackgroundColor;
+    final pageBackground = AppThemeTokens.of(context).background;
 
     // 标签栏和内容区共用的面板色
-    final panelColor = isDark ? const Color(0xFF1A1B1E) : Colors.white;
+    final panelColor = AppThemeTokens.of(context).surface;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -478,8 +477,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                         stops: [0.0, 0.42, 1.0],
                                         colors: [
                                           Colors.transparent,
-                                          Color(0x22000000),
-                                          Color(0xDD000000),
+                                          Color(
+                                              0x22000000), // theme: fixed 用户封面固定遮罩
+                                          Color(
+                                              0xDD000000), // theme: fixed 用户封面固定遮罩
                                         ],
                                       ),
                                     ),
@@ -534,7 +535,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                     indicatorColor: Theme.of(context).colorScheme.primary,
                     labelColor: Theme.of(context).colorScheme.primary,
                     unselectedLabelColor:
-                        isDark ? Colors.white60 : Colors.black54,
+                        AppThemeTokens.of(context).textSecondary,
                     tabs: [
                       Tab(text: '帖子 ${_posts.length}'),
                       Tab(text: _marketTabText),
@@ -631,8 +632,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                   stops: [0.0, 0.42, 1.0],
                                   colors: [
                                     Colors.transparent,
-                                    Color(0x22000000),
-                                    Color(0xDD000000),
+                                    Color(0x22000000), // theme: fixed 用户封面固定遮罩
+                                    Color(0xDD000000), // theme: fixed 用户封面固定遮罩
                                   ],
                                 ),
                               ),
@@ -708,7 +709,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                       indicatorColor: Theme.of(context).colorScheme.primary,
                       labelColor: Theme.of(context).colorScheme.primary,
                       unselectedLabelColor:
-                          isDark ? Colors.white60 : Colors.black54,
+                          AppThemeTokens.of(context).textSecondary,
                       labelStyle: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -754,7 +755,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
             child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(_postsError!, style: const TextStyle(color: Colors.grey)),
+            Text(_postsError!,
+                style:
+                    TextStyle(color: AppThemeTokens.of(context).textSecondary)),
             const SizedBox(height: 8),
             TextButton(
               onPressed: () {
@@ -807,7 +810,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(_marketError!, style: const TextStyle(color: Colors.grey)),
+            Text(_marketError!,
+                style:
+                    TextStyle(color: AppThemeTokens.of(context).textSecondary)),
             const SizedBox(height: 8),
             TextButton(
               onPressed: () {
@@ -899,7 +904,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         memCacheWidth: imageWidth,
         alignment: Alignment.center,
         placeholder: (_, __) => Container(
-          color: const Color(0xFFEDEEF1),
+          color: AppThemeTokens.of(context).surfaceMuted,
         ),
         errorWidget: (_, __, ___) {
           if (allowOriginalFallback) {
@@ -1489,8 +1494,6 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return ConstrainedBox(
       constraints: BoxConstraints(
         maxWidth: 420,
@@ -1499,7 +1502,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       child: AppCardSurface(
         key: const ValueKey('edit-profile-surface'),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          color: AppThemeTokens.of(context).surfaceElevated,
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
@@ -1524,7 +1527,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.3),
+                  color: AppThemeTokens.of(context).textTertiary,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1534,7 +1537,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black87,
+                  color: AppThemeTokens.of(context).textPrimary,
                 ),
               ),
               const SizedBox(height: 24),
@@ -1547,11 +1550,12 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   padding:
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                   decoration: BoxDecoration(
-                    color: context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
+                    color: context
+                                .watch<ThemeProvider?>()
+                                ?.shouldShowCustomBackground ==
+                            true
                         ? Colors.transparent
-                        : isDark
-                            ? Colors.grey[800]
-                            : Colors.grey[100],
+                        : AppThemeTokens.of(context).surfaceMuted,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -1559,7 +1563,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                       const Icon(Icons.image, color: Colors.blue),
                       const SizedBox(width: 12),
                       const Expanded(child: Text('更改主页背景图')),
-                      Icon(Icons.chevron_right, color: Colors.grey[500]),
+                      Icon(Icons.chevron_right,
+                          color: AppThemeTokens.of(context).textTertiary),
                     ],
                   ),
                 ),
@@ -1580,11 +1585,12 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   padding:
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                   decoration: BoxDecoration(
-                    color: context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true
+                    color: context
+                                .watch<ThemeProvider?>()
+                                ?.shouldShowCustomBackground ==
+                            true
                         ? Colors.transparent
-                        : isDark
-                            ? Colors.grey[800]
-                            : Colors.grey[100],
+                        : AppThemeTokens.of(context).surfaceMuted,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -1595,7 +1601,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                       ),
                       const SizedBox(width: 12),
                       const Expanded(child: Text('竞赛经历')),
-                      Icon(Icons.chevron_right, color: Colors.grey[500]),
+                      Icon(Icons.chevron_right,
+                          color: AppThemeTokens.of(context).textTertiary),
                     ],
                   ),
                 ),

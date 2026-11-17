@@ -1,3 +1,4 @@
+import '../../theme/app_theme_tokens.dart';
 import '../../providers/theme_provider.dart';
 import 'package:provider/provider.dart';
 import '../app_card.dart';
@@ -255,13 +256,12 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final customBackground =
         context.watch<ThemeProvider?>()?.shouldShowCustomBackground == true;
 
     return AppCardSurface(
       decoration: BoxDecoration(
-        color: isDark ? CampusTheme.darkBg : CampusTheme.bg,
+        color: AppThemeTokens.of(context).background,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: SafeArea(
@@ -273,7 +273,7 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: isDark ? Colors.white24 : Colors.black12,
+                color: AppThemeTokens.of(context).textTertiary,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -286,14 +286,14 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : CampusTheme.text,
+                      color: AppThemeTokens.of(context).textPrimary,
                     ),
                   ),
                 ],
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Row(
                 children: [
                   Expanded(
@@ -301,7 +301,7 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                       '拉取当前展示学期会刷新当前页，拉取其他学期会自动切换到对应学期',
                       style: TextStyle(
                         fontSize: 14,
-                        color: CampusTheme.subText,
+                        color: AppThemeTokens.of(context).textSecondary,
                       ),
                     ),
                   ),
@@ -323,16 +323,18 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                     margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? CampusTheme.primary.withValues(alpha: 0.1)
+                          ? AppThemeTokens.of(context)
+                              .primary
+                              .withValues(alpha: 0.1)
                           : customBackground
                               ? Colors.transparent
-                              : isDark
-                                  ? CampusTheme.darkCard
-                                  : Colors.white,
+                              : AppThemeTokens.of(context).card,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: isSelected
-                            ? CampusTheme.primary.withValues(alpha: 0.3)
+                            ? AppThemeTokens.of(context)
+                                .primary
+                                .withValues(alpha: 0.3)
                             : Colors.transparent,
                       ),
                     ),
@@ -351,15 +353,15 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                         term.title,
                         style: TextStyle(
                           color: isSelected
-                              ? CampusTheme.primary
-                              : (isDark ? Colors.white : CampusTheme.text),
+                              ? AppThemeTokens.of(context).primary
+                              : (AppThemeTokens.of(context).textPrimary),
                           fontWeight:
                               isSelected ? FontWeight.bold : FontWeight.w500,
                         ),
                       ),
                       trailing: isSelected
-                          ? const Icon(Icons.check_circle_rounded,
-                              color: CampusTheme.primary)
+                          ? Icon(Icons.check_circle_rounded,
+                              color: AppThemeTokens.of(context).primary)
                           : null,
                     ),
                   );
@@ -420,11 +422,11 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                     ? null
                     : _fetchCourses,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: CampusTheme.primary,
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppThemeTokens.of(context).primary,
+                  foregroundColor: AppThemeTokens.of(context).onPrimary,
                   disabledBackgroundColor:
-                      CampusTheme.primary.withValues(alpha: 0.8),
-                  disabledForegroundColor: Colors.white,
+                      AppThemeTokens.of(context).primary.withValues(alpha: 0.8),
+                  disabledForegroundColor: AppThemeTokens.of(context).onPrimary,
                   elevation: 0,
                   minimumSize: const Size(double.infinity, 50),
                   shape: RoundedRectangleBorder(
@@ -432,7 +434,7 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                   ),
                 ),
                 child: _loadingTerms
-                    ? const Row(
+                    ? Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           SizedBox(
@@ -440,32 +442,32 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                             height: 18,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color: AppThemeTokens.of(context).onPrimary,
                             ),
                           ),
-                          SizedBox(width: 12),
-                          Text('正在获取学校学期…'),
+                          const SizedBox(width: 12),
+                          const Text('正在获取学校学期…'),
                         ],
                       )
                     : _isFetching
                         ? Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const SizedBox(
+                              SizedBox(
                                 width: 18,
                                 height: 18,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: Colors.white,
+                                  color: AppThemeTokens.of(context).onPrimary,
                                 ),
                               ),
                               const SizedBox(width: 12),
                               Text(
                                 _statusText,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
-                                  color: Colors.white,
+                                  color: AppThemeTokens.of(context).onPrimary,
                                 ),
                               ),
                             ],

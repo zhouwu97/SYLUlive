@@ -1,5 +1,5 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
-import '../campus/campus_theme.dart';
 import '../../models/course_term.dart';
 import '../app_card.dart';
 
@@ -23,7 +23,7 @@ class CourseEmptyStateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const cardPrimary = Color(0xFF168B7D);
+    final cardPrimary = AppThemeTokens.of(context).primary;
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -31,7 +31,7 @@ class CourseEmptyStateCard extends StatelessWidget {
         AppCardSurface(
           margin: const EdgeInsets.symmetric(horizontal: 24),
           decoration: BoxDecoration(
-            color: isDark ? CampusTheme.darkCard : Colors.white,
+            color: AppThemeTokens.of(context).card,
             borderRadius: BorderRadius.circular(28),
             boxShadow: [
               BoxShadow(
@@ -44,7 +44,7 @@ class CourseEmptyStateCard extends StatelessWidget {
               ),
             ],
             border: Border.all(
-              color: isDark ? Colors.white12 : Colors.white,
+              color: AppThemeTokens.of(context).cardBorder,
               width: 1.5,
             ),
           ),
@@ -76,7 +76,7 @@ class CourseEmptyStateCard extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 19,
                   fontWeight: FontWeight.w800,
-                  color: isDark ? Colors.white : CampusTheme.text,
+                  color: AppThemeTokens.of(context).textPrimary,
                   letterSpacing: 0.2,
                 ),
               ),
@@ -106,7 +106,7 @@ class CourseEmptyStateCard extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14,
-                  color: isDark ? Colors.white70 : CampusTheme.subText,
+                  color: AppThemeTokens.of(context).textSecondary,
                   height: 1.6,
                 ),
               ),
@@ -128,7 +128,7 @@ class CourseEmptyStateCard extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.transparent,
                     shadowColor: Colors.transparent,
-                    foregroundColor: Colors.white,
+                    foregroundColor: AppThemeTokens.of(context).onPrimary,
                     elevation: 0,
                     minimumSize: const Size(double.infinity, 52),
                     shape: RoundedRectangleBorder(
@@ -150,7 +150,7 @@ class CourseEmptyStateCard extends StatelessWidget {
                 TextButton(
                   onPressed: onSecondaryAction,
                   style: TextButton.styleFrom(
-                    foregroundColor: CampusTheme.subText,
+                    foregroundColor: AppThemeTokens.of(context).textSecondary,
                     minimumSize: const Size(double.infinity, 48),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -161,7 +161,7 @@ class CourseEmptyStateCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white60 : CampusTheme.subText,
+                      color: AppThemeTokens.of(context).textSecondary,
                     ),
                   ),
                 ),
@@ -212,7 +212,8 @@ class CourseEmptyStateCard extends StatelessWidget {
             '登录并绑定教务系统后即可解锁以上功能',
             style: TextStyle(
               fontSize: 11,
-              color: appContentSecondaryColor(context, CampusTheme.subText),
+              color: appContentSecondaryColor(
+                  context, AppThemeTokens.of(context).textSecondary),
             ),
           )),
         ],
@@ -224,7 +225,8 @@ class CourseEmptyStateCard extends StatelessWidget {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: appContentSecondaryColor(context, CampusTheme.subText),
+              color: appContentSecondaryColor(
+                  context, AppThemeTokens.of(context).textSecondary),
             ),
           )),
         ],
@@ -233,7 +235,8 @@ class CourseEmptyStateCard extends StatelessWidget {
   }
 
   Widget _buildFeatureItem(BuildContext context, IconData icon, String label) {
-    final color = appContentSecondaryColor(context, CampusTheme.subText);
+    final color = appContentSecondaryColor(
+        context, AppThemeTokens.of(context).textSecondary);
     return Column(
       children: [
         Icon(icon, size: 24, color: color),

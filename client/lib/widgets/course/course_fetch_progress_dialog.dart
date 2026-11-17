@@ -1,7 +1,7 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import '../../theme/app_spacing.dart';
 import '../app_card.dart';
 
@@ -18,7 +18,7 @@ class CourseFetchProgressDialog extends StatelessWidget {
         child: AppCardSurface(
           key: const ValueKey('course-fetch-progress-surface'),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadius.sheet),
+            borderRadius: BorderRadius.circular(AppShape.of(context).sheet),
           ),
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(
@@ -32,10 +32,12 @@ class CourseFetchProgressDialog extends StatelessWidget {
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: AppColors.brandPrimary.withValues(alpha: .12),
+                    color: AppThemeTokens.of(context)
+                        .primary
+                        .withValues(alpha: .12),
                   ),
-                  child: const CircularProgressIndicator(
-                    color: AppColors.brandPrimary,
+                  child: CircularProgressIndicator(
+                    color: AppThemeTokens.of(context).primary,
                     strokeWidth: 3,
                   ),
                 ),

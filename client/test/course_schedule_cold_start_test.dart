@@ -22,6 +22,7 @@ import 'package:shenliyuan/providers/message_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/course_schedule_screen.dart';
+import 'package:shenliyuan/theme/app_theme_tokens.dart';
 import 'package:shenliyuan/screens/home_screen.dart';
 import 'package:shenliyuan/services/app_update_coordinator.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -252,7 +253,7 @@ void main() {
         expect(painted.a, closeTo(0.55, 0.005),
             reason: '课表独立透明度不受全局透明度、毛玻璃或深浅主题影响');
         expect(painted.withValues(alpha: 1),
-            getCourseColor('线性代数').withValues(alpha: 1));
+            getCourseColor('线性代数', palette: AppThemeTokens.of(tester.element(paintedCourse)).coursePalette).withValues(alpha: 1));
         for (final entry in [('后期课程', 0.2), ('2门课程冲突', 0.9)]) {
           final card = find
               .ancestor(

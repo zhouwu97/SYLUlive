@@ -36,15 +36,12 @@ class CampusTheme {
   /// 不改全局 AppTheme 的 seed，避免影响尚未完成迁移的业务页面；需要统一
   /// 校园/设置类页面时，在页面边界使用这个方法即可。
   static ThemeData withBrandAccent(ThemeData base) {
-    final isDark = base.brightness == Brightness.dark;
     final palette =
         base.extension<AppPalette>() ?? AppPalette.defaults(base.brightness);
     final accent = palette.primary;
-    final onAccent = isDark ? palette.background : palette.onPrimary;
-    final accentContainer =
-        isDark ? const Color(0xFF1B3B36) : palette.primaryContainer;
-    final onAccentContainer =
-        isDark ? const Color(0xFFBFEDE3) : palette.primary;
+    final onAccent = palette.onPrimary;
+    final accentContainer = palette.primaryContainer;
+    final onAccentContainer = palette.onPrimaryContainer;
 
     return base.copyWith(
       colorScheme: base.colorScheme.copyWith(
@@ -57,6 +54,33 @@ class CampusTheme {
         secondaryContainer: accentContainer,
         onSecondaryContainer: onAccentContainer,
       ),
+    );
+  }
+
+  /// 旧装饰入口保留给未迁移页面，首批组件使用当前 Token 和圆角。
+  static BoxDecoration themedCardDecoration(BuildContext context,
+      {bool softGreen = false}) {
+    final tokens = AppThemeTokens.of(context);
+    return BoxDecoration(
+      color: tokens.card,
+      gradient: !tokens.isDark && softGreen
+          ? LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [tokens.card, tokens.primaryContainer],
+            )
+          : null,
+      borderRadius: BorderRadius.circular(AppShape.of(context).lg),
+      border: Border.all(color: tokens.cardBorder),
+      boxShadow: tokens.isDark
+          ? null
+          : [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.025),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
+              ),
+            ],
     );
   }
 

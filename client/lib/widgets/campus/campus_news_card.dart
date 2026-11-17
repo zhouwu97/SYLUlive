@@ -1,11 +1,11 @@
+import '../../theme/app_theme_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../models/campus_article.dart';
 import '../../theme/app_motion.dart';
-import '../../theme/app_radius.dart';
+import '../../theme/app_palette.dart';
 import 'campus_notice_tag.dart';
-import 'campus_theme.dart';
 import '../app_card.dart';
 
 class CampusNewsCard extends StatefulWidget {
@@ -35,33 +35,35 @@ class _CampusNewsCardState extends State<CampusNewsCard> {
     final glass = context.watch<ThemeProvider?>()?.frostedGlass == true;
 
     final surface = AppCardMaterial(
-      color: isDark ? CampusTheme.darkCard : CampusTheme.card,
-      borderRadius: BorderRadius.circular(AppRadius.lg),
+      color: AppThemeTokens.of(context).card,
+      borderRadius: BorderRadius.circular(AppShape.of(context).lg),
       child: InkWell(
         onTap: widget.onTap,
         onHighlightChanged: (highlighted) {
           if (mounted) setState(() => _pressed = highlighted);
         },
-        borderRadius: BorderRadius.circular(AppRadius.lg),
+        borderRadius: BorderRadius.circular(AppShape.of(context).lg),
         child: AnimatedContainer(
           duration: reduceMotion ? Duration.zero : AppMotion.micro,
           curve: AppMotion.standard,
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadius.lg),
+            borderRadius: BorderRadius.circular(AppShape.of(context).lg),
             border: Border.all(
               color: _pressed
-                  ? CampusTheme.primary.withValues(alpha: isDark ? 0.3 : 0.18)
+                  ? AppThemeTokens.of(context)
+                      .primary
+                      .withValues(alpha: isDark ? 0.3 : 0.18)
                   : glass
                       ? Colors.transparent
-                      : isDark
-                          ? Colors.white.withValues(alpha: 0.08)
-                          : CampusTheme.softBorder,
+                      : AppThemeTokens.of(context).cardBorder,
             ),
             boxShadow: _pressed
                 ? [
                     BoxShadow(
-                      color: CampusTheme.primary.withValues(alpha: 0.08),
+                      color: AppThemeTokens.of(context)
+                          .primary
+                          .withValues(alpha: 0.08),
                       blurRadius: 14,
                       offset: const Offset(0, 5),
                     ),
@@ -81,9 +83,9 @@ class _CampusNewsCardState extends State<CampusNewsCard> {
                   const Spacer(),
                   Text(
                     article.shortDate,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: CampusTheme.subText,
+                      color: AppThemeTokens.of(context).textSecondary,
                     ),
                   ),
                 ],
@@ -98,7 +100,7 @@ class _CampusNewsCardState extends State<CampusNewsCard> {
                   fontSize: 15,
                   height: 1.32,
                   fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : CampusTheme.text,
+                  color: AppThemeTokens.of(context).textPrimary,
                 ),
               ),
               const SizedBox(height: 6),
@@ -113,7 +115,9 @@ class _CampusNewsCardState extends State<CampusNewsCard> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
-                          color: CampusTheme.subText.withValues(alpha: 0.6),
+                          color: AppThemeTokens.of(context)
+                              .textSecondary
+                              .withValues(alpha: 0.6),
                         ),
                       ),
                     ),
@@ -124,7 +128,9 @@ class _CampusNewsCardState extends State<CampusNewsCard> {
                       ' · ',
                       style: TextStyle(
                         fontSize: 12,
-                        color: CampusTheme.subText.withValues(alpha: 0.4),
+                        color: AppThemeTokens.of(context)
+                            .textSecondary
+                            .withValues(alpha: 0.4),
                       ),
                     ),
                   ],
@@ -132,14 +138,18 @@ class _CampusNewsCardState extends State<CampusNewsCard> {
                     Icon(
                       Icons.attach_file_rounded,
                       size: 13,
-                      color: CampusTheme.subText.withValues(alpha: 0.6),
+                      color: AppThemeTokens.of(context)
+                          .textSecondary
+                          .withValues(alpha: 0.6),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       '含附件',
                       style: TextStyle(
                         fontSize: 12,
-                        color: CampusTheme.subText.withValues(alpha: 0.6),
+                        color: AppThemeTokens.of(context)
+                            .textSecondary
+                            .withValues(alpha: 0.6),
                       ),
                     ),
                   ],

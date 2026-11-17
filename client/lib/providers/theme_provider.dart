@@ -1569,6 +1569,37 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         return themePacks.install(pack);
       });
 
+  Future<InstalledTheme> installStoreTheme(
+    PreparedThemePack pack, {
+    required String source,
+    required String familyId,
+  }) =>
+      _queueAppearanceOperation((prefs) async {
+        await _initializeThemeFiles(prefs);
+        final existing = await themePacks.findInstalledVersion(
+          pack.manifest.id,
+          pack.manifest.version,
+        );
+        if (existing != null) {
+          return InstalledTheme(
+            existing.manifest,
+            existing.directory,
+            existing.installedAt,
+            source: source,
+            familyId: familyId,
+          );
+        }
+        return themePacks.install(pack, source: source, familyId: familyId);
+      });
+
+  /// 判断指定主题版本是否为当前已持久化的主要生效外观（配色分组来源）。
+  bool isThemeVersionActive(String themeId, int version) {
+    final src = _appearance.group(ThemeGroup.colors)?['source'] as Map?;
+    if (src == null) return false;
+    final activeId = (src['themeId'] ?? src['id'])?.toString().toLowerCase();
+    return activeId == themeId.toLowerCase() && src['version'] == version;
+  }
+
   Future<void> applyInstalledTheme(
       InstalledTheme theme, Set<ThemeGroup> groups) {
     final selected = Set<ThemeGroup>.of(groups)

@@ -29,6 +29,7 @@ import '../widgets/global_background_wrapper.dart';
 import '../widgets/glass_container.dart';
 import '../features/emoji/presentation/emoji_submissions_screen.dart';
 import '../features/emoji/presentation/emoji_creator_screen.dart';
+import '../features/theme_pack/admin_theme_review_screen.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -329,6 +330,19 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       title: '审核待办',
                       isDark: isDark,
                       children: [
+                        _AdminActionPill(
+                          icon: Icons.palette_outlined,
+                          iconColor: Theme.of(context).colorScheme.primary,
+                          title: '主题审核',
+                          subtitle: '待审主题跨页试用、审核与下架管理',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const AdminThemeReviewScreen(),
+                            ),
+                          ).then((_) => _loadCounts()),
+                        ),
                         _AdminActionPill(
                           icon: Icons.emoji_emotions_outlined,
                           iconColor: Theme.of(context).colorScheme.primary,

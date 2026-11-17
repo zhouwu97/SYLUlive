@@ -9,10 +9,18 @@ import 'theme_manifest.dart';
 import 'theme_pack_codec.dart';
 
 class InstalledTheme {
-  const InstalledTheme(this.manifest, this.directory, this.installedAt);
+  const InstalledTheme(
+    this.manifest,
+    this.directory,
+    this.installedAt, {
+    this.source = 'local',
+    this.familyId,
+  });
   final ThemeManifest manifest;
   final String directory;
   final String installedAt;
+  final String source;
+  final String? familyId;
 }
 
 /// 修改由 ThemeProvider 的现有外观写入队列串行调用。
@@ -32,19 +40,33 @@ class ThemePackStore {
     final entries = jsonDecode(await file.readAsString()) as List;
     final result = <InstalledTheme>[];
     for (final entry in entries) {
+      final map = entry as Map;
       final folder = path.join(
-          root.path, 'installed', entry['id'] as String, '${entry['version']}');
-      final manifest = ThemeManifest.fromStored(jsonDecode(
-              await File(path.join(folder, 'manifest.json')).readAsString())
-          as Map<String, dynamic>);
+          root.path, 'installed', map['id'] as String, '${map['version']}');
+      final manifestFile = File(path.join(folder, 'manifest.json'));
+      if (!await manifestFile.exists()) continue;
+      final manifest = ThemeManifest.fromStored(
+          jsonDecode(await manifestFile.readAsString())
+              as Map<String, dynamic>);
       result.add(
-          InstalledTheme(manifest, folder, entry['installedAt'] as String));
+        InstalledTheme(
+          manifest,
+          folder,
+          map['installedAt'] as String,
+          source: (map['source'] as String?) ?? 'local',
+          familyId: map['familyId'] as String?,
+        ),
+      );
     }
     result.sort((a, b) => b.installedAt.compareTo(a.installedAt));
     return result;
   }
 
-  Future<InstalledTheme> install(PreparedThemePack pack) async {
+  Future<InstalledTheme> install(
+    PreparedThemePack pack, {
+    String source = 'local',
+    String? familyId,
+  }) async {
     final root = await directory;
     final manifest = pack.manifest;
     final destination = Directory(
@@ -71,7 +93,12 @@ class ThemePackStore {
       await staging.rename(destination.path);
       published = true;
       final installed = InstalledTheme(
-          manifest, destination.path, DateTime.now().toUtc().toIso8601String());
+        manifest,
+        destination.path,
+        DateTime.now().toUtc().toIso8601String(),
+        source: source,
+        familyId: familyId,
+      );
       final old =
           index.where((item) => item.manifest.id == manifest.id).firstOrNull;
       if (old == null || old.manifest.version < manifest.version) {
@@ -106,8 +133,8 @@ class ThemePackStore {
               'version': theme.manifest.version,
               'name': theme.manifest.name,
               'author': theme.manifest.author,
-              'source': 'local',
-              'familyId': null,
+              'source': theme.source,
+              'familyId': theme.familyId,
               'installedAt': theme.installedAt,
             }
         ]),

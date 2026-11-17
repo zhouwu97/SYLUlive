@@ -30,6 +30,7 @@ import 'theme_pack_codec.dart';
 import 'theme_pack_store.dart';
 import 'theme_presentation.dart';
 import 'theme_resolver.dart';
+import 'theme_submission_screen.dart';
 import 'theme_workshop_samples.dart';
 
 enum WorkshopTab {
@@ -1305,6 +1306,10 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
               onPressed: () => Navigator.of(dialogCtx).pop('save'),
               child: const Text('保存文件'),
             ),
+            OutlinedButton(
+              onPressed: () => Navigator.of(dialogCtx).pop('submit'),
+              child: const Text('投稿到商城'),
+            ),
             FilledButton(
               onPressed: () => Navigator.of(dialogCtx).pop('apply'),
               child: const Text('安装并应用'),
@@ -1349,7 +1354,19 @@ class _ThemeWorkshopScreenState extends State<ThemeWorkshopScreen> {
 
       final fileName =
           '${ThemeAppearanceExporter.sanitizeFileName(_state.name)}.sltheme';
-      if (action == 'apply') {
+      if (action == 'submit') {
+        final prepared =
+            await ThemePackCodec.decode(bytes, appVersion: appVer);
+        if (!mounted) return;
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => ThemeSubmissionScreen(
+              initialPackageBytes: bytes,
+              initialManifest: prepared.manifest,
+            ),
+          ),
+        );
+      } else if (action == 'apply') {
         final provider = context.read<ThemeProvider>();
         final prepared =
             await ThemePackCodec.decode(bytes, appVersion: appVer);

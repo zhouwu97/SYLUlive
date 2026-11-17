@@ -9,5 +9,9 @@
 	<array>
 		<string>group.com.sylu.sylulive</string>
 	</array>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:sylulive.online</string>
+	</array>
 </dict>
 </plist>

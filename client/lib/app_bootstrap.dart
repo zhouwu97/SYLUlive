@@ -106,6 +106,7 @@ import 'widgets/startup_recovery_screen.dart';
 import 'widgets/required_legal_consent_dialog.dart';
 import 'features/theme_pack/theme_font_registry.dart';
 import 'features/theme_pack/theme_import_screen.dart';
+import 'features/theme_pack/theme_store_screen.dart';
 import 'features/theme_pack/theme_trial_banner.dart';
 import 'platform/contracts/preferences_store.dart';
 import 'package:crypto/crypto.dart';
@@ -1829,6 +1830,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         // Navigator 尚未就绪或会话门禁尚未通过时，组队链接必须留在 Dart
         // 层等待下一次状态变化；此时不能 ACK 原生 pending link。
         if (TeamShareLink.parseRecruitmentId(uri) != null ||
+            ThemeShareLink.parseFamilyId(uri) != null ||
             AcademicTransferLink.tryParse(uri) != null) {
           _pendingTeamDeepLink = uri;
         }
@@ -1947,6 +1949,24 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
       if (_isLoginRouteVisible()) return _DeepLinkHandlingResult.deferred;
       appNavigatorKey.currentState?.push(
         MaterialPageRoute(builder: (_) => PostDetailScreen(postId: postId)),
+      );
+      return _DeepLinkHandlingResult.handled;
+    }
+    final themeFamilyId = ThemeShareLink.parseFamilyId(uri);
+    if (themeFamilyId != null) {
+      final auth = context.read<AuthProvider>();
+      if (_isLoginRouteVisible() ||
+          !auth.isLoggedIn ||
+          !(auth.user?.legalConsentsActive ?? false)) {
+        _pendingTeamDeepLink = uri;
+        return _DeepLinkHandlingResult.deferred;
+      }
+      final navigator = appNavigatorKey.currentState;
+      if (navigator == null) return _DeepLinkHandlingResult.deferred;
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => ThemeDetailScreen(familyId: themeFamilyId),
+        ),
       );
       return _DeepLinkHandlingResult.handled;
     }

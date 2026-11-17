@@ -41,13 +41,29 @@ abstract final class ThemePackCodec {
 
   static Future<PreparedThemePack> decode(Uint8List bytes,
       {required String appVersion}) async {
-    final prepared = await Isolate.run(() => _readArchive(bytes, appVersion));
+    final prepared =
+        await Isolate.run(() => _readArchive(bytes, appVersion, false));
     await _validateImages(prepared);
     await ThemeFontRegistry.probePackFont(prepared.manifest, prepared.contents);
     return prepared;
   }
 
-  static PreparedThemePack _readArchive(Uint8List bytes, String appVersion) {
+  /// 商城规范包已在服务端做过完整校验并由下载器核对过一次 SHA-256，仅解包校验 ZIP CRC32 并注册字体。
+  static Future<PreparedThemePack> decodeStorePackage(
+    Uint8List bytes, {
+    required String appVersion,
+  }) async {
+    final prepared =
+        await Isolate.run(() => _readArchive(bytes, appVersion, true));
+    await ThemeFontRegistry.probePackFont(prepared.manifest, prepared.contents);
+    return prepared;
+  }
+
+  static PreparedThemePack _readArchive(
+    Uint8List bytes,
+    String appVersion, [
+    bool preserveStoreSource = false,
+  ]) {
     if (bytes.length > maxPackageBytes) {
       throw const ThemePackError('theme_too_large');
     }
@@ -103,7 +119,11 @@ abstract final class ThemePackCodec {
       } on FormatException {
         throw const ThemePackError('theme_manifest_invalid', 'manifest.json');
       }
-      final manifest = ThemeManifest.parse(document, appVersion: appVersion);
+      final manifest = ThemeManifest.parse(
+        document,
+        appVersion: appVersion,
+        preserveStoreSource: preserveStoreSource,
+      );
       final references = <String, List<ThemeAssetKind>>{};
       for (final asset in manifest.assets) {
         references.putIfAbsent(asset.path, () => []).add(asset.kind);

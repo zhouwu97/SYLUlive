@@ -12,9 +12,13 @@ import (
 	"image/png"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"sync"
 	"testing"
+	"time"
 
 	"shenliyuan/internal/handlers"
 	"shenliyuan/internal/middleware"
@@ -125,6 +129,10 @@ func makeRouteTestZip(t *testing.T, themeName string) []byte {
 }
 
 func newThemeRouteFixture(t *testing.T) *themeRouteFixture {
+	return newThemeRouteFixtureOpt(t, true)
+}
+
+func newThemeRouteFixtureOpt(t *testing.T, buildZip bool) *themeRouteFixture {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -156,12 +164,16 @@ func newThemeRouteFixture(t *testing.T) *themeRouteFixture {
 	})
 
 	secret := "theme-routes-test-secret"
+	var zipBytes []byte
+	if buildZip {
+		zipBytes = makeRouteTestZip(t, "海盐蓝测试")
+	}
 	f := &themeRouteFixture{
 		db:     db,
 		router: gin.New(),
 		dir:    t.TempDir(),
 		tokens: map[uint]string{},
-		zipV1:  makeRouteTestZip(t, "海盐蓝测试"),
+		zipV1:  zipBytes,
 	}
 	f.router.Use(middleware.RequestBodyLimitMiddleware(
 		1<<20,
@@ -169,7 +181,12 @@ func newThemeRouteFixture(t *testing.T) *themeRouteFixture {
 	))
 	f.router.Use(middleware.IdempotencyMiddlewareWithJWT(db, secret))
 
-	for id, role := range map[uint]models.Role{1: models.RoleUser, 2: models.RoleUser, 3: models.RoleAdmin} {
+	for id, role := range map[uint]models.Role{
+		1: models.RoleUser,
+		2: models.RoleUser,
+		3: models.RoleAdmin,
+		4: models.RoleAdmin,
+	} {
 		require.NoError(t, db.Create(&models.User{
 			ID:            id,
 			PasswordHash:  "fixture",
@@ -390,4 +407,40 @@ func TestThemePackRoutesPermissionsCatalogVersionedDownloadAndRemoval(t *testing
 	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, fmt.Sprintf("/api/themes/%s/versions/1/package", wFam), 0, nil, nil).Code)
 	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, fmt.Sprintf("/api/themes/%s/versions/2/package", wFam), 0, nil, nil).Code)
 	require.Equal(t, http.StatusNotFound, f.req(http.MethodGet, "/api/themes/"+wFam, 0, nil, nil).Code)
+}
+
+func TestThemeLoopbackHarness(t *testing.T) {
+	if os.Getenv("SYLU_THEME_LOOPBACK_HARNESS") != "1" {
+		return
+	}
+	f := newThemeRouteFixtureOpt(t, false)
+	done := make(chan struct{})
+	var stopOnce sync.Once
+	f.router.POST("/__harness/stop", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+		stopOnce.Do(func() { close(done) })
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	srv := &http.Server{Handler: f.router}
+	go func() { _ = srv.Serve(ln) }()
+	defer func() { _ = srv.Close() }()
+
+	readyPayload, err := json.Marshal(map[string]any{
+		"baseUrl": fmt.Sprintf("http://%s/api", ln.Addr().String()),
+		"tokens": map[string]string{
+			"user1":  f.tokens[1],
+			"user2":  f.tokens[2],
+			"admin1": f.tokens[3],
+			"admin2": f.tokens[4],
+		},
+	})
+	require.NoError(t, err)
+	fmt.Printf("HARNESS_READY %s\n", string(readyPayload))
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Minute):
+	}
 }

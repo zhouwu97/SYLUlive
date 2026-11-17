@@ -6,20 +6,27 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/app_dialog.dart';
 import 'theme_appearance_exporter.dart';
 import 'theme_import_screen.dart';
 import 'theme_pack_store.dart';
+import 'theme_store_repository.dart';
+import 'theme_store_screen.dart';
 
 class InstalledThemesScreen extends StatefulWidget {
-  const InstalledThemesScreen({super.key});
+  const InstalledThemesScreen({super.key, this.repository});
+
+  final ThemeStoreRepository? repository;
+
   @override
   State<InstalledThemesScreen> createState() => _InstalledThemesScreenState();
 }
 
 class _InstalledThemesScreenState extends State<InstalledThemesScreen> {
   List<InstalledTheme>? _themes;
+  Map<String, ThemeCatalogItem> _remoteUpdates = const {};
   String? _error;
   bool _busy = false;
   int _generation = 0;
@@ -30,19 +37,70 @@ class _InstalledThemesScreenState extends State<InstalledThemesScreen> {
     unawaited(_load());
   }
 
+  ThemeStoreRepository? _resolveRepo() {
+    if (widget.repository != null) return widget.repository;
+    final auth = context.read<AuthProvider?>();
+    if (auth == null) return null;
+    return ThemeStoreRepository(auth.dio);
+  }
+
   Future<void> _load() async {
     final generation = ++_generation;
     setState(() => _error = null);
     try {
       final themes = await context.read<ThemeProvider>().installedThemes();
-      if (mounted && generation == _generation) {
-        setState(() => _themes = themes);
+      if (!mounted || generation != _generation) return;
+      setState(() => _themes = themes);
+      final repo = _resolveRepo();
+      if (repo != null && themes.isNotEmpty) {
+        final ids = themes
+            .map((t) => (t.familyId ?? t.manifest.id).toLowerCase())
+            .toSet()
+            .toList();
+        try {
+          final remoteMap = await repo.checkUpdates(ids);
+          if (!mounted || generation != _generation) return;
+          final updates = <String, ThemeCatalogItem>{};
+          for (final theme in themes) {
+            final key = (theme.familyId ?? theme.manifest.id).toLowerCase();
+            final remote = remoteMap[key];
+            if (remote != null && remote.version > theme.manifest.version) {
+              updates[theme.manifest.id] = remote;
+            }
+          }
+          setState(() => _remoteUpdates = updates);
+        } catch (_) {
+          // 离线或商城未开启时不阻断本机主题管理。
+        }
+      } else if (mounted && generation == _generation) {
+        setState(() => _remoteUpdates = const {});
       }
     } catch (_) {
       if (mounted && generation == _generation) {
         setState(() => _error = '无法读取本机主题，请检查存储空间后重试。');
       }
     }
+  }
+
+  Future<void> _openUpdateDetail(ThemeCatalogItem item) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ThemeDetailScreen(
+          familyId: item.familyId,
+          initialItem: item,
+          repository: widget.repository,
+        ),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  String _sourceLabel(InstalledTheme theme) {
+    return switch (theme.source) {
+      'official' => '官方主题',
+      'community' => '商城主题',
+      _ => '本机主题',
+    };
   }
 
   Future<void> _open([InstalledTheme? theme]) async {
@@ -163,59 +221,110 @@ class _InstalledThemesScreenState extends State<InstalledThemesScreen> {
                                     textAlign: TextAlign.center),
                               ])),
                         for (final theme in _themes ?? <InstalledTheme>[])
-                          Card(
-                              child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        ListTile(
-                                            contentPadding: EdgeInsets.zero,
-                                            leading: SizedBox(
-                                                width: 48,
-                                                height: 64,
-                                                child: Image.file(
-                                                    File(
-                                                        '${theme.directory}/${theme.manifest.data['preview']['light']}'),
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (_, __,
-                                                            ___) =>
-                                                        const Icon(Icons
-                                                            .broken_image_outlined))),
-                                            title: Text(theme.manifest.name),
-                                            subtitle: Text(
-                                                '${theme.manifest.author} · v${theme.manifest.version}\n本机主题'),
-                                            onTap: _busy
-                                                ? null
-                                                : () => _open(theme)),
-                                        Wrap(
-                                            alignment: WrapAlignment.end,
-                                            spacing: 8,
-                                            children: [
-                                              TextButton(
-                                                  onPressed: _busy
-                                                      ? null
-                                                      : () => _remove(theme),
-                                                  child: const Text('删除')),
-                                              TextButton(
-                                                  onPressed: _busy
-                                                      ? null
-                                                      : () => _share(theme,
-                                                          saveToFile: true),
-                                                  child: const Text('保存')),
-                                              TextButton(
-                                                  onPressed: _busy
-                                                      ? null
-                                                      : () => _share(theme),
-                                                  child: const Text('分享')),
-                                              FilledButton(
-                                                  onPressed: _busy
-                                                      ? null
-                                                      : () => _open(theme),
-                                                  child: const Text('预览与应用')),
-                                            ]),
-                                      ]))),
+                          Builder(builder: (context) {
+                            final updateItem =
+                                _remoteUpdates[theme.manifest.id];
+                            return Card(
+                                child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          ListTile(
+                                              contentPadding: EdgeInsets.zero,
+                                              leading: SizedBox(
+                                                  width: 48,
+                                                  height: 64,
+                                                  child: Image.file(
+                                                      File(
+                                                          '${theme.directory}/${theme.manifest.data['preview']['light']}'),
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder: (_, __,
+                                                              ___) =>
+                                                          const Icon(Icons
+                                                              .broken_image_outlined))),
+                                              title: Row(
+                                                children: [
+                                                  Flexible(
+                                                    child: Text(
+                                                        theme.manifest.name),
+                                                  ),
+                                                  if (updateItem != null) ...[
+                                                    const SizedBox(width: 8),
+                                                    Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 2,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        color: Theme.of(context)
+                                                            .colorScheme
+                                                            .primaryContainer,
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(999),
+                                                      ),
+                                                      child: Text(
+                                                        '可更新 v${updateItem.version}',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color: Theme.of(
+                                                                  context)
+                                                              .colorScheme
+                                                              .onPrimaryContainer,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                              subtitle: Text(
+                                                  '${theme.manifest.author} · v${theme.manifest.version}\n${_sourceLabel(theme)}'),
+                                              onTap: _busy
+                                                  ? null
+                                                  : () => _open(theme)),
+                                          Wrap(
+                                              alignment: WrapAlignment.end,
+                                              spacing: 8,
+                                              children: [
+                                                TextButton(
+                                                    onPressed: _busy
+                                                        ? null
+                                                        : () => _remove(theme),
+                                                    child: const Text('删除')),
+                                                TextButton(
+                                                    onPressed: _busy
+                                                        ? null
+                                                        : () => _share(theme,
+                                                            saveToFile: true),
+                                                    child: const Text('保存')),
+                                                TextButton(
+                                                    onPressed: _busy
+                                                        ? null
+                                                        : () => _share(theme),
+                                                    child: const Text('分享')),
+                                                if (updateItem != null)
+                                                  OutlinedButton(
+                                                      onPressed: _busy
+                                                          ? null
+                                                          : () =>
+                                                              _openUpdateDetail(
+                                                                  updateItem),
+                                                      child:
+                                                          const Text('前往更新')),
+                                                FilledButton(
+                                                    onPressed: _busy
+                                                        ? null
+                                                        : () => _open(theme),
+                                                    child:
+                                                        const Text('预览与应用')),
+                                              ]),
+                                        ])));
+                          }),
                         const Padding(
                             padding: EdgeInsets.only(top: 16),
                             child: Text('删除只移出本机主题列表。当前外观和上一个外观使用的资源会保留。')),

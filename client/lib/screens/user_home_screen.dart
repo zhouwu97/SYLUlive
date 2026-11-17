@@ -35,6 +35,8 @@ import 'competition/competition_award_screen.dart';
 
 import '../widgets/level_progress_pill.dart';
 import '../utils/app_navigation.dart';
+import '../features/theme_pack/theme_store_repository.dart';
+import '../features/theme_pack/theme_store_screen.dart';
 
 class UserHomeScreen extends StatefulWidget {
   final int? userId;
@@ -56,6 +58,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   User? _user;
   List<Post> _posts = [];
   List<Post> _marketPosts = [];
+  List<ThemeCatalogItem> _publishedThemes = [];
   int _marketTotal = 0;
   int _marketSoldCount = 0;
   int _currentTabIndex = 0;
@@ -105,6 +108,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       _loadProfilePartition(generation, targetId),
       _loadPostsPartition(generation, targetId),
       _loadMarketPartition(generation, targetId),
+      _loadThemesPartition(generation, targetId),
     ]);
 
     if (mounted && generation == _loadGeneration) {
@@ -213,6 +217,25 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           _marketError = '商品加载失败';
         });
       }
+    }
+  }
+
+  Future<void> _loadThemesPartition(int generation, int targetId) async {
+    final auth = context.read<AuthProvider>();
+    final requestEpoch = auth.accountSessionEpoch;
+    final requestViewerId = auth.user?.id;
+    try {
+      final items =
+          await ThemeStoreRepository(auth.dio).listUserThemes(targetId);
+      if (!mounted ||
+          generation != _loadGeneration ||
+          auth.accountSessionEpoch != requestEpoch ||
+          auth.user?.id != requestViewerId) {
+        return;
+      }
+      setState(() => _publishedThemes = items);
+    } catch (_) {
+      // 主题商城离线或关闭时不阻断个人主页展示。
     }
   }
 
@@ -362,6 +385,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       _accountSessionEpoch = auth.accountSessionEpoch;
       _posts = [];
       _marketPosts = [];
+      _publishedThemes = [];
       _marketTotal = 0;
       _marketSoldCount = 0;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -508,6 +532,11 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                 ],
                               ),
                             ),
+                            if (_publishedThemes.isNotEmpty)
+                              _buildPublishedThemesStrip(
+                                context,
+                                horizontalPadding: 16,
+                              ),
                           ],
                         ),
                       ),
@@ -726,6 +755,14 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                   ),
                 ),
               ),
+              if (_publishedThemes.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _buildPublishedThemesStrip(
+                    context,
+                    horizontalPadding:
+                        horizontalInset == 0 ? 12 : horizontalInset,
+                  ),
+                ),
             ];
           },
           body: TabBarView(
@@ -850,6 +887,113 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           onTap: () => _openProfilePostDetail(post, isMarket: true),
         );
       },
+    );
+  }
+
+  Widget _buildPublishedThemesStrip(
+    BuildContext context, {
+    required double horizontalPadding,
+  }) {
+    final tokens = AppThemeTokens.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(horizontalPadding, 12, horizontalPadding, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.palette_outlined,
+                size: 16,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '主题作品 ${_publishedThemes.length}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 124,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _publishedThemes.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final item = _publishedThemes[index];
+                final previewPath = isDark
+                    ? (item.previewDark.isNotEmpty
+                        ? item.previewDark
+                        : item.previewLight)
+                    : (item.previewLight.isNotEmpty
+                        ? item.previewLight
+                        : item.previewDark);
+                return SizedBox(
+                  width: 96,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      _openPage(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ThemeDetailScreen(
+                            familyId: item.familyId,
+                            initialItem: item,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: previewPath.isNotEmpty
+                                ? Image.network(
+                                    ApiConstants.fullUrl(previewPath),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => ColoredBox(
+                                      color: tokens.surfaceMuted,
+                                      child: const Icon(
+                                        Icons.palette_outlined,
+                                        size: 20,
+                                      ),
+                                    ),
+                                  )
+                                : ColoredBox(
+                                    color: tokens.surfaceMuted,
+                                    child: const Icon(
+                                      Icons.palette_outlined,
+                                      size: 20,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          item.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 

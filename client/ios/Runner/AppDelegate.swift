@@ -37,6 +37,19 @@ import WidgetKit
     return true
   }
 
+  override func application(
+    _ application: UIApplication,
+    continue userActivity: NSUserActivity,
+    restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
+  ) -> Bool {
+    if userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+       let webpageURL = userActivity.webpageURL {
+      handleIncomingURL(webpageURL)
+      return true
+    }
+    return super.application(application, continue: userActivity, restorationHandler: restorationHandler)
+  }
+
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     let messenger = engineBridge.applicationRegistrar.messenger()

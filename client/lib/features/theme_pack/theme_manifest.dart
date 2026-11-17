@@ -157,7 +157,11 @@ class ThemeManifest {
     }
   }
 
-  factory ThemeManifest.parse(Object? input, {required String appVersion}) {
+  factory ThemeManifest.parse(
+    Object? input, {
+    required String appVersion,
+    bool preserveStoreSource = false,
+  }) {
     final parser = _ManifestParser();
     final source = parser.object(input, 'manifest');
     if (source['formatVersion'] is! int) parser.invalid('formatVersion');
@@ -205,6 +209,13 @@ class ThemeManifest {
       for (final mode in ['light', 'dark'])
         mode: parser.variant(source[mode], mode),
     };
+    if (preserveStoreSource && source['source'] != null) {
+      result['source'] = parser.choice(
+        source['source'],
+        'source',
+        const ['community', 'official'],
+      );
+    }
     if (source['tags'] != null) {
       final tags = parser.list(source['tags'], 'tags', 0, 5);
       result['tags'] = [

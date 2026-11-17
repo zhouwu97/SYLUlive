@@ -16,6 +16,8 @@ import 'launcher_icon_service.dart';
 import 'theme_appearance_exporter.dart';
 import 'theme_import_screen.dart';
 import 'theme_layout_decoration_screen.dart';
+import 'theme_store_screen.dart';
+import 'theme_submission_screen.dart';
 import 'theme_workshop_screen.dart';
 
 class ThemeSection extends StatefulWidget {
@@ -204,6 +206,30 @@ class _ThemeSectionState extends State<ThemeSection> {
               spacing: 8,
               runSpacing: 8,
               children: [
+                _actionButton(
+                  context: context,
+                  icon: Icons.storefront_outlined,
+                  label: '主题商城',
+                  onPressed: _busy
+                      ? null
+                      : () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const ThemeStoreScreen(),
+                            ),
+                          ),
+                ),
+                _actionButton(
+                  context: context,
+                  icon: Icons.assignment_ind_outlined,
+                  label: '我的投稿',
+                  onPressed: _busy
+                      ? null
+                      : () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const MyThemeSubmissionsScreen(),
+                            ),
+                          ),
+                ),
                 _actionButton(
                   context: context,
                   icon: Icons.construction_outlined,

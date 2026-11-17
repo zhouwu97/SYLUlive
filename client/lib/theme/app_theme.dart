@@ -25,13 +25,24 @@ class AppTheme {
   static const double spacingSmall = 6.0;
   static const double spacingLarge = 20.0;
 
+  static const List<String> defaultFontFallback = [
+    'NotoSansCJKsc',
+    'Noto Color Emoji',
+    'Segoe UI Emoji',
+    'Apple Color Emoji',
+  ];
+
   static ThemeData build({
     required Brightness brightness,
     AppPalette? palette,
     AppShape shape = const AppShape(),
     Color seedColor = AppColors.brandPrimary,
     DynamicSchemeVariant variant = DynamicSchemeVariant.tonalSpot,
+    String? fontFamily,
   }) {
+    final effectiveFont = (fontFamily != null && fontFamily.isNotEmpty)
+        ? fontFamily
+        : 'NotoSansCJKsc';
     final colors = palette ?? AppPalette.defaults(brightness);
     var scheme = ColorScheme.fromSeed(
       seedColor: palette == null ? AppColors.brandPrimary : seedColor,
@@ -70,12 +81,8 @@ class AppTheme {
           : colors.primary,
       scaffoldBackgroundColor: colors.background,
       canvasColor: colors.background,
-      fontFamily: 'NotoSansCJKsc',
-      fontFamilyFallback: const [
-        'Noto Color Emoji',
-        'Segoe UI Emoji',
-        'Apple Color Emoji',
-      ],
+      fontFamily: effectiveFont,
+      fontFamilyFallback: defaultFontFallback,
       // 全局紧凑密度
       visualDensity: VisualDensity.compact,
       dividerTheme: DividerThemeData(
@@ -93,6 +100,8 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         toolbarHeight: 48,
         titleTextStyle: TextStyle(
+          fontFamily: effectiveFont,
+          fontFamilyFallback: defaultFontFallback,
           fontSize: 17,
           fontWeight: FontWeight.w600,
           color: colors.appBarForeground,
@@ -113,7 +122,12 @@ class AppTheme {
             borderRadius: BorderRadius.circular(shape.md),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          textStyle: TextStyle(
+            fontFamily: effectiveFont,
+            fontFamilyFallback: defaultFontFallback,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -124,7 +138,12 @@ class AppTheme {
             borderRadius: BorderRadius.circular(shape.md),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          textStyle: TextStyle(
+            fontFamily: effectiveFont,
+            fontFamilyFallback: defaultFontFallback,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
@@ -168,8 +187,17 @@ class AppTheme {
         labelColor: scheme.primary,
         unselectedLabelColor: colors.textSecondary,
         indicatorColor: scheme.primary,
-        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: const TextStyle(fontSize: 14),
+        labelStyle: TextStyle(
+          fontFamily: effectiveFont,
+          fontFamilyFallback: defaultFontFallback,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelStyle: TextStyle(
+          fontFamily: effectiveFont,
+          fontFamilyFallback: defaultFontFallback,
+          fontSize: 14,
+        ),
         indicatorSize: TabBarIndicatorSize.label,
       ),
       // 进度条

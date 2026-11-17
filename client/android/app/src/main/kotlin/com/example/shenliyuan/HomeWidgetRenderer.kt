@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.util.TypedValue
+import android.view.View
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 
@@ -30,7 +31,15 @@ object HomeWidgetRenderer {
         }
 
         // 材质覆盖整个根容器，列表行保持透明，避免出现局部实色块或叠加边框。
-        views.setInt(android.R.id.background, "setBackgroundResource", theme.backgroundResource(appearance.frostedGlass))
+        if (theme.resolvedTheme == NativeHomeWidgetTheme.APP_THEME && theme.backgroundTintColor != null) {
+            views.setInt(android.R.id.background, "setBackgroundResource", android.R.color.transparent)
+            views.setViewVisibility(R.id.widget_bg_tint, View.VISIBLE)
+            views.setInt(R.id.widget_bg_tint, "setColorFilter", theme.backgroundTintColor)
+            views.setInt(R.id.widget_bg_tint, "setImageAlpha", if (appearance.frostedGlass) 209 else 255)
+        } else {
+            views.setViewVisibility(R.id.widget_bg_tint, View.GONE)
+            views.setInt(android.R.id.background, "setBackgroundResource", theme.backgroundResource(appearance.frostedGlass))
+        }
         views.setTextViewText(R.id.tv_widget_title, appearance.title)
         views.setTextViewTextSize(
             R.id.tv_widget_title,
@@ -138,7 +147,7 @@ object HomeWidgetRenderer {
                 .appendPath(appWidgetId.toString())
                 .appendQueryParameter(
                     "appearance",
-                    "${theme.resolvedTheme.storageName}-${fontSize.storageName}",
+                    "${theme.resolvedTheme.storageName}-${fontSize.storageName}-${theme.primaryTextColor}-${theme.backgroundTintColor ?: 0}",
                 )
                 .build()
         }

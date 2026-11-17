@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_palette.dart';
 import '../../theme/app_theme.dart';
 import 'theme_contrast.dart';
+import 'theme_font_registry.dart';
 import 'theme_manifest.dart';
 
 /// 保存最终值与来源；来源只用于展示和文件留存，不参与重新拼装外观。
@@ -18,8 +19,11 @@ class ThemeAppearance {
     final mode = brightness == Brightness.dark ? 'dark' : 'light';
     final colors = group(ThemeGroup.colors)?[mode] as Map<String, dynamic>?;
     final preset = group(ThemeGroup.shape)?['value'] as String? ?? 'standard';
+    final fontFamily =
+        ThemeFontRegistry.resolvedFamilyFor(group(ThemeGroup.font));
     return AppTheme.build(
       brightness: brightness,
+      fontFamily: fontFamily,
       palette: colors == null
           ? null
           : AppPalette.fromJson(colors['tokens'] as Map<String, dynamic>,
@@ -108,11 +112,28 @@ class ThemeAppearance {
             if (this.group(ThemeGroup.navigation)?['motion'] != null)
               'motion': this.group(ThemeGroup.navigation)!['motion']
           };
+        case ThemeGroup.font:
+          final fontData = manifest.data['font'];
+          if (fontData != null) {
+            next['font'] = {
+              'source': source,
+              ...resolve(fontData) as Map<String, dynamic>,
+            };
+          }
+        case ThemeGroup.widgets:
+          next['widgets'] = {
+            'source': source,
+          };
+        case ThemeGroup.launcherIcon:
+          final launcherData = manifest.data['launcherIcon'];
+          if (launcherData != null) {
+            next['launcherIcon'] = {
+              'source': source,
+              ...resolve(launcherData) as Map<String, dynamic>,
+            };
+          }
         case ThemeGroup.layout:
         case ThemeGroup.decoration:
-        case ThemeGroup.font:
-        case ThemeGroup.widgets:
-        case ThemeGroup.launcherIcon:
           break;
       }
     }

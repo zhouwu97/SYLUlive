@@ -8,6 +8,7 @@ import WidgetKit
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private static let appGroup = "group.com.sylu.sylulive"
   private static let widgetChannel = "shenliyuan/widget"
+  private static let appIconChannel = "app_icon"
   private static let deepLinkChannel = "shenliyuan/deeplink"
   private static let pushChannel = "shenliyuan/private_message_notifications"
   private static let maxThemePackageBytes = 48 * 1024 * 1024
@@ -40,6 +41,7 @@ import WidgetKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     let messenger = engineBridge.applicationRegistrar.messenger()
     registerWidgetChannel(messenger)
+    registerAppIconChannel(messenger)
     registerDeepLinkChannel(messenger)
     registerPushChannel(messenger)
     dispatchPendingDeepLink()
@@ -165,6 +167,21 @@ import WidgetKit
           if let exam = arguments["exam_data"] as? String {
             defaults?.set(exam, forKey: "widget_exam_data")
           }
+          if let appPalette = arguments["app_palette"] as? String {
+            defaults?.set(appPalette, forKey: "widget_app_palette_v1")
+          }
+          if let courseTheme = arguments["course_theme"] as? String {
+            defaults?.set(courseTheme, forKey: "widget_course_theme")
+          }
+          if let examTheme = arguments["exam_theme"] as? String {
+            defaults?.set(examTheme, forKey: "widget_exam_theme")
+          }
+          if let courseGlass = arguments["course_frosted_glass"] as? Bool {
+            defaults?.set(courseGlass, forKey: "widget_course_frosted_glass")
+          }
+          if let examGlass = arguments["exam_frosted_glass"] as? Bool {
+            defaults?.set(examGlass, forKey: "widget_exam_frosted_glass")
+          }
           defaults?.set(Date().timeIntervalSince1970, forKey: "widget_updated_at")
           defaults?.synchronize()
         }
@@ -173,6 +190,56 @@ import WidgetKit
           WidgetCenter.shared.reloadTimelines(ofKind: "ExamScheduleWidget")
         }
         result(nil)
+      }
+  }
+
+  private func registerAppIconChannel(_ messenger: FlutterBinaryMessenger) {
+    // 维护者备选源图合入前仅打包默认主图标（nil）。
+    let bundledAlternateIcons: [String: String?] = [
+      "default": nil,
+    ]
+    FlutterMethodChannel(name: Self.appIconChannel, binaryMessenger: messenger)
+      .setMethodCallHandler { call, result in
+        switch call.method {
+        case "setDesired":
+          let args = call.arguments as? [String: Any]
+          let rawId = (args?["id"] as? String) ?? "default"
+          let targetName = bundledAlternateIcons[rawId] ?? nil
+          guard UIApplication.shared.supportsAlternateIcons else {
+            result(nil)
+            return
+          }
+          if UIApplication.shared.alternateIconName == targetName {
+            result(nil)
+            return
+          }
+          UIApplication.shared.setAlternateIconName(targetName) { error in
+            if let error {
+              result(FlutterError(code: "ICON_CHANGE_FAILED", message: error.localizedDescription, details: nil))
+            } else {
+              result(nil)
+            }
+          }
+        case "current":
+          let currentAlt = UIApplication.shared.alternateIconName
+          let activeId = bundledAlternateIcons.first(where: { $0.value == currentAlt })?.key ?? "default"
+          result([
+            "activeId": activeId,
+            "desiredId": activeId,
+            "themed": false,
+            "sdkInt": 0,
+            "pinShortcutSupported": false,
+          ])
+        case "requestPinThemeShortcut":
+          result([
+            "status": "unsupported",
+            "message": "iOS 不支持创建自定义桌面快捷方式",
+          ])
+        case "openShortcutPermissionSettings":
+          result(false)
+        default:
+          result(FlutterMethodNotImplemented)
+        }
       }
   }
 

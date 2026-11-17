@@ -151,8 +151,10 @@ class _LiquidGlassRendererState extends State<LiquidGlassRenderer> {
   @override
   Widget build(BuildContext context) {
     final source = LiquidGlassScene.maybeOf(context);
-    final dark = Theme.of(context).brightness == Brightness.dark;
+    final themeData = Theme.of(context);
+    final dark = themeData.brightness == Brightness.dark;
     final tokens = AppThemeTokens.of(context);
+    final labelStyle = themeData.textTheme.labelSmall;
     final fallback = !widget.enabled || _shader == null || source == null;
     if (!widget.enabled) {
       updateLiquidGlassRuntimeStatus(
@@ -174,6 +176,8 @@ class _LiquidGlassRendererState extends State<LiquidGlassRenderer> {
         dpr: MediaQuery.devicePixelRatioOf(context),
         textScale: MediaQuery.textScalerOf(context).scale(12) / 12,
         highContrast: MediaQuery.highContrastOf(context),
+        fontFamily: labelStyle?.fontFamily,
+        fontFamilyFallback: labelStyle?.fontFamilyFallback,
       ),
       child: const SizedBox.expand(),
     );
@@ -221,6 +225,8 @@ class _GlassPainter extends CustomPainter {
     required this.dpr,
     required this.textScale,
     required this.highContrast,
+    this.fontFamily,
+    this.fontFamilyFallback,
   }) : super(repaint: source);
 
   final LiquidGlassSceneSource? source;
@@ -234,6 +240,8 @@ class _GlassPainter extends CustomPainter {
   final double dpr;
   final double textScale;
   final bool highContrast;
+  final String? fontFamily;
+  final List<String>? fontFamilyFallback;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -439,7 +447,8 @@ class _GlassPainter extends CustomPainter {
         text: TextSpan(
           text: settings.labels[i],
           style: TextStyle(
-            fontFamily: 'NotoSansCJKsc',
+            fontFamily: fontFamily,
+            fontFamilyFallback: fontFamilyFallback,
             fontSize: 11 * textScale.clamp(1.0, 1.6),
             fontWeight: FontWeight.w600,
             color: color,

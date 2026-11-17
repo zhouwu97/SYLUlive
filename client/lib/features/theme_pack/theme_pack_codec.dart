@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 import 'package:archive/archive.dart';
 
 import '../../utils/verified_zip_entry.dart';
+import 'theme_font_registry.dart';
 import 'theme_manifest.dart';
 
 class PreparedThemePack {
@@ -34,6 +35,7 @@ abstract final class ThemePackCodec {
       return _readArchive(buffer.takeBytes(), appVersion);
     });
     await _validateImages(prepared);
+    await ThemeFontRegistry.probePackFont(prepared.manifest, prepared.contents);
     return prepared;
   }
 
@@ -41,6 +43,7 @@ abstract final class ThemePackCodec {
       {required String appVersion}) async {
     final prepared = await Isolate.run(() => _readArchive(bytes, appVersion));
     await _validateImages(prepared);
+    await ThemeFontRegistry.probePackFont(prepared.manifest, prepared.contents);
     return prepared;
   }
 

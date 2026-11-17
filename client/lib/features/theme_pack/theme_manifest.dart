@@ -23,6 +23,9 @@ enum ThemeGroup {
     wallpapers,
     material,
     navigation,
+    font,
+    widgets,
+    launcherIcon,
   };
 }
 
@@ -79,6 +82,7 @@ class ThemeManifest {
 
   Set<ThemeGroup> get groups => {
         ThemeGroup.colors,
+        ThemeGroup.widgets,
         if (data.containsKey('shape')) ThemeGroup.shape,
         if (['light', 'dark']
             .any((key) => (data[key] as Map).containsKey('wallpapers')))

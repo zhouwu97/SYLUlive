@@ -196,4 +196,57 @@ class HomeWidgetAppearanceRefreshTest {
             assertEquals(Color.parseColor("#F9FAFB"), root.findViewById<TextView>(R.id.tv_widget_title).currentTextColor)
         }
     }
+
+    @Test
+    fun `APP_THEME读取明暗调色板控制毛玻璃透明度并在缺失时回退SYSTEM`() {
+        val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        prefs.edit().remove("flutter.widget_app_palette_v1").commit()
+        RuntimeEnvironment.setQualifiers("+notnight")
+        save(NativeHomeWidgetTheme.APP_THEME, NativeHomeWidgetFontSize.STANDARD)
+        val fallbackRoot = HomeWidgetRenderer.build(context, 130, NativeWidgetVariant.COURSE_2X2)
+            .apply(context, FrameLayout(context))
+        assertEquals(
+            android.view.View.GONE,
+            fallbackRoot.findViewById<android.widget.ImageView>(R.id.widget_bg_tint).visibility,
+        )
+
+        val paletteJson = """{
+            "light":{"background":"#FFF5F9FF","primaryText":"#FF102030","secondaryText":"#FF405060","mutedText":"#FF708090","accent":"#FF2F7FD8","divider":"#FFD0E0F0"},
+            "dark":{"background":"#FF0E1113","primaryText":"#FFF0F4F8","secondaryText":"#FFA0B0C0","mutedText":"#FF8090A0","accent":"#FF84BAFF","divider":"#FF253038"}
+        }"""
+        HomeWidgetAppearanceStore.synchronize(
+            context,
+            courseTheme = "appTheme",
+            courseTitle = "课表",
+            courseFontSize = "standard",
+            examTheme = "appTheme",
+            examTitle = "考试",
+            examFontSize = "standard",
+            courseFrostedGlass = true,
+            examFrostedGlass = false,
+            appPalette = paletteJson,
+        )
+
+        RuntimeEnvironment.setQualifiers("+notnight")
+        val lightCourse = HomeWidgetRenderer.build(context, 131, NativeWidgetVariant.COURSE_2X2)
+            .apply(context, FrameLayout(context))
+        val lightTint = lightCourse.findViewById<android.widget.ImageView>(R.id.widget_bg_tint)
+        assertEquals(android.view.View.VISIBLE, lightTint.visibility)
+        assertEquals(209, lightTint.imageAlpha)
+        assertEquals(
+            Color.parseColor("#FF102030"),
+            lightCourse.findViewById<TextView>(R.id.tv_widget_title).currentTextColor,
+        )
+
+        RuntimeEnvironment.setQualifiers("+night")
+        val darkExam = HomeWidgetRenderer.build(context, 132, NativeWidgetVariant.EXAM_2X2)
+            .apply(context, FrameLayout(context))
+        val darkTint = darkExam.findViewById<android.widget.ImageView>(R.id.widget_bg_tint)
+        assertEquals(android.view.View.VISIBLE, darkTint.visibility)
+        assertEquals(255, darkTint.imageAlpha)
+        assertEquals(
+            Color.parseColor("#FFF0F4F8"),
+            darkExam.findViewById<TextView>(R.id.tv_widget_title).currentTextColor,
+        )
+    }
 }

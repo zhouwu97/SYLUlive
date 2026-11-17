@@ -104,6 +104,7 @@ import 'widgets/global_background_wrapper.dart';
 import 'widgets/app_scroll_behavior.dart';
 import 'widgets/startup_recovery_screen.dart';
 import 'widgets/required_legal_consent_dialog.dart';
+import 'features/theme_pack/theme_font_registry.dart';
 import 'features/theme_pack/theme_import_screen.dart';
 import 'features/theme_pack/theme_trial_banner.dart';
 import 'platform/contracts/preferences_store.dart';
@@ -443,10 +444,13 @@ Future<void> appBootstrap() async {
         );
       }
 
-      // 在创建 ThemeProvider 前预热偏好存储，使首帧直接采用用户的主题、壁纸
-      // 与字体档位。失败时 ThemeProvider 仍会异步回退，不阻断应用启动。
+      // 在创建 ThemeProvider 前预热偏好存储并预加载主题自定义字体，使首帧直接采用用户的主题、壁纸、字体与字号档位。
       try {
-        await AppPreferencesStore.getInstance();
+        final prewarmedPrefs = await AppPreferencesStore.getInstance();
+        await ThemeFontRegistry.preloadFromPreferences(
+          prewarmedPrefs,
+          appearanceKey: ThemeProvider.appearanceKey,
+        );
       } catch (error) {
         debugPrint('预热偏好存储失败: $error');
       }

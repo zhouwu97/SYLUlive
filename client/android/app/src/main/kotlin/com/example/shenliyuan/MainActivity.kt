@@ -36,6 +36,7 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val WIDGET_CHANNEL = "shenliyuan/widget"
+        private const val APP_ICON_CHANNEL = "app_icon"
         private const val DEEPLINK_CHANNEL = "shenliyuan/deeplink"
         private const val FOREGROUND_CHANNEL = "shenliyuan/foreground"
         private const val KEEP_ALIVE_CHANNEL = "shenliyuan/keep_alive"
@@ -148,6 +149,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        LauncherIconManager.registerLifecycleObserver(application)
         super.onCreate(savedInstanceState)
         lastWidgetNightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         // 清理旧版本成绩提醒任务、状态和通知；新版本不再启用该能力。
@@ -574,6 +576,40 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        // ── 桌面图标与自定义快捷方式 MethodChannel ──
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            APP_ICON_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setDesired" -> {
+                    LauncherIconManager.setDesired(
+                        context = this,
+                        id = call.argument<String>("id"),
+                        themed = call.argument<Boolean>("themed") ?: false,
+                    )
+                    result.success(null)
+                }
+                "current" -> {
+                    result.success(LauncherIconManager.current(this))
+                }
+                "requestPinThemeShortcut" -> {
+                    result.success(
+                        LauncherIconManager.requestPinThemeShortcut(
+                            context = this,
+                            imagePath = call.argument<String>("path"),
+                            themeId = call.argument<String>("id"),
+                            label = call.argument<String>("label"),
+                        )
+                    )
+                }
+                "openShortcutPermissionSettings" -> {
+                    result.success(LauncherIconManager.openShortcutPermissionSettings(this))
+                }
+                else -> result.notImplemented()
+            }
+        }
+
         // ── 小组件 MethodChannel ──
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -592,6 +628,7 @@ class MainActivity : FlutterActivity() {
                             examFontSize = call.argument("exam_font_size"),
                             courseFrostedGlass = call.argument("course_frosted_glass"),
                             examFrostedGlass = call.argument("exam_frosted_glass"),
+                            appPalette = call.argument("app_palette"),
                         )
                         refreshWidgets()
                         result.success(true)

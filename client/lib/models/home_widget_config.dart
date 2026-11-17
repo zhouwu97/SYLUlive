@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../features/theme_pack/theme_widget_palette.dart';
+import '../platform/contracts/preferences_store.dart';
+
 enum HomeWidgetKind {
   course,
   exam;
@@ -14,6 +17,7 @@ enum HomeWidgetKind {
 
 enum HomeWidgetTheme {
   system,
+  appTheme,
   light,
   dark,
   campusBlue;
@@ -22,6 +26,7 @@ enum HomeWidgetTheme {
 
   String get label => switch (this) {
         HomeWidgetTheme.system => '跟随系统',
+        HomeWidgetTheme.appTheme => '跟随 App 主题',
         HomeWidgetTheme.light => '浅色',
         HomeWidgetTheme.dark => '深色',
         HomeWidgetTheme.campusBlue => '校园蓝',
@@ -123,6 +128,9 @@ class HomeWidgetPreferenceKeys {
   static const examTitle = 'widget_exam_title';
   static const courseFontSize = 'widget_course_font_size';
   static const examFontSize = 'widget_exam_font_size';
+  static const appPalette = ThemeWidgetPalette.storageKey;
+  static const manualCourseTheme = 'widget_manual_course_theme_v1';
+  static const manualExamTheme = 'widget_manual_exam_theme_v1';
 
   static const legacyTextColor = 'widget_text_color';
   static const legacyTitle = 'widget_title';
@@ -287,8 +295,24 @@ class HomeWidgetThemePalette {
   static HomeWidgetThemePalette resolve(
     HomeWidgetTheme theme, {
     required Brightness systemBrightness,
+    String? appPaletteJson,
+    bool frostedGlass = false,
   }) {
-    final resolved = theme == HomeWidgetTheme.system
+    if (theme == HomeWidgetTheme.appTheme) {
+      final raw = appPaletteJson ??
+          AppPreferencesStore.maybeInstance?.getString(
+            HomeWidgetPreferenceKeys.appPalette,
+          );
+      final fromApp = ThemeWidgetPalette.resolveStored(
+        raw,
+        systemBrightness: systemBrightness,
+        frostedGlass: frostedGlass,
+      );
+      if (fromApp != null) return fromApp;
+    }
+
+    final resolved = (theme == HomeWidgetTheme.system ||
+            theme == HomeWidgetTheme.appTheme)
         ? (systemBrightness == Brightness.dark
             ? HomeWidgetTheme.dark
             : HomeWidgetTheme.light)
@@ -312,7 +336,8 @@ class HomeWidgetThemePalette {
           border: Color(0xFFBFDBFE),
         ),
       HomeWidgetTheme.light ||
-      HomeWidgetTheme.system =>
+      HomeWidgetTheme.system ||
+      HomeWidgetTheme.appTheme =>
         const HomeWidgetThemePalette(
           background: Color(0xF2FFFFFF),
           primaryText: Color(0xFF111827),

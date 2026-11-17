@@ -12,6 +12,7 @@ import '../../widgets/app_card.dart';
 import '../../widgets/settings/settings_section.dart';
 import '../../widgets/settings/settings_tile.dart';
 import 'installed_themes_screen.dart';
+import 'launcher_icon_service.dart';
 import 'theme_appearance_exporter.dart';
 import 'theme_import_screen.dart';
 
@@ -222,6 +223,19 @@ class _ThemeSectionState extends State<ThemeSection> {
                       : () => Navigator.of(context).push(
                             MaterialPageRoute<bool>(
                               builder: (_) => const ThemeImportScreen(),
+                            ),
+                          ),
+                ),
+                _actionButton(
+                  context: context,
+                  icon: Icons.apps_rounded,
+                  label: '桌面图标',
+                  onPressed: _busy
+                      ? null
+                      : () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  const LauncherIconSettingsScreen(),
                             ),
                           ),
                 ),

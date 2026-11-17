@@ -13,7 +13,9 @@ import '../../widgets/about_app_sheet.dart';
 import '../../widgets/floating_bottom_nav.dart';
 import '../../widgets/liquid_bottom_nav.dart';
 import '../../widgets/opacity_safe_backdrop_filter.dart';
+import 'theme_appearance.dart';
 import 'theme_contrast.dart';
+import 'theme_font_registry.dart';
 import 'theme_manifest.dart';
 import 'theme_navigation_images.dart';
 import 'theme_pack_codec.dart';
@@ -317,12 +319,19 @@ class _ThemeImportScreenState extends State<ThemeImportScreen> {
       if (!mounted || launchGen != _generation) return;
       await provider.applyInstalledTheme(target, groups);
       if (mounted && launchGen == _generation) {
+        final appliedLauncherOnAndroid = groups.contains(ThemeGroup.launcherIcon) &&
+            (Platform.isAndroid ||
+                Theme.of(context).platform == TargetPlatform.android);
         if (Navigator.of(context).canPop()) {
           Navigator.of(context).pop(true);
         }
         messenger.showSnackBar(
           SnackBar(
-            content: const Text('主题已应用'),
+            content: Text(
+              appliedLauncherOnAndroid
+                  ? '主题已应用（桌面图标返回桌面后生效）'
+                  : '主题已应用',
+            ),
             action: SnackBarAction(
               label: '撤销',
               onPressed: () async {
@@ -576,6 +585,45 @@ class ThemePreview extends StatefulWidget {
 class _ThemePreviewState extends State<ThemePreview> {
   final _visualIndex = ValueNotifier<double>(0);
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncPreviewFont();
+  }
+
+  @override
+  void didUpdateWidget(covariant ThemePreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.manifest.id != widget.manifest.id ||
+        oldWidget.manifest.version != widget.manifest.version ||
+        oldWidget.groups.contains(ThemeGroup.font) !=
+            widget.groups.contains(ThemeGroup.font)) {
+      _syncPreviewFont();
+    }
+  }
+
+  void _syncPreviewFont() {
+    if (!widget.groups.contains(ThemeGroup.font)) return;
+    final appearance = const ThemeAppearance.empty().apply(
+      widget.manifest,
+      const {ThemeGroup.font},
+      widget.installed?.directory ?? '',
+    );
+    final fontGroup = appearance.group(ThemeGroup.font);
+    if (fontGroup == null ||
+        ThemeFontRegistry.resolvedFamilyFor(fontGroup) != null) {
+      return;
+    }
+    unawaited(
+      ThemeFontRegistry.ensureLoaded(
+        fontGroup,
+        inMemoryContents: widget.pack?.contents,
+      ).then((loaded) {
+        if (loaded != null && mounted) setState(() {});
+      }),
+    );
+  }
 
   @override
   void dispose() {

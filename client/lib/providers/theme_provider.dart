@@ -5,12 +5,16 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:path/path.dart' as path;
+import 'package:shenliyuan/models/home_widget_config.dart';
 import 'package:shenliyuan/models/startup_destination.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/services/home_widget_service.dart';
 import 'package:shenliyuan/services/root_page_state_service.dart';
 import 'package:shenliyuan/theme/app_text_scaler.dart';
+import '../features/theme_pack/launcher_icon_service.dart';
 import '../features/theme_pack/theme_appearance.dart';
 import '../features/theme_pack/theme_appearance_exporter.dart';
+import '../features/theme_pack/theme_font_registry.dart';
 import '../features/theme_pack/theme_manifest.dart';
 import '../features/theme_pack/theme_pack_codec.dart';
 import '../features/theme_pack/theme_pack_store.dart';
@@ -1229,6 +1233,19 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         ? null
         : ThemeAppearance(jsonDecode(previous) as Map<String, dynamic>);
     _appearanceLoaded = true;
+    final fontGroup = _appearance.group(ThemeGroup.font);
+    if (fontGroup != null &&
+        ThemeFontRegistry.resolvedFamilyFor(fontGroup) == null) {
+      unawaited(
+        ThemeFontRegistry.ensureLoaded(fontGroup).then((loaded) {
+          if (loaded != null && !_disposed) notifyListeners();
+        }),
+      );
+    }
+    unawaited(
+      HomeWidgetService.syncThemeAppearance(_appearance, prefs: prefs)
+          .catchError((Object _) {}),
+    );
   }
 
   void _onThemeTabChanged() {
@@ -1258,10 +1275,11 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     super.dispose();
   }
 
-  ThemeAppearance _snapshotAppearance() {
+  ThemeAppearance _snapshotAppearance([AppPreferencesStore? prefs]) {
     final persistedWallpapers = _appearance.group(ThemeGroup.wallpapers);
     final persistedMaterial = _appearance.group(ThemeGroup.material);
     final persistedNav = _appearance.group(ThemeGroup.navigation);
+    final persistedWidgets = _appearance.group(ThemeGroup.widgets);
     final persistedMotion = persistedNav?['motion'] as Map<String, dynamic>?;
     final persistedNavStyle = persistedNav?['style'] != null
         ? persistedNav!['style'] as String
@@ -1295,6 +1313,18 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
                 'strength': _frostedGlassStrength
               },
             }
+        },
+      if (persistedWidgets == null && prefs != null)
+        'widgets': {
+          'source': null,
+          'legacy': {
+            'courseTheme':
+                prefs.getString(HomeWidgetPreferenceKeys.courseTheme) ??
+                    HomeWidgetTheme.system.storageName,
+            'examTheme':
+                prefs.getString(HomeWidgetPreferenceKeys.examTheme) ??
+                    HomeWidgetTheme.system.storageName,
+          },
         },
       'navigation': {
         'source': null,
@@ -1341,10 +1371,21 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
       directory = stagingDirectory;
     }
+    final trialAppearance = _appearance.apply(manifest, selected, directory);
+    await ThemeFontRegistry.ensureLoaded(
+      trialAppearance.group(ThemeGroup.font),
+      inMemoryContents: pack?.contents,
+    );
+    if (_disposed || generation != _trialGeneration) {
+      if (stagingDirectory != null) {
+        await themePacks.removeStagingDirectory(stagingDirectory);
+      }
+      return;
+    }
     _trial = ThemeTrialSession(
       manifest: manifest,
       groups: selected,
-      appearance: _appearance.apply(manifest, selected, directory),
+      appearance: trialAppearance,
       installed: installed,
       pack: pack,
       stagingDirectory: stagingDirectory,
@@ -1363,6 +1404,54 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (!_disposed) notifyListeners();
     if (previous.stagingDirectory != null) {
       await themePacks.removeStagingDirectory(previous.stagingDirectory);
+    }
+  }
+
+  Future<void> _recordManualWidgetThemesBeforeThemeApply(
+    AppPreferencesStore prefs,
+  ) async {
+    if (_appearance.group(ThemeGroup.widgets) != null) return;
+    if (!prefs.containsKey(HomeWidgetPreferenceKeys.manualCourseTheme)) {
+      await prefs.setString(
+        HomeWidgetPreferenceKeys.manualCourseTheme,
+        prefs.getString(HomeWidgetPreferenceKeys.courseTheme) ??
+            HomeWidgetTheme.system.storageName,
+      );
+    }
+    if (!prefs.containsKey(HomeWidgetPreferenceKeys.manualExamTheme)) {
+      await prefs.setString(
+        HomeWidgetPreferenceKeys.manualExamTheme,
+        prefs.getString(HomeWidgetPreferenceKeys.examTheme) ??
+            HomeWidgetTheme.system.storageName,
+      );
+    }
+  }
+
+  Future<void> _applySystemCapabilities({
+    required AppPreferencesStore prefs,
+    required ThemeAppearance next,
+    required Set<ThemeGroup> selected,
+    required ThemeManifest manifest,
+  }) async {
+    final applyWidgets = selected.contains(ThemeGroup.widgets);
+    await HomeWidgetService.syncThemeAppearance(
+      next,
+      prefs: prefs,
+      courseThemeOverride:
+          applyWidgets ? HomeWidgetTheme.appTheme.storageName : null,
+      examThemeOverride:
+          applyWidgets ? HomeWidgetTheme.appTheme.storageName : null,
+    );
+    if (selected.contains(ThemeGroup.launcherIcon)) {
+      final builtinId = manifest.data['launcherIcon']?['builtin'] as String?;
+      if (builtinId != null && builtinId.isNotEmpty) {
+        final themed = await LauncherIconService.readDesiredThemed(prefs);
+        await LauncherIconService.setDesired(
+          prefs: prefs,
+          id: builtinId,
+          themed: themed,
+        );
+      }
     }
   }
 
@@ -1386,13 +1475,22 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         );
         target = existing ?? await themePacks.install(active.pack!);
       }
-      await _commitAppearance(
-        prefs,
-        _appearance.apply(target.manifest, active.groups, target.directory),
-        _snapshotAppearance(),
-      );
+      final snapshot = _snapshotAppearance(prefs);
+      final next =
+          _appearance.apply(target.manifest, active.groups, target.directory);
+      await ThemeFontRegistry.ensureLoaded(next.group(ThemeGroup.font));
+      if (active.groups.contains(ThemeGroup.widgets)) {
+        await _recordManualWidgetThemesBeforeThemeApply(prefs);
+      }
+      await _commitAppearance(prefs, next, snapshot, notifyImmediately: false);
       _trial = null;
       if (!_disposed) notifyListeners();
+      await _applySystemCapabilities(
+        prefs: prefs,
+        next: next,
+        selected: active.groups,
+        manifest: target.manifest,
+      );
       if (active.stagingDirectory != null) {
         await themePacks.removeStagingDirectory(active.stagingDirectory);
       }
@@ -1470,8 +1568,9 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> applyInstalledTheme(
       InstalledTheme theme, Set<ThemeGroup> groups) {
-    final selected =
-        Set<ThemeGroup>.of(groups).intersection(ThemeGroup.applicable).intersection(theme.manifest.groups);
+    final selected = Set<ThemeGroup>.of(groups)
+        .intersection(ThemeGroup.applicable)
+        .intersection(theme.manifest.groups);
     return _queueAppearanceOperation((prefs) async {
       if (!_isLoaded) {
         _applyStoredPreferences(prefs);
@@ -1481,10 +1580,20 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       final oldTrialStaging = _trial?.stagingDirectory;
       _trialGeneration++;
       _trial = null;
-      await _commitAppearance(
-          prefs,
-          _appearance.apply(theme.manifest, selected, theme.directory),
-          _snapshotAppearance());
+      final snapshot = _snapshotAppearance(prefs);
+      final next =
+          _appearance.apply(theme.manifest, selected, theme.directory);
+      await ThemeFontRegistry.ensureLoaded(next.group(ThemeGroup.font));
+      if (selected.contains(ThemeGroup.widgets)) {
+        await _recordManualWidgetThemesBeforeThemeApply(prefs);
+      }
+      await _commitAppearance(prefs, next, snapshot);
+      await _applySystemCapabilities(
+        prefs: prefs,
+        next: next,
+        selected: selected,
+        manifest: theme.manifest,
+      );
       if (oldTrialStaging != null) {
         await themePacks.removeStagingDirectory(oldTrialStaging);
       }
@@ -1499,7 +1608,28 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         final oldTrialStaging = _trial?.stagingDirectory;
         _trialGeneration++;
         _trial = null;
-        await _commitAppearance(prefs, previous, _snapshotAppearance());
+        final snapshot = _snapshotAppearance(prefs);
+        await ThemeFontRegistry.ensureLoaded(previous.group(ThemeGroup.font));
+        await _commitAppearance(prefs, previous, snapshot);
+        final previousWidgets = previous.group(ThemeGroup.widgets);
+        String? courseOverride;
+        String? examOverride;
+        if (previousWidgets != null) {
+          final legacy = previousWidgets['legacy'] as Map?;
+          if (legacy != null) {
+            courseOverride = legacy['courseTheme'] as String?;
+            examOverride = legacy['examTheme'] as String?;
+          } else {
+            courseOverride = HomeWidgetTheme.appTheme.storageName;
+            examOverride = HomeWidgetTheme.appTheme.storageName;
+          }
+        }
+        await HomeWidgetService.syncThemeAppearance(
+          previous,
+          prefs: prefs,
+          courseThemeOverride: courseOverride,
+          examThemeOverride: examOverride,
+        );
         if (oldTrialStaging != null) {
           await themePacks.removeStagingDirectory(oldTrialStaging);
         }
@@ -1509,10 +1639,28 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> restoreManualAppearance() =>
       _queueAppearanceOperation((prefs) async {
         final oldTrialStaging = _trial?.stagingDirectory;
+        final hadThemeWidgets = _appearance.group(ThemeGroup.widgets) != null;
         _trialGeneration++;
         _trial = null;
-        await _commitAppearance(
-            prefs, const ThemeAppearance.empty(), _snapshotAppearance());
+        const cleared = ThemeAppearance.empty();
+        await _commitAppearance(prefs, cleared, _snapshotAppearance(prefs));
+        String? courseOverride;
+        String? examOverride;
+        if (hadThemeWidgets) {
+          courseOverride =
+              prefs.getString(HomeWidgetPreferenceKeys.manualCourseTheme) ??
+                  HomeWidgetTheme.system.storageName;
+          examOverride =
+              prefs.getString(HomeWidgetPreferenceKeys.manualExamTheme) ??
+                  HomeWidgetTheme.system.storageName;
+        }
+        await HomeWidgetService.syncThemeAppearance(
+          cleared,
+          prefs: prefs,
+          courseThemeOverride: courseOverride,
+          examThemeOverride: examOverride,
+        );
+        // 恢复手动外观不改动已生效的桌面图标，避免退出主题时触发桌面重载。
         if (oldTrialStaging != null) {
           await themePacks.removeStagingDirectory(oldTrialStaging);
         }
@@ -1532,8 +1680,12 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
         await _cleanupThemeFiles();
       });
 
-  Future<void> _commitAppearance(AppPreferencesStore prefs,
-      ThemeAppearance next, ThemeAppearance previous) async {
+  Future<void> _commitAppearance(
+    AppPreferencesStore prefs,
+    ThemeAppearance next,
+    ThemeAppearance previous, {
+    bool notifyImmediately = true,
+  }) async {
     final oldPrevious = prefs.getString(previousAppearanceKey);
     if (!await prefs.setString(
         previousAppearanceKey, jsonEncode(previous.data))) {
@@ -1554,7 +1706,7 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (!committed) throw const FileSystemException('当前外观未能保存');
     _appearance = next;
     _previousAppearance = previous;
-    if (!_disposed) notifyListeners();
+    if (notifyImmediately && !_disposed) notifyListeners();
   }
 
   Future<bool> _writeCurrentAppearance(
